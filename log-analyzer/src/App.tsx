@@ -1,11 +1,12 @@
-import { useState, useRef, useEffect, ReactNode } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { 
   Search, LayoutGrid, ListTodo, Settings, Layers, 
-  ChevronRight, Filter, Download, Play, CheckCircle2, 
-  AlertCircle, X, Plus, Terminal, RefreshCw, Trash2, FolderOpen,
-  MoreVertical, Moon, Sun, Laptop, Zap, Copy
+  CheckCircle2, AlertCircle, X, Plus, Terminal, 
+  RefreshCw, Trash2, FolderOpen, Moon, Zap, Play, StopCircle, 
+  MoreHorizontal, FileText, ChevronRight, Edit2, Save, Filter,
+  ChevronDown, Tag, Hash, PauseCircle
 } from "lucide-react";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
@@ -15,20 +16,43 @@ function cn(...inputs: ClassValue[]) { return twMerge(clsx(inputs)); }
 
 // --- Types ---
 type Page = 'search' | 'keywords' | 'workspaces' | 'tasks' | 'settings';
-interface LogEntry { id: number; timestamp: string; level: string; file: string; line: number; content: string; tags: any[]; }
+type ColorKey = 'blue' | 'green' | 'red' | 'orange' | 'purple';
 
-// --- UI Components (Design System) ---
+interface LogEntry { 
+  id: number; timestamp: string; level: string; file: string; line: number; content: string; tags: any[]; 
+}
+interface KeywordPattern { regex: string; comment: string; }
+interface KeywordGroup { id: string; name: string; color: ColorKey; patterns: KeywordPattern[]; enabled: boolean; }
+interface Workspace { id: string; name: string; path: string; status: 'READY' | 'SCANNING' | 'OFFLINE'; size: string; files: number; }
+interface Task { id: number; type: string; target: string; progress: number; status: 'RUNNING' | 'COMPLETED' | 'FAILED' | 'STOPPED'; }
 
-const Button = ({ children, variant = 'primary', className, icon: Icon, ...props }: any) => {
-  const base = "h-9 px-4 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed";
+// --- COLOR SYSTEM ---
+const COLOR_STYLES: Record<ColorKey, { dot: string; badge: string; border: string; text: string; activeBtn: string; hoverBorder: string; highlight: string; }> = {
+  blue: { dot: "bg-blue-500", badge: "bg-blue-500/15 text-blue-400 border-blue-500/20", border: "border-blue-500", text: "text-blue-400", activeBtn: "bg-blue-500 text-white border-blue-400 shadow-[0_0_10px_rgba(59,130,246,0.4)]", hoverBorder: "hover:border-blue-500/50", highlight: "bg-blue-500/20 text-blue-300 border-blue-500/30" },
+  green: { dot: "bg-emerald-500", badge: "bg-emerald-500/15 text-emerald-400 border-emerald-500/20", border: "border-emerald-500", text: "text-emerald-400", activeBtn: "bg-emerald-500 text-white border-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.4)]", hoverBorder: "hover:border-emerald-500/50", highlight: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30" },
+  red: { dot: "bg-red-500", badge: "bg-red-500/15 text-red-400 border-red-500/20", border: "border-red-500", text: "text-red-400", activeBtn: "bg-red-500 text-white border-red-400 shadow-[0_0_10px_rgba(239,68,68,0.4)]", hoverBorder: "hover:border-red-500/50", highlight: "bg-red-500/20 text-red-300 border-red-500/30" },
+  orange: { dot: "bg-amber-500", badge: "bg-amber-500/15 text-amber-400 border-amber-500/20", border: "border-amber-500", text: "text-amber-400", activeBtn: "bg-amber-500 text-white border-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.4)]", hoverBorder: "hover:border-amber-500/50", highlight: "bg-amber-500/20 text-amber-300 border-amber-500/30" },
+  purple: { dot: "bg-purple-500", badge: "bg-purple-500/15 text-purple-400 border-purple-500/20", border: "border-purple-500", text: "text-purple-400", activeBtn: "bg-purple-500 text-white border-purple-400 shadow-[0_0_10px_rgba(168,85,247,0.4)]", hoverBorder: "hover:border-purple-500/50", highlight: "bg-purple-500/20 text-purple-300 border-purple-500/30" }
+};
+
+// --- UI Components ---
+const Button = ({ children, variant = 'primary', className, icon: Icon, onClick, ...props }: any) => {
+  const base = "h-9 px-4 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shrink-0 select-none cursor-pointer";
   const variants = {
-    primary: "bg-primary hover:bg-primary-hover text-white shadow-sm",
-    secondary: "bg-bg-card hover:bg-bg-hover text-text-main border border-border-base",
-    ghost: "hover:bg-bg-hover text-text-muted hover:text-text-main",
-    danger: "bg-red-500/10 text-red-500 hover:bg-red-500/20 border border-red-500/20"
+    primary: "bg-primary hover:bg-primary-hover text-white shadow-sm active:scale-95",
+    secondary: "bg-bg-card hover:bg-bg-hover text-text-main border border-border-base active:scale-95",
+    ghost: "hover:bg-bg-hover text-text-muted hover:text-text-main active:bg-bg-hover/80",
+    danger: "bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20 hover:text-red-300 active:scale-95",
+    active: "bg-primary/20 text-primary border border-primary/50", 
+    icon: "h-8 w-8 p-0 bg-transparent hover:bg-bg-hover text-text-dim hover:text-text-main rounded-full"
   };
   return (
-    <button className={cn(base, variants[variant as keyof typeof variants], className)} {...props}>
+    <button 
+        type="button" 
+        className={cn(base, variants[variant as keyof typeof variants], className)} 
+        onClick={(e) => { e.stopPropagation(); onClick && onClick(e); }} 
+        {...props}
+    >
       {Icon && <Icon size={16} />}
       {children}
     </button>
@@ -36,170 +60,260 @@ const Button = ({ children, variant = 'primary', className, icon: Icon, ...props
 };
 
 const Input = ({ className, ...props }: any) => (
-  <input 
-    className={cn(
-      "h-9 w-full bg-bg-main border border-border-base rounded-md px-3 text-sm text-text-main placeholder:text-text-dim focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50 transition-all", 
-      className
-    )} 
-    {...props} 
-  />
+  <input className={cn("h-9 w-full bg-bg-main border border-border-base rounded-md px-3 text-sm text-text-main placeholder:text-text-dim focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50 transition-all", className)} {...props} />
 );
 
-const Card = ({ children, className, title, actions }: any) => (
-  <div className={cn("bg-bg-card border border-border-base rounded-lg overflow-hidden", className)}>
-    {(title || actions) && (
-      <div className="px-4 py-3 border-b border-border-base flex items-center justify-between bg-bg-sidebar/50">
-        {title && <h3 className="text-sm font-semibold text-text-main">{title}</h3>}
-        {actions && <div className="flex gap-2">{actions}</div>}
-      </div>
-    )}
-    <div className="p-4">{children}</div>
-  </div>
+const Card = ({ children, className }: any) => (
+  <div className={cn("bg-bg-card border border-border-base rounded-lg overflow-hidden", className)}>{children}</div>
 );
 
-const Badge = ({ children, variant = 'default' }: any) => {
-  const styles = {
-    default: "bg-bg-hover text-text-muted",
-    blue: "bg-primary/10 text-primary-text border-primary/20",
-    green: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20",
-    red: "bg-red-500/10 text-red-500 border-red-500/20",
-    orange: "bg-amber-500/10 text-amber-500 border-amber-500/20",
+// --- Modal Component ---
+const KeywordModal = ({ isOpen, onClose, onSave, initialData }: any) => {
+  if (!isOpen) return null;
+  const [name, setName] = useState("");
+  const [color, setColor] = useState<ColorKey>("blue");
+  const [patterns, setPatterns] = useState<KeywordPattern[]>([{ regex: "", comment: "" }]);
+
+  useEffect(() => {
+    if (isOpen) {
+        setName(initialData?.name || "");
+        setColor(initialData?.color || "blue");
+        setPatterns(initialData?.patterns || [{ regex: "", comment: "" }]);
+    }
+  }, [isOpen, initialData]);
+
+  const handleSave = () => {
+    const validPatterns = patterns.filter(p => p.regex.trim() !== "");
+    if (!name || validPatterns.length === 0) return;
+    onSave({ id: initialData?.id || Date.now().toString(), name, color, patterns: validPatterns, enabled: true });
+    onClose();
   };
+
+  const updateRow = (idx: number, field: keyof KeywordPattern, value: string) => {
+    const newPatterns = [...patterns];
+    newPatterns[idx][field] = value;
+    setPatterns(newPatterns);
+  };
+
   return (
-    <span className={cn("px-2 py-0.5 rounded text-[11px] font-medium border border-transparent", styles[variant as keyof typeof styles])}>
-      {children}
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-[600px] bg-bg-card border border-border-base rounded-lg shadow-2xl flex flex-col max-h-[85vh] animate-in fade-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+        <div className="px-6 py-4 border-b border-border-base flex justify-between items-center bg-bg-sidebar">
+          <h2 className="text-lg font-bold text-text-main">{initialData ? 'Edit Keyword Group' : 'New Keyword Group'}</h2>
+          <Button variant="icon" icon={X} onClick={onClose} />
+        </div>
+        <div className="p-6 overflow-y-auto flex-1 space-y-6">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs text-text-dim uppercase font-bold mb-1.5 block">Group Name</label>
+              <Input value={name} onChange={(e:any) => setName(e.target.value)} placeholder="e.g. Network Errors" />
+            </div>
+            <div>
+              <label className="text-xs text-text-dim uppercase font-bold mb-1.5 block">Highlight Color</label>
+              <div className="flex gap-2 h-9 items-center">
+                {(['blue', 'green', 'orange', 'red', 'purple'] as ColorKey[]).map((c) => (
+                  <button key={c} onClick={() => setColor(c)} className={cn("w-6 h-6 rounded-full border-2 transition-all cursor-pointer", COLOR_STYLES[c].dot, color === c ? "border-white scale-110 shadow-lg" : "border-transparent opacity-40 hover:opacity-100")} />
+                ))}
+              </div>
+            </div>
+          </div>
+          <div>
+            <div className="flex justify-between items-center mb-2">
+              <label className="text-xs text-text-dim uppercase font-bold">Patterns & Comments</label>
+              <Button variant="ghost" size="sm" className="h-6 text-xs" icon={Plus} onClick={() => setPatterns([...patterns, { regex: "", comment: "" }])}>Add</Button>
+            </div>
+            <div className="space-y-2">
+              {patterns.map((p, i) => (
+                <div key={i} className="flex gap-2 items-center group">
+                  <div className="flex-1"><Input value={p.regex} onChange={(e:any) => updateRow(i, 'regex', e.target.value)} placeholder="RegEx (e.g. timeout)" className="font-mono text-xs"/></div>
+                  <div className="flex-1"><Input value={p.comment} onChange={(e:any) => updateRow(i, 'comment', e.target.value)} placeholder="Comment" className="text-xs"/></div>
+                  <Button variant="icon" icon={Trash2} className="text-red-400 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => setPatterns(patterns.filter((_, idx) => idx !== i))} />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="px-6 py-4 border-t border-border-base bg-bg-sidebar flex justify-end gap-3">
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSave}>Save Configuration</Button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --- Hybrid Log Renderer ---
+const HybridLogRenderer = ({ text, query, keywordGroups }: { text: string, query: string, keywordGroups: KeywordGroup[] }) => {
+  const { patternMap, regexPattern } = useMemo(() => {
+    const map = new Map<string, { color: ColorKey, comment: string }>();
+    const patterns = new Set<string>();
+
+    keywordGroups.filter(g => g.enabled).forEach(group => {
+      group.patterns.forEach(p => {
+        if (p.regex?.trim()) {
+            map.set(p.regex.toLowerCase(), { color: group.color, comment: p.comment });
+            patterns.add(p.regex);
+        }
+      });
+    });
+
+    if (query) {
+        query.split('|').map(t => t.trim()).filter(t => t.length > 0).forEach((term, index) => {
+            if (!map.has(term.toLowerCase())) {
+                const colors: ColorKey[] = ['blue', 'purple', 'green', 'orange'];
+                map.set(term.toLowerCase(), { color: colors[index % colors.length], comment: "" });
+            }
+            patterns.add(term);
+        });
+    }
+
+    const sorted = Array.from(patterns).sort((a, b) => b.length - a.length);
+    return {
+      regexPattern: sorted.length > 0 ? new RegExp(`(${sorted.map(p => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi') : null,
+      patternMap: map
+    };
+  }, [keywordGroups, query]);
+
+  if (!regexPattern) return <span>{text}</span>;
+
+  return (
+    <span>
+      {text.split(regexPattern).map((part, i) => {
+        const info = patternMap.get(part.toLowerCase());
+        if (info) {
+          const style = COLOR_STYLES[info.color]?.highlight || COLOR_STYLES['blue'].highlight;
+          return (
+            <span key={i} className="inline-flex items-baseline mx-[1px]">
+              <span className={cn("rounded-[2px] px-1 border font-bold break-all", style)}>{part}</span>
+              {info.comment && <span className={cn("ml-1 px-1.5 rounded-[2px] text-[10px] font-normal border select-none whitespace-nowrap transform -translate-y-[1px]", style.replace("bg-", "bg-opacity-10 bg-"))}>{info.comment}</span>}
+            </span>
+          );
+        }
+        return <span key={i}>{part}</span>;
+      })}
     </span>
   );
 };
 
-// --- Page: Search Logs (The Core) ---
-const SearchPage = () => {
-  const [query, setQuery] = useState("timeout|error");
+// --- Filter Palette (Right Aligned) ---
+const FilterPalette = ({ isOpen, onClose, groups, currentQuery, onToggleRule }: any) => {
+    if (!isOpen) return null;
+    const isPatternActive = (regex: string) => currentQuery.split('|').map((t:string) => t.trim().toLowerCase()).includes(regex.toLowerCase());
+    const colorOrder: ColorKey[] = ['red', 'orange', 'blue', 'purple', 'green'];
+    
+    return (
+        <>
+            <div className="fixed inset-0 z-[45] bg-transparent" onClick={onClose}></div>
+            <div className="absolute top-full right-0 mt-2 w-[600px] max-h-[60vh] overflow-y-auto bg-[#18181b] border border-border-base rounded-lg shadow-2xl z-50 p-4 grid gap-6 animate-in fade-in zoom-in-95 duration-100 origin-top-right ring-1 ring-white/10">
+                <div className="flex justify-between items-center pb-2 border-b border-white/10">
+                    <h3 className="text-sm font-bold text-text-main flex items-center gap-2"><Filter size={14} className="text-primary"/> Filter Command Center</h3>
+                </div>
+                {colorOrder.map(color => {
+                    const colorGroups = groups.filter((g: KeywordGroup) => g.color === color);
+                    if (colorGroups.length === 0) return null;
+                    return (
+                        <div key={color}>
+                            <div className={cn("text-[10px] font-bold uppercase mb-2 flex items-center gap-2", COLOR_STYLES[color].text)}>
+                                <div className={cn("w-2 h-2 rounded-full", COLOR_STYLES[color].dot)}></div>
+                                {color} Priority Level
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                {colorGroups.map((group: KeywordGroup) => (
+                                    <div key={group.id} className="bg-bg-card/50 border border-white/5 rounded p-2">
+                                        <div className="text-xs font-semibold text-text-muted mb-2 px-1">{group.name}</div>
+                                        <div className="flex flex-wrap gap-2">
+                                            {group.patterns.map((p, idx) => {
+                                                const active = isPatternActive(p.regex);
+                                                return (
+                                                    <button key={idx} onClick={() => onToggleRule(p.regex)} className={cn("text-[11px] px-2 py-1 rounded border transition-all duration-150 flex items-center gap-1.5 cursor-pointer", active ? COLOR_STYLES[color].activeBtn : `bg-bg-main text-text-dim border-border-base hover:bg-bg-hover ${COLOR_STYLES[color].hoverBorder}`)}>
+                                                        {active && <CheckCircle2 size={10} />}<span className="font-mono">{p.regex}</span>
+                                                    </button>
+                                                )
+                                            })}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )
+                })}
+            </div>
+        </>
+    );
+};
+
+// --- Pages ---
+const SearchPage = ({ keywordGroups }: { keywordGroups: KeywordGroup[] }) => {
+  const [query, setQuery] = useState("");
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [isFilterPaletteOpen, setIsFilterPaletteOpen] = useState(false);
   const parentRef = useRef<HTMLDivElement>(null);
 
-  // Load Initial Data
-  useEffect(() => { invoke<LogEntry[]>("search_logs", { pattern: query }).then(setLogs); }, []);
+  useEffect(() => { invoke<LogEntry[]>("search_logs", { pattern: query || "error" }).then(setLogs); }, []);
   const handleSearch = () => invoke<LogEntry[]>("search_logs", { pattern: query }).then(setLogs);
 
-  const rowVirtualizer = useVirtualizer({
-    count: logs.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => 34,
-    overscan: 20,
-  });
+  const toggleRuleInQuery = (ruleRegex: string) => {
+    const terms = query.split('|').map(t => t.trim()).filter(t => t.length > 0);
+    const index = terms.findIndex(t => t.toLowerCase() === ruleRegex.toLowerCase());
+    let newQuery = index !== -1 ? terms.filter((_, i) => i !== index).join('|') : [...terms, ruleRegex].join('|');
+    setQuery(newQuery);
+    invoke<LogEntry[]>("search_logs", { pattern: newQuery }).then(setLogs);
+  };
 
+  const rowVirtualizer = useVirtualizer({ count: logs.length, getScrollElement: () => parentRef.current, estimateSize: () => 46, overscan: 15 });
   const activeLog = logs.find(l => l.id === selectedId);
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Search Header */}
-      <div className="p-4 border-b border-border-base bg-bg-sidebar space-y-3 shrink-0">
+    <div className="flex flex-col h-full relative">
+      <div className="p-4 border-b border-border-base bg-bg-sidebar space-y-3 shrink-0 relative z-40">
         <div className="flex gap-2">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-2.5 text-text-dim" size={16} />
-            <Input 
-              value={query} onChange={(e: any) => setQuery(e.target.value)} 
-              className="pl-9 font-mono" placeholder="Search logs (RegEx supported)..." 
-            />
+            <Input value={query} onChange={(e: any) => setQuery(e.target.value)} className="pl-9 font-mono bg-bg-main" placeholder="Search..." />
           </div>
-          <select className="h-9 bg-bg-main border border-border-base rounded-md px-3 text-sm text-text-main focus:outline-none focus:border-primary">
-            <option>All Levels</option>
-            <option>ERROR</option>
-            <option>WARN</option>
-          </select>
+          <div className="relative">
+             <Button variant={isFilterPaletteOpen ? "active" : "secondary"} icon={Filter} onClick={() => setIsFilterPaletteOpen(!isFilterPaletteOpen)} className="w-[140px] justify-between">
+                Filters <ChevronDown size={14} className={cn("transition-transform", isFilterPaletteOpen ? "rotate-180" : "")}/>
+             </Button>
+             <FilterPalette isOpen={isFilterPaletteOpen} onClose={() => setIsFilterPaletteOpen(false)} groups={keywordGroups} currentQuery={query} onToggleRule={toggleRuleInQuery} />
+          </div>
           <Button icon={Search} onClick={handleSearch}>Search</Button>
         </div>
-        <div className="flex items-center gap-2">
-           <span className="text-xs font-semibold text-text-muted uppercase">File Filter:</span>
-           <Input className="h-7 text-xs w-[300px]" placeholder="*.log, app-*.txt" />
-           <div className="ml-auto text-xs text-text-dim flex gap-4">
-             <span>Result: {logs.length} matched</span>
-             <span>Time: 12ms</span>
-           </div>
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none h-6 min-h-[24px]">
+             <span className="text-[10px] font-bold text-text-dim uppercase">Active:</span>
+             {query ? query.split('|').map((term, i) => <span key={i} className="flex items-center text-[10px] bg-bg-card border border-border-base px-1.5 rounded text-text-main whitespace-nowrap"><Hash size={8} className="mr-1 opacity-50"/> {term}</span>) : <span className="text-[10px] text-text-dim italic">None</span>}
         </div>
       </div>
-
-      {/* Main Content Area (Split View) */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left: Log List */}
-        <div ref={parentRef} className="flex-1 overflow-auto bg-bg-main">
-          {/* Table Header */}
-          <div className="sticky top-0 z-10 grid grid-cols-[60px_150px_200px_1fr] px-4 py-2 bg-bg-main border-b border-border-base text-xs font-semibold text-text-dim uppercase tracking-wider">
-            <div>Level</div>
-            <div>Time</div>
-            <div>File</div>
-            <div>Content</div>
-          </div>
-          
+        <div ref={parentRef} className="flex-1 overflow-auto bg-bg-main scrollbar-thin">
+          <div className="sticky top-0 z-10 grid grid-cols-[60px_190px_220px_1fr] px-4 py-2 bg-bg-main border-b border-border-base text-xs font-bold text-text-dim uppercase tracking-wider"><div>Level</div> <div>Time</div> <div>File</div> <div>Content</div></div>
           <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, width: '100%', position: 'relative' }}>
             {rowVirtualizer.getVirtualItems().map((virtualRow) => {
               const log = logs[virtualRow.index];
               const isActive = log.id === selectedId;
-              const levelColor = log.level === 'ERROR' ? 'text-status-error' : log.level === 'WARN' ? 'text-status-warn' : 'text-status-info';
-              
               return (
-                <div 
-                  key={virtualRow.key}
-                  onClick={() => setSelectedId(log.id)}
-                  style={{ height: `${virtualRow.size}px`, transform: `translateY(${virtualRow.start}px)` }}
-                  className={cn(
-                    "absolute top-0 left-0 w-full grid grid-cols-[60px_150px_200px_1fr] items-center px-4 border-b border-border-base/50 cursor-pointer text-[13px] font-mono hover:bg-bg-hover transition-colors",
-                    isActive && "bg-blue-900/20 border-l-2 border-l-primary"
-                  )}
-                >
-                  <div className={cn("font-bold", levelColor)}>{log.level.substring(0,1)}</div>
-                  <div className="text-text-muted">{log.timestamp}</div>
-                  <div className="text-text-muted truncate pr-2" title={log.file}>{log.file}:{log.line}</div>
-                  <div className="text-text-main truncate opacity-90">{log.content}</div>
+                <div key={virtualRow.key} data-index={virtualRow.index} ref={rowVirtualizer.measureElement} onClick={() => setSelectedId(log.id)} style={{ transform: `translateY(${virtualRow.start}px)` }}
+                  className={cn("absolute top-0 left-0 w-full grid grid-cols-[60px_190px_220px_1fr] px-4 py-2 border-b border-border-base/40 cursor-pointer text-[13px] font-mono hover:bg-bg-hover transition-colors items-start", isActive && "bg-blue-500/10 border-l-2 border-l-primary")}>
+                  <div className={cn("font-bold pt-0.5", log.level === 'ERROR' ? 'text-red-400' : log.level === 'WARN' ? 'text-yellow-400' : 'text-blue-400')}>{log.level.substring(0,1)}</div>
+                  <div className="text-text-muted whitespace-nowrap pt-0.5">{log.timestamp}</div>
+                  <div className="text-text-muted break-all pr-4 pt-0.5 leading-relaxed">{log.file}:{log.line}</div>
+                  <div className="text-text-main whitespace-pre-wrap break-all leading-relaxed pr-4"><HybridLogRenderer text={log.content} query={query} keywordGroups={keywordGroups} /></div>
                 </div>
               );
             })}
           </div>
         </div>
-
-        {/* Right: Context Panel */}
         {activeLog && (
-          <div className="w-[450px] bg-bg-sidebar border-l border-border-base flex flex-col shrink-0">
+          <div className="w-[450px] bg-bg-sidebar border-l border-border-base flex flex-col shrink-0 shadow-xl z-20">
             <div className="h-10 border-b border-border-base flex items-center justify-between px-4 bg-bg-card/50">
-              <span className="text-xs font-semibold text-text-muted uppercase">Log Context</span>
-              <div className="flex gap-2">
-                <Button variant="ghost" className="h-6 w-6 p-0"><Copy size={14}/></Button>
-                <Button variant="ghost" className="h-6 w-6 p-0" onClick={() => setSelectedId(null)}><X size={14}/></Button>
-              </div>
+              <span className="text-xs font-semibold text-text-muted uppercase">Log Inspector</span>
+              <Button variant="ghost" className="h-6 w-6 p-0" onClick={() => setSelectedId(null)}><X size={14}/></Button>
             </div>
-            
             <div className="flex-1 overflow-auto p-4 font-mono text-xs">
-              <div className="mb-6">
-                <div className="text-text-dim mb-1">Source File</div>
-                <div className="text-primary break-all">/var/www/production/{activeLog.file}</div>
-              </div>
-              
-              <div className="bg-bg-main border border-border-base rounded-md overflow-hidden">
-                <div className="flex border-b border-border-base bg-bg-card/30">
-                   <div className="w-10 py-1 text-center text-text-dim border-r border-border-base bg-bg-card">Line</div>
-                   <div className="px-2 py-1 text-text-dim">Content</div>
-                </div>
-                {[-2, -1, 0, 1, 2].map(offset => (
-                  <div key={offset} className={cn("flex", offset === 0 ? "bg-blue-500/10" : "")}>
-                    <div className="w-10 py-1 text-center text-text-dim border-r border-border-base opacity-50 select-none">
-                      {activeLog.line + offset}
-                    </div>
-                    <div className={cn("px-2 py-1 whitespace-pre-wrap break-all", offset === 0 ? "text-text-main" : "text-text-dim")}>
-                      {offset === 0 ? activeLog.content : `Context line placeholder content...`}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-6">
-                <div className="text-text-dim mb-2">Metadata Tags</div>
-                <div className="flex flex-wrap gap-2">
-                   {activeLog.level === 'ERROR' && <Badge variant="red">Critical Error</Badge>}
-                   <Badge variant="blue">Network</Badge>
-                   <Badge>Microservice: Auth</Badge>
-                </div>
+              <div className="bg-bg-main p-3 rounded border border-border-base mb-4">
+                 <div className="text-text-dim text-[10px] uppercase mb-1">Decoded Message</div>
+                 <div className="text-text-main whitespace-pre-wrap break-all leading-relaxed"><HybridLogRenderer text={activeLog.content} query={query} keywordGroups={keywordGroups} /></div>
               </div>
             </div>
           </div>
@@ -209,52 +323,99 @@ const SearchPage = () => {
   );
 };
 
-// --- Page: Workspaces (Mock) ---
-const WorkspacesPage = () => {
-  const workspaces = [
-    { name: "Production Logs - US", path: "/var/logs/prod-us", status: "READY", size: "48.7 GB", files: 1247 },
-    { name: "Staging Environment", path: "/var/logs/staging", status: "SCANNING", size: "12.1 GB", files: 456 },
-    { name: "Archive Q4 2024", path: "/mnt/archive/2024", status: "ERROR", size: "0 GB", files: 0 },
-  ];
+const KeywordsPage = ({ keywordGroups, setKeywordGroups }: { keywordGroups: KeywordGroup[], setKeywordGroups: any }) => {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingGroup, setEditingGroup] = useState<KeywordGroup | null>(null);
+
+  const handleSave = (group: KeywordGroup) => {
+    if (editingGroup) {
+      setKeywordGroups((prev: KeywordGroup[]) => prev.map(g => g.id === group.id ? group : g));
+    } else {
+      setKeywordGroups((prev: KeywordGroup[]) => [...prev, group]);
+    }
+  };
+
+  // FIX: 使用函数式更新，确保删除生效
+  const handleDelete = (id: string) => {
+    setKeywordGroups((prev: KeywordGroup[]) => prev.filter(g => g.id !== id));
+  };
+
+  const handleEdit = (group: KeywordGroup) => {
+    setEditingGroup(group);
+    setIsModalOpen(true);
+  };
 
   return (
-    <div className="p-8 max-w-6xl mx-auto space-y-6">
-      <div className="flex justify-between items-center">
-         <div>
-            <h1 className="text-2xl font-semibold text-text-main">Workspace Management</h1>
-            <p className="text-text-muted mt-1">Manage your log analysis targets and indexes.</p>
-         </div>
+    <div className="p-8 max-w-6xl mx-auto h-full overflow-auto">
+      <div className="flex justify-between items-center mb-6">
+         <h1 className="text-2xl font-bold text-text-main">Keyword Configuration</h1>
+         <Button icon={Plus} onClick={() => { setEditingGroup(null); setIsModalOpen(true); }}>New Keyword Group</Button>
+      </div>
+      <div className="space-y-4">
+        {keywordGroups.map((group) => (
+          <Card key={group.id} className="overflow-hidden hover:border-primary/50 transition-colors">
+            <div className="px-6 py-4 flex items-center justify-between bg-bg-sidebar/30 border-b border-border-base/50">
+              <div className="flex items-center gap-4">
+                <div className={cn("w-3 h-3 rounded-full shadow-[0_0_8px_currentColor]", COLOR_STYLES[group.color].dot)}></div>
+                <div><h3 className="text-sm font-bold text-text-main">{group.name}</h3></div>
+              </div>
+              <div className="flex items-center gap-2">
+                 <Button variant="ghost" icon={Edit2} onClick={() => handleEdit(group)}>Edit</Button>
+                 <Button variant="danger" icon={Trash2} onClick={() => handleDelete(group.id)}>Delete</Button>
+              </div>
+            </div>
+            <div className="px-6 py-3 bg-bg-card flex flex-wrap gap-2">
+                {group.patterns.map((p, i) => (
+                  <div key={i} className="flex items-center bg-bg-main border border-border-base rounded px-2 py-1 text-xs">
+                    <span className="font-mono text-text-main mr-2">{p.regex}</span>
+                    {p.comment && <span className={cn("text-[10px] px-1.5 rounded", COLOR_STYLES[group.color].badge)}>{p.comment}</span>}
+                  </div>
+                ))}
+            </div>
+          </Card>
+        ))}
+      </div>
+      <KeywordModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} initialData={editingGroup} onSave={handleSave} />
+    </div>
+  );
+};
+
+// --- Functional Pages: Workspaces & Tasks (Fixed) ---
+const WorkspacesPage = ({ workspaces, setWorkspaces }: { workspaces: Workspace[], setWorkspaces: any }) => {
+  const handleDelete = (id: string) => setWorkspaces((prev: Workspace[]) => prev.filter(w => w.id !== id));
+  const handleRescan = (id: string) => {
+    setWorkspaces((prev: Workspace[]) => prev.map(w => w.id === id ? { ...w, status: 'SCANNING' } : w));
+    setTimeout(() => {
+        setWorkspaces((prev: Workspace[]) => prev.map(w => w.id === id ? { ...w, status: 'READY' } : w));
+    }, 2000);
+  };
+
+  return (
+    <div className="p-8 max-w-6xl mx-auto h-full overflow-auto">
+      <div className="flex justify-between items-center mb-6">
+         <h1 className="text-2xl font-bold text-text-main">Workspaces</h1>
          <Button icon={Plus}>New Workspace</Button>
       </div>
-      
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-         {workspaces.map((ws, i) => (
-           <Card key={i} title={ws.name} className="h-full flex flex-col">
+         {workspaces.map((ws) => (
+           <Card key={ws.id} title={ws.name} className="h-full flex flex-col hover:border-primary/50 transition-colors group">
               <div className="space-y-4 mb-6">
                  <div>
-                    <div className="text-xs text-text-dim uppercase font-bold mb-1">Path</div>
-                    <code className="text-xs bg-bg-main px-2 py-1 rounded border border-border-base block truncate">{ws.path}</code>
+                    <div className="text-xs text-text-dim uppercase font-bold mb-1">Root Path</div>
+                    <code className="text-xs bg-bg-main px-2 py-1.5 rounded border border-border-base block truncate font-mono text-text-muted">{ws.path}</code>
                  </div>
                  <div className="grid grid-cols-3 gap-2 text-center">
-                    <div className="bg-bg-hover rounded p-2">
-                       <div className="text-xs text-text-dim">Files</div>
-                       <div className="font-mono text-sm font-bold text-text-main">{ws.files}</div>
-                    </div>
-                    <div className="bg-bg-hover rounded p-2">
-                       <div className="text-xs text-text-dim">Size</div>
-                       <div className="font-mono text-sm font-bold text-text-main">{ws.size}</div>
-                    </div>
-                    <div className="bg-bg-hover rounded p-2 flex flex-col items-center justify-center">
-                       {ws.status === 'READY' ? <CheckCircle2 size={16} className="text-status-success mb-1"/> : 
-                        ws.status === 'ERROR' ? <AlertCircle size={16} className="text-status-error mb-1"/> : 
-                        <RefreshCw size={16} className="text-primary animate-spin mb-1"/>}
-                       <div className="text-[10px] font-bold">{ws.status}</div>
+                    <div className="bg-bg-hover/50 rounded p-2"><div className="text-[10px] text-text-dim uppercase">Files</div><div className="font-mono text-sm font-bold text-text-main">{ws.files}</div></div>
+                    <div className="bg-bg-hover/50 rounded p-2"><div className="text-[10px] text-text-dim uppercase">Size</div><div className="font-mono text-sm font-bold text-text-main">{ws.size}</div></div>
+                    <div className="bg-bg-hover/50 rounded p-2 flex flex-col items-center justify-center">
+                       {ws.status === 'READY' ? <CheckCircle2 size={16} className="text-emerald-500 mb-1"/> : ws.status === 'OFFLINE' ? <AlertCircle size={16} className="text-red-500 mb-1"/> : <RefreshCw size={16} className="text-blue-500 animate-spin mb-1"/>}
+                       <div className="text-[9px] font-bold">{ws.status}</div>
                     </div>
                  </div>
               </div>
-              <div className="mt-auto grid grid-cols-2 gap-2">
-                 <Button variant="secondary" icon={FolderOpen} className="text-xs">Browse</Button>
-                 <Button variant="secondary" icon={RefreshCw} className="text-xs">Rescan</Button>
+              <div className="mt-auto grid grid-cols-2 gap-3 opacity-60 group-hover:opacity-100 transition-opacity">
+                 <Button variant="secondary" icon={RefreshCw} className="text-xs h-8" onClick={() => handleRescan(ws.id)}>Rescan</Button>
+                 <Button variant="secondary" icon={Trash2} className="text-xs h-8 hover:text-red-400" onClick={() => handleDelete(ws.id)}>Delete</Button>
               </div>
            </Card>
          ))}
@@ -263,141 +424,86 @@ const WorkspacesPage = () => {
   );
 };
 
+const TasksPage = ({ tasks, setTasks }: { tasks: Task[], setTasks: any }) => {
+  const handleToggle = (id: number) => setTasks((prev: Task[]) => prev.map(t => t.id === id ? { ...t, status: t.status === 'RUNNING' ? 'STOPPED' : 'RUNNING' } : t));
+  const handleDelete = (id: number) => setTasks((prev: Task[]) => prev.filter(t => t.id !== id));
+
+  return (
+    <div className="p-8 max-w-4xl mx-auto h-full overflow-auto">
+      <h1 className="text-2xl font-bold mb-6 text-text-main">Background Tasks</h1>
+      <div className="space-y-4">
+        {tasks.map((t) => (
+          <div key={t.id} className="p-4 bg-bg-card border border-border-base rounded-lg flex items-center gap-4">
+            <div className={cn("p-2 rounded-full bg-bg-hover", t.status === 'RUNNING' ? "text-blue-500" : t.status === 'FAILED' ? "text-red-500" : "text-emerald-500")}>
+              {t.status === 'RUNNING' ? <RefreshCw size={20} className="animate-spin"/> : t.status === 'FAILED' ? <AlertCircle size={20}/> : t.status === 'STOPPED' ? <PauseCircle size={20}/> : <CheckCircle2 size={20}/>}
+            </div>
+            <div className="flex-1 min-w-0">
+               <div className="flex justify-between mb-1"><h3 className="font-semibold text-sm text-text-main truncate">{t.type}: {t.target}</h3><span className="text-xs font-mono text-text-dim">ID: {t.id}</span></div>
+               <div className="w-full bg-bg-main h-2 rounded-full overflow-hidden">
+                  <div className={cn("h-full transition-all duration-500", t.status==='FAILED'?'bg-red-500':t.status==='COMPLETED'?'bg-emerald-500':t.status==='STOPPED'?'bg-yellow-500':'bg-blue-500')} style={{width: `${t.progress}%`}}></div>
+               </div>
+               <div className="flex justify-between mt-1 text-xs text-text-dim"><span>{t.status}</span><span>{t.progress}%</span></div>
+            </div>
+            <div className="flex gap-2">
+               {(t.status === 'RUNNING' || t.status === 'STOPPED') && <Button variant="secondary" className="h-8 w-8 p-0" onClick={() => handleToggle(t.id)}>{t.status === 'RUNNING' ? <StopCircle size={16}/> : <Play size={16}/>}</Button>}
+               <Button variant="ghost" className="h-8 w-8 p-0 text-red-400 hover:text-red-300" onClick={() => handleDelete(t.id)}><Trash2 size={16}/></Button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 // --- Main App Shell ---
 export default function App() {
   const [page, setPage] = useState<Page>('search');
+  const [keywordGroups, setKeywordGroups] = useState<KeywordGroup[]>([
+    { id: "1", name: "Network Errors", color: "red", enabled: true, patterns: [{ regex: "timeout", comment: "连接超时" }, { regex: "connection refused", comment: "连接被拒" }] },
+    { id: "2", name: "SQL Issues", color: "orange", enabled: true, patterns: [{ regex: "slow query", comment: "慢查询" }, { regex: "deadlock", comment: "死锁" }] },
+    { id: "3", name: "Auth Audit", color: "blue", enabled: true, patterns: [{ regex: "invalid token", comment: "Token失效" }] }
+  ]);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([
+    { id: "1", name: "Production - US East", path: "/var/logs/prod-us", status: "READY", size: "142 GB", files: 12470 },
+    { id: "2", name: "Staging - EU West", path: "/var/logs/staging-eu", status: "SCANNING", size: "12.1 GB", files: 456 }
+  ]);
+  const [tasks, setTasks] = useState<Task[]>([
+    { id: 1024, type: "Index Scan", target: "Production - US East", progress: 45, status: "RUNNING" },
+    { id: 1022, type: "Cache Clear", target: "System", progress: 0, status: "FAILED" }
+  ]);
 
   const NavItem = ({ id, icon: Icon, label }: any) => (
-    <button 
-      onClick={() => setPage(id)}
-      className={cn(
-        "w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all duration-200 group",
-        page === id ? "bg-primary text-white shadow-md" : "text-text-muted hover:bg-bg-hover hover:text-text-main"
-      )}
-    >
-      <Icon size={18} />
-      <span className="text-sm font-medium">{label}</span>
-      {page === id && <ChevronRight size={14} className="ml-auto opacity-50" />}
+    <button onClick={() => setPage(id)} className={cn("w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all duration-200 group relative", page === id ? "bg-primary text-white shadow-md" : "text-text-muted hover:bg-bg-hover hover:text-text-main")}>
+      <Icon size={18} /> <span className="text-sm font-medium">{label}</span> {page === id && <div className="absolute right-2 w-1.5 h-1.5 bg-white rounded-full"></div>}
     </button>
   );
 
   return (
     <div className="flex h-screen bg-bg-main text-text-main font-sans selection:bg-primary/30">
-      {/* Sidebar - Wide Professional Style */}
-      <div className="w-[240px] bg-bg-sidebar border-r border-border-base flex flex-col shrink-0">
-        <div className="h-14 flex items-center px-5 border-b border-border-base mb-2">
-           <div className="h-8 w-8 bg-primary rounded-lg flex items-center justify-center text-white mr-3">
-             <Zap size={18} fill="currentColor" />
-           </div>
+      <div className="w-[240px] bg-bg-sidebar border-r border-border-base flex flex-col shrink-0 z-50">
+        <div className="h-14 flex items-center px-5 border-b border-border-base mb-2 select-none">
+           <div className="h-8 w-8 bg-primary rounded-lg flex items-center justify-center text-white mr-3 shadow-lg shadow-primary/20"><Zap size={18} fill="currentColor" /></div>
            <span className="font-bold text-lg tracking-tight">LogAnalyzer</span>
         </div>
-
         <div className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          <div className="text-xs font-semibold text-text-dim px-3 mb-2 uppercase tracking-wider">Analyze</div>
-          <NavItem id="search" icon={Search} label="Search Logs" />
-          <NavItem id="keywords" icon={ListTodo} label="Keywords" />
-          
-          <div className="text-xs font-semibold text-text-dim px-3 mb-2 mt-6 uppercase tracking-wider">Manage</div>
-          <NavItem id="workspaces" icon={LayoutGrid} label="Workspaces" />
-          <NavItem id="tasks" icon={Layers} label="Tasks & Jobs" />
+          <div className="text-[10px] font-bold text-text-dim px-3 mb-2 uppercase tracking-wider opacity-80">Analyze</div>
+          <NavItem id="search" icon={Search} label="Search Logs" /><NavItem id="keywords" icon={ListTodo} label="Keywords" />
+          <div className="text-[10px] font-bold text-text-dim px-3 mb-2 mt-6 uppercase tracking-wider opacity-80">Manage</div>
+          <NavItem id="workspaces" icon={LayoutGrid} label="Workspaces" /><NavItem id="tasks" icon={Layers} label="Tasks & Jobs" />
         </div>
-
-        <div className="p-3 border-t border-border-base">
-          <NavItem id="settings" icon={Settings} label="Settings" />
-        </div>
+        <div className="p-3 border-t border-border-base"><NavItem id="settings" icon={Settings} label="Settings" /></div>
       </div>
-
-      {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 bg-bg-main">
-        {/* Top Header */}
-        <div className="h-14 border-b border-border-base bg-bg-main flex items-center justify-between px-6 shrink-0">
-           <div className="flex items-center text-sm text-text-muted">
-              <span className="opacity-50">Workspace / </span>
-              <span className="ml-2 font-medium text-text-main flex items-center gap-2">
-                Production Logs <span className="w-1.5 h-1.5 rounded-full bg-status-success"></span>
-              </span>
-           </div>
-           <div className="flex items-center gap-3">
-              <Button variant="ghost" className="h-8 w-8 p-0 rounded-full"><Moon size={16}/></Button>
-              <Button variant="ghost" className="h-8 w-8 p-0 rounded-full"><LayoutGrid size={16}/></Button>
-              <div className="w-8 h-8 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center text-xs font-bold text-primary">
-                JS
-              </div>
-           </div>
+        <div className="h-14 border-b border-border-base bg-bg-main flex items-center justify-between px-6 shrink-0 z-40">
+           <div className="flex items-center text-sm text-text-muted select-none"><span className="opacity-50">Workspace / </span><span className="font-medium text-text-main ml-2 flex items-center gap-2"><FileText size={14} className="text-primary"/> Production Logs</span></div>
+           <div className="flex items-center gap-3"><Button variant="ghost" className="h-8 w-8 p-0 rounded-full"><Moon size={16}/></Button><div className="h-4 w-[1px] bg-border-base mx-1"></div><div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-500 to-purple-500 flex items-center justify-center text-xs font-bold text-white shadow-lg">JS</div></div>
         </div>
-
-        {/* Page Content */}
         <div className="flex-1 overflow-hidden relative">
-           {page === 'search' && <SearchPage />}
-           {page === 'workspaces' && <WorkspacesPage />}
-           
-           {/* Mock pages for demo */}
-           {page === 'keywords' && (
-             <div className="p-8 max-w-5xl mx-auto">
-                <h1 className="text-2xl font-bold mb-6">Keyword Configuration</h1>
-                <Card className="mb-6">
-                   <div className="grid grid-cols-[1fr_200px_100px_100px] gap-4 p-3 border-b border-border-base bg-bg-hover/30 text-xs font-bold text-text-dim uppercase">
-                      <div>Pattern</div> <div>Group</div> <div>Color</div> <div>Actions</div>
-                   </div>
-                   {[
-                     { p: "timeout|超时", g: "Network", c: "orange" },
-                     { p: "auth.*failed", g: "Security", c: "red" },
-                     { p: "heap space", g: "Performance", c: "purple" }
-                   ].map((k, i) => (
-                     <div key={i} className="grid grid-cols-[1fr_200px_100px_100px] gap-4 p-4 border-b border-border-base items-center text-sm">
-                        <code className="bg-bg-main px-2 py-1 rounded border border-border-base font-mono text-xs">{k.p}</code>
-                        <div><Badge variant="default">{k.g}</Badge></div>
-                        <div className={`w-4 h-4 rounded-full bg-${k.c}-500`}></div>
-                        <div className="flex gap-2 text-text-dim"><Terminal size={14}/><Trash2 size={14}/></div>
-                     </div>
-                   ))}
-                </Card>
-             </div>
-           )}
-
-           {page === 'tasks' && (
-             <div className="p-8 max-w-4xl mx-auto">
-                <h1 className="text-2xl font-bold mb-6">Background Tasks</h1>
-                <div className="space-y-4">
-                  <div className="p-4 bg-bg-card border border-border-base rounded-lg">
-                     <div className="flex justify-between mb-2">
-                        <span className="font-semibold text-sm flex items-center gap-2"><RefreshCw size={14} className="animate-spin text-primary"/> Indexing: Production Logs</span>
-                        <span className="text-xs text-text-dim">45%</span>
-                     </div>
-                     <div className="h-1.5 w-full bg-bg-main rounded-full overflow-hidden">
-                        <div className="h-full bg-primary w-[45%]"></div>
-                     </div>
-                  </div>
-                  <div className="p-4 bg-bg-card border border-border-base rounded-lg opacity-70">
-                     <div className="flex justify-between mb-2">
-                        <span className="font-semibold text-sm flex items-center gap-2"><CheckCircle2 size={14} className="text-status-success"/> Export: Weekly Report</span>
-                        <span className="text-xs text-text-dim">Completed</span>
-                     </div>
-                     <div className="h-1.5 w-full bg-bg-main rounded-full overflow-hidden">
-                        <div className="h-full bg-status-success w-full"></div>
-                     </div>
-                  </div>
-                </div>
-             </div>
-           )}
-           
-           {page === 'settings' && (
-             <div className="p-8 max-w-2xl mx-auto">
-                <h1 className="text-2xl font-bold mb-6">Settings</h1>
-                <Card title="General" className="mb-6">
-                   <div className="space-y-4">
-                      <div>
-                         <label className="text-sm font-medium mb-1 block">API Endpoint</label>
-                         <Input defaultValue="https://api.log-analyzer.internal/v1" />
-                      </div>
-                      <div className="flex items-center justify-between">
-                         <span className="text-sm">Auto-update index</span>
-                         <div className="w-10 h-5 bg-primary rounded-full relative cursor-pointer"><div className="absolute right-1 top-1 w-3 h-3 bg-white rounded-full"></div></div>
-                      </div>
-                   </div>
-                </Card>
-             </div>
-           )}
+           {page === 'search' && <SearchPage keywordGroups={keywordGroups} />}
+           {page === 'keywords' && <KeywordsPage keywordGroups={keywordGroups} setKeywordGroups={setKeywordGroups} />}
+           {page === 'workspaces' && <WorkspacesPage workspaces={workspaces} setWorkspaces={setWorkspaces} />}
+           {page === 'tasks' && <TasksPage tasks={tasks} setTasks={setTasks} />}
+           {page === 'settings' && <div className="p-10 text-center text-text-dim">Settings</div>}
         </div>
       </div>
     </div>
