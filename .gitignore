@@ -1,0 +1,5 @@
+.DS_Store
+log-analyzer/node_modules
+log-analyzer/dist
+log-analyzer/dist-ssr
+log-analyzer/src-tauri/target
