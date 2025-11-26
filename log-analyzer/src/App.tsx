@@ -1,12 +1,14 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { open } from '@tauri-apps/plugin-dialog';
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { 
   Search, LayoutGrid, ListTodo, Settings, Layers, 
   CheckCircle2, AlertCircle, X, Plus, Terminal, 
   RefreshCw, Trash2, FolderOpen, Moon, Zap, Play, StopCircle, 
   MoreHorizontal, FileText, ChevronRight, Edit2, Save, Filter,
-  ChevronDown, Tag, Hash, PauseCircle
+  ChevronDown, Tag, Hash, PauseCircle, Copy, Info, Loader2
 } from "lucide-react";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
@@ -17,17 +19,19 @@ function cn(...inputs: ClassValue[]) { return twMerge(clsx(inputs)); }
 // --- Types ---
 type Page = 'search' | 'keywords' | 'workspaces' | 'tasks' | 'settings';
 type ColorKey = 'blue' | 'green' | 'red' | 'orange' | 'purple';
+type ToastType = 'success' | 'error' | 'info';
 
 interface LogEntry { 
-  id: number; timestamp: string; level: string; file: string; line: number; content: string; tags: any[]; 
+  id: number; timestamp: string; level: string; file: string; line: number; content: string; tags: any[]; real_path?: string;
 }
 interface KeywordPattern { regex: string; comment: string; }
 interface KeywordGroup { id: string; name: string; color: ColorKey; patterns: KeywordPattern[]; enabled: boolean; }
-interface Workspace { id: string; name: string; path: string; status: 'READY' | 'SCANNING' | 'OFFLINE'; size: string; files: number; }
+interface Workspace { id: string; name: string; path: string; status: 'READY' | 'SCANNING' | 'OFFLINE' | 'PROCESSING'; size: string; files: number; }
 interface Task { id: number; type: string; target: string; progress: number; status: 'RUNNING' | 'COMPLETED' | 'FAILED' | 'STOPPED'; }
+interface Toast { id: number; type: ToastType; message: string; }
 
 // --- COLOR SYSTEM ---
-const COLOR_STYLES: Record<ColorKey, { dot: string; badge: string; border: string; text: string; activeBtn: string; hoverBorder: string; highlight: string; }> = {
+const COLOR_STYLES: Record<ColorKey, any> = {
   blue: { dot: "bg-blue-500", badge: "bg-blue-500/15 text-blue-400 border-blue-500/20", border: "border-blue-500", text: "text-blue-400", activeBtn: "bg-blue-500 text-white border-blue-400 shadow-[0_0_10px_rgba(59,130,246,0.4)]", hoverBorder: "hover:border-blue-500/50", highlight: "bg-blue-500/20 text-blue-300 border-blue-500/30" },
   green: { dot: "bg-emerald-500", badge: "bg-emerald-500/15 text-emerald-400 border-emerald-500/20", border: "border-emerald-500", text: "text-emerald-400", activeBtn: "bg-emerald-500 text-white border-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.4)]", hoverBorder: "hover:border-emerald-500/50", highlight: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30" },
   red: { dot: "bg-red-500", badge: "bg-red-500/15 text-red-400 border-red-500/20", border: "border-red-500", text: "text-red-400", activeBtn: "bg-red-500 text-white border-red-400 shadow-[0_0_10px_rgba(239,68,68,0.4)]", hoverBorder: "hover:border-red-500/50", highlight: "bg-red-500/20 text-red-300 border-red-500/30" },
@@ -37,7 +41,6 @@ const COLOR_STYLES: Record<ColorKey, { dot: string; badge: string; border: strin
 
 // --- UI Components ---
 const Button = ({ children, variant = 'primary', className, icon: Icon, onClick, ...props }: any) => {
-  const base = "h-9 px-4 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shrink-0 select-none cursor-pointer";
   const variants = {
     primary: "bg-primary hover:bg-primary-hover text-white shadow-sm active:scale-95",
     secondary: "bg-bg-card hover:bg-bg-hover text-text-main border border-border-base active:scale-95",
@@ -46,40 +49,21 @@ const Button = ({ children, variant = 'primary', className, icon: Icon, onClick,
     active: "bg-primary/20 text-primary border border-primary/50", 
     icon: "h-8 w-8 p-0 bg-transparent hover:bg-bg-hover text-text-dim hover:text-text-main rounded-full"
   };
-  return (
-    <button 
-        type="button" 
-        className={cn(base, variants[variant as keyof typeof variants], className)} 
-        onClick={(e) => { e.stopPropagation(); onClick && onClick(e); }} 
-        {...props}
-    >
-      {Icon && <Icon size={16} />}
-      {children}
-    </button>
-  );
+  return <button type="button" className={cn("h-9 px-4 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shrink-0 select-none cursor-pointer", variants[variant as keyof typeof variants], className)} onClick={(e) => { e.stopPropagation(); onClick && onClick(e); }} {...props}>{Icon && <Icon size={16} />}{children}</button>;
 };
+const Input = ({ className, ref, ...props }: any) => (<input ref={ref} className={cn("h-9 w-full bg-bg-main border border-border-base rounded-md px-3 text-sm text-text-main placeholder:text-text-dim focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50 transition-all", className)} {...props} />);
+const Card = ({ children, className, ...props }: any) => (<div className={cn("bg-bg-card border border-border-base rounded-lg overflow-hidden", className)} {...props}>{children}</div>);
+const ToastContainer = ({ toasts, removeToast }: { toasts: Toast[], removeToast: (id: number) => void }) => (<div className="fixed bottom-6 right-6 z-[100] flex flex-col gap-3 pointer-events-none">{toasts.map(toast => (<div key={toast.id} className={cn("pointer-events-auto min-w-[300px] p-4 rounded-lg shadow-2xl border flex items-center gap-3 animate-in slide-in-from-right-full duration-300", toast.type === 'success' ? "bg-bg-card border-emerald-500/30 text-emerald-400" : toast.type === 'error' ? "bg-bg-card border-red-500/30 text-red-400" : "bg-bg-card border-blue-500/30 text-blue-400")}>{toast.type === 'success' ? <CheckCircle2 size={20}/> : toast.type === 'error' ? <AlertCircle size={20}/> : <Info size={20}/>}<span className="text-sm font-medium text-text-main">{toast.message}</span><button onClick={() => removeToast(toast.id)} className="ml-auto text-text-dim hover:text-text-main"><X size={16}/></button></div>))}</div>);
 
-const Input = ({ className, ...props }: any) => (
-  <input className={cn("h-9 w-full bg-bg-main border border-border-base rounded-md px-3 text-sm text-text-main placeholder:text-text-dim focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50 transition-all", className)} {...props} />
-);
-
-const Card = ({ children, className }: any) => (
-  <div className={cn("bg-bg-card border border-border-base rounded-lg overflow-hidden", className)}>{children}</div>
-);
-
-// --- Modal Component ---
+// --- Keyword Modal ---
 const KeywordModal = ({ isOpen, onClose, onSave, initialData }: any) => {
   if (!isOpen) return null;
-  const [name, setName] = useState("");
-  const [color, setColor] = useState<ColorKey>("blue");
-  const [patterns, setPatterns] = useState<KeywordPattern[]>([{ regex: "", comment: "" }]);
+  const [name, setName] = useState(initialData?.name || "");
+  const [color, setColor] = useState<ColorKey>(initialData?.color || "blue");
+  const [patterns, setPatterns] = useState<KeywordPattern[]>(initialData?.patterns || [{ regex: "", comment: "" }]);
 
   useEffect(() => {
-    if (isOpen) {
-        setName(initialData?.name || "");
-        setColor(initialData?.color || "blue");
-        setPatterns(initialData?.patterns || [{ regex: "", comment: "" }]);
-    }
+    if (isOpen) { setName(initialData?.name || ""); setColor(initialData?.color || "blue"); setPatterns(initialData?.patterns || [{ regex: "", comment: "" }]); }
   }, [isOpen, initialData]);
 
   const handleSave = () => {
@@ -87,12 +71,6 @@ const KeywordModal = ({ isOpen, onClose, onSave, initialData }: any) => {
     if (!name || validPatterns.length === 0) return;
     onSave({ id: initialData?.id || Date.now().toString(), name, color, patterns: validPatterns, enabled: true });
     onClose();
-  };
-
-  const updateRow = (idx: number, field: keyof KeywordPattern, value: string) => {
-    const newPatterns = [...patterns];
-    newPatterns[idx][field] = value;
-    setPatterns(newPatterns);
   };
 
   return (
@@ -104,39 +82,15 @@ const KeywordModal = ({ isOpen, onClose, onSave, initialData }: any) => {
         </div>
         <div className="p-6 overflow-y-auto flex-1 space-y-6">
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs text-text-dim uppercase font-bold mb-1.5 block">Group Name</label>
-              <Input value={name} onChange={(e:any) => setName(e.target.value)} placeholder="e.g. Network Errors" />
-            </div>
-            <div>
-              <label className="text-xs text-text-dim uppercase font-bold mb-1.5 block">Highlight Color</label>
-              <div className="flex gap-2 h-9 items-center">
-                {(['blue', 'green', 'orange', 'red', 'purple'] as ColorKey[]).map((c) => (
-                  <button key={c} onClick={() => setColor(c)} className={cn("w-6 h-6 rounded-full border-2 transition-all cursor-pointer", COLOR_STYLES[c].dot, color === c ? "border-white scale-110 shadow-lg" : "border-transparent opacity-40 hover:opacity-100")} />
-                ))}
-              </div>
-            </div>
+            <div><label className="text-xs text-text-dim uppercase font-bold mb-1.5 block">Group Name</label><Input value={name} onChange={(e:any) => setName(e.target.value)} placeholder="Name" /></div>
+            <div><label className="text-xs text-text-dim uppercase font-bold mb-1.5 block">Highlight Color</label><div className="flex gap-2 h-9 items-center">{(['blue', 'green', 'orange', 'red', 'purple'] as ColorKey[]).map((c) => (<button key={c} onClick={() => setColor(c)} className={cn("w-6 h-6 rounded-full border-2 transition-all cursor-pointer", COLOR_STYLES[c].dot, color === c ? "border-white scale-110 shadow-lg" : "border-transparent opacity-40 hover:opacity-100")} />))}</div></div>
           </div>
           <div>
-            <div className="flex justify-between items-center mb-2">
-              <label className="text-xs text-text-dim uppercase font-bold">Patterns & Comments</label>
-              <Button variant="ghost" size="sm" className="h-6 text-xs" icon={Plus} onClick={() => setPatterns([...patterns, { regex: "", comment: "" }])}>Add</Button>
-            </div>
-            <div className="space-y-2">
-              {patterns.map((p, i) => (
-                <div key={i} className="flex gap-2 items-center group">
-                  <div className="flex-1"><Input value={p.regex} onChange={(e:any) => updateRow(i, 'regex', e.target.value)} placeholder="RegEx (e.g. timeout)" className="font-mono text-xs"/></div>
-                  <div className="flex-1"><Input value={p.comment} onChange={(e:any) => updateRow(i, 'comment', e.target.value)} placeholder="Comment" className="text-xs"/></div>
-                  <Button variant="icon" icon={Trash2} className="text-red-400 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => setPatterns(patterns.filter((_, idx) => idx !== i))} />
-                </div>
-              ))}
-            </div>
+            <div className="flex justify-between items-center mb-2"><label className="text-xs text-text-dim uppercase font-bold">Patterns & Comments</label><Button variant="ghost" size="sm" className="h-6 text-xs" icon={Plus} onClick={() => setPatterns([...patterns, { regex: "", comment: "" }])}>Add</Button></div>
+            <div className="space-y-2">{patterns.map((p, i) => (<div key={i} className="flex gap-2 items-center group"><div className="flex-1"><Input value={p.regex} onChange={(e:any) => { const n = [...patterns]; n[i].regex = e.target.value; setPatterns(n); }} placeholder="RegEx" className="font-mono text-xs"/></div><div className="flex-1"><Input value={p.comment} onChange={(e:any) => { const n = [...patterns]; n[i].comment = e.target.value; setPatterns(n); }} placeholder="Comment" className="text-xs"/></div><Button variant="icon" icon={Trash2} className="text-red-400 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => setPatterns(patterns.filter((_, idx) => idx !== i))} /></div>))}</div>
           </div>
         </div>
-        <div className="px-6 py-4 border-t border-border-base bg-bg-sidebar flex justify-end gap-3">
-          <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSave}>Save Configuration</Button>
-        </div>
+        <div className="px-6 py-4 border-t border-border-base bg-bg-sidebar flex justify-end gap-3"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button onClick={handleSave}>Save Configuration</Button></div>
       </div>
     </div>
   );
@@ -147,47 +101,27 @@ const HybridLogRenderer = ({ text, query, keywordGroups }: { text: string, query
   const { patternMap, regexPattern } = useMemo(() => {
     const map = new Map<string, { color: ColorKey, comment: string }>();
     const patterns = new Set<string>();
-
     keywordGroups.filter(g => g.enabled).forEach(group => {
-      group.patterns.forEach(p => {
-        if (p.regex?.trim()) {
-            map.set(p.regex.toLowerCase(), { color: group.color, comment: p.comment });
-            patterns.add(p.regex);
-        }
-      });
+      group.patterns.forEach(p => { if (p.regex?.trim()) { map.set(p.regex.toLowerCase(), { color: group.color, comment: p.comment }); patterns.add(p.regex); } });
     });
-
     if (query) {
         query.split('|').map(t => t.trim()).filter(t => t.length > 0).forEach((term, index) => {
-            if (!map.has(term.toLowerCase())) {
-                const colors: ColorKey[] = ['blue', 'purple', 'green', 'orange'];
-                map.set(term.toLowerCase(), { color: colors[index % colors.length], comment: "" });
-            }
+            if (!map.has(term.toLowerCase())) { map.set(term.toLowerCase(), { color: ['blue', 'purple', 'green', 'orange'][index % 4] as ColorKey, comment: "" }); }
             patterns.add(term);
         });
     }
-
     const sorted = Array.from(patterns).sort((a, b) => b.length - a.length);
-    return {
-      regexPattern: sorted.length > 0 ? new RegExp(`(${sorted.map(p => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi') : null,
-      patternMap: map
-    };
+    return { regexPattern: sorted.length > 0 ? new RegExp(`(${sorted.map(p => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi') : null, patternMap: map };
   }, [keywordGroups, query]);
 
   if (!regexPattern) return <span>{text}</span>;
-
   return (
     <span>
       {text.split(regexPattern).map((part, i) => {
         const info = patternMap.get(part.toLowerCase());
         if (info) {
           const style = COLOR_STYLES[info.color]?.highlight || COLOR_STYLES['blue'].highlight;
-          return (
-            <span key={i} className="inline-flex items-baseline mx-[1px]">
-              <span className={cn("rounded-[2px] px-1 border font-bold break-all", style)}>{part}</span>
-              {info.comment && <span className={cn("ml-1 px-1.5 rounded-[2px] text-[10px] font-normal border select-none whitespace-nowrap transform -translate-y-[1px]", style.replace("bg-", "bg-opacity-10 bg-"))}>{info.comment}</span>}
-            </span>
-          );
+          return <span key={i} className="inline-flex items-baseline mx-[1px]"><span className={cn("rounded-[2px] px-1 border font-bold break-all", style)}>{part}</span>{info.comment && <span className={cn("ml-1 px-1.5 rounded-[2px] text-[10px] font-normal border select-none whitespace-nowrap transform -translate-y-[1px]", style.replace("bg-", "bg-opacity-10 bg-"))}>{info.comment}</span>}</span>;
         }
         return <span key={i}>{part}</span>;
       })}
@@ -195,28 +129,22 @@ const HybridLogRenderer = ({ text, query, keywordGroups }: { text: string, query
   );
 };
 
-// --- Filter Palette (Right Aligned) ---
+// --- Filter Palette ---
 const FilterPalette = ({ isOpen, onClose, groups, currentQuery, onToggleRule }: any) => {
     if (!isOpen) return null;
     const isPatternActive = (regex: string) => currentQuery.split('|').map((t:string) => t.trim().toLowerCase()).includes(regex.toLowerCase());
     const colorOrder: ColorKey[] = ['red', 'orange', 'blue', 'purple', 'green'];
-    
     return (
         <>
             <div className="fixed inset-0 z-[45] bg-transparent" onClick={onClose}></div>
             <div className="absolute top-full right-0 mt-2 w-[600px] max-h-[60vh] overflow-y-auto bg-[#18181b] border border-border-base rounded-lg shadow-2xl z-50 p-4 grid gap-6 animate-in fade-in zoom-in-95 duration-100 origin-top-right ring-1 ring-white/10">
-                <div className="flex justify-between items-center pb-2 border-b border-white/10">
-                    <h3 className="text-sm font-bold text-text-main flex items-center gap-2"><Filter size={14} className="text-primary"/> Filter Command Center</h3>
-                </div>
+                <div className="flex justify-between items-center pb-2 border-b border-white/10"><h3 className="text-sm font-bold text-text-main flex items-center gap-2"><Filter size={14} className="text-primary"/> Filter Command Center</h3></div>
                 {colorOrder.map(color => {
                     const colorGroups = groups.filter((g: KeywordGroup) => g.color === color);
                     if (colorGroups.length === 0) return null;
                     return (
                         <div key={color}>
-                            <div className={cn("text-[10px] font-bold uppercase mb-2 flex items-center gap-2", COLOR_STYLES[color].text)}>
-                                <div className={cn("w-2 h-2 rounded-full", COLOR_STYLES[color].dot)}></div>
-                                {color} Priority Level
-                            </div>
+                            <div className={cn("text-[10px] font-bold uppercase mb-2 flex items-center gap-2", COLOR_STYLES[color].text)}><div className={cn("w-2 h-2 rounded-full", COLOR_STYLES[color].dot)}></div>{color} Priority Level</div>
                             <div className="grid grid-cols-2 gap-3">
                                 {colorGroups.map((group: KeywordGroup) => (
                                     <div key={group.id} className="bg-bg-card/50 border border-white/5 rounded p-2">
@@ -224,11 +152,7 @@ const FilterPalette = ({ isOpen, onClose, groups, currentQuery, onToggleRule }: 
                                         <div className="flex flex-wrap gap-2">
                                             {group.patterns.map((p, idx) => {
                                                 const active = isPatternActive(p.regex);
-                                                return (
-                                                    <button key={idx} onClick={() => onToggleRule(p.regex)} className={cn("text-[11px] px-2 py-1 rounded border transition-all duration-150 flex items-center gap-1.5 cursor-pointer", active ? COLOR_STYLES[color].activeBtn : `bg-bg-main text-text-dim border-border-base hover:bg-bg-hover ${COLOR_STYLES[color].hoverBorder}`)}>
-                                                        {active && <CheckCircle2 size={10} />}<span className="font-mono">{p.regex}</span>
-                                                    </button>
-                                                )
+                                                return <button key={idx} onClick={() => onToggleRule(p.regex)} className={cn("text-[11px] px-2 py-1 rounded border transition-all duration-150 flex items-center gap-1.5 cursor-pointer", active ? COLOR_STYLES[color].activeBtn : `bg-bg-main text-text-dim border-border-base hover:bg-bg-hover ${COLOR_STYLES[color].hoverBorder}`)}>{active && <CheckCircle2 size={10} />}<span className="font-mono">{p.regex}</span></button>
                                             })}
                                         </div>
                                     </div>
@@ -243,24 +167,35 @@ const FilterPalette = ({ isOpen, onClose, groups, currentQuery, onToggleRule }: 
 };
 
 // --- Pages ---
-const SearchPage = ({ keywordGroups }: { keywordGroups: KeywordGroup[] }) => {
+const SearchPage = ({ keywordGroups, addToast, searchInputRef, activeWorkspace }: any) => {
   const [query, setQuery] = useState("");
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [isFilterPaletteOpen, setIsFilterPaletteOpen] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
   const parentRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { invoke<LogEntry[]>("search_logs", { pattern: query || "error" }).then(setLogs); }, []);
-  const handleSearch = () => invoke<LogEntry[]>("search_logs", { pattern: query }).then(setLogs);
+  useEffect(() => {
+    const unlistenResults = listen<LogEntry[]>('search-results', (e) => setLogs(prev => [...prev, ...e.payload]));
+    const unlistenComplete = listen('search-complete', (e) => { setIsSearching(false); addToast('success', `Found ${e.payload} logs.`); });
+    const unlistenError = listen('search-error', (e) => { setIsSearching(false); addToast('error', `${e.payload}`); });
+    return () => { unlistenResults.then(f => f()); unlistenComplete.then(f => f()); unlistenError.then(f => f()); }
+  }, []);
 
-  const toggleRuleInQuery = (ruleRegex: string) => {
-    const terms = query.split('|').map(t => t.trim()).filter(t => t.length > 0);
-    const index = terms.findIndex(t => t.toLowerCase() === ruleRegex.toLowerCase());
-    let newQuery = index !== -1 ? terms.filter((_, i) => i !== index).join('|') : [...terms, ruleRegex].join('|');
-    setQuery(newQuery);
-    invoke<LogEntry[]>("search_logs", { pattern: newQuery }).then(setLogs);
+  const handleSearch = async () => {
+    if (!activeWorkspace) return addToast('error', 'Select a workspace first.');
+    setLogs([]); setIsSearching(true);
+    try { await invoke("search_logs", { query, searchPath: activeWorkspace.path }); } catch(e) { setIsSearching(false); }
   };
 
+  const toggleRuleInQuery = (ruleRegex: string) => {
+    const terms = query.split('|').map((t:string) => t.trim()).filter((t:string) => t.length > 0);
+    const idx = terms.findIndex((t:string) => t.toLowerCase() === ruleRegex.toLowerCase());
+    setQuery(idx !== -1 ? terms.filter((_:any, i:number) => i !== idx).join('|') : [...terms, ruleRegex].join('|'));
+  };
+
+  const copyToClipboard = (text: string) => { navigator.clipboard.writeText(text).then(() => addToast('success', 'Copied')); };
+  const tryFormatJSON = (content: string) => { try { const start = content.indexOf('{'); if (start === -1) return content; const jsonPart = content.substring(start); const obj = JSON.parse(jsonPart); return JSON.stringify(obj, null, 2); } catch (e) { return content; } };
   const rowVirtualizer = useVirtualizer({ count: logs.length, getScrollElement: () => parentRef.current, estimateSize: () => 46, overscan: 15 });
   const activeLog = logs.find(l => l.id === selectedId);
 
@@ -268,22 +203,11 @@ const SearchPage = ({ keywordGroups }: { keywordGroups: KeywordGroup[] }) => {
     <div className="flex flex-col h-full relative">
       <div className="p-4 border-b border-border-base bg-bg-sidebar space-y-3 shrink-0 relative z-40">
         <div className="flex gap-2">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-2.5 text-text-dim" size={16} />
-            <Input value={query} onChange={(e: any) => setQuery(e.target.value)} className="pl-9 font-mono bg-bg-main" placeholder="Search..." />
-          </div>
-          <div className="relative">
-             <Button variant={isFilterPaletteOpen ? "active" : "secondary"} icon={Filter} onClick={() => setIsFilterPaletteOpen(!isFilterPaletteOpen)} className="w-[140px] justify-between">
-                Filters <ChevronDown size={14} className={cn("transition-transform", isFilterPaletteOpen ? "rotate-180" : "")}/>
-             </Button>
-             <FilterPalette isOpen={isFilterPaletteOpen} onClose={() => setIsFilterPaletteOpen(false)} groups={keywordGroups} currentQuery={query} onToggleRule={toggleRuleInQuery} />
-          </div>
-          <Button icon={Search} onClick={handleSearch}>Search</Button>
+          <div className="relative flex-1"><Search className="absolute left-3 top-2.5 text-text-dim" size={16} /><Input ref={searchInputRef} value={query} onChange={(e: any) => setQuery(e.target.value)} className="pl-9 font-mono bg-bg-main" placeholder="Search regex (Cmd+K)..." onKeyDown={(e:any) => e.key === 'Enter' && handleSearch()} /></div>
+          <div className="relative"><Button variant={isFilterPaletteOpen ? "active" : "secondary"} icon={Filter} onClick={() => setIsFilterPaletteOpen(!isFilterPaletteOpen)} className="w-[140px] justify-between">Filters <ChevronDown size={14} className={cn("transition-transform", isFilterPaletteOpen ? "rotate-180" : "")}/></Button><FilterPalette isOpen={isFilterPaletteOpen} onClose={() => setIsFilterPaletteOpen(false)} groups={keywordGroups} currentQuery={query} onToggleRule={toggleRuleInQuery} /></div>
+          <Button icon={isSearching ? Loader2 : Search} onClick={handleSearch} disabled={isSearching} className={isSearching ? "animate-pulse" : ""}>{isSearching ? '...' : 'Search'}</Button>
         </div>
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none h-6 min-h-[24px]">
-             <span className="text-[10px] font-bold text-text-dim uppercase">Active:</span>
-             {query ? query.split('|').map((term, i) => <span key={i} className="flex items-center text-[10px] bg-bg-card border border-border-base px-1.5 rounded text-text-main whitespace-nowrap"><Hash size={8} className="mr-1 opacity-50"/> {term}</span>) : <span className="text-[10px] text-text-dim italic">None</span>}
-        </div>
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none h-6 min-h-[24px]"><span className="text-[10px] font-bold text-text-dim uppercase">Active:</span>{query ? query.split('|').map((term:string, i:number) => <span key={i} className="flex items-center text-[10px] bg-bg-card border border-border-base px-1.5 rounded text-text-main whitespace-nowrap"><Hash size={8} className="mr-1 opacity-50"/> {term}</span>) : <span className="text-[10px] text-text-dim italic">None</span>}</div>
       </div>
       <div className="flex-1 flex overflow-hidden">
         <div ref={parentRef} className="flex-1 overflow-auto bg-bg-main scrollbar-thin">
@@ -293,8 +217,7 @@ const SearchPage = ({ keywordGroups }: { keywordGroups: KeywordGroup[] }) => {
               const log = logs[virtualRow.index];
               const isActive = log.id === selectedId;
               return (
-                <div key={virtualRow.key} data-index={virtualRow.index} ref={rowVirtualizer.measureElement} onClick={() => setSelectedId(log.id)} style={{ transform: `translateY(${virtualRow.start}px)` }}
-                  className={cn("absolute top-0 left-0 w-full grid grid-cols-[60px_190px_220px_1fr] px-4 py-2 border-b border-border-base/40 cursor-pointer text-[13px] font-mono hover:bg-bg-hover transition-colors items-start", isActive && "bg-blue-500/10 border-l-2 border-l-primary")}>
+                <div key={virtualRow.key} data-index={virtualRow.index} ref={rowVirtualizer.measureElement} onClick={() => setSelectedId(log.id)} style={{ transform: `translateY(${virtualRow.start}px)` }} className={cn("absolute top-0 left-0 w-full grid grid-cols-[60px_190px_220px_1fr] px-4 py-2 border-b border-border-base/40 cursor-pointer text-[13px] font-mono hover:bg-bg-hover transition-colors items-start", isActive && "bg-blue-500/10 border-l-2 border-l-primary")}>
                   <div className={cn("font-bold pt-0.5", log.level === 'ERROR' ? 'text-red-400' : log.level === 'WARN' ? 'text-yellow-400' : 'text-blue-400')}>{log.level.substring(0,1)}</div>
                   <div className="text-text-muted whitespace-nowrap pt-0.5">{log.timestamp}</div>
                   <div className="text-text-muted break-all pr-4 pt-0.5 leading-relaxed">{log.file}:{log.line}</div>
@@ -303,18 +226,17 @@ const SearchPage = ({ keywordGroups }: { keywordGroups: KeywordGroup[] }) => {
               );
             })}
           </div>
+          {logs.length === 0 && !isSearching && <div className="flex items-center justify-center h-full text-text-dim">No logs found. Select workspace & search.</div>}
         </div>
         {activeLog && (
-          <div className="w-[450px] bg-bg-sidebar border-l border-border-base flex flex-col shrink-0 shadow-xl z-20">
+          <div className="w-[450px] bg-bg-sidebar border-l border-border-base flex flex-col shrink-0 shadow-xl z-20 animate-in slide-in-from-right duration-200">
             <div className="h-10 border-b border-border-base flex items-center justify-between px-4 bg-bg-card/50">
               <span className="text-xs font-semibold text-text-muted uppercase">Log Inspector</span>
-              <Button variant="ghost" className="h-6 w-6 p-0" onClick={() => setSelectedId(null)}><X size={14}/></Button>
+              <div className="flex gap-1"><Button variant="ghost" className="h-6 w-6 p-0" onClick={() => copyToClipboard(activeLog.content)}><Copy size={14}/></Button><Button variant="ghost" className="h-6 w-6 p-0" onClick={() => setSelectedId(null)}><X size={14}/></Button></div>
             </div>
             <div className="flex-1 overflow-auto p-4 font-mono text-xs">
-              <div className="bg-bg-main p-3 rounded border border-border-base mb-4">
-                 <div className="text-text-dim text-[10px] uppercase mb-1">Decoded Message</div>
-                 <div className="text-text-main whitespace-pre-wrap break-all leading-relaxed"><HybridLogRenderer text={activeLog.content} query={query} keywordGroups={keywordGroups} /></div>
-              </div>
+              <div className="bg-bg-main p-3 rounded border border-border-base mb-4"><div className="text-text-dim text-[10px] uppercase mb-1">Message Body</div><div className="text-text-main whitespace-pre-wrap break-all leading-relaxed"><HybridLogRenderer text={tryFormatJSON(activeLog.content)} query={query} keywordGroups={keywordGroups} /></div></div>
+              <div className="p-2 bg-bg-card border border-border-base rounded mb-2"><div className="text-[10px] text-text-dim uppercase">File</div><div className="break-all text-text-main">{activeLog.real_path}</div></div>
             </div>
           </div>
         )}
@@ -323,55 +245,26 @@ const SearchPage = ({ keywordGroups }: { keywordGroups: KeywordGroup[] }) => {
   );
 };
 
-const KeywordsPage = ({ keywordGroups, setKeywordGroups }: { keywordGroups: KeywordGroup[], setKeywordGroups: any }) => {
+const KeywordsPage = ({ keywordGroups, setKeywordGroups, addToast }: any) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingGroup, setEditingGroup] = useState<KeywordGroup | null>(null);
-
   const handleSave = (group: KeywordGroup) => {
-    if (editingGroup) {
-      setKeywordGroups((prev: KeywordGroup[]) => prev.map(g => g.id === group.id ? group : g));
-    } else {
-      setKeywordGroups((prev: KeywordGroup[]) => [...prev, group]);
-    }
+    if (editingGroup) { setKeywordGroups((prev: KeywordGroup[]) => prev.map(g => g.id === group.id ? group : g)); addToast('success', 'Updated'); } 
+    else { setKeywordGroups((prev: KeywordGroup[]) => [...prev, group]); addToast('success', 'Created'); }
   };
-
-  // FIX: 使用函数式更新，确保删除生效
-  const handleDelete = (id: string) => {
-    setKeywordGroups((prev: KeywordGroup[]) => prev.filter(g => g.id !== id));
-  };
-
-  const handleEdit = (group: KeywordGroup) => {
-    setEditingGroup(group);
-    setIsModalOpen(true);
-  };
+  const handleDelete = (id: string) => { setKeywordGroups((prev: KeywordGroup[]) => prev.filter(g => g.id !== id)); addToast('info', 'Deleted'); };
 
   return (
     <div className="p-8 max-w-6xl mx-auto h-full overflow-auto">
-      <div className="flex justify-between items-center mb-6">
-         <h1 className="text-2xl font-bold text-text-main">Keyword Configuration</h1>
-         <Button icon={Plus} onClick={() => { setEditingGroup(null); setIsModalOpen(true); }}>New Keyword Group</Button>
-      </div>
+      <div className="flex justify-between items-center mb-6"><h1 className="text-2xl font-bold text-text-main">Keyword Configuration</h1><Button icon={Plus} onClick={() => { setEditingGroup(null); setIsModalOpen(true); }}>New Group</Button></div>
       <div className="space-y-4">
-        {keywordGroups.map((group) => (
+        {keywordGroups.map((group: KeywordGroup) => (
           <Card key={group.id} className="overflow-hidden hover:border-primary/50 transition-colors">
             <div className="px-6 py-4 flex items-center justify-between bg-bg-sidebar/30 border-b border-border-base/50">
-              <div className="flex items-center gap-4">
-                <div className={cn("w-3 h-3 rounded-full shadow-[0_0_8px_currentColor]", COLOR_STYLES[group.color].dot)}></div>
-                <div><h3 className="text-sm font-bold text-text-main">{group.name}</h3></div>
-              </div>
-              <div className="flex items-center gap-2">
-                 <Button variant="ghost" icon={Edit2} onClick={() => handleEdit(group)}>Edit</Button>
-                 <Button variant="danger" icon={Trash2} onClick={() => handleDelete(group.id)}>Delete</Button>
-              </div>
+              <div className="flex items-center gap-4"><div className={cn("w-3 h-3 rounded-full shadow-[0_0_8px_currentColor]", COLOR_STYLES[group.color].dot)}></div><div><h3 className="text-sm font-bold text-text-main">{group.name}</h3></div></div>
+              <div className="flex items-center gap-2"><Button variant="ghost" icon={Edit2} onClick={() => { setEditingGroup(group); setIsModalOpen(true); }}>Edit</Button><Button variant="danger" icon={Trash2} onClick={() => handleDelete(group.id)}>Delete</Button></div>
             </div>
-            <div className="px-6 py-3 bg-bg-card flex flex-wrap gap-2">
-                {group.patterns.map((p, i) => (
-                  <div key={i} className="flex items-center bg-bg-main border border-border-base rounded px-2 py-1 text-xs">
-                    <span className="font-mono text-text-main mr-2">{p.regex}</span>
-                    {p.comment && <span className={cn("text-[10px] px-1.5 rounded", COLOR_STYLES[group.color].badge)}>{p.comment}</span>}
-                  </div>
-                ))}
-            </div>
+            <div className="px-6 py-3 bg-bg-card flex flex-wrap gap-2">{group.patterns.map((p, i) => (<div key={i} className="flex items-center bg-bg-main border border-border-base rounded px-2 py-1 text-xs"><span className="font-mono text-text-main mr-2">{p.regex}</span>{p.comment && <span className={cn("text-[10px] px-1.5 rounded", COLOR_STYLES[group.color].badge)}>{p.comment}</span>}</div>))}</div>
           </Card>
         ))}
       </div>
@@ -380,42 +273,39 @@ const KeywordsPage = ({ keywordGroups, setKeywordGroups }: { keywordGroups: Keyw
   );
 };
 
-// --- Functional Pages: Workspaces & Tasks (Fixed) ---
-const WorkspacesPage = ({ workspaces, setWorkspaces }: { workspaces: Workspace[], setWorkspaces: any }) => {
-  const handleDelete = (id: string) => setWorkspaces((prev: Workspace[]) => prev.filter(w => w.id !== id));
-  const handleRescan = (id: string) => {
-    setWorkspaces((prev: Workspace[]) => prev.map(w => w.id === id ? { ...w, status: 'SCANNING' } : w));
-    setTimeout(() => {
-        setWorkspaces((prev: Workspace[]) => prev.map(w => w.id === id ? { ...w, status: 'READY' } : w));
-    }, 2000);
+const WorkspacesPage = ({ workspaces, setWorkspaces, addToast, setActiveWorkspaceId, setImportStatus, activeWorkspaceId }: any) => {
+  const handleDelete = (id: string) => { setWorkspaces((prev: Workspace[]) => prev.filter(w => w.id !== id)); addToast('info', 'Deleted'); };
+  const handleImport = async () => {
+    try {
+        const selected = await open({ directory: true, multiple: false });
+        if (selected) {
+            const pathStr = selected as string;
+            const newWs: Workspace = { id: Date.now().toString(), name: pathStr.split(/[/\\]/).pop() || "New", path: pathStr, status: 'PROCESSING', size: '-', files: 0 };
+            setWorkspaces((prev: Workspace[]) => [...prev, newWs]);
+            // 核心修改：导入后自动设为 Active
+            setActiveWorkspaceId(newWs.id);
+            invoke("import_folder", { path: pathStr }).then(() => { addToast('info', 'Importing...'); setImportStatus("Extracting..."); }).catch(e => { addToast('error', `${e}`); });
+        }
+    } catch (e) { addToast('error', `${e}`); }
   };
 
   return (
     <div className="p-8 max-w-6xl mx-auto h-full overflow-auto">
-      <div className="flex justify-between items-center mb-6">
-         <h1 className="text-2xl font-bold text-text-main">Workspaces</h1>
-         <Button icon={Plus}>New Workspace</Button>
-      </div>
+      <div className="flex justify-between items-center mb-6"><h1 className="text-2xl font-bold text-text-main">Workspaces</h1><Button icon={Plus} onClick={handleImport}>Import Folder</Button></div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-         {workspaces.map((ws) => (
-           <Card key={ws.id} title={ws.name} className="h-full flex flex-col hover:border-primary/50 transition-colors group">
-              <div className="space-y-4 mb-6">
-                 <div>
-                    <div className="text-xs text-text-dim uppercase font-bold mb-1">Root Path</div>
-                    <code className="text-xs bg-bg-main px-2 py-1.5 rounded border border-border-base block truncate font-mono text-text-muted">{ws.path}</code>
-                 </div>
-                 <div className="grid grid-cols-3 gap-2 text-center">
-                    <div className="bg-bg-hover/50 rounded p-2"><div className="text-[10px] text-text-dim uppercase">Files</div><div className="font-mono text-sm font-bold text-text-main">{ws.files}</div></div>
-                    <div className="bg-bg-hover/50 rounded p-2"><div className="text-[10px] text-text-dim uppercase">Size</div><div className="font-mono text-sm font-bold text-text-main">{ws.size}</div></div>
-                    <div className="bg-bg-hover/50 rounded p-2 flex flex-col items-center justify-center">
-                       {ws.status === 'READY' ? <CheckCircle2 size={16} className="text-emerald-500 mb-1"/> : ws.status === 'OFFLINE' ? <AlertCircle size={16} className="text-red-500 mb-1"/> : <RefreshCw size={16} className="text-blue-500 animate-spin mb-1"/>}
-                       <div className="text-[9px] font-bold">{ws.status}</div>
-                    </div>
-                 </div>
+         {workspaces.map((ws: Workspace) => (
+           <Card 
+             key={ws.id} 
+             // 核心修改：如果 ID 匹配，显示主色边框
+             className={cn("h-full flex flex-col hover:border-primary/50 transition-colors group cursor-pointer", activeWorkspaceId === ws.id ? "border-primary ring-1 ring-primary" : "border-border-base")} 
+             onClick={() => setActiveWorkspaceId(ws.id)}
+           >
+              <div className="px-4 py-3 border-b border-border-base bg-bg-sidebar/50 font-bold text-sm flex justify-between items-center">
+                  {ws.name}<Button variant="ghost" icon={Trash2} className="h-6 w-6 p-0 text-text-dim hover:text-red-400" onClick={() => handleDelete(ws.id)}/>
               </div>
-              <div className="mt-auto grid grid-cols-2 gap-3 opacity-60 group-hover:opacity-100 transition-opacity">
-                 <Button variant="secondary" icon={RefreshCw} className="text-xs h-8" onClick={() => handleRescan(ws.id)}>Rescan</Button>
-                 <Button variant="secondary" icon={Trash2} className="text-xs h-8 hover:text-red-400" onClick={() => handleDelete(ws.id)}>Delete</Button>
+              <div className="p-4 space-y-4">
+                 <code className="text-xs bg-bg-main px-2 py-1.5 rounded border border-border-base block truncate font-mono text-text-muted" title={ws.path}>{ws.path}</code>
+                 <div className="flex items-center gap-2 text-xs font-bold">{ws.status === 'READY' ? <><CheckCircle2 size={14} className="text-emerald-500"/> <span className="text-emerald-500">READY</span></> : <><RefreshCw size={14} className="text-blue-500 animate-spin"/> <span className="text-blue-500">PROCESSING</span></>}</div>
               </div>
            </Card>
          ))}
@@ -424,88 +314,55 @@ const WorkspacesPage = ({ workspaces, setWorkspaces }: { workspaces: Workspace[]
   );
 };
 
-const TasksPage = ({ tasks, setTasks }: { tasks: Task[], setTasks: any }) => {
-  const handleToggle = (id: number) => setTasks((prev: Task[]) => prev.map(t => t.id === id ? { ...t, status: t.status === 'RUNNING' ? 'STOPPED' : 'RUNNING' } : t));
-  const handleDelete = (id: number) => setTasks((prev: Task[]) => prev.filter(t => t.id !== id));
-
-  return (
-    <div className="p-8 max-w-4xl mx-auto h-full overflow-auto">
-      <h1 className="text-2xl font-bold mb-6 text-text-main">Background Tasks</h1>
-      <div className="space-y-4">
-        {tasks.map((t) => (
-          <div key={t.id} className="p-4 bg-bg-card border border-border-base rounded-lg flex items-center gap-4">
-            <div className={cn("p-2 rounded-full bg-bg-hover", t.status === 'RUNNING' ? "text-blue-500" : t.status === 'FAILED' ? "text-red-500" : "text-emerald-500")}>
-              {t.status === 'RUNNING' ? <RefreshCw size={20} className="animate-spin"/> : t.status === 'FAILED' ? <AlertCircle size={20}/> : t.status === 'STOPPED' ? <PauseCircle size={20}/> : <CheckCircle2 size={20}/>}
-            </div>
-            <div className="flex-1 min-w-0">
-               <div className="flex justify-between mb-1"><h3 className="font-semibold text-sm text-text-main truncate">{t.type}: {t.target}</h3><span className="text-xs font-mono text-text-dim">ID: {t.id}</span></div>
-               <div className="w-full bg-bg-main h-2 rounded-full overflow-hidden">
-                  <div className={cn("h-full transition-all duration-500", t.status==='FAILED'?'bg-red-500':t.status==='COMPLETED'?'bg-emerald-500':t.status==='STOPPED'?'bg-yellow-500':'bg-blue-500')} style={{width: `${t.progress}%`}}></div>
-               </div>
-               <div className="flex justify-between mt-1 text-xs text-text-dim"><span>{t.status}</span><span>{t.progress}%</span></div>
-            </div>
-            <div className="flex gap-2">
-               {(t.status === 'RUNNING' || t.status === 'STOPPED') && <Button variant="secondary" className="h-8 w-8 p-0" onClick={() => handleToggle(t.id)}>{t.status === 'RUNNING' ? <StopCircle size={16}/> : <Play size={16}/>}</Button>}
-               <Button variant="ghost" className="h-8 w-8 p-0 text-red-400 hover:text-red-300" onClick={() => handleDelete(t.id)}><Trash2 size={16}/></Button>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-};
-
-// --- Main App Shell ---
+// --- Main App ---
 export default function App() {
-  const [page, setPage] = useState<Page>('search');
-  const [keywordGroups, setKeywordGroups] = useState<KeywordGroup[]>([
-    { id: "1", name: "Network Errors", color: "red", enabled: true, patterns: [{ regex: "timeout", comment: "连接超时" }, { regex: "connection refused", comment: "连接被拒" }] },
-    { id: "2", name: "SQL Issues", color: "orange", enabled: true, patterns: [{ regex: "slow query", comment: "慢查询" }, { regex: "deadlock", comment: "死锁" }] },
-    { id: "3", name: "Auth Audit", color: "blue", enabled: true, patterns: [{ regex: "invalid token", comment: "Token失效" }] }
-  ]);
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([
-    { id: "1", name: "Production - US East", path: "/var/logs/prod-us", status: "READY", size: "142 GB", files: 12470 },
-    { id: "2", name: "Staging - EU West", path: "/var/logs/staging-eu", status: "SCANNING", size: "12.1 GB", files: 456 }
-  ]);
-  const [tasks, setTasks] = useState<Task[]>([
-    { id: 1024, type: "Index Scan", target: "Production - US East", progress: 45, status: "RUNNING" },
-    { id: 1022, type: "Cache Clear", target: "System", progress: 0, status: "FAILED" }
-  ]);
+  const [page, setPage] = useState<Page>('workspaces');
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  
+  const [keywordGroups, setKeywordGroups] = useState<KeywordGroup[]>([]);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([ { id: 1024, type: "Index Scan", target: "US East", progress: 45, status: "RUNNING" } ]);
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
+  const [importStatus, setImportStatus] = useState("");
 
-  const NavItem = ({ id, icon: Icon, label }: any) => (
-    <button onClick={() => setPage(id)} className={cn("w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all duration-200 group relative", page === id ? "bg-primary text-white shadow-md" : "text-text-muted hover:bg-bg-hover hover:text-text-main")}>
-      <Icon size={18} /> <span className="text-sm font-medium">{label}</span> {page === id && <div className="absolute right-2 w-1.5 h-1.5 bg-white rounded-full"></div>}
-    </button>
-  );
+  useEffect(() => { invoke<any>("load_config").then(c => { if(c.keyword_groups) setKeywordGroups(c.keyword_groups); if(c.workspaces) setWorkspaces(c.workspaces); if(c.workspaces && c.workspaces.length > 0) setActiveWorkspaceId(c.workspaces[0].id); }); }, []);
+  useEffect(() => { if(keywordGroups.length>0 || workspaces.length>0) invoke("save_config", { config: { keyword_groups: keywordGroups, workspaces } }); }, [keywordGroups, workspaces]);
+
+  useEffect(() => {
+      const u1 = listen<string>('task-progress', e => setImportStatus(e.payload));
+      const u2 = listen('import-complete', () => { setImportStatus(""); setWorkspaces((prev: Workspace[]) => prev.map(w => w.status === 'PROCESSING' ? { ...w, status: 'READY' } : w)); });
+      const u3 = listen('import-error', (e) => { setImportStatus(""); addToast('error', `Import error: ${e.payload}`); });
+      return () => { u1.then(f=>f()); u2.then(f=>f()); u3.then(f=>f()); }
+  }, []);
+
+  const addToast = (type: ToastType, message: string) => { const id = Date.now(); setToasts(p => [...p, { id, type, message }]); setTimeout(() => setToasts(p => p.filter(t => t.id !== id)), 3000); };
+  const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId) || null;
 
   return (
     <div className="flex h-screen bg-bg-main text-text-main font-sans selection:bg-primary/30">
       <div className="w-[240px] bg-bg-sidebar border-r border-border-base flex flex-col shrink-0 z-50">
-        <div className="h-14 flex items-center px-5 border-b border-border-base mb-2 select-none">
-           <div className="h-8 w-8 bg-primary rounded-lg flex items-center justify-center text-white mr-3 shadow-lg shadow-primary/20"><Zap size={18} fill="currentColor" /></div>
-           <span className="font-bold text-lg tracking-tight">LogAnalyzer</span>
+        <div className="h-14 flex items-center px-5 border-b border-border-base mb-2 select-none"><div className="h-8 w-8 bg-primary rounded-lg flex items-center justify-center text-white mr-3 shadow-lg shadow-primary/20"><Zap size={18} fill="currentColor" /></div><span className="font-bold text-lg tracking-tight">LogAnalyzer</span></div>
+        <div className="flex-1 px-3 py-4 space-y-1">
+            <button onClick={() => setPage('workspaces')} className={cn("w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all", page === 'workspaces' ? "bg-primary text-white" : "text-text-muted hover:bg-bg-hover")}><LayoutGrid size={18}/> Workspaces</button>
+            <button onClick={() => setPage('search')} className={cn("w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all", page === 'search' ? "bg-primary text-white" : "text-text-muted hover:bg-bg-hover")}><Search size={18}/> Search Logs</button>
+            <button onClick={() => setPage('keywords')} className={cn("w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all", page === 'keywords' ? "bg-primary text-white" : "text-text-muted hover:bg-bg-hover")}><ListTodo size={18}/> Keywords</button>
+            <button onClick={() => setPage('tasks')} className={cn("w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all", page === 'tasks' ? "bg-primary text-white" : "text-text-muted hover:bg-bg-hover")}><Layers size={18}/> Tasks</button>
         </div>
-        <div className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          <div className="text-[10px] font-bold text-text-dim px-3 mb-2 uppercase tracking-wider opacity-80">Analyze</div>
-          <NavItem id="search" icon={Search} label="Search Logs" /><NavItem id="keywords" icon={ListTodo} label="Keywords" />
-          <div className="text-[10px] font-bold text-text-dim px-3 mb-2 mt-6 uppercase tracking-wider opacity-80">Manage</div>
-          <NavItem id="workspaces" icon={LayoutGrid} label="Workspaces" /><NavItem id="tasks" icon={Layers} label="Tasks & Jobs" />
-        </div>
-        <div className="p-3 border-t border-border-base"><NavItem id="settings" icon={Settings} label="Settings" /></div>
+        {importStatus && <div className="p-3 m-3 bg-bg-card border border-primary/20 rounded text-xs text-primary animate-pulse"><div className="font-bold mb-1 flex items-center gap-2"><Loader2 size={12} className="animate-spin"/> Processing</div><div className="truncate opacity-80">{importStatus}</div></div>}
+        <div className="p-3 border-t border-border-base"><button onClick={() => setPage('settings')} className={cn("w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all", page === 'settings' ? "bg-primary text-white" : "text-text-muted hover:bg-bg-hover")}><Settings size={18}/> Settings</button></div>
       </div>
       <div className="flex-1 flex flex-col min-w-0 bg-bg-main">
-        <div className="h-14 border-b border-border-base bg-bg-main flex items-center justify-between px-6 shrink-0 z-40">
-           <div className="flex items-center text-sm text-text-muted select-none"><span className="opacity-50">Workspace / </span><span className="font-medium text-text-main ml-2 flex items-center gap-2"><FileText size={14} className="text-primary"/> Production Logs</span></div>
-           <div className="flex items-center gap-3"><Button variant="ghost" className="h-8 w-8 p-0 rounded-full"><Moon size={16}/></Button><div className="h-4 w-[1px] bg-border-base mx-1"></div><div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-500 to-purple-500 flex items-center justify-center text-xs font-bold text-white shadow-lg">JS</div></div>
-        </div>
+        <div className="h-14 border-b border-border-base bg-bg-main flex items-center justify-between px-6 shrink-0 z-40"><div className="flex items-center text-sm text-text-muted select-none"><span className="opacity-50">Workspace / </span><span className="font-medium text-text-main ml-2 flex items-center gap-2"><FileText size={14} className="text-primary"/> {activeWorkspace ? activeWorkspace.name : "Select Workspace"}</span></div></div>
         <div className="flex-1 overflow-hidden relative">
-           {page === 'search' && <SearchPage keywordGroups={keywordGroups} />}
-           {page === 'keywords' && <KeywordsPage keywordGroups={keywordGroups} setKeywordGroups={setKeywordGroups} />}
-           {page === 'workspaces' && <WorkspacesPage workspaces={workspaces} setWorkspaces={setWorkspaces} />}
-           {page === 'tasks' && <TasksPage tasks={tasks} setTasks={setTasks} />}
+           {page === 'search' && <SearchPage keywordGroups={keywordGroups} addToast={addToast} searchInputRef={searchInputRef} activeWorkspace={activeWorkspace} />}
+           {page === 'keywords' && <KeywordsPage keywordGroups={keywordGroups} setKeywordGroups={setKeywordGroups} addToast={addToast} />}
+           {page === 'workspaces' && <WorkspacesPage workspaces={workspaces} setWorkspaces={setWorkspaces} addToast={addToast} setActiveWorkspaceId={setActiveWorkspaceId} setImportStatus={setImportStatus} activeWorkspaceId={activeWorkspaceId} />}
+           {page === 'tasks' && <TasksPage tasks={tasks} setTasks={setTasks} addToast={addToast} />}
            {page === 'settings' && <div className="p-10 text-center text-text-dim">Settings</div>}
         </div>
       </div>
+      <ToastContainer toasts={toasts} removeToast={(id) => setToasts(prev => prev.filter(t => t.id !== id))} />
     </div>
   );
 }

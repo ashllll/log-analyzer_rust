@@ -2,6 +2,16 @@
   "name": "log-analyzer",
   "private": true,
   "version": "0.1.0",
+  "description": "A desktop log analysis tool built with Tauri, React, and TypeScript",
+  "author": {
+    "name": "Joe Ash",
+    "email": "joe@example.com"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/joeash/log-analyzer"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,6 +22,7 @@
   "dependencies": {
     "@tanstack/react-virtual": "^3.13.12",
     "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-dialog": "^2.4.2",
     "@tauri-apps/plugin-opener": "^2",
     "clsx": "^2.1.1",
     "framer-motion": "^12.23.24",
