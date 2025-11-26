@@ -52,10 +52,10 @@ const Button = ({ children, variant = 'primary', className, icon: Icon, onClick,
   return <button type="button" className={cn("h-9 px-4 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shrink-0 select-none cursor-pointer", variants[variant as keyof typeof variants], className)} onClick={(e) => { e.stopPropagation(); onClick && onClick(e); }} {...props}>{Icon && <Icon size={16} />}{children}</button>;
 };
 const Input = ({ className, ref, ...props }: any) => (<input ref={ref} className={cn("h-9 w-full bg-bg-main border border-border-base rounded-md px-3 text-sm text-text-main placeholder:text-text-dim focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50 transition-all", className)} {...props} />);
-const Card = ({ children, className, ...props }: any) => (<div className={cn("bg-bg-card border border-border-base rounded-lg overflow-hidden", className)} {...props}>{children}</div>);
+const Card = ({ children, className }: any) => (<div className={cn("bg-bg-card border border-border-base rounded-lg overflow-hidden", className)}>{children}</div>);
 const ToastContainer = ({ toasts, removeToast }: { toasts: Toast[], removeToast: (id: number) => void }) => (<div className="fixed bottom-6 right-6 z-[100] flex flex-col gap-3 pointer-events-none">{toasts.map(toast => (<div key={toast.id} className={cn("pointer-events-auto min-w-[300px] p-4 rounded-lg shadow-2xl border flex items-center gap-3 animate-in slide-in-from-right-full duration-300", toast.type === 'success' ? "bg-bg-card border-emerald-500/30 text-emerald-400" : toast.type === 'error' ? "bg-bg-card border-red-500/30 text-red-400" : "bg-bg-card border-blue-500/30 text-blue-400")}>{toast.type === 'success' ? <CheckCircle2 size={20}/> : toast.type === 'error' ? <AlertCircle size={20}/> : <Info size={20}/>}<span className="text-sm font-medium text-text-main">{toast.message}</span><button onClick={() => removeToast(toast.id)} className="ml-auto text-text-dim hover:text-text-main"><X size={16}/></button></div>))}</div>);
 
-// --- Keyword Modal ---
+// --- Renderers & Modals (Same as before) ---
 const KeywordModal = ({ isOpen, onClose, onSave, initialData }: any) => {
   if (!isOpen) return null;
   const [name, setName] = useState(initialData?.name || "");
@@ -96,7 +96,6 @@ const KeywordModal = ({ isOpen, onClose, onSave, initialData }: any) => {
   );
 };
 
-// --- Hybrid Log Renderer ---
 const HybridLogRenderer = ({ text, query, keywordGroups }: { text: string, query: string, keywordGroups: KeywordGroup[] }) => {
   const { patternMap, regexPattern } = useMemo(() => {
     const map = new Map<string, { color: ColorKey, comment: string }>();
@@ -129,7 +128,6 @@ const HybridLogRenderer = ({ text, query, keywordGroups }: { text: string, query
   );
 };
 
-// --- Filter Palette ---
 const FilterPalette = ({ isOpen, onClose, groups, currentQuery, onToggleRule }: any) => {
     if (!isOpen) return null;
     const isPatternActive = (regex: string) => currentQuery.split('|').map((t:string) => t.trim().toLowerCase()).includes(regex.toLowerCase());
@@ -282,7 +280,6 @@ const WorkspacesPage = ({ workspaces, setWorkspaces, addToast, setActiveWorkspac
             const pathStr = selected as string;
             const newWs: Workspace = { id: Date.now().toString(), name: pathStr.split(/[/\\]/).pop() || "New", path: pathStr, status: 'PROCESSING', size: '-', files: 0 };
             setWorkspaces((prev: Workspace[]) => [...prev, newWs]);
-            // 核心修改：导入后自动设为 Active
             setActiveWorkspaceId(newWs.id);
             invoke("import_folder", { path: pathStr }).then(() => { addToast('info', 'Importing...'); setImportStatus("Extracting..."); }).catch(e => { addToast('error', `${e}`); });
         }
@@ -294,21 +291,54 @@ const WorkspacesPage = ({ workspaces, setWorkspaces, addToast, setActiveWorkspac
       <div className="flex justify-between items-center mb-6"><h1 className="text-2xl font-bold text-text-main">Workspaces</h1><Button icon={Plus} onClick={handleImport}>Import Folder</Button></div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
          {workspaces.map((ws: Workspace) => (
-           <Card 
-             key={ws.id} 
-             // 核心修改：如果 ID 匹配，显示主色边框
-             className={cn("h-full flex flex-col hover:border-primary/50 transition-colors group cursor-pointer", activeWorkspaceId === ws.id ? "border-primary ring-1 ring-primary" : "border-border-base")} 
-             onClick={() => setActiveWorkspaceId(ws.id)}
-           >
+           <Card key={ws.id} className={cn("h-full flex flex-col hover:border-primary/50 transition-colors group cursor-pointer", activeWorkspaceId === ws.id ? "border-primary ring-1 ring-primary" : "border-border-base")} onClick={() => setActiveWorkspaceId(ws.id)}>
               <div className="px-4 py-3 border-b border-border-base bg-bg-sidebar/50 font-bold text-sm flex justify-between items-center">
                   {ws.name}<Button variant="ghost" icon={Trash2} className="h-6 w-6 p-0 text-text-dim hover:text-red-400" onClick={() => handleDelete(ws.id)}/>
               </div>
               <div className="p-4 space-y-4">
-                 <code className="text-xs bg-bg-main px-2 py-1.5 rounded border border-border-base block truncate font-mono text-text-muted" title={ws.path}>{ws.path}</code>
+                 <code className="text-xs bg-bg-main px-2 py-1.5 rounded border border-border-base block truncate font-mono text-text-muted">{ws.path}</code>
                  <div className="flex items-center gap-2 text-xs font-bold">{ws.status === 'READY' ? <><CheckCircle2 size={14} className="text-emerald-500"/> <span className="text-emerald-500">READY</span></> : <><RefreshCw size={14} className="text-blue-500 animate-spin"/> <span className="text-blue-500">PROCESSING</span></>}</div>
               </div>
            </Card>
          ))}
+      </div>
+    </div>
+  );
+};
+
+// FIX: TasksPage 必须接受 addToast 参数
+const TasksPage = ({ tasks, setTasks, addToast }: { tasks: Task[], setTasks: any, addToast: any }) => {
+  useEffect(() => {
+    const interval = setInterval(() => {
+        setTasks((prev: Task[]) => prev.map(t => {
+            if (t.status === 'RUNNING') { const newProgress = Math.min(100, t.progress + Math.random() * 5); return { ...t, progress: newProgress, status: newProgress >= 100 ? 'COMPLETED' : 'RUNNING' }; }
+            return t;
+        }));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+  const handleToggle = (id: number) => setTasks((prev: Task[]) => prev.map(t => t.id === id ? { ...t, status: t.status === 'RUNNING' ? 'STOPPED' : 'RUNNING' } : t));
+  // FIX: 确保使用 addToast 且有空值保护
+  const handleDelete = (id: number) => { 
+      setTasks((prev: Task[]) => prev.filter(t => t.id !== id)); 
+      if(addToast) addToast('info', 'Deleted'); 
+  };
+
+  return (
+    <div className="p-8 max-w-4xl mx-auto h-full overflow-auto">
+      <h1 className="text-2xl font-bold mb-6 text-text-main">Background Tasks</h1>
+      <div className="space-y-4">
+        {tasks.map((t: Task) => (
+          <div key={t.id} className="p-4 bg-bg-card border border-border-base rounded-lg flex items-center gap-4">
+            <div className={cn("p-2 rounded-full bg-bg-hover", t.status === 'RUNNING' ? "text-blue-500" : t.status === 'FAILED' ? "text-red-500" : "text-emerald-500")}>{t.status === 'RUNNING' ? <RefreshCw size={20} className="animate-spin"/> : t.status === 'FAILED' ? <AlertCircle size={20}/> : t.status === 'STOPPED' ? <PauseCircle size={20}/> : <CheckCircle2 size={20}/>}</div>
+            <div className="flex-1 min-w-0">
+               <div className="flex justify-between mb-1"><h3 className="font-semibold text-sm text-text-main truncate">{t.type}: {t.target}</h3><span className="text-xs font-mono text-text-dim">ID: {t.id}</span></div>
+               <div className="w-full bg-bg-main h-2 rounded-full overflow-hidden"><div className={cn("h-full transition-all duration-500", t.status==='FAILED'?'bg-red-500':t.status==='COMPLETED'?'bg-emerald-500':t.status==='STOPPED'?'bg-yellow-500':'bg-blue-500')} style={{width: `${t.progress}%`}}></div></div>
+               <div className="flex justify-between mt-1 text-xs text-text-dim"><span>{t.status}</span><span>{Math.floor(t.progress)}%</span></div>
+            </div>
+            <div className="flex gap-2">{(t.status === 'RUNNING' || t.status === 'STOPPED') && <Button variant="secondary" className="h-8 w-8 p-0" onClick={() => handleToggle(t.id)}>{t.status === 'RUNNING' ? <StopCircle size={16}/> : <Play size={16}/>}</Button>}<Button variant="ghost" className="h-8 w-8 p-0 text-red-400 hover:text-red-300" onClick={() => handleDelete(t.id)}><Trash2 size={16}/></Button></div>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -326,7 +356,7 @@ export default function App() {
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
   const [importStatus, setImportStatus] = useState("");
 
-  useEffect(() => { invoke<any>("load_config").then(c => { if(c.keyword_groups) setKeywordGroups(c.keyword_groups); if(c.workspaces) setWorkspaces(c.workspaces); if(c.workspaces && c.workspaces.length > 0) setActiveWorkspaceId(c.workspaces[0].id); }); }, []);
+  useEffect(() => { invoke<any>("load_config").then(c => { if(c.keyword_groups) setKeywordGroups(c.keyword_groups); if(c.workspaces) setWorkspaces(c.workspaces); }); }, []);
   useEffect(() => { if(keywordGroups.length>0 || workspaces.length>0) invoke("save_config", { config: { keyword_groups: keywordGroups, workspaces } }); }, [keywordGroups, workspaces]);
 
   useEffect(() => {
@@ -358,6 +388,7 @@ export default function App() {
            {page === 'search' && <SearchPage keywordGroups={keywordGroups} addToast={addToast} searchInputRef={searchInputRef} activeWorkspace={activeWorkspace} />}
            {page === 'keywords' && <KeywordsPage keywordGroups={keywordGroups} setKeywordGroups={setKeywordGroups} addToast={addToast} />}
            {page === 'workspaces' && <WorkspacesPage workspaces={workspaces} setWorkspaces={setWorkspaces} addToast={addToast} setActiveWorkspaceId={setActiveWorkspaceId} setImportStatus={setImportStatus} activeWorkspaceId={activeWorkspaceId} />}
+           {/* FIX: 显式传递 addToast */}
            {page === 'tasks' && <TasksPage tasks={tasks} setTasks={setTasks} addToast={addToast} />}
            {page === 'settings' && <div className="p-10 text-center text-text-dim">Settings</div>}
         </div>
