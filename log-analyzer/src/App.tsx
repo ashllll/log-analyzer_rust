@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from '@tauri-apps/plugin-dialog';
@@ -14,6 +14,21 @@ import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
 function cn(...inputs: ClassValue[]) { return twMerge(clsx(inputs)); }
+
+// 统一日志工具
+const logger = {
+  debug: (message: string, ...args: any[]) => {
+    if (import.meta.env.DEV) {
+      console.log(`[DEBUG] ${message}`, ...args);
+    }
+  },
+  info: (message: string, ...args: any[]) => {
+    console.log(`[INFO] ${message}`, ...args);
+  },
+  error: (message: string, ...args: any[]) => {
+    console.error(`[ERROR] ${message}`, ...args);
+  }
+};
 
 // Types
 type Page = 'search' | 'keywords' | 'workspaces' | 'tasks' | 'settings';
@@ -46,6 +61,18 @@ const COLOR_STYLES: Record<ColorKey, any> = {
 };
 
 // UI Components
+const NavItem = ({ icon: Icon, label, active, onClick }: { icon: any, label: string, active: boolean, onClick: () => void }) => (
+  <button 
+    onClick={onClick}
+    className={cn(
+      "w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all",
+      active ? "bg-primary text-white" : "text-text-muted hover:bg-bg-hover"
+    )}
+  >
+    <Icon size={18}/> {label}
+  </button>
+);
+
 const Button = ({ children, variant = 'primary', className, icon: Icon, onClick, ...props }: any) => {
   const variants = {
     primary: "bg-primary hover:bg-primary-hover text-white shadow-sm active:scale-95",
@@ -142,7 +169,22 @@ const SearchPage = ({ keywordGroups, addToast, searchInputRef, activeWorkspace }
 
   const copyToClipboard = (text: string) => { navigator.clipboard.writeText(text).then(() => addToast('success', 'Copied')); };
   const tryFormatJSON = (content: string) => { try { const start = content.indexOf('{'); if (start === -1) return content; const jsonPart = content.substring(start); const obj = JSON.parse(jsonPart); return JSON.stringify(obj, null, 2); } catch (e) { return content; } };
-  const rowVirtualizer = useVirtualizer({ count: logs.length, getScrollElement: () => parentRef.current, estimateSize: () => 46, overscan: 15 });
+  
+  // 优化：动态高度估算
+  const rowVirtualizer = useVirtualizer({ 
+    count: logs.length, 
+    getScrollElement: () => parentRef.current, 
+    estimateSize: useCallback((index: number) => {
+      const log = logs[index];
+      if (!log) return 46;
+      // 根据内容长度估算高度
+      const lines = Math.ceil(log.content.length / 120);
+      return Math.max(46, Math.min(lines * 22, 200));  // 最小 46px，最大 200px
+    }, [logs]),
+    overscan: 20,  // 增加 overscan
+    measureElement: (element) => element?.getBoundingClientRect().height || 46  // 精确测量
+  });
+  
   const activeLog = logs.find(l => l.id === selectedId);
 
   return (
@@ -223,7 +265,7 @@ const WorkspacesPage = ({ workspaces, setWorkspaces, addToast, setActiveWorkspac
   const handleDelete = (id: string) => { setWorkspaces((prev: Workspace[]) => prev.filter(w => w.id !== id)); addToast('info', 'Deleted'); };
   
   const handleImportFile = async () => {
-    console.log('[FRONTEND] handleImportFile called');
+    logger.debug('handleImportFile called');
     try {
         // 选择单个文件或压缩包
         const selected = await open({ 
@@ -234,36 +276,36 @@ const WorkspacesPage = ({ workspaces, setWorkspaces, addToast, setActiveWorkspac
             extensions: ['log', 'txt', 'gz', 'zip', 'tar', 'tgz', 'rar', '*']
           }]
         });
-        console.log('[FRONTEND] Selected file:', selected);
+        logger.debug('Selected file:', selected);
         if (selected) {
             await importPath(selected as string);
         }
     } catch (e) { 
-      console.error('[FRONTEND] handleImportFile error:', e);
+      logger.error('handleImportFile error:', e);
       addToast('error', `${e}`); 
     }
   };
   
   const handleImportFolder = async () => {
-    console.log('[FRONTEND] handleImportFolder called');
+    logger.debug('handleImportFolder called');
     try {
         // 选择文件夹
         const selected = await open({ 
           directory: true,
           multiple: false
         });
-        console.log('[FRONTEND] Selected folder:', selected);
+        logger.debug('Selected folder:', selected);
         if (selected) {
             await importPath(selected as string);
         }
     } catch (e) { 
-      console.error('[FRONTEND] handleImportFolder error:', e);
+      logger.error('handleImportFolder error:', e);
       addToast('error', `${e}`); 
     }
   };
   
   const importPath = async (pathStr: string) => {
-    console.log('[FRONTEND] importPath called with:', pathStr);
+    logger.debug('importPath called with:', pathStr);
     try {
       const fileName = pathStr.split(/[/\\]/).pop() || "New";
       const newWs: Workspace = { 
@@ -274,25 +316,25 @@ const WorkspacesPage = ({ workspaces, setWorkspaces, addToast, setActiveWorkspac
         size: '-', 
         files: 0 
       };
-      console.log('[FRONTEND] Creating workspace:', newWs);
+      logger.debug('Creating workspace:', newWs);
       setWorkspaces((prev: Workspace[]) => [...prev, newWs]);
       setActiveWorkspaceId(newWs.id);
       
-      console.log('[FRONTEND] Invoking import_folder with:', { path: pathStr, workspaceId: newWs.id });
+      logger.debug('Invoking import_folder with:', { path: pathStr, workspaceId: newWs.id });
       const taskId = await invoke<string>("import_folder", { 
         path: pathStr, 
         workspaceId: newWs.id
       });
-      console.log('[FRONTEND] import_folder returned taskId:', taskId);
+      logger.debug('import_folder returned taskId:', taskId);
       
       // 注意：任务会通过 task-update 事件自动添加，这里仅作为后备
       setTasks((prev: Task[]) => {
         // 如果已经通过事件添加，则不重复
         if (prev.find(t => t.id === taskId)) {
-          console.log('[FRONTEND] Task already exists, skipping');
+          logger.debug('Task already exists, skipping');
           return prev;
         }
-        console.log('[FRONTEND] Adding task to list:', taskId);
+        logger.debug('Adding task to list:', taskId);
         return [...prev, { 
           id: taskId, 
           type: 'Import', 
@@ -305,7 +347,7 @@ const WorkspacesPage = ({ workspaces, setWorkspaces, addToast, setActiveWorkspac
       
       addToast('info', 'Import started');
     } catch (e) {
-      console.error('[FRONTEND] importPath error:', e);
+      logger.error('importPath error:', e);
       addToast('error', `Failed to start import: ${e}`);
       // 删除刚创建的工作区
       setWorkspaces((prev: Workspace[]) => prev.slice(0, -1));
@@ -406,16 +448,16 @@ export default function App() {
   useEffect(() => {
       // Listen for task updates from Rust
       const u1 = listen<TaskUpdateEvent>('task-update', e => {
-          console.log('[FRONTEND] task-update event received:', e.payload);
+          logger.debug('task-update event received:', e.payload);
           const update = e.payload;
           setTasks((prev: Task[]) => {
             const existingTask = prev.find(t => t.id === update.task_id);
             if (existingTask) {
-              console.log('[FRONTEND] Updating existing task:', update.task_id);
+              logger.debug('Updating existing task:', update.task_id);
               // 更新已存在的任务
               return prev.map(t => t.id === update.task_id ? { ...t, status: update.status as any, message: update.message, progress: update.progress } : t);
             } else {
-              console.log('[FRONTEND] Creating new task from event:', update.task_id);
+              logger.debug('Creating new task from event:', update.task_id);
               // 创建新任务（如果前端没有创建）
               return [...prev, {
                 id: update.task_id,
@@ -455,13 +497,15 @@ export default function App() {
       <div className="w-[240px] bg-bg-sidebar border-r border-border-base flex flex-col shrink-0 z-50">
         <div className="h-14 flex items-center px-5 border-b border-border-base mb-2 select-none"><div className="h-8 w-8 bg-primary rounded-lg flex items-center justify-center text-white mr-3 shadow-lg shadow-primary/20"><Zap size={18} fill="currentColor" /></div><span className="font-bold text-lg tracking-tight">LogAnalyzer</span></div>
         <div className="flex-1 px-3 py-4 space-y-1">
-            <button onClick={() => setPage('workspaces')} className={cn("w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all", page === 'workspaces' ? "bg-primary text-white" : "text-text-muted hover:bg-bg-hover")}><LayoutGrid size={18}/> Workspaces</button>
-            <button onClick={() => setPage('search')} className={cn("w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all", page === 'search' ? "bg-primary text-white" : "text-text-muted hover:bg-bg-hover")}><Search size={18}/> Search Logs</button>
-            <button onClick={() => setPage('keywords')} className={cn("w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all", page === 'keywords' ? "bg-primary text-white" : "text-text-muted hover:bg-bg-hover")}><ListTodo size={18}/> Keywords</button>
-            <button onClick={() => setPage('tasks')} className={cn("w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all", page === 'tasks' ? "bg-primary text-white" : "text-text-muted hover:bg-bg-hover")}><Layers size={18}/> Tasks</button>
+            <NavItem icon={LayoutGrid} label="Workspaces" active={page === 'workspaces'} onClick={() => setPage('workspaces')} />
+            <NavItem icon={Search} label="Search Logs" active={page === 'search'} onClick={() => setPage('search')} />
+            <NavItem icon={ListTodo} label="Keywords" active={page === 'keywords'} onClick={() => setPage('keywords')} />
+            <NavItem icon={Layers} label="Tasks" active={page === 'tasks'} onClick={() => setPage('tasks')} />
         </div>
         {importStatus && <div className="p-3 m-3 bg-bg-card border border-primary/20 rounded text-xs text-primary animate-pulse"><div className="font-bold mb-1 flex items-center gap-2"><Loader2 size={12} className="animate-spin"/> Processing</div><div className="truncate opacity-80">{importStatus}</div></div>}
-        <div className="p-3 border-t border-border-base"><button onClick={() => setPage('settings')} className={cn("w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all", page === 'settings' ? "bg-primary text-white" : "text-text-muted hover:bg-bg-hover")}><Settings size={18}/> Settings</button></div>
+        <div className="p-3 border-t border-border-base">
+          <NavItem icon={Settings} label="Settings" active={page === 'settings'} onClick={() => setPage('settings')} />
+        </div>
       </div>
       <div className="flex-1 flex flex-col min-w-0 bg-bg-main">
         <div className="h-14 border-b border-border-base bg-bg-main flex items-center justify-between px-6 shrink-0 z-40"><div className="flex items-center text-sm text-text-muted select-none"><span className="opacity-50">Workspace / </span><span className="font-medium text-text-main ml-2 flex items-center gap-2"><FileText size={14} className="text-primary"/> {activeWorkspace ? activeWorkspace.name : "Select Workspace"}</span></div></div>
