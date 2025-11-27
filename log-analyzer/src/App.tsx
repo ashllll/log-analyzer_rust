@@ -13,24 +13,30 @@ import {
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
-// --- Utility ---
 function cn(...inputs: ClassValue[]) { return twMerge(clsx(inputs)); }
 
-// --- Types ---
+// Types
 type Page = 'search' | 'keywords' | 'workspaces' | 'tasks' | 'settings';
 type ColorKey = 'blue' | 'green' | 'red' | 'orange' | 'purple';
 type ToastType = 'success' | 'error' | 'info';
 
-interface LogEntry { 
-  id: number; timestamp: string; level: string; file: string; line: number; content: string; tags: any[]; real_path?: string;
-}
+interface LogEntry { id: number; timestamp: string; level: string; file: string; line: number; content: string; tags: any[]; real_path?: string; }
 interface KeywordPattern { regex: string; comment: string; }
 interface KeywordGroup { id: string; name: string; color: ColorKey; patterns: KeywordPattern[]; enabled: boolean; }
 interface Workspace { id: string; name: string; path: string; status: 'READY' | 'SCANNING' | 'OFFLINE' | 'PROCESSING'; size: string; files: number; }
-interface Task { id: number; type: string; target: string; progress: number; status: 'RUNNING' | 'COMPLETED' | 'FAILED' | 'STOPPED'; }
+// Enhanced Task Interface
+interface Task { 
+    id: string; 
+    type: string; 
+    target: string; 
+    progress: number; 
+    message: string; // Real-time message from backend
+    status: 'RUNNING' | 'COMPLETED' | 'FAILED' | 'STOPPED'; 
+}
 interface Toast { id: number; type: ToastType; message: string; }
+interface TaskUpdateEvent { task_id: string; status: string; message: string; progress: number; }
 
-// --- COLOR SYSTEM ---
+// Color System
 const COLOR_STYLES: Record<ColorKey, any> = {
   blue: { dot: "bg-blue-500", badge: "bg-blue-500/15 text-blue-400 border-blue-500/20", border: "border-blue-500", text: "text-blue-400", activeBtn: "bg-blue-500 text-white border-blue-400 shadow-[0_0_10px_rgba(59,130,246,0.4)]", hoverBorder: "hover:border-blue-500/50", highlight: "bg-blue-500/20 text-blue-300 border-blue-500/30" },
   green: { dot: "bg-emerald-500", badge: "bg-emerald-500/15 text-emerald-400 border-emerald-500/20", border: "border-emerald-500", text: "text-emerald-400", activeBtn: "bg-emerald-500 text-white border-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.4)]", hoverBorder: "hover:border-emerald-500/50", highlight: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30" },
@@ -39,7 +45,7 @@ const COLOR_STYLES: Record<ColorKey, any> = {
   purple: { dot: "bg-purple-500", badge: "bg-purple-500/15 text-purple-400 border-purple-500/20", border: "border-purple-500", text: "text-purple-400", activeBtn: "bg-purple-500 text-white border-purple-400 shadow-[0_0_10px_rgba(168,85,247,0.4)]", hoverBorder: "hover:border-purple-500/50", highlight: "bg-purple-500/20 text-purple-300 border-purple-500/30" }
 };
 
-// --- UI Components ---
+// UI Components
 const Button = ({ children, variant = 'primary', className, icon: Icon, onClick, ...props }: any) => {
   const variants = {
     primary: "bg-primary hover:bg-primary-hover text-white shadow-sm active:scale-95",
@@ -52,34 +58,27 @@ const Button = ({ children, variant = 'primary', className, icon: Icon, onClick,
   return <button type="button" className={cn("h-9 px-4 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shrink-0 select-none cursor-pointer", variants[variant as keyof typeof variants], className)} onClick={(e) => { e.stopPropagation(); onClick && onClick(e); }} {...props}>{Icon && <Icon size={16} />}{children}</button>;
 };
 const Input = ({ className, ref, ...props }: any) => (<input ref={ref} className={cn("h-9 w-full bg-bg-main border border-border-base rounded-md px-3 text-sm text-text-main placeholder:text-text-dim focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50 transition-all", className)} {...props} />);
-const Card = ({ children, className }: any) => (<div className={cn("bg-bg-card border border-border-base rounded-lg overflow-hidden", className)}>{children}</div>);
+const Card = ({ children, className, ...props }: any) => (<div className={cn("bg-bg-card border border-border-base rounded-lg overflow-hidden", className)} {...props}>{children}</div>);
 const ToastContainer = ({ toasts, removeToast }: { toasts: Toast[], removeToast: (id: number) => void }) => (<div className="fixed bottom-6 right-6 z-[100] flex flex-col gap-3 pointer-events-none">{toasts.map(toast => (<div key={toast.id} className={cn("pointer-events-auto min-w-[300px] p-4 rounded-lg shadow-2xl border flex items-center gap-3 animate-in slide-in-from-right-full duration-300", toast.type === 'success' ? "bg-bg-card border-emerald-500/30 text-emerald-400" : toast.type === 'error' ? "bg-bg-card border-red-500/30 text-red-400" : "bg-bg-card border-blue-500/30 text-blue-400")}>{toast.type === 'success' ? <CheckCircle2 size={20}/> : toast.type === 'error' ? <AlertCircle size={20}/> : <Info size={20}/>}<span className="text-sm font-medium text-text-main">{toast.message}</span><button onClick={() => removeToast(toast.id)} className="ml-auto text-text-dim hover:text-text-main"><X size={16}/></button></div>))}</div>);
 
-// --- Renderers & Modals (Same as before) ---
+// Components: KeywordModal, HybridLogRenderer, FilterPalette (Assuming they are defined as in previous steps)
+// --- Keyword Modal ---
 const KeywordModal = ({ isOpen, onClose, onSave, initialData }: any) => {
   if (!isOpen) return null;
   const [name, setName] = useState(initialData?.name || "");
   const [color, setColor] = useState<ColorKey>(initialData?.color || "blue");
   const [patterns, setPatterns] = useState<KeywordPattern[]>(initialData?.patterns || [{ regex: "", comment: "" }]);
-
-  useEffect(() => {
-    if (isOpen) { setName(initialData?.name || ""); setColor(initialData?.color || "blue"); setPatterns(initialData?.patterns || [{ regex: "", comment: "" }]); }
-  }, [isOpen, initialData]);
-
+  useEffect(() => { if (isOpen) { setName(initialData?.name || ""); setColor(initialData?.color || "blue"); setPatterns(initialData?.patterns || [{ regex: "", comment: "" }]); } }, [isOpen, initialData]);
   const handleSave = () => {
     const validPatterns = patterns.filter(p => p.regex.trim() !== "");
     if (!name || validPatterns.length === 0) return;
     onSave({ id: initialData?.id || Date.now().toString(), name, color, patterns: validPatterns, enabled: true });
     onClose();
   };
-
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
       <div className="w-[600px] bg-bg-card border border-border-base rounded-lg shadow-2xl flex flex-col max-h-[85vh] animate-in fade-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
-        <div className="px-6 py-4 border-b border-border-base flex justify-between items-center bg-bg-sidebar">
-          <h2 className="text-lg font-bold text-text-main">{initialData ? 'Edit Keyword Group' : 'New Keyword Group'}</h2>
-          <Button variant="icon" icon={X} onClick={onClose} />
-        </div>
+        <div className="px-6 py-4 border-b border-border-base flex justify-between items-center bg-bg-sidebar"><h2 className="text-lg font-bold text-text-main">{initialData ? 'Edit Keyword Group' : 'New Keyword Group'}</h2><Button variant="icon" icon={X} onClick={onClose} /></div>
         <div className="p-6 overflow-y-auto flex-1 space-y-6">
           <div className="grid grid-cols-2 gap-4">
             <div><label className="text-xs text-text-dim uppercase font-bold mb-1.5 block">Group Name</label><Input value={name} onChange={(e:any) => setName(e.target.value)} placeholder="Name" /></div>
@@ -95,76 +94,25 @@ const KeywordModal = ({ isOpen, onClose, onSave, initialData }: any) => {
     </div>
   );
 };
-
-const HybridLogRenderer = ({ text, query, keywordGroups }: { text: string, query: string, keywordGroups: KeywordGroup[] }) => {
+const HybridLogRenderer = ({ text, query, keywordGroups }: any) => {
   const { patternMap, regexPattern } = useMemo(() => {
-    const map = new Map<string, { color: ColorKey, comment: string }>();
-    const patterns = new Set<string>();
-    keywordGroups.filter(g => g.enabled).forEach(group => {
-      group.patterns.forEach(p => { if (p.regex?.trim()) { map.set(p.regex.toLowerCase(), { color: group.color, comment: p.comment }); patterns.add(p.regex); } });
-    });
-    if (query) {
-        query.split('|').map(t => t.trim()).filter(t => t.length > 0).forEach((term, index) => {
-            if (!map.has(term.toLowerCase())) { map.set(term.toLowerCase(), { color: ['blue', 'purple', 'green', 'orange'][index % 4] as ColorKey, comment: "" }); }
-            patterns.add(term);
-        });
-    }
-    const sorted = Array.from(patterns).sort((a, b) => b.length - a.length);
-    return { regexPattern: sorted.length > 0 ? new RegExp(`(${sorted.map(p => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi') : null, patternMap: map };
+    const map = new Map(); const patterns = new Set();
+    keywordGroups.filter((g:any) => g.enabled).forEach((group:any) => { group.patterns.forEach((p:any) => { if (p.regex?.trim()) { map.set(p.regex.toLowerCase(), { color: group.color, comment: p.comment }); patterns.add(p.regex); } }); });
+    if (query) { query.split('|').map((t:string) => t.trim()).filter((t:string) => t.length > 0).forEach((term:string, index:number) => { if (!map.has(term.toLowerCase())) { map.set(term.toLowerCase(), { color: ['blue', 'purple', 'green', 'orange'][index % 4], comment: "" }); } patterns.add(term); }); }
+    const sorted = Array.from(patterns).sort((a:any, b:any) => b.length - a.length);
+    return { regexPattern: sorted.length > 0 ? new RegExp(`(${sorted.map((p:any) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi') : null, patternMap: map };
   }, [keywordGroups, query]);
-
   if (!regexPattern) return <span>{text}</span>;
-  return (
-    <span>
-      {text.split(regexPattern).map((part, i) => {
-        const info = patternMap.get(part.toLowerCase());
-        if (info) {
-          const style = COLOR_STYLES[info.color]?.highlight || COLOR_STYLES['blue'].highlight;
-          return <span key={i} className="inline-flex items-baseline mx-[1px]"><span className={cn("rounded-[2px] px-1 border font-bold break-all", style)}>{part}</span>{info.comment && <span className={cn("ml-1 px-1.5 rounded-[2px] text-[10px] font-normal border select-none whitespace-nowrap transform -translate-y-[1px]", style.replace("bg-", "bg-opacity-10 bg-"))}>{info.comment}</span>}</span>;
-        }
-        return <span key={i}>{part}</span>;
-      })}
-    </span>
-  );
+  return <span>{text.split(regexPattern).map((part:string, i:number) => { const info = patternMap.get(part.toLowerCase()); if (info) { const style = COLOR_STYLES[info.color as ColorKey]?.highlight || COLOR_STYLES['blue'].highlight; return <span key={i} className="inline-flex items-baseline mx-[1px]"><span className={cn("rounded-[2px] px-1 border font-bold break-all", style)}>{part}</span>{info.comment && <span className={cn("ml-1 px-1.5 rounded-[2px] text-[10px] font-normal border select-none whitespace-nowrap transform -translate-y-[1px]", style.replace("bg-", "bg-opacity-10 bg-"))}>{info.comment}</span>}</span>; } return <span key={i}>{part}</span>; })}</span>;
 };
-
 const FilterPalette = ({ isOpen, onClose, groups, currentQuery, onToggleRule }: any) => {
     if (!isOpen) return null;
     const isPatternActive = (regex: string) => currentQuery.split('|').map((t:string) => t.trim().toLowerCase()).includes(regex.toLowerCase());
     const colorOrder: ColorKey[] = ['red', 'orange', 'blue', 'purple', 'green'];
-    return (
-        <>
-            <div className="fixed inset-0 z-[45] bg-transparent" onClick={onClose}></div>
-            <div className="absolute top-full right-0 mt-2 w-[600px] max-h-[60vh] overflow-y-auto bg-[#18181b] border border-border-base rounded-lg shadow-2xl z-50 p-4 grid gap-6 animate-in fade-in zoom-in-95 duration-100 origin-top-right ring-1 ring-white/10">
-                <div className="flex justify-between items-center pb-2 border-b border-white/10"><h3 className="text-sm font-bold text-text-main flex items-center gap-2"><Filter size={14} className="text-primary"/> Filter Command Center</h3></div>
-                {colorOrder.map(color => {
-                    const colorGroups = groups.filter((g: KeywordGroup) => g.color === color);
-                    if (colorGroups.length === 0) return null;
-                    return (
-                        <div key={color}>
-                            <div className={cn("text-[10px] font-bold uppercase mb-2 flex items-center gap-2", COLOR_STYLES[color].text)}><div className={cn("w-2 h-2 rounded-full", COLOR_STYLES[color].dot)}></div>{color} Priority Level</div>
-                            <div className="grid grid-cols-2 gap-3">
-                                {colorGroups.map((group: KeywordGroup) => (
-                                    <div key={group.id} className="bg-bg-card/50 border border-white/5 rounded p-2">
-                                        <div className="text-xs font-semibold text-text-muted mb-2 px-1">{group.name}</div>
-                                        <div className="flex flex-wrap gap-2">
-                                            {group.patterns.map((p, idx) => {
-                                                const active = isPatternActive(p.regex);
-                                                return <button key={idx} onClick={() => onToggleRule(p.regex)} className={cn("text-[11px] px-2 py-1 rounded border transition-all duration-150 flex items-center gap-1.5 cursor-pointer", active ? COLOR_STYLES[color].activeBtn : `bg-bg-main text-text-dim border-border-base hover:bg-bg-hover ${COLOR_STYLES[color].hoverBorder}`)}>{active && <CheckCircle2 size={10} />}<span className="font-mono">{p.regex}</span></button>
-                                            })}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )
-                })}
-            </div>
-        </>
-    );
+    return (<><div className="fixed inset-0 z-[45] bg-transparent" onClick={onClose}></div><div className="absolute top-full right-0 mt-2 w-[600px] max-h-[60vh] overflow-y-auto bg-[#18181b] border border-border-base rounded-lg shadow-2xl z-50 p-4 grid gap-6 animate-in fade-in zoom-in-95 duration-100 origin-top-right ring-1 ring-white/10"><div className="flex justify-between items-center pb-2 border-b border-white/10"><h3 className="text-sm font-bold text-text-main flex items-center gap-2"><Filter size={14} className="text-primary"/> Filter Command Center</h3></div>{colorOrder.map(color => { const colorGroups = groups.filter((g: KeywordGroup) => g.color === color); if (colorGroups.length === 0) return null; return (<div key={color}><div className={cn("text-[10px] font-bold uppercase mb-2 flex items-center gap-2", COLOR_STYLES[color].text)}><div className={cn("w-2 h-2 rounded-full", COLOR_STYLES[color].dot)}></div>{color} Priority Level</div><div className="grid grid-cols-2 gap-3">{colorGroups.map((group: KeywordGroup) => (<div key={group.id} className="bg-bg-card/50 border border-white/5 rounded p-2"><div className="text-xs font-semibold text-text-muted mb-2 px-1">{group.name}</div><div className="flex flex-wrap gap-2">{group.patterns.map((p, idx) => { const active = isPatternActive(p.regex); return <button key={idx} onClick={() => onToggleRule(p.regex)} className={cn("text-[11px] px-2 py-1 rounded border transition-all duration-150 flex items-center gap-1.5 cursor-pointer", active ? COLOR_STYLES[color].activeBtn : `bg-bg-main text-text-dim border-border-base hover:bg-bg-hover ${COLOR_STYLES[color].hoverBorder}`)}>{active && <CheckCircle2 size={10} />}<span className="font-mono">{p.regex}</span></button> })}</div></div>))}</div></div>) })}</div></>);
 };
 
-// --- Pages ---
+// --- Search Page ---
 const SearchPage = ({ keywordGroups, addToast, searchInputRef, activeWorkspace }: any) => {
   const [query, setQuery] = useState("");
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -271,24 +219,108 @@ const KeywordsPage = ({ keywordGroups, setKeywordGroups, addToast }: any) => {
   );
 };
 
-const WorkspacesPage = ({ workspaces, setWorkspaces, addToast, setActiveWorkspaceId, setImportStatus, activeWorkspaceId }: any) => {
+const WorkspacesPage = ({ workspaces, setWorkspaces, addToast, setActiveWorkspaceId, setImportStatus, activeWorkspaceId, setTasks }: any) => {
   const handleDelete = (id: string) => { setWorkspaces((prev: Workspace[]) => prev.filter(w => w.id !== id)); addToast('info', 'Deleted'); };
-  const handleImport = async () => {
+  
+  const handleImportFile = async () => {
+    console.log('[FRONTEND] handleImportFile called');
     try {
-        const selected = await open({ directory: true, multiple: false });
+        // 选择单个文件或压缩包
+        const selected = await open({ 
+          directory: false,
+          multiple: false,
+          filters: [{
+            name: 'Log Files & Archives',
+            extensions: ['log', 'txt', 'gz', 'zip', 'tar', 'tgz', 'rar', '*']
+          }]
+        });
+        console.log('[FRONTEND] Selected file:', selected);
         if (selected) {
-            const pathStr = selected as string;
-            const newWs: Workspace = { id: Date.now().toString(), name: pathStr.split(/[/\\]/).pop() || "New", path: pathStr, status: 'PROCESSING', size: '-', files: 0 };
-            setWorkspaces((prev: Workspace[]) => [...prev, newWs]);
-            setActiveWorkspaceId(newWs.id);
-            invoke("import_folder", { path: pathStr }).then(() => { addToast('info', 'Importing...'); setImportStatus("Extracting..."); }).catch(e => { addToast('error', `${e}`); });
+            await importPath(selected as string);
         }
-    } catch (e) { addToast('error', `${e}`); }
+    } catch (e) { 
+      console.error('[FRONTEND] handleImportFile error:', e);
+      addToast('error', `${e}`); 
+    }
+  };
+  
+  const handleImportFolder = async () => {
+    console.log('[FRONTEND] handleImportFolder called');
+    try {
+        // 选择文件夹
+        const selected = await open({ 
+          directory: true,
+          multiple: false
+        });
+        console.log('[FRONTEND] Selected folder:', selected);
+        if (selected) {
+            await importPath(selected as string);
+        }
+    } catch (e) { 
+      console.error('[FRONTEND] handleImportFolder error:', e);
+      addToast('error', `${e}`); 
+    }
+  };
+  
+  const importPath = async (pathStr: string) => {
+    console.log('[FRONTEND] importPath called with:', pathStr);
+    try {
+      const fileName = pathStr.split(/[/\\]/).pop() || "New";
+      const newWs: Workspace = { 
+        id: Date.now().toString(), 
+        name: fileName, 
+        path: pathStr, 
+        status: 'PROCESSING', 
+        size: '-', 
+        files: 0 
+      };
+      console.log('[FRONTEND] Creating workspace:', newWs);
+      setWorkspaces((prev: Workspace[]) => [...prev, newWs]);
+      setActiveWorkspaceId(newWs.id);
+      
+      console.log('[FRONTEND] Invoking import_folder with:', { path: pathStr, workspaceId: newWs.id });
+      const taskId = await invoke<string>("import_folder", { 
+        path: pathStr, 
+        workspaceId: newWs.id
+      });
+      console.log('[FRONTEND] import_folder returned taskId:', taskId);
+      
+      // 注意：任务会通过 task-update 事件自动添加，这里仅作为后备
+      setTasks((prev: Task[]) => {
+        // 如果已经通过事件添加，则不重复
+        if (prev.find(t => t.id === taskId)) {
+          console.log('[FRONTEND] Task already exists, skipping');
+          return prev;
+        }
+        console.log('[FRONTEND] Adding task to list:', taskId);
+        return [...prev, { 
+          id: taskId, 
+          type: 'Import', 
+          target: pathStr, 
+          progress: 0, 
+          status: 'RUNNING', 
+          message: 'Initializing...' 
+        }];
+      });
+      
+      addToast('info', 'Import started');
+    } catch (e) {
+      console.error('[FRONTEND] importPath error:', e);
+      addToast('error', `Failed to start import: ${e}`);
+      // 删除刚创建的工作区
+      setWorkspaces((prev: Workspace[]) => prev.slice(0, -1));
+    }
   };
 
   return (
     <div className="p-8 max-w-6xl mx-auto h-full overflow-auto">
-      <div className="flex justify-between items-center mb-6"><h1 className="text-2xl font-bold text-text-main">Workspaces</h1><Button icon={Plus} onClick={handleImport}>Import Folder</Button></div>
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold text-text-main">Workspaces</h1>
+        <div className="flex gap-2">
+          <Button icon={FileText} onClick={handleImportFile}>Import File</Button>
+          <Button icon={Plus} onClick={handleImportFolder}>Import Folder</Button>
+        </div>
+      </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
          {workspaces.map((ws: Workspace) => (
            <Card key={ws.id} className={cn("h-full flex flex-col hover:border-primary/50 transition-colors group cursor-pointer", activeWorkspaceId === ws.id ? "border-primary ring-1 ring-primary" : "border-border-base")} onClick={() => setActiveWorkspaceId(ws.id)}>
@@ -306,37 +338,33 @@ const WorkspacesPage = ({ workspaces, setWorkspaces, addToast, setActiveWorkspac
   );
 };
 
-// FIX: TasksPage 必须接受 addToast 参数
+// --- Updated Tasks Page (Real Events) ---
 const TasksPage = ({ tasks, setTasks, addToast }: { tasks: Task[], setTasks: any, addToast: any }) => {
-  useEffect(() => {
-    const interval = setInterval(() => {
-        setTasks((prev: Task[]) => prev.map(t => {
-            if (t.status === 'RUNNING') { const newProgress = Math.min(100, t.progress + Math.random() * 5); return { ...t, progress: newProgress, status: newProgress >= 100 ? 'COMPLETED' : 'RUNNING' }; }
-            return t;
-        }));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, []);
-  const handleToggle = (id: number) => setTasks((prev: Task[]) => prev.map(t => t.id === id ? { ...t, status: t.status === 'RUNNING' ? 'STOPPED' : 'RUNNING' } : t));
-  // FIX: 确保使用 addToast 且有空值保护
-  const handleDelete = (id: number) => { 
-      setTasks((prev: Task[]) => prev.filter(t => t.id !== id)); 
-      if(addToast) addToast('info', 'Deleted'); 
-  };
+  const handleDelete = (id: string) => { setTasks((prev: Task[]) => prev.filter(t => t.id !== id)); addToast('info', 'Task removed'); };
 
   return (
     <div className="p-8 max-w-4xl mx-auto h-full overflow-auto">
       <h1 className="text-2xl font-bold mb-6 text-text-main">Background Tasks</h1>
       <div className="space-y-4">
+        {tasks.length === 0 && <div className="text-text-dim text-center py-10">No active tasks</div>}
         {tasks.map((t: Task) => (
-          <div key={t.id} className="p-4 bg-bg-card border border-border-base rounded-lg flex items-center gap-4">
-            <div className={cn("p-2 rounded-full bg-bg-hover", t.status === 'RUNNING' ? "text-blue-500" : t.status === 'FAILED' ? "text-red-500" : "text-emerald-500")}>{t.status === 'RUNNING' ? <RefreshCw size={20} className="animate-spin"/> : t.status === 'FAILED' ? <AlertCircle size={20}/> : t.status === 'STOPPED' ? <PauseCircle size={20}/> : <CheckCircle2 size={20}/>}</div>
-            <div className="flex-1 min-w-0">
-               <div className="flex justify-between mb-1"><h3 className="font-semibold text-sm text-text-main truncate">{t.type}: {t.target}</h3><span className="text-xs font-mono text-text-dim">ID: {t.id}</span></div>
-               <div className="w-full bg-bg-main h-2 rounded-full overflow-hidden"><div className={cn("h-full transition-all duration-500", t.status==='FAILED'?'bg-red-500':t.status==='COMPLETED'?'bg-emerald-500':t.status==='STOPPED'?'bg-yellow-500':'bg-blue-500')} style={{width: `${t.progress}%`}}></div></div>
-               <div className="flex justify-between mt-1 text-xs text-text-dim"><span>{t.status}</span><span>{Math.floor(t.progress)}%</span></div>
+          <div key={t.id} className="p-4 bg-bg-card border border-border-base rounded-lg flex items-center gap-4 animate-in fade-in slide-in-from-bottom-2">
+            <div className={cn("p-2 rounded-full bg-bg-hover", t.status === 'RUNNING' ? "text-blue-500" : t.status === 'FAILED' ? "text-red-500" : "text-emerald-500")}>
+              {t.status === 'RUNNING' ? <RefreshCw size={20} className="animate-spin"/> : t.status === 'FAILED' ? <AlertCircle size={20}/> : <CheckCircle2 size={20}/>}
             </div>
-            <div className="flex gap-2">{(t.status === 'RUNNING' || t.status === 'STOPPED') && <Button variant="secondary" className="h-8 w-8 p-0" onClick={() => handleToggle(t.id)}>{t.status === 'RUNNING' ? <StopCircle size={16}/> : <Play size={16}/>}</Button>}<Button variant="ghost" className="h-8 w-8 p-0 text-red-400 hover:text-red-300" onClick={() => handleDelete(t.id)}><Trash2 size={16}/></Button></div>
+            <div className="flex-1 min-w-0">
+               <div className="flex justify-between mb-1"><h3 className="font-semibold text-sm text-text-main truncate">{t.type}: {t.target}</h3><span className="text-xs font-mono text-text-dim font-bold">{t.status}</span></div>
+               <div className="w-full bg-bg-main h-2 rounded-full overflow-hidden relative">
+                  <div className={cn("h-full transition-all duration-500", t.status==='FAILED'?'bg-red-500':t.status==='COMPLETED'?'bg-emerald-500':'bg-blue-500')} style={{width: `${t.progress || 5}%`}}></div>
+               </div>
+               <div className="flex justify-between mt-1 text-xs text-text-dim">
+                  <span className="truncate max-w-[300px]">{t.message}</span>
+                  <span>{t.progress}%</span>
+               </div>
+            </div>
+            <div className="flex gap-2">
+               <Button variant="ghost" className="h-8 w-8 p-0 text-red-400 hover:text-red-300" onClick={() => handleDelete(t.id)}><Trash2 size={16}/></Button>
+            </div>
           </div>
         ))}
       </div>
@@ -352,17 +380,70 @@ export default function App() {
   
   const [keywordGroups, setKeywordGroups] = useState<KeywordGroup[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([ { id: 1024, type: "Index Scan", target: "US East", progress: 45, status: "RUNNING" } ]);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
   const [importStatus, setImportStatus] = useState("");
 
   useEffect(() => { invoke<any>("load_config").then(c => { if(c.keyword_groups) setKeywordGroups(c.keyword_groups); if(c.workspaces) setWorkspaces(c.workspaces); }); }, []);
   useEffect(() => { if(keywordGroups.length>0 || workspaces.length>0) invoke("save_config", { config: { keyword_groups: keywordGroups, workspaces } }); }, [keywordGroups, workspaces]);
 
+  // 新增：工作区切换时自动加载索引
   useEffect(() => {
-      const u1 = listen<string>('task-progress', e => setImportStatus(e.payload));
-      const u2 = listen('import-complete', () => { setImportStatus(""); setWorkspaces((prev: Workspace[]) => prev.map(w => w.status === 'PROCESSING' ? { ...w, status: 'READY' } : w)); });
-      const u3 = listen('import-error', (e) => { setImportStatus(""); addToast('error', `Import error: ${e.payload}`); });
+    if (activeWorkspaceId) {
+      const workspace = workspaces.find(w => w.id === activeWorkspaceId);
+      if (workspace && workspace.status === 'READY') {
+        invoke('load_workspace', { workspaceId: activeWorkspaceId })  // 修复：使用 camelCase
+          .then(() => {
+            addToast('success', `Loaded workspace: ${workspace.name}`);
+          })
+          .catch((e) => {
+            addToast('error', `Failed to load index: ${e}`);
+          });
+      }
+    }
+  }, [activeWorkspaceId]);
+
+  useEffect(() => {
+      // Listen for task updates from Rust
+      const u1 = listen<TaskUpdateEvent>('task-update', e => {
+          console.log('[FRONTEND] task-update event received:', e.payload);
+          const update = e.payload;
+          setTasks((prev: Task[]) => {
+            const existingTask = prev.find(t => t.id === update.task_id);
+            if (existingTask) {
+              console.log('[FRONTEND] Updating existing task:', update.task_id);
+              // 更新已存在的任务
+              return prev.map(t => t.id === update.task_id ? { ...t, status: update.status as any, message: update.message, progress: update.progress } : t);
+            } else {
+              console.log('[FRONTEND] Creating new task from event:', update.task_id);
+              // 创建新任务（如果前端没有创建）
+              return [...prev, {
+                id: update.task_id,
+                type: 'Import',
+                target: 'Unknown',
+                progress: update.progress,
+                status: update.status as any,
+                message: update.message
+              }];
+            }
+          });
+          // Optional: show global spinner text
+          if (update.status === 'RUNNING') setImportStatus(update.message);
+      });
+      
+      const u2 = listen('import-complete', (e: any) => { 
+          setImportStatus(""); 
+          setWorkspaces((prev: Workspace[]) => prev.map(w => w.status === 'PROCESSING' ? { ...w, status: 'READY' } : w));
+          // 更新对应的任务状态
+          const taskId = e.payload;
+          if (taskId) {
+            setTasks((prev: Task[]) => prev.map(t => t.id === taskId ? { ...t, status: 'COMPLETED', progress: 100, message: 'Done' } : t));
+          }
+          addToast('success', 'Process complete'); 
+      });
+      
+      const u3 = listen('import-error', (e) => { setImportStatus(""); addToast('error', `Error: ${e.payload}`); });
+      
       return () => { u1.then(f=>f()); u2.then(f=>f()); u3.then(f=>f()); }
   }, []);
 
@@ -387,8 +468,8 @@ export default function App() {
         <div className="flex-1 overflow-hidden relative">
            {page === 'search' && <SearchPage keywordGroups={keywordGroups} addToast={addToast} searchInputRef={searchInputRef} activeWorkspace={activeWorkspace} />}
            {page === 'keywords' && <KeywordsPage keywordGroups={keywordGroups} setKeywordGroups={setKeywordGroups} addToast={addToast} />}
-           {page === 'workspaces' && <WorkspacesPage workspaces={workspaces} setWorkspaces={setWorkspaces} addToast={addToast} setActiveWorkspaceId={setActiveWorkspaceId} setImportStatus={setImportStatus} activeWorkspaceId={activeWorkspaceId} />}
-           {/* FIX: 显式传递 addToast */}
+           {page === 'workspaces' && <WorkspacesPage workspaces={workspaces} setWorkspaces={setWorkspaces} addToast={addToast} setActiveWorkspaceId={setActiveWorkspaceId} setImportStatus={setImportStatus} activeWorkspaceId={activeWorkspaceId} setTasks={setTasks} />}
+           {/* FIX: Pass addToast correctly */}
            {page === 'tasks' && <TasksPage tasks={tasks} setTasks={setTasks} addToast={addToast} />}
            {page === 'settings' && <div className="p-10 text-center text-text-dim">Settings</div>}
         </div>
