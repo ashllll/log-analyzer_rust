@@ -33,22 +33,74 @@ const logger = {
 type Page = 'search' | 'keywords' | 'workspaces' | 'tasks' | 'settings';
 type ColorKey = 'blue' | 'green' | 'red' | 'orange' | 'purple';
 type ToastType = 'success' | 'error' | 'info';
+type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'active' | 'icon';
+type LucideIcon = React.ComponentType<{ size?: number; className?: string }>;
 
 interface LogEntry { id: number; timestamp: string; level: string; file: string; line: number; content: string; tags: any[]; real_path?: string; }
 interface KeywordPattern { regex: string; comment: string; }
 interface KeywordGroup { id: string; name: string; color: ColorKey; patterns: KeywordPattern[]; enabled: boolean; }
 interface Workspace { id: string; name: string; path: string; status: 'READY' | 'SCANNING' | 'OFFLINE' | 'PROCESSING'; size: string; files: number; }
-// Enhanced Task Interface
 interface Task { 
     id: string; 
     type: string; 
     target: string; 
     progress: number; 
-    message: string; // Real-time message from backend
+    message: string;
     status: 'RUNNING' | 'COMPLETED' | 'FAILED' | 'STOPPED'; 
 }
 interface Toast { id: number; type: ToastType; message: string; }
 interface TaskUpdateEvent { task_id: string; task_type: string; target: string; status: string; message: string; progress: number; }
+
+// Component Props Types
+interface NavItemProps { icon: LucideIcon; label: string; active: boolean; onClick: () => void; }
+interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> { 
+    children?: React.ReactNode; 
+    variant?: ButtonVariant; 
+    icon?: LucideIcon;
+}
+interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
+    ref?: React.Ref<HTMLInputElement | null>;
+}
+interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
+    children: React.ReactNode;
+}
+interface KeywordModalProps {
+    isOpen: boolean;
+    onClose: () => void;
+    onSave: (group: KeywordGroup) => void;
+    initialData?: KeywordGroup | null;
+}
+interface HybridLogRendererProps {
+    text: string;
+    query: string;
+    keywordGroups: KeywordGroup[];
+}
+interface FilterPaletteProps {
+    isOpen: boolean;
+    onClose: () => void;
+    groups: KeywordGroup[];
+    currentQuery: string;
+    onToggleRule: (regex: string) => void;
+}
+interface SearchPageProps {
+    keywordGroups: KeywordGroup[];
+    addToast: (type: ToastType, message: string) => void;
+    searchInputRef: React.RefObject<HTMLInputElement | null>;
+    activeWorkspace: Workspace | null;
+}
+interface KeywordsPageProps {
+    keywordGroups: KeywordGroup[];
+    setKeywordGroups: React.Dispatch<React.SetStateAction<KeywordGroup[]>>;
+    addToast: (type: ToastType, message: string) => void;
+}
+interface WorkspacesPageProps {
+    workspaces: Workspace[];
+    setWorkspaces: React.Dispatch<React.SetStateAction<Workspace[]>>;
+    addToast: (type: ToastType, message: string) => void;
+    setActiveWorkspaceId: (id: string | null) => void;
+    activeWorkspaceId: string | null;
+    setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
+}
 
 // Color System
 const COLOR_STYLES: Record<ColorKey, any> = {
@@ -60,7 +112,7 @@ const COLOR_STYLES: Record<ColorKey, any> = {
 };
 
 // UI Components
-const NavItem = ({ icon: Icon, label, active, onClick }: { icon: any, label: string, active: boolean, onClick: () => void }) => (
+const NavItem = ({ icon: Icon, label, active, onClick }: NavItemProps) => (
   <button 
     onClick={onClick}
     className={cn(
@@ -72,7 +124,7 @@ const NavItem = ({ icon: Icon, label, active, onClick }: { icon: any, label: str
   </button>
 );
 
-const Button = ({ children, variant = 'primary', className, icon: Icon, onClick, ...props }: any) => {
+const Button = ({ children, variant = 'primary', className, icon: Icon, onClick, ...props }: ButtonProps) => {
   const variants = {
     primary: "bg-primary hover:bg-primary-hover text-white shadow-sm active:scale-95",
     secondary: "bg-bg-card hover:bg-bg-hover text-text-main border border-border-base active:scale-95",
@@ -83,14 +135,13 @@ const Button = ({ children, variant = 'primary', className, icon: Icon, onClick,
   };
   return <button type="button" className={cn("h-9 px-4 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shrink-0 select-none cursor-pointer", variants[variant as keyof typeof variants], className)} onClick={(e) => { e.stopPropagation(); onClick && onClick(e); }} {...props}>{Icon && <Icon size={16} />}{children}</button>;
 };
-const Input = ({ className, ref, ...props }: any) => (<input ref={ref} className={cn("h-9 w-full bg-bg-main border border-border-base rounded-md px-3 text-sm text-text-main placeholder:text-text-dim focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50 transition-all", className)} {...props} />);
-const Card = ({ children, className, ...props }: any) => (<div className={cn("bg-bg-card border border-border-base rounded-lg overflow-hidden", className)} {...props}>{children}</div>);
+const Input = ({ className, ref, ...props }: InputProps) => (<input ref={ref} className={cn("h-9 w-full bg-bg-main border border-border-base rounded-md px-3 text-sm text-text-main placeholder:text-text-dim focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50 transition-all", className)} {...props} />);
+const Card = ({ children, className, ...props }: CardProps) => (<div className={cn("bg-bg-card border border-border-base rounded-lg overflow-hidden", className)} {...props}>{children}</div>);
 const ToastContainer = ({ toasts, removeToast }: { toasts: Toast[], removeToast: (id: number) => void }) => (<div className="fixed bottom-6 right-6 z-[100] flex flex-col gap-3 pointer-events-none">{toasts.map(toast => (<div key={toast.id} className={cn("pointer-events-auto min-w-[300px] p-4 rounded-lg shadow-2xl border flex items-center gap-3 animate-in slide-in-from-right-full duration-300", toast.type === 'success' ? "bg-bg-card border-emerald-500/30 text-emerald-400" : toast.type === 'error' ? "bg-bg-card border-red-500/30 text-red-400" : "bg-bg-card border-blue-500/30 text-blue-400")}>{toast.type === 'success' ? <CheckCircle2 size={20}/> : toast.type === 'error' ? <AlertCircle size={20}/> : <Info size={20}/>}<span className="text-sm font-medium text-text-main">{toast.message}</span><button onClick={() => removeToast(toast.id)} className="ml-auto text-text-dim hover:text-text-main"><X size={16}/></button></div>))}</div>);
 
 // Components: KeywordModal, HybridLogRenderer, FilterPalette (Assuming they are defined as in previous steps)
 // --- Keyword Modal ---
-const KeywordModal = ({ isOpen, onClose, onSave, initialData }: any) => {
-  if (!isOpen) return null;
+const KeywordModal = ({ isOpen, onClose, onSave, initialData }: KeywordModalProps) => {
   const [name, setName] = useState(initialData?.name || "");
   const [color, setColor] = useState<ColorKey>(initialData?.color || "blue");
   const [patterns, setPatterns] = useState<KeywordPattern[]>(initialData?.patterns || [{ regex: "", comment: "" }]);
@@ -101,6 +152,7 @@ const KeywordModal = ({ isOpen, onClose, onSave, initialData }: any) => {
     onSave({ id: initialData?.id || Date.now().toString(), name, color, patterns: validPatterns, enabled: true });
     onClose();
   };
+  if (!isOpen) return null;
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
       <div className="w-[600px] bg-bg-card border border-border-base rounded-lg shadow-2xl flex flex-col max-h-[85vh] animate-in fade-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
@@ -111,7 +163,7 @@ const KeywordModal = ({ isOpen, onClose, onSave, initialData }: any) => {
             <div><label className="text-xs text-text-dim uppercase font-bold mb-1.5 block">Highlight Color</label><div className="flex gap-2 h-9 items-center">{(['blue', 'green', 'orange', 'red', 'purple'] as ColorKey[]).map((c) => (<button key={c} onClick={() => setColor(c)} className={cn("w-6 h-6 rounded-full border-2 transition-all cursor-pointer", COLOR_STYLES[c].dot, color === c ? "border-white scale-110 shadow-lg" : "border-transparent opacity-40 hover:opacity-100")} />))}</div></div>
           </div>
           <div>
-            <div className="flex justify-between items-center mb-2"><label className="text-xs text-text-dim uppercase font-bold">Patterns & Comments</label><Button variant="ghost" size="sm" className="h-6 text-xs" icon={Plus} onClick={() => setPatterns([...patterns, { regex: "", comment: "" }])}>Add</Button></div>
+            <div className="flex justify-between items-center mb-2"><label className="text-xs text-text-dim uppercase font-bold">Patterns & Comments</label><Button variant="ghost" className="h-6 text-xs" icon={Plus} onClick={() => setPatterns([...patterns, { regex: "", comment: "" }])}>Add</Button></div>
             <div className="space-y-2">{patterns.map((p, i) => (<div key={i} className="flex gap-2 items-center group"><div className="flex-1"><Input value={p.regex} onChange={(e:any) => { const n = [...patterns]; n[i].regex = e.target.value; setPatterns(n); }} placeholder="RegEx" className="font-mono text-xs"/></div><div className="flex-1"><Input value={p.comment} onChange={(e:any) => { const n = [...patterns]; n[i].comment = e.target.value; setPatterns(n); }} placeholder="Comment" className="text-xs"/></div><Button variant="icon" icon={Trash2} className="text-red-400 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => setPatterns(patterns.filter((_, idx) => idx !== i))} /></div>))}</div>
           </div>
         </div>
@@ -120,7 +172,7 @@ const KeywordModal = ({ isOpen, onClose, onSave, initialData }: any) => {
     </div>
   );
 };
-const HybridLogRenderer = ({ text, query, keywordGroups }: any) => {
+const HybridLogRenderer = ({ text, query, keywordGroups }: HybridLogRendererProps) => {
   const { patternMap, regexPattern } = useMemo(() => {
     const map = new Map(); const patterns = new Set();
     keywordGroups.filter((g:any) => g.enabled).forEach((group:any) => { group.patterns.forEach((p:any) => { if (p.regex?.trim()) { map.set(p.regex.toLowerCase(), { color: group.color, comment: p.comment }); patterns.add(p.regex); } }); });
@@ -131,7 +183,7 @@ const HybridLogRenderer = ({ text, query, keywordGroups }: any) => {
   if (!regexPattern) return <span>{text}</span>;
   return <span>{text.split(regexPattern).map((part:string, i:number) => { const info = patternMap.get(part.toLowerCase()); if (info) { const style = COLOR_STYLES[info.color as ColorKey]?.highlight || COLOR_STYLES['blue'].highlight; return <span key={i} className="inline-flex items-baseline mx-[1px]"><span className={cn("rounded-[2px] px-1 border font-bold break-all", style)}>{part}</span>{info.comment && <span className={cn("ml-1 px-1.5 rounded-[2px] text-[10px] font-normal border select-none whitespace-nowrap transform -translate-y-[1px]", style.replace("bg-", "bg-opacity-10 bg-"))}>{info.comment}</span>}</span>; } return <span key={i}>{part}</span>; })}</span>;
 };
-const FilterPalette = ({ isOpen, onClose, groups, currentQuery, onToggleRule }: any) => {
+const FilterPalette = ({ isOpen, onClose, groups, currentQuery, onToggleRule }: FilterPaletteProps) => {
     if (!isOpen) return null;
     const isPatternActive = (regex: string) => currentQuery.split('|').map((t:string) => t.trim().toLowerCase()).includes(regex.toLowerCase());
     const colorOrder: ColorKey[] = ['red', 'orange', 'blue', 'purple', 'green'];
@@ -139,7 +191,7 @@ const FilterPalette = ({ isOpen, onClose, groups, currentQuery, onToggleRule }: 
 };
 
 // --- Search Page ---
-const SearchPage = ({ keywordGroups, addToast, searchInputRef, activeWorkspace }: any) => {
+const SearchPage = ({ keywordGroups, addToast, searchInputRef, activeWorkspace }: SearchPageProps) => {
   const [query, setQuery] = useState("");
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -152,12 +204,12 @@ const SearchPage = ({ keywordGroups, addToast, searchInputRef, activeWorkspace }
     const unlistenComplete = listen('search-complete', (e) => { setIsSearching(false); addToast('success', `Found ${e.payload} logs.`); });
     const unlistenError = listen('search-error', (e) => { setIsSearching(false); addToast('error', `${e.payload}`); });
     return () => { unlistenResults.then(f => f()); unlistenComplete.then(f => f()); unlistenError.then(f => f()); }
-  }, []);
+  }, [addToast]);
 
   const handleSearch = async () => {
     if (!activeWorkspace) return addToast('error', 'Select a workspace first.');
     setLogs([]); setIsSearching(true);
-    try { await invoke("search_logs", { query, searchPath: activeWorkspace.path }); } catch(e) { setIsSearching(false); }
+    try { await invoke("search_logs", { query, searchPath: activeWorkspace.path }); } catch(_e) { setIsSearching(false); }
   };
 
   const toggleRuleInQuery = (ruleRegex: string) => {
@@ -167,7 +219,7 @@ const SearchPage = ({ keywordGroups, addToast, searchInputRef, activeWorkspace }
   };
 
   const copyToClipboard = (text: string) => { navigator.clipboard.writeText(text).then(() => addToast('success', 'Copied')); };
-  const tryFormatJSON = (content: string) => { try { const start = content.indexOf('{'); if (start === -1) return content; const jsonPart = content.substring(start); const obj = JSON.parse(jsonPart); return JSON.stringify(obj, null, 2); } catch (e) { return content; } };
+  const tryFormatJSON = (content: string) => { try { const start = content.indexOf('{'); if (start === -1) return content; const jsonPart = content.substring(start); const obj = JSON.parse(jsonPart); return JSON.stringify(obj, null, 2); } catch (_e) { return content; } };
   
   // 优化：动态高度估算
   const rowVirtualizer = useVirtualizer({ 
@@ -232,7 +284,7 @@ const SearchPage = ({ keywordGroups, addToast, searchInputRef, activeWorkspace }
   );
 };
 
-const KeywordsPage = ({ keywordGroups, setKeywordGroups, addToast }: any) => {
+const KeywordsPage = ({ keywordGroups, setKeywordGroups, addToast }: KeywordsPageProps) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingGroup, setEditingGroup] = useState<KeywordGroup | null>(null);
   const handleSave = (group: KeywordGroup) => {
@@ -260,7 +312,7 @@ const KeywordsPage = ({ keywordGroups, setKeywordGroups, addToast }: any) => {
   );
 };
 
-const WorkspacesPage = ({ workspaces, setWorkspaces, addToast, setActiveWorkspaceId, activeWorkspaceId, setTasks }: any) => {
+const WorkspacesPage = ({ workspaces, setWorkspaces, addToast, setActiveWorkspaceId, activeWorkspaceId, setTasks }: WorkspacesPageProps) => {
   const handleDelete = (id: string) => { setWorkspaces((prev: Workspace[]) => prev.filter(w => w.id !== id)); addToast('info', 'Deleted'); };
   
   const handleImportFile = async () => {
