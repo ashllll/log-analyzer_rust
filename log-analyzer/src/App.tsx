@@ -5,10 +5,9 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { 
   Search, LayoutGrid, ListTodo, Settings, Layers, 
-  CheckCircle2, AlertCircle, X, Plus, Terminal, 
-  RefreshCw, Trash2, FolderOpen, Moon, Zap, Play, StopCircle, 
-  MoreHorizontal, FileText, ChevronRight, Edit2, Save, Filter,
-  ChevronDown, Tag, Hash, PauseCircle, Copy, Info, Loader2
+  CheckCircle2, AlertCircle, X, Plus, 
+  RefreshCw, Trash2, Zap, Filter,
+  ChevronDown, Hash, Copy, Info, Loader2, FileText, Edit2
 } from "lucide-react";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
@@ -261,7 +260,7 @@ const KeywordsPage = ({ keywordGroups, setKeywordGroups, addToast }: any) => {
   );
 };
 
-const WorkspacesPage = ({ workspaces, setWorkspaces, addToast, setActiveWorkspaceId, setImportStatus, activeWorkspaceId, setTasks }: any) => {
+const WorkspacesPage = ({ workspaces, setWorkspaces, addToast, setActiveWorkspaceId, activeWorkspaceId, setTasks }: any) => {
   const handleDelete = (id: string) => { setWorkspaces((prev: Workspace[]) => prev.filter(w => w.id !== id)); addToast('info', 'Deleted'); };
   
   const handleImportFile = async () => {
@@ -519,7 +518,7 @@ export default function App() {
         <div className="flex-1 overflow-hidden relative">
            {page === 'search' && <SearchPage keywordGroups={keywordGroups} addToast={addToast} searchInputRef={searchInputRef} activeWorkspace={activeWorkspace} />}
            {page === 'keywords' && <KeywordsPage keywordGroups={keywordGroups} setKeywordGroups={setKeywordGroups} addToast={addToast} />}
-           {page === 'workspaces' && <WorkspacesPage workspaces={workspaces} setWorkspaces={setWorkspaces} addToast={addToast} setActiveWorkspaceId={setActiveWorkspaceId} setImportStatus={setImportStatus} activeWorkspaceId={activeWorkspaceId} setTasks={setTasks} />}
+           {page === 'workspaces' && <WorkspacesPage workspaces={workspaces} setWorkspaces={setWorkspaces} addToast={addToast} setActiveWorkspaceId={setActiveWorkspaceId} activeWorkspaceId={activeWorkspaceId} setTasks={setTasks} />}
            {/* FIX: Pass addToast correctly */}
            {page === 'tasks' && <TasksPage tasks={tasks} setTasks={setTasks} addToast={addToast} />}
            {page === 'settings' && <div className="p-10 text-center text-text-dim">Settings</div>}
