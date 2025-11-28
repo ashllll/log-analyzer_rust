@@ -35,6 +35,45 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Generate version number
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            # 如果是 tag 推送，使用 tag 名作为版本号（去掉 v 前缀）
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            # 如果是 main 分支推送，使用 0.0.0-nightly.YYYYMMDD
+            VERSION="0.0.0-nightly.$(date +'%Y%m%d')"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+        shell: bash
+
+      - name: Update version in project files
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          
+          # 更新 package.json
+          cd log-analyzer
+          sed -i.bak "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
+          
+          # 更新 Cargo.toml
+          sed -i.bak "s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
+          
+          # 更新 tauri.conf.json
+          sed -i.bak "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+          
+          # 显示更新后的版本
+          echo "Updated package.json:"
+          grep '"version"' package.json
+          echo "Updated Cargo.toml:"
+          grep '^version' src-tauri/Cargo.toml
+          echo "Updated tauri.conf.json:"
+          grep '"version"' src-tauri/tauri.conf.json
+          
+          cd ..
+        shell: bash
+
       - name: Install dependencies (Ubuntu)
         if: matrix.platform.os == 'ubuntu-22.04'
         run: |
