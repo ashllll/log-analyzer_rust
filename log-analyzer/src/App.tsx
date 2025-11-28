@@ -221,19 +221,19 @@ const SearchPage = ({ keywordGroups, addToast, searchInputRef, activeWorkspace }
   const copyToClipboard = (text: string) => { navigator.clipboard.writeText(text).then(() => addToast('success', 'Copied')); };
   const tryFormatJSON = (content: string) => { try { const start = content.indexOf('{'); if (start === -1) return content; const jsonPart = content.substring(start); const obj = JSON.parse(jsonPart); return JSON.stringify(obj, null, 2); } catch (_e) { return content; } };
   
-  // 优化：动态高度估算
+  // 优化：动态高度估算 - 提高显示密度
   const rowVirtualizer = useVirtualizer({ 
     count: logs.length, 
     getScrollElement: () => parentRef.current, 
     estimateSize: useCallback((index: number) => {
       const log = logs[index];
-      if (!log) return 46;
-      // 根据内容长度估算高度
-      const lines = Math.ceil(log.content.length / 120);
-      return Math.max(46, Math.min(lines * 22, 200));  // 最小 46px，最大 200px
+      if (!log) return 28;  // 减小最小高度从 46px 到 28px
+      // 根据内容长度估算高度，使用更紧凑的行高
+      const lines = Math.ceil(log.content.length / 140);
+      return Math.max(28, Math.min(lines * 16, 120));  // 最小 28px，最大 120px，行高从 22px 减到 16px
     }, [logs]),
-    overscan: 20,  // 增加 overscan
-    measureElement: (element) => element?.getBoundingClientRect().height || 46  // 精确测量
+    overscan: 25,  // 增加 overscan 以保证流畅滚动
+    measureElement: (element) => element?.getBoundingClientRect().height || 28
   });
   
   const activeLog = logs.find(l => l.id === selectedId);
@@ -250,17 +250,17 @@ const SearchPage = ({ keywordGroups, addToast, searchInputRef, activeWorkspace }
       </div>
       <div className="flex-1 flex overflow-hidden">
         <div ref={parentRef} className="flex-1 overflow-auto bg-bg-main scrollbar-thin">
-          <div className="sticky top-0 z-10 grid grid-cols-[60px_190px_220px_1fr] px-4 py-2 bg-bg-main border-b border-border-base text-xs font-bold text-text-dim uppercase tracking-wider"><div>Level</div> <div>Time</div> <div>File</div> <div>Content</div></div>
+          <div className="sticky top-0 z-10 grid grid-cols-[50px_160px_200px_1fr] px-3 py-1.5 bg-bg-main border-b border-border-base text-[10px] font-bold text-text-dim uppercase tracking-wider"><div>Lvl</div> <div>Time</div> <div>File</div> <div>Content</div></div>
           <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, width: '100%', position: 'relative' }}>
             {rowVirtualizer.getVirtualItems().map((virtualRow) => {
               const log = logs[virtualRow.index];
               const isActive = log.id === selectedId;
               return (
-                <div key={virtualRow.key} data-index={virtualRow.index} ref={rowVirtualizer.measureElement} onClick={() => setSelectedId(log.id)} style={{ transform: `translateY(${virtualRow.start}px)` }} className={cn("absolute top-0 left-0 w-full grid grid-cols-[60px_190px_220px_1fr] px-4 py-2 border-b border-border-base/40 cursor-pointer text-[13px] font-mono hover:bg-bg-hover transition-colors items-start", isActive && "bg-blue-500/10 border-l-2 border-l-primary")}>
-                  <div className={cn("font-bold pt-0.5", log.level === 'ERROR' ? 'text-red-400' : log.level === 'WARN' ? 'text-yellow-400' : 'text-blue-400')}>{log.level.substring(0,1)}</div>
-                  <div className="text-text-muted whitespace-nowrap pt-0.5">{log.timestamp}</div>
-                  <div className="text-text-muted break-all pr-4 pt-0.5 leading-relaxed">{log.file}:{log.line}</div>
-                  <div className="text-text-main whitespace-pre-wrap break-all leading-relaxed pr-4"><HybridLogRenderer text={log.content} query={query} keywordGroups={keywordGroups} /></div>
+                <div key={virtualRow.key} data-index={virtualRow.index} ref={rowVirtualizer.measureElement} onClick={() => setSelectedId(log.id)} style={{ transform: `translateY(${virtualRow.start}px)` }} className={cn("absolute top-0 left-0 w-full grid grid-cols-[50px_160px_200px_1fr] px-3 py-0.5 border-b border-border-base/40 cursor-pointer text-[11px] font-mono hover:bg-bg-hover transition-colors items-start", isActive && "bg-blue-500/10 border-l-2 border-l-primary")}>
+                  <div className={cn("font-bold", log.level === 'ERROR' ? 'text-red-400' : log.level === 'WARN' ? 'text-yellow-400' : 'text-blue-400')}>{log.level.substring(0,1)}</div>
+                  <div className="text-text-muted whitespace-nowrap text-[10px]">{log.timestamp}</div>
+                  <div className="text-text-muted break-all pr-2 text-[10px] leading-tight">{log.file}:{log.line}</div>
+                  <div className="text-text-main whitespace-pre-wrap break-all leading-tight pr-2"><HybridLogRenderer text={log.content} query={query} keywordGroups={keywordGroups} /></div>
                 </div>
               );
             })}
