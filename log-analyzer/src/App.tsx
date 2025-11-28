@@ -49,7 +49,7 @@ interface Task {
     status: 'RUNNING' | 'COMPLETED' | 'FAILED' | 'STOPPED'; 
 }
 interface Toast { id: number; type: ToastType; message: string; }
-interface TaskUpdateEvent { task_id: string; status: string; message: string; progress: number; }
+interface TaskUpdateEvent { task_id: string; task_type: string; target: string; status: string; message: string; progress: number; }
 
 // Color System
 const COLOR_STYLES: Record<ColorKey, any> = {
@@ -455,14 +455,21 @@ export default function App() {
             if (existingTask) {
               logger.debug('Updating existing task:', update.task_id);
               // 更新已存在的任务
-              return prev.map(t => t.id === update.task_id ? { ...t, status: update.status as any, message: update.message, progress: update.progress } : t);
+              return prev.map(t => t.id === update.task_id ? { 
+                ...t, 
+                type: update.task_type || t.type,
+                target: update.target || t.target,
+                status: update.status as any, 
+                message: update.message, 
+                progress: update.progress 
+              } : t);
             } else {
               logger.debug('Creating new task from event:', update.task_id);
               // 创建新任务（如果前端没有创建）
               return [...prev, {
                 id: update.task_id,
-                type: 'Import',
-                target: 'Unknown',
+                type: update.task_type || 'Import',
+                target: update.target || 'Unknown',
                 progress: update.progress,
                 status: update.status as any,
                 message: update.message
