@@ -1369,6 +1369,7 @@ async fn import_folder(
     eprintln!("[DEBUG] Canonical path: {}", canonical_path.display());
 
     // 立即发送初始状态
+    eprintln!("[DEBUG] Sending initial task-update event: task_id={}, workspace_id={}", task_id, workspaceId);
     let _ = app.emit(
         "task-update",
         TaskProgress {
@@ -1535,6 +1536,7 @@ async fn import_folder(
                 .unwrap_or("Unknown")
                 .to_string();
 
+            eprintln!("[DEBUG] Sending COMPLETED task-update event: task_id={}, workspace_id={}", task_id_clone, workspace_id_clone);
             let _ = app_handle.emit(
                 "task-update",
                 TaskProgress {
@@ -1544,9 +1546,10 @@ async fn import_folder(
                     status: "COMPLETED".to_string(),
                     message: "Done".to_string(),
                     progress: 100,
-                    workspace_id: Some(workspace_id_clone),  // 添加 workspace_id
+                    workspace_id: Some(workspace_id_clone.clone()),  // 添加 workspace_id
                 },
             );
+            eprintln!("[DEBUG] Sending import-complete event: task_id={}", task_id_clone);
             let _ = app_handle.emit("import-complete", task_id_clone);
         }
     });

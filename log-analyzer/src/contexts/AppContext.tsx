@@ -391,73 +391,34 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       
       // 当任务完成时，更新工作区状态为 READY
       if (status === 'COMPLETED') {
-        let workspace = null;
+        console.log('[EVENT] Task completed, workspace_id:', workspace_id);
         
-        // 优先使用后端发送的 workspace_id（最可靠）
+        // 直接使用 workspace_id 更新状态，不需要先查找
+        // 如果工作区不存在，reducer 会忽略这个操作
         if (workspace_id) {
-          workspace = workspaceState.workspaces.find(w => 
-            w.id === workspace_id && w.status === 'PROCESSING'
-          );
-        }
-        
-        // 备选：从前端任务列表查找 workspaceId
-        if (!workspace) {
-          const task = taskState.tasks.find(t => t.id === task_id);
-          if (task?.workspaceId) {
-            workspace = workspaceState.workspaces.find(w => 
-              w.id === task.workspaceId && w.status === 'PROCESSING'
-            );
-          }
-        }
-        
-        // 最后备选：通过 name 匹配
-        if (!workspace) {
-          workspace = workspaceState.workspaces.find(w => 
-            w.status === 'PROCESSING' && w.name === target
-          );
-        }
-        
-        if (workspace) {
-          console.log('[EVENT] Updating workspace status to READY:', workspace.id);
+          console.log('[EVENT] Updating workspace status to READY:', workspace_id);
           workspaceDispatch({
             type: 'UPDATE_WORKSPACE',
-            payload: { id: workspace.id, updates: { status: 'READY' } }
+            payload: { id: workspace_id, updates: { status: 'READY' } }
           });
         } else {
-          console.warn('[EVENT] Could not find workspace for completed task:', { task_id, target, workspace_id });
-        }
-      } else if (status === 'FAILED') {
-        let workspace = null;
-        
-        // 优先使用后端发送的 workspace_id
-        if (workspace_id) {
-          workspace = workspaceState.workspaces.find(w => 
-            w.id === workspace_id && w.status === 'PROCESSING'
-          );
-        }
-        
-        // 备选：从前端任务列表查找
-        if (!workspace) {
+          // 备选：如果没有 workspace_id，尝试通过任务 ID 或 name 查找
           const task = taskState.tasks.find(t => t.id === task_id);
           if (task?.workspaceId) {
-            workspace = workspaceState.workspaces.find(w => 
-              w.id === task.workspaceId && w.status === 'PROCESSING'
-            );
+            workspaceDispatch({
+              type: 'UPDATE_WORKSPACE',
+              payload: { id: task.workspaceId, updates: { status: 'READY' } }
+            });
+          } else {
+            console.warn('[EVENT] Could not find workspace_id for completed task:', { task_id, target });
           }
         }
-        
-        // 最后备选
-        if (!workspace) {
-          workspace = workspaceState.workspaces.find(w => 
-            w.status === 'PROCESSING' && w.name === target
-          );
-        }
-        
-        if (workspace) {
-          console.log('[EVENT] Updating workspace status to OFFLINE:', workspace.id);
+      } else if (status === 'FAILED') {
+        // 直接使用 workspace_id 更新状态
+        if (workspace_id) {
           workspaceDispatch({
             type: 'UPDATE_WORKSPACE',
-            payload: { id: workspace.id, updates: { status: 'OFFLINE' } }
+            payload: { id: workspace_id, updates: { status: 'OFFLINE' } }
           });
         }
       }
