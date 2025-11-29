@@ -17,12 +17,12 @@ use walkdir::WalkDir;
 // 类型别名：简化复杂类型定义
 // 搜索缓存键：包含查询、工作区ID和过滤条件
 type SearchCacheKey = (
-    String,                // query
-    String,                // workspace_id
-    Option<String>,        // time_start
-    Option<String>,        // time_end
-    Vec<String>,           // levels
-    Option<String>,        // file_pattern
+    String,         // query
+    String,         // workspace_id
+    Option<String>, // time_start
+    Option<String>, // time_end
+    Vec<String>,    // levels
+    Option<String>, // file_pattern
 );
 type SearchCache = Arc<Mutex<lru::LruCache<SearchCacheKey, Vec<LogEntry>>>>;
 type PathMapType = HashMap<String, String>;
@@ -49,7 +49,7 @@ struct TaskProgress {
     status: String,
     message: String,
     progress: u8,
-    workspace_id: Option<String>,  // 工作区 ID，用于前端匹配
+    workspace_id: Option<String>, // 工作区 ID，用于前端匹配
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -77,39 +77,39 @@ struct FileMetadata {
 // 高级过滤器
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 struct SearchFilters {
-    time_start: Option<String>,  // 开始时间（ISO 8601 格式）
-    time_end: Option<String>,    // 结束时间（ISO 8601 格式）
-    levels: Vec<String>,         // 允许的日志级别列表
+    time_start: Option<String>,   // 开始时间（ISO 8601 格式）
+    time_end: Option<String>,     // 结束时间（ISO 8601 格式）
+    levels: Vec<String>,          // 允许的日志级别列表
     file_pattern: Option<String>, // 文件路径匹配模式
 }
 
 // 性能监控指标
 #[derive(Serialize, Clone, Debug)]
 struct PerformanceMetrics {
-    memory_used_mb: f64,             // 当前进程内存使用量（MB）
-    path_map_size: usize,            // 索引文件映射条目数
-    cache_size: usize,               // 搜索缓存条目数
-    last_search_duration_ms: u64,    // 最近一次搜索耗时（毫秒）
-    cache_hit_rate: f64,             // 缓存命中率（0-100）
-    indexed_files_count: usize,      // 已索引文件数量
-    index_file_size_mb: f64,         // 索引文件磁盘大小（MB）
+    memory_used_mb: f64,          // 当前进程内存使用量（MB）
+    path_map_size: usize,         // 索引文件映射条目数
+    cache_size: usize,            // 搜索缓存条目数
+    last_search_duration_ms: u64, // 最近一次搜索耗时（毫秒）
+    cache_hit_rate: f64,          // 缓存命中率（0-100）
+    indexed_files_count: usize,   // 已索引文件数量
+    index_file_size_mb: f64,      // 索引文件磁盘大小（MB）
 }
 
 // 文件变化事件
 #[derive(Serialize, Clone, Debug)]
 struct FileChangeEvent {
-    event_type: String,    // "modified", "created", "deleted"
-    file_path: String,     // 变化的文件路径
-    workspace_id: String,  // 所属工作区
-    timestamp: i64,        // 事件发生时间戳
+    event_type: String,   // "modified", "created", "deleted"
+    file_path: String,    // 变化的文件路径
+    workspace_id: String, // 所属工作区
+    timestamp: i64,       // 事件发生时间戳
 }
 
 // 监听器状态
 struct WatcherState {
-    workspace_id: String,                 // 工作区 ID（用于日志记录和调试）
-    watched_path: PathBuf,                // 监听的路径（用于计算相对路径）
-    file_offsets: HashMap<String, u64>,  // 文件读取偏移量（用于增量读取）
-    is_active: bool,                      // 监听器是否活跃
+    workspace_id: String,               // 工作区 ID（用于日志记录和调试）
+    watched_path: PathBuf,              // 监听的路径（用于计算相对路径）
+    file_offsets: HashMap<String, u64>, // 文件读取偏移量（用于增量读取）
+    is_active: bool,                    // 监听器是否活跃
 }
 
 struct AppState {
@@ -119,22 +119,22 @@ struct AppState {
     workspace_indices: Mutex<HashMap<String, PathBuf>>,
     search_cache: SearchCache, // 搜索缓存：(query, workspace_id) -> results
     // 性能统计
-    last_search_duration: Arc<Mutex<u64>>,      // 最近搜索耗时（毫秒）
-    total_searches: Arc<Mutex<u64>>,            // 总搜索次数
-    cache_hits: Arc<Mutex<u64>>,                 // 缓存命中次数
+    last_search_duration: Arc<Mutex<u64>>, // 最近搜索耗时（毫秒）
+    total_searches: Arc<Mutex<u64>>,       // 总搜索次数
+    cache_hits: Arc<Mutex<u64>>,           // 缓存命中次数
     // 实时监听
-    watchers: Arc<Mutex<HashMap<String, WatcherState>>>,  // workspace_id -> WatcherState
+    watchers: Arc<Mutex<HashMap<String, WatcherState>>>, // workspace_id -> WatcherState
     // 临时文件清理队列（用于处理清理失败的情况）
-    cleanup_queue: Arc<Mutex<Vec<PathBuf>>>,    // 待清理的路径列表
+    cleanup_queue: Arc<Mutex<Vec<PathBuf>>>, // 待清理的路径列表
 }
 
 impl Drop for AppState {
     fn drop(&mut self) {
         eprintln!("[INFO] AppState dropping, performing final cleanup...");
-        
+
         // 执行最后的清理队列处理
         process_cleanup_queue(&self.cleanup_queue);
-        
+
         // 打印性能统计摘要
         if let Ok(searches) = self.total_searches.lock() {
             if let Ok(hits) = self.cache_hits.lock() {
@@ -149,7 +149,7 @@ impl Drop for AppState {
                 );
             }
         }
-        
+
         eprintln!("[INFO] AppState cleanup completed");
     }
 }
@@ -157,27 +157,27 @@ impl Drop for AppState {
 // --- Helpers ---
 
 /// 检测unrar命令是否可用
-/// 
+///
 /// # 功能
 /// 检测系统中是否安装了unrar工具，用于RAR文件解压
-/// 
+///
 /// # 返回值
 /// - `Ok(true)`: unrar可用
 /// - `Ok(false)`: unrar不可用
 /// - `Err(String)`: 检测过程出错
-/// 
+///
 /// # 平台支持
 /// - Windows: 检测 unrar.exe
 /// - Linux/macOS: 检测 unrar
 fn check_unrar_available() -> Result<bool, String> {
     use std::process::Command;
-    
+
     let unrar_cmd = if cfg!(target_os = "windows") {
         "unrar.exe"
     } else {
         "unrar"
     };
-    
+
     match Command::new(unrar_cmd).arg("-?").output() {
         Ok(_) => Ok(true),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
@@ -186,36 +186,39 @@ fn check_unrar_available() -> Result<bool, String> {
 }
 
 /// 获取unrar安装指引
-/// 
+///
 /// # 功能
 /// 根据当前操作系统返回相应的unrar安装指令
-/// 
+///
 /// # 返回值
 /// 包含unrar安装指南的字符串
 fn get_unrar_install_guide() -> String {
     if cfg!(target_os = "windows") {
         "RAR support requires 'unrar' to be installed.\n\
          Please download from: https://www.rarlab.com/rar_add.htm\n\
-         After installation, add unrar.exe to your system PATH.".to_string()
+         After installation, add unrar.exe to your system PATH."
+            .to_string()
     } else if cfg!(target_os = "macos") {
         "RAR support requires 'unrar' to be installed.\n\
-         Install with: brew install unrar".to_string()
+         Install with: brew install unrar"
+            .to_string()
     } else {
         "RAR support requires 'unrar' to be installed.\n\
          Install with: sudo apt install unrar (Ubuntu/Debian)\n\
-         or: sudo yum install unrar (CentOS/Fedora)".to_string()
+         or: sudo yum install unrar (CentOS/Fedora)"
+            .to_string()
     }
 }
 
 /// 验证路径参数
-/// 
+///
 /// # 功能
 /// 检查路径是否非空且存在
-/// 
+///
 /// # 参数
 /// - `path`: 要验证的路径字符串
 /// - `param_name`: 参数名称（用于错误消息）
-/// 
+///
 /// # 返回值
 /// - `Ok(PathBuf)`: 验证通过，返回规范化后的路径
 /// - `Err(String)`: 验证失败，包含错误信息
@@ -223,23 +226,23 @@ fn validate_path_param(path: &str, param_name: &str) -> Result<PathBuf, String> 
     if path.trim().is_empty() {
         return Err(format!("Parameter '{}' cannot be empty", param_name));
     }
-    
+
     let path_buf = PathBuf::from(path);
     if !path_buf.exists() {
         return Err(format!("Path does not exist: {}", path));
     }
-    
+
     Ok(path_buf)
 }
 
 /// 验证workspace_id参数
-/// 
+///
 /// # 功能
 /// 检查workspace_id是否非空且格式合法
-/// 
+///
 /// # 参数
 /// - `workspace_id`: 要验证的工作区ID
-/// 
+///
 /// # 返回值
 /// - `Ok(())`: 验证通过
 /// - `Err(String)`: 验证失败，包含错误信息
@@ -247,26 +250,26 @@ fn validate_workspace_id(workspace_id: &str) -> Result<(), String> {
     if workspace_id.trim().is_empty() {
         return Err("Workspace ID cannot be empty".to_string());
     }
-    
+
     // 检查是否包含非法字符（避免路径穿越）
     if workspace_id.contains("..") || workspace_id.contains('/') || workspace_id.contains('\\') {
         return Err("Workspace ID contains invalid characters".to_string());
     }
-    
+
     Ok(())
 }
 
 /// 文件操作重试辅助函数
-/// 
+///
 /// # 功能
 /// 对可能暂时失败的文件操作进行重试
-/// 
+///
 /// # 参数
 /// - `operation`: 要执行的操作闭包
 /// - `max_retries`: 最大重试次数
 /// - `delays_ms`: 每次重试的延迟时间（毫秒）
 /// - `operation_name`: 操作名称（用于日志）
-/// 
+///
 /// # 返回值
 /// - `Ok(T)`: 操作成功，返回结果
 /// - `Err(String)`: 所有重试都失败，返回错误信息
@@ -280,7 +283,7 @@ where
     F: FnMut() -> Result<T, String>,
 {
     let mut last_error = String::new();
-    
+
     for attempt in 0..=max_retries {
         match operation() {
             Ok(result) => {
@@ -294,32 +297,37 @@ where
             }
             Err(e) => {
                 last_error = e.clone();
-                
+
                 // 检查是否是可重试的错误
-                let is_retryable = e.contains("permission denied") 
+                let is_retryable = e.contains("permission denied")
                     || e.contains("Access is denied")
                     || e.contains("file is being used")
                     || e.contains("cannot access");
-                
+
                 if !is_retryable || attempt >= max_retries {
                     eprintln!(
                         "[ERROR] {} failed after {} attempts: {}",
-                        operation_name, attempt + 1, e
+                        operation_name,
+                        attempt + 1,
+                        e
                     );
                     break;
                 }
-                
+
                 // 等待后重试
                 let delay = delays_ms.get(attempt).copied().unwrap_or(500);
                 eprintln!(
                     "[WARN] {} failed (attempt {}), retrying in {}ms: {}",
-                    operation_name, attempt + 1, delay, e
+                    operation_name,
+                    attempt + 1,
+                    delay,
+                    e
                 );
                 std::thread::sleep(std::time::Duration::from_millis(delay));
             }
         }
     }
-    
+
     Err(format!(
         "{} failed after {} attempts: {}",
         operation_name,
@@ -329,10 +337,10 @@ where
 }
 
 /// 尝试清理临时目录，失败时加入清理队列
-/// 
+///
 /// # 功能
 /// 尝试删除指定的临时目录，如果失败则将路径添加到清理队列
-/// 
+///
 /// # 参数
 /// - `path`: 要清理的路径
 /// - `cleanup_queue`: 清理队列的Arc引用
@@ -340,7 +348,7 @@ fn try_cleanup_temp_dir(path: &Path, cleanup_queue: &Arc<Mutex<Vec<PathBuf>>>) {
     if !path.exists() {
         return;
     }
-    
+
     // 尝试重试3次删除目录
     let result = retry_file_operation(
         || {
@@ -351,18 +359,20 @@ fn try_cleanup_temp_dir(path: &Path, cleanup_queue: &Arc<Mutex<Vec<PathBuf>>>) {
                     let _ = remove_readonly(entry.path());
                 }
             }
-            
-            fs::remove_dir_all(path)
-                .map_err(|e| format!("Failed to remove directory: {}", e))
+
+            fs::remove_dir_all(path).map_err(|e| format!("Failed to remove directory: {}", e))
         },
         3,
         &[100, 500, 1000],
         &format!("cleanup_temp_dir({})", path.display()),
     );
-    
+
     match result {
         Ok(_) => {
-            eprintln!("[INFO] Successfully cleaned up temp directory: {}", path.display());
+            eprintln!(
+                "[INFO] Successfully cleaned up temp directory: {}",
+                path.display()
+            );
         }
         Err(e) => {
             eprintln!(
@@ -378,10 +388,10 @@ fn try_cleanup_temp_dir(path: &Path, cleanup_queue: &Arc<Mutex<Vec<PathBuf>>>) {
 }
 
 /// 执行清理队列中的任务
-/// 
+///
 /// # 功能
 /// 尝试清理队列中所有待处理的临时目录
-/// 
+///
 /// # 参数
 /// - `cleanup_queue`: 清理队列的Arc引用
 fn process_cleanup_queue(cleanup_queue: &Arc<Mutex<Vec<PathBuf>>>) {
@@ -392,27 +402,24 @@ fn process_cleanup_queue(cleanup_queue: &Arc<Mutex<Vec<PathBuf>>>) {
             return;
         }
     };
-    
+
     if paths_to_clean.is_empty() {
         return;
     }
-    
+
     let total_count = paths_to_clean.len();
-    
-    eprintln!(
-        "[INFO] Processing cleanup queue with {} items",
-        total_count
-    );
-    
+
+    eprintln!("[INFO] Processing cleanup queue with {} items", total_count);
+
     let mut successful = 0;
     let mut failed_paths = Vec::new();
-    
+
     for path in &paths_to_clean {
         if !path.exists() {
             successful += 1;
             continue;
         }
-        
+
         match fs::remove_dir_all(path) {
             Ok(_) => {
                 eprintln!("[INFO] Successfully cleaned up: {}", path.display());
@@ -424,12 +431,12 @@ fn process_cleanup_queue(cleanup_queue: &Arc<Mutex<Vec<PathBuf>>>) {
             }
         }
     }
-    
+
     // 更新清理队列
     if let Ok(mut queue) = cleanup_queue.lock() {
         *queue = failed_paths;
     }
-    
+
     eprintln!(
         "[INFO] Cleanup queue processed: {} successful, {} still pending",
         successful,
@@ -472,7 +479,7 @@ fn canonicalize_path(path: &Path) -> Result<PathBuf, String> {
 #[allow(clippy::permissions_set_readonly_false)] // Windows 特定操作，允许设置可写
 fn remove_readonly(path: &Path) -> Result<(), String> {
     use std::os::windows::fs::MetadataExt;
-    
+
     // 使用重试机制
     retry_file_operation(
         || {
@@ -487,7 +494,7 @@ fn remove_readonly(path: &Path) -> Result<(), String> {
             }
             Ok(())
         },
-        2, // 最多重试2次
+        2,           // 最多重试2次
         &[100, 300], // 延迟100ms和300ms
         &format!("remove_readonly({})", path.display()),
     )
@@ -750,14 +757,16 @@ fn process_tar_archive<R: std::io::Read>(
             let out_path = safe_path_join(&extract_path, &normalized_name);
 
             if let Some(p) = out_path.parent() {
-                fs::create_dir_all(p)
-                    .map_err(|e| format!("Failed to create parent dir for {}: {}", normalized_name, e))?;
+                fs::create_dir_all(p).map_err(|e| {
+                    format!("Failed to create parent dir for {}: {}", normalized_name, e)
+                })?;
             }
 
             // Windows 兼容：在解压前移除只读属性
             if out_path.exists() {
-                remove_readonly(&out_path)
-                    .map_err(|e| format!("Failed to remove readonly for {}: {}", normalized_name, e))?;
+                remove_readonly(&out_path).map_err(|e| {
+                    format!("Failed to remove readonly for {}: {}", normalized_name, e)
+                })?;
             }
 
             file.unpack(&out_path)
@@ -773,7 +782,7 @@ fn process_tar_archive<R: std::io::Read>(
                 ctx.app,
                 ctx.task_id,
             );
-            
+
             Ok(())
         })();
 
@@ -796,7 +805,10 @@ fn process_tar_archive<R: std::io::Read>(
     // 如果有部分文件成功，则返回Ok，但在消息中标注部分失败
     if success_count > 0 {
         if error_count > 0 {
-            eprintln!("[WARN] TAR archive partially extracted ({} errors)", error_count);
+            eprintln!(
+                "[WARN] TAR archive partially extracted ({} errors)",
+                error_count
+            );
         }
         Ok(())
     } else if error_count > 0 {
@@ -835,7 +847,8 @@ fn process_zip_archive(
 
     for i in 0..archive.len() {
         let entry_result = (|| -> Result<(), String> {
-            let mut file = archive.by_index(i)
+            let mut file = archive
+                .by_index(i)
                 .map_err(|e| format!("Failed to read zip entry {}: {}", i, e))?;
             let name_raw = file.name_raw().to_vec();
             let name = decode_filename(&name_raw);
@@ -850,18 +863,21 @@ fn process_zip_archive(
             let out_path = safe_path_join(&extract_path, &normalized_name);
 
             if file.is_dir() {
-                fs::create_dir_all(&out_path)
-                    .map_err(|e| format!("Failed to create directory {}: {}", normalized_name, e))?;
+                fs::create_dir_all(&out_path).map_err(|e| {
+                    format!("Failed to create directory {}: {}", normalized_name, e)
+                })?;
             } else {
                 if let Some(p) = out_path.parent() {
-                    fs::create_dir_all(p)
-                        .map_err(|e| format!("Failed to create parent dir for {}: {}", normalized_name, e))?;
+                    fs::create_dir_all(p).map_err(|e| {
+                        format!("Failed to create parent dir for {}: {}", normalized_name, e)
+                    })?;
                 }
 
                 // Windows 兼容：在解压前移除只读属性
                 if out_path.exists() {
-                    remove_readonly(&out_path)
-                        .map_err(|e| format!("Failed to remove readonly for {}: {}", normalized_name, e))?;
+                    remove_readonly(&out_path).map_err(|e| {
+                        format!("Failed to remove readonly for {}: {}", normalized_name, e)
+                    })?;
                 }
 
                 let mut outfile = File::create(&out_path)
@@ -871,16 +887,9 @@ fn process_zip_archive(
 
                 let new_virtual = format!("{}/{}", virtual_path, normalized_name);
                 // 递归处理
-                process_path_recursive(
-                    &out_path,
-                    &new_virtual,
-                    target_root,
-                    map,
-                    app,
-                    task_id,
-                );
+                process_path_recursive(&out_path, &new_virtual, target_root, map, app, task_id);
             }
-            
+
             Ok(())
         })();
 
@@ -903,7 +912,10 @@ fn process_zip_archive(
     // 如果有部分文件成功，则返回Ok
     if success_count > 0 {
         if error_count > 0 {
-            eprintln!("[WARN] ZIP archive partially extracted ({} errors)", error_count);
+            eprintln!(
+                "[WARN] ZIP archive partially extracted ({} errors)",
+                error_count
+            );
         }
         Ok(())
     } else if error_count > 0 {
@@ -978,10 +990,13 @@ fn process_rar_archive(
     // 检测 unrar 是否可用
     let unrar_available = check_unrar_available()
         .map_err(|e| format!("Failed to check unrar availability: {}", e))?;
-    
+
     if !unrar_available {
         let guide = get_unrar_install_guide();
-        eprintln!("[WARNING] unrar command not found, skipping RAR: {}", path.display());
+        eprintln!(
+            "[WARNING] unrar command not found, skipping RAR: {}",
+            path.display()
+        );
         eprintln!("[INFO] {}", guide);
         return Err(guide);
     }
@@ -1067,7 +1082,7 @@ fn process_path_recursive(
                 status: "RUNNING".to_string(),
                 message: format!("Warning: {}", e),
                 progress: 50,
-                workspace_id: None,  // 这是内部进度更新，没有 workspace_id
+                workspace_id: None, // 这是内部进度更新，没有 workspace_id
             },
         );
     }
@@ -1102,7 +1117,7 @@ fn process_path_recursive_with_metadata(
                 status: "RUNNING".to_string(),
                 message: format!("Warning: {}", e),
                 progress: 50,
-                workspace_id: None,  // 内部进度更新
+                workspace_id: None, // 内部进度更新
             },
         );
     }
@@ -1147,7 +1162,7 @@ fn process_path_recursive_inner(
             status: "RUNNING".to_string(),
             message: format!("Processing: {}", file_name),
             progress: 50,
-            workspace_id: None,  // 文件处理进度
+            workspace_id: None, // 文件处理进度
         },
     );
 
@@ -1282,7 +1297,7 @@ fn process_path_recursive_inner_with_metadata(
             status: "RUNNING".to_string(),
             message: format!("Processing: {}", file_name),
             progress: 50,
-            workspace_id: None,  // 文件处理进度
+            workspace_id: None, // 文件处理进度
         },
     );
 
@@ -1338,7 +1353,7 @@ async fn import_folder(
     // 参数验证
     validate_path_param(&path, "path")?;
     validate_workspace_id(&workspaceId)?;
-    
+
     let app_handle = app.clone();
     let task_id = Uuid::new_v4().to_string();
     let task_id_clone = task_id.clone();
@@ -1367,7 +1382,10 @@ async fn import_folder(
     eprintln!("[DEBUG] Canonical path: {}", canonical_path.display());
 
     // 立即发送初始状态
-    eprintln!("[DEBUG] Sending initial task-update event: task_id={}, workspace_id={}", task_id, workspaceId);
+    eprintln!(
+        "[DEBUG] Sending initial task-update event: task_id={}, workspace_id={}",
+        task_id, workspaceId
+    );
     let _ = app.emit(
         "task-update",
         TaskProgress {
@@ -1381,7 +1399,7 @@ async fn import_folder(
             status: "RUNNING".to_string(),
             message: "Starting import...".to_string(),
             progress: 0,
-            workspace_id: Some(workspaceId.clone()),  // 添加 workspace_id
+            workspace_id: Some(workspaceId.clone()), // 添加 workspace_id
         },
     );
 
@@ -1438,7 +1456,7 @@ async fn import_folder(
                         status: "RUNNING".to_string(),
                         message: "Scanning...".to_string(),
                         progress: 10,
-                        workspace_id: Some(workspace_id_clone.clone()),  // 添加 workspace_id
+                        workspace_id: Some(workspace_id_clone.clone()), // 添加 workspace_id
                     },
                 );
 
@@ -1484,13 +1502,13 @@ async fn import_folder(
                         eprintln!("[WARNING] Failed to save index: {}", e);
                     }
                 }
-                
+
                 // 清理临时目录
                 if let Some(ref temp_dir) = *temp_guard {
                     let temp_path = temp_dir.path().to_path_buf();
                     // 释放锁后执行清理（避免在锁内执行IO操作）
                     drop(temp_guard);
-                    
+
                     let cleanup_queue = Arc::clone(&state.cleanup_queue);
                     try_cleanup_temp_dir(&temp_path, &cleanup_queue);
                 } else {
@@ -1518,7 +1536,7 @@ async fn import_folder(
                     status: "FAILED".to_string(),
                     message: "Crashed".to_string(),
                     progress: 0,
-                    workspace_id: Some(workspace_id_clone.clone()),  // 添加 workspace_id
+                    workspace_id: Some(workspace_id_clone.clone()), // 添加 workspace_id
                 },
             );
             let _ = app_handle.emit("import-error", "Backend process crashed");
@@ -1534,7 +1552,10 @@ async fn import_folder(
                 .unwrap_or("Unknown")
                 .to_string();
 
-            eprintln!("[DEBUG] Sending COMPLETED task-update event: task_id={}, workspace_id={}", task_id_clone, workspace_id_clone);
+            eprintln!(
+                "[DEBUG] Sending COMPLETED task-update event: task_id={}, workspace_id={}",
+                task_id_clone, workspace_id_clone
+            );
             let _ = app_handle.emit(
                 "task-update",
                 TaskProgress {
@@ -1544,10 +1565,13 @@ async fn import_folder(
                     status: "COMPLETED".to_string(),
                     message: "Done".to_string(),
                     progress: 100,
-                    workspace_id: Some(workspace_id_clone.clone()),  // 添加 workspace_id
+                    workspace_id: Some(workspace_id_clone.clone()), // 添加 workspace_id
                 },
             );
-            eprintln!("[DEBUG] Sending import-complete event: task_id={}", task_id_clone);
+            eprintln!(
+                "[DEBUG] Sending import-complete event: task_id={}",
+                task_id_clone
+            );
             let _ = app_handle.emit("import-complete", task_id_clone);
         }
     });
@@ -1594,46 +1618,49 @@ fn search_single_file(
 // ============================================================================
 
 /// 从指定偏移量读取文件新增内容
-/// 
+///
 /// # 参数
 /// - `path`: 文件路径
 /// - `offset`: 上次读取的偏移量（字节）
-/// 
+///
 /// # 返回值
 /// - `Ok((lines, new_offset))`: 新读取的行和新的偏移量
 /// - `Err(String)`: 错误信息
 fn read_file_from_offset(path: &Path, offset: u64) -> Result<(Vec<String>, u64), String> {
     use std::io::{Seek, SeekFrom};
-    
-    let mut file = File::open(path)
-        .map_err(|e| format!("Failed to open file: {}", e))?;
-    
+
+    let mut file = File::open(path).map_err(|e| format!("Failed to open file: {}", e))?;
+
     // 获取当前文件大小
-    let file_size = file.metadata()
+    let file_size = file
+        .metadata()
         .map_err(|e| format!("Failed to get file metadata: {}", e))?
         .len();
-    
+
     // 如果文件被截断（小于上次偏移量），从头开始读取
     let start_offset = if file_size < offset {
-        eprintln!("[WARNING] File truncated, reading from beginning: {}", path.display());
+        eprintln!(
+            "[WARNING] File truncated, reading from beginning: {}",
+            path.display()
+        );
         0
     } else {
         offset
     };
-    
+
     // 如果没有新内容，直接返回
     if start_offset >= file_size {
         return Ok((Vec::new(), file_size));
     }
-    
+
     // 移动到偏移量位置
     file.seek(SeekFrom::Start(start_offset))
         .map_err(|e| format!("Failed to seek to offset: {}", e))?;
-    
+
     // 读取新增内容
     let reader = BufReader::new(file);
     let mut lines = Vec::new();
-    
+
     for line_result in reader.lines() {
         match line_result {
             Ok(line) => lines.push(line),
@@ -1643,7 +1670,7 @@ fn read_file_from_offset(path: &Path, offset: u64) -> Result<(Vec<String>, u64),
             }
         }
     }
-    
+
     eprintln!(
         "[DEBUG] Read {} new lines from {} (offset: {} -> {})",
         lines.len(),
@@ -1651,19 +1678,19 @@ fn read_file_from_offset(path: &Path, offset: u64) -> Result<(Vec<String>, u64),
         start_offset,
         file_size
     );
-    
+
     Ok((lines, file_size))
 }
 
 /// 解析日志行并创建 LogEntry
-/// 
+///
 /// # 参数
 /// - `lines`: 日志行
 /// - `file_path`: 文件路径（用于显示）
 /// - `real_path`: 实际文件路径
 /// - `start_id`: 起始 ID
 /// - `start_line_number`: 起始行号
-/// 
+///
 /// # 返回值
 /// - 解析后的 LogEntry 列表
 fn parse_log_lines(
@@ -1693,13 +1720,13 @@ fn parse_log_lines(
 }
 
 /// 将新日志条目添加到工作区索引（增量更新）
-/// 
+///
 /// # 参数
 /// - `workspace_id`: 工作区 ID
 /// - `new_entries`: 新的日志条目
 /// - `app`: AppHandle
 /// - `state`: AppState
-/// 
+///
 /// # 返回值
 /// - `Ok(())`: 成功
 /// - `Err(String)`: 错误信息
@@ -1707,27 +1734,27 @@ fn append_to_workspace_index(
     workspace_id: &str,
     new_entries: &[LogEntry],
     app: &AppHandle,
-    _state: &AppState,  // 为未来扩展保留（可用于持久化索引更新）
+    _state: &AppState, // 为未来扩展保留（可用于持久化索引更新）
 ) -> Result<(), String> {
     if new_entries.is_empty() {
         return Ok(());
     }
-    
+
     eprintln!(
         "[DEBUG] Appending {} new entries to workspace: {}",
         new_entries.len(),
         workspace_id
     );
-    
+
     // 发送新日志到前端（实时更新）
     let _ = app.emit("new-logs", new_entries);
-    
+
     // 这里可以选择性地更新持久化索引
     // 为了性能考虑，可以批量更新或定期保存
     // 当前实现：只发送到前端，不立即持久化
-    
+
     eprintln!("[DEBUG] New entries sent to frontend");
-    
+
     Ok(())
 }
 
@@ -1736,8 +1763,8 @@ async fn search_logs(
     app: AppHandle,
     query: String,
     #[allow(non_snake_case)] workspaceId: Option<String>, // 工作区ID，用于缓存隔离
-    max_results: Option<usize>, // 可配置限制
-    filters: Option<SearchFilters>, // 高级过滤器
+    max_results: Option<usize>,                           // 可配置限制
+    filters: Option<SearchFilters>,                       // 高级过滤器
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     // 参数验证
@@ -1747,14 +1774,14 @@ async fn search_logs(
     if query.len() > 1000 {
         return Err("Search query too long (max 1000 characters)".to_string());
     }
-    
+
     let app_handle = app.clone();
     let path_map = Arc::clone(&state.path_map); // Arc clone
     let search_cache = Arc::clone(&state.search_cache);
     let total_searches = Arc::clone(&state.total_searches);
     let cache_hits = Arc::clone(&state.cache_hits);
     let last_search_duration = Arc::clone(&state.last_search_duration);
-    
+
     // 限制结果数量，防止内存溢出
     let max_results = max_results.unwrap_or(50000).min(100_000);
     let filters = filters.unwrap_or_default();
@@ -1781,7 +1808,7 @@ async fn search_logs(
 
         if let Some(cached_results) = cache_result {
             eprintln!("[DEBUG] Cache HIT for query: {}", query);
-            
+
             // 更新缓存统计
             if let Ok(mut hits) = cache_hits.lock() {
                 *hits += 1;
@@ -1809,7 +1836,7 @@ async fn search_logs(
 
     std::thread::spawn(move || {
         let start_time = std::time::Instant::now();
-        
+
         if query.is_empty() {
             return;
         }
@@ -1820,21 +1847,21 @@ async fn search_logs(
             .split('|')
             .map(|t| t.trim())
             .filter(|t| !t.is_empty())
-            .map(regex::escape)  // 转义每个关键词
+            .map(regex::escape) // 转义每个关键词
             .collect();
-        
+
         if terms.is_empty() {
             let _ = app_handle.emit("search-error", "Search query is empty after processing");
             return;
         }
-        
+
         // 使用 OR 组合多个关键词，(?i) 表示不区分大小写
         let pattern = if terms.len() == 1 {
             format!("(?i){}", terms[0])
         } else {
             format!("(?i)({})", terms.join("|"))
         };
-        
+
         let re = match Regex::new(&pattern) {
             Ok(r) => r,
             Err(e) => {
@@ -1869,7 +1896,10 @@ async fn search_logs(
             })
             .collect();
 
-        eprintln!("[DEBUG] Found {} results before filtering", all_results.len());
+        eprintln!(
+            "[DEBUG] Found {} results before filtering",
+            all_results.len()
+        );
 
         // 应用高级过滤器
         if !filters.levels.is_empty()
@@ -1905,10 +1935,7 @@ async fn search_logs(
                 true
             });
 
-            eprintln!(
-                "[DEBUG] {} results after filtering",
-                all_results.len()
-            );
+            eprintln!("[DEBUG] {} results after filtering", all_results.len());
         }
 
         // 截取结果（Rayon 不支持 .take()）
@@ -1940,7 +1967,7 @@ async fn search_logs(
         // 记录搜索耗时
         let duration = start_time.elapsed().as_millis() as u64;
         eprintln!("[DEBUG] Search completed in {}ms", duration);
-        
+
         // 更新性能统计
         if let Ok(mut last_duration) = last_search_duration.lock() {
             *last_duration = duration;
@@ -1961,7 +1988,7 @@ async fn load_workspace(
 ) -> Result<(), String> {
     // 参数验证
     validate_workspace_id(&workspaceId)?;
-    
+
     let index_dir = app
         .path()
         .app_data_dir()
@@ -2060,7 +2087,7 @@ async fn refresh_workspace(
             status: "RUNNING".to_string(),
             message: "Loading existing index...".to_string(),
             progress: 0,
-            workspace_id: Some(workspaceId.clone()),  // 添加 workspace_id
+            workspace_id: Some(workspaceId.clone()), // 添加 workspace_id
         },
     );
 
@@ -2082,11 +2109,8 @@ async fn refresh_workspace(
     }
 
     std::thread::spawn(move || {
-        eprintln!(
-            "[DEBUG] Refresh thread started for task: {}",
-            task_id_clone
-        );
-        
+        eprintln!("[DEBUG] Refresh thread started for task: {}", task_id_clone);
+
         // 提取文件名用于 target 字段
         let file_name = Path::new(&path)
             .file_name()
@@ -2109,11 +2133,11 @@ async fn refresh_workspace(
                 TaskProgress {
                     task_id: task_id_clone.clone(),
                     task_type: "Refresh".to_string(),
-                    target: file_name.clone(),  // 使用文件名而不是完整路径
+                    target: file_name.clone(), // 使用文件名而不是完整路径
                     status: "RUNNING".to_string(),
                     message: "Scanning file system...".to_string(),
                     progress: 20,
-                    workspace_id: Some(workspace_id_clone.clone()),  // 添加 workspace_id
+                    workspace_id: Some(workspace_id_clone.clone()), // 添加 workspace_id
                 },
             );
 
@@ -2140,11 +2164,11 @@ async fn refresh_workspace(
                 TaskProgress {
                     task_id: task_id_clone.clone(),
                     task_type: "Refresh".to_string(),
-                    target: file_name.clone(),  // 使用文件名
+                    target: file_name.clone(), // 使用文件名
                     status: "RUNNING".to_string(),
                     message: "Analyzing changes...".to_string(),
                     progress: 40,
-                    workspace_id: Some(workspace_id_clone.clone()),  // 添加 workspace_id
+                    workspace_id: Some(workspace_id_clone.clone()), // 添加 workspace_id
                 },
             );
 
@@ -2195,14 +2219,11 @@ async fn refresh_workspace(
                     TaskProgress {
                         task_id: task_id_clone.clone(),
                         task_type: "Refresh".to_string(),
-                        target: file_name.clone(),  // 使用文件名
+                        target: file_name.clone(), // 使用文件名
                         status: "RUNNING".to_string(),
-                        message: format!(
-                            "Processing {} changes...",
-                            total_changes
-                        ),
+                        message: format!("Processing {} changes...", total_changes),
                         progress: 60,
-                        workspace_id: Some(workspace_id_clone.clone()),  // 添加 workspace_id
+                        workspace_id: Some(workspace_id_clone.clone()), // 添加 workspace_id
                     },
                 );
 
@@ -2227,9 +2248,13 @@ async fn refresh_workspace(
                     for real_path in &new_files {
                         let file_path = Path::new(real_path);
                         if let Ok(relative) = file_path.strip_prefix(source_path) {
-                            let virtual_path = format!("{}/{}", root_name, relative.to_string_lossy().replace('\\', "/"));
+                            let virtual_path = format!(
+                                "{}/{}",
+                                root_name,
+                                relative.to_string_lossy().replace('\\', "/")
+                            );
                             let normalized_virtual = normalize_path_separator(&virtual_path);
-                            
+
                             new_entries.insert(real_path.clone(), normalized_virtual);
                             if let Some(meta) = current_files.get(real_path) {
                                 new_metadata_entries.insert(real_path.clone(), meta.clone());
@@ -2241,9 +2266,13 @@ async fn refresh_workspace(
                     for real_path in &modified_files {
                         let file_path = Path::new(real_path);
                         if let Ok(relative) = file_path.strip_prefix(source_path) {
-                            let virtual_path = format!("{}/{}", root_name, relative.to_string_lossy().replace('\\', "/"));
+                            let virtual_path = format!(
+                                "{}/{}",
+                                root_name,
+                                relative.to_string_lossy().replace('\\', "/")
+                            );
                             let normalized_virtual = normalize_path_separator(&virtual_path);
-                            
+
                             new_entries.insert(real_path.clone(), normalized_virtual);
                             if let Some(meta) = current_files.get(real_path) {
                                 new_metadata_entries.insert(real_path.clone(), meta.clone());
@@ -2265,7 +2294,10 @@ async fn refresh_workspace(
                         existing_metadata.remove(real_path);
                     }
 
-                    eprintln!("[DEBUG] Updated index: {} total files", existing_path_map.len());
+                    eprintln!(
+                        "[DEBUG] Updated index: {} total files",
+                        existing_path_map.len()
+                    );
                 }
 
                 let _ = app_handle.emit(
@@ -2273,11 +2305,11 @@ async fn refresh_workspace(
                     TaskProgress {
                         task_id: task_id_clone.clone(),
                         task_type: "Refresh".to_string(),
-                        target: file_name.clone(),  // 使用文件名
+                        target: file_name.clone(), // 使用文件名
                         status: "RUNNING".to_string(),
                         message: "Saving index...".to_string(),
                         progress: 80,
-                        workspace_id: Some(workspace_id_clone.clone()),  // 添加 workspace_id
+                        workspace_id: Some(workspace_id_clone.clone()), // 添加 workspace_id
                     },
                 );
 
@@ -2290,7 +2322,7 @@ async fn refresh_workspace(
                 ) {
                     Ok(index_path) => {
                         eprintln!("[DEBUG] Index updated: {}", index_path.display());
-                        
+
                         // 更新内存中的索引
                         let state = app_handle.state::<AppState>();
                         let mut map_guard = state
@@ -2301,7 +2333,7 @@ async fn refresh_workspace(
                             .file_metadata
                             .lock()
                             .map_err(|e| format!("Lock error: {}", e))?;
-                        
+
                         *map_guard = existing_path_map;
                         *metadata_guard = existing_metadata;
                     }
@@ -2322,26 +2354,29 @@ async fn refresh_workspace(
                 TaskProgress {
                     task_id: task_id_clone.clone(),
                     task_type: "Refresh".to_string(),
-                    target: file_name.clone(),  // 使用文件名
+                    target: file_name.clone(), // 使用文件名
                     status: "FAILED".to_string(),
                     message: "Refresh failed".to_string(),
                     progress: 0,
-                    workspace_id: Some(workspace_id_clone.clone()),  // 添加 workspace_id
+                    workspace_id: Some(workspace_id_clone.clone()), // 添加 workspace_id
                 },
             );
         } else {
             eprintln!("[DEBUG] Refresh completed for task: {}", task_id_clone);
-            eprintln!("[DEBUG] Sending COMPLETED event with workspace_id: {:?}", workspace_id_clone);
+            eprintln!(
+                "[DEBUG] Sending COMPLETED event with workspace_id: {:?}",
+                workspace_id_clone
+            );
             let _ = app_handle.emit(
                 "task-update",
                 TaskProgress {
                     task_id: task_id_clone.clone(),
                     task_type: "Refresh".to_string(),
-                    target: file_name,  // 使用文件名
+                    target: file_name, // 使用文件名
                     status: "COMPLETED".to_string(),
                     message: "Refresh complete".to_string(),
                     progress: 100,
-                    workspace_id: Some(workspace_id_clone.clone()),  // 添加 workspace_id
+                    workspace_id: Some(workspace_id_clone.clone()), // 添加 workspace_id
                 },
             );
             eprintln!("[DEBUG] Sending import-complete event");
@@ -2386,11 +2421,8 @@ fn export_to_csv(results: &[LogEntry], path: &str) -> Result<String, String> {
         .map_err(|e| format!("Failed to write BOM: {}", e))?;
 
     // 写入 CSV 头部
-    writeln!(
-        writer,
-        "ID,Timestamp,Level,File,Line,Content"
-    )
-    .map_err(|e| format!("Failed to write CSV header: {}", e))?;
+    writeln!(writer, "ID,Timestamp,Level,File,Line,Content")
+        .map_err(|e| format!("Failed to write CSV header: {}", e))?;
 
     // 写入数据行
     for entry in results {
@@ -2405,12 +2437,7 @@ fn export_to_csv(results: &[LogEntry], path: &str) -> Result<String, String> {
         writeln!(
             writer,
             "{},\"{}\",{},\"{}\",{},\"{}\"",
-            entry.id,
-            entry.timestamp,
-            entry.level,
-            file_escaped,
-            entry.line,
-            content_escaped
+            entry.id, entry.timestamp, entry.level, file_escaped, entry.line, content_escaped
         )
         .map_err(|e| format!("Failed to write CSV row: {}", e))?;
     }
@@ -2419,7 +2446,10 @@ fn export_to_csv(results: &[LogEntry], path: &str) -> Result<String, String> {
         .flush()
         .map_err(|e| format!("Failed to flush CSV file: {}", e))?;
 
-    eprintln!("[DEBUG] CSV export completed: {} rows written", results.len());
+    eprintln!(
+        "[DEBUG] CSV export completed: {} rows written",
+        results.len()
+    );
     Ok(path.to_string())
 }
 
@@ -2517,13 +2547,13 @@ async fn get_performance_metrics(
 }
 
 /// 获取当前进程内存使用量（MB）
-/// 
+///
 /// 使用平台特定的 API 获取进程的常驻内存大小（RSS）
 fn get_process_memory_mb() -> f64 {
     #[cfg(target_os = "windows")]
     {
         use std::mem;
-        
+
         #[repr(C)]
         #[allow(non_snake_case)]
         struct PROCESS_MEMORY_COUNTERS {
@@ -2538,7 +2568,7 @@ fn get_process_memory_mb() -> f64 {
             PagefileUsage: usize,
             PeakPagefileUsage: usize,
         }
-        
+
         extern "system" {
             fn GetCurrentProcess() -> *mut std::ffi::c_void;
             fn GetProcessMemoryInfo(
@@ -2547,20 +2577,20 @@ fn get_process_memory_mb() -> f64 {
                 cb: u32,
             ) -> i32;
         }
-        
+
         unsafe {
             let mut pmc: PROCESS_MEMORY_COUNTERS = mem::zeroed();
             pmc.cb = mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
-            
+
             let process = GetCurrentProcess();
             if GetProcessMemoryInfo(process, &mut pmc, pmc.cb) != 0 {
                 return pmc.WorkingSetSize as f64 / 1024.0 / 1024.0;
             }
         }
-        
+
         0.0
     }
-    
+
     #[cfg(not(target_os = "windows"))]
     {
         // Linux/macOS: 简化实现，返回 0
@@ -2571,12 +2601,12 @@ fn get_process_memory_mb() -> f64 {
 /// 递归计算目录总大小
 fn calculate_dir_size(dir: &Path) -> Result<u64, std::io::Error> {
     let mut total_size = 0u64;
-    
+
     if dir.is_dir() {
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
-            
+
             if path.is_dir() {
                 total_size += calculate_dir_size(&path)?;
             } else if path.is_file() {
@@ -2584,22 +2614,22 @@ fn calculate_dir_size(dir: &Path) -> Result<u64, std::io::Error> {
             }
         }
     }
-    
+
     Ok(total_size)
 }
 
 /// 检查RAR支持状态
 #[command]
 async fn check_rar_support() -> Result<serde_json::Value, String> {
-    let available = check_unrar_available()
-        .map_err(|e| format!("Failed to check RAR support: {}", e))?;
-    
+    let available =
+        check_unrar_available().map_err(|e| format!("Failed to check RAR support: {}", e))?;
+
     let install_guide = if !available {
         Some(get_unrar_install_guide())
     } else {
         None
     };
-    
+
     Ok(serde_json::json!({
         "available": available,
         "install_guide": install_guide,
@@ -2615,13 +2645,13 @@ async fn start_watch(
     #[allow(non_snake_case)] autoSearch: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    use notify::{Watcher, RecursiveMode, recommended_watcher, Event};
+    use notify::{recommended_watcher, Event, RecursiveMode, Watcher};
     use std::sync::mpsc::channel;
-    
+
     // 参数验证
     validate_workspace_id(&workspaceId)?;
     validate_path_param(&path, "path")?;
-    
+
     eprintln!(
         "[DEBUG] start_watch called: workspace_id={}, path={}, auto_search={:?}",
         workspaceId, path, autoSearch
@@ -2635,7 +2665,9 @@ async fn start_watch(
 
     // 检查是否已经在监听
     {
-        let watchers = state.watchers.lock()
+        let watchers = state
+            .watchers
+            .lock()
             .map_err(|e| format!("Lock error: {}", e))?;
         if watchers.contains_key(&workspaceId) {
             return Err("Workspace is already being watched".to_string());
@@ -2652,7 +2684,9 @@ async fn start_watch(
 
     // 添加到状态管理
     {
-        let mut watchers = state.watchers.lock()
+        let mut watchers = state
+            .watchers
+            .lock()
             .map_err(|e| format!("Lock error: {}", e))?;
         watchers.insert(workspaceId.clone(), watcher_state);
     }
@@ -2662,13 +2696,16 @@ async fn start_watch(
     let workspace_id_clone = workspaceId.clone();
     let watch_path_clone = watch_path.clone();
     let watchers_arc = Arc::clone(&state.watchers);
-    
+
     std::thread::spawn(move || {
-        eprintln!("[DEBUG] File watcher thread started for workspace: {}", workspace_id_clone);
-        
+        eprintln!(
+            "[DEBUG] File watcher thread started for workspace: {}",
+            workspace_id_clone
+        );
+
         // 创建事件通道
         let (tx, rx) = channel::<Result<Event, notify::Error>>();
-        
+
         // 创建监听器
         let mut watcher = match recommended_watcher(tx) {
             Ok(w) => w,
@@ -2677,21 +2714,24 @@ async fn start_watch(
                 return;
             }
         };
-        
+
         // 开始监听
         if let Err(e) = watcher.watch(&watch_path_clone, RecursiveMode::Recursive) {
             eprintln!("[ERROR] Failed to start watching: {}", e);
             return;
         }
-        
-        eprintln!("[DEBUG] Successfully started watching: {}", watch_path_clone.display());
-        
+
+        eprintln!(
+            "[DEBUG] Successfully started watching: {}",
+            watch_path_clone.display()
+        );
+
         // 事件处理循环
         for res in rx {
             match res {
                 Ok(event) => {
                     eprintln!("[DEBUG] File event received: {:?}", event);
-                    
+
                     // 处理事件
                     let event_type = match event.kind {
                         notify::EventKind::Create(_) => "created",
@@ -2699,11 +2739,11 @@ async fn start_watch(
                         notify::EventKind::Remove(_) => "deleted",
                         _ => continue,
                     };
-                    
+
                     // 处理每个受影响的文件
                     for path in event.paths {
                         let file_path_str = path.to_string_lossy().to_string();
-                        
+
                         // 发送文件变化事件到前端
                         let file_change = FileChangeEvent {
                             event_type: event_type.to_string(),
@@ -2712,16 +2752,17 @@ async fn start_watch(
                             timestamp: chrono::Utc::now().timestamp(),
                         };
                         let _ = app_handle.emit("file-changed", file_change);
-                        
+
                         // 如果是文件修改事件，执行增量读取
                         if event_type == "modified" && path.is_file() {
                             eprintln!("[DEBUG] Processing modified file: {}", path.display());
-                            
+
                             // 获取上次偏移量
                             let (offset, watcher_workspace_id, watcher_watched_path) = {
                                 if let Ok(mut watchers) = watchers_arc.lock() {
                                     if let Some(watcher) = watchers.get_mut(&workspace_id_clone) {
-                                        let offset = *watcher.file_offsets.get(&file_path_str).unwrap_or(&0);
+                                        let offset =
+                                            *watcher.file_offsets.get(&file_path_str).unwrap_or(&0);
                                         let workspace_id = watcher.workspace_id.clone();
                                         let watched_path = watcher.watched_path.clone();
                                         (offset, workspace_id, watched_path)
@@ -2732,13 +2773,13 @@ async fn start_watch(
                                     continue;
                                 }
                             };
-                            
+
                             eprintln!(
                                 "[DEBUG] Reading from offset {} for file: {}",
                                 offset,
                                 path.display()
                             );
-                            
+
                             // 增量读取文件
                             match read_file_from_offset(&path, offset) {
                                 Ok((new_lines, new_offset)) => {
@@ -2748,7 +2789,7 @@ async fn start_watch(
                                             new_lines.len(),
                                             path.display()
                                         );
-                                        
+
                                         // 计算起始行号
                                         let start_line_number = if offset == 0 {
                                             1
@@ -2756,14 +2797,14 @@ async fn start_watch(
                                             // 估算行号（简化实现）
                                             (offset / 100) as usize + 1
                                         };
-                                        
+
                                         // 解析日志行
                                         let virtual_path = path
                                             .strip_prefix(&watcher_watched_path)
                                             .ok()
                                             .and_then(|p| p.to_str())
                                             .unwrap_or(path.to_str().unwrap_or("unknown"));
-                                        
+
                                         let new_entries = parse_log_lines(
                                             &new_lines,
                                             virtual_path,
@@ -2771,7 +2812,7 @@ async fn start_watch(
                                             0, // 临时 ID，实际应用中应该使用全局计数器
                                             start_line_number,
                                         );
-                                        
+
                                         // 发送新日志到前端
                                         let state = app_handle.state::<AppState>();
                                         let _ = append_to_workspace_index(
@@ -2780,17 +2821,20 @@ async fn start_watch(
                                             &app_handle,
                                             &state,
                                         );
-                                        
+
                                         eprintln!(
                                             "[DEBUG] Sent {} new log entries to frontend",
                                             new_entries.len()
                                         );
                                     }
-                                    
+
                                     // 更新偏移量
                                     if let Ok(mut watchers) = watchers_arc.lock() {
-                                        if let Some(watcher) = watchers.get_mut(&workspace_id_clone) {
-                                            watcher.file_offsets.insert(file_path_str.clone(), new_offset);
+                                        if let Some(watcher) = watchers.get_mut(&workspace_id_clone)
+                                        {
+                                            watcher
+                                                .file_offsets
+                                                .insert(file_path_str.clone(), new_offset);
                                             eprintln!(
                                                 "[DEBUG] Updated offset for {}: {} -> {}",
                                                 path.display(),
@@ -2801,38 +2845,39 @@ async fn start_watch(
                                     }
                                 }
                                 Err(e) => {
-                                    eprintln!(
-                                        "[WARNING] Failed to read file incrementally: {}",
-                                        e
-                                    );
+                                    eprintln!("[WARNING] Failed to read file incrementally: {}", e);
                                 }
                             }
                         }
                     }
-                    
+
                     // 检查是否还在活跃
                     let is_active = {
                         if let Ok(watchers) = watchers_arc.lock() {
-                            watchers.get(&workspace_id_clone)
+                            watchers
+                                .get(&workspace_id_clone)
                                 .map(|w| w.is_active)
                                 .unwrap_or(false)
                         } else {
                             false
                         }
                     };
-                    
+
                     if !is_active {
                         eprintln!("[DEBUG] Watcher deactivated, stopping thread");
                         break;
                     }
-                },
+                }
                 Err(e) => {
                     eprintln!("[ERROR] Watch error: {}", e);
                 }
             }
         }
-        
-        eprintln!("[DEBUG] File watcher thread terminated for workspace: {}", workspace_id_clone);
+
+        eprintln!(
+            "[DEBUG] File watcher thread terminated for workspace: {}",
+            workspace_id_clone
+        );
     });
 
     Ok(())
@@ -2844,22 +2889,27 @@ async fn stop_watch(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     eprintln!("[DEBUG] stop_watch called: workspace_id={}", workspaceId);
-    
+
     // 标记监听器为不活跃
-    let mut watchers = state.watchers.lock()
+    let mut watchers = state
+        .watchers
+        .lock()
         .map_err(|e| format!("Lock error: {}", e))?;
-    
+
     if let Some(watcher_state) = watchers.get_mut(&workspaceId) {
         watcher_state.is_active = false;
         eprintln!("[DEBUG] Watcher deactivated for workspace: {}", workspaceId);
     } else {
         return Err("No active watcher found for this workspace".to_string());
     }
-    
+
     // 从状态中移除
     watchers.remove(&workspaceId);
-    
-    eprintln!("[DEBUG] Watcher removed from state for workspace: {}", workspaceId);
+
+    eprintln!(
+        "[DEBUG] Watcher removed from state for workspace: {}",
+        workspaceId
+    );
     Ok(())
 }
 
