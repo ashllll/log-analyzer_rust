@@ -1804,7 +1804,28 @@ async fn search_logs(
             return;
         }
 
-        let re = match Regex::new(&format!("(?i){}", query)) {
+        // 转义用户输入的特殊字符，将其视为字面量而不是正则表达式
+        // 支持 | 分隔的多个关键词，每个关键词都转义后再 OR 组合
+        let terms: Vec<String> = query
+            .split('|')
+            .map(|t| t.trim())
+            .filter(|t| !t.is_empty())
+            .map(|t| regex::escape(t))  // 转义每个关键词
+            .collect();
+        
+        if terms.is_empty() {
+            let _ = app_handle.emit("search-error", "Search query is empty after processing");
+            return;
+        }
+        
+        // 使用 OR 组合多个关键词，(?i) 表示不区分大小写
+        let pattern = if terms.len() == 1 {
+            format!("(?i){}", terms[0])
+        } else {
+            format!("(?i)({})", terms.join("|"))
+        };
+        
+        let re = match Regex::new(&pattern) {
             Ok(r) => r,
             Err(e) => {
                 let _ = app_handle.emit("search-error", format!("Invalid Regex: {}", e));
