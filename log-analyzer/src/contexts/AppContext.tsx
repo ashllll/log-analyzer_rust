@@ -40,6 +40,7 @@ export interface Task {
   progress: number;
   message: string;
   status: 'RUNNING' | 'COMPLETED' | 'FAILED' | 'STOPPED';
+  workspaceId?: string;  // 工作区 ID，用于匹配任务与工作区
 }
 
 export interface Toast {
@@ -390,10 +391,23 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       
       // 当任务完成时，更新工作区状态为 READY
       if (status === 'COMPLETED') {
-        // 查找对应的工作区
-        const workspace = workspaceState.workspaces.find(w => 
-          w.status === 'PROCESSING' && w.name === target
-        );
+        // 查找对应的工作区：优先使用 workspaceId，其次使用 name 匹配
+        const task = taskState.tasks.find(t => t.id === task_id);
+        let workspace = null;
+        
+        if (task?.workspaceId) {
+          // 优先通过 workspaceId 匹配
+          workspace = workspaceState.workspaces.find(w => 
+            w.id === task.workspaceId && w.status === 'PROCESSING'
+          );
+        }
+        
+        if (!workspace) {
+          // 备选：通过 name 匹配
+          workspace = workspaceState.workspaces.find(w => 
+            w.status === 'PROCESSING' && w.name === target
+          );
+        }
         
         if (workspace) {
           console.log('[EVENT] Updating workspace status to READY:', workspace.id);
@@ -401,12 +415,25 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             type: 'UPDATE_WORKSPACE',
             payload: { id: workspace.id, updates: { status: 'READY' } }
           });
+        } else {
+          console.warn('[EVENT] Could not find workspace for completed task:', { task_id, target });
         }
       } else if (status === 'FAILED') {
         // 查找对应的工作区
-        const workspace = workspaceState.workspaces.find(w => 
-          w.status === 'PROCESSING' && w.name === target
-        );
+        const task = taskState.tasks.find(t => t.id === task_id);
+        let workspace = null;
+        
+        if (task?.workspaceId) {
+          workspace = workspaceState.workspaces.find(w => 
+            w.id === task.workspaceId && w.status === 'PROCESSING'
+          );
+        }
+        
+        if (!workspace) {
+          workspace = workspaceState.workspaces.find(w => 
+            w.status === 'PROCESSING' && w.name === target
+          );
+        }
         
         if (workspace) {
           console.log('[EVENT] Updating workspace status to OFFLINE:', workspace.id);
@@ -445,7 +472,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       unlistenImportComplete.then(f => f());
       unlistenImportError.then(f => f());
     };
-  }, [workspaceState.workspaces]);
+  }, [workspaceState.workspaces, taskState.tasks]);
 
   return (
     <AppContext.Provider value={{ state: appState, setPage, addToast, removeToast, setActiveWorkspace }}>

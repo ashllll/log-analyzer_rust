@@ -112,10 +112,11 @@ export const useWorkspaceOperations = () => {
         payload: {
           id: taskId,
           type: 'Import',
-          target: pathStr,
+          target: fileName,  // 使用文件名而不是完整路径
           progress: 0,
           status: 'RUNNING',
-          message: 'Initializing...'
+          message: 'Initializing...',
+          workspaceId: newWs.id  // 添加工作区ID用于匹配
         }
       });
       
