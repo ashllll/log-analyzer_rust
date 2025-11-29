@@ -42,8 +42,14 @@ jobs:
             # 如果是 tag 推送，使用 tag 名作为版本号（去掉 v 前缀）
             VERSION="${GITHUB_REF_NAME#v}"
           else
-            # 如果是 main 分支推送，使用 0.0.0-nightly.YYYYMMDD
-            VERSION="0.0.0-nightly.$(date +'%Y%m%d')"
+            # 如果是 main 分支推送，使用适合 MSI 的版本号格式
+            # 格式: 0.0.YYMM.DDHH (年月.日时)
+            # 例如: 0.0.2411.2914 表示 2024年11月29日14时
+            YEAR=$(date +'%y')
+            MONTH=$(date +'%m')
+            DAY=$(date +'%d')
+            HOUR=$(date +'%H')
+            VERSION="0.0.${YEAR}${MONTH}.${DAY}${HOUR}"
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Version: $VERSION"
