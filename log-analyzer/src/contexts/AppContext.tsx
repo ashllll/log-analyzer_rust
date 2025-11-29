@@ -369,6 +369,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   // 监听后端任务事件
   useEffect(() => {
+    // 使用 Set 跟踪已创建的任务 ID，避免重复创建
+    const createdTaskIds = new Set<string>();
+    
     // 监听任务更新事件
     const unlistenTaskUpdate = listen<any>('task-update', (event) => {
       const { task_id, task_type, target, status, message, progress, workspace_id } = event.payload;
@@ -377,9 +380,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       // 检查任务是否已存在
       const existingTask = taskState.tasks.find(t => t.id === task_id);
       
-      if (!existingTask) {
-        // 如果任务不存在，先添加它
+      if (!existingTask && !createdTaskIds.has(task_id)) {
+        // 如果任务不存在且未被标记为已创建，先添加它
         console.log('[EVENT] Task not found, creating new task:', task_id);
+        createdTaskIds.add(task_id);
         taskDispatch({
           type: 'ADD_TASK',
           payload: {
@@ -392,8 +396,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             workspaceId: workspace_id
           }
         });
-      } else {
-        // 任务已存在，更新它
+      } else if (existingTask || createdTaskIds.has(task_id)) {
+        // 任务已存在或已标记为已创建，更新它
         taskDispatch({
           type: 'UPDATE_TASK',
           payload: {
