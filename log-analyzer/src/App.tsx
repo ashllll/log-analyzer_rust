@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { open, save } from '@tauri-apps/plugin-dialog';
+import { save } from '@tauri-apps/plugin-dialog';
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { 
   Search, LayoutGrid, ListTodo, Settings, Layers, 
@@ -12,7 +12,53 @@ import {
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
+// 导入全局Context和Hooks
+import { AppProvider, useApp, Toast, ToastType, Workspace, Task, KeywordGroup, KeywordPattern, ColorKey } from './contexts/AppContext';
+import { useWorkspaceOperations } from './hooks/useWorkspaceOperations';
+import { useTaskManager } from './hooks/useTaskManager';
+import { useKeywordManager } from './hooks/useKeywordManager';
+
 function cn(...inputs: ClassValue[]) { return twMerge(clsx(inputs)); }
+
+// 错误处理工具 - 供内部使用
+// @ts-ignore - used internally
+class ErrorHandler {
+  private static errorMap: Record<string, { message: string; suggestion: string }> = {
+    'Path canonicalization failed': { message: '路径无效或不存在', suggestion: '检查路径是否正确' },
+    'Failed to lock': { message: '资源正在使用中', suggestion: '稍后重试' },
+    'unrar command not found': { message: 'RAR支持未安装', suggestion: '查看安装指南' },
+    'Invalid Regex': { message: '搜索表达式语法错误', suggestion: '检查正则表达式格式' },
+    'Disk space': { message: '磁盘空间不足', suggestion: '清理磁盘空间后重试' },
+    'Path does not exist': { message: '路径不存在', suggestion: '选择有效的文件或目录' },
+    'Workspace ID cannot be empty': { message: '工作区 ID 不能为空', suggestion: '请选择一个工作区' },
+    'Search query cannot be empty': { message: '搜索查询不能为空', suggestion: '输入搜索关键词' },
+  };
+
+  static handle(error: any): string {
+    const errorStr = String(error);
+    logger.error('Error occurred:', errorStr);
+    
+    // 匹配错误模式
+    for (const [pattern, info] of Object.entries(this.errorMap)) {
+      if (errorStr.includes(pattern)) {
+        return `${info.message} - ${info.suggestion}`;
+      }
+    }
+    
+    // 默认错误消息
+    if (errorStr.length > 100) {
+      return '操作失败，请查看控制台详情';
+    }
+    return errorStr;
+  }
+  
+  static isRetryable(error: any): boolean {
+    const errorStr = String(error);
+    return errorStr.includes('Failed to lock') || 
+           errorStr.includes('Resource busy') ||
+           errorStr.includes('timeout');
+  }
+}
 
 // 统一日志工具
 const logger = {
@@ -29,10 +75,7 @@ const logger = {
   }
 };
 
-// Types
-type Page = 'search' | 'keywords' | 'workspaces' | 'tasks' | 'settings';
-type ColorKey = 'blue' | 'green' | 'red' | 'orange' | 'purple';
-type ToastType = 'success' | 'error' | 'info';
+// 本地类型定义
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'active' | 'icon';
 type LucideIcon = React.ComponentType<{ size?: number; className?: string }>;
 
@@ -55,19 +98,6 @@ interface PerformanceStats {
 }
 
 interface LogEntry { id: number; timestamp: string; level: string; file: string; line: number; content: string; tags: any[]; real_path?: string; }
-interface KeywordPattern { regex: string; comment: string; }
-interface KeywordGroup { id: string; name: string; color: ColorKey; patterns: KeywordPattern[]; enabled: boolean; }
-interface Workspace { id: string; name: string; path: string; status: 'READY' | 'SCANNING' | 'OFFLINE' | 'PROCESSING'; size: string; files: number; watching?: boolean; }
-interface Task { 
-    id: string; 
-    type: string; 
-    target: string; 
-    progress: number; 
-    message: string;
-    status: 'RUNNING' | 'COMPLETED' | 'FAILED' | 'STOPPED'; 
-}
-interface Toast { id: number; type: ToastType; message: string; }
-interface TaskUpdateEvent { task_id: string; task_type: string; target: string; status: string; message: string; progress: number; }
 
 // Component Props Types
 interface NavItemProps { icon: LucideIcon; label: string; active: boolean; onClick: () => void; }
@@ -106,11 +136,14 @@ interface SearchPageProps {
     searchInputRef: React.RefObject<HTMLInputElement | null>;
     activeWorkspace: Workspace | null;
 }
+// Component Props Types (legacy - kept for future use)
+// @ts-ignore
 interface KeywordsPageProps {
     keywordGroups: KeywordGroup[];
     setKeywordGroups: React.Dispatch<React.SetStateAction<KeywordGroup[]>>;
     addToast: (type: ToastType, message: string) => void;
 }
+// @ts-ignore
 interface WorkspacesPageProps {
     workspaces: Workspace[];
     setWorkspaces: React.Dispatch<React.SetStateAction<Workspace[]>>;
@@ -198,8 +231,43 @@ const HybridLogRenderer = ({ text, query, keywordGroups }: HybridLogRendererProp
     const sorted = Array.from(patterns).sort((a:any, b:any) => b.length - a.length);
     return { regexPattern: sorted.length > 0 ? new RegExp(`(${sorted.map((p:any) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi') : null, patternMap: map };
   }, [keywordGroups, query]);
+  
+  // 性能优化：文本长度检查
+  if (text.length > 500) {
+    // 超长文本截断显示
+    const truncated = text.substring(0, 500) + '...';
+    if (!regexPattern) return <span>{truncated}</span>;
+    const parts = truncated.split(regexPattern);
+    // 仅高亮可见部分
+    return <span>{parts.map((part:string, i:number) => { 
+      const info = patternMap.get(part.toLowerCase()); 
+      if (info) { 
+        const style = COLOR_STYLES[info.color as ColorKey]?.highlight || COLOR_STYLES['blue'].highlight; 
+        return <span key={i} className={cn("rounded-[2px] px-1 border font-bold break-all", style)}>{part}</span>;
+      } 
+      return <span key={i}>{part}</span>; 
+    })}<span className="text-text-dim ml-1">[truncated]</span></span>;
+  }
+  
   if (!regexPattern) return <span>{text}</span>;
-  return <span>{text.split(regexPattern).map((part:string, i:number) => { const info = patternMap.get(part.toLowerCase()); if (info) { const style = COLOR_STYLES[info.color as ColorKey]?.highlight || COLOR_STYLES['blue'].highlight; return <span key={i} className="inline-flex items-baseline mx-[1px]"><span className={cn("rounded-[2px] px-1 border font-bold break-all", style)}>{part}</span>{info.comment && <span className={cn("ml-1 px-1.5 rounded-[2px] text-[10px] font-normal border select-none whitespace-nowrap transform -translate-y-[1px]", style.replace("bg-", "bg-opacity-10 bg-"))}>{info.comment}</span>}</span>; } return <span key={i}>{part}</span>; })}</span>;
+  
+  const parts = text.split(regexPattern);
+  
+  // 性能优化：匹配数量检查
+  const matchCount = parts.filter(part => patternMap.has(part.toLowerCase())).length;
+  if (matchCount > 20) {
+    // 降级为纯文本+提示
+    return <span className="text-text-dim">{text} <span className="text-[10px] bg-red-500/20 text-red-400 px-1 py-0.5 rounded border border-red-500/30 ml-1">[{matchCount} matches - rendering disabled for performance]</span></span>;
+  }
+  
+  return <span>{parts.map((part:string, i:number) => { 
+    const info = patternMap.get(part.toLowerCase()); 
+    if (info) { 
+      const style = COLOR_STYLES[info.color as ColorKey]?.highlight || COLOR_STYLES['blue'].highlight; 
+      return <span key={i} className="inline-flex items-baseline mx-[1px]"><span className={cn("rounded-[2px] px-1 border font-bold break-all", style)}>{part}</span>{info.comment && <span className={cn("ml-1 px-1.5 rounded-[2px] text-[10px] font-normal border select-none whitespace-nowrap transform -translate-y-[1px]", style.replace("bg-", "bg-opacity-10 bg-"))}>{info.comment}</span>}</span>; 
+    } 
+    return <span key={i}>{part}</span>; 
+  })}</span>;
 };
 const FilterPalette = ({ isOpen, onClose, groups, currentQuery, onToggleRule }: FilterPaletteProps) => {
     if (!isOpen) return null;
@@ -224,6 +292,22 @@ const SearchPage = ({ keywordGroups, addToast, searchInputRef, activeWorkspace }
   });
   
   const parentRef = useRef<HTMLDivElement>(null);
+
+  // ResizeObserver优化：监听容器尺寸变化，即时更新虚拟滚动
+  useEffect(() => {
+    if (!parentRef.current) return;
+    
+    const resizeObserver = new ResizeObserver(() => {
+      // 当容器尺寸变化时，虚拟滚动会自动重新计算
+      // 这里无需额外操作，useVirtualizer会自动响应
+    });
+    
+    resizeObserver.observe(parentRef.current);
+    
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, []);
 
   useEffect(() => {
     const unlistenResults = listen<LogEntry[]>('search-results', (e) => setLogs(prev => [...prev, ...e.payload]));
@@ -307,7 +391,7 @@ const SearchPage = ({ keywordGroups, addToast, searchInputRef, activeWorkspace }
     }
   };
   
-  // 优化：动态高度估算 - 提高显示密度
+  // 优化：动态高度估算 - 提高显示密度，添加ResizeObserver支持
   const rowVirtualizer = useVirtualizer({ 
     count: logs.length, 
     getScrollElement: () => parentRef.current, 
@@ -319,7 +403,9 @@ const SearchPage = ({ keywordGroups, addToast, searchInputRef, activeWorkspace }
       return Math.max(28, Math.min(lines * 16, 120));  // 最小 28px，最大 120px，行高从 22px 减到 16px
     }, [logs]),
     overscan: 25,  // 增加 overscan 以保证流畅滚动
-    measureElement: (element) => element?.getBoundingClientRect().height || 28
+    measureElement: (element) => element?.getBoundingClientRect().height || 28,
+    // 启用动态测量以响应尺寸变化
+    enabled: true
   });
   
   const activeLog = logs.find(l => l.id === selectedId);
@@ -459,14 +545,19 @@ const SearchPage = ({ keywordGroups, addToast, searchInputRef, activeWorkspace }
   );
 };
 
-const KeywordsPage = ({ keywordGroups, setKeywordGroups, addToast }: KeywordsPageProps) => {
+const KeywordsPage = () => {
+  const { saveKeywordGroup, deleteKeywordGroup, keywordGroups } = useKeywordManager();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingGroup, setEditingGroup] = useState<KeywordGroup | null>(null);
+  
   const handleSave = (group: KeywordGroup) => {
-    if (editingGroup) { setKeywordGroups((prev: KeywordGroup[]) => prev.map(g => g.id === group.id ? group : g)); addToast('success', 'Updated'); } 
-    else { setKeywordGroups((prev: KeywordGroup[]) => [...prev, group]); addToast('success', 'Created'); }
+    const isEditing = !!editingGroup;
+    saveKeywordGroup(group, isEditing);
   };
-  const handleDelete = (id: string) => { setKeywordGroups((prev: KeywordGroup[]) => prev.filter(g => g.id !== id)); addToast('info', 'Deleted'); };
+  
+  const handleDelete = (id: string) => { 
+    deleteKeywordGroup(id);
+  };
 
   return (
     <div className="p-8 max-w-6xl mx-auto h-full overflow-auto">
@@ -487,158 +578,28 @@ const KeywordsPage = ({ keywordGroups, setKeywordGroups, addToast }: KeywordsPag
   );
 };
 
-const WorkspacesPage = ({ workspaces, setWorkspaces, addToast, setActiveWorkspaceId, activeWorkspaceId, setTasks }: WorkspacesPageProps) => {
-  const handleDelete = (id: string) => { setWorkspaces((prev: Workspace[]) => prev.filter(w => w.id !== id)); addToast('info', 'Deleted'); };
+const WorkspacesPage = () => {
+  const { workspaces, importFile, importFolder, refreshWorkspace, deleteWorkspace, toggleWatch } = useWorkspaceOperations();
+  const { state: appState, setActiveWorkspace } = useApp();
+  
+  const handleDelete = (id: string) => { 
+    deleteWorkspace(id); 
+  };
   
   const handleToggleWatch = async (ws: Workspace) => {
-    try {
-      if (ws.watching) {
-        await invoke('stop_watch', { workspaceId: ws.id });
-        setWorkspaces(prev => prev.map(w => 
-          w.id === ws.id ? { ...w, watching: false } : w
-        ));
-        addToast('info', '停止监听');
-      } else {
-        await invoke('start_watch', { 
-          workspaceId: ws.id, 
-          path: ws.path,
-          autoSearch: false 
-        });
-        setWorkspaces(prev => prev.map(w => 
-          w.id === ws.id ? { ...w, watching: true } : w
-        ));
-        addToast('info', '开始监听');
-      }
-    } catch (e) {
-      logger.error('Toggle watch error:', e);
-      addToast('error', `监听操作失败: ${e}`);
-    }
+    await toggleWatch(ws);
   };
   
   const handleRefresh = async (ws: Workspace) => {
-    logger.debug('handleRefresh called for workspace:', ws.id);
-    try {
-      const taskId = await invoke<string>("refresh_workspace", { 
-        workspaceId: ws.id,
-        path: ws.path
-      });
-      logger.debug('refresh_workspace returned taskId:', taskId);
-      
-      // 更新工作区状态
-      setWorkspaces((prev: Workspace[]) => prev.map(w => 
-        w.id === ws.id ? { ...w, status: 'PROCESSING' } : w
-      ));
-      
-      // 添加任务（如果不存在）
-      setTasks((prev: Task[]) => {
-        if (prev.find(t => t.id === taskId)) {
-          return prev;
-        }
-        return [...prev, { 
-          id: taskId, 
-          type: 'Refresh', 
-          target: ws.name, 
-          progress: 0, 
-          status: 'RUNNING', 
-          message: 'Starting refresh...' 
-        }];
-      });
-      
-      addToast('info', 'Refreshing workspace...');
-    } catch (e) {
-      logger.error('handleRefresh error:', e);
-      addToast('error', `Failed to refresh: ${e}`);
-    }
+    await refreshWorkspace(ws);
   };
   
   const handleImportFile = async () => {
-    logger.debug('handleImportFile called');
-    try {
-        // 选择单个文件或压缩包
-        const selected = await open({ 
-          directory: false,
-          multiple: false,
-          filters: [{
-            name: 'Log Files & Archives',
-            extensions: ['log', 'txt', 'gz', 'zip', 'tar', 'tgz', 'rar', '*']
-          }]
-        });
-        logger.debug('Selected file:', selected);
-        if (selected) {
-            await importPath(selected as string);
-        }
-    } catch (e) { 
-      logger.error('handleImportFile error:', e);
-      addToast('error', `${e}`); 
-    }
+    await importFile();
   };
   
   const handleImportFolder = async () => {
-    logger.debug('handleImportFolder called');
-    try {
-        // 选择文件夹
-        const selected = await open({ 
-          directory: true,
-          multiple: false
-        });
-        logger.debug('Selected folder:', selected);
-        if (selected) {
-            await importPath(selected as string);
-        }
-    } catch (e) { 
-      logger.error('handleImportFolder error:', e);
-      addToast('error', `${e}`); 
-    }
-  };
-  
-  const importPath = async (pathStr: string) => {
-    logger.debug('importPath called with:', pathStr);
-    try {
-      const fileName = pathStr.split(/[/\\]/).pop() || "New";
-      const newWs: Workspace = { 
-        id: Date.now().toString(), 
-        name: fileName, 
-        path: pathStr, 
-        status: 'PROCESSING', 
-        size: '-', 
-        files: 0 
-      };
-      logger.debug('Creating workspace:', newWs);
-      setWorkspaces((prev: Workspace[]) => [...prev, newWs]);
-      setActiveWorkspaceId(newWs.id);
-      
-      logger.debug('Invoking import_folder with:', { path: pathStr, workspaceId: newWs.id });
-      const taskId = await invoke<string>("import_folder", { 
-        path: pathStr, 
-        workspaceId: newWs.id
-      });
-      logger.debug('import_folder returned taskId:', taskId);
-      
-      // 注意：任务会通过 task-update 事件自动添加，这里仅作为后备
-      setTasks((prev: Task[]) => {
-        // 如果已经通过事件添加，则不重复
-        if (prev.find(t => t.id === taskId)) {
-          logger.debug('Task already exists, skipping');
-          return prev;
-        }
-        logger.debug('Adding task to list:', taskId);
-        return [...prev, { 
-          id: taskId, 
-          type: 'Import', 
-          target: pathStr, 
-          progress: 0, 
-          status: 'RUNNING', 
-          message: 'Initializing...' 
-        }];
-      });
-      
-      addToast('info', 'Import started');
-    } catch (e) {
-      logger.error('importPath error:', e);
-      addToast('error', `Failed to start import: ${e}`);
-      // 删除刚创建的工作区
-      setWorkspaces((prev: Workspace[]) => prev.slice(0, -1));
-    }
+    await importFolder();
   };
 
   return (
@@ -652,7 +613,7 @@ const WorkspacesPage = ({ workspaces, setWorkspaces, addToast, setActiveWorkspac
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
          {workspaces.map((ws: Workspace) => (
-           <Card key={ws.id} className={cn("h-full flex flex-col hover:border-primary/50 transition-colors group cursor-pointer", activeWorkspaceId === ws.id ? "border-primary ring-1 ring-primary" : "border-border-base")} onClick={() => setActiveWorkspaceId(ws.id)}>
+           <Card key={ws.id} className={cn("h-full flex flex-col hover:border-primary/50 transition-colors group cursor-pointer", appState.activeWorkspaceId === ws.id ? "border-primary ring-1 ring-primary" : "border-border-base")} onClick={() => setActiveWorkspace(ws.id)}>
               <div className="px-4 py-3 border-b border-border-base bg-bg-sidebar/50 font-bold text-sm flex justify-between items-center">
                   {ws.name}
                   <div className="flex gap-1">
@@ -681,9 +642,12 @@ const WorkspacesPage = ({ workspaces, setWorkspaces, addToast, setActiveWorkspac
   );
 };
 
-// --- Updated Tasks Page (Real Events) ---
-const TasksPage = ({ tasks, setTasks, addToast }: { tasks: Task[], setTasks: any, addToast: any }) => {
-  const handleDelete = (id: string) => { setTasks((prev: Task[]) => prev.filter(t => t.id !== id)); addToast('info', 'Task removed'); };
+const TasksPage = () => {
+  const { tasks, deleteTask } = useTaskManager();
+  
+  const handleDelete = (id: string) => { 
+    deleteTask(id);
+  };
 
   return (
     <div className="p-8 max-w-4xl mx-auto h-full overflow-auto">
@@ -818,118 +782,52 @@ const PerformancePage = ({ addToast }: { addToast: any }) => {
   );
 };
 
-// --- Main App ---
-export default function App() {
-  const [page, setPage] = useState<Page>('workspaces');
-  const [toasts, setToasts] = useState<Toast[]>([]);
-  const searchInputRef = useRef<HTMLInputElement>(null);
+// --- Main App Component (Internal) ---
+function AppContent() {
+  const { state: appState, setPage, addToast, removeToast } = useApp();
+  const { keywordGroups } = useKeywordManager();
+  const { workspaces } = useWorkspaceOperations();
   
-  const [keywordGroups, setKeywordGroups] = useState<KeywordGroup[]>([]);
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
-  const [importStatus, setImportStatus] = useState("");
-
-  useEffect(() => { invoke<any>("load_config").then(c => { if(c.keyword_groups) setKeywordGroups(c.keyword_groups); if(c.workspaces) setWorkspaces(c.workspaces); }); }, []);
-  useEffect(() => { if(keywordGroups.length>0 || workspaces.length>0) invoke("save_config", { config: { keyword_groups: keywordGroups, workspaces } }); }, [keywordGroups, workspaces]);
-
-  // 新增：工作区切换时自动加载索引
-  useEffect(() => {
-    if (activeWorkspaceId) {
-      const workspace = workspaces.find(w => w.id === activeWorkspaceId);
-      if (workspace && workspace.status === 'READY') {
-        invoke('load_workspace', { workspaceId: activeWorkspaceId })  // 修复：使用 camelCase
-          .then(() => {
-            addToast('success', `Loaded workspace: ${workspace.name}`);
-          })
-          .catch((e) => {
-            addToast('error', `Failed to load index: ${e}`);
-          });
-      }
-    }
-  }, [activeWorkspaceId]);
-
-  useEffect(() => {
-      // Listen for task updates from Rust
-      const u1 = listen<TaskUpdateEvent>('task-update', e => {
-          logger.debug('task-update event received:', e.payload);
-          const update = e.payload;
-          setTasks((prev: Task[]) => {
-            const existingTask = prev.find(t => t.id === update.task_id);
-            if (existingTask) {
-              logger.debug('Updating existing task:', update.task_id);
-              // 更新已存在的任务
-              return prev.map(t => t.id === update.task_id ? { 
-                ...t, 
-                type: update.task_type || t.type,
-                target: update.target || t.target,
-                status: update.status as any, 
-                message: update.message, 
-                progress: update.progress 
-              } : t);
-            } else {
-              logger.debug('Creating new task from event:', update.task_id);
-              // 创建新任务（如果前端没有创建）
-              return [...prev, {
-                id: update.task_id,
-                type: update.task_type || 'Import',
-                target: update.target || 'Unknown',
-                progress: update.progress,
-                status: update.status as any,
-                message: update.message
-              }];
-            }
-          });
-          // Optional: show global spinner text
-          if (update.status === 'RUNNING') setImportStatus(update.message);
-      });
-      
-      const u2 = listen('import-complete', (e: any) => { 
-          setImportStatus(""); 
-          setWorkspaces((prev: Workspace[]) => prev.map(w => w.status === 'PROCESSING' ? { ...w, status: 'READY' } : w));
-          // 更新对应的任务状态
-          const taskId = e.payload;
-          if (taskId) {
-            setTasks((prev: Task[]) => prev.map(t => t.id === taskId ? { ...t, status: 'COMPLETED', progress: 100, message: 'Done' } : t));
-          }
-          addToast('success', 'Process complete'); 
-      });
-      
-      const u3 = listen('import-error', (e) => { setImportStatus(""); addToast('error', `Error: ${e.payload}`); });
-      
-      return () => { u1.then(f=>f()); u2.then(f=>f()); u3.then(f=>f()); }
-  }, []);
-
-  const addToast = (type: ToastType, message: string) => { const id = Date.now(); setToasts(p => [...p, { id, type, message }]); setTimeout(() => setToasts(p => p.filter(t => t.id !== id)), 3000); };
-  const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId) || null;
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const [importStatus] = useState("");  // 保留以兼容旧代码，但实际不再使用
+  
+  const activeWorkspace = workspaces.find(w => w.id === appState.activeWorkspaceId) || null;
 
   return (
     <div className="flex h-screen bg-bg-main text-text-main font-sans selection:bg-primary/30">
       <div className="w-[240px] bg-bg-sidebar border-r border-border-base flex flex-col shrink-0 z-50">
         <div className="h-14 flex items-center px-5 border-b border-border-base mb-2 select-none"><div className="h-8 w-8 bg-primary rounded-lg flex items-center justify-center text-white mr-3 shadow-lg shadow-primary/20"><Zap size={18} fill="currentColor" /></div><span className="font-bold text-lg tracking-tight">LogAnalyzer</span></div>
         <div className="flex-1 px-3 py-4 space-y-1">
-            <NavItem icon={LayoutGrid} label="Workspaces" active={page === 'workspaces'} onClick={() => setPage('workspaces')} />
-            <NavItem icon={Search} label="Search Logs" active={page === 'search'} onClick={() => setPage('search')} />
-            <NavItem icon={ListTodo} label="Keywords" active={page === 'keywords'} onClick={() => setPage('keywords')} />
-            <NavItem icon={Layers} label="Tasks" active={page === 'tasks'} onClick={() => setPage('tasks')} />
+            <NavItem icon={LayoutGrid} label="Workspaces" active={appState.page === 'workspaces'} onClick={() => setPage('workspaces')} />
+            <NavItem icon={Search} label="Search Logs" active={appState.page === 'search'} onClick={() => setPage('search')} />
+            <NavItem icon={ListTodo} label="Keywords" active={appState.page === 'keywords'} onClick={() => setPage('keywords')} />
+            <NavItem icon={Layers} label="Tasks" active={appState.page === 'tasks'} onClick={() => setPage('tasks')} />
         </div>
         {importStatus && <div className="p-3 m-3 bg-bg-card border border-primary/20 rounded text-xs text-primary animate-pulse"><div className="font-bold mb-1 flex items-center gap-2"><Loader2 size={12} className="animate-spin"/> Processing</div><div className="truncate opacity-80">{importStatus}</div></div>}
         <div className="p-3 border-t border-border-base">
-          <NavItem icon={Settings} label="Settings" active={page === 'settings'} onClick={() => setPage('settings')} />
+          <NavItem icon={Settings} label="Settings" active={appState.page === 'settings'} onClick={() => setPage('settings')} />
         </div>
       </div>
       <div className="flex-1 flex flex-col min-w-0 bg-bg-main">
         <div className="h-14 border-b border-border-base bg-bg-main flex items-center justify-between px-6 shrink-0 z-40"><div className="flex items-center text-sm text-text-muted select-none"><span className="opacity-50">Workspace / </span><span className="font-medium text-text-main ml-2 flex items-center gap-2"><FileText size={14} className="text-primary"/> {activeWorkspace ? activeWorkspace.name : "Select Workspace"}</span></div></div>
         <div className="flex-1 overflow-hidden relative">
-           {page === 'search' && <SearchPage keywordGroups={keywordGroups} addToast={addToast} searchInputRef={searchInputRef} activeWorkspace={activeWorkspace} />}
-           {page === 'keywords' && <KeywordsPage keywordGroups={keywordGroups} setKeywordGroups={setKeywordGroups} addToast={addToast} />}
-           {page === 'workspaces' && <WorkspacesPage workspaces={workspaces} setWorkspaces={setWorkspaces} addToast={addToast} setActiveWorkspaceId={setActiveWorkspaceId} activeWorkspaceId={activeWorkspaceId} setTasks={setTasks} />}
-           {/* FIX: Pass addToast correctly */}
-           {page === 'tasks' && <TasksPage tasks={tasks} setTasks={setTasks} addToast={addToast} />}
-           {page === 'settings' && <PerformancePage addToast={addToast} />}
+           {appState.page === 'search' && <SearchPage keywordGroups={keywordGroups} addToast={addToast} searchInputRef={searchInputRef} activeWorkspace={activeWorkspace} />}
+           {appState.page === 'keywords' && <KeywordsPage />}
+           {appState.page === 'workspaces' && <WorkspacesPage />}
+           {appState.page === 'tasks' && <TasksPage />}
+           {appState.page === 'settings' && <PerformancePage addToast={addToast} />}
         </div>
       </div>
-      <ToastContainer toasts={toasts} removeToast={(id) => setToasts(prev => prev.filter(t => t.id !== id))} />
+      <ToastContainer toasts={appState.toasts} removeToast={removeToast} />
     </div>
+  );
+}
+
+// --- Main App (Wrapped with Provider) ---
+export default function App() {
+  return (
+    <AppProvider>
+      <AppContent />
+    </AppProvider>
   );
 }

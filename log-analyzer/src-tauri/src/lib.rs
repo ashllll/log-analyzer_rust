@@ -15,7 +15,16 @@ use walkdir::WalkDir;
 // --- Data Structures ---
 
 // 类型别名：简化复杂类型定义
-type SearchCache = Arc<Mutex<lru::LruCache<(String, String), Vec<LogEntry>>>>;
+// 搜索缓存键：包含查询、工作区ID和过滤条件
+type SearchCacheKey = (
+    String,                // query
+    String,                // workspace_id
+    Option<String>,        // time_start
+    Option<String>,        // time_end
+    Vec<String>,           // levels
+    Option<String>,        // file_pattern
+);
+type SearchCache = Arc<Mutex<lru::LruCache<SearchCacheKey, Vec<LogEntry>>>>;
 type PathMapType = HashMap<String, String>;
 type MetadataMapType = HashMap<String, FileMetadata>;
 type IndexResult = Result<(PathMapType, MetadataMapType), String>;
@@ -114,9 +123,320 @@ struct AppState {
     cache_hits: Arc<Mutex<u64>>,                 // 缓存命中次数
     // 实时监听
     watchers: Arc<Mutex<HashMap<String, WatcherState>>>,  // workspace_id -> WatcherState
+    // 临时文件清理队列（用于处理清理失败的情况）
+    cleanup_queue: Arc<Mutex<Vec<PathBuf>>>,    // 待清理的路径列表
+}
+
+impl Drop for AppState {
+    fn drop(&mut self) {
+        eprintln!("[INFO] AppState dropping, performing final cleanup...");
+        
+        // 执行最后的清理队列处理
+        process_cleanup_queue(&self.cleanup_queue);
+        
+        // 打印性能统计摘要
+        if let Ok(searches) = self.total_searches.lock() {
+            if let Ok(hits) = self.cache_hits.lock() {
+                let hit_rate = if *searches > 0 {
+                    (*hits as f64 / *searches as f64) * 100.0
+                } else {
+                    0.0
+                };
+                eprintln!(
+                    "[INFO] Session stats: {} searches, {} cache hits ({:.1}% hit rate)",
+                    searches, hits, hit_rate
+                );
+            }
+        }
+        
+        eprintln!("[INFO] AppState cleanup completed");
+    }
 }
 
 // --- Helpers ---
+
+/// 检测unrar命令是否可用
+/// 
+/// # 功能
+/// 检测系统中是否安装了unrar工具，用于RAR文件解压
+/// 
+/// # 返回值
+/// - `Ok(true)`: unrar可用
+/// - `Ok(false)`: unrar不可用
+/// - `Err(String)`: 检测过程出错
+/// 
+/// # 平台支持
+/// - Windows: 检测 unrar.exe
+/// - Linux/macOS: 检测 unrar
+fn check_unrar_available() -> Result<bool, String> {
+    use std::process::Command;
+    
+    let unrar_cmd = if cfg!(target_os = "windows") {
+        "unrar.exe"
+    } else {
+        "unrar"
+    };
+    
+    match Command::new(unrar_cmd).arg("-?").output() {
+        Ok(_) => Ok(true),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(format!("Failed to check unrar availability: {}", e)),
+    }
+}
+
+/// 获取unrar安装指引
+/// 
+/// # 功能
+/// 根据当前操作系统返回相应的unrar安装指令
+/// 
+/// # 返回值
+/// 包含unrar安装指南的字符串
+fn get_unrar_install_guide() -> String {
+    if cfg!(target_os = "windows") {
+        "RAR support requires 'unrar' to be installed.\n\
+         Please download from: https://www.rarlab.com/rar_add.htm\n\
+         After installation, add unrar.exe to your system PATH.".to_string()
+    } else if cfg!(target_os = "macos") {
+        "RAR support requires 'unrar' to be installed.\n\
+         Install with: brew install unrar".to_string()
+    } else {
+        "RAR support requires 'unrar' to be installed.\n\
+         Install with: sudo apt install unrar (Ubuntu/Debian)\n\
+         or: sudo yum install unrar (CentOS/Fedora)".to_string()
+    }
+}
+
+/// 验证路径参数
+/// 
+/// # 功能
+/// 检查路径是否非空且存在
+/// 
+/// # 参数
+/// - `path`: 要验证的路径字符串
+/// - `param_name`: 参数名称（用于错误消息）
+/// 
+/// # 返回值
+/// - `Ok(PathBuf)`: 验证通过，返回规范化后的路径
+/// - `Err(String)`: 验证失败，包含错误信息
+fn validate_path_param(path: &str, param_name: &str) -> Result<PathBuf, String> {
+    if path.trim().is_empty() {
+        return Err(format!("Parameter '{}' cannot be empty", param_name));
+    }
+    
+    let path_buf = PathBuf::from(path);
+    if !path_buf.exists() {
+        return Err(format!("Path does not exist: {}", path));
+    }
+    
+    Ok(path_buf)
+}
+
+/// 验证workspace_id参数
+/// 
+/// # 功能
+/// 检查workspace_id是否非空且格式合法
+/// 
+/// # 参数
+/// - `workspace_id`: 要验证的工作区ID
+/// 
+/// # 返回值
+/// - `Ok(())`: 验证通过
+/// - `Err(String)`: 验证失败，包含错误信息
+fn validate_workspace_id(workspace_id: &str) -> Result<(), String> {
+    if workspace_id.trim().is_empty() {
+        return Err("Workspace ID cannot be empty".to_string());
+    }
+    
+    // 检查是否包含非法字符（避免路径穿越）
+    if workspace_id.contains("..") || workspace_id.contains('/') || workspace_id.contains('\\') {
+        return Err("Workspace ID contains invalid characters".to_string());
+    }
+    
+    Ok(())
+}
+
+/// 文件操作重试辅助函数
+/// 
+/// # 功能
+/// 对可能暂时失败的文件操作进行重试
+/// 
+/// # 参数
+/// - `operation`: 要执行的操作闭包
+/// - `max_retries`: 最大重试次数
+/// - `delays_ms`: 每次重试的延迟时间（毫秒）
+/// - `operation_name`: 操作名称（用于日志）
+/// 
+/// # 返回值
+/// - `Ok(T)`: 操作成功，返回结果
+/// - `Err(String)`: 所有重试都失败，返回错误信息
+fn retry_file_operation<T, F>(
+    mut operation: F,
+    max_retries: usize,
+    delays_ms: &[u64],
+    operation_name: &str,
+) -> Result<T, String>
+where
+    F: FnMut() -> Result<T, String>,
+{
+    let mut last_error = String::new();
+    
+    for attempt in 0..=max_retries {
+        match operation() {
+            Ok(result) => {
+                if attempt > 0 {
+                    eprintln!(
+                        "[INFO] {} succeeded after {} retries",
+                        operation_name, attempt
+                    );
+                }
+                return Ok(result);
+            }
+            Err(e) => {
+                last_error = e.clone();
+                
+                // 检查是否是可重试的错误
+                let is_retryable = e.contains("permission denied") 
+                    || e.contains("Access is denied")
+                    || e.contains("file is being used")
+                    || e.contains("cannot access");
+                
+                if !is_retryable || attempt >= max_retries {
+                    eprintln!(
+                        "[ERROR] {} failed after {} attempts: {}",
+                        operation_name, attempt + 1, e
+                    );
+                    break;
+                }
+                
+                // 等待后重试
+                let delay = delays_ms.get(attempt).copied().unwrap_or(500);
+                eprintln!(
+                    "[WARN] {} failed (attempt {}), retrying in {}ms: {}",
+                    operation_name, attempt + 1, delay, e
+                );
+                std::thread::sleep(std::time::Duration::from_millis(delay));
+            }
+        }
+    }
+    
+    Err(format!(
+        "{} failed after {} attempts: {}",
+        operation_name,
+        max_retries + 1,
+        last_error
+    ))
+}
+
+/// 尝试清理临时目录，失败时加入清理队列
+/// 
+/// # 功能
+/// 尝试删除指定的临时目录，如果失败则将路径添加到清理队列
+/// 
+/// # 参数
+/// - `path`: 要清理的路径
+/// - `cleanup_queue`: 清理队列的Arc引用
+fn try_cleanup_temp_dir(path: &Path, cleanup_queue: &Arc<Mutex<Vec<PathBuf>>>) {
+    if !path.exists() {
+        return;
+    }
+    
+    // 尝试重试3次删除目录
+    let result = retry_file_operation(
+        || {
+            #[cfg(target_os = "windows")]
+            {
+                // Windows：递归移除只读属性
+                for entry in WalkDir::new(path) {
+                    if let Ok(entry) = entry {
+                        let _ = remove_readonly(entry.path());
+                    }
+                }
+            }
+            
+            fs::remove_dir_all(path)
+                .map_err(|e| format!("Failed to remove directory: {}", e))
+        },
+        3,
+        &[100, 500, 1000],
+        &format!("cleanup_temp_dir({})", path.display()),
+    );
+    
+    match result {
+        Ok(_) => {
+            eprintln!("[INFO] Successfully cleaned up temp directory: {}", path.display());
+        }
+        Err(e) => {
+            eprintln!(
+                "[WARN] Failed to clean up temp directory: {}. Adding to cleanup queue.",
+                e
+            );
+            // 添加到清理队列
+            if let Ok(mut queue) = cleanup_queue.lock() {
+                queue.push(path.to_path_buf());
+            }
+        }
+    }
+}
+
+/// 执行清理队列中的任务
+/// 
+/// # 功能
+/// 尝试清理队列中所有待处理的临时目录
+/// 
+/// # 参数
+/// - `cleanup_queue`: 清理队列的Arc引用
+fn process_cleanup_queue(cleanup_queue: &Arc<Mutex<Vec<PathBuf>>>) {
+    let paths_to_clean: Vec<PathBuf> = {
+        if let Ok(queue) = cleanup_queue.lock() {
+            queue.clone()
+        } else {
+            return;
+        }
+    };
+    
+    if paths_to_clean.is_empty() {
+        return;
+    }
+    
+    let total_count = paths_to_clean.len();
+    
+    eprintln!(
+        "[INFO] Processing cleanup queue with {} items",
+        total_count
+    );
+    
+    let mut successful = 0;
+    let mut failed_paths = Vec::new();
+    
+    for path in &paths_to_clean {
+        if !path.exists() {
+            successful += 1;
+            continue;
+        }
+        
+        match fs::remove_dir_all(path) {
+            Ok(_) => {
+                eprintln!("[INFO] Successfully cleaned up: {}", path.display());
+                successful += 1;
+            }
+            Err(e) => {
+                eprintln!("[WARN] Still cannot clean up {}: {}", path.display(), e);
+                failed_paths.push(path.clone());
+            }
+        }
+    }
+    
+    // 更新清理队列
+    if let Ok(mut queue) = cleanup_queue.lock() {
+        *queue = failed_paths;
+    }
+    
+    eprintln!(
+        "[INFO] Cleanup queue processed: {} successful, {} still pending",
+        successful,
+        total_count - successful
+    );
+}
 
 /// Windows 路径规范化（处理 UNC 路径和长路径）
 ///
@@ -153,16 +473,25 @@ fn canonicalize_path(path: &Path) -> Result<PathBuf, String> {
 #[allow(clippy::permissions_set_readonly_false)] // Windows 特定操作，允许设置可写
 fn remove_readonly(path: &Path) -> Result<(), String> {
     use std::os::windows::fs::MetadataExt;
-    if let Ok(metadata) = path.metadata() {
-        // Windows FILE_ATTRIBUTE_READONLY = 0x1
-        if metadata.file_attributes() & 0x1 != 0 {
-            let mut perms = metadata.permissions();
-            perms.set_readonly(false);
-            fs::set_permissions(path, perms)
-                .map_err(|e| format!("Failed to remove readonly: {}", e))?;
-        }
-    }
-    Ok(())
+    
+    // 使用重试机制
+    retry_file_operation(
+        || {
+            if let Ok(metadata) = path.metadata() {
+                // Windows FILE_ATTRIBUTE_READONLY = 0x1
+                if metadata.file_attributes() & 0x1 != 0 {
+                    let mut perms = metadata.permissions();
+                    perms.set_readonly(false);
+                    fs::set_permissions(path, perms)
+                        .map_err(|e| format!("Failed to remove readonly: {}", e))?;
+                }
+            }
+            Ok(())
+        },
+        2, // 最多重试2次
+        &[100, 300], // 延迟100ms和300ms
+        &format!("remove_readonly({})", path.display()),
+    )
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -401,35 +730,42 @@ fn process_tar_archive<R: std::io::Read>(
         .entries()
         .map_err(|e| format!("Failed to read tar entries: {}", e))?;
 
+    let mut success_count = 0;
+    let mut error_count = 0;
+    let mut errors = Vec::new();
+
     for mut file in entries.flatten() {
-        let entry_path = file
-            .path()
-            .map_err(|e| format!("Invalid tar entry path: {}", e))?;
-        let entry_name = entry_path.to_string_lossy().to_string();
+        let entry_result = (|| -> Result<(), String> {
+            let entry_path = file
+                .path()
+                .map_err(|e| format!("Invalid tar entry path: {}", e))?;
+            let entry_name = entry_path.to_string_lossy().to_string();
 
-        // 安全检查：阻止路径穿越
-        if entry_name.contains("..") {
-            eprintln!("[WARNING] Skipping unsafe path: {}", entry_name);
-            continue;
-        }
+            // 安全检查：阻止路径穿越
+            if entry_name.contains("..") {
+                return Err(format!("Unsafe path detected: {}", entry_name));
+            }
 
-        // Windows 兼容：处理路径分隔符
-        let normalized_name = entry_name.replace('\\', "/");
-        let out_path = safe_path_join(&extract_path, &normalized_name);
+            // Windows 兼容：处理路径分隔符
+            let normalized_name = entry_name.replace('\\', "/");
+            let out_path = safe_path_join(&extract_path, &normalized_name);
 
-        if let Some(p) = out_path.parent() {
-            let _ = fs::create_dir_all(p);
-        }
+            if let Some(p) = out_path.parent() {
+                fs::create_dir_all(p)
+                    .map_err(|e| format!("Failed to create parent dir for {}: {}", normalized_name, e))?;
+            }
 
-        // Windows 兼容：在解压前移除只读属性
-        if out_path.exists() {
-            let _ = remove_readonly(&out_path);
-        }
+            // Windows 兼容：在解压前移除只读属性
+            if out_path.exists() {
+                remove_readonly(&out_path)
+                    .map_err(|e| format!("Failed to remove readonly for {}: {}", normalized_name, e))?;
+            }
 
-        if file.unpack(&out_path).is_ok() {
+            file.unpack(&out_path)
+                .map_err(|e| format!("Failed to unpack {}: {}", normalized_name, e))?;
+
             let new_virtual = format!("{}/{}", ctx.virtual_path, normalized_name);
-
-            // 递归处理解压后的文件（文件和目录都需要处理）
+            // 递归处理解压后的文件
             process_path_recursive(
                 &out_path,
                 &new_virtual,
@@ -438,9 +774,40 @@ fn process_tar_archive<R: std::io::Read>(
                 ctx.app,
                 ctx.task_id,
             );
+            
+            Ok(())
+        })();
+
+        match entry_result {
+            Ok(_) => success_count += 1,
+            Err(e) => {
+                error_count += 1;
+                eprintln!("[WARNING] TAR entry extraction failed: {}", e);
+                errors.push(e);
+                // 继续处理其他文件，不中断整体流程
+            }
         }
     }
-    Ok(())
+
+    eprintln!(
+        "[INFO] TAR extraction complete: {} succeeded, {} failed",
+        success_count, error_count
+    );
+
+    // 如果有部分文件成功，则返回Ok，但在消息中标注部分失败
+    if success_count > 0 {
+        if error_count > 0 {
+            eprintln!("[WARN] TAR archive partially extracted ({} errors)", error_count);
+        }
+        Ok(())
+    } else if error_count > 0 {
+        Err(format!(
+            "All TAR entries failed to extract. First error: {}",
+            errors.first().unwrap_or(&"Unknown error".to_string())
+        ))
+    } else {
+        Ok(())
+    }
 }
 
 // --- ZIP Processor (Windows 编码优化) ---
@@ -463,15 +830,20 @@ fn process_zip_archive(
     fs::create_dir_all(&extract_path)
         .map_err(|e| format!("Failed to create extract dir: {}", e))?;
 
+    let mut success_count = 0;
+    let mut error_count = 0;
+    let mut errors = Vec::new();
+
     for i in 0..archive.len() {
-        if let Ok(mut file) = archive.by_index(i) {
+        let entry_result = (|| -> Result<(), String> {
+            let mut file = archive.by_index(i)
+                .map_err(|e| format!("Failed to read zip entry {}: {}", i, e))?;
             let name_raw = file.name_raw().to_vec();
-            let name = decode_filename(&name_raw); // Windows 编码处理
+            let name = decode_filename(&name_raw);
 
             // 安全检查
             if name.contains("..") {
-                eprintln!("[WARNING] Skipping unsafe zip entry: {}", name);
-                continue;
+                return Err(format!("Unsafe zip entry: {}", name));
             }
 
             // Windows 兼容：路径分隔符规范化
@@ -479,35 +851,70 @@ fn process_zip_archive(
             let out_path = safe_path_join(&extract_path, &normalized_name);
 
             if file.is_dir() {
-                let _ = fs::create_dir_all(&out_path);
+                fs::create_dir_all(&out_path)
+                    .map_err(|e| format!("Failed to create directory {}: {}", normalized_name, e))?;
             } else {
                 if let Some(p) = out_path.parent() {
-                    let _ = fs::create_dir_all(p);
+                    fs::create_dir_all(p)
+                        .map_err(|e| format!("Failed to create parent dir for {}: {}", normalized_name, e))?;
                 }
 
                 // Windows 兼容：在解压前移除只读属性
                 if out_path.exists() {
-                    let _ = remove_readonly(&out_path);
+                    remove_readonly(&out_path)
+                        .map_err(|e| format!("Failed to remove readonly for {}: {}", normalized_name, e))?;
                 }
 
-                if let Ok(mut outfile) = File::create(&out_path) {
-                    if std::io::copy(&mut file, &mut outfile).is_ok() {
-                        let new_virtual = format!("{}/{}", virtual_path, normalized_name);
-                        // 递归处理
-                        process_path_recursive(
-                            &out_path,
-                            &new_virtual,
-                            target_root,
-                            map,
-                            app,
-                            task_id,
-                        );
-                    }
-                }
+                let mut outfile = File::create(&out_path)
+                    .map_err(|e| format!("Failed to create file {}: {}", normalized_name, e))?;
+                std::io::copy(&mut file, &mut outfile)
+                    .map_err(|e| format!("Failed to extract {}: {}", normalized_name, e))?;
+
+                let new_virtual = format!("{}/{}", virtual_path, normalized_name);
+                // 递归处理
+                process_path_recursive(
+                    &out_path,
+                    &new_virtual,
+                    target_root,
+                    map,
+                    app,
+                    task_id,
+                );
+            }
+            
+            Ok(())
+        })();
+
+        match entry_result {
+            Ok(_) => success_count += 1,
+            Err(e) => {
+                error_count += 1;
+                eprintln!("[WARNING] ZIP entry extraction failed: {}", e);
+                errors.push(e);
+                // 继续处理其他文件
             }
         }
     }
-    Ok(())
+
+    eprintln!(
+        "[INFO] ZIP extraction complete: {} succeeded, {} failed",
+        success_count, error_count
+    );
+
+    // 如果有部分文件成功，则返回Ok
+    if success_count > 0 {
+        if error_count > 0 {
+            eprintln!("[WARN] ZIP archive partially extracted ({} errors)", error_count);
+        }
+        Ok(())
+    } else if error_count > 0 {
+        Err(format!(
+            "All ZIP entries failed to extract. First error: {}",
+            errors.first().unwrap_or(&"Unknown error".to_string())
+        ))
+    } else {
+        Ok(())
+    }
 }
 
 // --- GZ Processor ---
@@ -569,29 +976,22 @@ fn process_rar_archive(
 ) -> Result<(), String> {
     use std::process::Command;
 
-    // 检查系统是否安装 unrar
+    // 检测 unrar 是否可用
+    let unrar_available = check_unrar_available()
+        .map_err(|e| format!("Failed to check unrar availability: {}", e))?;
+    
+    if !unrar_available {
+        let guide = get_unrar_install_guide();
+        eprintln!("[WARNING] unrar command not found, skipping RAR: {}", path.display());
+        eprintln!("[INFO] {}", guide);
+        return Err(guide);
+    }
+
     let unrar_cmd = if cfg!(target_os = "windows") {
         "unrar.exe"
     } else {
         "unrar"
     };
-
-    // 检查 unrar 命令是否可用
-    let check = Command::new(unrar_cmd).arg("-?").output();
-
-    if check.is_err() {
-        eprintln!(
-            "[WARNING] unrar command not found, skipping RAR: {}",
-            path.display()
-        );
-        return Err(
-            "RAR support requires 'unrar' to be installed. Please install it:\n\
-            - macOS: brew install unrar\n\
-            - Ubuntu/Debian: sudo apt install unrar\n\
-            - Windows: Download from https://www.rarlab.com/rar_add.htm"
-                .to_string(),
-        );
-    }
 
     let extract_folder_name = format!("{}_extracted_{}", file_name, Uuid::new_v4());
     let extract_path = target_root.join(&extract_folder_name);
@@ -932,6 +1332,10 @@ async fn import_folder(
     #[allow(non_snake_case)] workspaceId: String,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
+    // 参数验证
+    validate_path_param(&path, "path")?;
+    validate_workspace_id(&workspaceId)?;
+    
     let app_handle = app.clone();
     let task_id = Uuid::new_v4().to_string();
     let task_id_clone = task_id.clone();
@@ -942,13 +1346,13 @@ async fn import_folder(
         path, workspaceId, task_id
     );
 
-    // ✅ 验证路径存在性和安全性
+    // 验证路径存在性和安全性
     let source_path = Path::new(&path);
     if !source_path.exists() {
         return Err(format!("Path does not exist: {}", path));
     }
 
-    // ✅ 使用 canonicalize_path 处理 Windows UNC 路径和长路径
+    // 使用 canonicalize_path 处理 Windows UNC 路径和长路径
     let canonical_path = canonicalize_path(source_path).unwrap_or_else(|e| {
         eprintln!(
             "[WARNING] Path canonicalization failed: {}, using original path",
@@ -1073,6 +1477,18 @@ async fn import_folder(
                     Err(e) => {
                         eprintln!("[WARNING] Failed to save index: {}", e);
                     }
+                }
+                
+                // 清理临时目录
+                if let Some(ref temp_dir) = *temp_guard {
+                    let temp_path = temp_dir.path().to_path_buf();
+                    // 释放锁后执行清理（避免在锁内执行IO操作）
+                    drop(temp_guard);
+                    
+                    let cleanup_queue = Arc::clone(&state.cleanup_queue);
+                    try_cleanup_temp_dir(&temp_path, &cleanup_queue);
+                } else {
+                    drop(temp_guard);
                 }
             }
             Ok::<(), String>(())
@@ -1309,44 +1725,77 @@ fn append_to_workspace_index(
 async fn search_logs(
     app: AppHandle,
     query: String,
+    #[allow(non_snake_case)] workspaceId: Option<String>, // 工作区ID，用于缓存隔离
     max_results: Option<usize>, // 可配置限制
     filters: Option<SearchFilters>, // 高级过滤器
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    // 参数验证
+    if query.is_empty() {
+        return Err("Search query cannot be empty".to_string());
+    }
+    if query.len() > 1000 {
+        return Err("Search query too long (max 1000 characters)".to_string());
+    }
+    
     let app_handle = app.clone();
     let path_map = Arc::clone(&state.path_map); // Arc clone
-    let _search_cache = Arc::clone(&state.search_cache);
-    let max_results = max_results.unwrap_or(50000);
+    let search_cache = Arc::clone(&state.search_cache);
+    let total_searches = Arc::clone(&state.total_searches);
+    let cache_hits = Arc::clone(&state.cache_hits);
+    let last_search_duration = Arc::clone(&state.last_search_duration);
+    
+    // 限制结果数量，防止内存溢出
+    let max_results = max_results.unwrap_or(50000).min(100_000);
     let filters = filters.unwrap_or_default();
 
-    // 获取当前工作区 ID（从前端传入，暂时使用 "default"）
-    let _workspace_id = "default".to_string(); // TODO: 从前端传入
-    let _cache_key = (
+    // 获取当前工作区 ID（从前端传入）
+    let workspace_id = workspaceId.unwrap_or_else(|| "default".to_string());
+    let cache_key: SearchCacheKey = (
         query.clone(),
-        _workspace_id.clone(),
+        workspace_id.clone(),
         filters.time_start.clone(),
         filters.time_end.clone(),
         filters.levels.clone(),
         filters.file_pattern.clone(),
     );
 
-    // 尝试从缓存获取（暂时禁用缓存，因为 cache_key 类型不匹配）
-    /*
+    // 尝试从缓存获取（短时间持有锁）
     {
-        let mut cache_guard = search_cache.lock().expect("Failed to lock search_cache");
+        let cache_result = {
+            let mut cache_guard = search_cache
+                .lock()
+                .map_err(|e| format!("Failed to lock search_cache: {}", e))?;
+            cache_guard.get(&cache_key).cloned()
+        }; // 锁在这里释放
 
-        if let Some(cached_results) = cache_guard.get(&cache_key) {
+        if let Some(cached_results) = cache_result {
             eprintln!("[DEBUG] Cache HIT for query: {}", query);
+            
+            // 更新缓存统计
+            if let Ok(mut hits) = cache_hits.lock() {
+                *hits += 1;
+            }
+            if let Ok(mut searches) = total_searches.lock() {
+                *searches += 1;
+            }
 
-            // 发送缓存结果
-            let _ = app_handle.emit("search-results", cached_results.as_slice());
+            // 分批发送缓存结果
+            for chunk in cached_results.chunks(500) {
+                let _ = app_handle.emit("search-results", chunk);
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
             let _ = app_handle.emit("search-complete", cached_results.len());
             return Ok(());
         } else {
             eprintln!("[DEBUG] Cache MISS for query: {}", query);
         }
     }
-    */
+
+    // 更新搜索统计
+    if let Ok(mut searches) = total_searches.lock() {
+        *searches += 1;
+    }
 
     std::thread::spawn(move || {
         let start_time = std::time::Instant::now();
@@ -1432,20 +1881,24 @@ async fn search_logs(
         }
 
         // 截取结果（Rayon 不支持 .take()）
-        if all_results.len() > max_results {
+        let results_truncated = all_results.len() > max_results;
+        if results_truncated {
             all_results.truncate(max_results);
+            eprintln!("[WARN] Results truncated to {} (max limit)", max_results);
         }
 
         eprintln!("[DEBUG] Final result count: {}", all_results.len());
 
-        // 缓存结果（暂时禁用）
-        /*
-        {
-            let mut cache_guard = search_cache.lock().expect("Failed to lock search_cache");
-            cache_guard.put(cache_key.clone(), all_results.clone());
-            eprintln!("[DEBUG] Cached results for query: {}", query);
+        // 缓存结果（仅当结果未被截断时缓存）
+        if !results_truncated && all_results.len() > 0 {
+            // 使用 try_lock 避免阻塞，失败时跳过缓存
+            if let Ok(mut cache_guard) = search_cache.try_lock() {
+                cache_guard.put(cache_key.clone(), all_results.clone());
+                eprintln!("[DEBUG] Cached results for query: {}", query);
+            } else {
+                eprintln!("[DEBUG] Cache lock busy, skipping cache update");
+            }
         }
-        */
 
         // 分批发送结果
         for chunk in all_results.chunks(500) {
@@ -1456,6 +1909,11 @@ async fn search_logs(
         // 记录搜索耗时
         let duration = start_time.elapsed().as_millis() as u64;
         eprintln!("[DEBUG] Search completed in {}ms", duration);
+        
+        // 更新性能统计
+        if let Ok(mut last_duration) = last_search_duration.lock() {
+            *last_duration = duration;
+        }
 
         let _ = app_handle.emit("search-complete", all_results.len());
     });
@@ -1470,6 +1928,9 @@ async fn load_workspace(
     #[allow(non_snake_case)] workspaceId: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    // 参数验证
+    validate_workspace_id(&workspaceId)?;
+    
     let index_dir = app
         .path()
         .app_data_dir()
@@ -1486,33 +1947,38 @@ async fn load_workspace(
         }
     }
 
+    // 在锁外加载索引数据（IO操作）
     let (path_map, file_metadata) = load_index(&index_path)?;
 
-    // 更新内存中的 path_map 和 metadata
-    let mut map_guard = state
-        .path_map
-        .lock()
-        .map_err(|e| format!("Failed to acquire path_map lock: {}", e))?;
-    let mut metadata_guard = state
-        .file_metadata
-        .lock()
-        .map_err(|e| format!("Failed to acquire metadata lock: {}", e))?;
+    // 短时间持有锁更新内存中的数据
+    {
+        let mut map_guard = state
+            .path_map
+            .lock()
+            .map_err(|e| format!("Failed to acquire path_map lock: {}", e))?;
+        let mut metadata_guard = state
+            .file_metadata
+            .lock()
+            .map_err(|e| format!("Failed to acquire metadata lock: {}", e))?;
 
-    *map_guard = path_map;
-    *metadata_guard = file_metadata;
+        *map_guard = path_map;
+        *metadata_guard = file_metadata;
 
-    eprintln!(
-        "[DEBUG] Loaded {} files with {} metadata entries",
-        map_guard.len(),
-        metadata_guard.len()
-    );
+        eprintln!(
+            "[DEBUG] Loaded {} files with {} metadata entries",
+            map_guard.len(),
+            metadata_guard.len()
+        );
+    } // 锁在这里释放
 
     // 保存索引路径
-    let mut indices_guard = state
-        .workspace_indices
-        .lock()
-        .map_err(|e| format!("Failed to acquire indices lock: {}", e))?;
-    indices_guard.insert(workspaceId, index_path);
+    {
+        let mut indices_guard = state
+            .workspace_indices
+            .lock()
+            .map_err(|e| format!("Failed to acquire indices lock: {}", e))?;
+        indices_guard.insert(workspaceId, index_path);
+    } // 锁在这里释放
 
     Ok(())
 }
@@ -2075,6 +2541,24 @@ fn calculate_dir_size(dir: &Path) -> Result<u64, std::io::Error> {
     Ok(total_size)
 }
 
+/// 检查RAR支持状态
+#[command]
+async fn check_rar_support() -> Result<serde_json::Value, String> {
+    let available = check_unrar_available()
+        .map_err(|e| format!("Failed to check RAR support: {}", e))?;
+    
+    let install_guide = if !available {
+        Some(get_unrar_install_guide())
+    } else {
+        None
+    };
+    
+    Ok(serde_json::json!({
+        "available": available,
+        "install_guide": install_guide,
+    }))
+}
+
 // 实时监听命令
 #[command]
 async fn start_watch(
@@ -2086,6 +2570,10 @@ async fn start_watch(
 ) -> Result<(), String> {
     use notify::{Watcher, RecursiveMode, recommended_watcher, Event};
     use std::sync::mpsc::channel;
+    
+    // 参数验证
+    validate_workspace_id(&workspaceId)?;
+    validate_path_param(&path, "path")?;
     
     eprintln!(
         "[DEBUG] start_watch called: workspace_id={}, path={}, auto_search={:?}",
@@ -2400,6 +2888,8 @@ pub fn run() {
             cache_hits: Arc::new(Mutex::new(0)),
             // 实时监听
             watchers: Arc::new(Mutex::new(HashMap::new())),
+            // 临时文件清理队列
+            cleanup_queue: Arc::new(Mutex::new(Vec::new())),
         })
         .invoke_handler(tauri::generate_handler![
             save_config,
@@ -2410,6 +2900,7 @@ pub fn run() {
             refresh_workspace,
             export_results,
             get_performance_metrics,
+            check_rar_support,
             start_watch,
             stop_watch,
         ])
@@ -2535,5 +3026,52 @@ mod tests {
         let invalid_bytes = vec![0xFF, 0xFE, 0xFD];
         let result = decode_filename(&invalid_bytes);
         assert!(result.contains("�") || result.len() > 0);
+    }
+
+    #[test]
+    fn test_validate_path_param() {
+        // 测试空路径
+        let result = validate_path_param("", "test_path");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("cannot be empty"));
+
+        // 测试不存在的路径
+        let result = validate_path_param("/nonexistent/path/12345", "test_path");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("does not exist"));
+
+        // 测试存在的路径
+        let current_dir = std::env::current_dir().unwrap();
+        let result = validate_path_param(&current_dir.to_string_lossy(), "test_path");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_workspace_id() {
+        // 测试空 ID
+        let result = validate_workspace_id("");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("cannot be empty"));
+
+        // 测试包含路径穿越
+        let result = validate_workspace_id("../evil");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("invalid characters"));
+
+        // 测试包含路径分隔符
+        let result = validate_workspace_id("folder/subfolder");
+        assert!(result.is_err());
+
+        // 测试合法 ID
+        let result = validate_workspace_id("workspace_123");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_check_unrar_available() {
+        // 这个测试可能会根据系统配置不同而失败
+        let result = check_unrar_available();
+        assert!(result.is_ok());
+        // 不断言结果，因为不同系统可能有不同的unrar安装状态
     }
 }
