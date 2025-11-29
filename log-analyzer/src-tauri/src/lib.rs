@@ -2075,6 +2075,13 @@ async fn refresh_workspace(
             "[DEBUG] Refresh thread started for task: {}",
             task_id_clone
         );
+        
+        // 提取文件名用于 target 字段
+        let file_name = Path::new(&path)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("Unknown")
+            .to_string();
 
         let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
             // 加载现有索引
@@ -2091,7 +2098,7 @@ async fn refresh_workspace(
                 TaskProgress {
                     task_id: task_id_clone.clone(),
                     task_type: "Refresh".to_string(),
-                    target: path.clone(),
+                    target: file_name.clone(),  // 使用文件名而不是完整路径
                     status: "RUNNING".to_string(),
                     message: "Scanning file system...".to_string(),
                     progress: 20,
@@ -2121,7 +2128,7 @@ async fn refresh_workspace(
                 TaskProgress {
                     task_id: task_id_clone.clone(),
                     task_type: "Refresh".to_string(),
-                    target: path.clone(),
+                    target: file_name.clone(),  // 使用文件名
                     status: "RUNNING".to_string(),
                     message: "Analyzing changes...".to_string(),
                     progress: 40,
@@ -2176,7 +2183,7 @@ async fn refresh_workspace(
                 TaskProgress {
                     task_id: task_id_clone.clone(),
                     task_type: "Refresh".to_string(),
-                    target: path.clone(),
+                    target: file_name.clone(),  // 使用文件名
                     status: "RUNNING".to_string(),
                     message: format!(
                         "Processing {} changes...",
@@ -2253,7 +2260,7 @@ async fn refresh_workspace(
                 TaskProgress {
                     task_id: task_id_clone.clone(),
                     task_type: "Refresh".to_string(),
-                    target: path.clone(),
+                    target: file_name.clone(),  // 使用文件名
                     status: "RUNNING".to_string(),
                     message: "Saving index...".to_string(),
                     progress: 80,
@@ -2300,7 +2307,7 @@ async fn refresh_workspace(
                 TaskProgress {
                     task_id: task_id_clone.clone(),
                     task_type: "Refresh".to_string(),
-                    target: path.clone(),
+                    target: file_name.clone(),  // 使用文件名
                     status: "FAILED".to_string(),
                     message: "Refresh failed".to_string(),
                     progress: 0,
@@ -2313,7 +2320,7 @@ async fn refresh_workspace(
                 TaskProgress {
                     task_id: task_id_clone.clone(),
                     task_type: "Refresh".to_string(),
-                    target: path.clone(),
+                    target: file_name,  // 使用文件名
                     status: "COMPLETED".to_string(),
                     message: "Refresh complete".to_string(),
                     progress: 100,

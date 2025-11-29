@@ -165,7 +165,8 @@ export const useWorkspaceOperations = () => {
           target: workspace.name,
           progress: 0,
           status: 'RUNNING',
-          message: 'Starting refresh...'
+          message: 'Starting refresh...',
+          workspaceId: workspace.id  // 添加 workspaceId 用于精确匹配
         }
       });
       
