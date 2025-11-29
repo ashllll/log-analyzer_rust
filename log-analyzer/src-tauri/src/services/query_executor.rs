@@ -111,9 +111,8 @@ impl QueryExecutor {
 
         // 编译正则表达式
         let mut regexes = Vec::new();
-        let terms_list: Vec<String>;  // 将在match中初始化
-
-        match strategy {
+        
+        let terms_list: Vec<String> = match strategy {
             SearchStrategy::And => {
                 // 为每个search term创建一个CompiledRegex
                 for term in &and_terms {
@@ -130,7 +129,7 @@ impl QueryExecutor {
                     });
                 }
                 // 保存搜索项用于验证
-                terms_list = and_terms.iter().map(|t| t.value.to_lowercase()).collect();
+                and_terms.iter().map(|t| t.value.to_lowercase()).collect()
             }
             SearchStrategy::Or => {
                 // 为每个search term创建一个CompiledRegex
@@ -147,7 +146,7 @@ impl QueryExecutor {
                         priority: term.priority,
                     });
                 }
-                terms_list = or_terms.iter().map(|t| t.value.clone()).collect();
+                or_terms.iter().map(|t| t.value.clone()).collect()
             }
             SearchStrategy::Not => {
                 // 为每个search term创建一个CompiledRegex
@@ -164,9 +163,9 @@ impl QueryExecutor {
                         priority: term.priority,
                     });
                 }
-                terms_list = not_terms.iter().map(|t| t.value.clone()).collect();
+                not_terms.iter().map(|t| t.value.clone()).collect()
             }
-        }
+        };
 
         Ok(ExecutionPlan {
             strategy,
@@ -195,7 +194,7 @@ impl QueryExecutor {
             };
             return self
                 .get_or_compile_regex(&pattern)
-                .map(|r| r.clone())
+                .cloned()
                 .map_err(|e| ExecutionError::InvalidPattern(e.to_string()));
         }
 
@@ -215,7 +214,7 @@ impl QueryExecutor {
         let pattern = format!("({})", patterns.join("|"));
 
         self.get_or_compile_regex(&pattern)
-            .map(|r| r.clone())
+            .cloned()
             .map_err(|e| ExecutionError::InvalidPattern(e.to_string()))
     }
 
@@ -243,7 +242,7 @@ impl QueryExecutor {
         let pattern = format!("({})", patterns.join("|"));
 
         self.get_or_compile_regex(&pattern)
-            .map(|r| r.clone())
+            .cloned()
             .map_err(|e| ExecutionError::InvalidPattern(e.to_string()))
     }
 
@@ -272,7 +271,7 @@ impl QueryExecutor {
         let pattern = format!("({})", patterns.join("|"));
 
         self.get_or_compile_regex(&pattern)
-            .map(|r| r.clone())
+            .cloned()
             .map_err(|e| ExecutionError::InvalidPattern(e.to_string()))
     }
 
