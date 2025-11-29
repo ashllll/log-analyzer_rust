@@ -1,13 +1,13 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { open } from '@tauri-apps/plugin-dialog';
+import { open, save } from '@tauri-apps/plugin-dialog';
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { 
   Search, LayoutGrid, ListTodo, Settings, Layers, 
   CheckCircle2, AlertCircle, X, Plus, 
   RefreshCw, Trash2, Zap, Filter,
-  ChevronDown, Hash, Copy, Info, Loader2, FileText, Edit2
+  ChevronDown, Hash, Copy, Info, Loader2, FileText, Edit2, Download, Eye, EyeOff, RotateCcw
 } from "lucide-react";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
@@ -36,10 +36,28 @@ type ToastType = 'success' | 'error' | 'info';
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'active' | 'icon';
 type LucideIcon = React.ComponentType<{ size?: number; className?: string }>;
 
+// 高级过滤器类型
+interface FilterOptions {
+  timeRange: { start: string | null; end: string | null };
+  levels: string[];
+  filePattern: string;
+}
+
+// 性能指标类型
+interface PerformanceStats {
+  memoryUsed: number;
+  pathMapSize: number;
+  cacheSize: number;
+  lastSearchDuration: number;
+  cacheHitRate: number;
+  indexedFilesCount: number;
+  indexFileSizeMb: number;
+}
+
 interface LogEntry { id: number; timestamp: string; level: string; file: string; line: number; content: string; tags: any[]; real_path?: string; }
 interface KeywordPattern { regex: string; comment: string; }
 interface KeywordGroup { id: string; name: string; color: ColorKey; patterns: KeywordPattern[]; enabled: boolean; }
-interface Workspace { id: string; name: string; path: string; status: 'READY' | 'SCANNING' | 'OFFLINE' | 'PROCESSING'; size: string; files: number; }
+interface Workspace { id: string; name: string; path: string; status: 'READY' | 'SCANNING' | 'OFFLINE' | 'PROCESSING'; size: string; files: number; watching?: boolean; }
 interface Task { 
     id: string; 
     type: string; 
@@ -197,6 +215,14 @@ const SearchPage = ({ keywordGroups, addToast, searchInputRef, activeWorkspace }
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [isFilterPaletteOpen, setIsFilterPaletteOpen] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  
+  // 高级过滤状态
+  const [filterOptions, setFilterOptions] = useState<FilterOptions>({
+    timeRange: { start: null, end: null },
+    levels: [],
+    filePattern: ""
+  });
+  
   const parentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -209,7 +235,31 @@ const SearchPage = ({ keywordGroups, addToast, searchInputRef, activeWorkspace }
   const handleSearch = async () => {
     if (!activeWorkspace) return addToast('error', 'Select a workspace first.');
     setLogs([]); setIsSearching(true);
-    try { await invoke("search_logs", { query, searchPath: activeWorkspace.path }); } catch(_e) { setIsSearching(false); }
+    try { 
+      // 构建过滤器对象
+      const filters = {
+        time_start: filterOptions.timeRange.start,
+        time_end: filterOptions.timeRange.end,
+        levels: filterOptions.levels,
+        file_pattern: filterOptions.filePattern || null
+      };
+      
+      await invoke("search_logs", { 
+        query, 
+        searchPath: activeWorkspace.path,
+        filters: filters
+      }); 
+    } catch(_e) { setIsSearching(false); }
+  };
+  
+  // 重置过滤器
+  const handleResetFilters = () => {
+    setFilterOptions({
+      timeRange: { start: null, end: null },
+      levels: [],
+      filePattern: ""
+    });
+    addToast('info', '过滤器已重置');
   };
 
   const toggleRuleInQuery = (ruleRegex: string) => {
@@ -220,6 +270,42 @@ const SearchPage = ({ keywordGroups, addToast, searchInputRef, activeWorkspace }
 
   const copyToClipboard = (text: string) => { navigator.clipboard.writeText(text).then(() => addToast('success', 'Copied')); };
   const tryFormatJSON = (content: string) => { try { const start = content.indexOf('{'); if (start === -1) return content; const jsonPart = content.substring(start); const obj = JSON.parse(jsonPart); return JSON.stringify(obj, null, 2); } catch (_e) { return content; } };
+  
+  // 导出功能
+  const handleExport = async (format: 'csv' | 'json') => {
+    if (logs.length === 0) {
+      addToast('error', '没有可导出的数据');
+      return;
+    }
+
+    try {
+      const defaultPath = `log-export-${Date.now()}.${format}`;
+      const savePath = await save({
+        defaultPath,
+        filters: [{
+          name: format.toUpperCase(),
+          extensions: [format]
+        }]
+      });
+
+      if (!savePath) {
+        // 用户取消
+        return;
+      }
+
+      logger.debug('Exporting to:', savePath);
+      await invoke('export_results', {
+        results: logs,
+        format,
+        savePath
+      });
+
+      addToast('success', `已导出 ${logs.length} 条日志到 ${format.toUpperCase()}`);
+    } catch (e) {
+      logger.error('Export error:', e);
+      addToast('error', `导出失败: ${e}`);
+    }
+  };
   
   // 优化：动态高度估算 - 提高显示密度
   const rowVirtualizer = useVirtualizer({ 
@@ -244,8 +330,97 @@ const SearchPage = ({ keywordGroups, addToast, searchInputRef, activeWorkspace }
         <div className="flex gap-2">
           <div className="relative flex-1"><Search className="absolute left-3 top-2.5 text-text-dim" size={16} /><Input ref={searchInputRef} value={query} onChange={(e: any) => setQuery(e.target.value)} className="pl-9 font-mono bg-bg-main" placeholder="Search regex (Cmd+K)..." onKeyDown={(e:any) => e.key === 'Enter' && handleSearch()} /></div>
           <div className="relative"><Button variant={isFilterPaletteOpen ? "active" : "secondary"} icon={Filter} onClick={() => setIsFilterPaletteOpen(!isFilterPaletteOpen)} className="w-[140px] justify-between">Filters <ChevronDown size={14} className={cn("transition-transform", isFilterPaletteOpen ? "rotate-180" : "")}/></Button><FilterPalette isOpen={isFilterPaletteOpen} onClose={() => setIsFilterPaletteOpen(false)} groups={keywordGroups} currentQuery={query} onToggleRule={toggleRuleInQuery} /></div>
+          <Button icon={Download} onClick={() => handleExport('csv')} disabled={logs.length === 0} variant="secondary" title="Export to CSV">CSV</Button>
+          <Button icon={Download} onClick={() => handleExport('json')} disabled={logs.length === 0} variant="secondary" title="Export to JSON">JSON</Button>
           <Button icon={isSearching ? Loader2 : Search} onClick={handleSearch} disabled={isSearching} className={isSearching ? "animate-pulse" : ""}>{isSearching ? '...' : 'Search'}</Button>
         </div>
+        
+        {/* 高级过滤器 UI */}
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-[10px] font-bold text-text-dim uppercase">Advanced Filters</span>
+          {(filterOptions.levels.length > 0 || filterOptions.timeRange.start || filterOptions.timeRange.end || filterOptions.filePattern) && (
+            <>
+              <span className="text-[10px] bg-primary/20 text-primary px-1.5 py-0.5 rounded border border-primary/30">
+                {[
+                  filterOptions.levels.length > 0 && `${filterOptions.levels.length} levels`,
+                  filterOptions.timeRange.start && 'time range',
+                  filterOptions.filePattern && 'file pattern'
+                ].filter(Boolean).join(', ')}
+              </span>
+              <Button variant="ghost" onClick={handleResetFilters} className="h-5 text-[10px] px-2" icon={RotateCcw}>Reset</Button>
+            </>
+          )}
+        </div>
+        <div className="grid grid-cols-4 gap-2">
+          {/* 日志级别过滤 */}
+          <div className="col-span-1">
+            <label className="text-[10px] text-text-dim uppercase font-bold mb-1 block">Level</label>
+            <div className="flex gap-1">
+              {['ERROR', 'WARN', 'INFO', 'DEBUG'].map((level) => (
+                <button
+                  key={level}
+                  onClick={() => {
+                    setFilterOptions(prev => ({
+                      ...prev,
+                      levels: prev.levels.includes(level) 
+                        ? prev.levels.filter(l => l !== level)
+                        : [...prev.levels, level]
+                    }));
+                  }}
+                  className={cn(
+                    "text-[10px] px-2 py-1 rounded border transition-all",
+                    filterOptions.levels.includes(level)
+                      ? "bg-primary text-white border-primary"
+                      : "bg-bg-main text-text-dim border-border-base hover:border-primary/50"
+                  )}
+                  title={level}
+                >
+                  {level.substring(0, 1)}
+                </button>
+              ))}
+            </div>
+          </div>
+          
+          {/* 时间范围过滤 */}
+          <div className="col-span-2">
+            <label className="text-[10px] text-text-dim uppercase font-bold mb-1 block">Time Range</label>
+            <div className="flex gap-1">
+              <input
+                type="datetime-local"
+                value={filterOptions.timeRange.start || ""}
+                onChange={(e) => setFilterOptions(prev => ({
+                  ...prev,
+                  timeRange: { ...prev.timeRange, start: e.target.value || null }
+                }))}
+                className="h-7 text-[11px] flex-1 bg-bg-main border border-border-base rounded px-2 text-text-main focus:outline-none focus:border-primary/50"
+                placeholder="Start"
+              />
+              <span className="text-text-dim self-center">~</span>
+              <input
+                type="datetime-local"
+                value={filterOptions.timeRange.end || ""}
+                onChange={(e) => setFilterOptions(prev => ({
+                  ...prev,
+                  timeRange: { ...prev.timeRange, end: e.target.value || null }
+                }))}
+                className="h-7 text-[11px] flex-1 bg-bg-main border border-border-base rounded px-2 text-text-main focus:outline-none focus:border-primary/50"
+                placeholder="End"
+              />
+            </div>
+          </div>
+          
+          {/* 文件来源过滤 */}
+          <div className="col-span-1">
+            <label className="text-[10px] text-text-dim uppercase font-bold mb-1 block">File Pattern</label>
+            <Input
+              value={filterOptions.filePattern}
+              onChange={(e: any) => setFilterOptions(prev => ({ ...prev, filePattern: e.target.value }))}
+              className="h-7 text-[11px]"
+              placeholder="e.g. error.log"
+            />
+          </div>
+        </div>
+        
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none h-6 min-h-[24px]"><span className="text-[10px] font-bold text-text-dim uppercase">Active:</span>{query ? query.split('|').map((term:string, i:number) => <span key={i} className="flex items-center text-[10px] bg-bg-card border border-border-base px-1.5 rounded text-text-main whitespace-nowrap"><Hash size={8} className="mr-1 opacity-50"/> {term}</span>) : <span className="text-[10px] text-text-dim italic">None</span>}</div>
       </div>
       <div className="flex-1 flex overflow-hidden">
@@ -314,6 +489,67 @@ const KeywordsPage = ({ keywordGroups, setKeywordGroups, addToast }: KeywordsPag
 
 const WorkspacesPage = ({ workspaces, setWorkspaces, addToast, setActiveWorkspaceId, activeWorkspaceId, setTasks }: WorkspacesPageProps) => {
   const handleDelete = (id: string) => { setWorkspaces((prev: Workspace[]) => prev.filter(w => w.id !== id)); addToast('info', 'Deleted'); };
+  
+  const handleToggleWatch = async (ws: Workspace) => {
+    try {
+      if (ws.watching) {
+        await invoke('stop_watch', { workspaceId: ws.id });
+        setWorkspaces(prev => prev.map(w => 
+          w.id === ws.id ? { ...w, watching: false } : w
+        ));
+        addToast('info', '停止监听');
+      } else {
+        await invoke('start_watch', { 
+          workspaceId: ws.id, 
+          path: ws.path,
+          autoSearch: false 
+        });
+        setWorkspaces(prev => prev.map(w => 
+          w.id === ws.id ? { ...w, watching: true } : w
+        ));
+        addToast('info', '开始监听');
+      }
+    } catch (e) {
+      logger.error('Toggle watch error:', e);
+      addToast('error', `监听操作失败: ${e}`);
+    }
+  };
+  
+  const handleRefresh = async (ws: Workspace) => {
+    logger.debug('handleRefresh called for workspace:', ws.id);
+    try {
+      const taskId = await invoke<string>("refresh_workspace", { 
+        workspaceId: ws.id,
+        path: ws.path
+      });
+      logger.debug('refresh_workspace returned taskId:', taskId);
+      
+      // 更新工作区状态
+      setWorkspaces((prev: Workspace[]) => prev.map(w => 
+        w.id === ws.id ? { ...w, status: 'PROCESSING' } : w
+      ));
+      
+      // 添加任务（如果不存在）
+      setTasks((prev: Task[]) => {
+        if (prev.find(t => t.id === taskId)) {
+          return prev;
+        }
+        return [...prev, { 
+          id: taskId, 
+          type: 'Refresh', 
+          target: ws.name, 
+          progress: 0, 
+          status: 'RUNNING', 
+          message: 'Starting refresh...' 
+        }];
+      });
+      
+      addToast('info', 'Refreshing workspace...');
+    } catch (e) {
+      logger.error('handleRefresh error:', e);
+      addToast('error', `Failed to refresh: ${e}`);
+    }
+  };
   
   const handleImportFile = async () => {
     logger.debug('handleImportFile called');
@@ -418,11 +654,25 @@ const WorkspacesPage = ({ workspaces, setWorkspaces, addToast, setActiveWorkspac
          {workspaces.map((ws: Workspace) => (
            <Card key={ws.id} className={cn("h-full flex flex-col hover:border-primary/50 transition-colors group cursor-pointer", activeWorkspaceId === ws.id ? "border-primary ring-1 ring-primary" : "border-border-base")} onClick={() => setActiveWorkspaceId(ws.id)}>
               <div className="px-4 py-3 border-b border-border-base bg-bg-sidebar/50 font-bold text-sm flex justify-between items-center">
-                  {ws.name}<Button variant="ghost" icon={Trash2} className="h-6 w-6 p-0 text-text-dim hover:text-red-400" onClick={() => handleDelete(ws.id)}/>
+                  {ws.name}
+                  <div className="flex gap-1">
+                    <Button 
+                      variant="ghost" 
+                      icon={ws.watching ? EyeOff : Eye} 
+                      className="h-6 w-6 p-0 text-text-dim hover:text-emerald-400" 
+                      onClick={(e) => { e.stopPropagation(); handleToggleWatch(ws); }} 
+                      title={ws.watching ? "Stop watching" : "Start watching"}
+                    />
+                    <Button variant="ghost" icon={RefreshCw} className="h-6 w-6 p-0 text-text-dim hover:text-blue-400" onClick={(e) => { e.stopPropagation(); handleRefresh(ws); }} title="Refresh workspace"/>
+                    <Button variant="ghost" icon={Trash2} className="h-6 w-6 p-0 text-text-dim hover:text-red-400" onClick={(e) => { e.stopPropagation(); handleDelete(ws.id); }}/>
+                  </div>
               </div>
               <div className="p-4 space-y-4">
                  <code className="text-xs bg-bg-main px-2 py-1.5 rounded border border-border-base block truncate font-mono text-text-muted">{ws.path}</code>
-                 <div className="flex items-center gap-2 text-xs font-bold">{ws.status === 'READY' ? <><CheckCircle2 size={14} className="text-emerald-500"/> <span className="text-emerald-500">READY</span></> : <><RefreshCw size={14} className="text-blue-500 animate-spin"/> <span className="text-blue-500">PROCESSING</span></>}</div>
+                 <div className="flex items-center gap-2 text-xs font-bold">
+                   {ws.status === 'READY' ? <><CheckCircle2 size={14} className="text-emerald-500"/> <span className="text-emerald-500">READY</span></> : <><RefreshCw size={14} className="text-blue-500 animate-spin"/> <span className="text-blue-500">PROCESSING</span></>}
+                   {ws.watching && <><Eye size={14} className="text-amber-500 ml-2"/> <span className="text-amber-500">WATCHING</span></>}
+                 </div>
               </div>
            </Card>
          ))}
@@ -460,6 +710,109 @@ const TasksPage = ({ tasks, setTasks, addToast }: { tasks: Task[], setTasks: any
             </div>
           </div>
         ))}
+      </div>
+    </div>
+  );
+};
+
+// --- Performance Page ---
+const PerformancePage = ({ addToast }: { addToast: any }) => {
+  const [stats, setStats] = useState<PerformanceStats | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const loadStats = async () => {
+    setLoading(true);
+    try {
+      const metrics = await invoke<any>('get_performance_metrics');
+      setStats({
+        memoryUsed: metrics.memory_used_mb,
+        pathMapSize: metrics.path_map_size,
+        cacheSize: metrics.cache_size,
+        lastSearchDuration: metrics.last_search_duration_ms,
+        cacheHitRate: metrics.cache_hit_rate,
+        indexedFilesCount: metrics.indexed_files_count,
+        indexFileSizeMb: metrics.index_file_size_mb
+      });
+    } catch (e) {
+      addToast('error', `Failed to load stats: ${e}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadStats();
+    const interval = setInterval(loadStats, 5000); // 每5秒刷新
+    return () => clearInterval(interval);
+  }, []);
+
+  if (!stats) {
+    return <div className="p-10 text-center text-text-dim">Loading performance stats...</div>;
+  }
+
+  return (
+    <div className="p-8 max-w-6xl mx-auto h-full overflow-auto">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold text-text-main">Performance Monitor</h1>
+        <Button icon={RefreshCw} onClick={loadStats} disabled={loading}>
+          {loading ? 'Refreshing...' : 'Refresh'}
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {/* 内存使用 */}
+        <Card className="p-6">
+          <div className="text-xs text-text-dim uppercase font-bold mb-2">Memory Usage</div>
+          <div className="text-3xl font-bold text-primary">
+            {stats.memoryUsed > 0 ? `${stats.memoryUsed.toFixed(1)} MB` : 'N/A'}
+          </div>
+          <div className="text-xs text-text-muted mt-1">进程内存占用</div>
+        </Card>
+
+        {/* 索引文件数 */}
+        <Card className="p-6">
+          <div className="text-xs text-text-dim uppercase font-bold mb-2">Indexed Files</div>
+          <div className="text-3xl font-bold text-emerald-400">
+            {stats.indexedFilesCount.toLocaleString()}
+          </div>
+          <div className="text-xs text-text-muted mt-1">已索引文件数量</div>
+        </Card>
+
+        {/* 缓存大小 */}
+        <Card className="p-6">
+          <div className="text-xs text-text-dim uppercase font-bold mb-2">Cache Size</div>
+          <div className="text-3xl font-bold text-blue-400">
+            {stats.cacheSize}
+          </div>
+          <div className="text-xs text-text-muted mt-1">搜索缓存条目数</div>
+        </Card>
+
+        {/* 搜索耗时 */}
+        <Card className="p-6">
+          <div className="text-xs text-text-dim uppercase font-bold mb-2">Last Search</div>
+          <div className="text-3xl font-bold text-amber-400">
+            {stats.lastSearchDuration > 0 ? `${stats.lastSearchDuration} ms` : 'N/A'}
+          </div>
+          <div className="text-xs text-text-muted mt-1">最近搜索耗时</div>
+        </Card>
+
+        {/* 缓存命中率 */}
+        <Card className="p-6">
+          <div className="text-xs text-text-dim uppercase font-bold mb-2">Cache Hit Rate</div>
+          <div className="text-3xl font-bold text-purple-400">
+            {stats.cacheHitRate.toFixed(1)}%
+          </div>
+          <div className="text-xs text-text-muted mt-1">缓存命中率</div>
+        </Card>
+
+        {/* 索引文件大小 */}
+        <Card className="p-6">
+          <div className="text-xs text-text-dim uppercase font-bold mb-2">Index Size</div>
+          <div className="text-3xl font-bold text-red-400">
+            {stats.indexFileSizeMb.toFixed(2)} MB
+          </div>
+          <div className="text-xs text-text-muted mt-1">索引文件磁盘占用</div>
+        </Card>
       </div>
     </div>
   );
@@ -573,7 +926,7 @@ export default function App() {
            {page === 'workspaces' && <WorkspacesPage workspaces={workspaces} setWorkspaces={setWorkspaces} addToast={addToast} setActiveWorkspaceId={setActiveWorkspaceId} activeWorkspaceId={activeWorkspaceId} setTasks={setTasks} />}
            {/* FIX: Pass addToast correctly */}
            {page === 'tasks' && <TasksPage tasks={tasks} setTasks={setTasks} addToast={addToast} />}
-           {page === 'settings' && <div className="p-10 text-center text-text-dim">Settings</div>}
+           {page === 'settings' && <PerformancePage addToast={addToast} />}
         </div>
       </div>
       <ToastContainer toasts={toasts} removeToast={(id) => setToasts(prev => prev.filter(t => t.id !== id))} />
