@@ -371,7 +371,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     // 监听任务更新事件
     const unlistenTaskUpdate = listen<any>('task-update', (event) => {
-      const { task_id, task_type, target, status, message, progress } = event.payload;
+      const { task_id, task_type, target, status, message, progress, workspace_id } = event.payload;
       console.log('[EVENT] task-update:', event.payload);
       
       // 更新任务状态
@@ -391,19 +391,27 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       
       // 当任务完成时，更新工作区状态为 READY
       if (status === 'COMPLETED') {
-        // 查找对应的工作区：优先使用 workspaceId，其次使用 name 匹配
-        const task = taskState.tasks.find(t => t.id === task_id);
         let workspace = null;
         
-        if (task?.workspaceId) {
-          // 优先通过 workspaceId 匹配
+        // 优先使用后端发送的 workspace_id（最可靠）
+        if (workspace_id) {
           workspace = workspaceState.workspaces.find(w => 
-            w.id === task.workspaceId && w.status === 'PROCESSING'
+            w.id === workspace_id && w.status === 'PROCESSING'
           );
         }
         
+        // 备选：从前端任务列表查找 workspaceId
         if (!workspace) {
-          // 备选：通过 name 匹配
+          const task = taskState.tasks.find(t => t.id === task_id);
+          if (task?.workspaceId) {
+            workspace = workspaceState.workspaces.find(w => 
+              w.id === task.workspaceId && w.status === 'PROCESSING'
+            );
+          }
+        }
+        
+        // 最后备选：通过 name 匹配
+        if (!workspace) {
           workspace = workspaceState.workspaces.find(w => 
             w.status === 'PROCESSING' && w.name === target
           );
@@ -416,19 +424,29 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             payload: { id: workspace.id, updates: { status: 'READY' } }
           });
         } else {
-          console.warn('[EVENT] Could not find workspace for completed task:', { task_id, target });
+          console.warn('[EVENT] Could not find workspace for completed task:', { task_id, target, workspace_id });
         }
       } else if (status === 'FAILED') {
-        // 查找对应的工作区
-        const task = taskState.tasks.find(t => t.id === task_id);
         let workspace = null;
         
-        if (task?.workspaceId) {
+        // 优先使用后端发送的 workspace_id
+        if (workspace_id) {
           workspace = workspaceState.workspaces.find(w => 
-            w.id === task.workspaceId && w.status === 'PROCESSING'
+            w.id === workspace_id && w.status === 'PROCESSING'
           );
         }
         
+        // 备选：从前端任务列表查找
+        if (!workspace) {
+          const task = taskState.tasks.find(t => t.id === task_id);
+          if (task?.workspaceId) {
+            workspace = workspaceState.workspaces.find(w => 
+              w.id === task.workspaceId && w.status === 'PROCESSING'
+            );
+          }
+        }
+        
+        // 最后备选
         if (!workspace) {
           workspace = workspaceState.workspaces.find(w => 
             w.status === 'PROCESSING' && w.name === target

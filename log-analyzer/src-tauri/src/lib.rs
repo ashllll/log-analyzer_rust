@@ -49,6 +49,7 @@ struct TaskProgress {
     status: String,
     message: String,
     progress: u8,
+    workspace_id: Option<String>,  // 工作区 ID，用于前端匹配
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -1068,6 +1069,7 @@ fn process_path_recursive(
                 status: "RUNNING".to_string(),
                 message: format!("Warning: {}", e),
                 progress: 50,
+                workspace_id: None,  // 这是内部进度更新，没有 workspace_id
             },
         );
     }
@@ -1102,6 +1104,7 @@ fn process_path_recursive_with_metadata(
                 status: "RUNNING".to_string(),
                 message: format!("Warning: {}", e),
                 progress: 50,
+                workspace_id: None,  // 内部进度更新
             },
         );
     }
@@ -1146,6 +1149,7 @@ fn process_path_recursive_inner(
             status: "RUNNING".to_string(),
             message: format!("Processing: {}", file_name),
             progress: 50,
+            workspace_id: None,  // 文件处理进度
         },
     );
 
@@ -1280,6 +1284,7 @@ fn process_path_recursive_inner_with_metadata(
             status: "RUNNING".to_string(),
             message: format!("Processing: {}", file_name),
             progress: 50,
+            workspace_id: None,  // 文件处理进度
         },
     );
 
@@ -1377,6 +1382,7 @@ async fn import_folder(
             status: "RUNNING".to_string(),
             message: "Starting import...".to_string(),
             progress: 0,
+            workspace_id: Some(workspaceId.clone()),  // 添加 workspace_id
         },
     );
 
@@ -1433,6 +1439,7 @@ async fn import_folder(
                         status: "RUNNING".to_string(),
                         message: "Scanning...".to_string(),
                         progress: 10,
+                        workspace_id: Some(workspace_id_clone.clone()),  // 添加 workspace_id
                     },
                 );
 
@@ -1512,6 +1519,7 @@ async fn import_folder(
                     status: "FAILED".to_string(),
                     message: "Crashed".to_string(),
                     progress: 0,
+                    workspace_id: Some(workspace_id_clone.clone()),  // 添加 workspace_id
                 },
             );
             let _ = app_handle.emit("import-error", "Backend process crashed");
@@ -1536,6 +1544,7 @@ async fn import_folder(
                     status: "COMPLETED".to_string(),
                     message: "Done".to_string(),
                     progress: 100,
+                    workspace_id: Some(workspace_id_clone),  // 添加 workspace_id
                 },
             );
             let _ = app_handle.emit("import-complete", task_id_clone);
@@ -2050,6 +2059,7 @@ async fn refresh_workspace(
             status: "RUNNING".to_string(),
             message: "Loading existing index...".to_string(),
             progress: 0,
+            workspace_id: Some(workspaceId.clone()),  // 添加 workspace_id
         },
     );
 
@@ -2102,6 +2112,7 @@ async fn refresh_workspace(
                     status: "RUNNING".to_string(),
                     message: "Scanning file system...".to_string(),
                     progress: 20,
+                    workspace_id: Some(workspace_id_clone.clone()),  // 添加 workspace_id
                 },
             );
 
@@ -2132,6 +2143,7 @@ async fn refresh_workspace(
                     status: "RUNNING".to_string(),
                     message: "Analyzing changes...".to_string(),
                     progress: 40,
+                    workspace_id: Some(workspace_id_clone.clone()),  // 添加 workspace_id
                 },
             );
 
@@ -2190,6 +2202,7 @@ async fn refresh_workspace(
                         total_changes
                     ),
                     progress: 60,
+                    workspace_id: Some(workspace_id_clone.clone()),  // 添加 workspace_id
                 },
             );
 
@@ -2264,6 +2277,7 @@ async fn refresh_workspace(
                     status: "RUNNING".to_string(),
                     message: "Saving index...".to_string(),
                     progress: 80,
+                    workspace_id: Some(workspace_id_clone.clone()),  // 添加 workspace_id
                 },
             );
 
@@ -2311,6 +2325,7 @@ async fn refresh_workspace(
                     status: "FAILED".to_string(),
                     message: "Refresh failed".to_string(),
                     progress: 0,
+                    workspace_id: Some(workspace_id_clone.clone()),  // 添加 workspace_id
                 },
             );
         } else {
@@ -2324,6 +2339,7 @@ async fn refresh_workspace(
                     status: "COMPLETED".to_string(),
                     message: "Refresh complete".to_string(),
                     progress: 100,
+                    workspace_id: Some(workspace_id_clone),  // 添加 workspace_id
                 },
             );
             let _ = app_handle.emit("import-complete", task_id_clone);
