@@ -18,6 +18,12 @@ import { useWorkspaceOperations } from './hooks/useWorkspaceOperations';
 import { useTaskManager } from './hooks/useTaskManager';
 import { useKeywordManager } from './hooks/useKeywordManager';
 
+// 导入结构化查询模块
+import { SearchQueryBuilder } from './services/SearchQueryBuilder';
+// import { queryApi } from './services/queryApi';  // 保留以备将来使用
+import { SearchQuery } from './types/search';
+import { saveQuery, loadQuery } from './services/queryStorage';
+
 function cn(...inputs: ClassValue[]) { return twMerge(clsx(inputs)); }
 
 // 错误处理工具 - 供内部使用
@@ -284,6 +290,9 @@ const SearchPage = ({ keywordGroups, addToast, searchInputRef, activeWorkspace }
   const [isFilterPaletteOpen, setIsFilterPaletteOpen] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   
+  // 结构化查询状态
+  const [currentQuery, setCurrentQuery] = useState<SearchQuery | null>(null);
+  
   // 高级过滤状态
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({
     timeRange: { start: null, end: null },
@@ -316,6 +325,23 @@ const SearchPage = ({ keywordGroups, addToast, searchInputRef, activeWorkspace }
     return () => { unlistenResults.then(f => f()); unlistenComplete.then(f => f()); unlistenError.then(f => f()); }
   }, [addToast]);
 
+  // 加载保存的查询
+  useEffect(() => {
+    const saved = loadQuery();
+    if (saved) {
+      setCurrentQuery(saved);
+      const builder = SearchQueryBuilder.import(JSON.stringify(saved));
+      setQuery(builder.toQueryString());
+    }
+  }, []);
+
+  // 自动保存查询变化
+  useEffect(() => {
+    if (currentQuery) {
+      saveQuery(currentQuery);
+    }
+  }, [currentQuery]);
+
   const handleSearch = async () => {
     if (!activeWorkspace) return addToast('error', 'Select a workspace first.');
     setLogs([]); setIsSearching(true);
@@ -333,6 +359,12 @@ const SearchPage = ({ keywordGroups, addToast, searchInputRef, activeWorkspace }
         searchPath: activeWorkspace.path,
         filters: filters
       }); 
+      
+      // 如果使用了结构化查询，更新执行次数
+      if (currentQuery) {
+        currentQuery.metadata.executionCount += 1;
+        setCurrentQuery({...currentQuery});
+      }
     } catch(_e) { setIsSearching(false); }
   };
   
@@ -346,11 +378,65 @@ const SearchPage = ({ keywordGroups, addToast, searchInputRef, activeWorkspace }
     addToast('info', '过滤器已重置');
   };
 
-  const toggleRuleInQuery = (ruleRegex: string) => {
-    const terms = query.split('|').map((t:string) => t.trim()).filter((t:string) => t.length > 0);
-    const idx = terms.findIndex((t:string) => t.toLowerCase() === ruleRegex.toLowerCase());
-    setQuery(idx !== -1 ? terms.filter((_:any, i:number) => i !== idx).join('|') : [...terms, ruleRegex].join('|'));
-  };
+  // 删除单个关键词
+  const removeTermFromQuery = useCallback((termToRemove: string) => {
+    const terms = query.split('|').map(t => t.trim()).filter(t => t.length > 0);
+    const newTerms = terms.filter(t => t.toLowerCase() !== termToRemove.toLowerCase());
+    setQuery(newTerms.join('|'));
+    
+    // 同时更新结构化查询
+    if (currentQuery) {
+      const builder = SearchQueryBuilder.import(JSON.stringify(currentQuery));
+      const existing = builder.findTermByValue(termToRemove);
+      if (existing) {
+        builder.removeTerm(existing.id);
+        setCurrentQuery(builder.getQuery());
+      }
+    }
+  }, [query, currentQuery]);
+
+  // | 仅作为分隔符，多个关键词用 OR 逻辑组合（匹配任意一个）
+  const toggleRuleInQuery = useCallback((ruleRegex: string) => {
+    // 创建或更新查询构建器
+    const builder = currentQuery 
+      ? SearchQueryBuilder.import(JSON.stringify(currentQuery))
+      : SearchQueryBuilder.fromString(query, keywordGroups);
+
+    // 检查是否已存在
+    const existing = builder.findTermByValue(ruleRegex);
+
+    if (existing) {
+      // 已存在：切换启用状态
+      builder.toggleTerm(existing.id);
+    } else {
+      // 不存在：添加新项
+      builder.addTerm(ruleRegex, {
+        source: 'preset',
+        isRegex: true,
+        operator: 'AND'
+      });
+    }
+
+    // 验证查询
+    const validation = builder.validate();
+    if (!validation.isValid) {
+      const errors = validation.issues
+        .filter(i => i.severity === 'error')
+        .map(i => i.message)
+        .join(', ');
+      console.error('Query validation failed:', errors);
+      addToast('error', `查询验证失败: ${errors}`);
+      return;
+    }
+
+    // 更新状态
+    const newQuery = builder.getQuery();
+    setCurrentQuery(newQuery);
+    
+    // 更新查询字符串（用于显示）
+    const queryString = builder.toQueryString();
+    setQuery(queryString);
+  }, [query, keywordGroups, currentQuery, addToast]);
 
   const copyToClipboard = (text: string) => { navigator.clipboard.writeText(text).then(() => addToast('success', 'Copied')); };
   const tryFormatJSON = (content: string) => { try { const start = content.indexOf('{'); if (start === -1) return content; const jsonPart = content.substring(start); const obj = JSON.parse(jsonPart); return JSON.stringify(obj, null, 2); } catch (_e) { return content; } };
@@ -414,7 +500,11 @@ const SearchPage = ({ keywordGroups, addToast, searchInputRef, activeWorkspace }
     <div className="flex flex-col h-full relative">
       <div className="p-4 border-b border-border-base bg-bg-sidebar space-y-3 shrink-0 relative z-40">
         <div className="flex gap-2">
-          <div className="relative flex-1"><Search className="absolute left-3 top-2.5 text-text-dim" size={16} /><Input ref={searchInputRef} value={query} onChange={(e: any) => setQuery(e.target.value)} className="pl-9 font-mono bg-bg-main" placeholder="Search regex (Cmd+K)..." onKeyDown={(e:any) => e.key === 'Enter' && handleSearch()} /></div>
+          <div className="relative flex-1"><Search className="absolute left-3 top-2.5 text-text-dim" size={16} /><Input ref={searchInputRef} value={query} onChange={(e: any) => {
+            // 规范化输入：移除 | 前后的空格
+            const normalized = e.target.value.replace(/\s*\|\s*/g, '|');
+            setQuery(normalized);
+          }} className="pl-9 font-mono bg-bg-main" placeholder="Search keywords separated by | ..." onKeyDown={(e:any) => e.key === 'Enter' && handleSearch()} /></div>
           <div className="relative"><Button variant={isFilterPaletteOpen ? "active" : "secondary"} icon={Filter} onClick={() => setIsFilterPaletteOpen(!isFilterPaletteOpen)} className="w-[140px] justify-between">Filters <ChevronDown size={14} className={cn("transition-transform", isFilterPaletteOpen ? "rotate-180" : "")}/></Button><FilterPalette isOpen={isFilterPaletteOpen} onClose={() => setIsFilterPaletteOpen(false)} groups={keywordGroups} currentQuery={query} onToggleRule={toggleRuleInQuery} /></div>
           <Button icon={Download} onClick={() => handleExport('csv')} disabled={logs.length === 0} variant="secondary" title="Export to CSV">CSV</Button>
           <Button icon={Download} onClick={() => handleExport('json')} disabled={logs.length === 0} variant="secondary" title="Export to JSON">JSON</Button>
@@ -507,7 +597,22 @@ const SearchPage = ({ keywordGroups, addToast, searchInputRef, activeWorkspace }
           </div>
         </div>
         
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none h-6 min-h-[24px]"><span className="text-[10px] font-bold text-text-dim uppercase">Active:</span>{query ? query.split('|').map((term:string, i:number) => <span key={i} className="flex items-center text-[10px] bg-bg-card border border-border-base px-1.5 rounded text-text-main whitespace-nowrap"><Hash size={8} className="mr-1 opacity-50"/> {term}</span>) : <span className="text-[10px] text-text-dim italic">None</span>}</div>
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none h-6 min-h-[24px]"><span className="text-[10px] font-bold text-text-dim uppercase">Active:</span>{query ? query.split('|').map((term:string, i:number) => {
+          const trimmedTerm = term.trim();
+          return (
+            <span key={i} className="flex items-center text-[10px] bg-bg-card border border-border-base px-1.5 py-0.5 rounded text-text-main whitespace-nowrap group gap-1">
+              <Hash size={8} className="mr-0.5 opacity-50"/> 
+              {trimmedTerm}
+              <button 
+                onClick={() => removeTermFromQuery(trimmedTerm)} 
+                className="opacity-0 group-hover:opacity-100 hover:text-red-400 transition-all ml-0.5"
+                title="Remove keyword"
+              >
+                <X size={10} />
+              </button>
+            </span>
+          );
+        }) : <span className="text-[10px] text-text-dim italic">None</span>}</div>
       </div>
       <div className="flex-1 flex overflow-hidden">
         <div ref={parentRef} className="flex-1 overflow-auto bg-bg-main scrollbar-thin">

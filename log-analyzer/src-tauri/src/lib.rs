@@ -12,6 +12,12 @@ use tempfile::TempDir;
 use uuid::Uuid;
 use walkdir::WalkDir;
 
+// 新增模块声明
+mod models;
+mod services;
+use models::search::*;
+use services::{QueryExecutor, ExecutionPlan};
+
 // --- Data Structures ---
 
 // 类型别名：简化复杂类型定义
@@ -39,6 +45,9 @@ struct LogEntry {
     line: usize,
     content: String,
     tags: Vec<String>,
+    /// 匹配详情（可选）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    match_details: Option<Vec<services::MatchDetail>>,
 }
 
 #[derive(Serialize, Clone)]
@@ -1580,6 +1589,7 @@ async fn import_folder(
 }
 
 // 单文件搜索函数（用于并行处理）
+#[allow(dead_code)]  // 保留供将来使用或测试
 fn search_single_file(
     real_path: &str,
     virtual_path: &str,
@@ -1604,6 +1614,48 @@ fn search_single_file(
                         line: i + 1,
                         content: line,
                         tags: vec![],
+                        match_details: None,  // 旧版本不包含匹配详情
+                    });
+                }
+            }
+        }
+    }
+
+    results
+}
+
+/// 单文件搜索（带匹配详情） - 使用 query_executor
+fn search_single_file_with_details(
+    real_path: &str,
+    virtual_path: &str,
+    executor: &QueryExecutor,
+    plan: &ExecutionPlan,
+    global_offset: usize,
+) -> Vec<LogEntry> {
+    let mut results = Vec::new();
+
+    if let Ok(file) = File::open(real_path) {
+        let reader = BufReader::with_capacity(8192, file);
+
+        for (i, line_res) in reader.lines().enumerate() {
+            if let Ok(line) = line_res {
+                // 使用 query_executor 匹配
+                if executor.matches_line(plan, &line) {
+                    let (ts, lvl) = parse_metadata(&line);
+                    
+                    // 获取匹配详情
+                    let match_details = executor.match_with_details(plan, &line);
+
+                    results.push(LogEntry {
+                        id: global_offset + i,
+                        timestamp: ts,
+                        level: lvl,
+                        file: virtual_path.to_string(),
+                        real_path: real_path.to_string(),
+                        line: i + 1,
+                        content: line,
+                        tags: vec![],
+                        match_details,
                     });
                 }
             }
@@ -1714,6 +1766,7 @@ fn parse_log_lines(
                 line: start_line_number + i,
                 content: line.clone(),
                 tags: vec![],
+                match_details: None, // 无搜索情境下不包含匹配详情
             }
         })
         .collect()
@@ -1841,31 +1894,57 @@ async fn search_logs(
             return;
         }
 
-        // 转义用户输入的特殊字符，将其视为字面量而不是正则表达式
-        // 支持 | 分隔的多个关键词，每个关键词都转义后再 OR 组合
-        let terms: Vec<String> = query
+        // 将简单查询字符串转换为结构化查询
+        // | 仅作为分隔符，多个关键词用 OR 逻辑组合
+        let raw_terms: Vec<String> = query
             .split('|')
             .map(|t| t.trim())
             .filter(|t| !t.is_empty())
-            .map(regex::escape) // 转义每个关键词
+            .map(|t| t.to_string())
             .collect();
 
-        if terms.is_empty() {
+        if raw_terms.is_empty() {
             let _ = app_handle.emit("search-error", "Search query is empty after processing");
             return;
         }
 
-        // 使用 OR 组合多个关键词，(?i) 表示不区分大小写
-        let pattern = if terms.len() == 1 {
-            format!("(?i){}", terms[0])
-        } else {
-            format!("(?i)({})", terms.join("|"))
+        // 创建结构化查询对象
+        use models::search::*;
+        let search_terms: Vec<SearchTerm> = raw_terms
+            .iter()
+            .enumerate()
+            .map(|(i, term)| SearchTerm {
+                id: format!("term_{}", i),
+                value: term.clone(),
+                operator: QueryOperator::Or, // OR 逻辑
+                source: TermSource::User,
+                preset_group_id: None,
+                is_regex: false,
+                priority: 1,
+                enabled: true,
+                case_sensitive: false,
+            })
+            .collect();
+
+        let structured_query = SearchQuery {
+            id: "search_logs_query".to_string(),
+            terms: search_terms,
+            global_operator: QueryOperator::Or,
+            filters: None,
+            metadata: QueryMetadata {
+                created_at: 0,
+                last_modified: 0,
+                execution_count: 0,
+                label: None,
+            },
         };
 
-        let re = match Regex::new(&pattern) {
-            Ok(r) => r,
+        // 创建 QueryExecutor 并执行查询
+        let mut executor = services::QueryExecutor::new(100);
+        let plan = match executor.execute(&structured_query) {
+            Ok(p) => p,
             Err(e) => {
-                let _ = app_handle.emit("search-error", format!("Invalid Regex: {}", e));
+                let _ = app_handle.emit("search-error", format!("Query execution error: {}", e));
                 return;
             }
         };
@@ -1882,16 +1961,17 @@ async fn search_logs(
             query
         );
 
-        // 并行搜索（使用 Rayon）
+        // 并行搜索，使用带详情的搜索函数
         let mut all_results: Vec<LogEntry> = files
             .par_iter()
             .enumerate()
             .flat_map(|(idx, (real_path, virtual_path))| {
-                search_single_file(
+                search_single_file_with_details(
                     real_path,
                     virtual_path,
-                    &re,
-                    idx * 10000, // 简单的 ID 偏移
+                    &executor,
+                    &plan,
+                    idx * 10000,
                 )
             })
             .collect();
@@ -2636,6 +2716,44 @@ async fn check_rar_support() -> Result<serde_json::Value, String> {
     }))
 }
 
+// ============================================================================
+// 结构化查询 API
+// ============================================================================
+
+/**
+ * 执行结构化查询
+ */
+#[command]
+fn execute_structured_query(
+    query: SearchQuery,
+    logs: Vec<String>,
+) -> Result<Vec<String>, String> {
+    let mut executor = QueryExecutor::new(1000);
+    
+    let plan = executor.execute(&query)
+        .map_err(|e| e.to_string())?;
+    
+    let filtered: Vec<String> = logs
+        .iter()
+        .filter(|line| executor.matches_line(&plan, line))
+        .cloned()
+        .collect();
+    
+    Ok(filtered)
+}
+
+/**
+ * 验证查询有效性
+ */
+#[command]
+fn validate_query(query: SearchQuery) -> Result<bool, String> {
+    let mut executor = QueryExecutor::new(1000);
+    
+    executor.execute(&query)
+        .map(|_| true)
+        .map_err(|e| e.to_string())
+}
+
 // 实时监听命令
 #[command]
 async fn start_watch(
@@ -3000,6 +3118,8 @@ pub fn run() {
             check_rar_support,
             start_watch,
             stop_watch,
+            execute_structured_query,
+            validate_query,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
