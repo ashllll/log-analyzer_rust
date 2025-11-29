@@ -2,8 +2,10 @@ name: Release
 
 on:
   push:
+    branches:
+      - main  # 推送到 main 分支时自动构建正式版本
     tags:
-      - 'v*'  # 仅在推送 v* 标签时触发正式版本（如 v1.0.0）
+      - 'v*'  # 推送 v* 标签时触发指定版本（如 v1.0.0）
   workflow_dispatch:  # 允许手动触发
 
 jobs:
@@ -28,18 +30,48 @@ jobs:
             name: windows
 
     runs-on: ${{ matrix.platform.os }}
+    outputs:
+      version: ${{ steps.version.outputs.version }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 获取完整的 git 历史，以便读取 tags
 
       - name: Generate version number
         id: version
         run: |
-          # 使用 tag 名作为版本号（去掉 v 前缀）
-          VERSION="${GITHUB_REF_NAME#v}"
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            # 如果是 tag 推送，使用 tag 名作为版本号（去掉 v 前缀）
+            VERSION="${GITHUB_REF_NAME#v}"
+            echo "Using tag version: $VERSION"
+          else
+            # 如果是 main 分支推送，自动递增 patch 版本号
+            # 获取最新的 tag
+            LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+            echo "Latest tag: $LATEST_TAG"
+            
+            # 去掉 v 前缀
+            LATEST_VERSION="${LATEST_TAG#v}"
+            
+            # 解析版本号（假设格式为 X.Y.Z）
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$LATEST_VERSION"
+            
+            # 递增 patch 版本号
+            PATCH=$((PATCH + 1))
+            VERSION="${MAJOR}.${MINOR}.${PATCH}"
+            
+            echo "Auto-incremented version: $VERSION"
+            
+            # 创建并推送新 tag
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git tag "v${VERSION}"
+            git push origin "v${VERSION}"
+          fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Version: $VERSION"
+          echo "Final version: $VERSION"
         shell: bash
 
       - name: Update version in project files
@@ -155,8 +187,16 @@ jobs:
       - name: Generate tag for release
         id: generate_tag
         run: |
-          echo "tag_name=${{ github.ref_name }}" >> $GITHUB_OUTPUT
-          echo "release_name=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            # Tag 推送，使用现有 tag
+            echo "tag_name=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+            echo "release_name=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          else
+            # Main 分支推送，使用自动生成的版本号
+            VERSION="${{ needs.release.outputs.version }}"
+            echo "tag_name=v${VERSION}" >> $GITHUB_OUTPUT
+            echo "release_name=v${VERSION}" >> $GITHUB_OUTPUT
+          fi
           echo "is_prerelease=false" >> $GITHUB_OUTPUT
 
       - name: Create Release
