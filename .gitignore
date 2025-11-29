@@ -4,3 +4,4 @@ log-analyzer/dist
 log-analyzer/dist-ssr
 log-analyzer/src-tauri/target
 .qoder/
+*.backup
