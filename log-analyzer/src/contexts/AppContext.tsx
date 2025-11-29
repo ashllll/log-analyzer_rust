@@ -374,20 +374,40 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       const { task_id, task_type, target, status, message, progress, workspace_id } = event.payload;
       console.log('[EVENT] task-update:', event.payload);
       
-      // 更新任务状态
-      taskDispatch({
-        type: 'UPDATE_TASK',
-        payload: {
-          id: task_id,
-          updates: {
+      // 检查任务是否已存在
+      const existingTask = taskState.tasks.find(t => t.id === task_id);
+      
+      if (!existingTask) {
+        // 如果任务不存在，先添加它
+        console.log('[EVENT] Task not found, creating new task:', task_id);
+        taskDispatch({
+          type: 'ADD_TASK',
+          payload: {
+            id: task_id,
             type: task_type,
             target,
+            progress,
             status: status as 'RUNNING' | 'COMPLETED' | 'FAILED' | 'STOPPED',
             message,
-            progress
+            workspaceId: workspace_id
           }
-        }
-      });
+        });
+      } else {
+        // 任务已存在，更新它
+        taskDispatch({
+          type: 'UPDATE_TASK',
+          payload: {
+            id: task_id,
+            updates: {
+              type: task_type,
+              target,
+              status: status as 'RUNNING' | 'COMPLETED' | 'FAILED' | 'STOPPED',
+              message,
+              progress
+            }
+          }
+        });
+      }
       
       // 当任务完成时，更新工作区状态为 READY
       if (status === 'COMPLETED') {
