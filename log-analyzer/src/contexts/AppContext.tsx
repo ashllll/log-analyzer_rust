@@ -1,4 +1,4 @@
-import { createContext, useContext, useReducer, useCallback, ReactNode, useEffect } from 'react';
+import { createContext, useContext, useReducer, useCallback, ReactNode, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
@@ -312,6 +312,12 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     loading: false,
     error: null
   });
+  
+  // 使用 ref 保存最新的 tasks 状态，避免闭包陷阱
+  const tasksRef = useRef(taskState.tasks);
+  useEffect(() => {
+    tasksRef.current = taskState.tasks;
+  }, [taskState.tasks]);
 
   // App Actions
   const setPage = useCallback((page: Page) => {
@@ -377,8 +383,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       const { task_id, task_type, target, status, message, progress, workspace_id } = event.payload;
       console.log('[EVENT] task-update:', event.payload);
       
-      // 检查任务是否已存在
-      const existingTask = taskState.tasks.find(t => t.id === task_id);
+      // 检查任务是否已存在（使用 ref 获取最新状态）
+      const existingTask = tasksRef.current.find(t => t.id === task_id);
       
       if (!existingTask && !createdTaskIds.has(task_id)) {
         // 如果任务不存在且未被标记为已创建，先添加它
@@ -475,7 +481,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       unlistenImportComplete.then(f => f());
       unlistenImportError.then(f => f());
     };
-  }, [workspaceState.workspaces, taskState.tasks]);
+  }, []); // 移除依赖，只在组件挂载时创建一次监听器
 
   return (
     <AppContext.Provider value={{ state: appState, setPage, addToast, removeToast, setActiveWorkspace }}>

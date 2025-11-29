@@ -106,19 +106,7 @@ export const useWorkspaceOperations = () => {
       
       logger.debug('import_folder returned taskId:', taskId);
       
-      // 添加任务到任务列表（作为后备，主要通过事件添加）
-      taskDispatch({
-        type: 'ADD_TASK',
-        payload: {
-          id: taskId,
-          type: 'Import',
-          target: fileName,  // 使用文件名而不是完整路径
-          progress: 0,
-          status: 'RUNNING',
-          message: 'Initializing...',
-          workspaceId: newWs.id  // 添加工作区ID用于匹配
-        }
-      });
+      // 任务由后端事件自动创建，不需要手动添加
       
       addToast('info', '导入已开始');
     } catch (e) {
@@ -150,25 +138,10 @@ export const useWorkspaceOperations = () => {
       
       logger.debug('refresh_workspace returned taskId:', taskId);
       
-      // 更新工作区状态
-      workspaceDispatch({
-        type: 'UPDATE_WORKSPACE',
-        payload: { id: workspace.id, updates: { status: 'PROCESSING' } }
-      });
+      // 不再手动设置 PROCESSING 状态，让后端事件处理
+      // 工作区状态由后端 task-update 事件自动更新
       
-      // 添加任务
-      taskDispatch({
-        type: 'ADD_TASK',
-        payload: {
-          id: taskId,
-          type: 'Refresh',
-          target: workspace.name,
-          progress: 0,
-          status: 'RUNNING',
-          message: 'Starting refresh...',
-          workspaceId: workspace.id  // 添加 workspaceId 用于精确匹配
-        }
-      });
+      // 任务由后端事件自动创建，不需要手动添加
       
       addToast('info', '刷新工作区中...');
     } catch (e) {

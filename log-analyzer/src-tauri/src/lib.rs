@@ -2189,128 +2189,128 @@ async fn refresh_workspace(
             let total_changes = new_files.len() + modified_files.len() + deleted_files.len();
 
             if total_changes == 0 {
-                eprintln!("[DEBUG] No changes detected, skipping update");
-                return Ok::<(), String>(());
-            }
+                eprintln!("[DEBUG] No changes detected, no index update needed");
+                // 直接跳到最后，不做任何处理，但不 return，让它继续执行到 COMPLETED 事件
+            } else {
+                let _ = app_handle.emit(
+                    "task-update",
+                    TaskProgress {
+                        task_id: task_id_clone.clone(),
+                        task_type: "Refresh".to_string(),
+                        target: file_name.clone(),  // 使用文件名
+                        status: "RUNNING".to_string(),
+                        message: format!(
+                            "Processing {} changes...",
+                            total_changes
+                        ),
+                        progress: 60,
+                        workspace_id: Some(workspace_id_clone.clone()),  // 添加 workspace_id
+                    },
+                );
 
-            let _ = app_handle.emit(
-                "task-update",
-                TaskProgress {
-                    task_id: task_id_clone.clone(),
-                    task_type: "Refresh".to_string(),
-                    target: file_name.clone(),  // 使用文件名
-                    status: "RUNNING".to_string(),
-                    message: format!(
-                        "Processing {} changes...",
-                        total_changes
-                    ),
-                    progress: 60,
-                    workspace_id: Some(workspace_id_clone.clone()),  // 添加 workspace_id
-                },
-            );
+                // 处理新增和修改的文件
+                let state = app_handle.state::<AppState>();
+                let temp_guard = state
+                    .temp_dir
+                    .lock()
+                    .map_err(|e| format!("Lock error: {}", e))?;
 
-            // 处理新增和修改的文件
-            let state = app_handle.state::<AppState>();
-            let temp_guard = state
-                .temp_dir
-                .lock()
-                .map_err(|e| format!("Lock error: {}", e))?;
+                if let Some(ref temp_dir) = *temp_guard {
+                    let _target_base = temp_dir.path();
+                    let root_name = source_path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy();
 
-            if let Some(ref temp_dir) = *temp_guard {
-                let _target_base = temp_dir.path();
-                let root_name = source_path
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy();
+                    let mut new_entries: HashMap<String, String> = HashMap::new();
+                    let mut new_metadata_entries: HashMap<String, FileMetadata> = HashMap::new();
 
-                let mut new_entries: HashMap<String, String> = HashMap::new();
-                let mut new_metadata_entries: HashMap<String, FileMetadata> = HashMap::new();
-
-                // 处理新增文件
-                for real_path in &new_files {
-                    let file_path = Path::new(real_path);
-                    if let Ok(relative) = file_path.strip_prefix(source_path) {
-                        let virtual_path = format!("{}/{}", root_name, relative.to_string_lossy().replace('\\', "/"));
-                        let normalized_virtual = normalize_path_separator(&virtual_path);
-                        
-                        new_entries.insert(real_path.clone(), normalized_virtual);
-                        if let Some(meta) = current_files.get(real_path) {
-                            new_metadata_entries.insert(real_path.clone(), meta.clone());
+                    // 处理新增文件
+                    for real_path in &new_files {
+                        let file_path = Path::new(real_path);
+                        if let Ok(relative) = file_path.strip_prefix(source_path) {
+                            let virtual_path = format!("{}/{}", root_name, relative.to_string_lossy().replace('\\', "/"));
+                            let normalized_virtual = normalize_path_separator(&virtual_path);
+                            
+                            new_entries.insert(real_path.clone(), normalized_virtual);
+                            if let Some(meta) = current_files.get(real_path) {
+                                new_metadata_entries.insert(real_path.clone(), meta.clone());
+                            }
                         }
                     }
-                }
 
-                // 处理修改的文件
-                for real_path in &modified_files {
-                    let file_path = Path::new(real_path);
-                    if let Ok(relative) = file_path.strip_prefix(source_path) {
-                        let virtual_path = format!("{}/{}", root_name, relative.to_string_lossy().replace('\\', "/"));
-                        let normalized_virtual = normalize_path_separator(&virtual_path);
-                        
-                        new_entries.insert(real_path.clone(), normalized_virtual);
-                        if let Some(meta) = current_files.get(real_path) {
-                            new_metadata_entries.insert(real_path.clone(), meta.clone());
+                    // 处理修改的文件
+                    for real_path in &modified_files {
+                        let file_path = Path::new(real_path);
+                        if let Ok(relative) = file_path.strip_prefix(source_path) {
+                            let virtual_path = format!("{}/{}", root_name, relative.to_string_lossy().replace('\\', "/"));
+                            let normalized_virtual = normalize_path_separator(&virtual_path);
+                            
+                            new_entries.insert(real_path.clone(), normalized_virtual);
+                            if let Some(meta) = current_files.get(real_path) {
+                                new_metadata_entries.insert(real_path.clone(), meta.clone());
+                            }
                         }
                     }
+
+                    // 合并到现有索引
+                    for (k, v) in new_entries {
+                        existing_path_map.insert(k, v);
+                    }
+                    for (k, v) in new_metadata_entries {
+                        existing_metadata.insert(k, v);
+                    }
+
+                    // 删除已删除的文件
+                    for real_path in &deleted_files {
+                        existing_path_map.remove(real_path);
+                        existing_metadata.remove(real_path);
+                    }
+
+                    eprintln!("[DEBUG] Updated index: {} total files", existing_path_map.len());
                 }
 
-                // 合并到现有索引
-                for (k, v) in new_entries {
-                    existing_path_map.insert(k, v);
-                }
-                for (k, v) in new_metadata_entries {
-                    existing_metadata.insert(k, v);
-                }
+                let _ = app_handle.emit(
+                    "task-update",
+                    TaskProgress {
+                        task_id: task_id_clone.clone(),
+                        task_type: "Refresh".to_string(),
+                        target: file_name.clone(),  // 使用文件名
+                        status: "RUNNING".to_string(),
+                        message: "Saving index...".to_string(),
+                        progress: 80,
+                        workspace_id: Some(workspace_id_clone.clone()),  // 添加 workspace_id
+                    },
+                );
 
-                // 删除已删除的文件
-                for real_path in &deleted_files {
-                    existing_path_map.remove(real_path);
-                    existing_metadata.remove(real_path);
-                }
-
-                eprintln!("[DEBUG] Updated index: {} total files", existing_path_map.len());
-            }
-
-            let _ = app_handle.emit(
-                "task-update",
-                TaskProgress {
-                    task_id: task_id_clone.clone(),
-                    task_type: "Refresh".to_string(),
-                    target: file_name.clone(),  // 使用文件名
-                    status: "RUNNING".to_string(),
-                    message: "Saving index...".to_string(),
-                    progress: 80,
-                    workspace_id: Some(workspace_id_clone.clone()),  // 添加 workspace_id
-                },
-            );
-
-            // 保存更新后的索引
-            match save_index(
-                &app_handle,
-                &workspace_id_clone,
-                &existing_path_map,
-                &existing_metadata,
-            ) {
-                Ok(index_path) => {
-                    eprintln!("[DEBUG] Index updated: {}", index_path.display());
-                    
-                    // 更新内存中的索引
-                    let state = app_handle.state::<AppState>();
-                    let mut map_guard = state
-                        .path_map
-                        .lock()
-                        .map_err(|e| format!("Lock error: {}", e))?;
-                    let mut metadata_guard = state
-                        .file_metadata
-                        .lock()
-                        .map_err(|e| format!("Lock error: {}", e))?;
-                    
-                    *map_guard = existing_path_map;
-                    *metadata_guard = existing_metadata;
-                }
-                Err(e) => {
-                    eprintln!("[WARNING] Failed to save index: {}", e);
-                    return Err(e);
+                // 保存更新后的索引
+                match save_index(
+                    &app_handle,
+                    &workspace_id_clone,
+                    &existing_path_map,
+                    &existing_metadata,
+                ) {
+                    Ok(index_path) => {
+                        eprintln!("[DEBUG] Index updated: {}", index_path.display());
+                        
+                        // 更新内存中的索引
+                        let state = app_handle.state::<AppState>();
+                        let mut map_guard = state
+                            .path_map
+                            .lock()
+                            .map_err(|e| format!("Lock error: {}", e))?;
+                        let mut metadata_guard = state
+                            .file_metadata
+                            .lock()
+                            .map_err(|e| format!("Lock error: {}", e))?;
+                        
+                        *map_guard = existing_path_map;
+                        *metadata_guard = existing_metadata;
+                    }
+                    Err(e) => {
+                        eprintln!("[WARNING] Failed to save index: {}", e);
+                        return Err(e);
+                    }
                 }
             }
 
@@ -2333,6 +2333,7 @@ async fn refresh_workspace(
             );
         } else {
             eprintln!("[DEBUG] Refresh completed for task: {}", task_id_clone);
+            eprintln!("[DEBUG] Sending COMPLETED event with workspace_id: {:?}", workspace_id_clone);
             let _ = app_handle.emit(
                 "task-update",
                 TaskProgress {
@@ -2342,9 +2343,10 @@ async fn refresh_workspace(
                     status: "COMPLETED".to_string(),
                     message: "Refresh complete".to_string(),
                     progress: 100,
-                    workspace_id: Some(workspace_id_clone),  // 添加 workspace_id
+                    workspace_id: Some(workspace_id_clone.clone()),  // 添加 workspace_id
                 },
             );
+            eprintln!("[DEBUG] Sending import-complete event");
             let _ = app_handle.emit("import-complete", task_id_clone);
         }
     });
