@@ -347,10 +347,8 @@ fn try_cleanup_temp_dir(path: &Path, cleanup_queue: &Arc<Mutex<Vec<PathBuf>>>) {
             #[cfg(target_os = "windows")]
             {
                 // Windows：递归移除只读属性
-                for entry in WalkDir::new(path) {
-                    if let Ok(entry) = entry {
-                        let _ = remove_readonly(entry.path());
-                    }
+                for entry in WalkDir::new(path).into_iter().flatten() {
+                    let _ = remove_readonly(entry.path());
                 }
             }
             
@@ -1822,7 +1820,7 @@ async fn search_logs(
             .split('|')
             .map(|t| t.trim())
             .filter(|t| !t.is_empty())
-            .map(|t| regex::escape(t))  // 转义每个关键词
+            .map(regex::escape)  // 转义每个关键词
             .collect();
         
         if terms.is_empty() {
@@ -1923,7 +1921,7 @@ async fn search_logs(
         eprintln!("[DEBUG] Final result count: {}", all_results.len());
 
         // 缓存结果（仅当结果未被截断时缓存）
-        if !results_truncated && all_results.len() > 0 {
+        if !results_truncated && !all_results.is_empty() {
             // 使用 try_lock 避免阻塞，失败时跳过缓存
             if let Ok(mut cache_guard) = search_cache.try_lock() {
                 cache_guard.put(cache_key.clone(), all_results.clone());
