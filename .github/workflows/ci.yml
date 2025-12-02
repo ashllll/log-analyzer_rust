@@ -63,6 +63,12 @@ jobs:
           cd log-analyzer
           npm ci
 
+      - name: Set executable permissions for bundled binaries (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          chmod +x log-analyzer/src-tauri/binaries/unrar-*
+          ls -la log-analyzer/src-tauri/binaries/
+
       - name: Run Rust tests
         run: |
           cd log-analyzer/src-tauri

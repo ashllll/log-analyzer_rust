@@ -8,6 +8,17 @@
     "opener:default",
     "dialog:default", 
     "dialog:allow-open", 
-    "dialog:allow-save"
+    "dialog:allow-save",
+    "shell:allow-execute",
+    {
+      "identifier": "shell:allow-spawn",
+      "allow": [
+        {
+          "name": "binaries/unrar",
+          "sidecar": true,
+          "args": true
+        }
+      ]
+    }
   ]
 }

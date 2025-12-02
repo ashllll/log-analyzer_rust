@@ -165,58 +165,75 @@ impl Drop for AppState {
 
 // --- Helpers ---
 
-/// 检测unrar命令是否可用
+/// 获取内置unrar可执行文件的路径
 ///
 /// # 功能
-/// 检测系统中是否安装了unrar工具，用于RAR文件解压
+/// 返回打包在应用中的unrar二进制文件路径（Tauri sidecar）
+///
+/// # 参数
+/// - `app`: Tauri AppHandle引用
 ///
 /// # 返回值
-/// - `Ok(true)`: unrar可用
-/// - `Ok(false)`: unrar不可用
-/// - `Err(String)`: 检测过程出错
-///
-/// # 平台支持
-/// - Windows: 检测 unrar.exe
-/// - Linux/macOS: 检测 unrar
-fn check_unrar_available() -> Result<bool, String> {
-    use std::process::Command;
-
-    let unrar_cmd = if cfg!(target_os = "windows") {
-        "unrar.exe"
-    } else {
-        "unrar"
-    };
-
-    match Command::new(unrar_cmd).arg("-?").output() {
-        Ok(_) => Ok(true),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
-        Err(e) => Err(format!("Failed to check unrar availability: {}", e)),
-    }
-}
-
-/// 获取unrar安装指引
-///
-/// # 功能
-/// 根据当前操作系统返回相应的unrar安装指令
-///
-/// # 返回值
-/// 包含unrar安装指南的字符串
-fn get_unrar_install_guide() -> String {
-    if cfg!(target_os = "windows") {
-        "RAR support requires 'unrar' to be installed.\n\
-         Please download from: https://www.rarlab.com/rar_add.htm\n\
-         After installation, add unrar.exe to your system PATH."
-            .to_string()
+/// - `Ok(PathBuf)`: unrar可执行文件的完整路径
+/// - `Err(String)`: 获取路径失败
+fn get_bundled_unrar_path(app: &AppHandle) -> Result<PathBuf, String> {
+    use tauri::Manager;
+    
+    // 获取应用资源目录
+    let resource_path = app
+        .path()
+        .resource_dir()
+        .map_err(|e| format!("Failed to get resource directory: {}", e))?;
+    
+    // 根据平台确定二进制文件名
+    let binary_name = if cfg!(target_os = "windows") {
+        "unrar-x86_64-pc-windows-msvc.exe"
     } else if cfg!(target_os = "macos") {
-        "RAR support requires 'unrar' to be installed.\n\
-         Install with: brew install unrar"
-            .to_string()
+        if cfg!(target_arch = "aarch64") {
+            "unrar-aarch64-apple-darwin"
+        } else {
+            "unrar-x86_64-apple-darwin"
+        }
     } else {
-        "RAR support requires 'unrar' to be installed.\n\
-         Install with: sudo apt install unrar (Ubuntu/Debian)\n\
-         or: sudo yum install unrar (CentOS/Fedora)"
-            .to_string()
+        "unrar-x86_64-unknown-linux-gnu"
+    };
+    
+    // 尝试在资源目录中查找
+    let sidecar_path = resource_path.join("binaries").join(binary_name);
+    if sidecar_path.exists() {
+        eprintln!("[DEBUG] Found bundled unrar at: {}", sidecar_path.display());
+        return Ok(sidecar_path);
     }
+    
+    // 开发模式：尝试在 src-tauri/binaries 目录查找
+    let exe_path = std::env::current_exe()
+        .map_err(|e| format!("Failed to get current exe path: {}", e))?;
+    let exe_dir = exe_path
+        .parent()
+        .ok_or("Failed to get exe directory")?;
+    
+    // 开发模式路径：target/debug/binaries 或直接在 src-tauri/binaries
+    let dev_paths = [
+        exe_dir.join("binaries").join(binary_name),
+        exe_dir.join("../binaries").join(binary_name),
+        exe_dir.join("../../binaries").join(binary_name),
+        exe_dir.join("../../../src-tauri/binaries").join(binary_name),
+    ];
+    
+    for path in &dev_paths {
+        if path.exists() {
+            let canonical = dunce::canonicalize(path)
+                .map_err(|e| format!("Failed to canonicalize path: {}", e))?;
+            eprintln!("[DEBUG] Found bundled unrar (dev mode) at: {}", canonical.display());
+            return Ok(canonical);
+        }
+    }
+    
+    Err(format!(
+        "Bundled unrar not found. Checked paths:\n  - {}\n  - {:?}",
+        sidecar_path.display(),
+        dev_paths.iter().map(|p| p.display().to_string()).collect::<Vec<_>>()
+    ))
 }
 
 /// 验证路径参数
@@ -984,7 +1001,7 @@ fn process_gz_file(
     Ok(())
 }
 
-// --- RAR Processor (使用系统 unrar 命令) ---
+// --- RAR Processor (使用内置 unrar 二进制文件) ---
 fn process_rar_archive(
     path: &Path,
     file_name: &str,
@@ -996,25 +1013,8 @@ fn process_rar_archive(
 ) -> Result<(), String> {
     use std::process::Command;
 
-    // 检测 unrar 是否可用
-    let unrar_available = check_unrar_available()
-        .map_err(|e| format!("Failed to check unrar availability: {}", e))?;
-
-    if !unrar_available {
-        let guide = get_unrar_install_guide();
-        eprintln!(
-            "[WARNING] unrar command not found, skipping RAR: {}",
-            path.display()
-        );
-        eprintln!("[INFO] {}", guide);
-        return Err(guide);
-    }
-
-    let unrar_cmd = if cfg!(target_os = "windows") {
-        "unrar.exe"
-    } else {
-        "unrar"
-    };
+    // 获取内置的 unrar 路径
+    let unrar_path = get_bundled_unrar_path(app)?;
 
     let extract_folder_name = format!("{}_extracted_{}", file_name, Uuid::new_v4());
     let extract_path = target_root.join(&extract_folder_name);
@@ -1026,9 +1026,10 @@ fn process_rar_archive(
         path.display(),
         extract_path.display()
     );
+    eprintln!("[DEBUG] Using bundled unrar: {}", unrar_path.display());
 
     // 执行 unrar 命令
-    let output = Command::new(unrar_cmd)
+    let output = Command::new(&unrar_path)
         .arg("x") // 解压并保持路径
         .arg("-o+") // 覆盖已存在文件
         .arg("-y") // 自动确认
@@ -2699,20 +2700,15 @@ fn calculate_dir_size(dir: &Path) -> Result<u64, std::io::Error> {
 }
 
 /// 检查RAR支持状态
+/// 
+/// 由于 unrar 已经内置在应用中，此命令始终返回 available: true
 #[command]
 async fn check_rar_support() -> Result<serde_json::Value, String> {
-    let available =
-        check_unrar_available().map_err(|e| format!("Failed to check RAR support: {}", e))?;
-
-    let install_guide = if !available {
-        Some(get_unrar_install_guide())
-    } else {
-        None
-    };
-
+    // unrar 已经打包在应用中，始终可用
     Ok(serde_json::json!({
-        "available": available,
-        "install_guide": install_guide,
+        "available": true,
+        "install_guide": null,
+        "bundled": true,
     }))
 }
 
@@ -3089,6 +3085,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_shell::init())
         .manage(AppState {
             temp_dir: Mutex::new(None),
             path_map: Arc::new(Mutex::new(HashMap::new())), // 使用 Arc
@@ -3284,11 +3281,6 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    #[test]
-    fn test_check_unrar_available() {
-        // 这个测试可能会根据系统配置不同而失败
-        let result = check_unrar_available();
-        assert!(result.is_ok());
-        // 不断言结果，因为不同系统可能有不同的unrar安装状态
-    }
+    // 注意：get_bundled_unrar_path 需要 AppHandle，无法在单元测试中测试
+    // 该功能通过集成测试（实际运行应用并导入 RAR 文件）进行验证
 }

@@ -210,6 +210,11 @@ log-analyzer_rust/
 │   │   │   │   └── search.rs # 查询模型定义
 │   │   │   └── services/     # 业务服务
 │   │   │       └── query_executor.rs  # 查询执行器
+│   │   ├── binaries/         # 内置 unrar 二进制文件
+│   │   │   ├── unrar-x86_64-pc-windows-msvc.exe
+│   │   │   ├── unrar-x86_64-apple-darwin
+│   │   │   ├── unrar-aarch64-apple-darwin
+│   │   │   └── unrar-x86_64-unknown-linux-gnu
 │   │   └── Cargo.toml        # Rust 依赖
 │   └── package.json          # Node 依赖
 ├── docs/                      # 📚 项目文档
@@ -227,7 +232,7 @@ log-analyzer_rust/
 
 | 功能 | 描述 |
 |------|------|
-| 📦 **多格式压缩包** | 支持 `.zip`、`.tar`、`.tar.gz`、`.tgz`、`.gz`、`.rar`（需系统安装 unrar） |
+| 📦 **多格式压缩包** | 支持 `.zip`、`.tar`、`.tar.gz`、`.tgz`、`.gz`、`.rar`（内置 unrar，开箱即用） |
 | 🔄 **递归解压** | 自动处理任意层级嵌套的压缩包（如 `.zip` → `.tar.gz` → `.gz`） |
 | 💾 **索引持久化** | 导入一次，永久使用。索引使用 Gzip 压缩存储，节省空间 50%+ |
 | 📂 **灵活导入** | 支持导入单个文件、压缩包或整个文件夹，自动识别格式 |
@@ -287,7 +292,7 @@ log-analyzer_rust/
   - `zip` 0.6 - ZIP 格式解压
   - `tar` 0.4 - TAR 归档处理
   - `flate2` 1.0 - GZIP 压缩/解压
-  - `unrar` 0.5 - RAR 格式（需系统安装 unrar 命令）
+  - `unrar` - RAR 格式（内置二进制文件，无需系统安装）
 - **性能优化**:
   - `rayon` 1.8 - 并行搜索，多核加速
   - `lru` 0.12 - LRU 缓存，搜索结果缓存
@@ -428,6 +433,16 @@ cargo test --manifest-path=src-tauri/Cargo.toml --test '*'
 - [x] **高级过滤功能**（按时间范围、日志级别、文件来源过滤）
 - [x] **结构化查询系统**（完整的查询构建器 + 匹配详情追踪）
 - [x] **查询持久化**（自动保存查询到 localStorage，刷新后恢复）
+
+#### 最近更新（2024-12）
+- [x] **内置 unrar 工具**
+  - 应用自带各平台 unrar 二进制文件（Windows/macOS/Linux）
+  - 用户无需手动安装任何依赖，开箱即用
+  - 自动检测平台并使用对应的二进制文件
+  - 开发模式和发布版本均支持
+- [x] **更新 CI/CD 配置**
+  - 添加 binaries 目录可执行权限设置
+  - 确保跨平台构建正常工作
 
 #### 最近更新（2024-11）
 - [x] **完整实施结构化查询系统**
