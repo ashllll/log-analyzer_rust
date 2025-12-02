@@ -434,7 +434,7 @@ cargo test --manifest-path=src-tauri/Cargo.toml --test '*'
 - [x] **结构化查询系统**（完整的查询构建器 + 匹配详情追踪）
 - [x] **查询持久化**（自动保存查询到 localStorage，刷新后恢复）
 
-#### 最近更新（2024-12）
+#### 最近更新（2025-12）
 - [x] **内置 unrar 工具**
   - 应用自带各平台 unrar 二进制文件（Windows/macOS/Linux）
   - 用户无需手动安装任何依赖，开箱即用
@@ -448,7 +448,7 @@ cargo test --manifest-path=src-tauri/Cargo.toml --test '*'
   - 添加 binaries 目录可执行权限设置
   - 确保跨平台构建正常工作
 
-#### 最近更新（2024-11）
+#### 历史更新（2024-11）
 - [x] **完整实施结构化查询系统**
   - 创建 `SearchQueryBuilder` 类（流畅 API 构建器模式）
   - 实现 `QueryExecutor` 执行器（支持优先级排序）
