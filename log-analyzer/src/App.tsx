@@ -34,6 +34,9 @@ import { cn } from './utils/classNames';
 import { ErrorHandler } from './utils/errorHandler';
 import { logger } from './utils/logger';
 
+// 导入UI组件
+import { Button, Input, Card, NavItem, ToastContainer } from './components/ui';
+
 // SearchPage Props Type  
 interface SearchPageProps {
     keywordGroups: KeywordGroup[];
@@ -42,33 +45,7 @@ interface SearchPageProps {
     activeWorkspace: Workspace | null;
 }
 
-// UI Components
-const NavItem = ({ icon: Icon, label, active, onClick }: NavItemProps) => (
-  <button 
-    onClick={onClick}
-    className={cn(
-      "w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all",
-      active ? "bg-primary text-white" : "text-text-muted hover:bg-bg-hover"
-    )}
-  >
-    <Icon size={18}/> {label}
-  </button>
-);
-
-const Button = ({ children, variant = 'primary', className, icon: Icon, onClick, ...props }: ButtonProps) => {
-  const variants = {
-    primary: "bg-primary hover:bg-primary-hover text-white shadow-sm active:scale-95",
-    secondary: "bg-bg-card hover:bg-bg-hover text-text-main border border-border-base active:scale-95",
-    ghost: "hover:bg-bg-hover text-text-muted hover:text-text-main active:bg-bg-hover/80",
-    danger: "bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20 hover:text-red-300 active:scale-95",
-    active: "bg-primary/20 text-primary border border-primary/50", 
-    icon: "h-8 w-8 p-0 bg-transparent hover:bg-bg-hover text-text-dim hover:text-text-main rounded-full"
-  };
-  return <button type="button" className={cn("h-9 px-4 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shrink-0 select-none cursor-pointer", variants[variant as keyof typeof variants], className)} onClick={(e) => { e.stopPropagation(); onClick && onClick(e); }} {...props}>{Icon && <Icon size={16} />}{children}</button>;
-};
-const Input = ({ className, ref, ...props }: InputProps) => (<input ref={ref} className={cn("h-9 w-full bg-bg-main border border-border-base rounded-md px-3 text-sm text-text-main placeholder:text-text-dim focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50 transition-all", className)} {...props} />);
-const Card = ({ children, className, ...props }: CardProps) => (<div className={cn("bg-bg-card border border-border-base rounded-lg overflow-hidden", className)} {...props}>{children}</div>);
-const ToastContainer = ({ toasts, removeToast }: { toasts: Toast[], removeToast: (id: number) => void }) => (<div className="fixed bottom-6 right-6 z-[100] flex flex-col gap-3 pointer-events-none">{toasts.map(toast => (<div key={toast.id} className={cn("pointer-events-auto min-w-[300px] p-4 rounded-lg shadow-2xl border flex items-center gap-3 animate-in slide-in-from-right-full duration-300", toast.type === 'success' ? "bg-bg-card border-emerald-500/30 text-emerald-400" : toast.type === 'error' ? "bg-bg-card border-red-500/30 text-red-400" : "bg-bg-card border-blue-500/30 text-blue-400")}>{toast.type === 'success' ? <CheckCircle2 size={20}/> : toast.type === 'error' ? <AlertCircle size={20}/> : <Info size={20}/>}<span className="text-sm font-medium text-text-main">{toast.message}</span><button onClick={() => removeToast(toast.id)} className="ml-auto text-text-dim hover:text-text-main"><X size={16}/></button></div>))}</div>);
+// UI Components: Moved to components/ui/
 
 // Components: KeywordModal, HybridLogRenderer, FilterPalette (Assuming they are defined as in previous steps)
 // --- Keyword Modal ---
