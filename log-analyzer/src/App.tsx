@@ -37,6 +37,10 @@ import { logger } from './utils/logger';
 // 导入UI组件
 import { Button, Input, Card, NavItem, ToastContainer } from './components/ui';
 
+// 导入业务组件
+import { KeywordModal, FilterPalette } from './components/modals';
+import { HybridLogRenderer } from './components/renderers';
+
 // SearchPage Props Type  
 interface SearchPageProps {
     keywordGroups: KeywordGroup[];
@@ -45,93 +49,7 @@ interface SearchPageProps {
     activeWorkspace: Workspace | null;
 }
 
-// UI Components: Moved to components/ui/
-
-// Components: KeywordModal, HybridLogRenderer, FilterPalette (Assuming they are defined as in previous steps)
-// --- Keyword Modal ---
-const KeywordModal = ({ isOpen, onClose, onSave, initialData }: KeywordModalProps) => {
-  const [name, setName] = useState(initialData?.name || "");
-  const [color, setColor] = useState<ColorKey>(initialData?.color || "blue");
-  const [patterns, setPatterns] = useState<KeywordPattern[]>(initialData?.patterns || [{ regex: "", comment: "" }]);
-  useEffect(() => { if (isOpen) { setName(initialData?.name || ""); setColor(initialData?.color || "blue"); setPatterns(initialData?.patterns || [{ regex: "", comment: "" }]); } }, [isOpen, initialData]);
-  const handleSave = () => {
-    const validPatterns = patterns.filter(p => p.regex.trim() !== "");
-    if (!name || validPatterns.length === 0) return;
-    onSave({ id: initialData?.id || Date.now().toString(), name, color, patterns: validPatterns, enabled: true });
-    onClose();
-  };
-  if (!isOpen) return null;
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-[600px] bg-bg-card border border-border-base rounded-lg shadow-2xl flex flex-col max-h-[85vh] animate-in fade-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
-        <div className="px-6 py-4 border-b border-border-base flex justify-between items-center bg-bg-sidebar"><h2 className="text-lg font-bold text-text-main">{initialData ? 'Edit Keyword Group' : 'New Keyword Group'}</h2><Button variant="icon" icon={X} onClick={onClose} /></div>
-        <div className="p-6 overflow-y-auto flex-1 space-y-6">
-          <div className="grid grid-cols-2 gap-4">
-            <div><label className="text-xs text-text-dim uppercase font-bold mb-1.5 block">Group Name</label><Input value={name} onChange={(e:any) => setName(e.target.value)} placeholder="Name" /></div>
-            <div><label className="text-xs text-text-dim uppercase font-bold mb-1.5 block">Highlight Color</label><div className="flex gap-2 h-9 items-center">{(['blue', 'green', 'orange', 'red', 'purple'] as ColorKey[]).map((c) => (<button key={c} onClick={() => setColor(c)} className={cn("w-6 h-6 rounded-full border-2 transition-all cursor-pointer", COLOR_STYLES[c].dot, color === c ? "border-white scale-110 shadow-lg" : "border-transparent opacity-40 hover:opacity-100")} />))}</div></div>
-          </div>
-          <div>
-            <div className="flex justify-between items-center mb-2"><label className="text-xs text-text-dim uppercase font-bold">Patterns & Comments</label><Button variant="ghost" className="h-6 text-xs" icon={Plus} onClick={() => setPatterns([...patterns, { regex: "", comment: "" }])}>Add</Button></div>
-            <div className="space-y-2">{patterns.map((p, i) => (<div key={i} className="flex gap-2 items-center group"><div className="flex-1"><Input value={p.regex} onChange={(e:any) => { const n = [...patterns]; n[i].regex = e.target.value; setPatterns(n); }} placeholder="RegEx" className="font-mono text-xs"/></div><div className="flex-1"><Input value={p.comment} onChange={(e:any) => { const n = [...patterns]; n[i].comment = e.target.value; setPatterns(n); }} placeholder="Comment" className="text-xs"/></div><Button variant="icon" icon={Trash2} className="text-red-400 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => setPatterns(patterns.filter((_, idx) => idx !== i))} /></div>))}</div>
-          </div>
-        </div>
-        <div className="px-6 py-4 border-t border-border-base bg-bg-sidebar flex justify-end gap-3"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button onClick={handleSave}>Save Configuration</Button></div>
-      </div>
-    </div>
-  );
-};
-const HybridLogRenderer = ({ text, query, keywordGroups }: HybridLogRendererProps) => {
-  const { patternMap, regexPattern } = useMemo(() => {
-    const map = new Map(); const patterns = new Set();
-    keywordGroups.filter((g:any) => g.enabled).forEach((group:any) => { group.patterns.forEach((p:any) => { if (p.regex?.trim()) { map.set(p.regex.toLowerCase(), { color: group.color, comment: p.comment }); patterns.add(p.regex); } }); });
-    if (query) { query.split('|').map((t:string) => t.trim()).filter((t:string) => t.length > 0).forEach((term:string, index:number) => { if (!map.has(term.toLowerCase())) { map.set(term.toLowerCase(), { color: ['blue', 'purple', 'green', 'orange'][index % 4], comment: "" }); } patterns.add(term); }); }
-    const sorted = Array.from(patterns).sort((a:any, b:any) => b.length - a.length);
-    return { regexPattern: sorted.length > 0 ? new RegExp(`(${sorted.map((p:any) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi') : null, patternMap: map };
-  }, [keywordGroups, query]);
-  
-  // 性能优化：文本长度检查
-  if (text.length > 500) {
-    // 超长文本截断显示
-    const truncated = text.substring(0, 500) + '...';
-    if (!regexPattern) return <span>{truncated}</span>;
-    const parts = truncated.split(regexPattern);
-    // 仅高亮可见部分
-    return <span>{parts.map((part:string, i:number) => { 
-      const info = patternMap.get(part.toLowerCase()); 
-      if (info) { 
-        const style = COLOR_STYLES[info.color as ColorKey]?.highlight || COLOR_STYLES['blue'].highlight; 
-        return <span key={i} className={cn("rounded-[2px] px-1 border font-bold break-all", style)}>{part}</span>;
-      } 
-      return <span key={i}>{part}</span>; 
-    })}<span className="text-text-dim ml-1">[truncated]</span></span>;
-  }
-  
-  if (!regexPattern) return <span>{text}</span>;
-  
-  const parts = text.split(regexPattern);
-  
-  // 性能优化：匹配数量检查
-  const matchCount = parts.filter(part => patternMap.has(part.toLowerCase())).length;
-  if (matchCount > 20) {
-    // 降级为纯文本+提示
-    return <span className="text-text-dim">{text} <span className="text-[10px] bg-red-500/20 text-red-400 px-1 py-0.5 rounded border border-red-500/30 ml-1">[{matchCount} matches - rendering disabled for performance]</span></span>;
-  }
-  
-  return <span>{parts.map((part:string, i:number) => { 
-    const info = patternMap.get(part.toLowerCase()); 
-    if (info) { 
-      const style = COLOR_STYLES[info.color as ColorKey]?.highlight || COLOR_STYLES['blue'].highlight; 
-      return <span key={i} className="inline-flex items-baseline mx-[1px]"><span className={cn("rounded-[2px] px-1 border font-bold break-all", style)}>{part}</span>{info.comment && <span className={cn("ml-1 px-1.5 rounded-[2px] text-[10px] font-normal border select-none whitespace-nowrap transform -translate-y-[1px]", style.replace("bg-", "bg-opacity-10 bg-"))}>{info.comment}</span>}</span>; 
-    } 
-    return <span key={i}>{part}</span>; 
-  })}</span>;
-};
-const FilterPalette = ({ isOpen, onClose, groups, currentQuery, onToggleRule }: FilterPaletteProps) => {
-    if (!isOpen) return null;
-    const isPatternActive = (regex: string) => currentQuery.split('|').map((t:string) => t.trim().toLowerCase()).includes(regex.toLowerCase());
-    const colorOrder: ColorKey[] = ['red', 'orange', 'blue', 'purple', 'green'];
-    return (<><div className="fixed inset-0 z-[45] bg-transparent" onClick={onClose}></div><div className="absolute top-full right-0 mt-2 w-[600px] max-h-[60vh] overflow-y-auto bg-[#18181b] border border-border-base rounded-lg shadow-2xl z-50 p-4 grid gap-6 animate-in fade-in zoom-in-95 duration-100 origin-top-right ring-1 ring-white/10"><div className="flex justify-between items-center pb-2 border-b border-white/10"><h3 className="text-sm font-bold text-text-main flex items-center gap-2"><Filter size={14} className="text-primary"/> Filter Command Center</h3></div>{colorOrder.map(color => { const colorGroups = groups.filter((g: KeywordGroup) => g.color === color); if (colorGroups.length === 0) return null; return (<div key={color}><div className={cn("text-[10px] font-bold uppercase mb-2 flex items-center gap-2", COLOR_STYLES[color].text)}><div className={cn("w-2 h-2 rounded-full", COLOR_STYLES[color].dot)}></div>{color} Priority Level</div><div className="grid grid-cols-2 gap-3">{colorGroups.map((group: KeywordGroup) => (<div key={group.id} className="bg-bg-card/50 border border-white/5 rounded p-2"><div className="text-xs font-semibold text-text-muted mb-2 px-1">{group.name}</div><div className="flex flex-wrap gap-2">{group.patterns.map((p, idx) => { const active = isPatternActive(p.regex); return <button key={idx} onClick={() => onToggleRule(p.regex)} className={cn("text-[11px] px-2 py-1 rounded border transition-all duration-150 flex items-center gap-1.5 cursor-pointer", active ? COLOR_STYLES[color].activeBtn : `bg-bg-main text-text-dim border-border-base hover:bg-bg-hover ${COLOR_STYLES[color].hoverBorder}`)}>{active && <CheckCircle2 size={10} />}<span className="font-mono">{p.regex}</span></button> })}</div></div>))}</div></div>) })}</div></>);
-};
+// Business Components: Moved to components/modals/ and components/renderers/
 
 // --- Search Page ---
 const SearchPage = ({ keywordGroups, addToast, searchInputRef, activeWorkspace }: SearchPageProps) => {
