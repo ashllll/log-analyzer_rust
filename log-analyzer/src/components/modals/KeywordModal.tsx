@@ -3,7 +3,7 @@ import { X, Plus, Trash2 } from 'lucide-react';
 import { Button, Input } from '../ui';
 import { cn } from '../../utils/classNames';
 import type { KeywordModalProps } from '../../types/ui';
-import type { KeywordGroup, KeywordPattern, ColorKey } from '../../types/common';
+import type { KeywordPattern, ColorKey } from '../../types/common';
 import { COLOR_STYLES } from '../../constants/colors';
 
 /**

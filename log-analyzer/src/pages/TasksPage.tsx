@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCircle2, Loader2, AlertCircle, RefreshCw, Trash2 } from 'lucide-react';
+import { CheckCircle2, AlertCircle, RefreshCw, Trash2 } from 'lucide-react';
 import { useTaskManager } from '../hooks/useTaskManager';
 import { Button } from '../components/ui';
 import { cn } from '../utils/classNames';

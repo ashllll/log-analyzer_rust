@@ -1,6 +1,6 @@
 // UI 组件相关类型定义
 import React from 'react';
-import { KeywordGroup, ColorKey } from './common';
+import { KeywordGroup } from './common';
 
 // 按钮变体类型
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'active' | 'icon';

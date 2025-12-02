@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { save } from '@tauri-apps/plugin-dialog';
@@ -6,7 +6,6 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { 
   Search, 
   Download, 
-  RefreshCw, 
   Filter, 
   X, 
   ChevronDown, 
@@ -15,11 +14,9 @@ import {
   Loader2, 
   RotateCcw 
 } from 'lucide-react';
-import { useApp } from '../contexts/AppContext';
-import { Button, Input, Card } from '../components/ui';
+import { Button, Input } from '../components/ui';
 import { HybridLogRenderer } from '../components/renderers';
 import { FilterPalette } from '../components/modals';
-import { ErrorHandler } from '../utils/errorHandler';
 import { logger } from '../utils/logger';
 import { cn } from '../utils/classNames';
 import { SearchQueryBuilder } from '../services/SearchQueryBuilder';
@@ -28,7 +25,6 @@ import { saveQuery, loadQuery } from '../services/queryStorage';
 import type { 
   LogEntry, 
   FilterOptions, 
-  PerformanceStats, 
   Workspace, 
   KeywordGroup,
   ToastType 
