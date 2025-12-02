@@ -9,11 +9,9 @@ import {
   RefreshCw, Trash2, Zap, Filter,
   ChevronDown, Hash, Copy, Info, Loader2, FileText, Edit2, Download, Eye, EyeOff, RotateCcw
 } from "lucide-react";
-import { clsx, type ClassValue } from "clsx";
-import { twMerge } from "tailwind-merge";
 
 // 导入全局Context和Hooks
-import { AppProvider, useApp, Toast, ToastType, Workspace, Task, KeywordGroup, KeywordPattern, ColorKey } from './contexts/AppContext';
+import { AppProvider, useApp } from './contexts/AppContext';
 import { useWorkspaceOperations } from './hooks/useWorkspaceOperations';
 import { useTaskManager } from './hooks/useTaskManager';
 import { useKeywordManager } from './hooks/useKeywordManager';
@@ -24,149 +22,25 @@ import { SearchQueryBuilder } from './services/SearchQueryBuilder';
 import { SearchQuery } from './types/search';
 import { saveQuery, loadQuery } from './services/queryStorage';
 
-function cn(...inputs: ClassValue[]) { return twMerge(clsx(inputs)); }
+// 导入类型定义
+import type { LogEntry, FilterOptions, PerformanceStats, Toast, Workspace, Task, KeywordGroup, KeywordPattern, ColorKey, ToastType } from './types/common';
+import type { ButtonVariant, LucideIcon, NavItemProps, ButtonProps, InputProps, CardProps, KeywordModalProps, HybridLogRendererProps, FilterPaletteProps } from './types/ui';
 
-// 错误处理工具 - 供内部使用
-// @ts-ignore - used internally
-class ErrorHandler {
-  private static errorMap: Record<string, { message: string; suggestion: string }> = {
-    'Path canonicalization failed': { message: '路径无效或不存在', suggestion: '检查路径是否正确' },
-    'Failed to lock': { message: '资源正在使用中', suggestion: '稍后重试' },
-    'unrar command not found': { message: 'RAR支持未安装', suggestion: '查看安装指南' },
-    'Invalid Regex': { message: '搜索表达式语法错误', suggestion: '检查正则表达式格式' },
-    'Disk space': { message: '磁盘空间不足', suggestion: '清理磁盘空间后重试' },
-    'Path does not exist': { message: '路径不存在', suggestion: '选择有效的文件或目录' },
-    'Workspace ID cannot be empty': { message: '工作区 ID 不能为空', suggestion: '请选择一个工作区' },
-    'Search query cannot be empty': { message: '搜索查询不能为空', suggestion: '输入搜索关键词' },
-  };
+// 导入常量
+import { COLOR_STYLES } from './constants/colors';
 
-  static handle(error: any): string {
-    const errorStr = String(error);
-    logger.error('Error occurred:', errorStr);
-    
-    // 匹配错误模式
-    for (const [pattern, info] of Object.entries(this.errorMap)) {
-      if (errorStr.includes(pattern)) {
-        return `${info.message} - ${info.suggestion}`;
-      }
-    }
-    
-    // 默认错误消息
-    if (errorStr.length > 100) {
-      return '操作失败，请查看控制台详情';
-    }
-    return errorStr;
-  }
-  
-  static isRetryable(error: any): boolean {
-    const errorStr = String(error);
-    return errorStr.includes('Failed to lock') || 
-           errorStr.includes('Resource busy') ||
-           errorStr.includes('timeout');
-  }
-}
+// 导入工具函数
+import { cn } from './utils/classNames';
+import { ErrorHandler } from './utils/errorHandler';
+import { logger } from './utils/logger';
 
-// 统一日志工具
-const logger = {
-  debug: (message: string, ...args: any[]) => {
-    if (import.meta.env.DEV) {
-      console.log(`[DEBUG] ${message}`, ...args);
-    }
-  },
-  info: (message: string, ...args: any[]) => {
-    console.log(`[INFO] ${message}`, ...args);
-  },
-  error: (message: string, ...args: any[]) => {
-    console.error(`[ERROR] ${message}`, ...args);
-  }
-};
-
-// 本地类型定义
-type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'active' | 'icon';
-type LucideIcon = React.ComponentType<{ size?: number; className?: string }>;
-
-// 高级过滤器类型
-interface FilterOptions {
-  timeRange: { start: string | null; end: string | null };
-  levels: string[];
-  filePattern: string;
-}
-
-// 性能指标类型
-interface PerformanceStats {
-  memoryUsed: number;
-  pathMapSize: number;
-  cacheSize: number;
-  lastSearchDuration: number;
-  cacheHitRate: number;
-  indexedFilesCount: number;
-  indexFileSizeMb: number;
-}
-
-interface LogEntry { id: number; timestamp: string; level: string; file: string; line: number; content: string; tags: any[]; real_path?: string; }
-
-// Component Props Types
-interface NavItemProps { icon: LucideIcon; label: string; active: boolean; onClick: () => void; }
-interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> { 
-    children?: React.ReactNode; 
-    variant?: ButtonVariant; 
-    icon?: LucideIcon;
-}
-interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
-    ref?: React.Ref<HTMLInputElement | null>;
-}
-interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
-    children: React.ReactNode;
-}
-interface KeywordModalProps {
-    isOpen: boolean;
-    onClose: () => void;
-    onSave: (group: KeywordGroup) => void;
-    initialData?: KeywordGroup | null;
-}
-interface HybridLogRendererProps {
-    text: string;
-    query: string;
-    keywordGroups: KeywordGroup[];
-}
-interface FilterPaletteProps {
-    isOpen: boolean;
-    onClose: () => void;
-    groups: KeywordGroup[];
-    currentQuery: string;
-    onToggleRule: (regex: string) => void;
-}
+// SearchPage Props Type  
 interface SearchPageProps {
     keywordGroups: KeywordGroup[];
     addToast: (type: ToastType, message: string) => void;
     searchInputRef: React.RefObject<HTMLInputElement | null>;
     activeWorkspace: Workspace | null;
 }
-// Component Props Types (legacy - kept for future use)
-// @ts-ignore
-interface KeywordsPageProps {
-    keywordGroups: KeywordGroup[];
-    setKeywordGroups: React.Dispatch<React.SetStateAction<KeywordGroup[]>>;
-    addToast: (type: ToastType, message: string) => void;
-}
-// @ts-ignore
-interface WorkspacesPageProps {
-    workspaces: Workspace[];
-    setWorkspaces: React.Dispatch<React.SetStateAction<Workspace[]>>;
-    addToast: (type: ToastType, message: string) => void;
-    setActiveWorkspaceId: (id: string | null) => void;
-    activeWorkspaceId: string | null;
-    setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
-}
-
-// Color System
-const COLOR_STYLES: Record<ColorKey, any> = {
-  blue: { dot: "bg-blue-500", badge: "bg-blue-500/15 text-blue-400 border-blue-500/20", border: "border-blue-500", text: "text-blue-400", activeBtn: "bg-blue-500 text-white border-blue-400 shadow-[0_0_10px_rgba(59,130,246,0.4)]", hoverBorder: "hover:border-blue-500/50", highlight: "bg-blue-500/20 text-blue-300 border-blue-500/30" },
-  green: { dot: "bg-emerald-500", badge: "bg-emerald-500/15 text-emerald-400 border-emerald-500/20", border: "border-emerald-500", text: "text-emerald-400", activeBtn: "bg-emerald-500 text-white border-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.4)]", hoverBorder: "hover:border-emerald-500/50", highlight: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30" },
-  red: { dot: "bg-red-500", badge: "bg-red-500/15 text-red-400 border-red-500/20", border: "border-red-500", text: "text-red-400", activeBtn: "bg-red-500 text-white border-red-400 shadow-[0_0_10px_rgba(239,68,68,0.4)]", hoverBorder: "hover:border-red-500/50", highlight: "bg-red-500/20 text-red-300 border-red-500/30" },
-  orange: { dot: "bg-amber-500", badge: "bg-amber-500/15 text-amber-400 border-amber-500/20", border: "border-amber-500", text: "text-amber-400", activeBtn: "bg-amber-500 text-white border-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.4)]", hoverBorder: "hover:border-amber-500/50", highlight: "bg-amber-500/20 text-amber-300 border-amber-500/30" },
-  purple: { dot: "bg-purple-500", badge: "bg-purple-500/15 text-purple-400 border-purple-500/20", border: "border-purple-500", text: "text-purple-400", activeBtn: "bg-purple-500 text-white border-purple-400 shadow-[0_0_10px_rgba(168,85,247,0.4)]", hoverBorder: "hover:border-purple-500/50", highlight: "bg-purple-500/20 text-purple-300 border-purple-500/30" }
-};
 
 // UI Components
 const NavItem = ({ icon: Icon, label, active, onClick }: NavItemProps) => (
