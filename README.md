@@ -435,6 +435,10 @@ cargo test --manifest-path=src-tauri/Cargo.toml --test '*'
 - [x] **查询持久化**（自动保存查询到 localStorage，刷新后恢复）
 
 #### 最近更新（2025-12）
+- [x] **添加 Time MCP 服务配置**
+  - 新增 `.qoder/mcp.json` 配置文件
+  - 集成 `@anthropic/mcp-server-time` 提供准确时间戳
+  - 用于文档更新和变更日志记录
 - [x] **内置 unrar 工具**
   - 应用自带各平台 unrar 二进制文件（Windows/macOS/Linux）
   - 用户无需手动安装任何依赖，开箱即用
