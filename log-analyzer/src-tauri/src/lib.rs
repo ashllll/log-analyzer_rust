@@ -16,7 +16,7 @@ use walkdir::WalkDir;
 mod models;
 mod services;
 use models::search::*;
-use services::{QueryExecutor, ExecutionPlan};
+use services::{ExecutionPlan, QueryExecutor};
 
 // --- Data Structures ---
 
@@ -178,13 +178,13 @@ impl Drop for AppState {
 /// - `Err(String)`: 获取路径失败
 fn get_bundled_unrar_path(app: &AppHandle) -> Result<PathBuf, String> {
     use tauri::Manager;
-    
+
     // 获取应用资源目录
     let resource_path = app
         .path()
         .resource_dir()
         .map_err(|e| format!("Failed to get resource directory: {}", e))?;
-    
+
     // 根据平台确定二进制文件名
     let binary_name = if cfg!(target_os = "windows") {
         "unrar-x86_64-pc-windows-msvc.exe"
@@ -197,42 +197,48 @@ fn get_bundled_unrar_path(app: &AppHandle) -> Result<PathBuf, String> {
     } else {
         "unrar-x86_64-unknown-linux-gnu"
     };
-    
+
     // 尝试在资源目录中查找
     let sidecar_path = resource_path.join("binaries").join(binary_name);
     if sidecar_path.exists() {
         eprintln!("[DEBUG] Found bundled unrar at: {}", sidecar_path.display());
         return Ok(sidecar_path);
     }
-    
+
     // 开发模式：尝试在 src-tauri/binaries 目录查找
-    let exe_path = std::env::current_exe()
-        .map_err(|e| format!("Failed to get current exe path: {}", e))?;
-    let exe_dir = exe_path
-        .parent()
-        .ok_or("Failed to get exe directory")?;
-    
+    let exe_path =
+        std::env::current_exe().map_err(|e| format!("Failed to get current exe path: {}", e))?;
+    let exe_dir = exe_path.parent().ok_or("Failed to get exe directory")?;
+
     // 开发模式路径：target/debug/binaries 或直接在 src-tauri/binaries
     let dev_paths = [
         exe_dir.join("binaries").join(binary_name),
         exe_dir.join("../binaries").join(binary_name),
         exe_dir.join("../../binaries").join(binary_name),
-        exe_dir.join("../../../src-tauri/binaries").join(binary_name),
+        exe_dir
+            .join("../../../src-tauri/binaries")
+            .join(binary_name),
     ];
-    
+
     for path in &dev_paths {
         if path.exists() {
             let canonical = dunce::canonicalize(path)
                 .map_err(|e| format!("Failed to canonicalize path: {}", e))?;
-            eprintln!("[DEBUG] Found bundled unrar (dev mode) at: {}", canonical.display());
+            eprintln!(
+                "[DEBUG] Found bundled unrar (dev mode) at: {}",
+                canonical.display()
+            );
             return Ok(canonical);
         }
     }
-    
+
     Err(format!(
         "Bundled unrar not found. Checked paths:\n  - {}\n  - {:?}",
         sidecar_path.display(),
-        dev_paths.iter().map(|p| p.display().to_string()).collect::<Vec<_>>()
+        dev_paths
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>()
     ))
 }
 
@@ -1590,7 +1596,7 @@ async fn import_folder(
 }
 
 // 单文件搜索函数（用于并行处理）
-#[allow(dead_code)]  // 保留供将来使用或测试
+#[allow(dead_code)] // 保留供将来使用或测试
 fn search_single_file(
     real_path: &str,
     virtual_path: &str,
@@ -1615,7 +1621,7 @@ fn search_single_file(
                         line: i + 1,
                         content: line,
                         tags: vec![],
-                        match_details: None,  // 旧版本不包含匹配详情
+                        match_details: None, // 旧版本不包含匹配详情
                     });
                 }
             }
@@ -1643,7 +1649,7 @@ fn search_single_file_with_details(
                 // 使用 query_executor 匹配
                 if executor.matches_line(plan, &line) {
                     let (ts, lvl) = parse_metadata(&line);
-                    
+
                     // 获取匹配详情
                     let match_details = executor.match_with_details(plan, &line);
 
@@ -2700,7 +2706,7 @@ fn calculate_dir_size(dir: &Path) -> Result<u64, std::io::Error> {
 }
 
 /// 检查RAR支持状态
-/// 
+///
 /// 由于 unrar 已经内置在应用中，此命令始终返回 available: true
 #[command]
 async fn check_rar_support() -> Result<serde_json::Value, String> {
@@ -2720,21 +2726,17 @@ async fn check_rar_support() -> Result<serde_json::Value, String> {
  * 执行结构化查询
  */
 #[command]
-fn execute_structured_query(
-    query: SearchQuery,
-    logs: Vec<String>,
-) -> Result<Vec<String>, String> {
+fn execute_structured_query(query: SearchQuery, logs: Vec<String>) -> Result<Vec<String>, String> {
     let mut executor = QueryExecutor::new(1000);
-    
-    let plan = executor.execute(&query)
-        .map_err(|e| e.to_string())?;
-    
+
+    let plan = executor.execute(&query).map_err(|e| e.to_string())?;
+
     let filtered: Vec<String> = logs
         .iter()
         .filter(|line| executor.matches_line(&plan, line))
         .cloned()
         .collect();
-    
+
     Ok(filtered)
 }
 
@@ -2744,8 +2746,9 @@ fn execute_structured_query(
 #[command]
 fn validate_query(query: SearchQuery) -> Result<bool, String> {
     let mut executor = QueryExecutor::new(1000);
-    
-    executor.execute(&query)
+
+    executor
+        .execute(&query)
         .map(|_| true)
         .map_err(|e| e.to_string())
 }

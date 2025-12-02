@@ -5,7 +5,7 @@ use std::collections::HashMap;
 /**
  * 查询执行器
  */
-#[allow(dead_code)]  // cache_size 和 regex_cache 字段用于缓存优化
+#[allow(dead_code)] // cache_size 和 regex_cache 字段用于缓存优化
 pub struct QueryExecutor {
     cache_size: usize,
     regex_cache: HashMap<String, Regex>,
@@ -84,8 +84,7 @@ impl QueryExecutor {
         &mut self,
         query: &SearchQuery,
     ) -> Result<ExecutionPlan, ExecutionError> {
-        let enabled_terms: Vec<&SearchTerm> =
-            query.terms.iter().filter(|t| t.enabled).collect();
+        let enabled_terms: Vec<&SearchTerm> = query.terms.iter().filter(|t| t.enabled).collect();
 
         // 按操作符分组
         let mut and_terms = Vec::new();
@@ -111,7 +110,7 @@ impl QueryExecutor {
 
         // 编译正则表达式
         let mut regexes = Vec::new();
-        
+
         let terms_list: Vec<String> = match strategy {
             SearchStrategy::And => {
                 // 为每个search term创建一个CompiledRegex
@@ -120,8 +119,9 @@ impl QueryExecutor {
                         Regex::new(&regex::escape(&term.value))
                     } else {
                         Regex::new(&format!("(?i:{})", regex::escape(&term.value)))
-                    }.map_err(|e| ExecutionError::InvalidPattern(e.to_string()))?;
-                    
+                    }
+                    .map_err(|e| ExecutionError::InvalidPattern(e.to_string()))?;
+
                     regexes.push(CompiledRegex {
                         regex: term_regex,
                         term_id: term.id.clone(),
@@ -138,8 +138,9 @@ impl QueryExecutor {
                         Regex::new(&regex::escape(&term.value))
                     } else {
                         Regex::new(&format!("(?i:{})", regex::escape(&term.value)))
-                    }.map_err(|e| ExecutionError::InvalidPattern(e.to_string()))?;
-                    
+                    }
+                    .map_err(|e| ExecutionError::InvalidPattern(e.to_string()))?;
+
                     regexes.push(CompiledRegex {
                         regex: term_regex,
                         term_id: term.id.clone(),
@@ -155,8 +156,9 @@ impl QueryExecutor {
                         Regex::new(&regex::escape(&term.value))
                     } else {
                         Regex::new(&format!("(?i:{})", regex::escape(&term.value)))
-                    }.map_err(|e| ExecutionError::InvalidPattern(e.to_string()))?;
-                    
+                    }
+                    .map_err(|e| ExecutionError::InvalidPattern(e.to_string()))?;
+
                     regexes.push(CompiledRegex {
                         regex: term_regex,
                         term_id: term.id.clone(),
@@ -179,7 +181,7 @@ impl QueryExecutor {
      * 构建 AND 策略的正则表达式
      * 注意：Rust regex 不支持前向断言，所以使用简单匹配+后处理
      */
-    #[allow(dead_code)]  // 保留供将来使用
+    #[allow(dead_code)] // 保留供将来使用
     fn build_and_regex(&mut self, terms: &[&SearchTerm]) -> Result<Regex, ExecutionError> {
         if terms.is_empty() {
             return Err(ExecutionError::EmptyQuery);
@@ -221,7 +223,7 @@ impl QueryExecutor {
     /**
      * 构建 OR 策略的正则表达式
      */
-    #[allow(dead_code)]  // 保留供将来使用
+    #[allow(dead_code)] // 保留供将来使用
     fn build_or_regex(&mut self, terms: &[&SearchTerm]) -> Result<Regex, ExecutionError> {
         if terms.is_empty() {
             return Err(ExecutionError::EmptyQuery);
@@ -250,7 +252,7 @@ impl QueryExecutor {
      * 构建 NOT 策略的正则表达式
      * 注意：Rust regex 不支持负向断言，需要在 matches_line 中反向处理
      */
-    #[allow(dead_code)]  // 保留供将来使用
+    #[allow(dead_code)] // 保留供将来使用
     fn build_not_regex(&mut self, terms: &[&SearchTerm]) -> Result<Regex, ExecutionError> {
         if terms.is_empty() {
             return Err(ExecutionError::EmptyQuery);
@@ -278,11 +280,11 @@ impl QueryExecutor {
     /**
      * 获取或编译正则表达式（带缓存）
      */
-    #[allow(dead_code)]  // 缓存功能保留供将来使用
+    #[allow(dead_code)] // 缓存功能保留供将来使用
     fn get_or_compile_regex(&mut self, pattern: &str) -> Result<&Regex, ExecutionError> {
         if !self.regex_cache.contains_key(pattern) {
-            let regex = Regex::new(pattern)
-                .map_err(|e| ExecutionError::InvalidPattern(e.to_string()))?;
+            let regex =
+                Regex::new(pattern).map_err(|e| ExecutionError::InvalidPattern(e.to_string()))?;
 
             // 限制缓存大小
             if self.regex_cache.len() >= self.cache_size {
@@ -334,12 +336,8 @@ impl QueryExecutor {
     /**
      * 批量过滤日志行
      */
-    #[allow(dead_code)]  // 保留供将来使用或测试调用
-    pub fn filter_lines<'a>(
-        &self,
-        plan: &ExecutionPlan,
-        lines: &'a [String],
-    ) -> Vec<&'a String> {
+    #[allow(dead_code)] // 保留供将来使用或测试调用
+    pub fn filter_lines<'a>(&self, plan: &ExecutionPlan, lines: &'a [String]) -> Vec<&'a String> {
         lines
             .iter()
             .filter(|line| self.matches_line(plan, line))
@@ -355,11 +353,12 @@ impl QueryExecutor {
         }
 
         let mut details = Vec::new();
-        
+
         for compiled in &plan.regexes {
             if let Some(mat) = compiled.regex.find(line) {
                 // 直接使用term_id和terms列表查找值
-                let term_value = plan.terms
+                let term_value = plan
+                    .terms
                     .iter()
                     .find(|t| t.to_lowercase() == mat.as_str().to_lowercase())
                     .cloned()
@@ -388,7 +387,7 @@ impl QueryExecutor {
 /**
  * 执行计划
  */
-#[allow(dead_code)]  // term_count 字段在测试中使用
+#[allow(dead_code)] // term_count 字段在测试中使用
 pub struct ExecutionPlan {
     pub strategy: SearchStrategy,
     pub regexes: Vec<CompiledRegex>,
@@ -400,7 +399,7 @@ impl ExecutionPlan {
     /**
      * 获取搜索项数量
      */
-    #[allow(dead_code)]  // 保留供将来使用或API调用
+    #[allow(dead_code)] // 保留供将来使用或API调用
     pub fn get_term_count(&self) -> usize {
         self.term_count
     }
@@ -408,7 +407,7 @@ impl ExecutionPlan {
     /**
      * 获取所有搜索项
      */
-    #[allow(dead_code)]  // 保留供将来使用或API调用
+    #[allow(dead_code)] // 保留供将来使用或API调用
     pub fn get_terms(&self) -> &[String] {
         &self.terms
     }
@@ -416,7 +415,7 @@ impl ExecutionPlan {
     /**
      * 按优先级排序正则表达式
      */
-    #[allow(dead_code)]  // 保留供将来使用或API调用
+    #[allow(dead_code)] // 保留供将来使用或API调用
     pub fn sort_by_priority(&mut self) {
         self.regexes.sort_by_key(|r| std::cmp::Reverse(r.priority));
     }
@@ -434,7 +433,7 @@ pub enum SearchStrategy {
 /**
  * 编译后的正则表达式
  */
-#[allow(dead_code)]  // term_id 和 priority 字段在 match_with_details 中使用
+#[allow(dead_code)] // term_id 和 priority 字段在 match_with_details 中使用
 pub struct CompiledRegex {
     pub regex: Regex,
     pub term_id: String,
@@ -681,7 +680,7 @@ mod tests {
     #[test]
     fn test_match_with_details() {
         let mut executor = QueryExecutor::new(100);
-        
+
         let term1 = SearchTerm {
             id: "term1".to_string(),
             value: "error".to_string(),
@@ -689,11 +688,11 @@ mod tests {
             source: TermSource::User,
             preset_group_id: None,
             is_regex: false,
-            priority: 2,  // 高优先级
+            priority: 2, // 高优先级
             enabled: true,
             case_sensitive: false,
         };
-        
+
         let term2 = SearchTerm {
             id: "term2".to_string(),
             value: "warning".to_string(),
@@ -701,7 +700,7 @@ mod tests {
             source: TermSource::User,
             preset_group_id: None,
             is_regex: false,
-            priority: 1,  // 低优先级
+            priority: 1, // 低优先级
             enabled: true,
             case_sensitive: false,
         };
@@ -720,23 +719,23 @@ mod tests {
         };
 
         let plan = executor.execute(&query).unwrap();
-        
+
         // 测试匹配详情
         let line = "This is an error with warning";
         let details = executor.match_with_details(&plan, line);
-        
+
         assert!(details.is_some());
         let details = details.unwrap();
-        
+
         // 应该有两个匹配
         assert_eq!(details.len(), 2);
-        
+
         // 验证按优先级排序（高优先级在前）
         assert_eq!(details[0].term_value, "error");
         assert_eq!(details[0].priority, 2);
         assert_eq!(details[1].term_value, "warning");
         assert_eq!(details[1].priority, 1);
-        
+
         // 验证匹配位置
         assert!(details[0].match_position.is_some());
         assert!(details[1].match_position.is_some());
@@ -745,7 +744,7 @@ mod tests {
     #[test]
     fn test_execution_plan_methods() {
         let mut executor = QueryExecutor::new(100);
-        
+
         let term1 = SearchTerm {
             id: "term1".to_string(),
             value: "error".to_string(),
@@ -757,7 +756,7 @@ mod tests {
             enabled: true,
             case_sensitive: false,
         };
-        
+
         let term2 = SearchTerm {
             id: "term2".to_string(),
             value: "warning".to_string(),
@@ -784,16 +783,16 @@ mod tests {
         };
 
         let mut plan = executor.execute(&query).unwrap();
-        
+
         // 测试 get_term_count
         assert_eq!(plan.get_term_count(), 2);
-        
+
         // 测试 get_terms
         let terms = plan.get_terms();
         assert_eq!(terms.len(), 2);
         assert!(terms.contains(&"error".to_string()));
         assert!(terms.contains(&"warning".to_string()));
-        
+
         // 测试 sort_by_priority
         plan.sort_by_priority();
         // 验证排序后的顺序（高优先级在前）
@@ -810,12 +809,12 @@ mod tests {
             priority: 5,
             match_position: Some((10, 15)),
         };
-        
+
         let json = serde_json::to_string(&detail).unwrap();
         assert!(json.contains("test_term"));
         assert!(json.contains("error"));
         assert!(json.contains("priority"));
-        
+
         // 测试反序列化
         let deserialized: MatchDetail = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.term_id, "test_term");

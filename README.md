@@ -440,6 +440,10 @@ cargo test --manifest-path=src-tauri/Cargo.toml --test '*'
   - 用户无需手动安装任何依赖，开箱即用
   - 自动检测平台并使用对应的二进制文件
   - 开发模式和发布版本均支持
+- [x] **前端模块化重构完成**
+  - 将所有页面组件拆分到独立文件（SearchPage/KeywordsPage/WorkspacesPage/TasksPage/PerformancePage）
+  - App.tsx 精简到 66 行，仅保留布局和导航逻辑
+  - 统一通过 pages/index.ts 导出页面组件
 - [x] **更新 CI/CD 配置**
   - 添加 binaries 目录可执行权限设置
   - 确保跨平台构建正常工作

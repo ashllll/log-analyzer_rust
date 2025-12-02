@@ -112,7 +112,7 @@ mod tests {
 
         let json = serde_json::to_string(&query).unwrap();
         let deserialized: SearchQuery = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(query.id, deserialized.id);
         assert_eq!(query.terms.len(), deserialized.terms.len());
     }
@@ -121,10 +121,10 @@ mod tests {
     fn test_operator_serialization() {
         let json = serde_json::to_string(&QueryOperator::And).unwrap();
         assert_eq!(json, r#""AND""#);
-        
+
         let json = serde_json::to_string(&QueryOperator::Or).unwrap();
         assert_eq!(json, r#""OR""#);
-        
+
         let json = serde_json::to_string(&QueryOperator::Not).unwrap();
         assert_eq!(json, r#""NOT""#);
     }
@@ -133,7 +133,7 @@ mod tests {
     fn test_source_serialization() {
         let json = serde_json::to_string(&TermSource::User).unwrap();
         assert_eq!(json, r#""user""#);
-        
+
         let json = serde_json::to_string(&TermSource::Preset).unwrap();
         assert_eq!(json, r#""preset""#);
     }
@@ -154,7 +154,7 @@ mod tests {
 
         let json = serde_json::to_string(&term).unwrap();
         let deserialized: SearchTerm = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(term.id, deserialized.id);
         assert_eq!(term.value, deserialized.value);
         assert_eq!(term.priority, deserialized.priority);
