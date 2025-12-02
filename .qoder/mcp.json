@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "time": {
+      "command": "npx",
+      "args": ["-y", "@anthropic/mcp-server-time"],
+      "description": "提供准确的时间戳服务，用于文档更新和变更日志记录"
+    }
+  }
+}
