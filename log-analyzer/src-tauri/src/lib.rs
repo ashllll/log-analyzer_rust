@@ -13,8 +13,12 @@ use uuid::Uuid;
 use walkdir::WalkDir;
 
 // 新增模块声明
+mod archive;
+mod commands;
 mod models;
 mod services;
+mod utils;
+use models::log_entry::{FileChangeEvent, LogEntry, TaskProgress};
 use models::search::*;
 use services::{ExecutionPlan, QueryExecutor};
 
@@ -35,31 +39,7 @@ type PathMapType = HashMap<String, String>;
 type MetadataMapType = HashMap<String, FileMetadata>;
 type IndexResult = Result<(PathMapType, MetadataMapType), String>;
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-struct LogEntry {
-    id: usize,
-    timestamp: String,
-    level: String,
-    file: String,
-    real_path: String,
-    line: usize,
-    content: String,
-    tags: Vec<String>,
-    /// 匹配详情（可选）
-    #[serde(skip_serializing_if = "Option::is_none")]
-    match_details: Option<Vec<services::MatchDetail>>,
-}
-
-#[derive(Serialize, Clone)]
-struct TaskProgress {
-    task_id: String,
-    task_type: String, // 任务类型: "Import", "Export", etc.
-    target: String,    // 目标路径或文件名
-    status: String,
-    message: String,
-    progress: u8,
-    workspace_id: Option<String>, // 工作区 ID，用于前端匹配
-}
+// LogEntry、TaskProgress 已移至 models/log_entry.rs
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct AppConfig {
@@ -104,14 +84,7 @@ struct PerformanceMetrics {
     index_file_size_mb: f64,      // 索引文件磁盘大小（MB）
 }
 
-// 文件变化事件
-#[derive(Serialize, Clone, Debug)]
-struct FileChangeEvent {
-    event_type: String,   // "modified", "created", "deleted"
-    file_path: String,    // 变化的文件路径
-    workspace_id: String, // 所属工作区
-    timestamp: i64,       // 事件发生时间戳
-}
+// FileChangeEvent 已移至 models/log_entry.rs
 
 // 监听器状态
 struct WatcherState {
