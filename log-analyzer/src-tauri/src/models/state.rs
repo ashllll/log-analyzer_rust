@@ -39,6 +39,7 @@ pub type PathMapType = HashMap<String, String>;
 pub type MetadataMapType = HashMap<String, FileMetadata>;
 
 /// 索引操作结果类型
+#[allow(dead_code)] // Reserved for future use
 pub type IndexResult = Result<(PathMapType, MetadataMapType), String>;
 
 // --- 状态结构体 ---

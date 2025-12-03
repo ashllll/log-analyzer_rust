@@ -25,6 +25,7 @@ use super::retry::retry_file_operation;
 /// 2. 在Windows上递归移除只读属性
 /// 3. 重试删除目录（最多3次）
 /// 4. 失败时添加到清理队列
+#[allow(dead_code)] // 保留供删除工作区时使用
 pub fn try_cleanup_temp_dir(path: &Path, cleanup_queue: &Arc<Mutex<Vec<PathBuf>>>) {
     if !path.exists() {
         return;

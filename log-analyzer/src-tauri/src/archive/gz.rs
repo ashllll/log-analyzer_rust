@@ -37,6 +37,7 @@ use uuid::Uuid;
 ///
 /// - `file.log.gz` → 解压后作为 `file.log` 处理
 /// - `archive.tar.gz` → 通过 tar 模块处理（不会调用此函数）
+#[allow(dead_code)] // Will be used when lib.rs is fully migrated
 pub fn process_gz_file(
     path: &Path,
     file_name: &str,

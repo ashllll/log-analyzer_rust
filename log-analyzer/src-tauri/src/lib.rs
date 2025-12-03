@@ -1,1334 +1,50 @@
+//! 日志分析器 - Rust 后端
+//!
+//! 提供高性能的日志分析功能，包括：
+//! - 多格式压缩包递归解压
+//! - 并行全文搜索
+//! - 结构化查询系统
+//! - 索引持久化与增量更新
+//! - 实时文件监听
+
 use rayon::prelude::*;
 use regex::Regex;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::{self, File};
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader};
 use std::panic;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tauri::{command, AppHandle, Emitter, Manager, State};
-use tempfile::TempDir;
 use uuid::Uuid;
 use walkdir::WalkDir;
 
-// 新增模块声明
+// 模块声明
 mod archive;
 mod commands;
 mod models;
 mod services;
 mod utils;
-use models::log_entry::{FileChangeEvent, LogEntry, TaskProgress};
-use models::search::*;
-use services::{ExecutionPlan, QueryExecutor};
 
-// --- Data Structures ---
-
-// 类型别名：简化复杂类型定义
-// 搜索缓存键：包含查询、工作区ID和过滤条件
-type SearchCacheKey = (
-    String,         // query
-    String,         // workspace_id
-    Option<String>, // time_start
-    Option<String>, // time_end
-    Vec<String>,    // levels
-    Option<String>, // file_pattern
-);
-type SearchCache = Arc<Mutex<lru::LruCache<SearchCacheKey, Vec<LogEntry>>>>;
-type PathMapType = HashMap<String, String>;
-type MetadataMapType = HashMap<String, FileMetadata>;
-type IndexResult = Result<(PathMapType, MetadataMapType), String>;
-
-// LogEntry、TaskProgress 已移至 models/log_entry.rs
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-struct AppConfig {
-    keyword_groups: serde_json::Value,
-    workspaces: serde_json::Value,
-}
-
-// 新增：索引持久化结构（支持增量更新）
-#[derive(Serialize, Deserialize, Debug, Clone)]
-struct IndexData {
-    path_map: HashMap<String, String>, // real_path -> virtual_path
-    file_metadata: HashMap<String, FileMetadata>, // 文件元数据（用于增量更新）
-    workspace_id: String,
-    created_at: i64,
-}
-
-// 文件元数据（用于增量判断）
-#[derive(Serialize, Deserialize, Debug, Clone)]
-struct FileMetadata {
-    modified_time: i64, // 修改时间戳（Unix 时间戳）
-    size: u64,          // 文件大小
-}
-
-// 高级过滤器
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-struct SearchFilters {
-    time_start: Option<String>,   // 开始时间（ISO 8601 格式）
-    time_end: Option<String>,     // 结束时间（ISO 8601 格式）
-    levels: Vec<String>,          // 允许的日志级别列表
-    file_pattern: Option<String>, // 文件路径匹配模式
-}
-
-// 性能监控指标
-#[derive(Serialize, Clone, Debug)]
-struct PerformanceMetrics {
-    memory_used_mb: f64,          // 当前进程内存使用量（MB）
-    path_map_size: usize,         // 索引文件映射条目数
-    cache_size: usize,            // 搜索缓存条目数
-    last_search_duration_ms: u64, // 最近一次搜索耗时（毫秒）
-    cache_hit_rate: f64,          // 缓存命中率（0-100）
-    indexed_files_count: usize,   // 已索引文件数量
-    index_file_size_mb: f64,      // 索引文件磁盘大小（MB）
-}
-
-// FileChangeEvent 已移至 models/log_entry.rs
-
-// 监听器状态
-struct WatcherState {
-    workspace_id: String,               // 工作区 ID（用于日志记录和调试）
-    watched_path: PathBuf,              // 监听的路径（用于计算相对路径）
-    file_offsets: HashMap<String, u64>, // 文件读取偏移量（用于增量读取）
-    is_active: bool,                    // 监听器是否活跃
-}
-
-struct AppState {
-    temp_dir: Mutex<Option<TempDir>>,
-    path_map: Arc<Mutex<PathMapType>>,          // 使用 Arc 优化内存
-    file_metadata: Arc<Mutex<MetadataMapType>>, // 文件元数据映射
-    workspace_indices: Mutex<HashMap<String, PathBuf>>,
-    search_cache: SearchCache, // 搜索缓存：(query, workspace_id) -> results
-    // 性能统计
-    last_search_duration: Arc<Mutex<u64>>, // 最近搜索耗时（毫秒）
-    total_searches: Arc<Mutex<u64>>,       // 总搜索次数
-    cache_hits: Arc<Mutex<u64>>,           // 缓存命中次数
-    // 实时监听
-    watchers: Arc<Mutex<HashMap<String, WatcherState>>>, // workspace_id -> WatcherState
-    // 临时文件清理队列（用于处理清理失败的情况）
-    cleanup_queue: Arc<Mutex<Vec<PathBuf>>>, // 待清理的路径列表
-}
-
-impl Drop for AppState {
-    fn drop(&mut self) {
-        eprintln!("[INFO] AppState dropping, performing final cleanup...");
-
-        // 执行最后的清理队列处理
-        process_cleanup_queue(&self.cleanup_queue);
-
-        // 打印性能统计摘要
-        if let Ok(searches) = self.total_searches.lock() {
-            if let Ok(hits) = self.cache_hits.lock() {
-                let hit_rate = if *searches > 0 {
-                    (*hits as f64 / *searches as f64) * 100.0
-                } else {
-                    0.0
-                };
-                eprintln!(
-                    "[INFO] Session stats: {} searches, {} cache hits ({:.1}% hit rate)",
-                    searches, hits, hit_rate
-                );
-            }
-        }
-
-        eprintln!("[INFO] AppState cleanup completed");
-    }
-}
-
-// --- Helpers ---
-
-/// 获取内置unrar可执行文件的路径
-///
-/// # 功能
-/// 返回打包在应用中的unrar二进制文件路径（Tauri sidecar）
-///
-/// # 参数
-/// - `app`: Tauri AppHandle引用
-///
-/// # 返回值
-/// - `Ok(PathBuf)`: unrar可执行文件的完整路径
-/// - `Err(String)`: 获取路径失败
-fn get_bundled_unrar_path(app: &AppHandle) -> Result<PathBuf, String> {
-    use tauri::Manager;
-
-    // 获取应用资源目录
-    let resource_path = app
-        .path()
-        .resource_dir()
-        .map_err(|e| format!("Failed to get resource directory: {}", e))?;
-
-    // 根据平台确定二进制文件名
-    let binary_name = if cfg!(target_os = "windows") {
-        "unrar-x86_64-pc-windows-msvc.exe"
-    } else if cfg!(target_os = "macos") {
-        if cfg!(target_arch = "aarch64") {
-            "unrar-aarch64-apple-darwin"
-        } else {
-            "unrar-x86_64-apple-darwin"
-        }
-    } else {
-        "unrar-x86_64-unknown-linux-gnu"
-    };
-
-    // 尝试在资源目录中查找
-    let sidecar_path = resource_path.join("binaries").join(binary_name);
-    if sidecar_path.exists() {
-        eprintln!("[DEBUG] Found bundled unrar at: {}", sidecar_path.display());
-        return Ok(sidecar_path);
-    }
-
-    // 开发模式：尝试在 src-tauri/binaries 目录查找
-    let exe_path =
-        std::env::current_exe().map_err(|e| format!("Failed to get current exe path: {}", e))?;
-    let exe_dir = exe_path.parent().ok_or("Failed to get exe directory")?;
-
-    // 开发模式路径：target/debug/binaries 或直接在 src-tauri/binaries
-    let dev_paths = [
-        exe_dir.join("binaries").join(binary_name),
-        exe_dir.join("../binaries").join(binary_name),
-        exe_dir.join("../../binaries").join(binary_name),
-        exe_dir
-            .join("../../../src-tauri/binaries")
-            .join(binary_name),
-    ];
-
-    for path in &dev_paths {
-        if path.exists() {
-            let canonical = dunce::canonicalize(path)
-                .map_err(|e| format!("Failed to canonicalize path: {}", e))?;
-            eprintln!(
-                "[DEBUG] Found bundled unrar (dev mode) at: {}",
-                canonical.display()
-            );
-            return Ok(canonical);
-        }
-    }
-
-    Err(format!(
-        "Bundled unrar not found. Checked paths:\n  - {}\n  - {:?}",
-        sidecar_path.display(),
-        dev_paths
-            .iter()
-            .map(|p| p.display().to_string())
-            .collect::<Vec<_>>()
-    ))
-}
-
-/// 验证路径参数
-///
-/// # 功能
-/// 检查路径是否非空且存在
-///
-/// # 参数
-/// - `path`: 要验证的路径字符串
-/// - `param_name`: 参数名称（用于错误消息）
-///
-/// # 返回值
-/// - `Ok(PathBuf)`: 验证通过，返回规范化后的路径
-/// - `Err(String)`: 验证失败，包含错误信息
-fn validate_path_param(path: &str, param_name: &str) -> Result<PathBuf, String> {
-    if path.trim().is_empty() {
-        return Err(format!("Parameter '{}' cannot be empty", param_name));
-    }
-
-    let path_buf = PathBuf::from(path);
-    if !path_buf.exists() {
-        return Err(format!("Path does not exist: {}", path));
-    }
-
-    Ok(path_buf)
-}
-
-/// 验证workspace_id参数
-///
-/// # 功能
-/// 检查workspace_id是否非空且格式合法
-///
-/// # 参数
-/// - `workspace_id`: 要验证的工作区ID
-///
-/// # 返回值
-/// - `Ok(())`: 验证通过
-/// - `Err(String)`: 验证失败，包含错误信息
-fn validate_workspace_id(workspace_id: &str) -> Result<(), String> {
-    if workspace_id.trim().is_empty() {
-        return Err("Workspace ID cannot be empty".to_string());
-    }
-
-    // 检查是否包含非法字符（避免路径穿越）
-    if workspace_id.contains("..") || workspace_id.contains('/') || workspace_id.contains('\\') {
-        return Err("Workspace ID contains invalid characters".to_string());
-    }
-
-    Ok(())
-}
-
-/// 文件操作重试辅助函数
-///
-/// # 功能
-/// 对可能暂时失败的文件操作进行重试
-///
-/// # 参数
-/// - `operation`: 要执行的操作闭包
-/// - `max_retries`: 最大重试次数
-/// - `delays_ms`: 每次重试的延迟时间（毫秒）
-/// - `operation_name`: 操作名称（用于日志）
-///
-/// # 返回值
-/// - `Ok(T)`: 操作成功，返回结果
-/// - `Err(String)`: 所有重试都失败，返回错误信息
-fn retry_file_operation<T, F>(
-    mut operation: F,
-    max_retries: usize,
-    delays_ms: &[u64],
-    operation_name: &str,
-) -> Result<T, String>
-where
-    F: FnMut() -> Result<T, String>,
-{
-    let mut last_error = String::new();
-
-    for attempt in 0..=max_retries {
-        match operation() {
-            Ok(result) => {
-                if attempt > 0 {
-                    eprintln!(
-                        "[INFO] {} succeeded after {} retries",
-                        operation_name, attempt
-                    );
-                }
-                return Ok(result);
-            }
-            Err(e) => {
-                last_error = e.clone();
-
-                // 检查是否是可重试的错误
-                let is_retryable = e.contains("permission denied")
-                    || e.contains("Access is denied")
-                    || e.contains("file is being used")
-                    || e.contains("cannot access");
-
-                if !is_retryable || attempt >= max_retries {
-                    eprintln!(
-                        "[ERROR] {} failed after {} attempts: {}",
-                        operation_name,
-                        attempt + 1,
-                        e
-                    );
-                    break;
-                }
-
-                // 等待后重试
-                let delay = delays_ms.get(attempt).copied().unwrap_or(500);
-                eprintln!(
-                    "[WARN] {} failed (attempt {}), retrying in {}ms: {}",
-                    operation_name,
-                    attempt + 1,
-                    delay,
-                    e
-                );
-                std::thread::sleep(std::time::Duration::from_millis(delay));
-            }
-        }
-    }
-
-    Err(format!(
-        "{} failed after {} attempts: {}",
-        operation_name,
-        max_retries + 1,
-        last_error
-    ))
-}
-
-/// 尝试清理临时目录，失败时加入清理队列
-///
-/// # 功能
-/// 尝试删除指定的临时目录，如果失败则将路径添加到清理队列
-///
-/// # 参数
-/// - `path`: 要清理的路径
-/// - `cleanup_queue`: 清理队列的Arc引用
-fn try_cleanup_temp_dir(path: &Path, cleanup_queue: &Arc<Mutex<Vec<PathBuf>>>) {
-    if !path.exists() {
-        return;
-    }
-
-    // 尝试重试3次删除目录
-    let result = retry_file_operation(
-        || {
-            #[cfg(target_os = "windows")]
-            {
-                // Windows：递归移除只读属性
-                for entry in WalkDir::new(path).into_iter().flatten() {
-                    let _ = remove_readonly(entry.path());
-                }
-            }
-
-            fs::remove_dir_all(path).map_err(|e| format!("Failed to remove directory: {}", e))
-        },
-        3,
-        &[100, 500, 1000],
-        &format!("cleanup_temp_dir({})", path.display()),
-    );
-
-    match result {
-        Ok(_) => {
-            eprintln!(
-                "[INFO] Successfully cleaned up temp directory: {}",
-                path.display()
-            );
-        }
-        Err(e) => {
-            eprintln!(
-                "[WARN] Failed to clean up temp directory: {}. Adding to cleanup queue.",
-                e
-            );
-            // 添加到清理队列
-            if let Ok(mut queue) = cleanup_queue.lock() {
-                queue.push(path.to_path_buf());
-            }
-        }
-    }
-}
-
-/// 执行清理队列中的任务
-///
-/// # 功能
-/// 尝试清理队列中所有待处理的临时目录
-///
-/// # 参数
-/// - `cleanup_queue`: 清理队列的Arc引用
-fn process_cleanup_queue(cleanup_queue: &Arc<Mutex<Vec<PathBuf>>>) {
-    let paths_to_clean: Vec<PathBuf> = {
-        if let Ok(queue) = cleanup_queue.lock() {
-            queue.clone()
-        } else {
-            return;
-        }
-    };
-
-    if paths_to_clean.is_empty() {
-        return;
-    }
-
-    let total_count = paths_to_clean.len();
-
-    eprintln!("[INFO] Processing cleanup queue with {} items", total_count);
-
-    let mut successful = 0;
-    let mut failed_paths = Vec::new();
-
-    for path in &paths_to_clean {
-        if !path.exists() {
-            successful += 1;
-            continue;
-        }
-
-        match fs::remove_dir_all(path) {
-            Ok(_) => {
-                eprintln!("[INFO] Successfully cleaned up: {}", path.display());
-                successful += 1;
-            }
-            Err(e) => {
-                eprintln!("[WARN] Still cannot clean up {}: {}", path.display(), e);
-                failed_paths.push(path.clone());
-            }
-        }
-    }
-
-    // 更新清理队列
-    if let Ok(mut queue) = cleanup_queue.lock() {
-        *queue = failed_paths;
-    }
-
-    eprintln!(
-        "[INFO] Cleanup queue processed: {} successful, {} still pending",
-        successful,
-        total_count - successful
-    );
-}
-
-/// Windows 路径规范化（处理 UNC 路径和长路径）
-///
-/// # 功能
-/// - Windows: 使用 dunce 去除 UNC 前缀 `\\?\`，处理超过 MAX_PATH (260) 的路径
-/// - Unix-like: 标准规范化，解析符号链接
-///
-/// # 例子
-/// ```ignore
-/// // 此例子仅用于说明，不会执行
-/// use std::path::Path;
-/// let path = Path::new("C:\\very\\long\\path");
-/// let canonical = canonicalize_path(path)?;
-/// ```
-///
-/// # 使用场景
-/// - ✅ 已集成: `import_folder` 中的路径验证
-fn canonicalize_path(path: &Path) -> Result<PathBuf, String> {
-    #[cfg(target_os = "windows")]
-    {
-        // Windows: 使用 dunce 去除 UNC 前缀 \\?\，并处理长路径
-        dunce::canonicalize(path).map_err(|e| format!("Path canonicalization failed: {}", e))
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        // Unix-like: 标准规范化
-        path.canonicalize()
-            .map_err(|e| format!("Path canonicalization failed: {}", e))
-    }
-}
-
-// Windows 兼容：移除文件只读属性（避免删除失败）
-#[cfg(target_os = "windows")]
-#[allow(clippy::permissions_set_readonly_false)] // Windows 特定操作，允许设置可写
-fn remove_readonly(path: &Path) -> Result<(), String> {
-    use std::os::windows::fs::MetadataExt;
-
-    // 使用重试机制
-    retry_file_operation(
-        || {
-            if let Ok(metadata) = path.metadata() {
-                // Windows FILE_ATTRIBUTE_READONLY = 0x1
-                if metadata.file_attributes() & 0x1 != 0 {
-                    let mut perms = metadata.permissions();
-                    perms.set_readonly(false);
-                    fs::set_permissions(path, perms)
-                        .map_err(|e| format!("Failed to remove readonly: {}", e))?;
-                }
-            }
-            Ok(())
-        },
-        2,           // 最多重试2次
-        &[100, 300], // 延迟100ms和300ms
-        &format!("remove_readonly({})", path.display()),
-    )
-}
-
-#[cfg(not(target_os = "windows"))]
-fn remove_readonly(_path: &Path) -> Result<(), String> {
-    // Unix-like: 不需要处理
-    Ok(())
-}
-
-// Windows 兼容：处理多种编码
-fn decode_filename(bytes: &[u8]) -> String {
-    // 尝试 UTF-8
-    let (cow, _, had_errors) = encoding_rs::UTF_8.decode(bytes);
-    if !had_errors && !cow.contains('\u{FFFD}') {
-        return cow.into_owned();
-    }
-
-    // 尝试 GBK (中文 Windows)
-    let (cow_gbk, _, had_errors_gbk) = encoding_rs::GBK.decode(bytes);
-    if !had_errors_gbk {
-        return cow_gbk.into_owned();
-    }
-
-    // Windows-1252 (西文 Windows)
-    let (cow_win, _, _) = encoding_rs::WINDOWS_1252.decode(bytes);
-    cow_win.into_owned()
-}
-
-/// 跨平台路径规范化（统一路径分隔符）
-///
-/// # 功能
-/// - Windows: 将 `/` 转换为 `\`
-/// - Unix-like: 保持 `/` 不变
-///
-/// # 例子
-/// ```ignore
-/// // 此例子仅用于说明，不会执行
-/// let path = "folder/subfolder/file.txt";
-/// let normalized = normalize_path_separator(path);
-/// // Windows: "folder\\subfolder\\file.txt"
-/// // Linux/macOS: "folder/subfolder/file.txt"
-/// ```
-///
-/// # 使用场景
-/// - ✅ 已集成: `process_path_recursive_inner` 中的虚拟路径处理
-/// - ✅ 已集成: `process_path_recursive_inner_with_metadata` 中的虚拟路径处理
-fn normalize_path_separator(path: &str) -> String {
-    #[cfg(target_os = "windows")]
-    {
-        path.replace('/', "\\")
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        path.to_string()
-    }
-}
-
-// 安全的路径拼接（处理 Windows 路径分隔符）
-fn safe_path_join(base: &Path, component: &str) -> PathBuf {
-    // 移除路径穿越尝试
-    let sanitized = component
-        .replace("..", "")
-        .replace(":", "") // Windows 驱动器符号
-        .trim()
-        .to_string();
-
-    base.join(sanitized)
-}
-
-fn parse_metadata(line: &str) -> (String, String) {
-    let level = if line.contains("ERROR") {
-        "ERROR"
-    } else if line.contains("WARN") {
-        "WARN"
-    } else if line.contains("INFO") {
-        "INFO"
-    } else {
-        "DEBUG"
-    };
-    let timestamp = if line.len() > 19 {
-        line[0..19].to_string()
-    } else {
-        "".to_string()
-    };
-    (timestamp, level.to_string())
-}
-
-/// 获取文件元数据（用于增量判断）
-///
-/// # 功能
-/// 提取文件的修改时间和大小，用于：
-/// - 增量索引更新（判断文件是否变化）
-/// - 索引持久化（保存元数据到磁盘）
-///
-/// # 返回值
-/// - `Ok(FileMetadata)`: 包含 `modified_time` (Unix 时间戳) 和 `size` (字节)
-/// - `Err(String)`: 读取失败的错误信息
-///
-/// # 例子
-/// ```ignore
-/// // 此例子仅用于说明，不会执行
-/// use std::path::Path;
-/// let metadata = get_file_metadata(Path::new("file.txt"))?;
-/// println!("Modified: {}, Size: {}", metadata.modified_time, metadata.size);
-/// ```
-///
-/// # 使用场景
-/// - ✅ 已集成: `process_path_recursive_inner_with_metadata` 中收集普通文件元数据
-fn get_file_metadata(path: &Path) -> Result<FileMetadata, String> {
-    use std::time::SystemTime;
-
-    let metadata = path
-        .metadata()
-        .map_err(|e| format!("Failed to read file metadata: {}", e))?;
-
-    let modified = metadata
-        .modified()
-        .map_err(|e| format!("Failed to get modified time: {}", e))?;
-
-    let modified_time = modified
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .map_err(|e| format!("Invalid timestamp: {}", e))?
-        .as_secs() as i64;
-
-    Ok(FileMetadata {
-        modified_time,
-        size: metadata.len(),
-    })
-}
-
-// 保存索引到磁盘（带压缩，Windows 兼容，支持增量更新）
-fn save_index(
-    app: &AppHandle,
-    workspace_id: &str,
-    path_map: &HashMap<String, String>,
-    file_metadata: &HashMap<String, FileMetadata>,
-) -> Result<PathBuf, String> {
-    use flate2::write::GzEncoder;
-    use flate2::Compression;
-
-    let index_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("Failed to get app data dir: {}", e))?
-        .join("indices");
-    fs::create_dir_all(&index_dir).map_err(|e| format!("Failed to create index dir: {}", e))?;
-
-    let index_path = index_dir.join(format!("{}.idx.gz", workspace_id)); // 压缩格式
-    let index_data = IndexData {
-        path_map: path_map.clone(),
-        file_metadata: file_metadata.clone(),
-        workspace_id: workspace_id.to_string(),
-        created_at: chrono::Utc::now().timestamp(),
-    };
-
-    let encoded =
-        bincode::serialize(&index_data).map_err(|e| format!("Serialization error: {}", e))?;
-    let file =
-        File::create(&index_path).map_err(|e| format!("Failed to create index file: {}", e))?;
-
-    // Gzip 压缩
-    let mut encoder = GzEncoder::new(file, Compression::default());
-    encoder
-        .write_all(&encoded)
-        .map_err(|e| format!("Write error: {}", e))?;
-    encoder
-        .finish()
-        .map_err(|e| format!("Compression error: {}", e))?;
-
-    eprintln!(
-        "[DEBUG] Index saved (compressed): {} ({} entries)",
-        index_path.display(),
-        path_map.len()
-    );
-    Ok(index_path)
-}
-
-// 从磁盘加载索引（带解压，Windows 兼容，返回元数据）
-fn load_index(index_path: &Path) -> IndexResult {
-    use flate2::read::GzDecoder;
-
-    if !index_path.exists() {
-        return Err("Index file not found".to_string());
-    }
-
-    let file = File::open(index_path).map_err(|e| format!("Failed to open index file: {}", e))?;
-
-    // 检查是否为压缩格式
-    let mut data = Vec::new();
-    if index_path.extension().and_then(|s| s.to_str()) == Some("gz") {
-        // 解压
-        let mut decoder = GzDecoder::new(file);
-        decoder
-            .read_to_end(&mut data)
-            .map_err(|e| format!("Decompression error: {}", e))?;
-    } else {
-        // 未压缩（兼容旧版本）
-        let mut reader = BufReader::new(file);
-        reader
-            .read_to_end(&mut data)
-            .map_err(|e| format!("Read error: {}", e))?;
-    }
-
-    let index_data: IndexData =
-        bincode::deserialize(&data).map_err(|e| format!("Deserialization error: {}", e))?;
-
-    eprintln!(
-        "[DEBUG] Index loaded: {} ({} entries)",
-        index_path.display(),
-        index_data.path_map.len()
-    );
-    Ok((index_data.path_map, index_data.file_metadata))
-}
-
-// --- Generic Tar Processor (Windows 兼容) ---
-// 参数结构体：减少参数数量
-struct ArchiveContext<'a> {
-    target_root: &'a Path,
-    virtual_path: &'a str,
-    map: &'a mut PathMapType,
-    app: &'a AppHandle,
-    task_id: &'a str,
-}
-
-fn process_tar_archive<R: std::io::Read>(
-    archive: &mut tar::Archive<R>,
-    _path: &Path,
-    file_name: &str,
-    ctx: &mut ArchiveContext,
-) -> Result<(), String> {
-    let extract_folder_name = format!("{}_extracted_{}", file_name, Uuid::new_v4());
-    let extract_path = ctx.target_root.join(&extract_folder_name);
-    fs::create_dir_all(&extract_path)
-        .map_err(|e| format!("Failed to create extract dir: {}", e))?;
-
-    let entries = archive
-        .entries()
-        .map_err(|e| format!("Failed to read tar entries: {}", e))?;
-
-    let mut success_count = 0;
-    let mut error_count = 0;
-    let mut errors = Vec::new();
-
-    for mut file in entries.flatten() {
-        let entry_result = (|| -> Result<(), String> {
-            let entry_path = file
-                .path()
-                .map_err(|e| format!("Invalid tar entry path: {}", e))?;
-            let entry_name = entry_path.to_string_lossy().to_string();
-
-            // 安全检查：阻止路径穿越
-            if entry_name.contains("..") {
-                return Err(format!("Unsafe path detected: {}", entry_name));
-            }
-
-            // Windows 兼容：处理路径分隔符
-            let normalized_name = entry_name.replace('\\', "/");
-            let out_path = safe_path_join(&extract_path, &normalized_name);
-
-            if let Some(p) = out_path.parent() {
-                fs::create_dir_all(p).map_err(|e| {
-                    format!("Failed to create parent dir for {}: {}", normalized_name, e)
-                })?;
-            }
-
-            // Windows 兼容：在解压前移除只读属性
-            if out_path.exists() {
-                remove_readonly(&out_path).map_err(|e| {
-                    format!("Failed to remove readonly for {}: {}", normalized_name, e)
-                })?;
-            }
-
-            file.unpack(&out_path)
-                .map_err(|e| format!("Failed to unpack {}: {}", normalized_name, e))?;
-
-            let new_virtual = format!("{}/{}", ctx.virtual_path, normalized_name);
-            // 递归处理解压后的文件
-            process_path_recursive(
-                &out_path,
-                &new_virtual,
-                ctx.target_root,
-                ctx.map,
-                ctx.app,
-                ctx.task_id,
-            );
-
-            Ok(())
-        })();
-
-        match entry_result {
-            Ok(_) => success_count += 1,
-            Err(e) => {
-                error_count += 1;
-                eprintln!("[WARNING] TAR entry extraction failed: {}", e);
-                errors.push(e);
-                // 继续处理其他文件，不中断整体流程
-            }
-        }
-    }
-
-    eprintln!(
-        "[INFO] TAR extraction complete: {} succeeded, {} failed",
-        success_count, error_count
-    );
-
-    // 如果有部分文件成功，则返回Ok，但在消息中标注部分失败
-    if success_count > 0 {
-        if error_count > 0 {
-            eprintln!(
-                "[WARN] TAR archive partially extracted ({} errors)",
-                error_count
-            );
-        }
-        Ok(())
-    } else if error_count > 0 {
-        Err(format!(
-            "All TAR entries failed to extract. First error: {}",
-            errors.first().unwrap_or(&"Unknown error".to_string())
-        ))
-    } else {
-        Ok(())
-    }
-}
-
-// --- ZIP Processor (Windows 编码优化) ---
-fn process_zip_archive(
-    path: &Path,
-    file_name: &str,
-    virtual_path: &str,
-    target_root: &Path,
-    map: &mut HashMap<String, String>,
-    app: &AppHandle,
-    task_id: &str,
-) -> Result<(), String> {
-    let file = File::open(path).map_err(|e| format!("Failed to open zip: {}", e))?;
-    let reader = BufReader::new(file);
-    let mut archive =
-        zip::ZipArchive::new(reader).map_err(|e| format!("Invalid zip archive: {}", e))?;
-
-    let extract_folder_name = format!("{}_extracted_{}", file_name, Uuid::new_v4());
-    let extract_path = target_root.join(&extract_folder_name);
-    fs::create_dir_all(&extract_path)
-        .map_err(|e| format!("Failed to create extract dir: {}", e))?;
-
-    let mut success_count = 0;
-    let mut error_count = 0;
-    let mut errors = Vec::new();
-
-    for i in 0..archive.len() {
-        let entry_result = (|| -> Result<(), String> {
-            let mut file = archive
-                .by_index(i)
-                .map_err(|e| format!("Failed to read zip entry {}: {}", i, e))?;
-            let name_raw = file.name_raw().to_vec();
-            let name = decode_filename(&name_raw);
-
-            // 安全检查
-            if name.contains("..") {
-                return Err(format!("Unsafe zip entry: {}", name));
-            }
-
-            // Windows 兼容：路径分隔符规范化
-            let normalized_name = name.replace('\\', "/");
-            let out_path = safe_path_join(&extract_path, &normalized_name);
-
-            if file.is_dir() {
-                fs::create_dir_all(&out_path).map_err(|e| {
-                    format!("Failed to create directory {}: {}", normalized_name, e)
-                })?;
-            } else {
-                if let Some(p) = out_path.parent() {
-                    fs::create_dir_all(p).map_err(|e| {
-                        format!("Failed to create parent dir for {}: {}", normalized_name, e)
-                    })?;
-                }
-
-                // Windows 兼容：在解压前移除只读属性
-                if out_path.exists() {
-                    remove_readonly(&out_path).map_err(|e| {
-                        format!("Failed to remove readonly for {}: {}", normalized_name, e)
-                    })?;
-                }
-
-                let mut outfile = File::create(&out_path)
-                    .map_err(|e| format!("Failed to create file {}: {}", normalized_name, e))?;
-                std::io::copy(&mut file, &mut outfile)
-                    .map_err(|e| format!("Failed to extract {}: {}", normalized_name, e))?;
-
-                let new_virtual = format!("{}/{}", virtual_path, normalized_name);
-                // 递归处理
-                process_path_recursive(&out_path, &new_virtual, target_root, map, app, task_id);
-            }
-
-            Ok(())
-        })();
-
-        match entry_result {
-            Ok(_) => success_count += 1,
-            Err(e) => {
-                error_count += 1;
-                eprintln!("[WARNING] ZIP entry extraction failed: {}", e);
-                errors.push(e);
-                // 继续处理其他文件
-            }
-        }
-    }
-
-    eprintln!(
-        "[INFO] ZIP extraction complete: {} succeeded, {} failed",
-        success_count, error_count
-    );
-
-    // 如果有部分文件成功，则返回Ok
-    if success_count > 0 {
-        if error_count > 0 {
-            eprintln!(
-                "[WARN] ZIP archive partially extracted ({} errors)",
-                error_count
-            );
-        }
-        Ok(())
-    } else if error_count > 0 {
-        Err(format!(
-            "All ZIP entries failed to extract. First error: {}",
-            errors.first().unwrap_or(&"Unknown error".to_string())
-        ))
-    } else {
-        Ok(())
-    }
-}
-
-// --- GZ Processor ---
-fn process_gz_file(
-    path: &Path,
-    file_name: &str,
-    virtual_path: &str,
-    target_root: &Path,
-    map: &mut HashMap<String, String>,
-    app: &AppHandle,
-    task_id: &str,
-) -> Result<(), String> {
-    let file = File::open(path).map_err(|e| e.to_string())?;
-    let reader = BufReader::new(file);
-    let mut gz = flate2::read::GzDecoder::new(reader);
-
-    let base_name = file_name.trim_end_matches(".gz");
-    let unique_name = format!(
-        "{}_{}",
-        base_name,
-        Uuid::new_v4()
-            .to_string()
-            .split('-')
-            .next()
-            .unwrap_or("tmp")
-    );
-    let out_path = target_root.join(&unique_name);
-
-    let mut out_file = File::create(&out_path).map_err(|e| e.to_string())?;
-    std::io::copy(&mut gz, &mut out_file).map_err(|e| e.to_string())?;
-
-    let decompressed_virtual = if virtual_path.ends_with(".gz") {
-        virtual_path.trim_end_matches(".gz").to_string()
-    } else {
-        virtual_path.to_string()
-    };
-
-    // 关键：递归处理（解压后可能是 tar 或其他压缩格式）
-    process_path_recursive(
-        &out_path,
-        &decompressed_virtual,
-        target_root,
-        map,
-        app,
-        task_id,
-    );
-    Ok(())
-}
-
-// --- RAR Processor (使用内置 unrar 二进制文件) ---
-fn process_rar_archive(
-    path: &Path,
-    file_name: &str,
-    virtual_path: &str,
-    target_root: &Path,
-    map: &mut HashMap<String, String>,
-    app: &AppHandle,
-    task_id: &str,
-) -> Result<(), String> {
-    use std::process::Command;
-
-    // 获取内置的 unrar 路径
-    let unrar_path = get_bundled_unrar_path(app)?;
-
-    let extract_folder_name = format!("{}_extracted_{}", file_name, Uuid::new_v4());
-    let extract_path = target_root.join(&extract_folder_name);
-    fs::create_dir_all(&extract_path)
-        .map_err(|e| format!("Failed to create extract dir: {}", e))?;
-
-    eprintln!(
-        "[DEBUG] Extracting RAR: {} -> {}",
-        path.display(),
-        extract_path.display()
-    );
-    eprintln!("[DEBUG] Using bundled unrar: {}", unrar_path.display());
-
-    // 执行 unrar 命令
-    let output = Command::new(&unrar_path)
-        .arg("x") // 解压并保持路径
-        .arg("-o+") // 覆盖已存在文件
-        .arg("-y") // 自动确认
-        .arg(path) // 源文件
-        .arg(&extract_path) // 目标目录
-        .output()
-        .map_err(|e| format!("Failed to execute unrar: {}", e))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("unrar failed: {}", stderr));
-    }
-
-    eprintln!(
-        "[DEBUG] RAR extracted successfully: {}",
-        extract_path.display()
-    );
-
-    // 递归处理解压后的内容
-    for entry in WalkDir::new(&extract_path)
-        .min_depth(1)
-        .into_iter()
-        .filter_map(|e| e.ok())
-    {
-        let entry_path = entry.path();
-        let relative = entry_path
-            .strip_prefix(&extract_path)
-            .map_err(|e| format!("Path strip failed: {}", e))?;
-        let relative_str = relative.to_string_lossy().replace('\\', "/");
-        let new_virtual = format!("{}/{}", virtual_path, relative_str);
-
-        if entry_path.is_file() {
-            process_path_recursive(entry_path, &new_virtual, target_root, map, app, task_id);
-        }
-    }
-
-    Ok(())
-}
-
-// --- Deep Recursive Processor (增强版，支持元数据收集) ---
-
-fn process_path_recursive(
-    path: &Path,
-    virtual_path: &str,
-    target_root: &Path,
-    map: &mut HashMap<String, String>,
-    app: &AppHandle,
-    task_id: &str,
-) {
-    // 错误处理：如果处理失败，不中断整个流程
-    if let Err(e) = process_path_recursive_inner(path, virtual_path, target_root, map, app, task_id)
-    {
-        eprintln!("[WARNING] Failed to process {}: {}", path.display(), e);
-        let _ = app.emit(
-            "task-update",
-            TaskProgress {
-                task_id: task_id.to_string(),
-                task_type: "Import".to_string(),
-                target: "Processing".to_string(),
-                status: "RUNNING".to_string(),
-                message: format!("Warning: {}", e),
-                progress: 50,
-                workspace_id: None, // 这是内部进度更新，没有 workspace_id
-            },
-        );
-    }
-}
-
-// 带元数据收集的版本
-fn process_path_recursive_with_metadata(
-    path: &Path,
-    virtual_path: &str,
-    target_root: &Path,
-    map: &mut HashMap<String, String>,
-    metadata_map: &mut HashMap<String, FileMetadata>,
-    app: &AppHandle,
-    task_id: &str,
-) {
-    if let Err(e) = process_path_recursive_inner_with_metadata(
-        path,
-        virtual_path,
-        target_root,
-        map,
-        metadata_map,
-        app,
-        task_id,
-    ) {
-        eprintln!("[WARNING] Failed to process {}: {}", path.display(), e);
-        let _ = app.emit(
-            "task-update",
-            TaskProgress {
-                task_id: task_id.to_string(),
-                task_type: "Import".to_string(),
-                target: "Processing".to_string(),
-                status: "RUNNING".to_string(),
-                message: format!("Warning: {}", e),
-                progress: 50,
-                workspace_id: None, // 内部进度更新
-            },
-        );
-    }
-}
-
-fn process_path_recursive_inner(
-    path: &Path,
-    virtual_path: &str,
-    target_root: &Path,
-    map: &mut HashMap<String, String>,
-    app: &AppHandle,
-    task_id: &str,
-) -> Result<(), String> {
-    // 处理目录
-    if path.is_dir() {
-        for entry in WalkDir::new(path)
-            .min_depth(1)
-            .max_depth(1)
-            .into_iter()
-            .filter_map(|e| e.ok())
-        {
-            let entry_name = entry.file_name().to_string_lossy();
-            let new_virtual = format!("{}/{}", virtual_path, entry_name);
-            process_path_recursive(entry.path(), &new_virtual, target_root, map, app, task_id);
-        }
-        return Ok(());
-    }
-
-    let path_str = path.to_string_lossy();
-    let file_name = path
-        .file_name()
-        .ok_or("Invalid filename")?
-        .to_string_lossy();
-    let lower_path = path_str.to_lowercase();
-
-    let _ = app.emit(
-        "task-update",
-        TaskProgress {
-            task_id: task_id.to_string(),
-            task_type: "Import".to_string(),
-            target: file_name.to_string(),
-            status: "RUNNING".to_string(),
-            message: format!("Processing: {}", file_name),
-            progress: 50,
-            workspace_id: None, // 文件处理进度
-        },
-    );
-
-    // 判断文件类型
-    let is_zip = lower_path.ends_with(".zip");
-    let is_rar = lower_path.ends_with(".rar");
-    let is_tar = lower_path.ends_with(".tar");
-    let is_tar_gz = lower_path.ends_with(".tar.gz") || lower_path.ends_with(".tgz");
-    let is_plain_gz = lower_path.ends_with(".gz") && !is_tar_gz;
-
-    // --- 处理 ZIP ---
-    if is_zip {
-        return process_zip_archive(
-            path,
-            &file_name,
-            virtual_path,
-            target_root,
-            map,
-            app,
-            task_id,
-        );
-    }
-
-    // --- 处理 RAR ---
-    if is_rar {
-        return process_rar_archive(
-            path,
-            &file_name,
-            virtual_path,
-            target_root,
-            map,
-            app,
-            task_id,
-        );
-    }
-
-    // --- 处理 TAR / TAR.GZ ---
-    if is_tar || is_tar_gz {
-        let file = File::open(path).map_err(|e| e.to_string())?;
-        let reader = BufReader::new(file);
-        let mut ctx = ArchiveContext {
-            target_root,
-            virtual_path,
-            map,
-            app,
-            task_id,
-        };
-        if is_tar_gz {
-            let tar = flate2::read::GzDecoder::new(reader);
-            let mut archive = tar::Archive::new(tar);
-            return process_tar_archive(&mut archive, path, &file_name, &mut ctx);
-        } else {
-            let mut archive = tar::Archive::new(reader);
-            return process_tar_archive(&mut archive, path, &file_name, &mut ctx);
-        }
-    }
-
-    // --- 处理纯 GZ ---
-    if is_plain_gz {
-        return process_gz_file(
-            path,
-            &file_name,
-            virtual_path,
-            target_root,
-            map,
-            app,
-            task_id,
-        );
-    }
-
-    // --- 普通文件 ---
-    let real_path = path.to_string_lossy().to_string();
-
-    // ✅ 使用 normalize_path_separator 统一路径分隔符
-    let normalized_virtual = normalize_path_separator(virtual_path);
-
-    map.insert(real_path, normalized_virtual.clone());
-    eprintln!(
-        "[DEBUG] regular file indexed: real_path={}, virtual_path={}",
-        path.display(),
-        normalized_virtual
-    );
-    Ok(())
-}
-
-// 带元数据收集的内部处理函数
-fn process_path_recursive_inner_with_metadata(
-    path: &Path,
-    virtual_path: &str,
-    target_root: &Path,
-    map: &mut HashMap<String, String>,
-    metadata_map: &mut HashMap<String, FileMetadata>,
-    app: &AppHandle,
-    task_id: &str,
-) -> Result<(), String> {
-    // 处理目录
-    if path.is_dir() {
-        for entry in WalkDir::new(path)
-            .min_depth(1)
-            .max_depth(1)
-            .into_iter()
-            .filter_map(|e| e.ok())
-        {
-            let entry_name = entry.file_name().to_string_lossy();
-            let new_virtual = format!("{}/{}", virtual_path, entry_name);
-            process_path_recursive_with_metadata(
-                entry.path(),
-                &new_virtual,
-                target_root,
-                map,
-                metadata_map,
-                app,
-                task_id,
-            );
-        }
-        return Ok(());
-    }
-
-    let path_str = path.to_string_lossy();
-    let file_name = path
-        .file_name()
-        .ok_or("Invalid filename")?
-        .to_string_lossy();
-    let lower_path = path_str.to_lowercase();
-
-    let _ = app.emit(
-        "task-update",
-        TaskProgress {
-            task_id: task_id.to_string(),
-            task_type: "Import".to_string(),
-            target: file_name.to_string(),
-            status: "RUNNING".to_string(),
-            message: format!("Processing: {}", file_name),
-            progress: 50,
-            workspace_id: None, // 文件处理进度
-        },
-    );
-
-    // 判断文件类型
-    let is_zip = lower_path.ends_with(".zip");
-    let is_rar = lower_path.ends_with(".rar");
-    let is_tar = lower_path.ends_with(".tar");
-    let is_tar_gz = lower_path.ends_with(".tar.gz") || lower_path.ends_with(".tgz");
-    let is_plain_gz = lower_path.ends_with(".gz") && !is_tar_gz;
-
-    // 压缩文件不收集元数据，只处理普通文件
-    if is_zip || is_rar || is_tar || is_tar_gz || is_plain_gz {
-        // 递归调用原始的处理函数（不收集元数据）
-        return process_path_recursive_inner(path, virtual_path, target_root, map, app, task_id);
-    }
-
-    // --- 普通文件：收集元数据 ---
-    let real_path = path.to_string_lossy().to_string();
-
-    // ✅ 使用 normalize_path_separator 统一路径分隔符
-    let normalized_virtual = normalize_path_separator(virtual_path);
-
-    map.insert(real_path.clone(), normalized_virtual.clone());
-
-    // 收集文件元数据
-    if let Ok(metadata) = get_file_metadata(path) {
-        metadata_map.insert(real_path.clone(), metadata);
-        eprintln!(
-            "[DEBUG] regular file indexed with metadata: real_path={}, virtual_path={}",
-            path.display(),
-            normalized_virtual
-        );
-    } else {
-        eprintln!(
-            "[DEBUG] regular file indexed (no metadata): real_path={}, virtual_path={}",
-            path.display(),
-            normalized_virtual
-        );
-    }
-
-    Ok(())
-}
+// 从模块导入类型
+use models::{
+    AppConfig, AppState, FileChangeEvent, FileMetadata, LogEntry, PerformanceMetrics,
+    SearchCacheKey, SearchFilters, SearchQuery, TaskProgress, WatcherState,
+};
+
+// 从services模块导入函数和类型
+use services::{
+    append_to_workspace_index, get_file_metadata, load_index, parse_log_lines, parse_metadata,
+    read_file_from_offset, save_index, ExecutionPlan, QueryExecutor,
+};
+
+// 从archive模块导入函数
+use archive::process_path_recursive_with_metadata;
+
+// 从utils模块导入函数
+use utils::{
+    canonicalize_path, normalize_path_separator, validate_path_param, validate_workspace_id,
+};
 
 // --- Commands ---
 
@@ -1370,6 +86,20 @@ async fn import_folder(
 
     eprintln!("[DEBUG] Canonical path: {}", canonical_path.display());
 
+    // 创建持久化的解压目录（使用应用数据目录而非临时目录）
+    let extracted_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data dir: {}", e))?
+        .join("extracted")
+        .join(&workspaceId);
+
+    // 确保目录存在
+    fs::create_dir_all(&extracted_dir)
+        .map_err(|e| format!("Failed to create extracted dir: {}", e))?;
+
+    eprintln!("[DEBUG] Using extracted dir: {}", extracted_dir.display());
+
     // 立即发送初始状态
     eprintln!(
         "[DEBUG] Sending initial task-update event: task_id={}, workspace_id={}",
@@ -1392,11 +122,8 @@ async fn import_folder(
         },
     );
 
+    // 清理内存中的旧数据
     {
-        let mut temp_guard = state
-            .temp_dir
-            .lock()
-            .map_err(|e| format!("Failed to acquire temp_dir lock: {}", e))?;
         let mut map_guard = state
             .path_map
             .lock()
@@ -1406,11 +133,8 @@ async fn import_folder(
             .lock()
             .map_err(|e| format!("Failed to acquire metadata lock: {}", e))?;
 
-        *temp_guard = None;
         map_guard.clear();
         metadata_guard.clear();
-        let new_temp = TempDir::new().map_err(|e| format!("Failed to create temp dir: {}", e))?;
-        *temp_guard = Some(new_temp);
     }
 
     std::thread::spawn(move || {
@@ -1421,89 +145,74 @@ async fn import_folder(
 
         let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
             let state = app_handle.state::<AppState>();
+            let source_path = Path::new(&path);
+            let root_name = source_path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy();
 
-            // 使用 ? 操作符代替 unwrap
-            let temp_guard = state
-                .temp_dir
+            let _ = app_handle.emit(
+                "task-update",
+                TaskProgress {
+                    task_id: task_id_clone.clone(),
+                    task_type: "Import".to_string(),
+                    target: root_name.to_string(),
+                    status: "RUNNING".to_string(),
+                    message: "Scanning...".to_string(),
+                    progress: 10,
+                    workspace_id: Some(workspace_id_clone.clone()),
+                },
+            );
+
+            let mut map_guard = state
+                .path_map
+                .lock()
+                .map_err(|e| format!("Lock error: {}", e))?;
+            let mut metadata_guard = state
+                .file_metadata
                 .lock()
                 .map_err(|e| format!("Lock error: {}", e))?;
 
-            if let Some(ref temp_dir) = *temp_guard {
-                let target_base = temp_dir.path();
-                let source_path = Path::new(&path);
-                let root_name = source_path
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy();
+            // 使用持久化的解压目录
+            process_path_recursive_with_metadata(
+                source_path,
+                &root_name,
+                &extracted_dir,
+                &mut map_guard,
+                &mut metadata_guard,
+                &app_handle,
+                &task_id_clone,
+            );
 
-                let _ = app_handle.emit(
-                    "task-update",
-                    TaskProgress {
-                        task_id: task_id_clone.clone(),
-                        task_type: "Import".to_string(),
-                        target: root_name.to_string(),
-                        status: "RUNNING".to_string(),
-                        message: "Scanning...".to_string(),
-                        progress: 10,
-                        workspace_id: Some(workspace_id_clone.clone()), // 添加 workspace_id
-                    },
-                );
+            eprintln!("[DEBUG] Total files indexed: {}", map_guard.len());
+            eprintln!("[DEBUG] Metadata collected: {} files", metadata_guard.len());
 
-                let mut map_guard = state
-                    .path_map
-                    .lock()
-                    .map_err(|e| format!("Lock error: {}", e))?;
-                let mut metadata_guard = state
-                    .file_metadata
-                    .lock()
-                    .map_err(|e| format!("Lock error: {}", e))?;
-
-                // 使用带元数据收集的版本
-                process_path_recursive_with_metadata(
-                    source_path,
-                    &root_name,
-                    target_base,
-                    &mut map_guard,
-                    &mut metadata_guard,
-                    &app_handle,
-                    &task_id_clone,
-                );
-
-                eprintln!("[DEBUG] Total files indexed: {}", map_guard.len());
-                eprintln!("[DEBUG] Metadata collected: {} files", metadata_guard.len());
-
-                // 保存索引到磁盘（包含元数据）
-                match save_index(
-                    &app_handle,
-                    &workspace_id_clone,
-                    &map_guard,
-                    &metadata_guard,
-                ) {
-                    Ok(index_path) => {
-                        eprintln!("[DEBUG] Index persisted to: {}", index_path.display());
-                        let mut indices_guard = state
-                            .workspace_indices
-                            .lock()
-                            .map_err(|e| format!("Lock error: {}", e))?;
-                        indices_guard.insert(workspace_id_clone.clone(), index_path);
-                    }
-                    Err(e) => {
-                        eprintln!("[WARNING] Failed to save index: {}", e);
-                    }
+            // 保存索引到磁盘（包含元数据）
+            match save_index(
+                &app_handle,
+                &workspace_id_clone,
+                &map_guard,
+                &metadata_guard,
+            ) {
+                Ok(index_path) => {
+                    eprintln!("[DEBUG] Index persisted to: {}", index_path.display());
+                    let mut indices_guard = state
+                        .workspace_indices
+                        .lock()
+                        .map_err(|e| format!("Lock error: {}", e))?;
+                    indices_guard.insert(workspace_id_clone.clone(), index_path);
                 }
-
-                // 清理临时目录
-                if let Some(ref temp_dir) = *temp_guard {
-                    let temp_path = temp_dir.path().to_path_buf();
-                    // 释放锁后执行清理（避免在锁内执行IO操作）
-                    drop(temp_guard);
-
-                    let cleanup_queue = Arc::clone(&state.cleanup_queue);
-                    try_cleanup_temp_dir(&temp_path, &cleanup_queue);
-                } else {
-                    drop(temp_guard);
+                Err(e) => {
+                    eprintln!("[WARNING] Failed to save index: {}", e);
                 }
             }
+
+            // 注意：不再清理解压目录，保持文件可用以便搜索
+            eprintln!(
+                "[DEBUG] Extracted files kept in: {}",
+                extracted_dir.display()
+            );
+
             Ok::<(), String>(())
         }));
 
@@ -1643,152 +352,6 @@ fn search_single_file_with_details(
     }
 
     results
-}
-
-// ============================================================================
-// 增量读取相关功能（用于文件监听）
-// ============================================================================
-
-/// 从指定偏移量读取文件新增内容
-///
-/// # 参数
-/// - `path`: 文件路径
-/// - `offset`: 上次读取的偏移量（字节）
-///
-/// # 返回值
-/// - `Ok((lines, new_offset))`: 新读取的行和新的偏移量
-/// - `Err(String)`: 错误信息
-fn read_file_from_offset(path: &Path, offset: u64) -> Result<(Vec<String>, u64), String> {
-    use std::io::{Seek, SeekFrom};
-
-    let mut file = File::open(path).map_err(|e| format!("Failed to open file: {}", e))?;
-
-    // 获取当前文件大小
-    let file_size = file
-        .metadata()
-        .map_err(|e| format!("Failed to get file metadata: {}", e))?
-        .len();
-
-    // 如果文件被截断（小于上次偏移量），从头开始读取
-    let start_offset = if file_size < offset {
-        eprintln!(
-            "[WARNING] File truncated, reading from beginning: {}",
-            path.display()
-        );
-        0
-    } else {
-        offset
-    };
-
-    // 如果没有新内容，直接返回
-    if start_offset >= file_size {
-        return Ok((Vec::new(), file_size));
-    }
-
-    // 移动到偏移量位置
-    file.seek(SeekFrom::Start(start_offset))
-        .map_err(|e| format!("Failed to seek to offset: {}", e))?;
-
-    // 读取新增内容
-    let reader = BufReader::new(file);
-    let mut lines = Vec::new();
-
-    for line_result in reader.lines() {
-        match line_result {
-            Ok(line) => lines.push(line),
-            Err(e) => {
-                eprintln!("[WARNING] Error reading line: {}", e);
-                break;
-            }
-        }
-    }
-
-    eprintln!(
-        "[DEBUG] Read {} new lines from {} (offset: {} -> {})",
-        lines.len(),
-        path.display(),
-        start_offset,
-        file_size
-    );
-
-    Ok((lines, file_size))
-}
-
-/// 解析日志行并创建 LogEntry
-///
-/// # 参数
-/// - `lines`: 日志行
-/// - `file_path`: 文件路径（用于显示）
-/// - `real_path`: 实际文件路径
-/// - `start_id`: 起始 ID
-/// - `start_line_number`: 起始行号
-///
-/// # 返回值
-/// - 解析后的 LogEntry 列表
-fn parse_log_lines(
-    lines: &[String],
-    file_path: &str,
-    real_path: &str,
-    start_id: usize,
-    start_line_number: usize,
-) -> Vec<LogEntry> {
-    lines
-        .iter()
-        .enumerate()
-        .map(|(i, line)| {
-            let (timestamp, level) = parse_metadata(line);
-            LogEntry {
-                id: start_id + i,
-                timestamp,
-                level,
-                file: file_path.to_string(),
-                real_path: real_path.to_string(),
-                line: start_line_number + i,
-                content: line.clone(),
-                tags: vec![],
-                match_details: None, // 无搜索情境下不包含匹配详情
-            }
-        })
-        .collect()
-}
-
-/// 将新日志条目添加到工作区索引（增量更新）
-///
-/// # 参数
-/// - `workspace_id`: 工作区 ID
-/// - `new_entries`: 新的日志条目
-/// - `app`: AppHandle
-/// - `state`: AppState
-///
-/// # 返回值
-/// - `Ok(())`: 成功
-/// - `Err(String)`: 错误信息
-fn append_to_workspace_index(
-    workspace_id: &str,
-    new_entries: &[LogEntry],
-    app: &AppHandle,
-    _state: &AppState, // 为未来扩展保留（可用于持久化索引更新）
-) -> Result<(), String> {
-    if new_entries.is_empty() {
-        return Ok(());
-    }
-
-    eprintln!(
-        "[DEBUG] Appending {} new entries to workspace: {}",
-        new_entries.len(),
-        workspace_id
-    );
-
-    // 发送新日志到前端（实时更新）
-    let _ = app.emit("new-logs", new_entries);
-
-    // 这里可以选择性地更新持久化索引
-    // 为了性能考虑，可以批量更新或定期保存
-    // 当前实现：只发送到前端，不立即持久化
-
-    eprintln!("[DEBUG] New entries sent to frontend");
-
-    Ok(())
 }
 
 #[command]
@@ -3105,6 +1668,8 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::encoding::decode_filename;
+    use crate::utils::path::{remove_readonly, safe_path_join};
     use std::fs;
     use tempfile::TempDir;
 

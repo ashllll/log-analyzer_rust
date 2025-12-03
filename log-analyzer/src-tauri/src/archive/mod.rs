@@ -20,8 +20,5 @@ pub mod rar;
 pub mod tar;
 pub mod zip;
 
-pub use context::ArchiveContext;
-pub use processor::{
-    process_path_recursive, process_path_recursive_inner,
-    process_path_recursive_inner_with_metadata, process_path_recursive_with_metadata,
-};
+// 重新导出核心类型和函数
+pub use processor::process_path_recursive_with_metadata;

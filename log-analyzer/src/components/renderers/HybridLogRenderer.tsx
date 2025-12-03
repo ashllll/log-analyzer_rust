@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, memo } from 'react';
 import { cn } from '../../utils/classNames';
 import { COLOR_STYLES } from '../../constants/colors';
 import type { HybridLogRendererProps } from '../../types/ui';
@@ -7,9 +7,9 @@ import type { ColorKey } from '../../types/common';
 /**
  * 日志高亮渲染组件
  * 支持搜索关键词和关键词组的颜色高亮
- * 包含性能优化：超长文本截断、匹配数量限制
+ * 包含性能优化：超长文本截断、匹配数量限制、React.memo 防止不必要重渲染
  */
-const HybridLogRenderer: React.FC<HybridLogRendererProps> = ({ text, query, keywordGroups }) => {
+const HybridLogRendererInner: React.FC<HybridLogRendererProps> = ({ text, query, keywordGroups }) => {
   const { patternMap, regexPattern } = useMemo(() => {
     const map = new Map();
     const patterns = new Set();
@@ -134,5 +134,18 @@ const HybridLogRenderer: React.FC<HybridLogRendererProps> = ({ text, query, keyw
     </span>
   );
 };
+
+/**
+ * 使用 React.memo 包装，避免不必要的重渲染
+ * 自定义比较函数：仅当 text、query 或 keywordGroups 引用变化时才重新渲染
+ */
+const HybridLogRenderer = memo(HybridLogRendererInner, (prevProps, nextProps) => {
+  // 返回 true 表示 props 相同，不需要重渲染
+  return (
+    prevProps.text === nextProps.text &&
+    prevProps.query === nextProps.query &&
+    prevProps.keywordGroups === nextProps.keywordGroups
+  );
+});
 
 export default HybridLogRenderer;

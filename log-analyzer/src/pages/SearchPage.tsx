@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useDeferredValue, memo, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { save } from '@tauri-apps/plugin-dialog';
@@ -47,15 +47,96 @@ interface SearchPageProps {
   activeWorkspace: Workspace | null;
 }
 
+/**
+ * 虚拟行组件 Props
+ */
+interface LogRowProps {
+  log: LogEntry;
+  isActive: boolean;
+  onClick: () => void;
+  query: string;
+  keywordGroups: KeywordGroup[];
+  virtualStart: number;
+  virtualKey: React.Key;
+  measureRef: (node: Element | null) => void;
+}
+
+/**
+ * 虚拟行组件 - 使用 React.memo 优化
+ * 只有当 log、isActive、query 或 keywordGroups 变化时才重新渲染
+ */
+const LogRow = memo<LogRowProps>(({ 
+  log, 
+  isActive, 
+  onClick, 
+  query, 
+  keywordGroups, 
+  virtualStart, 
+  virtualKey,
+  measureRef 
+}) => {
+  return (
+    <div 
+      key={virtualKey}
+      data-index={virtualKey} 
+      ref={measureRef} 
+      onClick={onClick} 
+      style={{ transform: `translateY(${virtualStart}px)` }} 
+      className={cn(
+        "absolute top-0 left-0 w-full grid grid-cols-[50px_160px_200px_1fr] px-3 py-0.5 border-b border-border-base/40 cursor-pointer text-[11px] font-mono hover:bg-bg-hover transition-colors items-start", 
+        isActive && "bg-blue-500/10 border-l-2 border-l-primary"
+      )}
+    >
+      <div className={cn(
+        "font-bold", 
+        log.level === 'ERROR' ? 'text-red-400' : 
+        log.level === 'WARN' ? 'text-yellow-400' : 
+        'text-blue-400'
+      )}>
+        {log.level.substring(0,1)}
+      </div>
+      <div className="text-text-muted whitespace-nowrap text-[10px]">
+        {log.timestamp}
+      </div>
+      <div className="text-text-muted break-all pr-2 text-[10px] leading-tight">
+        {log.file}:{log.line}
+      </div>
+      <div className="text-text-main whitespace-pre-wrap break-all leading-tight pr-2">
+        <HybridLogRenderer 
+          text={log.content} 
+          query={query} 
+          keywordGroups={keywordGroups} 
+        />
+      </div>
+    </div>
+  );
+}, (prevProps, nextProps) => {
+  // 返回 true 表示 props 相同，不需要重渲染
+  return (
+    prevProps.log === nextProps.log &&
+    prevProps.isActive === nextProps.isActive &&
+    prevProps.query === nextProps.query &&
+    prevProps.keywordGroups === nextProps.keywordGroups &&
+    prevProps.virtualStart === nextProps.virtualStart
+  );
+});
+
 const SearchPage: React.FC<SearchPageProps> = ({ 
   keywordGroups, 
   addToast, 
   searchInputRef, 
   activeWorkspace 
 }) => {
+  // 缓存启用的关键词组，避免每次渲染都重新计算
+  const enabledKeywordGroups = useMemo(() => 
+    keywordGroups.filter(g => g.enabled),
+    [keywordGroups]
+  );
+  
   // 搜索状态
   const [query, setQuery] = useState("");
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const deferredLogs = useDeferredValue(logs); // 使用延迟值优化渲染
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [isFilterPaletteOpen, setIsFilterPaletteOpen] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
@@ -88,12 +169,28 @@ const SearchPage: React.FC<SearchPageProps> = ({
     };
   }, []);
 
-  // 监听搜索事件
+  // 监听搜索事件（简化版：直接更新但使用 React 18 并发特性处理渲染）
   useEffect(() => {
-    const unlistenResults = listen<LogEntry[]>('search-results', (e) => setLogs(prev => [...prev, ...e.payload]));
-    const unlistenComplete = listen('search-complete', (e) => { setIsSearching(false); addToast('success', `Found ${e.payload} logs.`); });
-    const unlistenError = listen('search-error', (e) => { setIsSearching(false); addToast('error', `${e.payload}`); });
-    return () => { unlistenResults.then(f => f()); unlistenComplete.then(f => f()); unlistenError.then(f => f()); }
+    const unlistenResults = listen<LogEntry[]>('search-results', (e) => {
+      // 直接更新状态，useDeferredValue 会处理渲染优化
+      setLogs(prev => [...prev, ...e.payload]);
+    });
+    
+    const unlistenComplete = listen('search-complete', (e) => {
+      setIsSearching(false);
+      addToast('success', `Found ${e.payload} logs.`);
+    });
+    
+    const unlistenError = listen('search-error', (e) => {
+      setIsSearching(false);
+      addToast('error', `${e.payload}`);
+    });
+    
+    return () => {
+      unlistenResults.then(f => f());
+      unlistenComplete.then(f => f());
+      unlistenError.then(f => f());
+    };
   }, [addToast]);
 
   // 加载保存的查询
@@ -118,7 +215,9 @@ const SearchPage: React.FC<SearchPageProps> = ({
    */
   const handleSearch = async () => {
     if (!activeWorkspace) return addToast('error', 'Select a workspace first.');
-    setLogs([]); 
+    
+    // 清空状态
+    setLogs([]);
     setIsSearching(true);
     
     try { 
@@ -285,25 +384,17 @@ const SearchPage: React.FC<SearchPageProps> = ({
   
   /**
    * 虚拟滚动配置
-   * 优化：动态高度估算 - 提高显示密度，添加ResizeObserver支持
+   * 优化：固定 estimateSize 避免依赖 logs，完全依赖动态测量
    */
   const rowVirtualizer = useVirtualizer({ 
-    count: logs.length, 
+    count: deferredLogs.length, 
     getScrollElement: () => parentRef.current, 
-    estimateSize: useCallback((index: number) => {
-      const log = logs[index];
-      if (!log) return 28;  // 减小最小高度从 46px 到 28px
-      // 根据内容长度估算高度，使用更紧凑的行高
-      const lines = Math.ceil(log.content.length / 140);
-      return Math.max(28, Math.min(lines * 16, 120));  // 最小 28px，最大 120px，行高从 22px 减到 16px
-    }, [logs]),
-    overscan: 25,  // 增加 overscan 以保证流畅滚动
-    measureElement: (element) => element?.getBoundingClientRect().height || 28,
-    // 启用动态测量以响应尺寸变化
-    enabled: true
+    estimateSize: useCallback(() => 32, []),  // 固定估算高度，依赖动态测量
+    overscan: 15,  // 适当的 overscan 值
+    measureElement: (element) => element?.getBoundingClientRect().height || 32,
   });
   
-  const activeLog = logs.find(l => l.id === selectedId);
+  const activeLog = deferredLogs.find(l => l.id === selectedId);
 
   return (
     <div className="flex flex-col h-full relative">
@@ -509,45 +600,23 @@ const SearchPage: React.FC<SearchPageProps> = ({
             <div>Content</div>
           </div>
           
-          {/* 虚拟滚动列表 */}
+          {/* 虚拟滚动列表 - 使用 LogRow 组件优化渲染 */}
           <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, width: '100%', position: 'relative' }}>
             {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-              const log = logs[virtualRow.index];
-              const isActive = log.id === selectedId;
+              const log = deferredLogs[virtualRow.index];
+              if (!log) return null; // 防止延迟渲染时索引越界
               return (
-                <div 
-                  key={virtualRow.key} 
-                  data-index={virtualRow.index} 
-                  ref={rowVirtualizer.measureElement} 
-                  onClick={() => setSelectedId(log.id)} 
-                  style={{ transform: `translateY(${virtualRow.start}px)` }} 
-                  className={cn(
-                    "absolute top-0 left-0 w-full grid grid-cols-[50px_160px_200px_1fr] px-3 py-0.5 border-b border-border-base/40 cursor-pointer text-[11px] font-mono hover:bg-bg-hover transition-colors items-start", 
-                    isActive && "bg-blue-500/10 border-l-2 border-l-primary"
-                  )}
-                >
-                  <div className={cn(
-                    "font-bold", 
-                    log.level === 'ERROR' ? 'text-red-400' : 
-                    log.level === 'WARN' ? 'text-yellow-400' : 
-                    'text-blue-400'
-                  )}>
-                    {log.level.substring(0,1)}
-                  </div>
-                  <div className="text-text-muted whitespace-nowrap text-[10px]">
-                    {log.timestamp}
-                  </div>
-                  <div className="text-text-muted break-all pr-2 text-[10px] leading-tight">
-                    {log.file}:{log.line}
-                  </div>
-                  <div className="text-text-main whitespace-pre-wrap break-all leading-tight pr-2">
-                    <HybridLogRenderer 
-                      text={log.content} 
-                      query={query} 
-                      keywordGroups={keywordGroups} 
-                    />
-                  </div>
-                </div>
+                <LogRow
+                  key={virtualRow.key}
+                  log={log}
+                  isActive={log.id === selectedId}
+                  onClick={() => setSelectedId(log.id)}
+                  query={query}
+                  keywordGroups={enabledKeywordGroups}
+                  virtualStart={virtualRow.start}
+                  virtualKey={virtualRow.key}
+                  measureRef={rowVirtualizer.measureElement}
+                />
               );
             })}
           </div>
@@ -589,7 +658,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
                   <HybridLogRenderer 
                     text={tryFormatJSON(activeLog.content)} 
                     query={query} 
-                    keywordGroups={keywordGroups} 
+                    keywordGroups={enabledKeywordGroups} 
                   />
                 </div>
               </div>

@@ -19,6 +19,7 @@ use tauri::AppHandle;
 /// # 生命周期
 ///
 /// 'a: 所有引用的生命周期参数，确保上下文不超过引用的有效期
+#[allow(dead_code)] // Will be used when lib.rs is fully migrated
 pub struct ArchiveContext<'a> {
     pub target_root: &'a Path,
     pub virtual_path: &'a str,

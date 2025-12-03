@@ -1,11 +1,12 @@
-pub mod search;
-pub mod log_entry;
 pub mod config;
 pub mod filters;
+pub mod log_entry;
+pub mod search;
 pub mod state;
 
-// pub use search::*;  // Unused, commented out to suppress warning
-pub use log_entry::*;
-pub use config::*;
-pub use filters::*;
-pub use state::*;
+// 重新导出核心类型
+pub use config::{AppConfig, FileMetadata};
+pub use filters::{PerformanceMetrics, SearchFilters};
+pub use log_entry::{FileChangeEvent, LogEntry, TaskProgress};
+pub use search::*;
+pub use state::{AppState, SearchCacheKey, WatcherState};

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useTransition } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useApp, useWorkspaceState, useTaskState, Workspace } from '../contexts/AppContext';
@@ -24,11 +24,12 @@ const logger = {
  * 统一错误处理和加载状态管理
  */
 export const useWorkspaceOperations = () => {
-  const { addToast, setActiveWorkspace } = useApp();
+  const { addToast, setActiveWorkspace, state: appState } = useApp();
   const { state: workspaceState, dispatch: workspaceDispatch } = useWorkspaceState();
   const { dispatch: taskDispatch } = useTaskState();
   
   const [operationLoading, setOperationLoading] = useState(false);
+  const [isPending, startTransition] = useTransition();
 
   /**
    * 导入文件夹
@@ -167,31 +168,40 @@ export const useWorkspaceOperations = () => {
 
   /**
    * 切换工作区
+   * 优化：如果已经是当前工作区，跳过加载
+   * 使用 startTransition 降低优先级，避免UI卡顿
    */
   const switchWorkspace = useCallback(async (id: string) => {
-    logger.debug('switchWorkspace called for id:', id);
-    setOperationLoading(true);
-    
-    try {
-      const workspace = workspaceState.workspaces.find(w => w.id === id);
-      if (!workspace) {
-        throw new Error('Workspace not found');
-      }
-      
-      if (workspace.status === 'READY') {
-        await invoke('load_workspace', { workspaceId: id });
-        setActiveWorkspace(id);
-        addToast('success', `已加载工作区: ${workspace.name}`);
-      } else {
-        setActiveWorkspace(id);
-      }
-    } catch (e) {
-      logger.error('switchWorkspace error:', e);
-      addToast('error', `加载索引失败: ${e}`);
-    } finally {
-      setOperationLoading(false);
+    // 如果已经是当前工作区，不重复加载
+    if (appState.activeWorkspaceId === id) {
+      logger.debug('Already active workspace, skipping reload:', id);
+      return;
     }
-  }, [addToast, setActiveWorkspace, workspaceState.workspaces]);
+    
+    logger.debug('switchWorkspace called for id:', id);
+    
+    const workspace = workspaceState.workspaces.find(w => w.id === id);
+    if (!workspace) {
+      addToast('error', 'Workspace not found');
+      return;
+    }
+    
+    // 先立即更新UI，然后异步加载索引
+    startTransition(() => {
+      setActiveWorkspace(id);
+    });
+    
+    // 如果工作区已准备好，异步加载索引（不阻塞UI）
+    if (workspace.status === 'READY') {
+      try {
+        await invoke('load_workspace', { workspaceId: id });
+        // 加载成功后不显示 toast，避免频繁提示
+      } catch (e) {
+        logger.error('switchWorkspace error:', e);
+        addToast('error', `加载索引失败: ${e}`);
+      }
+    }
+  }, [addToast, setActiveWorkspace, workspaceState.workspaces, appState.activeWorkspaceId]);
 
   /**
    * 切换工作区监听状态
@@ -229,7 +239,7 @@ export const useWorkspaceOperations = () => {
 
   return {
     workspaces: workspaceState.workspaces,
-    loading: operationLoading || workspaceState.loading,
+    loading: operationLoading || workspaceState.loading || isPending,
     error: workspaceState.error,
     importFolder,
     importFile,

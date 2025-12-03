@@ -7,7 +7,7 @@
 //! - 实时事件推送到前端
 
 use crate::models::log_entry::LogEntry;
-use std::collections::HashMap;
+// use std::collections::HashMap;  // Unused
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
@@ -105,7 +105,7 @@ pub fn read_file_from_offset(path: &Path, offset: u64) -> Result<(Vec<String>, u
 ///
 /// - **时间戳**：取前19个字符（通常为 ISO 8601 格式）
 /// - **日志级别**：按优先级匹配 ERROR > WARN > INFO > DEBUG（默认）
-pub(crate) fn parse_metadata(line: &str) -> (String, String) {
+pub fn parse_metadata(line: &str) -> (String, String) {
     let level = if line.contains("ERROR") {
         "ERROR"
     } else if line.contains("WARN") {

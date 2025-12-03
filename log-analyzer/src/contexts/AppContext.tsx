@@ -361,16 +361,46 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     loadConfig();
   }, []);
 
-  // 保存配置
+  // 保存配置（使用防抖避免频繁保存）
+  const saveTimeoutRef = useRef<number | null>(null);
+  const lastSavedRef = useRef<string>('');
+  
   useEffect(() => {
-    if (keywordState.keywordGroups.length > 0 || workspaceState.workspaces.length > 0) {
+    if (keywordState.keywordGroups.length === 0 && workspaceState.workspaces.length === 0) {
+      return;
+    }
+    
+    // 生成配置指纹，避免相同配置重复保存
+    const configFingerprint = JSON.stringify({
+      keywords: keywordState.keywordGroups.map(g => ({ id: g.id, enabled: g.enabled })),
+      workspaces: workspaceState.workspaces.map(w => ({ id: w.id, status: w.status }))
+    });
+    
+    if (configFingerprint === lastSavedRef.current) {
+      return; // 配置未变化，跳过保存
+    }
+    
+    // 清除之前的定时器
+    if (saveTimeoutRef.current) {
+      window.clearTimeout(saveTimeoutRef.current);
+    }
+    
+    // 防抖：500ms 后保存
+    saveTimeoutRef.current = window.setTimeout(() => {
+      lastSavedRef.current = configFingerprint;
       invoke('save_config', {
         config: {
           keyword_groups: keywordState.keywordGroups,
           workspaces: workspaceState.workspaces
         }
       }).catch(e => console.error('Failed to save config:', e));
-    }
+    }, 500);
+    
+    return () => {
+      if (saveTimeoutRef.current) {
+        window.clearTimeout(saveTimeoutRef.current);
+      }
+    };
   }, [keywordState.keywordGroups, workspaceState.workspaces]);
 
   // 监听后端任务事件

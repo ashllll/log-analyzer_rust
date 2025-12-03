@@ -205,10 +205,20 @@ pub fn process_path_recursive_inner(
         if is_tar_gz {
             let tar = flate2::read::GzDecoder::new(reader);
             let mut archive = tar::Archive::new(tar);
-            return crate::archive::tar::process_tar_archive(&mut archive, path, &file_name, &mut ctx);
+            return crate::archive::tar::process_tar_archive(
+                &mut archive,
+                path,
+                &file_name,
+                &mut ctx,
+            );
         } else {
             let mut archive = tar::Archive::new(reader);
-            return crate::archive::tar::process_tar_archive(&mut archive, path, &file_name, &mut ctx);
+            return crate::archive::tar::process_tar_archive(
+                &mut archive,
+                path,
+                &file_name,
+                &mut ctx,
+            );
         }
     }
 
@@ -232,11 +242,8 @@ pub fn process_path_recursive_inner(
     let normalized_virtual = normalize_path_separator(virtual_path);
 
     map.insert(real_path, normalized_virtual.clone());
-    eprintln!(
-        "[DEBUG] regular file indexed: real_path={}, virtual_path={}",
-        path.display(),
-        normalized_virtual
-    );
+    // 注意：为了性能考虑，不再逐个文件输出日志
+    // 日志汇总在处理完成后输出
     Ok(())
 }
 
@@ -322,18 +329,9 @@ pub fn process_path_recursive_inner_with_metadata(
     // 收集文件元数据
     if let Ok(metadata) = get_file_metadata(path) {
         metadata_map.insert(real_path.clone(), metadata);
-        eprintln!(
-            "[DEBUG] regular file indexed with metadata: real_path={}, virtual_path={}",
-            path.display(),
-            normalized_virtual
-        );
-    } else {
-        eprintln!(
-            "[DEBUG] regular file indexed (no metadata): real_path={}, virtual_path={}",
-            path.display(),
-            normalized_virtual
-        );
+        // 注意：为了性能考虑，不再逐个文件输出日志
     }
+    // 日志汇总在处理完成后输出
 
     Ok(())
 }
