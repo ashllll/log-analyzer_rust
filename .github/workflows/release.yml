@@ -52,9 +52,21 @@ jobs:
             
             echo "Auto-incremented version: $VERSION"
             
-            # 创建并推送新 tag
+            # 更新源码中的版本号
+            cd log-analyzer
+            sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
+            sed -i "s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
+            sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+            cd ..
+            
+            # 提交版本号变更
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add log-analyzer/package.json log-analyzer/src-tauri/Cargo.toml log-analyzer/src-tauri/tauri.conf.json
+            git commit -m "chore: bump version to $VERSION [skip ci]" || echo "No changes to commit"
+            git push origin main
+            
+            # 创建并推送新 tag
             git tag "v${VERSION}"
             git push origin "v${VERSION}"
             echo "Created and pushed tag: v${VERSION}"
