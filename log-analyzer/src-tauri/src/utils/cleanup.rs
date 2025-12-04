@@ -12,7 +12,7 @@ use super::retry::retry_file_operation;
 
 /// 尝试清理临时目录
 ///
-/// 尝试删除指定的临时目录，如果失败则将路径添加到清理队列供后续处理。
+/// 尝试删除指定的临时目录,如果失败则将路径添加到清理队列供后续处理。
 ///
 /// # 参数
 ///
@@ -23,9 +23,12 @@ use super::retry::retry_file_operation;
 ///
 /// 1. 检查路径是否存在
 /// 2. 在Windows上递归移除只读属性
-/// 3. 重试删除目录（最多3次）
+/// 3. 重试删除目录(最多3次)
 /// 4. 失败时添加到清理队列
-#[allow(dead_code)] // 保留供删除工作区时使用
+///
+/// # 使用场景
+///
+/// 用于删除工作区时清理解压目录,支持重试机制和延迟清理。
 pub fn try_cleanup_temp_dir(path: &Path, cleanup_queue: &Arc<Mutex<Vec<PathBuf>>>) {
     if !path.exists() {
         return;

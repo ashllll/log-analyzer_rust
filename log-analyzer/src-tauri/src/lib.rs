@@ -46,6 +46,9 @@ use utils::{
     canonicalize_path, normalize_path_separator, validate_path_param, validate_workspace_id,
 };
 
+// 从commands模块导入新增的delete_workspace命令
+use commands::delete_workspace;
+
 // --- Commands ---
 
 #[command]
@@ -1656,6 +1659,7 @@ pub fn run() {
             stop_watch,
             execute_structured_query,
             validate_query,
+            delete_workspace,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
