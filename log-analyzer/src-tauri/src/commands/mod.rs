@@ -20,5 +20,8 @@ pub mod search;
 pub mod watch;
 pub mod workspace;
 
-// 暂不重新导出，避免与lib.rs中的命令冲突
+// 暂不重新导出,避免与lib.rs中的命令冲突
 // 在阶段5整合时启用
+
+// 导出workspace模块的delete_workspace命令
+pub use workspace::delete_workspace;

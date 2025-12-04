@@ -438,14 +438,14 @@ cargo test --manifest-path=src-tauri/Cargo.toml --test '*'
 - [x] **后端代码模块化清理**
   - 移除 lib.rs 中重复的遗留代码（从 3088 行精简至 1592 行）
   - 完成 models/utils/services/archive/commands 五层模块拆分
-  - 消除所有重复函数定义，统一使用模块导出
+  - 消除所有重复函数定义,统一使用模块导出
 - [x] **压缩包解压持久化存储**
   - 解压文件存储至应用数据目录（`extracted/{workspace_id}/`）
   - 修复压缩包导入后搜索不到结果的问题
   - 支持应用重启后继续搜索已导入的压缩包内容
 - [x] **工作区切换逻辑优化**
   - 修复点击工作区时未加载后端索引的问题
-  - 添加重复点击检测，避免不必要的索引重新加载
+  - 添加重复点击检测,避免不必要的索引重新加载
 - [x] **前端性能优化**
   - HybridLogRenderer 添加 React.memo 优化
   - 提取 LogRow 独立组件减少重渲染
@@ -454,16 +454,25 @@ cargo test --manifest-path=src-tauri/Cargo.toml --test '*'
   - keywordGroups 缓存优化
 - [x] **内置 unrar 工具**
   - 应用自带各平台 unrar 二进制文件（Windows/macOS/Linux）
-  - 用户无需手动安装任何依赖，开箱即用
+  - 用户无需手动安装任何依赖,开箱即用
   - 自动检测平台并使用对应的二进制文件
   - 开发模式和发布版本均支持
 - [x] **前端模块化重构完成**
   - 将所有页面组件拆分到独立文件（SearchPage/KeywordsPage/WorkspacesPage/TasksPage/PerformancePage）
-  - App.tsx 精简到 66 行，仅保留布局和导航逻辑
+  - App.tsx 精简到 66 行,仅保留布局和导航逻辑
   - 统一通过 pages/index.ts 导出页面组件
 - [x] **更新 CI/CD 配置**
   - 添加 binaries 目录可执行权限设置
   - 确保跨平台构建正常工作
+- [x] **工作区删除功能完善** （2025-12-05）
+  - 新增后端 `delete_workspace` 命令,实现完整资源清理
+  - 支持自动清除压缩文件工作区的解压目录
+  - 实现文件监听器自动停止机制
+  - 清除内存中的 path_map、file_metadata 和 workspace_indices
+  - 删除索引文件（支持压缩和未压缩版本）
+  - 使用重试机制处理文件占用,失败时加入清理队列
+  - 前端同步调用后端命令,自动切换工作区状态
+  - 修复删除压缩文件工作区后无法释放磁盘空间的问题
 
 #### 历史更新（2024-11）
 - [x] **完整实施结构化查询系统**

@@ -155,16 +155,38 @@ export const useWorkspaceOperations = () => {
 
   /**
    * 删除工作区
+   * 调用后端命令删除工作区及其所有相关资源
    */
   const deleteWorkspace = useCallback(async (id: string) => {
+    logger.debug('deleteWorkspace called for id:', id);
+    setOperationLoading(true);
+    
     try {
+      // 调用后端删除命令
+      await invoke('delete_workspace', { workspaceId: id });
+      
+      // 后端删除成功,更新前端状态
       workspaceDispatch({ type: 'DELETE_WORKSPACE', payload: id });
-      addToast('info', '工作区已删除');
+      
+      // 如果删除的是当前活跃工作区,清空活跃状态
+      if (appState.activeWorkspaceId === id) {
+        // 切换到其他工作区或清空
+        const remainingWorkspaces = workspaceState.workspaces.filter(w => w.id !== id);
+        if (remainingWorkspaces.length > 0) {
+          setActiveWorkspace(remainingWorkspaces[0].id);
+        } else {
+          setActiveWorkspace(null);
+        }
+      }
+      
+      addToast('success', '工作区已删除');
     } catch (e) {
       logger.error('deleteWorkspace error:', e);
       addToast('error', `删除失败: ${e}`);
+    } finally {
+      setOperationLoading(false);
     }
-  }, [addToast, workspaceDispatch]);
+  }, [addToast, workspaceDispatch, appState.activeWorkspaceId, workspaceState.workspaces, setActiveWorkspace]);
 
   /**
    * 切换工作区

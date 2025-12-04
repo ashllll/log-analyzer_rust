@@ -19,8 +19,8 @@ const WorkspacesPage: React.FC = () => {
   const { workspaces, importFile, importFolder, refreshWorkspace, deleteWorkspace, toggleWatch, switchWorkspace } = useWorkspaceOperations();
   const { state: appState } = useApp();
   
-  const handleDelete = (id: string) => { 
-    deleteWorkspace(id); 
+  const handleDelete = async (id: string) => {
+    await deleteWorkspace(id);
   };
   
   const handleToggleWatch = async (ws: Workspace) => {
