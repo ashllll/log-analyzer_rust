@@ -1,6 +1,7 @@
 import { createContext, useContext, useReducer, useCallback, ReactNode, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { logger } from '../utils/logger';
 
 // ============================================================================
 // Types
@@ -411,14 +412,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     // 监听任务更新事件
     const unlistenTaskUpdate = listen<any>('task-update', (event) => {
       const { task_id, task_type, target, status, message, progress, workspace_id } = event.payload;
-      console.log('[EVENT] task-update:', event.payload);
+      logger.debug('[EVENT] task-update:', event.payload);
       
       // 检查任务是否已存在（使用 ref 获取最新状态）
       const existingTask = tasksRef.current.find(t => t.id === task_id);
       
       if (!existingTask && !createdTaskIds.has(task_id)) {
         // 如果任务不存在且未被标记为已创建，先添加它
-        console.log('[EVENT] Task not found, creating new task:', task_id);
+        logger.debug('[EVENT] Task not found, creating new task:', task_id);
         createdTaskIds.add(task_id);
         taskDispatch({
           type: 'ADD_TASK',
@@ -451,12 +452,12 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       
       // 当任务完成时，更新工作区状态为 READY
       if (status === 'COMPLETED') {
-        console.log('[EVENT] Task completed, workspace_id:', workspace_id);
+        logger.debug('[EVENT] Task completed, workspace_id:', workspace_id);
         
         // 直接使用 workspace_id 更新状态，不需要先查找
         // 如果工作区不存在，reducer 会忽略这个操作
         if (workspace_id) {
-          console.log('[EVENT] Updating workspace status to READY:', workspace_id);
+          logger.debug('[EVENT] Updating workspace status to READY:', workspace_id);
           workspaceDispatch({
             type: 'UPDATE_WORKSPACE',
             payload: { id: workspace_id, updates: { status: 'READY' } }
@@ -470,7 +471,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
               payload: { id: task.workspaceId, updates: { status: 'READY' } }
             });
           } else {
-            console.warn('[EVENT] Could not find workspace_id for completed task:', { task_id, target });
+            logger.debug('[EVENT] Could not find workspace_id for completed task:', { task_id, target });
           }
         }
       } else if (status === 'FAILED') {
@@ -486,7 +487,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
     // 监听导入完成事件
     const unlistenImportComplete = listen<string>('import-complete', (event) => {
-      console.log('[EVENT] import-complete:', event.payload);
+      logger.debug('[EVENT] import-complete:', event.payload);
       const taskId = event.payload;
       
       // 标记任务为完成
@@ -501,7 +502,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
     // 监听导入错误事件
     const unlistenImportError = listen<string>('import-error', (event) => {
-      console.error('[EVENT] import-error:', event.payload);
+      logger.error('[EVENT] import-error:', event.payload);
       addToast('error', `导入失败: ${event.payload}`);
     });
 

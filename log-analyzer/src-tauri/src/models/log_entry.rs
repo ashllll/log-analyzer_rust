@@ -16,6 +16,9 @@ pub struct LogEntry {
     /// 匹配详情（可选）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub match_details: Option<Vec<MatchDetail>>,
+    /// 匹配的关键词列表（可选，用于统计面板）
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub matched_keywords: Option<Vec<String>>,
 }
 
 /// 任务进度

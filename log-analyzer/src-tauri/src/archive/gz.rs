@@ -80,6 +80,7 @@ pub fn process_gz_file(
         map,
         app,
         task_id,
+        "", // workspace_id会在递归处理中自动生成
     );
     Ok(())
 }

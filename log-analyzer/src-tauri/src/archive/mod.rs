@@ -15,7 +15,9 @@
 
 pub mod context;
 pub mod gz;
+pub mod path_tracker;
 pub mod processor;
+pub mod progress_reporter;
 pub mod rar;
 pub mod tar;
 pub mod zip;

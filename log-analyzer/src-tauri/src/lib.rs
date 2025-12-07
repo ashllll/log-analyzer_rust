@@ -185,6 +185,7 @@ async fn import_folder(
                 &mut metadata_guard,
                 &app_handle,
                 &task_id_clone,
+                &workspace_id_clone,
             );
 
             eprintln!("[DEBUG] Total files indexed: {}", map_guard.len());
@@ -306,7 +307,8 @@ fn search_single_file(
                         line: i + 1,
                         content: line,
                         tags: vec![],
-                        match_details: None, // 旧版本不包含匹配详情
+                        match_details: None,    // 旧版本不包含匹配详情
+                        matched_keywords: None, // 旧版本不包含匹配关键词
                     });
                 }
             }
@@ -338,6 +340,16 @@ fn search_single_file_with_details(
                     // 获取匹配详情
                     let match_details = executor.match_with_details(plan, &line);
 
+                    // 提取匹配的关键词列表
+                    let matched_keywords = match_details.as_ref().map(|details| {
+                        details
+                            .iter()
+                            .map(|detail| detail.term_value.clone())
+                            .collect::<std::collections::HashSet<_>>()
+                            .into_iter()
+                            .collect::<Vec<_>>()
+                    });
+
                     results.push(LogEntry {
                         id: global_offset + i,
                         timestamp: ts,
@@ -348,6 +360,7 @@ fn search_single_file_with_details(
                         content: line,
                         tags: vec![],
                         match_details,
+                        matched_keywords: matched_keywords.filter(|v| !v.is_empty()),
                     });
                 }
             }
@@ -421,6 +434,28 @@ async fn search_logs(
                 let _ = app_handle.emit("search-results", chunk);
                 std::thread::sleep(std::time::Duration::from_millis(2));
             }
+
+            // 从缓存结果计算统计信息
+            use models::search_statistics::SearchResultSummary;
+            use services::calculate_keyword_statistics;
+
+            // 提取原始关键词列表
+            let raw_terms: Vec<String> = query
+                .split('|')
+                .map(|t| t.trim())
+                .filter(|t| !t.is_empty())
+                .map(|t| t.to_string())
+                .collect();
+
+            let keyword_stats = calculate_keyword_statistics(&cached_results, &raw_terms);
+            let summary = SearchResultSummary::new(
+                cached_results.len(),
+                keyword_stats,
+                0,     // 缓存命中无搜索耗时
+                false, // 缓存结果不会被截断
+            );
+
+            let _ = app_handle.emit("search-summary", &summary);
             let _ = app_handle.emit("search-complete", cached_results.len());
             return Ok(());
         } else {
@@ -598,6 +633,25 @@ async fn search_logs(
         if let Ok(mut last_duration) = last_search_duration.lock() {
             *last_duration = duration;
         }
+
+        // 计算关键词统计信息
+        use models::search_statistics::SearchResultSummary;
+        use services::calculate_keyword_statistics;
+
+        let keyword_stats = calculate_keyword_statistics(&all_results, &raw_terms);
+        let summary = SearchResultSummary::new(
+            all_results.len(),
+            keyword_stats,
+            duration,
+            results_truncated,
+        );
+
+        // 发送搜索统计摘要
+        let _ = app_handle.emit("search-summary", &summary);
+        eprintln!(
+            "[DEBUG] Sent search summary with {} keyword stats",
+            summary.keyword_stats.len()
+        );
 
         let _ = app_handle.emit("search-complete", all_results.len());
     });
@@ -1784,7 +1838,7 @@ mod tests {
 
         let invalid_bytes = vec![0xFF, 0xFE, 0xFD];
         let result = decode_filename(&invalid_bytes);
-        assert!(result.contains("�") || result.len() > 0);
+        assert!(result.contains("�") || !result.is_empty());
     }
 
     #[test]

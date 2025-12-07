@@ -11,6 +11,8 @@ export interface LogEntry {
   content: string;
   tags: any[];
   real_path?: string;
+  /** 该行匹配的关键词列表 */
+  matched_keywords?: string[];
 }
 
 // 高级过滤器类型

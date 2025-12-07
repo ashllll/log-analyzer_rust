@@ -128,3 +128,45 @@ export interface OptimizedQuery {
     removedInvalidCount: number;
   };
 }
+
+/**
+ * 关键词统计信息
+ * 用于显示每个关键词的匹配数量和占比
+ */
+export interface KeywordStatistics {
+  /** 关键词文本 */
+  keyword: string;
+  
+  /** 该关键词匹配的总行数 */
+  matchCount: number;
+  
+  /** 占总结果的百分比 */
+  matchPercentage: number;
+}
+
+/**
+ * 搜索结果摘要
+ * 包含所有关键词的统计信息和搜索元数据
+ */
+export interface SearchResultSummary {
+  /** 总匹配行数 */
+  totalMatches: number;
+  
+  /** 关键词统计数组 */
+  keywordStats: KeywordStatistics[];
+  
+  /** 搜索耗时（毫秒） */
+  searchDurationMs: number;
+  
+  /** 是否因超限截断 */
+  truncated: boolean;
+}
+
+/**
+ * 关键词统计（前端扩展）
+ * 在KeywordStatistics基础上添加高亮颜色
+ */
+export interface KeywordStat extends KeywordStatistics {
+  /** 高亮颜色 */
+  color: string;
+}

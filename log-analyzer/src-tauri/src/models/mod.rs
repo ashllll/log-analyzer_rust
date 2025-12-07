@@ -1,7 +1,9 @@
 pub mod config;
+pub mod extraction_error;
 pub mod filters;
 pub mod log_entry;
 pub mod search;
+pub mod search_statistics;
 pub mod state;
 
 // 重新导出核心类型

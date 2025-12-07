@@ -11,19 +11,6 @@ interface TaskUpdateEvent {
   progress: number;
 }
 
-// 日志工具 - 供调试使用
-// @ts-ignore - used for debugging
-const logger = {
-  debug: (message: string, ...args: any[]) => {
-    if (import.meta.env.DEV) {
-      console.log(`[DEBUG] ${message}`, ...args);
-    }
-  },
-  error: (message: string, ...args: any[]) => {
-    console.error(`[ERROR] ${message}`, ...args);
-  }
-};
-
 /**
  * 任务管理Hook
  * 监听后端任务事件并更新状态

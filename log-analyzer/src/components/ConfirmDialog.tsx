@@ -1,9 +1,6 @@
 import React from 'react';
 import { AlertCircle, X } from 'lucide-react';
-import { clsx, type ClassValue } from "clsx";
-import { twMerge } from "tailwind-merge";
-
-function cn(...inputs: ClassValue[]) { return twMerge(clsx(inputs)); }
+import { cn } from '../utils/classNames';
 
 /**
  * 确认对话框组件

@@ -1,0 +1,15 @@
+{
+  "search": {
+    "statistics": {
+      "title": "Search Statistics (OR Logic)",
+      "total_matches": "Total: {{count}} matches in {{duration}}ms",
+      "matches_count": "{{count}} matches",
+      "percentage": "{{value}}%",
+      "showing_all_results": "Showing all results containing any keyword",
+      "collapse": "Collapse",
+      "expand": "Expand"
+    },
+    "expand_full_text": "Expand Full Text",
+    "collapse_text": "Collapse"
+  }
+}

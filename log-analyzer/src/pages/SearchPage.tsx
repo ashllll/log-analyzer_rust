@@ -17,10 +17,11 @@ import {
 import { Button, Input } from '../components/ui';
 import { HybridLogRenderer } from '../components/renderers';
 import { FilterPalette } from '../components/modals';
+import { KeywordStatsPanel } from '../components/search/KeywordStatsPanel';
 import { logger } from '../utils/logger';
 import { cn } from '../utils/classNames';
 import { SearchQueryBuilder } from '../services/SearchQueryBuilder';
-import { SearchQuery } from '../types/search';
+import { SearchQuery, SearchResultSummary, KeywordStat } from '../types/search';
 import { saveQuery, loadQuery } from '../services/queryStorage';
 import type { 
   LogEntry, 
@@ -141,6 +142,13 @@ const SearchPage: React.FC<SearchPageProps> = ({
   const [isFilterPaletteOpen, setIsFilterPaletteOpen] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   
+  // 搜索统计状态
+  const [searchSummary, setSearchSummary] = useState<SearchResultSummary | null>(null);
+  const [keywordStats, setKeywordStats] = useState<KeywordStat[]>([]);
+  
+  // 给每个关键词分配颜色
+  const KEYWORD_COLORS = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#06b6d4'];
+  
   // 结构化查询状态
   const [currentQuery, setCurrentQuery] = useState<SearchQuery | null>(null);
   
@@ -176,6 +184,18 @@ const SearchPage: React.FC<SearchPageProps> = ({
       setLogs(prev => [...prev, ...e.payload]);
     });
     
+    const unlistenSummary = listen<SearchResultSummary>('search-summary', (e) => {
+      const summary = e.payload;
+      setSearchSummary(summary);
+      
+      // 转换为KeywordStat，添加颜色
+      const stats: KeywordStat[] = summary.keywordStats.map((stat, index) => ({
+        ...stat,
+        color: KEYWORD_COLORS[index % KEYWORD_COLORS.length]
+      }));
+      setKeywordStats(stats);
+    });
+    
     const unlistenComplete = listen('search-complete', (e) => {
       setIsSearching(false);
       addToast('success', `Found ${e.payload} logs.`);
@@ -188,10 +208,11 @@ const SearchPage: React.FC<SearchPageProps> = ({
     
     return () => {
       unlistenResults.then(f => f());
+      unlistenSummary.then(f => f());
       unlistenComplete.then(f => f());
       unlistenError.then(f => f());
     };
-  }, [addToast]);
+  }, [addToast, KEYWORD_COLORS]);
 
   // 加载保存的查询
   useEffect(() => {
@@ -218,6 +239,8 @@ const SearchPage: React.FC<SearchPageProps> = ({
     
     // 清空状态
     setLogs([]);
+    setSearchSummary(null);
+    setKeywordStats([]);
     setIsSearching(true);
     
     try { 
@@ -586,6 +609,16 @@ const SearchPage: React.FC<SearchPageProps> = ({
             );
           }) : <span className="text-[10px] text-text-dim italic">None</span>}
         </div>
+        
+        {/* 关键词统计面板 */}
+        {searchSummary && keywordStats.length > 0 && (
+          <KeywordStatsPanel
+            keywords={keywordStats}
+            totalMatches={searchSummary.totalMatches}
+            searchDurationMs={searchSummary.searchDurationMs}
+            onClose={() => setSearchSummary(null)}
+          />
+        )}
       </div>
       
       {/* 结果展示区 */}

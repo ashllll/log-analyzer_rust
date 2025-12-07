@@ -174,7 +174,7 @@ pub fn process_rar_archive(
         let new_virtual = format!("{}/{}", virtual_path, relative_str);
 
         if entry_path.is_file() {
-            process_path_recursive(entry_path, &new_virtual, target_root, map, app, task_id);
+            process_path_recursive(entry_path, &new_virtual, target_root, map, app, task_id, "");
         }
     }
 

@@ -4,7 +4,9 @@
 
 pub mod cleanup;
 pub mod encoding;
+pub mod log_file_detector;
 pub mod path;
+pub mod path_security;
 pub mod retry;
 pub mod validation;
 

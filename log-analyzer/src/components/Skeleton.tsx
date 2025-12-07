@@ -1,8 +1,5 @@
 import React from 'react';
-import { clsx, type ClassValue } from "clsx";
-import { twMerge } from "tailwind-merge";
-
-function cn(...inputs: ClassValue[]) { return twMerge(clsx(inputs)); }
+import { cn } from '../utils/classNames';
 
 /**
  * 骨架屏组件 - 替代空白加载状态

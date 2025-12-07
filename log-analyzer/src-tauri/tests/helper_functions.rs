@@ -65,7 +65,16 @@ fn test_readonly_file_operations() {
 
     // 恢复可写（清理）
     let mut perms = metadata.permissions();
-    perms.set_readonly(false);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        perms.set_mode(0o644); // 设置为所有者可读写，其他只读
+    }
+    #[cfg(not(unix))]
+    {
+        #[allow(clippy::permissions_set_readonly_false)]
+        perms.set_readonly(false);
+    }
     fs::set_permissions(&test_file, perms).unwrap();
 }
 

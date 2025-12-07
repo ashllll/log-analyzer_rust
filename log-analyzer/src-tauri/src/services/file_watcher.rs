@@ -7,7 +7,6 @@
 //! - 实时事件推送到前端
 
 use crate::models::log_entry::LogEntry;
-// use std::collections::HashMap;  // Unused
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
@@ -163,7 +162,8 @@ pub fn parse_log_lines(
                 line: start_line_number + i,
                 content: line.clone(),
                 tags: vec![],
-                match_details: None, // 无搜索情境下不包含匹配详情
+                match_details: None,    // 无搜索情境下不包含匹配详情
+                matched_keywords: None, // 无搜索情境下不包含匹配关键词
             }
         })
         .collect()

@@ -2,21 +2,7 @@ import { useCallback, useState, useTransition } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useApp, useWorkspaceState, useTaskState, Workspace } from '../contexts/AppContext';
-
-// 日志工具
-const logger = {
-  debug: (message: string, ...args: any[]) => {
-    if (import.meta.env.DEV) {
-      console.log(`[DEBUG] ${message}`, ...args);
-    }
-  },
-  info: (message: string, ...args: any[]) => {
-    console.log(`[INFO] ${message}`, ...args);
-  },
-  error: (message: string, ...args: any[]) => {
-    console.error(`[ERROR] ${message}`, ...args);
-  }
-};
+import { logger } from '../utils/logger';
 
 /**
  * 工作区操作Hook

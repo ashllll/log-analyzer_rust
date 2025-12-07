@@ -28,6 +28,7 @@ use walkdir::WalkDir;
 /// - `map`: 真实路径到虚拟路径的映射表
 /// - `app`: Tauri 应用句柄
 /// - `task_id`: 任务 ID
+/// - `workspace_id`: 工作区ID(用于解压目录命名)
 ///
 /// # 行为
 ///
@@ -41,10 +42,18 @@ pub fn process_path_recursive(
     map: &mut HashMap<String, String>,
     app: &AppHandle,
     task_id: &str,
+    workspace_id: &str,
 ) {
     // 错误处理：如果处理失败，不中断整个流程
-    if let Err(e) = process_path_recursive_inner(path, virtual_path, target_root, map, app, task_id)
-    {
+    if let Err(e) = process_path_recursive_inner(
+        path,
+        virtual_path,
+        target_root,
+        map,
+        app,
+        task_id,
+        workspace_id,
+    ) {
         eprintln!("[WARNING] Failed to process {}: {}", path.display(), e);
         let _ = app.emit(
             "task-update",
@@ -72,6 +81,8 @@ pub fn process_path_recursive(
 /// - `metadata_map`: 文件元数据映射表（用于增量索引）
 /// - `app`: Tauri 应用句柄
 /// - `task_id`: 任务 ID
+/// - `workspace_id`: 工作区ID
+#[allow(clippy::too_many_arguments)]
 pub fn process_path_recursive_with_metadata(
     path: &Path,
     virtual_path: &str,
@@ -80,6 +91,7 @@ pub fn process_path_recursive_with_metadata(
     metadata_map: &mut HashMap<String, FileMetadata>,
     app: &AppHandle,
     task_id: &str,
+    workspace_id: &str,
 ) {
     if let Err(e) = process_path_recursive_inner_with_metadata(
         path,
@@ -89,6 +101,7 @@ pub fn process_path_recursive_with_metadata(
         metadata_map,
         app,
         task_id,
+        workspace_id,
     ) {
         eprintln!("[WARNING] Failed to process {}: {}", path.display(), e);
         let _ = app.emit(
@@ -122,6 +135,7 @@ pub fn process_path_recursive_inner(
     map: &mut HashMap<String, String>,
     app: &AppHandle,
     task_id: &str,
+    workspace_id: &str,
 ) -> Result<(), String> {
     // 处理目录
     if path.is_dir() {
@@ -133,7 +147,15 @@ pub fn process_path_recursive_inner(
         {
             let entry_name = entry.file_name().to_string_lossy();
             let new_virtual = format!("{}/{}", virtual_path, entry_name);
-            process_path_recursive(entry.path(), &new_virtual, target_root, map, app, task_id);
+            process_path_recursive(
+                entry.path(),
+                &new_virtual,
+                target_root,
+                map,
+                app,
+                task_id,
+                workspace_id,
+            );
         }
         return Ok(());
     }
@@ -172,10 +194,12 @@ pub fn process_path_recursive_inner(
             &file_name,
             virtual_path,
             target_root,
+            workspace_id,
             map,
             app,
             task_id,
-        );
+        )
+        .map(|_| ()); // 忽略ExtractionSummary,转换为Result<(), String>
     }
 
     // --- 处理 RAR ---
@@ -253,6 +277,7 @@ pub fn process_path_recursive_inner(
 ///
 /// - 压缩文件：使用原始处理逻辑（不收集元数据）
 /// - 普通文件：收集元数据并添加到 `metadata_map`
+#[allow(clippy::too_many_arguments)]
 pub fn process_path_recursive_inner_with_metadata(
     path: &Path,
     virtual_path: &str,
@@ -261,6 +286,7 @@ pub fn process_path_recursive_inner_with_metadata(
     metadata_map: &mut HashMap<String, FileMetadata>,
     app: &AppHandle,
     task_id: &str,
+    workspace_id: &str,
 ) -> Result<(), String> {
     // 处理目录
     if path.is_dir() {
@@ -280,6 +306,7 @@ pub fn process_path_recursive_inner_with_metadata(
                 metadata_map,
                 app,
                 task_id,
+                workspace_id,
             );
         }
         return Ok(());
@@ -315,7 +342,15 @@ pub fn process_path_recursive_inner_with_metadata(
     // 压缩文件不收集元数据，只处理普通文件
     if is_zip || is_rar || is_tar || is_tar_gz || is_plain_gz {
         // 递归调用原始的处理函数（不收集元数据）
-        return process_path_recursive_inner(path, virtual_path, target_root, map, app, task_id);
+        return process_path_recursive_inner(
+            path,
+            virtual_path,
+            target_root,
+            map,
+            app,
+            task_id,
+            workspace_id,
+        );
     }
 
     // --- 普通文件：收集元数据 ---

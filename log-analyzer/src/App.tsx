@@ -4,6 +4,9 @@ import {
   Zap, Loader2, FileText
 } from "lucide-react";
 
+// 初始化i18n
+import './i18n';
+
 // 导入全局Context和Hooks
 import { AppProvider, useApp } from './contexts/AppContext';
 import { useWorkspaceOperations } from './hooks/useWorkspaceOperations';
