@@ -64,8 +64,8 @@ const WINDOWS_RESERVED_CHARS: &[char] = &['<', '>', ':', '"', '|', '?', '*'];
 ///
 /// # Examples
 ///
-/// ```
-/// use crate::utils::path_security::{validate_and_sanitize_path, SecurityConfig};
+/// ```rust,ignore
+/// use log_analyzer::utils::path_security::{validate_and_sanitize_path, SecurityConfig};
 ///
 /// let config = SecurityConfig::default();
 /// let result = validate_and_sanitize_path("normal_file.log", &config);

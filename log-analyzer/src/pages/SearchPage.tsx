@@ -147,7 +147,10 @@ const SearchPage: React.FC<SearchPageProps> = ({
   const [keywordStats, setKeywordStats] = useState<KeywordStat[]>([]);
   
   // 给每个关键词分配颜色
-  const KEYWORD_COLORS = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#06b6d4'];
+  const keywordColors = useMemo(
+    () => ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#06b6d4'],
+    []
+  );
   
   // 结构化查询状态
   const [currentQuery, setCurrentQuery] = useState<SearchQuery | null>(null);
@@ -191,7 +194,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
       // 转换为KeywordStat，添加颜色
       const stats: KeywordStat[] = summary.keywordStats.map((stat, index) => ({
         ...stat,
-        color: KEYWORD_COLORS[index % KEYWORD_COLORS.length]
+        color: keywordColors[index % keywordColors.length]
       }));
       setKeywordStats(stats);
     });
@@ -206,13 +209,13 @@ const SearchPage: React.FC<SearchPageProps> = ({
       addToast('error', `${e.payload}`);
     });
     
-    return () => {
-      unlistenResults.then(f => f());
-      unlistenSummary.then(f => f());
-      unlistenComplete.then(f => f());
-      unlistenError.then(f => f());
-    };
-  }, [addToast, KEYWORD_COLORS]);
+  return () => {
+    unlistenResults.then(f => f());
+    unlistenSummary.then(f => f());
+    unlistenComplete.then(f => f());
+    unlistenError.then(f => f());
+  };
+  }, [addToast, keywordColors]);
 
   // 加载保存的查询
   useEffect(() => {
@@ -263,7 +266,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
         currentQuery.metadata.executionCount += 1;
         setCurrentQuery({...currentQuery});
       }
-    } catch(_e) { 
+    } catch { 
       setIsSearching(false); 
     }
   };
@@ -362,7 +365,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
       const jsonPart = content.substring(start); 
       const obj = JSON.parse(jsonPart); 
       return JSON.stringify(obj, null, 2); 
-    } catch (_e) { 
+    } catch { 
       return content; 
     } 
   };

@@ -233,6 +233,8 @@ log-analyzer_rust/
 └── README.md                 # 本文件
 ```
 
+**后端命令拆分**：`src-tauri/src/commands/` 已按功能拆分 import/search/workspace/watch/config/performance/export/query，每个文件内包含对应 `#[tauri::command]` 实现，`lib.rs` 仅负责注册命令和初始化状态。
+
 ## 🎯 功能特性
 
 ### 核心功能

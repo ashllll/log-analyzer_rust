@@ -512,7 +512,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       unlistenImportComplete.then(f => f());
       unlistenImportError.then(f => f());
     };
-  }, []); // 移除依赖，只在组件挂载时创建一次监听器
+  }, [addToast, taskDispatch, workspaceDispatch, taskState.tasks]);
 
   return (
     <AppContext.Provider value={{ state: appState, setPage, addToast, removeToast, setActiveWorkspace }}>

@@ -13,11 +13,346 @@
 //! - 提供友好的错误提示
 //! - 支持重试和清理队列机制
 
-use std::fs;
-use tauri::{command, AppHandle, Manager, State};
+use crate::commands::import::import_folder;
 
-use crate::models::AppState;
-use crate::utils::{cleanup::try_cleanup_temp_dir, validation::validate_workspace_id};
+/// 加载工作区索引
+#[command]
+pub async fn load_workspace(
+    app: AppHandle,
+    #[allow(non_snake_case)] workspaceId: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    validate_workspace_id(&workspaceId)?;
+
+    let index_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data dir: {}", e))?
+        .join("indices");
+
+    let mut index_path = index_dir.join(format!("{}.idx.gz", workspaceId));
+    if !index_path.exists() {
+        index_path = index_dir.join(format!("{}.idx", workspaceId));
+        if !index_path.exists() {
+            return Err(format!("Index not found for workspace: {}", workspaceId));
+        }
+    }
+
+    let (path_map, file_metadata) = load_index(&index_path)?;
+
+    {
+        let mut map_guard = state
+            .path_map
+            .lock()
+            .map_err(|e| format!("Failed to acquire path_map lock: {}", e))?;
+        let mut metadata_guard = state
+            .file_metadata
+            .lock()
+            .map_err(|e| format!("Failed to acquire metadata lock: {}", e))?;
+
+        *map_guard = path_map;
+        *metadata_guard = file_metadata;
+    }
+
+    {
+        let mut indices_guard = state
+            .workspace_indices
+            .lock()
+            .map_err(|e| format!("Failed to acquire indices lock: {}", e))?;
+        indices_guard.insert(workspaceId, index_path);
+    }
+
+    Ok(())
+}
+
+/// 增量刷新工作区索引
+#[command]
+pub async fn refresh_workspace(
+    app: AppHandle,
+    #[allow(non_snake_case)] workspaceId: String,
+    path: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let app_handle = app.clone();
+    let task_id = Uuid::new_v4().to_string();
+    let task_id_clone = task_id.clone();
+    let workspace_id_clone = workspaceId.clone();
+
+    let source_path = Path::new(&path);
+    if !source_path.exists() {
+        return Err(format!("Path does not exist: {}", path));
+    }
+
+    let canonical_path = canonicalize_path(source_path).unwrap_or_else(|e| {
+        eprintln!(
+            "[WARNING] Path canonicalization failed: {}, using original path",
+            e
+        );
+        source_path.to_path_buf()
+    });
+
+    let _ = app.emit(
+        "task-update",
+        TaskProgress {
+            task_id: task_id.clone(),
+            task_type: "Refresh".to_string(),
+            target: canonical_path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(&path)
+                .to_string(),
+            status: "RUNNING".to_string(),
+            message: "Loading existing index...".to_string(),
+            progress: 0,
+            workspace_id: Some(workspaceId.clone()),
+        },
+    );
+
+    let index_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data dir: {}", e))?
+        .join("indices");
+
+    let mut index_path = index_dir.join(format!("{}.idx.gz", workspaceId));
+    if !index_path.exists() {
+        index_path = index_dir.join(format!("{}.idx", workspaceId));
+        if !index_path.exists() {
+            return import_folder(app, path, workspaceId, state).await;
+        }
+    }
+
+    std::thread::spawn(move || {
+        let file_name = Path::new(&path)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("Unknown")
+            .to_string();
+
+        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+            let (mut existing_path_map, mut existing_metadata) = load_index(&index_path)?;
+
+            let _ = app_handle.emit(
+                "task-update",
+                TaskProgress {
+                    task_id: task_id_clone.clone(),
+                    task_type: "Refresh".to_string(),
+                    target: file_name.clone(),
+                    status: "RUNNING".to_string(),
+                    message: "Scanning file system...".to_string(),
+                    progress: 20,
+                    workspace_id: Some(workspace_id_clone.clone()),
+                },
+            );
+
+            let mut current_files: HashMap<String, FileMetadata> = HashMap::new();
+            let source_path = Path::new(&path);
+
+            for entry in WalkDir::new(source_path)
+                .into_iter()
+                .filter_map(|e| e.ok())
+                .filter(|e| e.file_type().is_file())
+            {
+                let real_path = entry.path().to_string_lossy().to_string();
+                if let Ok(metadata) = get_file_metadata(entry.path()) {
+                    current_files.insert(real_path, metadata);
+                }
+            }
+
+            let _ = app_handle.emit(
+                "task-update",
+                TaskProgress {
+                    task_id: task_id_clone.clone(),
+                    task_type: "Refresh".to_string(),
+                    target: file_name.clone(),
+                    status: "RUNNING".to_string(),
+                    message: "Analyzing changes...".to_string(),
+                    progress: 40,
+                    workspace_id: Some(workspace_id_clone.clone()),
+                },
+            );
+
+            let mut new_files: Vec<String> = Vec::new();
+            let mut modified_files: Vec<String> = Vec::new();
+
+            for (real_path, current_meta) in &current_files {
+                if let Some(existing_meta) = existing_metadata.get(real_path) {
+                    if existing_meta.modified_time != current_meta.modified_time
+                        || existing_meta.size != current_meta.size
+                    {
+                        modified_files.push(real_path.clone());
+                    }
+                } else {
+                    new_files.push(real_path.clone());
+                }
+            }
+
+            let deleted_files: Vec<String> = existing_metadata
+                .keys()
+                .filter(|k| !current_files.contains_key(*k))
+                .cloned()
+                .collect();
+
+            let total_changes = new_files.len() + modified_files.len() + deleted_files.len();
+
+            if total_changes > 0 {
+                let _ = app_handle.emit(
+                    "task-update",
+                    TaskProgress {
+                        task_id: task_id_clone.clone(),
+                        task_type: "Refresh".to_string(),
+                        target: file_name.clone(),
+                        status: "RUNNING".to_string(),
+                        message: format!("Processing {} changes...", total_changes),
+                        progress: 60,
+                        workspace_id: Some(workspace_id_clone.clone()),
+                    },
+                );
+
+                let state = app_handle.state::<AppState>();
+                let temp_guard = state
+                    .temp_dir
+                    .lock()
+                    .map_err(|e| format!("Lock error: {}", e))?;
+
+                if let Some(ref _temp_dir) = *temp_guard {
+                    let root_name = source_path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy();
+
+                    let mut new_entries: HashMap<String, String> = HashMap::new();
+                    let mut new_metadata_entries: HashMap<String, FileMetadata> = HashMap::new();
+
+                    for real_path in &new_files {
+                        let file_path = Path::new(real_path);
+                        if let Ok(relative) = file_path.strip_prefix(source_path) {
+                            let virtual_path = format!(
+                                "{}/{}",
+                                root_name,
+                                relative.to_string_lossy().replace('\\', "/")
+                            );
+                            let normalized_virtual = normalize_path_separator(&virtual_path);
+
+                            new_entries.insert(real_path.clone(), normalized_virtual);
+                            if let Some(meta) = current_files.get(real_path) {
+                                new_metadata_entries.insert(real_path.clone(), meta.clone());
+                            }
+                        }
+                    }
+
+                    for real_path in &modified_files {
+                        let file_path = Path::new(real_path);
+                        if let Ok(relative) = file_path.strip_prefix(source_path) {
+                            let virtual_path = format!(
+                                "{}/{}",
+                                root_name,
+                                relative.to_string_lossy().replace('\\', "/")
+                            );
+                            let normalized_virtual = normalize_path_separator(&virtual_path);
+
+                            new_entries.insert(real_path.clone(), normalized_virtual);
+                            if let Some(meta) = current_files.get(real_path) {
+                                new_metadata_entries.insert(real_path.clone(), meta.clone());
+                            }
+                        }
+                    }
+
+                    for (k, v) in new_entries {
+                        existing_path_map.insert(k, v);
+                    }
+                    for (k, v) in new_metadata_entries {
+                        existing_metadata.insert(k, v);
+                    }
+
+                    for real_path in &deleted_files {
+                        existing_path_map.remove(real_path);
+                        existing_metadata.remove(real_path);
+                    }
+                }
+
+                let _ = app_handle.emit(
+                    "task-update",
+                    TaskProgress {
+                        task_id: task_id_clone.clone(),
+                        task_type: "Refresh".to_string(),
+                        target: file_name.clone(),
+                        status: "RUNNING".to_string(),
+                        message: "Saving index...".to_string(),
+                        progress: 80,
+                        workspace_id: Some(workspace_id_clone.clone()),
+                    },
+                );
+
+                save_index(
+                    &app_handle,
+                    &workspace_id_clone,
+                    &existing_path_map,
+                    &existing_metadata,
+                )?;
+
+                let state = app_handle.state::<AppState>();
+                let mut map_guard = state
+                    .path_map
+                    .lock()
+                    .map_err(|e| format!("Lock error: {}", e))?;
+                let mut metadata_guard = state
+                    .file_metadata
+                    .lock()
+                    .map_err(|e| format!("Lock error: {}", e))?;
+
+                *map_guard = existing_path_map;
+                *metadata_guard = existing_metadata;
+            }
+
+            Ok::<(), String>(())
+        }));
+
+        if result.is_err() {
+            let _ = app_handle.emit(
+                "task-update",
+                TaskProgress {
+                    task_id: task_id_clone.clone(),
+                    task_type: "Refresh".to_string(),
+                    target: file_name.clone(),
+                    status: "FAILED".to_string(),
+                    message: "Refresh failed".to_string(),
+                    progress: 0,
+                    workspace_id: Some(workspace_id_clone.clone()),
+                },
+            );
+        } else {
+            let _ = app_handle.emit(
+                "task-update",
+                TaskProgress {
+                    task_id: task_id_clone.clone(),
+                    task_type: "Refresh".to_string(),
+                    target: file_name,
+                    status: "COMPLETED".to_string(),
+                    message: "Refresh complete".to_string(),
+                    progress: 100,
+                    workspace_id: Some(workspace_id_clone.clone()),
+                },
+            );
+            let _ = app_handle.emit("import-complete", task_id_clone);
+        }
+    });
+
+    Ok(task_id)
+}
+
+use std::{collections::HashMap, fs, panic, path::Path};
+
+use tauri::{command, AppHandle, Emitter, Manager, State};
+use uuid::Uuid;
+use walkdir::WalkDir;
+
+use crate::models::{AppState, FileMetadata, TaskProgress};
+use crate::services::{get_file_metadata, load_index, save_index};
+use crate::utils::{
+    canonicalize_path, cleanup::try_cleanup_temp_dir, normalize_path_separator,
+    validation::validate_workspace_id,
+};
 
 /// 判断工作区是否为解压类型
 ///

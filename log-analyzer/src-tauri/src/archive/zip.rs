@@ -11,6 +11,7 @@ use crate::models::extraction_error::{
     ErrorCollector, ErrorTypeSummary, ExtractionError, ExtractionErrorType, ExtractionMetadata,
     ExtractionSummary,
 };
+use crate::models::log_entry::TaskProgress;
 use crate::utils::encoding::decode_filename;
 use crate::utils::path::{remove_readonly, safe_path_join};
 use crate::utils::path_security::{
@@ -20,7 +21,7 @@ use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::BufReader;
 use std::path::Path;
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 use uuid::Uuid;
 
 /// 处理 ZIP 归档文件（Windows 编码优化）
@@ -84,6 +85,7 @@ pub fn process_zip_archive(
     // 初始化性能优化模块
     let mut path_tracker = PathTracker::new();
     let mut progress_reporter = ProgressReporter::new(archive.len(), 5);
+    let mut total_size_bytes: u64 = 0;
 
     let mut success_count = 0;
     let mut skipped_count = 0;
@@ -167,6 +169,7 @@ pub fn process_zip_archive(
                     .map_err(|e| format!("Failed to create file {}: {}", safe_name, e))?;
                 std::io::copy(&mut file, &mut outfile)
                     .map_err(|e| format!("Failed to extract {}: {}", safe_name, e))?;
+                total_size_bytes = total_size_bytes.saturating_add(file.size());
 
                 let new_virtual = format!("{}/{}", virtual_path, safe_name);
                 // 递归处理
@@ -200,8 +203,18 @@ pub fn process_zip_archive(
         if progress_reporter.should_report() {
             let progress_msg = progress_reporter.get_progress_message();
             eprintln!("[INFO] {}", progress_msg);
-            // TODO: 发送task-update事件到前端
-            // app.emit_all("task-update", TaskUpdatePayload { task_id, message: progress_msg })?;
+            let _ = app.emit(
+                "task-update",
+                TaskProgress {
+                    task_id: task_id.to_string(),
+                    task_type: "Import".to_string(),
+                    target: "ZIP".to_string(),
+                    status: "RUNNING".to_string(),
+                    message: progress_msg.clone(),
+                    progress: progress_reporter.percentage(),
+                    workspace_id: Some(workspace_id.to_string()),
+                },
+            );
             progress_reporter.mark_reported();
         }
     }
@@ -221,7 +234,7 @@ pub fn process_zip_archive(
     );
 
     // 写入解压元数据
-    if let Err(e) = write_extraction_metadata(&extract_path, path, &summary) {
+    if let Err(e) = write_extraction_metadata(&extract_path, path, &summary, total_size_bytes) {
         eprintln!("[WARNING] Failed to write extraction metadata: {}", e);
         // 元数据写入失败不影响解压结果
     }
@@ -235,6 +248,7 @@ fn write_extraction_metadata(
     extract_path: &Path,
     source_path: &Path,
     summary: &ExtractionSummary,
+    total_size_bytes: u64,
 ) -> Result<(), String> {
     // 统计错误类型
     let mut error_type_counts: HashMap<String, usize> = HashMap::new();
@@ -261,7 +275,7 @@ fn write_extraction_metadata(
         total_entries: summary.total_entries,
         successful_files: summary.success_count,
         failed_files: summary.failed_count,
-        total_size_bytes: 0, // TODO: 计算总大小
+        total_size_bytes,
         extractor_version: env!("CARGO_PKG_VERSION").to_string(),
         error_summary,
     };

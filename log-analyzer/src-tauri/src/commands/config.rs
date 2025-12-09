@@ -1,17 +1,39 @@
 //! 配置管理命令
-//!
-//! 暂时保留在lib.rs中，阶段5整合时迁移
 
-// TODO: 从lib.rs迁移 save_config 和 load_config
-
-/*
-use crate::models::config::AppConfig;
 use std::fs;
-use tauri::{AppHandle, Manager};
 
-#[tauri::command]
-pub fn save_config(app: AppHandle, config: AppConfig) -> Result<(), String> { ... }
+use tauri::{command, AppHandle, Manager};
 
-#[tauri::command]
-pub fn load_config(app: AppHandle) -> Result<AppConfig, String> { ... }
-*/
+use crate::models::AppConfig;
+
+#[command]
+pub fn save_config(app: AppHandle, config: AppConfig) -> Result<(), String> {
+    let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    if !config_dir.exists() {
+        fs::create_dir_all(&config_dir).map_err(|e| e.to_string())?;
+    }
+    let path = config_dir.join("config.json");
+    fs::write(path, serde_json::to_string_pretty(&config).unwrap()).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[command]
+pub fn load_config(app: AppHandle) -> Result<AppConfig, String> {
+    let path = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| e.to_string())?
+        .join("config.json");
+    if path.exists() {
+        let c = fs::read_to_string(path).map_err(|e| e.to_string())?;
+        Ok(serde_json::from_str(&c).unwrap_or(AppConfig {
+            keyword_groups: serde_json::json!([]),
+            workspaces: serde_json::json!([]),
+        }))
+    } else {
+        Ok(AppConfig {
+            keyword_groups: serde_json::json!([]),
+            workspaces: serde_json::json!([]),
+        })
+    }
+}

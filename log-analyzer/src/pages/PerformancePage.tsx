@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { RefreshCw } from "lucide-react";
 
@@ -17,7 +17,7 @@ const PerformancePage = ({ addToast }: PerformancePageProps) => {
   const [stats, setStats] = useState<PerformanceStats | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const loadStats = async () => {
+  const loadStats = useCallback(async () => {
     setLoading(true);
     try {
       const metrics = await invoke<any>('get_performance_metrics');
@@ -35,13 +35,13 @@ const PerformancePage = ({ addToast }: PerformancePageProps) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [addToast]);
 
   useEffect(() => {
     loadStats();
     const interval = setInterval(loadStats, 5000); // 每5秒刷新
     return () => clearInterval(interval);
-  }, []);
+  }, [loadStats]);
 
   if (!stats) {
     return <div className="p-10 text-center text-text-dim">Loading performance stats...</div>;

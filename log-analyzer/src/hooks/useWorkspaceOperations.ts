@@ -1,7 +1,7 @@
 import { useCallback, useState, useTransition } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
-import { useApp, useWorkspaceState, useTaskState, Workspace } from '../contexts/AppContext';
+import { useApp, useWorkspaceState, Workspace } from '../contexts/AppContext';
 import { logger } from '../utils/logger';
 
 /**
@@ -12,10 +12,65 @@ import { logger } from '../utils/logger';
 export const useWorkspaceOperations = () => {
   const { addToast, setActiveWorkspace, state: appState } = useApp();
   const { state: workspaceState, dispatch: workspaceDispatch } = useWorkspaceState();
-  const { dispatch: taskDispatch } = useTaskState();
   
   const [operationLoading, setOperationLoading] = useState(false);
   const [isPending, startTransition] = useTransition();
+
+  /**
+   * 导入路径（文件或文件夹）
+   */
+  const importPath = useCallback(async (pathStr: string) => {
+    logger.debug('importPath called with:', pathStr);
+    setOperationLoading(true);
+    const previousActive = appState.activeWorkspaceId;
+    let tempWorkspaceId: string | null = null;
+    
+    try {
+      const fileName = pathStr.split(/[/\\]/).pop() || "New";
+      const workspaceId = Date.now().toString();
+      const newWs: Workspace = { 
+        id: workspaceId, 
+        name: fileName, 
+        path: pathStr, 
+        status: 'PROCESSING', 
+        size: '-', 
+        files: 0 
+      };
+      tempWorkspaceId = workspaceId;
+      
+      logger.debug('Creating workspace:', newWs);
+      workspaceDispatch({ type: 'ADD_WORKSPACE', payload: newWs });
+      
+      logger.debug('Invoking import_folder with:', { path: pathStr, workspaceId: newWs.id });
+      const taskId = await invoke<string>("import_folder", { 
+        path: pathStr, 
+        workspaceId: newWs.id
+      });
+      
+      logger.debug('import_folder returned taskId:', taskId);
+      
+      // 任务由后端事件自动创建，不需要手动添加
+      
+      setActiveWorkspace(newWs.id);
+      addToast('info', '导入已开始');
+    } catch (e) {
+      logger.error('importPath error:', e);
+      addToast('error', `导入失败: ${e}`);
+      
+      // 删除刚创建的工作区
+      if (tempWorkspaceId) {
+        workspaceDispatch({ 
+          type: 'DELETE_WORKSPACE', 
+          payload: tempWorkspaceId 
+        });
+      }
+
+      // 恢复之前的激活工作区，避免指向不存在的工作区
+      setActiveWorkspace(previousActive);
+    } finally {
+      setOperationLoading(false);
+    }
+  }, [addToast, setActiveWorkspace, workspaceDispatch, appState.activeWorkspaceId]);
 
   /**
    * 导入文件夹
@@ -36,7 +91,7 @@ export const useWorkspaceOperations = () => {
       logger.error('importFolder error:', e);
       addToast('error', `导入失败: ${e}`); 
     }
-  }, [addToast]);
+  }, [addToast, importPath]);
 
   /**
    * 导入单个文件
@@ -61,54 +116,7 @@ export const useWorkspaceOperations = () => {
       logger.error('importFile error:', e);
       addToast('error', `导入失败: ${e}`); 
     }
-  }, [addToast]);
-
-  /**
-   * 导入路径（文件或文件夹）
-   */
-  const importPath = useCallback(async (pathStr: string) => {
-    logger.debug('importPath called with:', pathStr);
-    setOperationLoading(true);
-    
-    try {
-      const fileName = pathStr.split(/[/\\]/).pop() || "New";
-      const newWs: Workspace = { 
-        id: Date.now().toString(), 
-        name: fileName, 
-        path: pathStr, 
-        status: 'PROCESSING', 
-        size: '-', 
-        files: 0 
-      };
-      
-      logger.debug('Creating workspace:', newWs);
-      workspaceDispatch({ type: 'ADD_WORKSPACE', payload: newWs });
-      setActiveWorkspace(newWs.id);
-      
-      logger.debug('Invoking import_folder with:', { path: pathStr, workspaceId: newWs.id });
-      const taskId = await invoke<string>("import_folder", { 
-        path: pathStr, 
-        workspaceId: newWs.id
-      });
-      
-      logger.debug('import_folder returned taskId:', taskId);
-      
-      // 任务由后端事件自动创建，不需要手动添加
-      
-      addToast('info', '导入已开始');
-    } catch (e) {
-      logger.error('importPath error:', e);
-      addToast('error', `导入失败: ${e}`);
-      
-      // 删除刚创建的工作区
-      workspaceDispatch({ 
-        type: 'DELETE_WORKSPACE', 
-        payload: Date.now().toString() 
-      });
-    } finally {
-      setOperationLoading(false);
-    }
-  }, [addToast, setActiveWorkspace, workspaceDispatch, taskDispatch]);
+  }, [addToast, importPath]);
 
   /**
    * 刷新工作区
@@ -137,7 +145,7 @@ export const useWorkspaceOperations = () => {
     } finally {
       setOperationLoading(false);
     }
-  }, [addToast, workspaceDispatch, taskDispatch]);
+  }, [addToast]);
 
   /**
    * 删除工作区
