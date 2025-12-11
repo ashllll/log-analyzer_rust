@@ -1,0 +1,298 @@
+/**
+ * 性能基准测试模块
+ * 
+ * 用于测试和验证各种优化措施的性能提升效果
+ */
+
+use std::time::{Duration, Instant};
+use std::path::Path;
+use crate::services::pattern_matcher::PatternMatcher;
+use crate::services::query_planner::QueryPlanner;
+use crate::models::search::SearchQuery;
+use crate::error::Result;
+
+/// 基准测试结果
+#[derive(Debug, Clone)]
+pub struct BenchmarkResult {
+    pub name: String,
+    pub duration: Duration,
+    pub iterations: usize,
+    pub avg_time_ms: f64,
+    pub throughput: f64, // 操作/秒
+}
+
+impl BenchmarkResult {
+    pub fn new(name: String, duration: Duration, iterations: usize) -> Self {
+        let avg_time_ms = duration.as_secs_f64() * 1000.0 / iterations as f64;
+        let throughput = iterations as f64 / duration.as_secs_f64();
+        
+        Self {
+            name,
+            duration,
+            iterations,
+            avg_time_ms,
+            throughput,
+        }
+    }
+}
+
+/// 基准测试运行器
+pub struct BenchmarkRunner;
+
+impl BenchmarkRunner {
+    /// 运行搜索算法基准测试
+    pub fn run_search_benchmark() -> Result<Vec<BenchmarkResult>> {
+        let mut results = Vec::new();
+        
+        // 测试1: 单关键词搜索
+        results.push(Self::benchmark_single_keyword()?);
+        
+        // 测试2: 多关键词搜索（10个）
+        results.push(Self::benchmark_multiple_keywords(10)?);
+        
+        // 测试3: 大量关键词搜索（100个）
+        results.push(Self::benchmark_multiple_keywords(100)?);
+        
+        // 测试4: 大文件搜索
+        results.push(Self::benchmark_large_file()?);
+        
+        // 测试5: 正则表达式搜索
+        results.push(Self::benchmark_regex_search()?);
+        
+        Ok(results)
+    }
+    
+    /// 基准测试：单关键词搜索
+    fn benchmark_single_keyword() -> Result<BenchmarkResult> {
+        let content = generate_test_content(10000);
+        let patterns = vec!["error".to_string()];
+        let matcher = PatternMatcher::new(&patterns)?;
+        
+        let start = Instant::now();
+        let iterations = 1000;
+        
+        for _ in 0..iterations {
+            let _ = matcher.find_matches(&content);
+        }
+        
+        let duration = start.elapsed();
+        Ok(BenchmarkResult::new(
+            "单关键词搜索".to_string(),
+            duration,
+            iterations,
+        ))
+    }
+    
+    /// 基准测试：多关键词搜索
+    fn benchmark_multiple_keywords(count: usize) -> Result<BenchmarkResult> {
+        let content = generate_test_content(10000);
+        let patterns = generate_keywords(count);
+        let matcher = PatternMatcher::new(&patterns)?;
+        
+        let start = Instant::now();
+        let iterations = 100;
+        
+        for _ in 0..iterations {
+            let _ = matcher.find_matches(&content);
+        }
+        
+        let duration = start.elapsed();
+        Ok(BenchmarkResult::new(
+            format!("多关键词搜索({}个)", count),
+            duration,
+            iterations,
+        ))
+    }
+    
+    /// 基准测试：大文件搜索
+    fn benchmark_large_file() -> Result<BenchmarkResult> {
+        let content = generate_test_content(100000); // 10万行
+        let patterns = vec!["error".to_string(), "warning".to_string(), "info".to_string()];
+        let matcher = PatternMatcher::new(&patterns)?;
+        
+        let start = Instant::now();
+        let iterations = 10;
+        
+        for _ in 0..iterations {
+            let _ = matcher.find_matches(&content);
+        }
+        
+        let duration = start.elapsed();
+        Ok(BenchmarkResult::new(
+            "大文件搜索(10万行)".to_string(),
+            duration,
+            iterations,
+        ))
+    }
+    
+    /// 基准测试：正则表达式搜索
+    fn benchmark_regex_search() -> Result<BenchmarkResult> {
+        let content = generate_test_content(10000);
+        let query = SearchQuery {
+            keywords: vec!["error".to_string()],
+            regex_patterns: Some(vec![r"\d{4}-\d{2}-\d{2}".to_string()]),
+            use_regex: true,
+            case_sensitive: false,
+            ..Default::default()
+        };
+        
+        let planner = QueryPlanner::new();
+        let plan = planner.build_plan(&query)?;
+        
+        let start = Instant::now();
+        let iterations = 100;
+        
+        for _ in 0..iterations {
+            let _ = plan.execute(&content);
+        }
+        
+        let duration = start.elapsed();
+        Ok(BenchmarkResult::new(
+            "正则表达式搜索".to_string(),
+            duration,
+            iterations,
+        ))
+    }
+    
+    /// 运行查询执行器基准测试
+    pub fn run_query_executor_benchmark() -> Result<Vec<BenchmarkResult>> {
+        let mut results = Vec::new();
+        
+        // 测试查询计划构建性能
+        results.push(Self::benchmark_query_planning()?);
+        
+        // 测试查询执行性能
+        results.push(Self::benchmark_query_execution()?);
+        
+        Ok(results)
+    }
+    
+    /// 基准测试：查询计划构建
+    fn benchmark_query_planning() -> Result<BenchmarkResult> {
+        let query = SearchQuery {
+            keywords: vec!["error".to_string(), "warning".to_string()],
+            regex_patterns: Some(vec![r"\d{4}-\d{2}-\d{2}".to_string()]),
+            use_regex: true,
+            case_sensitive: false,
+            ..Default::default()
+        };
+        
+        let planner = QueryPlanner::new();
+        let iterations = 1000;
+        let start = Instant::now();
+        
+        for _ in 0..iterations {
+            let _ = planner.build_plan(&query);
+        }
+        
+        let duration = start.elapsed();
+        Ok(BenchmarkResult::new(
+            "查询计划构建".to_string(),
+            duration,
+            iterations,
+        ))
+    }
+    
+    /// 基准测试：查询执行
+    fn benchmark_query_execution() -> Result<BenchmarkResult> {
+        let content = generate_test_content(10000);
+        let query = SearchQuery {
+            keywords: vec!["error".to_string(), "warning".to_string()],
+            use_regex: false,
+            case_sensitive: false,
+            ..Default::default()
+        };
+        
+        let planner = QueryPlanner::new();
+        let plan = planner.build_plan(&query)?;
+        
+        let start = Instant::now();
+        let iterations = 100;
+        
+        for _ in 0..iterations {
+            let _ = plan.execute(&content);
+        }
+        
+        let duration = start.elapsed();
+        Ok(BenchmarkResult::new(
+            "查询执行".to_string(),
+            duration,
+            iterations,
+        ))
+    }
+}
+
+/// 生成测试内容
+fn generate_test_content(lines: usize) -> String {
+    let mut content = String::new();
+    let templates = [
+        "2024-01-01 10:00:00 INFO Application started successfully",
+        "2024-01-01 10:00:01 WARNING Low memory warning",
+        "2024-01-01 10:00:02 ERROR Database connection failed",
+        "2024-01-01 10:00:03 INFO User logged in: user123",
+        "2024-01-01 10:00:04 DEBUG Processing request: GET /api/data",
+        "2024-01-01 10:00:05 ERROR Timeout while processing request",
+        "2024-01-01 10:00:06 INFO Data processed successfully",
+        "2024-01-01 10:00:07 WARNING High CPU usage detected",
+        "2024-01-01 10:00:08 ERROR File not found: /path/to/file",
+        "2024-01-01 10:00:09 INFO Shutdown initiated",
+    ];
+    
+    for i in 0..lines {
+        let template = &templates[i % templates.len()];
+        content.push_str(template);
+        content.push('\n');
+    }
+    
+    content
+}
+
+/// 生成关键词列表
+fn generate_keywords(count: usize) -> Vec<String> {
+    let base_keywords = [
+        "error", "warning", "info", "debug", "critical", "fatal", "success",
+        "failed", "timeout", "connection", "database", "memory", "cpu", "disk",
+        "network", "request", "response", "status", "code", "message",
+    ];
+    
+    let mut keywords = Vec::new();
+    for i in 0..count {
+        let keyword = format!("{}_{}", base_keywords[i % base_keywords.len()], i);
+        keywords.push(keyword);
+    }
+    
+    keywords
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[test]
+    fn test_benchmark_result_calculation() {
+        let result = BenchmarkResult::new(
+            "test".to_string(),
+            Duration::from_secs(1),
+            1000,
+        );
+        
+        assert_eq!(result.name, "test");
+        assert_eq!(result.iterations, 1000);
+        assert_eq!(result.avg_time_ms, 1.0); // 1000ms / 1000 = 1ms
+        assert_eq!(result.throughput, 1000.0); // 1000 ops / 1s = 1000 ops/s
+    }
+    
+    #[test]
+    fn test_generate_test_content() {
+        let content = generate_test_content(100);
+        let lines: Vec<&str> = content.lines().collect();
+        assert_eq!(lines.len(), 100);
+    }
+    
+    #[test]
+    fn test_generate_keywords() {
+        let keywords = generate_keywords(50);
+        assert_eq!(keywords.len(), 50);
+        assert!(keywords[0].starts_with("error") || keywords[0].starts_with("warning"));
+    }
+}
