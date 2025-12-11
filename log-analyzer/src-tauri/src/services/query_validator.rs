@@ -1,10 +1,10 @@
-use crate::models::search::*;
 use crate::error::{AppError, Result};
+use crate::models::search::*;
 use regex::Regex;
 
 /**
  * 查询验证器
- * 
+ *
  * 负责验证搜索查询的有效性和正确性
  */
 pub struct QueryValidator;
@@ -12,10 +12,10 @@ pub struct QueryValidator;
 impl QueryValidator {
     /**
      * 验证查询
-     * 
+     *
      * # 参数
      * * `query` - 要验证的搜索查询
-     * 
+     *
      * # 返回
      * * `Ok(())` - 如果查询有效
      * * `Err(AppError)` - 如果查询无效
@@ -41,32 +41,33 @@ impl QueryValidator {
 
     /**
      * 验证单个搜索项
-     * 
+     *
      * # 参数
      * * `term` - 要验证的搜索项
-     * 
+     *
      * # 返回
      * * `Ok(())` - 如果项有效
      * * `Err(AppError)` - 如果项无效
      */
     fn validate_term(term: &SearchTerm) -> Result<()> {
         if term.value.is_empty() {
-            return Err(AppError::validation_error(
-                format!("Term {} has empty value", term.id)
-            ));
+            return Err(AppError::validation_error(format!(
+                "Term {} has empty value",
+                term.id
+            )));
         }
 
         if term.value.len() > 100 {
-            return Err(AppError::validation_error(
-                format!("Term {} value is too long", term.id)
-            ));
+            return Err(AppError::validation_error(format!(
+                "Term {} value is too long",
+                term.id
+            )));
         }
 
         if term.is_regex {
-            Regex::new(&term.value)
-                .map_err(|e| AppError::validation_error(
-                    format!("Term {} has invalid regex: {}", term.id, e)
-                ))?;
+            Regex::new(&term.value).map_err(|e| {
+                AppError::validation_error(format!("Term {} has invalid regex: {}", term.id, e))
+            })?;
         }
 
         Ok(())
@@ -109,7 +110,7 @@ mod tests {
 
         let result = QueryValidator::validate(&query);
         assert!(result.is_err());
-        
+
         match result.unwrap_err() {
             AppError::Validation(msg) => assert!(msg.contains("empty")),
             _ => panic!("Expected Validation error"),
@@ -133,7 +134,7 @@ mod tests {
 
         let result = QueryValidator::validate(&query);
         assert!(result.is_err());
-        
+
         match result.unwrap_err() {
             AppError::Validation(msg) => assert!(msg.contains("No enabled terms")),
             _ => panic!("Expected Validation error"),
@@ -169,7 +170,7 @@ mod tests {
 
         let result = QueryValidator::validate(&query);
         assert!(result.is_err());
-        
+
         match result.unwrap_err() {
             AppError::Validation(msg) => assert!(msg.contains("empty value")),
             _ => panic!("Expected Validation error"),
@@ -196,7 +197,7 @@ mod tests {
 
         let result = QueryValidator::validate(&query);
         assert!(result.is_err());
-        
+
         match result.unwrap_err() {
             AppError::Validation(msg) => assert!(msg.contains("too long")),
             _ => panic!("Expected Validation error"),
@@ -232,7 +233,7 @@ mod tests {
 
         let result = QueryValidator::validate(&query);
         assert!(result.is_err());
-        
+
         match result.unwrap_err() {
             AppError::Validation(msg) => assert!(msg.contains("invalid regex")),
             _ => panic!("Expected Validation error"),

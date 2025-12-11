@@ -8,6 +8,7 @@ use unicode_normalization::UnicodeNormalization;
 
 /// 路径组件验证结果
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 pub enum PathValidationResult {
     /// 路径安全,返回清理后的字符串
     Valid(String),
@@ -19,6 +20,7 @@ pub enum PathValidationResult {
 
 /// 安全检查配置
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct SecurityConfig {
     /// 单个路径组件最大长度(默认255)
     pub max_component_length: usize,
@@ -43,12 +45,14 @@ impl Default for SecurityConfig {
 }
 
 /// Windows保留文件名列表
+#[allow(dead_code)]
 const WINDOWS_RESERVED_NAMES: &[&str] = &[
     "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
     "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
 ];
 
 /// Windows保留字符列表
+#[allow(dead_code)]
 const WINDOWS_RESERVED_CHARS: &[char] = &['<', '>', ':', '"', '|', '?', '*'];
 
 /// 验证并清理路径组件
@@ -70,6 +74,7 @@ const WINDOWS_RESERVED_CHARS: &[char] = &['<', '>', ':', '"', '|', '?', '*'];
 /// let config = SecurityConfig::default();
 /// let result = validate_and_sanitize_path("normal_file.log", &config);
 /// ```
+#[allow(dead_code)]
 pub fn validate_and_sanitize_path(
     component: &str,
     config: &SecurityConfig,
@@ -175,6 +180,7 @@ pub fn validate_and_sanitize_path(
 /// # Returns
 ///
 /// 如果是保留文件名返回true,否则返回false
+#[allow(dead_code)]
 pub fn is_windows_reserved_name(name: &str) -> bool {
     // 移除扩展名
     let name_without_ext = if let Some(pos) = name.rfind('.') {
@@ -198,6 +204,7 @@ pub fn is_windows_reserved_name(name: &str) -> bool {
 /// # Returns
 ///
 /// 截断后的路径组件,包含hash后缀保证唯一性
+#[allow(dead_code)]
 fn truncate_long_component(component: &str, max_len: usize) -> String {
     if component.len() <= max_len {
         return component.to_string();
@@ -249,6 +256,7 @@ fn truncate_long_component(component: &str, max_len: usize) -> String {
 /// # Returns
 ///
 /// 如果深度超过限制返回Err,否则返回Ok
+#[allow(dead_code)]
 pub fn check_path_depth(path: &Path, max_depth: usize) -> Result<(), String> {
     let depth = path.components().count();
     if depth > max_depth {

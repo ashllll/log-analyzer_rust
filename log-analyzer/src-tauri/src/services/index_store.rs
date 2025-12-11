@@ -6,6 +6,7 @@
 //! - 增量更新
 //! - 跨平台兼容（Windows UNC 路径支持）
 
+use crate::error::{AppError, Result};
 use crate::models::config::{FileMetadata, IndexData};
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
@@ -19,7 +20,7 @@ use tauri::{AppHandle, Manager};
 /// 索引加载结果类型
 ///
 /// 返回元组：(路径映射表, 文件元数据映射表)
-pub type IndexResult = Result<(HashMap<String, String>, HashMap<String, FileMetadata>), String>;
+pub type IndexResult = Result<(HashMap<String, String>, HashMap<String, FileMetadata>)>;
 
 /// 保存索引到磁盘（带压缩，Windows 兼容，支持增量更新）
 ///
@@ -46,13 +47,13 @@ pub fn save_index(
     workspace_id: &str,
     path_map: &HashMap<String, String>,
     file_metadata: &HashMap<String, FileMetadata>,
-) -> Result<PathBuf, String> {
+) -> Result<PathBuf> {
     let index_dir = app
         .path()
         .app_data_dir()
-        .map_err(|e| format!("Failed to get app data dir: {}", e))?
+        .map_err(|e| AppError::validation_error(format!("Failed to get app data dir: {}", e)))?
         .join("indices");
-    fs::create_dir_all(&index_dir).map_err(|e| format!("Failed to create index dir: {}", e))?;
+    fs::create_dir_all(&index_dir).map_err(AppError::Io)?;
 
     let index_path = index_dir.join(format!("{}.idx.gz", workspace_id)); // 压缩格式
     let index_data = IndexData {
@@ -62,19 +63,14 @@ pub fn save_index(
         created_at: chrono::Utc::now().timestamp(),
     };
 
-    let encoded =
-        bincode::serialize(&index_data).map_err(|e| format!("Serialization error: {}", e))?;
-    let file =
-        File::create(&index_path).map_err(|e| format!("Failed to create index file: {}", e))?;
+    let encoded = bincode::serialize(&index_data)
+        .map_err(|e| AppError::validation_error(format!("Serialization error: {}", e)))?;
+    let file = File::create(&index_path).map_err(AppError::Io)?;
 
     // Gzip 压缩
     let mut encoder = GzEncoder::new(file, Compression::default());
-    encoder
-        .write_all(&encoded)
-        .map_err(|e| format!("Write error: {}", e))?;
-    encoder
-        .finish()
-        .map_err(|e| format!("Compression error: {}", e))?;
+    encoder.write_all(&encoded).map_err(AppError::Io)?;
+    encoder.finish().map_err(AppError::Io)?;
 
     eprintln!(
         "[DEBUG] Index saved (compressed): {} ({} entries)",
@@ -102,10 +98,10 @@ pub fn save_index(
 /// - 反序列化失败
 pub fn load_index(index_path: &Path) -> IndexResult {
     if !index_path.exists() {
-        return Err("Index file not found".to_string());
+        return Err(AppError::not_found("Index file not found"));
     }
 
-    let file = File::open(index_path).map_err(|e| format!("Failed to open index file: {}", e))?;
+    let file = File::open(index_path).map_err(AppError::Io)?;
 
     // 检查是否为压缩格式
     let mut data = Vec::new();
@@ -114,17 +110,15 @@ pub fn load_index(index_path: &Path) -> IndexResult {
         let mut decoder = GzDecoder::new(file);
         decoder
             .read_to_end(&mut data)
-            .map_err(|e| format!("Decompression error: {}", e))?;
+            .map_err(AppError::Io)?;
     } else {
         // 未压缩（兼容旧版本）
         let mut reader = BufReader::new(file);
-        reader
-            .read_to_end(&mut data)
-            .map_err(|e| format!("Read error: {}", e))?;
+        reader.read_to_end(&mut data).map_err(AppError::Io)?;
     }
 
-    let index_data: IndexData =
-        bincode::deserialize(&data).map_err(|e| format!("Deserialization error: {}", e))?;
+    let index_data: IndexData = bincode::deserialize(&data)
+        .map_err(|e| AppError::validation_error(format!("Deserialization error: {}", e)))?;
 
     eprintln!(
         "[DEBUG] Index loaded: {} ({} entries)",

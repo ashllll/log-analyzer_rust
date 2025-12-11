@@ -1,11 +1,11 @@
-use crate::models::search::*;
 use crate::error::{AppError, Result};
+use crate::models::search::*;
 use regex::Regex;
 use std::collections::HashMap;
 
 /**
  * 查询计划构建器
- * 
+ *
  * 负责构建搜索查询的执行计划
  */
 pub struct QueryPlanner {
@@ -16,7 +16,7 @@ pub struct QueryPlanner {
 impl QueryPlanner {
     /**
      * 创建新的计划构建器
-     * 
+     *
      * # 参数
      * * `cache_size` - 正则表达式缓存大小
      */
@@ -29,10 +29,10 @@ impl QueryPlanner {
 
     /**
      * 构建执行计划
-     * 
+     *
      * # 参数
      * * `query` - 搜索查询
-     * 
+     *
      * # 返回
      * * `Ok(ExecutionPlan)` - 执行计划
      * * `Err(AppError)` - 构建失败
@@ -110,10 +110,10 @@ impl QueryPlanner {
 
     /**
      * 编译正则表达式（带缓存）
-     * 
+     *
      * # 参数
      * * `term` - 搜索项
-     * 
+     *
      * # 返回
      * * `Ok(Regex)` - 编译后的正则表达式
      * * `Err(AppError)` - 编译失败
@@ -137,9 +137,7 @@ impl QueryPlanner {
 
         // 编译新的正则表达式
         let regex = Regex::new(&pattern)
-            .map_err(|e| AppError::validation_error(
-                format!("Invalid pattern: {}", e)
-            ))?;
+            .map_err(|e| AppError::validation_error(format!("Invalid pattern: {}", e)))?;
 
         // 添加到缓存
         if self.regex_cache.len() >= self.cache_size {
@@ -162,6 +160,7 @@ impl QueryPlanner {
 pub struct ExecutionPlan {
     pub strategy: SearchStrategy,
     pub regexes: Vec<CompiledRegex>,
+    #[allow(dead_code)]
     pub term_count: usize,
     pub terms: Vec<String>,
 }
@@ -170,6 +169,7 @@ impl ExecutionPlan {
     /**
      * 获取搜索项数量
      */
+    #[allow(dead_code)]
     pub fn get_term_count(&self) -> usize {
         self.term_count
     }
@@ -177,6 +177,7 @@ impl ExecutionPlan {
     /**
      * 获取所有搜索项
      */
+    #[allow(dead_code)]
     pub fn get_terms(&self) -> &[String] {
         &self.terms
     }
@@ -282,9 +283,7 @@ mod tests {
         let mut planner = QueryPlanner::new(100);
         let query = SearchQuery {
             id: "test".to_string(),
-            terms: vec![
-                create_test_term("debug", QueryOperator::Not),
-            ],
+            terms: vec![create_test_term("debug", QueryOperator::Not)],
             global_operator: QueryOperator::Not,
             filters: None,
             metadata: QueryMetadata {
@@ -303,16 +302,16 @@ mod tests {
     #[test]
     fn test_compile_regex_cache() {
         let mut planner = QueryPlanner::new(2); // 小缓存用于测试
-        
+
         let term1 = create_test_term("error", QueryOperator::And);
         let term2 = create_test_term("timeout", QueryOperator::And);
-        
+
         // 第一次编译
         let regex1 = planner.compile_regex(&term1).unwrap();
-        let regex2 = planner.compile_regex(&term2).unwrap();
-        
+        let _regex2 = planner.compile_regex(&term2).unwrap();
+
         assert!(planner.regex_cache.len() == 2);
-        
+
         // 第二次应该命中缓存
         let regex1_cached = planner.compile_regex(&term1).unwrap();
         assert_eq!(regex1.as_str(), regex1_cached.as_str());
@@ -321,7 +320,7 @@ mod tests {
     #[test]
     fn test_compile_regex_case_insensitive() {
         let mut planner = QueryPlanner::new(100);
-        
+
         let term = SearchTerm {
             id: "test".to_string(),
             value: "error".to_string(),
@@ -342,7 +341,7 @@ mod tests {
     #[test]
     fn test_compile_regex_case_sensitive() {
         let mut planner = QueryPlanner::new(100);
-        
+
         let term = SearchTerm {
             id: "test".to_string(),
             value: "error".to_string(),
@@ -363,7 +362,7 @@ mod tests {
     #[test]
     fn test_compile_regex_with_regex_term() {
         let mut planner = QueryPlanner::new(100);
-        
+
         let term = SearchTerm {
             id: "test".to_string(),
             value: r"\d+".to_string(),
@@ -403,11 +402,15 @@ mod tests {
                 },
             ],
             term_count: 3,
-            terms: vec!["test1".to_string(), "test2".to_string(), "test3".to_string()],
+            terms: vec![
+                "test1".to_string(),
+                "test2".to_string(),
+                "test3".to_string(),
+            ],
         };
 
         plan.sort_by_priority();
-        
+
         assert_eq!(plan.regexes[0].priority, 3);
         assert_eq!(plan.regexes[1].priority, 2);
         assert_eq!(plan.regexes[2].priority, 1);

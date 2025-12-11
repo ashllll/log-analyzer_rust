@@ -13,6 +13,5 @@ pub use file_watcher::{
 };
 pub use index_store::{load_index, save_index};
 pub use query_executor::{MatchDetail, QueryExecutor};
-pub use query_planner::{ExecutionPlan, QueryPlanner, SearchStrategy, CompiledRegex};
-pub use query_validator::QueryValidator;
+pub use query_planner::ExecutionPlan;
 pub use search_statistics::calculate_keyword_statistics;

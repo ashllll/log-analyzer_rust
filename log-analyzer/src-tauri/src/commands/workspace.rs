@@ -38,7 +38,7 @@ pub async fn load_workspace(
         }
     }
 
-    let (path_map, file_metadata) = load_index(&index_path)?;
+    let (path_map, file_metadata) = load_index(&index_path).map_err(|e| e.to_string())?;
 
     {
         let mut map_guard = state
@@ -130,7 +130,8 @@ pub async fn refresh_workspace(
             .to_string();
 
         let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
-            let (mut existing_path_map, mut existing_metadata) = load_index(&index_path)?;
+            let (mut existing_path_map, mut existing_metadata) =
+                load_index(&index_path).map_err(|e| e.to_string())?;
 
             let _ = app_handle.emit(
                 "task-update",
@@ -289,7 +290,8 @@ pub async fn refresh_workspace(
                     &workspace_id_clone,
                     &existing_path_map,
                     &existing_metadata,
-                )?;
+                )
+                .map_err(|e| e.to_string())?;
 
                 let state = app_handle.state::<AppState>();
                 let mut map_guard = state

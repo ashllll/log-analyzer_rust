@@ -27,6 +27,7 @@
 /// let filename = decode_filename(bytes);
 /// assert_eq!(filename, "你好");
 /// ```
+#[allow(dead_code)]
 pub fn decode_filename(bytes: &[u8]) -> String {
     // 尝试 UTF-8
     let (cow, _, had_errors) = encoding_rs::UTF_8.decode(bytes);

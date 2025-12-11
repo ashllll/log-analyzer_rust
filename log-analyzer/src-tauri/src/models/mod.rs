@@ -1,5 +1,4 @@
 pub mod config;
-pub mod extraction_error;
 pub mod filters;
 pub mod log_entry;
 pub mod search;

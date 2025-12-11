@@ -1,46 +1,46 @@
-use thiserror::Error;
 use std::path::PathBuf;
+use thiserror::Error;
 
 /**
  * 统一错误类型
- * 
+ *
  * 使用thiserror提供详细的错误信息和错误链
  */
 #[derive(Error, Debug)]
 pub enum AppError {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
-    
+
     #[error("Search error: {message}")]
-    Search { 
+    Search {
         message: String,
-        source: Option<Box<dyn std::error::Error + Send + Sync>>
+        source: Option<Box<dyn std::error::Error + Send + Sync>>,
     },
-    
+
     #[error("Archive error: {message}")]
-    Archive { 
+    Archive {
         message: String,
-        path: Option<PathBuf>
+        path: Option<PathBuf>,
     },
-    
+
     #[error("Validation error: {0}")]
     Validation(String),
-    
+
     #[error("Not found: {0}")]
     NotFound(String),
-    
+
     #[error("Invalid path: {0}")]
     InvalidPath(String),
-    
+
     #[error("Encoding error: {0}")]
     Encoding(String),
-    
+
     #[error("Query execution error: {0}")]
     QueryExecution(String),
-    
+
     #[error("File watcher error: {0}")]
     FileWatcher(String),
-    
+
     #[error("Index error: {0}")]
     IndexError(String),
 }
@@ -63,7 +63,7 @@ impl AppError {
             other => other,
         }
     }
-    
+
     /**
      * 创建搜索错误
      */
@@ -73,7 +73,7 @@ impl AppError {
             source: None,
         }
     }
-    
+
     /**
      * 创建归档错误
      */
@@ -83,14 +83,14 @@ impl AppError {
             path,
         }
     }
-    
+
     /**
      * 创建验证错误
      */
     pub fn validation_error(message: impl Into<String>) -> Self {
         AppError::Validation(message.into())
     }
-    
+
     /**
      * 创建未找到错误
      */
@@ -112,7 +112,7 @@ mod tests {
     fn test_error_creation() {
         let error = AppError::search_error("Query failed");
         assert!(matches!(error, AppError::Search { .. }));
-        
+
         let error = AppError::validation_error("Invalid input");
         assert!(matches!(error, AppError::Validation(_)));
     }
@@ -121,7 +121,7 @@ mod tests {
     fn test_error_with_context() {
         let error = AppError::search_error("Query failed");
         let with_context = error.with_context("Validation");
-        
+
         match with_context {
             AppError::Search { message, .. } => {
                 assert!(message.contains("Validation"));
@@ -135,7 +135,7 @@ mod tests {
     fn test_io_error_conversion() {
         let io_error = std::io::Error::new(std::io::ErrorKind::NotFound, "File not found");
         let app_error: AppError = io_error.into();
-        
+
         assert!(matches!(app_error, AppError::Io(_)));
     }
 

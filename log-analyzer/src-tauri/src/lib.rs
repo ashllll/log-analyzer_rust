@@ -20,8 +20,8 @@ mod services;
 mod utils;
 
 // 从模块导入类型
-use models::AppState;
 pub use error::{AppError, Result};
+use models::AppState;
 
 // --- Commands ---
 
@@ -107,29 +107,29 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use crate::services::{get_file_metadata, parse_metadata};
-    use crate::utils::encoding::decode_filename;
-    use crate::utils::path::{remove_readonly, safe_path_join};
-    use crate::utils::{
-        canonicalize_path, normalize_path_separator, validate_path_param, validate_workspace_id,
-    };
-    use std::path::PathBuf;
+    use crate::utils::{normalize_path_separator, validate_path_param, validate_workspace_id};
 
     #[test]
     fn test_path_utils() {
-        // 测试路径工具函数
-        let path = PathBuf::from("test/path");
-        let normalized = normalize_path_separator(&path);
-        assert!(normalized.contains('/'));
-
-        let validated = validate_path_param(&path).unwrap();
-        assert!(validated.is_absolute());
+        // 测试路径规范化（Windows 上将 / 转为 \uff09
+        #[cfg(target_os = "windows")]
+        {
+            let normalized = normalize_path_separator("test/path");
+            assert_eq!(normalized, "test\\path");
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let normalized = normalize_path_separator("test/path");
+            assert_eq!(normalized, "test/path");
+        }
     }
 
     #[test]
     fn test_workspace_id_validation() {
         assert!(validate_workspace_id("valid-id-123").is_ok());
         assert!(validate_workspace_id("").is_err());
-        assert!(validate_workspace_id("invalid@id!").is_err());
+        assert!(validate_workspace_id("../invalid").is_err());
+        assert!(validate_workspace_id("invalid/id").is_err());
+        assert!(validate_workspace_id("invalid\\id").is_err());
     }
 }

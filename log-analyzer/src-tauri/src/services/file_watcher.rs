@@ -6,6 +6,7 @@
 //! - 增量索引更新
 //! - 实时事件推送到前端
 
+use crate::error::{AppError, Result};
 use crate::models::log_entry::LogEntry;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -34,16 +35,13 @@ use tauri::{AppHandle, Emitter};
 /// - **截断检测**：如果文件被截断（大小小于上次偏移量），自动从头读取
 /// - **增量读取**：只读取新增内容，避免重复处理
 /// - **错误容忍**：单行读取错误不中断整体流程
-pub fn read_file_from_offset(path: &Path, offset: u64) -> Result<(Vec<String>, u64), String> {
+pub fn read_file_from_offset(path: &Path, offset: u64) -> Result<(Vec<String>, u64)> {
     use std::io::{Seek, SeekFrom};
 
-    let mut file = File::open(path).map_err(|e| format!("Failed to open file: {}", e))?;
+    let mut file = File::open(path).map_err(AppError::Io)?;
 
     // 获取当前文件大小
-    let file_size = file
-        .metadata()
-        .map_err(|e| format!("Failed to get file metadata: {}", e))?
-        .len();
+    let file_size = file.metadata().map_err(AppError::Io)?.len();
 
     // 如果文件被截断（小于上次偏移量），从头开始读取
     let start_offset = if file_size < offset {
@@ -63,7 +61,7 @@ pub fn read_file_from_offset(path: &Path, offset: u64) -> Result<(Vec<String>, u
 
     // 移动到偏移量位置
     file.seek(SeekFrom::Start(start_offset))
-        .map_err(|e| format!("Failed to seek to offset: {}", e))?;
+        .map_err(AppError::Io)?;
 
     // 读取新增内容
     let reader = BufReader::new(file);
@@ -193,7 +191,7 @@ pub fn append_to_workspace_index(
     new_entries: &[LogEntry],
     app: &AppHandle,
     _state: &crate::models::state::AppState, // 为未来扩展保留（可用于持久化索引更新）
-) -> Result<(), String> {
+) -> Result<()> {
     if new_entries.is_empty() {
         return Ok(());
     }
@@ -241,20 +239,16 @@ pub fn append_to_workspace_index(
 /// # 使用场景
 ///
 /// - ✅ 已集成: `process_path_recursive_inner_with_metadata` 中收集普通文件元数据
-pub fn get_file_metadata(path: &Path) -> Result<crate::models::config::FileMetadata, String> {
+pub fn get_file_metadata(path: &Path) -> Result<crate::models::config::FileMetadata> {
     use std::time::SystemTime;
 
-    let metadata = path
-        .metadata()
-        .map_err(|e| format!("Failed to read file metadata: {}", e))?;
+    let metadata = path.metadata().map_err(AppError::Io)?;
 
-    let modified = metadata
-        .modified()
-        .map_err(|e| format!("Failed to get modified time: {}", e))?;
+    let modified = metadata.modified().map_err(AppError::Io)?;
 
     let modified_time = modified
         .duration_since(SystemTime::UNIX_EPOCH)
-        .map_err(|e| format!("Invalid timestamp: {}", e))?
+        .map_err(|e| AppError::validation_error(format!("Invalid timestamp: {}", e)))?
         .as_secs() as i64;
 
     Ok(crate::models::config::FileMetadata {

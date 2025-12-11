@@ -1,12 +1,12 @@
+use crate::error::Result;
 use crate::models::search::*;
 use crate::services::pattern_matcher::PatternMatcher;
 use crate::services::query_planner::{ExecutionPlan, QueryPlanner};
 use crate::services::query_validator::QueryValidator;
-use crate::error::{AppError, Result};
 
 /**
  * 查询执行器
- * 
+ *
  * 重构后的执行器，职责拆分为：
  * - QueryValidator: 验证查询
  * - QueryPlanner: 构建执行计划
@@ -14,6 +14,7 @@ use crate::error::{AppError, Result};
  * - QueryExecutor: 执行查询和结果匹配
  */
 pub struct QueryExecutor {
+    #[allow(dead_code)]
     validator: QueryValidator,
     planner: QueryPlanner,
     pattern_matcher: Option<PatternMatcher>,
@@ -22,7 +23,7 @@ pub struct QueryExecutor {
 impl QueryExecutor {
     /**
      * 创建新的执行器
-     * 
+     *
      * # 参数
      * * `cache_size` - 正则表达式缓存大小
      */
@@ -36,10 +37,10 @@ impl QueryExecutor {
 
     /**
      * 执行查询
-     * 
+     *
      * # 参数
      * * `query` - 搜索查询
-     * 
+     *
      * # 返回
      * * `Ok(ExecutionPlan)` - 执行计划
      * * `Err(AppError)` - 执行失败
@@ -47,31 +48,32 @@ impl QueryExecutor {
     pub fn execute(&mut self, query: &SearchQuery) -> Result<ExecutionPlan> {
         // 1. 验证查询
         QueryValidator::validate(query)?;
-        
+
         // 2. 构建执行计划
         let mut plan = self.planner.build_plan(query)?;
-        
+
         // 3. 初始化Aho-Corasick模式匹配器（仅用于AND策略）
-        self.pattern_matcher = if plan.strategy == crate::services::query_planner::SearchStrategy::And {
-            let patterns = plan.terms.clone();
-            Some(PatternMatcher::new(patterns, true)) // AND策略总是大小写不敏感
-        } else {
-            None
-        };
-        
+        self.pattern_matcher =
+            if plan.strategy == crate::services::query_planner::SearchStrategy::And {
+                let patterns = plan.terms.clone();
+                Some(PatternMatcher::new(patterns, true)) // AND策略总是大小写不敏感
+            } else {
+                None
+            };
+
         // 4. 按优先级排序
         plan.sort_by_priority();
-        
+
         Ok(plan)
     }
 
     /**
      * 测试单行是否匹配
-     * 
+     *
      * # 参数
      * * `plan` - 执行计划
      * * `line` - 要测试的文本行
-     * 
+     *
      * # 返回
      * * `true` - 如果行匹配
      * * `false` - 否则
@@ -116,11 +118,11 @@ impl QueryExecutor {
 
     /**
      * 批量过滤日志行
-     * 
+     *
      * # 参数
      * * `plan` - 执行计划
      * * `lines` - 要过滤的文本行列表
-     * 
+     *
      * # 返回
      * * 匹配的行列表
      */
@@ -134,11 +136,11 @@ impl QueryExecutor {
 
     /**
      * 匹配并返回详情
-     * 
+     *
      * # 参数
      * * `plan` - 执行计划
      * * `line` - 要匹配的文本行
-     * 
+     *
      * # 返回
      * * `Some(Vec<MatchDetail>)` - 匹配详情
      * * `None` - 不匹配

@@ -2,20 +2,21 @@
 //!
 //! 核心递归逻辑，负责：
 //! - 识别文件类型（压缩文件 vs 普通文件）
-//! - 调用相应的处理器
+//! - 调用统一的 ArchiveManager 处理器
+//! - 支持异步递归解压嵌套压缩包
 //! - 收集元数据（增量索引）
 //! - 错误处理和进度报告
 
-use crate::archive::context::ArchiveContext;
+use crate::archive::ArchiveManager;
+use crate::error::{AppError, Result};
 use crate::models::config::FileMetadata;
 use crate::models::log_entry::TaskProgress;
 use crate::services::file_watcher::get_file_metadata;
 use crate::utils::path::normalize_path_separator;
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::BufReader;
 use std::path::Path;
 use tauri::{AppHandle, Emitter};
+use tokio::fs;
 use walkdir::WalkDir;
 
 /// 递归处理路径（公共接口，带错误处理）
@@ -33,9 +34,10 @@ use walkdir::WalkDir;
 /// # 行为
 ///
 /// - 内部调用 `process_path_recursive_inner` 进行实际处理
+/// - 支持异步递归解压嵌套压缩包
 /// - 捕获错误，记录日志，发送警告事件
 /// - 单个文件失败不中断整体流程
-pub fn process_path_recursive(
+pub async fn process_path_recursive(
     path: &Path,
     virtual_path: &str,
     target_root: &Path,
@@ -53,7 +55,9 @@ pub fn process_path_recursive(
         app,
         task_id,
         workspace_id,
-    ) {
+    )
+    .await
+    {
         eprintln!("[WARNING] Failed to process {}: {}", path.display(), e);
         let _ = app.emit(
             "task-update",
@@ -83,7 +87,7 @@ pub fn process_path_recursive(
 /// - `task_id`: 任务 ID
 /// - `workspace_id`: 工作区ID
 #[allow(clippy::too_many_arguments)]
-pub fn process_path_recursive_with_metadata(
+pub async fn process_path_recursive_with_metadata(
     path: &Path,
     virtual_path: &str,
     target_root: &Path,
@@ -102,7 +106,9 @@ pub fn process_path_recursive_with_metadata(
         app,
         task_id,
         workspace_id,
-    ) {
+    )
+    .await
+    {
         eprintln!("[WARNING] Failed to process {}: {}", path.display(), e);
         let _ = app.emit(
             "task-update",
@@ -124,11 +130,16 @@ pub fn process_path_recursive_with_metadata(
 /// # 行为
 ///
 /// 1. 如果是目录：递归处理子项
-/// 2. 如果是文件：
-///    - 识别压缩格式（ZIP/RAR/TAR/TAR.GZ/GZ）
-///    - 调用相应的处理器
-///    - 普通文件：添加到索引
-pub fn process_path_recursive_inner(
+/// 2. 如果是压缩文件：
+///    - 使用 ArchiveManager 统一接口解压
+///    - 递归处理解压后的文件（支持嵌套压缩包）
+/// 3. 如果是普通文件：添加到索引
+///
+/// # 并发安全
+///
+/// - 使用 Box::pin 解决递归异步调用问题
+/// - 所有类型满足 Send trait 要求
+async fn process_path_recursive_inner(
     path: &Path,
     virtual_path: &str,
     target_root: &Path,
@@ -136,7 +147,7 @@ pub fn process_path_recursive_inner(
     app: &AppHandle,
     task_id: &str,
     workspace_id: &str,
-) -> Result<(), String> {
+) -> Result<()> {
     // 处理目录
     if path.is_dir() {
         for entry in WalkDir::new(path)
@@ -145,9 +156,11 @@ pub fn process_path_recursive_inner(
             .into_iter()
             .filter_map(|e| e.ok())
         {
-            let entry_name = entry.file_name().to_string_lossy();
+            let entry_name = entry.file_name().to_string_lossy().to_string();
             let new_virtual = format!("{}/{}", virtual_path, entry_name);
-            process_path_recursive(
+
+            // 使用 Box::pin 解决递归异步调用
+            Box::pin(process_path_recursive(
                 entry.path(),
                 &new_virtual,
                 target_root,
@@ -155,119 +168,79 @@ pub fn process_path_recursive_inner(
                 app,
                 task_id,
                 workspace_id,
-            );
+            ))
+            .await;
         }
         return Ok(());
     }
 
-    let path_str = path.to_string_lossy();
     let file_name = path
         .file_name()
-        .ok_or("Invalid filename")?
-        .to_string_lossy();
-    let lower_path = path_str.to_lowercase();
+        .ok_or_else(|| AppError::validation_error("Invalid filename"))?
+        .to_string_lossy()
+        .to_string();
 
     let _ = app.emit(
         "task-update",
         TaskProgress {
             task_id: task_id.to_string(),
             task_type: "Import".to_string(),
-            target: file_name.to_string(),
+            target: file_name.clone(),
             status: "RUNNING".to_string(),
             message: format!("Processing: {}", file_name),
             progress: 50,
-            workspace_id: None, // 文件处理进度
+            workspace_id: None,
         },
     );
 
-    // 判断文件类型
-    let is_zip = lower_path.ends_with(".zip");
-    let is_rar = lower_path.ends_with(".rar");
-    let is_tar = lower_path.ends_with(".tar");
-    let is_tar_gz = lower_path.ends_with(".tar.gz") || lower_path.ends_with(".tgz");
-    let is_plain_gz = lower_path.ends_with(".gz") && !is_tar_gz;
+    // 创建 ArchiveManager 实例
+    let archive_manager = ArchiveManager::new();
 
-    // --- 处理 ZIP ---
-    if is_zip {
-        return crate::archive::zip::process_zip_archive(
+    // 检查是否为压缩文件
+    if is_archive_file(path) {
+        // 使用统一接口处理压缩文件
+        match extract_and_process_archive(
+            &archive_manager,
             path,
-            &file_name,
             virtual_path,
             target_root,
+            map,
+            app,
+            task_id,
             workspace_id,
-            map,
-            app,
-            task_id,
         )
-        .map(|_| ()); // 忽略ExtractionSummary,转换为Result<(), String>
-    }
-
-    // --- 处理 RAR ---
-    if is_rar {
-        return crate::archive::rar::process_rar_archive(
-            path,
-            &file_name,
-            virtual_path,
-            target_root,
-            map,
-            app,
-            task_id,
-        );
-    }
-
-    // --- 处理 TAR / TAR.GZ ---
-    if is_tar || is_tar_gz {
-        let file = File::open(path).map_err(|e| e.to_string())?;
-        let reader = BufReader::new(file);
-        let mut ctx = ArchiveContext {
-            target_root,
-            virtual_path,
-            map,
-            app,
-            task_id,
-        };
-        if is_tar_gz {
-            let tar = flate2::read::GzDecoder::new(reader);
-            let mut archive = tar::Archive::new(tar);
-            return crate::archive::tar::process_tar_archive(
-                &mut archive,
-                path,
-                &file_name,
-                &mut ctx,
-            );
-        } else {
-            let mut archive = tar::Archive::new(reader);
-            return crate::archive::tar::process_tar_archive(
-                &mut archive,
-                path,
-                &file_name,
-                &mut ctx,
-            );
+        .await
+        {
+            Ok(_) => return Ok(()),
+            Err(e) => {
+                eprintln!(
+                    "[WARNING] Failed to extract archive {}: {}",
+                    path.display(),
+                    e
+                );
+                // 压缩文件解压失败，记录错误但继续处理
+                let _ = app.emit(
+                    "task-update",
+                    TaskProgress {
+                        task_id: task_id.to_string(),
+                        task_type: "Import".to_string(),
+                        target: file_name.clone(),
+                        status: "RUNNING".to_string(),
+                        message: format!("Warning: Failed to extract {}", file_name),
+                        progress: 50,
+                        workspace_id: None,
+                    },
+                );
+                return Err(e);
+            }
         }
-    }
-
-    // --- 处理纯 GZ ---
-    if is_plain_gz {
-        return crate::archive::gz::process_gz_file(
-            path,
-            &file_name,
-            virtual_path,
-            target_root,
-            map,
-            app,
-            task_id,
-        );
     }
 
     // --- 普通文件 ---
     let real_path = path.to_string_lossy().to_string();
-
-    // ✅ 使用 normalize_path_separator 统一路径分隔符
     let normalized_virtual = normalize_path_separator(virtual_path);
 
     map.insert(real_path, normalized_virtual.clone());
-    // 注意：为了性能考虑，不再逐个文件输出日志
-    // 日志汇总在处理完成后输出
     Ok(())
 }
 
@@ -275,10 +248,14 @@ pub fn process_path_recursive_inner(
 ///
 /// # 行为
 ///
-/// - 压缩文件：使用原始处理逻辑（不收集元数据）
+/// - 压缩文件：使用统一 ArchiveManager 接口处理
 /// - 普通文件：收集元数据并添加到 `metadata_map`
+///
+/// # 并发安全
+///
+/// - 使用 Box::pin 解决递归异步调用问题
 #[allow(clippy::too_many_arguments)]
-pub fn process_path_recursive_inner_with_metadata(
+async fn process_path_recursive_inner_with_metadata(
     path: &Path,
     virtual_path: &str,
     target_root: &Path,
@@ -287,7 +264,7 @@ pub fn process_path_recursive_inner_with_metadata(
     app: &AppHandle,
     task_id: &str,
     workspace_id: &str,
-) -> Result<(), String> {
+) -> Result<()> {
     // 处理目录
     if path.is_dir() {
         for entry in WalkDir::new(path)
@@ -296,9 +273,11 @@ pub fn process_path_recursive_inner_with_metadata(
             .into_iter()
             .filter_map(|e| e.ok())
         {
-            let entry_name = entry.file_name().to_string_lossy();
+            let entry_name = entry.file_name().to_string_lossy().to_string();
             let new_virtual = format!("{}/{}", virtual_path, entry_name);
-            process_path_recursive_with_metadata(
+
+            // 使用 Box::pin 解决递归异步调用
+            Box::pin(process_path_recursive_with_metadata(
                 entry.path(),
                 &new_virtual,
                 target_root,
@@ -307,42 +286,34 @@ pub fn process_path_recursive_inner_with_metadata(
                 app,
                 task_id,
                 workspace_id,
-            );
+            ))
+            .await;
         }
         return Ok(());
     }
 
-    let path_str = path.to_string_lossy();
     let file_name = path
         .file_name()
-        .ok_or("Invalid filename")?
-        .to_string_lossy();
-    let lower_path = path_str.to_lowercase();
+        .ok_or_else(|| AppError::validation_error("Invalid filename"))?
+        .to_string_lossy()
+        .to_string();
 
     let _ = app.emit(
         "task-update",
         TaskProgress {
             task_id: task_id.to_string(),
             task_type: "Import".to_string(),
-            target: file_name.to_string(),
+            target: file_name.clone(),
             status: "RUNNING".to_string(),
             message: format!("Processing: {}", file_name),
             progress: 50,
-            workspace_id: None, // 文件处理进度
+            workspace_id: None,
         },
     );
 
-    // 判断文件类型
-    let is_zip = lower_path.ends_with(".zip");
-    let is_rar = lower_path.ends_with(".rar");
-    let is_tar = lower_path.ends_with(".tar");
-    let is_tar_gz = lower_path.ends_with(".tar.gz") || lower_path.ends_with(".tgz");
-    let is_plain_gz = lower_path.ends_with(".gz") && !is_tar_gz;
-
-    // 压缩文件不收集元数据，只处理普通文件
-    if is_zip || is_rar || is_tar || is_tar_gz || is_plain_gz {
-        // 递归调用原始的处理函数（不收集元数据）
-        return process_path_recursive_inner(
+    // 压缩文件不收集元数据，使用原始处理逻辑
+    if is_archive_file(path) {
+        return Box::pin(process_path_recursive_inner(
             path,
             virtual_path,
             target_root,
@@ -350,13 +321,12 @@ pub fn process_path_recursive_inner_with_metadata(
             app,
             task_id,
             workspace_id,
-        );
+        ))
+        .await;
     }
 
     // --- 普通文件：收集元数据 ---
     let real_path = path.to_string_lossy().to_string();
-
-    // ✅ 使用 normalize_path_separator 统一路径分隔符
     let normalized_virtual = normalize_path_separator(virtual_path);
 
     map.insert(real_path.clone(), normalized_virtual.clone());
@@ -364,9 +334,142 @@ pub fn process_path_recursive_inner_with_metadata(
     // 收集文件元数据
     if let Ok(metadata) = get_file_metadata(path) {
         metadata_map.insert(real_path.clone(), metadata);
-        // 注意：为了性能考虑，不再逐个文件输出日志
     }
-    // 日志汇总在处理完成后输出
+
+    Ok(())
+}
+
+/// 检查文件是否为压缩文件
+///
+/// # 支持的格式
+///
+/// - ZIP (.zip)
+/// - RAR (.rar)
+/// - TAR (.tar, .tar.gz, .tgz)
+/// - GZ (.gz)
+fn is_archive_file(path: &Path) -> bool {
+    let _archive_manager = ArchiveManager::new();
+    _archive_manager.supported_extensions().iter().any(|ext| {
+        // 检查扩展名是否匹配
+        if let Some(file_ext) = path.extension().and_then(|s| s.to_str()) {
+            if file_ext.eq_ignore_ascii_case(ext) {
+                return true;
+            }
+        }
+
+        // 检查复合扩展名如 .tar.gz
+        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
+            let lower_name = name.to_lowercase();
+            if lower_name.ends_with(&format!(".{}", ext)) {
+                return true;
+            }
+        }
+
+        false
+    })
+}
+
+/// 提取压缩文件并递归处理内容
+///
+/// # 参数
+///
+/// - `archive_manager`: ArchiveManager 实例
+/// - `archive_path`: 压缩文件路径
+/// - `virtual_path`: 虚拟路径前缀
+/// - `target_root`: 解压目标根目录
+/// - `map`: 路径映射表
+/// - `app`: Tauri 应用句柄
+/// - `task_id`: 任务 ID
+/// - `workspace_id`: 工作区 ID
+///
+/// # 行为
+///
+/// 1. 创建临时解压目录
+/// 2. 使用 ArchiveManager 解压文件
+/// 3. 递归处理解压后的文件（支持嵌套压缩包）
+/// 4. 清理临时目录（失败时）
+#[allow(clippy::too_many_arguments)]
+async fn extract_and_process_archive(
+    archive_manager: &ArchiveManager,
+    archive_path: &Path,
+    virtual_path: &str,
+    target_root: &Path,
+    map: &mut HashMap<String, String>,
+    app: &AppHandle,
+    task_id: &str,
+    workspace_id: &str,
+) -> Result<()> {
+    let file_name = archive_path
+        .file_name()
+        .ok_or_else(|| AppError::validation_error("Invalid archive filename"))?
+        .to_string_lossy()
+        .to_string();
+
+    // 创建临时解压目录 (workspace_id/archive_name_timestamp)
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let extract_dir_name = format!("{}_{}", file_name.replace('.', "_"), timestamp);
+    let extract_dir = target_root.join(workspace_id).join(&extract_dir_name);
+
+    // 确保解压目录存在
+    fs::create_dir_all(&extract_dir).await.map_err(|e| {
+        AppError::archive_error(
+            format!("Failed to create extraction directory: {}", e),
+            Some(extract_dir.clone()),
+        )
+    })?;
+
+    // 使用 ArchiveManager 统一接口提取文件
+    let summary = archive_manager
+        .extract_archive(archive_path, &extract_dir)
+        .await
+        .map_err(|e| {
+            AppError::archive_error(
+                format!("Failed to extract {}: {}", file_name, e),
+                Some(archive_path.to_path_buf()),
+            )
+        })?;
+
+    // 报告提取结果
+    eprintln!(
+        "[INFO] Extracted {} files from {} (total size: {} bytes)",
+        summary.files_extracted, file_name, summary.total_size
+    );
+
+    if summary.has_errors() {
+        eprintln!("[WARNING] Extraction errors: {:?}", summary.errors);
+    }
+
+    // 递归处理解压后的文件（支持嵌套压缩包）
+    for extracted_file in &summary.extracted_files {
+        let relative_path = extracted_file.strip_prefix(&extract_dir).map_err(|_| {
+            AppError::validation_error(format!(
+                "Failed to compute relative path for {}",
+                extracted_file.display()
+            ))
+        })?;
+
+        let new_virtual = format!(
+            "{}/{}/{}",
+            virtual_path,
+            file_name,
+            relative_path.to_string_lossy()
+        );
+
+        // 使用 Box::pin 递归处理（支持嵌套压缩包）
+        Box::pin(process_path_recursive(
+            extracted_file,
+            &new_virtual,
+            target_root,
+            map,
+            app,
+            task_id,
+            workspace_id,
+        ))
+        .await;
+    }
 
     Ok(())
 }

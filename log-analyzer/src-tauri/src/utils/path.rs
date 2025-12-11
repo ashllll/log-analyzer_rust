@@ -134,6 +134,7 @@ pub fn normalize_path_separator(path: &str) -> String {
 /// let result = safe_path_join(base, "../evil");
 /// // 结果: /base/evil (.. 被移除)
 /// ```
+#[allow(dead_code)]
 pub fn safe_path_join(base: &Path, component: &str) -> PathBuf {
     // 移除路径穿越尝试
     let sanitized = component
