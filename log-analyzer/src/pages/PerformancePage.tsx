@@ -9,6 +9,16 @@ interface PerformancePageProps {
   addToast: (type: 'success' | 'error' | 'info', message: string) => void;
 }
 
+interface PerformanceMetricsResponse {
+  memory_used_mb: number;
+  path_map_size: number;
+  cache_size: number;
+  last_search_duration_ms: number;
+  cache_hit_rate: number;
+  indexed_files_count: number;
+  index_file_size_mb: number;
+}
+
 /**
  * 性能监控页面
  * 显示应用性能指标，包括内存使用、索引大小、缓存命中率等
@@ -20,15 +30,15 @@ const PerformancePage = ({ addToast }: PerformancePageProps) => {
   const loadStats = useCallback(async () => {
     setLoading(true);
     try {
-      const metrics = await invoke<any>('get_performance_metrics');
+      const metrics = await invoke<PerformanceMetricsResponse>('get_performance_metrics');
       setStats({
-        memoryUsed: metrics.memory_used_mb,
-        pathMapSize: metrics.path_map_size,
-        cacheSize: metrics.cache_size,
-        lastSearchDuration: metrics.last_search_duration_ms,
-        cacheHitRate: metrics.cache_hit_rate,
-        indexedFilesCount: metrics.indexed_files_count,
-        indexFileSizeMb: metrics.index_file_size_mb
+        memoryUsed: metrics.memory_used_mb ?? 0,
+        pathMapSize: metrics.path_map_size ?? 0,
+        cacheSize: metrics.cache_size ?? 0,
+        lastSearchDuration: metrics.last_search_duration_ms ?? 0,
+        cacheHitRate: metrics.cache_hit_rate ?? 0,
+        indexedFilesCount: metrics.indexed_files_count ?? 0,
+        indexFileSizeMb: metrics.index_file_size_mb ?? 0
       });
     } catch (e) {
       addToast('error', `Failed to load stats: ${e}`);

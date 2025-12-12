@@ -35,10 +35,10 @@ impl ArchiveManager {
      */
     pub fn new() -> Self {
         let handlers: Vec<Box<dyn ArchiveHandler>> = vec![
-            Box::new(TarHandler),  // 先检查TAR（包括tar.gz等）
-            Box::new(GzHandler),   // 再检查纯GZ
-            Box::new(ZipHandler),  // 然后ZIP
-            Box::new(RarHandler),  // 最后RAR
+            Box::new(TarHandler), // 先检查TAR（包括tar.gz等）
+            Box::new(GzHandler),  // 再检查纯GZ
+            Box::new(ZipHandler), // 然后ZIP
+            Box::new(RarHandler), // 最后RAR
         ];
 
         Self { handlers }

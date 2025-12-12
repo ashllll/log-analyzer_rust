@@ -3,6 +3,8 @@
 use std::fs;
 use std::path::Path;
 
+use sysinfo::{PidExt, ProcessRefreshKind, RefreshKind, System, SystemExt};
+
 use tauri::{command, AppHandle, Manager, State};
 
 use crate::models::{AppState, PerformanceMetrics};
@@ -73,51 +75,19 @@ pub async fn get_performance_metrics(
 }
 
 fn get_process_memory_mb() -> f64 {
-    #[cfg(target_os = "windows")]
-    {
-        use std::mem;
+    if let Ok(pid) = sysinfo::get_current_pid() {
+        let mut system = System::new_with_specifics(
+            RefreshKind::new().with_processes(ProcessRefreshKind::new()),
+        );
+        system.refresh_process(pid);
 
-        #[repr(C)]
-        #[allow(non_snake_case)]
-        struct PROCESS_MEMORY_COUNTERS {
-            cb: u32,
-            PageFaultCount: u32,
-            PeakWorkingSetSize: usize,
-            WorkingSetSize: usize,
-            QuotaPeakPagedPoolUsage: usize,
-            QuotaPagedPoolUsage: usize,
-            QuotaPeakNonPagedPoolUsage: usize,
-            QuotaNonPagedPoolUsage: usize,
-            PagefileUsage: usize,
-            PeakPagefileUsage: usize,
+        if let Some(process) = system.process(pid) {
+            // sysinfo 返回 KiB，这里统一转换为 MB
+            return process.memory() as f64 / 1024.0;
         }
-
-        extern "system" {
-            fn GetCurrentProcess() -> *mut std::ffi::c_void;
-            fn GetProcessMemoryInfo(
-                process: *mut std::ffi::c_void,
-                ppsmemCounters: *mut PROCESS_MEMORY_COUNTERS,
-                cb: u32,
-            ) -> i32;
-        }
-
-        unsafe {
-            let mut pmc: PROCESS_MEMORY_COUNTERS = mem::zeroed();
-            pmc.cb = mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
-
-            let process = GetCurrentProcess();
-            if GetProcessMemoryInfo(process, &mut pmc, pmc.cb) != 0 {
-                return pmc.WorkingSetSize as f64 / 1024.0 / 1024.0;
-            }
-        }
-
-        0.0
     }
 
-    #[cfg(not(target_os = "windows"))]
-    {
-        0.0
-    }
+    0.0
 }
 
 fn calculate_dir_size(dir: &Path) -> Result<u64, std::io::Error> {

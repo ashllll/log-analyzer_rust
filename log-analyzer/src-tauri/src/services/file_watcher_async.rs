@@ -39,7 +39,8 @@ impl AsyncFileReader {
         let file_size = metadata.len();
         
         // 计算实际起始偏移量
-        let start_offset = if file_size < offset { 0 } else { offset };
+        // 读取偏移量超出文件大小时，返回空结果而不是重新读取整个文件
+        let start_offset = file_size.min(offset);
         
         if start_offset >= file_size {
             return Ok((Vec::new(), file_size));
@@ -161,9 +162,17 @@ mod tests {
         let (lines_partial, _) = AsyncFileReader::read_file_from_offset(path, 10)
             .await
             .unwrap();
-        
+
         assert!(lines_partial.len() > 0);
         assert!(lines_partial.len() <= 5);
+
+        // 从超过文件大小的偏移量读取时应该返回空结果
+        let (empty_lines, size_after_end) = AsyncFileReader::read_file_from_offset(path, u64::MAX)
+            .await
+            .unwrap();
+
+        assert!(empty_lines.is_empty());
+        assert_eq!(size, size_after_end);
     }
 
     #[tokio::test]

@@ -108,9 +108,7 @@ pub fn load_index(index_path: &Path) -> IndexResult {
     if index_path.extension().and_then(|s| s.to_str()) == Some("gz") {
         // 解压
         let mut decoder = GzDecoder::new(file);
-        decoder
-            .read_to_end(&mut data)
-            .map_err(AppError::Io)?;
+        decoder.read_to_end(&mut data).map_err(AppError::Io)?;
     } else {
         // 未压缩（兼容旧版本）
         let mut reader = BufReader::new(file);
