@@ -1,9 +1,7 @@
 //! 导入相关命令实现
 //! 包含工作区导入与 RAR 支持检查
 
-#![allow(clippy::await_holding_lock)]
-
-use std::{fs, panic, path::Path, thread};
+use std::{collections::HashMap, fs, panic, path::Path, thread};
 
 use tauri::{command, AppHandle, Emitter, Manager, State};
 use uuid::Uuid;
@@ -87,7 +85,6 @@ pub async fn import_folder(
 
         let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
             rt.block_on(async {
-                let state = app_handle.state::<AppState>();
                 let source_path = Path::new(&path);
                 let root_name = source_path
                     .file_name()
@@ -108,33 +105,43 @@ pub async fn import_folder(
                     },
                 );
 
-                let mut map_guard = state
-                    .path_map
-                    .lock()
-                    .map_err(|e| format!("Lock error: {}", e))?;
-                let mut metadata_guard = state
-                    .file_metadata
-                    .lock()
-                    .map_err(|e| format!("Lock error: {}", e))?;
+                // 创建局部映射表，在没有持有锁的情况下处理数据
+                let mut local_map = HashMap::new();
+                let mut local_metadata = HashMap::new();
 
-                // 异步调用处理函数
+                // 异步调用处理函数，不持有任何锁
                 process_path_recursive_with_metadata(
                     source_path,
                     &root_name,
                     &extracted_dir,
-                    &mut map_guard,
-                    &mut metadata_guard,
+                    &mut local_map,
+                    &mut local_metadata,
                     &app_handle,
                     &task_id_clone,
                     &workspace_id_clone,
                 )
                 .await;
 
-                // 显式释放锁以避免 await_holding_lock 警告
+                // 处理完成后，获取锁并更新共享状态
+                let state = app_handle.state::<AppState>();
+                
+                // 更新路径映射
+                let mut map_guard = state
+                    .path_map
+                    .lock()
+                    .map_err(|e| format!("Lock error: {}", e))?;
+                *map_guard = local_map;
                 drop(map_guard);
+                
+                // 更新元数据映射
+                let mut metadata_guard = state
+                    .file_metadata
+                    .lock()
+                    .map_err(|e| format!("Lock error: {}", e))?;
+                *metadata_guard = local_metadata;
                 drop(metadata_guard);
 
-                // 重新获取锁用于保存索引
+                // 保存索引
                 let map_guard = state
                     .path_map
                     .lock()

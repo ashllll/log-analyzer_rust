@@ -3,7 +3,7 @@
 use std::fs;
 use std::path::Path;
 
-use sysinfo::{PidExt, ProcessRefreshKind, RefreshKind, System, SystemExt};
+use sysinfo::System;
 
 use tauri::{command, AppHandle, Manager, State};
 
@@ -76,10 +76,8 @@ pub async fn get_performance_metrics(
 
 fn get_process_memory_mb() -> f64 {
     if let Ok(pid) = sysinfo::get_current_pid() {
-        let mut system = System::new_with_specifics(
-            RefreshKind::new().with_processes(ProcessRefreshKind::new()),
-        );
-        system.refresh_process(pid);
+        // 使用正确的刷新方法，先获取系统信息
+        let system = System::new_all();
 
         if let Some(process) = system.process(pid) {
             // sysinfo 返回 KiB，这里统一转换为 MB

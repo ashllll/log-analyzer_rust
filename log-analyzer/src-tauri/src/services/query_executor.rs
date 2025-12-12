@@ -14,10 +14,8 @@ use crate::services::query_validator::QueryValidator;
  * - QueryExecutor: 执行查询和结果匹配
  */
 pub struct QueryExecutor {
-    #[allow(dead_code)]
-    validator: QueryValidator,
     planner: QueryPlanner,
-    pattern_matcher: Option<PatternMatcher>,
+    // 移除未使用的 validator 字段
 }
 
 impl QueryExecutor {
@@ -29,9 +27,7 @@ impl QueryExecutor {
      */
     pub fn new(cache_size: usize) -> Self {
         Self {
-            validator: QueryValidator,
             planner: QueryPlanner::new(cache_size),
-            pattern_matcher: None,
         }
     }
 
@@ -52,34 +48,7 @@ impl QueryExecutor {
         // 2. 构建执行计划
         let mut plan = self.planner.build_plan(query)?;
 
-        // 3. 初始化Aho-Corasick模式匹配器（仅用于AND策略，且根据大小写敏感性选择）
-        self.pattern_matcher = if plan.strategy
-            == crate::services::query_planner::SearchStrategy::And
-        {
-            let (case_sensitive_terms, case_insensitive_terms): (Vec<&PlanTerm>, Vec<&PlanTerm>) =
-                plan.terms.iter().partition(|term| term.case_sensitive);
-
-            if !case_insensitive_terms.is_empty() && case_sensitive_terms.is_empty() {
-                let patterns = case_insensitive_terms
-                    .iter()
-                    .map(|term| term.value.clone())
-                    .collect();
-                Some(PatternMatcher::new(patterns, true))
-            } else if case_insensitive_terms.is_empty() && !case_sensitive_terms.is_empty() {
-                let patterns = case_sensitive_terms
-                    .iter()
-                    .map(|term| term.value.clone())
-                    .collect();
-                Some(PatternMatcher::new(patterns, false))
-            } else {
-                // 混合大小写敏感时使用回退逻辑，确保逐项遵循配置
-                None
-            }
-        } else {
-            None
-        };
-
-        // 4. 按优先级排序
+        // 3. 按优先级排序
         plan.sort_by_priority();
 
         Ok(plan)
@@ -99,11 +68,26 @@ impl QueryExecutor {
     pub fn matches_line(&self, plan: &ExecutionPlan, line: &str) -> bool {
         match plan.strategy {
             crate::services::query_planner::SearchStrategy::And => {
-                // 使用Aho-Corasick算法优化AND逻辑
-                if let Some(ref matcher) = self.pattern_matcher {
+                // 根据执行计划创建临时的 PatternMatcher
+                let (case_sensitive_terms, case_insensitive_terms): (Vec<&PlanTerm>, Vec<&PlanTerm>) = 
+                    plan.terms.iter().partition(|term| term.case_sensitive);
+                
+                if !case_insensitive_terms.is_empty() && case_sensitive_terms.is_empty() {
+                    let patterns = case_insensitive_terms
+                        .iter()
+                        .map(|term| term.value.clone())
+                        .collect();
+                    let matcher = PatternMatcher::new(patterns, true);
+                    matcher.matches_all(line)
+                } else if case_insensitive_terms.is_empty() && !case_sensitive_terms.is_empty() {
+                    let patterns = case_sensitive_terms
+                        .iter()
+                        .map(|term| term.value.clone())
+                        .collect();
+                    let matcher = PatternMatcher::new(patterns, false);
                     matcher.matches_all(line)
                 } else {
-                    // 回退到逐项校验，保留大小写敏感配置
+                    // 混合大小写敏感时使用逐项校验，保留大小写敏感配置
                     let line_lower = line.to_lowercase();
                     for term in &plan.terms {
                         if term.case_sensitive {

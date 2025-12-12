@@ -22,7 +22,30 @@ pub trait ArchiveHandler: Send + Sync {
     fn can_handle(&self, path: &Path) -> bool;
 
     /**
-     * 提取压缩文件内容
+     * 提取压缩文件内容（带安全限制）
+     *
+     * # 参数
+     * * `source` - 源文件路径
+     * * `target_dir` - 目标目录
+     * * `max_file_size` - 单个文件最大大小（字节）
+     * * `max_total_size` - 解压后总大小限制（字节）
+     * * `max_file_count` - 解压文件数量限制
+     *
+     * # 返回
+     * * `Ok(ExtractionSummary)` - 提取摘要
+     * * `Err(AppError)` - 提取失败
+     */
+    async fn extract_with_limits(
+        &self, 
+        source: &Path, 
+        target_dir: &Path, 
+        max_file_size: u64, 
+        max_total_size: u64, 
+        max_file_count: usize
+    ) -> Result<ExtractionSummary>;
+
+    /**
+     * 提取压缩文件内容（兼容旧版本，默认调用带限制的方法）
      *
      * # 参数
      * * `source` - 源文件路径
@@ -32,7 +55,16 @@ pub trait ArchiveHandler: Send + Sync {
      * * `Ok(ExtractionSummary)` - 提取摘要
      * * `Err(AppError)` - 提取失败
      */
-    async fn extract(&self, source: &Path, target_dir: &Path) -> Result<ExtractionSummary>;
+    async fn extract(&self, source: &Path, target_dir: &Path) -> Result<ExtractionSummary> {
+        // 默认使用安全限制：单个文件100MB，总大小1GB，文件数1000
+        self.extract_with_limits(
+            source, 
+            target_dir, 
+            100 * 1024 * 1024, 
+            1 * 1024 * 1024 * 1024, 
+            1000
+        ).await
+    }
 
     /**
      * 获取支持的文件扩展名

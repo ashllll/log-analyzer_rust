@@ -20,7 +20,14 @@ impl ArchiveHandler for GzHandler {
             .unwrap_or(false)
     }
 
-    async fn extract(&self, source: &Path, target_dir: &Path) -> Result<ExtractionSummary> {
+    async fn extract_with_limits(
+        &self, 
+        source: &Path, 
+        target_dir: &Path, 
+        max_file_size: u64, 
+        max_total_size: u64, 
+        max_file_count: usize
+    ) -> Result<ExtractionSummary> {
         // 确保目标目录存在
         fs::create_dir_all(target_dir).await.map_err(|e| {
             AppError::archive_error(
@@ -40,6 +47,33 @@ impl ArchiveHandler for GzHandler {
         // 解压数据
         let decompressed_data = decompress_gzip(&compressed_data)?;
         let data_len = decompressed_data.len() as u64;
+
+        // 安全检查：单个文件大小限制
+        if data_len > max_file_size {
+            return Err(AppError::archive_error(
+                format!("File {} exceeds maximum size limit of {} bytes", 
+                       source.display(), max_file_size), 
+                Some(source.to_path_buf())
+            ));
+        }
+        
+        // 安全检查：总大小限制
+        if data_len > max_total_size {
+            return Err(AppError::archive_error(
+                format!("Extraction would exceed total size limit of {} bytes", 
+                       max_total_size), 
+                Some(source.to_path_buf())
+            ));
+        }
+        
+        // 安全检查：文件数量限制（GZ通常只包含一个文件）
+        if max_file_count < 1 {
+            return Err(AppError::archive_error(
+                format!("Extraction would exceed file count limit of {} files", 
+                       max_file_count), 
+                Some(source.to_path_buf())
+            ));
+        }
 
         // 确定输出文件名（去掉.gz扩展名）
         let output_name = source
@@ -63,6 +97,17 @@ impl ArchiveHandler for GzHandler {
         summary.add_file(output_path, data_len);
 
         Ok(summary)
+    }
+
+    async fn extract(&self, source: &Path, target_dir: &Path) -> Result<ExtractionSummary> {
+        // 默认使用安全限制：单个文件100MB，总大小1GB，文件数1000
+        self.extract_with_limits(
+            source, 
+            target_dir, 
+            100 * 1024 * 1024, 
+            1 * 1024 * 1024 * 1024, 
+            1000
+        ).await
     }
 
     fn file_extensions(&self) -> Vec<&str> {

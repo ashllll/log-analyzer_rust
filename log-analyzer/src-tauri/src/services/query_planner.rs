@@ -151,7 +151,7 @@ impl ExecutionPlan {
      * 获取所有搜索项
      */
     #[allow(dead_code)]
-    pub fn get_terms(&self) -> &[String] {
+    pub fn get_terms(&self) -> &[PlanTerm] {
         &self.terms
     }
 

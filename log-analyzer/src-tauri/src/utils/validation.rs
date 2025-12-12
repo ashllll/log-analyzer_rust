@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 /// 验证路径参数
 ///
-/// 检查路径是否非空且存在。
+/// 检查路径是否非空、存在、安全且有效。
 ///
 /// # 参数
 ///
@@ -24,10 +24,22 @@ use std::path::PathBuf;
 /// let path = validate_path_param("/path/to/file", "input_path")?;
 /// ```
 pub fn validate_path_param(path: &str, param_name: &str) -> Result<PathBuf, String> {
+    // 1. 检查路径是否为空
     if path.trim().is_empty() {
         return Err(format!("Parameter '{}' cannot be empty", param_name));
     }
 
+    // 2. 检查路径长度
+    if path.len() > 1024 {
+        return Err(format!("Parameter '{}' path too long (max 1024 characters)", param_name));
+    }
+
+    // 3. 检查路径是否包含非法字符（防止路径遍历攻击）
+    if path.contains("../") || path.contains("..\\") || path.starts_with("../") || path.starts_with("..\\") {
+        return Err(format!("Parameter '{}' contains invalid path traversal sequences", param_name));
+    }
+
+    // 4. 检查路径是否存在
     let path_buf = PathBuf::from(path);
     if !path_buf.exists() {
         return Err(format!("Path does not exist: {}", path));

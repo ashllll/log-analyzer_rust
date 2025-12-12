@@ -241,6 +241,7 @@ async fn process_path_recursive_inner(
     let normalized_virtual = normalize_path_separator(virtual_path);
 
     map.insert(real_path, normalized_virtual.clone());
+
     Ok(())
 }
 
@@ -469,6 +470,24 @@ async fn extract_and_process_archive(
             workspace_id,
         ))
         .await;
+    }
+
+    // 清理临时解压目录
+    let cleanup_result = fs::remove_dir_all(&extract_dir).await;
+    match cleanup_result {
+        Ok(_) => {
+            eprintln!(
+                "[INFO] Successfully cleaned up temporary extraction directory: {}", 
+                extract_dir.display()
+            );
+        }
+        Err(e) => {
+            eprintln!(
+                "[WARNING] Failed to clean up temporary extraction directory {}: {}", 
+                extract_dir.display(), e
+            );
+            // 可以考虑添加到清理队列，不过当前设计中没有传递清理队列到这里
+        }
     }
 
     Ok(())

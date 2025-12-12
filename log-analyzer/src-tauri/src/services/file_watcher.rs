@@ -35,6 +35,7 @@ use tauri::{AppHandle, Emitter};
 /// - **截断检测**：如果文件被截断（大小小于上次偏移量），自动从头读取
 /// - **增量读取**：只读取新增内容，避免重复处理
 /// - **错误容忍**：单行读取错误不中断整体流程
+/// - **大文件优化**：使用大缓冲区提高读取效率
 pub fn read_file_from_offset(path: &Path, offset: u64) -> Result<(Vec<String>, u64)> {
     use std::io::{Seek, SeekFrom};
 
@@ -63,8 +64,8 @@ pub fn read_file_from_offset(path: &Path, offset: u64) -> Result<(Vec<String>, u
     file.seek(SeekFrom::Start(start_offset))
         .map_err(AppError::Io)?;
 
-    // 读取新增内容
-    let reader = BufReader::new(file);
+    // 读取新增内容 - 使用大缓冲区（64KB）提高大文件读取效率
+    let reader = BufReader::with_capacity(65536, file);
     let mut lines = Vec::new();
 
     for line_result in reader.lines() {

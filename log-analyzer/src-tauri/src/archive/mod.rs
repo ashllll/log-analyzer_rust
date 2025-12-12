@@ -27,6 +27,10 @@ use std::path::Path;
  */
 pub struct ArchiveManager {
     handlers: Vec<Box<dyn ArchiveHandler>>,
+    // 安全配置
+    max_file_size: u64,      // 单个文件最大大小（字节）
+    max_total_size: u64,     // 解压后总大小限制（字节）
+    max_file_count: usize,   // 解压文件数量限制
 }
 
 impl ArchiveManager {
@@ -41,7 +45,12 @@ impl ArchiveManager {
             Box::new(RarHandler), // 最后RAR
         ];
 
-        Self { handlers }
+        Self {
+            handlers,
+            max_file_size: 100 * 1024 * 1024,      // 默认单个文件最大100MB
+            max_total_size: 1 * 1024 * 1024 * 1024, // 默认总大小最大1GB
+            max_file_count: 1000,                   // 默认最大文件数1000
+        }
     }
 
     /**
@@ -62,8 +71,14 @@ impl ArchiveManager {
             )
         })?;
 
-        // 使用处理器提取文件
-        handler.extract(source, target_dir).await
+        // 使用处理器提取文件，传递安全限制参数
+        handler.extract_with_limits(
+            source, 
+            target_dir, 
+            self.max_file_size, 
+            self.max_total_size, 
+            self.max_file_count
+        ).await
     }
 
     /**

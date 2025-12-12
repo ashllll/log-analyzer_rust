@@ -41,7 +41,14 @@ impl ArchiveHandler for TarHandler {
         false
     }
 
-    async fn extract(&self, source: &Path, target_dir: &Path) -> Result<ExtractionSummary> {
+    async fn extract_with_limits(
+        &self, 
+        source: &Path, 
+        target_dir: &Path, 
+        max_file_size: u64, 
+        max_total_size: u64, 
+        max_file_count: usize
+    ) -> Result<ExtractionSummary> {
         // 确保目标目录存在
         fs::create_dir_all(target_dir).await.map_err(|e| {
             AppError::archive_error(
@@ -54,8 +61,16 @@ impl ArchiveHandler for TarHandler {
         let target_path = target_dir.to_path_buf();
 
         // 在阻塞任务中执行TAR解压（tar crate是同步的）
-        let summary =
-            tokio::task::spawn_blocking(move || extract_tar_sync(&source_path, &target_path))
+        let summary = 
+            tokio::task::spawn_blocking(move || {
+                extract_tar_sync_with_limits(
+                    &source_path, 
+                    &target_path, 
+                    max_file_size, 
+                    max_total_size, 
+                    max_file_count
+                )
+            })
                 .await
                 .map_err(|e| {
                     AppError::archive_error(
@@ -67,15 +82,32 @@ impl ArchiveHandler for TarHandler {
         Ok(summary)
     }
 
+    async fn extract(&self, source: &Path, target_dir: &Path) -> Result<ExtractionSummary> {
+        // 默认使用安全限制：单个文件100MB，总大小1GB，文件数1000
+        self.extract_with_limits(
+            source, 
+            target_dir, 
+            100 * 1024 * 1024, 
+            1 * 1024 * 1024 * 1024, 
+            1000
+        ).await
+    }
+
     fn file_extensions(&self) -> Vec<&str> {
         vec!["tar", "tar.gz", "tgz"]
     }
 }
 
 /**
- * 同步方式提取TAR归档文件
+ * 同步方式提取TAR归档文件（带安全限制）
  */
-fn extract_tar_sync(source: &Path, target_dir: &Path) -> Result<ExtractionSummary> {
+fn extract_tar_sync_with_limits(
+    source: &Path, 
+    target_dir: &Path, 
+    max_file_size: u64, 
+    max_total_size: u64, 
+    max_file_count: usize
+) -> Result<ExtractionSummary> {
     let mut summary = ExtractionSummary::new();
 
     // 打开源文件
@@ -100,23 +132,54 @@ fn extract_tar_sync(source: &Path, target_dir: &Path) -> Result<ExtractionSummar
         // 处理 .tar.gz 或 .tgz
         let gz_decoder = GzDecoder::new(reader);
         let mut archive = Archive::new(gz_decoder);
-        extract_entries(&mut archive, target_dir, &mut summary)?;
+        extract_entries_with_limits(
+            &mut archive, 
+            target_dir, 
+            &mut summary, 
+            max_file_size, 
+            max_total_size, 
+            max_file_count
+        )?;
     } else {
         // 处理 .tar
         let mut archive = Archive::new(reader);
-        extract_entries(&mut archive, target_dir, &mut summary)?;
+        extract_entries_with_limits(
+            &mut archive, 
+            target_dir, 
+            &mut summary, 
+            max_file_size, 
+            max_total_size, 
+            max_file_count
+        )?;
     }
 
     Ok(summary)
 }
 
 /**
- * 从Archive中提取所有条目
+ * 同步方式提取TAR归档文件（兼容旧版本）
  */
-fn extract_entries<R: std::io::Read>(
+fn extract_tar_sync(source: &Path, target_dir: &Path) -> Result<ExtractionSummary> {
+    // 默认使用安全限制：单个文件100MB，总大小1GB，文件数1000
+    extract_tar_sync_with_limits(
+        source, 
+        target_dir, 
+        100 * 1024 * 1024, 
+        1 * 1024 * 1024 * 1024, 
+        1000
+    )
+}
+
+/**
+ * 从Archive中提取所有条目（带安全限制）
+ */
+fn extract_entries_with_limits<R: std::io::Read>(
     archive: &mut Archive<R>,
     target_dir: &Path,
     summary: &mut ExtractionSummary,
+    max_file_size: u64,
+    max_total_size: u64,
+    max_file_count: usize
 ) -> Result<()> {
     let entries = archive
         .entries()
@@ -137,6 +200,36 @@ fn extract_entries<R: std::io::Read>(
         let size = entry.size();
         let is_file = entry.header().entry_type().is_file();
 
+        // 安全检查
+        if is_file {
+            // 检查文件大小
+            if size > max_file_size {
+                return Err(AppError::archive_error(
+                    format!("File {} exceeds maximum size limit of {} bytes", 
+                           entry_path.display(), max_file_size), 
+                    Some(entry_path)
+                ));
+            }
+            
+            // 检查总大小限制
+            if summary.total_size + size > max_total_size {
+                return Err(AppError::archive_error(
+                    format!("Extraction would exceed total size limit of {} bytes", 
+                           max_total_size), 
+                    Some(entry_path)
+                ));
+            }
+            
+            // 检查文件数量限制
+            if summary.files_extracted + 1 > max_file_count {
+                return Err(AppError::archive_error(
+                    format!("Extraction would exceed file count limit of {} files", 
+                           max_file_count), 
+                    Some(entry_path)
+                ));
+            }
+        }
+
         // 解压条目
         if let Err(e) = entry.unpack(&full_path) {
             // 记录错误但继续处理其他文件
@@ -151,6 +244,25 @@ fn extract_entries<R: std::io::Read>(
     }
 
     Ok(())
+}
+
+/**
+ * 从Archive中提取所有条目（兼容旧版本）
+ */
+fn extract_entries<R: std::io::Read>(
+    archive: &mut Archive<R>,
+    target_dir: &Path,
+    summary: &mut ExtractionSummary,
+) -> Result<()> {
+    // 默认使用安全限制：单个文件100MB，总大小1GB，文件数1000
+    extract_entries_with_limits(
+        archive, 
+        target_dir, 
+        summary, 
+        100 * 1024 * 1024, 
+        1 * 1024 * 1024 * 1024, 
+        1000
+    )
 }
 
 #[cfg(test)]
