@@ -9,7 +9,7 @@
 [![React](https://img.shields.io/badge/React-19+-61dafb.svg)](https://reactjs.org/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](http://www.apache.org/licenses/LICENSE-2.0.txt)
 
-支持多格式压缩包 · 递归解压 · Aho-Corasick搜索 · 索引持久化 · 虚拟滚动 · 跨平台
+支持多格式压缩包 · 递归解压 · Aho-Corasick 搜索 · 索引持久化 · 虚拟滚动 · 跨平台
 
 [快速开始](#-快速开始) · [功能特性](#-功能特性) · [技术栈](#-技术栈) · [开发指南](#-开发指南) · [许可证](#-许可证)
 
@@ -23,7 +23,7 @@ Log Analyzer 是一款专为开发者和运维人员打造的**桌面端日志�
 
 ### 为什么选择 Log Analyzer?
 
-- 🚀 **极致性能**: Aho-Corasick多模式匹配算法,搜索复杂度从O(n×m)降至O(n+m),性能提升80%+
+- 🚀 **极致性能**: Aho-Corasick 多模式匹配算法，搜索复杂度从 O(n×m) 降至 O(n+m)，性能提升 80%+
 - 📦 **智能解压**: 统一压缩处理器架构,支持ZIP/RAR/GZ/TAR等格式,代码重复减少70%
 - 🛡️ **统一错误处理**: 使用`thiserror`创建`AppError`,错误处理一致性达100%
 - 🏗️ **清晰架构**: QueryExecutor职责拆分,符合SRP原则,可维护性显著提升
@@ -178,7 +178,7 @@ log-analyzer/
 
 ### 技术亮点
 
-- 🚀 **Aho-Corasick算法** - 多模式匹配,性能提升80%+
+- 🚀 **Aho-Corasick 算法** - 多模式匹配，性能提升 80%+
 - 🛡️ **统一错误处理** - thiserror创建AppError,错误一致性100%
 - 🏗️ **职责拆分** - Validator/Planner/Executor,复杂度降低60%
 - ⚡ **异步I/O** - tokio非阻塞,UI响应性提升
