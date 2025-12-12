@@ -1,7 +1,7 @@
 use crate::error::Result;
 use crate::models::search::*;
 use crate::services::pattern_matcher::PatternMatcher;
-use crate::services::query_planner::{ExecutionPlan, QueryPlanner};
+use crate::services::query_planner::{ExecutionPlan, PlanTerm, QueryPlanner};
 use crate::services::query_validator::QueryValidator;
 
 /**
@@ -52,14 +52,32 @@ impl QueryExecutor {
         // 2. 构建执行计划
         let mut plan = self.planner.build_plan(query)?;
 
-        // 3. 初始化Aho-Corasick模式匹配器（仅用于AND策略）
-        self.pattern_matcher =
-            if plan.strategy == crate::services::query_planner::SearchStrategy::And {
-                let patterns = plan.terms.clone();
-                Some(PatternMatcher::new(patterns, true)) // AND策略总是大小写不敏感
+        // 3. 初始化Aho-Corasick模式匹配器（仅用于AND策略，且根据大小写敏感性选择）
+        self.pattern_matcher = if plan.strategy
+            == crate::services::query_planner::SearchStrategy::And
+        {
+            let (case_sensitive_terms, case_insensitive_terms): (Vec<&PlanTerm>, Vec<&PlanTerm>) =
+                plan.terms.iter().partition(|term| term.case_sensitive);
+
+            if !case_insensitive_terms.is_empty() && case_sensitive_terms.is_empty() {
+                let patterns = case_insensitive_terms
+                    .iter()
+                    .map(|term| term.value.clone())
+                    .collect();
+                Some(PatternMatcher::new(patterns, true))
+            } else if case_insensitive_terms.is_empty() && !case_sensitive_terms.is_empty() {
+                let patterns = case_sensitive_terms
+                    .iter()
+                    .map(|term| term.value.clone())
+                    .collect();
+                Some(PatternMatcher::new(patterns, false))
             } else {
+                // 混合大小写敏感时使用回退逻辑，确保逐项遵循配置
                 None
-            };
+            }
+        } else {
+            None
+        };
 
         // 4. 按优先级排序
         plan.sort_by_priority();
@@ -85,10 +103,14 @@ impl QueryExecutor {
                 if let Some(ref matcher) = self.pattern_matcher {
                     matcher.matches_all(line)
                 } else {
-                    // 回退到原始实现
+                    // 回退到逐项校验，保留大小写敏感配置
                     let line_lower = line.to_lowercase();
                     for term in &plan.terms {
-                        if !line_lower.contains(term) {
+                        if term.case_sensitive {
+                            if !line.contains(&term.value) {
+                                return false;
+                            }
+                        } else if !line_lower.contains(&term.value.to_lowercase()) {
                             return false;
                         }
                     }
@@ -154,12 +176,12 @@ impl QueryExecutor {
 
         for compiled in &plan.regexes {
             if let Some(mat) = compiled.regex.find(line) {
-                // 直接使用term_id和terms列表查找值
+                // 使用term_id定位原始配置，确保保留大小写设置
                 let term_value = plan
                     .terms
                     .iter()
-                    .find(|t| t.to_lowercase() == mat.as_str().to_lowercase())
-                    .cloned()
+                    .find(|t| t.id == compiled.term_id)
+                    .map(|t| t.value.clone())
                     .unwrap_or_else(|| mat.as_str().to_string());
 
                 details.push(MatchDetail {
@@ -195,4 +217,62 @@ pub struct MatchDetail {
     pub priority: u32,
     /// 匹配位置（可选）
     pub match_position: Option<(usize, usize)>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::models::search::{QueryMetadata, TermSource};
+
+    fn build_term(
+        id: &str,
+        value: &str,
+        operator: QueryOperator,
+        case_sensitive: bool,
+    ) -> SearchTerm {
+        SearchTerm {
+            id: id.to_string(),
+            value: value.to_string(),
+            operator,
+            source: TermSource::User,
+            preset_group_id: None,
+            is_regex: false,
+            priority: 1,
+            enabled: true,
+            case_sensitive,
+        }
+    }
+
+    fn build_query(terms: Vec<SearchTerm>, global_operator: QueryOperator) -> SearchQuery {
+        SearchQuery {
+            id: "q1".to_string(),
+            terms,
+            global_operator,
+            filters: None,
+            metadata: QueryMetadata {
+                created_at: 0,
+                last_modified: 0,
+                execution_count: 0,
+                label: None,
+            },
+        }
+    }
+
+    #[test]
+    fn test_matches_line_and_mixed_case_sensitivity() {
+        let mut executor = QueryExecutor::new(10);
+        let query = build_query(
+            vec![
+                build_term("1", "ERROR", QueryOperator::And, true),
+                build_term("2", "timeout", QueryOperator::And, false),
+            ],
+            QueryOperator::And,
+        );
+
+        let plan = executor.execute(&query).expect("plan should build");
+
+        assert!(!executor.matches_line(&plan, "error timeout happened"));
+        assert!(executor.matches_line(&plan, "ERROR timeout happened"));
+    }
 }
