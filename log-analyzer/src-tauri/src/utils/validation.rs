@@ -31,12 +31,22 @@ pub fn validate_path_param(path: &str, param_name: &str) -> Result<PathBuf, Stri
 
     // 2. 检查路径长度
     if path.len() > 1024 {
-        return Err(format!("Parameter '{}' path too long (max 1024 characters)", param_name));
+        return Err(format!(
+            "Parameter '{}' path too long (max 1024 characters)",
+            param_name
+        ));
     }
 
     // 3. 检查路径是否包含非法字符（防止路径遍历攻击）
-    if path.contains("../") || path.contains("..\\") || path.starts_with("../") || path.starts_with("..\\") {
-        return Err(format!("Parameter '{}' contains invalid path traversal sequences", param_name));
+    if path.contains("../")
+        || path.contains("..\\")
+        || path.starts_with("../")
+        || path.starts_with("..\\")
+    {
+        return Err(format!(
+            "Parameter '{}' contains invalid path traversal sequences",
+            param_name
+        ));
     }
 
     // 4. 检查路径是否存在

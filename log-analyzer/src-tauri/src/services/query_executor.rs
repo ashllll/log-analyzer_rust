@@ -69,9 +69,11 @@ impl QueryExecutor {
         match plan.strategy {
             crate::services::query_planner::SearchStrategy::And => {
                 // 根据执行计划创建临时的 PatternMatcher
-                let (case_sensitive_terms, case_insensitive_terms): (Vec<&PlanTerm>, Vec<&PlanTerm>) = 
-                    plan.terms.iter().partition(|term| term.case_sensitive);
-                
+                let (case_sensitive_terms, case_insensitive_terms): (
+                    Vec<&PlanTerm>,
+                    Vec<&PlanTerm>,
+                ) = plan.terms.iter().partition(|term| term.case_sensitive);
+
                 if !case_insensitive_terms.is_empty() && case_sensitive_terms.is_empty() {
                     let patterns = case_insensitive_terms
                         .iter()

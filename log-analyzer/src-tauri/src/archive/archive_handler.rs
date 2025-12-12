@@ -36,12 +36,12 @@ pub trait ArchiveHandler: Send + Sync {
      * * `Err(AppError)` - 提取失败
      */
     async fn extract_with_limits(
-        &self, 
-        source: &Path, 
-        target_dir: &Path, 
-        max_file_size: u64, 
-        max_total_size: u64, 
-        max_file_count: usize
+        &self,
+        source: &Path,
+        target_dir: &Path,
+        max_file_size: u64,
+        max_total_size: u64,
+        max_file_count: usize,
     ) -> Result<ExtractionSummary>;
 
     /**
@@ -55,15 +55,17 @@ pub trait ArchiveHandler: Send + Sync {
      * * `Ok(ExtractionSummary)` - 提取摘要
      * * `Err(AppError)` - 提取失败
      */
+    #[allow(dead_code)]
     async fn extract(&self, source: &Path, target_dir: &Path) -> Result<ExtractionSummary> {
         // 默认使用安全限制：单个文件100MB，总大小1GB，文件数1000
         self.extract_with_limits(
-            source, 
-            target_dir, 
-            100 * 1024 * 1024, 
-            1 * 1024 * 1024 * 1024, 
-            1000
-        ).await
+            source,
+            target_dir,
+            100 * 1024 * 1024,
+            1024 * 1024 * 1024, // 1GB
+            1000,
+        )
+        .await
     }
 
     /**

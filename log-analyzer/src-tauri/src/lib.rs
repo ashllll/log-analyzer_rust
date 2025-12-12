@@ -107,7 +107,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use crate::utils::{normalize_path_separator, validate_path_param, validate_workspace_id};
+    use crate::utils::{normalize_path_separator, validate_workspace_id};
 
     #[test]
     fn test_path_utils() {

@@ -124,7 +124,7 @@ pub async fn import_folder(
 
                 // 处理完成后，获取锁并更新共享状态
                 let state = app_handle.state::<AppState>();
-                
+
                 // 更新路径映射
                 let mut map_guard = state
                     .path_map
@@ -132,7 +132,7 @@ pub async fn import_folder(
                     .map_err(|e| format!("Lock error: {}", e))?;
                 *map_guard = local_map;
                 drop(map_guard);
-                
+
                 // 更新元数据映射
                 let mut metadata_guard = state
                     .file_metadata

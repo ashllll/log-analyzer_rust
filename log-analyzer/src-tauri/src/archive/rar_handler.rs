@@ -22,12 +22,12 @@ impl ArchiveHandler for RarHandler {
     }
 
     async fn extract_with_limits(
-        &self, 
-        source: &Path, 
-        target_dir: &Path, 
-        max_file_size: u64, 
-        max_total_size: u64, 
-        max_file_count: usize
+        &self,
+        source: &Path,
+        target_dir: &Path,
+        max_file_size: u64,
+        max_total_size: u64,
+        max_file_count: usize,
     ) -> Result<ExtractionSummary> {
         // 确保目标目录存在
         fs::create_dir_all(target_dir).await.map_err(|e| {
@@ -65,25 +65,28 @@ impl ArchiveHandler for RarHandler {
 
         // 扫描提取的文件，应用安全限制
         scan_extracted_files_with_limits(
-            target_dir, 
-            &mut summary, 
-            max_file_size, 
-            max_total_size, 
-            max_file_count
-        ).await?;
+            target_dir,
+            &mut summary,
+            max_file_size,
+            max_total_size,
+            max_file_count,
+        )
+        .await?;
 
         Ok(summary)
     }
 
+    #[allow(dead_code)]
     async fn extract(&self, source: &Path, target_dir: &Path) -> Result<ExtractionSummary> {
         // 默认使用安全限制：单个文件100MB，总大小1GB，文件数1000
         self.extract_with_limits(
-            source, 
-            target_dir, 
-            100 * 1024 * 1024, 
-            1 * 1024 * 1024 * 1024, 
-            1000
-        ).await
+            source,
+            target_dir,
+            100 * 1024 * 1024,
+            1024 * 1024 * 1024, // 1GB
+            1000,
+        )
+        .await
     }
 
     fn file_extensions(&self) -> Vec<&str> {
@@ -131,7 +134,7 @@ fn scan_extracted_files_with_limits<'a>(
     summary: &'a mut ExtractionSummary,
     max_file_size: u64,
     max_total_size: u64,
-    max_file_count: usize
+    max_file_count: usize,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send + 'a>> {
     Box::pin(async move {
         let mut entries = fs::read_dir(dir).await.map_err(|e| {
@@ -157,38 +160,52 @@ fn scan_extracted_files_with_limits<'a>(
 
             if metadata.is_file() {
                 let file_size = metadata.len();
-                
+
                 // 安全检查：单个文件大小限制
                 if file_size > max_file_size {
                     return Err(AppError::archive_error(
-                        format!("File {} exceeds maximum size limit of {} bytes", 
-                               path.display(), max_file_size), 
-                        Some(path)
+                        format!(
+                            "File {} exceeds maximum size limit of {} bytes",
+                            path.display(),
+                            max_file_size
+                        ),
+                        Some(path),
                     ));
                 }
-                
+
                 // 安全检查：总大小限制
                 if summary.total_size + file_size > max_total_size {
                     return Err(AppError::archive_error(
-                        format!("Extraction would exceed total size limit of {} bytes", 
-                               max_total_size), 
-                        Some(path)
+                        format!(
+                            "Extraction would exceed total size limit of {} bytes",
+                            max_total_size
+                        ),
+                        Some(path),
                     ));
                 }
-                
+
                 // 安全检查：文件数量限制
                 if summary.files_extracted + 1 > max_file_count {
                     return Err(AppError::archive_error(
-                        format!("Extraction would exceed file count limit of {} files", 
-                               max_file_count), 
-                        Some(path)
+                        format!(
+                            "Extraction would exceed file count limit of {} files",
+                            max_file_count
+                        ),
+                        Some(path),
                     ));
                 }
-                
+
                 summary.add_file(path.clone(), file_size);
             } else if metadata.is_dir() {
                 // 使用 Box::pin 递归扫描子目录
-                scan_extracted_files_with_limits(&path, summary, max_file_size, max_total_size, max_file_count).await?;
+                scan_extracted_files_with_limits(
+                    &path,
+                    summary,
+                    max_file_size,
+                    max_total_size,
+                    max_file_count,
+                )
+                .await?;
             }
         }
 
@@ -203,6 +220,7 @@ fn scan_extracted_files_with_limits<'a>(
  *
  * - 使用 Box::pin 解决递归异步调用问题
  */
+#[allow(dead_code)]
 fn scan_extracted_files<'a>(
     dir: &'a Path,
     summary: &'a mut ExtractionSummary,
@@ -210,12 +228,13 @@ fn scan_extracted_files<'a>(
     Box::pin(async move {
         // 默认使用安全限制：单个文件100MB，总大小1GB，文件数1000
         scan_extracted_files_with_limits(
-            dir, 
-            summary, 
-            100 * 1024 * 1024, 
-            1 * 1024 * 1024 * 1024, 
-            1000
-        ).await
+            dir,
+            summary,
+            100 * 1024 * 1024,
+            1024 * 1024 * 1024, // 1GB
+            1000,
+        )
+        .await
     })
 }
 
