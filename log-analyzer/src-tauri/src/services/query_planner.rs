@@ -40,65 +40,31 @@ impl QueryPlanner {
     pub fn build_plan(&mut self, query: &SearchQuery) -> Result<ExecutionPlan> {
         let enabled_terms: Vec<&SearchTerm> = query.terms.iter().filter(|t| t.enabled).collect();
 
-        // 按操作符分组
-        let mut and_terms = Vec::new();
-        let mut or_terms = Vec::new();
-        let mut not_terms = Vec::new();
-
-        for term in &enabled_terms {
-            match term.operator {
-                QueryOperator::And => and_terms.push(*term),
-                QueryOperator::Or => or_terms.push(*term),
-                QueryOperator::Not => not_terms.push(*term),
-            }
-        }
-
-        // 决定策略（优先级：AND > OR > NOT）
-        let strategy = if !and_terms.is_empty() {
-            SearchStrategy::And
-        } else if !or_terms.is_empty() {
-            SearchStrategy::Or
-        } else {
-            SearchStrategy::Not
+        // 决定策略（优先级由全局配置决定）
+        let strategy = match query.global_operator {
+            QueryOperator::And => SearchStrategy::And,
+            QueryOperator::Or => SearchStrategy::Or,
+            QueryOperator::Not => SearchStrategy::Not,
         };
 
         // 编译正则表达式
         let mut regexes = Vec::new();
-        let terms_list: Vec<String> = match strategy {
-            SearchStrategy::And => {
-                for term in &and_terms {
-                    let regex = self.compile_regex(term)?;
-                    regexes.push(CompiledRegex {
-                        regex,
-                        term_id: term.id.clone(),
-                        priority: term.priority,
-                    });
-                }
-                and_terms.iter().map(|t| t.value.to_lowercase()).collect()
-            }
-            SearchStrategy::Or => {
-                for term in &or_terms {
-                    let regex = self.compile_regex(term)?;
-                    regexes.push(CompiledRegex {
-                        regex,
-                        term_id: term.id.clone(),
-                        priority: term.priority,
-                    });
-                }
-                or_terms.iter().map(|t| t.value.clone()).collect()
-            }
-            SearchStrategy::Not => {
-                for term in &not_terms {
-                    let regex = self.compile_regex(term)?;
-                    regexes.push(CompiledRegex {
-                        regex,
-                        term_id: term.id.clone(),
-                        priority: term.priority,
-                    });
-                }
-                not_terms.iter().map(|t| t.value.clone()).collect()
-            }
-        };
+        let mut terms_list = Vec::new();
+
+        for term in &enabled_terms {
+            let regex = self.compile_regex(term)?;
+            regexes.push(CompiledRegex {
+                regex,
+                term_id: term.id.clone(),
+                priority: term.priority,
+            });
+
+            terms_list.push(PlanTerm {
+                id: term.id.clone(),
+                value: term.value.clone(),
+                case_sensitive: term.case_sensitive,
+            });
+        }
 
         Ok(ExecutionPlan {
             strategy,
@@ -162,7 +128,14 @@ pub struct ExecutionPlan {
     pub regexes: Vec<CompiledRegex>,
     #[allow(dead_code)]
     pub term_count: usize,
-    pub terms: Vec<String>,
+    pub terms: Vec<PlanTerm>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlanTerm {
+    pub id: String,
+    pub value: String,
+    pub case_sensitive: bool,
 }
 
 impl ExecutionPlan {
@@ -252,6 +225,10 @@ mod tests {
         assert_eq!(plan.strategy, SearchStrategy::And);
         assert_eq!(plan.term_count, 2);
         assert_eq!(plan.terms.len(), 2);
+        assert!(plan
+            .terms
+            .iter()
+            .all(|term| matches!(term.case_sensitive, false)));
     }
 
     #[test]
@@ -276,6 +253,7 @@ mod tests {
         let plan = planner.build_plan(&query).unwrap();
         assert_eq!(plan.strategy, SearchStrategy::Or);
         assert_eq!(plan.term_count, 2);
+        assert_eq!(plan.terms.len(), 2);
     }
 
     #[test]
@@ -297,6 +275,34 @@ mod tests {
         let plan = planner.build_plan(&query).unwrap();
         assert_eq!(plan.strategy, SearchStrategy::Not);
         assert_eq!(plan.term_count, 1);
+        assert_eq!(plan.terms.len(), 1);
+    }
+
+    #[test]
+    fn test_plan_respects_global_operator_overrides() {
+        let mut planner = QueryPlanner::new(100);
+        let query = SearchQuery {
+            id: "test".to_string(),
+            terms: vec![
+                create_test_term("error", QueryOperator::And),
+                create_test_term("timeout", QueryOperator::Not),
+            ],
+            // 全局 OR 应覆盖局部 operator 设置
+            global_operator: QueryOperator::Or,
+            filters: None,
+            metadata: QueryMetadata {
+                created_at: 0,
+                last_modified: 0,
+                execution_count: 0,
+                label: None,
+            },
+        };
+
+        let plan = planner.build_plan(&query).unwrap();
+        assert_eq!(plan.strategy, SearchStrategy::Or);
+        assert_eq!(plan.term_count, 2);
+        assert_eq!(plan.regexes.len(), 2);
+        assert_eq!(plan.terms.len(), 2);
     }
 
     #[test]
@@ -403,9 +409,21 @@ mod tests {
             ],
             term_count: 3,
             terms: vec![
-                "test1".to_string(),
-                "test2".to_string(),
-                "test3".to_string(),
+                PlanTerm {
+                    id: "1".to_string(),
+                    value: "test1".to_string(),
+                    case_sensitive: false,
+                },
+                PlanTerm {
+                    id: "2".to_string(),
+                    value: "test2".to_string(),
+                    case_sensitive: false,
+                },
+                PlanTerm {
+                    id: "3".to_string(),
+                    value: "test3".to_string(),
+                    case_sensitive: false,
+                },
             ],
         };
 
