@@ -1,8 +1,8 @@
-[根目录](../../../CLAUDE.md) > [src-tauri](../) > **archive (压缩包处理)**
+[根目录../../../CLAUDE.md) > [src-tauri](../) > **archive (压缩包处理)**
 
 # 压缩包处理模块文档
 
-> 支持 ZIP/TAR/GZ/RAR 多格式递归解压
+> 支持 ZIP/TAR/GZ/RAR 多格式递归解压 | v0.0.47+ Builder 模式重构
 
 ## 模块职责
 
@@ -14,6 +14,82 @@ Archive 模块负责统一处理各种压缩格式的日志文件，采用策略
 - **统一接口**: ArchiveHandler Trait 标准化
 - **错误处理**: 详细错误信息和路径追踪
 - **跨平台**: 内置多平台 unrar 二进制
+- **Builder 模式**: v0.0.47+ 采用 Builder 模式重构参数管理
+
+## v0.0.47 重大更新：Builder 模式重构
+
+### 解决的问题
+
+- **参数超限**: `process_path_recursive` 8参数 → 0参数
+- **类型安全**: 编译时参数验证
+- **可读性**: 链式配置提升代码可读性
+- **向后兼容**: 保留旧函数并标记为 deprecated
+
+### 新旧 API 对比
+
+**旧方式 (v0.0.46-)**:
+```rust
+process_path_recursive_with_metadata(
+    path,
+    virtual_path,
+    target_root,
+    &mut map,
+    &mut metadata,
+    &app,
+    task_id,
+    workspace_id,
+    &state,
+)
+.await;
+```
+
+**新方式 (v0.0.47+)**:
+```rust
+ProcessBuilderWithMetadata::new(
+    path.to_path_buf(),
+    virtual_path.to_string(),
+    &mut map,
+    &mut metadata,
+    &app,
+    &state,
+)
+.target_root(target_root.to_path_buf())
+.task_id(task_id.to_string())
+.workspace_id(workspace_id.to_string())
+.execute()
+.await;
+```
+
+### Builder 结构体
+
+#### ProcessBuilder
+```rust
+pub struct ProcessBuilder<'a> {
+    path: PathBuf,
+    virtual_path: String,
+    target_root: PathBuf,
+    map: &'a mut HashMap<String, String>,
+    app: &'a AppHandle,
+    task_id: String,
+    workspace_id: String,
+    state: &'a AppState,
+}
+```
+
+#### ProcessBuilderWithMetadata
+```rust
+pub struct ProcessBuilderWithMetadata<'a> {
+    path: PathBuf,
+    virtual_path: String,
+    target_root: PathBuf,
+    map: &'a mut HashMap<String, String>,
+    file_metadata: &'a mut HashMap<String, FileMetadata>,
+    app: &'a AppHandle,
+    task_id: String,
+    workspace_id: String,
+    state: &'a AppState,
+}
+```
 
 ## 架构设计
 
