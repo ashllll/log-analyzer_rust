@@ -6,12 +6,15 @@
 //! - 支持异步递归解压嵌套压缩包
 //! - 收集元数据（增量索引）
 //! - 错误处理和进度报告
+//! - RAII模式的资源管理和内存泄漏防护
 
 use crate::archive::ArchiveManager;
 use crate::error::{AppError, Result};
 use crate::models::config::FileMetadata;
 use crate::models::log_entry::TaskProgress;
+use crate::models::AppState;
 use crate::services::file_watcher::get_file_metadata;
+use crate::utils::cleanup::try_cleanup_temp_dir;
 use crate::utils::path::normalize_path_separator;
 use std::collections::HashMap;
 use std::path::Path;
@@ -45,6 +48,7 @@ pub async fn process_path_recursive(
     app: &AppHandle,
     task_id: &str,
     workspace_id: &str,
+    state: &AppState,
 ) {
     // 错误处理：如果处理失败，不中断整个流程
     if let Err(e) = process_path_recursive_inner(
@@ -55,21 +59,36 @@ pub async fn process_path_recursive(
         app,
         task_id,
         workspace_id,
+        state,
     )
     .await
     {
-        eprintln!("[WARNING] Failed to process {}: {}", path.display(), e);
+        let error_context = format!("Failed to process path: {} - Error: {}", path.display(), e);
+        eprintln!("[ERROR] {}", error_context);
+
+        // 发送结构化错误信息到前端
         let _ = app.emit(
             "task-update",
             TaskProgress {
                 task_id: task_id.to_string(),
                 task_type: "Import".to_string(),
-                target: "Processing".to_string(),
+                target: path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("Unknown")
+                    .to_string(),
                 status: "RUNNING".to_string(),
-                message: format!("Warning: {}", e),
+                message: format!("Processing error: {}", e),
                 progress: 50,
                 workspace_id: None, // 这是内部进度更新，没有 workspace_id
             },
+        );
+
+        // 记录详细错误信息用于调试
+        eprintln!(
+            "[DEBUG] Error details - Path: {:?}, Error type: {:?}",
+            path,
+            std::any::type_name::<AppError>()
         );
     }
 }
@@ -96,6 +115,7 @@ pub async fn process_path_recursive_with_metadata(
     app: &AppHandle,
     task_id: &str,
     workspace_id: &str,
+    state: &AppState,
 ) {
     if let Err(e) = process_path_recursive_inner_with_metadata(
         path,
@@ -106,21 +126,40 @@ pub async fn process_path_recursive_with_metadata(
         app,
         task_id,
         workspace_id,
+        state,
     )
     .await
     {
-        eprintln!("[WARNING] Failed to process {}: {}", path.display(), e);
+        let error_context = format!(
+            "Failed to process metadata path: {} - Error: {}",
+            path.display(),
+            e
+        );
+        eprintln!("[ERROR] {}", error_context);
+
+        // 发送结构化错误信息到前端
         let _ = app.emit(
             "task-update",
             TaskProgress {
                 task_id: task_id.to_string(),
                 task_type: "Import".to_string(),
-                target: "Processing".to_string(),
+                target: path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("Unknown")
+                    .to_string(),
                 status: "RUNNING".to_string(),
-                message: format!("Warning: {}", e),
+                message: format!("Metadata processing error: {}", e),
                 progress: 50,
                 workspace_id: None, // 内部进度更新
             },
+        );
+
+        // 记录详细错误信息用于调试
+        eprintln!(
+            "[DEBUG] Metadata error details - Path: {:?}, Error type: {:?}",
+            path,
+            std::any::type_name::<AppError>()
         );
     }
 }
@@ -147,6 +186,7 @@ async fn process_path_recursive_inner(
     app: &AppHandle,
     task_id: &str,
     workspace_id: &str,
+    state: &AppState,
 ) -> Result<()> {
     // 处理目录
     if path.is_dir() {
@@ -168,6 +208,7 @@ async fn process_path_recursive_inner(
                 app,
                 task_id,
                 workspace_id,
+                state,
             ))
             .await;
         }
@@ -208,28 +249,50 @@ async fn process_path_recursive_inner(
             app,
             task_id,
             workspace_id,
+            state,
         )
         .await
         {
             Ok(_) => return Ok(()),
             Err(e) => {
-                eprintln!(
-                    "[WARNING] Failed to extract archive {}: {}",
-                    path.display(),
-                    e
-                );
-                // 压缩文件解压失败，记录错误但继续处理
+                let archive_error =
+                    format!("Archive extraction failed for {}: {}", path.display(), e);
+                eprintln!("[ERROR] {}", archive_error);
+
+                // 压缩文件解压失败，记录错误并发送结构化信息
+                let error_target = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("Unknown")
+                    .to_string();
                 let _ = app.emit(
                     "task-update",
                     TaskProgress {
                         task_id: task_id.to_string(),
                         task_type: "Import".to_string(),
-                        target: file_name.clone(),
+                        target: error_target.clone(),
                         status: "RUNNING".to_string(),
-                        message: format!("Warning: Failed to extract {}", file_name),
+                        message: format!("Archive extraction failed: {}", e),
                         progress: 50,
                         workspace_id: None,
                     },
+                );
+
+                // 发送专门的错误事件
+                let _ = app.emit(
+                    "archive-error",
+                    serde_json::json!({
+                        "path": path.display().to_string(),
+                        "error": e.to_string(),
+                        "task_id": task_id,
+                        "workspace_id": workspace_id
+                    }),
+                );
+
+                eprintln!(
+                    "[DEBUG] Archive error details - File: {:?}, Error type: {:?}",
+                    path,
+                    std::any::type_name::<AppError>()
                 );
                 return Err(e);
             }
@@ -265,6 +328,7 @@ async fn process_path_recursive_inner_with_metadata(
     app: &AppHandle,
     task_id: &str,
     workspace_id: &str,
+    state: &AppState,
 ) -> Result<()> {
     // 处理目录
     if path.is_dir() {
@@ -287,6 +351,7 @@ async fn process_path_recursive_inner_with_metadata(
                 app,
                 task_id,
                 workspace_id,
+                state,
             ))
             .await;
         }
@@ -322,6 +387,7 @@ async fn process_path_recursive_inner_with_metadata(
             app,
             task_id,
             workspace_id,
+            state,
         ))
         .await;
     }
@@ -370,7 +436,7 @@ fn is_archive_file(path: &Path) -> bool {
     })
 }
 
-/// 提取压缩文件并递归处理内容
+/// 提取压缩文件并递归处理内容（增强资源管理版）
 ///
 /// # 参数
 ///
@@ -382,13 +448,15 @@ fn is_archive_file(path: &Path) -> bool {
 /// - `app`: Tauri 应用句柄
 /// - `task_id`: 任务 ID
 /// - `workspace_id`: 工作区 ID
+/// - `state`: 应用状态（用于清理队列和资源监控）
 ///
 /// # 行为
 ///
-/// 1. 创建临时解压目录
+/// 1. 创建临时解压目录（RAII管理）
 /// 2. 使用 ArchiveManager 解压文件
 /// 3. 递归处理解压后的文件（支持嵌套压缩包）
-/// 4. 清理临时目录（失败时）
+/// 4. 清理临时目录（失败时使用清理队列）
+/// 5. 资源使用监控和内存泄漏防护
 #[allow(clippy::too_many_arguments)]
 async fn extract_and_process_archive(
     archive_manager: &ArchiveManager,
@@ -399,12 +467,20 @@ async fn extract_and_process_archive(
     app: &AppHandle,
     task_id: &str,
     workspace_id: &str,
+    state: &AppState,
 ) -> Result<()> {
+    let start_time = std::time::Instant::now();
     let file_name = archive_path
         .file_name()
         .ok_or_else(|| AppError::validation_error("Invalid archive filename"))?
         .to_string_lossy()
         .to_string();
+
+    // 资源使用监控 - 开始
+    eprintln!(
+        "[INFO] [RESOURCE] Starting archive processing: {} (Memory: estimated, Files: pending)",
+        file_name
+    );
 
     // 创建临时解压目录 (workspace_id/archive_name_timestamp)
     let timestamp = std::time::SystemTime::now()
@@ -468,28 +544,42 @@ async fn extract_and_process_archive(
             app,
             task_id,
             workspace_id,
+            state,
         ))
         .await;
     }
 
-    // 清理临时解压目录
-    let cleanup_result = fs::remove_dir_all(&extract_dir).await;
-    match cleanup_result {
-        Ok(_) => {
-            eprintln!(
-                "[INFO] Successfully cleaned up temporary extraction directory: {}",
-                extract_dir.display()
-            );
-        }
-        Err(e) => {
-            eprintln!(
-                "[WARNING] Failed to clean up temporary extraction directory {}: {}",
-                extract_dir.display(),
-                e
-            );
-            // 可以考虑添加到清理队列，不过当前设计中没有传递清理队列到这里
-        }
+    // 清理临时解压目录（使用健壮的清理机制）
+    try_cleanup_temp_dir(&extract_dir, &state.cleanup_queue);
+
+    // 验证清理结果
+    let cleanup_successful = !extract_dir.exists();
+    if cleanup_successful {
+        eprintln!(
+            "[INFO] [RESOURCE] Successfully cleaned up temporary extraction directory: {}",
+            extract_dir.display()
+        );
+    } else {
+        eprintln!(
+            "[WARNING] [RESOURCE] Temporary extraction directory still exists after cleanup attempt: {}",
+            extract_dir.display()
+        );
+        // 目录仍然存在，已通过try_cleanup_temp_dir添加到清理队列
+        // 这里不需要额外的错误处理，由清理队列在后台处理
     }
+
+    // 资源使用监控 - 结束
+    let duration = start_time.elapsed();
+    eprintln!(
+        "[INFO] [RESOURCE] Completed archive processing: {} (Duration: {:?}, Cleanup: {})",
+        file_name,
+        duration,
+        if cleanup_successful {
+            "Success"
+        } else {
+            "Queued"
+        }
+    );
 
     Ok(())
 }

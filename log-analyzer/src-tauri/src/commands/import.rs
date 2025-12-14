@@ -109,6 +109,9 @@ pub async fn import_folder(
                 let mut local_map = HashMap::new();
                 let mut local_metadata = HashMap::new();
 
+                // 获取应用状态（用于清理队列）
+                let state = app_handle.state::<AppState>();
+
                 // 异步调用处理函数，不持有任何锁
                 process_path_recursive_with_metadata(
                     source_path,
@@ -119,11 +122,11 @@ pub async fn import_folder(
                     &app_handle,
                     &task_id_clone,
                     &workspace_id_clone,
+                    &state,
                 )
                 .await;
 
                 // 处理完成后，获取锁并更新共享状态
-                let state = app_handle.state::<AppState>();
 
                 // 更新路径映射
                 let mut map_guard = state

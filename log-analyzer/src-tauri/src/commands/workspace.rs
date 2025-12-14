@@ -470,60 +470,108 @@ fn cleanup_workspace_resources(
 
     // 3.1 从 workspace_indices 读取索引文件，精准删除 path_map 与 file_metadata 项
     let indexed_paths: Option<Vec<String>> = match state.workspace_indices.lock() {
-        Ok(indices) => indices
-            .get(workspace_id)
-            .and_then(|path| load_index(path).ok())
-            .map(|(paths, _meta)| paths.keys().cloned().collect()),
+        Ok(indices) => match indices.get(workspace_id) {
+            Some(index_path) => match load_index(index_path) {
+                Ok((paths, _meta)) => {
+                    let path_keys: Vec<String> = paths.keys().cloned().collect();
+                    eprintln!(
+                        "[INFO] [delete_workspace] Step 3.1: Loaded {} paths from index",
+                        path_keys.len()
+                    );
+                    Some(path_keys)
+                }
+                Err(e) => {
+                    let error =
+                        format!("Failed to load index file {}: {}", index_path.display(), e);
+                    eprintln!("[ERROR] [delete_workspace] Step 3.1 failed: {}", error);
+                    errors.push(error);
+                    None
+                }
+            },
+            None => {
+                eprintln!("[INFO] [delete_workspace] Step 3.1: No index path found for workspace");
+                None
+            }
+        },
         Err(e) => {
             let error = format!("Failed to lock workspace_indices: {}", e);
-            eprintln!(
-                "[WARNING] [delete_workspace] Step 3.1 (load index) failed: {}",
-                error
-            );
+            eprintln!("[ERROR] [delete_workspace] Step 3.1 failed: {}", error);
             errors.push(error);
             None
         }
     };
 
-    // 3.2 清除 path_map 与 file_metadata
+    // 3.2 清除 path_map 与 file_metadata（仅在成功获取路径列表时执行）
     if let Some(paths_to_remove) = indexed_paths {
-        match state.path_map.lock() {
-            Ok(mut path_map) => {
-                let before_count = path_map.len();
-                for p in &paths_to_remove {
-                    path_map.remove(p);
+        if paths_to_remove.is_empty() {
+            eprintln!("[INFO] [delete_workspace] Step 3.2: No paths to remove from path_map");
+        } else {
+            match state.path_map.lock() {
+                Ok(mut path_map) => {
+                    let before_count = path_map.len();
+                    let mut removed_count = 0;
+                    for p in &paths_to_remove {
+                        if path_map.remove(p).is_some() {
+                            removed_count += 1;
+                        }
+                    }
+                    let after_count = path_map.len();
+                    eprintln!(
+                        "[INFO] [delete_workspace] Step 3.2: Removed {} entries from path_map ({} -> {})",
+                        removed_count, before_count, after_count
+                    );
+
+                    // 验证清理结果
+                    if removed_count != paths_to_remove.len() {
+                        eprintln!(
+                            "[WARNING] [delete_workspace] Step 3.2: Expected to remove {} entries, but only removed {}",
+                            paths_to_remove.len(), removed_count
+                        );
+                    }
                 }
-                let removed = before_count - path_map.len();
-                eprintln!(
-                    "[INFO] [delete_workspace] Removed {} entries from path_map",
-                    removed
-                );
-            }
-            Err(e) => {
-                let error = format!("Failed to lock path_map: {}", e);
-                eprintln!("[WARNING] [delete_workspace] Step 3.2 failed: {}", error);
-                errors.push(error);
+                Err(e) => {
+                    let error = format!("Failed to lock path_map: {}", e);
+                    eprintln!("[ERROR] [delete_workspace] Step 3.2 failed: {}", error);
+                    errors.push(error);
+                }
             }
         }
 
-        match state.file_metadata.lock() {
-            Ok(mut file_metadata) => {
-                let before_count = file_metadata.len();
-                for p in &paths_to_remove {
-                    file_metadata.remove(p);
+        if paths_to_remove.is_empty() {
+            eprintln!("[INFO] [delete_workspace] Step 3.3: No paths to remove from file_metadata");
+        } else {
+            match state.file_metadata.lock() {
+                Ok(mut file_metadata) => {
+                    let before_count = file_metadata.len();
+                    let mut removed_count = 0;
+                    for p in &paths_to_remove {
+                        if file_metadata.remove(p).is_some() {
+                            removed_count += 1;
+                        }
+                    }
+                    let after_count = file_metadata.len();
+                    eprintln!(
+                        "[INFO] [delete_workspace] Step 3.3: Removed {} entries from file_metadata ({} -> {})",
+                        removed_count, before_count, after_count
+                    );
+
+                    // 验证清理结果
+                    if removed_count != paths_to_remove.len() {
+                        eprintln!(
+                            "[WARNING] [delete_workspace] Step 3.3: Expected to remove {} entries, but only removed {}",
+                            paths_to_remove.len(), removed_count
+                        );
+                    }
                 }
-                let removed = before_count - file_metadata.len();
-                eprintln!(
-                    "[INFO] [delete_workspace] Removed {} entries from file_metadata",
-                    removed
-                );
-            }
-            Err(e) => {
-                let error = format!("Failed to lock file_metadata: {}", e);
-                eprintln!("[WARNING] [delete_workspace] Step 3.3 failed: {}", error);
-                errors.push(error);
+                Err(e) => {
+                    let error = format!("Failed to lock file_metadata: {}", e);
+                    eprintln!("[ERROR] [delete_workspace] Step 3.3 failed: {}", error);
+                    errors.push(error);
+                }
             }
         }
+    } else {
+        eprintln!("[WARNING] [delete_workspace] Step 3.2-3.3: Skipping path_map and file_metadata cleanup due to index loading failure");
     }
 
     // 3.3 清除 workspace_indices（最后移除记录）
@@ -560,29 +608,72 @@ fn cleanup_workspace_resources(
     let compressed_index = index_dir.join(format!("{}.idx.gz", workspace_id));
     let uncompressed_index = index_dir.join(format!("{}.idx", workspace_id));
 
+    let mut deleted_count = 0;
+    let mut failed_count = 0;
+
     for index_path in [compressed_index, uncompressed_index] {
         if index_path.exists() {
-            match fs::remove_file(&index_path) {
-                Ok(_) => {
-                    eprintln!(
-                        "[INFO] [delete_workspace] Deleted index file: {}",
-                        index_path.display()
-                    );
+            match fs::metadata(&index_path) {
+                Ok(metadata) => {
+                    if metadata.is_file() {
+                        match fs::remove_file(&index_path) {
+                            Ok(_) => {
+                                deleted_count += 1;
+                                eprintln!(
+                                    "[INFO] [delete_workspace] Deleted index file: {} ({} bytes)",
+                                    index_path.display(),
+                                    metadata.len()
+                                );
+                            }
+                            Err(e) => {
+                                failed_count += 1;
+                                let error = format!(
+                                    "Failed to delete index file {}: {}",
+                                    index_path.display(),
+                                    e
+                                );
+                                eprintln!("[ERROR] [delete_workspace] {}", error);
+                                errors.push(error);
+                            }
+                        }
+                    } else {
+                        eprintln!(
+                            "[WARNING] [delete_workspace] Path {} exists but is not a regular file, skipping",
+                            index_path.display()
+                        );
+                    }
                 }
                 Err(e) => {
+                    failed_count += 1;
                     let error = format!(
-                        "Failed to delete index file {}: {}",
+                        "Failed to get metadata for index file {}: {}",
                         index_path.display(),
                         e
                     );
-                    eprintln!("[WARNING] [delete_workspace] {}", error);
+                    eprintln!("[ERROR] [delete_workspace] {}", error);
                     errors.push(error);
                 }
             }
+        } else {
+            eprintln!(
+                "[INFO] [delete_workspace] Index file does not exist, skipping: {}",
+                index_path.display()
+            );
         }
     }
 
-    eprintln!("[INFO] [delete_workspace] Step 4 completed: Index files processed");
+    eprintln!(
+        "[INFO] [delete_workspace] Step 4 completed: {} index files deleted, {} failures",
+        deleted_count, failed_count
+    );
+
+    // 如果关键文件删除失败，记录警告但不中断清理流程
+    if failed_count > 0 && deleted_count == 0 {
+        eprintln!(
+            "[WARNING] [delete_workspace] All index file deletions failed for workspace: {}",
+            workspace_id
+        );
+    }
 
     // ===== 步骤5: 删除解压目录 =====
     eprintln!("[INFO] [delete_workspace] Step 5: Checking for extracted directory");
