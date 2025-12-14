@@ -1,0 +1,296 @@
+{
+  "timestamp": "2025-12-13T10:08:18Z",
+  "project": {
+    "name": "log-analyzer_rust",
+    "version": "0.0.43",
+    "description": "基于 Rust + Tauri + React 的高性能桌面日志分析工具"
+  },
+  "scan_phases": {
+    "phase_a": {
+      "status": "completed",
+      "description": "全仓清点（轻量级）",
+      "duration_ms": 500
+    },
+    "phase_b": {
+      "status": "completed",
+      "description": "模块优先扫描（中等强度）",
+      "duration_ms": 1200
+    },
+    "phase_c": {
+      "status": "completed",
+      "description": "深度补捞（按需触发）",
+      "duration_ms": 800
+    }
+  },
+  "coverage_metrics": {
+    "total_files_estimated": 150,
+    "files_scanned": 45,
+    "coverage_percentage": 30,
+    "scan_truncated": false,
+    "ignore_stats": {
+      "patterns_from_gitignore": [
+        ".DS_Store",
+        "node_modules",
+        "dist",
+        "dist-ssr",
+        "src-tauri/target",
+        ".qoder",
+        "*.backup"
+      ],
+      "default_patterns_applied": [
+        ".git/**",
+        ".github/**",
+        "dist/**",
+        "build/**",
+        ".next/**",
+        "__pycache__/**",
+        "*.lock",
+        "*.log",
+        "*.bin",
+        "*.pdf",
+        "*.png",
+        "*.jpg",
+        "*.jpeg",
+        "*.gif",
+        "*.mp4",
+        "*.zip",
+        "*.tar",
+        "*.gz"
+      ],
+      "total_ignored": 105,
+      "top_ignored_dirs": [
+        ".git",
+        "node_modules",
+        "target",
+        "dist"
+      ]
+    }
+  },
+  "modules": [
+    {
+      "path": "log-analyzer",
+      "type": "main_project",
+      "language": "rust_react",
+      "description": "Tauri + React 主项目",
+      "files_count": 8,
+      "key_files": [
+        "package.json",
+        "Cargo.toml",
+        "tauri.conf.json",
+        "src/App.tsx",
+        "src/main.tsx"
+      ],
+      "submodules": [
+        {
+          "path": "log-analyzer/src-tauri",
+          "type": "rust_backend",
+          "language": "rust",
+          "description": "Rust 后端核心",
+          "files_count": 37,
+          "has_tests": true,
+          "test_files": [
+            "src-tauri/tests/helper_functions.rs"
+          ],
+          "test_coverage": "80%+",
+          "key_services": [
+            "archive",
+            "commands",
+            "models",
+            "services",
+            "utils"
+          ],
+          "claude_md": "log-analyzer/src-tauri/CLAUDE.md"
+        },
+        {
+          "path": "log-analyzer/src",
+          "type": "react_frontend",
+          "language": "typescript",
+          "description": "React 前端应用",
+          "files_count": 35,
+          "has_tests": true,
+          "test_files": [
+            "src/services/__tests__/SearchQueryBuilder.test.ts"
+          ],
+          "key_components": [
+            "components",
+            "pages",
+            "services",
+            "hooks",
+            "types"
+          ],
+          "claude_md": "log-analyzer/src/CLAUDE.md"
+        }
+      ],
+      "claude_md": "CLAUDE.md"
+    }
+  ],
+  "core_modules": [
+    {
+      "path": "log-analyzer/src-tauri/src/archive",
+      "type": "archive_handler",
+      "language": "rust",
+      "description": "压缩包处理（ZIP/TAR/GZ/RAR）",
+      "files_count": 7,
+      "features": [
+        "多格式支持",
+        "递归解压",
+        "安全限制",
+        "策略模式"
+      ],
+      "claude_md": "log-analyzer/src-tauri/src/archive/CLAUDE.md"
+    },
+    {
+      "path": "log-analyzer/src-tauri/src/services",
+      "type": "core_services",
+      "language": "rust",
+      "description": "核心业务服务（搜索/查询/匹配）",
+      "files_count": 8,
+      "features": [
+        "Aho-Corasick算法",
+        "三层查询架构",
+        "并行搜索",
+        "异步I/O"
+      ],
+      "claude_md": "log-analyzer/src-tauri/src/services/CLAUDE.md"
+    }
+  ],
+  "test_coverage": {
+    "rust": {
+      "total_tests": 40,
+      "coverage": "80%+",
+      "test_files": [
+        "src-tauri/tests/helper_functions.rs"
+      ],
+      "module_tests": {
+        "pattern_matcher": 9,
+        "error": 17,
+        "query_validator": 6,
+        "query_planner": 7,
+        "file_watcher_async": 5,
+        "search_statistics": 3,
+        "archive": "multiple"
+      }
+    },
+    "typescript": {
+      "test_files": [
+        "src/services/__tests__/SearchQueryBuilder.test.ts"
+      ],
+      "coverage": "partial",
+      "total_tests": 40
+    }
+  },
+  "architecture": {
+    "backend": {
+      "framework": "Tauri 2.0",
+      "language": "Rust 1.70+",
+      "key_patterns": [
+        "Strategy Pattern (ArchiveHandler)",
+        "Builder Pattern (QueryBuilder)",
+        "Observer Pattern (FileWatcher)",
+        "Command Pattern (Tauri Commands)"
+      ],
+      "algorithms": [
+        "Aho-Corasick",
+        "LRU Cache",
+        "Parallel Search (Rayon)"
+      ]
+    },
+    "frontend": {
+      "framework": "React 19",
+      "language": "TypeScript",
+      "styling": "Tailwind CSS",
+      "patterns": [
+        "Virtual Scrolling",
+        "Context + Hooks",
+        "Fluent API"
+      ]
+    }
+  },
+  "key_files_scanned": [
+    "log-analyzer/package.json",
+    "log-analyzer/Cargo.toml",
+    "log-analyzer/tauri.conf.json",
+    "README.md",
+    "log-analyzer/src-tauri/src/lib.rs",
+    "log-analyzer/src-tauri/src/main.rs",
+    "log-analyzer/src-tauri/src/error.rs",
+    "log-analyzer/src-tauri/src/models/search.rs",
+    "log-analyzer/src-tauri/src/services/pattern_matcher.rs",
+    "log-analyzer/src-tauri/src/commands/search.rs",
+    "log-analyzer/src-tauri/src/archive/mod.rs",
+    "log-analyzer/src/App.tsx",
+    "log-analyzer/src/pages/SearchPage.tsx",
+    "log-analyzer/src/types/search.ts",
+    "log-analyzer/src/services/SearchQueryBuilder.ts",
+    "log-analyzer/src-tauri/tests/helper_functions.rs",
+    "log-analyzer/src/services/__tests__/SearchQueryBuilder.test.ts"
+  ],
+  "documentation_created": [
+    "CLAUDE.md",
+    "log-analyzer/src-tauri/CLAUDE.md",
+    "log-analyzer/src/CLAUDE.md",
+    "log-analyzer/src-tauri/src/archive/CLAUDE.md",
+    "log-analyzer/src-tauri/src/services/CLAUDE.md"
+  ],
+  "identified_gaps": [
+    {
+      "area": "frontend_testing",
+      "description": "除 SearchQueryBuilder 外，其他组件缺少测试",
+      "priority": "medium",
+      "recommendation": "为 SearchPage、KeywordsPage 等核心组件添加测试"
+    },
+    {
+      "area": "integration_tests",
+      "description": "缺少端到端集成测试",
+      "priority": "high",
+      "recommendation": "使用 Cypress 或 Playwright 添加 E2E 测试"
+    },
+    {
+      "area": "performance_monitoring",
+      "description": "缺少实时性能监控",
+      "priority": "medium",
+      "recommendation": "集成性能监控工具，建立基线和告警"
+    },
+    {
+      "area": "documentation_coverage",
+      "description": "部分工具模块缺少详细文档",
+      "priority": "low",
+      "recommendation": "为 utils 模块创建 API 文档"
+    }
+  ],
+  "recommended_next_steps": [
+    {
+      "priority": 1,
+      "task": "补充前端测试",
+      "details": "为 SearchPage、KeywordsPage、WorkspacesPage 等核心组件添加 Jest 测试",
+      "estimated_effort": "2-3 天"
+    },
+    {
+      "priority": 2,
+      "task": "添加 E2E 测试",
+      "details": "使用 Cypress 添加端到端测试，覆盖完整用户流程",
+      "estimated_effort": "3-5 天"
+    },
+    {
+      "priority": 3,
+      "task": "性能监控优化",
+      "details": "集成性能监控，建立基线和告警机制",
+      "estimated_effort": "2-3 天"
+    },
+    {
+      "priority": 4,
+      "task": "完善工具模块文档",
+      "details": "为 utils 模块创建详细的 API 文档",
+      "estimated_effort": "1 天"
+    }
+  ],
+  "navigation_structure": {
+    "root": "CLAUDE.md",
+    "modules": {
+      "rust_backend": "log-analyzer/src-tauri/CLAUDE.md",
+      "react_frontend": "log-analyzer/src/CLAUDE.md",
+      "archive_module": "log-analyzer/src-tauri/src/archive/CLAUDE.md",
+      "services_module": "log-analyzer/src-tauri/src/services/CLAUDE.md"
+    }
+  }
+}
