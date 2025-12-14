@@ -225,10 +225,7 @@ mod tests {
         assert_eq!(plan.strategy, SearchStrategy::And);
         assert_eq!(plan.term_count, 2);
         assert_eq!(plan.terms.len(), 2);
-        assert!(plan
-            .terms
-            .iter()
-            .all(|term| matches!(term.case_sensitive, false)));
+        assert!(plan.terms.iter().all(|term| !term.case_sensitive));
     }
 
     #[test]

@@ -2,7 +2,6 @@
 //!
 //! 提供跨平台的路径操作工具，包括路径规范化、安全拼接等功能。
 
-use std::fs;
 use std::path::{Path, PathBuf};
 
 /// 规范化路径
@@ -54,6 +53,7 @@ pub fn canonicalize_path(path: &Path) -> Result<PathBuf, String> {
 #[cfg(target_os = "windows")]
 #[allow(clippy::permissions_set_readonly_false)] // Windows 特定操作，允许设置可写
 pub fn remove_readonly(path: &Path) -> Result<(), String> {
+    use std::fs;
     use std::os::windows::fs::MetadataExt;
 
     // 使用重试机制
@@ -77,6 +77,7 @@ pub fn remove_readonly(path: &Path) -> Result<(), String> {
 }
 
 #[cfg(not(target_os = "windows"))]
+#[allow(dead_code)]
 pub fn remove_readonly(_path: &Path) -> Result<(), String> {
     // Unix-like: 不需要处理
     Ok(())

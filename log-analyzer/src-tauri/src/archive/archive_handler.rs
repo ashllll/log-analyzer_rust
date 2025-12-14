@@ -216,7 +216,7 @@ mod tests {
     #[test]
     fn test_extraction_error() {
         let error = ExtractionError::new("Extract failed".to_string())
-            .with_source(std::io::Error::new(std::io::ErrorKind::Other, "IO error"))
+            .with_source(std::io::Error::other("IO error"))
             .with_path(PathBuf::from("test.zip"));
 
         assert_eq!(error.message, "Extract failed");
