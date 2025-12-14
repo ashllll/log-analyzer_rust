@@ -180,41 +180,72 @@ const SearchPage: React.FC<SearchPageProps> = ({
     };
   }, []);
 
-  // 监听搜索事件（简化版：直接更新但使用 React 18 并发特性处理渲染）
+  // 监听搜索事件（修复内存泄漏）
   useEffect(() => {
-    const unlistenResults = listen<LogEntry[]>('search-results', (e) => {
-      // 直接更新状态，useDeferredValue 会处理渲染优化
-      setLogs(prev => [...prev, ...e.payload]);
-    });
-    
-    const unlistenSummary = listen<SearchResultSummary>('search-summary', (e) => {
-      const summary = e.payload;
-      setSearchSummary(summary);
-      
-      // 转换为KeywordStat，添加颜色
-      const stats: KeywordStat[] = summary.keywordStats.map((stat, index) => ({
-        ...stat,
-        color: keywordColors[index % keywordColors.length]
-      }));
-      setKeywordStats(stats);
-    });
-    
-    const unlistenComplete = listen('search-complete', (e) => {
-      setIsSearching(false);
-      addToast('success', `Found ${e.payload} logs.`);
-    });
-    
-    const unlistenError = listen('search-error', (e) => {
-      setIsSearching(false);
-      addToast('error', `${e.payload}`);
-    });
-    
-  return () => {
-    unlistenResults.then(f => f());
-    unlistenSummary.then(f => f());
-    unlistenComplete.then(f => f());
-    unlistenError.then(f => f());
-  };
+    let unlisteners: Array<() => void> = [];
+    let timeoutId: NodeJS.Timeout;
+
+    const setupListeners = async () => {
+      try {
+        // 设置超时保护：30秒后自动清理
+        timeoutId = setTimeout(() => {
+          console.warn('Event listeners timeout - forcing cleanup');
+          cleanup();
+        }, 30000);
+
+        const [resultsUnlisten, summaryUnlisten, completeUnlisten, errorUnlisten] = await Promise.all([
+          listen<LogEntry[]>('search-results', (e) => {
+            // 直接更新状态，useDeferredValue 会处理渲染优化
+            setLogs(prev => [...prev, ...e.payload]);
+          }),
+          listen<SearchResultSummary>('search-summary', (e) => {
+            const summary = e.payload;
+            setSearchSummary(summary);
+
+            // 转换为KeywordStat，添加颜色
+            const stats: KeywordStat[] = summary.keywordStats.map((stat, index) => ({
+              ...stat,
+              color: keywordColors[index % keywordColors.length]
+            }));
+            setKeywordStats(stats);
+          }),
+          listen('search-complete', (e) => {
+            setIsSearching(false);
+            addToast('success', `Found ${e.payload} logs.`);
+          }),
+          listen('search-error', (e) => {
+            setIsSearching(false);
+            addToast('error', `${e.payload}`);
+          })
+        ]);
+
+        unlisteners = [resultsUnlisten, summaryUnlisten, completeUnlisten, errorUnlisten];
+      } catch (error) {
+        console.error('Failed to setup event listeners:', error);
+      }
+    };
+
+    const cleanup = () => {
+      // 清除超时定时器
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+
+      // 清理所有监听器
+      unlisteners.forEach(unlisten => {
+        try {
+          unlisten();
+        } catch (error) {
+          console.error('Error cleaning up listener:', error);
+        }
+      });
+      unlisteners = [];
+    };
+
+    setupListeners();
+
+    // 返回清理函数
+    return cleanup;
   }, [addToast, keywordColors]);
 
   // 加载保存的查询

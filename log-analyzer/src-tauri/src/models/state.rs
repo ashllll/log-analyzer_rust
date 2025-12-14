@@ -14,6 +14,7 @@ use super::{FileMetadata, LogEntry};
 /// 搜索缓存键
 ///
 /// 包含查询字符串、工作区ID和过滤条件的组合键。
+/// 增加了更多参数以避免缓存污染。
 pub type SearchCacheKey = (
     String,         // query
     String,         // workspace_id
@@ -21,6 +22,9 @@ pub type SearchCacheKey = (
     Option<String>, // time_end
     Vec<String>,    // levels
     Option<String>, // file_pattern
+    bool,           // case_sensitive
+    usize,          // max_results
+    String,         // query_version (查询版本，用于失效策略)
 );
 
 /// 搜索缓存类型

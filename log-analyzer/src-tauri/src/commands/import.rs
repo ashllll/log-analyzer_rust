@@ -79,14 +79,9 @@ pub async fn import_folder(
         metadata_guard.clear();
     }
 
-    thread::spawn(move || {
-        // 创建 Tokio runtime 用于执行异步操作
-        let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
-
-        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
-            rt.block_on(async {
-                let source_path = Path::new(&path);
-                let root_name = source_path
+    // 直接在当前异步上下文中执行，避免创建新的 runtime
+    let source_path = Path::new(&path);
+    let root_name = source_path
                     .file_name()
                     .unwrap_or_default()
                     .to_string_lossy()
@@ -174,52 +169,21 @@ pub async fn import_folder(
                     }
                 }
 
-                Ok::<(), String>(())
-            })
-        }));
-
-        if let Err(_e) = result {
-            let file_name = Path::new(&path)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("Unknown")
-                .to_string();
-
-            let _ = app_handle.emit(
-                "task-update",
-                TaskProgress {
-                    task_id: task_id_clone.clone(),
-                    task_type: "Import".to_string(),
-                    target: file_name.clone(),
-                    status: "FAILED".to_string(),
-                    message: "Crashed".to_string(),
-                    progress: 0,
-                    workspace_id: Some(workspace_id_clone.clone()),
-                },
-            );
-            let _ = app_handle.emit("import-error", "Backend process crashed");
-        } else {
-            let file_name = Path::new(&path)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("Unknown")
-                .to_string();
-
-            let _ = app_handle.emit(
-                "task-update",
-                TaskProgress {
-                    task_id: task_id_clone.clone(),
-                    task_type: "Import".to_string(),
-                    target: file_name,
-                    status: "COMPLETED".to_string(),
-                    message: "Done".to_string(),
-                    progress: 100,
-                    workspace_id: Some(workspace_id_clone.clone()),
-                },
-            );
-            let _ = app_handle.emit("import-complete", task_id_clone);
-        }
-    });
+        // 导入完成，发送成功事件
+        let file_name = root_name.clone();
+        let _ = app_handle.emit(
+            "task-update",
+            TaskProgress {
+                task_id: task_id_clone.clone(),
+                task_type: "Import".to_string(),
+                target: file_name,
+                status: "COMPLETED".to_string(),
+                message: "Done".to_string(),
+                progress: 100,
+                workspace_id: Some(workspace_id_clone.clone()),
+            },
+        );
+        let _ = app_handle.emit("import-complete", task_id_clone);
 
     Ok(task_id)
 }

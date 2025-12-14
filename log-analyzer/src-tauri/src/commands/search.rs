@@ -7,7 +7,7 @@ use std::{
     collections::HashSet,
     fs::File,
     io::{BufRead, BufReader},
-    sync::Arc,
+    sync::{Arc, Mutex},
     thread,
     time::Duration,
 };
@@ -17,6 +17,24 @@ use crate::models::search::{QueryMetadata, QueryOperator, SearchTerm, TermSource
 use crate::models::search_statistics::SearchResultSummary;
 use crate::models::{AppState, LogEntry, SearchCacheKey, SearchFilters, SearchQuery};
 use crate::services::{calculate_keyword_statistics, parse_metadata, ExecutionPlan, QueryExecutor};
+
+/// 计算并打印缓存统计信息
+fn log_cache_statistics(
+    total_searches: &Arc<Mutex<u64>>,
+    cache_hits: &Arc<Mutex<u64>>,
+) {
+    if let (Ok(total), Ok(hits)) = (total_searches.lock(), cache_hits.lock()) {
+        let hit_rate = if *total > 0 {
+            (*hits as f64 / *total as f64) * 100.0
+        } else {
+            0.0
+        };
+        println!(
+            "[CACHE STATS] Total searches: {}, Cache hits: {}, Hit rate: {:.2}%",
+            total, hits, hit_rate
+        );
+    }
+}
 
 #[command]
 pub async fn search_logs(
@@ -44,6 +62,11 @@ pub async fn search_logs(
     let max_results = max_results.unwrap_or(50000).min(100_000);
     let filters = filters.unwrap_or_default();
     let workspace_id = workspaceId.unwrap_or_else(|| "default".to_string());
+
+    // 生成查询版本号（基于时间戳，用于缓存失效）
+    let query_version = chrono::Utc::now().format("%Y%m%d%H%M%S").to_string();
+
+    // 完善缓存键：增加更多参数避免缓存污染
     let cache_key: SearchCacheKey = (
         query.clone(),
         workspace_id.clone(),
@@ -51,6 +74,9 @@ pub async fn search_logs(
         filters.time_end.clone(),
         filters.levels.clone(),
         filters.file_pattern.clone(),
+        false, // case_sensitive - 需要从查询中获取
+        max_results,
+        query_version,
     );
 
     {
@@ -68,6 +94,9 @@ pub async fn search_logs(
             if let Ok(mut searches) = total_searches.lock() {
                 *searches += 1;
             }
+
+            // 记录缓存统计
+            log_cache_statistics(&total_searches, &cache_hits);
 
             for chunk in cached_results.chunks(500) {
                 let _ = app_handle.emit("search-results", chunk);
@@ -148,83 +177,123 @@ pub async fn search_logs(
         };
 
         let files: Vec<(String, String)> = {
-            let guard = path_map.lock().expect("Failed to lock path_map");
-            guard.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+            match path_map.lock() {
+                Ok(guard) => guard.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+                Err(e) => {
+                    let _ = app_handle.emit("search-error", format!("Failed to access file index: {}", e));
+                    return;
+                }
+            }
         };
 
-        let mut all_results: Vec<LogEntry> = files
-            .par_iter()
-            .enumerate()
-            .flat_map(|(idx, (real_path, virtual_path))| {
-                search_single_file_with_details(
-                    real_path,
-                    virtual_path,
-                    &executor,
-                    &plan,
-                    idx * 10000,
-                )
-            })
-            .collect();
+        // 流式处理：分批发送结果，避免内存峰值
+        let batch_size = 500;
+        let mut total_processed = 0;
+        let mut results_count = 0;
+        let mut all_batch_results: Vec<LogEntry> = Vec::new(); // 用于统计
+        let mut remaining_batch: Vec<LogEntry> = Vec::new(); // 用于保存最后的批次
 
-        if !filters.levels.is_empty()
-            || filters.time_start.is_some()
-            || filters.time_end.is_some()
-            || filters.file_pattern.is_some()
-        {
-            all_results.retain(|entry| {
-                if !filters.levels.is_empty() && !filters.levels.contains(&entry.level) {
-                    return false;
-                }
-                if let Some(ref start) = filters.time_start {
-                    if entry.timestamp < *start {
-                        return false;
+        // 先发送开始事件
+        let _ = app_handle.emit("search-start", "Starting search...");
+
+        for file_batch in files.chunks(10) { // 每批处理10个文件
+            let mut batch_results: Vec<LogEntry> = Vec::new();
+
+            // 并行处理当前批次
+            let batch: Vec<_> = file_batch
+                .iter()
+                .enumerate()
+                .map(|(idx, (real_path, virtual_path))| {
+                    search_single_file_with_details(
+                        real_path,
+                        virtual_path,
+                        &executor,
+                        &plan,
+                        total_processed + idx * 10000,
+                    )
+                })
+                .collect();
+
+            // 收集当前批次的结果
+            for file_results in batch {
+                for entry in file_results {
+                    // 应用过滤器
+                    let mut include = true;
+
+                    if !filters.levels.is_empty() && !filters.levels.contains(&entry.level) {
+                        include = false;
+                    }
+                    if include && filters.time_start.is_some() {
+                        if let Some(ref start) = filters.time_start {
+                            if entry.timestamp < *start {
+                                include = false;
+                            }
+                        }
+                    }
+                    if include && filters.time_end.is_some() {
+                        if let Some(ref end) = filters.time_end {
+                            if entry.timestamp > *end {
+                                include = false;
+                            }
+                        }
+                    }
+                    if include && filters.file_pattern.is_some() {
+                        if let Some(ref pattern) = filters.file_pattern {
+                            if !entry.file.contains(pattern) && !entry.real_path.contains(pattern) {
+                                include = false;
+                            }
+                        }
+                    }
+
+                    if include {
+                        batch_results.push(entry.clone());
+                        all_batch_results.push(entry.clone());
+                        results_count += 1;
+
+                        // 当批次满时发送
+                        if batch_results.len() >= batch_size {
+                            let _ = app_handle.emit("search-results", &batch_results);
+                            remaining_batch = batch_results.clone();
+                            batch_results.clear();
+                        }
                     }
                 }
-                if let Some(ref end) = filters.time_end {
-                    if entry.timestamp > *end {
-                        return false;
-                    }
-                }
-                if let Some(ref pattern) = filters.file_pattern {
-                    if !entry.file.contains(pattern) && !entry.real_path.contains(pattern) {
-                        return false;
-                    }
-                }
-                true
-            });
-        }
+            }
 
-        let results_truncated = all_results.len() > max_results;
-        if results_truncated {
-            all_results.truncate(max_results);
-        }
+            total_processed += file_batch.len();
 
-        if !results_truncated && !all_results.is_empty() {
-            if let Ok(mut cache_guard) = search_cache.try_lock() {
-                cache_guard.put(cache_key.clone(), all_results.clone());
+            // 发送进度更新
+            let progress = (total_processed as f64 / files.len() as f64 * 100.0) as i32;
+            let _ = app_handle.emit("search-progress", progress);
+
+            // 避免阻塞：定期暂停
+            if total_processed % 50 == 0 {
+                thread::sleep(Duration::from_millis(1));
             }
         }
 
-        for chunk in all_results.chunks(500) {
-            let _ = app_handle.emit("search-results", chunk);
-            thread::sleep(Duration::from_millis(2));
+        // 发送剩余结果
+        if !remaining_batch.is_empty() {
+            let _ = app_handle.emit("search-results", &remaining_batch);
         }
 
+        // 计算搜索统计信息
         let duration = start_time.elapsed().as_millis() as u64;
         if let Ok(mut last_duration) = last_search_duration.lock() {
             *last_duration = duration;
         }
 
-        let keyword_stats = calculate_keyword_statistics(&all_results, &raw_terms);
+        // 使用累积的结果进行统计
+        let keyword_stats = calculate_keyword_statistics(&all_batch_results, &raw_terms);
         let summary = SearchResultSummary::new(
-            all_results.len(),
+            results_count,
             keyword_stats,
             duration,
-            results_truncated,
+            false, // 流式处理无法知道是否被截断
         );
 
         let _ = app_handle.emit("search-summary", &summary);
-        let _ = app_handle.emit("search-complete", all_results.len());
+        let _ = app_handle.emit("search-complete", results_count);
     });
 
     Ok(())

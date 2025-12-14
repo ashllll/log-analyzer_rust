@@ -13,7 +13,8 @@ pub fn save_config(app: AppHandle, config: AppConfig) -> Result<(), String> {
         fs::create_dir_all(&config_dir).map_err(|e| e.to_string())?;
     }
     let path = config_dir.join("config.json");
-    fs::write(path, serde_json::to_string_pretty(&config).unwrap()).map_err(|e| e.to_string())?;
+    let json = serde_json::to_string_pretty(&config).map_err(|e| format!("Failed to serialize config: {}", e))?;
+    fs::write(path, json).map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -26,10 +27,16 @@ pub fn load_config(app: AppHandle) -> Result<AppConfig, String> {
         .join("config.json");
     if path.exists() {
         let c = fs::read_to_string(path).map_err(|e| e.to_string())?;
-        Ok(serde_json::from_str(&c).unwrap_or(AppConfig {
-            keyword_groups: serde_json::json!([]),
-            workspaces: serde_json::json!([]),
-        }))
+        match serde_json::from_str(&c) {
+            Ok(config) => Ok(config),
+            Err(e) => {
+                eprintln!("[WARNING] Failed to parse config, using defaults: {}", e);
+                Ok(AppConfig {
+                    keyword_groups: serde_json::json!([]),
+                    workspaces: serde_json::json!([]),
+                })
+            }
+        }
     } else {
         Ok(AppConfig {
             keyword_groups: serde_json::json!([]),
