@@ -6,7 +6,7 @@ use std::{collections::HashMap, fs, panic, path::Path, thread};
 use tauri::{command, AppHandle, Emitter, Manager, State};
 use uuid::Uuid;
 
-use crate::archive::process_path_recursive_with_metadata;
+use crate::archive::processor::ProcessBuilderWithMetadata;
 use crate::models::{AppState, TaskProgress};
 use crate::services::save_index;
 use crate::utils::{canonicalize_path, validate_path_param, validate_workspace_id};
@@ -106,24 +106,26 @@ pub async fn import_folder(
                 );
 
                 // 创建局部映射表，在没有持有锁的情况下处理数据
-                let mut local_map = HashMap::new();
-                let mut local_metadata = HashMap::new();
+                let mut local_map: HashMap<String, String> = HashMap::new();
+                let mut local_metadata: HashMap<String, crate::models::config::FileMetadata> =
+                    HashMap::new();
 
                 // 获取应用状态（用于清理队列）
                 let state = app_handle.state::<AppState>();
 
                 // 异步调用处理函数，不持有任何锁
-                process_path_recursive_with_metadata(
-                    source_path,
-                    &root_name,
-                    &extracted_dir,
+                ProcessBuilderWithMetadata::new(
+                    source_path.to_path_buf(),
+                    root_name.clone(),
                     &mut local_map,
                     &mut local_metadata,
                     &app_handle,
-                    &task_id_clone,
-                    &workspace_id_clone,
                     &state,
                 )
+                .target_root(extracted_dir.to_path_buf())
+                .task_id(task_id_clone.clone())
+                .workspace_id(workspace_id_clone.clone())
+                .execute()
                 .await;
 
                 // 处理完成后，获取锁并更新共享状态
