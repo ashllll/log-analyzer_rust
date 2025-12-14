@@ -184,6 +184,132 @@ impl BenchmarkRunner {
         Ok(results)
     }
 
+    /// 运行处理器模块基准测试
+    #[allow(dead_code)]
+    pub fn run_processor_benchmark() -> Result<Vec<BenchmarkResult>> {
+        let results = vec![
+            Self::benchmark_string_processing()?,
+            Self::benchmark_large_file_processing()?,
+            Self::benchmark_batch_file_processing()?,
+        ];
+
+        Ok(results)
+    }
+
+    /// 基准测试：字符串处理性能
+    #[allow(dead_code)]
+    fn benchmark_string_processing() -> Result<BenchmarkResult> {
+        let iterations = 100000;
+        let test_strings = vec![
+            "/very/long/path/to/some/deeply/nested/directory/structure/with/many/levels/file.log",
+            "short.log",
+            "archive.tar.gz",
+            "path/with/spaces in name/file.txt",
+            "C:\\Windows\\System32\\config\\system.log",
+        ];
+
+        let start = Instant::now();
+
+        for i in 0..iterations {
+            let s = &test_strings[i % test_strings.len()];
+            let _ = s.split('/').last();
+        }
+
+        let duration = start.elapsed();
+        Ok(BenchmarkResult::new(
+            "字符串处理（路径分割）".to_string(),
+            duration,
+            iterations,
+        ))
+    }
+
+    /// 基准测试：大文件处理性能
+    #[allow(dead_code)]
+    fn benchmark_large_file_processing() -> Result<BenchmarkResult> {
+        use tempfile::TempDir;
+
+        let iterations = 100;
+        let file_sizes = vec![
+            1024 * 1024,      // 1MB
+            10 * 1024 * 1024, // 10MB
+        ];
+
+        let mut best_throughput = 0.0;
+        let mut best_name = "".to_string();
+
+        for &size in &file_sizes {
+            let temp_dir = TempDir::new()?;
+            let test_file = temp_dir.path().join("large_test.log");
+
+            // 创建大文件
+            let content = "log line with some data\n".repeat(size / 20);
+            std::fs::write(&test_file, &content)?;
+
+            let start = Instant::now();
+            let file_iterations = iterations;
+
+            for _ in 0..file_iterations {
+                let _metadata = std::fs::metadata(&test_file)?;
+            }
+
+            let duration = start.elapsed();
+            let throughput = file_iterations as f64 / duration.as_secs_f64();
+
+            if throughput > best_throughput {
+                best_throughput = throughput;
+                best_name = format!("大文件处理({}MB)", size / 1024 / 1024);
+            }
+        }
+
+        Ok(BenchmarkResult::new(
+            best_name,
+            Duration::from_secs_f64(1.0 / best_throughput),
+            1,
+        ))
+    }
+
+    /// 基准测试：批量文件处理性能
+    #[allow(dead_code)]
+    fn benchmark_batch_file_processing() -> Result<BenchmarkResult> {
+        use tempfile::TempDir;
+
+        let file_counts = vec![100, 1000, 5000];
+        let mut best_throughput = 0.0;
+        let mut best_name = "".to_string();
+
+        for count in file_counts {
+            let temp_dir = TempDir::new()?;
+
+            // 创建批量文件
+            for i in 0..count {
+                let test_file = temp_dir.path().join(format!("log_{}.txt", i));
+                std::fs::write(&test_file, format!("log content {}", i))?;
+            }
+
+            let start = Instant::now();
+
+            // 批量处理文件
+            for entry in std::fs::read_dir(temp_dir.path())? {
+                let entry = entry?;
+                let _metadata = entry.metadata()?;
+            }
+
+            let duration = start.elapsed();
+            let throughput = 1.0 / duration.as_secs_f64();
+
+            if throughput > best_throughput {
+                best_throughput = throughput;
+                best_name = format!("批量文件处理({}文件)", count);
+            }
+        }
+
+        Ok(BenchmarkResult::new(
+            best_name,
+            Duration::from_secs_f64(1.0 / best_throughput),
+            1,
+        ))
+    }
+
     /// 基准测试：查询计划构建
     #[allow(dead_code)]
     fn benchmark_query_planning() -> Result<BenchmarkResult> {
