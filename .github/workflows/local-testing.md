@@ -57,11 +57,12 @@ sudo apt-get install -y \
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source ~/.cargo/env
 
-# 安装 Node.js 18+
+# 安装 Node.js 22.12+
 # 使用 nvm
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
-nvm install 18
-nvm use 18
+nvm install 22.12
+nvm use 22
+nvm alias default 22
 ```
 
 ## 方法 2: 使用 GitHub CLI

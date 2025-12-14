@@ -11,7 +11,7 @@ stages:
 variables:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  NODE_VERSION: "18"
+  NODE_VERSION: "22"
   # 缓存配置
   CARGO_HOME: $CI_PROJECT_DIR/.cargo
   CARGO_REGISTRY_CACHE: $CI_PROJECT_DIR/.cargo/cache

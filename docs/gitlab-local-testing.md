@@ -161,8 +161,8 @@ RUN apt-get update && apt-get install -y \
     npm \
     git
 
-# 安装 Node.js 18
-RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
+# 安装 Node.js 22
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
 RUN apt-get install -y nodejs
 
 # 安装 Rust 工具

@@ -65,7 +65,7 @@ docker-compose -f docker-compose.jenkins.yml up -d
 - HTML Publisher
 
 #### 工具配置
-1. **NodeJS**: 配置 NodeJS 18
+1. **NodeJS**: 配置 NodeJS 22
 2. **Docker**: 自动配置
 3. **Rust**: 通过 Docker 容器使用
 

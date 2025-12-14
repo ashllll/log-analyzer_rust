@@ -8,7 +8,7 @@ pipeline {
     environment {
         CARGO_TERM_COLOR = 'always'
         RUST_BACKTRACE = '1'
-        NODE_VERSION = '18'
+        NODE_VERSION = '22'
         CARGO_HOME = "${WORKSPACE}/.cargo"
         NPM_CONFIG_CACHE = "${WORKSPACE}/.npm"
         // 构建参数
@@ -18,7 +18,7 @@ pipeline {
     // 参数化构建
     parameters {
         string(name: 'RUST_VERSION', defaultValue: '1.70', description: 'Rust toolchain version')
-        string(name: 'NODE_VERSION', defaultValue: '18', description: 'Node.js version')
+        string(name: 'NODE_VERSION', defaultValue: '22', description: 'Node.js version')
         booleanParam(name: 'RUN_TESTS', defaultValue: true, description: 'Run unit tests')
         booleanParam(name: 'RUN_INTEGRATION_TESTS', defaultValue: true, description: 'Run integration tests')
         booleanParam(name: 'RUN_SECURITY_SCAN', defaultValue: true, description: 'Run security scans')
