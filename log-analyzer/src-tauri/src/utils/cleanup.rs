@@ -6,7 +6,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use super::path::remove_readonly;
 use super::retry::retry_file_operation;
+use walkdir::WalkDir;
 
 /// 尝试清理临时目录
 ///
