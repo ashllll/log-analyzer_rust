@@ -378,6 +378,7 @@ impl<'a> ProcessBuilderWithMetadata<'a> {
     since = "0.0.47",
     note = "Use `ProcessBuilder` instead for better parameter management"
 )]
+#[allow(dead_code)]
 pub async fn process_path_recursive(
     path: &Path,
     virtual_path: &str,
@@ -438,6 +439,7 @@ pub async fn process_path_recursive(
     since = "0.0.47",
     note = "Use `ProcessBuilderWithMetadata` instead for better parameter management"
 )]
+#[allow(dead_code)]
 pub async fn process_path_recursive_with_metadata(
     path: &Path,
     virtual_path: &str,

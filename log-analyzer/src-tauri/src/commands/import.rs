@@ -1,7 +1,7 @@
 //! 导入相关命令实现
 //! 包含工作区导入与 RAR 支持检查
 
-use std::{collections::HashMap, fs, panic, path::Path, thread};
+use std::{collections::HashMap, fs, path::Path};
 
 use tauri::{command, AppHandle, Emitter, Manager, State};
 use uuid::Uuid;

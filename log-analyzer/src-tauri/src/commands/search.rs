@@ -1,7 +1,6 @@
 //! 搜索命令实现
 //! 包含日志搜索及缓存逻辑，附带关键词统计与结果批量推送
 
-use rayon::prelude::*;
 use regex::Regex;
 use std::{
     collections::HashSet,

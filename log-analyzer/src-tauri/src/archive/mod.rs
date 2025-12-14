@@ -13,6 +13,7 @@ pub mod zip_handler;
 pub use archive_handler::{ArchiveHandler, ExtractionSummary};
 pub use gz_handler::GzHandler;
 #[allow(unused_imports)]
+#[allow(deprecated)]
 pub use processor::process_path_recursive_with_metadata;
 pub use rar_handler::RarHandler;
 pub use tar_handler::TarHandler;
