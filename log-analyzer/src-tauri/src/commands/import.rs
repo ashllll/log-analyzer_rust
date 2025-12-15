@@ -6,7 +6,7 @@ use std::{collections::HashMap, fs, path::Path};
 use tauri::{command, AppHandle, Emitter, Manager, State};
 use uuid::Uuid;
 
-use crate::archive::processor::ProcessBuilderWithMetadata;
+use crate::archive::processor::process_path_recursive_with_metadata;
 use crate::models::{AppState, TaskProgress};
 use crate::services::save_index;
 use crate::utils::{canonicalize_path, validate_path_param, validate_workspace_id};
@@ -82,108 +82,105 @@ pub async fn import_folder(
     // 直接在当前异步上下文中执行，避免创建新的 runtime
     let source_path = Path::new(&path);
     let root_name = source_path
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_string();
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
 
-                let _ = app_handle.emit(
-                    "task-update",
-                    TaskProgress {
-                        task_id: task_id_clone.clone(),
-                        task_type: "Import".to_string(),
-                        target: root_name.clone(),
-                        status: "RUNNING".to_string(),
-                        message: "Scanning...".to_string(),
-                        progress: 10,
-                        workspace_id: Some(workspace_id_clone.clone()),
-                    },
-                );
+    let _ = app_handle.emit(
+        "task-update",
+        TaskProgress {
+            task_id: task_id_clone.clone(),
+            task_type: "Import".to_string(),
+            target: root_name.clone(),
+            status: "RUNNING".to_string(),
+            message: "Scanning...".to_string(),
+            progress: 10,
+            workspace_id: Some(workspace_id_clone.clone()),
+        },
+    );
 
-                // 创建局部映射表，在没有持有锁的情况下处理数据
-                let mut local_map: HashMap<String, String> = HashMap::new();
-                let mut local_metadata: HashMap<String, crate::models::config::FileMetadata> =
-                    HashMap::new();
+    // 创建局部映射表，在没有持有锁的情况下处理数据
+    let mut local_map: HashMap<String, String> = HashMap::new();
+    let mut local_metadata: HashMap<String, crate::models::config::FileMetadata> = HashMap::new();
 
-                // 获取应用状态（用于清理队列）
-                let state = app_handle.state::<AppState>();
+    // 获取应用状态（用于清理队列）
+    let state = app_handle.state::<AppState>();
 
-                // 异步调用处理函数，不持有任何锁
-                ProcessBuilderWithMetadata::new(
-                    source_path.to_path_buf(),
-                    root_name.clone(),
-                    &mut local_map,
-                    &mut local_metadata,
-                    &app_handle,
-                    &state,
-                )
-                .target_root(extracted_dir.to_path_buf())
-                .task_id(task_id_clone.clone())
-                .workspace_id(workspace_id_clone.clone())
-                .execute()
-                .await;
+    // 异步调用处理函数，不持有任何锁
+    process_path_recursive_with_metadata(
+        source_path,
+        &root_name,
+        &extracted_dir,
+        &mut local_map,
+        &mut local_metadata,
+        &app_handle,
+        &task_id_clone,
+        &workspace_id_clone,
+    )
+    .await;
 
-                // 处理完成后，获取锁并更新共享状态
+    // 处理完成后，获取锁并更新共享状态
 
-                // 更新路径映射
-                let mut map_guard = state
-                    .path_map
-                    .lock()
-                    .map_err(|e| format!("Lock error: {}", e))?;
-                *map_guard = local_map;
-                drop(map_guard);
+    // 更新路径映射
+    let mut map_guard = state
+        .path_map
+        .lock()
+        .map_err(|e| format!("Lock error: {}", e))?;
+    *map_guard = local_map;
+    drop(map_guard);
 
-                // 更新元数据映射
-                let mut metadata_guard = state
-                    .file_metadata
-                    .lock()
-                    .map_err(|e| format!("Lock error: {}", e))?;
-                *metadata_guard = local_metadata;
-                drop(metadata_guard);
+    // 更新元数据映射
+    let mut metadata_guard = state
+        .file_metadata
+        .lock()
+        .map_err(|e| format!("Lock error: {}", e))?;
+    *metadata_guard = local_metadata;
+    drop(metadata_guard);
 
-                // 保存索引
-                let map_guard = state
-                    .path_map
-                    .lock()
-                    .map_err(|e| format!("Lock error: {}", e))?;
-                let metadata_guard = state
-                    .file_metadata
-                    .lock()
-                    .map_err(|e| format!("Lock error: {}", e))?;
+    // 保存索引
+    let map_guard = state
+        .path_map
+        .lock()
+        .map_err(|e| format!("Lock error: {}", e))?;
+    let metadata_guard = state
+        .file_metadata
+        .lock()
+        .map_err(|e| format!("Lock error: {}", e))?;
 
-                match save_index(
-                    &app_handle,
-                    &workspace_id_clone,
-                    &map_guard,
-                    &metadata_guard,
-                ) {
-                    Ok(index_path) => {
-                        let mut indices_guard = state
-                            .workspace_indices
-                            .lock()
-                            .map_err(|e| format!("Lock error: {}", e))?;
-                        indices_guard.insert(workspace_id_clone.clone(), index_path);
-                    }
-                    Err(e) => {
-                        eprintln!("[WARNING] Failed to save index: {}", e);
-                    }
-                }
+    match save_index(
+        &app_handle,
+        &workspace_id_clone,
+        &map_guard,
+        &metadata_guard,
+    ) {
+        Ok(index_path) => {
+            let mut indices_guard = state
+                .workspace_indices
+                .lock()
+                .map_err(|e| format!("Lock error: {}", e))?;
+            indices_guard.insert(workspace_id_clone.clone(), index_path);
+        }
+        Err(e) => {
+            eprintln!("[WARNING] Failed to save index: {}", e);
+        }
+    }
 
-        // 导入完成，发送成功事件
-        let file_name = root_name.clone();
-        let _ = app_handle.emit(
-            "task-update",
-            TaskProgress {
-                task_id: task_id_clone.clone(),
-                task_type: "Import".to_string(),
-                target: file_name,
-                status: "COMPLETED".to_string(),
-                message: "Done".to_string(),
-                progress: 100,
-                workspace_id: Some(workspace_id_clone.clone()),
-            },
-        );
-        let _ = app_handle.emit("import-complete", task_id_clone);
+    // 导入完成，发送成功事件
+    let file_name = root_name.clone();
+    let _ = app_handle.emit(
+        "task-update",
+        TaskProgress {
+            task_id: task_id_clone.clone(),
+            task_type: "Import".to_string(),
+            target: file_name,
+            status: "COMPLETED".to_string(),
+            message: "Done".to_string(),
+            progress: 100,
+            workspace_id: Some(workspace_id_clone.clone()),
+        },
+    );
+    let _ = app_handle.emit("import-complete", task_id_clone);
 
     Ok(task_id)
 }

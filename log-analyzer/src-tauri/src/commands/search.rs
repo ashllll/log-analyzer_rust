@@ -18,10 +18,7 @@ use crate::models::{AppState, LogEntry, SearchCacheKey, SearchFilters, SearchQue
 use crate::services::{calculate_keyword_statistics, parse_metadata, ExecutionPlan, QueryExecutor};
 
 /// 计算并打印缓存统计信息
-fn log_cache_statistics(
-    total_searches: &Arc<Mutex<u64>>,
-    cache_hits: &Arc<Mutex<u64>>,
-) {
+fn log_cache_statistics(total_searches: &Arc<Mutex<u64>>, cache_hits: &Arc<Mutex<u64>>) {
     if let (Ok(total), Ok(hits)) = (total_searches.lock(), cache_hits.lock()) {
         let hit_rate = if *total > 0 {
             (*hits as f64 / *total as f64) * 100.0
@@ -179,7 +176,10 @@ pub async fn search_logs(
             match path_map.lock() {
                 Ok(guard) => guard.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
                 Err(e) => {
-                    let _ = app_handle.emit("search-error", format!("Failed to access file index: {}", e));
+                    let _ = app_handle.emit(
+                        "search-error",
+                        format!("Failed to access file index: {}", e),
+                    );
                     return;
                 }
             }
@@ -195,7 +195,8 @@ pub async fn search_logs(
         // 先发送开始事件
         let _ = app_handle.emit("search-start", "Starting search...");
 
-        for file_batch in files.chunks(10) { // 每批处理10个文件
+        for file_batch in files.chunks(10) {
+            // 每批处理10个文件
             let mut batch_results: Vec<LogEntry> = Vec::new();
 
             // 并行处理当前批次

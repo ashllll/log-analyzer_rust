@@ -234,7 +234,7 @@ jobs:
         npm run tauri build
     
     - name: Upload artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: log-analyzer-${{ matrix.target }}
         path: |
@@ -269,7 +269,7 @@ jobs:
         cargo test --bench -- --nocapture > benchmark-results.txt
     
     - name: Upload benchmark results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: benchmark-results
         path: log-analyzer/src-tauri/benchmark-results.txt
@@ -336,7 +336,7 @@ jobs:
         EOF
     
     - name: Upload code quality report
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: code-quality-report
         path: log-analyzer/src-tauri/code-quality-report.md

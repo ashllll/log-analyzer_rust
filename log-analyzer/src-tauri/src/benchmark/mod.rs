@@ -200,7 +200,7 @@ impl BenchmarkRunner {
     #[allow(dead_code)]
     fn benchmark_string_processing() -> Result<BenchmarkResult> {
         let iterations = 100000;
-        let test_strings = vec![
+        let test_strings = [
             "/very/long/path/to/some/deeply/nested/directory/structure/with/many/levels/file.log",
             "short.log",
             "archive.tar.gz",
@@ -212,7 +212,7 @@ impl BenchmarkRunner {
 
         for i in 0..iterations {
             let s = &test_strings[i % test_strings.len()];
-            let _ = s.split('/').last();
+            let _ = s.split('/').next_back();
         }
 
         let duration = start.elapsed();
