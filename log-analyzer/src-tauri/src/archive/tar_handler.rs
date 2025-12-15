@@ -1,5 +1,8 @@
 use crate::archive::archive_handler::{ArchiveHandler, ExtractionSummary};
 use crate::error::{AppError, Result};
+use crate::utils::path_security::{
+    validate_and_sanitize_path, PathValidationResult, SecurityConfig,
+};
 use async_trait::async_trait;
 use flate2::read::GzDecoder;
 use std::fs::File;
@@ -198,7 +201,24 @@ fn extract_entries_with_limits<R: std::io::Read>(
             .map_err(|e| AppError::archive_error(format!("Failed to get entry path: {}", e), None))?
             .to_path_buf(); // 转换为PathBuf以避免借用问题
 
-        let full_path = target_dir.join(&entry_path);
+        // 路径安全检查
+        let entry_str = entry_path.to_string_lossy().to_string();
+        let config = SecurityConfig::default();
+        let validation = validate_and_sanitize_path(&entry_str, &config);
+
+        let safe_entry_path = match validation {
+            PathValidationResult::Unsafe(reason) => {
+                summary.add_error(format!("Unsafe path rejected: {} - {}", entry_str, reason));
+                continue;
+            }
+            PathValidationResult::Valid(name) => std::path::PathBuf::from(name),
+            PathValidationResult::RequiresSanitization(original, sanitized) => {
+                eprintln!("[SECURITY] Path sanitized: {} -> {}", original, sanitized);
+                std::path::PathBuf::from(sanitized)
+            }
+        };
+
+        let full_path = target_dir.join(&safe_entry_path);
         let size = entry.size();
         let is_file = entry.header().entry_type().is_file();
 

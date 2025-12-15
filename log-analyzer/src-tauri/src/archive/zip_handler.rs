@@ -1,5 +1,8 @@
 use crate::archive::archive_handler::{ArchiveHandler, ExtractionSummary};
 use crate::error::{AppError, Result};
+use crate::utils::path_security::{
+    validate_and_sanitize_path, PathValidationResult, SecurityConfig,
+};
 use async_trait::async_trait;
 use std::io::Cursor;
 use std::path::Path;
@@ -73,14 +76,28 @@ impl ArchiveHandler for ZipHandler {
                 let is_dir = file.is_dir();
                 let file_size = file.size();
 
-                // 安全检查：防止路径遍历
-                if file_name.contains("..") {
-                    files.push((file_name.clone(), None, true)); // 标记为错误
-                    continue;
-                }
+                // 安全检查：使用完整的路径安全模块
+                let config = SecurityConfig::default();
+                let validation = validate_and_sanitize_path(&file_name, &config);
+
+                let safe_file_name = match validation {
+                    PathValidationResult::Unsafe(reason) => {
+                        files.push((file_name.clone(), None, true));
+                        eprintln!(
+                            "[SECURITY] Unsafe path rejected: {} - {}",
+                            file_name, reason
+                        );
+                        continue;
+                    }
+                    PathValidationResult::Valid(name) => name,
+                    PathValidationResult::RequiresSanitization(original, sanitized) => {
+                        eprintln!("[SECURITY] Path sanitized: {} -> {}", original, sanitized);
+                        sanitized
+                    }
+                };
 
                 if is_dir {
-                    files.push((file_name, None, false));
+                    files.push((safe_file_name, None, false));
                 } else {
                     // 安全检查：单个文件大小限制
                     if file_size > max_file_size {
@@ -124,11 +141,10 @@ impl ArchiveHandler for ZipHandler {
                         )
                     })?;
 
-                    // 更新统计
                     total_size += buffer.len() as u64;
                     file_count += 1;
 
-                    files.push((file_name, Some(buffer), false));
+                    files.push((safe_file_name, Some(buffer), false));
                 }
             }
 

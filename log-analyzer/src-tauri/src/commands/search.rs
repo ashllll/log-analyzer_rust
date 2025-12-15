@@ -59,10 +59,8 @@ pub async fn search_logs(
     let filters = filters.unwrap_or_default();
     let workspace_id = workspaceId.unwrap_or_else(|| "default".to_string());
 
-    // 生成查询版本号（基于时间戳，用于缓存失效）
-    let query_version = chrono::Utc::now().format("%Y%m%d%H%M%S").to_string();
-
-    // 完善缓存键：增加更多参数避免缓存污染
+    // 缓存键：基于查询参数生成，不包含时间戳以确保缓存可命中
+    // 注意：当索引更新时，应清除相关缓存
     let cache_key: SearchCacheKey = (
         query.clone(),
         workspace_id.clone(),
@@ -72,7 +70,7 @@ pub async fn search_logs(
         filters.file_pattern.clone(),
         false, // case_sensitive - 需要从查询中获取
         max_results,
-        query_version,
+        String::new(), // 移除时间戳版本号，避免缓存永远失效
     );
 
     {
@@ -189,13 +187,22 @@ pub async fn search_logs(
         let batch_size = 500;
         let mut total_processed = 0;
         let mut results_count = 0;
-        let mut all_batch_results: Vec<LogEntry> = Vec::new(); // 用于统计
-        let mut remaining_batch: Vec<LogEntry> = Vec::new(); // 用于保存最后的批次
+        // 流式统计：使用HashMap增量统计关键词，避免累积所有结果
+        let mut keyword_counts: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
+        let mut was_truncated = false;
+        let mut pending_batch: Vec<LogEntry> = Vec::new(); // 当前待发送批次
 
         // 先发送开始事件
         let _ = app_handle.emit("search-start", "Starting search...");
 
-        for file_batch in files.chunks(10) {
+        'outer: for file_batch in files.chunks(10) {
+            // 检查是否已达到max_results限制
+            if results_count >= max_results {
+                was_truncated = true;
+                break 'outer;
+            }
+
             // 每批处理10个文件
             let mut batch_results: Vec<LogEntry> = Vec::new();
 
@@ -217,6 +224,12 @@ pub async fn search_logs(
             // 收集当前批次的结果
             for file_results in batch {
                 for entry in file_results {
+                    // 检查是否已达到max_results限制
+                    if results_count >= max_results {
+                        was_truncated = true;
+                        break 'outer;
+                    }
+
                     // 应用过滤器
                     let mut include = true;
 
@@ -246,18 +259,28 @@ pub async fn search_logs(
                     }
 
                     if include {
-                        batch_results.push(entry.clone());
-                        all_batch_results.push(entry.clone());
+                        // 流式统计：增量更新关键词计数
+                        if let Some(ref keywords) = entry.matched_keywords {
+                            for kw in keywords {
+                                *keyword_counts.entry(kw.clone()).or_insert(0) += 1;
+                            }
+                        }
+
+                        batch_results.push(entry);
                         results_count += 1;
 
                         // 当批次满时发送
                         if batch_results.len() >= batch_size {
                             let _ = app_handle.emit("search-results", &batch_results);
-                            remaining_batch = batch_results.clone();
                             batch_results.clear();
                         }
                     }
                 }
+            }
+
+            // 保存未发送的结果
+            if !batch_results.is_empty() {
+                pending_batch = batch_results;
             }
 
             total_processed += file_batch.len();
@@ -273,8 +296,8 @@ pub async fn search_logs(
         }
 
         // 发送剩余结果
-        if !remaining_batch.is_empty() {
-            let _ = app_handle.emit("search-results", &remaining_batch);
+        if !pending_batch.is_empty() {
+            let _ = app_handle.emit("search-results", &pending_batch);
         }
 
         // 计算搜索统计信息
@@ -283,13 +306,24 @@ pub async fn search_logs(
             *last_duration = duration;
         }
 
-        // 使用累积的结果进行统计
-        let keyword_stats = calculate_keyword_statistics(&all_batch_results, &raw_terms);
+        // 使用流式统计结果构建关键词统计
+        let keyword_stats: Vec<crate::models::search_statistics::KeywordStatistics> = raw_terms
+            .iter()
+            .map(|term| {
+                let count = keyword_counts.get(term).copied().unwrap_or(0);
+                crate::models::search_statistics::KeywordStatistics::new(
+                    term.clone(),
+                    count,
+                    results_count,
+                )
+            })
+            .collect();
+
         let summary = SearchResultSummary::new(
             results_count,
             keyword_stats,
             duration,
-            false, // 流式处理无法知道是否被截断
+            was_truncated, // 标记是否因达到限制而截断
         );
 
         let _ = app_handle.emit("search-summary", &summary);
