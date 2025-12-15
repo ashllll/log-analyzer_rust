@@ -15,38 +15,41 @@ jobs:
       contents: write
     outputs:
       version: ${{ steps.version.outputs.version }}
+      skip_release: ${{ steps.version.outputs.skip_release }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # 获取完整的 git 历史，以便读取 tags
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Generate version number
         id: version
         run: |
+          # 检查是否已经是由CI创建的版本号提交
+          if [[ "${{ github.event.head_commit.message }}" == *"[skip ci]"* ]]; then
+            echo "Skipping version bump - this is a version bump commit"
+            echo "skip_release=true" >> $GITHUB_OUTPUT
+            echo "version=0.0.0" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
           if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            # 如果是 tag 推送，使用 tag 名作为版本号（去掉 v 前缀）
+            # 如果是tag推送，使用tag名作为版本号
             VERSION="${GITHUB_REF_NAME#v}"
             echo "Using tag version: $VERSION"
+            echo "skip_release=false" >> $GITHUB_OUTPUT
           else
-            # 如果是 main 分支推送，自动递增 patch 版本号
-            # 获取最新的 v* 格式 tag
+            # 如果是main分支推送，自动递增patch版本号
             LATEST_TAG=$(git tag -l "v*" --sort=-v:refname | head -n 1)
             
             if [ -z "$LATEST_TAG" ]; then
-              # 如果没有找到 v* tag，从 v0.0.0 开始
-              LATEST_TAG="v0.0.0"
+              LATEST_TAG="v0.0.41"
             fi
             
             echo "Latest tag: $LATEST_TAG"
-            
-            # 去掉 v 前缀
             LATEST_VERSION="${LATEST_TAG#v}"
-            
-            # 解析版本号（假设格式为 X.Y.Z）
             IFS='.' read -r MAJOR MINOR PATCH <<< "$LATEST_VERSION"
-            
-            # 递增 patch 版本号
             PATCH=$((PATCH + 1))
             VERSION="${MAJOR}.${MINOR}.${PATCH}"
             
@@ -57,12 +60,10 @@ jobs:
             
             # 跨平台兼容的 sed 命令
             if [ "$(uname)" = "Darwin" ]; then
-              # macOS
               sed -i '' "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
               sed -i '' "s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
               sed -i '' "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
             else
-              # Linux
               sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
               sed -i "s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
               sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
@@ -74,13 +75,25 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git add log-analyzer/package.json log-analyzer/src-tauri/Cargo.toml log-analyzer/src-tauri/tauri.conf.json
-            git commit -m "chore: bump version to $VERSION [skip ci]" || echo "No changes to commit"
-            git push origin main
             
-            # 创建并推送新 tag
-            git tag "v${VERSION}"
-            git push origin "v${VERSION}"
-            echo "Created and pushed tag: v${VERSION}"
+            if git diff --staged --quiet; then
+              echo "No version changes to commit"
+            else
+              git commit -m "chore: bump version to $VERSION [skip ci]"
+              git push origin main
+              echo "Pushed version bump commit"
+            fi
+            
+            # 创建并推送新tag
+            if ! git rev-parse "v${VERSION}" >/dev/null 2>&1; then
+              git tag "v${VERSION}"
+              git push origin "v${VERSION}"
+              echo "Created and pushed tag: v${VERSION}"
+            else
+              echo "Tag v${VERSION} already exists"
+            fi
+            
+            echo "skip_release=false" >> $GITHUB_OUTPUT
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Final version: $VERSION"
@@ -88,6 +101,7 @@ jobs:
 
   release:
     needs: prepare-version
+    if: needs.prepare-version.outputs.skip_release != 'true'
     permissions:
       contents: write
     strategy:

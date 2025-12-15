@@ -286,11 +286,7 @@ jobs:
             issue_number: context.issue.number,
             owner: context.repo.owner,
             repo: context.repo.repo,
-            body: `## Performance Benchmark Results
-
-\`\`\`
-${benchmarkResults}
-\`\`\``
+            body: '## Performance Benchmark Results\n\n```\n' + benchmarkResults + '\n```'
           })
 
   # 代码质量报告
