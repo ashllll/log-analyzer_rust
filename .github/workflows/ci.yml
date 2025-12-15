@@ -60,12 +60,14 @@ jobs:
         cargo test --bench --verbose
     
     - name: Generate test coverage
+      if: matrix.os == 'ubuntu-latest'
       run: |
         cd log-analyzer/src-tauri
         cargo install cargo-tarpaulin
         cargo tarpaulin --out Xml --output-dir ./coverage
     
     - name: Upload coverage to Codecov
+      if: matrix.os == 'ubuntu-latest'
       uses: codecov/codecov-action@v3
       with:
         file: ./log-analyzer/src-tauri/coverage/cobertura.xml
@@ -238,16 +240,6 @@ jobs:
         path: |
           log-analyzer/src-tauri/target/release/bundle/*/*.*
           !log-analyzer/src-tauri/target/release/bundle/*/*.pdb
-    
-    - name: Create Release
-      if: startsWith(github.ref, 'refs/tags/')
-      uses: softprops/action-gh-release@v1
-      with:
-        files: |
-          log-analyzer/src-tauri/target/release/bundle/*/*.*
-          !log-analyzer/src-tauri/target/release/bundle/*/*.pdb
-        draft: false
-        prerelease: false
 
   # 性能基准测试
   benchmark:
@@ -294,7 +286,11 @@ jobs:
             issue_number: context.issue.number,
             owner: context.repo.owner,
             repo: context.repo.repo,
-            body: `## Performance Benchmark Results\n\n\`\`\`\n${benchmarkResults}\n\`\`\``
+            body: `## Performance Benchmark Results
+
+\`\`\`
+${benchmarkResults}
+\`\`\``
           })
 
   # 代码质量报告

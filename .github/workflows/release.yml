@@ -54,9 +54,20 @@ jobs:
             
             # 更新源码中的版本号
             cd log-analyzer
-            sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
-            sed -i "s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
-            sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+            
+            # 跨平台兼容的 sed 命令
+            if [ "$(uname)" = "Darwin" ]; then
+              # macOS
+              sed -i '' "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
+              sed -i '' "s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
+              sed -i '' "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+            else
+              # Linux
+              sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
+              sed -i "s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
+              sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+            fi
+            
             cd ..
             
             # 提交版本号变更
@@ -106,15 +117,20 @@ jobs:
         run: |
           VERSION="${{ needs.prepare-version.outputs.version }}"
           
-          # 更新 package.json
           cd log-analyzer
-          sed -i.bak "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
           
-          # 更新 Cargo.toml
-          sed -i.bak "s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
-          
-          # 更新 tauri.conf.json
-          sed -i.bak "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+          # 跨平台兼容的版本号更新
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            # macOS
+            sed -i '' "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
+            sed -i '' "s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
+            sed -i '' "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+          else
+            # Linux 和 Windows (Git Bash)
+            sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
+            sed -i "s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
+            sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+          fi
           
           # 显示更新后的版本
           echo "Updated package.json:"
