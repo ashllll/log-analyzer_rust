@@ -121,3 +121,39 @@ pub fn validate_workspace_id(workspace_id: &str) -> Result<(), String> {
 ///     Ok(canonical_path)
 /// }
 /// ```
+///
+/// # Returns
+///
+/// - `Ok(())` - 验证通过
+/// - `Err(AppError)` - 验证失败
+pub fn validate_path_safety(path: &str) -> Result<()> {
+    // 检查路径遍历字符序列
+    if path.contains("..") {
+        return Err(AppError::InvalidPath(format!(
+            "Path traversal detected in path: {}",
+            path
+        )));
+    }
+
+    // 检查绝对路径
+    if Path::new(path).is_absolute() {
+        return Err(AppError::InvalidPath(format!(
+            "Absolute paths are not allowed: {}",
+            path
+        )));
+    }
+
+    // 检查路径分隔符
+    if path.contains('\\') || path.contains('/') {
+        // 只允许单一层级的相对路径
+        let parts: Vec<&str> = path.split(|c| c == '\\' || c == '/').collect();
+        if parts.len() > 2 || (parts.len() == 2 && parts[0].is_empty()) {
+            return Err(AppError::InvalidPath(format!(
+                "Nested paths are not allowed: {}",
+                path
+            )));
+        }
+    }
+
+    Ok(())
+}

@@ -53,10 +53,10 @@ impl LockManager {
     }
     
     /// 安全地获取两个锁
-    pub fn acquire_two_locks<T, U>(
-        lock1: &Mutex<T>,
-        lock2: &Mutex<U>,
-    ) -> (std::sync::MutexGuard<'_, T>, std::sync::MutexGuard<'_, U>) {
+    pub fn acquire_two_locks<'a, T, U>(
+        lock1: &'a Mutex<T>,
+        lock2: &'a Mutex<U>,
+    ) -> (std::sync::MutexGuard<'a, T>, std::sync::MutexGuard<'a, U>) {
         let locks = vec![lock1 as &Mutex<_>, lock2 as &Mutex<_>];
         let guards = Self::acquire_multiple_locks(locks);
         

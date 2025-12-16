@@ -60,7 +60,7 @@ impl BenchmarkRunner {
     fn benchmark_single_keyword() -> Result<BenchmarkResult> {
         let content = generate_test_content(10000);
         let patterns = vec!["error".to_string()];
-        let matcher = PatternMatcher::new(patterns, false);
+        let matcher = PatternMatcher::new(patterns, false)?;
 
         let start = Instant::now();
         let iterations = 1000;
@@ -82,7 +82,7 @@ impl BenchmarkRunner {
     fn benchmark_multiple_keywords(count: usize) -> Result<BenchmarkResult> {
         let content = generate_test_content(10000);
         let patterns = generate_keywords(count);
-        let matcher = PatternMatcher::new(patterns, false);
+        let matcher = PatternMatcher::new(patterns, false)?;
 
         let start = Instant::now();
         let iterations = 100;
@@ -108,7 +108,7 @@ impl BenchmarkRunner {
             "warning".to_string(),
             "info".to_string(),
         ];
-        let matcher = PatternMatcher::new(patterns, false);
+        let matcher = PatternMatcher::new(patterns, false)?;
 
         let start = Instant::now();
         let iterations = 10;
