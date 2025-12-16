@@ -14,10 +14,58 @@ use crate::models::log_entry::TaskProgress;
 use crate::services::file_watcher::get_file_metadata;
 use crate::utils::path::normalize_path_separator;
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Component, Path};
 use tauri::{AppHandle, Emitter};
 use tokio::fs;
 use walkdir::WalkDir;
+
+/// 检查路径是否安全（防止路径遍历攻击）
+///
+/// # 参数
+///
+/// - `path` - 要检查的路径
+/// - `base_dir` - 基础目录，用于验证路径是否在允许范围内
+///
+/// # 返回
+///
+/// - `Ok(())` - 路径安全
+/// - `Err(AppError)` - 路径不安全
+fn validate_path_safety(path: &Path, base_dir: &Path) -> Result<()> {
+    // 规范化路径
+    let canonical_path = path.canonicalize().map_err(|e| {
+        AppError::validation_error(format!("Failed to canonicalize path {}: {}", path.display(), e))
+    })?;
+    
+    let canonical_base = base_dir.canonicalize().map_err(|e| {
+        AppError::validation_error(format!("Failed to canonicalize base dir {}: {}", base_dir.display(), e))
+    })?;
+    
+    // 验证路径是否在基础目录内
+    if !canonical_path.starts_with(&canonical_base) {
+        return Err(AppError::validation_error(format!(
+            "Path traversal detected: {} is outside of {}",
+            path.display(),
+            base_dir.display()
+        )));
+    }
+    
+    // 检查路径组件中是否包含可疑的遍历尝试
+    for component in path.components() {
+        if let Component::Normal(os_str) = component {
+            if let Some(str) = os_str.to_str() {
+                // 检查是否包含路径遍历序列
+                if str.contains("..") || str.contains("/") || str.contains("\\") {
+                    return Err(AppError::validation_error(format!(
+                        "Suspicious path component detected: {}",
+                        str
+                    )));
+                }
+            }
+        }
+    }
+    
+    Ok(())
+}
 
 /// 递归处理路径（公共接口，带错误处理）
 ///
@@ -447,6 +495,12 @@ async fn extract_and_process_archive(
 
     // 递归处理解压后的文件（支持嵌套压缩包）
     for extracted_file in &summary.extracted_files {
+        // 验证路径安全：防止路径遍历攻击
+        if let Err(e) = validate_path_safety(extracted_file, &extract_dir) {
+            eprintln!("[SECURITY] Skipping unsafe file {}: {}", extracted_file.display(), e);
+            continue; // 跳过不安全的文件
+        }
+
         let relative_path = extracted_file.strip_prefix(&extract_dir).map_err(|_| {
             AppError::validation_error(format!(
                 "Failed to compute relative path for {}",

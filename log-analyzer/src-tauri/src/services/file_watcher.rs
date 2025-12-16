@@ -13,6 +13,58 @@ use std::io::{BufRead, BufReader};
 use std::path::Path;
 use tauri::{AppHandle, Emitter};
 
+/// 时间戳解析器
+pub struct TimestampParser;
+
+impl TimestampParser {
+    /// 支持的时间戳格式
+    const FORMATS: &'static [&'static str] = &[
+        "%Y-%m-%dT%H:%M:%S%.f",    // ISO 8601 with fractional seconds
+        "%Y-%m-%dT%H:%M:%S",       // ISO 8601
+        "%Y-%m-%d %H:%M:%S%.f",    // Common format with fractional seconds
+        "%Y-%m-%d %H:%M:%S",       // Common format
+        "%d/%m/%Y %H:%M:%S%.f",    // European format with fractional seconds
+        "%d/%m/%Y %H:%M:%S",       // European format
+        "%m/%d/%Y %H:%M:%S%.f",    // US format with fractional seconds
+        "%m/%d/%Y %H:%M:%S",       // US format
+        "%Y/%m/%d %H:%M:%S%.f",    // Asian format with fractional seconds
+        "%Y/%m/%d %H:%M:%S",       // Asian format
+    ];
+
+    /// 解析时间戳
+    pub fn parse_timestamp(line: &str) -> Option<String> {
+        // 首先尝试匹配常见的时间戳模式
+        let patterns = [
+            (r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+", 26), // ISO 8601 with ms
+            (r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", 19),      // ISO 8601
+            (r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+", 26),  // Common with ms
+            (r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", 19),       // Common
+            (r"\d{2}/\d{2}/\d{4} \d{2}:\d{2}:\d{2}\.\d+", 26),  // US with ms
+            (r"\d{2}/\d{2}/\d{4} \d{2}:\d{2}:\d{2}", 19),       // US
+            (r"\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}\.\d+", 26),  // Asian with ms
+            (r"\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}", 19),       // Asian
+        ];
+
+        for (pattern, length) in &patterns {
+            if let Some(start) = line.find(&pattern[2..pattern.len() - 2]) {
+                let end = start + length;
+                if end <= line.len() {
+                    let timestamp_str = &line[start..end];
+                    
+                    // 验证时间戳格式
+                    for format in Self::FORMATS {
+                        if let Ok(_dt) = chrono::NaiveDateTime::parse_from_str(timestamp_str, format) {
+                            return Some(timestamp_str.to_string());
+                        }
+                    }
+                }
+            }
+        }
+
+        None
+    }
+}
+
 /// 从指定偏移量读取文件新增内容（支持增量读取）
 ///
 /// # Arguments
@@ -36,55 +88,62 @@ use tauri::{AppHandle, Emitter};
 /// - **增量读取**：只读取新增内容，避免重复处理
 /// - **错误容忍**：单行读取错误不中断整体流程
 /// - **大文件优化**：使用大缓冲区提高读取效率
+/// - **资源安全**：使用作用域确保文件句柄正确关闭
 pub fn read_file_from_offset(path: &Path, offset: u64) -> Result<(Vec<String>, u64)> {
     use std::io::{Seek, SeekFrom};
 
-    let mut file = File::open(path).map_err(AppError::Io)?;
+    // 使用作用域确保文件句柄自动关闭，防止资源泄漏
+    let (lines, file_size) = {
+        let mut file = File::open(path).map_err(AppError::Io)?;
 
-    // 获取当前文件大小
-    let file_size = file.metadata().map_err(AppError::Io)?.len();
+        // 获取当前文件大小
+        let file_size = file.metadata().map_err(AppError::Io)?.len();
 
-    // 如果文件被截断（小于上次偏移量），从头开始读取
-    let start_offset = if file_size < offset {
-        eprintln!(
-            "[WARNING] File truncated, reading from beginning: {}",
-            path.display()
-        );
-        0
-    } else {
-        offset
-    };
+        // 如果文件被截断（小于上次偏移量），从头开始读取
+        let start_offset = if file_size < offset {
+            eprintln!(
+                "[WARNING] File truncated, reading from beginning: {}",
+                path.display()
+            );
+            0
+        } else {
+            offset
+        };
 
-    // 如果没有新内容，直接返回
-    if start_offset >= file_size {
-        return Ok((Vec::new(), file_size));
-    }
+        // 如果没有新内容，直接返回
+        if start_offset >= file_size {
+            return Ok((Vec::new(), file_size));
+        }
 
-    // 移动到偏移量位置
-    file.seek(SeekFrom::Start(start_offset))
-        .map_err(AppError::Io)?;
+        // 移动到偏移量位置
+        file.seek(SeekFrom::Start(start_offset))
+            .map_err(AppError::Io)?;
 
-    // 读取新增内容 - 使用大缓冲区（64KB）提高大文件读取效率
-    let reader = BufReader::with_capacity(65536, file);
-    let mut lines = Vec::new();
+        // 读取新增内容 - 使用大缓冲区（64KB）提高大文件读取效率
+        let reader = BufReader::with_capacity(65536, file);
+        let mut lines = Vec::new();
 
-    for line_result in reader.lines() {
-        match line_result {
-            Ok(line) => lines.push(line),
-            Err(e) => {
-                eprintln!("[WARNING] Error reading line: {}", e);
-                break;
+        for line_result in reader.lines() {
+            match line_result {
+                Ok(line) => lines.push(line),
+                Err(e) => {
+                    eprintln!("[WARNING] Error reading line: {}", e);
+                    // 修改：继续读取而不是break，避免丢失后续有效行
+                    continue;
+                }
             }
         }
-    }
 
-    eprintln!(
-        "[DEBUG] Read {} new lines from {} (offset: {} -> {})",
-        lines.len(),
-        path.display(),
-        start_offset,
-        file_size
-    );
+        eprintln!(
+            "[DEBUG] Read {} new lines from {} (offset: {} -> {})",
+            lines.len(),
+            path.display(),
+            start_offset,
+            file_size
+        );
+
+        (lines, file_size)
+    }; // 文件句柄在此处自动关闭，防止资源泄漏
 
     Ok((lines, file_size))
 }
@@ -101,7 +160,7 @@ pub fn read_file_from_offset(path: &Path, offset: u64) -> Result<(Vec<String>, u
 ///
 /// # 提取规则
 ///
-/// - **时间戳**：取前19个字符（通常为 ISO 8601 格式）
+/// - **时间戳**：使用改进的时间戳解析器
 /// - **日志级别**：按优先级匹配 ERROR > WARN > INFO > DEBUG（默认）
 pub fn parse_metadata(line: &str) -> (String, String) {
     let level = if line.contains("ERROR") {
@@ -113,11 +172,10 @@ pub fn parse_metadata(line: &str) -> (String, String) {
     } else {
         "DEBUG"
     };
-    let timestamp = if line.len() > 19 {
-        line[0..19].to_string()
-    } else {
-        "".to_string()
-    };
+    
+    // 使用改进的时间戳解析器
+    let timestamp = TimestampParser::parse_timestamp(line).unwrap_or_default();
+    
     (timestamp, level.to_string())
 }
 
@@ -256,4 +314,40 @@ pub fn get_file_metadata(path: &Path) -> Result<crate::models::config::FileMetad
         modified_time,
         size: metadata.len(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_timestamp_parser_iso8601() {
+        let line = "2024-01-15T10:30:45.123 [INFO] Application started";
+        let timestamp = TimestampParser::parse_timestamp(line);
+        assert!(timestamp.is_some());
+        assert_eq!(timestamp.unwrap(), "2024-01-15T10:30:45.123");
+    }
+
+    #[test]
+    fn test_timestamp_parser_common() {
+        let line = "2024-01-15 10:30:45 [ERROR] Database connection failed";
+        let timestamp = TimestampParser::parse_timestamp(line);
+        assert!(timestamp.is_some());
+        assert_eq!(timestamp.unwrap(), "2024-01-15 10:30:45");
+    }
+
+    #[test]
+    fn test_timestamp_parser_us() {
+        let line = "01/15/2024 10:30:45.456 [WARN] Low memory warning";
+        let timestamp = TimestampParser::parse_timestamp(line);
+        assert!(timestamp.is_some());
+        assert_eq!(timestamp.unwrap(), "01/15/2024 10:30:45.456");
+    }
+
+    #[test]
+    fn test_timestamp_parser_no_match() {
+        let line = "This is a log line without timestamp";
+        let timestamp = TimestampParser::parse_timestamp(line);
+        assert!(timestamp.is_none());
+    }
 }

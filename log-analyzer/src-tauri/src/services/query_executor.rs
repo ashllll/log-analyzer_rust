@@ -68,39 +68,53 @@ impl QueryExecutor {
     pub fn matches_line(&self, plan: &ExecutionPlan, line: &str) -> bool {
         match plan.strategy {
             crate::services::query_planner::SearchStrategy::And => {
-                // 根据执行计划创建临时的 PatternMatcher
-                let (case_sensitive_terms, case_insensitive_terms): (
-                    Vec<&PlanTerm>,
-                    Vec<&PlanTerm>,
-                ) = plan.terms.iter().partition(|term| term.case_sensitive);
-
-                if !case_insensitive_terms.is_empty() && case_sensitive_terms.is_empty() {
-                    let patterns = case_insensitive_terms
-                        .iter()
-                        .map(|term| term.value.clone())
+                // 收集所有模式，按大小写敏感分组
+                let mut all_patterns = Vec::new();
+                let mut case_sensitive_flags = Vec::new();
+                
+                for term in &plan.terms {
+                    all_patterns.push(term.value.clone());
+                    case_sensitive_flags.push(term.case_sensitive);
+                }
+                
+                // 如果有任何大小写敏感模式，需要分别处理
+                if case_sensitive_flags.iter().any(|&x| x) {
+                    // 混合模式：分别构建两个匹配器
+                    let sensitive_patterns: Vec<_> = plan.terms.iter()
+                        .filter(|t| t.case_sensitive)
+                        .map(|t| t.value.clone())
                         .collect();
-                    let matcher = PatternMatcher::new(patterns, true);
-                    matcher.matches_all(line)
-                } else if case_insensitive_terms.is_empty() && !case_sensitive_terms.is_empty() {
-                    let patterns = case_sensitive_terms
-                        .iter()
-                        .map(|term| term.value.clone())
+                        
+                    let insensitive_patterns: Vec<_> = plan.terms.iter()
+                        .filter(|t| !t.case_sensitive)
+                        .map(|t| t.value.clone())
                         .collect();
-                    let matcher = PatternMatcher::new(patterns, false);
-                    matcher.matches_all(line)
+                    
+                    // 使用Result类型的new方法，需要处理错误
+                    let sensitive_matcher = if !sensitive_patterns.is_empty() {
+                        PatternMatcher::new(sensitive_patterns, false).unwrap_or_else(|_| {
+                            // 如果构建失败，创建一个空匹配器（不会匹配任何内容）
+                            PatternMatcher::new(Vec::new(), false).unwrap()
+                        })
+                    } else {
+                        PatternMatcher::new(Vec::new(), false).unwrap()
+                    };
+                    
+                    let insensitive_matcher = if !insensitive_patterns.is_empty() {
+                        PatternMatcher::new(insensitive_patterns, true).unwrap_or_else(|_| {
+                            PatternMatcher::new(Vec::new(), true).unwrap()
+                        })
+                    } else {
+                        PatternMatcher::new(Vec::new(), true).unwrap()
+                    };
+                    
+                    sensitive_matcher.matches_all(line) && insensitive_matcher.matches_all(line)
                 } else {
-                    // 混合大小写敏感时使用逐项校验，保留大小写敏感配置
-                    let line_lower = line.to_lowercase();
-                    for term in &plan.terms {
-                        if term.case_sensitive {
-                            if !line.contains(&term.value) {
-                                return false;
-                            }
-                        } else if !line_lower.contains(&term.value.to_lowercase()) {
-                            return false;
-                        }
-                    }
-                    true
+                    // 全部大小写不敏感
+                    let patterns = plan.terms.iter().map(|t| t.value.clone()).collect();
+                    PatternMatcher::new(patterns, true)
+                        .map(|m| m.matches_all(line))
+                        .unwrap_or(false)
                 }
             }
             crate::services::query_planner::SearchStrategy::Or => {

@@ -43,6 +43,9 @@ pub enum AppError {
 
     #[error("Index error: {0}")]
     IndexError(String),
+    
+    #[error("Pattern error: {0}")]
+    PatternError(String),
 }
 
 impl AppError {
@@ -96,6 +99,13 @@ impl AppError {
      */
     pub fn not_found(message: impl Into<String>) -> Self {
         AppError::NotFound(message.into())
+    }
+    
+    /**
+     * 创建模式错误
+     */
+    pub fn pattern_error(message: impl Into<String>) -> Self {
+        AppError::PatternError(message.into())
     }
 }
 

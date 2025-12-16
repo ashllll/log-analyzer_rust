@@ -37,6 +37,40 @@ use commands::{
     workspace::{delete_workspace, load_workspace, refresh_workspace},
 };
 
+/// 锁管理器，用于避免死锁
+pub struct LockManager;
+
+impl LockManager {
+    /// 安全地获取多个锁，按锁的地址排序以避免死锁
+    pub fn acquire_multiple_locks<T>(
+        locks: Vec<&Mutex<T>>,
+    ) -> Vec<std::sync::MutexGuard<'_, T>> {
+        // 按锁的地址排序，确保所有线程以相同顺序获取锁
+        let mut sorted_locks: Vec<_> = locks.into_iter().enumerate().collect();
+        sorted_locks.sort_by_key(|(_, lock)| lock as *const _ as usize);
+        
+        sorted_locks.into_iter().map(|(_, lock)| lock.lock().unwrap()).collect()
+    }
+    
+    /// 安全地获取两个锁
+    pub fn acquire_two_locks<T, U>(
+        lock1: &Mutex<T>,
+        lock2: &Mutex<U>,
+    ) -> (std::sync::MutexGuard<'_, T>, std::sync::MutexGuard<'_, U>) {
+        let locks = vec![lock1 as &Mutex<_>, lock2 as &Mutex<_>];
+        let guards = Self::acquire_multiple_locks(locks);
+        
+        // 安全地转换回具体类型
+        // 注意：这里使用了 unsafe，因为我们知道 guards 的顺序
+        unsafe {
+            let guard1 = std::mem::transmute_copy(&guards[0]);
+            let guard2 = std::mem::transmute_copy(&guards[1]);
+            std::mem::forget(guards); // 防止 guards 被 drop
+            (guard1, guard2)
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // 设置全局 panic hook

@@ -20,8 +20,12 @@ impl PatternMatcher {
      * # 参数
      * * `patterns` - 要匹配的模式列表
      * * `case_insensitive` - 是否大小写不敏感
+     *
+     * # 返回
+     * * `Ok(PatternMatcher)` - 成功创建匹配器
+     * * `Err(AppError)` - 构建失败，返回错误信息
      */
-    pub fn new(patterns: Vec<String>, case_insensitive: bool) -> Self {
+    pub fn new(patterns: Vec<String>, case_insensitive: bool) -> crate::error::Result<Self> {
         let ac = if !patterns.is_empty() {
             let mut builder = AhoCorasickBuilder::new();
             builder.match_kind(MatchKind::LeftmostFirst);
@@ -30,22 +34,22 @@ impl PatternMatcher {
                 builder.ascii_case_insensitive(true);
             }
 
-            match builder.build(&patterns) {
-                Ok(ac) => Some(ac),
-                Err(e) => {
-                    eprintln!("[WARNING] Failed to build Aho-Corasick automaton: {}", e);
-                    None
-                }
-            }
+            // 构建失败时返回错误而不是 None，避免静默失败
+            Some(builder.build(&patterns).map_err(|e| {
+                crate::error::AppError::search_error(format!(
+                    "Failed to build pattern matcher for patterns {:?}: {}",
+                    patterns, e
+                ))
+            })?)
         } else {
             None
         };
 
-        Self {
+        Ok(Self {
             ac,
             patterns,
             case_insensitive,
-        }
+        })
     }
 
     /**
@@ -126,14 +130,14 @@ mod tests {
 
     #[test]
     fn test_pattern_matcher_empty_patterns() {
-        let matcher = PatternMatcher::new(Vec::new(), false);
+        let matcher = PatternMatcher::new(Vec::new(), false).unwrap();
         assert!(!matcher.matches_all("test text"));
         assert!(!matcher.matches_any("test text"));
     }
 
     #[test]
     fn test_pattern_matcher_single_pattern() {
-        let matcher = PatternMatcher::new(vec!["error".to_string()], false);
+        let matcher = PatternMatcher::new(vec!["error".to_string()], false).unwrap();
 
         // 包含error子串的应该匹配
         assert!(matcher.matches_all("error occurred"));
@@ -148,7 +152,7 @@ mod tests {
 
     #[test]
     fn test_pattern_matcher_multiple_patterns_and() {
-        let matcher = PatternMatcher::new(vec!["error".to_string(), "timeout".to_string()], false);
+        let matcher = PatternMatcher::new(vec!["error".to_string(), "timeout".to_string()], false).unwrap();
 
         // 应该匹配包含所有关键词的行
         assert!(matcher.matches_all("error occurred due to timeout"));
@@ -162,7 +166,7 @@ mod tests {
 
     #[test]
     fn test_pattern_matcher_case_insensitive() {
-        let matcher = PatternMatcher::new(vec!["ERROR".to_string(), "TIMEOUT".to_string()], true);
+        let matcher = PatternMatcher::new(vec!["ERROR".to_string(), "TIMEOUT".to_string()], true).unwrap();
 
         assert!(matcher.matches_all("Error occurred due to Timeout"));
         assert!(matcher.matches_all("ERROR: timeout"));
@@ -171,7 +175,7 @@ mod tests {
 
     #[test]
     fn test_pattern_matcher_case_sensitive() {
-        let matcher = PatternMatcher::new(vec!["ERROR".to_string(), "timeout".to_string()], false);
+        let matcher = PatternMatcher::new(vec!["ERROR".to_string(), "timeout".to_string()], false).unwrap();
 
         assert!(matcher.matches_all("ERROR occurred due to timeout"));
         assert!(!matcher.matches_all("error occurred due to TIMEOUT")); // ERROR不匹配
@@ -186,7 +190,7 @@ mod tests {
                 "warning".to_string(),
             ],
             false,
-        );
+        ).unwrap();
 
         let matches = matcher.find_matches("error and timeout occurred");
         assert_eq!(matches.len(), 2);
@@ -206,46 +210,59 @@ mod tests {
             .map(|i| format!("keyword{}", i))
             .collect();
 
-        let matcher = PatternMatcher::new(patterns.clone(), false);
+        let matcher = PatternMatcher::new(patterns.clone(), false).unwrap();
 
         // 构造包含所有关键词的测试文本
         let text = patterns.join(" ");
 
+        // 预热
+        for _ in 0..100 {
+            let _ = matcher.matches_all(&text);
+        }
+
+        // 正式测试
         let start = std::time::Instant::now();
-        let result = matcher.matches_all(&text);
+        let iterations = 1000;
+        for _ in 0..iterations {
+            let _ = matcher.matches_all(&text);
+        }
         let duration = start.elapsed();
 
-        assert!(result, "All keywords should be found in the text");
+        // 计算每次操作的平均时间
+        let avg_time = duration / iterations;
+
+        assert!(matcher.matches_all(&text), "All keywords should be found in the text");
+        // 使用相对阈值（每次操作 < 1ms）
         assert!(
-            duration.as_millis() < 50,
-            "Performance test should complete within 50ms, actual: {}ms",
-            duration.as_millis()
+            avg_time < std::time::Duration::from_millis(1),
+            "Average time per operation should be < 1ms, actual: {:?}",
+            avg_time
         );
     }
 
     #[test]
     fn test_pattern_matcher_edge_cases() {
         // 测试空文本
-        let matcher = PatternMatcher::new(vec!["error".to_string()], false);
+        let matcher = PatternMatcher::new(vec!["error".to_string()], false).unwrap();
         assert!(!matcher.matches_all(""));
         assert!(!matcher.matches_any(""));
 
         // 测试重复关键词
-        let matcher = PatternMatcher::new(vec!["error".to_string()], false);
+        let matcher = PatternMatcher::new(vec!["error".to_string()], false).unwrap();
         assert!(matcher.matches_all("error occurred"));
 
         // 测试特殊字符
         let matcher = PatternMatcher::new(
             vec!["error.log".to_string(), "timeout[ms]".to_string()],
             false,
-        );
+        ).unwrap();
         assert!(matcher.matches_all("Found error.log and timeout[ms]"));
     }
 
     #[test]
     fn test_pattern_matcher_partial_match() {
         // 测试部分匹配的情况
-        let matcher = PatternMatcher::new(vec!["error".to_string(), "timeout".to_string()], false);
+        let matcher = PatternMatcher::new(vec!["error".to_string(), "timeout".to_string()], false).unwrap();
 
         // 只包含一个关键词
         assert!(!matcher.matches_all("just an error"));
