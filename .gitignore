@@ -6,3 +6,8 @@ log-analyzer/src-tauri/target
 .qoder/
 !.qoder/rules/
 *.backup
+
+# 临时文件和脚本
+*.ps1
+CI_CHECK_SUMMARY.md
+fix-clippy-warnings.md

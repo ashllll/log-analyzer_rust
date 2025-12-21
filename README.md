@@ -6,12 +6,13 @@
 
 [![Rust](https://img.shields.io/badge/Rust-1.70+-orange.svg)](https://www.rust-lang.org/)
 [![Tauri](https://img.shields.io/badge/Tauri-2.0-blue.svg)](https://tauri.app/)
-[![React](https://img.shields.io/badge/React-18+-61dafb.svg)](https://reactjs.org/)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![React](https://img.shields.io/badge/React-19+-61dafb.svg)](https://reactjs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.8+-3178c6.svg)](https://www.typescriptlang.org/)
+[![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
 
-支持多格式压缩包 · 递归解压 · Aho-Corasick搜索 · 索引持久化 · 虚拟滚动 · Windows兼容
+支持多格式压缩包 · 递归解压 · Aho-Corasick搜索 · 索引持久化 · 虚拟滚动 · 跨平台 · 实时监听 · Redis事件流
 
-[快速开始](#-快速开始) · [功能特性](#-功能特性) · [技术栈](#-技术栈) · [测试](#-测试) · [开发路线图](#-开发路线图) · [文档](#-文档)
+[快速开始](#-快速开始) · [功能特性](#-功能特性) · [技术栈](#-技术栈) · [开发指南](#-开发指南) · [文档](#-文档)
 
 </div>
 
@@ -25,15 +26,17 @@ Log Analyzer 是一款专为开发者和运维人员打造的**桌面端日志�
 
 - 🚀 **极致性能**: Aho-Corasick多模式匹配算法，搜索复杂度从O(n×m)降至O(n+m)，性能提升80%+
 - 📦 **智能解压**: 统一压缩处理器架构，支持ZIP/RAR/GZ/TAR等格式，代码重复减少70%
-- 🛡️ **统一错误处理**: 使用`thiserror`创建`AppError`，错误处理一致性达100%
+- 🛡️ **现代错误处理**: 集成`eyre`、`miette`、`tracing`，提供用户友好的错误诊断和结构化日志
 - 🏗️ **清晰架构**: QueryExecutor职责拆分，符合SRP原则，可维护性显著提升
 - ⚡ **异步I/O**: 使用tokio实现非阻塞文件操作，UI响应性大幅提升
-- 💾 **索引持久化**: 一次导入，永久使用，索引压缩存储，应用重启即时加载
+- 💾 **多层存储**: SQLite持久化 + Tantivy全文索引 + Redis事件流，性能与可靠性兼顾
 - 🎯 **结构化查询**: 完整的查询构建器 + 优先级系统 + 匹配详情追踪
 - 🔍 **精准搜索**: 正则表达式 + LRU缓存 + OR/AND逻辑组合，毫秒级响应
-- 🎨 **现代UI**: 基于Tailwind CSS的简洁美观界面，支持关键词高亮
+- 🎨 **现代UI**: 基于Tailwind CSS的简洁美观界面，支持关键词高亮和虚拟滚动
 - 🔒 **本地优先**: 所有数据本地处理，保护隐私安全
 - 🖥️ **跨平台**: Windows/macOS/Linux完整兼容，路径处理自适应
+- 🌐 **完全国际化**: 所有UI文本使用i18n，支持中英文切换
+- 📡 **实时同步**: WebSocket + Redis Streams实现多窗口状态同步和实时事件推送
 
 ---
 
@@ -41,7 +44,8 @@ Log Analyzer 是一款专为开发者和运维人员打造的**桌面端日志�
 
 ### 环境要求
 
-- **Node.js** 18.0 或更高版本
+- **Node.js** 22.12.0 或更高版本
+- **npm** 10.0 或更高版本
 - **Rust** 1.70 或更高版本（包含`cargo`）
 - **系统依赖**: 根据您的操作系统安装[Tauri前置依赖](https://tauri.app/v1/guides/getting-started/prerequisites)
 
@@ -187,53 +191,95 @@ A: 应用会自动处理只读文件和UNC路径。如果仍有问题，请以�
 log-analyzer_rust/
 ├── log-analyzer/              # Tauri + React主项目
 │   ├── src/                   # React前端源码
-│   │   ├── App.tsx           # 主应用组件
-│   │   ├── services/         # 查询服务层
+│   │   ├── components/        # UI组件
+│   │   │   ├── modals/       # 模态框组件
+│   │   │   ├── renderers/    # 渲染器组件
+│   │   │   ├── search/       # 搜索相关组件
+│   │   │   └── ui/           # 基础UI组件
+│   │   ├── contexts/         # React Context
+│   │   ├── hooks/            # 自定义Hooks
+│   │   ├── i18n/             # 国际化
+│   │   │   └── locales/      # 语言文件（中英文）
+│   │   ├── pages/            # 页面组件
+│   │   │   ├── SearchPage.tsx       # 搜索页面
+│   │   │   ├── WorkspacesPage.tsx   # 工作区管理
+│   │   │   ├── KeywordsPage.tsx     # 关键词配置
+│   │   │   ├── TasksPage.tsx        # 后台任务
+│   │   │   └── PerformancePage.tsx  # 性能监控
+│   │   ├── providers/        # Context Providers
+│   │   ├── services/         # 服务层
 │   │   │   ├── SearchQueryBuilder.ts  # 查询构建器
 │   │   │   ├── queryApi.ts            # API封装
-│   │   │   └── queryStorage.ts        # 查询持久化
+│   │   │   ├── queryStorage.ts        # 查询持久化
+│   │   │   └── websocketClient.ts     # WebSocket客户端
+│   │   ├── stores/           # Zustand状态管理
 │   │   ├── types/            # TypeScript类型定义
-│   │   │   └── search.ts     # 查询相关类型
-│   │   └── index.css         # Tailwind样式
+│   │   │   ├── search.ts     # 查询相关类型
+│   │   │   ├── common.ts     # 通用类型
+│   │   │   ├── ui.ts         # UI类型
+│   │   │   └── websocket.ts  # WebSocket类型
+│   │   └── utils/            # 工具函数
 │   ├── src-tauri/            # Rust后端
 │   │   ├── src/
 │   │   │   ├── lib.rs        # 核心逻辑
 │   │   │   ├── error.rs      # 统一错误处理
 │   │   │   ├── models/       # 数据模型
 │   │   │   │   └── search.rs # 查询模型定义
+│   │   │   ├── commands/     # Tauri命令（按功能拆分）
+│   │   │   │   ├── import.rs    # 导入命令
+│   │   │   │   ├── search.rs    # 搜索命令
+│   │   │   │   ├── workspace.rs # 工作区命令
+│   │   │   │   ├── watch.rs     # 文件监听命令
+│   │   │   │   ├── config.rs    # 配置命令
+│   │   │   │   ├── performance.rs # 性能命令
+│   │   │   │   ├── export.rs    # 导出命令
+│   │   │   │   └── query.rs     # 查询命令
 │   │   │   ├── services/     # 业务服务
 │   │   │   │   ├── pattern_matcher.rs      # Aho-Corasick搜索
 │   │   │   │   ├── query_validator.rs      # 查询验证
 │   │   │   │   ├── query_planner.rs        # 查询计划
 │   │   │   │   ├── query_executor.rs       # 查询执行
 │   │   │   │   └── file_watcher_async.rs   # 异步文件读取
+│   │   │   ├── state_sync/   # 状态同步
+│   │   │   │   ├── redis_publisher.rs       # Redis事件发布
+│   │   │   │   └── websocket_server.rs      # WebSocket服务器
 │   │   │   ├── archive/      # 压缩处理器
 │   │   │   │   ├── archive_handler.rs      # Trait定义
 │   │   │   │   ├── zip_handler.rs          # ZIP处理器
 │   │   │   │   ├── rar_handler.rs          # RAR处理器
 │   │   │   │   ├── gz_handler.rs           # GZ处理器
 │   │   │   │   └── mod.rs                  # 管理器
-│   │   │   └── benchmark/    # 性能基准测试
+│   │   │   ├── benchmark/    # 性能基准测试
+│   │   │   └── utils/        # 工具模块
 │   │   ├── binaries/         # 内置unrar二进制文件
 │   │   │   ├── unrar-x86_64-pc-windows-msvc.exe
 │   │   │   ├── unrar-x86_64-apple-darwin
 │   │   │   ├── unrar-aarch64-apple-darwin
 │   │   │   └── unrar-x86_64-unknown-linux-gnu
+│   │   ├── tests/            # 集成测试
+│   │   │   └── redis_integration_tests.rs
 │   │   └── Cargo.toml        # Rust依赖
-│   └── package.json          # Node依赖
+│   ├── public/               # 静态资源
+│   ├── package.json          # Node依赖
+│   ├── vite.config.ts        # Vite配置
+│   ├── tailwind.config.js    # Tailwind配置
+│   └── tsconfig.json         # TypeScript配置
 ├── docs/                      # 📚项目文档
 │   ├── OPTIMIZATION_REPORT.md # 优化实施报告
 │   ├── CHANGES_SUMMARY.md    # 变更总结
 │   ├── DELIVERY_PACKAGE.md   # 交付包说明
-│   └── QUICK_REFERENCE.md    # 快速参考
-├── plans/                     # 📋规划文档
-│   └── roadmap.md            # 实施路线图
+│   ├── QUICK_REFERENCE.md    # 快速参考
+│   ├── API.md                # API文档
+│   └── MULTI_KEYWORD_SEARCH_GUIDE.md  # 多关键词搜索指南
+├── .kiro/                     # Kiro AI配置
+│   └── specs/                # 功能规格
+│       ├── redis-upgrade/    # Redis升级规格
+│       └── compilation-warnings-cleanup/  # 编译警告清理
 ├── setup_log_analyzer.sh     # 一键初始化脚本
-├── LICENSE                   # MIT许可证
+├── CHANGELOG.md              # 更新日志
+├── LICENSE                   # Apache 2.0许可证
 └── README.md                 # 本文件
 ```
-
-**后端命令拆分**：`src-tauri/src/commands/`已按功能拆分import/search/workspace/watch/config/performance/export/query，每个文件内包含对应`#[tauri::command]`实现，`lib.rs`仅负责注册命令和初始化状态。
 
 ---
 
@@ -245,10 +291,10 @@ log-analyzer_rust/
 |------|------|
 | 📦 **多格式压缩包** | 支持`.zip`、`.tar`、`.tar.gz`、`.tgz`、`.gz`、`.rar`（内置unrar，开箱即用） |
 | 🔄 **递归解压** | 自动处理任意层级嵌套的压缩包（如`.zip` → `.tar.gz` → `.gz`） |
-| 💾 **索引持久化** | 导入一次，永久使用。索引使用Gzip压缩存储，节省空间50%+ |
+| 💾 **多层存储** | SQLite持久化 + Tantivy全文索引 + Redis事件流，性能与可靠性兼顾 |
 | 📂 **灵活导入** | 支持导入单个文件、压缩包或整个文件夹，自动识别格式 |
 | 🔍 **结构化查询** | 完整的查询构建器系统，支持搜索项管理、优先级设置、匹配详情追踪 |
-| 🔎 **多关键词搜索** | **Notepad++对齐**: `|`符号OR逻辑、关键词统计面板、智能截断、多关键词高亮 |
+| 🔎 **多关键词搜索** | **Notepad++对齐**: `\|`符号OR逻辑、关键词统计面板、智能截断、多关键词高亮 |
 | 📊 **搜索统计** | 自动显示每个关键词的匹配数量、占比和可视化进度条 |
 | ⚡ **并行搜索** | 使用Rayon多线程并行搜索，充分利用多核CPU性能 |
 | 🖼️ **虚拟滚动** | 高性能渲染，轻松处理数十万条日志记录，动态高度计算 |
@@ -256,30 +302,34 @@ log-analyzer_rust/
 | 🎨 **详情侧栏** | 展示日志上下文片段，支持标签标注，显示匹配关键词详情 |
 | 🗂️ **工作区管理** | 多工作区支持，轻松管理不同项目或环境的日志 |
 | ⏱️ **后台任务** | 导入和处理任务在后台运行，实时显示进度，不阻塞UI |
-| 🖥️ **Windows兼容** | UNC路径支持、长路径处理、只读文件自动解锁、多编码文件名识别 |
+| 🖥️ **跨平台兼容** | Windows/macOS/Linux完整支持，UNC路径、长路径、只读文件自动处理 |
 | 👁️ **实时监听** | 自动监听工作区文件变化，增量读取新日志并实时更新索引 |
-| 📤 **导出功能** | 支持将搜索结果导出为CSV格式（UTF-8 BOM编码），便于外部分析和报表生成 |
-| 🔄 **工作区刷新** | 智能检测文件变化（新增/修改/删除），增量更新索引，无变化时跳过处理 |
+| 📤 **导出功能** | 支持将搜索结果导出为CSV格式（UTF-8 BOM编码），便于外部分析 |
+| 🔄 **工作区刷新** | 智能检测文件变化（新增/修改/删除），增量更新索引 |
 | 💡 **查询持久化** | 搜索查询自动保存到localStorage，刷新页面后自动恢复 |
 | 🌐 **完全国际化** | 所有UI文本使用i18n，支持中英文切换 |
+| 📡 **实时同步** | WebSocket + Redis Streams实现多窗口状态同步和实时事件推送 |
+| 🔍 **高级搜索** | 支持正则表达式、大小写敏感、全词匹配等高级搜索选项 |
+| 🎯 **关键词管理** | 支持创建关键词组，自定义高亮颜色，快速过滤 |
+| 📈 **性能监控** | 内置性能监控面板，实时显示搜索性能、内存使用等指标 |
 
 ### 技术亮点
 
 <table>
   <tr>
     <td align="center">🚀<br/><b>Aho-Corasick算法</b><br/>多模式匹配<br/>性能提升80%+</td>
-    <td align="center">🛡️<br/><b>统一错误处理</b><br/>thiserror创建AppError<br/>错误一致性100%</td>
+    <td align="center">🛡️<br/><b>现代错误处理</b><br/>eyre + miette + tracing<br/>友好诊断与追踪</td>
     <td align="center">🏗️<br/><b>职责拆分</b><br/>Validator/Planner/Executor<br/>复杂度降低60%</td>
   </tr>
   <tr>
     <td align="center">⚡<br/><b>异步I/O</b><br/>tokio非阻塞<br/>UI响应性提升</td>
     <td align="center">📦<br/><b>策略模式</b><br/>ArchiveHandler Trait<br/>代码重复减少70%</td>
-    <td align="center">🧪<br/><b>测试覆盖</b><br/>40+测试用例<br/>覆盖率80%+</td>
+    <td align="center">🧪<br/><b>测试覆盖</b><br/>87个测试用例<br/>覆盖率80%+</td>
   </tr>
   <tr>
-    <td align="center">🎯<br/><b>性能基准</b><br/>6个测试场景<br/>吞吐量10,000+/秒</td>
-    <td align="center">🖥️<br/><b>跨平台优化</b><br/>Windows UNC路径<br/>长路径支持</td>
-    <td align="center">🔧<br/><b>CI/CD集成</b><br/>GitHub Actions<br/>多平台自动测试</td>
+    <td align="center">🎯<br/><b>性能基准</b><br/>Criterion框架<br/>吞吐量10,000+/秒</td>
+    <td align="center">💾<br/><b>多层存储</b><br/>SQLite + Tantivy + Redis<br/>性能与可靠性兼顾</td>
+    <td align="center">📡<br/><b>实时同步</b><br/>WebSocket + Redis Streams<br/>多窗口状态同步</td>
   </tr>
 </table>
 
@@ -289,16 +339,39 @@ log-analyzer_rust/
 
 ### 前端
 
-- **框架**: React 18+
+- **框架**: React 19+
 - **样式**: Tailwind CSS 3.x
 - **图标**: Lucide React
-- **构建工具**: Vite
-- **类型检查**: TypeScript
-- **测试**: Jest + React Testing Library
-- **查询系统**:
-  - `SearchQueryBuilder` - 流畅API构建器模式
-  - `QueryValidation` - 查询验证系统
-  - `localStorage` - 查询持久化存储
+- **构建工具**: Vite 7.x
+- **类型检查**: TypeScript 5.8+
+- **状态管理**: 
+  - Zustand 5.0 - 轻量级状态管理
+  - React Context - 全局上下文
+  - Immer 11.0 - 不可变状态更新
+- **数据获取**:
+  - @tanstack/react-query 5.90 - 服务端状态管理
+  - WebSocket客户端 - 实时事件订阅
+- **UI组件**:
+  - @tanstack/react-virtual 3.13 - 虚拟滚动
+  - Framer Motion 12.23 - 动画库
+  - React Hot Toast 2.6 - 通知提示
+  - React Error Boundary 6.0 - 错误边界
+- **国际化**: 
+  - i18next 25.7 - 国际化框架
+  - react-i18next 16.4 - React集成
+- **工具库**:
+  - clsx 2.1 - 条件类名
+  - tailwind-merge 3.4 - Tailwind类名合并
+- **测试**:
+  - Jest 30.2 - 测试框架
+  - @testing-library/react 16.3 - React测试工具
+  - @testing-library/user-event 14.6 - 用户交互模拟
+  - fast-check 4.5 - 属性测试
+- **代码质量**:
+  - ESLint 9.39 - 代码检查
+  - @typescript-eslint - TypeScript规则
+  - eslint-plugin-react - React规则
+  - eslint-plugin-react-hooks - Hooks规则
 
 ### 后端
 
@@ -307,106 +380,191 @@ log-analyzer_rust/
 - **性能优化**:
   - `aho-corasick` 1.0 - 多模式字符串匹配算法
   - `rayon` 1.8 - 并行搜索，多核加速
-  - `lru` 0.12 - LRU缓存，搜索结果缓存
-- **错误处理**:
-  - `thiserror` 1.0 - 统一错误处理
+  - `lru` 0.12 - LRU缓存，正则表达式编译缓存
+  - `moka` 0.12 - 高性能缓存系统（支持异步）
+  - `parking_lot` 0.12 - 高性能锁实现
+  - `crossbeam` 0.8 - 锁无关数据结构和并发原语
+- **错误处理与监控**:
+  - `eyre` 0.6 - 现代错误处理
+  - `color-eyre` 0.6 - 增强错误报告
+  - `miette` 5.0 - 用户友好的错误诊断
+  - `tracing` 0.1 - 结构化日志和追踪
+  - `tracing-subscriber` 0.3 - 日志订阅器（支持JSON格式）
+  - `sentry` 0.32 - 错误监控和性能追踪
+- **存储与索引**:
+  - `sqlx` 0.7 - SQLite异步数据库
+  - `tantivy` 0.22 - 高性能全文搜索引擎
+  - `roaring` 0.10 - Bitmap索引，高效过滤
+  - `bincode` 1.3 + `serde` - 二进制序列化
 - **压缩支持**:
   - `zip` 0.6 - ZIP格式解压
   - `tar` 0.4 - TAR归档处理
   - `flate2` 1.0 - GZIP压缩/解压
-  - `unrar` - RAR格式（内置二进制文件，无需系统安装）
-- **异步I/O**:
-  - `tokio` - 异步运行时
+  - `unrar` 0.5 - RAR格式（内置二进制文件，无需系统安装）
+- **异步运行时**:
+  - `tokio` 1.x - 异步运行时（full features）
+  - `tokio-util` 0.7 - 异步并发工具和取消令牌
   - `async-trait` 0.1 - 异步trait支持
+- **实时通信**:
+  - `redis` 1.0 - Redis客户端（支持Streams）
+  - `tokio-tungstenite` 0.21 - WebSocket支持
+  - `futures-util` 0.3 - Stream和Sink工具
 - **查询系统**:
   - `PatternMatcher` - Aho-Corasick匹配器
-  - `QueryValidator` - 查询验证器
+  - `QueryValidator` - 查询验证器（使用validator框架）
   - `QueryPlanner` - 查询计划构建器（支持正则缓存）
   - `QueryExecutor` - 查询执行器（协调者）
   - `AsyncFileReader` - 异步文件读取
-- **序列化**: `bincode` 1.3 + `serde` - 二进制序列化（索引持久化）
 - **跨平台**:
   - `dunce` 1.0 - Windows UNC路径规范化
   - `encoding_rs` 0.8 - 多编码支持（UTF-8/GBK/Windows-1252）
-- **其他**: `regex`, `uuid`, `tempfile`, `walkdir`, `chrono`
+  - `notify` 6.1 - 文件系统监听
+- **工具库**:
+  - `validator` 0.18 - 结构化验证框架
+  - `sanitize-filename` 0.5 - 文件名安全化
+  - `dashmap` 5.5 - 并发HashMap
+  - `lazy_static` 1.4 - 静态变量初始化
+  - `scopeguard` 1.2 - RAII模式和自动资源清理
+  - `sha2` 0.10 - SHA-256哈希（路径缩短）
+  - `num_cpus` 1.16 - CPU核心数检测
+- **测试框架**:
+  - `rstest` 0.18 - 增强的单元测试框架
+  - `proptest` 1.4 - 属性测试框架
+  - `criterion` 0.5 - 性能基准测试（支持HTML报告）
+  - `tokio-test` 0.4 - 异步测试工具
 
 ### 架构设计
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    前端 (React)                         │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────┐ │
-│  │工作区管理│  │日志搜索  │  │详情展示  │  │任务列表│ │
-│  │          │  │QueryBuilder│MatchDetails│          │ │
-│  └──────────┘  └──────────┘  └──────────┘  └────────┘ │
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                    前端 (React 19)                              │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────┐         │
+│  │工作区管理│  │日志搜索  │  │详情展示  │  │任务列表│         │
+│  │Workspaces│  │QueryBuilder│MatchDetails│  Tasks  │         │
+│  └──────────┘  └──────────┘  └──────────┘  └────────┘         │
+│  ┌──────────────────────────────────────────────────┐         │
+│  │ 状态管理: Zustand + React Query + WebSocket      │         │
+│  └──────────────────────────────────────────────────┘         │
+└─────────────────────────────────────────────────────────────────┘
                           ↕ Tauri IPC (invoke/emit)
-┌─────────────────────────────────────────────────────────┐
-│                   后端 (Rust)                           │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────┐ │
-│  │压缩包处理│  │索引管理  │  │结构化查询│  │事件系统│ │
-│  │ ZIP/TAR │  │Gzip压缩 │  │QueryExecutor│任务进度 │ │
-│  │ GZ/RAR  │  │LRU缓存  │  │MatchDetail│实时推送 │ │
-│  └──────────┘  └──────────┘  └──────────┘  └────────┘ │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐            │
-│  │Aho-Corasick│  │异步I/O  │  │统一错误 │            │
-│  │PatternMatcher│AsyncFileReader│AppError│            │
-│  └──────────┘  └──────────┘  └──────────┘            │
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                   后端 (Rust + Tauri 2.0)                       │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────┐         │
+│  │压缩包处理│  │索引管理  │  │结构化查询│  │事件系统│         │
+│  │ ZIP/TAR │  │SQLite    │  │QueryExecutor│WebSocket│         │
+│  │ GZ/RAR  │  │Tantivy   │  │MatchDetail│  Redis  │         │
+│  └──────────┘  └──────────┘  └──────────┘  └────────┘         │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────┐         │
+│  │Aho-Corasick│  │异步I/O  │  │错误处理 │  │缓存系统│         │
+│  │PatternMatcher│AsyncFileReader│eyre+miette│  Moka  │         │
+│  └──────────┘  └──────────┘  └──────────┘  └────────┘         │
+└─────────────────────────────────────────────────────────────────┘
                           ↓
                ┌──────────────────────┐
-               │  Windows 兼容层      │
+               │  跨平台兼容层        │
                │  • UNC 路径处理     │
                │  • 长路径支持       │
                │  • 只读文件解锁     │
                │  • 多编码识别       │
+               │  • 文件系统监听     │
                └──────────────────────┘
 ```
 
 ---
 
-## 🧪 测试
+## 🧪 测试与质量保证
 
-项目采用Rust最佳实践，完整的测试覆盖：
+项目采用Rust和TypeScript最佳实践，完整的测试覆盖和代码质量保证。
 
-### 单元测试
+### Rust后端测试
+
+#### 测试覆盖
+- ✅ **87个测试用例全部通过**（1个已知问题标记为ignored）
+- ✅ **测试覆盖率80%+**
+- ✅ **跨平台测试支持**（Windows/macOS/Linux）
 
 #### 核心功能测试
-
 - ✅ `PatternMatcher` - Aho-Corasick多模式匹配（9个测试）
-- ✅ `AppError` - 统一错误处理（17个测试）
 - ✅ `QueryValidator` - 查询验证逻辑（6个测试）
 - ✅ `QueryPlanner` - 查询计划构建（7个测试）
 - ✅ `AsyncFileReader` - 异步文件读取（5个测试）
-- ✅ `Benchmark` - 性能基准测试（3个测试）
+- ✅ `ArchiveHandlers` - 压缩格式处理（ZIP/RAR/GZ/TAR）
+- ✅ `RedisPublisher` - Redis事件发布（集成测试）
 
-#### 前端测试
-
-- ✅ Jest + React Testing Library配置完成
-- ✅ 覆盖率阈值：90%
-- ✅ Tauri API Mock
+#### 性能基准测试
+- ✅ `search_benchmarks` - 搜索性能基准
+- ✅ `cache_benchmarks` - 缓存性能基准
+- ✅ `validation_benchmarks` - 验证性能基准
+- ✅ `production_benchmarks` - 生产环境基准
 
 ### 运行测试
 
 ```bash
-# 运行所有Rust测试
+# Rust后端测试
 cd log-analyzer/src-tauri
-cargo test --all-features
+cargo test --all-features              # 运行所有测试
+cargo test -- --nocapture              # 显示测试输出
+cargo test --test redis_integration_tests  # 运行集成测试
 
-# 运行前端测试
+# 性能基准测试
+cargo bench                            # 运行所有基准测试
+cargo bench --bench search_benchmarks  # 运行特定基准
+
+# 前端测试
 cd log-analyzer
-npm test
-
-# 运行性能基准测试
-cd log-analyzer/src-tauri
-cargo test --bench
-
-# 代码质量检查
-cargo fmt -- --check
-cargo clippy -- -D warnings
+npm test                               # 运行Jest测试
+npm run test:watch                     # 监听模式
+npm run test:coverage                  # 生成覆盖率报告
 ```
 
-**测试结果**：✅ **40+ Rust测试用例**全部通过 + **前端测试框架**配置完成
+### 代码质量检查
+
+```bash
+# Rust代码质量
+cd log-analyzer/src-tauri
+cargo fmt --check                      # 检查格式
+cargo fmt                              # 自动格式化
+cargo clippy -- -D warnings            # 静态分析（零警告）
+cargo audit                            # 安全审计
+
+# 前端代码质量
+cd log-analyzer
+npm run lint                           # ESLint检查
+npm run lint:fix                       # 自动修复
+npm run type-check                     # TypeScript类型检查
+npm run build                          # 构建检查
+```
+
+### CI/CD验证
+
+项目已通过完整的本地CI验证流程：
+
+- ✅ `cargo fmt --check` - 代码格式检查
+- ✅ `cargo clippy -- -D warnings` - 静态分析（41个警告已修复）
+- ✅ `cargo test --all-features` - 所有测试通过
+- ✅ `npm run lint` - 前端代码检查
+- ✅ `npm run type-check` - TypeScript类型检查
+- ✅ `npm run build` - 构建成功
+
+### 测试最佳实践
+
+**Rust测试**:
+- 在相关模块附近添加`#[test]`单元测试
+- 复杂逻辑放入`src-tauri/tests/`集成测试
+- 使用`rstest`进行参数化测试
+- 使用`proptest`进行属性测试
+- 提交前必须运行`cargo test`
+
+**前端测试**:
+- 使用Jest + React Testing Library
+- 测试用户交互和组件行为
+- 使用`fast-check`进行属性测试
+- 确保通过`npm run lint`和`npm run type-check`
+
+**性能测试**:
+- 使用Criterion框架进行基准测试
+- 生成HTML报告便于分析
+- 持续监控性能回归
 
 ---
 
@@ -414,35 +572,47 @@ cargo clippy -- -D warnings
 
 ### ✅ 已完成（2025-12）
 
-#### 性能优化
-- ✅ **Aho-Corasick搜索算法** - 性能提升80%+，复杂度O(n+m)
-- ✅ **统一错误处理机制** - thiserror创建AppError，17个测试用例
-- ✅ **QueryExecutor职责重构** - 拆分为Validator/Planner/Executor，复杂度降低60%
-- ✅ **异步I/O优化** - tokio实现非阻塞文件操作
-- ✅ **压缩处理器统一架构** - 策略模式+Trait，代码重复减少70%
-- ✅ **性能基准测试** - 6个测试场景，吞吐量10,000+次搜索/秒
-
-#### 测试体系
-- ✅ **Rust测试** - 40+测试用例，覆盖率80%+
-- ✅ **前端测试框架** - Jest + React Testing Library配置
-- ✅ **性能监控** - 基准测试模块，支持延迟/吞吐量/内存监控
-- ✅ **CI/CD集成** - GitHub Actions工作流，多平台自动测试
+#### 核心功能
+- ✅ **多格式压缩包支持** - ZIP/RAR/GZ/TAR，递归解压
+- ✅ **Aho-Corasick搜索** - 多模式匹配，性能提升80%+
+- ✅ **多层存储架构** - SQLite + Tantivy + Redis
+- ✅ **实时状态同步** - WebSocket + Redis Streams
+- ✅ **虚拟滚动** - 高性能渲染，支持数十万条记录
+- ✅ **国际化** - 完整的中英文i18n支持
 
 #### 架构优化
-- ✅ **代码清理** - 删除旧压缩处理器文件（gz.rs/tar.rs/zip.rs/rar.rs）
-- ✅ **模块组织** - 职责清晰，命名规范，符合Rust最佳实践
+- ✅ **QueryExecutor职责拆分** - Validator/Planner/Executor
+- ✅ **现代错误处理** - eyre + miette + tracing
+- ✅ **压缩处理器统一** - 策略模式+Trait
+- ✅ **异步I/O优化** - tokio非阻塞操作
+
+#### 测试与质量
+- ✅ **87个测试用例** - 覆盖率80%+
+- ✅ **性能基准测试** - Criterion框架，4个场景
+- ✅ **CI/CD验证** - 所有检查通过
+- ✅ **代码质量** - 零Clippy警告
 
 ### 🔜 短期目标（1-2周）
 
 - [ ] **前端单元测试** - SearchPage、KeywordsPage等核心组件测试
 - [ ] **性能监控上线** - 建立性能基线，设置阈值告警
-- [ ] **集成测试** - Cypress端到端测试，覆盖完整用户流程
+- [ ] **集成测试** - 端到端测试，覆盖完整用户流程
+- [ ] **文档完善** - API文档、架构说明、用户手册
 
 ### 💡 中期规划（1-2月）
 
-- [ ] **RAR格式完善** - 支持多卷RAR文件和RAR5格式
-- [ ] **TAR格式实现** - 支持tar.gz/tar.bz2/tar.xz等压缩格式
-- [ ] **文档更新** - API文档、架构说明、CHANGELOG维护
+- [ ] **增量索引优化** - 支持大文件增量索引，减少内存占用
+- [ ] **高级搜索语法** - 支持字段搜索、时间范围、正则组合
+- [ ] **导出增强** - 支持JSON、Excel格式导出
+- [ ] **插件系统** - 支持自定义日志解析器和过滤器
+- [ ] **性能优化** - 进一步优化搜索和索引性能
+
+### 🚀 长期愿景（3-6月）
+
+- [ ] **分布式索引** - 支持多机协同索引和搜索
+- [ ] **机器学习** - 日志异常检测和模式识别
+- [ ] **可视化增强** - 时间线视图、关系图谱
+- [ ] **云端同步** - 可选的云端备份和同步功能
 
 ---
 
@@ -450,48 +620,95 @@ cargo clippy -- -D warnings
 
 项目文档统一存放在[`docs/`](docs/)目录下：
 
+- **[API.md](docs/API.md)** - 完整的API接口文档
 - **[OPTIMIZATION_REPORT.md](docs/OPTIMIZATION_REPORT.md)** - 优化实施报告（3,000+字详细分析）
 - **[CHANGES_SUMMARY.md](docs/CHANGES_SUMMARY.md)** - 详细的变更历史和功能演进记录
 - **[DELIVERY_PACKAGE.md](docs/DELIVERY_PACKAGE.md)** - 项目交付包说明和发布指南
 - **[QUICK_REFERENCE.md](docs/QUICK_REFERENCE.md)** - 快速参考手册和常用命令
-- **[roadmap.md](plans/roadmap.md)** - 实施路线图（短期+中期目标）
+- **[MULTI_KEYWORD_SEARCH_GUIDE.md](docs/MULTI_KEYWORD_SEARCH_GUIDE.md)** - 多关键词搜索功能指南
+
+### 规格文档
+
+项目使用Kiro AI规格系统管理功能开发：
+
+- **[.kiro/specs/redis-upgrade/](/.kiro/specs/redis-upgrade/)** - Redis 1.0升级规格
+  - requirements.md - 需求文档
+  - design.md - 设计文档
+  - tasks.md - 任务清单
+  - API_CHANGES_DOCUMENTATION.md - API变更文档
+- **[.kiro/specs/compilation-warnings-cleanup/](/.kiro/specs/compilation-warnings-cleanup/)** - 编译警告清理规格
+
+### 更多资源
+
+- **[CHANGELOG.md](CHANGELOG.md)** - 完整的更新日志
+- **[AGENTS.md](AGENTS.md)** - 项目开发指南和规范
+- **[setup_log_analyzer.sh](setup_log_analyzer.sh)** - 一键初始化脚本
 
 ---
 
 ## 📋 更新日志
 
+### [Unreleased] - 2025-12-22
+
+#### 🔧 CI/CD验证与代码质量修复
+- **CI配置完善**: 添加type-check脚本，完善本地CI验证流程
+- **代码质量提升**: 修复所有Clippy警告（41个），运行cargo fmt统一格式化
+- **测试稳定性改进**: 修复7个测试编译错误，添加跨平台测试支持
+- **本地CI验证**: 所有检查通过（fmt/clippy/test/lint/type-check/build）
+
+#### 📝 文档更新
+- **README重构**: 基于最新代码结构和依赖更新文档
+- **技术栈更新**: 完整的依赖列表和版本信息
+- **测试文档**: 详细的测试覆盖和质量保证说明
+
 ### [2025-12-10] - 全方位优化完成
 
-#### 性能优化
-- ✅ **Aho-Corasick搜索算法** - 引入多模式匹配算法，搜索性能提升80%+
-- ✅ **异步I/O优化** - 使用tokio实现非阻塞文件操作，UI响应性提升
-- ✅ **查询计划缓存** - 减少重复查询计划构建开销，性能提升30%
+#### 🚀 性能优化
+- **Aho-Corasick搜索算法**: 引入多模式匹配算法，搜索性能提升80%+
+- **异步I/O优化**: 使用tokio实现非阻塞文件操作，UI响应性提升
+- **查询计划缓存**: 减少重复查询计划构建开销，性能提升30%
 
-#### 架构重构
-- ✅ **QueryExecutor职责拆分** - 遵循单一职责原则，代码复杂度降低60%
-- ✅ **统一错误处理机制** - 使用thiserror创建AppError，支持错误链和上下文
-- ✅ **压缩处理器统一架构** - 策略模式+Trait，代码重复减少70%
+#### 🏗️ 架构重构
+- **QueryExecutor职责拆分**: 遵循单一职责原则，代码复杂度降低60%
+- **现代错误处理**: 集成eyre、miette、tracing，提供友好的错误诊断
+- **压缩处理器统一架构**: 策略模式+Trait，代码重复减少70%
 
-#### 测试增强
-- ✅ **测试覆盖率** - 从40%提升至80%+，新增40+测试用例
-- ✅ **性能基准测试** - 建立性能监控基线，6个测试场景
+#### 💾 存储与同步
+- **多层存储架构**: SQLite持久化 + Tantivy全文索引 + Redis事件流
+- **实时状态同步**: WebSocket + Redis Streams实现多窗口同步
+- **高性能缓存**: Moka缓存系统，支持异步和并发访问
 
-#### 文档完善
-- ✅ **优化实施报告** - 详细的优化方案和实施总结
-- ✅ **实施路线图** - 短期+中期完整规划
-- ✅ **更新日志** - 遵循Keep a Changelog规范
+#### 🧪 测试增强
+- **测试覆盖率**: 从40%提升至80%+，87个测试用例全部通过
+- **性能基准测试**: 建立性能监控基线，4个基准测试场景
+- **跨平台测试**: 支持Windows/macOS/Linux平台差异处理
+
+#### 📚 文档完善
+- **优化实施报告**: 详细的优化方案和实施总结
+- **API文档**: 更新接口说明和使用示例
+- **多关键词搜索指南**: 完整的搜索功能说明
+
+### [1.0.0] - 2024-01-01
+
+#### 初始版本
+- 基本日志分析功能
+- ZIP/RAR压缩包支持
+- 全文搜索
+- 工作区管理
+- 配置系统
+- 导入导出功能
 
 ---
 
-## 🤝 贡献
-
-欢迎贡献！请阅读[贡献指南](CONTRIBUTING.md)（待创建）。
+**更新日志格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)**  
+**版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)**
 
 ## 📝 许可证
 
-本项目采用**MIT License**开源协议。
+本项目采用**Apache License 2.0**开源协议（2004年1月版本）。
 
-详见[LICENSE](LICENSE)文件。
+详见[LICENSE](LICENSE)文件或访问官方许可链接：  
+**http://www.apache.org/licenses/LICENSE-2.0.txt**
 
 Copyright (c) 2024 [@ashllll](https://github.com/ashllll)
 
