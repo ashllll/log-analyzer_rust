@@ -2,7 +2,8 @@
 //!
 //! 提供路径、工作区ID等参数的验证功能。
 
-use std::path::PathBuf;
+use crate::AppError;
+use std::path::{Path, PathBuf};
 
 /// 验证路径参数
 ///
@@ -126,7 +127,8 @@ pub fn validate_workspace_id(workspace_id: &str) -> Result<(), String> {
 ///
 /// - `Ok(())` - 验证通过
 /// - `Err(AppError)` - 验证失败
-pub fn validate_path_safety(path: &str) -> Result<()> {
+#[allow(dead_code)]
+pub fn validate_path_safety(path: &str) -> Result<(), AppError> {
     // 检查路径遍历字符序列
     if path.contains("..") {
         return Err(AppError::InvalidPath(format!(

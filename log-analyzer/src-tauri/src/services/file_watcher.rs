@@ -19,16 +19,16 @@ pub struct TimestampParser;
 impl TimestampParser {
     /// 支持的时间戳格式
     const FORMATS: &'static [&'static str] = &[
-        "%Y-%m-%dT%H:%M:%S%.f",    // ISO 8601 with fractional seconds
-        "%Y-%m-%dT%H:%M:%S",       // ISO 8601
-        "%Y-%m-%d %H:%M:%S%.f",    // Common format with fractional seconds
-        "%Y-%m-%d %H:%M:%S",       // Common format
-        "%d/%m/%Y %H:%M:%S%.f",    // European format with fractional seconds
-        "%d/%m/%Y %H:%M:%S",       // European format
-        "%m/%d/%Y %H:%M:%S%.f",    // US format with fractional seconds
-        "%m/%d/%Y %H:%M:%S",       // US format
-        "%Y/%m/%d %H:%M:%S%.f",    // Asian format with fractional seconds
-        "%Y/%m/%d %H:%M:%S",       // Asian format
+        "%Y-%m-%dT%H:%M:%S%.f", // ISO 8601 with fractional seconds
+        "%Y-%m-%dT%H:%M:%S",    // ISO 8601
+        "%Y-%m-%d %H:%M:%S%.f", // Common format with fractional seconds
+        "%Y-%m-%d %H:%M:%S",    // Common format
+        "%d/%m/%Y %H:%M:%S%.f", // European format with fractional seconds
+        "%d/%m/%Y %H:%M:%S",    // European format
+        "%m/%d/%Y %H:%M:%S%.f", // US format with fractional seconds
+        "%m/%d/%Y %H:%M:%S",    // US format
+        "%Y/%m/%d %H:%M:%S%.f", // Asian format with fractional seconds
+        "%Y/%m/%d %H:%M:%S",    // Asian format
     ];
 
     /// 解析时间戳
@@ -37,12 +37,12 @@ impl TimestampParser {
         let patterns = [
             (r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+", 26), // ISO 8601 with ms
             (r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", 19),      // ISO 8601
-            (r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+", 26),  // Common with ms
-            (r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", 19),       // Common
-            (r"\d{2}/\d{2}/\d{4} \d{2}:\d{2}:\d{2}\.\d+", 26),  // US with ms
-            (r"\d{2}/\d{2}/\d{4} \d{2}:\d{2}:\d{2}", 19),       // US
-            (r"\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}\.\d+", 26),  // Asian with ms
-            (r"\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}", 19),       // Asian
+            (r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+", 26), // Common with ms
+            (r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", 19),      // Common
+            (r"\d{2}/\d{2}/\d{4} \d{2}:\d{2}:\d{2}\.\d+", 26), // US with ms
+            (r"\d{2}/\d{2}/\d{4} \d{2}:\d{2}:\d{2}", 19),      // US
+            (r"\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}\.\d+", 26), // Asian with ms
+            (r"\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}", 19),      // Asian
         ];
 
         for (pattern, length) in &patterns {
@@ -50,10 +50,12 @@ impl TimestampParser {
                 let end = start + length;
                 if end <= line.len() {
                     let timestamp_str = &line[start..end];
-                    
+
                     // 验证时间戳格式
                     for format in Self::FORMATS {
-                        if let Ok(_dt) = chrono::NaiveDateTime::parse_from_str(timestamp_str, format) {
+                        if let Ok(_dt) =
+                            chrono::NaiveDateTime::parse_from_str(timestamp_str, format)
+                        {
                             return Some(timestamp_str.to_string());
                         }
                     }
@@ -172,10 +174,10 @@ pub fn parse_metadata(line: &str) -> (String, String) {
     } else {
         "DEBUG"
     };
-    
+
     // 使用改进的时间戳解析器
     let timestamp = TimestampParser::parse_timestamp(line).unwrap_or_default();
-    
+
     (timestamp, level.to_string())
 }
 

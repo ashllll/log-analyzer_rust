@@ -33,13 +33,21 @@ use walkdir::WalkDir;
 fn validate_path_safety(path: &Path, base_dir: &Path) -> Result<()> {
     // 规范化路径
     let canonical_path = path.canonicalize().map_err(|e| {
-        AppError::validation_error(format!("Failed to canonicalize path {}: {}", path.display(), e))
+        AppError::validation_error(format!(
+            "Failed to canonicalize path {}: {}",
+            path.display(),
+            e
+        ))
     })?;
-    
+
     let canonical_base = base_dir.canonicalize().map_err(|e| {
-        AppError::validation_error(format!("Failed to canonicalize base dir {}: {}", base_dir.display(), e))
+        AppError::validation_error(format!(
+            "Failed to canonicalize base dir {}: {}",
+            base_dir.display(),
+            e
+        ))
     })?;
-    
+
     // 验证路径是否在基础目录内
     if !canonical_path.starts_with(&canonical_base) {
         return Err(AppError::validation_error(format!(
@@ -48,7 +56,7 @@ fn validate_path_safety(path: &Path, base_dir: &Path) -> Result<()> {
             base_dir.display()
         )));
     }
-    
+
     // 检查路径组件中是否包含可疑的遍历尝试
     for component in path.components() {
         if let Component::Normal(os_str) = component {
@@ -63,7 +71,7 @@ fn validate_path_safety(path: &Path, base_dir: &Path) -> Result<()> {
             }
         }
     }
-    
+
     Ok(())
 }
 
@@ -497,7 +505,11 @@ async fn extract_and_process_archive(
     for extracted_file in &summary.extracted_files {
         // 验证路径安全：防止路径遍历攻击
         if let Err(e) = validate_path_safety(extracted_file, &extract_dir) {
-            eprintln!("[SECURITY] Skipping unsafe file {}: {}", extracted_file.display(), e);
+            eprintln!(
+                "[SECURITY] Skipping unsafe file {}: {}",
+                extracted_file.display(),
+                e
+            );
             continue; // 跳过不安全的文件
         }
 
