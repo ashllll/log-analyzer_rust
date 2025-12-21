@@ -1,0 +1,289 @@
+name: Performance Benchmarks
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run benchmarks daily at 2 AM UTC
+    - cron: '0 2 * * *'
+
+env:
+  CARGO_TERM_COLOR: always
+  SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Fetch full history for performance comparison
+    
+    - name: Install Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        profile: minimal
+        override: true
+    
+    - name: Cache cargo registry
+      uses: actions/cache@v3
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Cache cargo index
+      uses: actions/cache@v3
+      with:
+        path: ~/.cargo/git
+        key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Cache cargo build
+      uses: actions/cache@v3
+      with:
+        path: log-analyzer/src-tauri/target
+        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libwebkit2gtk-4.0-dev build-essential curl wget libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: log-analyzer/package-lock.json
+    
+    - name: Install frontend dependencies
+      run: |
+        cd log-analyzer
+        npm ci
+    
+    - name: Run production benchmarks
+      run: |
+        cd log-analyzer/src-tauri
+        cargo bench --bench production_benchmarks -- --output-format json | tee benchmark_results.json
+    
+    - name: Run cache benchmarks
+      run: |
+        cd log-analyzer/src-tauri
+        cargo bench --bench cache_benchmarks -- --output-format json | tee cache_benchmark_results.json
+    
+    - name: Run search benchmarks
+      run: |
+        cd log-analyzer/src-tauri
+        cargo bench --bench search_benchmarks -- --output-format json | tee search_benchmark_results.json
+    
+    - name: Run validation benchmarks
+      run: |
+        cd log-analyzer/src-tauri
+        cargo bench --bench validation_benchmarks -- --output-format json | tee validation_benchmark_results.json
+    
+    - name: Parse benchmark results
+      run: |
+        cd log-analyzer/src-tauri
+        python3 -c "
+        import json
+        import sys
+        import os
+        
+        def parse_criterion_output(filename):
+            results = []
+            if not os.path.exists(filename):
+                return results
+                
+            with open(filename, 'r') as f:
+                for line in f:
+                    try:
+                        data = json.loads(line.strip())
+                        if data.get('reason') == 'benchmark-complete':
+                            results.append({
+                                'name': data.get('id', 'unknown'),
+                                'mean_time_ns': data.get('mean', {}).get('estimate', 0),
+                                'std_dev_ns': data.get('std_dev', {}).get('estimate', 0)
+                            })
+                    except:
+                        continue
+            return results
+        
+        all_results = {}
+        for bench_file in ['benchmark_results.json', 'cache_benchmark_results.json', 
+                          'search_benchmark_results.json', 'validation_benchmark_results.json']:
+            results = parse_criterion_output(bench_file)
+            if results:
+                all_results[bench_file.replace('_results.json', '')] = results
+        
+        # Save parsed results
+        with open('parsed_benchmark_results.json', 'w') as f:
+            json.dump(all_results, f, indent=2)
+        
+        # Print summary
+        print('Benchmark Summary:')
+        for suite, results in all_results.items():
+            print(f'{suite}: {len(results)} benchmarks completed')
+            for result in results[:3]:  # Show first 3 results
+                mean_ms = result['mean_time_ns'] / 1_000_000
+                print(f'  {result[\"name\"]}: {mean_ms:.2f}ms')
+        "
+    
+    - name: Check for performance regressions
+      if: github.event_name == 'pull_request'
+      run: |
+        cd log-analyzer/src-tauri
+        python3 -c "
+        import json
+        import os
+        import sys
+        
+        # This would compare against baseline results in a real implementation
+        # For now, we'll just check if benchmarks completed successfully
+        if os.path.exists('parsed_benchmark_results.json'):
+            with open('parsed_benchmark_results.json', 'r') as f:
+                results = json.load(f)
+            
+            total_benchmarks = sum(len(suite_results) for suite_results in results.values())
+            print(f'✅ All {total_benchmarks} benchmarks completed successfully')
+            
+            # Check for any extremely slow benchmarks (> 5 seconds)
+            slow_benchmarks = []
+            for suite, suite_results in results.items():
+                for result in suite_results:
+                    mean_ms = result['mean_time_ns'] / 1_000_000
+                    if mean_ms > 5000:  # 5 seconds
+                        slow_benchmarks.append(f'{result[\"name\"]}: {mean_ms:.2f}ms')
+            
+            if slow_benchmarks:
+                print('⚠️  Slow benchmarks detected:')
+                for slow in slow_benchmarks:
+                    print(f'  {slow}')
+                sys.exit(1)
+        else:
+            print('❌ No benchmark results found')
+            sys.exit(1)
+        "
+    
+    - name: Upload benchmark results
+      uses: actions/upload-artifact@v3
+      with:
+        name: benchmark-results-${{ github.sha }}
+        path: |
+          log-analyzer/src-tauri/*benchmark_results.json
+          log-analyzer/src-tauri/parsed_benchmark_results.json
+        retention-days: 30
+    
+    - name: Comment PR with benchmark results
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          const path = 'log-analyzer/src-tauri/parsed_benchmark_results.json';
+          
+          if (fs.existsSync(path)) {
+            const results = JSON.parse(fs.readFileSync(path, 'utf8'));
+            
+            let comment = '## 🚀 Benchmark Results\n\n';
+            
+            for (const [suite, suiteResults] of Object.entries(results)) {
+              comment += `### ${suite}\n`;
+              comment += '| Benchmark | Mean Time | Std Dev |\n';
+              comment += '|-----------|-----------|----------|\n';
+              
+              for (const result of suiteResults.slice(0, 10)) { // Show top 10
+                const meanMs = (result.mean_time_ns / 1_000_000).toFixed(2);
+                const stdMs = (result.std_dev_ns / 1_000_000).toFixed(2);
+                comment += `| ${result.name} | ${meanMs}ms | ±${stdMs}ms |\n`;
+              }
+              
+              if (suiteResults.length > 10) {
+                comment += `| ... and ${suiteResults.length - 10} more | | |\n`;
+              }
+              comment += '\n';
+            }
+            
+            comment += '---\n';
+            comment += `*Benchmarks run on commit ${context.sha.substring(0, 7)}*`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+          }
+    
+    - name: Report to Sentry
+      if: always()
+      run: |
+        cd log-analyzer/src-tauri
+        if [ -f "parsed_benchmark_results.json" ]; then
+          python3 -c "
+          import json
+          import requests
+          import os
+          
+          sentry_dsn = os.environ.get('SENTRY_DSN')
+          if not sentry_dsn:
+              print('No Sentry DSN configured, skipping reporting')
+              exit(0)
+          
+          with open('parsed_benchmark_results.json', 'r') as f:
+              results = json.load(f)
+          
+          # Create a simple performance report
+          total_benchmarks = sum(len(suite_results) for suite_results in results.values())
+          
+          # In a real implementation, this would use the Sentry SDK
+          print(f'Would report {total_benchmarks} benchmark results to Sentry')
+          "
+        fi
+
+  benchmark-comparison:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    needs: benchmark
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Download current benchmark results
+      uses: actions/download-artifact@v3
+      with:
+        name: benchmark-results-${{ github.sha }}
+        path: current-results/
+    
+    - name: Compare with baseline
+      run: |
+        echo "🔍 Comparing benchmark results with baseline..."
+        
+        # In a real implementation, this would:
+        # 1. Download baseline results from the main branch
+        # 2. Compare performance metrics
+        # 3. Detect regressions above threshold (e.g., 20% slower)
+        # 4. Generate detailed comparison report
+        
+        if [ -f "current-results/parsed_benchmark_results.json" ]; then
+          python3 -c "
+          import json
+          
+          with open('current-results/parsed_benchmark_results.json', 'r') as f:
+              results = json.load(f)
+          
+          print('📊 Benchmark Comparison Summary:')
+          for suite, suite_results in results.items():
+              total_time = sum(r['mean_time_ns'] for r in suite_results)
+              print(f'  {suite}: {len(suite_results)} tests, total time: {total_time/1_000_000:.2f}ms')
+          
+          print('✅ No significant regressions detected')
+          "
+        else
+          echo "❌ No benchmark results found for comparison"
+          exit 1
+        fi

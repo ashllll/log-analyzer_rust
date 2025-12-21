@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 14b09249cbd17ce32b9cf379e7a7a1f91aa082f6c5627a1bd529e1221f99f0b6 # shrinks to workspace_id = "Aa_AAA-0", archive_path = "0.zip", event_type = ZipBombDetected, severity = Low, compression_ratio = Some(9720.161790199625), nesting_depth = None, risk_score = None, details = {}

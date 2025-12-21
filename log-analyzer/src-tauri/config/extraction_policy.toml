@@ -1,0 +1,79 @@
+# Enhanced Archive Extraction Policy Configuration
+# This file defines the security, performance, and operational parameters
+# for the enhanced archive handling system
+
+[extraction]
+# Maximum nesting depth for archive extraction (1-20)
+# Archives nested deeper than this will not be extracted
+max_depth = 10
+
+# Maximum size for a single file in bytes (100MB default)
+max_file_size = 104857600
+
+# Maximum total extracted size per archive in bytes (10GB default)
+max_total_size = 10737418240
+
+# Maximum total extracted size per workspace in bytes (50GB default)
+max_workspace_size = 53687091200
+
+# Number of concurrent extraction operations (default: CPU cores / 2)
+# Set to 0 to auto-detect based on CPU cores
+concurrent_extractions = 0
+
+# Buffer size for streaming extraction in bytes (64KB default)
+buffer_size = 65536
+
+[security]
+# Compression ratio threshold for suspicious file detection
+# Files with ratio > this value will be flagged (default: 100.0)
+compression_ratio_threshold = 100.0
+
+# Exponential backoff threshold for nested archives
+# Archives with score (ratio^depth) > this will be rejected
+exponential_backoff_threshold = 1000000.0
+
+# Enable zip bomb detection
+enable_zip_bomb_detection = true
+
+[paths]
+# Enable long path support (Windows UNC prefix \\?\)
+enable_long_paths = true
+
+# Path shortening threshold as fraction of OS limit (0.0-1.0)
+# Shortening triggers when path length exceeds this fraction
+shortening_threshold = 0.8
+
+# Hash algorithm for path shortening (SHA256, SHA512)
+hash_algorithm = "SHA256"
+
+# Length of hash to use for shortened paths (8-32 characters)
+hash_length = 16
+
+[performance]
+# Temporary directory TTL in hours
+temp_dir_ttl_hours = 24
+
+# Log retention period in days
+log_retention_days = 90
+
+# Enable streaming extraction (reduces memory usage)
+enable_streaming = true
+
+# Directory creation batch size
+directory_batch_size = 10
+
+# Parallel file extraction within single archive (1-8)
+parallel_files_per_archive = 4
+
+[audit]
+# Enable detailed audit logging
+enable_audit_logging = true
+
+# Log format: "json" or "text"
+log_format = "json"
+
+# Log level: "trace", "debug", "info", "warn", "error"
+log_level = "info"
+
+# Enable security event logging
+log_security_events = true

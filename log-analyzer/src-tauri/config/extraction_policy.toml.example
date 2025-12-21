@@ -1,0 +1,172 @@
+# Enhanced Archive Handling Configuration
+# 
+# This file configures the behavior of the enhanced archive extraction system.
+# Copy this file to extraction_policy.toml and customize as needed.
+
+[extraction]
+# Maximum nesting depth for archives (1-20)
+# Archives nested deeper than this will not be extracted
+# Default: 10
+max_depth = 10
+
+# Maximum size for a single file in bytes
+# Files larger than this will be skipped
+# Default: 104857600 (100MB)
+max_file_size = 104857600
+
+# Maximum total extraction size per archive in bytes
+# Extraction will halt if this limit is exceeded
+# Default: 10737418240 (10GB)
+max_total_size = 10737418240
+
+# Maximum total size per workspace in bytes
+# Prevents a single workspace from consuming too much disk space
+# Default: 53687091200 (50GB)
+max_workspace_size = 53687091200
+
+# Number of concurrent extractions
+# Set to 0 to use automatic detection (CPU cores / 2)
+# Default: 0 (auto)
+concurrent_extractions = 0
+
+# Buffer size for streaming extraction in bytes
+# Larger buffers use more memory but may improve performance
+# Default: 65536 (64KB)
+buffer_size = 65536
+
+[security]
+# Compression ratio threshold for zip bomb detection
+# Files with compression ratio exceeding this value will be flagged
+# Default: 100.0 (100:1 compression ratio)
+compression_ratio_threshold = 100.0
+
+# Exponential backoff threshold for nested archives
+# Risk score = (compression_ratio ^ nesting_depth)
+# Archives with risk score exceeding this will be rejected
+# Default: 1000000.0
+exponential_backoff_threshold = 1000000.0
+
+# Enable zip bomb detection
+# Recommended: true
+# Default: true
+enable_zip_bomb_detection = true
+
+[paths]
+# Enable long path support (Windows UNC prefix \\?\)
+# Required for paths exceeding 260 characters on Windows
+# Default: true
+enable_long_paths = true
+
+# Threshold for automatic path shortening (0.0-1.0)
+# Paths will be shortened when they reach this percentage of OS limit
+# 0.8 = shorten when path reaches 80% of limit
+# Default: 0.8
+shortening_threshold = 0.8
+
+# Hash algorithm for path shortening
+# Supported: SHA256, SHA512, BLAKE3
+# Default: SHA256
+hash_algorithm = "SHA256"
+
+# Length of hash in shortened paths (8-64)
+# Longer hashes reduce collision probability but create longer paths
+# Default: 16
+hash_length = 16
+
+[performance]
+# Temporary directory TTL in hours
+# Temporary files older than this will be cleaned up
+# Default: 24
+temp_dir_ttl_hours = 24
+
+# Log retention period in days
+# Logs older than this will be rotated/deleted
+# Default: 90
+log_retention_days = 90
+
+# Enable streaming extraction
+# Processes large files in chunks to minimize memory usage
+# Recommended: true
+# Default: true
+enable_streaming = true
+
+[audit]
+# Enable audit logging
+# Logs all extraction operations for compliance and debugging
+# Recommended: true
+# Default: true
+enable_audit_logging = true
+
+# Log format
+# Supported: json, text, pretty
+# json: Structured JSON format (recommended for production)
+# text: Plain text format
+# pretty: Human-readable format (recommended for development)
+# Default: json
+log_format = "json"
+
+# Log level
+# Supported: trace, debug, info, warn, error
+# trace: Most verbose, includes all details
+# debug: Detailed information for debugging
+# info: General information about operations
+# warn: Warning messages and security events
+# error: Error messages only
+# Default: info
+log_level = "info"
+
+# Example configurations for different environments:
+
+# Development Configuration
+# [extraction]
+# max_depth = 5
+# max_file_size = 10485760  # 10MB
+# concurrent_extractions = 2
+# 
+# [audit]
+# log_level = "debug"
+# log_format = "pretty"
+
+# Production Configuration
+# [extraction]
+# max_depth = 10
+# max_file_size = 104857600  # 100MB
+# concurrent_extractions = 8
+# 
+# [security]
+# enable_zip_bomb_detection = true
+# compression_ratio_threshold = 100.0
+# 
+# [audit]
+# log_level = "info"
+# log_format = "json"
+# enable_audit_logging = true
+
+# High-Security Configuration
+# [extraction]
+# max_depth = 5
+# max_file_size = 52428800  # 50MB
+# max_total_size = 5368709120  # 5GB
+# 
+# [security]
+# compression_ratio_threshold = 50.0
+# exponential_backoff_threshold = 100000.0
+# enable_zip_bomb_detection = true
+# 
+# [audit]
+# log_level = "info"
+# log_format = "json"
+# enable_audit_logging = true
+# log_retention_days = 180
+
+# Performance-Optimized Configuration
+# [extraction]
+# concurrent_extractions = 16
+# buffer_size = 262144  # 256KB
+# 
+# [performance]
+# enable_streaming = true
+# temp_dir_ttl_hours = 12
+# 
+# [audit]
+# log_level = "warn"  # Reduce logging overhead
