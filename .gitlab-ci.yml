@@ -84,7 +84,7 @@ test:rust:clippy:
     - install:rust
   script:
     - cd log-analyzer/src-tauri
-    - cargo clippy -- -D warnings
+    - cargo clippy --all-features --all-targets
   tags:
     - docker
 

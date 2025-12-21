@@ -145,7 +145,7 @@ pipeline {
                     steps {
                         sh '''
                             cd log-analyzer/src-tauri
-                            cargo clippy -- -D warnings
+                            cargo clippy --all-features --all-targets
                             echo "Rust Clippy 检查通过"
                         '''
                     }

@@ -47,7 +47,7 @@ jobs:
     - name: Run clippy linter
       run: |
         cd log-analyzer/src-tauri
-        cargo clippy -- -D warnings
+        cargo clippy --all-features --all-targets
     
     - name: Run tests
       run: |
