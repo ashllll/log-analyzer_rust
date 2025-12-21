@@ -71,25 +71,29 @@ impl QueryExecutor {
                 // 收集所有模式，按大小写敏感分组
                 let mut all_patterns = Vec::new();
                 let mut case_sensitive_flags = Vec::new();
-                
+
                 for term in &plan.terms {
                     all_patterns.push(term.value.clone());
                     case_sensitive_flags.push(term.case_sensitive);
                 }
-                
+
                 // 如果有任何大小写敏感模式，需要分别处理
                 if case_sensitive_flags.iter().any(|&x| x) {
                     // 混合模式：分别构建两个匹配器
-                    let sensitive_patterns: Vec<_> = plan.terms.iter()
+                    let sensitive_patterns: Vec<_> = plan
+                        .terms
+                        .iter()
                         .filter(|t| t.case_sensitive)
                         .map(|t| t.value.clone())
                         .collect();
-                        
-                    let insensitive_patterns: Vec<_> = plan.terms.iter()
+
+                    let insensitive_patterns: Vec<_> = plan
+                        .terms
+                        .iter()
                         .filter(|t| !t.case_sensitive)
                         .map(|t| t.value.clone())
                         .collect();
-                    
+
                     // 使用Result类型的new方法，需要处理错误
                     let sensitive_matcher = if !sensitive_patterns.is_empty() {
                         PatternMatcher::new(sensitive_patterns, false).unwrap_or_else(|_| {
@@ -99,15 +103,14 @@ impl QueryExecutor {
                     } else {
                         PatternMatcher::new(Vec::new(), false).unwrap()
                     };
-                    
+
                     let insensitive_matcher = if !insensitive_patterns.is_empty() {
-                        PatternMatcher::new(insensitive_patterns, true).unwrap_or_else(|_| {
-                            PatternMatcher::new(Vec::new(), true).unwrap()
-                        })
+                        PatternMatcher::new(insensitive_patterns, true)
+                            .unwrap_or_else(|_| PatternMatcher::new(Vec::new(), true).unwrap())
                     } else {
                         PatternMatcher::new(Vec::new(), true).unwrap()
                     };
-                    
+
                     sensitive_matcher.matches_all(line) && insensitive_matcher.matches_all(line)
                 } else {
                     // 全部大小写不敏感

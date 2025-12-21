@@ -1,0 +1,10 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 1a5841e403a5400c2ffd8dd746d6991e3e7253b8989684a6d27be208f0922002 # shrinks to invalid_id = "."
+cc 00c8f09e9467e112fd172cd15104a7c353f4bd01e780598c31fcb3326d798f46 # shrinks to malicious_path = "¡..a"
+cc a41fd451daa7099a5e595720d1b39e8f020849cb65520433734352653504c4e8 # shrinks to keys = ["6", "6"]
+cc ecc1f9d47cecf1d31d3dc05b3d63f42d211419be0be07d43db34a80d873daffa # shrinks to query = " "

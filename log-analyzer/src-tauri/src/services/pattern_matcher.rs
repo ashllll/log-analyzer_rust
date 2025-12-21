@@ -152,7 +152,8 @@ mod tests {
 
     #[test]
     fn test_pattern_matcher_multiple_patterns_and() {
-        let matcher = PatternMatcher::new(vec!["error".to_string(), "timeout".to_string()], false).unwrap();
+        let matcher =
+            PatternMatcher::new(vec!["error".to_string(), "timeout".to_string()], false).unwrap();
 
         // 应该匹配包含所有关键词的行
         assert!(matcher.matches_all("error occurred due to timeout"));
@@ -166,7 +167,8 @@ mod tests {
 
     #[test]
     fn test_pattern_matcher_case_insensitive() {
-        let matcher = PatternMatcher::new(vec!["ERROR".to_string(), "TIMEOUT".to_string()], true).unwrap();
+        let matcher =
+            PatternMatcher::new(vec!["ERROR".to_string(), "TIMEOUT".to_string()], true).unwrap();
 
         assert!(matcher.matches_all("Error occurred due to Timeout"));
         assert!(matcher.matches_all("ERROR: timeout"));
@@ -175,7 +177,8 @@ mod tests {
 
     #[test]
     fn test_pattern_matcher_case_sensitive() {
-        let matcher = PatternMatcher::new(vec!["ERROR".to_string(), "timeout".to_string()], false).unwrap();
+        let matcher =
+            PatternMatcher::new(vec!["ERROR".to_string(), "timeout".to_string()], false).unwrap();
 
         assert!(matcher.matches_all("ERROR occurred due to timeout"));
         assert!(!matcher.matches_all("error occurred due to TIMEOUT")); // ERROR不匹配
@@ -190,7 +193,8 @@ mod tests {
                 "warning".to_string(),
             ],
             false,
-        ).unwrap();
+        )
+        .unwrap();
 
         let matches = matcher.find_matches("error and timeout occurred");
         assert_eq!(matches.len(), 2);
@@ -231,7 +235,10 @@ mod tests {
         // 计算每次操作的平均时间
         let avg_time = duration / iterations;
 
-        assert!(matcher.matches_all(&text), "All keywords should be found in the text");
+        assert!(
+            matcher.matches_all(&text),
+            "All keywords should be found in the text"
+        );
         // 使用相对阈值（每次操作 < 1ms）
         assert!(
             avg_time < std::time::Duration::from_millis(1),
@@ -255,14 +262,16 @@ mod tests {
         let matcher = PatternMatcher::new(
             vec!["error.log".to_string(), "timeout[ms]".to_string()],
             false,
-        ).unwrap();
+        )
+        .unwrap();
         assert!(matcher.matches_all("Found error.log and timeout[ms]"));
     }
 
     #[test]
     fn test_pattern_matcher_partial_match() {
         // 测试部分匹配的情况
-        let matcher = PatternMatcher::new(vec!["error".to_string(), "timeout".to_string()], false).unwrap();
+        let matcher =
+            PatternMatcher::new(vec!["error".to_string(), "timeout".to_string()], false).unwrap();
 
         // 只包含一个关键词
         assert!(!matcher.matches_all("just an error"));

@@ -1,0 +1,9 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 288078635aa29c553e9fb69aa62a7790924d0aa9d1b9a00d0d17f2dbcda60d3f # shrinks to unsafe_path = "../\0"
+cc b63cceadbf097b51ecf17789dfc56e3f96ff958c9a7883102a813aa001de813d # shrinks to unsafe_path = "丽.\\"
+cc e965fa5ffbf4c8e07aa7504458e4cb20421f3dc1c52ab0a7196e3aaf54a55143 # shrinks to valid_query = " ", safe_workspace_id = "0"
