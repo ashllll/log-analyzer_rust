@@ -93,7 +93,6 @@ cargo check --manifest-path log-analyzer/src-tauri/Cargo.toml
 - `events/` - 事件系统
 - `monitoring/` - 高级监控
 - `search_engine/` - 增强搜索引擎
-- `state_sync/` - 状态同步（Redis/WebSocket）
 - 增强的 archive 处理
 - 新的 commands 和 utils
 

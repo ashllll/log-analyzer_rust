@@ -17,12 +17,12 @@ The performance optimization follows a **layered architecture** approach using b
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    Frontend Layer                           │
-│  React Query + Zustand + WebSocket Client                  │
+│  React Query + Zustand + Tauri Events                      │
 └─────────────────────────────────────────────────────────────┘
                               │
 ┌─────────────────────────────────────────────────────────────┐
 │                 Real-time Sync Layer                       │
-│     WebSocket Server + Redis Pub/Sub + Event Sourcing     │
+│          Tauri Events + Event Sourcing                     │
 └─────────────────────────────────────────────────────────────┘
                               │
 ┌─────────────────────────────────────────────────────────────┐
@@ -44,17 +44,17 @@ The performance optimization follows a **layered architecture** approach using b
 - **Performance**: Sub-millisecond queries on millions of documents
 - **Memory Efficiency**: 50% less memory usage than Java-based alternatives
 
-**State Synchronization: Redis + WebSockets**
-- **Why**: Redis handles 1M+ ops/sec, WebSockets provide <10ms latency
-- **Production Use**: Used by Discord, Slack, and other real-time applications
-- **Reliability**: Redis Cluster provides 99.99% availability
-- **Scalability**: Horizontal scaling with Redis Sentinel
+**State Synchronization: Tauri Events**
+- **Why**: 零外部依赖，<10ms 延迟，适合单机桌面应用
+- **Production Use**: Tauri 官方推荐方案，被众多桌面应用采用
+- **Reliability**: 进程内通信，无网络故障风险
+- **Simplicity**: 无需额外服务器，开箱即用
 
-**Caching: Redis + In-Memory LRU**
-- **Why**: Redis provides distributed caching, LRU handles hot data
-- **Performance**: Redis: <1ms latency, In-memory: <0.1ms latency
-- **Production Use**: Used by Twitter, GitHub, and Stack Overflow
-- **Features**: TTL, eviction policies, persistence
+**Caching: In-Memory LRU**
+- **Why**: 轻量级，高性能，适合桌面应用场景
+- **Performance**: <0.1ms 延迟，零网络开销
+- **Production Use**: 被广泛应用于各类桌面和移动应用
+- **Features**: TTL、淘汰策略、内存控制
 
 ## Components and Interfaces
 

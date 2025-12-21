@@ -83,7 +83,7 @@ This document outlines the requirements for addressing critical performance bott
 
 1. WHEN implementing search indexing THEN the system SHALL use established libraries like Tantivy or Apache Lucene-equivalent solutions
 2. WHEN managing state synchronization THEN the system SHALL use mature event-driven architectures with message queues
-3. WHEN implementing caching THEN the system SHALL use production-proven solutions like Redis-compatible or high-performance in-memory caches
+3. WHEN implementing caching THEN the system SHALL use production-proven solutions like high-performance in-memory caches (LRU)
 4. WHEN optimizing concurrent operations THEN the system SHALL use well-tested concurrency patterns and lock-free data structures
 5. WHEN monitoring performance THEN the system SHALL integrate with established APM solutions and metrics collection systems
 
