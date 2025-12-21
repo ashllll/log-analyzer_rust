@@ -39,8 +39,22 @@ use commands::{
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // 初始化 color-eyre 用于增强的错误报告
+    color_eyre::install().expect("Failed to install color-eyre");
+
+    // 初始化 tracing 结构化日志系统
+    use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+    
+    tracing_subscriber::registry()
+        .with(fmt::layer().with_target(true).with_thread_ids(true))
+        .with(EnvFilter::from_default_env().add_directive(tracing::Level::INFO.into()))
+        .init();
+
+    tracing::info!("Starting log analyzer application");
+
     // 设置全局 panic hook
     std::panic::set_hook(Box::new(|panic_info| {
+        tracing::error!("Application panic: {:?}", panic_info);
         eprintln!("[PANIC] Application panic: {:?}", panic_info);
     }));
 
@@ -55,8 +69,8 @@ pub fn run() {
         .build_global()
         .expect("Failed to build Rayon thread pool");
 
-    eprintln!(
-        "[INFO] Rayon thread pool initialized with {} threads",
+    tracing::info!(
+        "Rayon thread pool initialized with {} threads",
         num_cpus
     );
 

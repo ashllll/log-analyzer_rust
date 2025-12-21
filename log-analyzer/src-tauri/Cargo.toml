@@ -37,3 +37,34 @@ aho-corasick = "1.0"  # 多模式匹配算法（搜索性能优化）
 thiserror = "1.0"  # 错误处理
 async-trait = "0.1"  # 异步trait支持
 sysinfo = { version = "0.31", default-features = true }
+
+# Phase 1: Industry-Standard Error Handling & Logging
+eyre = "0.6"  # 现代错误处理
+color-eyre = "0.6"  # 增强错误报告
+miette = { version = "5.0", features = ["fancy"] }  # 用户友好的错误诊断
+tracing = "0.1"  # 结构化日志和追踪
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }  # 日志订阅器
+tracing-appender = "0.2"  # 日志文件轮转
+sentry = { version = "0.32", features = ["tracing"] }  # 错误监控
+
+# Phase 1: High-Performance Concurrency
+parking_lot = { version = "0.12", features = ["arc_lock", "send_guard"] }  # 高性能锁
+crossbeam = "0.8"  # 无锁数据结构
+tokio-util = { version = "0.7", features = ["rt"] }  # 异步工具和取消令牌
+
+# Phase 2: Enterprise-Grade Caching
+moka = { version = "0.12", features = ["future", "sync"] }  # 企业级缓存系统
+
+# Phase 3: Production Validation Framework
+validator = { version = "0.18", features = ["derive"] }  # 结构化验证框架
+sanitize-filename = "0.5"  # 文件名安全化
+
+# Phase 3: Automatic Resource Management
+scopeguard = "1.2"  # RAII模式和自动资源清理
+
+# Phase 4: Testing Infrastructure
+[dev-dependencies]
+rstest = "0.18"  # 增强的单元测试框架
+proptest = "1.4"  # 属性测试框架
+criterion = { version = "0.5", features = ["html_reports"] }  # 性能基准测试
+tokio-test = "0.4"  # 异步测试工具
