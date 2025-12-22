@@ -1,17 +1,18 @@
-/**
+/*!
  * Sentry 性能监控配置
- * 
+ *
  * 提供生产环境的错误追踪和性能监控
- * 
+ *
  * **Validates: Requirements 7.1, 7.3, 7.4**
  */
 
+#![allow(dead_code)]
+
 use sentry::{ClientOptions, IntoDsn};
 use std::env;
-use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::util::SubscriberInitExt;
 
 /// Sentry 监控配置
+#[allow(dead_code)]
 pub struct SentryMonitoringConfig {
     /// Sentry DSN (Data Source Name)
     pub dsn: Option<String>,
@@ -31,8 +32,7 @@ impl Default for SentryMonitoringConfig {
     fn default() -> Self {
         Self {
             dsn: env::var("SENTRY_DSN").ok(),
-            environment: env::var("ENVIRONMENT")
-                .unwrap_or_else(|_| "development".to_string()),
+            environment: env::var("ENVIRONMENT").unwrap_or_else(|_| "development".to_string()),
             release: env!("CARGO_PKG_VERSION").to_string(),
             traces_sample_rate: 0.1, // 10% 采样率
             profiles_sample_rate: 0.1,
@@ -111,9 +111,8 @@ pub mod performance {
         /// 开始新的性能事务
         pub fn start(name: impl Into<String>) -> Self {
             let name = name.into();
-            let transaction = sentry::start_transaction(
-                sentry::TransactionContext::new(&name, "performance"),
-            );
+            let transaction =
+                sentry::start_transaction(sentry::TransactionContext::new(&name, "performance"));
 
             Self {
                 name,
@@ -125,7 +124,7 @@ pub mod performance {
         /// 完成事务
         pub fn finish(mut self) {
             let duration = self.start_time.elapsed();
-            
+
             if let Some(transaction) = self.transaction.take() {
                 transaction.finish();
             }
@@ -140,7 +139,7 @@ pub mod performance {
         /// 完成事务并返回持续时间
         pub fn finish_with_duration(mut self) -> std::time::Duration {
             let duration = self.start_time.elapsed();
-            
+
             if let Some(transaction) = self.transaction.take() {
                 transaction.finish();
             }
@@ -174,11 +173,7 @@ pub mod performance {
     }
 
     /// 记录搜索性能指标
-    pub fn record_search_metrics(
-        query_time_ms: f64,
-        result_count: usize,
-        files_scanned: usize,
-    ) {
+    pub fn record_search_metrics(query_time_ms: f64, result_count: usize, files_scanned: usize) {
         record_metric("search.query_time", query_time_ms, "milliseconds");
         record_metric("search.result_count", result_count as f64, "count");
         record_metric("search.files_scanned", files_scanned as f64, "count");

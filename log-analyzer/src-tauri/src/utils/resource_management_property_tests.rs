@@ -36,22 +36,22 @@ mod tests {
         proptest!(|(prefix in "[a-z]{3,10}")| {
             let cleanup_queue = Arc::new(SegQueue::new());
             let base_temp = TempDir::new().unwrap();
-            
+
             let temp_path = {
                 let guard = create_guarded_temp_dir(
                     base_temp.path(),
                     &prefix,
                     cleanup_queue.clone()
                 ).unwrap();
-                
+
                 let path = guard.path().to_path_buf();
-                
+
                 // 验证目录存在
                 prop_assert!(path.exists(), "Temp directory should exist while guard is alive");
-                
+
                 path
             }; // guard dropped here
-            
+
             // 验证目录被清理
             prop_assert!(!temp_path.exists(), "Temp directory should be cleaned up after guard is dropped");
         });
@@ -66,19 +66,19 @@ mod tests {
         proptest!(|(prefix in "[a-z]{3,10}")| {
             let cleanup_queue = Arc::new(SegQueue::new());
             let base_temp = TempDir::new().unwrap();
-            
+
             let mut guard = create_guarded_temp_dir(
                 base_temp.path(),
                 &prefix,
                 cleanup_queue.clone()
             ).unwrap();
-            
+
             let temp_path = guard.path().to_path_buf();
             prop_assert!(temp_path.exists(), "Temp directory should exist before cleanup");
-            
+
             // 手动清理
             guard.cleanup();
-            
+
             // 验证目录被清理
             prop_assert!(!temp_path.exists(), "Temp directory should be cleaned up after manual cleanup");
         });
@@ -94,7 +94,7 @@ mod tests {
             let cleanup_queue = Arc::new(SegQueue::new());
             let resource_manager = crate::utils::ResourceManager::new(cleanup_queue.clone());
             let base_temp = TempDir::new().unwrap();
-            
+
             // 创建多个临时目录
             let paths: Vec<PathBuf> = (0..count)
                 .map(|i| {
@@ -103,16 +103,16 @@ mod tests {
                     path
                 })
                 .collect();
-            
+
             // 验证所有目录都存在
             for path in &paths {
                 prop_assert!(path.exists(), "Temp directory should exist before cleanup");
             }
-            
+
             // 批量清理
             let success_count = resource_manager.cleanup_batch(&paths);
             prop_assert_eq!(success_count, count, "All directories should be cleaned up");
-            
+
             // 验证所有目录都被清理
             for path in &paths {
                 prop_assert!(!path.exists(), "Temp directory should be cleaned up after batch cleanup");
@@ -130,16 +130,16 @@ mod tests {
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async {
                 let manager = Arc::new(CancellationManager::new());
-                
+
                 // 创建取消令牌
                 let token = manager.create_token(operation_id.clone());
-                
+
                 // 验证初始状态
                 assert!(!token.is_cancelled(), "Token should not be cancelled initially");
-                
+
                 // 取消操作
                 manager.cancel_operation(&operation_id).unwrap();
-                
+
                 // 验证取消状态
                 assert!(token.is_cancelled(), "Token should be cancelled after cancel_operation");
             });
@@ -154,12 +154,12 @@ mod tests {
     async fn property_async_task_cancellation() {
         let manager = Arc::new(CancellationManager::new());
         let operation_id = "test-async-task".to_string();
-        
+
         let token = manager.create_token(operation_id.clone());
         let token_clone = token.clone();
         let manager_clone = manager.clone();
         let operation_id_clone = operation_id.clone();
-        
+
         // 启动异步任务
         let task_handle = tokio::spawn(async move {
             let mut iterations = 0;
@@ -177,17 +177,23 @@ mod tests {
                 }
             }
         });
-        
+
         // 等待一小段时间后取消
         sleep(Duration::from_millis(50)).await;
         manager_clone.cancel_operation(&operation_id_clone).unwrap();
-        
+
         // 等待任务完成
         let result = task_handle.await.unwrap();
-        assert!(result.is_ok(), "Task should complete successfully after cancellation");
-        
+        assert!(
+            result.is_ok(),
+            "Task should complete successfully after cancellation"
+        );
+
         let iterations = result.unwrap();
-        assert!(iterations < 100, "Task should be cancelled before reaching 100 iterations");
+        assert!(
+            iterations < 100,
+            "Task should be cancelled before reaching 100 iterations"
+        );
     }
 
     /// **Feature: bug-fixes, Property 19: Search Cancellation (Multiple Operations)**
@@ -198,7 +204,7 @@ mod tests {
     fn property_cancel_all_operations() {
         proptest!(|(count in 1usize..10)| {
             let manager = Arc::new(CancellationManager::new());
-            
+
             // 创建多个操作
             let tokens: Vec<_> = (0..count)
                 .map(|i| {
@@ -206,15 +212,15 @@ mod tests {
                     manager.create_token(operation_id)
                 })
                 .collect();
-            
+
             // 验证所有令牌都未取消
             for token in &tokens {
                 prop_assert!(!token.is_cancelled(), "Token should not be cancelled initially");
             }
-            
+
             // 取消所有操作
             manager.cancel_all();
-            
+
             // 验证所有令牌都被取消
             for token in &tokens {
                 prop_assert!(token.is_cancelled(), "Token should be cancelled after cancel_all");
@@ -231,7 +237,7 @@ mod tests {
         proptest!(|(count in 1usize..10)| {
             let cleanup_queue = Arc::new(SegQueue::new());
             let tracker = Arc::new(ResourceTracker::new(cleanup_queue.clone()));
-            
+
             // 注册多个资源
             for i in 0..count {
                 let resource_id = format!("resource-{}", i);
@@ -241,24 +247,24 @@ mod tests {
                     format!("/tmp/test-{}", i),
                 );
             }
-            
+
             // 验证活跃资源数量
             prop_assert_eq!(tracker.active_count(), count, "Active count should match registered count");
-            
+
             // 标记一半资源为已清理
             let half = count / 2;
             for i in 0..half {
                 let resource_id = format!("resource-{}", i);
                 tracker.mark_cleaned(&resource_id);
             }
-            
+
             // 验证活跃资源数量
             let expected_active = count - half;
             prop_assert_eq!(tracker.active_count(), expected_active, "Active count should decrease after marking cleaned");
-            
+
             // 清理所有资源
             tracker.cleanup_all();
-            
+
             // 验证所有资源都被清理
             prop_assert_eq!(tracker.active_count(), 0, "All resources should be cleaned after cleanup_all");
         });
@@ -273,7 +279,7 @@ mod tests {
         proptest!(|(count in 1usize..5)| {
             let cleanup_queue = Arc::new(SegQueue::new());
             let tracker = Arc::new(ResourceTracker::new(cleanup_queue.clone()));
-            
+
             // 注册多个资源
             for i in 0..count {
                 let resource_id = format!("resource-{}", i);
@@ -283,20 +289,20 @@ mod tests {
                     format!("/tmp/test-{}", i),
                 );
             }
-            
+
             // 等待一小段时间
             std::thread::sleep(Duration::from_millis(100));
-            
+
             // 检测泄漏（阈值设为 50ms）
             let leaks = tracker.detect_leaks(Duration::from_millis(50));
             prop_assert_eq!(leaks.len(), count, "All resources should be detected as leaks");
-            
+
             // 标记所有资源为已清理
             for i in 0..count {
                 let resource_id = format!("resource-{}", i);
                 tracker.mark_cleaned(&resource_id);
             }
-            
+
             // 再次检测泄漏
             let leaks = tracker.detect_leaks(Duration::from_millis(50));
             prop_assert_eq!(leaks.len(), 0, "No leaks should be detected after marking cleaned");

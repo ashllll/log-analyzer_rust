@@ -115,7 +115,7 @@ impl AppServices {
         let mut health_checks = Vec::new();
 
         // 检查事件总线
-        let event_bus_health = if self.event_bus.subscriber_count() >= 0 {
+        let event_bus_health = if self.event_bus.subscriber_count() > 0 {
             ServiceHealth::healthy("EventBus")
                 .with_detail("subscribers", self.event_bus.subscriber_count().to_string())
         } else {
@@ -124,13 +124,13 @@ impl AppServices {
         health_checks.push(event_bus_health);
 
         // 检查资源管理器
-        let resource_health = ServiceHealth::healthy("ResourceManager")
-            .with_detail("status", "operational");
+        let resource_health =
+            ServiceHealth::healthy("ResourceManager").with_detail("status", "operational");
         health_checks.push(resource_health);
 
         // 检查取消管理器
-        let cancellation_health = ServiceHealth::healthy("CancellationManager")
-            .with_detail("status", "operational");
+        let cancellation_health =
+            ServiceHealth::healthy("CancellationManager").with_detail("status", "operational");
         health_checks.push(cancellation_health);
 
         // 检查资源追踪器
@@ -308,9 +308,10 @@ impl AppServicesBuilder {
 
         // 获取配置（使用默认配置如果未提供）
         let config = self.config.unwrap_or_default();
-        
+
         // 验证配置
-        config.validate()
+        config
+            .validate()
             .context("Service configuration validation failed")?;
 
         // 1. 创建基础服务（无依赖）
@@ -332,13 +333,19 @@ impl AppServicesBuilder {
         });
 
         let event_bus = self.event_bus.unwrap_or_else(|| {
-            tracing::debug!("Creating EventBus with capacity: {}", config.event_bus.capacity);
+            tracing::debug!(
+                "Creating EventBus with capacity: {}",
+                config.event_bus.capacity
+            );
             Arc::new(EventBus::new(config.event_bus.capacity))
         });
 
         // 2. 创建依赖其他服务的服务
         let query_executor = self.query_executor.unwrap_or_else(|| {
-            tracing::debug!("Creating QueryExecutor with cache size: {}", config.query_executor.cache_size);
+            tracing::debug!(
+                "Creating QueryExecutor with cache size: {}",
+                config.query_executor.cache_size
+            );
             Arc::new(QueryExecutor::new(config.query_executor.cache_size))
         });
 
@@ -416,7 +423,10 @@ mod tests {
 
         // 验证克隆后引用计数增加
         assert!(Arc::strong_count(services.event_bus()) >= 2);
-        assert!(Arc::ptr_eq(services.event_bus(), services_clone.event_bus()));
+        assert!(Arc::ptr_eq(
+            services.event_bus(),
+            services_clone.event_bus()
+        ));
     }
 
     #[test]
@@ -555,10 +565,10 @@ mod tests {
             .expect("Failed to build services");
 
         assert!(services.start_all().is_ok());
-        
+
         let health = services.overall_health();
         assert!(health.healthy_services > 0);
-        
+
         assert!(services.stop_all().is_ok());
     }
 }

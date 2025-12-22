@@ -82,7 +82,10 @@ impl TempDirGuard {
             return;
         }
 
-        info!("Manually cleaning up temp directory: {}", self.path.display());
+        info!(
+            "Manually cleaning up temp directory: {}",
+            self.path.display()
+        );
         try_cleanup_temp_dir(&self.path, &self.cleanup_queue);
         self.cleaned = true;
     }
@@ -91,7 +94,10 @@ impl TempDirGuard {
 impl Drop for TempDirGuard {
     fn drop(&mut self) {
         if !self.cleaned {
-            info!("TempDirGuard dropping, cleaning up: {}", self.path.display());
+            info!(
+                "TempDirGuard dropping, cleaning up: {}",
+                self.path.display()
+            );
             try_cleanup_temp_dir(&self.path, &self.cleanup_queue);
             self.cleaned = true;
         }
@@ -177,13 +183,21 @@ impl ResourceManager {
                     success_count += 1;
                 }
                 Err(e) => {
-                    warn!("Failed to clean up {}: {}, adding to queue", path.display(), e);
+                    warn!(
+                        "Failed to clean up {}: {}, adding to queue",
+                        path.display(),
+                        e
+                    );
                     self.cleanup_queue.push(path.clone());
                 }
             }
         }
 
-        info!("Batch cleanup: {}/{} successful", success_count, paths.len());
+        info!(
+            "Batch cleanup: {}/{} successful",
+            success_count,
+            paths.len()
+        );
         success_count
     }
 }
@@ -246,7 +260,7 @@ mod tests {
         let cleanup_queue = Arc::new(SegQueue::new());
         let base_temp = TempDir::new().unwrap();
         let temp_path = base_temp.path().join("test_temp");
-        
+
         fs::create_dir_all(&temp_path).unwrap();
         assert!(temp_path.exists());
 
@@ -264,13 +278,13 @@ mod tests {
         let cleanup_queue = Arc::new(SegQueue::new());
         let base_temp = TempDir::new().unwrap();
         let temp_path = base_temp.path().join("test_temp_manual");
-        
+
         fs::create_dir_all(&temp_path).unwrap();
         assert!(temp_path.exists());
 
         let mut guard = TempDirGuard::new(temp_path.clone(), cleanup_queue.clone());
         guard.cleanup();
-        
+
         // 手动清理后目录应该被删除
         assert!(!temp_path.exists());
     }
@@ -279,7 +293,7 @@ mod tests {
     fn test_resource_manager_batch_cleanup() {
         let cleanup_queue = Arc::new(SegQueue::new());
         let manager = ResourceManager::new(cleanup_queue.clone());
-        
+
         let base_temp = TempDir::new().unwrap();
         let paths: Vec<PathBuf> = (0..3)
             .map(|i| {
@@ -308,18 +322,15 @@ mod tests {
     fn test_create_guarded_temp_dir() {
         let cleanup_queue = Arc::new(SegQueue::new());
         let base_temp = TempDir::new().unwrap();
-        
-        let guard = create_guarded_temp_dir(
-            base_temp.path(),
-            "test-",
-            cleanup_queue.clone()
-        ).unwrap();
+
+        let guard =
+            create_guarded_temp_dir(base_temp.path(), "test-", cleanup_queue.clone()).unwrap();
 
         let temp_path = guard.path().to_path_buf();
         assert!(temp_path.exists());
-        
+
         drop(guard);
-        
+
         // 守卫被 drop 后，目录应该被清理
         assert!(!temp_path.exists());
     }
@@ -328,16 +339,16 @@ mod tests {
     fn test_defer_cleanup() {
         let cleanup_queue = Arc::new(SegQueue::new());
         let manager = ResourceManager::new(cleanup_queue);
-        
+
         {
             let _guard = manager.defer_cleanup(|_| {
                 // 这个闭包在作用域结束时执行
                 // 由于闭包限制，我们无法直接验证，但可以通过日志确认
             });
-            
+
             // 在作用域内，清理还未执行
         } // guard dropped here, cleanup executed
-        
+
         // 清理已执行（通过 defer 机制）
         // 注意：由于闭包限制，我们无法直接验证，但可以通过日志确认
     }

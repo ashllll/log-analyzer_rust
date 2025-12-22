@@ -20,9 +20,7 @@ mod tests {
     #[test]
     fn test_eyre_tracing_parking_lot_integration() -> Result<()> {
         // 初始化 tracing
-        let _guard = tracing_subscriber::fmt()
-            .with_test_writer()
-            .try_init();
+        let _guard = tracing_subscriber::fmt().with_test_writer().try_init();
 
         // 使用 parking_lot Mutex
         let data = Arc::new(Mutex::new(Vec::<String>::new()));
@@ -58,9 +56,7 @@ mod tests {
         use moka::future::Cache;
 
         // 初始化 tracing
-        let _guard = tracing_subscriber::fmt()
-            .with_test_writer()
-            .try_init();
+        let _guard = tracing_subscriber::fmt().with_test_writer().try_init();
 
         // 创建 moka 缓存
         let cache: Cache<String, String> = Cache::builder()
@@ -105,9 +101,7 @@ mod tests {
         use crate::utils::validation::validate_safe_path;
 
         // 初始化 tracing
-        let _guard = tracing_subscriber::fmt()
-            .with_test_writer()
-            .try_init();
+        let _guard = tracing_subscriber::fmt().with_test_writer().try_init();
 
         // 测试有效路径
         let valid_result = validate_safe_path("valid/path/to/file.txt");
@@ -136,9 +130,7 @@ mod tests {
         use tokio_util::sync::CancellationToken;
 
         // 初始化 tracing
-        let _guard = tracing_subscriber::fmt()
-            .with_test_writer()
-            .try_init();
+        let _guard = tracing_subscriber::fmt().with_test_writer().try_init();
 
         let cleanup_flag = Arc::new(Mutex::new(false));
         let cleanup_flag_clone = Arc::clone(&cleanup_flag);
@@ -186,9 +178,7 @@ mod tests {
     #[test]
     fn test_dependency_injection_service_lifecycle() -> Result<()> {
         // 初始化 tracing
-        let _guard = tracing_subscriber::fmt()
-            .with_test_writer()
-            .try_init();
+        let _guard = tracing_subscriber::fmt().with_test_writer().try_init();
 
         // 创建服务配置
         let config = ServiceConfiguration::development();
@@ -203,9 +193,7 @@ mod tests {
         info!("Services created successfully");
 
         // 启动所有服务
-        services
-            .start_all()
-            .context("Starting all services")?;
+        services.start_all().context("Starting all services")?;
         info!("All services started");
 
         // 检查健康状态
@@ -223,9 +211,7 @@ mod tests {
         info!("Services are functioning correctly");
 
         // 停止所有服务
-        services
-            .stop_all()
-            .context("Stopping all services")?;
+        services.stop_all().context("Stopping all services")?;
         info!("All services stopped");
 
         Ok(())
@@ -237,9 +223,7 @@ mod tests {
         use moka::sync::Cache;
 
         // 初始化 tracing
-        let _guard = tracing_subscriber::fmt()
-            .with_test_writer()
-            .try_init();
+        let _guard = tracing_subscriber::fmt().with_test_writer().try_init();
 
         // 创建共享缓存（使用 moka）
         let cache = Arc::new(
@@ -311,9 +295,7 @@ mod tests {
         use tokio_util::sync::CancellationToken;
 
         // 初始化 tracing
-        let _guard = tracing_subscriber::fmt()
-            .with_test_writer()
-            .try_init();
+        let _guard = tracing_subscriber::fmt().with_test_writer().try_init();
 
         let services = AppServices::new().context("Creating services")?;
 
@@ -363,9 +345,7 @@ mod tests {
         use scopeguard::defer;
 
         // 初始化 tracing
-        let _guard = tracing_subscriber::fmt()
-            .with_test_writer()
-            .try_init();
+        let _guard = tracing_subscriber::fmt().with_test_writer().try_init();
 
         let cleanup_count = Arc::new(Mutex::new(0usize));
         let cleanup_count_clone = Arc::clone(&cleanup_count);
@@ -407,9 +387,7 @@ mod tests {
         use tokio_util::sync::CancellationToken;
 
         // 初始化 tracing
-        let _guard = tracing_subscriber::fmt()
-            .with_test_writer()
-            .try_init();
+        let _guard = tracing_subscriber::fmt().with_test_writer().try_init();
 
         info!("Starting end-to-end workflow test");
 

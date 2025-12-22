@@ -4,9 +4,7 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::services::{
-        AppServices, AppServicesBuilder, HealthStatus, ServiceConfiguration,
-    };
+    use crate::services::{AppServices, AppServicesBuilder, HealthStatus, ServiceConfiguration};
     use std::io::Write;
     use tempfile::NamedTempFile;
 
@@ -267,8 +265,8 @@ mod tests {
             .expect("Failed to save TOML");
 
         // 从 TOML 加载
-        let loaded_config = ServiceConfiguration::from_toml_file(toml_file.path())
-            .expect("Failed to load TOML");
+        let loaded_config =
+            ServiceConfiguration::from_toml_file(toml_file.path()).expect("Failed to load TOML");
 
         // 验证配置相同
         assert_eq!(
@@ -287,8 +285,8 @@ mod tests {
             .expect("Failed to save JSON");
 
         // 从 JSON 加载
-        let loaded_json_config = ServiceConfiguration::from_json_file(json_file.path())
-            .expect("Failed to load JSON");
+        let loaded_json_config =
+            ServiceConfiguration::from_json_file(json_file.path()).expect("Failed to load JSON");
 
         // 验证配置相同
         assert_eq!(

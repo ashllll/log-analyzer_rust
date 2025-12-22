@@ -6,10 +6,13 @@ This document specifies the requirements for cleaning up Rust compilation warnin
 
 ## Glossary
 
-- **Compilation Warning**: A diagnostic message from the Rust compiler indicating potential issues that don't prevent compilation but should be addressed
+- **Rust Compiler**: The rustc tool that compiles Rust source code into executable binaries
+- **Compilation Warning**: A diagnostic message from the Rust Compiler indicating potential issues that don't prevent compilation but should be addressed
 - **Unused Code**: Code elements (imports, variables, fields, methods) that are defined but never referenced or used
 - **Dead Code**: Code that is compiled but never executed or referenced
-- **Log Analyzer**: The Tauri-based application for analyzing log files with archive extraction capabilities
+- **Log Analyzer System**: The Tauri-based application for analyzing log files with archive extraction capabilities
+- **Source File**: A Rust code file with .rs extension containing module implementation
+- **Test Suite**: The collection of all unit tests, property-based tests, and integration tests in the codebase
 
 ## Requirements
 
@@ -19,11 +22,11 @@ This document specifies the requirements for cleaning up Rust compilation warnin
 
 #### Acceptance Criteria
 
-1. WHEN the Rust compiler runs THEN the system SHALL produce zero warnings about unused imports
-2. WHEN the Rust compiler runs THEN the system SHALL produce zero warnings about unused variables
-3. WHEN the Rust compiler runs THEN the system SHALL produce zero warnings about unused struct fields
-4. WHEN the Rust compiler runs THEN the system SHALL produce zero warnings about unused methods
-5. WHEN code is removed THEN the system SHALL maintain all existing functionality and pass all tests
+1. WHEN the Rust Compiler runs THEN the Log Analyzer System SHALL produce zero warnings about unused imports
+2. WHEN the Rust Compiler runs THEN the Log Analyzer System SHALL produce zero warnings about unused variables
+3. WHEN the Rust Compiler runs THEN the Log Analyzer System SHALL produce zero warnings about unused struct fields
+4. WHEN the Rust Compiler runs THEN the Log Analyzer System SHALL produce zero warnings about unused methods
+5. WHEN code is removed THEN the Log Analyzer System SHALL maintain all existing functionality and pass all tests
 
 ### Requirement 2
 
@@ -31,10 +34,10 @@ This document specifies the requirements for cleaning up Rust compilation warnin
 
 #### Acceptance Criteria
 
-1. WHEN unused imports are identified THEN the system SHALL remove them from the source files
-2. WHEN imports are removed THEN the system SHALL verify that no compilation errors are introduced
-3. WHEN the extraction_engine module is compiled THEN the system SHALL not warn about unused ArchiveHandler or ExtractionSummary imports
-4. WHEN the progress_tracker module is compiled THEN the system SHALL not warn about unused PathBuf import
+1. WHEN unused imports are identified THEN the Log Analyzer System SHALL remove them from the Source Files
+2. WHEN imports are removed THEN the Log Analyzer System SHALL verify that no compilation errors are introduced
+3. WHEN the extraction_engine module is compiled THEN the Log Analyzer System SHALL not warn about unused ArchiveHandler or ExtractionSummary imports
+4. WHEN the progress_tracker module is compiled THEN the Log Analyzer System SHALL not warn about unused PathBuf import
 
 ### Requirement 3
 
@@ -42,9 +45,9 @@ This document specifies the requirements for cleaning up Rust compilation warnin
 
 #### Acceptance Criteria
 
-1. WHEN unused variables are identified THEN the system SHALL either remove them or prefix with underscore if they serve documentation purposes
-2. WHEN variables in extraction_engine are compiled THEN the system SHALL not warn about unused stack, source, expected_size, buffer_size, or max_file_size variables
-3. WHEN variables in dynamic_optimizer are compiled THEN the system SHALL not warn about unused config variable
+1. WHEN unused variables are identified THEN the Log Analyzer System SHALL either remove them or prefix with underscore if they serve documentation purposes
+2. WHEN variables in extraction_engine are compiled THEN the Log Analyzer System SHALL not warn about unused stack, source, expected_size, buffer_size, or max_file_size variables
+3. WHEN variables in dynamic_optimizer are compiled THEN the Log Analyzer System SHALL not warn about unused config variable
 
 ### Requirement 4
 
@@ -52,12 +55,12 @@ This document specifies the requirements for cleaning up Rust compilation warnin
 
 #### Acceptance Criteria
 
-1. WHEN unused struct fields are identified THEN the system SHALL either remove them or mark with #[allow(dead_code)] if they are part of a public API or future feature
-2. WHEN unused methods are identified THEN the system SHALL either remove them or mark with #[allow(dead_code)] if they are part of a public API
-3. WHEN the ArchiveManager struct is compiled THEN the system SHALL not warn about unused extraction_orchestrator field or create_extraction_orchestrator method
-4. WHEN the ExtractionEngine struct is compiled THEN the system SHALL not warn about unused security_detector field or extract_file_streaming method
-5. WHEN the FileHandle struct is compiled THEN the system SHALL not warn about unused opened_at field
-6. WHEN the ReaderPool struct is compiled THEN the system SHALL not warn about unused acquire_reader method
+1. WHEN unused struct fields are identified THEN the Log Analyzer System SHALL either remove them or mark with #[allow(dead_code)] if they are part of a public API or future feature
+2. WHEN unused methods are identified THEN the Log Analyzer System SHALL either remove them or mark with #[allow(dead_code)] if they are part of a public API
+3. WHEN the ArchiveManager struct is compiled THEN the Log Analyzer System SHALL not warn about unused extraction_orchestrator field or create_extraction_orchestrator method
+4. WHEN the ExtractionEngine struct is compiled THEN the Log Analyzer System SHALL not warn about unused security_detector field or extract_file_streaming method
+5. WHEN the FileHandle struct is compiled THEN the Log Analyzer System SHALL not warn about unused opened_at field
+6. WHEN the ReaderPool struct is compiled THEN the Log Analyzer System SHALL not warn about unused acquire_reader method
 
 ### Requirement 5
 
@@ -65,7 +68,7 @@ This document specifies the requirements for cleaning up Rust compilation warnin
 
 #### Acceptance Criteria
 
-1. WHEN cleanup is complete THEN the system SHALL run all existing tests successfully
-2. WHEN cleanup is complete THEN the system SHALL run cargo fmt to ensure consistent formatting
-3. WHEN cleanup is complete THEN the system SHALL run cargo clippy with no warnings
-4. WHEN the codebase is built THEN the system SHALL produce zero compilation warnings
+1. WHEN cleanup is complete THEN the Log Analyzer System SHALL run all existing tests successfully
+2. WHEN cleanup is complete THEN the Log Analyzer System SHALL run cargo fmt to ensure consistent formatting
+3. WHEN cleanup is complete THEN the Log Analyzer System SHALL run cargo clippy with no warnings
+4. WHEN the codebase is built THEN the Log Analyzer System SHALL produce zero compilation warnings

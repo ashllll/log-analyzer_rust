@@ -355,21 +355,46 @@
 
 - [x] 13. Integrate with existing ArchiveManager
 
-
-
-
-
   - Update ArchiveManager to use new ExtractionEngine for secure extraction
   - Add feature flag for gradual rollout (use_enhanced_extraction)
   - Maintain backward compatibility with existing extraction path
   - Update import commands to pass workspace_id to extraction engine
-  - Add configuration UI for policy management in settings
   - _Requirements: All_
 
-- [x] 13.1 Write integration tests for ArchiveManager compatibility
+- [x] 13.1 Update processor.rs to use enhanced extraction system
 
 
-  - Test existing archives work with new engine, path mappings are accessible
+  - Modify `process_path_recursive_with_metadata` to call `extract_archive_async` from public_api
+  - Pass workspace_id to extraction engine
+  - Handle ExtractionResult and integrate with existing path mapping
+  - Maintain backward compatibility with existing behavior
+  - _Requirements: 10.1, 10.5_
+
+- [x] 13.2 Add feature flag for gradual rollout
+
+
+  - Add `use_enhanced_extraction` boolean flag to ExtractionPolicy configuration
+  - Implement conditional logic in processor to use old or new extraction based on flag
+  - Default to false for backward compatibility
+  - Add runtime toggle capability for A/B testing
+  - _Requirements: 6.1, 6.2_
+
+- [x] 13.3 Add configuration UI for policy management
+
+
+  - Create settings page component for extraction policy configuration
+  - Add form fields for all policy parameters (max_depth, max_file_size, etc.)
+  - Implement validation and error handling for policy updates
+  - Add real-time policy reload without restart
+  - _Requirements: 6.1, 6.3, 6.4_
+
+- [x] 13.4 Write integration tests for ArchiveManager compatibility
+
+
+  - Test existing archives work with new engine
+  - Test path mappings are accessible and correct
+  - Test feature flag toggle between old and new extraction
+  - Test backward compatibility with existing workspaces
   - _Requirements: All_
 
 - [x] 14. Implement resource management and cleanup
@@ -498,11 +523,11 @@
 
 
 
-
-
   - Run full test suite (unit + property + integration + security)
   - Run performance benchmarks and verify targets met
   - Run security tests and verify all attacks blocked
   - Verify backward compatibility with existing archives
   - Verify configuration hot reload works correctly
+  - Test end-to-end workflow with real archives
+  - Verify integration with existing import commands
   - Ensure all tests pass, ask the user if questions arise.

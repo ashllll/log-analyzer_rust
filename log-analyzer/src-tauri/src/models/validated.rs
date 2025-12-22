@@ -2,6 +2,8 @@
 //!
 //! 使用 validator 框架提供结构化验证和错误报告
 
+#![allow(dead_code)]
+
 use chrono;
 use once_cell::sync::Lazy;
 use regex::Regex;

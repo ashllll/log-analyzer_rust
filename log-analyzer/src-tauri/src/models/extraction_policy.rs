@@ -32,6 +32,9 @@ pub struct ExtractionConfig {
 
     /// Buffer size for streaming in bytes
     pub buffer_size: usize,
+
+    /// Use enhanced extraction system (default: false for backward compatibility)
+    pub use_enhanced_extraction: bool,
 }
 
 /// Security and zip bomb detection parameters
@@ -108,6 +111,7 @@ impl Default for ExtractionPolicy {
                 max_workspace_size: 53_687_091_200, // 50GB
                 concurrent_extractions: 0,          // Auto-detect
                 buffer_size: 65_536,                // 64KB
+                use_enhanced_extraction: false,     // Default to false for backward compatibility
             },
             security: SecurityConfig {
                 compression_ratio_threshold: 100.0,
@@ -312,6 +316,7 @@ mod tests {
             max_workspace_size = 53687091200
             concurrent_extractions = 4
             buffer_size = 65536
+            use_enhanced_extraction = false
             
             [security]
             compression_ratio_threshold = 100.0

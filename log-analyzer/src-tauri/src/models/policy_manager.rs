@@ -339,6 +339,7 @@ mod tests {
             max_workspace_size = 53687091200
             concurrent_extractions = 4
             buffer_size = 65536
+            use_enhanced_extraction = false
             
             [security]
             compression_ratio_threshold = 100.0
@@ -463,6 +464,7 @@ mod tests {
             max_workspace_size = 53687091200
             concurrent_extractions = 4
             buffer_size = 65536
+            use_enhanced_extraction = false
             
             [security]
             compression_ratio_threshold = 100.0

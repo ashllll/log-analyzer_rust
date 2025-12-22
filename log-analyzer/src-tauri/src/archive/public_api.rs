@@ -3,9 +3,13 @@
 //! This module provides both synchronous and asynchronous interfaces for
 //! archive extraction with comprehensive error handling and result structures.
 
-use crate::archive::{
-    ExtractionEngine, ExtractionOrchestrator, ExtractionPolicy, PathManager, SecurityDetector,
+use crate::archive::extraction_engine::{
+    ExtractionEngine, ExtractionPolicy, ExtractionResult as InternalExtractionResult,
+    ExtractionWarning as InternalExtractionWarning, WarningCategory as InternalWarningCategory,
 };
+use crate::archive::extraction_orchestrator::ExtractionOrchestrator;
+use crate::archive::path_manager::{PathConfig, PathManager};
+use crate::archive::security_detector::{SecurityDetector, SecurityPolicy};
 use crate::error::AppError;
 use crate::services::MetadataDB;
 use serde::{Deserialize, Serialize};
@@ -370,12 +374,12 @@ pub async fn extract_archive_async(
     );
 
     let path_manager = Arc::new(PathManager::new(
-        crate::archive::PathConfig::default(),
+        PathConfig::default(),
         metadata_db.clone(),
     ));
 
     let security_detector = Arc::new(SecurityDetector::new(
-        crate::archive::SecurityPolicy::default(),
+        SecurityPolicy::default(),
     ));
 
     // Create extraction engine
@@ -390,7 +394,7 @@ pub async fn extract_archive_async(
     let orchestrator = ExtractionOrchestrator::new(Arc::new(engine), Some(num_cpus::get() / 2));
 
     // Perform extraction
-    let internal_result = orchestrator
+    let internal_result: InternalExtractionResult = orchestrator
         .extract_archive(archive_path, target_dir, workspace_id)
         .await
         .map_err(|e| ExtractionError::from(e))?;
@@ -415,14 +419,14 @@ pub async fn extract_archive_async(
         .iter()
         .map(|w| ExtractionWarning {
             category: match w.category {
-                crate::archive::WarningCategory::DepthLimitReached => {
+                InternalWarningCategory::DepthLimitReached => {
                     WarningCategory::DepthLimitReached
                 }
-                crate::archive::WarningCategory::PathShortened => WarningCategory::PathShortened,
-                crate::archive::WarningCategory::HighCompressionRatio => {
+                InternalWarningCategory::PathShortened => WarningCategory::PathShortened,
+                InternalWarningCategory::HighCompressionRatio => {
                     WarningCategory::HighCompressionRatio
                 }
-                crate::archive::WarningCategory::FileSkipped => WarningCategory::DuplicateFilename,
+                InternalWarningCategory::FileSkipped => WarningCategory::DuplicateFilename,
             },
             message: w.message.clone(),
             file_path: w.file_path.clone(),

@@ -109,12 +109,12 @@ impl ResourceTracker {
     /// - `path` - 资源路径或描述
     pub fn register_resource(&self, id: String, resource_type: ResourceType, path: String) {
         let info = ResourceInfo::new(id.clone(), resource_type.clone(), path.clone());
-        
+
         {
             let mut resources = self.resources.lock();
             resources.insert(id.clone(), info);
         }
-        
+
         info!(
             "Registered resource: {} (type: {:?}, path: {})",
             id, resource_type, path
@@ -155,11 +155,7 @@ impl ResourceTracker {
     /// 获取所有活跃资源
     pub fn get_active_resources(&self) -> Vec<ResourceInfo> {
         let resources = self.resources.lock();
-        resources
-            .values()
-            .filter(|r| !r.cleaned)
-            .cloned()
-            .collect()
+        resources.values().filter(|r| !r.cleaned).cloned().collect()
     }
 
     /// 检测资源泄漏
@@ -221,7 +217,10 @@ impl ResourceTracker {
                     Ok(())
                 }
                 _ => {
-                    warn!("Cleanup not implemented for resource type: {:?}", info.resource_type);
+                    warn!(
+                        "Cleanup not implemented for resource type: {:?}",
+                        info.resource_type
+                    );
                     self.mark_cleaned(id);
                     Ok(())
                 }
@@ -267,19 +266,20 @@ impl ResourceTracker {
     /// 生成资源报告
     pub fn generate_report(&self) -> ResourceReport {
         let resources = self.resources.lock();
-        
+
         let total = resources.len();
         let active = resources.values().filter(|r| !r.cleaned).count();
         let cleaned = resources.values().filter(|r| r.cleaned).count();
-        
-        let by_type: HashMap<String, usize> = resources
-            .values()
-            .filter(|r| !r.cleaned)
-            .fold(HashMap::new(), |mut acc, r| {
-                let type_name = format!("{:?}", r.resource_type);
-                *acc.entry(type_name).or_insert(0) += 1;
-                acc
-            });
+
+        let by_type: HashMap<String, usize> =
+            resources
+                .values()
+                .filter(|r| !r.cleaned)
+                .fold(HashMap::new(), |mut acc, r| {
+                    let type_name = format!("{:?}", r.resource_type);
+                    *acc.entry(type_name).or_insert(0) += 1;
+                    acc
+                });
 
         ResourceReport {
             total,
@@ -292,7 +292,10 @@ impl ResourceTracker {
     /// 启用或禁用泄漏检测
     pub fn set_leak_detection(&mut self, enabled: bool) {
         self.leak_detection_enabled = enabled;
-        info!("Leak detection {}", if enabled { "enabled" } else { "disabled" });
+        info!(
+            "Leak detection {}",
+            if enabled { "enabled" } else { "disabled" }
+        );
     }
 }
 
@@ -332,15 +335,15 @@ mod tests {
     fn test_register_and_unregister() {
         let cleanup_queue = Arc::new(SegQueue::new());
         let tracker = ResourceTracker::new(cleanup_queue);
-        
+
         tracker.register_resource(
             "test-1".to_string(),
             ResourceType::TempDirectory,
             "/tmp/test".to_string(),
         );
-        
+
         assert_eq!(tracker.active_count(), 1);
-        
+
         tracker.unregister_resource("test-1");
         assert_eq!(tracker.active_count(), 0);
     }
@@ -349,15 +352,15 @@ mod tests {
     fn test_mark_cleaned() {
         let cleanup_queue = Arc::new(SegQueue::new());
         let tracker = ResourceTracker::new(cleanup_queue);
-        
+
         tracker.register_resource(
             "test-1".to_string(),
             ResourceType::TempDirectory,
             "/tmp/test".to_string(),
         );
-        
+
         assert_eq!(tracker.active_count(), 1);
-        
+
         tracker.mark_cleaned("test-1");
         assert_eq!(tracker.active_count(), 0);
     }
@@ -366,20 +369,20 @@ mod tests {
     fn test_leak_detection() {
         let cleanup_queue = Arc::new(SegQueue::new());
         let tracker = ResourceTracker::new(cleanup_queue);
-        
+
         tracker.register_resource(
             "test-1".to_string(),
             ResourceType::TempDirectory,
             "/tmp/test".to_string(),
         );
-        
+
         // 等待一小段时间
         sleep(Duration::from_millis(100));
-        
+
         // 检测泄漏（阈值设为 50ms）
         let leaks = tracker.detect_leaks(Duration::from_millis(50));
         assert_eq!(leaks.len(), 1);
-        
+
         // 标记为已清理后不应再检测到泄漏
         tracker.mark_cleaned("test-1");
         let leaks = tracker.detect_leaks(Duration::from_millis(50));
@@ -390,21 +393,21 @@ mod tests {
     fn test_resource_report() {
         let cleanup_queue = Arc::new(SegQueue::new());
         let tracker = ResourceTracker::new(cleanup_queue);
-        
+
         tracker.register_resource(
             "test-1".to_string(),
             ResourceType::TempDirectory,
             "/tmp/test1".to_string(),
         );
-        
+
         tracker.register_resource(
             "test-2".to_string(),
             ResourceType::FileHandle,
             "/tmp/test2".to_string(),
         );
-        
+
         tracker.mark_cleaned("test-1");
-        
+
         let report = tracker.generate_report();
         assert_eq!(report.total, 2);
         assert_eq!(report.active, 1);
@@ -415,23 +418,23 @@ mod tests {
     fn test_cleanup_all() {
         let cleanup_queue = Arc::new(SegQueue::new());
         let tracker = ResourceTracker::new(cleanup_queue);
-        
+
         tracker.register_resource(
             "test-1".to_string(),
             ResourceType::TempDirectory,
             "/tmp/test1".to_string(),
         );
-        
+
         tracker.register_resource(
             "test-2".to_string(),
             ResourceType::FileHandle,
             "/tmp/test2".to_string(),
         );
-        
+
         assert_eq!(tracker.active_count(), 2);
-        
+
         tracker.cleanup_all();
-        
+
         // 所有资源应该被标记为已清理
         assert_eq!(tracker.active_count(), 0);
     }

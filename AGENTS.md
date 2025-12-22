@@ -25,6 +25,9 @@
 ## 提交与 Pull Request
 - 提交信息用祈使句，推荐 `feat|fix|chore|docs(scope): summary`，便于与语义化版本及 CHANGELOG 对齐；一次提交聚焦单一职责。
 - PR 需包含：变更摘要、涉及模块、测试结果（lint/cargo test/手工验证）；UI 变更附截图或录屏；涉及文档或配置的更新请在描述中标明。
+- 提交前请保证本地 `npm run tauri build` 无误，提交后请保证 `npm run tauri build` 无误。
+- 提交前请保证本地 `cargo test` 无误，提交后请保证 `cargo test` 无误。
+- 提交发生错误时，不要允许删除、修改最新的本地代码，本地修改后的最新代码必须保留。
 
 ## 安全与配置提示
 - 本地要求 Node 18+ 与 Rust 1.70+；遵循 Tauri 官方依赖安装指引，确保 `src-tauri/binaries/` 未被误删。

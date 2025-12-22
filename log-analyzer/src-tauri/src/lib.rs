@@ -19,8 +19,8 @@ mod commands;
 mod error;
 mod models;
 mod monitoring;
-pub mod services;  // 公开 services 模块用于基准测试
-pub mod utils;     // 公开 utils 模块用于基准测试
+pub mod services; // 公开 services 模块用于基准测试
+pub mod utils; // 公开 utils 模块用于基准测试
 
 // 从模块导入类型
 pub use error::{AppError, Result};
@@ -83,7 +83,7 @@ pub fn run() {
             let resource_manager = Arc::new(utils::ResourceManager::new(cleanup_queue.clone()));
             let cancellation_manager = Arc::new(utils::CancellationManager::new());
             let resource_tracker = Arc::new(utils::ResourceTracker::new(cleanup_queue.clone()));
-            
+
             AppState {
                 temp_dir: Mutex::new(None),
                 path_map: Arc::new(Mutex::new(HashMap::new())),

@@ -112,7 +112,9 @@ impl Drop for AppState {
         report.print();
 
         // 检测资源泄漏
-        let leaks = self.resource_tracker.detect_leaks(std::time::Duration::from_secs(300));
+        let leaks = self
+            .resource_tracker
+            .detect_leaks(std::time::Duration::from_secs(300));
         if !leaks.is_empty() {
             eprintln!("[WARNING] Detected {} resource leaks", leaks.len());
         }

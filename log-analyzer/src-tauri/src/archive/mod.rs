@@ -4,18 +4,37 @@
  * 提供统一的接口处理各种压缩格式（ZIP、RAR、TAR、GZ）
  */
 pub mod archive_handler;
+pub mod audit_logger;
+pub mod checkpoint_manager;
+pub mod edge_case_handlers;
+pub mod extraction_context;
+pub mod extraction_engine;
+pub mod extraction_orchestrator;
 pub mod gz_handler;
+pub mod path_manager;
 pub mod processor;
+pub mod progress_tracker;
+pub mod public_api;
 pub mod rar_handler;
+pub mod resource_manager;
+pub mod security_detector;
 pub mod tar_handler;
 pub mod zip_handler;
 
 pub use archive_handler::{ArchiveHandler, ExtractionSummary};
+pub use extraction_context::{ExtractionContext, ExtractionItem, ExtractionStack};
+pub use extraction_engine::{ExtractionEngine, ExtractionPolicy};
+pub use extraction_orchestrator::ExtractionOrchestrator;
 pub use gz_handler::GzHandler;
+pub use path_manager::{PathConfig, PathManager};
 #[allow(unused_imports)]
 #[allow(deprecated)]
 pub use processor::process_path_recursive_with_metadata;
+pub use public_api::{
+    extract_archive_async, extract_archive_sync, ExtractionResult,
+};
 pub use rar_handler::RarHandler;
+pub use security_detector::{SecurityDetector, SecurityPolicy};
 pub use tar_handler::TarHandler;
 pub use zip_handler::ZipHandler;
 

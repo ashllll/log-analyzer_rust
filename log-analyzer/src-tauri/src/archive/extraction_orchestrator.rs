@@ -5,7 +5,7 @@
 //! It wraps the ExtractionEngine and provides controlled access with
 //! resource management.
 
-use crate::archive::{ExtractionEngine, ExtractionResult};
+use crate::archive::extraction_engine::{ExtractionEngine, ExtractionResult};
 use crate::error::{AppError, Result};
 use dashmap::DashMap;
 use std::path::{Path, PathBuf};

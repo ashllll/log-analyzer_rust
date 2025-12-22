@@ -6,13 +6,13 @@
 //! - eyre vs 自定义错误类型开销
 //! - 服务创建和依赖注入开销
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use log_analyzer::services::{AppServices, ServiceConfiguration};
 use log_analyzer::utils::validation::validate_safe_path;
 use moka::sync::Cache;
 use parking_lot::Mutex as ParkingLotMutex;
-use std::sync::Mutex as StdMutex;
 use std::sync::Arc;
+use std::sync::Mutex as StdMutex;
 use std::thread;
 use std::time::Duration;
 
@@ -163,8 +163,7 @@ fn bench_error_handling_overhead(c: &mut Criterion) {
 
         b.iter(|| {
             let result: eyre::Result<()> = (|| {
-                validate_safe_path("valid/path/to/file.txt")
-                    .context("Validating file path")?;
+                validate_safe_path("valid/path/to/file.txt").context("Validating file path")?;
                 Ok(())
             })();
             black_box(result);
@@ -265,25 +264,21 @@ fn bench_memory_and_cache_efficiency(c: &mut Criterion) {
 
     // 不同缓存大小的性能
     for size in [100, 500, 1000, 5000].iter() {
-        group.bench_with_input(
-            BenchmarkId::new("cache_size", size),
-            size,
-            |b, &size| {
-                let cache: Cache<String, Vec<u8>> = Cache::builder()
-                    .max_capacity(size)
-                    .time_to_live(Duration::from_secs(60))
-                    .build();
+        group.bench_with_input(BenchmarkId::new("cache_size", size), size, |b, &size| {
+            let cache: Cache<String, Vec<u8>> = Cache::builder()
+                .max_capacity(size)
+                .time_to_live(Duration::from_secs(60))
+                .build();
 
-                b.iter(|| {
-                    for i in 0..size {
-                        let key = format!("key_{}", i);
-                        let value = vec![0u8; 1024]; // 1KB 数据
-                        cache.insert(key.clone(), value);
-                        black_box(cache.get(&key));
-                    }
-                });
-            },
-        );
+            b.iter(|| {
+                for i in 0..size {
+                    let key = format!("key_{}", i);
+                    let value = vec![0u8; 1024]; // 1KB 数据
+                    cache.insert(key.clone(), value);
+                    black_box(cache.get(&key));
+                }
+            });
+        });
     }
 
     group.finish();

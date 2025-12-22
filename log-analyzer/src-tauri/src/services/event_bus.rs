@@ -49,13 +49,13 @@ pub struct EventBus {
 
 impl EventBus {
     /// 创建新的事件总线
-    /// 
+    ///
     /// # Arguments
     /// * `capacity` - 通道容量，默认推荐 1000
     pub fn new(capacity: usize) -> Self {
         let (sender, receiver) = broadcast::channel(capacity);
         info!("EventBus initialized with capacity: {}", capacity);
-        
+
         Self {
             sender,
             _receiver: receiver,
@@ -63,10 +63,10 @@ impl EventBus {
     }
 
     /// 发布事件到所有订阅者
-    /// 
+    ///
     /// # Arguments
     /// * `event` - 要发布的事件
-    /// 
+    ///
     /// # Returns
     /// 成功时返回接收到事件的订阅者数量
     pub fn publish(&self, event: AppEvent) -> Result<usize> {
@@ -83,7 +83,7 @@ impl EventBus {
     }
 
     /// 订阅事件
-    /// 
+    ///
     /// # Returns
     /// 返回一个新的接收器，可以用来接收事件
     pub fn subscribe(&self) -> broadcast::Receiver<AppEvent> {
@@ -416,7 +416,7 @@ mod property_tests {
         ) {
             // 创建事件总线
             let bus = EventBus::new(100);
-            
+
             // 创建多个订阅者
             let mut subscribers: Vec<EventSubscriber> = (0..subscriber_count)
                 .map(|i| EventSubscriber::new(bus.subscribe(), format!("sub-{}", i)))
@@ -524,4 +524,3 @@ mod property_tests {
         }
     }
 }
-

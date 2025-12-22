@@ -2,11 +2,15 @@
 //!
 //! 核心递归逻辑，负责：
 //! - 识别文件类型（压缩文件 vs 普通文件）
-//! - 调用统一的 ArchiveManager 处理器
+//! - 调用统一的 ArchiveManager 处理器或增强提取系统
 //! - 支持异步递归解压嵌套压缩包
 //! - 收集元数据（增量索引）
 //! - 错误处理和进度报告
 
+use crate::archive::extraction_engine::ExtractionPolicy;
+use crate::archive::path_manager::PathConfig;
+use crate::archive::public_api::extract_archive_async;
+use crate::archive::security_detector::SecurityPolicy;
 use crate::archive::ArchiveManager;
 use crate::error::{AppError, Result};
 use crate::models::config::FileMetadata;
@@ -15,9 +19,28 @@ use crate::services::file_watcher::get_file_metadata;
 use crate::utils::path::normalize_path_separator;
 use std::collections::HashMap;
 use std::path::{Component, Path};
+use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use tokio::fs;
 use walkdir::WalkDir;
+
+/// 检查是否启用增强提取系统
+///
+/// 优先级：
+/// 1. 环境变量 USE_ENHANCED_EXTRACTION（用于测试和临时覆盖）
+/// 2. 配置文件中的 use_enhanced_extraction 标志
+/// 3. 默认为 false（使用旧系统）以保持向后兼容性
+fn is_enhanced_extraction_enabled() -> bool {
+    // 首先检查环境变量（最高优先级）
+    if let Ok(env_value) = std::env::var("USE_ENHANCED_EXTRACTION") {
+        return env_value.to_lowercase() == "true";
+    }
+
+    // 然后检查配置文件
+    // TODO: 从配置文件加载 ExtractionPolicy 并检查 use_enhanced_extraction 标志
+    // 目前默认为 false
+    false
+}
 
 /// 检查路径是否安全（防止路径遍历攻击）
 ///
@@ -441,8 +464,8 @@ fn is_archive_file(path: &Path) -> bool {
 ///
 /// # 行为
 ///
-/// 1. 创建临时解压目录
-/// 2. 使用 ArchiveManager 解压文件
+/// 1. 检查是否启用增强提取系统
+/// 2. 如果启用，使用 extract_archive_async；否则使用 ArchiveManager
 /// 3. 递归处理解压后的文件（支持嵌套压缩包）
 /// 4. 清理临时目录（失败时）
 #[allow(clippy::too_many_arguments)]
@@ -480,29 +503,77 @@ async fn extract_and_process_archive(
         )
     })?;
 
-    // 使用 ArchiveManager 统一接口提取文件
-    let summary = archive_manager
-        .extract_archive(archive_path, &extract_dir)
-        .await
-        .map_err(|e| {
-            AppError::archive_error(
-                format!("Failed to extract {}: {}", file_name, e),
-                Some(archive_path.to_path_buf()),
-            )
-        })?;
+    // 检查是否使用增强提取系统
+    let extracted_files = if is_enhanced_extraction_enabled() {
+        // 使用增强提取系统
+        eprintln!("[INFO] Using enhanced extraction system for {}", file_name);
+        
+        let policy = ExtractionPolicy::default();
+        
+        match extract_archive_async(archive_path, &extract_dir, workspace_id, Some(policy)).await {
+            Ok(result) => {
+                eprintln!(
+                    "[INFO] Enhanced extraction: {} files from {} (total size: {} bytes)",
+                    result.extracted_files.len(),
+                    file_name,
+                    result.performance_metrics.bytes_extracted
+                );
 
-    // 报告提取结果
-    eprintln!(
-        "[INFO] Extracted {} files from {} (total size: {} bytes)",
-        summary.files_extracted, file_name, summary.total_size
-    );
+                // 报告警告
+                for warning in &result.warnings {
+                    eprintln!("[WARNING] {:?}: {}", warning.category, warning.message);
+                }
 
-    if summary.has_errors() {
-        eprintln!("[WARNING] Extraction errors: {:?}", summary.errors);
-    }
+                // 报告安全事件
+                for event in &result.security_events {
+                    eprintln!("[SECURITY] {:?}: {:?}", event.event_type, event.details);
+                }
+
+                // 集成路径映射
+                for (short_path, original_path) in &result.metadata_mappings {
+                    let short_str = short_path.to_string_lossy().to_string();
+                    let original_str = original_path.to_string_lossy().to_string();
+                    eprintln!("[DEBUG] Path mapping: {} -> {}", short_str, original_str);
+                }
+
+                result.extracted_files
+            }
+            Err(e) => {
+                return Err(AppError::archive_error(
+                    format!("Enhanced extraction failed for {}: {}", file_name, e),
+                    Some(archive_path.to_path_buf()),
+                ));
+            }
+        }
+    } else {
+        // 使用旧的 ArchiveManager
+        eprintln!("[INFO] Using legacy extraction system for {}", file_name);
+        
+        let summary = archive_manager
+            .extract_archive(archive_path, &extract_dir)
+            .await
+            .map_err(|e| {
+                AppError::archive_error(
+                    format!("Failed to extract {}: {}", file_name, e),
+                    Some(archive_path.to_path_buf()),
+                )
+            })?;
+
+        // 报告提取结果
+        eprintln!(
+            "[INFO] Extracted {} files from {} (total size: {} bytes)",
+            summary.files_extracted, file_name, summary.total_size
+        );
+
+        if summary.has_errors() {
+            eprintln!("[WARNING] Extraction errors: {:?}", summary.errors);
+        }
+
+        summary.extracted_files
+    };
 
     // 递归处理解压后的文件（支持嵌套压缩包）
-    for extracted_file in &summary.extracted_files {
+    for extracted_file in &extracted_files {
         // 验证路径安全：防止路径遍历攻击
         if let Err(e) = validate_path_safety(extracted_file, &extract_dir) {
             eprintln!(

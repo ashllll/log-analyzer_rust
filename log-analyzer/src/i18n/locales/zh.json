@@ -11,5 +11,50 @@
     },
     "expand_full_text": "展开全文",
     "collapse_text": "收起"
+  },
+  "settings": {
+    "title": "提取策略设置",
+    "save": "保存",
+    "saving": "保存中...",
+    "reset": "重置",
+    "save_success": "设置已保存",
+    "save_error": "保存失败: {{error}}",
+    "reset_success": "已重置为默认设置",
+    "validation_failed": "验证失败，请检查输入",
+    "extraction": {
+      "title": "提取设置",
+      "use_enhanced": "使用增强提取系统",
+      "use_enhanced_description": "启用长路径支持、深层嵌套、压缩炸弹检测等高级功能",
+      "max_depth": "最大嵌套深度 (1-20)",
+      "max_file_size": "最大文件大小 (字节)",
+      "concurrent_extractions": "并发提取数 (0=自动)",
+      "concurrent_auto": "0 表示根据 CPU 核心数自动检测"
+    },
+    "security": {
+      "title": "安全设置",
+      "enable_zip_bomb_detection": "启用压缩炸弹检测",
+      "zip_bomb_description": "检测并阻止恶意构造的压缩包",
+      "compression_ratio_threshold": "压缩比阈值"
+    },
+    "paths": {
+      "title": "路径设置",
+      "enable_long_paths": "启用长路径支持",
+      "long_paths_description": "支持超过 255 字符的文件名 (Windows UNC 路径)",
+      "shortening_threshold": "路径缩短阈值 (0.0-1.0)",
+      "hash_length": "哈希长度 (8-32)"
+    },
+    "performance": {
+      "title": "性能设置",
+      "enable_streaming": "启用流式提取",
+      "streaming_description": "减少内存使用",
+      "parallel_files_per_archive": "每个压缩包的并行文件数 (1-8)"
+    },
+    "errors": {
+      "max_depth_range": "最大深度必须在 1-20 之间",
+      "must_be_positive": "必须为正数",
+      "threshold_range": "阈值必须在 0.0-1.0 之间",
+      "hash_length_range": "哈希长度必须在 8-32 之间",
+      "parallel_files_range": "并行文件数必须在 1-8 之间"
+    }
   }
 }

@@ -12,7 +12,7 @@ use std::path::Path;
 /// 服务配置
 ///
 /// 定义所有服务的配置参数，支持从配置文件加载
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct ServiceConfiguration {
     /// 事件总线配置
     #[serde(default)]
@@ -199,10 +199,10 @@ impl ServiceConfiguration {
         let path = path.as_ref();
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("Failed to read config file: {}", path.display()))?;
-        
+
         let config: Self = toml::from_str(&content)
             .with_context(|| format!("Failed to parse TOML config: {}", path.display()))?;
-        
+
         tracing::info!("Loaded service configuration from: {}", path.display());
         Ok(config)
     }
@@ -218,10 +218,10 @@ impl ServiceConfiguration {
         let path = path.as_ref();
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("Failed to read config file: {}", path.display()))?;
-        
+
         let config: Self = serde_json::from_str(&content)
             .with_context(|| format!("Failed to parse JSON config: {}", path.display()))?;
-        
+
         tracing::info!("Loaded service configuration from: {}", path.display());
         Ok(config)
     }
@@ -235,12 +235,11 @@ impl ServiceConfiguration {
     /// 如果写入失败，返回错误
     pub fn save_to_toml<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         let path = path.as_ref();
-        let content = toml::to_string_pretty(self)
-            .context("Failed to serialize config to TOML")?;
-        
+        let content = toml::to_string_pretty(self).context("Failed to serialize config to TOML")?;
+
         std::fs::write(path, content)
             .with_context(|| format!("Failed to write config file: {}", path.display()))?;
-        
+
         tracing::info!("Saved service configuration to: {}", path.display());
         Ok(())
     }
@@ -254,12 +253,12 @@ impl ServiceConfiguration {
     /// 如果写入失败，返回错误
     pub fn save_to_json<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         let path = path.as_ref();
-        let content = serde_json::to_string_pretty(self)
-            .context("Failed to serialize config to JSON")?;
-        
+        let content =
+            serde_json::to_string_pretty(self).context("Failed to serialize config to JSON")?;
+
         std::fs::write(path, content)
             .with_context(|| format!("Failed to write config file: {}", path.display()))?;
-        
+
         tracing::info!("Saved service configuration to: {}", path.display());
         Ok(())
     }
@@ -357,23 +356,13 @@ impl ServiceConfiguration {
         if self.monitoring.health_checks_enabled
             && self.monitoring.health_check_interval_seconds == 0
         {
-            eyre::bail!("Health check interval must be greater than 0 when health checks are enabled");
+            eyre::bail!(
+                "Health check interval must be greater than 0 when health checks are enabled"
+            );
         }
 
         tracing::debug!("Service configuration validated successfully");
         Ok(())
-    }
-}
-
-impl Default for ServiceConfiguration {
-    fn default() -> Self {
-        Self {
-            event_bus: EventBusConfig::default(),
-            query_executor: QueryExecutorConfig::default(),
-            cache: CacheConfig::default(),
-            resource_management: ResourceManagementConfig::default(),
-            monitoring: MonitoringConfig::default(),
-        }
     }
 }
 
@@ -422,11 +411,11 @@ mod tests {
     fn test_toml_serialization() {
         let config = ServiceConfiguration::development();
         let toml_str = toml::to_string(&config).expect("Failed to serialize to TOML");
-        
+
         // 验证可以反序列化
         let deserialized: ServiceConfiguration =
             toml::from_str(&toml_str).expect("Failed to deserialize from TOML");
-        
+
         assert_eq!(config.event_bus.capacity, deserialized.event_bus.capacity);
     }
 
@@ -434,47 +423,47 @@ mod tests {
     fn test_json_serialization() {
         let config = ServiceConfiguration::production();
         let json_str = serde_json::to_string(&config).expect("Failed to serialize to JSON");
-        
+
         // 验证可以反序列化
         let deserialized: ServiceConfiguration =
             serde_json::from_str(&json_str).expect("Failed to deserialize from JSON");
-        
+
         assert_eq!(config.event_bus.capacity, deserialized.event_bus.capacity);
     }
 
     #[test]
     fn test_load_from_toml_file() {
         let config = ServiceConfiguration::development();
-        
+
         // 创建临时文件
         let mut temp_file = NamedTempFile::new().expect("Failed to create temp file");
         let toml_content = toml::to_string(&config).expect("Failed to serialize");
         temp_file
             .write_all(toml_content.as_bytes())
             .expect("Failed to write to temp file");
-        
+
         // 从文件加载
         let loaded_config = ServiceConfiguration::from_toml_file(temp_file.path())
             .expect("Failed to load from TOML file");
-        
+
         assert_eq!(config.event_bus.capacity, loaded_config.event_bus.capacity);
     }
 
     #[test]
     fn test_load_from_json_file() {
         let config = ServiceConfiguration::production();
-        
+
         // 创建临时文件
         let mut temp_file = NamedTempFile::new().expect("Failed to create temp file");
         let json_content = serde_json::to_string(&config).expect("Failed to serialize");
         temp_file
             .write_all(json_content.as_bytes())
             .expect("Failed to write to temp file");
-        
+
         // 从文件加载
         let loaded_config = ServiceConfiguration::from_json_file(temp_file.path())
             .expect("Failed to load from JSON file");
-        
+
         assert_eq!(config.event_bus.capacity, loaded_config.event_bus.capacity);
     }
 
@@ -482,16 +471,16 @@ mod tests {
     fn test_save_and_load_toml() {
         let config = ServiceConfiguration::development();
         let temp_file = NamedTempFile::new().expect("Failed to create temp file");
-        
+
         // 保存
         config
             .save_to_toml(temp_file.path())
             .expect("Failed to save to TOML");
-        
+
         // 加载
         let loaded_config = ServiceConfiguration::from_toml_file(temp_file.path())
             .expect("Failed to load from TOML");
-        
+
         assert_eq!(config.event_bus.capacity, loaded_config.event_bus.capacity);
     }
 
@@ -499,16 +488,16 @@ mod tests {
     fn test_save_and_load_json() {
         let config = ServiceConfiguration::production();
         let temp_file = NamedTempFile::new().expect("Failed to create temp file");
-        
+
         // 保存
         config
             .save_to_json(temp_file.path())
             .expect("Failed to save to JSON");
-        
+
         // 加载
         let loaded_config = ServiceConfiguration::from_json_file(temp_file.path())
             .expect("Failed to load from JSON");
-        
+
         assert_eq!(config.event_bus.capacity, loaded_config.event_bus.capacity);
     }
 }

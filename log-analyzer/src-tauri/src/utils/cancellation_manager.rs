@@ -63,12 +63,12 @@ impl CancellationManager {
     /// ```
     pub fn create_token(&self, operation_id: String) -> CancellationToken {
         let token = self.global_token.child_token();
-        
+
         {
             let mut tokens = self.tokens.lock();
             tokens.insert(operation_id.clone(), token.clone());
         }
-        
+
         info!("Created cancellation token for operation: {}", operation_id);
         token
     }
@@ -138,11 +138,11 @@ impl CancellationManager {
     pub fn cancel_all(&self) {
         info!("Cancelling all active operations");
         self.global_token.cancel();
-        
+
         let mut tokens = self.tokens.lock();
         let count = tokens.len();
         tokens.clear();
-        
+
         info!("Cancelled {} active operations", count);
     }
 
@@ -201,7 +201,7 @@ impl CancellableOperation {
     /// - `manager` - 取消管理器引用
     pub fn new(operation_id: String, manager: Arc<CancellationManager>) -> Self {
         let token = manager.create_token(operation_id.clone());
-        
+
         Self {
             operation_id,
             token,
@@ -254,10 +254,7 @@ impl Drop for CancellableOperation {
 ///     }
 /// }
 /// ```
-pub async fn run_with_cancellation<F, Fut>(
-    token: CancellationToken,
-    task: F,
-) -> Result<(), String>
+pub async fn run_with_cancellation<F, Fut>(token: CancellationToken, task: F) -> Result<(), String>
 where
     F: FnOnce(CancellationToken) -> Fut,
     Fut: std::future::Future<Output = Result<(), String>>,
@@ -283,10 +280,10 @@ mod tests {
     fn test_create_and_cancel_token() {
         let manager = CancellationManager::new();
         let token = manager.create_token("test-op".to_string());
-        
+
         assert!(!token.is_cancelled());
         assert_eq!(manager.active_count(), 1);
-        
+
         manager.cancel_operation("test-op").unwrap();
         assert!(token.is_cancelled());
     }
@@ -295,9 +292,9 @@ mod tests {
     fn test_remove_token() {
         let manager = CancellationManager::new();
         manager.create_token("test-op".to_string());
-        
+
         assert_eq!(manager.active_count(), 1);
-        
+
         manager.remove_token("test-op");
         assert_eq!(manager.active_count(), 0);
     }
@@ -307,12 +304,12 @@ mod tests {
         let manager = CancellationManager::new();
         let token1 = manager.create_token("op1".to_string());
         let token2 = manager.create_token("op2".to_string());
-        
+
         assert!(!token1.is_cancelled());
         assert!(!token2.is_cancelled());
-        
+
         manager.cancel_all();
-        
+
         assert!(token1.is_cancelled());
         assert!(token2.is_cancelled());
         assert_eq!(manager.active_count(), 0);
@@ -321,12 +318,12 @@ mod tests {
     #[test]
     fn test_cancellable_operation_auto_cleanup() {
         let manager = Arc::new(CancellationManager::new());
-        
+
         {
             let _op = CancellableOperation::new("test-op".to_string(), manager.clone());
             assert_eq!(manager.active_count(), 1);
         } // op dropped here
-        
+
         // 令牌应该被自动清理
         assert_eq!(manager.active_count(), 0);
     }
@@ -334,13 +331,13 @@ mod tests {
     #[tokio::test]
     async fn test_run_with_cancellation_success() {
         let token = CancellationToken::new();
-        
+
         let result = run_with_cancellation(token, |_token| async {
             sleep(Duration::from_millis(10)).await;
             Ok(())
         })
         .await;
-        
+
         assert!(result.is_ok());
     }
 
@@ -348,13 +345,13 @@ mod tests {
     async fn test_run_with_cancellation_cancelled() {
         let token = CancellationToken::new();
         let token_clone = token.clone();
-        
+
         // 在后台取消令牌
         tokio::spawn(async move {
             sleep(Duration::from_millis(50)).await;
             token_clone.cancel();
         });
-        
+
         let result = run_with_cancellation(token, |token| async move {
             loop {
                 tokio::select! {
@@ -368,7 +365,7 @@ mod tests {
             }
         })
         .await;
-        
+
         assert!(result.is_err());
     }
 
@@ -376,7 +373,7 @@ mod tests {
     fn test_child_token_cancellation() {
         let manager = CancellationManager::new();
         let token = manager.create_token("test-op".to_string());
-        
+
         // 全局取消应该级联到子令牌
         manager.cancel_all();
         assert!(token.is_cancelled());

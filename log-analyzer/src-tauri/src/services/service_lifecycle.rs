@@ -227,20 +227,11 @@ impl ServiceLifecycleManager {
     pub fn check_all_health(&self) -> Vec<ServiceHealth> {
         self.services
             .iter()
-            .filter_map(|service| {
-                match service.health_check() {
-                    Ok(health) => Some(health),
-                    Err(e) => {
-                        tracing::error!(
-                            "Health check failed for service {}: {}",
-                            service.name(),
-                            e
-                        );
-                        Some(ServiceHealth::unhealthy(
-                            service.name(),
-                            format!("Health check failed: {}", e),
-                        ))
-                    }
+            .map(|service| match service.health_check() {
+                Ok(health) => health,
+                Err(e) => {
+                    tracing::error!("Health check failed for service {}: {}", service.name(), e);
+                    ServiceHealth::unhealthy(service.name(), format!("Health check failed: {}", e))
                 }
             })
             .collect()
@@ -412,10 +403,7 @@ mod tests {
 
         assert_eq!(health.details.get("version"), Some(&"1.0.0".to_string()));
         assert_eq!(health.details.get("uptime"), Some(&"100s".to_string()));
-        assert_eq!(
-            health.message,
-            Some("All systems operational".to_string())
-        );
+        assert_eq!(health.message, Some("All systems operational".to_string()));
     }
 
     #[test]
