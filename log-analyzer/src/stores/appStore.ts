@@ -22,7 +22,7 @@ export interface Toast {
   message: string;
 }
 
-interface AppState {
+export interface AppState {
   // State
   page: Page;
   toasts: Toast[];

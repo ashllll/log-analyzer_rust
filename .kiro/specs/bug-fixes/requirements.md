@@ -103,3 +103,15 @@ This document outlines the requirements for fixing critical bugs identified in t
 3. WHEN performance issues are detected THEN the Backend SHALL log timing and resource usage information
 4. WHEN cache operations occur THEN the Backend SHALL track hit rates and performance metrics
 5. WHEN cleanup operations run THEN the Backend SHALL log the success or failure of each step
+
+### Requirement 8
+
+**User Story:** As a developer, I want complete TypeScript type definitions for all state stores, so that the application compiles without type errors and provides proper IDE support.
+
+#### Acceptance Criteria
+
+1. WHEN the Frontend is compiled THEN the System SHALL resolve all missing type exports from store modules
+2. WHEN store interfaces are defined THEN the System SHALL include all required state properties and action methods
+3. WHEN hooks access store state THEN the System SHALL provide correct type definitions for all accessed properties
+4. WHEN components use store actions THEN the System SHALL ensure all action methods are properly typed and exported
+5. WHEN utility functions are called THEN the System SHALL export all required utility methods including warn logging

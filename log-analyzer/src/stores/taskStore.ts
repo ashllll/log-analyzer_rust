@@ -28,7 +28,11 @@ export interface Task {
 
 interface TaskState {
   // State
-  tasks: ons
+  tasks: Task[];
+  loading: boolean;
+  error: string | null;
+  
+  // Actions
   setTasks: (tasks: Task[]) => void;
   addTask: (task: Task) => void;
   addTaskIfNotExists: (task: Task) => void; // 带去重的添加

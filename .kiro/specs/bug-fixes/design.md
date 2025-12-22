@@ -89,13 +89,27 @@ The bug fixes leverage battle-tested, industry-standard solutions with proven tr
 #### Modern State Management (`zustand` + `react-query`)
 - **Purpose**: Replace complex Context+Reducer with modern state solutions
 - **Key Libraries**: `zustand` for client state, `@tanstack/react-query` for server state, `immer` for immutable updates
+- **Architecture Pattern**: Multi-Store Modular Architecture (Zustand 官方推荐)
+  - **appStore**: 全局应用状态（页面导航、Toast 通知、活动工作区 ID）
+  - **workspaceStore**: 工作区状态管理（工作区列表、加载状态、错误状态）
+  - **taskStore**: 任务状态管理（任务列表、任务生命周期）
+  - **keywordStore**: 关键词组状态管理（关键词组列表、启用/禁用状态）
 - **Features**:
-  - Automatic deduplication and caching of server requests
-  - Optimistic updates and automatic rollback on failure
-  - Background refetching and synchronization
-  - DevTools integration for debugging
-  - Type-safe state management with TypeScript
-- **Migration Strategy**: Replace useReducer patterns with zustand stores, move server state to react-query
+  - 模块化设计：每个功能域独立的 store，关注点分离
+  - 类型安全：完整的 TypeScript 类型定义和推断
+  - 无需 Provider：直接导入使用，避免 Context 嵌套地狱
+  - DevTools 集成：每个 store 独立的调试支持
+  - 自动去重：内置任务去重逻辑防止重复创建
+  - Automatic deduplication and caching of server requests (via react-query)
+  - Optimistic updates and automatic rollback on failure (via react-query)
+  - Background refetching and synchronization (via react-query)
+- **Migration Strategy**: 
+  - ✅ 已完成：创建独立的 store 模块（appStore, workspaceStore, taskStore, keywordStore）
+  - ✅ 已完成：AppStoreProvider 使用独立 stores 进行初始化和事件监听
+  - ✅ 已完成：页面组件直接使用独立 stores（如 WorkspacesPage）
+  - 🔧 待修复：清理过时的 useAppState 适配器层
+  - 🔧 待修复：修复所有组件的 store 访问和类型定义
+  - 🔧 待修复：统一使用 getState() 模式避免闭包陷阱
 
 #### Native Event Management (React + Tokio)
 - **Purpose**: Use built-in event systems instead of third-party libraries
@@ -576,6 +590,22 @@ interface ValidatedSearchQuery {
 ### Property 31: Cleanup Operation Logging
 *For any* cleanup operation execution, success or failure of each step should be logged
 **Validates: Requirements 7.5**
+
+### Property 32: Store Type Completeness
+*For any* store module, all required state properties and action methods should be properly typed and exported
+**Validates: Requirements 8.1, 8.2**
+
+### Property 33: Hook Type Safety
+*For any* hook accessing store state, all accessed properties should have correct type definitions
+**Validates: Requirements 8.3**
+
+### Property 34: Action Method Availability
+*For any* component using store actions, all action methods should be properly typed and accessible
+**Validates: Requirements 8.4**
+
+### Property 35: Utility Function Completeness
+*For any* utility module, all required utility methods should be exported with proper type definitions
+**Validates: Requirements 8.5**
 
 ## Error Handling
 

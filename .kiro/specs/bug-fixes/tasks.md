@@ -451,3 +451,87 @@ This implementation plan addresses critical bugs using mature, industry-standard
 - [x] 10.4 Final checkpoint - Production readiness validation
 
   - Ensure all tests pass, ask the user if questions arise.
+
+- [x] 11. TypeScript Type System Completeness - Multi-Store Architecture
+
+
+
+  - 采用成熟的多 Store 模块化架构（Zustand 官方推荐模式）
+  - 修复所有 TypeScript 编译错误，确保类型安全
+  - 清理过时的适配器层，统一使用独立 store 模式
+  - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5_
+  - _参考方案_: Zustand 多 Store 模式、MobX 模块化架构、Redux Toolkit 的 slice 隔离
+
+
+- [x] 11.1 修复独立 Store 模块的类型定义
+
+  - **taskStore.ts**: 修复语法错误（'ons' 拼写错误），补全 TaskState 接口
+  - **workspaceStore.ts**: 确保 Workspace 类型正确导出
+  - **keywordStore.ts**: 确保 KeywordGroup 类型正确导出
+  - **appStore.ts**: 确保 AppState 接口正确导出（仅包含全局状态）
+  - 为所有 store 添加完整的 TypeScript 类型注解
+  - _Requirements: 8.1, 8.2_
+  - _成熟方案_: 遵循 Zustand TypeScript 最佳实践，使用 create<T>() 确保类型推断
+
+
+- [x] 11.2 重构或移除 useAppState 适配器层
+
+  - **分析决策**: 确定是否需要保留 useAppState.ts 适配器
+  - **选项 A**: 完全移除，让组件直接使用独立 stores（推荐，更清晰）
+  - **选项 B**: 修复适配器，正确导入和转发独立 store 的状态
+  - 更新所有使用 useAppState 的组件，改为直接使用独立 stores
+  - 移除 dispatch 模式的模拟，直接调用 store actions
+  - _Requirements: 8.3, 8.4_
+  - _成熟方案_: 参考 Zustand 官方文档的"不需要 Provider"模式，直接导入使用
+
+
+- [x] 11.3 修复 EventManager 和其他组件的 store 访问
+
+  - 更新 EventManager.tsx 使用 getState() 模式访问独立 stores
+  - 修复所有组件中错误的 store 属性访问
+  - 确保所有组件使用正确的 store 导入
+  - 添加 TypeScript 类型注解消除 implicit any 错误
+  - _Requirements: 8.3, 8.4_
+  - _成熟方案_: Zustand 的 getState() 模式避免闭包陷阱
+
+- [x] 11.4 修复工具模块的类型完整性
+
+
+  - **logger.ts**: 添加缺失的 warn 方法
+  - **ErrorFallback.tsx**: 导出 MinimalErrorFallback 组件
+  - 确保所有工具函数有完整的 TypeScript 类型定义
+  - 添加 JSDoc 注释提升开发体验
+  - _Requirements: 8.5_
+  - _成熟方案_: 遵循 TypeScript 严格模式最佳实践
+
+
+- [x] 11.5 统一 hooks 层的类型安全模式
+
+  - 审查所有自定义 hooks（useServerQueries, useConfigManager, useStateSynchronization 等）
+  - 修复所有 implicit any 类型错误
+  - 确保 hooks 正确导入和使用独立 stores
+  - 添加完整的 TypeScript 泛型和类型约束
+  - _Requirements: 8.3, 8.4_
+  - _成熟方案_: React + TypeScript hooks 最佳实践
+
+
+
+- [x] 11.6 验证 TypeScript 编译和类型安全
+  - 运行 `tsc --noEmit` 验证所有类型错误已解决
+  - 确保启用 TypeScript 严格模式（strict: true）
+  - 验证没有 implicit any 类型
+  - 运行完整构建 `npm run build` 确认生产就绪
+  - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5_
+  - _成熟方案_: TypeScript 编译器严格检查
+
+
+- [x] 11.7 编写类型安全测试
+
+
+  - **Property 32: Store Type Completeness** - 验证所有 store 类型完整性
+  - **Property 33: Hook Type Safety** - 验证 hooks 类型推断正确
+  - **Property 34: Action Method Availability** - 验证所有 action 方法可访问
+  - **Property 35: Utility Function Completeness** - 验证工具函数类型完整
+  - 使用 TypeScript 的类型测试工具（如 tsd）验证类型定义
+  - _Validates: Requirements 8.1, 8.2, 8.3, 8.4, 8.5_
+  - _成熟方案_: 使用 tsd 或 @typescript-eslint 进行类型级别测试

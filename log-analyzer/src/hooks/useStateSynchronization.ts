@@ -8,7 +8,9 @@
  */
 
 import { useEffect, useCallback, useRef, useState } from 'react';
-import { useAppStore, Workspace, Task } from '../stores/appStore';
+import { useAppStore } from '../stores/appStore';
+import { useWorkspaceStore, type Workspace } from '../stores/workspaceStore';
+import { useTaskStore, type Task } from '../stores/taskStore';
 import { useWebSocket } from './useWebSocket';
 import { logger } from '../utils/logger';
 import {
@@ -67,12 +69,12 @@ const UPDATE_BATCH_DELAY = 50; // 50ms batching
 
 export function useStateSynchronization(): UseStateSynchronizationReturn {
   // Store actions
-  const updateWorkspace = useAppStore((state) => state.updateWorkspace);
-  const deleteWorkspace = useAppStore((state) => state.deleteWorkspace);
-  const updateTask = useAppStore((state) => state.updateTask);
+  const updateWorkspace = useWorkspaceStore((state) => state.updateWorkspace);
+  const deleteWorkspace = useWorkspaceStore((state) => state.deleteWorkspace);
+  const updateTask = useTaskStore((state) => state.updateTask);
   const addToast = useAppStore((state) => state.addToast);
-  const workspaces = useAppStore((state) => state.workspaces);
-  const tasks = useAppStore((state) => state.tasks);
+  const workspaces = useWorkspaceStore((state) => state.workspaces);
+  const tasks = useTaskStore((state) => state.tasks);
 
   // Local state
   const [syncState, setSyncState] = useState<SyncState>({

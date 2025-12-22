@@ -1,8 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/core';
 import { useAppStore } from '../stores/appStore';
+import { useWorkspaceStore, type Workspace } from '../stores/workspaceStore';
+import { useKeywordStore, type KeywordGroup } from '../stores/keywordStore';
 import { logger } from '../utils/logger';
-import type { Workspace, KeywordGroup } from '../stores/appStore';
 
 // ============================================================================
 // Query Keys
@@ -24,8 +25,8 @@ export const queryKeys = {
  * Load application configuration from backend
  */
 export const useConfigQuery = () => {
-  const setWorkspaces = useAppStore((state) => state.setWorkspaces);
-  const setKeywordGroups = useAppStore((state) => state.setKeywordGroups);
+  const setWorkspaces = useWorkspaceStore((state) => state.setWorkspaces);
+  const setKeywordGroups = useKeywordStore((state) => state.setKeywordGroups);
   
   return useQuery({
     queryKey: queryKeys.config,
@@ -110,7 +111,7 @@ export const useLoadWorkspaceMutation = () => {
 export const useImportFolderMutation = () => {
   const queryClient = useQueryClient();
   const addToast = useAppStore((state) => state.addToast);
-  const addWorkspace = useAppStore((state) => state.addWorkspace);
+  const addWorkspace = useWorkspaceStore((state) => state.addWorkspace);
   const setActiveWorkspace = useAppStore((state) => state.setActiveWorkspace);
   
   return useMutation({
@@ -149,7 +150,7 @@ export const useImportFolderMutation = () => {
       
       // Rollback optimistic update
       if (context?.newWorkspace) {
-        const deleteWorkspace = useAppStore.getState().deleteWorkspace;
+        const deleteWorkspace = useWorkspaceStore.getState().deleteWorkspace;
         deleteWorkspace(workspaceId);
       }
     },
@@ -193,9 +194,9 @@ export const useRefreshWorkspaceMutation = () => {
 export const useDeleteWorkspaceMutation = () => {
   const queryClient = useQueryClient();
   const addToast = useAppStore((state) => state.addToast);
-  const deleteWorkspace = useAppStore((state) => state.deleteWorkspace);
+  const deleteWorkspace = useWorkspaceStore((state) => state.deleteWorkspace);
   const setActiveWorkspace = useAppStore((state) => state.setActiveWorkspace);
-  const workspaces = useAppStore((state) => state.workspaces);
+  const workspaces = useWorkspaceStore((state) => state.workspaces);
   const activeWorkspaceId = useAppStore((state) => state.activeWorkspaceId);
   
   return useMutation({
@@ -212,7 +213,7 @@ export const useDeleteWorkspaceMutation = () => {
       
       // Handle active workspace switching
       if (activeWorkspaceId === workspaceId) {
-        const remainingWorkspaces = workspaces.filter(w => w.id !== workspaceId);
+        const remainingWorkspaces = workspaces.filter((w: Workspace) => w.id !== workspaceId);
         if (remainingWorkspaces.length > 0) {
           setActiveWorkspace(remainingWorkspaces[0].id);
         } else {
@@ -240,7 +241,7 @@ export const useDeleteWorkspaceMutation = () => {
  */
 export const useToggleWatchMutation = () => {
   const addToast = useAppStore((state) => state.addToast);
-  const updateWorkspace = useAppStore((state) => state.updateWorkspace);
+  const updateWorkspace = useWorkspaceStore((state) => state.updateWorkspace);
   
   return useMutation({
     mutationFn: async ({ workspace, enable }: { workspace: Workspace; enable: boolean }) => {

@@ -1,5 +1,8 @@
-// 从 App.tsx 迁移的通用类型定义
-import { Toast, Workspace, Task, KeywordGroup } from '../contexts/AppContext';
+// 从独立 stores 导入类型定义
+import type { Toast } from '../stores/appStore';
+import type { Workspace } from '../stores/workspaceStore';
+import type { Task } from '../stores/taskStore';
+import type { KeywordGroup } from '../stores/keywordStore';
 
 // 日志条目类型
 export interface LogEntry {
@@ -33,6 +36,7 @@ export interface PerformanceStats {
   indexFileSizeMb: number;
 }
 
-// 重新导出 Context 类型供外部使用
+// 重新导出 Store 类型供外部使用
 export type { Toast, Workspace, Task, KeywordGroup };
-export type { ToastType, KeywordPattern, ColorKey } from '../contexts/AppContext';
+export type { ToastType } from '../stores/appStore';
+export type { KeywordPattern, ColorKey } from '../stores/keywordStore';

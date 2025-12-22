@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import toast from 'react-hot-toast';
-import { useAppStore } from '../stores/appStore';
+import { useTaskStore } from '../stores/taskStore';
+import { useWorkspaceStore } from '../stores/workspaceStore';
 import { logger } from '../utils/logger';
 
 /**
@@ -35,14 +36,15 @@ export const EventManager = () => {
         logger.debug('[EVENT] task-update:', event.payload);
         
         // 使用 getState() 获取最新的 store 状态和 actions
-        const store = useAppStore.getState();
-        const existingTask = store.tasks.find(t => t.id === task_id);
+        const taskStore = useTaskStore.getState();
+        const workspaceStore = useWorkspaceStore.getState();
+        const existingTask = taskStore.tasks.find((t) => t.id === task_id);
         
         if (!existingTask && !createdTaskIdsRef.current.has(task_id)) {
           // Create new task
           logger.debug('[EVENT] Task not found, creating new task:', task_id);
           createdTaskIdsRef.current.add(task_id);
-          store.addTaskIfNotExists({
+          taskStore.addTaskIfNotExists({
             id: task_id,
             type: task_type,
             target,
@@ -53,7 +55,7 @@ export const EventManager = () => {
           });
         } else if (existingTask || createdTaskIdsRef.current.has(task_id)) {
           // Update existing task
-          store.updateTask(task_id, {
+          taskStore.updateTask(task_id, {
             type: task_type,
             target,
             status: status as 'RUNNING' | 'COMPLETED' | 'FAILED' | 'STOPPED',
@@ -65,11 +67,11 @@ export const EventManager = () => {
         // Update workspace status based on task completion
         if (status === 'COMPLETED' && workspace_id) {
           logger.info('[EVENT] ✅ Task completed, updating workspace status to READY:', workspace_id);
-          store.updateWorkspace(workspace_id, { status: 'READY' });
+          workspaceStore.updateWorkspace(workspace_id, { status: 'READY' });
           toast.success('导入完成');
         } else if (status === 'FAILED' && workspace_id) {
           logger.error('[EVENT] ❌ Task failed, updating workspace status to OFFLINE:', workspace_id);
-          store.updateWorkspace(workspace_id, { status: 'OFFLINE' });
+          workspaceStore.updateWorkspace(workspace_id, { status: 'OFFLINE' });
         }
       });
       
@@ -81,7 +83,8 @@ export const EventManager = () => {
     const setupImportCompleteListener = async () => {
       const unlisten = await listen<any>('import-complete', (event) => {
         logger.debug('[EVENT] import-complete:', event.payload);
-        const store = useAppStore.getState();
+        const taskStore = useTaskStore.getState();
+        const workspaceStore = useWorkspaceStore.getState();
         
         // 支持两种 payload 格式：字符串（旧格式）或对象（新格式）
         const payload = event.payload;
@@ -89,19 +92,19 @@ export const EventManager = () => {
         const workspaceId = typeof payload === 'object' ? payload?.workspace_id : null;
         
         if (taskId) {
-          store.updateTask(taskId, { status: 'COMPLETED', progress: 100 });
+          taskStore.updateTask(taskId, { status: 'COMPLETED', progress: 100 });
         }
         
         // 如果有 workspace_id，更新 workspace 状态
         if (workspaceId) {
           logger.debug('[EVENT] import-complete with workspace_id, updating status to READY:', workspaceId);
-          store.updateWorkspace(workspaceId, { status: 'READY' });
+          workspaceStore.updateWorkspace(workspaceId, { status: 'READY' });
         } else if (taskId) {
           // 回退方案：从任务中查找 workspace_id
-          const task = store.tasks.find(t => t.id === taskId);
+          const task = taskStore.tasks.find((t) => t.id === taskId);
           if (task?.workspaceId) {
             logger.debug('[EVENT] import-complete fallback, updating workspace status to READY:', task.workspaceId);
-            store.updateWorkspace(task.workspaceId, { status: 'READY' });
+            workspaceStore.updateWorkspace(task.workspaceId, { status: 'READY' });
           }
         }
       });

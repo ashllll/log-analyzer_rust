@@ -1,5 +1,6 @@
 import { useEffect, useCallback, useRef } from 'react';
-import { useAppStore } from '../stores/appStore';
+import { useWorkspaceStore } from '../stores/workspaceStore';
+import { useKeywordStore } from '../stores/keywordStore';
 import { useConfigMutation } from './useServerQueries';
 import { logger } from '../utils/logger';
 
@@ -7,8 +8,8 @@ import { logger } from '../utils/logger';
  * Hook for managing configuration with debounced saving using React patterns
  */
 export const useConfigManager = () => {
-  const keywordGroups = useAppStore((state) => state.keywordGroups);
-  const workspaces = useAppStore((state) => state.workspaces);
+  const keywordGroups = useKeywordStore((state) => state.keywordGroups);
+  const workspaces = useWorkspaceStore((state) => state.workspaces);
   const configMutation = useConfigMutation();
   
   // Track last saved fingerprint to avoid duplicate saves
@@ -24,8 +25,8 @@ export const useConfigManager = () => {
 
     // Generate config fingerprint to avoid unnecessary saves
     const configFingerprint = JSON.stringify({
-      keywords: keywordGroups.map(g => ({ id: g.id, enabled: g.enabled })),
-      workspaces: workspaces.map(w => ({ id: w.id, status: w.status }))
+      keywords: keywordGroups.map((g) => ({ id: g.id, enabled: g.enabled })),
+      workspaces: workspaces.map((w) => ({ id: w.id, status: w.status }))
     });
 
     // Skip if config hasn't changed

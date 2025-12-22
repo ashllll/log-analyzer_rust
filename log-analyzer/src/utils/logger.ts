@@ -30,6 +30,13 @@ export const logger = {
   },
   
   /**
+   * 警告日志
+   */
+  warn: (message: string, ...args: any[]) => {
+    console.warn(`[WARN] ${message}`, ...args);
+  },
+  
+  /**
    * 错误日志
    */
   error: (message: string, ...args: any[]) => {
