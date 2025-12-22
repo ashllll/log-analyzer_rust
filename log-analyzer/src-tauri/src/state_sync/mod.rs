@@ -18,7 +18,7 @@ use tokio::sync::RwLock;
 
 pub mod models;
 
-pub use models::{WorkspaceEvent, WorkspaceState, WorkspaceStatus};
+pub use models::{WorkspaceEvent, WorkspaceState};
 
 /// State synchronization manager using Tauri Events
 #[derive(Clone)]

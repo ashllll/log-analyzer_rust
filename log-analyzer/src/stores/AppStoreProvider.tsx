@@ -17,6 +17,12 @@ interface AppStoreProviderProps {
  * 1. 在应用启动时加载配置
  * 2. 设置后端事件监听器
  * 3. 在组件卸载时清理事件监听器
+ * 
+ * ## 任务生命周期管理
+ * 
+ * 采用业内成熟的事件驱动架构：
+ * - task-update: 任务状态更新（创建、进度、完成）
+ * - task-removed: 任务自动清理（后端 Actor 触发）
  */
 export const AppStoreProvider = ({ children }: AppStoreProviderProps) => {
   const addToast = useAppStore((state) => state.addToast);
@@ -25,6 +31,7 @@ export const AppStoreProvider = ({ children }: AppStoreProviderProps) => {
   const setKeywordGroups = useKeywordStore((state) => state.setKeywordGroups);
   const addTaskIfNotExists = useTaskStore((state) => state.addTaskIfNotExists);
   const updateTask = useTaskStore((state) => state.updateTask);
+  const deleteTask = useTaskStore((state) => state.deleteTask);
 
   useEffect(() => {
     // 加载配置
@@ -50,7 +57,7 @@ export const AppStoreProvider = ({ children }: AppStoreProviderProps) => {
     // 设置事件监听器
     const setupListeners = async () => {
       // 监听任务更新事件
-      const taskUnlisten = await listen<any>('task-update', (event) => {
+      const taskUpdateUnlisten = await listen<any>('task-update', (event) => {
         const progress = event.payload;
         const task = {
           id: progress.task_id,
@@ -78,8 +85,16 @@ export const AppStoreProvider = ({ children }: AppStoreProviderProps) => {
         }
       });
 
+      // 监听任务移除事件（后端 Actor 自动清理）
+      const taskRemovedUnlisten = await listen<any>('task-removed', (event) => {
+        const { task_id } = event.payload;
+        console.log('[TaskManager] Auto-removing task:', task_id);
+        deleteTask(task_id);
+      });
+
       return () => {
-        taskUnlisten();
+        taskUpdateUnlisten();
+        taskRemovedUnlisten();
       };
     };
 
@@ -89,7 +104,7 @@ export const AppStoreProvider = ({ children }: AppStoreProviderProps) => {
     return () => {
       cleanupPromise.then((cleanup) => cleanup());
     };
-  }, [addToast, setWorkspaces, setKeywordGroups, addTaskIfNotExists, updateTask, updateWorkspace]);
+  }, [addToast, setWorkspaces, setKeywordGroups, addTaskIfNotExists, updateTask, deleteTask, updateWorkspace]);
 
   return <>{children}</>;
 };

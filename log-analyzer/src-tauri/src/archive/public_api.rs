@@ -5,7 +5,7 @@
 
 use crate::archive::extraction_engine::{
     ExtractionEngine, ExtractionPolicy, ExtractionResult as InternalExtractionResult,
-    ExtractionWarning as InternalExtractionWarning, WarningCategory as InternalWarningCategory,
+    WarningCategory as InternalWarningCategory,
 };
 use crate::archive::extraction_orchestrator::ExtractionOrchestrator;
 use crate::archive::path_manager::{PathConfig, PathManager};

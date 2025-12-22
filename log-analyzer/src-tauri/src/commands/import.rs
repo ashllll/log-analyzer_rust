@@ -7,7 +7,7 @@ use tauri::{command, AppHandle, Emitter, Manager, State};
 use uuid::Uuid;
 
 use crate::archive::processor::process_path_recursive_with_metadata;
-use crate::models::{AppState, TaskProgress};
+use crate::models::AppState;
 use crate::services::save_index;
 use crate::utils::{canonicalize_path, validate_path_param, validate_workspace_id};
 
@@ -48,22 +48,26 @@ pub async fn import_folder(
     fs::create_dir_all(&extracted_dir)
         .map_err(|e| format!("Failed to create extracted dir: {}", e))?;
 
-    let _ = app.emit(
-        "task-update",
-        TaskProgress {
-            task_id: task_id.clone(),
-            task_type: "Import".to_string(),
-            target: canonical_path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or(&path)
-                .to_string(),
-            status: "RUNNING".to_string(),
-            message: "Starting import...".to_string(),
-            progress: 0,
-            workspace_id: Some(workspaceId.clone()),
-        },
-    );
+    // 使用 TaskManager 创建任务
+    let target_name = canonical_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(&path)
+        .to_string();
+
+    let task = if let Some(task_manager) = state.task_manager.lock().as_ref() {
+        task_manager.create_task(
+            task_id.clone(),
+            "Import".to_string(),
+            target_name.clone(),
+            Some(workspaceId.clone()),
+        )
+    } else {
+        return Err("Task manager not initialized".to_string());
+    };
+
+    // 发送初始任务事件
+    let _ = app.emit("task-update", task);
 
     {
         let mut map_guard = state.path_map.lock();
@@ -81,18 +85,17 @@ pub async fn import_folder(
         .to_string_lossy()
         .to_string();
 
-    let _ = app_handle.emit(
-        "task-update",
-        TaskProgress {
-            task_id: task_id_clone.clone(),
-            task_type: "Import".to_string(),
-            target: root_name.clone(),
-            status: "RUNNING".to_string(),
-            message: "Scanning...".to_string(),
-            progress: 10,
-            workspace_id: Some(workspace_id_clone.clone()),
-        },
-    );
+    // 更新任务进度
+    if let Some(task_manager) = state.task_manager.lock().as_ref() {
+        if let Some(task) = task_manager.update_task(
+            &task_id_clone,
+            10,
+            "Scanning...".to_string(),
+            crate::task_manager::TaskStatus::Running,
+        ) {
+            let _ = app_handle.emit("task-update", task);
+        }
+    }
 
     // 创建局部映射表，在没有持有锁的情况下处理数据
     let mut local_map: HashMap<String, String> = HashMap::new();
@@ -147,20 +150,18 @@ pub async fn import_folder(
         }
     }
 
-    // 导入完成，发送成功事件
-    let file_name = root_name.clone();
-    let _ = app_handle.emit(
-        "task-update",
-        TaskProgress {
-            task_id: task_id_clone.clone(),
-            task_type: "Import".to_string(),
-            target: file_name,
-            status: "COMPLETED".to_string(),
-            message: "Done".to_string(),
-            progress: 100,
-            workspace_id: Some(workspace_id_clone.clone()),
-        },
-    );
+    // 导入完成，使用 TaskManager 更新任务状态
+    if let Some(task_manager) = state.task_manager.lock().as_ref() {
+        if let Some(task) = task_manager.update_task(
+            &task_id_clone,
+            100,
+            "Done".to_string(),
+            crate::task_manager::TaskStatus::Completed,
+        ) {
+            let _ = app_handle.emit("task-update", task);
+        }
+    }
+
     let _ = app_handle.emit("import-complete", task_id_clone);
 
     Ok(task_id)
