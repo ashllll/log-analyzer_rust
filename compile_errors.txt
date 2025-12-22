@@ -1,0 +1,274 @@
+    Checking log-analyzer v0.0.58 (F:\github\log-analyzer_rust\log-analyzer\src-tauri)
+error: expected one of `.`, `;`, `?`, `else`, or an operator, found `{`
+   --> src\commands\watch.rs:102:72
+    |
+102 | ...                   let mut watchers = watchers_arc.lock() {
+    |                                                              ^ expected one of `.`, `;`, `?`, `else`, or an operator
+
+error: expected one of `.`, `;`, `?`, `else`, or an operator, found `{`
+   --> src\commands\watch.rs:149:76
+    |
+149 | ...                   let mut watchers = watchers_arc.lock() {
+    |                                                              ^ expected one of `.`, `;`, `?`, `else`, or an operator
+
+error: expected one of `.`, `;`, `?`, `else`, or an operator, found `{`
+   --> src\commands\watch.rs:166:60
+    |
+166 |                         let watchers = watchers_arc.lock() {
+    |                                                            ^ expected one of `.`, `;`, `?`, `else`, or an operator
+
+error: expected one of `.`, `;`, `?`, `else`, or an operator, found `{`
+  --> src\utils\cleanup.rs:73:50
+   |
+73 |             let mut queue = cleanup_queue.lock() {
+   |                                                  ^ expected one of `.`, `;`, `?`, `else`, or an operator
+
+error: expected one of `.`, `;`, `?`, `else`, or an operator, found `{`
+  --> src\utils\cleanup.rs:96:42
+   |
+96 |         let queue = cleanup_queue.lock() {
+   |                                          ^ expected one of `.`, `;`, `?`, `else`, or an operator
+
+error: expected one of `.`, `;`, `?`, `else`, or an operator, found `{`
+   --> src\utils\cleanup.rs:133:42
+    |
+133 |     let mut queue = cleanup_queue.lock() {
+    |                                          ^ expected one of `.`, `;`, `?`, `else`, or an operator
+
+error: expected `;`
+   --> src\commands\watch.rs:102:72
+    |
+102 | ...                   let mut watchers = watchers_arc.lock() {
+    |                                                              ^
+
+error[E0432]: unresolved import `commands::watch::start_watch`
+  --> src\lib.rs:37:13
+   |
+37 |     watch::{start_watch, stop_watch},
+   |             ^^^^^^^^^^^
+   |             |
+   |             no `start_watch` in `commands::watch`
+   |             help: a similar name exists in the module: `stop_watch`
+
+error: cannot find macro `__cmd__start_watch` in this scope
+   --> src\lib.rs:109:13
+    |
+109 |             start_watch,
+    |             ^^^^^^^^^^^ help: a macro with a similar name exists: `__cmd__stop_watch`
+    |
+   ::: src\commands\watch.rs:190:1
+    |
+190 | #[command]
+    | ---------- similarly named macro `__cmd__stop_watch` defined here
+
+warning: unused import: `std::collections::HashMap`
+ --> src\commands\watch.rs:3:5
+  |
+3 | use std::collections::HashMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `std::path::PathBuf`
+ --> src\commands\watch.rs:4:5
+  |
+4 | use std::path::PathBuf;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::sync::Arc`
+ --> src\commands\watch.rs:5:5
+  |
+5 | use std::sync::Arc;
+  |     ^^^^^^^^^^^^^^
+
+warning: unused import: `std::thread`
+ --> src\commands\watch.rs:6:5
+  |
+6 | use std::thread;
+  |     ^^^^^^^^^^^
+
+warning: unused imports: `EventKind`, `Event`, `RecursiveMode`, `Watcher`, and `recommended_watcher`
+ --> src\commands\watch.rs:8:14
+  |
+8 | use notify::{recommended_watcher, Event, EventKind, RecursiveMode, Watcher};
+  |              ^^^^^^^^^^^^^^^^^^^  ^^^^^  ^^^^^^^^^  ^^^^^^^^^^^^^  ^^^^^^^
+
+warning: unused imports: `AppHandle`, `Emitter`, and `Manager`
+ --> src\commands\watch.rs:9:22
+  |
+9 | use tauri::{command, AppHandle, Emitter, Manager, State};
+  |                      ^^^^^^^^^  ^^^^^^^  ^^^^^^^
+
+warning: unused import: `FileChangeEvent`
+  --> src\commands\watch.rs:11:31
+   |
+11 | use crate::models::{AppState, FileChangeEvent};
+   |                               ^^^^^^^^^^^^^^^
+
+warning: unused imports: `append_to_workspace_index`, `parse_log_lines`, and `read_file_from_offset`
+  --> src\commands\watch.rs:12:23
+   |
+12 | use crate::services::{append_to_workspace_index, parse_log_lines, read_file_from_offset};
+   |                       ^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `validate_path_param` and `validate_workspace_id`
+  --> src\commands\watch.rs:13:20
+   |
+13 | use crate::utils::{validate_path_param, validate_workspace_id};
+   |                    ^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `WatcherState`
+  --> src\models\mod.rs:13:43
+   |
+13 | pub use state::{AppState, SearchCacheKey, WatcherState};
+   |                                           ^^^^^^^^^^^^
+
+error[E0599]: no method named `map_err` found for struct `MutexGuard<'_, RawMutex, HashMap<String, WatcherState>>` in the current scope
+   --> src\commands\watch.rs:198:10
+    |
+195 |       let mut watchers = state
+    |  ________________________-
+196 | |         .watchers
+197 | |         .lock()
+198 | |         .map_err(|e| format!("Lock error: {}", e))?;
+    | |         -^^^^^^^ method not found in `MutexGuard<'_, RawMutex, HashMap<String, WatcherState>>`
+    | |_________|
+    |
+    |
+    = note: the full name for the type has been written to 'F:\github\log-analyzer_rust\log-analyzer\src-tauri\target\debug\deps\log_analyzer-bdfa48119ab3f42d.long-type-8898526553990771641.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+   --> src\commands\workspace.rs:449:9
+    |
+448 |     let indexed_paths: Option<Vec<String>> = match state.workspace_indices.lock() {
+    |                                                    ------------------------------ this expression has type `MutexGuard<'_, RawMutex, HashMap<String, PathBuf>>`
+449 |         Ok(indices) => match indices.get(workspace_id) {
+    |         ^^^^^^^^^^^ expected `MutexGuard<'_, RawMutex, ...>`, found `Result<_, _>`
+    |
+    = note: expected struct `parking_lot::lock_api::MutexGuard<'_, parking_lot::RawMutex, HashMap<std::string::String, PathBuf>>`
+                 found enum `std::result::Result<_, _>`
+    = note: the full name for the type has been written to 'F:\github\log-analyzer_rust\log-analyzer\src-tauri\target\debug\deps\log_analyzer-bdfa48119ab3f42d.long-type-555450459880473047.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+   --> src\commands\workspace.rs:472:9
+    |
+448 |     let indexed_paths: Option<Vec<String>> = match state.workspace_indices.lock() {
+    |                                                    ------------------------------ this expression has type `MutexGuard<'_, RawMutex, HashMap<String, PathBuf>>`
+...
+472 |         Err(e) => {
+    |         ^^^^^^ expected `MutexGuard<'_, RawMutex, ...>`, found `Result<_, _>`
+    |
+    = note: expected struct `parking_lot::lock_api::MutexGuard<'_, parking_lot::RawMutex, HashMap<std::string::String, PathBuf>>`
+                 found enum `std::result::Result<_, _>`
+    = note: the full name for the type has been written to 'F:\github\log-analyzer_rust\log-analyzer\src-tauri\target\debug\deps\log_analyzer-bdfa48119ab3f42d.long-type-555450459880473047.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+   --> src\commands\workspace.rs:486:17
+    |
+485 |             match state.path_map.lock() {
+    |                   --------------------- this expression has type `MutexGuard<'_, RawMutex, HashMap<String, String>>`
+486 |                 Ok(mut path_map) => {
+    |                 ^^^^^^^^^^^^^^^^ expected `MutexGuard<'_, RawMutex, ...>`, found `Result<_, _>`
+    |
+    = note: expected struct `parking_lot::lock_api::MutexGuard<'_, parking_lot::RawMutex, HashMap<std::string::String, std::string::String>>`
+                 found enum `std::result::Result<_, _>`
+    = note: the full name for the type has been written to 'F:\github\log-analyzer_rust\log-analyzer\src-tauri\target\debug\deps\log_analyzer-bdfa48119ab3f42d.long-type-10114594719282313937.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+   --> src\commands\workspace.rs:508:17
+    |
+485 |             match state.path_map.lock() {
+    |                   --------------------- this expression has type `MutexGuard<'_, RawMutex, HashMap<String, String>>`
+...
+508 |                 Err(e) => {
+    |                 ^^^^^^ expected `MutexGuard<'_, RawMutex, ...>`, found `Result<_, _>`
+    |
+    = note: expected struct `parking_lot::lock_api::MutexGuard<'_, parking_lot::RawMutex, HashMap<std::string::String, std::string::String>>`
+                 found enum `std::result::Result<_, _>`
+    = note: the full name for the type has been written to 'F:\github\log-analyzer_rust\log-analyzer\src-tauri\target\debug\deps\log_analyzer-bdfa48119ab3f42d.long-type-10114594719282313937.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+   --> src\commands\workspace.rs:520:17
+    |
+519 |             match state.file_metadata.lock() {
+    |                   -------------------------- this expression has type `MutexGuard<'_, RawMutex, HashMap<String, FileMetadata>>`
+520 |                 Ok(mut file_metadata) => {
+    |                 ^^^^^^^^^^^^^^^^^^^^^ expected `MutexGuard<'_, RawMutex, ...>`, found `Result<_, _>`
+    |
+    = note: expected struct `parking_lot::lock_api::MutexGuard<'_, parking_lot::RawMutex, HashMap<std::string::String, FileMetadata>>`
+                 found enum `std::result::Result<_, _>`
+    = note: the full name for the type has been written to 'F:\github\log-analyzer_rust\log-analyzer\src-tauri\target\debug\deps\log_analyzer-bdfa48119ab3f42d.long-type-18408070836580176681.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+   --> src\commands\workspace.rs:542:17
+    |
+519 |             match state.file_metadata.lock() {
+    |                   -------------------------- this expression has type `MutexGuard<'_, RawMutex, HashMap<String, FileMetadata>>`
+...
+542 |                 Err(e) => {
+    |                 ^^^^^^ expected `MutexGuard<'_, RawMutex, ...>`, found `Result<_, _>`
+    |
+    = note: expected struct `parking_lot::lock_api::MutexGuard<'_, parking_lot::RawMutex, HashMap<std::string::String, FileMetadata>>`
+                 found enum `std::result::Result<_, _>`
+    = note: the full name for the type has been written to 'F:\github\log-analyzer_rust\log-analyzer\src-tauri\target\debug\deps\log_analyzer-bdfa48119ab3f42d.long-type-18408070836580176681.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+   --> src\commands\workspace.rs:555:9
+    |
+554 |     match state.workspace_indices.lock() {
+    |           ------------------------------ this expression has type `MutexGuard<'_, RawMutex, HashMap<String, PathBuf>>`
+555 |         Ok(mut workspace_indices) => {
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^ expected `MutexGuard<'_, RawMutex, ...>`, found `Result<_, _>`
+    |
+    = note: expected struct `parking_lot::lock_api::MutexGuard<'_, parking_lot::RawMutex, HashMap<std::string::String, PathBuf>>`
+                 found enum `std::result::Result<_, _>`
+    = note: the full name for the type has been written to 'F:\github\log-analyzer_rust\log-analyzer\src-tauri\target\debug\deps\log_analyzer-bdfa48119ab3f42d.long-type-4798140674229856759.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+   --> src\commands\workspace.rs:562:9
+    |
+554 |     match state.workspace_indices.lock() {
+    |           ------------------------------ this expression has type `MutexGuard<'_, RawMutex, HashMap<String, PathBuf>>`
+...
+562 |         Err(e) => {
+    |         ^^^^^^ expected `MutexGuard<'_, RawMutex, ...>`, found `Result<_, _>`
+    |
+    = note: expected struct `parking_lot::lock_api::MutexGuard<'_, parking_lot::RawMutex, HashMap<std::string::String, PathBuf>>`
+                 found enum `std::result::Result<_, _>`
+    = note: the full name for the type has been written to 'F:\github\log-analyzer_rust\log-analyzer\src-tauri\target\debug\deps\log_analyzer-bdfa48119ab3f42d.long-type-4798140674229856759.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+   --> src\models\state.rs:100:16
+    |
+100 |         if let Ok(searches) = self.total_searches.lock() {
+    |                ^^^^^^^^^^^^   -------------------------- this expression has type `parking_lot::lock_api::MutexGuard<'_, parking_lot::RawMutex, u64>`
+    |                |
+    |                expected `MutexGuard<'_, RawMutex, u64>`, found `Result<_, _>`
+    |
+    = note: expected struct `parking_lot::lock_api::MutexGuard<'_, parking_lot::RawMutex, u64>`
+                 found enum `std::result::Result<_, _>`
+
+error[E0308]: mismatched types
+   --> src\models\state.rs:101:20
+    |
+101 |             if let Ok(hits) = self.cache_hits.lock() {
+    |                    ^^^^^^^^   ---------------------- this expression has type `parking_lot::lock_api::MutexGuard<'_, parking_lot::RawMutex, u64>`
+    |                    |
+    |                    expected `MutexGuard<'_, RawMutex, u64>`, found `Result<_, _>`
+    |
+    = note: expected struct `parking_lot::lock_api::MutexGuard<'_, parking_lot::RawMutex, u64>`
+                 found enum `std::result::Result<_, _>`
+
+Some errors have detailed explanations: E0308, E0432, E0599.
+For more information about an error, try `rustc --explain E0308`.
+warning: `log-analyzer` (lib) generated 10 warnings
+error: could not compile `log-analyzer` (lib) due to 20 previous errors; 10 warnings emitted

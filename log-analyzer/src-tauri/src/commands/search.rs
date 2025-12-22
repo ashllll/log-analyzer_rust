@@ -1,12 +1,13 @@
 //! 搜索命令实现
 //! 包含日志搜索及缓存逻辑，附带关键词统计与结果批量推送
 
+use parking_lot::Mutex;
 use regex::Regex;
 use std::{
     collections::HashSet,
     fs::File,
     io::{BufRead, BufReader},
-    sync::{Arc, Mutex},
+    sync::Arc,
     thread,
     time::Duration,
 };
@@ -19,17 +20,17 @@ use crate::services::{calculate_keyword_statistics, parse_metadata, ExecutionPla
 
 /// 计算并打印缓存统计信息
 fn log_cache_statistics(total_searches: &Arc<Mutex<u64>>, cache_hits: &Arc<Mutex<u64>>) {
-    if let (Ok(total), Ok(hits)) = (total_searches.lock(), cache_hits.lock()) {
-        let hit_rate = if *total > 0 {
-            (*hits as f64 / *total as f64) * 100.0
-        } else {
-            0.0
-        };
-        println!(
-            "[CACHE STATS] Total searches: {}, Cache hits: {}, Hit rate: {:.2}%",
-            total, hits, hit_rate
-        );
-    }
+    let total = total_searches.lock();
+    let hits = cache_hits.lock();
+    let hit_rate = if *total > 0 {
+        (*hits as f64 / *total as f64) * 100.0
+    } else {
+        0.0
+    };
+    println!(
+        "[CACHE STATS] Total searches: {}, Cache hits: {}, Hit rate: {:.2}%",
+        total, hits, hit_rate
+    );
 }
 
 #[command]
@@ -40,7 +41,7 @@ pub async fn search_logs(
     max_results: Option<usize>,
     filters: Option<SearchFilters>,
     state: State<'_, AppState>,
-) -> Result<(), String> {
+) -> Result<String, String> {
     if query.is_empty() {
         return Err("Search query cannot be empty".to_string());
     }
@@ -54,10 +55,21 @@ pub async fn search_logs(
     let total_searches = Arc::clone(&state.total_searches);
     let cache_hits = Arc::clone(&state.cache_hits);
     let last_search_duration = Arc::clone(&state.last_search_duration);
+    let cancellation_tokens = Arc::clone(&state.search_cancellation_tokens);
 
     let max_results = max_results.unwrap_or(50000).min(100_000);
     let filters = filters.unwrap_or_default();
     let workspace_id = workspaceId.unwrap_or_else(|| "default".to_string());
+
+    // 生成唯一的搜索ID
+    let search_id = uuid::Uuid::new_v4().to_string();
+
+    // 创建取消令牌
+    let cancellation_token = tokio_util::sync::CancellationToken::new();
+    {
+        let mut tokens = cancellation_tokens.lock();
+        tokens.insert(search_id.clone(), cancellation_token.clone());
+    }
 
     // 缓存键：基于查询参数生成，不包含时间戳以确保缓存可命中
     // 注意：当索引更新时，应清除相关缓存
@@ -74,18 +86,16 @@ pub async fn search_logs(
     );
 
     {
-        let cache_result = {
-            let mut cache_guard = search_cache
-                .lock()
-                .map_err(|e| format!("Failed to lock search_cache: {}", e))?;
-            cache_guard.get(&cache_key).cloned()
-        };
+        // moka 的 get 方法直接返回 Option,无需锁
+        let cache_result = search_cache.get(&cache_key);
 
         if let Some(cached_results) = cache_result {
-            if let Ok(mut hits) = cache_hits.lock() {
+            {
+                let mut hits = cache_hits.lock();
                 *hits += 1;
             }
-            if let Ok(mut searches) = total_searches.lock() {
+            {
+                let mut searches = total_searches.lock();
                 *searches += 1;
             }
 
@@ -109,14 +119,16 @@ pub async fn search_logs(
 
             let _ = app_handle.emit("search-summary", &summary);
             let _ = app_handle.emit("search-complete", cached_results.len());
-            return Ok(());
+            return Ok(search_id);
         }
     }
 
-    if let Ok(mut searches) = total_searches.lock() {
+    {
+        let mut searches = total_searches.lock();
         *searches += 1;
     }
 
+    let search_id_clone = search_id.clone();
     thread::spawn(move || {
         let start_time = std::time::Instant::now();
 
@@ -171,16 +183,8 @@ pub async fn search_logs(
         };
 
         let files: Vec<(String, String)> = {
-            match path_map.lock() {
-                Ok(guard) => guard.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
-                Err(e) => {
-                    let _ = app_handle.emit(
-                        "search-error",
-                        format!("Failed to access file index: {}", e),
-                    );
-                    return;
-                }
-            }
+            let guard = path_map.lock();
+            guard.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
         };
 
         // 流式处理：分批发送结果，避免内存峰值
@@ -192,11 +196,23 @@ pub async fn search_logs(
             std::collections::HashMap::new();
         let mut was_truncated = false;
         let mut pending_batch: Vec<LogEntry> = Vec::new(); // 当前待发送批次
+        let mut all_results: Vec<LogEntry> = Vec::new(); // 用于缓存的完整结果集
 
         // 先发送开始事件
         let _ = app_handle.emit("search-start", "Starting search...");
 
         'outer: for file_batch in files.chunks(10) {
+            // 检查取消状态
+            if cancellation_token.is_cancelled() {
+                let _ = app_handle.emit("search-cancelled", search_id_clone.clone());
+                // 清理取消令牌
+                {
+                    let mut tokens = cancellation_tokens.lock();
+                    tokens.remove(&search_id_clone);
+                }
+                return;
+            }
+
             // 检查是否已达到max_results限制
             if results_count >= max_results {
                 was_truncated = true;
@@ -266,6 +282,8 @@ pub async fn search_logs(
                             }
                         }
 
+                        // 保存到完整结果集用于缓存
+                        all_results.push(entry.clone());
                         batch_results.push(entry);
                         results_count += 1;
 
@@ -302,7 +320,8 @@ pub async fn search_logs(
 
         // 计算搜索统计信息
         let duration = start_time.elapsed().as_millis() as u64;
-        if let Ok(mut last_duration) = last_search_duration.lock() {
+        {
+            let mut last_duration = last_search_duration.lock();
             *last_duration = duration;
         }
 
@@ -326,11 +345,22 @@ pub async fn search_logs(
             was_truncated, // 标记是否因达到限制而截断
         );
 
+        // 将结果插入 moka 缓存(仅在未截断且未取消时缓存)
+        if !was_truncated && !cancellation_token.is_cancelled() {
+            search_cache.insert(cache_key, all_results);
+        }
+
         let _ = app_handle.emit("search-summary", &summary);
         let _ = app_handle.emit("search-complete", results_count);
+
+        // 清理取消令牌
+        {
+            let mut tokens = cancellation_tokens.lock();
+            tokens.remove(&search_id_clone);
+        }
     });
 
-    Ok(())
+    Ok(search_id)
 }
 
 #[allow(dead_code)]
@@ -367,6 +397,30 @@ fn search_single_file(
     }
 
     results
+}
+
+/// 取消正在进行的搜索
+#[command]
+pub async fn cancel_search(
+    #[allow(non_snake_case)] searchId: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let cancellation_tokens = Arc::clone(&state.search_cancellation_tokens);
+
+    let token = {
+        let tokens = cancellation_tokens.lock();
+        tokens.get(&searchId).cloned()
+    };
+
+    if let Some(token) = token {
+        token.cancel();
+        Ok(())
+    } else {
+        Err(format!(
+            "Search with ID {} not found or already completed",
+            searchId
+        ))
+    }
 }
 
 fn search_single_file_with_details(

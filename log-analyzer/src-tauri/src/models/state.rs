@@ -2,12 +2,18 @@
 //!
 //! 本模块定义了应用的全局状态结构和相关类型别名。
 
+use crossbeam::queue::SegQueue;
+use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tempfile::TempDir;
+use tokio_util::sync::CancellationToken;
 
 use super::{FileMetadata, LogEntry};
+use crate::utils::cancellation_manager::CancellationManager;
+use crate::utils::resource_manager::ResourceManager;
+use crate::utils::resource_tracker::ResourceTracker;
 
 // --- 类型别名定义 ---
 
@@ -29,8 +35,8 @@ pub type SearchCacheKey = (
 
 /// 搜索缓存类型
 ///
-/// 使用LRU缓存存储搜索结果。
-pub type SearchCache = Arc<Mutex<lru::LruCache<SearchCacheKey, Vec<LogEntry>>>>;
+/// 使用 moka 企业级缓存存储搜索结果,支持 TTL/TTI 过期策略。
+pub type SearchCache = Arc<moka::sync::Cache<SearchCacheKey, Vec<LogEntry>>>;
 
 /// 路径映射类型
 ///
@@ -84,30 +90,57 @@ pub struct AppState {
     pub cache_hits: Arc<Mutex<u64>>,
     /// 工作区监听器映射（workspace_id -> WatcherState）
     pub watchers: Arc<Mutex<HashMap<String, WatcherState>>>,
-    /// 临时文件清理队列
-    pub cleanup_queue: Arc<Mutex<Vec<PathBuf>>>,
+    /// 临时文件清理队列（无锁队列）
+    pub cleanup_queue: Arc<SegQueue<PathBuf>>,
+    /// 活跃搜索的取消令牌映射（search_id -> CancellationToken）
+    /// 注意：此字段保留用于向后兼容，新代码应使用 cancellation_manager
+    pub search_cancellation_tokens: Arc<Mutex<HashMap<String, CancellationToken>>>,
+    /// 资源管理器（RAII 模式）
+    pub resource_manager: Arc<ResourceManager>,
+    /// 取消管理器（统一的取消令牌管理）
+    pub cancellation_manager: Arc<CancellationManager>,
+    /// 资源追踪器（资源生命周期管理）
+    pub resource_tracker: Arc<ResourceTracker>,
 }
 
 impl Drop for AppState {
     fn drop(&mut self) {
         eprintln!("[INFO] AppState dropping, performing final cleanup...");
 
+        // 生成资源报告
+        let report = self.resource_tracker.generate_report();
+        report.print();
+
+        // 检测资源泄漏
+        let leaks = self.resource_tracker.detect_leaks(std::time::Duration::from_secs(300));
+        if !leaks.is_empty() {
+            eprintln!("[WARNING] Detected {} resource leaks", leaks.len());
+        }
+
+        // 取消所有活跃操作
+        self.cancellation_manager.cancel_all();
+        eprintln!("[INFO] Cancelled all active operations");
+
+        // 清理所有资源
+        self.resource_tracker.cleanup_all();
+        eprintln!("[INFO] Cleaned up all tracked resources");
+
         // 执行最后的清理队列处理
         crate::utils::cleanup::process_cleanup_queue(&self.cleanup_queue);
 
         // 打印性能统计摘要
-        if let Ok(searches) = self.total_searches.lock() {
-            if let Ok(hits) = self.cache_hits.lock() {
-                let hit_rate = if *searches > 0 {
-                    (*hits as f64 / *searches as f64) * 100.0
-                } else {
-                    0.0
-                };
-                eprintln!(
-                    "[INFO] Session stats: {} searches, {} cache hits ({:.1}% hit rate)",
-                    searches, hits, hit_rate
-                );
-            }
+        {
+            let searches = self.total_searches.lock();
+            let hits = self.cache_hits.lock();
+            let hit_rate = if *searches > 0 {
+                (*hits as f64 / *searches as f64) * 100.0
+            } else {
+                0.0
+            };
+            eprintln!(
+                "[INFO] Session stats: {} searches, {} cache hits ({:.1}% hit rate)",
+                searches, hits, hit_rate
+            );
         }
 
         eprintln!("[INFO] AppState cleanup completed");

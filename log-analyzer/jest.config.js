@@ -31,4 +31,7 @@ export default {
     },
   },
   testTimeout: 10000,
+  transformIgnorePatterns: [
+    'node_modules/(?!(react-error-boundary|lucide-react)/)',
+  ],
 };

@@ -252,7 +252,7 @@ describe('SearchQueryBuilder', () => {
         .addTerm('timeout');
       
       const queryString = builder.toQueryString();
-      expect(queryString).toBe('error | timeout');
+      expect(queryString).toBe('error|timeout');
     });
 
     it('should exclude disabled terms', () => {

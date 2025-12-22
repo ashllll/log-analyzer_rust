@@ -1,7 +1,8 @@
 import { useCallback, useState, useTransition } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
-import { useApp, useWorkspaceState, Workspace } from '../contexts/AppContext';
+import { useAppStore } from '../stores/appStore';
+import { useWorkspaceStore, Workspace } from '../stores/workspaceStore';
 import { logger } from '../utils/logger';
 
 /**
@@ -10,8 +11,15 @@ import { logger } from '../utils/logger';
  * 统一错误处理和加载状态管理
  */
 export const useWorkspaceOperations = () => {
-  const { addToast, setActiveWorkspace, state: appState } = useApp();
-  const { state: workspaceState, dispatch: workspaceDispatch } = useWorkspaceState();
+  const addToast = useAppStore((state) => state.addToast);
+  const setActiveWorkspace = useAppStore((state) => state.setActiveWorkspace);
+  const activeWorkspaceId = useAppStore((state) => state.activeWorkspaceId);
+  const workspaces = useWorkspaceStore((state) => state.workspaces);
+  const addWorkspace = useWorkspaceStore((state) => state.addWorkspace);
+  const updateWorkspace = useWorkspaceStore((state) => state.updateWorkspace);
+  const deleteWorkspace = useWorkspaceStore((state) => state.deleteWorkspace);
+  const workspacesLoading = useWorkspaceStore((state) => state.loading);
+  const workspacesError = useWorkspaceStore((state) => state.error);
   
   const [operationLoading, setOperationLoading] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -22,7 +30,7 @@ export const useWorkspaceOperations = () => {
   const importPath = useCallback(async (pathStr: string) => {
     logger.debug('importPath called with:', pathStr);
     setOperationLoading(true);
-    const previousActive = appState.activeWorkspaceId;
+    const previousActive = activeWorkspaceId;
     let tempWorkspaceId: string | null = null;
     
     try {
@@ -39,7 +47,7 @@ export const useWorkspaceOperations = () => {
       tempWorkspaceId = workspaceId;
       
       logger.debug('Creating workspace:', newWs);
-      workspaceDispatch({ type: 'ADD_WORKSPACE', payload: newWs });
+      addWorkspace(newWs);
       
       logger.debug('Invoking import_folder with:', { path: pathStr, workspaceId: newWs.id });
       const taskId = await invoke<string>("import_folder", { 
@@ -59,10 +67,7 @@ export const useWorkspaceOperations = () => {
       
       // 删除刚创建的工作区
       if (tempWorkspaceId) {
-        workspaceDispatch({ 
-          type: 'DELETE_WORKSPACE', 
-          payload: tempWorkspaceId 
-        });
+        deleteWorkspace(tempWorkspaceId);
       }
 
       // 恢复之前的激活工作区，避免指向不存在的工作区
@@ -70,7 +75,7 @@ export const useWorkspaceOperations = () => {
     } finally {
       setOperationLoading(false);
     }
-  }, [addToast, setActiveWorkspace, workspaceDispatch, appState.activeWorkspaceId]);
+  }, [addToast, setActiveWorkspace, addWorkspace, deleteWorkspace, activeWorkspaceId]);
 
   /**
    * 导入文件夹
@@ -151,7 +156,7 @@ export const useWorkspaceOperations = () => {
    * 删除工作区
    * 调用后端命令删除工作区及其所有相关资源
    */
-  const deleteWorkspace = useCallback(async (id: string) => {
+  const deleteWorkspaceOp = useCallback(async (id: string) => {
     logger.debug('deleteWorkspace called for id:', id);
     setOperationLoading(true);
     
@@ -160,12 +165,12 @@ export const useWorkspaceOperations = () => {
       await invoke('delete_workspace', { workspaceId: id });
       
       // 后端删除成功,更新前端状态
-      workspaceDispatch({ type: 'DELETE_WORKSPACE', payload: id });
+      deleteWorkspace(id);
       
       // 如果删除的是当前活跃工作区,清空活跃状态
-      if (appState.activeWorkspaceId === id) {
+      if (activeWorkspaceId === id) {
         // 切换到其他工作区或清空
-        const remainingWorkspaces = workspaceState.workspaces.filter(w => w.id !== id);
+        const remainingWorkspaces = workspaces.filter(w => w.id !== id);
         if (remainingWorkspaces.length > 0) {
           setActiveWorkspace(remainingWorkspaces[0].id);
         } else {
@@ -180,7 +185,7 @@ export const useWorkspaceOperations = () => {
     } finally {
       setOperationLoading(false);
     }
-  }, [addToast, workspaceDispatch, appState.activeWorkspaceId, workspaceState.workspaces, setActiveWorkspace]);
+  }, [addToast, deleteWorkspace, activeWorkspaceId, workspaces, setActiveWorkspace]);
 
   /**
    * 切换工作区
@@ -189,14 +194,14 @@ export const useWorkspaceOperations = () => {
    */
   const switchWorkspace = useCallback(async (id: string) => {
     // 如果已经是当前工作区，不重复加载
-    if (appState.activeWorkspaceId === id) {
+    if (activeWorkspaceId === id) {
       logger.debug('Already active workspace, skipping reload:', id);
       return;
     }
     
     logger.debug('switchWorkspace called for id:', id);
     
-    const workspace = workspaceState.workspaces.find(w => w.id === id);
+    const workspace = workspaces.find(w => w.id === id);
     if (!workspace) {
       addToast('error', 'Workspace not found');
       return;
@@ -217,7 +222,7 @@ export const useWorkspaceOperations = () => {
         addToast('error', `加载索引失败: ${e}`);
       }
     }
-  }, [addToast, setActiveWorkspace, workspaceState.workspaces, appState.activeWorkspaceId]);
+  }, [addToast, setActiveWorkspace, workspaces, activeWorkspaceId]);
 
   /**
    * 切换工作区监听状态
@@ -228,10 +233,7 @@ export const useWorkspaceOperations = () => {
     try {
       if (workspace.watching) {
         await invoke('stop_watch', { workspaceId: workspace.id });
-        workspaceDispatch({
-          type: 'UPDATE_WORKSPACE',
-          payload: { id: workspace.id, updates: { watching: false } }
-        });
+        updateWorkspace(workspace.id, { watching: false });
         addToast('info', '停止监听');
       } else {
         await invoke('start_watch', { 
@@ -239,10 +241,7 @@ export const useWorkspaceOperations = () => {
           path: workspace.path,
           autoSearch: false 
         });
-        workspaceDispatch({
-          type: 'UPDATE_WORKSPACE',
-          payload: { id: workspace.id, updates: { watching: true } }
-        });
+        updateWorkspace(workspace.id, { watching: true });
         addToast('info', '开始监听');
       }
     } catch (e) {
@@ -251,16 +250,16 @@ export const useWorkspaceOperations = () => {
     } finally {
       setOperationLoading(false);
     }
-  }, [addToast, workspaceDispatch]);
+  }, [addToast, updateWorkspace]);
 
   return {
-    workspaces: workspaceState.workspaces,
-    loading: operationLoading || workspaceState.loading || isPending,
-    error: workspaceState.error,
+    workspaces,
+    loading: operationLoading || workspacesLoading || isPending,
+    error: workspacesError,
     importFolder,
     importFile,
     refreshWorkspace,
-    deleteWorkspace,
+    deleteWorkspace: deleteWorkspaceOp,
     switchWorkspace,
     toggleWatch
   };

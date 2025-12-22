@@ -22,7 +22,7 @@ pub struct LogEntry {
 }
 
 /// 任务进度
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TaskProgress {
     pub task_id: String,
     pub task_type: String, // 任务类型: "Import", "Export", etc.
@@ -34,7 +34,7 @@ pub struct TaskProgress {
 }
 
 /// 文件变化事件
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct FileChangeEvent {
     pub event_type: String,   // "modified", "created", "deleted"
     pub file_path: String,    // 变化的文件路径

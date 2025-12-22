@@ -8,7 +8,6 @@ import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { AppProvider } from '../../providers/AppProvider';
 import App from '../../App';
 
 // Mock Tauri API
@@ -51,9 +50,7 @@ const TestWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <AppProvider>
-        {children}
-      </AppProvider>
+      {children}
     </QueryClientProvider>
   );
 };

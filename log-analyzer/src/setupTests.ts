@@ -1,6 +1,8 @@
 // Setup file for Jest tests
 // This file is executed before running tests
 
+import '@testing-library/jest-dom';
+
 // Mock Tauri API for testing
 const mockTauri = {
   invoke: jest.fn(),

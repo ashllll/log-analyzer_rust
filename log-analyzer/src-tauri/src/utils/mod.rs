@@ -2,14 +2,23 @@
 //!
 //! 提供路径处理、编码转换、参数验证、重试机制和清理功能等通用工具。
 
+pub mod cancellation_manager;
 pub mod cleanup;
 pub mod encoding;
 pub mod log_file_detector;
 pub mod path;
 pub mod path_security;
+pub mod resource_manager;
+pub mod resource_tracker;
 pub mod retry;
 pub mod validation;
 
+#[cfg(test)]
+mod resource_management_property_tests;
+
 // 重新导出常用工具函数
+pub use cancellation_manager::{CancellableOperation, CancellationManager, run_with_cancellation};
 pub use path::{canonicalize_path, normalize_path_separator};
+pub use resource_manager::{ResourceManager, TempDirGuard, create_guarded_temp_dir};
+pub use resource_tracker::{ResourceTracker, ResourceType, ResourceInfo, ResourceReport};
 pub use validation::{validate_path_param, validate_workspace_id};

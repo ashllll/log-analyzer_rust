@@ -1,10 +1,10 @@
-use std::path::PathBuf;
 use miette::Diagnostic;
+use std::path::PathBuf;
 use thiserror::Error;
 
 /**
  * 应用错误类型 - 使用 miette 提供用户友好的错误诊断
- * 
+ *
  * 这个枚举用于用户可见的错误，提供详细的诊断信息
  */
 #[derive(Error, Debug, Diagnostic)]
@@ -72,10 +72,7 @@ pub enum AppError {
     IndexError(String),
 
     #[error("Pattern error: {0}")]
-    #[diagnostic(
-        code(app::pattern_error),
-        help("Check your regex pattern syntax")
-    )]
+    #[diagnostic(code(app::pattern_error), help("Check your regex pattern syntax"))]
     PatternError(String),
 }
 
@@ -142,7 +139,7 @@ impl AppError {
 
 /**
  * 统一结果类型 - 使用 eyre::Result 提供更好的错误链
- * 
+ *
  * 对于内部错误处理，使用 eyre::Result
  * 对于用户可见的错误，转换为 AppError
  */
@@ -151,11 +148,13 @@ pub type Result<T> = std::result::Result<T, AppError>;
 /**
  * 内部结果类型 - 使用 eyre 进行错误传播
  */
+#[allow(dead_code)]
 pub type EyreResult<T> = eyre::Result<T>;
 
 /**
  * 将 eyre::Error 转换为 AppError
  */
+#[allow(dead_code)]
 pub fn eyre_to_app_error(error: eyre::Error) -> AppError {
     AppError::search_error(error.to_string())
 }

@@ -66,14 +66,8 @@ pub async fn import_folder(
     );
 
     {
-        let mut map_guard = state
-            .path_map
-            .lock()
-            .map_err(|e| format!("Failed to acquire path_map lock: {}", e))?;
-        let mut metadata_guard = state
-            .file_metadata
-            .lock()
-            .map_err(|e| format!("Failed to acquire metadata lock: {}", e))?;
+        let mut map_guard = state.path_map.lock();
+        let mut metadata_guard = state.file_metadata.lock();
 
         map_guard.clear();
         metadata_guard.clear();
@@ -123,30 +117,20 @@ pub async fn import_folder(
     // 处理完成后，获取锁并更新共享状态
 
     // 更新路径映射
-    let mut map_guard = state
-        .path_map
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))?;
-    *map_guard = local_map;
-    drop(map_guard);
+    {
+        let mut map_guard = state.path_map.lock();
+        *map_guard = local_map;
+    }
 
     // 更新元数据映射
-    let mut metadata_guard = state
-        .file_metadata
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))?;
-    *metadata_guard = local_metadata;
-    drop(metadata_guard);
+    {
+        let mut metadata_guard = state.file_metadata.lock();
+        *metadata_guard = local_metadata;
+    }
 
     // 保存索引
-    let map_guard = state
-        .path_map
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))?;
-    let metadata_guard = state
-        .file_metadata
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))?;
+    let map_guard = state.path_map.lock();
+    let metadata_guard = state.file_metadata.lock();
 
     match save_index(
         &app_handle,
@@ -155,10 +139,7 @@ pub async fn import_folder(
         &metadata_guard,
     ) {
         Ok(index_path) => {
-            let mut indices_guard = state
-                .workspace_indices
-                .lock()
-                .map_err(|e| format!("Lock error: {}", e))?;
+            let mut indices_guard = state.workspace_indices.lock();
             indices_guard.insert(workspace_id_clone.clone(), index_path);
         }
         Err(e) => {

@@ -41,24 +41,15 @@ pub async fn load_workspace(
     let (path_map, file_metadata) = load_index(&index_path).map_err(|e| e.to_string())?;
 
     {
-        let mut map_guard = state
-            .path_map
-            .lock()
-            .map_err(|e| format!("Failed to acquire path_map lock: {}", e))?;
-        let mut metadata_guard = state
-            .file_metadata
-            .lock()
-            .map_err(|e| format!("Failed to acquire metadata lock: {}", e))?;
+        let mut map_guard = state.path_map.lock();
+        let mut metadata_guard = state.file_metadata.lock();
 
         *map_guard = path_map;
         *metadata_guard = file_metadata;
     }
 
     {
-        let mut indices_guard = state
-            .workspace_indices
-            .lock()
-            .map_err(|e| format!("Failed to acquire indices lock: {}", e))?;
+        let mut indices_guard = state.workspace_indices.lock();
         indices_guard.insert(workspaceId, index_path);
     }
 
@@ -91,6 +82,22 @@ pub async fn refresh_workspace(
         source_path.to_path_buf()
     });
 
+    let event_bus = get_event_bus();
+    let _ = event_bus.publish_task_update(TaskProgress {
+        task_id: task_id.clone(),
+        task_type: "Refresh".to_string(),
+        target: canonical_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(&path)
+            .to_string(),
+        status: "RUNNING".to_string(),
+        message: "Loading existing index...".to_string(),
+        progress: 0,
+        workspace_id: Some(workspaceId.clone()),
+    });
+
+    // 同时发送到 Tauri 前端（向后兼容）
     let _ = app.emit(
         "task-update",
         TaskProgress {
@@ -211,10 +218,7 @@ pub async fn refresh_workspace(
                 );
 
                 let state = app_handle.state::<AppState>();
-                let temp_guard = state
-                    .temp_dir
-                    .lock()
-                    .map_err(|e| format!("Lock error: {}", e))?;
+                let temp_guard = state.temp_dir.lock();
 
                 if let Some(ref _temp_dir) = *temp_guard {
                     let root_name = source_path
@@ -294,14 +298,8 @@ pub async fn refresh_workspace(
                 .map_err(|e| e.to_string())?;
 
                 let state = app_handle.state::<AppState>();
-                let mut map_guard = state
-                    .path_map
-                    .lock()
-                    .map_err(|e| format!("Lock error: {}", e))?;
-                let mut metadata_guard = state
-                    .file_metadata
-                    .lock()
-                    .map_err(|e| format!("Lock error: {}", e))?;
+                let mut map_guard = state.path_map.lock();
+                let mut metadata_guard = state.file_metadata.lock();
 
                 *map_guard = existing_path_map;
                 *metadata_guard = existing_metadata;
@@ -350,7 +348,7 @@ use uuid::Uuid;
 use walkdir::WalkDir;
 
 use crate::models::{AppState, FileMetadata, TaskProgress};
-use crate::services::{get_file_metadata, load_index, save_index};
+use crate::services::{get_event_bus, get_file_metadata, load_index, save_index};
 use crate::utils::{
     canonicalize_path, cleanup::try_cleanup_temp_dir, normalize_path_separator,
     validation::validate_workspace_id,
@@ -433,25 +431,19 @@ fn cleanup_workspace_resources(
         "[INFO] [delete_workspace] Step 1: Stopping file watcher for workspace: {}",
         workspace_id
     );
-    match state.watchers.lock() {
-        Ok(mut watchers) => {
-            if let Some(mut watcher_state) = watchers.remove(workspace_id) {
-                watcher_state.is_active = false;
-                eprintln!(
-                    "[INFO] [delete_workspace] File watcher stopped for workspace: {}",
-                    workspace_id
-                );
-            } else {
-                eprintln!(
-                    "[INFO] [delete_workspace] No active watcher found for workspace: {}",
-                    workspace_id
-                );
-            }
-        }
-        Err(e) => {
-            let error = format!("Failed to lock watchers: {}", e);
-            eprintln!("[WARNING] [delete_workspace] Step 1 failed: {}", error);
-            errors.push(error);
+    {
+        let mut watchers = state.watchers.lock();
+        if let Some(mut watcher_state) = watchers.remove(workspace_id) {
+            watcher_state.is_active = false;
+            eprintln!(
+                "[INFO] [delete_workspace] File watcher stopped for workspace: {}",
+                workspace_id
+            );
+        } else {
+            eprintln!(
+                "[INFO] [delete_workspace] No active watcher found for workspace: {}",
+                workspace_id
+            );
         }
     }
 
@@ -469,8 +461,9 @@ fn cleanup_workspace_resources(
     );
 
     // 3.1 从 workspace_indices 读取索引文件，精准删除 path_map 与 file_metadata 项
-    let indexed_paths: Option<Vec<String>> = match state.workspace_indices.lock() {
-        Ok(indices) => match indices.get(workspace_id) {
+    let indexed_paths: Option<Vec<String>> = {
+        let indices = state.workspace_indices.lock();
+        match indices.get(workspace_id) {
             Some(index_path) => match load_index(index_path) {
                 Ok((paths, _meta)) => {
                     let path_keys: Vec<String> = paths.keys().cloned().collect();
@@ -492,12 +485,6 @@ fn cleanup_workspace_resources(
                 eprintln!("[INFO] [delete_workspace] Step 3.1: No index path found for workspace");
                 None
             }
-        },
-        Err(e) => {
-            let error = format!("Failed to lock workspace_indices: {}", e);
-            eprintln!("[ERROR] [delete_workspace] Step 3.1 failed: {}", error);
-            errors.push(error);
-            None
         }
     };
 
@@ -506,33 +493,27 @@ fn cleanup_workspace_resources(
         if paths_to_remove.is_empty() {
             eprintln!("[INFO] [delete_workspace] Step 3.2: No paths to remove from path_map");
         } else {
-            match state.path_map.lock() {
-                Ok(mut path_map) => {
-                    let before_count = path_map.len();
-                    let mut removed_count = 0;
-                    for p in &paths_to_remove {
-                        if path_map.remove(p).is_some() {
-                            removed_count += 1;
-                        }
-                    }
-                    let after_count = path_map.len();
-                    eprintln!(
-                        "[INFO] [delete_workspace] Step 3.2: Removed {} entries from path_map ({} -> {})",
-                        removed_count, before_count, after_count
-                    );
-
-                    // 验证清理结果
-                    if removed_count != paths_to_remove.len() {
-                        eprintln!(
-                            "[WARNING] [delete_workspace] Step 3.2: Expected to remove {} entries, but only removed {}",
-                            paths_to_remove.len(), removed_count
-                        );
+            {
+                let mut path_map = state.path_map.lock();
+                let before_count = path_map.len();
+                let mut removed_count = 0;
+                for p in &paths_to_remove {
+                    if path_map.remove(p).is_some() {
+                        removed_count += 1;
                     }
                 }
-                Err(e) => {
-                    let error = format!("Failed to lock path_map: {}", e);
-                    eprintln!("[ERROR] [delete_workspace] Step 3.2 failed: {}", error);
-                    errors.push(error);
+                let after_count = path_map.len();
+                eprintln!(
+                    "[INFO] [delete_workspace] Step 3.2: Removed {} entries from path_map ({} -> {})",
+                    removed_count, before_count, after_count
+                );
+
+                // 验证清理结果
+                if removed_count != paths_to_remove.len() {
+                    eprintln!(
+                        "[WARNING] [delete_workspace] Step 3.2: Expected to remove {} entries, but only removed {}",
+                        paths_to_remove.len(), removed_count
+                    );
                 }
             }
         }
@@ -540,33 +521,27 @@ fn cleanup_workspace_resources(
         if paths_to_remove.is_empty() {
             eprintln!("[INFO] [delete_workspace] Step 3.3: No paths to remove from file_metadata");
         } else {
-            match state.file_metadata.lock() {
-                Ok(mut file_metadata) => {
-                    let before_count = file_metadata.len();
-                    let mut removed_count = 0;
-                    for p in &paths_to_remove {
-                        if file_metadata.remove(p).is_some() {
-                            removed_count += 1;
-                        }
-                    }
-                    let after_count = file_metadata.len();
-                    eprintln!(
-                        "[INFO] [delete_workspace] Step 3.3: Removed {} entries from file_metadata ({} -> {})",
-                        removed_count, before_count, after_count
-                    );
-
-                    // 验证清理结果
-                    if removed_count != paths_to_remove.len() {
-                        eprintln!(
-                            "[WARNING] [delete_workspace] Step 3.3: Expected to remove {} entries, but only removed {}",
-                            paths_to_remove.len(), removed_count
-                        );
+            {
+                let mut file_metadata = state.file_metadata.lock();
+                let before_count = file_metadata.len();
+                let mut removed_count = 0;
+                for p in &paths_to_remove {
+                    if file_metadata.remove(p).is_some() {
+                        removed_count += 1;
                     }
                 }
-                Err(e) => {
-                    let error = format!("Failed to lock file_metadata: {}", e);
-                    eprintln!("[ERROR] [delete_workspace] Step 3.3 failed: {}", error);
-                    errors.push(error);
+                let after_count = file_metadata.len();
+                eprintln!(
+                    "[INFO] [delete_workspace] Step 3.3: Removed {} entries from file_metadata ({} -> {})",
+                    removed_count, before_count, after_count
+                );
+
+                // 验证清理结果
+                if removed_count != paths_to_remove.len() {
+                    eprintln!(
+                        "[WARNING] [delete_workspace] Step 3.3: Expected to remove {} entries, but only removed {}",
+                        paths_to_remove.len(), removed_count
+                    );
                 }
             }
         }
@@ -575,18 +550,12 @@ fn cleanup_workspace_resources(
     }
 
     // 3.3 清除 workspace_indices（最后移除记录）
-    match state.workspace_indices.lock() {
-        Ok(mut workspace_indices) => {
-            if workspace_indices.remove(workspace_id).is_some() {
-                eprintln!("[INFO] [delete_workspace] Removed workspace from workspace_indices");
-            } else {
-                eprintln!("[INFO] [delete_workspace] Workspace not found in workspace_indices");
-            }
-        }
-        Err(e) => {
-            let error = format!("Failed to lock workspace_indices: {}", e);
-            eprintln!("[WARNING] [delete_workspace] Step 3.3 failed: {}", error);
-            errors.push(error);
+    {
+        let mut workspace_indices = state.workspace_indices.lock();
+        if workspace_indices.remove(workspace_id).is_some() {
+            eprintln!("[INFO] [delete_workspace] Removed workspace from workspace_indices");
+        } else {
+            eprintln!("[INFO] [delete_workspace] Workspace not found in workspace_indices");
         }
     }
 

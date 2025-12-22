@@ -16,32 +16,16 @@ pub async fn get_performance_metrics(
 ) -> Result<PerformanceMetrics, String> {
     let memory_used_mb = get_process_memory_mb();
 
-    let path_map_size = state
-        .path_map
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))?
-        .len();
+    let path_map_size = state.path_map.lock().len();
 
-    let cache_size = state
-        .search_cache
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))?
-        .len();
+    // moka::Cache 提供 entry_count() 方法获取缓存大小
+    let cache_size = state.search_cache.entry_count() as usize;
 
-    let last_search_duration_ms = *state
-        .last_search_duration
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))?;
+    let last_search_duration_ms = *state.last_search_duration.lock();
 
-    let total_searches = *state
-        .total_searches
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))?;
+    let total_searches = *state.total_searches.lock();
 
-    let cache_hits = *state
-        .cache_hits
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))?;
+    let cache_hits = *state.cache_hits.lock();
 
     let cache_hit_rate = if total_searches > 0 {
         (cache_hits as f64 / total_searches as f64) * 100.0

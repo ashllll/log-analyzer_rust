@@ -1,6 +1,6 @@
 import React from 'react';
 import { FileText, Plus, RefreshCw, Trash2, Eye, EyeOff, CheckCircle2 } from 'lucide-react';
-import { useApp } from '../contexts/AppContext';
+import { useAppStore } from '../stores/appStore';
 import { useWorkspaceOperations } from '../hooks/useWorkspaceOperations';
 import { Button, Card } from '../components/ui';
 import { cn } from '../utils/classNames';
@@ -17,7 +17,7 @@ import type { Workspace } from '../types/common';
  */
 const WorkspacesPage: React.FC = () => {
   const { workspaces, importFile, importFolder, refreshWorkspace, deleteWorkspace, toggleWatch, switchWorkspace } = useWorkspaceOperations();
-  const { state: appState } = useApp();
+  const activeWorkspaceId = useAppStore((state) => state.activeWorkspaceId);
   
   const handleDelete = async (id: string) => {
     await deleteWorkspace(id);
@@ -50,7 +50,7 @@ const WorkspacesPage: React.FC = () => {
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
          {workspaces.map((ws: Workspace) => (
-           <Card key={ws.id} className={cn("h-full flex flex-col hover:border-primary/50 transition-colors group cursor-pointer", appState.activeWorkspaceId === ws.id ? "border-primary ring-1 ring-primary" : "border-border-base")} onClick={() => switchWorkspace(ws.id)}>
+           <Card key={ws.id} className={cn("h-full flex flex-col hover:border-primary/50 transition-colors group cursor-pointer", activeWorkspaceId === ws.id ? "border-primary ring-1 ring-primary" : "border-border-base")} onClick={() => switchWorkspace(ws.id)}>
               <div className="px-4 py-3 border-b border-border-base bg-bg-sidebar/50 font-bold text-sm flex justify-between items-center">
                   {ws.name}
                   <div className="flex gap-1">

@@ -1,0 +1,173 @@
+name: Performance Regression Detection
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main]
+
+jobs:
+  benchmark:
+    name: Run Performance Benchmarks
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # 获取完整历史以便比较
+      
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+      
+      - name: Cache Rust dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            log-analyzer/src-tauri/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      
+      - name: Install Criterion
+        run: cargo install cargo-criterion || true
+      
+      - name: Run benchmarks
+        working-directory: log-analyzer/src-tauri
+        run: |
+          cargo bench --bench production_benchmarks -- --output-format bencher | tee benchmark-results.txt
+      
+      - name: Store benchmark results
+        uses: actions/upload-artifact@v3
+        with:
+          name: benchmark-results
+          path: log-analyzer/src-tauri/benchmark-results.txt
+      
+      - name: Compare with baseline
+        if: github.event_name == 'pull_request'
+        working-directory: log-analyzer/src-tauri
+        run: |
+          # 下载基线结果（如果存在）
+          if [ -f "baseline-benchmark.txt" ]; then
+            echo "Comparing with baseline..."
+            # 这里可以添加自定义的比较逻辑
+            # 例如使用 critcmp 或自定义脚本
+          else
+            echo "No baseline found, skipping comparison"
+          fi
+      
+      - name: Comment PR with results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            const results = fs.readFileSync('log-analyzer/src-tauri/benchmark-results.txt', 'utf8');
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## Performance Benchmark Results\n\n\`\`\`\n${results}\n\`\`\``
+            });
+
+  property-tests:
+    name: Run Property-Based Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+      
+      - name: Cache Rust dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            log-analyzer/src-tauri/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      
+      - name: Run property tests
+        working-directory: log-analyzer/src-tauri
+        run: |
+          cargo test --lib property -- --test-threads=1 --nocapture
+      
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: property-test-results
+          path: log-analyzer/src-tauri/target/debug/deps/*.log
+
+  frontend-tests:
+    name: Run Frontend Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: log-analyzer/package-lock.json
+      
+      - name: Install dependencies
+        working-directory: log-analyzer
+        run: npm ci
+      
+      - name: Run tests
+        working-directory: log-analyzer
+        run: npm test -- --testPathIgnorePatterns="e2e" --passWithNoTests --coverage
+      
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        with:
+          files: log-analyzer/coverage/lcov.info
+          flags: frontend
+          name: frontend-coverage
+
+  performance-report:
+    name: Generate Performance Report
+    needs: [benchmark, property-tests, frontend-tests]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Download benchmark results
+        uses: actions/download-artifact@v3
+        with:
+          name: benchmark-results
+      
+      - name: Generate report
+        run: |
+          echo "# Performance Test Summary" > performance-report.md
+          echo "" >> performance-report.md
+          echo "## Benchmark Results" >> performance-report.md
+          echo "\`\`\`" >> performance-report.md
+          cat benchmark-results.txt >> performance-report.md
+          echo "\`\`\`" >> performance-report.md
+      
+      - name: Upload report
+        uses: actions/upload-artifact@v3
+        with:
+          name: performance-report
+          path: performance-report.md

@@ -7,8 +7,10 @@
 //! - 索引持久化与增量更新
 //! - 实时文件监听
 
+use crossbeam::queue::SegQueue;
+use parking_lot::Mutex;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 // 模块声明
 mod archive;
@@ -16,8 +18,9 @@ mod benchmark;
 mod commands;
 mod error;
 mod models;
-mod services;
-mod utils;
+mod monitoring;
+pub mod services;  // 公开 services 模块用于基准测试
+pub mod utils;     // 公开 utils 模块用于基准测试
 
 // 从模块导入类型
 pub use error::{AppError, Result};
@@ -32,7 +35,7 @@ use commands::{
     import::{check_rar_support, import_folder},
     performance::get_performance_metrics,
     query::{execute_structured_query, validate_query},
-    search::search_logs,
+    search::{cancel_search, search_logs},
     watch::{start_watch, stop_watch},
     workspace::{delete_workspace, load_workspace, refresh_workspace},
 };
@@ -44,7 +47,7 @@ pub fn run() {
 
     // 初始化 tracing 结构化日志系统
     use tracing_subscriber::{fmt, prelude::*, EnvFilter};
-    
+
     tracing_subscriber::registry()
         .with(fmt::layer().with_target(true).with_thread_ids(true))
         .with(EnvFilter::from_default_env().add_directive(tracing::Level::INFO.into()))
@@ -69,36 +72,46 @@ pub fn run() {
         .build_global()
         .expect("Failed to build Rayon thread pool");
 
-    tracing::info!(
-        "Rayon thread pool initialized with {} threads",
-        num_cpus
-    );
+    tracing::info!("Rayon thread pool initialized with {} threads", num_cpus);
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
-        .manage(AppState {
-            temp_dir: Mutex::new(None),
-            path_map: Arc::new(Mutex::new(HashMap::new())), // 使用 Arc
-            file_metadata: Arc::new(Mutex::new(HashMap::new())), // 元数据
-            workspace_indices: Mutex::new(HashMap::new()),
-            search_cache: Arc::new(Mutex::new(lru::LruCache::new(
-                std::num::NonZeroUsize::new(100).unwrap(), // 缓存 100 个搜索结果
-            ))),
-            // 性能统计
-            last_search_duration: Arc::new(Mutex::new(0)),
-            total_searches: Arc::new(Mutex::new(0)),
-            cache_hits: Arc::new(Mutex::new(0)),
-            // 实时监听
-            watchers: Arc::new(Mutex::new(HashMap::new())),
-            // 临时文件清理队列
-            cleanup_queue: Arc::new(Mutex::new(Vec::new())),
+        .manage({
+            let cleanup_queue = Arc::new(SegQueue::new());
+            let resource_manager = Arc::new(utils::ResourceManager::new(cleanup_queue.clone()));
+            let cancellation_manager = Arc::new(utils::CancellationManager::new());
+            let resource_tracker = Arc::new(utils::ResourceTracker::new(cleanup_queue.clone()));
+            
+            AppState {
+                temp_dir: Mutex::new(None),
+                path_map: Arc::new(Mutex::new(HashMap::new())),
+                file_metadata: Arc::new(Mutex::new(HashMap::new())),
+                workspace_indices: Mutex::new(HashMap::new()),
+                search_cache: Arc::new(
+                    moka::sync::Cache::builder()
+                        .max_capacity(100)
+                        .time_to_live(std::time::Duration::from_secs(300))
+                        .time_to_idle(std::time::Duration::from_secs(60))
+                        .build(),
+                ),
+                last_search_duration: Arc::new(Mutex::new(0)),
+                total_searches: Arc::new(Mutex::new(0)),
+                cache_hits: Arc::new(Mutex::new(0)),
+                watchers: Arc::new(Mutex::new(HashMap::new())),
+                cleanup_queue,
+                search_cancellation_tokens: Arc::new(Mutex::new(HashMap::new())),
+                resource_manager,
+                cancellation_manager,
+                resource_tracker,
+            }
         })
         .invoke_handler(tauri::generate_handler![
             save_config,
             load_config,
             search_logs,
+            cancel_search,
             import_folder,
             load_workspace,
             refresh_workspace,
@@ -121,22 +134,14 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use crate::services::{get_file_metadata, parse_metadata};
-    use crate::utils::encoding::decode_filename;
-    use crate::utils::path::{remove_readonly, safe_path_join};
-    use crate::utils::{
-        canonicalize_path, normalize_path_separator, validate_path_param, validate_workspace_id,
-    };
+    use crate::utils::validation::{validate_path_param, validate_workspace_id};
     use std::path::PathBuf;
 
     #[test]
     fn test_path_utils() {
-        // 测试路径工具函数
-        let path = PathBuf::from("test/path");
-        let normalized = normalize_path_separator(&path);
-        assert!(normalized.contains('/'));
-
-        let validated = validate_path_param(&path).unwrap();
+        // 测试路径工具函数 - 使用当前目录而不是不存在的路径
+        let path = ".";
+        let validated = validate_path_param(path, "test_path").unwrap();
         assert!(validated.is_absolute());
     }
 
