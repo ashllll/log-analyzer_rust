@@ -30,9 +30,7 @@ pub use path_manager::{PathConfig, PathManager};
 #[allow(unused_imports)]
 #[allow(deprecated)]
 pub use processor::process_path_recursive_with_metadata;
-pub use public_api::{
-    extract_archive_async, extract_archive_sync, ExtractionResult,
-};
+pub use public_api::{extract_archive_async, extract_archive_sync, ExtractionResult};
 pub use rar_handler::RarHandler;
 pub use security_detector::{SecurityDetector, SecurityPolicy};
 pub use tar_handler::TarHandler;

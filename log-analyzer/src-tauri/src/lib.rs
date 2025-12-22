@@ -11,6 +11,7 @@ use crossbeam::queue::SegQueue;
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
+use tauri::Manager;
 
 // 模块声明
 mod archive;
@@ -19,7 +20,9 @@ mod commands;
 mod error;
 mod models;
 mod monitoring;
+mod search_engine; // 添加搜索引擎模块
 pub mod services; // 公开 services 模块用于基准测试
+mod state_sync; // 添加状态同步模块
 pub mod utils; // 公开 utils 模块用于基准测试
 
 // 从模块导入类型
@@ -33,9 +36,13 @@ use commands::{
     config::{load_config, save_config},
     export::export_results,
     import::{check_rar_support, import_folder},
-    performance::get_performance_metrics,
+    performance::{
+        get_performance_alerts, get_performance_metrics, get_performance_recommendations,
+        reset_performance_metrics,
+    },
     query::{execute_structured_query, validate_query},
     search::{cancel_search, search_logs},
+    state_sync::{broadcast_test_event, get_event_history, get_workspace_state, init_state_sync},
     watch::{start_watch, stop_watch},
     workspace::{delete_workspace, load_workspace, refresh_workspace},
 };
@@ -84,18 +91,38 @@ pub fn run() {
             let cancellation_manager = Arc::new(utils::CancellationManager::new());
             let resource_tracker = Arc::new(utils::ResourceTracker::new(cleanup_queue.clone()));
 
+            // 初始化搜索缓存（Moka L1 缓存）
+            let search_cache = Arc::new(
+                moka::sync::Cache::builder()
+                    .max_capacity(1000) // 增加容量到1000
+                    .time_to_live(std::time::Duration::from_secs(300)) // 5分钟TTL
+                    .time_to_idle(std::time::Duration::from_secs(60)) // 1分钟TTI
+                    .build(),
+            );
+
+            // 初始化统一缓存管理器（支持 L1 Moka + 可选 L2 Redis）
+            let cache_manager = Arc::new(utils::CacheManager::new(search_cache.clone()));
+
+            // 初始化 Tantivy 搜索引擎（延迟初始化，首次搜索时创建）
+            let search_engine = Arc::new(Mutex::new(None));
+
+            // 初始化状态同步管理器（延迟初始化，在 setup hook 中创建）
+            let state_sync = Arc::new(Mutex::new(None));
+
+            // 初始化性能监控组件
+            let metrics_collector = Arc::new(
+                monitoring::MetricsCollector::new().expect("Failed to create metrics collector"),
+            );
+            let alerting_system = Arc::new(
+                monitoring::AlertingSystem::new().expect("Failed to create alerting system"),
+            );
+
             AppState {
                 temp_dir: Mutex::new(None),
                 path_map: Arc::new(Mutex::new(HashMap::new())),
                 file_metadata: Arc::new(Mutex::new(HashMap::new())),
                 workspace_indices: Mutex::new(HashMap::new()),
-                search_cache: Arc::new(
-                    moka::sync::Cache::builder()
-                        .max_capacity(100)
-                        .time_to_live(std::time::Duration::from_secs(300))
-                        .time_to_idle(std::time::Duration::from_secs(60))
-                        .build(),
-                ),
+                search_cache,
                 last_search_duration: Arc::new(Mutex::new(0)),
                 total_searches: Arc::new(Mutex::new(0)),
                 cache_hits: Arc::new(Mutex::new(0)),
@@ -105,6 +132,11 @@ pub fn run() {
                 resource_manager,
                 cancellation_manager,
                 resource_tracker,
+                search_engine,
+                state_sync,
+                cache_manager,
+                metrics_collector,
+                alerting_system,
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -117,13 +149,44 @@ pub fn run() {
             refresh_workspace,
             export_results,
             get_performance_metrics,
+            get_performance_alerts,
+            get_performance_recommendations,
+            reset_performance_metrics,
             check_rar_support,
             start_watch,
             stop_watch,
             execute_structured_query,
             validate_query,
             delete_workspace,
+            init_state_sync,
+            get_workspace_state,
+            get_event_history,
+            broadcast_test_event,
         ])
+        .setup(|app| {
+            // 获取 AppState
+            let state = app.state::<AppState>();
+
+            // 启动性能监控系统
+            let metrics_collector = state.metrics_collector.clone();
+            let alerting_system = state.alerting_system.clone();
+
+            tauri::async_runtime::spawn(async move {
+                // 启动指标收集
+                if let Err(e) = metrics_collector.start_collection().await {
+                    tracing::error!("Failed to start metrics collection: {}", e);
+                }
+
+                // 初始化告警系统
+                if let Err(e) = alerting_system.initialize_alerts().await {
+                    tracing::error!("Failed to initialize alerting system: {}", e);
+                }
+
+                tracing::info!("Performance monitoring system started successfully");
+            });
+
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

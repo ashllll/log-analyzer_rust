@@ -17,5 +17,6 @@ pub mod import;
 pub mod performance;
 pub mod query;
 pub mod search;
+pub mod state_sync;
 pub mod watch;
 pub mod workspace;

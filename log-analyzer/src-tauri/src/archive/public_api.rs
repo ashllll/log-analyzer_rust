@@ -373,14 +373,9 @@ pub async fn extract_archive_async(
             })?,
     );
 
-    let path_manager = Arc::new(PathManager::new(
-        PathConfig::default(),
-        metadata_db.clone(),
-    ));
+    let path_manager = Arc::new(PathManager::new(PathConfig::default(), metadata_db.clone()));
 
-    let security_detector = Arc::new(SecurityDetector::new(
-        SecurityPolicy::default(),
-    ));
+    let security_detector = Arc::new(SecurityDetector::new(SecurityPolicy::default()));
 
     // Create extraction engine
     let engine = ExtractionEngine::new(
@@ -419,9 +414,7 @@ pub async fn extract_archive_async(
         .iter()
         .map(|w| ExtractionWarning {
             category: match w.category {
-                InternalWarningCategory::DepthLimitReached => {
-                    WarningCategory::DepthLimitReached
-                }
+                InternalWarningCategory::DepthLimitReached => WarningCategory::DepthLimitReached,
                 InternalWarningCategory::PathShortened => WarningCategory::PathShortened,
                 InternalWarningCategory::HighCompressionRatio => {
                     WarningCategory::HighCompressionRatio

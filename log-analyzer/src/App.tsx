@@ -1,9 +1,11 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { 
   Search, LayoutGrid, ListTodo, Settings, Layers, 
-  Zap, Loader2, FileText
+  Zap, Loader2, FileText, Activity
 } from "lucide-react";
 import { ErrorBoundary } from 'react-error-boundary';
+import { listen } from '@tauri-apps/api/event';
+import { invoke } from '@tauri-apps/api/core';
 
 // 初始化i18n
 import './i18n';
@@ -23,7 +25,7 @@ import { NavItem, ToastContainer } from './components/ui';
 import { PageErrorFallback, CompactErrorFallback } from './components/ErrorFallback';
 
 // 导入页面组件
-import { SearchPage, KeywordsPage, WorkspacesPage, TasksPage, PerformancePage } from './pages';
+import { SearchPage, KeywordsPage, WorkspacesPage, TasksPage, PerformancePage, PerformanceMonitoringPage } from './pages';
 
 // --- Main App Component (Internal) ---
 function AppContent() {
@@ -35,12 +37,61 @@ function AppContent() {
   const removeToast = useAppStore((state) => state.removeToast);
   
   const { keywordGroups } = useKeywordManager();
-  const { workspaces } = useWorkspaceOperations();
+  const { workspaces, refreshWorkspaces } = useWorkspaceOperations();
   
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [importStatus] = useState("");  // 保留以兼容旧代码，但实际不再使用
   
   const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId) || null;
+
+  // 初始化状态同步并监听工作区事件
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+
+    const setupStateSync = async () => {
+      try {
+        // 初始化状态同步
+        await invoke('init_state_sync');
+        console.log('[StateSync] Initialized successfully');
+
+        // 监听工作区事件
+        unlisten = await listen('workspace-event', (event: any) => {
+          console.log('[StateSync] Received workspace event:', event.payload);
+          
+          const { status } = event.payload;
+
+          // 根据事件类型更新UI
+          if (event.payload.type === 'StatusChanged') {
+            // 显示Toast通知
+            const toastType = status?.status === 'Cancelled' ? 'error' : 'success';
+            const toastMessage = status?.status === 'Cancelled' 
+              ? 'Workspace deleted' 
+              : status?.status === 'Completed' 
+                ? 'Workspace updated' 
+                : 'Workspace status changed';
+            
+            addToast(toastType, toastMessage);
+
+            // 刷新工作区列表
+            refreshWorkspaces();
+          }
+        });
+
+        console.log('[StateSync] Event listener registered');
+      } catch (error) {
+        console.error('[StateSync] Failed to initialize:', error);
+      }
+    };
+
+    setupStateSync();
+
+    // 清理函数
+    return () => {
+      if (unlisten) {
+        unlisten();
+      }
+    };
+  }, [addToast, refreshWorkspaces]);
 
   return (
     <div className="flex h-screen bg-bg-main text-text-main font-sans selection:bg-primary/30">
@@ -51,6 +102,7 @@ function AppContent() {
             <NavItem icon={Search} label="Search Logs" active={page === 'search'} onClick={() => setPage('search')} />
             <NavItem icon={ListTodo} label="Keywords" active={page === 'keywords'} onClick={() => setPage('keywords')} />
             <NavItem icon={Layers} label="Tasks" active={page === 'tasks'} onClick={() => setPage('tasks')} />
+            <NavItem icon={Activity} label="Performance" active={page === 'performance-monitoring'} onClick={() => setPage('performance-monitoring')} />
         </div>
         {importStatus && <div className="p-3 m-3 bg-bg-card border border-primary/20 rounded text-xs text-primary animate-pulse"><div className="font-bold mb-1 flex items-center gap-2"><Loader2 size={12} className="animate-spin"/> Processing</div><div className="truncate opacity-80">{importStatus}</div></div>}
         <div className="p-3 border-t border-border-base">
@@ -71,6 +123,9 @@ function AppContent() {
            </ErrorBoundary>
            <ErrorBoundary FallbackComponent={CompactErrorFallback} onReset={() => setPage('tasks')}>
              {page === 'tasks' && <TasksPage />}
+           </ErrorBoundary>
+           <ErrorBoundary FallbackComponent={CompactErrorFallback} onReset={() => setPage('performance-monitoring')}>
+             {page === 'performance-monitoring' && <PerformanceMonitoringPage />}
            </ErrorBoundary>
            <ErrorBoundary FallbackComponent={CompactErrorFallback} onReset={() => setPage('settings')}>
              {page === 'settings' && <PerformancePage addToast={addToast} />}

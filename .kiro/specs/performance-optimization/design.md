@@ -131,19 +131,20 @@ impl QueryOptimizer {
 
 ### 2. Real-Time State Synchronization System
 
-#### WebSocket-based State Manager
+#### Tauri Event-based State Manager
 ```rust
-use tokio_tungstenite::{WebSocketStream, tungstenite::Message};
-use redis::{Client as RedisClient, aio::Connection};
+use tauri::{Manager, Window, Emitter};
 use serde::{Serialize, Deserialize};
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 pub struct StateSync {
-    redis_client: RedisClient,
-    websocket_connections: Arc<RwLock<HashMap<UserId, WebSocketSender>>>,
-    event_publisher: EventPublisher,
+    app_handle: tauri::AppHandle,
+    state_cache: Arc<RwLock<HashMap<String, WorkspaceState>>>,
+    event_history: Arc<RwLock<VecDeque<WorkspaceEvent>>>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum WorkspaceEvent {
     StatusChanged { workspace_id: String, status: WorkspaceStatus },
     ProgressUpdate { workspace_id: String, progress: f64 },
@@ -156,9 +157,11 @@ impl StateSync {
         &self,
         event: WorkspaceEvent,
     ) -> Result<(), SyncError> {
-        // 1. Persist event to Redis for reliability
-        // 2. Broadcast to all connected WebSocket clients
-        // 3. Handle connection failures gracefully
+        // 1. Update local state cache
+        // 2. Emit Tauri event to frontend (<10ms latency)
+        // 3. Store in event history for debugging
+        self.app_handle.emit("workspace-event", &event)?;
+        Ok(())
     }
     
     pub async fn sync_workspace_state(
@@ -166,51 +169,86 @@ impl StateSync {
         workspace_id: &str,
     ) -> Result<WorkspaceState, SyncError> {
         // Ensure frontend and backend state consistency
-    }
-}
-```
-
-#### Event Sourcing for State Consistency
-```rust
-pub struct EventStore {
-    redis_streams: RedisClient,
-    event_handlers: HashMap<String, Box<dyn EventHandler>>,
-}
-
-impl EventStore {
-    pub async fn append_event(
-        &self,
-        stream: &str,
-        event: &WorkspaceEvent,
-    ) -> Result<EventId, EventError> {
-        // Use Redis Streams for reliable event storage
+        let state = self.state_cache.read().await
+            .get(workspace_id)
+            .cloned()
+            .ok_or(SyncError::WorkspaceNotFound)?;
+        Ok(state)
     }
     
-    pub async fn replay_events_since(
+    pub async fn get_event_history(
         &self,
-        stream: &str,
-        since: EventId,
-    ) -> Result<Vec<WorkspaceEvent>, EventError> {
-        // Handle reconnection scenarios
+        workspace_id: &str,
+        limit: usize,
+    ) -> Vec<WorkspaceEvent> {
+        // Retrieve recent events for debugging and recovery
+        self.event_history.read().await
+            .iter()
+            .filter(|e| e.workspace_id() == workspace_id)
+            .take(limit)
+            .cloned()
+            .collect()
     }
 }
 ```
 
-### 3. Multi-Layer Caching System
-
-#### Distributed Cache Manager
+#### Event History for State Consistency
 ```rust
-use redis::cluster::ClusterClient;
+pub struct EventHistory {
+    events: Arc<RwLock<VecDeque<WorkspaceEvent>>>,
+    max_size: usize,
+}
+
+impl EventHistory {
+    pub async fn append_event(
+        &self,
+        event: WorkspaceEvent,
+    ) -> Result<(), EventError> {
+        // Store event in memory with size limit
+        let mut events = self.events.write().await;
+        events.push_back(event);
+        if events.len() > self.max_size {
+            events.pop_front();
+        }
+        Ok(())
+    }
+    
+    pub async fn get_events_since(
+        &self,
+        timestamp: SystemTime,
+    ) -> Vec<WorkspaceEvent> {
+        // Retrieve events after a specific timestamp
+        self.events.read().await
+            .iter()
+            .filter(|e| e.timestamp() > timestamp)
+            .cloned()
+            .collect()
+    }
+}
+```
+
+### 3. High-Performance In-Memory Caching System
+
+#### LRU Cache Manager
+```rust
 use lru::LruCache;
 use std::num::NonZeroUsize;
+use std::time::{Duration, SystemTime};
 
 pub struct CacheManager {
-    // L1: In-memory cache for hot data (<0.1ms)
-    l1_cache: Arc<Mutex<LruCache<String, CachedResult>>>,
-    // L2: Redis cache for distributed access (<1ms)
-    l2_cache: ClusterClient,
+    // In-memory LRU cache for hot data (<0.1ms)
+    cache: Arc<Mutex<LruCache<String, CachedEntry>>>,
     // Cache statistics
     stats: Arc<RwLock<CacheStats>>,
+    // TTL tracking
+    ttl_map: Arc<RwLock<HashMap<String, SystemTime>>>,
+}
+
+#[derive(Clone)]
+struct CachedEntry {
+    data: CachedResult,
+    created_at: SystemTime,
+    access_count: u64,
 }
 
 impl CacheManager {
@@ -224,13 +262,36 @@ impl CacheManager {
         F: FnOnce() -> Fut,
         Fut: Future<Output = Result<CachedResult, ComputeError>>,
     {
-        // 1. Check L1 cache first
-        // 2. Check L2 cache if L1 miss
-        // 3. Compute and populate both caches if miss
+        // 1. Check cache and validate TTL
+        if let Some(entry) = self.get_valid_entry(key, ttl).await {
+            self.record_hit(key).await;
+            return Ok(entry.data);
+        }
+        
+        // 2. Compute and populate cache
+        self.record_miss(key).await;
+        let result = compute_fn().await?;
+        self.insert(key, result.clone(), ttl).await?;
+        Ok(result)
     }
     
     pub async fn invalidate_pattern(&self, pattern: &str) -> Result<u64, CacheError> {
-        // Intelligent cache invalidation
+        // Pattern-based cache invalidation using regex
+        let mut cache = self.cache.lock().await;
+        let mut ttl_map = self.ttl_map.write().await;
+        let pattern_regex = Regex::new(pattern)?;
+        
+        let keys_to_remove: Vec<String> = cache.iter()
+            .filter(|(k, _)| pattern_regex.is_match(k))
+            .map(|(k, _)| k.clone())
+            .collect();
+        
+        for key in &keys_to_remove {
+            cache.pop(key);
+            ttl_map.remove(key);
+        }
+        
+        Ok(keys_to_remove.len() as u64)
     }
 }
 ```
@@ -376,13 +437,12 @@ pub struct CachedSearchResult {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct CacheStats {
-    pub l1_hits: u64,
-    pub l1_misses: u64,
-    pub l2_hits: u64,
-    pub l2_misses: u64,
+    pub hits: u64,
+    pub misses: u64,
     pub evictions: u64,
     pub memory_usage_bytes: u64,
     pub hit_rate: f64,
+    pub avg_access_time_ms: f64,
 }
 ```
 
@@ -527,20 +587,20 @@ pub struct CacheStats {
 
 ### State Synchronization Error Handling
 
-1. **WebSocket Connection Management**: Robust connection handling with automatic recovery
-   - Exponential backoff reconnection strategy
-   - Connection health monitoring
-   - Fallback to HTTP polling when WebSocket fails
+1. **Tauri Event Delivery**: Robust event handling with reliability guarantees
+   - Event delivery confirmation tracking
+   - Automatic retry for failed emissions
+   - Event queue for temporary frontend unavailability
 
-2. **Redis Failure Handling**: Graceful degradation when Redis is unavailable
-   - Local state caching as fallback
-   - Automatic Redis reconnection
-   - State reconciliation after recovery
+2. **State Consistency Verification**: Ensure frontend-backend state alignment
+   - Periodic state synchronization checks
+   - Automatic state reconciliation on mismatch
+   - State snapshot and restore capabilities
 
-3. **Event Ordering Guarantees**: Ensure correct event ordering even during failures
-   - Event sequence numbering
-   - Gap detection and recovery
-   - Duplicate event filtering
+3. **Event Ordering Guarantees**: Ensure correct event ordering
+   - Event sequence numbering with timestamps
+   - In-order event processing
+   - Duplicate event filtering based on event IDs
 
 ### Cache Error Handling
 
@@ -549,10 +609,10 @@ pub struct CacheStats {
    - Manual cache clearing capabilities
    - Cache consistency verification
 
-2. **Distributed Cache Partitioning**: Handle Redis cluster partitioning scenarios
-   - Local cache promotion during partitions
-   - Automatic cluster topology updates
-   - Consistent hashing for data distribution
+2. **Memory Pressure Handling**: Handle scenarios when memory is constrained
+   - Automatic cache size reduction
+   - Aggressive eviction policies under pressure
+   - Cache warming suspension during high memory usage
 
 ## Testing Strategy
 
@@ -563,12 +623,12 @@ The testing strategy combines unit testing and property-based testing to ensure 
 **Unit Testing Focus**:
 - Specific performance benchmarks with known datasets
 - Integration points between search engine and cache layers
-- WebSocket connection handling and recovery scenarios
-- Redis integration and failover behavior
+- Tauri event emission and handling scenarios
+- Cache behavior under various conditions
 
 **Property-Based Testing Focus**:
 - Performance properties across varying dataset sizes and query complexities
-- State synchronization properties under different network conditions
+- State synchronization properties with different event patterns
 - Cache behavior properties under various memory pressure scenarios
 - Concurrent operation properties with different load patterns
 
@@ -583,8 +643,8 @@ The testing strategy combines unit testing and property-based testing to ensure 
 **Frontend Performance Testing (TypeScript)**:
 - **Library**: `@testing-library/react` with performance monitoring
 - **Configuration**: Real-time update latency measurement
-- **Metrics**: UI update latency, WebSocket message processing time
-- **Scenarios**: Multiple workspace operations, network disconnection/reconnection
+- **Metrics**: UI update latency, Tauri event processing time
+- **Scenarios**: Multiple workspace operations, event delivery verification
 
 ### Property-Based Test Configuration
 
@@ -625,27 +685,35 @@ proptest! {
 ```
 
 **Cache Performance Properties**:
-```typescript
-// Frontend property testing with fast-check
-import fc from 'fast-check'
-
-test('cache response time properties', () => {
-  fc.assert(fc.property(
-    fc.string({ minLength: 1, maxLength: 100 }),
-    async (query) => {
-      // **Performance Optimization, Property 3: Cache Performance Guarantee**
-      // First request to populate cache
-      await searchService.search(query)
-      
-      // Second request should be served from cache
-      const start = performance.now()
-      await searchService.search(query)
-      const duration = performance.now() - start
-      
-      expect(duration).toBeLessThan(50) // 50ms cache response time
+```rust
+proptest! {
+    #[test]
+    fn cache_response_time_under_50ms(
+        query in "[a-zA-Z0-9 ]{1,100}",
+    ) {
+        // **Performance Optimization, Property 3: Cache Performance Guarantee**
+        let cache_manager = CacheManager::new(1000);
+        
+        // First request to populate cache
+        let result = cache_manager.get_or_compute(
+            &query,
+            || async { Ok(mock_search_result()) },
+            Duration::from_secs(60)
+        ).await?;
+        
+        // Second request should be served from cache
+        let start = Instant::now();
+        let cached_result = cache_manager.get_or_compute(
+            &query,
+            || async { Ok(mock_search_result()) },
+            Duration::from_secs(60)
+        ).await?;
+        let duration = start.elapsed();
+        
+        prop_assert!(duration < Duration::from_millis(50));
+        prop_assert_eq!(result, cached_result);
     }
-  ), { numRuns: 1000 })
-})
+}
 ```
 
 ### Integration Testing Strategy
@@ -653,14 +721,14 @@ test('cache response time properties', () => {
 **End-to-End Performance Testing**:
 - Automated performance regression detection in CI/CD
 - Real-world dataset testing with production-like data volumes
-- Network latency simulation for distributed scenarios
+- Event delivery latency simulation for various scenarios
 - Memory and CPU constraint testing
 
 **Load Testing**:
 - Concurrent user simulation (100+ simultaneous searches)
 - Workspace operation stress testing
 - Cache invalidation under high load
-- WebSocket connection scaling tests
+- Tauri event emission stress testing (1000+ events/second)
 
 **Monitoring Integration**:
 - Continuous performance monitoring in test environments

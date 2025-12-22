@@ -22,6 +22,8 @@ pub async fn load_workspace(
     #[allow(non_snake_case)] workspaceId: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    let start_time = std::time::Instant::now();
+
     validate_workspace_id(&workspaceId)?;
 
     let index_dir = app
@@ -38,7 +40,12 @@ pub async fn load_workspace(
         }
     }
 
+    let load_start = std::time::Instant::now();
     let (path_map, file_metadata) = load_index(&index_path).map_err(|e| e.to_string())?;
+    let load_duration = load_start.elapsed();
+
+    // 记录文件数量（在移动 path_map 之前）
+    let file_count = path_map.len();
 
     {
         let mut map_guard = state.path_map.lock();
@@ -50,7 +57,32 @@ pub async fn load_workspace(
 
     {
         let mut indices_guard = state.workspace_indices.lock();
-        indices_guard.insert(workspaceId, index_path);
+        indices_guard.insert(workspaceId.clone(), index_path);
+    }
+
+    // 记录性能指标
+    let total_duration = start_time.elapsed();
+    state.metrics_collector.record_workspace_operation(
+        "load",
+        &workspaceId,
+        file_count,
+        total_duration,
+        vec![("index_load", load_duration)],
+        true,
+    );
+
+    // 广播工作区加载完成事件
+    if let Some(state_sync) = state.state_sync.lock().as_ref() {
+        use crate::state_sync::models::{WorkspaceEvent, WorkspaceStatus};
+        use std::time::Duration;
+        let _ = state_sync
+            .broadcast_workspace_event(WorkspaceEvent::StatusChanged {
+                workspace_id: workspaceId.clone(),
+                status: WorkspaceStatus::Completed {
+                    duration: Duration::from_secs(0),
+                },
+            })
+            .await;
     }
 
     Ok(())
@@ -130,6 +162,7 @@ pub async fn refresh_workspace(
     }
 
     std::thread::spawn(move || {
+        let operation_start = std::time::Instant::now();
         let file_name = Path::new(&path)
             .file_name()
             .and_then(|n| n.to_str())
@@ -321,6 +354,17 @@ pub async fn refresh_workspace(
                     workspace_id: Some(workspace_id_clone.clone()),
                 },
             );
+
+            // 记录失败的性能指标
+            let state = app_handle.state::<AppState>();
+            state.metrics_collector.record_workspace_operation(
+                "refresh",
+                &workspace_id_clone,
+                0,
+                operation_start.elapsed(),
+                vec![],
+                false,
+            );
         } else {
             let _ = app_handle.emit(
                 "task-update",
@@ -334,7 +378,56 @@ pub async fn refresh_workspace(
                     workspace_id: Some(workspace_id_clone.clone()),
                 },
             );
-            let _ = app_handle.emit("import-complete", task_id_clone);
+            let _ = app_handle.emit("import-complete", task_id_clone.clone());
+
+            // 失效该工作区的所有缓存
+            let state = app_handle.state::<AppState>();
+            if let Err(e) = state
+                .cache_manager
+                .invalidate_workspace_cache(&workspace_id_clone)
+            {
+                eprintln!(
+                    "[WARNING] Failed to invalidate cache for workspace {}: {}",
+                    workspace_id_clone, e
+                );
+            } else {
+                eprintln!(
+                    "[INFO] Successfully invalidated cache for workspace: {}",
+                    workspace_id_clone
+                );
+            }
+
+            // 记录成功的性能指标
+            let total_duration = operation_start.elapsed();
+            state.metrics_collector.record_workspace_operation(
+                "refresh",
+                &workspace_id_clone,
+                0, // 文件数量在 result 中，这里简化为 0
+                total_duration,
+                vec![],
+                true,
+            );
+
+            // 广播工作区刷新完成事件
+            let state_sync_opt = {
+                let guard = state.state_sync.lock();
+                guard.as_ref().cloned()
+            };
+            if let Some(state_sync) = state_sync_opt {
+                use crate::state_sync::models::{WorkspaceEvent, WorkspaceStatus};
+                use std::time::Duration;
+                let workspace_id_for_event = workspace_id_clone.clone();
+                tokio::spawn(async move {
+                    let _ = state_sync
+                        .broadcast_workspace_event(WorkspaceEvent::StatusChanged {
+                            workspace_id: workspace_id_for_event,
+                            status: WorkspaceStatus::Completed {
+                                duration: Duration::from_secs(0),
+                            },
+                        })
+                        .await;
+                });
+            }
         }
     });
 
@@ -732,6 +825,8 @@ pub async fn delete_workspace(
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<(), String> {
+    let start_time = std::time::Instant::now();
+
     eprintln!(
         "[INFO] [delete_workspace] Command called for workspace: {}",
         workspaceId
@@ -742,6 +837,44 @@ pub async fn delete_workspace(
 
     // 执行清理
     cleanup_workspace_resources(&workspaceId, &state, &app)?;
+
+    // 失效该工作区的所有缓存
+    if let Err(e) = state.cache_manager.invalidate_workspace_cache(&workspaceId) {
+        eprintln!(
+            "[WARNING] Failed to invalidate cache for workspace {}: {}",
+            workspaceId, e
+        );
+    } else {
+        eprintln!(
+            "[INFO] Successfully invalidated cache for workspace: {}",
+            workspaceId
+        );
+    }
+
+    // 记录性能指标
+    let total_duration = start_time.elapsed();
+    state.metrics_collector.record_workspace_operation(
+        "delete",
+        &workspaceId,
+        0,
+        total_duration,
+        vec![],
+        true,
+    );
+
+    // 广播工作区删除事件
+    if let Some(state_sync) = state.state_sync.lock().as_ref() {
+        use crate::state_sync::models::{WorkspaceEvent, WorkspaceStatus};
+        use std::time::SystemTime;
+        let _ = state_sync
+            .broadcast_workspace_event(WorkspaceEvent::StatusChanged {
+                workspace_id: workspaceId.clone(),
+                status: WorkspaceStatus::Cancelled {
+                    cancelled_at: SystemTime::now(),
+                },
+            })
+            .await;
+    }
 
     eprintln!(
         "[INFO] [delete_workspace] Command completed for workspace: {}",

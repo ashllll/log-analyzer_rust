@@ -7,6 +7,7 @@ use std::{
     collections::HashSet,
     fs::File,
     io::{BufRead, BufReader},
+    path::PathBuf,
     sync::Arc,
     thread,
     time::Duration,
@@ -16,6 +17,7 @@ use tauri::{command, AppHandle, Emitter, State};
 use crate::models::search::{QueryMetadata, QueryOperator, SearchTerm, TermSource};
 use crate::models::search_statistics::SearchResultSummary;
 use crate::models::{AppState, LogEntry, SearchCacheKey, SearchFilters, SearchQuery};
+use crate::search_engine::manager::{SearchConfig, SearchEngineManager};
 use crate::services::{calculate_keyword_statistics, parse_metadata, ExecutionPlan, QueryExecutor};
 
 /// 计算并打印缓存统计信息
@@ -31,6 +33,44 @@ fn log_cache_statistics(total_searches: &Arc<Mutex<u64>>, cache_hits: &Arc<Mutex
         "[CACHE STATS] Total searches: {}, Cache hits: {}, Hit rate: {:.2}%",
         total, hits, hit_rate
     );
+}
+
+/// 获取或初始化 SearchEngineManager
+///
+/// 使用延迟初始化模式，首次调用时创建索引
+fn get_or_init_search_engine(state: &AppState, workspace_id: &str) -> Result<(), String> {
+    let mut engine_guard = state.search_engine.lock();
+
+    if engine_guard.is_none() {
+        // 创建索引目录路径
+        let index_path = PathBuf::from(format!("./search_index/{}", workspace_id));
+
+        // 配置搜索引擎
+        let config = SearchConfig {
+            default_timeout: Duration::from_millis(200),
+            max_results: 50_000,
+            index_path,
+            writer_heap_size: 50_000_000, // 50MB
+        };
+
+        // 初始化搜索引擎
+        match SearchEngineManager::new(config) {
+            Ok(engine) => {
+                println!(
+                    "[SEARCH ENGINE] Initialized Tantivy search engine for workspace: {}",
+                    workspace_id
+                );
+                *engine_guard = Some(engine);
+                Ok(())
+            }
+            Err(e) => {
+                eprintln!("[SEARCH ENGINE] Failed to initialize: {}", e);
+                Err(format!("Failed to initialize search engine: {}", e))
+            }
+        }
+    } else {
+        Ok(())
+    }
 }
 
 #[command]
@@ -52,10 +92,12 @@ pub async fn search_logs(
     let app_handle = app.clone();
     let path_map = Arc::clone(&state.path_map);
     let search_cache = Arc::clone(&state.search_cache);
+    let cache_manager = Arc::clone(&state.cache_manager);
     let total_searches = Arc::clone(&state.total_searches);
     let cache_hits = Arc::clone(&state.cache_hits);
     let last_search_duration = Arc::clone(&state.last_search_duration);
     let cancellation_tokens = Arc::clone(&state.search_cancellation_tokens);
+    let metrics_collector = Arc::clone(&state.metrics_collector);
 
     let max_results = max_results.unwrap_or(50000).min(100_000);
     let filters = filters.unwrap_or_default();
@@ -86,8 +128,8 @@ pub async fn search_logs(
     );
 
     {
-        // moka 的 get 方法直接返回 Option,无需锁
-        let cache_result = search_cache.get(&cache_key);
+        // 使用 CacheManager 的同步 get 方法
+        let cache_result = state.cache_manager.get_sync(&cache_key);
 
         if let Some(cached_results) = cache_result {
             {
@@ -131,6 +173,7 @@ pub async fn search_logs(
     let search_id_clone = search_id.clone();
     thread::spawn(move || {
         let start_time = std::time::Instant::now();
+        let parse_start = std::time::Instant::now();
 
         let raw_terms: Vec<String> = query
             .split('|')
@@ -173,6 +216,9 @@ pub async fn search_logs(
             },
         };
 
+        let parse_duration = parse_start.elapsed();
+
+        let execution_start = std::time::Instant::now();
         let mut executor = QueryExecutor::new(100);
         let plan = match executor.execute(&structured_query) {
             Ok(p) => p,
@@ -325,6 +371,25 @@ pub async fn search_logs(
             *last_duration = duration;
         }
 
+        let execution_duration = execution_start.elapsed();
+        let format_duration = start_time.elapsed() - parse_duration - execution_duration;
+
+        // 记录性能指标
+        use crate::monitoring::metrics_collector::SearchPhase;
+        let phase_timings = vec![
+            (SearchPhase::Parsing, parse_duration),
+            (SearchPhase::Execution, execution_duration),
+            (SearchPhase::Formatting, format_duration),
+        ];
+
+        metrics_collector.record_search_operation(
+            &query,
+            results_count,
+            start_time.elapsed(),
+            phase_timings,
+            !was_truncated && !cancellation_token.is_cancelled(),
+        );
+
         // 使用流式统计结果构建关键词统计
         let keyword_stats: Vec<crate::models::search_statistics::KeywordStatistics> = raw_terms
             .iter()
@@ -345,9 +410,9 @@ pub async fn search_logs(
             was_truncated, // 标记是否因达到限制而截断
         );
 
-        // 将结果插入 moka 缓存(仅在未截断且未取消时缓存)
+        // 将结果插入缓存(仅在未截断且未取消时缓存)
         if !was_truncated && !cancellation_token.is_cancelled() {
-            search_cache.insert(cache_key, all_results);
+            cache_manager.insert_sync(cache_key, all_results);
         }
 
         let _ = app_handle.emit("search-summary", &summary);

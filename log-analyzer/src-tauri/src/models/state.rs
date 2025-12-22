@@ -11,6 +11,11 @@ use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
 
 use super::{FileMetadata, LogEntry};
+use crate::monitoring::alerting::AlertingSystem;
+use crate::monitoring::metrics_collector::MetricsCollector;
+use crate::search_engine::SearchEngineManager;
+use crate::state_sync::StateSync;
+use crate::utils::cache_manager::CacheManager;
 use crate::utils::cancellation_manager::CancellationManager;
 use crate::utils::resource_manager::ResourceManager;
 use crate::utils::resource_tracker::ResourceTracker;
@@ -101,6 +106,16 @@ pub struct AppState {
     pub cancellation_manager: Arc<CancellationManager>,
     /// 资源追踪器（资源生命周期管理）
     pub resource_tracker: Arc<ResourceTracker>,
+    /// Tantivy 搜索引擎管理器（高性能全文搜索）
+    pub search_engine: Arc<Mutex<Option<SearchEngineManager>>>,
+    /// 状态同步管理器（Tauri Events 实时同步）
+    pub state_sync: Arc<Mutex<Option<StateSync>>>,
+    /// 统一缓存管理器（L1 Moka + 可选 L2 Redis）
+    pub cache_manager: Arc<CacheManager>,
+    /// 性能指标收集器（搜索操作计时、系统资源监控）
+    pub metrics_collector: Arc<MetricsCollector>,
+    /// 告警系统（性能阈值违规、资源约束告警）
+    pub alerting_system: Arc<AlertingSystem>,
 }
 
 impl Drop for AppState {

@@ -616,6 +616,29 @@ impl CacheManager {
         }
     }
 
+    /// 同步获取缓存条目（仅 L1）
+    pub fn get_sync(&self, key: &SearchCacheKey) -> Option<Vec<LogEntry>> {
+        let start_time = Instant::now();
+
+        // 记录访问模式
+        self.access_tracker.record_access(key);
+
+        // 检查 L1
+        if let Some(entries) = self.search_cache.get(key) {
+            self.metrics.record_l1_hit(start_time.elapsed());
+            return Some(entries);
+        }
+
+        self.metrics.record_l1_miss(start_time.elapsed());
+        None
+    }
+
+    /// 同步插入缓存条目（仅 L1）
+    pub fn insert_sync(&self, key: SearchCacheKey, value: Vec<LogEntry>) {
+        // 插入 L1
+        self.search_cache.insert(key, value);
+    }
+
     /// 使工作区相关的缓存失效 (同步版本)
     pub fn invalidate_workspace_cache(&self, workspace_id: &str) -> Result<usize> {
         let mut invalidated_count = 0;

@@ -252,6 +252,18 @@ export const useWorkspaceOperations = () => {
     }
   }, [addToast, updateWorkspace]);
 
+  /**
+   * 刷新工作区列表
+   * 从后端重新加载所有工作区
+   */
+  const refreshWorkspaces = useCallback(async () => {
+    logger.debug('refreshWorkspaces called');
+    // 这里可以调用后端API获取工作区列表
+    // 目前工作区列表由前端维护，通过事件自动更新
+    // 如果需要从后端同步，可以添加相应的命令
+    logger.debug('Workspaces refreshed from store');
+  }, []);
+
   return {
     workspaces,
     loading: operationLoading || workspacesLoading || isPending,
@@ -259,6 +271,7 @@ export const useWorkspaceOperations = () => {
     importFolder,
     importFile,
     refreshWorkspace,
+    refreshWorkspaces,
     deleteWorkspace: deleteWorkspaceOp,
     switchWorkspace,
     toggleWatch

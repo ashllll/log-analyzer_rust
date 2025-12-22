@@ -507,9 +507,9 @@ async fn extract_and_process_archive(
     let extracted_files = if is_enhanced_extraction_enabled() {
         // 使用增强提取系统
         eprintln!("[INFO] Using enhanced extraction system for {}", file_name);
-        
+
         let policy = ExtractionPolicy::default();
-        
+
         match extract_archive_async(archive_path, &extract_dir, workspace_id, Some(policy)).await {
             Ok(result) => {
                 eprintln!(
@@ -548,7 +548,7 @@ async fn extract_and_process_archive(
     } else {
         // 使用旧的 ArchiveManager
         eprintln!("[INFO] Using legacy extraction system for {}", file_name);
-        
+
         let summary = archive_manager
             .extract_archive(archive_path, &extract_dir)
             .await

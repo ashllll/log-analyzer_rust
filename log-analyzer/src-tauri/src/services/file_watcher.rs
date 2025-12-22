@@ -33,31 +33,55 @@ impl TimestampParser {
 
     /// 解析时间戳
     pub fn parse_timestamp(line: &str) -> Option<String> {
-        // 首先尝试匹配常见的时间戳模式
-        let patterns = [
-            (r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+", 26), // ISO 8601 with ms
-            (r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", 19),      // ISO 8601
-            (r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+", 26), // Common with ms
-            (r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", 19),      // Common
-            (r"\d{2}/\d{2}/\d{4} \d{2}:\d{2}:\d{2}\.\d+", 26), // US with ms
-            (r"\d{2}/\d{2}/\d{4} \d{2}:\d{2}:\d{2}", 19),      // US
-            (r"\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}\.\d+", 26), // Asian with ms
-            (r"\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}", 19),      // Asian
-        ];
+        use once_cell::sync::Lazy;
+        use regex::Regex;
 
-        for (pattern, length) in &patterns {
-            if let Some(start) = line.find(&pattern[2..pattern.len() - 2]) {
-                let end = start + length;
-                if end <= line.len() {
-                    let timestamp_str = &line[start..end];
+        // 使用 Lazy 静态初始化正则表达式，避免重复编译
+        static TIMESTAMP_PATTERNS: Lazy<Vec<(Regex, usize)>> = Lazy::new(|| {
+            vec![
+                (
+                    Regex::new(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}").unwrap(),
+                    23,
+                ), // ISO 8601 with ms
+                (
+                    Regex::new(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}").unwrap(),
+                    19,
+                ), // ISO 8601
+                (
+                    Regex::new(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}").unwrap(),
+                    23,
+                ), // Common with ms
+                (
+                    Regex::new(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}").unwrap(),
+                    19,
+                ), // Common
+                (
+                    Regex::new(r"\d{2}/\d{2}/\d{4} \d{2}:\d{2}:\d{2}\.\d{3}").unwrap(),
+                    23,
+                ), // US with ms
+                (
+                    Regex::new(r"\d{2}/\d{2}/\d{4} \d{2}:\d{2}:\d{2}").unwrap(),
+                    19,
+                ), // US
+                (
+                    Regex::new(r"\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}\.\d{3}").unwrap(),
+                    23,
+                ), // Asian with ms
+                (
+                    Regex::new(r"\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}").unwrap(),
+                    19,
+                ), // Asian
+            ]
+        });
 
-                    // 验证时间戳格式
-                    for format in Self::FORMATS {
-                        if let Ok(_dt) =
-                            chrono::NaiveDateTime::parse_from_str(timestamp_str, format)
-                        {
-                            return Some(timestamp_str.to_string());
-                        }
+        for (pattern, _length) in TIMESTAMP_PATTERNS.iter() {
+            if let Some(mat) = pattern.find(line) {
+                let timestamp_str = mat.as_str();
+
+                // 验证时间戳格式
+                for format in Self::FORMATS {
+                    if let Ok(_dt) = chrono::NaiveDateTime::parse_from_str(timestamp_str, format) {
+                        return Some(timestamp_str.to_string());
                     }
                 }
             }

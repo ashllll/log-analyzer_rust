@@ -92,10 +92,7 @@ async fn test_path_mappings_accessibility() {
         // Verify mappings are stored
         for (short_path, original_path) in &result.metadata_mappings {
             let retrieved = db
-                .get_original_path(
-                    "test_workspace",
-                    short_path.to_str().unwrap(),
-                )
+                .get_original_path("test_workspace", short_path.to_str().unwrap())
                 .await
                 .unwrap();
 
@@ -119,10 +116,7 @@ async fn test_feature_flag_toggle() {
     // Create a test archive
     create_test_zip(
         &archive_path,
-        &[
-            ("file1.txt", "content1"),
-            ("file2.txt", "content2"),
-        ],
+        &[("file1.txt", "content1"), ("file2.txt", "content2")],
     )
     .unwrap();
 
@@ -135,9 +129,10 @@ async fn test_feature_flag_toggle() {
 
     // Extract using new system
     let policy = Arc::new(ExtractionPolicy::default());
-    let new_result = extract_archive_async(&archive_path, &extract_dir_new, "test_workspace", policy)
-        .await
-        .unwrap();
+    let new_result =
+        extract_archive_async(&archive_path, &extract_dir_new, "test_workspace", policy)
+            .await
+            .unwrap();
 
     // Both should extract the same number of files
     assert_eq!(old_result.files_extracted, new_result.extracted_files.len());
@@ -164,10 +159,7 @@ async fn test_backward_compatibility() {
     // Create a test archive
     create_test_zip(
         &archive_path,
-        &[
-            ("file1.txt", "content1"),
-            ("nested/file2.txt", "content2"),
-        ],
+        &[("file1.txt", "content1"), ("nested/file2.txt", "content2")],
     )
     .unwrap();
 
@@ -213,18 +205,27 @@ async fn test_nested_archive_extraction() {
 
     // Create outer archive containing inner archive
     let inner_bytes = fs::read(&inner_archive).unwrap();
-    create_test_zip(&outer_archive, &[("inner.zip", std::str::from_utf8(&inner_bytes).unwrap())]).unwrap();
+    create_test_zip(
+        &outer_archive,
+        &[("inner.zip", std::str::from_utf8(&inner_bytes).unwrap())],
+    )
+    .unwrap();
 
     // Extract using enhanced system with depth limit
     let mut policy = ExtractionPolicy::default();
     policy.max_depth = 2; // Allow nested extraction
-    let result = extract_archive_async(&outer_archive, &extract_dir, "test_workspace", Arc::new(policy))
-        .await
-        .unwrap();
+    let result = extract_archive_async(
+        &outer_archive,
+        &extract_dir,
+        "test_workspace",
+        Arc::new(policy),
+    )
+    .await
+    .unwrap();
 
     // Should extract both outer and inner files
     assert!(result.extracted_files.len() >= 1);
-    
+
     // Note: Actual nested extraction behavior depends on processor integration
     // This test verifies the API works correctly
 }

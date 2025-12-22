@@ -5,3 +5,4 @@ export { default as WorkspacesPage } from './WorkspacesPage';
 export { default as TasksPage } from './TasksPage';
 export { default as PerformancePage } from './PerformancePage';
 export { SettingsPage } from './SettingsPage';
+export { PerformanceMonitoringPage } from './PerformanceMonitoringPage';

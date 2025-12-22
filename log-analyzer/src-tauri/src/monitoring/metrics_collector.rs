@@ -842,6 +842,151 @@ impl MetricsCollector {
             ResourceConstraintStatus::Normal
         }
     }
+
+    // ========================================================================
+    // High-Level Operation Recording Methods
+    // ========================================================================
+
+    /// Record a search operation with detailed phase timings
+    /// **Validates: Requirements 4.1** - Detailed timing metrics for search operations
+    pub fn record_search_operation(
+        &self,
+        query: &str,
+        result_count: usize,
+        total_duration: Duration,
+        phase_timings: Vec<(SearchPhase, Duration)>,
+        success: bool,
+    ) {
+        // Increment operation counter
+        self.increment_counter("search_operations_total:{:?}");
+
+        // Record to histogram
+        let total_ms = total_duration.as_secs_f64() * 1000.0;
+        self.observe_histogram("search_duration_ms:{}", total_ms);
+
+        // Create detailed query timing
+        let mut timing = QueryPhaseTiming {
+            query: query.to_string(),
+            result_count: result_count as u64,
+            total_ms,
+            timestamp: SystemTime::now(),
+            ..Default::default()
+        };
+
+        // Fill in phase timings
+        for (phase, duration) in phase_timings {
+            let ms = duration.as_secs_f64() * 1000.0;
+            match phase {
+                SearchPhase::Parsing => timing.parsing_ms = ms,
+                SearchPhase::Execution => timing.execution_ms = ms,
+                SearchPhase::Formatting => timing.result_formatting_ms = ms,
+                SearchPhase::Highlighting => timing.highlighting_ms = ms,
+            }
+        }
+
+        // Record the timing
+        self.record_query_timing(timing);
+
+        // Collect system metrics if this is a significant operation
+        if total_ms > 100.0 {
+            self.collect_and_store_system_metrics();
+        }
+
+        debug!(
+            query = query,
+            result_count = result_count,
+            total_ms = total_ms,
+            success = success,
+            "Recorded search operation"
+        );
+    }
+
+    /// Record a workspace operation (load, refresh, delete)
+    /// **Validates: Requirements 4.1** - Timing metrics for workspace operations
+    pub fn record_workspace_operation(
+        &self,
+        operation_type: &str,
+        workspace_id: &str,
+        file_count: usize,
+        total_duration: Duration,
+        _phase_timings: Vec<(&str, Duration)>,
+        success: bool,
+    ) {
+        // Increment operation counter
+        self.increment_counter("workspace_operations_total:{:?}");
+
+        // Record to histogram
+        let total_ms = total_duration.as_secs_f64() * 1000.0;
+        self.observe_histogram("workspace_operation_duration_ms:{}", total_ms);
+
+        // Collect system metrics if this is a significant operation
+        if total_ms > 500.0 {
+            self.collect_and_store_system_metrics();
+        }
+
+        debug!(
+            operation_type = operation_type,
+            workspace_id = workspace_id,
+            file_count = file_count,
+            total_ms = total_ms,
+            success = success,
+            "Recorded workspace operation"
+        );
+    }
+
+    /// Record a state synchronization operation
+    /// **Validates: Requirements 2.1, 4.1** - State sync latency and success rate tracking
+    pub fn record_state_sync_operation(
+        &self,
+        event_type: &str,
+        workspace_id: &str,
+        latency: Duration,
+        success: bool,
+    ) {
+        // Increment operation counter
+        self.increment_counter("state_sync_operations_total:{:?}");
+
+        if success {
+            self.increment_counter("state_sync_success_total:{:?}");
+        } else {
+            self.increment_counter("state_sync_failure_total:{:?}");
+        }
+
+        // Record latency to histogram
+        let latency_ms = latency.as_secs_f64() * 1000.0;
+        self.observe_histogram("state_sync_latency_ms:{}", latency_ms);
+
+        debug!(
+            event_type = event_type,
+            workspace_id = workspace_id,
+            latency_ms = latency_ms,
+            success = success,
+            "Recorded state sync operation"
+        );
+    }
+
+    /// Reset all metrics
+    pub fn reset_metrics(&self) {
+        // Clear query timings
+        self.query_timings.write().clear();
+
+        // Clear system metrics
+        self.system_metrics.write().clear();
+
+        // Note: Counters, gauges, and histograms cannot be easily reset
+        // In production, you might want to recreate them or use a different approach
+
+        info!("Metrics reset completed");
+    }
+}
+
+/// Search operation phases for detailed timing
+#[derive(Debug, Clone, Copy)]
+pub enum SearchPhase {
+    Parsing,
+    Execution,
+    Formatting,
+    Highlighting,
 }
 
 impl Clone for MetricsCollector {
