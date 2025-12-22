@@ -6,6 +6,7 @@ import {
 import { ErrorBoundary } from 'react-error-boundary';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
+import { Toaster } from 'react-hot-toast';
 
 // 初始化i18n
 import './i18n';
@@ -21,7 +22,7 @@ import { useWorkspaceOperations } from './hooks/useWorkspaceOperations';
 import { useKeywordManager } from './hooks/useKeywordManager';
 
 // 导入UI组件
-import { NavItem, ToastContainer } from './components/ui';
+import { NavItem } from './components/ui';
 import { PageErrorFallback, CompactErrorFallback } from './components/ErrorFallback';
 
 // 导入页面组件
@@ -30,11 +31,9 @@ import { SearchPage, KeywordsPage, WorkspacesPage, TasksPage, PerformancePage, P
 // --- Main App Component (Internal) ---
 function AppContent() {
   const page = useAppStore((state) => state.page);
-  const toasts = useAppStore((state) => state.toasts);
   const activeWorkspaceId = useAppStore((state) => state.activeWorkspaceId);
   const setPage = useAppStore((state) => state.setPage);
   const addToast = useAppStore((state) => state.addToast);
-  const removeToast = useAppStore((state) => state.removeToast);
   
   const { keywordGroups } = useKeywordManager();
   const { workspaces, refreshWorkspaces } = useWorkspaceOperations();
@@ -132,7 +131,41 @@ function AppContent() {
            </ErrorBoundary>
         </div>
       </div>
-      <ToastContainer toasts={toasts} removeToast={removeToast} />
+      <Toaster
+        position="bottom-right"
+        toastOptions={{
+          duration: 3000,
+          style: {
+            background: 'rgb(30, 41, 59)',
+            color: 'rgb(226, 232, 240)',
+            border: '1px solid rgba(148, 163, 184, 0.2)',
+            borderRadius: '0.5rem',
+            padding: '0.75rem 1rem',
+            fontSize: '0.875rem',
+            maxWidth: '400px',
+          },
+          success: {
+            duration: 2500,
+            iconTheme: {
+              primary: '#10b981',
+              secondary: '#1e293b',
+            },
+            style: {
+              border: '1px solid rgba(16, 185, 129, 0.3)',
+            },
+          },
+          error: {
+            duration: 4000,
+            iconTheme: {
+              primary: '#ef4444',
+              secondary: '#1e293b',
+            },
+            style: {
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+            },
+          },
+        }}
+      />
     </div>
   );
 }

@@ -7,6 +7,7 @@
 import { create } from 'zustand';
 import { devtools, subscribeWithSelector } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
+import toast from 'react-hot-toast';
 
 // ============================================================================
 // Types
@@ -52,15 +53,22 @@ export const useAppStore = create<AppState>()(
           state.page = page;
         }),
         
-        addToast: (type, message) => set((state) => {
-          const id = Date.now();
-          state.toasts.push({ id, type, message });
+        addToast: (type, message) => {
+          // 使用 react-hot-toast 替代自定义 Toast
+          const duration = type === 'error' ? 4000 : 3000;
           
-          // 自动移除 Toast (3秒后)
-          setTimeout(() => {
-            useAppStore.getState().removeToast(id);
-          }, 3000);
-        }),
+          switch (type) {
+            case 'success':
+              toast.success(message, { duration });
+              break;
+            case 'error':
+              toast.error(message, { duration });
+              break;
+            case 'info':
+              toast(message, { duration, icon: 'ℹ️' });
+              break;
+          }
+        },
         
         removeToast: (id) => set((state) => {
           state.toasts = state.toasts.filter(t => t.id !== id);

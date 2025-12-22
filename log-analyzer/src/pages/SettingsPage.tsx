@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -141,7 +141,7 @@ export function SettingsPage() {
 
   const handleSave = async () => {
     if (!validatePolicy()) {
-      showToast(t('settings.validation_failed'), 'error');
+      showToast('error', t('settings.validation_failed'));
       return;
     }
 
@@ -149,11 +149,11 @@ export function SettingsPage() {
     try {
       // TODO: Save policy to backend
       // await invoke('update_extraction_policy', { policy });
-      showToast(t('settings.save_success'), 'success');
+      showToast('success', t('settings.save_success'));
     } catch (error) {
       showToast(
-        t('settings.save_error', { error: String(error) }),
-        'error'
+        'error',
+        t('settings.save_error', { error: String(error) })
       );
     } finally {
       setLoading(false);
@@ -163,7 +163,7 @@ export function SettingsPage() {
   const handleReset = () => {
     setPolicy(defaultPolicy);
     setErrors({});
-    showToast(t('settings.reset_success'), 'info');
+    showToast('info', t('settings.reset_success'));
   };
 
   return (

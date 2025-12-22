@@ -211,11 +211,18 @@ const SearchPage: React.FC<SearchPageProps> = ({
           }),
           listen('search-complete', (e) => {
             setIsSearching(false);
-            addToast('success', `Found ${e.payload} logs.`);
+            const count = e.payload as number;
+            // 使用更简洁的通知消息
+            if (count > 0) {
+              addToast('success', `找到 ${count.toLocaleString()} 条日志`);
+            } else {
+              addToast('info', '未找到匹配的日志');
+            }
           }),
           listen('search-error', (e) => {
             setIsSearching(false);
-            addToast('error', `${e.payload}`);
+            const errorMsg = String(e.payload);
+            addToast('error', `搜索失败: ${errorMsg}`);
           })
         ]);
 

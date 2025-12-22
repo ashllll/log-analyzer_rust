@@ -116,6 +116,7 @@ pub fn run() {
             let alerting_system = Arc::new(
                 monitoring::AlertingSystem::new().expect("Failed to create alerting system"),
             );
+            let recommendation_engine = Arc::new(monitoring::RecommendationEngine::new());
 
             AppState {
                 temp_dir: Mutex::new(None),
@@ -137,6 +138,7 @@ pub fn run() {
                 cache_manager,
                 metrics_collector,
                 alerting_system,
+                recommendation_engine,
             }
         })
         .invoke_handler(tauri::generate_handler![

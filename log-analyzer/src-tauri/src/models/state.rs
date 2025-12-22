@@ -13,6 +13,7 @@ use tokio_util::sync::CancellationToken;
 use super::{FileMetadata, LogEntry};
 use crate::monitoring::alerting::AlertingSystem;
 use crate::monitoring::metrics_collector::MetricsCollector;
+use crate::monitoring::recommendation_engine::RecommendationEngine;
 use crate::search_engine::SearchEngineManager;
 use crate::state_sync::StateSync;
 use crate::utils::cache_manager::CacheManager;
@@ -116,6 +117,8 @@ pub struct AppState {
     pub metrics_collector: Arc<MetricsCollector>,
     /// 告警系统（性能阈值违规、资源约束告警）
     pub alerting_system: Arc<AlertingSystem>,
+    /// 智能优化建议引擎（基于规则引擎的性能分析）
+    pub recommendation_engine: Arc<RecommendationEngine>,
 }
 
 impl Drop for AppState {

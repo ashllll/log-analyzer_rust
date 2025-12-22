@@ -213,7 +213,7 @@ async fn test_nested_archive_extraction() {
 
     // Create outer archive containing inner archive as binary data
     let inner_bytes = fs::read(&inner_archive).unwrap();
-    
+
     // Manually create outer archive with binary inner.zip
     let outer_file = fs::File::create(&outer_archive).unwrap();
     let mut zip = ZipWriter::new(outer_file);

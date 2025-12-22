@@ -402,7 +402,7 @@ pub async fn extract_archive_async(
 
     // Calculate performance metrics
     let duration = start_time.elapsed().unwrap_or(Duration::from_secs(0));
-    
+
     // Use the extraction speed from internal result if available
     let speed_mbps = if internal_result.extraction_duration_secs > 0.0 {
         internal_result.speed_mb_per_sec()
