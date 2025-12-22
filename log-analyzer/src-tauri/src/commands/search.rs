@@ -91,7 +91,6 @@ pub async fn search_logs(
 
     let app_handle = app.clone();
     let path_map = Arc::clone(&state.path_map);
-    let search_cache = Arc::clone(&state.search_cache);
     let cache_manager = Arc::clone(&state.cache_manager);
     let total_searches = Arc::clone(&state.total_searches);
     let cache_hits = Arc::clone(&state.cache_hits);

@@ -90,6 +90,11 @@ impl PathManager {
         }
     }
 
+    /// Get the PathManager configuration
+    pub fn config(&self) -> &PathConfig {
+        &self.config
+    }
+
     /// Predict the final path length before extraction
     ///
     /// Considers:

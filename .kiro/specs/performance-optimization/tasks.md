@@ -811,12 +811,16 @@ This implementation plan transforms the performance optimization design into act
   - Ensure all performance tests pass, ask the user if questions arise.
 
 
-- [ ] 17. 端到端集成测试和性能验证
+- [-] 17. 端到端集成测试和性能验证
+
   - 验证所有组件集成后的整体性能
   - 确保满足所有性能要求
   - _Requirements: All_
 
-- [ ] 17.1 修复所有失败的单元测试
+- [x] 17.1 修复所有失败的单元测试
+
+
+
   - 确保 `cargo test --manifest-path log-analyzer/src-tauri/Cargo.toml` 所有测试通过
   - 修复 `archive::security_detector` 属性测试
   - 修复 `services::file_watcher` 时间戳解析测试

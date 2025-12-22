@@ -14,11 +14,11 @@ use std::sync::Arc;
 use tauri::Manager;
 
 // 模块声明
-mod archive;
+pub mod archive; // 公开 archive 模块用于集成测试
 mod benchmark;
 mod commands;
 mod error;
-mod models;
+pub mod models; // 公开 models 模块用于集成测试
 mod monitoring;
 mod search_engine; // 添加搜索引擎模块
 pub mod services; // 公开 services 模块用于基准测试

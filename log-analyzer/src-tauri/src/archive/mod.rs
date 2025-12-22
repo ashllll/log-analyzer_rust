@@ -35,6 +35,16 @@ pub use rar_handler::RarHandler;
 pub use security_detector::{SecurityDetector, SecurityPolicy};
 pub use tar_handler::TarHandler;
 pub use zip_handler::ZipHandler;
+// 导出 checkpoint 相关类型供测试使用
+pub use checkpoint_manager::{Checkpoint, CheckpointConfig, CheckpointManager};
+// 导出 audit logger 相关类型供测试使用
+pub use audit_logger::{AuditLogEntry, AuditLogger};
+// 导出 edge case handlers 相关类型供测试使用
+pub use edge_case_handlers::EdgeCaseHandler;
+// 导出 progress tracker 相关类型供测试使用
+pub use progress_tracker::ProgressTracker;
+// 导出 resource manager 相关类型供测试使用
+pub use resource_manager::ResourceManager as ArchiveResourceManager;
 
 use crate::error::Result;
 use std::path::Path;

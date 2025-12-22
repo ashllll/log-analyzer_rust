@@ -8,9 +8,7 @@
 //! - 错误处理和进度报告
 
 use crate::archive::extraction_engine::ExtractionPolicy;
-use crate::archive::path_manager::PathConfig;
 use crate::archive::public_api::extract_archive_async;
-use crate::archive::security_detector::SecurityPolicy;
 use crate::archive::ArchiveManager;
 use crate::error::{AppError, Result};
 use crate::models::config::FileMetadata;

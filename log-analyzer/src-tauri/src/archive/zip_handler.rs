@@ -206,7 +206,14 @@ impl ArchiveHandler for ZipHandler {
                     )
                 })?;
 
-                summary.add_file(out_path, buffer.len() as u64);
+                // Add file to summary using relative path (relative to target_dir)
+                // This is important because ExtractionEngine expects relative paths
+                let relative_path = out_path
+                    .strip_prefix(target_dir)
+                    .unwrap_or(&out_path)
+                    .to_path_buf();
+
+                summary.add_file(relative_path, buffer.len() as u64);
             }
         }
 

@@ -62,6 +62,12 @@ pub enum WarningCategory {
     UnicodeNormalization,
     /// Insufficient disk space warning
     InsufficientDiskSpace,
+    /// Security violation detected
+    SecurityViolation,
+    /// Extraction error occurred
+    ExtractionError,
+    /// Path resolution error
+    PathError,
 }
 
 /// Performance metrics for extraction operation
@@ -396,7 +402,11 @@ pub async fn extract_archive_async(
 
     // Calculate performance metrics
     let duration = start_time.elapsed().unwrap_or(Duration::from_secs(0));
-    let speed_mbps = if duration.as_secs() > 0 {
+    
+    // Use the extraction speed from internal result if available
+    let speed_mbps = if internal_result.extraction_duration_secs > 0.0 {
+        internal_result.speed_mb_per_sec()
+    } else if duration.as_secs() > 0 {
         (internal_result.total_bytes as f64 / 1_048_576.0) / duration.as_secs_f64()
     } else {
         0.0
@@ -420,6 +430,9 @@ pub async fn extract_archive_async(
                     WarningCategory::HighCompressionRatio
                 }
                 InternalWarningCategory::FileSkipped => WarningCategory::DuplicateFilename,
+                InternalWarningCategory::SecurityEvent => WarningCategory::SecurityViolation,
+                InternalWarningCategory::ArchiveError => WarningCategory::ExtractionError,
+                InternalWarningCategory::PathResolutionError => WarningCategory::PathError,
             },
             message: w.message.clone(),
             file_path: w.file_path.clone(),

@@ -5,3 +5,6 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 863aa10d3a79e03e1b8ee9c4e22d8722875f2958108f4b9be82ec4c1b5c41bc2 # shrinks to nesting_depth = 20
+cc d812cdae940fb65cca3a2d5a41c34ea9c54ba00f65f8f58fc3f24e3fb1dcfa7c # shrinks to nested_levels = 1
+cc daebef36bceec99d79a3e9a6a46634d18a168170de7f24bb0cbc84241c813e2a # shrinks to outer_file_count = 1, outer_file_size = 225612, inner_file_count = 1, inner_file_size = 498048, max_total_size = 1000000
+cc 6fbd5baf8cd9a5a5aca7153e9b5994208490aa8d475db96622300981ee06ad13 # shrinks to long_component = "_A0A0-0A-AA-0aa-aaaaa_AaA0_-A0_--aAaAaAa_-aa_A-_A_0A0AA_-0aA__-aaAa_aAAaA_0A-0A0AaAA--00aAaaAAaa-AAa", workspace_id1 = "_00a0aa_", workspace_id2 = "a_aaaa__"

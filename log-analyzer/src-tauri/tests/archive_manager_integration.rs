@@ -10,7 +10,6 @@ use log_analyzer::archive::{extract_archive_async, ArchiveManager, ExtractionPol
 use log_analyzer::services::MetadataDB;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Arc;
 use tempfile::TempDir;
 
 /// Helper function to create a test ZIP archive
@@ -50,8 +49,8 @@ async fn test_enhanced_extraction_basic_archive() {
     .unwrap();
 
     // Extract using enhanced system
-    let policy = Arc::new(ExtractionPolicy::default());
-    let result = extract_archive_async(&archive_path, &extract_dir, "test_workspace", policy)
+    let policy = ExtractionPolicy::default();
+    let result = extract_archive_async(&archive_path, &extract_dir, "test_workspace", Some(policy))
         .await
         .unwrap();
 
@@ -79,15 +78,15 @@ async fn test_path_mappings_accessibility() {
     create_test_zip(&archive_path, &[(&long_name, "long content")]).unwrap();
 
     // Extract using enhanced system
-    let policy = Arc::new(ExtractionPolicy::default());
-    let result = extract_archive_async(&archive_path, &extract_dir, "test_workspace", policy)
+    let policy = ExtractionPolicy::default();
+    let result = extract_archive_async(&archive_path, &extract_dir, "test_workspace", Some(policy))
         .await
         .unwrap();
 
     // Check if path mappings were created
     if !result.metadata_mappings.is_empty() {
         // Verify we can access the metadata database
-        let db = MetadataDB::new(&db_path).await.unwrap();
+        let db = MetadataDB::new(db_path.to_str().unwrap()).await.unwrap();
 
         // Verify mappings are stored
         for (short_path, original_path) in &result.metadata_mappings {
@@ -128,11 +127,15 @@ async fn test_feature_flag_toggle() {
         .unwrap();
 
     // Extract using new system
-    let policy = Arc::new(ExtractionPolicy::default());
-    let new_result =
-        extract_archive_async(&archive_path, &extract_dir_new, "test_workspace", policy)
-            .await
-            .unwrap();
+    let policy = ExtractionPolicy::default();
+    let new_result = extract_archive_async(
+        &archive_path,
+        &extract_dir_new,
+        "test_workspace",
+        Some(policy),
+    )
+    .await
+    .unwrap();
 
     // Both should extract the same number of files
     assert_eq!(old_result.files_extracted, new_result.extracted_files.len());
@@ -178,10 +181,11 @@ async fn test_backward_compatibility() {
     fs::remove_dir_all(&extract_dir).unwrap();
 
     // Second extraction using new system should work the same way
-    let policy = Arc::new(ExtractionPolicy::default());
-    let new_result = extract_archive_async(&archive_path, &extract_dir, "test_workspace", policy)
-        .await
-        .unwrap();
+    let policy = ExtractionPolicy::default();
+    let new_result =
+        extract_archive_async(&archive_path, &extract_dir, "test_workspace", Some(policy))
+            .await
+            .unwrap();
 
     assert_eq!(new_result.extracted_files.len(), 2);
     assert!(extract_dir.join("file1.txt").exists());
@@ -195,6 +199,10 @@ async fn test_backward_compatibility() {
 /// Test that enhanced extraction handles nested archives
 #[tokio::test]
 async fn test_nested_archive_extraction() {
+    use std::io::Write;
+    use zip::write::FileOptions;
+    use zip::ZipWriter;
+
     let temp_dir = TempDir::new().unwrap();
     let inner_archive = temp_dir.path().join("inner.zip");
     let outer_archive = temp_dir.path().join("outer.zip");
@@ -203,25 +211,23 @@ async fn test_nested_archive_extraction() {
     // Create inner archive
     create_test_zip(&inner_archive, &[("inner_file.txt", "inner content")]).unwrap();
 
-    // Create outer archive containing inner archive
+    // Create outer archive containing inner archive as binary data
     let inner_bytes = fs::read(&inner_archive).unwrap();
-    create_test_zip(
-        &outer_archive,
-        &[("inner.zip", std::str::from_utf8(&inner_bytes).unwrap())],
-    )
-    .unwrap();
+    
+    // Manually create outer archive with binary inner.zip
+    let outer_file = fs::File::create(&outer_archive).unwrap();
+    let mut zip = ZipWriter::new(outer_file);
+    zip.start_file("inner.zip", FileOptions::default()).unwrap();
+    zip.write_all(&inner_bytes).unwrap();
+    zip.finish().unwrap();
 
     // Extract using enhanced system with depth limit
     let mut policy = ExtractionPolicy::default();
     policy.max_depth = 2; // Allow nested extraction
-    let result = extract_archive_async(
-        &outer_archive,
-        &extract_dir,
-        "test_workspace",
-        Arc::new(policy),
-    )
-    .await
-    .unwrap();
+    let result =
+        extract_archive_async(&outer_archive, &extract_dir, "test_workspace", Some(policy))
+            .await
+            .unwrap();
 
     // Should extract both outer and inner files
     assert!(result.extracted_files.len() >= 1);
@@ -242,8 +248,8 @@ async fn test_warning_reporting() {
     create_test_zip(&archive_path, &[(&long_name, "content")]).unwrap();
 
     // Extract using enhanced system
-    let policy = Arc::new(ExtractionPolicy::default());
-    let result = extract_archive_async(&archive_path, &extract_dir, "test_workspace", policy)
+    let policy = ExtractionPolicy::default();
+    let result = extract_archive_async(&archive_path, &extract_dir, "test_workspace", Some(policy))
         .await
         .unwrap();
 
@@ -272,8 +278,8 @@ async fn test_performance_metrics() {
     .unwrap();
 
     // Extract using enhanced system
-    let policy = Arc::new(ExtractionPolicy::default());
-    let result = extract_archive_async(&archive_path, &extract_dir, "test_workspace", policy)
+    let policy = ExtractionPolicy::default();
+    let result = extract_archive_async(&archive_path, &extract_dir, "test_workspace", Some(policy))
         .await
         .unwrap();
 
