@@ -11,3 +11,28 @@ log-analyzer/src-tauri/target
 *.ps1
 CI_CHECK_SUMMARY.md
 fix-clippy-warnings.md
+
+# 临时编译错误文件
+compile_errors*.txt
+COMMIT_MESSAGE.txt
+
+# 临时状态文档（应移动到 docs/reports/archive/）
+*_STATUS.md
+*_SUMMARY.md
+*_REPORT.md
+*_COMPLETION*.md
+*_VERIFICATION*.md
+*_IMPLEMENTATION*.md
+*_INTEGRATION*.md
+*_OPTIMIZATION*.md
+*_MONITORING*.md
+*_LIFECYCLE*.md
+*_CLEANUP*.md
+*_FIX*.md
+*_REMOVAL*.md
+
+# 保留重要文档
+!README.md
+!CHANGELOG.md
+!docs/**/*.md
+!.kiro/**/*.md

@@ -613,14 +613,26 @@ npm run build                          # 构建检查
 
 ## 📚 文档
 
-项目文档统一存放在[`docs/`](docs/)目录下：
+项目文档统一存放在[`docs/`](docs/)目录下，按照功能分类组织。完整的文档索引请查看 **[docs/README.md](docs/README.md)**。
 
-- **[API.md](docs/API.md)** - 完整的API接口文档
-- **[OPTIMIZATION_REPORT.md](docs/OPTIMIZATION_REPORT.md)** - 优化实施报告（3,000+字详细分析）
-- **[CHANGES_SUMMARY.md](docs/CHANGES_SUMMARY.md)** - 详细的变更历史和功能演进记录
-- **[DELIVERY_PACKAGE.md](docs/DELIVERY_PACKAGE.md)** - 项目交付包说明和发布指南
-- **[QUICK_REFERENCE.md](docs/QUICK_REFERENCE.md)** - 快速参考手册和常用命令
-- **[MULTI_KEYWORD_SEARCH_GUIDE.md](docs/MULTI_KEYWORD_SEARCH_GUIDE.md)** - 多关键词搜索功能指南
+### 📐 架构文档
+- **[API.md](docs/architecture/API.md)** - 完整的API接口文档
+- **[ADVANCED_SEARCH_FEATURES_EXPLANATION.md](docs/architecture/ADVANCED_SEARCH_FEATURES_EXPLANATION.md)** - 高级搜索功能说明
+
+### 📚 用户指南
+- **[QUICK_REFERENCE.md](docs/guides/QUICK_REFERENCE.md)** - 快速参考手册和常用命令
+- **[MULTI_KEYWORD_SEARCH_GUIDE.md](docs/guides/MULTI_KEYWORD_SEARCH_GUIDE.md)** - 多关键词搜索功能指南
+
+### 🛠️ 开发文档
+- **[AGENTS.md](docs/development/AGENTS.md)** - 项目开发指南和规范
+- **[CLAUDE.md](docs/development/CLAUDE.md)** - Claude AI 使用说明
+- **[gitlab-local-testing.md](docs/development/gitlab-local-testing.md)** - GitLab 本地测试指南
+- **[jenkins-local-testing.md](docs/development/jenkins-local-testing.md)** - Jenkins 本地测试指南
+- **[upgrade-nodejs.md](docs/development/upgrade-nodejs.md)** - Node.js 升级指南
+
+### 📊 项目报告
+- **[TASK_13_FINAL_VALIDATION_REPORT.md](docs/reports/TASK_13_FINAL_VALIDATION_REPORT.md)** - TaskManager 生产就绪验证报告
+- **[历史报告归档](docs/reports/archive/)** - 已完成的历史报告和状态文档
 
 ### 规格文档
 
@@ -634,7 +646,6 @@ npm run build                          # 构建检查
 ### 更多资源
 
 - **[CHANGELOG.md](CHANGELOG.md)** - 完整的更新日志
-- **[AGENTS.md](AGENTS.md)** - 项目开发指南和规范
 - **[setup_log_analyzer.sh](setup_log_analyzer.sh)** - 一键初始化脚本
 
 ---
