@@ -19,17 +19,22 @@ pub mod streaming_builder;
 #[cfg(test)]
 pub mod property_tests;
 
+// 公共 API 导出 - 这些类型供外部模块使用
+#[allow(unused_imports)]
 pub use advanced_features::{
     AutocompleteEngine, FilterEngine, RegexSearchEngine, TimePartitionedIndex,
 };
 pub use boolean_query_processor::BooleanQueryProcessor;
+#[allow(unused_imports)]
 pub use concurrent_search::{
     ConcurrentSearchConfig, ConcurrentSearchManager, ConcurrentSearchStats,
 };
 pub use highlighting_engine::{HighlightingConfig, HighlightingEngine, HighlightingStats};
 pub use manager::SearchEngineManager;
+#[allow(unused_imports)]
 pub use query_optimizer::QueryOptimizer;
 pub use schema::LogSchema;
+#[allow(unused_imports)]
 pub use streaming_builder::StreamingIndexBuilder;
 
 use thiserror::Error;

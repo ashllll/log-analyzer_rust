@@ -114,38 +114,42 @@ pub async fn refresh_workspace(
         source_path.to_path_buf()
     });
 
-    let event_bus = get_event_bus();
-    let _ = event_bus.publish_task_update(TaskProgress {
-        task_id: task_id.clone(),
-        task_type: "Refresh".to_string(),
-        target: canonical_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or(&path)
-            .to_string(),
-        status: "RUNNING".to_string(),
-        message: "Loading existing index...".to_string(),
-        progress: 0,
-        workspace_id: Some(workspaceId.clone()),
-    });
+    // 使用 TaskManager 创建任务
+    let target_name = canonical_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(&path)
+        .to_string();
 
-    // 同时发送到 Tauri 前端（向后兼容）
-    let _ = app.emit(
-        "task-update",
-        TaskProgress {
-            task_id: task_id.clone(),
-            task_type: "Refresh".to_string(),
-            target: canonical_path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or(&path)
-                .to_string(),
-            status: "RUNNING".to_string(),
-            message: "Loading existing index...".to_string(),
-            progress: 0,
-            workspace_id: Some(workspaceId.clone()),
-        },
-    );
+    let task = if let Some(task_manager) = state.task_manager.lock().as_ref() {
+        task_manager.create_task(
+            task_id.clone(),
+            "Refresh".to_string(),
+            target_name.clone(),
+            Some(workspaceId.clone()),
+        )
+    } else {
+        return Err("Task manager not initialized".to_string());
+    };
+
+    // 发送初始任务事件
+    let _ = app.emit("task-update", task);
+
+    // 同时发送到事件总线（向后兼容）
+    let event_bus = get_event_bus();
+    if let Some(task_manager) = state.task_manager.lock().as_ref() {
+        if let Some(task) = task_manager.get_task(&task_id) {
+            let _ = event_bus.publish_task_update(crate::models::TaskProgress {
+                task_id: task.id.clone(),
+                task_type: task.task_type.clone(),
+                target: task.target.clone(),
+                status: format!("{:?}", task.status).to_uppercase(),
+                message: task.message.clone(),
+                progress: task.progress,
+                workspace_id: task.workspace_id.clone(),
+            });
+        }
+    }
 
     let index_dir = app
         .path()
@@ -163,28 +167,29 @@ pub async fn refresh_workspace(
 
     std::thread::spawn(move || {
         let operation_start = std::time::Instant::now();
-        let file_name = Path::new(&path)
+        let _file_name = Path::new(&path)
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("Unknown")
             .to_string();
 
         let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+            let state = app_handle.state::<AppState>();
+
             let (mut existing_path_map, mut existing_metadata) =
                 load_index(&index_path).map_err(|e| e.to_string())?;
 
-            let _ = app_handle.emit(
-                "task-update",
-                TaskProgress {
-                    task_id: task_id_clone.clone(),
-                    task_type: "Refresh".to_string(),
-                    target: file_name.clone(),
-                    status: "RUNNING".to_string(),
-                    message: "Scanning file system...".to_string(),
-                    progress: 20,
-                    workspace_id: Some(workspace_id_clone.clone()),
-                },
-            );
+            // 更新任务进度：扫描文件系统
+            if let Some(task_manager) = state.task_manager.lock().as_ref() {
+                if let Some(task) = task_manager.update_task(
+                    &task_id_clone,
+                    20,
+                    "Scanning file system...".to_string(),
+                    crate::task_manager::TaskStatus::Running,
+                ) {
+                    let _ = app_handle.emit("task-update", task);
+                }
+            }
 
             let mut current_files: HashMap<String, FileMetadata> = HashMap::new();
             let source_path = Path::new(&path);
@@ -200,18 +205,17 @@ pub async fn refresh_workspace(
                 }
             }
 
-            let _ = app_handle.emit(
-                "task-update",
-                TaskProgress {
-                    task_id: task_id_clone.clone(),
-                    task_type: "Refresh".to_string(),
-                    target: file_name.clone(),
-                    status: "RUNNING".to_string(),
-                    message: "Analyzing changes...".to_string(),
-                    progress: 40,
-                    workspace_id: Some(workspace_id_clone.clone()),
-                },
-            );
+            // 更新任务进度：分析变更
+            if let Some(task_manager) = state.task_manager.lock().as_ref() {
+                if let Some(task) = task_manager.update_task(
+                    &task_id_clone,
+                    40,
+                    "Analyzing changes...".to_string(),
+                    crate::task_manager::TaskStatus::Running,
+                ) {
+                    let _ = app_handle.emit("task-update", task);
+                }
+            }
 
             let mut new_files: Vec<String> = Vec::new();
             let mut modified_files: Vec<String> = Vec::new();
@@ -237,20 +241,18 @@ pub async fn refresh_workspace(
             let total_changes = new_files.len() + modified_files.len() + deleted_files.len();
 
             if total_changes > 0 {
-                let _ = app_handle.emit(
-                    "task-update",
-                    TaskProgress {
-                        task_id: task_id_clone.clone(),
-                        task_type: "Refresh".to_string(),
-                        target: file_name.clone(),
-                        status: "RUNNING".to_string(),
-                        message: format!("Processing {} changes...", total_changes),
-                        progress: 60,
-                        workspace_id: Some(workspace_id_clone.clone()),
-                    },
-                );
+                // 更新任务进度：处理变更
+                if let Some(task_manager) = state.task_manager.lock().as_ref() {
+                    if let Some(task) = task_manager.update_task(
+                        &task_id_clone,
+                        60,
+                        format!("Processing {} changes...", total_changes),
+                        crate::task_manager::TaskStatus::Running,
+                    ) {
+                        let _ = app_handle.emit("task-update", task);
+                    }
+                }
 
-                let state = app_handle.state::<AppState>();
                 let temp_guard = state.temp_dir.lock();
 
                 if let Some(ref _temp_dir) = *temp_guard {
@@ -309,18 +311,17 @@ pub async fn refresh_workspace(
                     }
                 }
 
-                let _ = app_handle.emit(
-                    "task-update",
-                    TaskProgress {
-                        task_id: task_id_clone.clone(),
-                        task_type: "Refresh".to_string(),
-                        target: file_name.clone(),
-                        status: "RUNNING".to_string(),
-                        message: "Saving index...".to_string(),
-                        progress: 80,
-                        workspace_id: Some(workspace_id_clone.clone()),
-                    },
-                );
+                // 更新任务进度：保存索引
+                if let Some(task_manager) = state.task_manager.lock().as_ref() {
+                    if let Some(task) = task_manager.update_task(
+                        &task_id_clone,
+                        80,
+                        "Saving index...".to_string(),
+                        crate::task_manager::TaskStatus::Running,
+                    ) {
+                        let _ = app_handle.emit("task-update", task);
+                    }
+                }
 
                 save_index(
                     &app_handle,
@@ -330,7 +331,6 @@ pub async fn refresh_workspace(
                 )
                 .map_err(|e| e.to_string())?;
 
-                let state = app_handle.state::<AppState>();
                 let mut map_guard = state.path_map.lock();
                 let mut metadata_guard = state.file_metadata.lock();
 
@@ -341,22 +341,22 @@ pub async fn refresh_workspace(
             Ok::<(), String>(())
         }));
 
+        let state = app_handle.state::<AppState>();
+
         if result.is_err() {
-            let _ = app_handle.emit(
-                "task-update",
-                TaskProgress {
-                    task_id: task_id_clone.clone(),
-                    task_type: "Refresh".to_string(),
-                    target: file_name.clone(),
-                    status: "FAILED".to_string(),
-                    message: "Refresh failed".to_string(),
-                    progress: 0,
-                    workspace_id: Some(workspace_id_clone.clone()),
-                },
-            );
+            // 更新任务状态为失败
+            if let Some(task_manager) = state.task_manager.lock().as_ref() {
+                if let Some(task) = task_manager.update_task(
+                    &task_id_clone,
+                    0,
+                    "Refresh failed".to_string(),
+                    crate::task_manager::TaskStatus::Failed,
+                ) {
+                    let _ = app_handle.emit("task-update", task);
+                }
+            }
 
             // 记录失败的性能指标
-            let state = app_handle.state::<AppState>();
             state.metrics_collector.record_workspace_operation(
                 "refresh",
                 &workspace_id_clone,
@@ -366,22 +366,21 @@ pub async fn refresh_workspace(
                 false,
             );
         } else {
-            let _ = app_handle.emit(
-                "task-update",
-                TaskProgress {
-                    task_id: task_id_clone.clone(),
-                    task_type: "Refresh".to_string(),
-                    target: file_name,
-                    status: "COMPLETED".to_string(),
-                    message: "Refresh complete".to_string(),
-                    progress: 100,
-                    workspace_id: Some(workspace_id_clone.clone()),
-                },
-            );
+            // 更新任务状态为完成
+            if let Some(task_manager) = state.task_manager.lock().as_ref() {
+                if let Some(task) = task_manager.update_task(
+                    &task_id_clone,
+                    100,
+                    "Refresh complete".to_string(),
+                    crate::task_manager::TaskStatus::Completed,
+                ) {
+                    let _ = app_handle.emit("task-update", task);
+                }
+            }
+
             let _ = app_handle.emit("import-complete", task_id_clone.clone());
 
             // 失效该工作区的所有缓存
-            let state = app_handle.state::<AppState>();
             if let Err(e) = state
                 .cache_manager
                 .invalidate_workspace_cache(&workspace_id_clone)
@@ -402,7 +401,7 @@ pub async fn refresh_workspace(
             state.metrics_collector.record_workspace_operation(
                 "refresh",
                 &workspace_id_clone,
-                0, // 文件数量在 result 中，这里简化为 0
+                0,
                 total_duration,
                 vec![],
                 true,
@@ -440,7 +439,7 @@ use tauri::{command, AppHandle, Emitter, Manager, State};
 use uuid::Uuid;
 use walkdir::WalkDir;
 
-use crate::models::{AppState, FileMetadata, TaskProgress};
+use crate::models::{AppState, FileMetadata};
 use crate::services::{get_event_bus, get_file_metadata, load_index, save_index};
 use crate::utils::{
     canonicalize_path, cleanup::try_cleanup_temp_dir, normalize_path_separator,

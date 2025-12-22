@@ -192,7 +192,6 @@ impl ExtractionResult {
     }
 }
 
-
 /// Warning encountered during extraction
 #[derive(Debug, Clone)]
 pub struct ExtractionWarning {
@@ -242,7 +241,10 @@ impl HandlerRegistry {
     }
 
     /// Find a handler that can process the given file
-    fn find_handler(&self, path: &Path) -> Option<&dyn crate::archive::archive_handler::ArchiveHandler> {
+    fn find_handler(
+        &self,
+        path: &Path,
+    ) -> Option<&dyn crate::archive::archive_handler::ArchiveHandler> {
         self.handlers
             .iter()
             .find(|h| h.can_handle(path))
@@ -396,7 +398,7 @@ impl ExtractionEngine {
     async fn extract_iterative(&self, initial_item: ExtractionItem) -> Result<ExtractionResult> {
         // Start timing the extraction
         let start_time = std::time::Instant::now();
-        
+
         let mut stack = ExtractionStack::new();
         let mut result = ExtractionResult {
             workspace_id: initial_item.parent_context.workspace_id.clone(),
@@ -486,20 +488,20 @@ impl ExtractionEngine {
                         "Archive-level error processing {:?} at depth {}: {}",
                         item.archive_path, item.depth, e
                     );
-                    
+
                     // Determine warning category based on error type
                     let category = if e.to_string().contains("Security") {
                         WarningCategory::SecurityEvent
                     } else {
                         WarningCategory::ArchiveError
                     };
-                    
+
                     result.warnings.push(ExtractionWarning {
                         message: format!("Failed to extract archive: {}", e),
                         file_path: Some(item.archive_path.clone()),
                         category,
                     });
-                    
+
                     // Continue processing other archives in the stack
                     info!(
                         "Continuing with remaining {} archive(s) in stack after error",
@@ -512,10 +514,8 @@ impl ExtractionEngine {
         // Calculate extraction duration and speed
         let duration = start_time.elapsed();
         result.extraction_duration_secs = duration.as_secs_f64();
-        result.extraction_speed_bytes_per_sec = ExtractionResult::calculate_speed(
-            result.total_bytes,
-            result.extraction_duration_secs,
-        );
+        result.extraction_speed_bytes_per_sec =
+            ExtractionResult::calculate_speed(result.total_bytes, result.extraction_duration_secs);
 
         // Log performance metrics
         info!(
@@ -582,17 +582,12 @@ impl ExtractionEngine {
         let registry = self.create_handler_registry();
 
         // Find appropriate handler
-        let handler = registry
-            .find_handler(&item.archive_path)
-            .ok_or_else(|| {
-                AppError::archive_error(
-                    format!(
-                        "No handler found for archive: {:?}",
-                        item.archive_path
-                    ),
-                    Some(item.archive_path.clone()),
-                )
-            })?;
+        let handler = registry.find_handler(&item.archive_path).ok_or_else(|| {
+            AppError::archive_error(
+                format!("No handler found for archive: {:?}", item.archive_path),
+                Some(item.archive_path.clone()),
+            )
+        })?;
 
         debug!(
             "Using handler for archive: {:?}",
@@ -655,7 +650,10 @@ impl ExtractionEngine {
 
                 // Add to stack for processing
                 stack.push(nested_item).map_err(|e| {
-                    AppError::archive_error(format!("Failed to add nested archive to stack: {}", e), Some(file_path.to_path_buf()))
+                    AppError::archive_error(
+                        format!("Failed to add nested archive to stack: {}", e),
+                        Some(file_path.to_path_buf()),
+                    )
                 })?;
 
                 debug!(
@@ -699,13 +697,13 @@ impl ExtractionEngine {
     /// Create handler registry with all available handlers
     fn create_handler_registry(&self) -> HandlerRegistry {
         let mut registry = HandlerRegistry::new();
-        
+
         // Register all handlers
         registry.register(Box::new(crate::archive::zip_handler::ZipHandler));
         registry.register(Box::new(crate::archive::tar_handler::TarHandler));
         registry.register(Box::new(crate::archive::gz_handler::GzHandler));
         registry.register(Box::new(crate::archive::rar_handler::RarHandler));
-        
+
         registry
     }
 

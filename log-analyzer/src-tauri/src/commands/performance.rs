@@ -89,46 +89,40 @@ pub async fn get_performance_recommendations(
     let cache_metrics = state.cache_manager.get_performance_metrics();
     let system_metrics = state.metrics_collector.get_current_system_metrics();
 
-    // 生成简单的优化建议
-    let mut recommendations = Vec::new();
+    // 创建性能快照
+    let snapshot = crate::monitoring::PerformanceSnapshot {
+        query_stats,
+        cache_metrics,
+        system_metrics,
+        timestamp: std::time::SystemTime::now(),
+    };
 
-    // 基于查询性能的建议
-    if query_stats.avg_total_ms > 200.0 {
-        recommendations.push(format!(
-            "搜索平均响应时间 {:.2}ms 超过阈值 200ms，建议优化查询或增加索引",
-            query_stats.avg_total_ms
-        ));
+    // 记录快照用于趋势分析
+    state
+        .recommendation_engine
+        .record_snapshot(snapshot.clone());
+
+    // 使用智能建议引擎生成建议
+    let recommendations = state
+        .recommendation_engine
+        .generate_recommendations(&snapshot);
+
+    // 转换为字符串格式（保持向后兼容）
+    let result: Vec<String> = recommendations
+        .into_iter()
+        .take(limit)
+        .map(|rec| {
+            // 格式：[优先级] 标题 - 描述
+            format!("{}", rec.description)
+        })
+        .collect();
+
+    // 如果没有建议，返回默认消息
+    if result.is_empty() {
+        Ok(vec!["系统性能良好，无需优化".to_string()])
+    } else {
+        Ok(result)
     }
-
-    // 基于缓存性能的建议
-    if cache_metrics.l1_hit_rate < 0.7 {
-        recommendations.push(format!(
-            "缓存命中率 {:.2}% 低于 70%，建议增加缓存大小或优化缓存策略",
-            cache_metrics.l1_hit_rate * 100.0
-        ));
-    }
-
-    // 基于系统资源的建议
-    if let Some(sys_metrics) = system_metrics {
-        if sys_metrics.memory_usage_percent > 80.0 {
-            recommendations.push(format!(
-                "内存使用率 {:.2}% 超过 80%，建议释放内存或增加系统内存",
-                sys_metrics.memory_usage_percent
-            ));
-        }
-        if sys_metrics.cpu_usage_percent > 80.0 {
-            recommendations.push(format!(
-                "CPU 使用率 {:.2}% 超过 80%，建议优化计算密集型操作",
-                sys_metrics.cpu_usage_percent
-            ));
-        }
-    }
-
-    if recommendations.is_empty() {
-        recommendations.push("系统性能良好，无需优化".to_string());
-    }
-
-    Ok(recommendations.into_iter().take(limit).collect())
 }
 
 /// 重置性能指标

@@ -1,7 +1,10 @@
 /**
  * 任务状态 Store - 使用 Zustand + Immer
  * 
- * 实现任务去重逻辑,防止重复创建任务
+ * 实现任务生命周期管理：
+ * 1. 任务去重逻辑，防止重复创建任务
+ * 2. 自动清理已完成/失败的任务（TTL机制）
+ * 3. 状态机模式确保状态转换的正确性
  */
 
 import { create } from 'zustand';
@@ -20,15 +23,12 @@ export interface Task {
   message: string;
   status: 'RUNNING' | 'COMPLETED' | 'FAILED' | 'STOPPED';
   workspaceId?: string;
+  completedAt?: number; // 完成时间戳，用于TTL清理
 }
 
 interface TaskState {
   // State
-  tasks: Task[];
-  loading: boolean;
-  error: string | null;
-  
-  // Actions
+  tasks: ons
   setTasks: (tasks: Task[]) => void;
   addTask: (task: Task) => void;
   addTaskIfNotExists: (task: Task) => void; // 带去重的添加

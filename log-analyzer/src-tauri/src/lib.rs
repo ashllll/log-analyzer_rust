@@ -23,6 +23,7 @@ mod monitoring;
 mod search_engine; // 添加搜索引擎模块
 pub mod services; // 公开 services 模块用于基准测试
 mod state_sync; // 添加状态同步模块
+mod task_manager; // 任务生命周期管理模块
 pub mod utils; // 公开 utils 模块用于基准测试
 
 // 从模块导入类型
@@ -116,6 +117,7 @@ pub fn run() {
             let alerting_system = Arc::new(
                 monitoring::AlertingSystem::new().expect("Failed to create alerting system"),
             );
+            let recommendation_engine = Arc::new(monitoring::RecommendationEngine::new());
 
             AppState {
                 temp_dir: Mutex::new(None),
@@ -137,6 +139,8 @@ pub fn run() {
                 cache_manager,
                 metrics_collector,
                 alerting_system,
+                recommendation_engine,
+                task_manager: Arc::new(parking_lot::Mutex::new(None)), // 延迟初始化
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -166,6 +170,17 @@ pub fn run() {
         .setup(|app| {
             // 获取 AppState
             let state = app.state::<AppState>();
+
+            // 初始化任务管理器
+            let task_manager_config = task_manager::TaskManagerConfig {
+                completed_task_ttl: 3, // 完成任务保留 3 秒
+                failed_task_ttl: 10,   // 失败任务保留 10 秒
+                cleanup_interval: 1,   // 每秒检查一次
+            };
+            let task_manager =
+                task_manager::TaskManager::new(app.handle().clone(), task_manager_config);
+            *state.task_manager.lock() = Some(task_manager);
+            tracing::info!("Task manager initialized successfully");
 
             // 启动性能监控系统
             let metrics_collector = state.metrics_collector.clone();

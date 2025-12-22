@@ -17,7 +17,6 @@ use crate::services::file_watcher::get_file_metadata;
 use crate::utils::path::normalize_path_separator;
 use std::collections::HashMap;
 use std::path::{Component, Path};
-use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use tokio::fs;
 use walkdir::WalkDir;

@@ -1,579 +1,633 @@
-//! Optimization Recommendation Engine
+//! 性能优化建议引擎
 //!
-//! **Feature: performance-optimization, Property 19: Optimization Recommendations**
-//! Analyzes performance patterns and provides automatic recommendations for:
-//! - Query optimization and index tuning
-//! - Resource allocation suggestions
-//! - Performance trend analysis and capacity planning
+//! 基于规则引擎的智能优化建议系统
+//! 采用业内成熟的专家系统架构，支持：
+//! - 多维度性能分析
+//! - 优先级排序
+//! - 趋势检测
+//! - 根因分析
 
-use crate::monitoring::metrics_collector::{
-    CacheMetricsSnapshot, QueryTimingStats, SystemResourceMetrics,
-};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::time::SystemTime;
+use std::sync::Arc;
 
-/// Types of optimization recommendations
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum RecommendationType {
-    QueryOptimization,
-    IndexTuning,
-    ResourceAllocation,
-    CacheTuning,
-    CapacityPlanning,
-    /// Performance trend warning
-    PerformanceTrend,
-    /// System configuration suggestion
-    SystemConfiguration,
+use super::metrics_collector::{CacheMetricsSnapshot, QueryTimingStats, SystemResourceMetrics};
+
+/// 优化建议
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Recommendation {
+    /// 建议 ID
+    pub id: String,
+    /// 建议标题
+    pub title: String,
+    /// 详细描述
+    pub description: String,
+    /// 优先级 (1-5, 5 最高)
+    pub priority: u8,
+    /// 类别
+    pub category: RecommendationCategory,
+    /// 影响范围
+    pub impact: ImpactLevel,
+    /// 置信度 (0.0-1.0)
+    pub confidence: f64,
+    /// 相关指标
+    pub metrics: HashMap<String, f64>,
+    /// 建议的操作步骤
+    pub actions: Vec<String>,
 }
 
-/// Priority level for recommendations
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, PartialOrd)]
-pub enum RecommendationPriority {
+/// 建议类别
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub enum RecommendationCategory {
+    /// 查询性能
+    QueryPerformance,
+    /// 缓存优化
+    CacheOptimization,
+    /// 内存管理
+    MemoryManagement,
+    /// CPU 优化
+    CpuOptimization,
+    /// 索引优化
+    IndexOptimization,
+    /// 配置调优
+    Configuration,
+}
+
+/// 影响级别
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ImpactLevel {
+    /// 低影响
     Low,
+    /// 中等影响
     Medium,
+    /// 高影响
     High,
+    /// 严重影响
     Critical,
 }
 
-/// Individual optimization recommendation
-/// **Validates: Requirements 4.5** - Optimization recommendations
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Recommendation {
-    pub id: String,
-    pub rec_type: RecommendationType,
-    pub priority: RecommendationPriority,
-    pub title: String,
-    pub description: String,
-    pub action_item: String,
-    pub impact_score: f64, // 0.0 to 1.0
-    pub timestamp: SystemTime,
-    /// Estimated improvement percentage if recommendation is followed
-    pub estimated_improvement: Option<f64>,
-    /// Related metrics that triggered this recommendation
-    pub related_metrics: HashMap<String, f64>,
-    /// Specific configuration changes suggested
-    pub config_suggestions: Vec<ConfigSuggestion>,
-}
-
-/// Configuration suggestion for a recommendation
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConfigSuggestion {
-    pub config_key: String,
-    pub current_value: String,
-    pub suggested_value: String,
-    pub rationale: String,
-}
-
-/// Performance trend data for analysis
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PerformanceTrend {
-    pub metric_name: String,
-    pub trend_direction: TrendDirection,
-    pub change_percentage: f64,
-    pub time_window_hours: u32,
-    pub data_points: Vec<f64>,
-}
-
-/// Direction of a performance trend
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum TrendDirection {
-    Improving,
-    Stable,
-    Degrading,
-    Unknown,
-}
-
-/// Capacity planning recommendation
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CapacityPlanningInfo {
-    pub resource_type: String,
-    pub current_usage_percent: f64,
-    pub projected_usage_percent: f64,
-    pub days_until_threshold: Option<u32>,
-    pub recommended_action: String,
-}
-
-/// Recommendation engine for performance optimization
-/// **Feature: performance-optimization, Property 19: Optimization Recommendations**
-pub struct RecommendationEngine {
-    last_analysis: parking_lot::RwLock<SystemTime>,
-    /// Historical performance data for trend analysis
-    performance_history: parking_lot::RwLock<Vec<PerformanceSnapshot>>,
-    /// Maximum history entries to retain
-    max_history_entries: usize,
-}
-
-/// Snapshot of performance metrics at a point in time
+/// 性能快照
 #[derive(Debug, Clone)]
-struct PerformanceSnapshot {
-    #[allow(dead_code)]
-    timestamp: SystemTime,
-    avg_search_time_ms: f64,
-    cache_hit_rate: f64,
-    cpu_usage: f64,
-    memory_usage: f64,
+pub struct PerformanceSnapshot {
+    pub query_stats: QueryTimingStats,
+    pub cache_metrics: CacheMetricsSnapshot,
+    pub system_metrics: Option<SystemResourceMetrics>,
+    pub timestamp: std::time::SystemTime,
+}
+
+/// 优化建议引擎
+pub struct RecommendationEngine {
+    /// 规则集
+    rules: Vec<Box<dyn RecommendationRule + Send + Sync>>,
+    /// 历史快照（用于趋势分析）
+    history: Arc<parking_lot::RwLock<Vec<PerformanceSnapshot>>>,
+    /// 最大历史记录数
+    max_history: usize,
+}
+
+/// 建议规则 trait
+pub trait RecommendationRule: Send + Sync {
+    /// 规则名称
+    fn name(&self) -> &str;
+
+    /// 评估规则，返回建议（如果适用）
+    fn evaluate(
+        &self,
+        snapshot: &PerformanceSnapshot,
+        history: &[PerformanceSnapshot],
+    ) -> Option<Recommendation>;
+
+    /// 规则优先级
+    fn priority(&self) -> u8 {
+        3
+    }
 }
 
 impl RecommendationEngine {
-    /// Create a new recommendation engine
+    /// 创建新的建议引擎
     pub fn new() -> Self {
-        Self {
-            last_analysis: parking_lot::RwLock::new(SystemTime::now()),
-            performance_history: parking_lot::RwLock::new(Vec::new()),
-            max_history_entries: 1000,
-        }
-    }
-
-    /// Analyze performance metrics and generate recommendations
-    /// **Validates: Requirements 4.5** - Optimization recommendations
-    pub fn analyze_and_recommend(
-        &self,
-        metrics: &HashMap<String, serde_json::Value>,
-        cache_metrics: &CacheMetricsSnapshot,
-    ) -> Vec<Recommendation> {
-        let mut recommendations = Vec::new();
-
-        // 1. Analyze Cache Performance
-        self.analyze_cache_performance(cache_metrics, &mut recommendations);
-
-        // 2. Analyze Search Performance
-        self.analyze_search_performance(metrics, &mut recommendations);
-
-        // 3. Analyze System Resources
-        self.analyze_system_resources(metrics, &mut recommendations);
-
-        *self.last_analysis.write() = SystemTime::now();
-        recommendations
-    }
-
-    /// Extended analysis including query timing stats and system metrics
-    /// **Validates: Requirements 4.5** - Resource allocation suggestions based on usage patterns
-    pub fn analyze_comprehensive(
-        &self,
-        metrics: &HashMap<String, serde_json::Value>,
-        cache_metrics: &CacheMetricsSnapshot,
-        query_stats: Option<&QueryTimingStats>,
-        system_metrics: Option<&SystemResourceMetrics>,
-    ) -> Vec<Recommendation> {
-        let mut recommendations = self.analyze_and_recommend(metrics, cache_metrics);
-
-        // 4. Analyze Query Phase Timing
-        if let Some(stats) = query_stats {
-            self.analyze_query_phases(stats, &mut recommendations);
-        }
-
-        // 5. Analyze System Resource Trends
-        if let Some(sys_metrics) = system_metrics {
-            self.analyze_resource_trends(sys_metrics, &mut recommendations);
-
-            // Store snapshot for trend analysis
-            self.store_performance_snapshot(cache_metrics, sys_metrics);
-        }
-
-        // 6. Perform Capacity Planning Analysis
-        self.analyze_capacity_planning(&mut recommendations);
-
-        recommendations
-    }
-
-    /// Analyze cache metrics for tuning recommendations
-    fn analyze_cache_performance(
-        &self,
-        metrics: &CacheMetricsSnapshot,
-        recs: &mut Vec<Recommendation>,
-    ) {
-        // High L1 miss rate but high L2 hit rate
-        if metrics.l1_hit_rate < 0.4 && metrics.l2_hit_rate > 0.7 {
-            recs.push(Recommendation {
-                id: "cache_l1_size".to_string(),
-                rec_type: RecommendationType::CacheTuning,
-                priority: RecommendationPriority::Medium,
-                title: "Increase L1 Cache Capacity".to_string(),
-                description: "High L1 miss rate with high L2 hit rate suggests L1 cache is too small for the hot working set.".to_string(),
-                action_item: "Increase 'max_capacity' in CacheConfig.".to_string(),
-                impact_score: 0.6,
-                timestamp: SystemTime::now(),
-                estimated_improvement: Some(20.0),
-                related_metrics: {
-                    let mut m = HashMap::new();
-                    m.insert("l1_hit_rate".to_string(), metrics.l1_hit_rate);
-                    m.insert("l2_hit_rate".to_string(), metrics.l2_hit_rate);
-                    m
-                },
-                config_suggestions: vec![
-                    ConfigSuggestion {
-                        config_key: "cache.l1.max_capacity".to_string(),
-                        current_value: "1000".to_string(),
-                        suggested_value: "2000".to_string(),
-                        rationale: "Double L1 capacity to accommodate hot working set".to_string(),
-                    }
-                ],
-            });
-        }
-
-        // High eviction rate
-        if metrics.eviction_rate_per_minute > 50.0 {
-            recs.push(Recommendation {
-                id: "cache_eviction_high".to_string(),
-                rec_type: RecommendationType::CacheTuning,
-                priority: RecommendationPriority::High,
-                title: "Cache Thrashing Detected".to_string(),
-                description: "High eviction rate indicates the cache is frequently replacing items before they can be reused.".to_string(),
-                action_item: "Increase cache capacity or review TTL/TTI settings.".to_string(),
-                impact_score: 0.8,
-                timestamp: SystemTime::now(),
-                estimated_improvement: Some(30.0),
-                related_metrics: {
-                    let mut m = HashMap::new();
-                    m.insert("eviction_rate_per_minute".to_string(), metrics.eviction_rate_per_minute);
-                    m
-                },
-                config_suggestions: vec![
-                    ConfigSuggestion {
-                        config_key: "cache.max_capacity".to_string(),
-                        current_value: "current".to_string(),
-                        suggested_value: "increase by 50%".to_string(),
-                        rationale: "Reduce eviction pressure by increasing capacity".to_string(),
-                    }
-                ],
-            });
-        }
-
-        // Low overall hit rate
-        if metrics.l1_hit_rate < 0.3 && metrics.l2_hit_rate < 0.5 {
-            recs.push(Recommendation {
-                id: "cache_low_hit_rate".to_string(),
-                rec_type: RecommendationType::CacheTuning,
-                priority: RecommendationPriority::High,
-                title: "Low Cache Hit Rate".to_string(),
-                description: "Both L1 and L2 cache hit rates are below optimal levels.".to_string(),
-                action_item: "Review cache key strategy and access patterns.".to_string(),
-                impact_score: 0.7,
-                timestamp: SystemTime::now(),
-                estimated_improvement: Some(40.0),
-                related_metrics: {
-                    let mut m = HashMap::new();
-                    m.insert("l1_hit_rate".to_string(), metrics.l1_hit_rate);
-                    m.insert("l2_hit_rate".to_string(), metrics.l2_hit_rate);
-                    m
-                },
-                config_suggestions: vec![],
-            });
-        }
-    }
-
-    /// Analyze search metrics for query optimization recommendations
-    fn analyze_search_performance(
-        &self,
-        metrics: &HashMap<String, serde_json::Value>,
-        recs: &mut Vec<Recommendation>,
-    ) {
-        // Check for slow searches in histograms
-        if let Some(search_duration) = metrics.get("histogram_search_duration_ms:{}") {
-            if let Ok(hist) = serde_json::from_value::<
-                crate::monitoring::metrics_collector::HistogramMetric,
-            >(search_duration.clone())
-            {
-                let avg_duration = if hist.total_count > 0 {
-                    hist.sum / hist.total_count as f64
-                } else {
-                    0.0
-                };
-
-                if avg_duration > 500.0 {
-                    recs.push(Recommendation {
-                        id: "search_slow_avg".to_string(),
-                        rec_type: RecommendationType::QueryOptimization,
-                        priority: RecommendationPriority::High,
-                        title: "Slow Average Search Performance".to_string(),
-                        description: format!(
-                            "Average search duration ({:.1}ms) is above the 200ms target.",
-                            avg_duration
-                        ),
-                        action_item:
-                            "Analyze common query patterns and consider adding specialized indexes."
-                                .to_string(),
-                        impact_score: 0.9,
-                        timestamp: SystemTime::now(),
-                        estimated_improvement: Some(50.0),
-                        related_metrics: {
-                            let mut m = HashMap::new();
-                            m.insert("avg_search_duration_ms".to_string(), avg_duration);
-                            m
-                        },
-                        config_suggestions: vec![],
-                    });
-                }
-            }
-        }
-    }
-
-    /// Analyze system resources for allocation recommendations
-    fn analyze_system_resources(
-        &self,
-        metrics: &HashMap<String, serde_json::Value>,
-        recs: &mut Vec<Recommendation>,
-    ) {
-        if let Some(cpu_usage) = metrics.get("gauge_cpu_usage_percent:{}") {
-            if let Some(val) = cpu_usage.get("value").and_then(|v| v.as_f64()) {
-                if val > 85.0 {
-                    recs.push(Recommendation {
-                        id: "cpu_high_usage".to_string(),
-                        rec_type: RecommendationType::ResourceAllocation,
-                        priority: RecommendationPriority::High,
-                        title: "High CPU Utilization".to_string(),
-                        description: format!("System is running at {:.1}% CPU capacity.", val),
-                        action_item:
-                            "Scale up CPU resources or limit concurrent search operations."
-                                .to_string(),
-                        impact_score: 0.7,
-                        timestamp: SystemTime::now(),
-                        estimated_improvement: Some(20.0),
-                        related_metrics: {
-                            let mut m = HashMap::new();
-                            m.insert("cpu_usage_percent".to_string(), val);
-                            m
-                        },
-                        config_suggestions: vec![],
-                    });
-                }
-            }
-        }
-    }
-
-    /// Analyze query phase timing for optimization opportunities
-    fn analyze_query_phases(&self, stats: &QueryTimingStats, recs: &mut Vec<Recommendation>) {
-        if stats.query_count == 0 {
-            return;
-        }
-
-        // Check if execution is the bottleneck
-        let execution_ratio = stats.avg_execution_ms / stats.avg_total_ms.max(1.0);
-        if execution_ratio > 0.8 && stats.avg_execution_ms > 100.0 {
-            recs.push(Recommendation {
-                id: "query_execution_bottleneck".to_string(),
-                rec_type: RecommendationType::IndexTuning,
-                priority: RecommendationPriority::High,
-                title: "Query Execution Bottleneck".to_string(),
-                description: format!(
-                    "Query execution ({:.1}ms) accounts for {:.0}% of total query time.",
-                    stats.avg_execution_ms,
-                    execution_ratio * 100.0
-                ),
-                action_item: "Consider adding specialized indexes for frequently searched terms."
-                    .to_string(),
-                impact_score: 0.8,
-                timestamp: SystemTime::now(),
-                estimated_improvement: Some(40.0),
-                related_metrics: {
-                    let mut m = HashMap::new();
-                    m.insert("avg_execution_ms".to_string(), stats.avg_execution_ms);
-                    m.insert("execution_ratio".to_string(), execution_ratio);
-                    m
-                },
-                config_suggestions: vec![],
-            });
-        }
-
-        // Check P99 latency
-        if stats.p99_total_ms > 1000.0 {
-            recs.push(Recommendation {
-                id: "query_p99_high".to_string(),
-                rec_type: RecommendationType::QueryOptimization,
-                priority: RecommendationPriority::High,
-                title: "High P99 Query Latency".to_string(),
-                description: format!(
-                    "P99 query latency ({:.1}ms) exceeds 1 second.",
-                    stats.p99_total_ms
-                ),
-                action_item: "Implement query timeouts and identify slow query patterns."
-                    .to_string(),
-                impact_score: 0.7,
-                timestamp: SystemTime::now(),
-                estimated_improvement: Some(30.0),
-                related_metrics: {
-                    let mut m = HashMap::new();
-                    m.insert("p99_total_ms".to_string(), stats.p99_total_ms);
-                    m
-                },
-                config_suggestions: vec![],
-            });
-        }
-    }
-
-    /// Analyze resource trends for capacity planning
-    fn analyze_resource_trends(
-        &self,
-        current: &SystemResourceMetrics,
-        recs: &mut Vec<Recommendation>,
-    ) {
-        if current.memory_usage_percent > 75.0 {
-            recs.push(Recommendation {
-                id: "memory_trend_warning".to_string(),
-                rec_type: RecommendationType::CapacityPlanning,
-                priority: if current.memory_usage_percent > 85.0 {
-                    RecommendationPriority::High
-                } else {
-                    RecommendationPriority::Medium
-                },
-                title: "Memory Usage Approaching Limit".to_string(),
-                description: format!(
-                    "Current memory usage is {:.1}%.",
-                    current.memory_usage_percent
-                ),
-                action_item: "Plan for memory capacity increase or optimize memory usage."
-                    .to_string(),
-                impact_score: 0.6,
-                timestamp: SystemTime::now(),
-                estimated_improvement: None,
-                related_metrics: {
-                    let mut m = HashMap::new();
-                    m.insert(
-                        "memory_usage_percent".to_string(),
-                        current.memory_usage_percent,
-                    );
-                    m
-                },
-                config_suggestions: vec![],
-            });
-        }
-    }
-
-    /// Store performance snapshot for trend analysis
-    fn store_performance_snapshot(
-        &self,
-        cache_metrics: &CacheMetricsSnapshot,
-        system_metrics: &SystemResourceMetrics,
-    ) {
-        let snapshot = PerformanceSnapshot {
-            timestamp: SystemTime::now(),
-            avg_search_time_ms: cache_metrics.avg_access_time_ms,
-            cache_hit_rate: cache_metrics.l1_hit_rate,
-            cpu_usage: system_metrics.cpu_usage_percent,
-            memory_usage: system_metrics.memory_usage_percent,
+        let mut engine = Self {
+            rules: Vec::new(),
+            history: Arc::new(parking_lot::RwLock::new(Vec::new())),
+            max_history: 100, // 保留最近 100 个快照
         };
 
-        let mut history = self.performance_history.write();
+        // 注册内置规则
+        engine.register_builtin_rules();
+
+        engine
+    }
+
+    /// 注册内置规则
+    fn register_builtin_rules(&mut self) {
+        self.add_rule(Box::new(QueryPerformanceRule));
+        self.add_rule(Box::new(CacheHitRateRule));
+        self.add_rule(Box::new(MemoryUsageRule));
+        self.add_rule(Box::new(CpuUsageRule));
+        self.add_rule(Box::new(QueryTrendRule));
+        self.add_rule(Box::new(CacheEfficiencyRule));
+        self.add_rule(Box::new(ResourceBalanceRule));
+    }
+
+    /// 添加规则
+    pub fn add_rule(&mut self, rule: Box<dyn RecommendationRule + Send + Sync>) {
+        self.rules.push(rule);
+    }
+
+    /// 记录性能快照
+    pub fn record_snapshot(&self, snapshot: PerformanceSnapshot) {
+        let mut history = self.history.write();
         history.push(snapshot);
 
-        if history.len() > self.max_history_entries {
-            history.drain(0..100);
+        // 限制历史记录数量
+        let len = history.len();
+        if len > self.max_history {
+            history.drain(0..len - self.max_history);
         }
     }
 
-    /// Analyze capacity planning based on historical trends
-    fn analyze_capacity_planning(&self, recs: &mut Vec<Recommendation>) {
-        let history = self.performance_history.read();
+    /// 生成优化建议
+    pub fn generate_recommendations(&self, current: &PerformanceSnapshot) -> Vec<Recommendation> {
+        let history = self.history.read();
+        let mut recommendations = Vec::new();
 
-        if history.len() < 20 {
-            return;
-        }
-
-        let recent: Vec<f64> = history
-            .iter()
-            .rev()
-            .take(10)
-            .map(|s| s.memory_usage)
-            .collect();
-        let older: Vec<f64> = history
-            .iter()
-            .rev()
-            .skip(10)
-            .take(10)
-            .map(|s| s.memory_usage)
-            .collect();
-
-        if !recent.is_empty() && !older.is_empty() {
-            let recent_avg: f64 = recent.iter().sum::<f64>() / recent.len() as f64;
-            let older_avg: f64 = older.iter().sum::<f64>() / older.len() as f64;
-
-            if recent_avg > older_avg * 1.1 && recent_avg > 60.0 {
-                recs.push(Recommendation {
-                    id: "capacity_memory_growth".to_string(),
-                    rec_type: RecommendationType::CapacityPlanning,
-                    priority: RecommendationPriority::Medium,
-                    title: "Memory Usage Growth Trend".to_string(),
-                    description: format!(
-                        "Memory usage increased from {:.1}% to {:.1}%.",
-                        older_avg, recent_avg
-                    ),
-                    action_item: "Monitor memory growth and plan for capacity increase."
-                        .to_string(),
-                    impact_score: 0.5,
-                    timestamp: SystemTime::now(),
-                    estimated_improvement: None,
-                    related_metrics: {
-                        let mut m = HashMap::new();
-                        m.insert("recent_avg_memory".to_string(), recent_avg);
-                        m.insert("older_avg_memory".to_string(), older_avg);
-                        m
-                    },
-                    config_suggestions: vec![],
-                });
+        // 评估所有规则
+        for rule in &self.rules {
+            if let Some(rec) = rule.evaluate(current, &history) {
+                recommendations.push(rec);
             }
         }
-    }
 
-    /// Get performance trend for a specific metric
-    pub fn get_performance_trend(&self, metric_name: &str) -> Option<PerformanceTrend> {
-        let history = self.performance_history.read();
+        // 按优先级和置信度排序
+        recommendations.sort_by(|a, b| {
+            let a_score = (a.priority as f64) * a.confidence;
+            let b_score = (b.priority as f64) * b.confidence;
+            b_score
+                .partial_cmp(&a_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
-        if history.len() < 5 {
-            return None;
-        }
-
-        let data_points: Vec<f64> = match metric_name {
-            "search_time" => history.iter().map(|s| s.avg_search_time_ms).collect(),
-            "cache_hit_rate" => history.iter().map(|s| s.cache_hit_rate).collect(),
-            "cpu_usage" => history.iter().map(|s| s.cpu_usage).collect(),
-            "memory_usage" => history.iter().map(|s| s.memory_usage).collect(),
-            _ => return None,
-        };
-
-        if data_points.len() < 2 {
-            return None;
-        }
-
-        let first_half_avg: f64 = data_points[..data_points.len() / 2].iter().sum::<f64>()
-            / (data_points.len() / 2) as f64;
-        let second_half_avg: f64 = data_points[data_points.len() / 2..].iter().sum::<f64>()
-            / (data_points.len() - data_points.len() / 2) as f64;
-
-        let change_percentage = if first_half_avg > 0.0 {
-            ((second_half_avg - first_half_avg) / first_half_avg) * 100.0
-        } else {
-            0.0
-        };
-
-        let trend_direction = if change_percentage > 5.0 {
-            if metric_name == "cache_hit_rate" {
-                TrendDirection::Improving
-            } else {
-                TrendDirection::Degrading
-            }
-        } else if change_percentage < -5.0 {
-            if metric_name == "cache_hit_rate" {
-                TrendDirection::Degrading
-            } else {
-                TrendDirection::Improving
-            }
-        } else {
-            TrendDirection::Stable
-        };
-
-        Some(PerformanceTrend {
-            metric_name: metric_name.to_string(),
-            trend_direction,
-            change_percentage,
-            time_window_hours: 1,
-            data_points,
-        })
+        recommendations
     }
 }
 
 impl Default for RecommendationEngine {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+// ============================================================================
+// 内置规则实现
+// ============================================================================
+
+/// 查询性能规则
+struct QueryPerformanceRule;
+
+impl RecommendationRule for QueryPerformanceRule {
+    fn name(&self) -> &str {
+        "query_performance"
+    }
+
+    fn evaluate(
+        &self,
+        snapshot: &PerformanceSnapshot,
+        _history: &[PerformanceSnapshot],
+    ) -> Option<Recommendation> {
+        let avg_ms = snapshot.query_stats.avg_total_ms;
+
+        if avg_ms > 500.0 {
+            let mut metrics = HashMap::new();
+            metrics.insert("avg_query_time_ms".to_string(), avg_ms);
+
+            Some(Recommendation {
+                id: "query_perf_slow".to_string(),
+                title: "查询响应时间过慢".to_string(),
+                description: format!(
+                    "当前平均查询时间为 {:.2}ms，远超推荐值 200ms。这可能导致用户体验下降。",
+                    avg_ms
+                ),
+                priority: 5,
+                category: RecommendationCategory::QueryPerformance,
+                impact: ImpactLevel::Critical,
+                confidence: 0.95,
+                metrics,
+                actions: vec![
+                    "检查索引是否正确构建".to_string(),
+                    "考虑增加查询缓存大小".to_string(),
+                    "优化正则表达式查询模式".to_string(),
+                    "减少单次查询的数据量".to_string(),
+                ],
+            })
+        } else if avg_ms > 200.0 {
+            let mut metrics = HashMap::new();
+            metrics.insert("avg_query_time_ms".to_string(), avg_ms);
+
+            Some(Recommendation {
+                id: "query_perf_moderate".to_string(),
+                title: "查询性能有优化空间".to_string(),
+                description: format!(
+                    "当前平均查询时间为 {:.2}ms，超过推荐值 200ms。建议进行优化。",
+                    avg_ms
+                ),
+                priority: 3,
+                category: RecommendationCategory::QueryPerformance,
+                impact: ImpactLevel::Medium,
+                confidence: 0.85,
+                metrics,
+                actions: vec![
+                    "检查查询模式是否可以优化".to_string(),
+                    "考虑启用查询结果缓存".to_string(),
+                ],
+            })
+        } else {
+            None
+        }
+    }
+
+    fn priority(&self) -> u8 {
+        5
+    }
+}
+
+/// 缓存命中率规则
+struct CacheHitRateRule;
+
+impl RecommendationRule for CacheHitRateRule {
+    fn name(&self) -> &str {
+        "cache_hit_rate"
+    }
+
+    fn evaluate(
+        &self,
+        snapshot: &PerformanceSnapshot,
+        _history: &[PerformanceSnapshot],
+    ) -> Option<Recommendation> {
+        let hit_rate = snapshot.cache_metrics.l1_hit_rate;
+
+        if hit_rate < 0.5 {
+            let mut metrics = HashMap::new();
+            metrics.insert("cache_hit_rate".to_string(), hit_rate);
+
+            Some(Recommendation {
+                id: "cache_hit_low".to_string(),
+                title: "缓存命中率过低".to_string(),
+                description: format!(
+                    "当前缓存命中率为 {:.1}%，远低于推荐值 70%。这会导致大量磁盘 I/O 操作。",
+                    hit_rate * 100.0
+                ),
+                priority: 4,
+                category: RecommendationCategory::CacheOptimization,
+                impact: ImpactLevel::High,
+                confidence: 0.9,
+                metrics,
+                actions: vec![
+                    "增加 L1 缓存大小（当前可能过小）".to_string(),
+                    "检查查询模式是否导致缓存失效".to_string(),
+                    "考虑启用预加载策略".to_string(),
+                    "优化缓存淘汰算法（LRU -> LFU）".to_string(),
+                ],
+            })
+        } else if hit_rate < 0.7 {
+            let mut metrics = HashMap::new();
+            metrics.insert("cache_hit_rate".to_string(), hit_rate);
+
+            Some(Recommendation {
+                id: "cache_hit_moderate".to_string(),
+                title: "缓存命中率可以提升".to_string(),
+                description: format!(
+                    "当前缓存命中率为 {:.1}%，低于推荐值 70%。提升缓存命中率可显著改善性能。",
+                    hit_rate * 100.0
+                ),
+                priority: 3,
+                category: RecommendationCategory::CacheOptimization,
+                impact: ImpactLevel::Medium,
+                confidence: 0.8,
+                metrics,
+                actions: vec![
+                    "适当增加缓存大小".to_string(),
+                    "分析热点数据访问模式".to_string(),
+                ],
+            })
+        } else {
+            None
+        }
+    }
+
+    fn priority(&self) -> u8 {
+        4
+    }
+}
+
+/// 内存使用规则
+struct MemoryUsageRule;
+
+impl RecommendationRule for MemoryUsageRule {
+    fn name(&self) -> &str {
+        "memory_usage"
+    }
+
+    fn evaluate(
+        &self,
+        snapshot: &PerformanceSnapshot,
+        _history: &[PerformanceSnapshot],
+    ) -> Option<Recommendation> {
+        let sys_metrics = snapshot.system_metrics.as_ref()?;
+        let mem_usage = sys_metrics.memory_usage_percent;
+
+        if mem_usage > 90.0 {
+            let mut metrics = HashMap::new();
+            metrics.insert("memory_usage_percent".to_string(), mem_usage);
+
+            Some(Recommendation {
+                id: "memory_critical".to_string(),
+                title: "内存使用率严重过高".to_string(),
+                description: format!(
+                    "当前内存使用率为 {:.1}%，已接近系统极限。可能导致系统不稳定或崩溃。",
+                    mem_usage
+                ),
+                priority: 5,
+                category: RecommendationCategory::MemoryManagement,
+                impact: ImpactLevel::Critical,
+                confidence: 0.95,
+                metrics,
+                actions: vec![
+                    "立即释放不必要的缓存".to_string(),
+                    "关闭其他占用内存的应用程序".to_string(),
+                    "考虑增加系统内存".to_string(),
+                    "检查是否存在内存泄漏".to_string(),
+                ],
+            })
+        } else if mem_usage > 80.0 {
+            let mut metrics = HashMap::new();
+            metrics.insert("memory_usage_percent".to_string(), mem_usage);
+
+            Some(Recommendation {
+                id: "memory_high".to_string(),
+                title: "内存使用率偏高".to_string(),
+                description: format!(
+                    "当前内存使用率为 {:.1}%，建议采取措施降低内存占用。",
+                    mem_usage
+                ),
+                priority: 4,
+                category: RecommendationCategory::MemoryManagement,
+                impact: ImpactLevel::High,
+                confidence: 0.85,
+                metrics,
+                actions: vec![
+                    "减小缓存大小".to_string(),
+                    "清理临时文件".to_string(),
+                    "优化数据结构占用".to_string(),
+                ],
+            })
+        } else {
+            None
+        }
+    }
+
+    fn priority(&self) -> u8 {
+        5
+    }
+}
+
+/// CPU 使用规则
+struct CpuUsageRule;
+
+impl RecommendationRule for CpuUsageRule {
+    fn name(&self) -> &str {
+        "cpu_usage"
+    }
+
+    fn evaluate(
+        &self,
+        snapshot: &PerformanceSnapshot,
+        _history: &[PerformanceSnapshot],
+    ) -> Option<Recommendation> {
+        let sys_metrics = snapshot.system_metrics.as_ref()?;
+        let cpu_usage = sys_metrics.cpu_usage_percent;
+
+        if cpu_usage > 85.0 {
+            let mut metrics = HashMap::new();
+            metrics.insert("cpu_usage_percent".to_string(), cpu_usage);
+
+            Some(Recommendation {
+                id: "cpu_high".to_string(),
+                title: "CPU 使用率过高".to_string(),
+                description: format!(
+                    "当前 CPU 使用率为 {:.1}%，可能影响系统响应速度。",
+                    cpu_usage
+                ),
+                priority: 4,
+                category: RecommendationCategory::CpuOptimization,
+                impact: ImpactLevel::High,
+                confidence: 0.85,
+                metrics,
+                actions: vec![
+                    "减少并发查询数量".to_string(),
+                    "优化正则表达式匹配算法".to_string(),
+                    "考虑使用增量索引".to_string(),
+                ],
+            })
+        } else {
+            None
+        }
+    }
+
+    fn priority(&self) -> u8 {
+        4
+    }
+}
+
+/// 查询趋势规则（基于历史数据）
+struct QueryTrendRule;
+
+impl RecommendationRule for QueryTrendRule {
+    fn name(&self) -> &str {
+        "query_trend"
+    }
+
+    fn evaluate(
+        &self,
+        snapshot: &PerformanceSnapshot,
+        history: &[PerformanceSnapshot],
+    ) -> Option<Recommendation> {
+        if history.len() < 10 {
+            return None; // 数据不足
+        }
+
+        // 计算最近 10 次的平均查询时间
+        let recent_avg: f64 = history
+            .iter()
+            .rev()
+            .take(10)
+            .map(|s| s.query_stats.avg_total_ms)
+            .sum::<f64>()
+            / 10.0;
+
+        let current_avg = snapshot.query_stats.avg_total_ms;
+
+        // 检测性能下降趋势
+        if current_avg > recent_avg * 1.5 {
+            let mut metrics = HashMap::new();
+            metrics.insert("current_avg_ms".to_string(), current_avg);
+            metrics.insert("recent_avg_ms".to_string(), recent_avg);
+            metrics.insert("degradation_ratio".to_string(), current_avg / recent_avg);
+
+            Some(Recommendation {
+                id: "query_trend_degradation".to_string(),
+                title: "检测到查询性能下降趋势".to_string(),
+                description: format!(
+                    "当前查询时间 {:.2}ms 比最近平均值 {:.2}ms 高出 {:.1}%，性能呈下降趋势。",
+                    current_avg,
+                    recent_avg,
+                    ((current_avg / recent_avg - 1.0) * 100.0)
+                ),
+                priority: 4,
+                category: RecommendationCategory::QueryPerformance,
+                impact: ImpactLevel::High,
+                confidence: 0.8,
+                metrics,
+                actions: vec![
+                    "检查是否有新的大文件导入".to_string(),
+                    "考虑重建索引".to_string(),
+                    "检查磁盘空间是否充足".to_string(),
+                    "分析是否有资源竞争".to_string(),
+                ],
+            })
+        } else {
+            None
+        }
+    }
+
+    fn priority(&self) -> u8 {
+        4
+    }
+}
+
+/// 缓存效率规则
+struct CacheEfficiencyRule;
+
+impl RecommendationRule for CacheEfficiencyRule {
+    fn name(&self) -> &str {
+        "cache_efficiency"
+    }
+
+    fn evaluate(
+        &self,
+        snapshot: &PerformanceSnapshot,
+        _history: &[PerformanceSnapshot],
+    ) -> Option<Recommendation> {
+        let cache = &snapshot.cache_metrics;
+
+        // 检查缓存命中率和请求量的关系
+        // 如果请求量大但命中率低，说明缓存策略可能需要调整
+        if cache.total_requests > 1000 && cache.l1_hit_rate < 0.5 {
+            let mut metrics = HashMap::new();
+            metrics.insert("total_requests".to_string(), cache.total_requests as f64);
+            metrics.insert("hit_rate".to_string(), cache.l1_hit_rate);
+            metrics.insert("eviction_rate".to_string(), cache.eviction_rate_per_minute);
+
+            Some(Recommendation {
+                id: "cache_efficiency_low".to_string(),
+                title: "缓存效率不佳".to_string(),
+                description: format!(
+                    "处理了 {} 次请求但命中率仅 {:.1}%，缓存策略可能需要调整。",
+                    cache.total_requests,
+                    cache.l1_hit_rate * 100.0
+                ),
+                priority: 3,
+                category: RecommendationCategory::CacheOptimization,
+                impact: ImpactLevel::Medium,
+                confidence: 0.75,
+                metrics,
+                actions: vec![
+                    "调整缓存淘汰策略".to_string(),
+                    "分析缓存访问模式".to_string(),
+                    "考虑使用分层缓存".to_string(),
+                    format!("当前淘汰率: {:.2}/分钟", cache.eviction_rate_per_minute),
+                ],
+            })
+        } else {
+            None
+        }
+    }
+
+    fn priority(&self) -> u8 {
+        3
+    }
+}
+
+/// 资源平衡规则
+struct ResourceBalanceRule;
+
+impl RecommendationRule for ResourceBalanceRule {
+    fn name(&self) -> &str {
+        "resource_balance"
+    }
+
+    fn evaluate(
+        &self,
+        snapshot: &PerformanceSnapshot,
+        _history: &[PerformanceSnapshot],
+    ) -> Option<Recommendation> {
+        let sys_metrics = snapshot.system_metrics.as_ref()?;
+
+        // 检测资源不平衡：CPU 高但内存低，或反之
+        let cpu = sys_metrics.cpu_usage_percent;
+        let mem = sys_metrics.memory_usage_percent;
+
+        if cpu > 80.0 && mem < 50.0 {
+            let mut metrics = HashMap::new();
+            metrics.insert("cpu_usage".to_string(), cpu);
+            metrics.insert("memory_usage".to_string(), mem);
+
+            Some(Recommendation {
+                id: "resource_imbalance_cpu".to_string(),
+                title: "资源使用不平衡（CPU 密集）".to_string(),
+                description: format!(
+                    "CPU 使用率 {:.1}% 但内存使用率仅 {:.1}%，可以通过增加缓存来减轻 CPU 负担。",
+                    cpu, mem
+                ),
+                priority: 3,
+                category: RecommendationCategory::Configuration,
+                impact: ImpactLevel::Medium,
+                confidence: 0.7,
+                metrics,
+                actions: vec![
+                    "增加查询结果缓存".to_string(),
+                    "启用预计算索引".to_string(),
+                    "考虑使用更多内存换取 CPU 性能".to_string(),
+                ],
+            })
+        } else if mem > 80.0 && cpu < 30.0 {
+            let mut metrics = HashMap::new();
+            metrics.insert("cpu_usage".to_string(), cpu);
+            metrics.insert("memory_usage".to_string(), mem);
+
+            Some(Recommendation {
+                id: "resource_imbalance_memory".to_string(),
+                title: "资源使用不平衡（内存密集）".to_string(),
+                description: format!(
+                    "内存使用率 {:.1}% 但 CPU 使用率仅 {:.1}%，可以减小缓存大小。",
+                    mem, cpu
+                ),
+                priority: 3,
+                category: RecommendationCategory::Configuration,
+                impact: ImpactLevel::Medium,
+                confidence: 0.7,
+                metrics,
+                actions: vec![
+                    "减小缓存大小".to_string(),
+                    "清理不必要的内存占用".to_string(),
+                    "优化数据结构".to_string(),
+                ],
+            })
+        } else {
+            None
+        }
+    }
+
+    fn priority(&self) -> u8 {
+        3
     }
 }
