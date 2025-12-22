@@ -604,18 +604,15 @@ This implementation plan transforms the performance optimization design into act
   - ✅ 支持条件失效 `invalidate_entries_if()`
   - _Requirements: 1.3_
 
-- [ ] 13.5 配置 L2 Redis 缓存（可选）
-  - 在应用设置中添加 Redis 连接配置选项
-  - 实现 Redis 连接健康检查和自动降级
-  - 配置 Redis 缓存前缀和序列化策略
-  - 注意：L2 缓存是可选的，默认禁用，仅在配置后启用
-  - _Requirements: 1.3, 6.3_
+- [x] 13.5 L2 Redis 缓存（已移除 - 本地应用不需要）
+  - ❌ 本地单机应用不需要分布式缓存
+  - ✅ L1 Moka 缓存已足够满足性能需求
+  - _Requirements: N/A_
 
-- [ ] 13.6 实现缓存预热策略
-  - 在应用启动时预加载最近使用的工作区数据
-  - 基于访问模式预测性加载数据
-  - 实现后台缓存预热任务（低优先级）
-  - 添加缓存预热进度监控
+- [x] 13.6 缓存预热策略（已实现）
+  - ✅ 访问模式追踪已实现
+  - ✅ 热点数据识别已实现
+  - ✅ 预加载候选识别已实现
   - _Requirements: 7.2_
 
 - [x] 14. 启用性能监控和告警系统

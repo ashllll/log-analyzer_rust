@@ -5,7 +5,7 @@
 //! - 缓存预热策略
 //! - 缓存统计和监控
 //! - 性能指标追踪和告警
-//! - L1 (Moka) 和 L2 (Redis) 多层缓存
+//! - L1 (Moka) 内存缓存
 //! - 智能缓存压缩
 //! - 基于访问模式的预加载
 
@@ -88,7 +88,7 @@ pub struct CacheConfig {
     pub enable_monitoring: bool,
     /// 监控报告间隔
     pub monitoring_interval: Duration,
-    /// 是否启用 L2 Redis 缓存
+    /// 是否启用 L2 Redis 缓存（本地应用默认禁用）
     pub enable_l2_cache: bool,
     /// Redis 连接 URL
     pub redis_url: String,
