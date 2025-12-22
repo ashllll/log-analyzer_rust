@@ -127,7 +127,7 @@ pub async fn refresh_workspace(
             "Refresh".to_string(),
             target_name.clone(),
             Some(workspaceId.clone()),
-        )
+        ).map_err(|e| format!("Failed to create task: {}", e))?
     } else {
         return Err("Task manager not initialized".to_string());
     };
@@ -138,7 +138,7 @@ pub async fn refresh_workspace(
     // 同时发送到事件总线（向后兼容）
     let event_bus = get_event_bus();
     if let Some(task_manager) = state.task_manager.lock().as_ref() {
-        if let Some(task) = task_manager.get_task(&task_id) {
+        if let Ok(Some(task)) = task_manager.get_task(&task_id) {
             let _ = event_bus.publish_task_update(crate::models::TaskProgress {
                 task_id: task.id.clone(),
                 task_type: task.task_type.clone(),
@@ -181,7 +181,7 @@ pub async fn refresh_workspace(
 
             // 更新任务进度：扫描文件系统
             if let Some(task_manager) = state.task_manager.lock().as_ref() {
-                if let Some(task) = task_manager.update_task(
+                if let Ok(Some(task)) = task_manager.update_task(
                     &task_id_clone,
                     20,
                     "Scanning file system...".to_string(),
@@ -207,7 +207,7 @@ pub async fn refresh_workspace(
 
             // 更新任务进度：分析变更
             if let Some(task_manager) = state.task_manager.lock().as_ref() {
-                if let Some(task) = task_manager.update_task(
+                if let Ok(Some(task)) = task_manager.update_task(
                     &task_id_clone,
                     40,
                     "Analyzing changes...".to_string(),
@@ -243,7 +243,7 @@ pub async fn refresh_workspace(
             if total_changes > 0 {
                 // 更新任务进度：处理变更
                 if let Some(task_manager) = state.task_manager.lock().as_ref() {
-                    if let Some(task) = task_manager.update_task(
+                    if let Ok(Some(task)) = task_manager.update_task(
                         &task_id_clone,
                         60,
                         format!("Processing {} changes...", total_changes),
@@ -313,7 +313,7 @@ pub async fn refresh_workspace(
 
                 // 更新任务进度：保存索引
                 if let Some(task_manager) = state.task_manager.lock().as_ref() {
-                    if let Some(task) = task_manager.update_task(
+                    if let Ok(Some(task)) = task_manager.update_task(
                         &task_id_clone,
                         80,
                         "Saving index...".to_string(),
@@ -346,7 +346,7 @@ pub async fn refresh_workspace(
         if result.is_err() {
             // 更新任务状态为失败
             if let Some(task_manager) = state.task_manager.lock().as_ref() {
-                if let Some(task) = task_manager.update_task(
+                if let Ok(Some(task)) = task_manager.update_task(
                     &task_id_clone,
                     0,
                     "Refresh failed".to_string(),
@@ -368,7 +368,7 @@ pub async fn refresh_workspace(
         } else {
             // 更新任务状态为完成
             if let Some(task_manager) = state.task_manager.lock().as_ref() {
-                if let Some(task) = task_manager.update_task(
+                if let Ok(Some(task)) = task_manager.update_task(
                     &task_id_clone,
                     100,
                     "Refresh complete".to_string(),

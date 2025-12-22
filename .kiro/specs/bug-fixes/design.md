@@ -144,6 +144,27 @@ The bug fixes leverage battle-tested, industry-standard solutions with proven tr
   - Follows Rust ownership model naturally
 - **Migration Strategy**: Replace complex service location with simple constructor injection and builder patterns
 
+#### Task Lifecycle Management (Tauri Async Runtime + Message Passing)
+- **Purpose**: Replace custom Actor implementation with Tauri-native async patterns
+- **Key Libraries**: `tauri::async_runtime` for async operations, `tokio::sync::mpsc` for message passing
+- **Architecture Pattern**: Message-passing concurrency (Rust/Tokio best practice)
+- **Features**:
+  - Native integration with Tauri's async runtime (no custom runtime needed)
+  - Non-blocking task operations using `tauri::async_runtime::spawn`
+  - Synchronous API with async backend using `tauri::async_runtime::block_on`
+  - Automatic cleanup on drop with RAII patterns
+  - Type-safe message passing with enum-based commands
+- **Migration Strategy**: 
+  - Replace `tokio::spawn` with `tauri::async_runtime::spawn` for Actor initialization
+  - Replace `tokio::task::block_in_place` with `tauri::async_runtime::block_on` for sync-to-async bridge
+  - Keep message-passing architecture (proven pattern from Erlang/Akka/Actix)
+  - Add proper error handling instead of panics
+- **Why Not Full Actor Framework**: 
+  - Actix/Bastion add unnecessary complexity for simple task tracking
+  - Tauri already provides async runtime - no need for separate Actor system
+  - Message-passing pattern is sufficient without full Actor framework overhead
+  - Simpler debugging and maintenance with native Tauri patterns
+
 ## Data Models
 
 ### Modern Error Types (eyre + miette)
@@ -606,6 +627,22 @@ interface ValidatedSearchQuery {
 ### Property 35: Utility Function Completeness
 *For any* utility module, all required utility methods should be exported with proper type definitions
 **Validates: Requirements 8.5**
+
+### Property 36: TaskManager Initialization Safety
+*For any* application startup, the TaskManager should initialize successfully without panicking
+**Validates: Requirements 9.1, 9.3**
+
+### Property 37: Task Creation from Sync Context
+*For any* task creation call from synchronous context, the operation should complete without blocking the main thread
+**Validates: Requirements 9.2**
+
+### Property 38: Task State Propagation
+*For any* task state update, changes should be reliably propagated to the frontend
+**Validates: Requirements 9.4**
+
+### Property 39: TaskManager Graceful Shutdown
+*For any* application shutdown, the TaskManager should cleanup all resources without errors
+**Validates: Requirements 9.5**
 
 ## Error Handling
 

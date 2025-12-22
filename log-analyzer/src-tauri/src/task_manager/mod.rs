@@ -15,14 +15,17 @@
 //! - Tokio Actors Pattern
 //! - Erlang/OTP Supervision Trees
 
+use eyre::{Result, WrapErr};
 use parking_lot::RwLock;
+use scopeguard::defer;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc;
-use tokio::time::interval;
+use tokio::time::{interval, timeout};
+use tracing::{debug, error, info, warn};
 
 /// 任务状态
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -36,6 +39,23 @@ pub enum TaskStatus {
     Failed,
     /// 已停止
     Stopped,
+}
+
+/// 任务管理器指标
+#[derive(Debug, Clone, Serialize)]
+pub struct TaskManagerMetrics {
+    /// 总任务数
+    pub total_tasks: usize,
+    /// 运行中的任务数
+    pub running_tasks: usize,
+    /// 已完成的任务数
+    pub completed_tasks: usize,
+    /// 失败的任务数
+    pub failed_tasks: usize,
+    /// 已停止的任务数
+    pub stopped_tasks: usize,
+    /// Actor 是否健康
+    pub is_healthy: bool,
 }
 
 /// 任务信息
@@ -64,6 +84,8 @@ pub struct TaskManagerConfig {
     pub failed_task_ttl: u64,
     /// 清理检查间隔（秒）
     pub cleanup_interval: u64,
+    /// 操作超时时间（秒）
+    pub operation_timeout: u64,
 }
 
 impl Default for TaskManagerConfig {
@@ -72,6 +94,7 @@ impl Default for TaskManagerConfig {
             completed_task_ttl: 3, // 完成任务保留 3 秒
             failed_task_ttl: 10,   // 失败任务保留 10 秒
             cleanup_interval: 1,   // 每秒检查一次
+            operation_timeout: 5,  // 操作超时 5 秒
         }
     }
 }
@@ -109,6 +132,10 @@ enum ActorMessage {
         id: String,
         respond_to: tokio::sync::oneshot::Sender<Option<TaskInfo>>,
     },
+    /// 获取指标
+    GetMetrics {
+        respond_to: tokio::sync::oneshot::Sender<TaskManagerMetrics>,
+    },
     /// 清理过期任务
     CleanupExpired,
     /// 停止 Actor
@@ -140,6 +167,14 @@ impl TaskManagerActor {
                 workspace_id,
                 respond_to,
             } => {
+                info!(
+                    task_id = %id,
+                    task_type = %task_type,
+                    target = %target,
+                    workspace_id = ?workspace_id,
+                    "Creating new task"
+                );
+                
                 let task = TaskInfo {
                     id: id.clone(),
                     task_type,
@@ -161,6 +196,13 @@ impl TaskManagerActor {
                 status,
                 respond_to,
             } => {
+                debug!(
+                    task_id = %id,
+                    progress = progress,
+                    status = ?status,
+                    "Updating task"
+                );
+                
                 let result = if let Some(task) = self.tasks.get_mut(&id) {
                     task.progress = progress;
                     task.message = message;
@@ -172,10 +214,16 @@ impl TaskManagerActor {
                         TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Stopped
                     ) {
                         task.completed_at = Some(Instant::now());
+                        info!(
+                            task_id = %id,
+                            status = ?status,
+                            "Task finished"
+                        );
                     }
 
                     Some(task.clone())
                 } else {
+                    warn!(task_id = %id, "Task not found for update");
                     None
                 };
                 let _ = respond_to.send(result);
@@ -189,15 +237,52 @@ impl TaskManagerActor {
                 let _ = respond_to.send(tasks);
             }
             ActorMessage::RemoveTask { id, respond_to } => {
+                debug!(task_id = %id, "Removing task");
                 let result = self.tasks.remove(&id);
                 let _ = respond_to.send(result);
+            }
+            ActorMessage::GetMetrics { respond_to } => {
+                let metrics = self.collect_metrics();
+                debug!(
+                    total = metrics.total_tasks,
+                    running = metrics.running_tasks,
+                    completed = metrics.completed_tasks,
+                    failed = metrics.failed_tasks,
+                    "Collected TaskManager metrics"
+                );
+                let _ = respond_to.send(metrics);
             }
             ActorMessage::CleanupExpired => {
                 self.cleanup_expired_tasks();
             }
             ActorMessage::Shutdown => {
-                // Actor 将在消息循环结束后停止
+                info!("TaskManager actor shutting down");
             }
+        }
+    }
+
+    fn collect_metrics(&self) -> TaskManagerMetrics {
+        let mut running = 0;
+        let mut completed = 0;
+        let mut failed = 0;
+        let mut stopped = 0;
+
+        for task in self.tasks.values() {
+            match task.status {
+                TaskStatus::Running => running += 1,
+                TaskStatus::Completed => completed += 1,
+                TaskStatus::Failed => failed += 1,
+                TaskStatus::Stopped => stopped += 1,
+            }
+        }
+
+        TaskManagerMetrics {
+            total_tasks: self.tasks.len(),
+            running_tasks: running,
+            completed_tasks: completed,
+            failed_tasks: failed,
+            stopped_tasks: stopped,
+            is_healthy: true,
         }
     }
 
@@ -225,23 +310,37 @@ impl TaskManagerActor {
 
         for id in to_remove {
             if let Some(task) = self.tasks.remove(&id) {
-                eprintln!(
-                    "[TaskManager] Auto-removed expired task: {} (status: {:?})",
-                    id, task.status
+                debug!(
+                    task_id = %id,
+                    status = ?task.status,
+                    "Auto-removed expired task"
                 );
 
                 // 发送任务移除事件
-                let _ = self.app.emit(
+                if let Err(e) = self.app.emit(
                     "task-removed",
                     serde_json::json!({
                         "task_id": id,
                     }),
-                );
+                ) {
+                    error!(
+                        task_id = %id,
+                        error = %e,
+                        "Failed to emit task-removed event"
+                    );
+                }
             }
         }
     }
 
     async fn run(mut self, mut receiver: mpsc::UnboundedReceiver<ActorMessage>) {
+        info!("TaskManager actor started");
+        
+        // 使用 scopeguard 确保清理日志被记录
+        defer! {
+            info!("TaskManager actor cleanup completed");
+        }
+        
         let mut cleanup_interval = interval(Duration::from_secs(self.config.cleanup_interval));
 
         loop {
@@ -259,28 +358,59 @@ impl TaskManagerActor {
             }
         }
 
-        eprintln!("[TaskManager] Actor stopped");
+        // 优雅关闭：处理所有待处理的消息
+        info!("Processing remaining messages before shutdown");
+        let shutdown_timeout = Duration::from_secs(5);
+        let shutdown_deadline = tokio::time::Instant::now() + shutdown_timeout;
+        
+        while let Ok(Some(msg)) = timeout(
+            shutdown_deadline.saturating_duration_since(tokio::time::Instant::now()),
+            receiver.recv()
+        ).await {
+            if matches!(msg, ActorMessage::Shutdown) {
+                break;
+            }
+            self.handle_message(msg);
+        }
+
+        // 记录未完成的任务
+        let running_tasks: Vec<_> = self.tasks.values()
+            .filter(|t| t.status == TaskStatus::Running)
+            .map(|t| t.id.clone())
+            .collect();
+        
+        if !running_tasks.is_empty() {
+            warn!(
+                running_tasks = ?running_tasks,
+                "TaskManager shutting down with running tasks"
+            );
+        }
+
+        info!("TaskManager actor stopped gracefully");
     }
 }
 
 /// 任务管理器句柄（客户端）
 pub struct TaskManager {
     sender: mpsc::UnboundedSender<ActorMessage>,
+    config: TaskManagerConfig,
 }
 
 impl TaskManager {
     /// 创建新的任务管理器
-    pub fn new(app: AppHandle, config: TaskManagerConfig) -> Self {
+    pub fn new(app: AppHandle, config: TaskManagerConfig) -> Result<Self> {
+        info!("Initializing TaskManager");
+        
         let (sender, receiver) = mpsc::unbounded_channel();
+        let actor = TaskManagerActor::new(app, config.clone());
 
-        let actor = TaskManagerActor::new(app, config);
-
-        // 启动 Actor
-        tokio::spawn(async move {
+        // 使用 tauri::async_runtime 启动 Actor
+        tauri::async_runtime::spawn(async move {
             actor.run(receiver).await;
         });
 
-        Self { sender }
+        info!("TaskManager initialized successfully");
+        Ok(Self { sender, config })
     }
 
     /// 创建新任务
@@ -290,24 +420,29 @@ impl TaskManager {
         task_type: String,
         target: String,
         workspace_id: Option<String>,
-    ) -> TaskInfo {
+    ) -> Result<TaskInfo> {
         let (tx, rx) = tokio::sync::oneshot::channel();
 
         let msg = ActorMessage::CreateTask {
-            id,
+            id: id.clone(),
             task_type,
             target,
             workspace_id,
             respond_to: tx,
         };
 
-        if self.sender.send(msg).is_err() {
-            panic!("TaskManager actor has stopped");
-        }
+        self.sender
+            .send(msg)
+            .wrap_err("TaskManager actor has stopped")?;
 
-        // 阻塞等待响应（在同步上下文中）
-        tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(rx))
-            .expect("Actor dropped response channel")
+        // 使用 tauri::async_runtime 阻塞等待响应，带超时
+        let timeout_duration = Duration::from_secs(self.config.operation_timeout);
+        tauri::async_runtime::block_on(async {
+            timeout(timeout_duration, rx)
+                .await
+                .wrap_err("Operation timed out")?
+                .wrap_err("Actor dropped response channel")
+        })
     }
 
     /// 更新任务进度
@@ -317,7 +452,7 @@ impl TaskManager {
         progress: u8,
         message: String,
         status: TaskStatus,
-    ) -> Option<TaskInfo> {
+    ) -> Result<Option<TaskInfo>> {
         let (tx, rx) = tokio::sync::oneshot::channel();
 
         let msg = ActorMessage::UpdateTask {
@@ -328,17 +463,21 @@ impl TaskManager {
             respond_to: tx,
         };
 
-        if self.sender.send(msg).is_err() {
-            return None;
-        }
+        self.sender
+            .send(msg)
+            .wrap_err("TaskManager actor has stopped")?;
 
-        tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(rx))
-            .ok()
-            .flatten()
+        let timeout_duration = Duration::from_secs(self.config.operation_timeout);
+        tauri::async_runtime::block_on(async {
+            timeout(timeout_duration, rx)
+                .await
+                .wrap_err("Operation timed out")?
+                .wrap_err("Actor dropped response channel")
+        })
     }
 
     /// 获取任务信息
-    pub fn get_task(&self, id: &str) -> Option<TaskInfo> {
+    pub fn get_task(&self, id: &str) -> Result<Option<TaskInfo>> {
         let (tx, rx) = tokio::sync::oneshot::channel();
 
         let msg = ActorMessage::GetTask {
@@ -346,31 +485,40 @@ impl TaskManager {
             respond_to: tx,
         };
 
-        if self.sender.send(msg).is_err() {
-            return None;
-        }
+        self.sender
+            .send(msg)
+            .wrap_err("TaskManager actor has stopped")?;
 
-        tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(rx))
-            .ok()
-            .flatten()
+        let timeout_duration = Duration::from_secs(self.config.operation_timeout);
+        tauri::async_runtime::block_on(async {
+            timeout(timeout_duration, rx)
+                .await
+                .wrap_err("Operation timed out")?
+                .wrap_err("Actor dropped response channel")
+        })
     }
 
     /// 获取所有任务
-    pub fn get_all_tasks(&self) -> Vec<TaskInfo> {
+    pub fn get_all_tasks(&self) -> Result<Vec<TaskInfo>> {
         let (tx, rx) = tokio::sync::oneshot::channel();
 
         let msg = ActorMessage::GetAllTasks { respond_to: tx };
 
-        if self.sender.send(msg).is_err() {
-            return Vec::new();
-        }
+        self.sender
+            .send(msg)
+            .wrap_err("TaskManager actor has stopped")?;
 
-        tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(rx))
-            .unwrap_or_default()
+        let timeout_duration = Duration::from_secs(self.config.operation_timeout);
+        tauri::async_runtime::block_on(async {
+            timeout(timeout_duration, rx)
+                .await
+                .wrap_err("Operation timed out")?
+                .wrap_err("Actor dropped response channel")
+        })
     }
 
     /// 删除任务
-    pub fn remove_task(&self, id: &str) -> Option<TaskInfo> {
+    pub fn remove_task(&self, id: &str) -> Result<Option<TaskInfo>> {
         let (tx, rx) = tokio::sync::oneshot::channel();
 
         let msg = ActorMessage::RemoveTask {
@@ -378,23 +526,62 @@ impl TaskManager {
             respond_to: tx,
         };
 
-        if self.sender.send(msg).is_err() {
-            return None;
-        }
+        self.sender
+            .send(msg)
+            .wrap_err("TaskManager actor has stopped")?;
 
-        tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(rx))
-            .ok()
-            .flatten()
+        let timeout_duration = Duration::from_secs(self.config.operation_timeout);
+        tauri::async_runtime::block_on(async {
+            timeout(timeout_duration, rx)
+                .await
+                .wrap_err("Operation timed out")?
+                .wrap_err("Actor dropped response channel")
+        })
+    }
+
+    /// 健康检查
+    pub fn health_check(&self) -> bool {
+        !self.sender.is_closed()
+    }
+
+    /// 获取任务管理器指标
+    pub fn get_metrics(&self) -> Result<TaskManagerMetrics> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+
+        let msg = ActorMessage::GetMetrics { respond_to: tx };
+
+        self.sender
+            .send(msg)
+            .wrap_err("TaskManager actor has stopped")?;
+
+        let timeout_duration = Duration::from_secs(self.config.operation_timeout);
+        tauri::async_runtime::block_on(async {
+            timeout(timeout_duration, rx)
+                .await
+                .wrap_err("Operation timed out")?
+                .wrap_err("Actor dropped response channel")
+        })
     }
 
     /// 停止任务管理器
-    pub fn shutdown(&self) {
-        let _ = self.sender.send(ActorMessage::Shutdown);
+    pub fn shutdown(&self) -> Result<()> {
+        info!("Shutting down TaskManager");
+        self.sender
+            .send(ActorMessage::Shutdown)
+            .wrap_err("Failed to send shutdown message")?;
+        Ok(())
     }
 }
 
 impl Drop for TaskManager {
     fn drop(&mut self) {
-        self.shutdown();
+        // 使用 scopeguard 确保即使 shutdown 失败也会记录
+        defer! {
+            debug!("TaskManager handle dropped");
+        }
+        
+        if let Err(e) = self.shutdown() {
+            error!(error = %e, "Error during TaskManager shutdown");
+        }
     }
 }

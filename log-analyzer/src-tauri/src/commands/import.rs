@@ -61,7 +61,7 @@ pub async fn import_folder(
             "Import".to_string(),
             target_name.clone(),
             Some(workspaceId.clone()),
-        )
+        ).map_err(|e| format!("Failed to create task: {}", e))?
     } else {
         return Err("Task manager not initialized".to_string());
     };
@@ -87,7 +87,7 @@ pub async fn import_folder(
 
     // 更新任务进度
     if let Some(task_manager) = state.task_manager.lock().as_ref() {
-        if let Some(task) = task_manager.update_task(
+        if let Ok(Some(task)) = task_manager.update_task(
             &task_id_clone,
             10,
             "Scanning...".to_string(),
@@ -152,7 +152,7 @@ pub async fn import_folder(
 
     // 导入完成，使用 TaskManager 更新任务状态
     if let Some(task_manager) = state.task_manager.lock().as_ref() {
-        if let Some(task) = task_manager.update_task(
+        if let Ok(Some(task)) = task_manager.update_task(
             &task_id_clone,
             100,
             "Done".to_string(),

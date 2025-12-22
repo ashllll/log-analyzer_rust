@@ -535,3 +535,75 @@ This implementation plan addresses critical bugs using mature, industry-standard
   - 使用 TypeScript 的类型测试工具（如 tsd）验证类型定义
   - _Validates: Requirements 8.1, 8.2, 8.3, 8.4, 8.5_
   - _成熟方案_: 使用 tsd 或 @typescript-eslint 进行类型级别测试
+
+- [x] 12. TaskManager 稳定性修复 - Tauri Native Async Patterns
+
+
+
+
+  - 使用 Tauri 原生异步运行时替代自定义 Actor 实现
+  - 修复同步上下文中的异步操作导致的 panic
+  - 实现可靠的任务生命周期管理
+  - _Requirements: 9.1, 9.2, 9.3, 9.4, 9.5_
+  - _成熟方案_: Tauri async_runtime + Tokio message passing (官方推荐模式)
+
+- [x] 12.1 修复 TaskManager 的 Tauri 异步运行时集成
+
+
+  - 将 `tokio::spawn` 替换为 `tauri::async_runtime::spawn` 用于 Actor 初始化
+  - 将所有 `tokio::task::block_in_place` 替换为 `tauri::async_runtime::block_on`
+  - 确保 TaskManager::new 在 Tauri setup hook 中正确初始化
+  - 添加初始化失败的错误处理（不使用 panic!）
+  - _Requirements: 9.1, 9.2, 9.3_
+  - _成熟方案_: Tauri 官方文档推荐的异步模式
+
+- [x] 12.2 优化消息传递和错误处理
+
+
+  - 保留消息传递架构（Erlang/Akka/Actix 验证的模式）
+  - 将 panic! 替换为 Result 返回值和错误日志
+  - 添加 Actor 停止时的优雅降级处理
+  - 实现超时机制防止无限等待
+  - _Requirements: 9.2, 9.4_
+  - _成熟方案_: Tokio mpsc + Result 错误传播
+
+- [x] 12.3 添加任务管理器监控和调试
+
+
+  - 集成 tracing 记录任务生命周期事件
+  - 添加任务创建/更新/删除的结构化日志
+  - 实现任务状态变更的 metrics 收集
+  - 添加 Actor 健康检查机制
+  - _Requirements: 9.4, 7.1_
+  - _成熟方案_: tracing + metrics (Rust 标准可观测性)
+
+- [x] 12.4 实现优雅关闭和资源清理
+
+
+  - 在 Drop trait 中实现优雅的 Actor 关闭
+  - 确保所有待处理消息在关闭前被处理
+  - 添加关闭超时机制
+  - 实现资源清理的 RAII 模式
+  - _Requirements: 9.5, 5.5_
+  - _成熟方案_: Rust RAII + scopeguard
+
+- [x] 12.5 编写 TaskManager 集成测试
+
+
+  - **Property 36: TaskManager Initialization Safety** - 验证初始化不会 panic
+  - **Property 37: Task Creation from Sync Context** - 验证同步上下文调用安全
+  - **Property 38: Task State Propagation** - 验证状态传播可靠性
+  - **Property 39: TaskManager Graceful Shutdown** - 验证优雅关闭
+  - 添加并发任务创建的压力测试
+  - _Validates: Requirements 9.1, 9.2, 9.3, 9.4, 9.5_
+  - _成熟方案_: rstest + tokio-test
+
+- [x] 13. 最终验证 - TaskManager 生产就绪
+
+
+
+
+  - 运行完整测试套件确认所有修复生效
+  - 验证应用启动不再 panic
+  - 测试任务管理的端到端流程
+  - 确认性能和稳定性达标

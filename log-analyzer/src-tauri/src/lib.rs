@@ -23,7 +23,7 @@ mod monitoring;
 mod search_engine; // 添加搜索引擎模块
 pub mod services; // 公开 services 模块用于基准测试
 mod state_sync; // 添加状态同步模块
-mod task_manager; // 任务生命周期管理模块
+pub mod task_manager; // 任务生命周期管理模块（公开用于测试）
 pub mod utils; // 公开 utils 模块用于基准测试
 
 // 从模块导入类型
@@ -176,11 +176,19 @@ pub fn run() {
                 completed_task_ttl: 3, // 完成任务保留 3 秒
                 failed_task_ttl: 10,   // 失败任务保留 10 秒
                 cleanup_interval: 1,   // 每秒检查一次
+                operation_timeout: 5,  // 操作超时 5 秒
             };
-            let task_manager =
-                task_manager::TaskManager::new(app.handle().clone(), task_manager_config);
-            *state.task_manager.lock() = Some(task_manager);
-            tracing::info!("Task manager initialized successfully");
+            
+            match task_manager::TaskManager::new(app.handle().clone(), task_manager_config) {
+                Ok(task_manager) => {
+                    *state.task_manager.lock() = Some(task_manager);
+                    tracing::info!("Task manager initialized successfully");
+                }
+                Err(e) => {
+                    tracing::error!(error = %e, "Failed to initialize task manager");
+                    return Err(e.into());
+                }
+            }
 
             // 启动性能监控系统
             let metrics_collector = state.metrics_collector.clone();
