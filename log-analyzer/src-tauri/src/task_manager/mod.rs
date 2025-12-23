@@ -413,7 +413,37 @@ impl TaskManager {
         Ok(Self { sender, config })
     }
 
-    /// 创建新任务
+    /// 创建新任务（异步版本）
+    pub async fn create_task_async(
+        &self,
+        id: String,
+        task_type: String,
+        target: String,
+        workspace_id: Option<String>,
+    ) -> Result<TaskInfo> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+
+        let msg = ActorMessage::CreateTask {
+            id: id.clone(),
+            task_type,
+            target,
+            workspace_id,
+            respond_to: tx,
+        };
+
+        self.sender
+            .send(msg)
+            .wrap_err("TaskManager actor has stopped")?;
+
+        // 直接使用 await，不需要 block_on
+        let timeout_duration = Duration::from_secs(self.config.operation_timeout);
+        timeout(timeout_duration, rx)
+            .await
+            .wrap_err("Operation timed out")?
+            .wrap_err("Actor dropped response channel")
+    }
+
+    /// 创建新任务（同步版本，仅用于同步上下文）
     pub fn create_task(
         &self,
         id: String,
@@ -445,7 +475,36 @@ impl TaskManager {
         })
     }
 
-    /// 更新任务进度
+    /// 更新任务进度（异步版本）
+    pub async fn update_task_async(
+        &self,
+        id: &str,
+        progress: u8,
+        message: String,
+        status: TaskStatus,
+    ) -> Result<Option<TaskInfo>> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+
+        let msg = ActorMessage::UpdateTask {
+            id: id.to_string(),
+            progress,
+            message,
+            status,
+            respond_to: tx,
+        };
+
+        self.sender
+            .send(msg)
+            .wrap_err("TaskManager actor has stopped")?;
+
+        let timeout_duration = Duration::from_secs(self.config.operation_timeout);
+        timeout(timeout_duration, rx)
+            .await
+            .wrap_err("Operation timed out")?
+            .wrap_err("Actor dropped response channel")
+    }
+
+    /// 更新任务进度（同步版本，仅用于同步上下文）
     pub fn update_task(
         &self,
         id: &str,

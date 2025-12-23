@@ -487,7 +487,7 @@ impl MetricsCollector {
 
         // Start periodic collection
         let collector = self.clone();
-        tokio::spawn(async move {
+        tauri::async_runtime::spawn(async move {
             let mut interval = interval(collector.collection_interval);
             loop {
                 interval.tick().await;

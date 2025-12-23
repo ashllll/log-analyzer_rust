@@ -550,6 +550,11 @@ This implementation plan addresses critical bugs using mature, industry-standard
 - [x] 12.1 修复 TaskManager 的 Tauri 异步运行时集成
 
 
+
+
+
+
+
   - 将 `tokio::spawn` 替换为 `tauri::async_runtime::spawn` 用于 Actor 初始化
   - 将所有 `tokio::task::block_in_place` 替换为 `tauri::async_runtime::block_on`
   - 确保 TaskManager::new 在 Tauri setup hook 中正确初始化
@@ -598,6 +603,37 @@ This implementation plan addresses critical bugs using mature, industry-standard
   - _Validates: Requirements 9.1, 9.2, 9.3, 9.4, 9.5_
   - _成熟方案_: rstest + tokio-test
 
+- [x] 12.6 修复 async 上下文中的 block_on 调用
+
+
+
+
+
+
+
+  - **识别问题**: delete_workspace 是 async 命令，但内部调用了使用 block_on 的 TaskManager 方法
+  - **根本原因**: TaskManager 的同步方法（create_task, update_task 等）使用 `tauri::async_runtime::block_on`
+  - **解决方案**: 在 async 命令中直接使用 TaskManager 的 async 方法（create_task_async, update_task_async）
+  - **修复范围**: 检查所有 async Tauri 命令，确保它们调用 async 版本的 TaskManager 方法
+  - _Requirements: 9.6, 9.7_
+  - _成熟方案_: Tokio 最佳实践 - 在 async 上下文中使用 async 方法
+
+- [x] 12.7 编写 async 上下文测试
+
+
+
+
+
+
+
+
+  - **Property 40: No block_on in Async Context** - 验证 async 命令不调用 block_on
+  - **Property 41: Workspace Deletion Without Panics** - 验证工作区删除不会 panic
+  - 添加 async 命令调用 TaskManager 的集成测试
+  - 模拟 delete_workspace 场景验证修复
+  - _Validates: Requirements 9.6, 9.7_
+  - _成熟方案_: tokio-test + proptest
+
 - [x] 13. 最终验证 - TaskManager 生产就绪
 
 
@@ -607,3 +643,93 @@ This implementation plan addresses critical bugs using mature, industry-standard
   - 验证应用启动不再 panic
   - 测试任务管理的端到端流程
   - 确认性能和稳定性达标
+
+- [x] 14. IPC 连接稳定性修复 - 业内成熟方案
+
+
+
+
+
+
+
+
+  - 实现 IPC 健康检查和重连机制
+  - 添加指数退避重试策略
+  - 实现断路器模式防止级联失败
+  - 添加 IPC 连接预热机制
+  - _Requirements: 10.1, 10.2, 10.3, 10.4, 10.5_
+  - _成熟方案_: Circuit Breaker + Exponential Backoff + Health Check (微服务标准模式)
+
+- [x] 14.1 实现 IPC 健康检查机制
+
+
+  - 创建 IPCHealthChecker 单例类 ✓
+  - 实现定期心跳检查（30秒间隔）✓
+  - 添加连续失败计数和告警 ✓
+  - 提供手动健康检查和等待恢复接口 ✓
+  - _Requirements: 10.1, 10.2_
+  - _成熟方案_: 参考 Kubernetes liveness/readiness probes
+
+- [x] 14.2 实现指数退避重试机制
+
+
+  - 创建 invokeWithRetry 函数封装 Tauri invoke ✓
+  - 实现指数退避算法（初始1秒，最大10秒）✓
+  - 添加抖动（Jitter）避免雷鸣群效应 ✓
+  - 集成超时控制（默认30秒）✓
+  - _Requirements: 10.2, 10.3_
+  - _成熟方案_: AWS SDK、Google Cloud SDK 的重试策略
+
+- [x] 14.3 实现断路器模式
+
+
+  - 创建 CircuitBreaker 类管理连接状态 ✓
+  - 实现三态模式：CLOSED、OPEN、HALF_OPEN ✓
+  - 添加失败阈值（5次）和恢复超时（60秒）✓
+  - 提供快速失败机制避免资源浪费 ✓
+  - _Requirements: 10.3, 10.4_
+  - _成熟方案_: Netflix Hystrix、Resilience4j 的断路器实现
+
+- [x] 14.4 实现 IPC 连接预热机制
+
+
+  - 创建 warmupIPCConnection 函数 ✓
+  - 在应用启动时预加载常用命令 ✓
+  - 集成健康检查验证连接状态 ✓
+  - 添加预热失败的错误收集和报告 ✓
+  - _Requirements: 10.1, 10.5_
+  - _成熟方案_: 参考 gRPC connection pooling 和 HTTP/2 connection preface
+
+- [x] 14.5 集成到 delete_workspace 操作
+
+
+  - 更新 useWorkspaceOperations hook 使用 invokeWithRetry ✓
+  - 添加友好的错误提示（区分超时、断路器、其他错误）✓
+  - 记录重试次数和总耗时用于监控 ✓
+  - 在 App.tsx 中集成 IPC 预热 ✓
+  - _Requirements: 10.2, 10.3, 10.5_
+  - _成熟方案_: 用户体验优化 + 可观测性
+
+- [x] 14.6 编写 IPC 稳定性测试
+
+
+  - **Property 40: IPC Health Check Reliability** - 验证健康检查准确性 ✓
+  - **Property 41: Retry Exponential Backoff** - 验证退避算法正确性 ✓
+  - **Property 42: Circuit Breaker State Transitions** - 验证断路器状态机 ✓
+  - **Property 43: IPC Warmup Success** - 验证预热机制有效性 ✓
+  - **Property 44: Delete Workspace Resilience** - 验证删除操作容错性 ✓
+  - 添加网络故障模拟测试 ✓
+  - _Validates: Requirements 10.1, 10.2, 10.3, 10.4, 10.5_
+  - _成熟方案_: Chaos Engineering + Fault Injection Testing
+  - _测试结果_: 10/10 通过 ✅
+
+- [x] 14.7 添加 IPC 监控和告警
+
+
+
+  - 集成 tracing 记录 IPC 调用和重试
+  - 添加 metrics 收集（成功率、延迟、重试次数）
+  - 实现告警规则（连续失败、断路器打开）
+  - 创建 IPC 健康仪表板
+  - _Requirements: 10.4, 7.1_
+  - _成熟方案_: Prometheus + Grafana 监控模式

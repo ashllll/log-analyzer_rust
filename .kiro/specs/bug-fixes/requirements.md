@@ -127,3 +127,5 @@ This document outlines the requirements for fixing critical bugs identified in t
 3. WHEN the application starts THEN the TaskManager SHALL initialize successfully in the Tauri setup hook
 4. WHEN tasks are updated THEN the System SHALL propagate state changes to the frontend reliably
 5. WHEN the application shuts down THEN the TaskManager SHALL cleanup all resources gracefully
+6. WHEN async Tauri commands call TaskManager methods THEN the System SHALL NOT use block_on within async contexts to prevent Tokio runtime panics
+7. WHEN workspace deletion operations execute THEN the Backend SHALL complete without triggering Tokio scheduler panics

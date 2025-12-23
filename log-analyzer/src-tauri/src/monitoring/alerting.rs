@@ -201,7 +201,7 @@ impl AlertingSystem {
 
         // Start alert cleanup task
         let alerting = self.clone();
-        tokio::spawn(async move {
+        tauri::async_runtime::spawn(async move {
             let mut interval = interval(Duration::from_secs(300)); // Check every 5 minutes
             loop {
                 interval.tick().await;

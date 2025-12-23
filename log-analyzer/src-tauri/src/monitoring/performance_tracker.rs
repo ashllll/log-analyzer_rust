@@ -101,7 +101,7 @@ impl PerformanceTracker {
 
         // Start periodic cleanup task
         let tracker = self.clone_for_cleanup();
-        tokio::spawn(async move {
+        tauri::async_runtime::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(300)); // 5 minutes
             loop {
                 interval.tick().await;

@@ -52,7 +52,7 @@ pub async fn async_search_logs(
     let path_map = Arc::clone(&state.path_map);
 
     // 启动异步搜索任务
-    tokio::spawn(async move {
+    tauri::async_runtime::spawn(async move {
         let result = perform_async_search(
             app_handle,
             query_clone,

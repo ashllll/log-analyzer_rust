@@ -72,7 +72,12 @@ pub async fn load_workspace(
     );
 
     // 广播工作区加载完成事件
-    if let Some(state_sync) = state.state_sync.lock().as_ref() {
+    // 注意：先克隆 state_sync，释放锁后再 await，避免跨 await 点持有锁
+    let state_sync_opt = {
+        let guard = state.state_sync.lock();
+        guard.as_ref().cloned()
+    };
+    if let Some(state_sync) = state_sync_opt {
         use crate::state_sync::models::{WorkspaceEvent, WorkspaceStatus};
         use std::time::Duration;
         let _ = state_sync
@@ -114,7 +119,7 @@ pub async fn refresh_workspace(
         source_path.to_path_buf()
     });
 
-    // 使用 TaskManager 创建任务
+    // 使用 TaskManager 创建任务（异步版本，避免在 async 上下文中使用 block_on）
     let target_name = canonical_path
         .file_name()
         .and_then(|n| n.to_str())
@@ -122,34 +127,30 @@ pub async fn refresh_workspace(
         .to_string();
 
     let task = if let Some(task_manager) = state.task_manager.lock().as_ref() {
-        task_manager.create_task(
+        task_manager.create_task_async(
             task_id.clone(),
             "Refresh".to_string(),
             target_name.clone(),
             Some(workspaceId.clone()),
-        ).map_err(|e| format!("Failed to create task: {}", e))?
+        ).await.map_err(|e| format!("Failed to create task: {}", e))?
     } else {
         return Err("Task manager not initialized".to_string());
     };
 
     // 发送初始任务事件
-    let _ = app.emit("task-update", task);
+    let _ = app.emit("task-update", task.clone());
 
     // 同时发送到事件总线（向后兼容）
     let event_bus = get_event_bus();
-    if let Some(task_manager) = state.task_manager.lock().as_ref() {
-        if let Ok(Some(task)) = task_manager.get_task(&task_id) {
-            let _ = event_bus.publish_task_update(crate::models::TaskProgress {
-                task_id: task.id.clone(),
-                task_type: task.task_type.clone(),
-                target: task.target.clone(),
-                status: format!("{:?}", task.status).to_uppercase(),
-                message: task.message.clone(),
-                progress: task.progress,
-                workspace_id: task.workspace_id.clone(),
-            });
-        }
-    }
+    let _ = event_bus.publish_task_update(crate::models::TaskProgress {
+        task_id: task.id.clone(),
+        task_type: task.task_type.clone(),
+        target: task.target.clone(),
+        status: format!("{:?}", task.status).to_uppercase(),
+        message: task.message.clone(),
+        progress: task.progress,
+        workspace_id: task.workspace_id.clone(),
+    });
 
     let index_dir = app
         .path()
@@ -165,7 +166,8 @@ pub async fn refresh_workspace(
         }
     }
 
-    std::thread::spawn(move || {
+    // 使用 tauri::async_runtime::spawn 执行后台任务（成熟的异步模式）
+    tauri::async_runtime::spawn(async move {
         let operation_start = std::time::Instant::now();
         let _file_name = Path::new(&path)
             .file_name()
@@ -173,7 +175,8 @@ pub async fn refresh_workspace(
             .unwrap_or("Unknown")
             .to_string();
 
-        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+        // 使用 Result 而不是 panic::catch_unwind（更安全的错误处理）
+        let result: Result<(), String> = async {
             let state = app_handle.state::<AppState>();
 
             let (mut existing_path_map, mut existing_metadata) =
@@ -181,38 +184,45 @@ pub async fn refresh_workspace(
 
             // 更新任务进度：扫描文件系统
             if let Some(task_manager) = state.task_manager.lock().as_ref() {
-                if let Ok(Some(task)) = task_manager.update_task(
+                if let Ok(Some(task)) = task_manager.update_task_async(
                     &task_id_clone,
                     20,
                     "Scanning file system...".to_string(),
                     crate::task_manager::TaskStatus::Running,
-                ) {
+                ).await {
                     let _ = app_handle.emit("task-update", task);
                 }
             }
 
-            let mut current_files: HashMap<String, FileMetadata> = HashMap::new();
-            let source_path = Path::new(&path);
+            // 使用 spawn_blocking 处理阻塞的文件系统操作
+            let current_files = tauri::async_runtime::spawn_blocking({
+                let path = path.clone();
+                move || {
+                    let mut files: HashMap<String, FileMetadata> = HashMap::new();
+                    let source_path = Path::new(&path);
 
-            for entry in WalkDir::new(source_path)
-                .into_iter()
-                .filter_map(|e| e.ok())
-                .filter(|e| e.file_type().is_file())
-            {
-                let real_path = entry.path().to_string_lossy().to_string();
-                if let Ok(metadata) = get_file_metadata(entry.path()) {
-                    current_files.insert(real_path, metadata);
+                    for entry in WalkDir::new(source_path)
+                        .into_iter()
+                        .filter_map(|e| e.ok())
+                        .filter(|e| e.file_type().is_file())
+                    {
+                        let real_path = entry.path().to_string_lossy().to_string();
+                        if let Ok(metadata) = get_file_metadata(entry.path()) {
+                            files.insert(real_path, metadata);
+                        }
+                    }
+                    files
                 }
-            }
+            }).await.map_err(|e| format!("Failed to scan file system: {}", e))?;
 
             // 更新任务进度：分析变更
             if let Some(task_manager) = state.task_manager.lock().as_ref() {
-                if let Ok(Some(task)) = task_manager.update_task(
+                if let Ok(Some(task)) = task_manager.update_task_async(
                     &task_id_clone,
                     40,
                     "Analyzing changes...".to_string(),
                     crate::task_manager::TaskStatus::Running,
-                ) {
+                ).await {
                     let _ = app_handle.emit("task-update", task);
                 }
             }
@@ -243,12 +253,12 @@ pub async fn refresh_workspace(
             if total_changes > 0 {
                 // 更新任务进度：处理变更
                 if let Some(task_manager) = state.task_manager.lock().as_ref() {
-                    if let Ok(Some(task)) = task_manager.update_task(
+                    if let Ok(Some(task)) = task_manager.update_task_async(
                         &task_id_clone,
                         60,
                         format!("Processing {} changes...", total_changes),
                         crate::task_manager::TaskStatus::Running,
-                    ) {
+                    ).await {
                         let _ = app_handle.emit("task-update", task);
                     }
                 }
@@ -256,6 +266,7 @@ pub async fn refresh_workspace(
                 let temp_guard = state.temp_dir.lock();
 
                 if let Some(ref _temp_dir) = *temp_guard {
+                    let source_path = Path::new(&path);
                     let root_name = source_path
                         .file_name()
                         .unwrap_or_default()
@@ -313,12 +324,12 @@ pub async fn refresh_workspace(
 
                 // 更新任务进度：保存索引
                 if let Some(task_manager) = state.task_manager.lock().as_ref() {
-                    if let Ok(Some(task)) = task_manager.update_task(
+                    if let Ok(Some(task)) = task_manager.update_task_async(
                         &task_id_clone,
                         80,
                         "Saving index...".to_string(),
                         crate::task_manager::TaskStatus::Running,
-                    ) {
+                    ).await {
                         let _ = app_handle.emit("task-update", task);
                     }
                 }
@@ -338,20 +349,20 @@ pub async fn refresh_workspace(
                 *metadata_guard = existing_metadata;
             }
 
-            Ok::<(), String>(())
-        }));
+            Ok(())
+        }.await;
 
         let state = app_handle.state::<AppState>();
 
         if result.is_err() {
             // 更新任务状态为失败
             if let Some(task_manager) = state.task_manager.lock().as_ref() {
-                if let Ok(Some(task)) = task_manager.update_task(
+                if let Ok(Some(task)) = task_manager.update_task_async(
                     &task_id_clone,
                     0,
                     "Refresh failed".to_string(),
                     crate::task_manager::TaskStatus::Failed,
-                ) {
+                ).await {
                     let _ = app_handle.emit("task-update", task);
                 }
             }
@@ -368,22 +379,23 @@ pub async fn refresh_workspace(
         } else {
             // 更新任务状态为完成
             if let Some(task_manager) = state.task_manager.lock().as_ref() {
-                if let Ok(Some(task)) = task_manager.update_task(
+                if let Ok(Some(task)) = task_manager.update_task_async(
                     &task_id_clone,
                     100,
                     "Refresh complete".to_string(),
                     crate::task_manager::TaskStatus::Completed,
-                ) {
+                ).await {
                     let _ = app_handle.emit("task-update", task);
                 }
             }
 
             let _ = app_handle.emit("import-complete", task_id_clone.clone());
 
-            // 失效该工作区的所有缓存
+            // 失效该工作区的所有缓存（使用异步版本，避免在 async 上下文中调用 block_on）
             if let Err(e) = state
                 .cache_manager
-                .invalidate_workspace_cache(&workspace_id_clone)
+                .invalidate_workspace_cache_async(&workspace_id_clone)
+                .await
             {
                 eprintln!(
                     "[WARNING] Failed to invalidate cache for workspace {}: {}",
@@ -416,7 +428,7 @@ pub async fn refresh_workspace(
                 use crate::state_sync::models::{WorkspaceEvent, WorkspaceStatus};
                 use std::time::Duration;
                 let workspace_id_for_event = workspace_id_clone.clone();
-                tokio::spawn(async move {
+                tauri::async_runtime::spawn(async move {
                     let _ = state_sync
                         .broadcast_workspace_event(WorkspaceEvent::StatusChanged {
                             workspace_id: workspace_id_for_event,
@@ -837,8 +849,12 @@ pub async fn delete_workspace(
     // 执行清理
     cleanup_workspace_resources(&workspaceId, &state, &app)?;
 
-    // 失效该工作区的所有缓存
-    if let Err(e) = state.cache_manager.invalidate_workspace_cache(&workspaceId) {
+    // 失效该工作区的所有缓存（使用异步版本，避免在 async 上下文中调用 block_on）
+    if let Err(e) = state
+        .cache_manager
+        .invalidate_workspace_cache_async(&workspaceId)
+        .await
+    {
         eprintln!(
             "[WARNING] Failed to invalidate cache for workspace {}: {}",
             workspaceId, e
@@ -862,7 +878,12 @@ pub async fn delete_workspace(
     );
 
     // 广播工作区删除事件
-    if let Some(state_sync) = state.state_sync.lock().as_ref() {
+    // 注意：先克隆 state_sync，释放锁后再 await，避免跨 await 点持有锁
+    let state_sync_opt = {
+        let guard = state.state_sync.lock();
+        guard.as_ref().cloned()
+    };
+    if let Some(state_sync) = state_sync_opt {
         use crate::state_sync::models::{WorkspaceEvent, WorkspaceStatus};
         use std::time::SystemTime;
         let _ = state_sync

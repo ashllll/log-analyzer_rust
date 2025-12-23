@@ -4,6 +4,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { useAppStore } from '../stores/appStore';
 import { useWorkspaceStore, Workspace } from '../stores/workspaceStore';
 import { logger } from '../utils/logger';
+import { invokeWithRetry } from '../utils/ipcRetry';
 
 /**
  * 工作区操作Hook
@@ -155,14 +156,36 @@ export const useWorkspaceOperations = () => {
   /**
    * 删除工作区
    * 调用后端命令删除工作区及其所有相关资源
+   * 
+   * 使用业内成熟方案：
+   * 1. 指数退避重试机制
+   * 2. IPC 健康检查
+   * 3. 断路器模式
+   * 4. 超时控制
    */
   const deleteWorkspaceOp = useCallback(async (id: string) => {
     logger.debug('deleteWorkspace called for id:', id);
     setOperationLoading(true);
     
     try {
-      // 调用后端删除命令
-      await invoke('delete_workspace', { workspaceId: id });
+      // 使用带重试的 IPC 调用
+      const result = await invokeWithRetry<void>('delete_workspace', 
+        { workspaceId: id },
+        {
+          maxRetries: 3,           // 最多重试3次
+          initialDelayMs: 1000,    // 初始延迟1秒
+          maxDelayMs: 5000,        // 最大延迟5秒
+          backoffMultiplier: 2,    // 指数退避系数
+          timeoutMs: 30000,        // 单次调用超时30秒
+          jitter: true,            // 启用抖动
+        }
+      );
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Unknown error');
+      }
+      
+      logger.debug(`deleteWorkspace succeeded after ${result.attempts} attempts (${result.totalDuration}ms)`);
       
       // 后端删除成功,更新前端状态
       deleteWorkspace(id);
@@ -181,7 +204,16 @@ export const useWorkspaceOperations = () => {
       addToast('success', '工作区已删除');
     } catch (e) {
       logger.error('deleteWorkspace error:', e);
-      addToast('error', `删除失败: ${e}`);
+      
+      // 提供更友好的错误提示
+      const errorMessage = String(e);
+      if (errorMessage.includes('circuit breaker')) {
+        addToast('error', 'IPC 连接暂时不可用，请稍后重试');
+      } else if (errorMessage.includes('timeout')) {
+        addToast('error', '删除操作超时，请检查工作区状态');
+      } else {
+        addToast('error', `删除失败: ${e}`);
+      }
     } finally {
       setOperationLoading(false);
     }

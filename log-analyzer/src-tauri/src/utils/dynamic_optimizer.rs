@@ -388,7 +388,7 @@ impl DynamicOptimizer {
         let config = self.config.clone();
         let recommendations = self.recommendations_history.clone();
 
-        tokio::spawn(async move {
+        tauri::async_runtime::spawn(async move {
             let mut interval = tokio::time::interval(config.check_interval);
             loop {
                 interval.tick().await;

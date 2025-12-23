@@ -155,7 +155,7 @@ pub async fn init_tauri_bridge(app_handle: AppHandle) -> TauriBridge {
     let _bridge_handle = bridge.is_running.clone();
     let mut bridge_clone = TauriBridge::new(bridge.app_handle.clone());
 
-    tokio::spawn(async move {
+    tauri::async_runtime::spawn(async move {
         bridge_clone.start().await;
     });
 

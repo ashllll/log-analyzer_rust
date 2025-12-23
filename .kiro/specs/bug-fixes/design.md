@@ -644,6 +644,14 @@ interface ValidatedSearchQuery {
 *For any* application shutdown, the TaskManager should cleanup all resources without errors
 **Validates: Requirements 9.5**
 
+### Property 40: No block_on in Async Context
+*For any* async Tauri command that calls TaskManager methods, the system should never call block_on within an async context
+**Validates: Requirements 9.6**
+
+### Property 41: Workspace Deletion Without Panics
+*For any* workspace deletion operation, the system should complete without triggering Tokio scheduler panics
+**Validates: Requirements 9.7**
+
 ## Error Handling
 
 The error handling strategy leverages mature ecosystems:

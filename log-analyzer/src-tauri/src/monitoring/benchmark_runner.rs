@@ -57,7 +57,7 @@ impl BenchmarkRunner {
 
         // Start periodic benchmark runs
         let runner = self.clone();
-        tokio::spawn(async move {
+        tauri::async_runtime::spawn(async move {
             let mut interval = interval(Duration::from_secs(3600)); // Run every hour
             loop {
                 interval.tick().await;

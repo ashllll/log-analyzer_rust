@@ -551,10 +551,9 @@ impl CacheManager {
             match redis::Client::open(config.redis_url.as_str()) {
                 Ok(client) => {
                     // 注意：这里是同步上下文，但我们需要异步连接管理器
-                    // 在实际应用中，可能需要更好的初始化方式
-                    tokio::task::block_in_place(|| {
-                        tokio::runtime::Handle::current()
-                            .block_on(async { client.get_connection_manager().await.ok() })
+                    // 使用 tauri::async_runtime::block_on 替代 tokio::task::block_in_place
+                    tauri::async_runtime::block_on(async {
+                        client.get_connection_manager().await.ok()
                     })
                 }
                 Err(_) => None,
@@ -596,9 +595,8 @@ impl CacheManager {
 
         let redis_conn = if config.enable_l2_cache {
             match redis::Client::open(config.redis_url.as_str()) {
-                Ok(client) => tokio::task::block_in_place(|| {
-                    tokio::runtime::Handle::current()
-                        .block_on(async { client.get_connection_manager().await.ok() })
+                Ok(client) => tauri::async_runtime::block_on(async {
+                    client.get_connection_manager().await.ok()
                 }),
                 Err(_) => None,
             }
@@ -665,34 +663,30 @@ impl CacheManager {
         // 同时失效异步缓存
         let async_cache = self.async_search_cache.clone();
         let workspace_id_owned = workspace_id.to_string();
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                let keys_to_invalidate_async: Vec<SearchCacheKey> = async_cache
-                    .iter()
-                    .filter_map(|(key, _)| {
-                        if key.1 == workspace_id_owned {
-                            Some((*key).clone())
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-                for key in keys_to_invalidate_async {
-                    async_cache.invalidate(&key).await;
-                }
-            })
+        tauri::async_runtime::block_on(async {
+            let keys_to_invalidate_async: Vec<SearchCacheKey> = async_cache
+                .iter()
+                .filter_map(|(key, _)| {
+                    if key.1 == workspace_id_owned {
+                        Some((*key).clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            for key in keys_to_invalidate_async {
+                async_cache.invalidate(&key).await;
+            }
         });
 
         // 如果启用了 L2，则在异步上下文中清理 Redis
         if self.config.enable_l2_cache && self.redis_conn.is_some() {
             let workspace_id_owned = workspace_id.to_string();
-            // 使用 block_in_place 执行异步清理
-            tokio::task::block_in_place(|| {
-                tokio::runtime::Handle::current().block_on(async {
-                    let _ = self
-                        .invalidate_l2_workspace_cache(&workspace_id_owned)
-                        .await;
-                })
+            // 使用 tauri::async_runtime::block_on 执行异步清理
+            tauri::async_runtime::block_on(async {
+                let _ = self
+                    .invalidate_l2_workspace_cache(&workspace_id_owned)
+                    .await;
             });
         }
 
@@ -1179,9 +1173,9 @@ impl CacheManager {
         let snapshot = self.metrics.snapshot();
         let alerts = self.check_performance_alerts();
         let cache_stats = self.get_cache_statistics();
-        let async_cache_stats = tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(self.get_async_cache_statistics())
-        });
+        let async_cache_stats = tauri::async_runtime::block_on(
+            self.get_async_cache_statistics()
+        );
 
         let overall_health = self.calculate_cache_health(&snapshot, &alerts);
 
@@ -1307,16 +1301,16 @@ impl CacheManager {
     }
 
     /// 启动性能监控任务
-    pub fn start_monitoring(&self) -> tokio::task::JoinHandle<()> {
+    pub fn start_monitoring(&self) -> tauri::async_runtime::JoinHandle<()> {
         if !self.config.enable_monitoring {
             tracing::info!("Cache monitoring is disabled in configuration");
-            return tokio::spawn(async {});
+            return tauri::async_runtime::spawn(async {});
         }
 
         let metrics = Arc::clone(&self.metrics);
         let interval = self.config.monitoring_interval;
 
-        tokio::spawn(async move {
+        tauri::async_runtime::spawn(async move {
             let mut interval_timer = tokio::time::interval(interval);
 
             loop {
@@ -1375,9 +1369,8 @@ impl CacheManager {
     /// 获取缓存调试信息
     pub fn get_debug_info(&self) -> CacheDebugInfo {
         let sync_entry_count = self.search_cache.entry_count();
-        let async_entry_count = tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current()
-                .block_on(async { self.async_search_cache.entry_count() })
+        let async_entry_count = tauri::async_runtime::block_on(async {
+            self.async_search_cache.entry_count()
         });
 
         // 采样一些缓存键用于调试
