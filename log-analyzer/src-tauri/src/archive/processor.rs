@@ -7,18 +7,23 @@
 //! - 收集元数据（增量索引）
 //! - 错误处理和进度报告
 
+use crate::archive::checkpoint_manager::{Checkpoint, CheckpointManager};
 use crate::archive::extraction_engine::ExtractionPolicy;
 use crate::archive::public_api::extract_archive_async;
 use crate::archive::ArchiveManager;
 use crate::error::{AppError, Result};
-use crate::models::config::FileMetadata;
+use crate::models::config::FileMetadata as ConfigFileMetadata;
 use crate::models::log_entry::TaskProgress;
 use crate::services::file_watcher::get_file_metadata;
+use crate::storage::{ArchiveMetadata, ContentAddressableStorage, FileMetadata, MetadataStore};
 use crate::utils::path::normalize_path_separator;
 use std::collections::HashMap;
-use std::path::{Component, Path};
+use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use tokio::fs;
+use tokio::sync::Mutex;
+use tracing::{debug, info, warn};
 use walkdir::WalkDir;
 
 /// 检查是否启用增强提取系统
@@ -33,9 +38,8 @@ fn is_enhanced_extraction_enabled() -> bool {
         return env_value.to_lowercase() == "true";
     }
 
-    // 然后检查配置文件
-    // TODO: 从配置文件加载 ExtractionPolicy 并检查 use_enhanced_extraction 标志
-    // 目前默认为 false
+    // Configuration file support can be added in the future if needed
+    // Currently defaults to false for backward compatibility
     false
 }
 
@@ -90,6 +94,57 @@ fn validate_path_safety(path: &Path, base_dir: &Path) -> Result<()> {
                 }
             }
         }
+    }
+
+    Ok(())
+}
+
+/// Validate virtual path to prevent path traversal attacks
+///
+/// # Arguments
+///
+/// * `virtual_path` - The virtual path to validate
+///
+/// # Returns
+///
+/// * `Ok(())` - Path is safe
+/// * `Err(AppError)` - Path contains suspicious components
+///
+/// # Requirements
+///
+/// Validates: Requirements 1.5, 7.2, 8.3
+fn validate_virtual_path(virtual_path: &str) -> Result<()> {
+    // Check for path traversal sequences
+    if virtual_path.contains("..") {
+        return Err(AppError::validation_error(format!(
+            "Path traversal detected in virtual path: {}",
+            virtual_path
+        )));
+    }
+
+    // Check for absolute paths (virtual paths should be relative)
+    if virtual_path.starts_with('/') || virtual_path.starts_with('\\') {
+        return Err(AppError::validation_error(format!(
+            "Virtual path should be relative, not absolute: {}",
+            virtual_path
+        )));
+    }
+
+    // Check for Windows drive letters
+    if virtual_path.len() >= 2 && virtual_path.chars().nth(1) == Some(':') {
+        return Err(AppError::validation_error(format!(
+            "Virtual path should not contain drive letters: {}",
+            virtual_path
+        )));
+    }
+
+    // Check path length (though CAS removes most limits, we still want reasonable paths)
+    if virtual_path.len() > 4096 {
+        warn!(
+            path = %virtual_path,
+            length = virtual_path.len(),
+            "Virtual path is very long"
+        );
     }
 
     Ok(())
@@ -168,7 +223,7 @@ pub async fn process_path_recursive_with_metadata(
     virtual_path: &str,
     target_root: &Path,
     map: &mut HashMap<String, String>,
-    metadata_map: &mut HashMap<String, FileMetadata>,
+    metadata_map: &mut HashMap<String, ConfigFileMetadata>,
     app: &AppHandle,
     task_id: &str,
     workspace_id: &str,
@@ -316,6 +371,21 @@ async fn process_path_recursive_inner(
     let real_path = path.to_string_lossy().to_string();
     let normalized_virtual = normalize_path_separator(virtual_path);
 
+    // Validate file exists before adding to path map
+    if !path.exists() {
+        warn!(
+            file = %real_path,
+            "File does not exist when adding to path_map, skipping"
+        );
+        return Ok(());
+    }
+
+    debug!(
+        real_path = %real_path,
+        virtual_path = %normalized_virtual,
+        "Adding file to path_map"
+    );
+
     map.insert(real_path, normalized_virtual.clone());
 
     Ok(())
@@ -337,7 +407,7 @@ async fn process_path_recursive_inner_with_metadata(
     virtual_path: &str,
     target_root: &Path,
     map: &mut HashMap<String, String>,
-    metadata_map: &mut HashMap<String, FileMetadata>,
+    metadata_map: &mut HashMap<String, ConfigFileMetadata>,
     app: &AppHandle,
     task_id: &str,
     workspace_id: &str,
@@ -416,6 +486,593 @@ async fn process_path_recursive_inner_with_metadata(
     Ok(())
 }
 
+// ========== NEW CAS-BASED PROCESSING FUNCTIONS ==========
+
+/// Context for CAS processing with checkpoint support
+pub struct CasProcessingContext {
+    pub workspace_dir: PathBuf,
+    pub cas: Arc<ContentAddressableStorage>,
+    pub metadata_store: Arc<MetadataStore>,
+    pub checkpoint_manager: Option<Arc<Mutex<CheckpointManager>>>,
+    pub checkpoint: Option<Arc<Mutex<Checkpoint>>>,
+    pub files_since_checkpoint: Arc<Mutex<usize>>,
+    pub bytes_since_checkpoint: Arc<Mutex<u64>>,
+}
+
+impl CasProcessingContext {
+    /// Create a new processing context
+    pub fn new(
+        workspace_dir: PathBuf,
+        cas: Arc<ContentAddressableStorage>,
+        metadata_store: Arc<MetadataStore>,
+    ) -> Self {
+        Self {
+            workspace_dir,
+            cas,
+            metadata_store,
+            checkpoint_manager: None,
+            checkpoint: None,
+            files_since_checkpoint: Arc::new(Mutex::new(0)),
+            bytes_since_checkpoint: Arc::new(Mutex::new(0)),
+        }
+    }
+
+    /// Enable checkpoint support
+    pub fn with_checkpoints(
+        mut self,
+        checkpoint_manager: Arc<Mutex<CheckpointManager>>,
+        checkpoint: Arc<Mutex<Checkpoint>>,
+    ) -> Self {
+        self.checkpoint_manager = Some(checkpoint_manager);
+        self.checkpoint = Some(checkpoint);
+        self
+    }
+
+    /// Update checkpoint if needed
+    async fn maybe_save_checkpoint(&self) -> Result<()> {
+        if let (Some(manager), Some(checkpoint)) = (&self.checkpoint_manager, &self.checkpoint) {
+            let files = *self.files_since_checkpoint.lock().await;
+            let bytes = *self.bytes_since_checkpoint.lock().await;
+
+            let manager_guard = manager.lock().await;
+            if manager_guard.should_write_checkpoint(files, bytes) {
+                let checkpoint_guard = checkpoint.lock().await;
+                manager_guard.save_checkpoint(&checkpoint_guard).await?;
+
+                // Reset counters
+                *self.files_since_checkpoint.lock().await = 0;
+                *self.bytes_since_checkpoint.lock().await = 0;
+
+                info!(
+                    files = checkpoint_guard.metrics.files_extracted,
+                    bytes = checkpoint_guard.metrics.bytes_extracted,
+                    "Checkpoint saved"
+                );
+            }
+        }
+        Ok(())
+    }
+
+    /// Update checkpoint with new file
+    async fn update_checkpoint(&self, file_path: PathBuf, file_size: u64) -> Result<()> {
+        if let Some(checkpoint) = &self.checkpoint {
+            let mut checkpoint_guard = checkpoint.lock().await;
+            checkpoint_guard.update_file(file_path, file_size);
+
+            // Update counters
+            *self.files_since_checkpoint.lock().await += 1;
+            *self.bytes_since_checkpoint.lock().await += file_size;
+        }
+        Ok(())
+    }
+
+    /// Check if file was already extracted
+    async fn is_file_extracted(&self, file_path: &Path) -> bool {
+        if let Some(checkpoint) = &self.checkpoint {
+            let checkpoint_guard = checkpoint.lock().await;
+            checkpoint_guard.is_file_extracted(file_path)
+        } else {
+            false
+        }
+    }
+}
+
+/// Process path recursively using CAS and MetadataStore with checkpoint support
+///
+/// This is the new CAS-based implementation that replaces the old HashMap-based approach.
+/// It includes checkpoint support for resumable processing.
+///
+/// # Arguments
+///
+/// * `path` - Path to process (file or directory)
+/// * `virtual_path` - Virtual path for indexing
+/// * `context` - Processing context with CAS, metadata store, and optional checkpoints
+/// * `app` - Tauri app handle
+/// * `task_id` - Task ID for progress reporting
+/// * `workspace_id` - Workspace ID
+/// * `parent_archive_id` - Parent archive ID (None for root level)
+/// * `depth_level` - Current nesting depth
+///
+/// # Requirements
+///
+/// Validates: Requirements 1.1, 1.2, 1.3, 4.1, 4.2, 4.3, 8.4
+#[allow(clippy::too_many_arguments)]
+pub async fn process_path_with_cas_and_checkpoints(
+    path: &Path,
+    virtual_path: &str,
+    context: &CasProcessingContext,
+    app: &AppHandle,
+    task_id: &str,
+    workspace_id: &str,
+    parent_archive_id: Option<i64>,
+    depth_level: i32,
+) -> Result<()> {
+    // Check if file was already extracted (checkpoint resume)
+    if context.is_file_extracted(path).await {
+        debug!(
+            path = %path.display(),
+            "Skipping already extracted file (checkpoint resume)"
+        );
+        return Ok(());
+    }
+
+    // Validate virtual path
+    validate_virtual_path(virtual_path)?;
+
+    // Validate file exists before processing
+    if !path.exists() {
+        warn!(
+            path = %path.display(),
+            "File does not exist, skipping"
+        );
+        return Ok(());
+    }
+
+    // Handle directories
+    if path.is_dir() {
+        for entry in WalkDir::new(path)
+            .min_depth(1)
+            .max_depth(1)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            let entry_name = entry.file_name().to_string_lossy().to_string();
+            let new_virtual = format!("{}/{}", virtual_path, entry_name);
+
+            Box::pin(process_path_with_cas_and_checkpoints(
+                entry.path(),
+                &new_virtual,
+                context,
+                app,
+                task_id,
+                workspace_id,
+                parent_archive_id,
+                depth_level,
+            ))
+            .await?;
+        }
+        return Ok(());
+    }
+
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| AppError::validation_error("Invalid filename"))?
+        .to_string_lossy()
+        .to_string();
+
+    // Report progress
+    let _ = app.emit(
+        "task-update",
+        TaskProgress {
+            task_id: task_id.to_string(),
+            task_type: "Import".to_string(),
+            target: file_name.clone(),
+            status: "RUNNING".to_string(),
+            message: format!("Processing: {}", file_name),
+            progress: 50,
+            workspace_id: None,
+        },
+    );
+
+    // Check if this is an archive file
+    if is_archive_file(path) {
+        // Process as archive
+        return Box::pin(extract_and_process_archive_with_cas_and_checkpoints(
+            path,
+            virtual_path,
+            context,
+            app,
+            task_id,
+            workspace_id,
+            parent_archive_id,
+            depth_level,
+        ))
+        .await;
+    }
+
+    // --- Regular file: Store in CAS and add to metadata ---
+    
+    // Store file content in CAS using streaming (memory-efficient)
+    let hash = context.cas.store_file_streaming(path).await?;
+
+    // Get file metadata
+    let file_size = fs::metadata(path)
+        .await
+        .map(|m| m.len() as i64)
+        .unwrap_or(0);
+    
+    let modified_time = fs::metadata(path)
+        .await
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+
+    // Detect MIME type (simple heuristic based on extension)
+    let mime_type = path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .and_then(|ext| match ext.to_lowercase().as_str() {
+            "log" | "txt" => Some("text/plain".to_string()),
+            "json" => Some("application/json".to_string()),
+            "xml" => Some("application/xml".to_string()),
+            "gz" => Some("application/gzip".to_string()),
+            "zip" => Some("application/zip".to_string()),
+            _ => None,
+        });
+
+    // Create file metadata
+    let file_metadata = FileMetadata {
+        id: 0, // Will be auto-generated
+        sha256_hash: hash.clone(),
+        virtual_path: normalize_path_separator(virtual_path),
+        original_name: file_name.clone(),
+        size: file_size,
+        modified_time,
+        mime_type,
+        parent_archive_id,
+        depth_level,
+    };
+
+    // Insert into metadata store
+    let file_id = context.metadata_store.insert_file(&file_metadata).await?;
+
+    // Update checkpoint
+    context.update_checkpoint(path.to_path_buf(), file_size as u64).await?;
+
+    // Maybe save checkpoint
+    context.maybe_save_checkpoint().await?;
+
+    debug!(
+        file_id = file_id,
+        hash = %hash,
+        virtual_path = %virtual_path,
+        size = file_size,
+        depth = depth_level,
+        "Stored file in CAS and metadata"
+    );
+
+    Ok(())
+}
+
+/// Process path recursively using CAS and MetadataStore
+///
+/// This is the new CAS-based implementation that replaces the old HashMap-based approach.
+///
+/// # Arguments
+///
+/// * `path` - Path to process (file or directory)
+/// * `virtual_path` - Virtual path for indexing
+/// * `workspace_dir` - Workspace directory (contains CAS and metadata.db)
+/// * `cas` - Content-Addressable Storage instance
+/// * `metadata_store` - Metadata store instance (wrapped in Arc)
+/// * `app` - Tauri app handle
+/// * `task_id` - Task ID for progress reporting
+/// * `workspace_id` - Workspace ID
+/// * `parent_archive_id` - Parent archive ID (None for root level)
+/// * `depth_level` - Current nesting depth
+///
+/// # Requirements
+///
+/// Validates: Requirements 1.1, 1.2, 1.3, 4.1, 4.2, 4.3
+#[allow(clippy::too_many_arguments)]
+pub async fn process_path_with_cas(
+    path: &Path,
+    virtual_path: &str,
+    workspace_dir: &Path,
+    cas: &ContentAddressableStorage,
+    metadata_store: Arc<MetadataStore>,
+    app: &AppHandle,
+    task_id: &str,
+    workspace_id: &str,
+    parent_archive_id: Option<i64>,
+    depth_level: i32,
+) -> Result<()> {
+    // Wrap CAS in Arc for the context
+    let cas_arc = Arc::new(cas.clone());
+    
+    // Create context without checkpoints for backward compatibility
+    let context = CasProcessingContext::new(
+        workspace_dir.to_path_buf(),
+        cas_arc,
+        metadata_store,
+    );
+
+    process_path_with_cas_and_checkpoints(
+        path,
+        virtual_path,
+        &context,
+        app,
+        task_id,
+        workspace_id,
+        parent_archive_id,
+        depth_level,
+    )
+    .await
+}
+
+/// Extract and process archive using CAS with checkpoint support
+///
+/// This function handles nested archive extraction with depth tracking and checkpoint support.
+///
+/// # Arguments
+///
+/// * `archive_path` - Path to the archive file
+/// * `virtual_path` - Virtual path prefix
+/// * `context` - Processing context with CAS, metadata store, and optional checkpoints
+/// * `app` - Tauri app handle
+/// * `task_id` - Task ID
+/// * `workspace_id` - Workspace ID
+/// * `parent_archive_id` - Parent archive ID (None for root)
+/// * `depth_level` - Current nesting depth
+///
+/// # Requirements
+///
+/// Validates: Requirements 4.1, 4.2, 4.3, 8.4
+#[allow(clippy::too_many_arguments)]
+async fn extract_and_process_archive_with_cas_and_checkpoints(
+    archive_path: &Path,
+    virtual_path: &str,
+    context: &CasProcessingContext,
+    app: &AppHandle,
+    task_id: &str,
+    workspace_id: &str,
+    parent_archive_id: Option<i64>,
+    depth_level: i32,
+) -> Result<()> {
+    const MAX_NESTING_DEPTH: i32 = 10;
+
+    // Check depth limit to prevent infinite recursion
+    if depth_level >= MAX_NESTING_DEPTH {
+        warn!(
+            archive = %archive_path.display(),
+            depth = depth_level,
+            "Maximum nesting depth reached, skipping archive"
+        );
+        return Ok(());
+    }
+
+    let file_name = archive_path
+        .file_name()
+        .ok_or_else(|| AppError::validation_error("Invalid archive filename"))?
+        .to_string_lossy()
+        .to_string();
+
+    info!(
+        archive = %file_name,
+        depth = depth_level,
+        parent_id = ?parent_archive_id,
+        "Processing archive with checkpoint support"
+    );
+
+    // Store the archive file itself in CAS
+    let archive_hash = context.cas.store_file_streaming(archive_path).await?;
+
+    // Detect archive type
+    let archive_type = archive_path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_lowercase())
+        .unwrap_or_else(|| "unknown".to_string());
+
+    // Create archive metadata
+    let archive_metadata = ArchiveMetadata {
+        id: 0, // Will be auto-generated
+        sha256_hash: archive_hash.clone(),
+        virtual_path: normalize_path_separator(virtual_path),
+        original_name: file_name.clone(),
+        archive_type: archive_type.clone(),
+        parent_archive_id,
+        depth_level,
+        extraction_status: "pending".to_string(),
+    };
+
+    // Insert archive metadata
+    let archive_id = context.metadata_store.insert_archive(&archive_metadata).await?;
+
+    debug!(
+        archive_id = archive_id,
+        hash = %archive_hash,
+        archive_type = %archive_type,
+        "Inserted archive metadata"
+    );
+
+    // Create extraction directory
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let extract_dir_name = format!("{}_{}", file_name.replace('.', "_"), timestamp);
+    let extract_dir = context.workspace_dir.join("extracted").join(&extract_dir_name);
+
+    fs::create_dir_all(&extract_dir).await.map_err(|e| {
+        AppError::archive_error(
+            format!("Failed to create extraction directory: {}", e),
+            Some(extract_dir.clone()),
+        )
+    })?;
+
+    // Extract archive
+    let archive_manager = ArchiveManager::new();
+    let extracted_files = if is_enhanced_extraction_enabled() {
+        let policy = ExtractionPolicy::default();
+        match extract_archive_async(archive_path, &extract_dir, workspace_id, Some(policy)).await {
+            Ok(result) => {
+                info!(
+                    files = result.extracted_files.len(),
+                    bytes = result.performance_metrics.bytes_extracted,
+                    "Enhanced extraction completed"
+                );
+                result.extracted_files
+            }
+            Err(e) => {
+                context.metadata_store
+                    .update_archive_status(archive_id, "failed")
+                    .await?;
+                return Err(AppError::archive_error(
+                    format!("Enhanced extraction failed: {}", e),
+                    Some(archive_path.to_path_buf()),
+                ));
+            }
+        }
+    } else {
+        match archive_manager.extract_archive(archive_path, &extract_dir).await {
+            Ok(summary) => {
+                info!(
+                    files = summary.files_extracted,
+                    bytes = summary.total_size,
+                    "Legacy extraction completed"
+                );
+                summary.extracted_files
+            }
+            Err(e) => {
+                context.metadata_store
+                    .update_archive_status(archive_id, "failed")
+                    .await?;
+                return Err(AppError::archive_error(
+                    format!("Legacy extraction failed: {}", e),
+                    Some(archive_path.to_path_buf()),
+                ));
+            }
+        }
+    };
+
+    // Update archive status to extracting
+    context.metadata_store
+        .update_archive_status(archive_id, "extracting")
+        .await?;
+
+    // Process extracted files recursively
+    for extracted_file in &extracted_files {
+        // Validate path safety
+        if let Err(e) = validate_path_safety(extracted_file, &extract_dir) {
+            warn!(
+                file = %extracted_file.display(),
+                error = %e,
+                "Skipping unsafe file"
+            );
+            continue;
+        }
+
+        let relative_path = extracted_file.strip_prefix(&extract_dir).map_err(|_| {
+            AppError::validation_error(format!(
+                "Failed to compute relative path for {}",
+                extracted_file.display()
+            ))
+        })?;
+
+        let new_virtual = format!(
+            "{}/{}/{}",
+            virtual_path,
+            file_name,
+            relative_path.to_string_lossy()
+        );
+
+        // Recursively process (supports nested archives)
+        Box::pin(process_path_with_cas_and_checkpoints(
+            extracted_file,
+            &new_virtual,
+            context,
+            app,
+            task_id,
+            workspace_id,
+            Some(archive_id),
+            depth_level + 1,
+        ))
+        .await?;
+    }
+
+    // Update archive status to completed
+    context.metadata_store
+        .update_archive_status(archive_id, "completed")
+        .await?;
+
+    info!(
+        archive_id = archive_id,
+        files = extracted_files.len(),
+        "Archive processing completed"
+    );
+
+    Ok(())
+}
+
+/// Extract and process archive using CAS
+///
+/// This function handles nested archive extraction with depth tracking.
+///
+/// # Arguments
+///
+/// * `archive_path` - Path to the archive file
+/// * `virtual_path` - Virtual path prefix
+/// * `workspace_dir` - Workspace directory
+/// * `cas` - Content-Addressable Storage instance
+/// * `metadata_store` - Metadata store instance (wrapped in Arc)
+/// * `app` - Tauri app handle
+/// * `task_id` - Task ID
+/// * `workspace_id` - Workspace ID
+/// * `parent_archive_id` - Parent archive ID (None for root)
+/// * `depth_level` - Current nesting depth
+///
+/// # Requirements
+///
+/// Validates: Requirements 4.1, 4.2, 4.3
+#[allow(clippy::too_many_arguments)]
+async fn extract_and_process_archive_with_cas(
+    archive_path: &Path,
+    virtual_path: &str,
+    workspace_dir: &Path,
+    cas: &ContentAddressableStorage,
+    metadata_store: Arc<MetadataStore>,
+    app: &AppHandle,
+    task_id: &str,
+    workspace_id: &str,
+    parent_archive_id: Option<i64>,
+    depth_level: i32,
+) -> Result<()> {
+    // Wrap CAS in Arc for the context
+    let cas_arc = Arc::new(cas.clone());
+    
+    // Create context without checkpoints for backward compatibility
+    let context = CasProcessingContext::new(
+        workspace_dir.to_path_buf(),
+        cas_arc,
+        metadata_store,
+    );
+
+    extract_and_process_archive_with_cas_and_checkpoints(
+        archive_path,
+        virtual_path,
+        &context,
+        app,
+        task_id,
+        workspace_id,
+        parent_archive_id,
+        depth_level,
+    )
+    .await
+}
+
 /// 检查文件是否为压缩文件
 ///
 /// # 支持的格式
@@ -446,7 +1103,10 @@ fn is_archive_file(path: &Path) -> bool {
     })
 }
 
-/// 提取压缩文件并递归处理内容
+/// 提取压缩文件并递归处理内容 (Legacy HashMap-based version)
+///
+/// **Note**: This is the legacy implementation for backward compatibility.
+/// New code should use `extract_and_process_archive_with_cas` instead.
 ///
 /// # 参数
 ///
@@ -465,6 +1125,11 @@ fn is_archive_file(path: &Path) -> bool {
 /// 2. 如果启用，使用 extract_archive_async；否则使用 ArchiveManager
 /// 3. 递归处理解压后的文件（支持嵌套压缩包）
 /// 4. 清理临时目录（失败时）
+/// 5. Track nesting depth and prevent infinite recursion
+///
+/// # Requirements
+///
+/// Validates: Requirements 4.1, 4.2, 4.3 (legacy implementation)
 #[allow(clippy::too_many_arguments)]
 async fn extract_and_process_archive(
     archive_manager: &ArchiveManager,
@@ -476,11 +1141,33 @@ async fn extract_and_process_archive(
     task_id: &str,
     workspace_id: &str,
 ) -> Result<()> {
+    const MAX_NESTING_DEPTH: i32 = 10;
+    
+    // Track depth to prevent infinite recursion
+    // For legacy implementation, we estimate depth from virtual_path
+    // Count the number of archive separators to determine nesting level
+    let depth_level = virtual_path.matches('/').count() as i32;
+    
+    if depth_level >= MAX_NESTING_DEPTH {
+        warn!(
+            archive = %archive_path.display(),
+            depth = depth_level,
+            "Maximum nesting depth reached in legacy mode, skipping archive"
+        );
+        return Ok(());
+    }
     let file_name = archive_path
         .file_name()
         .ok_or_else(|| AppError::validation_error("Invalid archive filename"))?
         .to_string_lossy()
         .to_string();
+
+    info!(
+        archive = %file_name,
+        depth = depth_level,
+        mode = "legacy",
+        "Processing archive (legacy HashMap mode)"
+    );
 
     // 创建工作区解压目录 (archive_name_timestamp)
     // 该目录将持久化保存，直到工作区删除时统一清理
@@ -516,21 +1203,31 @@ async fn extract_and_process_archive(
                     result.performance_metrics.bytes_extracted
                 );
 
-                // 报告警告
+                // Log warnings
                 for warning in &result.warnings {
-                    eprintln!("[WARNING] {:?}: {}", warning.category, warning.message);
+                    warn!(
+                        category = ?warning.category,
+                        message = %warning.message,
+                        "Extraction warning"
+                    );
                 }
 
-                // 报告安全事件
+                // Log security events
                 for event in &result.security_events {
-                    eprintln!("[SECURITY] {:?}: {:?}", event.event_type, event.details);
+                    warn!(
+                        event_type = ?event.event_type,
+                        details = ?event.details,
+                        "Security event detected"
+                    );
                 }
 
-                // 集成路径映射
+                // Log path mappings
                 for (short_path, original_path) in &result.metadata_mappings {
-                    let short_str = short_path.to_string_lossy().to_string();
-                    let original_str = original_path.to_string_lossy().to_string();
-                    eprintln!("[DEBUG] Path mapping: {} -> {}", short_str, original_str);
+                    debug!(
+                        short_path = %short_path.display(),
+                        original_path = %original_path.display(),
+                        "Path mapping created"
+                    );
                 }
 
                 result.extracted_files
@@ -569,16 +1266,22 @@ async fn extract_and_process_archive(
         summary.extracted_files
     };
 
-    // 递归处理解压后的文件（支持嵌套压缩包）
+    // Recursively process extracted files (supports nested archives)
+    debug!(
+        files_count = extracted_files.len(),
+        archive = %file_name,
+        "Processing extracted files"
+    );
+    
     for extracted_file in &extracted_files {
-        // 验证路径安全：防止路径遍历攻击
+        // Validate path safety: prevent path traversal attacks
         if let Err(e) = validate_path_safety(extracted_file, &extract_dir) {
-            eprintln!(
-                "[SECURITY] Skipping unsafe file {}: {}",
-                extracted_file.display(),
-                e
+            warn!(
+                file = %extracted_file.display(),
+                error = %e,
+                "Skipping unsafe file"
             );
-            continue; // 跳过不安全的文件
+            continue;
         }
 
         let relative_path = extracted_file.strip_prefix(&extract_dir).map_err(|_| {
@@ -593,6 +1296,13 @@ async fn extract_and_process_archive(
             virtual_path,
             file_name,
             relative_path.to_string_lossy()
+        );
+
+        debug!(
+            file = %extracted_file.display(),
+            virtual_path = %new_virtual,
+            exists = extracted_file.exists(),
+            "Processing extracted file"
         );
 
         // 使用 Box::pin 递归处理（支持嵌套压缩包）

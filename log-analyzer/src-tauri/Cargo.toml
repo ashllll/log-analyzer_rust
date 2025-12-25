@@ -77,6 +77,7 @@ toml = "0.8"  # TOML配置文件解析
 dashmap = "5.5"  # 并发哈希映射
 sha2 = "0.10"  # SHA-256 哈希算法
 sqlx = { version = "0.7", features = ["runtime-tokio-native-tls", "sqlite"] }  # SQLite 数据库
+async-compression = { version = "0.4", features = ["tokio", "gzip", "zstd"] }  # 流式压缩/解压
 num_cpus = "1.16"  # CPU 核心数检测
 
 # Phase 4: Testing Infrastructure

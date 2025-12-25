@@ -176,7 +176,6 @@ impl ResourceManager {
         };
 
         if !base_dir.exists() {
-            debug!("Temp directory does not exist: {:?}", base_dir);
             return Ok(0);
         }
 

@@ -12,6 +12,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 use tauri::{AppHandle, Emitter};
+use tracing::{debug, warn};
 
 /// 时间戳解析器
 pub struct TimestampParser;
@@ -119,17 +120,17 @@ pub fn read_file_from_offset(path: &Path, offset: u64) -> Result<(Vec<String>, u
     use std::io::{Seek, SeekFrom};
 
     // 使用作用域确保文件句柄自动关闭，防止资源泄漏
-    let (lines, file_size) = {
+    let (lines, file_size, start_offset) = {
         let mut file = File::open(path).map_err(AppError::Io)?;
 
         // 获取当前文件大小
         let file_size = file.metadata().map_err(AppError::Io)?.len();
 
-        // 如果文件被截断（小于上次偏移量），从头开始读取
+        // If file was truncated (smaller than last offset), read from beginning
         let start_offset = if file_size < offset {
-            eprintln!(
-                "[WARNING] File truncated, reading from beginning: {}",
-                path.display()
+            warn!(
+                file = %path.display(),
+                "File truncated, reading from beginning"
             );
             0
         } else {
@@ -145,7 +146,7 @@ pub fn read_file_from_offset(path: &Path, offset: u64) -> Result<(Vec<String>, u
         file.seek(SeekFrom::Start(start_offset))
             .map_err(AppError::Io)?;
 
-        // 读取新增内容 - 使用大缓冲区（64KB）提高大文件读取效率
+        // Read new content - use large buffer (64KB) for better performance with large files
         let reader = BufReader::with_capacity(65536, file);
         let mut lines = Vec::new();
 
@@ -153,23 +154,26 @@ pub fn read_file_from_offset(path: &Path, offset: u64) -> Result<(Vec<String>, u
             match line_result {
                 Ok(line) => lines.push(line),
                 Err(e) => {
-                    eprintln!("[WARNING] Error reading line: {}", e);
-                    // 修改：继续读取而不是break，避免丢失后续有效行
+                    warn!(
+                        error = %e,
+                        "Error reading line, continuing with next line"
+                    );
+                    // Continue reading instead of breaking to avoid losing subsequent valid lines
                     continue;
                 }
             }
         }
 
-        eprintln!(
-            "[DEBUG] Read {} new lines from {} (offset: {} -> {})",
-            lines.len(),
-            path.display(),
-            start_offset,
-            file_size
-        );
+        (lines, file_size, start_offset)
+    }; // File handle automatically closed here, preventing resource leaks
 
-        (lines, file_size)
-    }; // 文件句柄在此处自动关闭，防止资源泄漏
+    debug!(
+        lines_read = lines.len(),
+        file = %path.display(),
+        offset_start = start_offset,
+        offset_end = file_size,
+        "Read new lines from file"
+    );
 
     Ok((lines, file_size))
 }
@@ -281,20 +285,18 @@ pub fn append_to_workspace_index(
         return Ok(());
     }
 
-    eprintln!(
-        "[DEBUG] Appending {} new entries to workspace: {}",
-        new_entries.len(),
-        workspace_id
+    debug!(
+        entries_count = new_entries.len(),
+        workspace_id = %workspace_id,
+        "Appending new entries to workspace"
     );
 
-    // 发送新日志到前端（实时更新）
+    // Send new logs to frontend (real-time update)
     let _ = app.emit("new-logs", new_entries);
 
-    // 这里可以选择性地更新持久化索引
-    // 为了性能考虑，可以批量更新或定期保存
-    // 当前实现：只发送到前端，不立即持久化
-
-    eprintln!("[DEBUG] New entries sent to frontend");
+    // Optionally update persisted index here
+    // For performance, can batch updates or save periodically
+    // Current implementation: only send to frontend, no immediate persistence
 
     Ok(())
 }

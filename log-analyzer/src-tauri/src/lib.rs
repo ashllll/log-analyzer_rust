@@ -18,11 +18,13 @@ pub mod archive; // 公开 archive 模块用于集成测试
 mod benchmark;
 mod commands;
 mod error;
+pub mod migration; // 数据迁移模块
 pub mod models; // 公开 models 模块用于集成测试
 mod monitoring;
 mod search_engine; // 添加搜索引擎模块
 pub mod services; // 公开 services 模块用于基准测试
 mod state_sync; // 添加状态同步模块
+pub mod storage; // 添加 CAS 存储模块
 pub mod task_manager; // 任务生命周期管理模块（公开用于测试）
 pub mod utils; // 公开 utils 模块用于基准测试
 
@@ -37,6 +39,7 @@ use commands::{
     config::{load_config, save_config},
     export::export_results,
     import::{check_rar_support, import_folder},
+    migration::{detect_workspace_format_cmd, migrate_workspace_cmd, needs_migration_cmd},
     performance::{
         get_performance_alerts, get_performance_metrics, get_performance_recommendations,
         reset_performance_metrics,
@@ -44,6 +47,7 @@ use commands::{
     query::{execute_structured_query, validate_query},
     search::{cancel_search, search_logs},
     state_sync::{broadcast_test_event, get_event_history, get_workspace_state, init_state_sync},
+    virtual_tree::{get_virtual_file_tree, read_file_by_hash},
     watch::{start_watch, stop_watch},
     workspace::{delete_workspace, load_workspace, refresh_workspace},
 };
@@ -166,6 +170,11 @@ pub fn run() {
             get_workspace_state,
             get_event_history,
             broadcast_test_event,
+            read_file_by_hash,
+            get_virtual_file_tree,
+            detect_workspace_format_cmd,
+            needs_migration_cmd,
+            migrate_workspace_cmd,
         ])
         .setup(|app| {
             // 获取 AppState

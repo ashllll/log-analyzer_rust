@@ -9,6 +9,7 @@ use uuid::Uuid;
 use crate::archive::processor::process_path_recursive_with_metadata;
 use crate::models::AppState;
 use crate::services::save_index;
+use crate::storage::verify_after_import;
 use crate::utils::{canonicalize_path, validate_path_param, validate_workspace_id};
 
 #[command]
@@ -147,6 +148,56 @@ pub async fn import_folder(
         }
         Err(e) => {
             eprintln!("[WARNING] Failed to save index: {}", e);
+        }
+    }
+
+    // Verify integrity after import (Task 5.2)
+    // This generates a validation report to ensure all imported files are accessible
+    // and have valid hashes in the CAS
+    if let Some(task_manager) = state.task_manager.lock().as_ref() {
+        if let Ok(Some(task)) = task_manager.update_task_async(
+            &task_id_clone,
+            95,
+            "Verifying integrity...".to_string(),
+            crate::task_manager::TaskStatus::Running,
+        ).await {
+            let _ = app_handle.emit("task-update", task);
+        }
+    }
+
+    match verify_after_import(&extracted_dir).await {
+        Ok(report) => {
+            if report.is_valid() {
+                tracing::info!(
+                    workspace_id = %workspace_id_clone,
+                    total_files = report.total_files,
+                    valid_files = report.valid_files,
+                    "Integrity verification passed"
+                );
+            } else {
+                tracing::warn!(
+                    workspace_id = %workspace_id_clone,
+                    total_files = report.total_files,
+                    valid_files = report.valid_files,
+                    invalid_files = report.invalid_files.len(),
+                    missing_objects = report.missing_objects.len(),
+                    corrupted_objects = report.corrupted_objects.len(),
+                    "Integrity verification found issues"
+                );
+                
+                // Emit validation report to frontend
+                let _ = app_handle.emit("validation-report", serde_json::json!({
+                    "workspace_id": workspace_id_clone,
+                    "report": report,
+                }));
+            }
+        }
+        Err(e) => {
+            tracing::error!(
+                workspace_id = %workspace_id_clone,
+                error = %e,
+                "Failed to verify integrity after import"
+            );
         }
     }
 

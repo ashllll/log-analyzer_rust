@@ -74,6 +74,20 @@ pub enum AppError {
     #[error("Pattern error: {0}")]
     #[diagnostic(code(app::pattern_error), help("Check your regex pattern syntax"))]
     PatternError(String),
+
+    #[error("Database error: {0}")]
+    #[diagnostic(
+        code(app::database_error),
+        help("Check database connection and schema integrity")
+    )]
+    DatabaseError(String),
+
+    #[error("IO error: {message}")]
+    #[diagnostic(code(app::io_error_detailed))]
+    IoDetailed {
+        message: String,
+        path: Option<PathBuf>,
+    },
 }
 
 impl AppError {
@@ -134,6 +148,23 @@ impl AppError {
      */
     pub fn pattern_error(message: impl Into<String>) -> Self {
         AppError::PatternError(message.into())
+    }
+
+    /**
+     * 创建数据库错误
+     */
+    pub fn database_error(message: impl Into<String>) -> Self {
+        AppError::DatabaseError(message.into())
+    }
+
+    /**
+     * 创建详细的IO错误
+     */
+    pub fn io_error(message: impl Into<String>, path: Option<PathBuf>) -> Self {
+        AppError::IoDetailed {
+            message: message.into(),
+            path,
+        }
     }
 }
 

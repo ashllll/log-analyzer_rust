@@ -14,9 +14,11 @@
 pub mod config;
 pub mod export;
 pub mod import;
+pub mod migration;
 pub mod performance;
 pub mod query;
 pub mod search;
 pub mod state_sync;
+pub mod virtual_tree;
 pub mod watch;
 pub mod workspace;

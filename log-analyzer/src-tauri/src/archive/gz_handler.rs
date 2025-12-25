@@ -3,13 +3,144 @@ use crate::error::{AppError, Result};
 use async_trait::async_trait;
 use std::path::Path;
 use tokio::fs;
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
+use async_compression::tokio::bufread::GzipDecoder;
 
 /**
  * GZ文件处理器
  *
  * 处理单个gzip压缩文件，解压为单个文件
+ * 
+ * 支持两种模式:
+ * - 内存模式: 适用于小文件 (< 10MB)
+ * - 流式模式: 适用于大文件，避免内存溢出
  */
 pub struct GzHandler;
+
+impl GzHandler {
+    /// Stream extract a gzip file without loading entire content into memory
+    ///
+    /// This method uses async-compression for streaming decompression,
+    /// which is essential for handling large log files (1GB+) without
+    /// causing memory spikes.
+    ///
+    /// # Arguments
+    ///
+    /// * `source` - Path to the .gz file
+    /// * `target_dir` - Directory to extract to
+    /// * `max_file_size` - Maximum allowed file size (safety limit)
+    ///
+    /// # Returns
+    ///
+    /// ExtractionSummary with file count and size
+    ///
+    /// # Requirements
+    ///
+    /// Validates: Requirements 6.1, 6.2
+    pub async fn stream_extract_gz(
+        source: &Path,
+        target_dir: &Path,
+        max_file_size: u64,
+    ) -> Result<ExtractionSummary> {
+        const BUFFER_SIZE: usize = 64 * 1024; // 64KB buffer for streaming
+
+        // Ensure target directory exists
+        fs::create_dir_all(target_dir).await.map_err(|e| {
+            AppError::archive_error(
+                format!("Failed to create target directory: {}", e),
+                Some(target_dir.to_path_buf()),
+            )
+        })?;
+
+        // Open source file for streaming
+        let file = fs::File::open(source).await.map_err(|e| {
+            AppError::archive_error(
+                format!("Failed to open GZ file: {}", e),
+                Some(source.to_path_buf()),
+            )
+        })?;
+
+        // Create buffered reader for efficient I/O
+        let reader = BufReader::with_capacity(BUFFER_SIZE, file);
+
+        // Create gzip decoder that streams decompression
+        let mut decoder = GzipDecoder::new(reader);
+
+        // Determine output file name (remove .gz extension)
+        let output_name = source
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("output");
+
+        let output_path = target_dir.join(output_name);
+
+        // Create output file with buffered writer
+        let output_file = fs::File::create(&output_path).await.map_err(|e| {
+            AppError::archive_error(
+                format!("Failed to create output file: {}", e),
+                Some(output_path.clone()),
+            )
+        })?;
+
+        let mut writer = BufWriter::with_capacity(BUFFER_SIZE, output_file);
+
+        // Stream decompression with size tracking
+        let mut buffer = vec![0u8; BUFFER_SIZE];
+        let mut total_bytes = 0u64;
+
+        loop {
+            let bytes_read = decoder.read(&mut buffer).await.map_err(|e| {
+                AppError::archive_error(
+                    format!("Failed to decompress gzip stream: {}", e),
+                    Some(source.to_path_buf()),
+                )
+            })?;
+
+            if bytes_read == 0 {
+                break; // EOF
+            }
+
+            // Safety check: enforce size limit
+            total_bytes += bytes_read as u64;
+            if total_bytes > max_file_size {
+                // Clean up partial file
+                drop(writer);
+                let _ = fs::remove_file(&output_path).await;
+
+                return Err(AppError::archive_error(
+                    format!(
+                        "File {} exceeds maximum size limit of {} bytes (got {} bytes)",
+                        source.display(),
+                        max_file_size,
+                        total_bytes
+                    ),
+                    Some(source.to_path_buf()),
+                ));
+            }
+
+            // Write decompressed data
+            writer.write_all(&buffer[..bytes_read]).await.map_err(|e| {
+                AppError::archive_error(
+                    format!("Failed to write decompressed data: {}", e),
+                    Some(output_path.clone()),
+                )
+            })?;
+        }
+
+        // Flush remaining data
+        writer.flush().await.map_err(|e| {
+            AppError::archive_error(
+                format!("Failed to flush output file: {}", e),
+                Some(output_path.clone()),
+            )
+        })?;
+
+        let mut summary = ExtractionSummary::new();
+        summary.add_file(output_path, total_bytes);
+
+        Ok(summary)
+    }
+}
 
 #[async_trait]
 impl ArchiveHandler for GzHandler {
@@ -28,6 +159,25 @@ impl ArchiveHandler for GzHandler {
         max_total_size: u64,
         max_file_count: usize,
     ) -> Result<ExtractionSummary> {
+        const STREAMING_THRESHOLD: u64 = 10 * 1024 * 1024; // 10MB threshold
+
+        // Check file size to decide between streaming and in-memory
+        let file_size = fs::metadata(source)
+            .await
+            .map(|m| m.len())
+            .unwrap_or(0);
+
+        // Use streaming for large files to avoid memory issues
+        if file_size > STREAMING_THRESHOLD {
+            tracing::info!(
+                file = %source.display(),
+                size = file_size,
+                "Using streaming extraction for large GZ file"
+            );
+            return Self::stream_extract_gz(source, target_dir, max_file_size).await;
+        }
+
+        // For small files, use the original in-memory approach
         // 确保目标目录存在
         fs::create_dir_all(target_dir).await.map_err(|e| {
             AppError::archive_error(
@@ -227,6 +377,142 @@ mod tests {
 
         // 验证内容
         let extracted_content = fs::read(output_dir.join("test.txt")).await.unwrap();
+        assert_eq!(extracted_content, original_data);
+    }
+
+    #[tokio::test]
+    async fn test_stream_extract_gz_small_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let source_file = temp_dir.path().join("small.txt.gz");
+        let output_dir = temp_dir.path().join("output");
+
+        // Create small test data (< 10MB)
+        let original_data = b"Small file content for streaming test.";
+
+        // Compress and write file
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(original_data).unwrap();
+        let compressed = encoder.finish().unwrap();
+
+        fs::write(&source_file, compressed).await.unwrap();
+
+        // Extract using streaming
+        let summary = GzHandler::stream_extract_gz(
+            &source_file,
+            &output_dir,
+            100 * 1024 * 1024, // 100MB limit
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(summary.files_extracted, 1);
+        assert!(output_dir.join("small.txt").exists());
+
+        // Verify content
+        let extracted_content = fs::read(output_dir.join("small.txt")).await.unwrap();
+        assert_eq!(extracted_content, original_data);
+    }
+
+    #[tokio::test]
+    async fn test_stream_extract_gz_large_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let source_file = temp_dir.path().join("large.txt.gz");
+        let output_dir = temp_dir.path().join("output");
+
+        // Create large test data (> 10MB to trigger streaming)
+        let original_data = vec![b'x'; 15 * 1024 * 1024]; // 15MB
+
+        // Compress and write file
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(&original_data).unwrap();
+        let compressed = encoder.finish().unwrap();
+
+        fs::write(&source_file, compressed).await.unwrap();
+
+        // Extract using streaming
+        let summary = GzHandler::stream_extract_gz(
+            &source_file,
+            &output_dir,
+            100 * 1024 * 1024, // 100MB limit
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(summary.files_extracted, 1);
+        assert!(output_dir.join("large.txt").exists());
+
+        // Verify content
+        let extracted_content = fs::read(output_dir.join("large.txt")).await.unwrap();
+        assert_eq!(extracted_content, original_data);
+    }
+
+    #[tokio::test]
+    async fn test_stream_extract_gz_size_limit() {
+        let temp_dir = TempDir::new().unwrap();
+        let source_file = temp_dir.path().join("toolarge.txt.gz");
+        let output_dir = temp_dir.path().join("output");
+
+        // Create data that will exceed limit
+        let original_data = vec![b'x'; 2 * 1024 * 1024]; // 2MB
+
+        // Compress and write file
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(&original_data).unwrap();
+        let compressed = encoder.finish().unwrap();
+
+        fs::write(&source_file, compressed).await.unwrap();
+
+        // Try to extract with small limit (should fail)
+        let result = GzHandler::stream_extract_gz(
+            &source_file,
+            &output_dir,
+            1 * 1024 * 1024, // 1MB limit (smaller than file)
+        )
+        .await;
+
+        assert!(result.is_err(), "Should fail when file exceeds size limit");
+
+        // Verify partial file was cleaned up
+        assert!(
+            !output_dir.join("toolarge.txt").exists(),
+            "Partial file should be cleaned up"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_extract_with_limits_uses_streaming_for_large_files() {
+        let temp_dir = TempDir::new().unwrap();
+        let source_file = temp_dir.path().join("large.txt.gz");
+        let output_dir = temp_dir.path().join("output");
+
+        // Create large test data (> 10MB to trigger streaming)
+        let original_data = vec![b'y'; 12 * 1024 * 1024]; // 12MB
+
+        // Compress and write file
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(&original_data).unwrap();
+        let compressed = encoder.finish().unwrap();
+
+        fs::write(&source_file, compressed).await.unwrap();
+
+        // Extract using extract_with_limits (should automatically use streaming)
+        let handler = GzHandler;
+        let summary = handler
+            .extract_with_limits(
+                &source_file,
+                &output_dir,
+                100 * 1024 * 1024, // 100MB max file size
+                1024 * 1024 * 1024, // 1GB max total size
+                1000,               // max file count
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(summary.files_extracted, 1);
+        assert!(output_dir.join("large.txt").exists());
+
+        // Verify content
+        let extracted_content = fs::read(output_dir.join("large.txt")).await.unwrap();
         assert_eq!(extracted_content, original_data);
     }
 }

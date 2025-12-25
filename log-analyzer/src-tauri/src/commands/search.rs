@@ -5,14 +5,13 @@ use parking_lot::Mutex;
 use regex::Regex;
 use std::{
     collections::HashSet,
-    fs::File,
-    io::{BufRead, BufReader},
     path::PathBuf,
     sync::Arc,
     thread,
     time::Duration,
 };
 use tauri::{command, AppHandle, Emitter, State};
+use tracing::{debug, error, info, warn};
 
 use crate::models::search::{QueryMetadata, QueryOperator, SearchTerm, TermSource};
 use crate::models::search_statistics::SearchResultSummary;
@@ -232,6 +231,11 @@ pub async fn search_logs(
             guard.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
         };
 
+        debug!(
+            total_files = files.len(),
+            "Starting search across files"
+        );
+
         // 流式处理：分批发送结果，避免内存峰值
         let batch_size = 500;
         let mut total_processed = 0;
@@ -275,6 +279,7 @@ pub async fn search_logs(
                     search_single_file_with_details(
                         real_path,
                         virtual_path,
+                        None, // CAS not yet integrated, using legacy path-based access
                         &executor,
                         &plan,
                         total_processed + idx * 10000,
@@ -427,36 +432,66 @@ pub async fn search_logs(
     Ok(search_id)
 }
 
+/// Legacy search function using regex (kept for backward compatibility)
+///
+/// This function is marked as dead_code but kept for potential future use.
+/// New code should use `search_single_file_with_details` instead.
 #[allow(dead_code)]
 fn search_single_file(
-    real_path: &str,
+    sha256_hash: &str,
     virtual_path: &str,
+    cas: &crate::storage::ContentAddressableStorage,
     re: &Regex,
     global_offset: usize,
 ) -> Vec<LogEntry> {
     let mut results = Vec::new();
 
-    if let Ok(file) = File::open(real_path) {
-        let reader = BufReader::with_capacity(8192, file);
+    // Read content from CAS using hash
+    let content = match tokio::task::block_in_place(|| {
+        tokio::runtime::Handle::current().block_on(cas.read_content(sha256_hash))
+    }) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            warn!(
+                hash = %sha256_hash,
+                virtual_path = %virtual_path,
+                error = %e,
+                "Failed to read content from CAS"
+            );
+            return results;
+        }
+    };
 
-        for (i, line_res) in reader.lines().enumerate() {
-            if let Ok(line) = line_res {
-                if re.is_match(&line) {
-                    let (ts, lvl) = parse_metadata(&line);
-                    results.push(LogEntry {
-                        id: global_offset + i,
-                        timestamp: ts,
-                        level: lvl,
-                        file: virtual_path.to_string(),
-                        real_path: real_path.to_string(),
-                        line: i + 1,
-                        content: line,
-                        tags: vec![],
-                        match_details: None,
-                        matched_keywords: None,
-                    });
-                }
-            }
+    // Convert bytes to string
+    let content_str = match String::from_utf8(content) {
+        Ok(s) => s,
+        Err(e) => {
+            warn!(
+                hash = %sha256_hash,
+                virtual_path = %virtual_path,
+                error = %e,
+                "File content is not valid UTF-8, skipping"
+            );
+            return results;
+        }
+    };
+
+    // Process lines
+    for (i, line) in content_str.lines().enumerate() {
+        if re.is_match(line) {
+            let (ts, lvl) = parse_metadata(line);
+            results.push(LogEntry {
+                id: global_offset + i,
+                timestamp: ts,
+                level: lvl,
+                file: virtual_path.to_string(),
+                real_path: format!("cas://{}", sha256_hash),
+                line: i + 1,
+                content: line.to_string(),
+                tags: vec![],
+                match_details: None,
+                matched_keywords: None,
+            });
         }
     }
 
@@ -487,45 +522,190 @@ pub async fn cancel_search(
     }
 }
 
+/// Search a single file with support for both path-based and hash-based access
+///
+/// This function supports two modes:
+/// 1. Hash-based (CAS): When `file_identifier` starts with "cas://", reads from CAS
+/// 2. Path-based (legacy): When `file_identifier` is a file path, reads from filesystem
+///
+/// # Arguments
+///
+/// * `file_identifier` - Either "cas://<hash>" for CAS access or a file path for legacy access
+/// * `virtual_path` - Virtual path for display purposes
+/// * `cas_opt` - Optional Content-Addressable Storage instance (required for CAS mode)
+/// * `executor` - Query executor for matching
+/// * `plan` - Execution plan for the query
+/// * `global_offset` - Offset for line numbering
+///
+/// # Returns
+///
+/// Vector of matching log entries
 fn search_single_file_with_details(
-    real_path: &str,
+    file_identifier: &str,
     virtual_path: &str,
+    cas_opt: Option<&crate::storage::ContentAddressableStorage>,
     executor: &QueryExecutor,
     plan: &ExecutionPlan,
     global_offset: usize,
 ) -> Vec<LogEntry> {
     let mut results = Vec::new();
 
-    if let Ok(file) = File::open(real_path) {
-        let reader = BufReader::with_capacity(8192, file);
+    // Determine if this is CAS-based or path-based access
+    if file_identifier.starts_with("cas://") {
+        // Hash-based access via CAS
+        let sha256_hash = &file_identifier[6..]; // Remove "cas://" prefix
 
-        for (i, line_res) in reader.lines().enumerate() {
-            if let Ok(line) = line_res {
-                if executor.matches_line(plan, &line) {
-                    let (ts, lvl) = parse_metadata(&line);
-                    let match_details = executor.match_with_details(plan, &line);
-                    let matched_keywords = match_details.as_ref().map(|details| {
-                        details
-                            .iter()
-                            .map(|detail| detail.term_value.clone())
-                            .collect::<HashSet<_>>()
-                            .into_iter()
-                            .collect::<Vec<_>>()
-                    });
+        let cas = match cas_opt {
+            Some(c) => c,
+            None => {
+                error!(
+                    hash = %sha256_hash,
+                    virtual_path = %virtual_path,
+                    "CAS instance not provided for hash-based access"
+                );
+                return results;
+            }
+        };
 
-                    results.push(LogEntry {
-                        id: global_offset + i,
-                        timestamp: ts,
-                        level: lvl,
-                        file: virtual_path.to_string(),
-                        real_path: real_path.to_string(),
-                        line: i + 1,
-                        content: line,
-                        tags: vec![],
-                        match_details,
-                        matched_keywords: matched_keywords.filter(|v| !v.is_empty()),
-                    });
+        // Verify hash exists in CAS before reading (Requirements 8.1, 8.3)
+        if !cas.exists(sha256_hash) {
+            warn!(
+                hash = %sha256_hash,
+                virtual_path = %virtual_path,
+                "Hash does not exist in CAS, skipping file"
+            );
+            return results;
+        }
+
+        // Read content from CAS using hash
+        let content = match tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(cas.read_content(sha256_hash))
+        }) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                warn!(
+                    hash = %sha256_hash,
+                    virtual_path = %virtual_path,
+                    error = %e,
+                    "Failed to read content from CAS, skipping file"
+                );
+                return results;
+            }
+        };
+
+        // Convert bytes to string
+        let content_str = match String::from_utf8(content) {
+            Ok(s) => s,
+            Err(e) => {
+                warn!(
+                    hash = %sha256_hash,
+                    virtual_path = %virtual_path,
+                    error = %e,
+                    "File content is not valid UTF-8, skipping"
+                );
+                return results;
+            }
+        };
+
+        // Process lines
+        for (i, line) in content_str.lines().enumerate() {
+            if executor.matches_line(plan, line) {
+                let (ts, lvl) = parse_metadata(line);
+                let match_details = executor.match_with_details(plan, line);
+                let matched_keywords = match_details.as_ref().map(|details| {
+                    details
+                        .iter()
+                        .map(|detail| detail.term_value.clone())
+                        .collect::<HashSet<_>>()
+                        .into_iter()
+                        .collect::<Vec<_>>()
+                });
+
+                results.push(LogEntry {
+                    id: global_offset + i,
+                    timestamp: ts,
+                    level: lvl,
+                    file: virtual_path.to_string(),
+                    real_path: file_identifier.to_string(),
+                    line: i + 1,
+                    content: line.to_string(),
+                    tags: vec![],
+                    match_details,
+                    matched_keywords: matched_keywords.filter(|v| !v.is_empty()),
+                });
+            }
+        }
+
+        debug!(
+            hash = %sha256_hash,
+            virtual_path = %virtual_path,
+            matches = results.len(),
+            "Searched file via CAS"
+        );
+    } else {
+        // Legacy path-based access
+        use std::fs::File;
+        use std::io::{BufRead, BufReader};
+        use std::path::Path;
+
+        let real_path = file_identifier;
+        let path = Path::new(real_path);
+        
+        if !path.exists() {
+            warn!(
+                file = %real_path,
+                "Skipping non-existent file"
+            );
+            return results;
+        }
+
+        match File::open(real_path) {
+            Ok(file) => {
+                let reader = BufReader::with_capacity(8192, file);
+
+                for (i, line_res) in reader.lines().enumerate() {
+                    if let Ok(line) = line_res {
+                        if executor.matches_line(plan, &line) {
+                            let (ts, lvl) = parse_metadata(&line);
+                            let match_details = executor.match_with_details(plan, &line);
+                            let matched_keywords = match_details.as_ref().map(|details| {
+                                details
+                                    .iter()
+                                    .map(|detail| detail.term_value.clone())
+                                    .collect::<HashSet<_>>()
+                                    .into_iter()
+                                    .collect::<Vec<_>>()
+                            });
+
+                            results.push(LogEntry {
+                                id: global_offset + i,
+                                timestamp: ts,
+                                level: lvl,
+                                file: virtual_path.to_string(),
+                                real_path: real_path.to_string(),
+                                line: i + 1,
+                                content: line,
+                                tags: vec![],
+                                match_details,
+                                matched_keywords: matched_keywords.filter(|v| !v.is_empty()),
+                            });
+                        }
+                    }
                 }
+
+                debug!(
+                    path = %real_path,
+                    virtual_path = %virtual_path,
+                    matches = results.len(),
+                    "Searched file via filesystem"
+                );
+            }
+            Err(e) => {
+                error!(
+                    file = %real_path,
+                    error = %e,
+                    "Failed to open file for search"
+                );
             }
         }
     }

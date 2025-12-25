@@ -11,6 +11,7 @@ pub mod extraction_context;
 pub mod extraction_engine;
 pub mod extraction_orchestrator;
 pub mod gz_handler;
+pub mod parallel_processor;
 pub mod path_manager;
 pub mod processor;
 pub mod progress_tracker;
@@ -26,10 +27,12 @@ pub use extraction_context::{ExtractionContext, ExtractionItem, ExtractionStack}
 pub use extraction_engine::{ExtractionEngine, ExtractionPolicy};
 pub use extraction_orchestrator::ExtractionOrchestrator;
 pub use gz_handler::GzHandler;
+pub use parallel_processor::{ParallelConfig, ParallelProcessor};
 pub use path_manager::{PathConfig, PathManager};
 #[allow(unused_imports)]
 #[allow(deprecated)]
 pub use processor::process_path_recursive_with_metadata;
+pub use processor::{process_path_with_cas, CasProcessingContext}; // Export CAS-based processing function and context
 pub use public_api::{extract_archive_async, extract_archive_sync, ExtractionResult};
 pub use rar_handler::RarHandler;
 pub use security_detector::{SecurityDetector, SecurityPolicy};

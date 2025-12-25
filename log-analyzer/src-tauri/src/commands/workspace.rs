@@ -5,6 +5,7 @@
 //! - 清理解压目录
 //! - 清除内存状态
 //! - 删除索引文件
+//! - 工作区格式检测和迁移提示
 //!
 //! # 设计原则
 //!
@@ -12,19 +13,55 @@
 //! - 单步失败不中断流程
 //! - 提供友好的错误提示
 //! - 支持重试和清理队列机制
+//! - 向后兼容旧格式工作区
 
 use crate::commands::import::import_folder;
+use crate::migration::{detect_workspace_format, WorkspaceFormat};
+
+/// Workspace load response with format information
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct WorkspaceLoadResponse {
+    /// Whether the workspace was loaded successfully
+    pub success: bool,
+    /// Workspace format: "traditional", "cas", or "unknown"
+    pub format: String,
+    /// Whether the workspace needs migration
+    pub needs_migration: bool,
+    /// Number of files loaded
+    pub file_count: usize,
+}
 
 /// 加载工作区索引
+///
+/// 支持向后兼容：
+/// - 检测工作区格式（传统或CAS）
+/// - 传统格式工作区可以正常加载（只读模式）
+/// - 返回格式信息，提示用户迁移
 #[command]
 pub async fn load_workspace(
     app: AppHandle,
     #[allow(non_snake_case)] workspaceId: String,
     state: State<'_, AppState>,
-) -> Result<(), String> {
+) -> Result<WorkspaceLoadResponse, String> {
     let start_time = std::time::Instant::now();
 
     validate_workspace_id(&workspaceId)?;
+
+    // Detect workspace format
+    let format = detect_workspace_format(&workspaceId, &app).map_err(|e| e.to_string())?;
+    let format_str = match format {
+        WorkspaceFormat::Traditional => "traditional",
+        WorkspaceFormat::CAS => "cas",
+        WorkspaceFormat::Unknown => "unknown",
+    };
+    let needs_migration = format == WorkspaceFormat::Traditional;
+
+    if needs_migration {
+        eprintln!(
+            "[INFO] [load_workspace] Workspace {} is in traditional format and can be migrated to CAS",
+            workspaceId
+        );
+    }
 
     let index_dir = app
         .path()
@@ -90,7 +127,12 @@ pub async fn load_workspace(
             .await;
     }
 
-    Ok(())
+    Ok(WorkspaceLoadResponse {
+        success: true,
+        format: format_str.to_string(),
+        needs_migration,
+        file_count,
+    })
 }
 
 /// 增量刷新工作区索引
@@ -492,6 +534,35 @@ fn is_extracted_workspace(workspace_id: &str, app: &AppHandle) -> Result<bool, S
     Ok(extracted_dir.exists())
 }
 
+/// 判断工作区是否使用CAS存储
+///
+/// 检查工作区目录下是否存在CAS相关文件（metadata.db或objects目录）
+///
+/// # 参数
+///
+/// - `workspace_id` - 工作区ID
+/// - `app` - Tauri应用句柄
+///
+/// # 返回值
+///
+/// - `Ok(true)` - 工作区使用CAS存储
+/// - `Ok(false)` - 工作区使用传统存储
+/// - `Err(String)` - 获取应用目录失败
+fn is_cas_workspace(workspace_id: &str, app: &AppHandle) -> Result<bool, String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
+
+    let workspace_dir = app_data_dir.join("extracted").join(workspace_id);
+    
+    // Check for metadata.db or objects directory
+    let metadata_db = workspace_dir.join("metadata.db");
+    let objects_dir = workspace_dir.join("objects");
+    
+    Ok(metadata_db.exists() || objects_dir.exists())
+}
+
 /// 清理工作区资源
 ///
 /// 按正确的依赖顺序清理工作区的所有相关资源。
@@ -764,11 +835,82 @@ fn cleanup_workspace_resources(
                 extracted_dir.display()
             );
 
-            // 使用 cleanup 工具的重试机制
+            // Check if this is a CAS workspace
+            match is_cas_workspace(workspace_id, app) {
+                Ok(true) => {
+                    eprintln!("[INFO] [delete_workspace] Detected CAS workspace, cleaning up CAS resources");
+                    
+                    // Step 5.1: Delete SQLite database
+                    let metadata_db = extracted_dir.join("metadata.db");
+                    if metadata_db.exists() {
+                        match fs::remove_file(&metadata_db) {
+                            Ok(_) => {
+                                eprintln!(
+                                    "[INFO] [delete_workspace] Deleted SQLite database: {}",
+                                    metadata_db.display()
+                                );
+                            }
+                            Err(e) => {
+                                let error = format!(
+                                    "Failed to delete SQLite database {}: {}",
+                                    metadata_db.display(),
+                                    e
+                                );
+                                eprintln!("[ERROR] [delete_workspace] {}", error);
+                                errors.push(error);
+                            }
+                        }
+                    }
+                    
+                    // Also try to delete SQLite journal files
+                    for journal_ext in &["-wal", "-shm", "-journal"] {
+                        let journal_file = extracted_dir.join(format!("metadata.db{}", journal_ext));
+                        if journal_file.exists() {
+                            if let Err(e) = fs::remove_file(&journal_file) {
+                                eprintln!(
+                                    "[WARNING] [delete_workspace] Failed to delete journal file {}: {}",
+                                    journal_file.display(),
+                                    e
+                                );
+                            }
+                        }
+                    }
+                    
+                    // Step 5.2: Delete CAS objects directory
+                    let objects_dir = extracted_dir.join("objects");
+                    if objects_dir.exists() {
+                        match fs::remove_dir_all(&objects_dir) {
+                            Ok(_) => {
+                                eprintln!(
+                                    "[INFO] [delete_workspace] Deleted CAS objects directory: {}",
+                                    objects_dir.display()
+                                );
+                            }
+                            Err(e) => {
+                                let error = format!(
+                                    "Failed to delete CAS objects directory {}: {}",
+                                    objects_dir.display(),
+                                    e
+                                );
+                                eprintln!("[ERROR] [delete_workspace] {}", error);
+                                errors.push(error);
+                            }
+                        }
+                    }
+                }
+                Ok(false) => {
+                    eprintln!("[INFO] [delete_workspace] Traditional workspace, no CAS cleanup needed");
+                }
+                Err(e) => {
+                    eprintln!("[WARNING] [delete_workspace] Failed to check CAS status: {}", e);
+                }
+            }
+
+            // Use cleanup tool's retry mechanism for the entire extracted directory
             try_cleanup_temp_dir(&extracted_dir, &state.cleanup_queue);
 
-            // 注: try_cleanup_temp_dir 内部处理失败,失败时会自动加入清理队列
-            // 不需要额外的错误处理
+            // Note: try_cleanup_temp_dir handles failures internally
+            // Failed deletions are automatically added to cleanup queue
 
             eprintln!(
                 "[INFO] [delete_workspace] Step 5 completed: Extracted directory cleanup initiated"

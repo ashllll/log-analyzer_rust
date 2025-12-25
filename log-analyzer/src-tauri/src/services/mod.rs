@@ -1,6 +1,7 @@
 pub mod event_bus;
 pub mod file_watcher;
 pub mod index_store;
+pub mod index_validator;
 pub mod metadata_db;
 pub mod pattern_matcher;
 pub mod query_executor;
@@ -10,6 +11,7 @@ pub mod search_statistics;
 pub mod service_config;
 pub mod service_container;
 pub mod service_lifecycle;
+pub mod workspace_metrics;
 
 #[cfg(test)]
 mod dependency_management_tests;
@@ -30,6 +32,7 @@ pub use file_watcher::{
     read_file_from_offset,
 };
 pub use index_store::{load_index, save_index};
+pub use index_validator::{IndexValidator, InvalidFileInfo, ValidationReport};
 pub use metadata_db::MetadataDB;
 pub use query_executor::{MatchDetail, QueryExecutor};
 pub use query_planner::ExecutionPlan;
@@ -39,3 +42,4 @@ pub use service_container::{AppServices, AppServicesBuilder};
 pub use service_lifecycle::{
     HealthStatus, OverallHealth, Service, ServiceHealth, ServiceLifecycleManager,
 };
+pub use workspace_metrics::{DepthDistribution, WorkspaceMetrics, WorkspaceMetricsCollector};
