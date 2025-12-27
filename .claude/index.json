@@ -1,0 +1,202 @@
+{
+  "metadata": {
+    "generated_at": "2025-12-27T23:31:06+08:00",
+    "version": "1.0.0",
+    "project_name": "log-analyzer_rust",
+    "project_version": "0.0.71",
+    "scanner_version": "adaptive-v1"
+  },
+  "coverage": {
+    "total_files_estimate": 500,
+    "scanned_files": 150,
+    "coverage_percentage": 30,
+    "truncated": false
+  },
+  "modules": [
+    {
+      "name": "root",
+      "path": "F:\\github\\log-analyzer_rust",
+      "type": "root",
+      "documentation": "CLAUDE.md",
+      "description": "项目根目录",
+      "children": [
+        "log-analyzer/src-tauri",
+        "log-analyzer/src",
+        "docs"
+      ]
+    },
+    {
+      "name": "src-tauri",
+      "path": "F:\\github\\log-analyzer_rust\\log-analyzer\\src-tauri",
+      "type": "rust-backend",
+      "documentation": "log-analyzer/src-tauri/CLAUDE.md",
+      "description": "Rust 后端核心",
+      "entry_points": [
+        "src/main.rs",
+        "src/lib.rs"
+      ],
+      "interfaces": [
+        "src/commands/search.rs",
+        "src/commands/import.rs",
+        "src/commands/workspace.rs",
+        "src/commands/query.rs"
+      ],
+      "dependencies": [
+        "Cargo.toml"
+      ],
+      "tests": [
+        "tests/",
+        "src/*/mod.rs"
+      ],
+      "test_coverage": "80%+",
+      "test_cases": 87,
+      "key_files": [
+        "src/archive/",
+        "src/commands/",
+        "src/models/",
+        "src/services/",
+        "src/search_engine/",
+        "src/storage/",
+        "src/monitoring/",
+        "src/task_manager/",
+        "src/utils/"
+      ],
+      "gaps": [
+        "部分服务模块缺少详细注释",
+        "测试用例可以进一步扩充"
+      ]
+    },
+    {
+      "name": "src",
+      "path": "F:\\github\\log-analyzer_rust\\log-analyzer\\src",
+      "type": "react-frontend",
+      "documentation": "log-analyzer/src/CLAUDE.md",
+      "description": "React 前端界面",
+      "entry_points": [
+        "main.tsx",
+        "App.tsx"
+      ],
+      "interfaces": [
+        "services/queryApi.ts",
+        "services/websocketClient.ts"
+      ],
+      "dependencies": [
+        "../package.json"
+      ],
+      "tests": [
+        "services/__tests__/SearchQueryBuilder.test.ts",
+        "components/__tests__/"
+      ],
+      "test_coverage": "部分模块已覆盖",
+      "test_cases": 40,
+      "key_files": [
+        "components/",
+        "pages/",
+        "services/",
+        "hooks/",
+        "stores/",
+        "types/"
+      ],
+      "gaps": [
+        "组件测试覆盖率需要提升",
+        "部分页面组件缺少单元测试"
+      ]
+    },
+    {
+      "name": "docs",
+      "path": "F:\\github\\log-analyzer_rust\\docs",
+      "type": "documentation",
+      "documentation": "docs/README.md",
+      "description": "项目文档",
+      "key_files": [
+        "architecture/API.md",
+        "architecture/ADVANCED_SEARCH_FEATURES_EXPLANATION.md",
+        "guides/QUICK_REFERENCE.md",
+        "guides/MULTI_KEYWORD_SEARCH_GUIDE.md",
+        "development/AGENTS.md",
+        "development/CLAUDE.md",
+        "reports/TASK_13_FINAL_VALIDATION_REPORT.md"
+      ],
+      "gaps": []
+    }
+  ],
+  "ignored_patterns": [
+    "node_modules/**",
+    ".git/**",
+    ".github/**",
+    "dist/**",
+    "build/**",
+    ".next/**",
+    "__pycache__/**",
+    "*.lock",
+    "*.log",
+    "*.bin",
+    "*.pdf",
+    "*.png",
+    "*.jpg",
+    "*.jpeg",
+    "*.gif",
+    "*.mp4",
+    "*.zip",
+    "*.tar",
+    "*.gz",
+    "target/**",
+    "log-analyzer/src-tauri/target/**"
+  ],
+  "next_steps": [
+    {
+      "priority": "high",
+      "action": "补充深度扫描",
+      "target": "src-tauri/src/ 和 src/",
+      "description": "对核心模块进行更详细的代码分析"
+    },
+    {
+      "priority": "medium",
+      "action": "完善测试文档",
+      "target": "所有模块",
+      "description": "为每个服务模块添加测试策略说明"
+    },
+    {
+      "priority": "medium",
+      "action": "API 文档生成",
+      "target": "src-tauri/src/commands/",
+      "description": "使用 tauri-plugin-doc 自动生成 API 文档"
+    },
+    {
+      "priority": "low",
+      "action": "架构图优化",
+      "target": "CLAUDE.md",
+      "description": "生成更详细的时序图和状态图"
+    }
+  ],
+  "statistics": {
+    "rust_files": 200,
+    "typescript_files": 150,
+    "test_files": 30,
+    "documentation_files": 20,
+    "config_files": 15
+  },
+  "architecture_highlights": {
+    "backend": {
+      "framework": "Tauri 2.0 + Rust 1.70+",
+      "key_features": [
+        "Aho-Corasick 多模式匹配算法",
+        "CAS 内容寻址存储",
+        "SQLite + FTS5 全文搜索",
+        "tokio 异步 I/O",
+        "rayon 并行处理"
+      ],
+      "dependencies_count": 40
+    },
+    "frontend": {
+      "framework": "React 19 + TypeScript 5.8",
+      "key_features": [
+        "虚拟滚动 (@tanstack/react-virtual)",
+        "状态管理 (Zustand + React Query)",
+        "国际化 (i18next)",
+        "构建工具 (Vite 7)"
+      ],
+      "dependencies_count": 25
+    }
+  }
+}

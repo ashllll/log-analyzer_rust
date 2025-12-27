@@ -29,11 +29,23 @@
 ### 📊 项目报告 (`reports/`)
 项目进展报告和验证文档
 
-#### 当前报告
-- **TASK_13_FINAL_VALIDATION_REPORT.md** - TaskManager 生产就绪验证报告
+#### 当前报告 (`reports/current/`)
+- **CAS_MIGRATION_IMPLEMENTATION.md** - CAS迁移实施总结
+- **MIGRATION_IMPLEMENTATION_SUMMARY.md** - 迁移实施摘要
+- **IPC_MONITORING_IMPLEMENTATION.md** - IPC监控实现
+- **TASK_22_COMPLETION_SUMMARY.md** - 任务22完成总结
 
 #### 历史归档 (`reports/archive/`)
-已完成的历史报告和状态文档
+已完成的历史报告、任务文档和验证文档
+
+- **[归档文档索引](reports/archive/README.md)** - 查看所有归档文档
+- **[fixes/](reports/archive/fixes/)** - Bug修复和问题解决文档（9个）
+- **[plans/](reports/archive/plans/)** - 已完成的实施计划（6个）
+- **[tasks/](reports/archive/tasks/)** - 任务完成报告（16个）
+- **[validation/](reports/archive/validation/)** - 验证和测试报告（7个）
+
+#### 验证报告
+- **TASK_13_FINAL_VALIDATION_REPORT.md** - TaskManager 生产就绪验证报告
 
 ## 🔍 快速导航
 
