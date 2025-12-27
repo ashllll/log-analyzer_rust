@@ -18,10 +18,9 @@ pub mod archive; // 公开 archive 模块用于集成测试
 mod benchmark;
 mod commands;
 mod error;
-pub mod migration; // 数据迁移模块
 pub mod models; // 公开 models 模块用于集成测试
 mod monitoring;
-mod search_engine; // 添加搜索引擎模块
+pub mod search_engine; // 添加搜索引擎模块
 pub mod services; // 公开 services 模块用于基准测试
 mod state_sync; // 添加状态同步模块
 pub mod storage; // 添加 CAS 存储模块
@@ -39,7 +38,7 @@ use commands::{
     config::{load_config, save_config},
     export::export_results,
     import::{check_rar_support, import_folder},
-    migration::{detect_workspace_format_cmd, migrate_workspace_cmd, needs_migration_cmd},
+    legacy::{get_legacy_workspace_info, scan_legacy_formats},
     performance::{
         get_performance_alerts, get_performance_metrics, get_performance_recommendations,
         reset_performance_metrics,
@@ -125,9 +124,9 @@ pub fn run() {
 
             AppState {
                 temp_dir: Mutex::new(None),
-                path_map: Arc::new(Mutex::new(HashMap::new())),
-                file_metadata: Arc::new(Mutex::new(HashMap::new())),
-                workspace_indices: Mutex::new(HashMap::new()),
+                cas_instances: Arc::new(Mutex::new(HashMap::new())),
+                metadata_stores: Arc::new(Mutex::new(HashMap::new())),
+                workspace_dirs: Arc::new(Mutex::new(HashMap::new())),
                 search_cache,
                 last_search_duration: Arc::new(Mutex::new(0)),
                 total_searches: Arc::new(Mutex::new(0)),
@@ -145,6 +144,10 @@ pub fn run() {
                 alerting_system,
                 recommendation_engine,
                 task_manager: Arc::new(parking_lot::Mutex::new(None)), // 延迟初始化
+                filter_engine: Arc::new(Mutex::new(HashMap::new())),
+                regex_engine: Arc::new(search_engine::advanced_features::RegexSearchEngine::new(1000)),
+                time_partitioned_index: Arc::new(Mutex::new(HashMap::new())),
+                autocomplete_engine: Arc::new(search_engine::advanced_features::AutocompleteEngine::new(100)),
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -172,9 +175,8 @@ pub fn run() {
             broadcast_test_event,
             read_file_by_hash,
             get_virtual_file_tree,
-            detect_workspace_format_cmd,
-            needs_migration_cmd,
-            migrate_workspace_cmd,
+            scan_legacy_formats,
+            get_legacy_workspace_info,
         ])
         .setup(|app| {
             // 获取 AppState
@@ -187,7 +189,7 @@ pub fn run() {
                 cleanup_interval: 1,   // 每秒检查一次
                 operation_timeout: 5,  // 操作超时 5 秒
             };
-            
+
             match task_manager::TaskManager::new(app.handle().clone(), task_manager_config) {
                 Ok(task_manager) => {
                     *state.task_manager.lock() = Some(task_manager);
@@ -215,6 +217,31 @@ pub fn run() {
                 }
 
                 tracing::info!("Performance monitoring system started successfully");
+            });
+
+            // 检测旧格式工作区
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Ok(app_data_dir) = app_handle.path().app_data_dir() {
+                    let indices_dir = app_data_dir.join("indices");
+                    let legacy_workspaces = utils::scan_legacy_workspaces(&indices_dir);
+
+                    if !legacy_workspaces.is_empty() {
+                        let message = utils::generate_legacy_message(&legacy_workspaces);
+                        tracing::warn!("Legacy workspace formats detected:\n{}", message);
+
+                        // Log each legacy workspace
+                        for workspace in &legacy_workspaces {
+                            tracing::warn!(
+                                workspace_id = %workspace.workspace_id,
+                                format_type = ?workspace.format_type,
+                                "Legacy workspace detected"
+                            );
+                        }
+                    } else {
+                        tracing::info!("No legacy workspace formats detected");
+                    }
+                }
             });
 
             Ok(())

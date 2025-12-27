@@ -14,7 +14,7 @@
 pub mod config;
 pub mod export;
 pub mod import;
-pub mod migration;
+pub mod legacy;
 pub mod performance;
 pub mod query;
 pub mod search;
