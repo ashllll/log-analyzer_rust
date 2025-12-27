@@ -1,7 +1,7 @@
 {
   "name": "log-analyzer",
   "private": true,
-  "version": "0.0.71",
+  "version": "0.1.0",
   "description": "A desktop log analysis tool built with Tauri, React, and TypeScript",
   "author": {
     "name": "Joe Ash",

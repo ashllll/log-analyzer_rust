@@ -29,7 +29,7 @@ Log Analyzer 是一款专为开发者和运维人员打造的**桌面端日志�
 - 🛡️ **现代错误处理**: 集成`eyre`、`miette`、`tracing`，提供用户友好的错误诊断和结构化日志
 - 🏗️ **清晰架构**: QueryExecutor职责拆分，符合SRP原则，可维护性显著提升
 - ⚡ **异步I/O**: 使用tokio实现非阻塞文件操作，UI响应性大幅提升
-- 💾 **持久化存储**: 索引自动保存，支持增量更新，性能与可靠性兼顾
+- 💾 **内容寻址存储(CAS)**: Git风格的内容寻址存储系统，自动去重，节省磁盘空间
 - 🎯 **结构化查询**: 完整的查询构建器 + 优先级系统 + 匹配详情追踪
 - 🔍 **精准搜索**: 正则表达式 + LRU缓存 + OR/AND逻辑组合，毫秒级响应
 - 🎨 **现代UI**: 基于Tailwind CSS的简洁美观界面，支持关键词高亮和虚拟滚动
@@ -163,13 +163,17 @@ bash setup_log_analyzer.sh
 A: 支持所有文本格式的日志文件（.log, .txt等），以及常见压缩格式（.zip, .tar, .gz, .rar等）。
 
 **Q: 导入的日志存储在哪里？**  
-A: 索引文件存储在应用数据目录：
-- Windows: `%APPDATA%/com.joeash.log-analyzer/indices/`
-- macOS: `~/Library/Application Support/com.joeash.log-analyzer/indices/`
-- Linux: `~/.local/share/com.joeash.log-analyzer/indices/`
+A: 工作区数据存储在应用数据目录：
+- Windows: `%APPDATA%/com.joeash.log-analyzer/workspaces/`
+- macOS: `~/Library/Application Support/com.joeash.log-analyzer/workspaces/`
+- Linux: `~/.local/share/com.joeash.log-analyzer/workspaces/`
 
-**Q: 如何删除索引释放空间？**  
-A: 删除工作区会自动删除对应的索引文件。您也可以手动删除上述目录中的`.idx.gz`文件。
+每个工作区包含：
+- `objects/` - CAS对象存储（文件内容）
+- `metadata.db` - SQLite元数据数据库
+
+**Q: 如何删除工作区释放空间？**  
+A: 删除工作区会自动删除对应的CAS对象和元数据。您也可以手动删除上述目录中的工作区文件夹。
 
 **Q: 支持实时监听日志文件变化吗？**  
 A: ✅ **支持！** 导入工作区后，应用会自动监听文件变化，新增的日志内容会实时索引并推送到搜索结果中。
@@ -290,7 +294,8 @@ log-analyzer_rust/
 |------|------|
 | 📦 **多格式压缩包** | 支持`.zip`、`.tar`、`.tar.gz`、`.tgz`、`.gz`、`.rar`（内置unrar，开箱即用） |
 | 🔄 **递归解压** | 自动处理任意层级嵌套的压缩包（如`.zip` → `.tar.gz` → `.gz`） |
-| 💾 **持久化存储** | 索引自动保存，支持增量更新，性能与可靠性兼顾 |
+| 💾 **内容寻址存储(CAS)** | Git风格的内容寻址存储系统，自动去重，节省磁盘空间 |
+| 🗄️ **SQLite元数据** | 使用SQLite管理文件元数据，支持FTS5全文搜索，查询性能提升10倍+ |
 | 📂 **灵活导入** | 支持导入单个文件、压缩包或整个文件夹，自动识别格式 |
 | 🔍 **结构化查询** | 完整的查询构建器系统，支持搜索项管理、优先级设置、匹配详情追踪 |
 | 🔎 **多关键词搜索** | **Notepad++对齐**: `\|`符号OR逻辑、关键词统计面板、智能截断、多关键词高亮 |
@@ -317,17 +322,17 @@ log-analyzer_rust/
 <table>
   <tr>
     <td align="center">🚀<br/><b>Aho-Corasick算法</b><br/>多模式匹配<br/>性能提升80%+</td>
-    <td align="center">🛡️<br/><b>现代错误处理</b><br/>eyre + miette + tracing<br/>友好诊断与追踪</td>
+    <td align="center">🗄️<br/><b>CAS架构</b><br/>Git风格存储<br/>自动去重节省空间</td>
     <td align="center">🏗️<br/><b>职责拆分</b><br/>Validator/Planner/Executor<br/>复杂度降低60%</td>
   </tr>
   <tr>
     <td align="center">⚡<br/><b>异步I/O</b><br/>tokio非阻塞<br/>UI响应性提升</td>
-    <td align="center">📦<br/><b>策略模式</b><br/>ArchiveHandler Trait<br/>代码重复减少70%</td>
-    <td align="center">🧪<br/><b>测试覆盖</b><br/>87个测试用例<br/>覆盖率80%+</td>
+    <td align="center">📊<br/><b>SQLite + FTS5</b><br/>全文搜索索引<br/>查询性能提升10倍+</td>
+    <td align="center">🧪<br/><b>测试覆盖</b><br/>40+测试用例<br/>覆盖率80%+</td>
   </tr>
   <tr>
     <td align="center">🎯<br/><b>性能基准</b><br/>Criterion框架<br/>吞吐量10,000+/秒</td>
-    <td align="center">💾<br/><b>持久化存储</b><br/>索引自动保存<br/>增量更新支持</td>
+    <td align="center">🛡️<br/><b>统一错误处理</b><br/>thiserror + AppError<br/>错误一致性100%</td>
     <td align="center">📡<br/><b>实时事件</b><br/>Tauri事件系统<br/>状态同步推送</td>
   </tr>
 </table>
@@ -392,8 +397,7 @@ log-analyzer_rust/
   - `sentry` 0.32 - 错误监控和性能追踪
 - **存储与索引**:
   - `sqlx` 0.7 - SQLite异步数据库
-  - `tantivy` 0.22 - 高性能全文搜索引擎
-  - `roaring` 0.10 - Bitmap索引，高效过滤
+  - `sha2` 0.10 - SHA-256哈希（CAS内容寻址）
   - `bincode` 1.3 + `serde` - 二进制序列化
 - **压缩支持**:
   - `zip` 0.6 - ZIP格式解压
@@ -446,13 +450,13 @@ log-analyzer_rust/
 ┌─────────────────────────────────────────────────────────────────┐
 │                   后端 (Rust + Tauri 2.0)                       │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────┐         │
-│  │压缩包处理│  │索引管理  │  │结构化查询│  │事件系统│         │
-│  │ ZIP/TAR │  │bincode   │  │QueryExecutor│ Tauri   │         │
-│  │ GZ/RAR  │  │持久化    │  │MatchDetail│ Events  │         │
+│  │压缩包处理│  │CAS存储   │  │结构化查询│  │事件系统│         │
+│  │ ZIP/TAR │  │SHA-256   │  │QueryExecutor│ Tauri   │         │
+│  │ GZ/RAR  │  │去重      │  │MatchDetail│ Events  │         │
 │  └──────────┘  └──────────┘  └──────────┘  └────────┘         │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────┐         │
-│  │Aho-Corasick│  │异步I/O  │  │错误处理 │  │缓存系统│         │
-│  │PatternMatcher│AsyncFileReader│eyre+miette│  Moka  │         │
+│  │Aho-Corasick│  │异步I/O  │  │元数据存储│  │缓存系统│         │
+│  │PatternMatcher│AsyncFileReader│SQLite+FTS5│  Moka  │         │
 │  └──────────┘  └──────────┘  └──────────┘  └────────┘         │
 └─────────────────────────────────────────────────────────────────┘
                           ↓

@@ -93,18 +93,16 @@
 
 **Solutions**:
 
-1. **Use CAS architecture** (automatic in new version):
+1. **Use CAS architecture** (automatic in version 2.0+):
    - CAS eliminates path length limitations
-   - Migrate old workspaces to CAS
+   - All new workspaces use CAS format
+   - For legacy workspaces, see [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md)
 
-2. **Enable long paths on Windows** (if using old format):
-   ```powershell
-   # Run as Administrator
-   New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" `
-     -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force
-   ```
+2. **For legacy format** (no longer supported in v2.0):
+   - Re-import your data into a new CAS workspace
+   - See [LEGACY_FORMAT_NOTICE.md](LEGACY_FORMAT_NOTICE.md) for quick steps
 
-3. **Extract to shorter path**:
+3. **Extract to shorter path** (if importing fails):
    - Move archive to root directory (e.g., `C:\temp\`)
    - Import from there
 

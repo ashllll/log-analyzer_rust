@@ -28,7 +28,8 @@ Log Analyzer 是一款专为开发者和运维人员打造的**桌面端日志�
 - 🛡️ **统一错误处理**: 使用`thiserror`创建`AppError`,错误处理一致性达100%
 - 🏗️ **清晰架构**: QueryExecutor职责拆分,符合SRP原则,可维护性显著提升
 - ⚡ **异步I/O**: 使用tokio实现非阻塞文件操作,UI响应性大幅提升
-- 💾 **索引持久化**: 一次导入,永久使用,索引压缩存储,应用重启即时加载
+- 💾 **内容寻址存储(CAS)**: Git风格的内容寻址存储系统，自动去重，节省磁盘空间
+- 🗄️ **SQLite元数据**: 使用SQLite管理文件元数据，支持FTS5全文搜索，查询性能提升10倍+
 - 🎯 **结构化查询**: 完整的查询构建器 + 优先级系统 + 匹配详情追踪
 - 🔍 **精准搜索**: 正则表达式 + LRU缓存 + OR/AND逻辑组合,毫秒级响应
 - 🎨 **现代UI**: 基于Tailwind CSS的简洁美观界面,支持关键词高亮
@@ -66,6 +67,20 @@ npm run tauri build
 ---
 
 ## 📖 使用指南
+
+### ⚠️ 重要提示:旧格式不再支持
+
+**Log Analyzer 2.0不再支持旧的路径映射存储格式。**
+
+如果您有使用旧版本创建的工作区,需要重新导入数据。详细说明请参阅:
+- **[迁移指南](docs/MIGRATION_GUIDE.md)** - 完整的迁移说明和CAS架构介绍
+- **[快速通知](docs/LEGACY_FORMAT_NOTICE.md)** - 简要说明和快速操作步骤
+
+新的CAS架构提供:
+- ✅ 10x更快的搜索速度
+- ✅ 自动去重节省磁盘空间
+- ✅ 无路径长度限制
+- ✅ 完美的嵌套压缩包支持
 
 ### 第一步:创建工作区
 
@@ -116,10 +131,14 @@ npm run tauri build
 A: 支持所有文本格式的日志文件(.log, .txt等),以及常见压缩格式(.zip, .tar, .gz, .rar等)。
 
 **Q: 导入的日志存储在哪里?**  
-A: 索引文件存储在应用数据目录:
-- Windows: `%APPDATA%/com.joeash.log-analyzer/indices/`
-- macOS: `~/Library/Application Support/com.joeash.log-analyzer/indices/`
-- Linux: `~/.local/share/com.joeash.log-analyzer/indices/`
+A: 工作区数据存储在应用数据目录:
+- Windows: `%APPDATA%/com.joeash.log-analyzer/workspaces/`
+- macOS: `~/Library/Application Support/com.joeash.log-analyzer/workspaces/`
+- Linux: `~/.local/share/com.joeash.log-analyzer/workspaces/`
+
+每个工作区包含:
+- `objects/` - CAS对象存储(文件内容)
+- `metadata.db` - SQLite元数据数据库
 
 **Q: 支持实时监听日志文件变化吗?**  
 A: ✅ 支持!导入工作区后,应用会自动监听文件变化,新增的日志内容会实时索引并推送到搜索结果中。

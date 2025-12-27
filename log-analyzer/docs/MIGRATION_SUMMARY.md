@@ -1,8 +1,19 @@
 # Enhanced Archive Handling - Migration Summary
 
-## Overview
+## ⚠️ DEPRECATED
 
-This document provides a high-level summary of the migration tooling and documentation created for the Enhanced Archive Handling system.
+**This document describes migration tools that have been removed in version 2.0.**
+
+The legacy path-based storage format is no longer supported. For information about the current CAS architecture and how to handle legacy workspaces, please see:
+
+- **[MIGRATION_GUIDE.md](MIGRATION_GUIDE.md)** - Complete guide for transitioning to CAS format
+- **[LEGACY_FORMAT_NOTICE.md](LEGACY_FORMAT_NOTICE.md)** - Quick reference for legacy format users
+
+---
+
+## Historical Overview (For Reference Only)
+
+This document provides a high-level summary of the migration tooling and documentation that was created for the Enhanced Archive Handling system in earlier versions.
 
 ## Created Artifacts
 

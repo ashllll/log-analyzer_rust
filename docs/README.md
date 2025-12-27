@@ -7,6 +7,7 @@
 ### 📐 架构文档 (`architecture/`)
 系统架构、设计决策和技术规范
 
+- **CAS_ARCHITECTURE.md** - 内容寻址存储(CAS)架构详解
 - **API.md** - API 接口文档
 - **ADVANCED_SEARCH_FEATURES_EXPLANATION.md** - 高级搜索功能说明
 
@@ -38,13 +39,15 @@
 
 ### 新用户
 1. 阅读项目根目录的 [README.md](../README.md)
-2. 查看 [快速参考指南](guides/QUICK_REFERENCE.md)
-3. 了解 [多关键词搜索](guides/MULTI_KEYWORD_SEARCH_GUIDE.md)
+2. 了解 [CAS架构](architecture/CAS_ARCHITECTURE.md)
+3. 查看 [快速参考指南](guides/QUICK_REFERENCE.md)
+4. 了解 [多关键词搜索](guides/MULTI_KEYWORD_SEARCH_GUIDE.md)
 
 ### 开发者
-1. 查看 [开发文档](development/)
-2. 了解 [API 接口](architecture/API.md)
-3. 阅读 [架构说明](architecture/)
+1. 了解 [CAS架构设计](architecture/CAS_ARCHITECTURE.md)
+2. 查看 [API 接口](architecture/API.md)
+3. 阅读 [开发文档](development/)
+4. 查看 [架构说明](architecture/)
 
 ### 项目管理
 1. 查看 [最新报告](reports/)
@@ -62,8 +65,21 @@
 ### 归档规则
 当报告或状态文档不再活跃时，应移动到 `reports/archive/` 目录。
 
+## 🏗️ 架构亮点
+
+### 内容寻址存储(CAS)
+
+Log Analyzer 采用类似Git的内容寻址存储架构：
+
+- ✅ **自动去重**: 相同内容只存储一次
+- ✅ **无路径限制**: 使用SHA-256哈希，不受路径长度限制
+- ✅ **数据完整性**: 哈希验证确保内容未被篡改
+- ✅ **高效查询**: SQLite + FTS5全文搜索，性能提升10倍+
+
+详见 [CAS架构文档](architecture/CAS_ARCHITECTURE.md)
+
 ## 🔗 相关链接
 
 - [项目主页](../README.md)
 - [变更日志](../CHANGELOG.md)
-- [Bug 修复规范](.kiro/specs/bug-fixes/)
+- [CAS迁移完成规范](../.kiro/specs/complete-cas-migration/)

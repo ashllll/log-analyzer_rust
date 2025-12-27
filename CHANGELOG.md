@@ -1,132 +1,84 @@
-# LogAnalyzer 更新日志
+# Changelog
 
-## [Unreleased] - 2025-12-12
+All notable changes to this project will be documented in this file.
 
-### 🔧 CI/CD 验证与代码质量修复
-- **CI 配置完善**:
-  - 添加 type-check 脚本到 package.json，支持 TypeScript 类型检查
-  - 完善本地 CI 验证流程
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-- **代码质量提升**:
-  - 修复所有 Clippy 警告（41个）
-    * 消除 dead_code 警告
-    * 优化 vec 初始化方式（使用 vec![] 宏）
-    * 简化冗余闭包为函数引用
-    * 处理 await_holding_lock 必要场景
-  - 运行 cargo fmt 统一代码格式化
-  - 代码静态分析零警告通过 ✅
+## [0.1.0] - 2025-12-27
 
-- **测试稳定性改进**:
-  - 修复 7 个测试编译错误和逻辑错误
-  - 添加跨平台测试支持（Windows/macOS/Linux）
-  - 使用条件编译处理平台差异
-  - 修复浮点数精度比较问题
-  - 修复 TAR/ZIP 文件处理测试
-  - 87 个测试通过，1 个已知问题标记为 ignored
+### 🎉 Major Release: Complete CAS Architecture Migration
 
-- **本地 CI 验证结果**:
-  - ✅ cargo fmt --check
-  - ✅ cargo clippy -- -D warnings
-  - ✅ cargo test --all-features (87 passed, 1 ignored)
-  - ✅ npm run lint
-  - ✅ npm run type-check
-  - ✅ npm run build
+This release marks the completion of the Content-Addressable Storage (CAS) architecture migration,
+replacing the legacy `path_map` based file indexing system.
 
-### 📝 技术细节
-- **修改文件**: 17 个文件
-  - package.json: 添加 type-check 脚本
-  - src-tauri/src/commands/import.rs: 允许 await_holding_lock
-  - src-tauri/src/archive/*.rs: 修复测试和优化代码
-  - src-tauri/src/services/*.rs: 简化闭包和添加 allow 属性
-  - src-tauri/src/utils/*.rs: 添加 dead_code 允许属性
-  - src-tauri/src/lib.rs: 添加跨平台测试支持
+### 🚀 Features
 
-## [Previous] - 2025-12-10
+- **Complete CAS Architecture**: Migrated from legacy `path_map` system to Content-Addressable Storage
+- **Unified Metadata Store**: New `MetadataStore` for efficient file metadata management
+- **Streaming Archive Processing**: Improved archive handling with streaming support
+- **Enhanced Search**: Search now uses CAS for file content retrieval
 
-### 🚀 性能优化
-- **Aho-Corasick 搜索算法**: 引入多模式匹配算法，搜索性能提升 80%+
-  - 复杂度从 O(n×m) 降至 O(n+m)
-  - 支持 100+ 关键词同时搜索
-  - 吞吐量达到 10,000+ 次搜索/秒
-- **异步 I/O 优化**: 使用 tokio 实现非阻塞文件操作
-  - UI 响应性显著提升
-  - 支持并发文件处理
-- **查询计划缓存**: 减少重复查询计划构建开销
-  - 正则表达式编译结果缓存
-  - 查询执行速度提升 30%
+### 🔧 Changes
 
-### 🏗️ 架构重构
-- **QueryExecutor 职责拆分**: 遵循单一职责原则
-  - 拆分为 QueryValidator、QueryPlanner、QueryExecutor
-  - 代码复杂度降低 60%
-  - 可维护性显著提升
-- **统一错误处理机制**: 使用 thiserror 创建 AppError
-  - 统一的错误类型和上下文
-  - 错误链支持
-  - 友好的错误显示格式
-- **压缩处理器统一架构**: 策略模式 + Trait
-  - ArchiveHandler trait 定义标准接口
-  - 支持 ZIP、RAR、GZ、TAR 格式
-  - 易于扩展新格式
+#### Removed Files
 
-### 🧪 测试增强
-- **测试覆盖率**: 从 40% 提升至 80%+
-  - 新增 40+ 测试用例
-  - 覆盖核心功能和边界情况
-  - 所有测试通过 ✅
-- **性能基准测试**: 建立性能监控基线
-  - 6 个基准测试场景
-  - 自动化性能监控
-  - 持续性能优化
+- `src-tauri/src/services/index_store.rs` - Old index storage system
+- `src-tauri/src/services/metadata_db.rs` - Legacy path shortening (refactored)
+- `src-tauri/src/migration/mod.rs` - Migration module (no longer needed)
+- `src-tauri/src/commands/migration.rs` - Migration commands
+- `src-tauri/tests/migration_tests.rs` - Legacy migration tests
+- `temp_lib.rs` - Temporary library file
+- `src/components/MigrationDialog.tsx` - Frontend migration UI
+- `src/hooks/useMigration.ts` - Migration hook
+- `src-tauri/migrations/20231221000001_create_path_mappings.sql` - Legacy schema
+- `src-tauri/migrations/config_migration.rs` - Config migration
+- `src-tauri/migrations/migrate_to_enhanced_archive.rs` - Archive migration
 
-### 📚 文档完善
-- **优化实施报告**: 详细的优化方案和实施总结
-- **API 文档**: 更新接口说明和使用示例
-- **架构文档**: 模块关系和设计决策记录
-- **性能基准报告**: 性能测试结果和分析
+#### Modified Commands
 
-### 🔧 开发体验改进
-- **CI/CD 流水线**: GitHub Actions 自动化
-  - 多平台测试（Ubuntu、Windows、macOS）
-  - 自动化构建和发布
-  - 性能基准测试集成
-  - 代码质量检查
-- **代码质量工具**: 
-  - clippy 静态分析
-  - cargo fmt 格式化
-  - cargo audit 安全扫描
-  - cargo outdated 依赖更新
+- `commands/import.rs` - Updated to use `MetadataStore::insert_file()`
+- `commands/workspace.rs` - Uses `MetadataStore::get_all_files()` instead of `load_index`
+- `commands/async_search.rs` - Added `workspace_id` parameter, uses CAS for content
 
-### 📦 依赖更新
-- **新增依赖**:
-  - `aho-corasick = "1.0"` - 多模式字符串匹配
-  - `thiserror = "1.0"` - 错误处理
-  - `async-trait = "0.1"` - 异步trait支持
-  - `flate2 = "1.0"` - GZIP压缩/解压
-  - `tar = "0.4"` - TAR归档处理
+#### Updated Data Models
 
-### 🛡️ 安全改进
-- **输入验证**: 增强路径和查询参数验证
-- **错误处理**: 统一的错误处理机制
-- **资源管理**: 正确的文件句柄和内存管理
+- Removed `IndexData` struct from `models/config.rs`
+- Removed `PathMapType`, `MetadataMapType`, `IndexResult` from `models/state.rs`
+- Removed `format` and `needsMigration` from frontend types
 
-### 📝 代码质量
-- **命名规范**: 遵循 Rust 命名约定
-- **代码格式**: 统一的代码风格
-- **文档注释**: 详细的函数和模块文档
-- **职责单一**: 每个函数/类只负责一个职责
+### 🧪 Testing
 
-## [1.0.0] - 2024-01-01
+- Added property tests for CAS storage consistency
+- Added property tests for search using CAS
+- Added E2E tests for CAS migration workflows
+- All existing tests updated to use CAS + MetadataStore
 
-### 初始版本
-- 基本日志分析功能
-- ZIP/RAR 压缩包支持
-- 全文搜索
-- 工作区管理
-- 配置系统
-- 导入导出功能
+### 📚 Documentation
 
----
+- Updated README.md with CAS architecture documentation
+- Added `docs/architecture/CAS_ARCHITECTURE.md`
+- Added migration guide for users
+- Updated API documentation
 
-**更新日志格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)**  
-**版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)**
+### ⚠️ Breaking Changes
+
+- **Legacy Format Support Dropped**: Old `.idx.gz` index files are no longer supported
+- **No Migration Path**: Users with old workspace format must create new workspaces
+- **Database Schema Change**: Replaced `path_mappings` table with `files` and `archives` tables
+
+### 🛠️ Under the Hood
+
+- CAS storage for content-addressable file storage
+- SQLite-based metadata store with proper indexing
+- Streaming file processing for better memory efficiency
+- Parallel archive processing support
+
+### 📦 Dependencies
+
+- Updated `sqlx` for improved database operations
+- Added `async-compression` for streaming compression
+
+## [0.0.71] - Previous Versions
+
+See [git history](https://github.com/joeash/log-analyzer/commits/main) for earlier changes.
