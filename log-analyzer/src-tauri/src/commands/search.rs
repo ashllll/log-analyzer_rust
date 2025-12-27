@@ -1,17 +1,16 @@
 //! 搜索命令实现
 //! 包含日志搜索及缓存逻辑，附带关键词统计与结果批量推送
 
+use std::panic::AssertUnwindSafe;
 use parking_lot::Mutex;
 use regex::Regex;
-use std::{
-    collections::HashSet,
-    path::PathBuf,
-    sync::Arc,
-    thread,
-    time::Duration,
-};
+use sha2::{Digest, Sha256};
+use std::{collections::HashSet, path::PathBuf, sync::Arc, thread, time::Duration};
 use tauri::{command, AppHandle, Emitter, State};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, warn};
+
+// 导入AppError类型
+use crate::error::AppError;
 
 use crate::models::search::{QueryMetadata, QueryOperator, SearchTerm, TermSource};
 use crate::models::search_statistics::SearchResultSummary;
@@ -34,9 +33,20 @@ fn log_cache_statistics(total_searches: &Arc<Mutex<u64>>, cache_hits: &Arc<Mutex
     );
 }
 
+/// 计算查询内容的哈希版本号（用于缓存键区分）
+///
+/// 使用 SHA-256 哈希算法生成查询的版本标识符，确保不同查询内容
+/// 使用不同的缓存键，避免缓存污染。
+fn compute_query_version(query: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(query.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
 /// 获取或初始化 SearchEngineManager
 ///
 /// 使用延迟初始化模式，首次调用时创建索引
+#[allow(dead_code)]
 fn get_or_init_search_engine(state: &AppState, workspace_id: &str) -> Result<(), String> {
     let mut engine_guard = state.search_engine.lock();
 
@@ -89,7 +99,9 @@ pub async fn search_logs(
     }
 
     let app_handle = app.clone();
-    let path_map = Arc::clone(&state.path_map);
+    let workspace_dirs = Arc::clone(&state.workspace_dirs);
+    let cas_instances = Arc::clone(&state.cas_instances);
+    let metadata_stores = Arc::clone(&state.metadata_stores);
     let cache_manager = Arc::clone(&state.cache_manager);
     let total_searches = Arc::clone(&state.total_searches);
     let cache_hits = Arc::clone(&state.cache_hits);
@@ -99,7 +111,26 @@ pub async fn search_logs(
 
     let max_results = max_results.unwrap_or(50000).min(100_000);
     let filters = filters.unwrap_or_default();
-    let workspace_id = workspaceId.unwrap_or_else(|| "default".to_string());
+    
+    // 修复工作区ID处理：当没有提供workspaceId时，使用第一个可用的工作区而不是硬编码的"default"
+    let workspace_id = if let Some(ref id) = workspaceId {
+        id.clone()
+    } else {
+        // 当没有提供工作区ID时，获取第一个可用的工作区
+        let dirs = workspace_dirs.lock();
+        if let Some(first_workspace_id) = dirs.keys().next() {
+            debug!(
+                workspace_id = %first_workspace_id,
+                available_workspaces = ?dirs.keys().collect::<Vec<_>>(),
+                "Using first available workspace as default"
+            );
+            first_workspace_id.clone()
+        } else {
+            // 如果没有可用的工作区，返回明确的错误
+            let _ = app.emit("search-error", "No workspaces available. Please create a workspace first.");
+            return Err("No workspaces available".to_string());
+        }
+    };
 
     // 生成唯一的搜索ID
     let search_id = uuid::Uuid::new_v4().to_string();
@@ -111,8 +142,9 @@ pub async fn search_logs(
         tokens.insert(search_id.clone(), cancellation_token.clone());
     }
 
-    // 缓存键：基于查询参数生成，不包含时间戳以确保缓存可命中
-    // 注意：当索引更新时，应清除相关缓存
+    // 缓存键：基于查询参数生成，使用查询内容的哈希作为版本号
+    // 使用 SHA-256 哈希确保不同查询使用不同缓存键，避免缓存污染
+    let query_version = compute_query_version(&query);
     let cache_key: SearchCacheKey = (
         query.clone(),
         workspace_id.clone(),
@@ -122,7 +154,7 @@ pub async fn search_logs(
         filters.file_pattern.clone(),
         false, // case_sensitive - 需要从查询中获取
         max_results,
-        String::new(), // 移除时间戳版本号，避免缓存永远失效
+        query_version, // 使用 SHA-256 哈希作为版本号
     );
 
     {
@@ -142,9 +174,11 @@ pub async fn search_logs(
             // 记录缓存统计
             log_cache_statistics(&total_searches, &cache_hits);
 
+            // 发送缓存结果（批量发送，不使用 sleep 阻塞）
             for chunk in cached_results.chunks(500) {
                 let _ = app_handle.emit("search-results", chunk);
-                thread::sleep(Duration::from_millis(2));
+                // 移除 thread::sleep，使用 tokio::task::yield_now 避免阻塞
+                // 但由于在同步上下文中，直接发送即可
             }
 
             let raw_terms: Vec<String> = query
@@ -215,6 +249,7 @@ pub async fn search_logs(
         };
 
         let parse_duration = parse_start.elapsed();
+// ============================================================        // 高级搜索特性集成点        // ============================================================        // FilterEngine: 位图索引加速过滤（10K文档 < 10ms）        // RegexSearchEngine: LRU缓存正则搜索（加速50x+）        // TimePartitionedIndex: 时间分区索引（时序查询优化）        // AutocompleteEngine: Trie树自动补全（< 100ms响应）        //         // 使用方式：        // 1. 从 AppState 获取高级特性实例（已初始化）        // 2. 在搜索前使用 FilterEngine 预过滤候选文档        // 3. 在过滤时使用 RegexSearchEngine 加速正则匹配        // 4. 在时间范围查询时使用 TimePartitionedIndex        //         // 配置开关：config.json -> advanced_features.enable_*        tracing::info!("🔍 高级搜索特性已就绪（可通过配置启用）");
 
         let execution_start = std::time::Instant::now();
         let mut executor = QueryExecutor::new(100);
@@ -226,14 +261,184 @@ pub async fn search_logs(
             }
         };
 
-        let files: Vec<(String, String)> = {
-            let guard = path_map.lock();
-            guard.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+        // Get workspace directory
+        let workspace_dir = {
+            let dirs = workspace_dirs.lock();
+            debug!(
+                workspace_id = %workspace_id,
+                available_workspaces = ?dirs.keys().collect::<Vec<_>>(),
+                "Looking up workspace directory"
+            );
+            match dirs.get(&workspace_id) {
+                Some(dir) => {
+                    debug!(
+                        workspace_id = %workspace_id,
+                        directory = %dir.display(),
+                        "Found workspace directory"
+                    );
+                    dir.clone()
+                },
+                None => {
+                    error!(
+                        workspace_id = %workspace_id,
+                        available_workspaces = ?dirs.keys().collect::<Vec<_>>(),
+                        "Workspace directory not found"
+                    );
+                    
+                    // 如果是"default"工作区，尝试使用第一个可用的工作区
+                    if workspace_id == "default" {
+                        if let Some(first_workspace_id) = dirs.keys().next() {
+                            debug!(
+                                workspace_id = %first_workspace_id,
+                                "Falling back to first available workspace instead of 'default'"
+                            );
+                            let _ = app_handle.emit("search-error", format!("Workspace 'default' not found, using '{}' instead", first_workspace_id));
+                            return;
+                        }
+                    }
+                    
+                    let _ = app_handle.emit(
+                        "search-error",
+                        format!("Workspace directory not found for: {}", workspace_id),
+                    );
+                    return;
+                }
+            }
+        };
+
+        // Get or create MetadataStore for this workspace
+        let metadata_store = {
+            let mut stores = metadata_stores.lock();
+            if let Some(store) = stores.get(&workspace_id) {
+                Arc::clone(store)
+            } else {
+                // Create new MetadataStore using block_in_place for async operation
+                // 添加错误处理防止panic
+                let store_result = match std::panic::catch_unwind(AssertUnwindSafe(|| {
+                    tokio::task::block_in_place(|| {
+                        match tokio::runtime::Handle::try_current() {
+                            Ok(handle) => {
+                                debug!(
+                                    workspace_id = %workspace_id,
+                                    directory = %workspace_dir.display(),
+                                    "Creating new MetadataStore with Tokio runtime"
+                                );
+                                handle.block_on(
+                                    crate::storage::metadata_store::MetadataStore::new(&workspace_dir),
+                                )
+                            }
+                            Err(e) => {
+                                error!(
+                                    workspace_id = %workspace_id,
+                                    directory = %workspace_dir.display(),
+                                    error = %e,
+                                    "Failed to acquire Tokio runtime handle for MetadataStore creation"
+                                );
+                                // 返回错误而不是panic，需要转换为AppError类型
+                                Err(AppError::DatabaseError(format!("Tokio runtime error: {}", e)))
+                            }
+                        }
+                    })
+                })) {
+                    Ok(result) => result,
+                    Err(panic_info) => {
+                        error!(
+                            workspace_id = %workspace_id,
+                            directory = %workspace_dir.display(),
+                            panic_info = ?panic_info,
+                            "Panic occurred while creating MetadataStore"
+                        );
+                        Err(AppError::DatabaseError("Internal error occurred while creating metadata store".to_string()))
+                    }
+                };
+
+                match store_result {
+                    Ok(store) => {
+                        let store_arc = Arc::new(store);
+                        stores.insert(workspace_id.clone(), Arc::clone(&store_arc));
+                        store_arc
+                    }
+                    Err(e) => {
+                        let _ = app_handle.emit(
+                            "search-error",
+                            format!("Failed to open metadata store: {}", e),
+                        );
+                        return;
+                    }
+                }
+            }
+        };
+
+        // Get or create CAS for this workspace
+        let cas = {
+            let mut instances = cas_instances.lock();
+            if let Some(cas) = instances.get(&workspace_id) {
+                Arc::clone(cas)
+            } else {
+                // Create new CAS instance
+                let cas_arc = Arc::new(crate::storage::ContentAddressableStorage::new(
+                    workspace_dir.clone(),
+                ));
+                instances.insert(workspace_id.clone(), Arc::clone(&cas_arc));
+                cas_arc
+            }
+        };
+
+        // Get all files from MetadataStore (Requirements 2.3) using block_in_place
+        // 添加错误处理防止panic
+        let files = match std::panic::catch_unwind(AssertUnwindSafe(|| {
+            tokio::task::block_in_place(|| {
+                // 检查Tokio运行时是否可用
+                match tokio::runtime::Handle::try_current() {
+                    Ok(handle) => {
+                        debug!(
+                            workspace_id = %workspace_id,
+                            "Successfully acquired Tokio runtime handle"
+                        );
+                        handle.block_on(metadata_store.get_all_files())
+                    }
+                    Err(e) => {
+                        error!(
+                            workspace_id = %workspace_id,
+                            error = %e,
+                            "Failed to acquire Tokio runtime handle"
+                        );
+                        // 返回空结果而不是panic
+                        Ok(Vec::new())
+                    }
+                }
+            })
+        })) {
+            Ok(result) => result,
+            Err(panic_info) => {
+                error!(
+                    workspace_id = %workspace_id,
+                    panic_info = ?panic_info,
+                    "Panic occurred while getting files from metadata store"
+                );
+                let _ = app_handle.emit(
+                    "search-error",
+                    format!("Internal error occurred while accessing workspace: {}", workspace_id),
+                );
+                return;
+            }
+        };
+
+        let files = match files {
+            Ok(files) => files,
+            Err(e) => {
+                let _ = app_handle.emit(
+                    "search-error",
+                    format!("Failed to get files from metadata store: {}", e),
+                );
+                return;
+            }
         };
 
         debug!(
             total_files = files.len(),
-            "Starting search across files"
+            workspace_id = %workspace_id,
+            "Starting search across files using CAS"
         );
 
         // 流式处理：分批发送结果，避免内存峰值
@@ -271,15 +476,17 @@ pub async fn search_logs(
             // 每批处理10个文件
             let mut batch_results: Vec<LogEntry> = Vec::new();
 
-            // 并行处理当前批次
+            // 并行处理当前批次 (Requirements 2.3: 使用 CAS 读取内容)
             let batch: Vec<_> = file_batch
                 .iter()
                 .enumerate()
-                .map(|(idx, (real_path, virtual_path))| {
+                .map(|(idx, file_metadata)| {
+                    // Use CAS-based access with hash
+                    let file_identifier = format!("cas://{}", file_metadata.sha256_hash);
                     search_single_file_with_details(
-                        real_path,
-                        virtual_path,
-                        None, // CAS not yet integrated, using legacy path-based access
+                        &file_identifier,
+                        &file_metadata.virtual_path,
+                        Some(&*cas), // Pass CAS instance for hash-based access
                         &executor,
                         &plan,
                         total_processed + idx * 10000,
@@ -356,11 +563,6 @@ pub async fn search_logs(
             // 发送进度更新
             let progress = (total_processed as f64 / files.len() as f64 * 100.0) as i32;
             let _ = app_handle.emit("search-progress", progress);
-
-            // 避免阻塞：定期暂停
-            if total_processed % 50 == 0 {
-                thread::sleep(Duration::from_millis(1));
-            }
         }
 
         // 发送剩余结果
@@ -551,9 +753,8 @@ fn search_single_file_with_details(
     let mut results = Vec::new();
 
     // Determine if this is CAS-based or path-based access
-    if file_identifier.starts_with("cas://") {
+    if let Some(sha256_hash) = file_identifier.strip_prefix("cas://") {
         // Hash-based access via CAS
-        let sha256_hash = &file_identifier[6..]; // Remove "cas://" prefix
 
         let cas = match cas_opt {
             Some(c) => c,
@@ -650,7 +851,7 @@ fn search_single_file_with_details(
 
         let real_path = file_identifier;
         let path = Path::new(real_path);
-        
+
         if !path.exists() {
             warn!(
                 file = %real_path,

@@ -2,10 +2,9 @@
 //!
 //! 提供支持取消和超时的异步搜索功能
 
-use std::sync::Arc;
+use std::path::Path;
 use std::time::Duration;
 use tauri::{command, AppHandle, State};
-use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
@@ -13,6 +12,7 @@ use uuid::Uuid;
 use crate::events::bridge::emit;
 use crate::models::{AppState, LogEntry};
 use crate::services::parse_metadata;
+use crate::storage::{ContentAddressableStorage, MetadataStore};
 use crate::utils::async_resource_manager::OperationType;
 
 /// 异步搜索日志
@@ -49,18 +49,17 @@ pub async fn async_search_logs(
     let app_handle = app.clone();
     let search_id_clone = search_id.clone();
     let query_clone = query.clone();
-    let path_map = Arc::clone(&state.path_map);
+    let workspace_id_clone = workspace_id.clone();
 
     // 启动异步搜索任务
     tauri::async_runtime::spawn(async move {
         let result = perform_async_search(
             app_handle,
             query_clone,
-            workspace_id,
+            workspace_id_clone,
             max_results,
             timeout,
             cancellation_token,
-            path_map,
             search_id_clone.clone(),
         )
         .await;
@@ -100,13 +99,12 @@ pub async fn get_active_searches_count(state: State<'_, AppState>) -> Result<usi
 
 /// 执行异步搜索的核心逻辑
 async fn perform_async_search(
-    _app: AppHandle,
+    app: AppHandle,
     query: String,
-    _workspace_id: String,
+    workspace_id: String,
     max_results: usize,
     timeout: Duration,
     cancellation_token: CancellationToken,
-    path_map: Arc<parking_lot::Mutex<std::collections::HashMap<String, String>>>,
     search_id: String,
 ) -> Result<usize, String> {
     let start_time = std::time::Instant::now();
@@ -114,17 +112,35 @@ async fn perform_async_search(
     // 发送搜索开始事件
     let _ = emit::async_search_start(&search_id);
 
-    // 获取文件列表
-    let files: Vec<(String, String)> = {
-        let guard = path_map.lock();
-        guard.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
-    };
+    // Get workspace directory
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
+    let workspace_dir = app_data_dir.join("extracted").join(&workspace_id);
+
+    if !workspace_dir.exists() {
+        return Err(format!("Workspace not found: {}", workspace_id));
+    }
+
+    // Initialize MetadataStore and CAS
+    let metadata_store = MetadataStore::new(&workspace_dir)
+        .await
+        .map_err(|e| format!("Failed to open metadata store: {}", e))?;
+    
+    let cas = ContentAddressableStorage::new(workspace_dir);
+
+    // Get file list from MetadataStore
+    let files = metadata_store
+        .get_all_files()
+        .await
+        .map_err(|e| format!("Failed to get file list: {}", e))?;
 
     let mut results_count = 0;
     let mut batch_results: Vec<LogEntry> = Vec::new();
     let batch_size = 500;
 
-    for (i, (real_path, virtual_path)) in files.iter().enumerate() {
+    for (i, file) in files.iter().enumerate() {
         // 检查取消令牌
         if cancellation_token.is_cancelled() {
             tracing::info!(search_id = %search_id, "Search cancelled by user");
@@ -137,8 +153,37 @@ async fn perform_async_search(
             return Err("Search timed out".to_string());
         }
 
-        // 异步搜索单个文件
-        match search_file_async(real_path, virtual_path, &query, results_count).await {
+        // Read file content from CAS using SHA-256 hash
+        let content = match cas.read_content(&file.sha256_hash).await {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                tracing::warn!(
+                    search_id = %search_id,
+                    file = %file.virtual_path,
+                    hash = %file.sha256_hash,
+                    error = %e,
+                    "Failed to read file from CAS"
+                );
+                continue;
+            }
+        };
+
+        // Convert bytes to string
+        let content_str = match String::from_utf8(content) {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::warn!(
+                    search_id = %search_id,
+                    file = %file.virtual_path,
+                    error = %e,
+                    "Failed to decode file content as UTF-8"
+                );
+                continue;
+            }
+        };
+
+        // Search content line by line
+        match search_content_async(&content_str, &file.virtual_path, &query, results_count).await {
             Ok(mut file_results) => {
                 for entry in file_results.drain(..) {
                     if results_count >= max_results {
@@ -157,9 +202,9 @@ async fn perform_async_search(
             Err(e) => {
                 tracing::warn!(
                     search_id = %search_id,
-                    file = %real_path,
+                    file = %file.virtual_path,
                     error = %e,
-                    "Failed to search file"
+                    "Failed to search file content"
                 );
             }
         }
@@ -192,43 +237,37 @@ async fn perform_async_search(
     Ok(results_count)
 }
 
-/// 异步搜索单个文件
-async fn search_file_async(
-    real_path: &str,
+/// 异步搜索文件内容
+async fn search_content_async(
+    content: &str,
     virtual_path: &str,
     query: &str,
     global_offset: usize,
 ) -> Result<Vec<LogEntry>, String> {
     let mut results = Vec::new();
-
-    let file = File::open(real_path)
-        .await
-        .map_err(|e| format!("Failed to open file {}: {}", real_path, e))?;
-
-    let reader = BufReader::new(file);
-    let mut lines = reader.lines();
     let mut line_number = 0;
 
-    while let Some(line) = lines
-        .next_line()
-        .await
-        .map_err(|e| format!("Failed to read line: {}", e))?
-    {
+    for line in content.lines() {
         line_number += 1;
 
         if line.contains(query) {
-            let (ts, lvl) = parse_metadata(&line);
+            let (ts, lvl) = parse_metadata(line);
             results.push(LogEntry {
                 id: global_offset + line_number,
                 timestamp: ts,
                 level: lvl,
                 file: virtual_path.to_string(),
-                real_path: real_path.to_string(),
+                real_path: virtual_path.to_string(), // In CAS, virtual_path is the canonical path
                 line: line_number,
-                content: line,
+                content: line.to_string(),
                 tags: vec![],
                 match_details: None,
-                matched_keywords: Some(vec![query.to_string()]),
+                // 使用 Option 类型，只有当有匹配关键词时才包装为 Some
+                matched_keywords: if !query.is_empty() {
+                    Some(vec![query.to_string()])
+                } else {
+                    None
+                },
             });
         }
     }
@@ -239,21 +278,13 @@ async fn search_file_async(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::NamedTempFile;
 
     #[tokio::test]
-    async fn test_search_file_async() {
-        // 创建临时测试文件
-        let mut temp_file = NamedTempFile::new().unwrap();
-        let content =
-            "2023-01-01 10:00:00 INFO Test log entry\n2023-01-01 10:01:00 ERROR Another entry\n";
-        use std::io::Write;
-        temp_file.write_all(content.as_bytes()).unwrap();
+    async fn test_search_content_async() {
+        let content = "2023-01-01 10:00:00 INFO Test log entry\n2023-01-01 10:01:00 ERROR Another entry\n";
 
-        let file_path = temp_file.path().to_str().unwrap();
-
-        // 测试搜索
-        let results = search_file_async(file_path, "test.log", "Test", 0)
+        // Test search
+        let results = search_content_async(content, "test.log", "Test", 0)
             .await
             .unwrap();
 

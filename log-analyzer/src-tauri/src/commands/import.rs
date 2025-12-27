@@ -1,15 +1,13 @@
 //! 导入相关命令实现
 //! 包含工作区导入与 RAR 支持检查
 
-use std::{collections::HashMap, fs, path::Path};
+use std::{fs, path::Path};
 
 use tauri::{command, AppHandle, Emitter, Manager, State};
 use uuid::Uuid;
 
-use crate::archive::processor::process_path_recursive_with_metadata;
 use crate::models::AppState;
-use crate::services::save_index;
-use crate::storage::verify_after_import;
+use crate::storage::{verify_after_import, MetadataStore};
 use crate::utils::{canonicalize_path, validate_path_param, validate_workspace_id};
 
 #[command]
@@ -40,14 +38,15 @@ pub async fn import_folder(
         source_path.to_path_buf()
     });
 
-    let extracted_dir = app
+    let workspace_dir = app
         .path()
         .app_data_dir()
         .map_err(|e| format!("Failed to get app data dir: {}", e))?
-        .join("extracted")
+        .join("workspaces")
         .join(&workspaceId);
-    fs::create_dir_all(&extracted_dir)
-        .map_err(|e| format!("Failed to create extracted dir: {}", e))?;
+
+    fs::create_dir_all(&workspace_dir)
+        .map_err(|e| format!("Failed to create workspace dir: {}", e))?;
 
     // 使用 TaskManager 创建任务
     let target_name = canonical_path
@@ -56,27 +55,23 @@ pub async fn import_folder(
         .unwrap_or(&path)
         .to_string();
 
+    #[allow(clippy::await_holding_lock)]
     let task = if let Some(task_manager) = state.task_manager.lock().as_ref() {
-        task_manager.create_task_async(
-            task_id.clone(),
-            "Import".to_string(),
-            target_name.clone(),
-            Some(workspaceId.clone()),
-        ).await.map_err(|e| format!("Failed to create task: {}", e))?
+        task_manager
+            .create_task_async(
+                task_id.clone(),
+                "Import".to_string(),
+                target_name.clone(),
+                Some(workspaceId.clone()),
+            )
+            .await
+            .map_err(|e| format!("Failed to create task: {}", e))?
     } else {
         return Err("Task manager not initialized".to_string());
     };
 
     // 发送初始任务事件
     let _ = app.emit("task-update", task);
-
-    {
-        let mut map_guard = state.path_map.lock();
-        let mut metadata_guard = state.file_metadata.lock();
-
-        map_guard.clear();
-        metadata_guard.clear();
-    }
 
     // 直接在当前异步上下文中执行，避免创建新的 runtime
     let source_path = Path::new(&path);
@@ -87,92 +82,120 @@ pub async fn import_folder(
         .to_string();
 
     // 更新任务进度
+    #[allow(clippy::await_holding_lock)]
     if let Some(task_manager) = state.task_manager.lock().as_ref() {
-        if let Ok(Some(task)) = task_manager.update_task_async(
-            &task_id_clone,
-            10,
-            "Scanning...".to_string(),
-            crate::task_manager::TaskStatus::Running,
-        ).await {
+        if let Ok(Some(task)) = task_manager
+            .update_task_async(
+                &task_id_clone,
+                10,
+                "Scanning...".to_string(),
+                crate::task_manager::TaskStatus::Running,
+            )
+            .await
+        {
             let _ = app_handle.emit("task-update", task);
         }
     }
 
-    // 创建局部映射表，在没有持有锁的情况下处理数据
-    let mut local_map: HashMap<String, String> = HashMap::new();
-    let mut local_metadata: HashMap<String, crate::models::config::FileMetadata> = HashMap::new();
+    // Initialize CAS and MetadataStore for this workspace
+    let cas = {
+        let mut cas_instances = state.cas_instances.lock();
+        cas_instances
+            .entry(workspace_id_clone.clone())
+            .or_insert_with(|| {
+                std::sync::Arc::new(crate::storage::ContentAddressableStorage::new(
+                    workspace_dir.clone(),
+                ))
+            })
+            .clone()
+    };
 
-    // 获取应用状态（用于清理队列）
-    let state = app_handle.state::<AppState>();
+    let metadata_store = {
+        let mut metadata_stores = state.metadata_stores.lock();
+        if let Some(store) = metadata_stores.get(&workspace_id_clone) {
+            store.clone()
+        } else {
+            let store = std::sync::Arc::new(
+                MetadataStore::new(&workspace_dir)
+                    .await
+                    .map_err(|e| format!("Failed to create metadata store: {}", e))?,
+            );
+            metadata_stores.insert(workspace_id_clone.clone(), store.clone());
+            store
+        }
+    };
 
-    // 异步调用处理函数，不持有任何锁
-    process_path_recursive_with_metadata(
+    // Store workspace directory mapping
+    {
+        let mut workspace_dirs = state.workspace_dirs.lock();
+        workspace_dirs.insert(workspace_id_clone.clone(), workspace_dir.clone());
+    }
+
+    // Process the path using CAS architecture
+    use crate::archive::processor::process_path_with_cas;
+
+    if let Err(e) = process_path_with_cas(
         source_path,
         &root_name,
-        &extracted_dir,
-        &mut local_map,
-        &mut local_metadata,
+        &workspace_dir,
+        &cas,
+        metadata_store.clone(),
         &app_handle,
         &task_id_clone,
         &workspace_id_clone,
+        None, // parent_archive_id
+        0,    // depth_level
     )
-    .await;
-
-    // 处理完成后，获取锁并更新共享状态
-
-    // 更新路径映射
+    .await
     {
-        let mut map_guard = state.path_map.lock();
-        *map_guard = local_map;
-    }
+        eprintln!("[ERROR] Failed to process path: {}", e);
 
-    // 更新元数据映射
-    {
-        let mut metadata_guard = state.file_metadata.lock();
-        *metadata_guard = local_metadata;
-    }
-
-    // 保存索引
-    let map_guard = state.path_map.lock();
-    let metadata_guard = state.file_metadata.lock();
-
-    match save_index(
-        &app_handle,
-        &workspace_id_clone,
-        &map_guard,
-        &metadata_guard,
-    ) {
-        Ok(index_path) => {
-            let mut indices_guard = state.workspace_indices.lock();
-            indices_guard.insert(workspace_id_clone.clone(), index_path);
+        // Update task with error
+        #[allow(clippy::await_holding_lock)]
+        if let Some(task_manager) = state.task_manager.lock().as_ref() {
+            let _ = task_manager
+                .update_task_async(
+                    &task_id_clone,
+                    0,
+                    format!("Error: {}", e),
+                    crate::task_manager::TaskStatus::Failed,
+                )
+                .await;
         }
-        Err(e) => {
-            eprintln!("[WARNING] Failed to save index: {}", e);
-        }
+
+        return Err(format!("Failed to process path: {}", e));
     }
 
     // Verify integrity after import (Task 5.2)
     // This generates a validation report to ensure all imported files are accessible
     // and have valid hashes in the CAS
+    #[allow(clippy::await_holding_lock)]
     if let Some(task_manager) = state.task_manager.lock().as_ref() {
-        if let Ok(Some(task)) = task_manager.update_task_async(
-            &task_id_clone,
-            95,
-            "Verifying integrity...".to_string(),
-            crate::task_manager::TaskStatus::Running,
-        ).await {
+        if let Ok(Some(task)) = task_manager
+            .update_task_async(
+                &task_id_clone,
+                95,
+                "Verifying integrity...".to_string(),
+                crate::task_manager::TaskStatus::Running,
+            )
+            .await
+        {
             let _ = app_handle.emit("task-update", task);
         }
     }
 
-    match verify_after_import(&extracted_dir).await {
+    match verify_after_import(&workspace_dir).await {
         Ok(report) => {
             if report.is_valid() {
+                // Get file count from MetadataStore for logging
+                let file_count = metadata_store.count_files().await.unwrap_or(0);
+
                 tracing::info!(
                     workspace_id = %workspace_id_clone,
                     total_files = report.total_files,
                     valid_files = report.valid_files,
-                    "Integrity verification passed"
+                    file_count = file_count,
+                    "Import completed successfully with integrity verification"
                 );
             } else {
                 tracing::warn!(
@@ -184,12 +207,15 @@ pub async fn import_folder(
                     corrupted_objects = report.corrupted_objects.len(),
                     "Integrity verification found issues"
                 );
-                
+
                 // Emit validation report to frontend
-                let _ = app_handle.emit("validation-report", serde_json::json!({
-                    "workspace_id": workspace_id_clone,
-                    "report": report,
-                }));
+                let _ = app_handle.emit(
+                    "validation-report",
+                    serde_json::json!({
+                        "workspace_id": workspace_id_clone,
+                        "report": report,
+                    }),
+                );
             }
         }
         Err(e) => {
@@ -202,13 +228,17 @@ pub async fn import_folder(
     }
 
     // 导入完成，使用 TaskManager 更新任务状态
+    #[allow(clippy::await_holding_lock)]
     if let Some(task_manager) = state.task_manager.lock().as_ref() {
-        if let Ok(Some(task)) = task_manager.update_task_async(
-            &task_id_clone,
-            100,
-            "Done".to_string(),
-            crate::task_manager::TaskStatus::Completed,
-        ).await {
+        if let Ok(Some(task)) = task_manager
+            .update_task_async(
+                &task_id_clone,
+                100,
+                "Done".to_string(),
+                crate::task_manager::TaskStatus::Completed,
+            )
+            .await
+        {
             let _ = app_handle.emit("task-update", task);
         }
     }
