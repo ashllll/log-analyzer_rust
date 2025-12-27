@@ -320,6 +320,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     tasksRef.current = taskState.tasks;
   }, [taskState.tasks]);
 
+  // 老王备注：存储所有toast定时器，在组件卸载时清理
+  const toastTimeoutsRef = useRef<Set<NodeJS.Timeout>>(new Set());
+
   // App Actions
   const setPage = useCallback((page: Page) => {
     appDispatch({ type: 'SET_PAGE', payload: page });
@@ -328,13 +331,18 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const addToast = useCallback((type: ToastType, message: string) => {
     const action = { type: 'ADD_TOAST' as const, payload: { type, message } };
     appDispatch(action);
-    
+
     // 自动移除Toast
     const id = Date.now();
-    setTimeout(() => {
+    const timeoutId = setTimeout(() => {
       appDispatch({ type: 'REMOVE_TOAST', payload: id });
+      // 老王备注：从Set中移除已执行的定时器
+      toastTimeoutsRef.current.delete(timeoutId);
     }, 3000);
-  }, []);
+
+    // 老王备注：将定时器添加到Set中
+    toastTimeoutsRef.current.add(timeoutId);
+  }, [toastTimeoutsRef]);
 
   const removeToast = useCallback((id: number) => {
     appDispatch({ type: 'REMOVE_TOAST', payload: id });
@@ -511,6 +519,12 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       unlistenTaskUpdate.then(f => f());
       unlistenImportComplete.then(f => f());
       unlistenImportError.then(f => f());
+
+      // 老王备注：清除所有toast定时器，防止内存泄漏
+      toastTimeoutsRef.current.forEach(timeoutId => {
+        clearTimeout(timeoutId);
+      });
+      toastTimeoutsRef.current.clear();
     };
   }, [addToast, taskDispatch, workspaceDispatch, taskState.tasks]);
 

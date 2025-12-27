@@ -19,7 +19,9 @@
 use crate::error::{AppError, Result};
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
+use sqlx::sqlite::SqlitePoolOptions;
 use std::path::Path;
+use std::time::Duration;
 use tracing::{debug, info};
 
 /// File metadata stored in SQLite
@@ -84,10 +86,17 @@ impl MetadataStore {
 
         info!(path = %db_path.display(), "Initializing metadata store");
 
-        // Connect to database (mode=rwc creates if doesn't exist)
-        let pool = SqlitePool::connect(&db_url).await.map_err(|e| {
-            AppError::database_error(format!("Failed to connect to database: {}", e))
-        })?;
+        // 老王备注：使用业内成熟的SQLite连接池配置
+        // 连接池大小和超时配置基于SQLite最佳实践
+        let pool = SqlitePoolOptions::new()
+            .min_connections(1)      // 最小连接数：桌面应用通常1个足够
+            .max_connections(5)      // 最大连接数：避免资源耗尽
+            .acquire_timeout(Duration::from_secs(30))  // 获取连接超时
+            .idle_timeout(Duration::from_secs(600))      // 空闲连接超时：10分钟
+            .max_lifetime(Duration::from_secs(1800))     // 连接最大生命周期：30分钟
+            .connect(&db_url)
+            .await
+            .map_err(|e| AppError::database_error(format!("Failed to connect to database: {}", e)))?;
 
         // Initialize schema
         Self::init_schema(&pool).await?;
@@ -259,9 +268,12 @@ impl MetadataStore {
     ///
     /// The auto-generated file ID
     pub async fn insert_file(&self, metadata: &FileMetadata) -> Result<i64> {
-        let id = sqlx::query(
+        // 老王备注：使用 INSERT OR IGNORE 处理 UNIQUE 约束冲突
+        // 如果 sha256_hash 已存在，跳过插入（CAS 去重设计）
+        // 然后查询已存在的记录 ID
+        sqlx::query(
             r#"
-            INSERT INTO files (
+            INSERT OR IGNORE INTO files (
                 sha256_hash, virtual_path, original_name, size,
                 modified_time, mime_type, parent_archive_id, depth_level, created_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -278,14 +290,23 @@ impl MetadataStore {
         .bind(chrono::Utc::now().timestamp())
         .execute(&self.pool)
         .await
-        .map_err(|e| AppError::database_error(format!("Failed to insert file: {}", e)))?
-        .last_insert_rowid();
+        .map_err(|e| AppError::database_error(format!("Failed to insert file: {}", e)))?;
+
+        // 老王备注：查询插入的记录或已存在的记录 ID
+        let id = sqlx::query_as::<_, (i64,)>(
+            "SELECT id FROM files WHERE sha256_hash = ? LIMIT 1"
+        )
+        .bind(&metadata.sha256_hash)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| AppError::database_error(format!("Failed to fetch file ID: {}", e)))?
+        .0;
 
         debug!(
             id = id,
             hash = %metadata.sha256_hash,
             path = %metadata.virtual_path,
-            "Inserted file metadata"
+            "Inserted or retrieved existing file metadata (CAS deduplication)"
         );
 
         Ok(id)
@@ -293,9 +314,10 @@ impl MetadataStore {
 
     /// Insert archive metadata
     pub async fn insert_archive(&self, metadata: &ArchiveMetadata) -> Result<i64> {
-        let id = sqlx::query(
+        // 老王备注：使用 INSERT OR IGNORE 处理 UNIQUE 约束冲突（CAS 去重设计）
+        sqlx::query(
             r#"
-            INSERT INTO archives (
+            INSERT OR IGNORE INTO archives (
                 sha256_hash, virtual_path, original_name, archive_type,
                 parent_archive_id, depth_level, extraction_status, created_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -311,14 +333,23 @@ impl MetadataStore {
         .bind(chrono::Utc::now().timestamp())
         .execute(&self.pool)
         .await
-        .map_err(|e| AppError::database_error(format!("Failed to insert archive: {}", e)))?
-        .last_insert_rowid();
+        .map_err(|e| AppError::database_error(format!("Failed to insert archive: {}", e)))?;
+
+        // 老王备注：查询插入的记录或已存在的记录 ID
+        let id = sqlx::query_as::<_, (i64,)>(
+            "SELECT id FROM archives WHERE sha256_hash = ? LIMIT 1"
+        )
+        .bind(&metadata.sha256_hash)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| AppError::database_error(format!("Failed to fetch archive ID: {}", e)))?
+        .0;
 
         debug!(
             id = id,
             hash = %metadata.sha256_hash,
             path = %metadata.virtual_path,
-            "Inserted archive metadata"
+            "Inserted or retrieved existing archive metadata (CAS deduplication)"
         );
 
         Ok(id)
@@ -526,9 +557,10 @@ impl MetadataStore {
         let mut ids = Vec::with_capacity(files.len());
 
         for metadata in files {
-            let id = sqlx::query(
+            // 老王备注：使用 INSERT OR IGNORE 处理 UNIQUE 约束冲突（批量插入版本）
+            sqlx::query(
                 r#"
-                INSERT INTO files (
+                INSERT OR IGNORE INTO files (
                     sha256_hash, virtual_path, original_name, size,
                     modified_time, mime_type, parent_archive_id, depth_level, created_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -545,8 +577,17 @@ impl MetadataStore {
             .bind(chrono::Utc::now().timestamp())
             .execute(&mut *tx)
             .await
-            .map_err(|e| AppError::database_error(format!("Failed to insert file: {}", e)))?
-            .last_insert_rowid();
+            .map_err(|e| AppError::database_error(format!("Failed to insert file: {}", e)))?;
+
+            // 老王备注：查询插入的记录或已存在的记录 ID
+            let id = sqlx::query_as::<_, (i64,)>(
+                "SELECT id FROM files WHERE sha256_hash = ? LIMIT 1"
+            )
+            .bind(&metadata.sha256_hash)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| AppError::database_error(format!("Failed to fetch file ID: {}", e)))?
+            .0;
 
             ids.push(id);
         }
@@ -555,7 +596,7 @@ impl MetadataStore {
             AppError::database_error(format!("Failed to commit transaction: {}", e))
         })?;
 
-        info!(count = ids.len(), "Inserted files in batch transaction");
+        info!(count = ids.len(), "Inserted files in batch transaction (with CAS deduplication)");
         Ok(ids)
     }
 
@@ -628,9 +669,10 @@ impl MetadataStore {
         tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
         metadata: &FileMetadata,
     ) -> Result<i64> {
-        let id = sqlx::query(
+        // 老王备注：使用 INSERT OR IGNORE 处理 UNIQUE 约束冲突（事务版本）
+        sqlx::query(
             r#"
-            INSERT INTO files (
+            INSERT OR IGNORE INTO files (
                 sha256_hash, virtual_path, original_name, size,
                 modified_time, mime_type, parent_archive_id, depth_level, created_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -649,14 +691,25 @@ impl MetadataStore {
         .await
         .map_err(|e| {
             AppError::database_error(format!("Failed to insert file in transaction: {}", e))
+        })?;
+
+        // 老王备注：查询插入的记录或已存在的记录 ID
+        let id = sqlx::query_as::<_, (i64,)>(
+            "SELECT id FROM files WHERE sha256_hash = ? LIMIT 1"
+        )
+        .bind(&metadata.sha256_hash)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| {
+            AppError::database_error(format!("Failed to fetch file ID in transaction: {}", e))
         })?
-        .last_insert_rowid();
+        .0;
 
         debug!(
             id = id,
             hash = %metadata.sha256_hash,
             path = %metadata.virtual_path,
-            "Inserted file metadata in transaction"
+            "Inserted or retrieved existing file metadata in transaction (CAS deduplication)"
         );
 
         Ok(id)
@@ -680,9 +733,10 @@ impl MetadataStore {
         tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
         metadata: &ArchiveMetadata,
     ) -> Result<i64> {
-        let id = sqlx::query(
+        // 老王备注：使用 INSERT OR IGNORE 处理 UNIQUE 约束冲突（事务版本）
+        sqlx::query(
             r#"
-            INSERT INTO archives (
+            INSERT OR IGNORE INTO archives (
                 sha256_hash, virtual_path, original_name, archive_type,
                 parent_archive_id, depth_level, extraction_status, created_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -700,14 +754,25 @@ impl MetadataStore {
         .await
         .map_err(|e| {
             AppError::database_error(format!("Failed to insert archive in transaction: {}", e))
+        })?;
+
+        // 老王备注：查询插入的记录或已存在的记录 ID
+        let id = sqlx::query_as::<_, (i64,)>(
+            "SELECT id FROM archives WHERE sha256_hash = ? LIMIT 1"
+        )
+        .bind(&metadata.sha256_hash)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| {
+            AppError::database_error(format!("Failed to fetch archive ID in transaction: {}", e))
         })?
-        .last_insert_rowid();
+        .0;
 
         debug!(
             id = id,
             hash = %metadata.sha256_hash,
             path = %metadata.virtual_path,
-            "Inserted archive metadata in transaction"
+            "Inserted or retrieved existing archive metadata in transaction (CAS deduplication)"
         );
 
         Ok(id)
