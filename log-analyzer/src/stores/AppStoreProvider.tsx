@@ -5,6 +5,10 @@ import { useKeywordStore } from './keywordStore';
 import { useTaskStore } from './taskStore';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { eventBus } from '../events/EventBus';
+import type { TaskUpdateEvent, TaskRemovedEvent } from '../events/types';
+import type { Workspace, KeywordGroup } from '../types/common';
+import { logger } from '../utils/logger';
 
 interface AppStoreProviderProps {
   children: ReactNode;
@@ -37,13 +41,13 @@ export const AppStoreProvider = ({ children }: AppStoreProviderProps) => {
     // 加载配置
     const loadConfig = async () => {
       try {
-        const config = await invoke<any>('load_config');
+        const config = await invoke<Record<string, unknown>>('load_config');
         if (config) {
           if (config.workspaces) {
-            setWorkspaces(config.workspaces);
+            setWorkspaces(config.workspaces as Workspace[]);
           }
           if (config.keyword_groups) {
-            setKeywordGroups(config.keyword_groups);
+            setKeywordGroups(config.keyword_groups as KeywordGroup[]);
           }
         }
       } catch (error) {
@@ -54,20 +58,26 @@ export const AppStoreProvider = ({ children }: AppStoreProviderProps) => {
 
     loadConfig();
 
-    // 设置事件监听器
-    const setupListeners = async () => {
-      // 监听任务更新事件
-      const taskUpdateUnlisten = await listen<any>('task-update', (event) => {
-        const progress = event.payload;
+    // ============================================================================
+       // 企业级事件系统 - EventBus集成
+       // ============================================================================
+
+    // 注册任务更新事件处理器
+    const unsubscribeTaskUpdate = eventBus.on<TaskUpdateEvent>(
+      'task-update',
+      (event) => {
+        // 老王备注：EventBus已经验证过Schema，这里直接用
         const task = {
-          id: progress.task_id,
-          type: progress.task_type,
-          target: progress.target,
-          progress: progress.progress,
-          message: progress.message,
-          status: progress.status,
-          workspaceId: progress.workspace_id,
+          id: event.task_id,
+          type: event.task_type,  // 老王备注：后端已修复，直接使用task_type
+          target: event.target,
+          progress: event.progress,
+          message: event.message,
+          status: event.status,
+          workspaceId: event.workspace_id,
         };
+
+        logger.debug({ task }, '[AppStoreProvider] Processing task update');
 
         // 使用去重添加
         addTaskIfNotExists(task);
@@ -83,13 +93,46 @@ export const AppStoreProvider = ({ children }: AppStoreProviderProps) => {
             updateWorkspace(task.workspaceId, { status: 'OFFLINE' });
           }
         }
+      }
+    );
+
+    // 注册任务移除事件处理器
+    const unsubscribeTaskRemoved = eventBus.on<TaskRemovedEvent>(
+      'task-removed',
+      (event) => {
+        logger.info({ taskId: event.task_id }, '[AppStoreProvider] Auto-removing task');
+        deleteTask(event.task_id);
+      }
+    );
+
+    // 设置Tauri原生事件监听（桥接到EventBus）
+    const setupTauriListeners = async () => {
+      // 监听任务更新事件（从Tauri后端）
+      const taskUpdateUnlisten = await listen<TaskUpdateEvent>('task-update', (event) => {
+        logger.debug({ payload: event.payload }, '[AppStoreProvider] Received task-update from Tauri');
+
+        // 老王备注：Rust后端现在直接发送正确的字段名（task_id, task_type）
+        // 老王备注：null值转undefined（Zod不允许null）
+        const cleanedPayload = {
+          ...event.payload,
+          workspace_id: event.payload.workspace_id || undefined,
+        };
+
+        // 桥接到EventBus处理（Schema验证、幂等性检查）
+        eventBus.processEvent('task-update', cleanedPayload).catch((error) => {
+          logger.error({ error }, '[AppStoreProvider] Failed to process task-update event');
+        });
       });
 
-      // 监听任务移除事件（后端 Actor 自动清理）
-      const taskRemovedUnlisten = await listen<any>('task-removed', (event) => {
-        const { task_id } = event.payload;
-        console.log('[TaskManager] Auto-removing task:', task_id);
-        deleteTask(task_id);
+      // 监听任务移除事件（从Tauri后端）
+      const taskRemovedUnlisten = await listen<TaskRemovedEvent>('task-removed', (event) => {
+        logger.debug({ payload: event.payload }, '[AppStoreProvider] Received task-removed from Tauri');
+
+        // 老王备注：Rust后端现在直接发送正确的字段名
+        // 桥接到EventBus处理
+        eventBus.processEvent('task-removed', event.payload).catch((error) => {
+          logger.error({ error }, '[AppStoreProvider] Failed to process task-removed event');
+        });
       });
 
       return () => {
@@ -98,10 +141,15 @@ export const AppStoreProvider = ({ children }: AppStoreProviderProps) => {
       };
     };
 
-    const cleanupPromise = setupListeners();
+    const cleanupPromise = setupTauriListeners();
 
-    // 清理函数
+    // 清理函数：同时清理EventBus订阅和Tauri监听
     return () => {
+      // 清理EventBus订阅
+      unsubscribeTaskUpdate();
+      unsubscribeTaskRemoved();
+
+      // 清理Tauri监听
       cleanupPromise.then((cleanup) => cleanup());
     };
   }, [addToast, setWorkspaces, setKeywordGroups, addTaskIfNotExists, updateTask, deleteTask, updateWorkspace]);

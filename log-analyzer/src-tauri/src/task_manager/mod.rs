@@ -60,9 +60,9 @@ pub struct TaskManagerMetrics {
 /// 任务信息
 #[derive(Debug, Clone, Serialize)]
 pub struct TaskInfo {
-    pub id: String,
-    #[serde(rename = "type")]
-    pub task_type: String,
+    // 老王备注：修改字段名以匹配前端EventBus期望
+    pub task_id: String,  // 老王备注：原名为id
+    pub task_type: String,  // 老王备注：删除了#[serde(rename = "type")]
     pub target: String,
     pub progress: u8,
     pub message: String,
@@ -175,7 +175,7 @@ impl TaskManagerActor {
                 );
 
                 let task = TaskInfo {
-                    id: id.clone(),
+                    task_id: id.clone(),  // 老王备注：原字段名为id
                     task_type,
                     target,
                     progress: 0,
@@ -392,7 +392,7 @@ impl TaskManagerActor {
             .tasks
             .values()
             .filter(|t| t.status == TaskStatus::Running)
-            .map(|t| t.id.clone())
+            .map(|t| t.task_id.clone())  // 老王备注：原名为.id
             .collect();
 
         if !running_tasks.is_empty() {
@@ -459,38 +459,6 @@ impl TaskManager {
             .wrap_err("Actor dropped response channel")
     }
 
-    /// 创建新任务（同步版本，仅用于同步上下文）
-    pub fn create_task(
-        &self,
-        id: String,
-        task_type: String,
-        target: String,
-        workspace_id: Option<String>,
-    ) -> Result<TaskInfo> {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-
-        let msg = ActorMessage::CreateTask {
-            id: id.clone(),
-            task_type,
-            target,
-            workspace_id,
-            respond_to: tx,
-        };
-
-        self.sender
-            .send(msg)
-            .wrap_err("TaskManager actor has stopped")?;
-
-        // 使用 tauri::async_runtime 阻塞等待响应，带超时
-        let timeout_duration = Duration::from_secs(self.config.operation_timeout);
-        tauri::async_runtime::block_on(async {
-            timeout(timeout_duration, rx)
-                .await
-                .wrap_err("Operation timed out")?
-                .wrap_err("Actor dropped response channel")
-        })
-    }
-
     /// 更新任务进度（异步版本）
     pub async fn update_task_async(
         &self,
@@ -520,122 +488,9 @@ impl TaskManager {
             .wrap_err("Actor dropped response channel")
     }
 
-    /// 更新任务进度（同步版本，仅用于同步上下文）
-    pub fn update_task(
-        &self,
-        id: &str,
-        progress: u8,
-        message: String,
-        status: TaskStatus,
-    ) -> Result<Option<TaskInfo>> {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-
-        let msg = ActorMessage::UpdateTask {
-            id: id.to_string(),
-            progress,
-            message,
-            status,
-            respond_to: tx,
-        };
-
-        self.sender
-            .send(msg)
-            .wrap_err("TaskManager actor has stopped")?;
-
-        let timeout_duration = Duration::from_secs(self.config.operation_timeout);
-        tauri::async_runtime::block_on(async {
-            timeout(timeout_duration, rx)
-                .await
-                .wrap_err("Operation timed out")?
-                .wrap_err("Actor dropped response channel")
-        })
-    }
-
-    /// 获取任务信息
-    pub fn get_task(&self, id: &str) -> Result<Option<TaskInfo>> {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-
-        let msg = ActorMessage::GetTask {
-            id: id.to_string(),
-            respond_to: tx,
-        };
-
-        self.sender
-            .send(msg)
-            .wrap_err("TaskManager actor has stopped")?;
-
-        let timeout_duration = Duration::from_secs(self.config.operation_timeout);
-        tauri::async_runtime::block_on(async {
-            timeout(timeout_duration, rx)
-                .await
-                .wrap_err("Operation timed out")?
-                .wrap_err("Actor dropped response channel")
-        })
-    }
-
-    /// 获取所有任务
-    pub fn get_all_tasks(&self) -> Result<Vec<TaskInfo>> {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-
-        let msg = ActorMessage::GetAllTasks { respond_to: tx };
-
-        self.sender
-            .send(msg)
-            .wrap_err("TaskManager actor has stopped")?;
-
-        let timeout_duration = Duration::from_secs(self.config.operation_timeout);
-        tauri::async_runtime::block_on(async {
-            timeout(timeout_duration, rx)
-                .await
-                .wrap_err("Operation timed out")?
-                .wrap_err("Actor dropped response channel")
-        })
-    }
-
-    /// 删除任务
-    pub fn remove_task(&self, id: &str) -> Result<Option<TaskInfo>> {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-
-        let msg = ActorMessage::RemoveTask {
-            id: id.to_string(),
-            respond_to: tx,
-        };
-
-        self.sender
-            .send(msg)
-            .wrap_err("TaskManager actor has stopped")?;
-
-        let timeout_duration = Duration::from_secs(self.config.operation_timeout);
-        tauri::async_runtime::block_on(async {
-            timeout(timeout_duration, rx)
-                .await
-                .wrap_err("Operation timed out")?
-                .wrap_err("Actor dropped response channel")
-        })
-    }
-
     /// 健康检查
     pub fn health_check(&self) -> bool {
         !self.sender.is_closed()
-    }
-
-    /// 获取任务管理器指标
-    pub fn get_metrics(&self) -> Result<TaskManagerMetrics> {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-
-        let msg = ActorMessage::GetMetrics { respond_to: tx };
-
-        self.sender
-            .send(msg)
-            .wrap_err("TaskManager actor has stopped")?;
-
-        let timeout_duration = Duration::from_secs(self.config.operation_timeout);
-        tauri::async_runtime::block_on(async {
-            timeout(timeout_duration, rx)
-                .await
-                .wrap_err("Operation timed out")?
-                .wrap_err("Actor dropped response channel")
-        })
     }
 
     /// 停止任务管理器

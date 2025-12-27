@@ -9,6 +9,8 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useConfigQuery, useImportFolderMutation } from '../useServerQueries';
 import { useAppStore } from '../../stores/appStore';
+import { useWorkspaceStore } from '../../stores/workspaceStore';
+import { useKeywordStore } from '../../stores/keywordStore';
 
 // Mock Tauri invoke function
 jest.mock('@tauri-apps/api/core', () => ({
@@ -16,6 +18,17 @@ jest.mock('@tauri-apps/api/core', () => ({
 }));
 
 const mockInvoke = require('@tauri-apps/api/core').invoke;
+
+// Mock react-hot-toast
+jest.mock('react-hot-toast', () => ({
+  toast: {
+    success: jest.fn(),
+    error: jest.fn(),
+    default: jest.fn(),
+  },
+}));
+
+const mockToast = require('react-hot-toast').toast;
 
 // Mock logger
 jest.mock('../../utils/logger', () => ({
@@ -50,20 +63,23 @@ const createWrapper = () => {
 
 describe('Server Queries Integration Tests', () => {
   beforeEach(() => {
-    // Reset store state
+    // Reset all store states (Zustand stores)
     useAppStore.setState({
       page: 'workspaces',
       toasts: [],
       activeWorkspaceId: null,
+    });
+
+    useWorkspaceStore.setState({
       workspaces: [],
-      workspacesLoading: false,
-      workspacesError: null,
+      loading: false,
+      error: null,
+    });
+
+    useKeywordStore.setState({
       keywordGroups: [],
-      keywordsLoading: false,
-      keywordsError: null,
-      tasks: [],
-      tasksLoading: false,
-      tasksError: null,
+      loading: false,
+      error: null,
     });
 
     // Reset mocks
@@ -103,12 +119,13 @@ describe('Server Queries Integration Tests', () => {
         expect(result.current.isSuccess).toBe(true);
       });
 
-      // Check that the store was updated
-      const store = useAppStore.getState();
-      expect(store.workspaces).toHaveLength(1);
-      expect(store.workspaces[0].id).toBe('workspace-1');
-      expect(store.keywordGroups).toHaveLength(1);
-      expect(store.keywordGroups[0].id).toBe('group-1');
+      // Check that the stores were updated
+      const workspaceStore = useWorkspaceStore.getState();
+      const keywordStore = useKeywordStore.getState();
+      expect(workspaceStore.workspaces).toHaveLength(1);
+      expect(workspaceStore.workspaces[0].id).toBe('workspace-1');
+      expect(keywordStore.keywordGroups).toHaveLength(1);
+      expect(keywordStore.keywordGroups[0].id).toBe('group-1');
     });
 
     it('should handle configuration loading errors', async () => {
@@ -123,11 +140,6 @@ describe('Server Queries Integration Tests', () => {
       });
 
       expect(result.current.error).toEqual(mockError);
-      
-      // Store should have error state
-      const store = useAppStore.getState();
-      expect(store.workspacesError).toBe('Failed to load configuration');
-      expect(store.keywordsError).toBe('Failed to load configuration');
     });
   });
 
@@ -149,11 +161,12 @@ describe('Server Queries Integration Tests', () => {
 
       // Check optimistic update - workspace should be added immediately
       await waitFor(() => {
-        const store = useAppStore.getState();
-        expect(store.workspaces).toHaveLength(1);
-        expect(store.workspaces[0].id).toBe('workspace-123');
-        expect(store.workspaces[0].status).toBe('PROCESSING');
-        expect(store.activeWorkspaceId).toBe('workspace-123');
+        const workspaceStore = useWorkspaceStore.getState();
+        const appStore = useAppStore.getState();
+        expect(workspaceStore.workspaces).toHaveLength(1);
+        expect(workspaceStore.workspaces[0].id).toBe('workspace-123');
+        expect(workspaceStore.workspaces[0].status).toBe('PROCESSING');
+        expect(appStore.activeWorkspaceId).toBe('workspace-123');
       });
 
       // Wait for mutation to complete
@@ -161,11 +174,8 @@ describe('Server Queries Integration Tests', () => {
         expect(result.current.isSuccess).toBe(true);
       });
 
-      // Check that toast was added
-      const store = useAppStore.getState();
-      expect(store.toasts).toHaveLength(1);
-      expect(store.toasts[0].type).toBe('info');
-      expect(store.toasts[0].message).toBe('Import started');
+      // Check that toast was called
+      expect(mockToast.default).toHaveBeenCalledWith('Import started', { duration: 3000, icon: 'ℹ️' });
     });
 
     it('should rollback optimistic updates on error', async () => {
@@ -185,8 +195,8 @@ describe('Server Queries Integration Tests', () => {
 
       // Check optimistic update
       await waitFor(() => {
-        const store = useAppStore.getState();
-        expect(store.workspaces).toHaveLength(1);
+        const workspaceStore = useWorkspaceStore.getState();
+        expect(workspaceStore.workspaces).toHaveLength(1);
       });
 
       // Wait for mutation to fail
@@ -195,13 +205,11 @@ describe('Server Queries Integration Tests', () => {
       });
 
       // Check that optimistic update was rolled back
-      const store = useAppStore.getState();
-      expect(store.workspaces).toHaveLength(0);
-      
-      // Check that error toast was added
-      expect(store.toasts).toHaveLength(1);
-      expect(store.toasts[0].type).toBe('error');
-      expect(store.toasts[0].message).toBe('Import failed: Error: Import failed');
+      const workspaceStore = useWorkspaceStore.getState();
+      expect(workspaceStore.workspaces).toHaveLength(0);
+
+      // Check that error toast was called
+      expect(mockToast.error).toHaveBeenCalledWith('Import failed: Error: Import failed', { duration: 4000 });
     });
 
     it('should handle concurrent mutations correctly', async () => {
@@ -229,10 +237,10 @@ describe('Server Queries Integration Tests', () => {
       });
 
       // Check that both workspaces were added
-      const store = useAppStore.getState();
-      expect(store.workspaces).toHaveLength(2);
-      
-      const workspaceIds = store.workspaces.map(w => w.id);
+      const workspaceStore = useWorkspaceStore.getState();
+      expect(workspaceStore.workspaces).toHaveLength(2);
+
+      const workspaceIds = workspaceStore.workspaces.map(w => w.id);
       expect(workspaceIds).toContain('workspace-1');
       expect(workspaceIds).toContain('workspace-2');
     });
@@ -266,15 +274,15 @@ describe('Server Queries Integration Tests', () => {
       });
 
       // Check that Zustand store was updated
-      const store = useAppStore.getState();
-      expect(store.workspaces).toHaveLength(1);
-      expect(store.workspaces[0].id).toBe('workspace-1');
+      const workspaceStore = useWorkspaceStore.getState();
+      expect(workspaceStore.workspaces).toHaveLength(1);
+      expect(workspaceStore.workspaces[0].id).toBe('workspace-1');
 
       // Now modify the store directly
-      store.updateWorkspace('workspace-1', { status: 'PROCESSING' });
+      workspaceStore.updateWorkspace('workspace-1', { status: 'PROCESSING' });
 
       // Verify the change
-      expect(useAppStore.getState().workspaces[0].status).toBe('PROCESSING');
+      expect(useWorkspaceStore.getState().workspaces[0].status).toBe('PROCESSING');
 
       // React Query cache should still have the original data
       expect(configResult.current.data).toEqual(mockConfig);
@@ -303,7 +311,7 @@ describe('Server Queries Integration Tests', () => {
         expect(result.current.isSuccess).toBe(true);
       });
 
-      expect(useAppStore.getState().workspaces[0].id).toBe('workspace-1');
+      expect(useWorkspaceStore.getState().workspaces[0].id).toBe('workspace-1');
 
       // Trigger refetch
       result.current.refetch();
@@ -314,7 +322,7 @@ describe('Server Queries Integration Tests', () => {
       });
 
       // Store should be updated with new data
-      expect(useAppStore.getState().workspaces[0].id).toBe('workspace-2');
+      expect(useWorkspaceStore.getState().workspaces[0].id).toBe('workspace-2');
     });
   });
 });

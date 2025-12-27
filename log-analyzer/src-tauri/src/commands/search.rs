@@ -5,7 +5,7 @@ use std::panic::AssertUnwindSafe;
 use parking_lot::Mutex;
 use regex::Regex;
 use sha2::{Digest, Sha256};
-use std::{collections::HashSet, path::PathBuf, sync::Arc, thread, time::Duration};
+use std::{collections::HashSet, path::PathBuf, sync::Arc, time::Duration};
 use tauri::{command, AppHandle, Emitter, State};
 use tracing::{debug, error, warn};
 
@@ -203,7 +203,9 @@ pub async fn search_logs(
     }
 
     let search_id_clone = search_id.clone();
-    thread::spawn(move || {
+    // 老王备注：修复线程泄漏！使用tokio::task::spawn_blocking代替std::thread::spawn
+    // 这样tokio运行时会管理线程生命周期，避免资源泄漏
+    let _handle = tokio::task::spawn_blocking(move || {
         let start_time = std::time::Instant::now();
         let parse_start = std::time::Instant::now();
 
