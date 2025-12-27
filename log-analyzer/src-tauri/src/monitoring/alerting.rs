@@ -76,7 +76,7 @@ pub enum AlertType {
 
 /// Diagnostic information for alerts
 /// **Validates: Requirements 4.4** - Actionable diagnostic information in alerts
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AlertDiagnostics {
     /// Root cause analysis
     pub probable_cause: String,
@@ -88,18 +88,6 @@ pub struct AlertDiagnostics {
     pub documentation_links: Vec<String>,
     /// Suggested queries or commands for further investigation
     pub investigation_commands: Vec<String>,
-}
-
-impl Default for AlertDiagnostics {
-    fn default() -> Self {
-        Self {
-            probable_cause: String::new(),
-            recommended_actions: Vec::new(),
-            related_metrics: HashMap::new(),
-            documentation_links: Vec::new(),
-            investigation_commands: Vec::new(),
-        }
-    }
 }
 
 /// Alert escalation level
@@ -843,10 +831,10 @@ impl AlertingSystem {
 
         sentry::with_scope(
             |scope| {
-                scope.set_tag("alert_type", &format!("{:?}", alert.alert_type));
-                scope.set_tag("alert_severity", &format!("{:?}", alert.severity));
+                scope.set_tag("alert_type", format!("{:?}", alert.alert_type));
+                scope.set_tag("alert_severity", format!("{:?}", alert.severity));
                 scope.set_tag("alert_id", &alert.id);
-                scope.set_tag("escalation_level", &format!("{:?}", alert.escalation_level));
+                scope.set_tag("escalation_level", format!("{:?}", alert.escalation_level));
 
                 // Add metadata as extra context
                 for (key, value) in &alert.metadata {
@@ -860,7 +848,7 @@ impl AlertingSystem {
                 );
                 scope.set_extra(
                     "recommended_actions",
-                    serde_json::json!(alert.diagnostics.recommended_actions).into(),
+                    serde_json::json!(alert.diagnostics.recommended_actions),
                 );
                 scope.set_extra("occurrence_count", (alert.occurrence_count as u64).into());
 

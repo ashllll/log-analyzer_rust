@@ -10,7 +10,7 @@
 //! - Total file count and size
 //! - Archive count and distribution
 
-use crate::error::{AppError, Result};
+use crate::error::Result;
 use crate::storage::{ContentAddressableStorage, MetadataStore};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info};
@@ -92,7 +92,7 @@ impl WorkspaceMetricsCollector {
     /// let metadata = MetadataStore::new(&PathBuf::from("./workspace")).await.unwrap();
     /// let cas = ContentAddressableStorage::new(PathBuf::from("./workspace"));
     /// let collector = WorkspaceMetricsCollector::new(metadata, cas);
-    /// 
+    ///
     /// let metrics = collector.collect_metrics().await.unwrap();
     /// println!("Deduplication ratio: {:.2}%", metrics.deduplication_ratio * 100.0);
     /// # })
@@ -115,11 +115,7 @@ impl WorkspaceMetricsCollector {
         let actual_storage_size = self.cas.get_storage_size().await?;
 
         // Calculate space saved and deduplication ratio
-        let space_saved = if total_logical_size > actual_storage_size {
-            total_logical_size - actual_storage_size
-        } else {
-            0
-        };
+        let space_saved = total_logical_size.saturating_sub(actual_storage_size);
 
         let deduplication_ratio = if total_logical_size > 0 {
             space_saved as f64 / total_logical_size as f64
@@ -140,13 +136,7 @@ impl WorkspaceMetricsCollector {
             .map(|f| f.depth_level)
             .max()
             .unwrap_or(0)
-            .max(
-                archives
-                    .iter()
-                    .map(|a| a.depth_level)
-                    .max()
-                    .unwrap_or(0),
-            );
+            .max(archives.iter().map(|a| a.depth_level).max().unwrap_or(0));
 
         // Calculate average nesting depth
         let avg_nesting_depth = if total_files > 0 {
@@ -230,13 +220,7 @@ impl WorkspaceMetricsCollector {
             .map(|f| f.depth_level)
             .max()
             .unwrap_or(0)
-            .max(
-                archives
-                    .iter()
-                    .map(|a| a.depth_level)
-                    .max()
-                    .unwrap_or(0),
-            );
+            .max(archives.iter().map(|a| a.depth_level).max().unwrap_or(0));
 
         Ok((files.len(), archives.len(), max_depth))
     }
@@ -254,11 +238,7 @@ impl WorkspaceMetricsCollector {
         let total_logical_size: u64 = files.iter().map(|f| f.size as u64).sum();
         let actual_storage_size = self.cas.get_storage_size().await?;
 
-        let space_saved = if total_logical_size > actual_storage_size {
-            total_logical_size - actual_storage_size
-        } else {
-            0
-        };
+        let space_saved = total_logical_size.saturating_sub(actual_storage_size);
 
         let ratio = if total_logical_size > 0 {
             space_saved as f64 / total_logical_size as f64
@@ -305,13 +285,7 @@ impl WorkspaceMetricsCollector {
             .map(|f| f.depth_level)
             .max()
             .unwrap_or(0)
-            .max(
-                archives
-                    .iter()
-                    .map(|a| a.depth_level)
-                    .max()
-                    .unwrap_or(0),
-            );
+            .max(archives.iter().map(|a| a.depth_level).max().unwrap_or(0));
 
         Ok(max_depth)
     }
@@ -320,8 +294,8 @@ impl WorkspaceMetricsCollector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::{ContentAddressableStorage, MetadataStore};
     use crate::storage::metadata_store::FileMetadata;
+    use crate::storage::{ContentAddressableStorage, MetadataStore};
     use tempfile::TempDir;
 
     // Helper function to create FileMetadata
@@ -375,7 +349,8 @@ mod tests {
 
         let content = b"test content";
         let hash = cas.store_content(content).await.unwrap();
-        let file_meta = create_file_metadata(&hash, "test/file.log", "file.log", content.len() as i64, 0);
+        let file_meta =
+            create_file_metadata(&hash, "test/file.log", "file.log", content.len() as i64, 0);
         metadata.insert_file(&file_meta).await.unwrap();
 
         let collector = WorkspaceMetricsCollector::new(metadata, cas);
@@ -437,7 +412,8 @@ mod tests {
 
         let content3 = b"depth 5";
         let hash3 = cas.store_content(content3).await.unwrap();
-        let file_meta3 = create_file_metadata(&hash3, "archive/nested/file5.log", "file5.log", 300, 5);
+        let file_meta3 =
+            create_file_metadata(&hash3, "archive/nested/file5.log", "file5.log", 300, 5);
         metadata.insert_file(&file_meta3).await.unwrap();
 
         let collector = WorkspaceMetricsCollector::new(metadata, cas);
@@ -538,7 +514,7 @@ mod tests {
         let hash1 = cas.store_content(content1).await.unwrap();
         let file_meta1 = create_file_metadata(&hash1, "file1.log", "file1.log", 100, 0);
         metadata.insert_file(&file_meta1).await.unwrap();
-        
+
         let content2 = b"duplicate 2";
         let hash2 = cas.store_content(content2).await.unwrap();
         let file_meta2 = create_file_metadata(&hash2, "file2.log", "file2.log", 100, 0);
@@ -561,7 +537,8 @@ mod tests {
 
         let content = b"test content";
         let hash = cas.store_content(content).await.unwrap();
-        let file_meta = create_file_metadata(&hash, "file.log", "file.log", content.len() as i64, 0);
+        let file_meta =
+            create_file_metadata(&hash, "file.log", "file.log", content.len() as i64, 0);
         metadata.insert_file(&file_meta).await.unwrap();
 
         let collector = WorkspaceMetricsCollector::new(metadata, cas);

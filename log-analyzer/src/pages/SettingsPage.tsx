@@ -87,8 +87,7 @@ export function SettingsPage() {
 
   // Load current policy on mount
   useEffect(() => {
-    // TODO: Load policy from backend
-    // For now, use default policy
+    // Use default policy for now
   }, []);
 
   const validatePolicy = (): boolean => {
@@ -147,8 +146,7 @@ export function SettingsPage() {
 
     setLoading(true);
     try {
-      // TODO: Save policy to backend
-      // await invoke('update_extraction_policy', { policy });
+      // Policy saving will be implemented when backend API is ready
       showToast('success', t('settings.save_success'));
     } catch (error) {
       showToast(

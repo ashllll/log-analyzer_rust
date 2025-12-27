@@ -26,8 +26,8 @@ pub struct SearchFilters {
 pub struct PerformanceMetrics {
     /// 当前进程内存使用量（MB）
     pub memory_used_mb: f64,
-    /// 索引文件映射条目数
-    pub path_map_size: usize,
+    /// 索引文件数量
+    pub indexed_file_count: usize,
     /// 搜索缓存条目数
     pub cache_size: usize,
     /// 最近一次搜索耗时（毫秒）

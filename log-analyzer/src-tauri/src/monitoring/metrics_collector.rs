@@ -1,4 +1,5 @@
 //! Metrics collection and aggregation for production monitoring
+#![allow(dead_code)]
 //!
 //! **Feature: performance-optimization, Property 15: Search Metrics Collection**
 //! This module implements comprehensive metrics collection for search operations,
@@ -663,7 +664,7 @@ impl MetricsCollector {
             message: Some("Metrics collection completed".to_string()),
             data: {
                 let mut map = sentry::protocol::Map::new();
-                map.insert("summary".to_string(), summary.into());
+                map.insert("summary".to_string(), summary);
                 map
             },
             ..Default::default()

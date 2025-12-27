@@ -323,9 +323,7 @@ mod integration_tests {
     /// Test concurrent workspace deletions
     #[tokio::test]
     async fn test_concurrent_workspace_deletions() {
-        let workspace_ids: Vec<String> = (0..10)
-            .map(|i| format!("workspace-{}", i))
-            .collect();
+        let workspace_ids: Vec<String> = (0..10).map(|i| format!("workspace-{}", i)).collect();
 
         let futures: Vec<_> = workspace_ids
             .iter()
@@ -350,9 +348,7 @@ mod integration_tests {
         let futures: Vec<_> = (0..100)
             .map(|i| {
                 let id = format!("workspace-{}", i);
-                async move {
-                    simulate_async_task_operation(&id, "test").await
-                }
+                async move { simulate_async_task_operation(&id, "test").await }
             })
             .collect();
 
@@ -367,7 +363,10 @@ mod integration_tests {
 
         // Concurrent execution should be fast (not sequential)
         // 100 operations with 1 microsecond each should complete in well under 1 second
-        assert!(duration.as_millis() < 1000, "Async operations should be concurrent, not sequential");
+        assert!(
+            duration.as_millis() < 1000,
+            "Async operations should be concurrent, not sequential"
+        );
     }
 
     /// Test error handling in async context

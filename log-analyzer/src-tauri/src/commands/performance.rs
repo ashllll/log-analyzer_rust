@@ -113,7 +113,7 @@ pub async fn get_performance_recommendations(
         .take(limit)
         .map(|rec| {
             // 格式：[优先级] 标题 - 描述
-            format!("{}", rec.description)
+            rec.description.to_string()
         })
         .collect();
 

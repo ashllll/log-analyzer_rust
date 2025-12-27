@@ -1,4 +1,5 @@
 //! 任务生命周期管理器
+#![allow(dead_code)]
 //!
 //! 基于 Actor Model 和消息传递的任务管理系统
 //!
@@ -16,11 +17,9 @@
 //! - Erlang/OTP Supervision Trees
 
 use eyre::{Result, WrapErr};
-use parking_lot::RwLock;
 use scopeguard::defer;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc;
@@ -174,7 +173,7 @@ impl TaskManagerActor {
                     workspace_id = ?workspace_id,
                     "Creating new task"
                 );
-                
+
                 let task = TaskInfo {
                     id: id.clone(),
                     task_type,
@@ -202,7 +201,7 @@ impl TaskManagerActor {
                     status = ?status,
                     "Updating task"
                 );
-                
+
                 let result = if let Some(task) = self.tasks.get_mut(&id) {
                     task.progress = progress;
                     task.message = message;
@@ -310,9 +309,22 @@ impl TaskManagerActor {
 
         for id in to_remove {
             if let Some(task) = self.tasks.remove(&id) {
+                let elapsed = if let Some(completed_at) = task.completed_at {
+                    now.duration_since(completed_at).as_secs()
+                } else {
+                    0
+                };
+                
                 debug!(
                     task_id = %id,
+                    task_type = %task.task_type,
                     status = ?task.status,
+                    elapsed_seconds = elapsed,
+                    ttl_seconds = match task.status {
+                        TaskStatus::Completed => self.config.completed_task_ttl,
+                        TaskStatus::Failed | TaskStatus::Stopped => self.config.failed_task_ttl,
+                        TaskStatus::Running => 0,
+                    },
                     "Auto-removed expired task"
                 );
 
@@ -335,12 +347,12 @@ impl TaskManagerActor {
 
     async fn run(mut self, mut receiver: mpsc::UnboundedReceiver<ActorMessage>) {
         info!("TaskManager actor started");
-        
+
         // 使用 scopeguard 确保清理日志被记录
         defer! {
             info!("TaskManager actor cleanup completed");
         }
-        
+
         let mut cleanup_interval = interval(Duration::from_secs(self.config.cleanup_interval));
 
         loop {
@@ -362,11 +374,13 @@ impl TaskManagerActor {
         info!("Processing remaining messages before shutdown");
         let shutdown_timeout = Duration::from_secs(5);
         let shutdown_deadline = tokio::time::Instant::now() + shutdown_timeout;
-        
+
         while let Ok(Some(msg)) = timeout(
             shutdown_deadline.saturating_duration_since(tokio::time::Instant::now()),
-            receiver.recv()
-        ).await {
+            receiver.recv(),
+        )
+        .await
+        {
             if matches!(msg, ActorMessage::Shutdown) {
                 break;
             }
@@ -374,11 +388,13 @@ impl TaskManagerActor {
         }
 
         // 记录未完成的任务
-        let running_tasks: Vec<_> = self.tasks.values()
+        let running_tasks: Vec<_> = self
+            .tasks
+            .values()
             .filter(|t| t.status == TaskStatus::Running)
             .map(|t| t.id.clone())
             .collect();
-        
+
         if !running_tasks.is_empty() {
             warn!(
                 running_tasks = ?running_tasks,
@@ -400,7 +416,7 @@ impl TaskManager {
     /// 创建新的任务管理器
     pub fn new(app: AppHandle, config: TaskManagerConfig) -> Result<Self> {
         info!("Initializing TaskManager");
-        
+
         let (sender, receiver) = mpsc::unbounded_channel();
         let actor = TaskManagerActor::new(app, config.clone());
 
@@ -638,7 +654,7 @@ impl Drop for TaskManager {
         defer! {
             debug!("TaskManager handle dropped");
         }
-        
+
         if let Err(e) = self.shutdown() {
             error!(error = %e, "Error during TaskManager shutdown");
         }

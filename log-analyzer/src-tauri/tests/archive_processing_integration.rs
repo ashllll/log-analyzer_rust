@@ -74,7 +74,7 @@ fn create_nested_zip(dir: &Path, name: &str, inner_archives: Vec<PathBuf>) -> Pa
 async fn test_single_archive_extraction() {
     // **Test: Single archive extraction**
     // Validates: Requirements 4.1
-    
+
     let (cas, metadata, temp_dir) = create_test_workspace().await;
     let test_files = vec![
         ("app.log", b"application log content" as &[u8]),
@@ -96,10 +96,7 @@ async fn test_single_archive_extraction() {
         .unwrap();
 
     // Verify extraction summary
-    assert_eq!(
-        summary.files_extracted, 3,
-        "Should extract all 3 files"
-    );
+    assert_eq!(summary.files_extracted, 3, "Should extract all 3 files");
     assert!(summary.total_size > 0, "Total size should be positive");
     assert_eq!(
         summary.extracted_files.len(),
@@ -156,7 +153,7 @@ async fn test_single_archive_extraction() {
 async fn test_nested_archive_2_levels() {
     // **Test: Nested archive (2 levels)**
     // Validates: Requirements 4.1, 4.4
-    
+
     let (cas, metadata, temp_dir) = create_test_workspace().await;
 
     // Create inner archive (level 1)
@@ -215,7 +212,7 @@ async fn test_nested_archive_2_levels() {
     {
         if entry.file_type().is_file() {
             let extracted_file = entry.path();
-            
+
             // Skip the inner.zip file itself, only process .log files
             if extracted_file.extension().and_then(|s| s.to_str()) == Some("log") {
                 let content = fs::read(extracted_file).unwrap();
@@ -285,7 +282,7 @@ async fn test_nested_archive_2_levels() {
 async fn test_nested_archive_3_levels() {
     // **Test: Nested archive (3 levels)**
     // Validates: Requirements 4.1, 4.4
-    
+
     let (cas, metadata, temp_dir) = create_test_workspace().await;
 
     // Create innermost archive (level 1)
@@ -303,33 +300,42 @@ async fn test_nested_archive_3_levels() {
     fs::create_dir_all(&extract_dir).unwrap();
 
     let manager = ArchiveManager::new();
-    
+
     // Level 1: Extract outer
-    let summary1 = manager.extract_archive(&outer_zip, &extract_dir).await.unwrap();
+    let summary1 = manager
+        .extract_archive(&outer_zip, &extract_dir)
+        .await
+        .unwrap();
     assert!(summary1.files_extracted >= 1);
 
     // Level 2: Extract middle
     let middle_extracted = extract_dir.join("middle.zip");
     assert!(middle_extracted.exists());
-    
+
     let middle_extract_dir = temp_dir.path().join("extracted_middle");
     fs::create_dir_all(&middle_extract_dir).unwrap();
-    let summary2 = manager.extract_archive(&middle_extracted, &middle_extract_dir).await.unwrap();
+    let summary2 = manager
+        .extract_archive(&middle_extracted, &middle_extract_dir)
+        .await
+        .unwrap();
     assert!(summary2.files_extracted >= 1);
 
     // Level 3: Extract innermost
     let innermost_extracted = middle_extract_dir.join("innermost.zip");
     assert!(innermost_extracted.exists());
-    
+
     let innermost_extract_dir = temp_dir.path().join("extracted_innermost");
     fs::create_dir_all(&innermost_extract_dir).unwrap();
-    let summary3 = manager.extract_archive(&innermost_extracted, &innermost_extract_dir).await.unwrap();
+    let summary3 = manager
+        .extract_archive(&innermost_extracted, &innermost_extract_dir)
+        .await
+        .unwrap();
     assert_eq!(summary3.files_extracted, 1);
 
     // Store the deepest file
     let deepest_file = innermost_extract_dir.join("deepest.log");
     assert!(deepest_file.exists());
-    
+
     let content = fs::read(&deepest_file).unwrap();
     let hash = cas.store_content(&content).await.unwrap();
 
@@ -357,7 +363,7 @@ async fn test_nested_archive_3_levels() {
         .await
         .unwrap()
         .unwrap();
-    
+
     let retrieved_content = cas.read_content(&retrieved.sha256_hash).await.unwrap();
     assert_eq!(retrieved_content, b"deepest content");
 }
@@ -366,7 +372,7 @@ async fn test_nested_archive_3_levels() {
 async fn test_deeply_nested_archive_5_levels() {
     // **Test: Deeply nested archive (5+ levels)**
     // Validates: Requirements 4.1, 4.4
-    
+
     let (cas, metadata, temp_dir) = create_test_workspace().await;
 
     // Create a 5-level nested structure
@@ -393,13 +399,17 @@ async fn test_deeply_nested_archive_5_levels() {
     // Extract all 5 levels
     for level in 0..5 {
         fs::create_dir_all(&current_extract_dir).unwrap();
-        
+
         let summary = manager
             .extract_archive(&current_zip, &current_extract_dir)
             .await
             .unwrap();
-        
-        assert!(summary.files_extracted >= 1, "Level {} should extract files", level);
+
+        assert!(
+            summary.files_extracted >= 1,
+            "Level {} should extract files",
+            level
+        );
 
         // Find the next nested archive
         if level < 4 {
@@ -446,7 +456,7 @@ async fn test_deeply_nested_archive_5_levels() {
     let all_files = metadata.get_all_files().await.unwrap();
     assert_eq!(all_files.len(), 1);
     assert_eq!(all_files[0].depth_level, 5);
-    
+
     let retrieved_content = cas.read_content(&all_files[0].sha256_hash).await.unwrap();
     assert_eq!(retrieved_content, b"level 1 content");
 }
@@ -456,7 +466,7 @@ async fn test_path_length_handling() {
     // **Test: Path length handling**
     // Validates: Requirements 4.4
     // CAS should handle arbitrarily long virtual paths without issues
-    
+
     let (cas, metadata, temp_dir) = create_test_workspace().await;
 
     // Create a file with a very long name
@@ -488,7 +498,7 @@ async fn test_path_length_handling() {
             break;
         }
     }
-    
+
     let extracted_file = extracted_file_path.expect("Should have extracted file");
     let content = fs::read(&extracted_file).unwrap();
     let hash = cas.store_content(&content).await.unwrap();
@@ -532,7 +542,7 @@ async fn test_path_length_handling() {
     // Verify CAS storage path is short (hash-based)
     let object_path = cas.get_object_path(&hash);
     let object_path_str = object_path.to_string_lossy();
-    
+
     // The CAS path should be significantly shorter than the virtual path
     // CAS uses: workspace/objects/XX/YYYYYY... (where XX is 2-char prefix)
     // This should be much shorter than a 200+ character filename
@@ -548,7 +558,7 @@ async fn test_path_length_handling() {
 async fn test_mixed_nested_and_regular_files() {
     // **Test: Mixed nested archives and regular files**
     // Validates: Requirements 4.1, 4.4
-    
+
     let (cas, metadata, temp_dir) = create_test_workspace().await;
 
     // Create inner archive
@@ -597,7 +607,7 @@ async fn test_mixed_nested_and_regular_files() {
     {
         if entry.file_type().is_file() {
             let extracted_file = entry.path();
-            
+
             // Only process .log files, skip .zip files
             if extracted_file.extension().and_then(|s| s.to_str()) == Some("log") {
                 let content = fs::read(extracted_file).unwrap();
@@ -685,31 +695,31 @@ async fn test_process_path_with_cas_nested_archives() {
     // **Test: process_path_with_cas with nested archives**
     // This test verifies the integrated CAS-based processing function
     // Validates: Requirements 4.1, 4.2, 4.3
-    
+
     use log_analyzer::archive::process_path_with_cas;
     use tauri::Manager;
-    
+
     let (cas, metadata, temp_dir) = create_test_workspace().await;
     let metadata = Arc::new(metadata); // Wrap in Arc for sharing
-    
+
     // Create a 3-level nested archive structure
     // Level 1: innermost.zip with a log file
     let innermost_files = vec![("deepest.log", b"deepest content" as &[u8])];
     let innermost_zip = create_simple_zip(temp_dir.path(), "innermost.zip", innermost_files);
-    
+
     // Level 2: middle.zip containing innermost.zip
     let middle_zip = create_nested_zip(temp_dir.path(), "middle.zip", vec![innermost_zip]);
-    
+
     // Level 3: outer.zip containing middle.zip
     let outer_zip = create_nested_zip(temp_dir.path(), "outer.zip", vec![middle_zip]);
-    
+
     // Create a minimal Tauri app for testing
     // We use the actual app builder but with minimal configuration
     let app = tauri::test::noop_context();
-    
+
     let task_id = "test_task";
     let workspace_id = "test_workspace";
-    
+
     // Process the outer archive using process_path_with_cas
     let result = process_path_with_cas(
         &outer_zip,
@@ -724,23 +734,23 @@ async fn test_process_path_with_cas_nested_archives() {
         0,    // Root level
     )
     .await;
-    
+
     assert!(result.is_ok(), "Processing should succeed: {:?}", result.err());
-    
+
     // Verify all files were stored in CAS and metadata
     let all_files = metadata.get_all_files().await.unwrap();
     assert!(
         all_files.len() >= 3,
         "Should have at least 3 files (outer_file.log, middle outer_file.log, deepest.log)"
     );
-    
+
     // Verify depth tracking
     let max_depth = metadata.get_max_depth().await.unwrap();
     assert!(
         max_depth >= 3,
         "Max depth should be at least 3 for 3-level nesting"
     );
-    
+
     // Verify all archives were tracked
     let all_archives = metadata.get_all_archives().await.unwrap();
     assert_eq!(
@@ -748,7 +758,7 @@ async fn test_process_path_with_cas_nested_archives() {
         3,
         "Should have 3 archives (outer, middle, innermost)"
     );
-    
+
     // Verify archive hierarchy
     for archive in &all_archives {
         assert!(
@@ -757,7 +767,7 @@ async fn test_process_path_with_cas_nested_archives() {
             archive.original_name
         );
     }
-    
+
     // Verify all files exist in CAS
     for file in &all_files {
         assert!(
@@ -766,13 +776,13 @@ async fn test_process_path_with_cas_nested_archives() {
             file.virtual_path
         );
     }
-    
+
     // Verify virtual paths are correct
     let deepest_file = all_files
         .iter()
         .find(|f| f.original_name == "deepest.log")
         .expect("Should find deepest.log");
-    
+
     assert!(
         deepest_file.virtual_path.contains("outer.zip"),
         "Virtual path should contain outer.zip"
@@ -793,19 +803,19 @@ async fn test_process_path_with_cas_nested_archives() {
 async fn test_process_path_with_cas_depth_limit() {
     // **Test: Depth limit enforcement**
     // Validates: Requirements 4.3
-    
+
     use log_analyzer::archive::process_path_with_cas;
-    
+
     let (cas, metadata, temp_dir) = create_test_workspace().await;
     let metadata = Arc::new(metadata); // Wrap in Arc for sharing
-    
+
     // Create a simple archive
     let files = vec![("test.log", b"test content" as &[u8])];
     let archive = create_simple_zip(temp_dir.path(), "test.zip", files);
-    
+
     // Create a minimal Tauri app for testing
     let app = tauri::test::noop_context();
-    
+
     // Try to process at depth 10 (should succeed, at limit)
     let result = process_path_with_cas(
         &archive,
@@ -820,10 +830,10 @@ async fn test_process_path_with_cas_depth_limit() {
         10, // At the limit
     )
     .await;
-    
+
     // At depth 10, the archive itself should be skipped
     assert!(result.is_ok(), "Should handle depth limit gracefully");
-    
+
     // Verify no archives were processed (depth limit reached)
     let archives = metadata.get_all_archives().await.unwrap();
     assert_eq!(
@@ -839,19 +849,19 @@ async fn test_process_path_with_cas_depth_limit() {
 async fn test_archive_metadata_tracking() {
     // **Test: Archive metadata is properly tracked**
     // Validates: Requirements 4.1, 4.2
-    
+
     use log_analyzer::archive::process_path_with_cas;
-    
+
     let (cas, metadata, temp_dir) = create_test_workspace().await;
     let metadata = Arc::new(metadata); // Wrap in Arc for sharing
-    
+
     // Create nested archives
     let inner_files = vec![("inner.log", b"inner content" as &[u8])];
     let inner_zip = create_simple_zip(temp_dir.path(), "inner.zip", inner_files);
     let outer_zip = create_nested_zip(temp_dir.path(), "outer.zip", vec![inner_zip]);
-    
+
     let app = tauri::test::noop_context();
-    
+
     // Process the archive
     process_path_with_cas(
         &outer_zip,
@@ -867,17 +877,17 @@ async fn test_archive_metadata_tracking() {
     )
     .await
     .unwrap();
-    
+
     // Verify archive metadata
     let archives = metadata.get_all_archives().await.unwrap();
     assert_eq!(archives.len(), 2, "Should have 2 archives");
-    
+
     // Find outer archive
     let outer_archive = archives
         .iter()
         .find(|a| a.original_name == "outer.zip")
         .expect("Should find outer.zip");
-    
+
     assert_eq!(outer_archive.depth_level, 0, "Outer should be at depth 0");
     assert_eq!(
         outer_archive.parent_archive_id, None,
@@ -885,13 +895,13 @@ async fn test_archive_metadata_tracking() {
     );
     assert_eq!(outer_archive.archive_type, "zip");
     assert_eq!(outer_archive.extraction_status, "completed");
-    
+
     // Find inner archive
     let inner_archive = archives
         .iter()
         .find(|a| a.original_name == "inner.zip")
         .expect("Should find inner.zip");
-    
+
     assert_eq!(inner_archive.depth_level, 1, "Inner should be at depth 1");
     assert_eq!(
         inner_archive.parent_archive_id,
@@ -899,14 +909,14 @@ async fn test_archive_metadata_tracking() {
         "Inner should have outer as parent"
     );
     assert_eq!(inner_archive.extraction_status, "completed");
-    
+
     // Verify file metadata references correct parent
     let files = metadata.get_all_files().await.unwrap();
     let inner_log = files
         .iter()
         .find(|f| f.original_name == "inner.log")
         .expect("Should find inner.log");
-    
+
     assert_eq!(
         inner_log.parent_archive_id,
         Some(inner_archive.id),
@@ -940,7 +950,7 @@ mod property_tests {
             let filename = format!("leaf_{}.log", i);
             let content = format!("content at depth {}", depth).into_bytes();
             leaf_file_data.push((filename.clone(), content));
-            
+
             // Build expected virtual path
             let mut virtual_path = String::new();
             for level in (0..depth).rev() {

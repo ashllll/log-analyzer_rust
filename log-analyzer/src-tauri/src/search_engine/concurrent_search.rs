@@ -1,4 +1,5 @@
 //! Concurrent Search Support
+#![allow(dead_code)]
 //!
 //! Provides thread-safe search operations with performance guarantees:
 //! - Thread-safe SearchEngineManager with read-only access patterns
@@ -287,7 +288,12 @@ impl ConcurrentSearchManager {
             .into_par_iter()
             .map(|query| {
                 // Create a new tokio runtime for each thread
-                let rt = tokio::runtime::Runtime::new().unwrap();
+                let rt = tokio::runtime::Runtime::new().map_err(|e| {
+                    SearchError::IndexError(format!(
+                        "Failed to create tokio runtime for parallel search: {}",
+                        e
+                    ))
+                })?;
                 rt.block_on(self.search_concurrent(&query, limit, timeout))
             })
             .collect();
@@ -393,17 +399,18 @@ mod tests {
     /// 创建测试用的并发搜索管理器
     /// 使用正确初始化的 Tantivy 索引
     async fn create_test_concurrent_manager() -> (ConcurrentSearchManager, TempDir) {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("Failed to create temp directory for tests");
         let search_config = SearchConfig {
             index_path: temp_dir.path().to_path_buf(),
             ..Default::default()
         };
 
         // SearchEngineManager::new 会正确创建新索引
-        let search_engine = SearchEngineManager::new(search_config).unwrap();
+        let search_engine = SearchEngineManager::new(search_config)
+            .expect("Failed to create search engine for tests");
         let concurrent_config = ConcurrentSearchConfig::default();
-        let concurrent_manager =
-            ConcurrentSearchManager::new(search_engine, concurrent_config).unwrap();
+        let concurrent_manager = ConcurrentSearchManager::new(search_engine, concurrent_config)
+            .expect("Failed to create concurrent search manager for tests");
 
         (concurrent_manager, temp_dir)
     }

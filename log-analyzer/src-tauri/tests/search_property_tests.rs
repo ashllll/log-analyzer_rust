@@ -13,8 +13,7 @@ use tempfile::TempDir;
 
 /// Generate a valid log file name
 fn log_file_name() -> impl Strategy<Value = String> {
-    prop::string::string_regex("[a-zA-Z0-9_-]{1,20}\\.log")
-        .unwrap()
+    prop::string::string_regex("[a-zA-Z0-9_-]{1,20}\\.log").unwrap()
 }
 
 /// Generate log content with various log levels
@@ -58,7 +57,7 @@ mod property_tests {
             contents in prop::collection::vec(log_content(), 1..10)
         ) {
             let temp_dir = TempDir::new().unwrap();
-            
+
             // Create files with generated names and content
             let mut created_files = Vec::new();
             for (name, content) in file_names.iter().zip(contents.iter()) {
@@ -102,7 +101,7 @@ mod property_tests {
             nonexistent_names in prop::collection::vec(log_file_name(), 1..5)
         ) {
             let temp_dir = TempDir::new().unwrap();
-            
+
             // Create only the "existing" files
             let mut existing_files = Vec::new();
             for name in &existing_names {
@@ -150,7 +149,7 @@ mod property_tests {
             valid_names in prop::collection::vec(log_file_name(), 1..5)
         ) {
             let temp_dir = TempDir::new().unwrap();
-            
+
             // Create valid files
             let mut valid_files = Vec::new();
             for name in &valid_names {
@@ -187,14 +186,14 @@ mod property_tests {
             line_counts in prop::collection::vec(1usize..1000, 1..10)
         ) {
             let temp_dir = TempDir::new().unwrap();
-            
+
             let mut files = Vec::new();
             for (i, line_count) in line_counts.iter().take(file_count).enumerate() {
                 // Generate content with specified number of lines
                 let content: String = (0..*line_count)
                     .map(|j| format!("Line {}: ERROR: Test error\n", j))
                     .collect();
-                
+
                 let file_path = create_file(
                     temp_dir.path(),
                     &format!("file{}.log", i),
@@ -233,11 +232,11 @@ mod property_tests {
             file_names in prop::collection::vec(log_file_name(), 3..10)
         ) {
             let temp_dir = TempDir::new().unwrap();
-            
+
             // Create files, handling duplicates by using unique names
             let mut files = Vec::new();
             let mut seen_names = std::collections::HashSet::new();
-            
+
             for (i, name) in file_names.iter().enumerate() {
                 // Make name unique by adding index if duplicate
                 let unique_name = if seen_names.contains(name) {
@@ -246,7 +245,7 @@ mod property_tests {
                     name.clone()
                 };
                 seen_names.insert(unique_name.clone());
-                
+
                 let file_path = create_file(temp_dir.path(), &unique_name, "ERROR: Test");
                 files.push(file_path);
             }
@@ -292,7 +291,7 @@ mod helper_tests {
     fn test_create_file_helper() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = create_file(temp_dir.path(), "test.log", "test content");
-        
+
         assert!(file_path.exists());
         let content = fs::read_to_string(&file_path).unwrap();
         assert_eq!(content, "test content");
@@ -303,7 +302,7 @@ mod helper_tests {
         // Verify the generator produces valid file names
         let strategy = log_file_name();
         let mut runner = proptest::test_runner::TestRunner::default();
-        
+
         for _ in 0..10 {
             let name = strategy.new_tree(&mut runner).unwrap().current();
             assert!(name.ends_with(".log"));
@@ -316,16 +315,16 @@ mod helper_tests {
         // Verify the generator produces valid log content
         let strategy = log_content();
         let mut runner = proptest::test_runner::TestRunner::default();
-        
+
         for _ in 0..10 {
             let content = strategy.new_tree(&mut runner).unwrap().current();
             assert!(!content.is_empty());
             // Should contain at least one log level
             assert!(
-                content.contains("ERROR") ||
-                content.contains("WARN") ||
-                content.contains("INFO") ||
-                content.contains("DEBUG")
+                content.contains("ERROR")
+                    || content.contains("WARN")
+                    || content.contains("INFO")
+                    || content.contains("DEBUG")
             );
         }
     }

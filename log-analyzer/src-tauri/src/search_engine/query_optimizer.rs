@@ -1,4 +1,5 @@
 //! Query Optimization Engine
+#![allow(dead_code)]
 //!
 //! Analyzes query patterns and provides optimization suggestions:
 //! - Query rewriting suggestions for slow queries

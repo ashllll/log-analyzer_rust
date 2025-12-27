@@ -12,7 +12,6 @@ use crate::archive::extraction_engine::ExtractionPolicy;
 use crate::archive::public_api::extract_archive_async;
 use crate::archive::ArchiveManager;
 use crate::error::{AppError, Result};
-use crate::models::config::FileMetadata as ConfigFileMetadata;
 use crate::models::log_entry::TaskProgress;
 use crate::services::file_watcher::get_file_metadata;
 use crate::storage::{ArchiveMetadata, ContentAddressableStorage, FileMetadata, MetadataStore};
@@ -223,7 +222,7 @@ pub async fn process_path_recursive_with_metadata(
     virtual_path: &str,
     target_root: &Path,
     map: &mut HashMap<String, String>,
-    metadata_map: &mut HashMap<String, ConfigFileMetadata>,
+    metadata_map: &mut HashMap<String, crate::storage::FileMetadata>,
     app: &AppHandle,
     task_id: &str,
     workspace_id: &str,
@@ -371,11 +370,11 @@ async fn process_path_recursive_inner(
     let real_path = path.to_string_lossy().to_string();
     let normalized_virtual = normalize_path_separator(virtual_path);
 
-    // Validate file exists before adding to path map
+    // Validate file exists before processing
     if !path.exists() {
         warn!(
             file = %real_path,
-            "File does not exist when adding to path_map, skipping"
+            "File does not exist when processing, skipping"
         );
         return Ok(());
     }
@@ -383,7 +382,7 @@ async fn process_path_recursive_inner(
     debug!(
         real_path = %real_path,
         virtual_path = %normalized_virtual,
-        "Adding file to path_map"
+        "Processing file for CAS storage"
     );
 
     map.insert(real_path, normalized_virtual.clone());
@@ -407,7 +406,7 @@ async fn process_path_recursive_inner_with_metadata(
     virtual_path: &str,
     target_root: &Path,
     map: &mut HashMap<String, String>,
-    metadata_map: &mut HashMap<String, ConfigFileMetadata>,
+    metadata_map: &mut HashMap<String, crate::storage::FileMetadata>,
     app: &AppHandle,
     task_id: &str,
     workspace_id: &str,
@@ -691,7 +690,7 @@ pub async fn process_path_with_cas_and_checkpoints(
     }
 
     // --- Regular file: Store in CAS and add to metadata ---
-    
+
     // Store file content in CAS using streaming (memory-efficient)
     let hash = context.cas.store_file_streaming(path).await?;
 
@@ -700,7 +699,7 @@ pub async fn process_path_with_cas_and_checkpoints(
         .await
         .map(|m| m.len() as i64)
         .unwrap_or(0);
-    
+
     let modified_time = fs::metadata(path)
         .await
         .and_then(|m| m.modified())
@@ -739,7 +738,9 @@ pub async fn process_path_with_cas_and_checkpoints(
     let file_id = context.metadata_store.insert_file(&file_metadata).await?;
 
     // Update checkpoint
-    context.update_checkpoint(path.to_path_buf(), file_size as u64).await?;
+    context
+        .update_checkpoint(path.to_path_buf(), file_size as u64)
+        .await?;
 
     // Maybe save checkpoint
     context.maybe_save_checkpoint().await?;
@@ -791,13 +792,9 @@ pub async fn process_path_with_cas(
 ) -> Result<()> {
     // Wrap CAS in Arc for the context
     let cas_arc = Arc::new(cas.clone());
-    
+
     // Create context without checkpoints for backward compatibility
-    let context = CasProcessingContext::new(
-        workspace_dir.to_path_buf(),
-        cas_arc,
-        metadata_store,
-    );
+    let context = CasProcessingContext::new(workspace_dir.to_path_buf(), cas_arc, metadata_store);
 
     process_path_with_cas_and_checkpoints(
         path,
@@ -889,7 +886,10 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
     };
 
     // Insert archive metadata
-    let archive_id = context.metadata_store.insert_archive(&archive_metadata).await?;
+    let archive_id = context
+        .metadata_store
+        .insert_archive(&archive_metadata)
+        .await?;
 
     debug!(
         archive_id = archive_id,
@@ -904,7 +904,10 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
         .unwrap_or_default()
         .as_millis();
     let extract_dir_name = format!("{}_{}", file_name.replace('.', "_"), timestamp);
-    let extract_dir = context.workspace_dir.join("extracted").join(&extract_dir_name);
+    let extract_dir = context
+        .workspace_dir
+        .join("extracted")
+        .join(&extract_dir_name);
 
     fs::create_dir_all(&extract_dir).await.map_err(|e| {
         AppError::archive_error(
@@ -927,7 +930,8 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
                 result.extracted_files
             }
             Err(e) => {
-                context.metadata_store
+                context
+                    .metadata_store
                     .update_archive_status(archive_id, "failed")
                     .await?;
                 return Err(AppError::archive_error(
@@ -937,7 +941,10 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
             }
         }
     } else {
-        match archive_manager.extract_archive(archive_path, &extract_dir).await {
+        match archive_manager
+            .extract_archive(archive_path, &extract_dir)
+            .await
+        {
             Ok(summary) => {
                 info!(
                     files = summary.files_extracted,
@@ -947,7 +954,8 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
                 summary.extracted_files
             }
             Err(e) => {
-                context.metadata_store
+                context
+                    .metadata_store
                     .update_archive_status(archive_id, "failed")
                     .await?;
                 return Err(AppError::archive_error(
@@ -959,7 +967,8 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
     };
 
     // Update archive status to extracting
-    context.metadata_store
+    context
+        .metadata_store
         .update_archive_status(archive_id, "extracting")
         .await?;
 
@@ -1004,7 +1013,8 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
     }
 
     // Update archive status to completed
-    context.metadata_store
+    context
+        .metadata_store
         .update_archive_status(archive_id, "completed")
         .await?;
 
@@ -1038,6 +1048,7 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
 ///
 /// Validates: Requirements 4.1, 4.2, 4.3
 #[allow(clippy::too_many_arguments)]
+#[allow(dead_code)]
 async fn extract_and_process_archive_with_cas(
     archive_path: &Path,
     virtual_path: &str,
@@ -1052,13 +1063,9 @@ async fn extract_and_process_archive_with_cas(
 ) -> Result<()> {
     // Wrap CAS in Arc for the context
     let cas_arc = Arc::new(cas.clone());
-    
+
     // Create context without checkpoints for backward compatibility
-    let context = CasProcessingContext::new(
-        workspace_dir.to_path_buf(),
-        cas_arc,
-        metadata_store,
-    );
+    let context = CasProcessingContext::new(workspace_dir.to_path_buf(), cas_arc, metadata_store);
 
     extract_and_process_archive_with_cas_and_checkpoints(
         archive_path,
@@ -1142,12 +1149,12 @@ async fn extract_and_process_archive(
     workspace_id: &str,
 ) -> Result<()> {
     const MAX_NESTING_DEPTH: i32 = 10;
-    
+
     // Track depth to prevent infinite recursion
     // For legacy implementation, we estimate depth from virtual_path
     // Count the number of archive separators to determine nesting level
     let depth_level = virtual_path.matches('/').count() as i32;
-    
+
     if depth_level >= MAX_NESTING_DEPTH {
         warn!(
             archive = %archive_path.display(),
@@ -1272,7 +1279,7 @@ async fn extract_and_process_archive(
         archive = %file_name,
         "Processing extracted files"
     );
-    
+
     for extracted_file in &extracted_files {
         // Validate path safety: prevent path traversal attacks
         if let Err(e) = validate_path_safety(extracted_file, &extract_dir) {

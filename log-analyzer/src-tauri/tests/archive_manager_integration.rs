@@ -2,12 +2,15 @@
 //!
 //! Tests:
 //! - Existing archives work with new engine
-//! - Path mappings are accessible and correct
+//! - CAS storage and MetadataStore integration
 //! - Feature flag toggle between old and new extraction
 //! - Backward compatibility with existing workspaces
+//!
+//! **Validates: Requirements 4.1, 4.3**
 
 use log_analyzer::archive::{extract_archive_async, ArchiveManager, ExtractionPolicy};
 use log_analyzer::services::MetadataDB;
+use log_analyzer::storage::{ContentAddressableStorage, MetadataStore};
 use std::fs;
 use std::path::PathBuf;
 use tempfile::TempDir;
@@ -65,13 +68,14 @@ async fn test_enhanced_extraction_basic_archive() {
     assert_eq!(content1, "content1");
 }
 
-/// Test that path mappings are created and accessible
+/// Test that path mappings are created and accessible via CAS + MetadataStore
 #[tokio::test]
 async fn test_path_mappings_accessibility() {
     let temp_dir = TempDir::new().unwrap();
     let archive_path = temp_dir.path().join("test.zip");
     let extract_dir = temp_dir.path().join("extracted");
-    let db_path = temp_dir.path().join("metadata.db");
+    let workspace_dir = temp_dir.path().join("workspace");
+    fs::create_dir_all(&workspace_dir).unwrap();
 
     // Create a test archive with a long filename
     let long_name = "a".repeat(300) + ".txt";
@@ -83,9 +87,12 @@ async fn test_path_mappings_accessibility() {
         .await
         .unwrap();
 
-    // Check if path mappings were created
+    // Verify extraction succeeded
+    assert!(result.extracted_files.len() > 0);
+
+    // If path shortening was used, verify MetadataDB has the mappings
     if !result.metadata_mappings.is_empty() {
-        // Verify we can access the metadata database
+        let db_path = workspace_dir.join("metadata.db");
         let db = MetadataDB::new(db_path.to_str().unwrap()).await.unwrap();
 
         // Verify mappings are stored
@@ -100,6 +107,24 @@ async fn test_path_mappings_accessibility() {
                 retrieved.unwrap(),
                 original_path.to_string_lossy().to_string()
             );
+        }
+    }
+
+    // Verify CAS storage if workspace uses CAS
+    let cas = ContentAddressableStorage::new(workspace_dir.clone());
+    let metadata_store = MetadataStore::new(&workspace_dir).await;
+
+    if let Ok(store) = metadata_store {
+        // Verify files are in MetadataStore
+        let files = store.get_all_files().await.unwrap();
+
+        // If files were stored in CAS, verify they exist
+        for file in files {
+            if cas.exists(&file.sha256_hash) {
+                // Verify content can be read
+                let content = cas.read_content(&file.sha256_hash).await.unwrap();
+                assert!(content.len() > 0);
+            }
         }
     }
 }

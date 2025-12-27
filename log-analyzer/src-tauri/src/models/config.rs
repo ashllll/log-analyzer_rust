@@ -1,9 +1,8 @@
 //! 配置相关数据结构
 //!
-//! 本模块定义了应用配置、索引数据和文件元数据等核心配置结构。
+//! 本模块定义了应用配置等核心配置结构。
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// 应用配置
 ///
@@ -14,30 +13,57 @@ pub struct AppConfig {
     pub keyword_groups: serde_json::Value,
     /// 工作区配置
     pub workspaces: serde_json::Value,
+    /// 高级搜索特性配置
+    #[serde(default)]
+    pub advanced_features: AdvancedFeaturesConfig,
 }
 
-/// 索引持久化数据结构
+/// 高级搜索特性配置
 ///
-/// 支持索引的保存和加载，包含增量更新所需的元数据。
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct IndexData {
-    /// 路径映射：real_path -> virtual_path
-    pub path_map: HashMap<String, String>,
-    /// 文件元数据映射（用于增量更新）
-    pub file_metadata: HashMap<String, FileMetadata>,
-    /// 所属工作区 ID
-    pub workspace_id: String,
-    /// 创建时间戳（Unix 时间戳）
-    pub created_at: i64,
+/// 控制各种高级搜索特性的启用/禁用状态和参数设置。
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct AdvancedFeaturesConfig {
+    /// 是否启用位图索引过滤器（RoaringBitmap）
+    #[serde(default = "default_enabled")]
+    pub enable_filter_engine: bool,
+
+    /// 是否启用正则表达式搜索引擎（LRU缓存）
+    #[serde(default = "default_enabled")]
+    pub enable_regex_engine: bool,
+
+    /// 是否启用时间分区索引（时序优化）
+    #[serde(default = "default_enabled")]
+    pub enable_time_partition: bool,
+
+    /// 是否启用自动补全引擎（Trie树）
+    #[serde(default = "default_enabled")]
+    pub enable_autocomplete: bool,
+
+    /// 正则表达式缓存大小（默认1000）
+    #[serde(default = "default_regex_cache_size")]
+    pub regex_cache_size: usize,
+
+    /// 自动补全建议数量（默认100）
+    #[serde(default = "default_autocomplete_limit")]
+    pub autocomplete_limit: usize,
+
+    /// 时间分区大小（秒，默认3600 = 1小时）
+    #[serde(default = "default_partition_size")]
+    pub time_partition_size_secs: u64,
 }
 
-/// 文件元数据
-///
-/// 用于增量更新判断，记录文件的修改时间和大小。
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct FileMetadata {
-    /// 修改时间戳（Unix 时间戳）
-    pub modified_time: i64,
-    /// 文件大小（字节）
-    pub size: u64,
+fn default_enabled() -> bool {
+    true
+}
+
+fn default_regex_cache_size() -> usize {
+    1000
+}
+
+fn default_autocomplete_limit() -> usize {
+    100
+}
+
+fn default_partition_size() -> u64 {
+    3600
 }

@@ -31,10 +31,7 @@ async fn test_checkpoint_save_and_resume() {
     let target_dir = PathBuf::from("/test/output");
 
     // Create checkpoint manager
-    let manager = CheckpointManager::new(
-        CheckpointConfig::default(),
-        checkpoint_dir.clone(),
-    );
+    let manager = CheckpointManager::new(CheckpointConfig::default(), checkpoint_dir.clone());
 
     // Create initial checkpoint
     let mut checkpoint = Checkpoint::new(
@@ -75,13 +72,11 @@ async fn test_checkpoint_save_and_resume() {
 
     // Verify loaded checkpoint has correct state
     assert_eq!(
-        loaded_checkpoint.metrics.files_extracted,
-        3,
+        loaded_checkpoint.metrics.files_extracted, 3,
         "Should have 3 files extracted"
     );
     assert_eq!(
-        loaded_checkpoint.metrics.bytes_extracted,
-        7168,
+        loaded_checkpoint.metrics.bytes_extracted, 7168,
         "Should have correct byte count"
     );
 
@@ -115,10 +110,7 @@ async fn test_checkpoint_prevents_duplicate_processing() {
     let archive_path = PathBuf::from("/test/archive.zip");
     let target_dir = PathBuf::from("/test/output");
 
-    let manager = CheckpointManager::new(
-        CheckpointConfig::default(),
-        checkpoint_dir.clone(),
-    );
+    let manager = CheckpointManager::new(CheckpointConfig::default(), checkpoint_dir.clone());
 
     // Create checkpoint with some files already processed
     let mut checkpoint = Checkpoint::new(
@@ -167,8 +159,7 @@ async fn test_checkpoint_prevents_duplicate_processing() {
     assert_eq!(skipped_count, 2, "Should skip 2 already-processed files");
     assert_eq!(processed_count, 1, "Should process 1 new file");
     assert_eq!(
-        loaded_checkpoint.metrics.files_extracted,
-        3,
+        loaded_checkpoint.metrics.files_extracted, 3,
         "Should have 3 total files"
     );
 
@@ -214,7 +205,11 @@ async fn test_integrity_verification_detects_missing_files() {
     // Should detect missing file
     assert_eq!(report.total_files, 1, "Should have 1 file in metadata");
     assert_eq!(report.valid_files, 0, "Should have 0 valid files");
-    assert_eq!(report.missing_objects.len(), 1, "Should have 1 missing object");
+    assert_eq!(
+        report.missing_objects.len(),
+        1,
+        "Should have 1 missing object"
+    );
     assert!(!report.is_valid(), "Report should indicate invalid state");
 }
 
@@ -263,7 +258,11 @@ async fn test_integrity_verification_detects_corruption() {
     // Should detect corruption
     assert_eq!(report.total_files, 1, "Should have 1 file in metadata");
     assert_eq!(report.valid_files, 0, "Should have 0 valid files");
-    assert_eq!(report.corrupted_objects.len(), 1, "Should have 1 corrupted object");
+    assert_eq!(
+        report.corrupted_objects.len(),
+        1,
+        "Should have 1 corrupted object"
+    );
     assert!(!report.is_valid(), "Report should indicate invalid state");
 }
 
@@ -312,8 +311,16 @@ async fn test_integrity_verification_passes_for_valid_workspace() {
     // Should pass validation
     assert_eq!(report.total_files, 3, "Should have 3 files in metadata");
     assert_eq!(report.valid_files, 3, "Should have 3 valid files");
-    assert_eq!(report.missing_objects.len(), 0, "Should have no missing objects");
-    assert_eq!(report.corrupted_objects.len(), 0, "Should have no corrupted objects");
+    assert_eq!(
+        report.missing_objects.len(),
+        0,
+        "Should have no missing objects"
+    );
+    assert_eq!(
+        report.corrupted_objects.len(),
+        0,
+        "Should have no corrupted objects"
+    );
     assert!(report.is_valid(), "Report should indicate valid state");
 }
 
@@ -403,11 +410,7 @@ async fn test_checkpoint_disabled_mode() {
     let archive_path = PathBuf::from("/test/archive.zip");
     let target_dir = PathBuf::from("/test/output");
 
-    let checkpoint = Checkpoint::new(
-        workspace_id.to_string(),
-        archive_path.clone(),
-        target_dir,
-    );
+    let checkpoint = Checkpoint::new(workspace_id.to_string(), archive_path.clone(), target_dir);
 
     // Save should succeed but do nothing
     manager.save_checkpoint(&checkpoint).await.unwrap();
@@ -433,7 +436,7 @@ async fn test_checkpoint_disabled_mode() {
 async fn test_import_calls_integrity_verification() {
     let temp_dir = TempDir::new().unwrap();
     let workspace_dir = temp_dir.path().to_path_buf();
-    
+
     // Create CAS and metadata store
     let cas = ContentAddressableStorage::new(workspace_dir.clone());
     let metadata_store = MetadataStore::new(&workspace_dir).await.unwrap();
@@ -447,7 +450,7 @@ async fn test_import_calls_integrity_verification() {
 
     for (name, content) in files {
         let hash = cas.store_content(content).await.unwrap();
-        
+
         let file_metadata = FileMetadata {
             id: 0,
             sha256_hash: hash,
@@ -459,7 +462,7 @@ async fn test_import_calls_integrity_verification() {
             parent_archive_id: None,
             depth_level: 0,
         };
-        
+
         metadata_store.insert_file(&file_metadata).await.unwrap();
     }
 
@@ -467,12 +470,27 @@ async fn test_import_calls_integrity_verification() {
     let report = verify_after_import(&workspace_dir).await.unwrap();
 
     // Assertions
-    assert!(report.is_valid(), "Verification should pass after successful import");
+    assert!(
+        report.is_valid(),
+        "Verification should pass after successful import"
+    );
     assert_eq!(report.total_files, 3, "Should have 3 files");
     assert_eq!(report.valid_files, 3, "All 3 files should be valid");
-    assert_eq!(report.invalid_files.len(), 0, "Should have no invalid files");
-    assert_eq!(report.missing_objects.len(), 0, "Should have no missing objects");
-    assert_eq!(report.corrupted_objects.len(), 0, "Should have no corrupted objects");
+    assert_eq!(
+        report.invalid_files.len(),
+        0,
+        "Should have no invalid files"
+    );
+    assert_eq!(
+        report.missing_objects.len(),
+        0,
+        "Should have no missing objects"
+    );
+    assert_eq!(
+        report.corrupted_objects.len(),
+        0,
+        "Should have no corrupted objects"
+    );
 }
 
 /// Test that verification detects missing CAS objects after import
@@ -485,7 +503,7 @@ async fn test_import_calls_integrity_verification() {
 async fn test_verification_detects_missing_objects() {
     let temp_dir = TempDir::new().unwrap();
     let workspace_dir = temp_dir.path().to_path_buf();
-    
+
     let cas = ContentAddressableStorage::new(workspace_dir.clone());
     let metadata_store = MetadataStore::new(&workspace_dir).await.unwrap();
 
@@ -502,13 +520,16 @@ async fn test_verification_detects_missing_objects() {
         parent_archive_id: None,
         depth_level: 0,
     };
-    
+
     metadata_store.insert_file(&file_metadata).await.unwrap();
 
     // Verify - should detect missing object
     let report = verify_after_import(&workspace_dir).await.unwrap();
 
-    assert!(!report.is_valid(), "Verification should fail with missing objects");
+    assert!(
+        !report.is_valid(),
+        "Verification should fail with missing objects"
+    );
     assert_eq!(report.total_files, 1);
     assert_eq!(report.valid_files, 0);
     assert_eq!(report.invalid_files.len(), 1);
@@ -526,14 +547,14 @@ async fn test_verification_detects_missing_objects() {
 async fn test_verification_detects_corruption() {
     let temp_dir = TempDir::new().unwrap();
     let workspace_dir = temp_dir.path().to_path_buf();
-    
+
     let cas = ContentAddressableStorage::new(workspace_dir.clone());
     let metadata_store = MetadataStore::new(&workspace_dir).await.unwrap();
 
     // Store a file in CAS
     let original_content = b"original content";
     let hash = cas.store_content(original_content).await.unwrap();
-    
+
     // Add metadata
     let file_metadata = FileMetadata {
         id: 0,
@@ -546,17 +567,22 @@ async fn test_verification_detects_corruption() {
         parent_archive_id: None,
         depth_level: 0,
     };
-    
+
     metadata_store.insert_file(&file_metadata).await.unwrap();
 
     // Manually corrupt the CAS object
     let object_path = cas.get_object_path(&hash);
-    tokio::fs::write(&object_path, b"corrupted content").await.unwrap();
+    tokio::fs::write(&object_path, b"corrupted content")
+        .await
+        .unwrap();
 
     // Verify - should detect corruption
     let report = verify_after_import(&workspace_dir).await.unwrap();
 
-    assert!(!report.is_valid(), "Verification should fail with corrupted objects");
+    assert!(
+        !report.is_valid(),
+        "Verification should fail with corrupted objects"
+    );
     assert_eq!(report.total_files, 1);
     assert_eq!(report.valid_files, 0);
     assert_eq!(report.invalid_files.len(), 1);
@@ -595,7 +621,9 @@ async fn test_transaction_rollback_on_failure() {
         depth_level: 0,
     };
 
-    let id1 = MetadataStore::insert_file_tx(&mut tx, &file1).await.unwrap();
+    let id1 = MetadataStore::insert_file_tx(&mut tx, &file1)
+        .await
+        .unwrap();
     assert!(id1 > 0, "Should insert first file");
 
     // Insert second file successfully
@@ -611,7 +639,9 @@ async fn test_transaction_rollback_on_failure() {
         depth_level: 0,
     };
 
-    let id2 = MetadataStore::insert_file_tx(&mut tx, &file2).await.unwrap();
+    let id2 = MetadataStore::insert_file_tx(&mut tx, &file2)
+        .await
+        .unwrap();
     assert!(id2 > 0, "Should insert second file");
 
     // Explicitly rollback the transaction (simulating a failure)
@@ -623,10 +653,16 @@ async fn test_transaction_rollback_on_failure() {
 
     // Verify files are not retrievable
     let file1_result = metadata_store.get_file_by_hash("hash1").await.unwrap();
-    assert!(file1_result.is_none(), "File1 should not exist after rollback");
+    assert!(
+        file1_result.is_none(),
+        "File1 should not exist after rollback"
+    );
 
     let file2_result = metadata_store.get_file_by_hash("hash2").await.unwrap();
-    assert!(file2_result.is_none(), "File2 should not exist after rollback");
+    assert!(
+        file2_result.is_none(),
+        "File2 should not exist after rollback"
+    );
 }
 
 /// Test transaction commit on success
@@ -695,8 +731,15 @@ async fn test_transaction_commit_on_success() {
 
     // Verify each file is retrievable
     for file in &files {
-        let result = metadata_store.get_file_by_hash(&file.sha256_hash).await.unwrap();
-        assert!(result.is_some(), "File {} should exist after commit", file.sha256_hash);
+        let result = metadata_store
+            .get_file_by_hash(&file.sha256_hash)
+            .await
+            .unwrap();
+        assert!(
+            result.is_some(),
+            "File {} should exist after commit",
+            file.sha256_hash
+        );
         let retrieved = result.unwrap();
         assert_eq!(retrieved.virtual_path, file.virtual_path);
         assert_eq!(retrieved.size, file.size);
@@ -712,7 +755,7 @@ async fn test_transaction_commit_on_success() {
 #[tokio::test]
 async fn test_transaction_mixed_operations() {
     use log_analyzer::storage::ArchiveMetadata;
-    
+
     let temp_dir = TempDir::new().unwrap();
     let metadata_store = MetadataStore::new(temp_dir.path()).await.unwrap();
 
@@ -731,7 +774,9 @@ async fn test_transaction_mixed_operations() {
         extraction_status: "pending".to_string(),
     };
 
-    let archive_id = MetadataStore::insert_archive_tx(&mut tx, &archive).await.unwrap();
+    let archive_id = MetadataStore::insert_archive_tx(&mut tx, &archive)
+        .await
+        .unwrap();
     assert!(archive_id > 0, "Should insert archive");
 
     // Insert files belonging to the archive
@@ -777,7 +822,10 @@ async fn test_transaction_mixed_operations() {
     assert_eq!(file_count, 2, "Should have 2 files");
 
     // Verify archive-file relationship
-    let children = metadata_store.get_archive_children(archive_id).await.unwrap();
+    let children = metadata_store
+        .get_archive_children(archive_id)
+        .await
+        .unwrap();
     assert_eq!(children.len(), 2, "Archive should have 2 children");
 }
 
@@ -790,8 +838,7 @@ fn file_content_strategy() -> impl Strategy<Value = Vec<u8>> {
 
 /// Generate file names
 fn file_name_strategy() -> impl Strategy<Value = String> {
-    prop::string::string_regex("[a-zA-Z0-9_-]{1,20}\\.log")
-        .unwrap()
+    prop::string::string_regex("[a-zA-Z0-9_-]{1,20}\\.log").unwrap()
 }
 
 /// **Feature: archive-search-fix, Property 7: Error recovery isolation**
@@ -832,7 +879,7 @@ mod property_tests {
             let count = file_names.len().min(file_contents.len());
             let file_names = &file_names[..count];
             let file_contents = &file_contents[..count];
-            
+
             // Ensure failure_index is within bounds
             let failure_index = failure_index % count;
 
@@ -862,7 +909,7 @@ mod property_tests {
                             parent_archive_id: None,
                             depth_level: 0,
                         };
-                        
+
                         // Try to insert metadata (this simulates a partial failure)
                         if let Ok(_) = metadata_store.insert_file(&file_metadata).await {
                             failed_files.push((name.clone(), fake_hash));
@@ -882,7 +929,7 @@ mod property_tests {
                                     parent_archive_id: None,
                                     depth_level: 0,
                                 };
-                                
+
                                 if let Ok(_) = metadata_store.insert_file(&file_metadata).await {
                                     successful_files.push((name.clone(), hash));
                                 }
@@ -989,7 +1036,7 @@ mod property_tests {
             let count = file_names.len().min(file_contents.len());
             let file_names = &file_names[..count];
             let file_contents = &file_contents[..count];
-            
+
             // Ensure failure_count doesn't exceed total count
             let failure_count = failure_count.min(count - 1).max(1);
 
@@ -1019,7 +1066,7 @@ mod property_tests {
                             parent_archive_id: None,
                             depth_level: 0,
                         };
-                        
+
                         if let Ok(_) = metadata_store.insert_file(&file_metadata).await {
                             failed_files.push((name.clone(), fake_hash));
                         }
@@ -1038,7 +1085,7 @@ mod property_tests {
                                     parent_archive_id: None,
                                     depth_level: 0,
                                 };
-                                
+
                                 if let Ok(_) = metadata_store.insert_file(&file_metadata).await {
                                     successful_files.push((name.clone(), hash));
                                 }

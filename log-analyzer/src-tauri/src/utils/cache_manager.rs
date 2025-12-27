@@ -1,4 +1,5 @@
 //! 智能缓存管理器
+#![allow(dead_code)]
 //!
 //! 提供高级缓存管理功能，包括：
 //! - 工作区特定的缓存失效
@@ -1000,7 +1001,7 @@ impl CacheManager {
                     };
 
                     let _: redis::RedisResult<()> = conn
-                        .set_ex(&redis_key, data_to_store, self.config.ttl.as_secs() as u64)
+                        .set_ex(&redis_key, data_to_store, self.config.ttl.as_secs())
                         .await;
 
                     // 记录该键属于哪个工作区，以便后续失效
@@ -1064,7 +1065,7 @@ impl CacheManager {
                     };
 
                     let _: redis::RedisResult<()> = conn
-                        .set_ex(&redis_key, data_to_store, self.config.ttl.as_secs() as u64)
+                        .set_ex(&redis_key, data_to_store, self.config.ttl.as_secs())
                         .await;
 
                     let set_key = format!("{}index:{}", self.config.l2_prefix, key.1);
@@ -1169,24 +1170,60 @@ impl CacheManager {
     }
 
     /// 生成性能报告
+    /// 
+    /// 注意：此方法在同步上下文中生成报告，内部使用 `block_on` 获取异步缓存统计。
+    /// 报告生成方法通常在监控或管理界面调用，不是热路径，可以安全使用 block_on。
     pub fn generate_performance_report(&self) -> CachePerformanceReport {
-        let snapshot = self.metrics.snapshot();
-        let alerts = self.check_performance_alerts();
-        let cache_stats = self.get_cache_statistics();
-        let async_cache_stats = tauri::async_runtime::block_on(
-            self.get_async_cache_statistics()
-        );
+        // 使用 block_on 在同步上下文中获取异步缓存统计
+        let async_cache_stats = tauri::async_runtime::block_on(async {
+            self.get_async_cache_statistics().await
+        });
 
-        let overall_health = self.calculate_cache_health(&snapshot, &alerts);
+        let snapshot = self.metrics.snapshot();
+        let alerts = self.metrics.check_performance_alerts();
+
+        let health_score = {
+            let mut health = 100.0;
+            if snapshot.total_requests > 0 {
+                let hit_rate_score = (snapshot.l1_hit_rate * 100.0).min(100.0);
+                health = health * 0.4 + hit_rate_score * 0.4;
+            }
+            let access_time_score = if snapshot.avg_access_time_ms > 0.0 {
+                (100.0 / snapshot.avg_access_time_ms * 100.0).min(100.0)
+            } else {
+                100.0
+            };
+            health = health * 0.7 + access_time_score * 0.2;
+            let alert_penalty = alerts
+                .iter()
+                .map(|alert| match alert.severity {
+                    AlertSeverity::Critical => 20.0,
+                    AlertSeverity::Warning => 10.0,
+                    AlertSeverity::Info => 2.0,
+                })
+                .sum::<f64>();
+            (health - alert_penalty).max(0.0).min(100.0)
+        };
+
+        let recommendations = {
+            let mut recs = Vec::new();
+            if snapshot.l1_hit_rate < 0.5 && snapshot.total_requests > 20 {
+                recs.push("Consider reviewing cache key strategy".to_string());
+            }
+            if recs.is_empty() {
+                recs.push("Cache performance is within acceptable thresholds".to_string());
+            }
+            recs
+        };
 
         CachePerformanceReport {
             timestamp: std::time::SystemTime::now(),
-            metrics: snapshot.clone(),
-            alerts: alerts.clone(),
-            sync_cache_stats: cache_stats,
+            metrics: snapshot,
+            alerts,
+            sync_cache_stats: self.get_cache_statistics(),
             async_cache_stats,
-            overall_health,
-            recommendations: self.generate_recommendations(&snapshot, &alerts),
+            overall_health: health_score,
+            recommendations,
         }
     }
 
@@ -1367,26 +1404,33 @@ impl CacheManager {
     }
 
     /// 获取缓存调试信息
+    /// 
+    /// 注意：此方法在同步上下文中获取调试信息，内部使用 `block_on` 获取异步缓存信息。
+    /// 调试信息获取不是热路径，可以安全使用 block_on。
     pub fn get_debug_info(&self) -> CacheDebugInfo {
         let sync_entry_count = self.search_cache.entry_count();
+        let config = self.config.clone();
+        let metrics = self.metrics.snapshot();
+
+        // 使用 block_on 在同步上下文中获取异步缓存的条目数
         let async_entry_count = tauri::async_runtime::block_on(async {
             self.async_search_cache.entry_count()
         });
 
-        // 采样一些缓存键用于调试
+        // 采样一些缓存键用于调试（从同步缓存获取）
         let sample_keys: Vec<String> = self
             .search_cache
             .iter()
             .take(10)
-            .map(|(key, _)| format!("{}:{}", key.0, key.1))
+            .map(|(key, _)| format!("Query: {}, Workspace: {}", key.0, key.1))
             .collect();
 
         CacheDebugInfo {
             sync_cache_entries: sync_entry_count,
             async_cache_entries: async_entry_count,
             sample_keys,
-            config: self.config.clone(),
-            metrics_snapshot: self.metrics.snapshot(),
+            config,
+            metrics_snapshot: metrics,
         }
     }
 
@@ -1550,6 +1594,10 @@ impl CacheManager {
     }
 
     /// 获取缓存仪表板数据
+    /// 
+    /// 聚合缓存的各种状态信息用于仪表板展示。
+    /// 注意：此方法调用 generate_performance_report，后者内部使用 block_on 获取异步统计。
+    /// 仪表板数据获取不是热路径，可以接受 block_on 的开销。
     pub fn get_dashboard_data(&self) -> CacheDashboardData {
         let metrics = self.metrics.snapshot();
         let alerts = self.check_performance_alerts();
@@ -1558,6 +1606,7 @@ impl CacheManager {
         let l2_status = self.get_l2_config();
         let compression_status = self.get_compression_stats();
 
+        // 生成性能报告（同步方法，内部使用 block_on 获取异步统计）
         let report = self.generate_performance_report();
         let health_status = CacheHealthStatus::from_health_score(report.overall_health);
 
@@ -1929,7 +1978,7 @@ mod tests {
             unique_keys in prop::collection::vec(("[a-zA-Z0-9_]{1,20}", "[a-zA-Z0-9_]{1,10}"), 5..20),
             operations in prop::collection::vec(0usize..10, 10..30)
         )| {
-            let rt = tokio::runtime::Runtime::new().unwrap();
+            let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime for property test");
             rt.block_on(async {
                 let cache = create_test_cache();
                 let manager = CacheManager::new(cache.clone());
@@ -2020,7 +2069,7 @@ mod tests {
         proptest!(|(
             load_delays_ms in prop::collection::vec(0u64..100, 1..10)
         )| {
-            let rt = tokio::runtime::Runtime::new().unwrap();
+            let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime for property test");
             rt.block_on(async {
                 let cache = create_test_cache();
                 let manager = CacheManager::new(cache.clone());
@@ -2075,7 +2124,7 @@ mod tests {
         proptest!(|(
             operations in prop::collection::vec((any::<bool>(), "[a-zA-Z0-9_]{1,10}"), 5..20)
         )| {
-            let rt = tokio::runtime::Runtime::new().unwrap();
+            let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime for property test");
             rt.block_on(async {
                 let cache = create_test_cache();
                 let manager = CacheManager::new(cache.clone());
@@ -2101,7 +2150,7 @@ mod tests {
                     }
                 }
 
-                // Generate performance report
+                // Generate performance report (同步方法)
                 let report = manager.generate_performance_report();
 
                 // Property: Report metrics should match current metrics
@@ -2139,7 +2188,7 @@ mod tests {
             max_access_time_ms in 1.0f64..50.0,
             operations_count in 20usize..100
         )| {
-            let rt = tokio::runtime::Runtime::new().unwrap();
+            let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime for property test");
             rt.block_on(async {
                 let cache = create_test_cache();
                 let thresholds = CacheThresholds {
@@ -2211,7 +2260,7 @@ mod tests {
             workspace_ids in prop::collection::vec("[a-zA-Z0-9_]{1,8}", 1..5),
             queries in prop::collection::vec("[a-zA-Z0-9_]{1,12}", 1..10)
         )| {
-            let rt = tokio::runtime::Runtime::new().unwrap();
+            let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime for property test");
             rt.block_on(async {
                 let cache = create_test_cache();
                 let manager = CacheManager::new(cache.clone());

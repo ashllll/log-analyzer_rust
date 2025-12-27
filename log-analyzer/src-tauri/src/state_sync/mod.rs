@@ -9,7 +9,6 @@
 //! - Process-internal communication
 //! - Event history for debugging
 
-use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::SystemTime;

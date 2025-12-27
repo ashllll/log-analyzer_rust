@@ -11,7 +11,3 @@ pub mod sentry_config;
 pub use alerting::AlertingSystem;
 pub use metrics_collector::MetricsCollector;
 pub use recommendation_engine::{PerformanceSnapshot, RecommendationEngine};
-
-// pub use sentry_config::{
-//     error_monitoring, performance, init_sentry_monitoring, SentryMonitoringConfig,
-// };

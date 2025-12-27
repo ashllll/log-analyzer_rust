@@ -70,12 +70,14 @@ impl MetadataStore {
     /// - Failed to create tables
     pub async fn new(workspace_dir: &Path) -> Result<Self> {
         // Create workspace directory if it doesn't exist
-        tokio::fs::create_dir_all(workspace_dir).await.map_err(|e| {
-            AppError::io_error(
-                format!("Failed to create workspace directory: {}", e),
-                Some(workspace_dir.to_path_buf()),
-            )
-        })?;
+        tokio::fs::create_dir_all(workspace_dir)
+            .await
+            .map_err(|e| {
+                AppError::io_error(
+                    format!("Failed to create workspace directory: {}", e),
+                    Some(workspace_dir.to_path_buf()),
+                )
+            })?;
 
         let db_path = workspace_dir.join("metadata.db");
         let db_url = format!("sqlite://{}?mode=rwc", db_path.display());
@@ -136,9 +138,7 @@ impl MetadataStore {
         )
         .execute(pool)
         .await
-        .map_err(|e| {
-            AppError::database_error(format!("Failed to create archives table: {}", e))
-        })?;
+        .map_err(|e| AppError::database_error(format!("Failed to create archives table: {}", e)))?;
 
         // Create indexes
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_files_virtual_path ON files(virtual_path)")
@@ -213,7 +213,9 @@ impl MetadataStore {
         )
         .execute(pool)
         .await
-        .map_err(|e| AppError::database_error(format!("Failed to create FTS insert trigger: {}", e)))?;
+        .map_err(|e| {
+            AppError::database_error(format!("Failed to create FTS insert trigger: {}", e))
+        })?;
 
         sqlx::query(
             r#"
@@ -224,7 +226,9 @@ impl MetadataStore {
         )
         .execute(pool)
         .await
-        .map_err(|e| AppError::database_error(format!("Failed to create FTS delete trigger: {}", e)))?;
+        .map_err(|e| {
+            AppError::database_error(format!("Failed to create FTS delete trigger: {}", e))
+        })?;
 
         sqlx::query(
             r#"
@@ -237,7 +241,9 @@ impl MetadataStore {
         )
         .execute(pool)
         .await
-        .map_err(|e| AppError::database_error(format!("Failed to create FTS update trigger: {}", e)))?;
+        .map_err(|e| {
+            AppError::database_error(format!("Failed to create FTS update trigger: {}", e))
+        })?;
 
         info!("Database schema initialized successfully");
         Ok(())
@@ -365,15 +371,14 @@ impl MetadataStore {
 
     /// Get all files in an archive
     pub async fn get_archive_children(&self, archive_id: i64) -> Result<Vec<FileMetadata>> {
-        let rows = sqlx::query(
-            "SELECT * FROM files WHERE parent_archive_id = ? ORDER BY virtual_path",
-        )
-        .bind(archive_id)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| {
-            AppError::database_error(format!("Failed to query archive children: {}", e))
-        })?;
+        let rows =
+            sqlx::query("SELECT * FROM files WHERE parent_archive_id = ? ORDER BY virtual_path")
+                .bind(archive_id)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| {
+                    AppError::database_error(format!("Failed to query archive children: {}", e))
+                })?;
 
         Ok(rows
             .into_iter()
@@ -513,9 +518,10 @@ impl MetadataStore {
     ///
     /// Vector of auto-generated file IDs in the same order as input
     pub async fn insert_files_batch(&self, files: Vec<FileMetadata>) -> Result<Vec<i64>> {
-        let mut tx = self.pool.begin().await.map_err(|e| {
-            AppError::database_error(format!("Failed to begin transaction: {}", e))
-        })?;
+        let mut tx =
+            self.pool.begin().await.map_err(|e| {
+                AppError::database_error(format!("Failed to begin transaction: {}", e))
+            })?;
 
         let mut ids = Vec::with_capacity(files.len());
 
@@ -555,9 +561,10 @@ impl MetadataStore {
 
     /// Delete all files and archives (for workspace cleanup)
     pub async fn clear_all(&self) -> Result<()> {
-        let mut tx = self.pool.begin().await.map_err(|e| {
-            AppError::database_error(format!("Failed to begin transaction: {}", e))
-        })?;
+        let mut tx =
+            self.pool.begin().await.map_err(|e| {
+                AppError::database_error(format!("Failed to begin transaction: {}", e))
+            })?;
 
         sqlx::query("DELETE FROM files")
             .execute(&mut *tx)
@@ -594,9 +601,10 @@ impl MetadataStore {
     ///
     /// Validates: Requirements 8.4
     pub async fn begin_transaction(&self) -> Result<sqlx::Transaction<'_, sqlx::Sqlite>> {
-        self.pool.begin().await.map_err(|e| {
-            AppError::database_error(format!("Failed to begin transaction: {}", e))
-        })
+        self.pool
+            .begin()
+            .await
+            .map_err(|e| AppError::database_error(format!("Failed to begin transaction: {}", e)))
     }
 
     /// Insert file metadata within a transaction
@@ -639,7 +647,9 @@ impl MetadataStore {
         .bind(chrono::Utc::now().timestamp())
         .execute(&mut **tx)
         .await
-        .map_err(|e| AppError::database_error(format!("Failed to insert file in transaction: {}", e)))?
+        .map_err(|e| {
+            AppError::database_error(format!("Failed to insert file in transaction: {}", e))
+        })?
         .last_insert_rowid();
 
         debug!(
@@ -688,7 +698,9 @@ impl MetadataStore {
         .bind(chrono::Utc::now().timestamp())
         .execute(&mut **tx)
         .await
-        .map_err(|e| AppError::database_error(format!("Failed to insert archive in transaction: {}", e)))?
+        .map_err(|e| {
+            AppError::database_error(format!("Failed to insert archive in transaction: {}", e))
+        })?
         .last_insert_rowid();
 
         debug!(
@@ -831,7 +843,10 @@ mod tests {
         assert_eq!(files_count, 0, "Files table should exist and be empty");
 
         let archives_count = store.count_archives().await.unwrap();
-        assert_eq!(archives_count, 0, "Archives table should exist and be empty");
+        assert_eq!(
+            archives_count, 0,
+            "Archives table should exist and be empty"
+        );
 
         // Verify we can insert data (tests that schema is correct)
         let file = FileMetadata {
@@ -846,7 +861,10 @@ mod tests {
             depth_level: 0,
         };
         let id = store.insert_file(&file).await.unwrap();
-        assert!(id > 0, "Should successfully insert into initialized database");
+        assert!(
+            id > 0,
+            "Should successfully insert into initialized database"
+        );
     }
 
     /// Test file insertion with all fields
@@ -1258,10 +1276,7 @@ mod tests {
         let id = store.insert_archive(&archive).await.unwrap();
 
         // Update status
-        store
-            .update_archive_status(id, "completed")
-            .await
-            .unwrap();
+        store.update_archive_status(id, "completed").await.unwrap();
 
         // Verify update
         let updated = store.get_archive_by_id(id).await.unwrap().unwrap();
@@ -1359,13 +1374,7 @@ mod tests {
         let (store, _temp_dir) = create_test_store().await;
 
         // Insert files with varying sizes and depths
-        let files = vec![
-            (100, 0),
-            (200, 1),
-            (300, 2),
-            (400, 1),
-            (500, 3),
-        ];
+        let files = vec![(100, 0), (200, 1), (300, 2), (400, 1), (500, 3)];
 
         for (size, depth) in files {
             let file = FileMetadata {
@@ -1445,18 +1454,16 @@ mod tests {
         fn file_metadata_strategy() -> impl Strategy<Value = FileMetadata> {
             (
                 // sha256_hash: 64 hex characters
-                prop::collection::vec(0u8..=255, 32..=32)
-                    .prop_map(|bytes| {
-                        bytes.iter()
-                            .map(|b| format!("{:02x}", b))
-                            .collect::<String>()
-                    }),
+                prop::collection::vec(0u8..=255, 32..=32).prop_map(|bytes| {
+                    bytes
+                        .iter()
+                        .map(|b| format!("{:02x}", b))
+                        .collect::<String>()
+                }),
                 // virtual_path: reasonable path string
-                prop::string::string_regex("[a-zA-Z0-9_/.-]{1,200}")
-                    .unwrap(),
+                prop::string::string_regex("[a-zA-Z0-9_/.-]{1,200}").unwrap(),
                 // original_name: file name
-                prop::string::string_regex("[a-zA-Z0-9_.-]{1,50}")
-                    .unwrap(),
+                prop::string::string_regex("[a-zA-Z0-9_.-]{1,50}").unwrap(),
                 // size: reasonable file size (0 to 100MB)
                 0i64..=100_000_000i64,
                 // modified_time: unix timestamp
@@ -1465,19 +1472,30 @@ mod tests {
                 prop::option::of(Just("text/plain".to_string())),
                 // depth_level: 0 to 10
                 0i32..=10i32,
-            ).prop_map(|(hash, virtual_path, original_name, size, modified_time, mime_type, depth_level)| {
-                FileMetadata {
-                    id: 0,
-                    sha256_hash: hash,
-                    virtual_path,
-                    original_name,
-                    size,
-                    modified_time,
-                    mime_type,
-                    parent_archive_id: None,
-                    depth_level,
-                }
-            })
+            )
+                .prop_map(
+                    |(
+                        hash,
+                        virtual_path,
+                        original_name,
+                        size,
+                        modified_time,
+                        mime_type,
+                        depth_level,
+                    )| {
+                        FileMetadata {
+                            id: 0,
+                            sha256_hash: hash,
+                            virtual_path,
+                            original_name,
+                            size,
+                            modified_time,
+                            mime_type,
+                            parent_archive_id: None,
+                            depth_level,
+                        }
+                    },
+                )
         }
 
         /// **Feature: archive-search-fix, Property 2: Path Map completeness**
@@ -1493,7 +1511,7 @@ mod tests {
         fn prop_extracted_files_in_metadata_store() {
             // Use a smaller number of cases for async tests
             let config = ProptestConfig::with_cases(50);
-            
+
             proptest!(config, |(files in prop::collection::vec(file_metadata_strategy(), 1..20))| {
                 // Use tokio-test to run async code in property tests
                 tokio_test::block_on(async {
@@ -1507,7 +1525,7 @@ mod tests {
                         if inserted_files.iter().any(|f: &FileMetadata| f.sha256_hash == file.sha256_hash) {
                             continue;
                         }
-                        
+
                         match store.insert_file(&file).await {
                             Ok(_) => {
                                 inserted_files.push(file.clone());
@@ -1526,7 +1544,7 @@ mod tests {
                             .get_file_by_virtual_path(&file.virtual_path)
                             .await
                             .unwrap();
-                        
+
                         prop_assert!(
                             retrieved.is_some(),
                             "Extracted file with virtual_path '{}' must exist in metadata store",
@@ -1534,14 +1552,14 @@ mod tests {
                         );
 
                         let retrieved_file = retrieved.unwrap();
-                        
+
                         // Verify the retrieved file matches what we inserted
                         prop_assert_eq!(
                             &retrieved_file.sha256_hash,
                             &file.sha256_hash,
                             "Retrieved file hash must match inserted file hash"
                         );
-                        
+
                         prop_assert_eq!(
                             &retrieved_file.virtual_path,
                             &file.virtual_path,
@@ -1553,7 +1571,7 @@ mod tests {
                             .get_file_by_hash(&file.sha256_hash)
                             .await
                             .unwrap();
-                        
+
                         prop_assert!(
                             retrieved_by_hash.is_some(),
                             "Extracted file with hash '{}' must be retrievable by hash",

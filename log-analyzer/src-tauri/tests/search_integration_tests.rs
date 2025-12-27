@@ -73,7 +73,8 @@ fn create_nested_zip(dir: &Path, name: &str, inner_archives: Vec<PathBuf>) -> Pa
 
     // Add some regular files too
     zip.start_file("outer_file.log", options).unwrap();
-    zip.write_all(b"ERROR: outer level error\nINFO: outer level info").unwrap();
+    zip.write_all(b"ERROR: outer level error\nINFO: outer level info")
+        .unwrap();
 
     zip.finish().unwrap();
     zip_path
@@ -81,7 +82,11 @@ fn create_nested_zip(dir: &Path, name: &str, inner_archives: Vec<PathBuf>) -> Pa
 
 /// Helper to simulate search on CAS-stored files
 /// Returns matching lines from content
-async fn search_cas_file_async(cas: &ContentAddressableStorage, hash: &str, query: &str) -> Vec<String> {
+async fn search_cas_file_async(
+    cas: &ContentAddressableStorage,
+    hash: &str,
+    query: &str,
+) -> Vec<String> {
     let content = cas.read_content(hash).await.unwrap();
     let content_str = String::from_utf8(content).unwrap();
     content_str
@@ -94,20 +99,28 @@ async fn search_cas_file_async(cas: &ContentAddressableStorage, hash: &str, quer
 #[test]
 fn test_search_with_valid_files() {
     let temp_dir = TempDir::new().unwrap();
-    
+
     // Create test files
-    let file1 = create_test_file(&temp_dir, "test1.log", "ERROR: Test error message\nINFO: Normal log");
-    let file2 = create_test_file(&temp_dir, "test2.log", "WARN: Warning message\nERROR: Another error");
-    
+    let file1 = create_test_file(
+        &temp_dir,
+        "test1.log",
+        "ERROR: Test error message\nINFO: Normal log",
+    );
+    let file2 = create_test_file(
+        &temp_dir,
+        "test2.log",
+        "WARN: Warning message\nERROR: Another error",
+    );
+
     // Verify files exist
     assert!(file1.exists(), "Test file 1 should exist");
     assert!(file2.exists(), "Test file 2 should exist");
-    
+
     // In a real integration test, we would call the search command here
     // For now, we verify the setup is correct
     let content1 = fs::read_to_string(&file1).unwrap();
     assert!(content1.contains("ERROR"), "File 1 should contain ERROR");
-    
+
     let content2 = fs::read_to_string(&file2).unwrap();
     assert!(content2.contains("ERROR"), "File 2 should contain ERROR");
 }
@@ -115,17 +128,17 @@ fn test_search_with_valid_files() {
 #[test]
 fn test_search_with_missing_files() {
     let temp_dir = TempDir::new().unwrap();
-    
+
     // Create one valid file
     let valid_file = create_test_file(&temp_dir, "valid.log", "ERROR: Test error");
-    
+
     // Create a path to a non-existent file
     let missing_file = temp_dir.path().join("missing.log");
-    
+
     // Verify states
     assert!(valid_file.exists(), "Valid file should exist");
     assert!(!missing_file.exists(), "Missing file should not exist");
-    
+
     // The search should handle the missing file gracefully
     // and continue processing the valid file
 }
@@ -133,26 +146,26 @@ fn test_search_with_missing_files() {
 #[test]
 fn test_search_with_mixed_valid_and_invalid_files() {
     let temp_dir = TempDir::new().unwrap();
-    
+
     // Create multiple files
     let file1 = create_test_file(&temp_dir, "file1.log", "ERROR: Error in file 1");
     let file2 = create_test_file(&temp_dir, "file2.log", "ERROR: Error in file 2");
     let file3 = create_test_file(&temp_dir, "file3.log", "ERROR: Error in file 3");
-    
+
     // Verify all files exist initially
     assert!(file1.exists());
     assert!(file2.exists());
     assert!(file3.exists());
-    
+
     // Delete file2 to simulate a missing file scenario
     fs::remove_file(&file2).unwrap();
     assert!(!file2.exists(), "File 2 should be deleted");
-    
+
     // The search should:
     // 1. Process file1 successfully
     // 2. Skip file2 with a warning
     // 3. Process file3 successfully
-    
+
     // Verify remaining files still exist
     assert!(file1.exists(), "File 1 should still exist");
     assert!(file3.exists(), "File 3 should still exist");
@@ -161,18 +174,18 @@ fn test_search_with_mixed_valid_and_invalid_files() {
 #[test]
 fn test_path_validation_before_file_open() {
     let temp_dir = TempDir::new().unwrap();
-    
+
     // Test with various path scenarios
     let valid_path = temp_dir.path().join("valid.log");
     let invalid_path = temp_dir.path().join("nonexistent").join("file.log");
-    
+
     // Create only the valid file
     fs::write(&valid_path, "Test content").unwrap();
-    
+
     // Verify path states
     assert!(valid_path.exists(), "Valid path should exist");
     assert!(!invalid_path.exists(), "Invalid path should not exist");
-    
+
     // The search implementation should check path.exists() before File::open()
     // This prevents unnecessary error handling and provides better logging
 }
@@ -180,21 +193,21 @@ fn test_path_validation_before_file_open() {
 #[test]
 fn test_search_error_handling_and_recovery() {
     let temp_dir = TempDir::new().unwrap();
-    
+
     // Create a file that will be accessible
     let accessible_file = create_test_file(&temp_dir, "accessible.log", "ERROR: Accessible");
-    
+
     // Create a file path that doesn't exist
     let missing_file = temp_dir.path().join("missing.log");
-    
+
     // Simulate a search scenario where:
     // 1. First file is accessible
     // 2. Second file is missing
     // 3. Search should continue and not crash
-    
+
     assert!(accessible_file.exists());
     assert!(!missing_file.exists());
-    
+
     // The search should:
     // - Successfully read accessible_file
     // - Log a warning for missing_file
@@ -205,15 +218,15 @@ fn test_search_error_handling_and_recovery() {
 #[test]
 fn test_search_with_empty_file() {
     let temp_dir = TempDir::new().unwrap();
-    
+
     // Create an empty file
     let empty_file = create_test_file(&temp_dir, "empty.log", "");
-    
+
     assert!(empty_file.exists());
-    
+
     let content = fs::read_to_string(&empty_file).unwrap();
     assert_eq!(content.len(), 0, "File should be empty");
-    
+
     // Search should handle empty files gracefully
     // - No matches should be found
     // - No errors should occur
@@ -222,7 +235,7 @@ fn test_search_with_empty_file() {
 #[test]
 fn test_search_with_large_file() {
     let temp_dir = TempDir::new().unwrap();
-    
+
     // Create a large file with many lines
     let mut content = String::new();
     for i in 0..10000 {
@@ -233,15 +246,15 @@ fn test_search_with_large_file() {
             content.push_str("INFO: Normal log\n");
         }
     }
-    
+
     let large_file = create_test_file(&temp_dir, "large.log", &content);
-    
+
     assert!(large_file.exists());
-    
+
     // Verify file size
     let metadata = fs::metadata(&large_file).unwrap();
     assert!(metadata.len() > 100_000, "File should be reasonably large");
-    
+
     // Search should handle large files efficiently
     // - Use buffered reading (BufReader with 8192 capacity)
     // - Process line by line without loading entire file into memory
@@ -250,12 +263,12 @@ fn test_search_with_large_file() {
 #[test]
 fn test_search_with_special_characters_in_path() {
     let temp_dir = TempDir::new().unwrap();
-    
+
     // Create files with various valid characters in names
     let file1 = create_test_file(&temp_dir, "test-file.log", "ERROR: Test");
     let file2 = create_test_file(&temp_dir, "test_file.log", "ERROR: Test");
     let file3 = create_test_file(&temp_dir, "test.file.log", "ERROR: Test");
-    
+
     // All files should exist and be searchable
     assert!(file1.exists());
     assert!(file2.exists());
@@ -265,27 +278,33 @@ fn test_search_with_special_characters_in_path() {
 #[test]
 fn test_search_continues_after_file_error() {
     let temp_dir = TempDir::new().unwrap();
-    
+
     // Create multiple files
     let files: Vec<PathBuf> = (0..5)
-        .map(|i| create_test_file(&temp_dir, &format!("file{}.log", i), &format!("ERROR: Error {}", i)))
+        .map(|i| {
+            create_test_file(
+                &temp_dir,
+                &format!("file{}.log", i),
+                &format!("ERROR: Error {}", i),
+            )
+        })
         .collect();
-    
+
     // Verify all files exist
     for file in &files {
         assert!(file.exists());
     }
-    
+
     // Delete the middle file
     fs::remove_file(&files[2]).unwrap();
     assert!(!files[2].exists());
-    
+
     // Search should:
     // - Process files[0] and files[1] successfully
     // - Skip files[2] with a warning
     // - Continue to process files[3] and files[4] successfully
     // - Return results from 4 files (all except files[2])
-    
+
     // Verify other files still exist
     assert!(files[0].exists());
     assert!(files[1].exists());
@@ -297,17 +316,17 @@ fn test_search_continues_after_file_error() {
 #[test]
 fn test_search_requirements_validation() {
     let temp_dir = TempDir::new().unwrap();
-    
+
     // Requirement 1.5: System SHALL validate file path exists and is accessible
     let valid_file = create_test_file(&temp_dir, "valid.log", "ERROR: Test");
     let invalid_path = temp_dir.path().join("nonexistent.log");
-    
+
     assert!(valid_file.exists(), "Valid file should exist");
     assert!(!invalid_path.exists(), "Invalid path should not exist");
-    
+
     // Requirement 8.1: System SHALL log error and continue processing other files
     // This is tested by the test_search_continues_after_file_error test
-    
+
     // Requirement 8.3: System SHALL provide detailed error information
     // The implementation logs:
     // - warn! for non-existent files
@@ -335,7 +354,7 @@ async fn test_search_cas_stored_files() {
     // Store files in CAS and index in metadata
     for (filename, content) in test_files {
         let hash = cas.store_content(content).await.unwrap();
-        
+
         let file_meta = FileMetadata {
             id: 0,
             sha256_hash: hash.clone(),
@@ -381,7 +400,10 @@ async fn test_search_cas_stored_files() {
         let matches = search_cas_file_async(&cas, &file.sha256_hash, "NONEXISTENT").await;
         no_matches += matches.len();
     }
-    assert_eq!(no_matches, 0, "Should find no matches for non-existent term");
+    assert_eq!(
+        no_matches, 0,
+        "Should find no matches for non-existent term"
+    );
 }
 
 /// Test search with nested archives
@@ -392,7 +414,10 @@ async fn test_search_nested_archives() {
 
     // Create inner archive (level 1)
     let inner_files = vec![
-        ("inner1.log", b"ERROR: Inner error 1\nINFO: Inner info 1" as &[u8]),
+        (
+            "inner1.log",
+            b"ERROR: Inner error 1\nINFO: Inner info 1" as &[u8],
+        ),
         ("inner2.log", b"WARN: Inner warning\nERROR: Inner error 2"),
     ];
     let inner_zip = create_simple_zip(temp_dir.path(), "inner.zip", inner_files.clone());
@@ -414,7 +439,7 @@ async fn test_search_nested_archives() {
     if outer_file_path.exists() {
         let content = fs::read(&outer_file_path).unwrap();
         let hash = cas.store_content(&content).await.unwrap();
-        
+
         let file_meta = FileMetadata {
             id: 0,
             sha256_hash: hash,
@@ -445,7 +470,7 @@ async fn test_search_nested_archives() {
             if file_path.exists() {
                 let content = fs::read(&file_path).unwrap();
                 let hash = cas.store_content(&content).await.unwrap();
-                
+
                 let file_meta = FileMetadata {
                     id: 0,
                     sha256_hash: hash,
@@ -464,7 +489,10 @@ async fn test_search_nested_archives() {
 
     // Verify all files are indexed (outer + inner files)
     let all_files = metadata.get_all_files().await.unwrap();
-    assert!(all_files.len() >= 2, "Should have at least inner files indexed");
+    assert!(
+        all_files.len() >= 2,
+        "Should have at least inner files indexed"
+    );
 
     // Test search across nested archives for "ERROR"
     let mut error_count = 0;
@@ -481,12 +509,18 @@ async fn test_search_nested_archives() {
     for file in depth_2_files {
         // Verify we can read content from deeply nested files
         let content = cas.read_content(&file.sha256_hash).await.unwrap();
-        assert!(!content.is_empty(), "Nested file content should not be empty");
+        assert!(
+            !content.is_empty(),
+            "Nested file content should not be empty"
+        );
     }
 
     // Test metadata search for nested paths
     let nested_files = metadata.search_files("inner").await.unwrap();
-    assert!(!nested_files.is_empty(), "Should find files with 'inner' in path");
+    assert!(
+        !nested_files.is_empty(),
+        "Should find files with 'inner' in path"
+    );
 }
 
 /// Test search performance with CAS
@@ -513,7 +547,7 @@ async fn test_search_performance_with_cas() {
         }
 
         let hash = cas.store_content(&content).await.unwrap();
-        
+
         let file_meta = FileMetadata {
             id: 0,
             sha256_hash: hash,
@@ -535,13 +569,13 @@ async fn test_search_performance_with_cas() {
 
     // Measure search performance
     let start = Instant::now();
-    
+
     let mut total_matches = 0;
     for file in &all_files {
         let matches = search_cas_file_async(&cas, &file.sha256_hash, "ERROR").await;
         total_matches += matches.len();
     }
-    
+
     let duration = start.elapsed();
 
     // Verify search results
@@ -584,7 +618,7 @@ async fn test_search_with_deduplication() {
     // Note: We can't insert multiple files with the same hash due to UNIQUE constraint
     // So we'll test that the same content can be searched from different virtual paths
     // by using the metadata's virtual_path field
-    
+
     let file_meta = FileMetadata {
         id: 0,
         sha256_hash: hash.clone(),
@@ -630,7 +664,7 @@ async fn test_search_with_missing_cas_objects() {
     // Create and store a file
     let content = b"ERROR: Test error";
     let hash = cas.store_content(content).await.unwrap();
-    
+
     let file_meta = FileMetadata {
         id: 0,
         sha256_hash: hash.clone(),
@@ -703,7 +737,7 @@ async fn test_search_large_files_in_cas() {
     }
 
     let hash = cas.store_content(&content).await.unwrap();
-    
+
     let file_meta = FileMetadata {
         id: 0,
         sha256_hash: hash.clone(),
@@ -749,7 +783,7 @@ async fn test_search_empty_files_in_cas() {
     // Store an empty file
     let content = b"";
     let hash = cas.store_content(content).await.unwrap();
-    
+
     let file_meta = FileMetadata {
         id: 0,
         sha256_hash: hash.clone(),
@@ -783,7 +817,7 @@ async fn test_concurrent_search_on_cas() {
     for i in 0..10 {
         let content = format!("ERROR: Error in file {}\nINFO: Info in file {}\n", i, i);
         let hash = cas.store_content(content.as_bytes()).await.unwrap();
-        
+
         let file_meta = FileMetadata {
             id: 0,
             sha256_hash: hash,
@@ -803,15 +837,14 @@ async fn test_concurrent_search_on_cas() {
 
     // Perform concurrent searches
     let mut handles = vec![];
-    
+
     for file in all_files {
         let cas_clone = cas.clone();
         let hash = file.sha256_hash.clone();
-        
-        let handle = tokio::spawn(async move {
-            search_cas_file_async(&cas_clone, &hash, "ERROR").await
-        });
-        
+
+        let handle =
+            tokio::spawn(async move { search_cas_file_async(&cas_clone, &hash, "ERROR").await });
+
         handles.push(handle);
     }
 

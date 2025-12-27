@@ -10,7 +10,7 @@
 //! - Identify missing or corrupted objects
 //! - Support for batch validation
 
-use crate::error::{AppError, Result};
+use crate::error::Result;
 use crate::storage::{ContentAddressableStorage, MetadataStore};
 use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
@@ -91,7 +91,7 @@ impl IndexValidator {
     /// let metadata = MetadataStore::new(&PathBuf::from("./workspace")).await.unwrap();
     /// let cas = ContentAddressableStorage::new(PathBuf::from("./workspace"));
     /// let validator = IndexValidator::new(metadata, cas);
-    /// 
+    ///
     /// let report = validator.validate_metadata().await.unwrap();
     /// println!("Valid files: {}/{}", report.valid_files, report.total_files);
     /// # })
@@ -232,8 +232,8 @@ impl IndexValidator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::{ContentAddressableStorage, MetadataStore};
     use crate::storage::metadata_store::FileMetadata;
+    use crate::storage::{ContentAddressableStorage, MetadataStore};
     use tempfile::TempDir;
 
     // Helper function to create FileMetadata
@@ -287,7 +287,8 @@ mod tests {
         let hash = cas.store_content(content).await.unwrap();
 
         // Insert file metadata
-        let file_meta = create_file_metadata(&hash, "test/file.log", "file.log", content.len() as i64, 0);
+        let file_meta =
+            create_file_metadata(&hash, "test/file.log", "file.log", content.len() as i64, 0);
         metadata.insert_file(&file_meta).await.unwrap();
 
         let validator = IndexValidator::new(metadata, cas);
@@ -333,7 +334,13 @@ mod tests {
         // Store one file in CAS
         let content1 = b"valid content";
         let hash1 = cas.store_content(content1).await.unwrap();
-        let file_meta1 = create_file_metadata(&hash1, "test/valid.log", "valid.log", content1.len() as i64, 0);
+        let file_meta1 = create_file_metadata(
+            &hash1,
+            "test/valid.log",
+            "valid.log",
+            content1.len() as i64,
+            0,
+        );
         metadata.insert_file(&file_meta1).await.unwrap();
 
         // Insert metadata without CAS object
@@ -441,7 +448,13 @@ mod tests {
         // Add valid file
         let content1 = b"valid content";
         let hash1 = cas.store_content(content1).await.unwrap();
-        let file_meta1 = create_file_metadata(&hash1, "test/valid.log", "valid.log", content1.len() as i64, 0);
+        let file_meta1 = create_file_metadata(
+            &hash1,
+            "test/valid.log",
+            "valid.log",
+            content1.len() as i64,
+            0,
+        );
         metadata.insert_file(&file_meta1).await.unwrap();
 
         // Add invalid file

@@ -294,10 +294,6 @@ pub fn append_to_workspace_index(
     // Send new logs to frontend (real-time update)
     let _ = app.emit("new-logs", new_entries);
 
-    // Optionally update persisted index here
-    // For performance, can batch updates or save periodically
-    // Current implementation: only send to frontend, no immediate persistence
-
     Ok(())
 }
 
@@ -326,7 +322,7 @@ pub fn append_to_workspace_index(
 /// # 使用场景
 ///
 /// - ✅ 已集成: `process_path_recursive_inner_with_metadata` 中收集普通文件元数据
-pub fn get_file_metadata(path: &Path) -> Result<crate::models::config::FileMetadata> {
+pub fn get_file_metadata(path: &Path) -> Result<crate::storage::FileMetadata> {
     use std::time::SystemTime;
 
     let metadata = path.metadata().map_err(AppError::Io)?;
@@ -338,9 +334,20 @@ pub fn get_file_metadata(path: &Path) -> Result<crate::models::config::FileMetad
         .map_err(|e| AppError::validation_error(format!("Invalid timestamp: {}", e)))?
         .as_secs() as i64;
 
-    Ok(crate::models::config::FileMetadata {
+    Ok(crate::storage::FileMetadata {
+        id: 0,                       // Will be auto-generated
+        sha256_hash: String::new(),  // Will be filled by caller
+        virtual_path: String::new(), // Will be filled by caller
+        original_name: path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown")
+            .to_string(),
+        size: metadata.len() as i64,
         modified_time,
-        size: metadata.len(),
+        mime_type: None,
+        parent_archive_id: None,
+        depth_level: 0,
     })
 }
 

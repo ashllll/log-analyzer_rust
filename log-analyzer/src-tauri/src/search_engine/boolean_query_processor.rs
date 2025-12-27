@@ -1,4 +1,5 @@
 //! Boolean Query Processor
+#![allow(dead_code)]
 //!
 //! Optimized multi-keyword intersection algorithms using Tantivy's boolean query capabilities.
 //! Provides:
@@ -164,7 +165,7 @@ impl BooleanQueryProcessor {
 
         let count_collector = Count;
         let doc_count = searcher.search(&term_query, &count_collector)?;
-        let total_docs = searcher.num_docs() as u64;
+        let total_docs = searcher.num_docs();
 
         let selectivity = if total_docs > 0 {
             doc_count as f64 / total_docs as f64

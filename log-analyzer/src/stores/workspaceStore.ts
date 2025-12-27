@@ -18,8 +18,6 @@ export interface Workspace {
   size: string;
   files: number;
   watching?: boolean;
-  format?: 'traditional' | 'cas' | 'unknown';
-  needsMigration?: boolean;
 }
 
 interface WorkspaceState {

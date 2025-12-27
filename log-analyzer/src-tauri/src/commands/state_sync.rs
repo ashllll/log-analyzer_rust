@@ -21,53 +21,65 @@ pub async fn init_state_sync(app: AppHandle, state: State<'_, AppState>) -> Resu
 
 /// Get workspace state
 #[command]
+#[allow(clippy::await_holding_lock)]
 pub async fn get_workspace_state(
     #[allow(non_snake_case)] workspaceId: String,
     state: State<'_, AppState>,
 ) -> Result<Option<crate::state_sync::WorkspaceState>, String> {
-    let sync_guard = state.state_sync.lock();
+    let state_sync = {
+        let sync_guard = state.state_sync.lock();
+        if let Some(state_sync) = sync_guard.as_ref() {
+            state_sync.clone()
+        } else {
+            return Err("State synchronization not initialized".to_string());
+        }
+    };
 
-    if let Some(state_sync) = sync_guard.as_ref() {
-        Ok(state_sync.get_workspace_state(&workspaceId).await)
-    } else {
-        Err("State synchronization not initialized".to_string())
-    }
+    Ok(state_sync.get_workspace_state(&workspaceId).await)
 }
 
 /// Get event history for a workspace
 #[command]
+#[allow(clippy::await_holding_lock)]
 pub async fn get_event_history(
     #[allow(non_snake_case)] workspaceId: String,
     limit: Option<usize>,
     state: State<'_, AppState>,
 ) -> Result<Vec<WorkspaceEvent>, String> {
-    let sync_guard = state.state_sync.lock();
+    let state_sync = {
+        let sync_guard = state.state_sync.lock();
+        if let Some(state_sync) = sync_guard.as_ref() {
+            state_sync.clone()
+        } else {
+            return Err("State synchronization not initialized".to_string());
+        }
+    };
 
-    if let Some(state_sync) = sync_guard.as_ref() {
-        let limit = limit.unwrap_or(100);
-        Ok(state_sync.get_event_history(&workspaceId, limit).await)
-    } else {
-        Err("State synchronization not initialized".to_string())
-    }
+    let limit = limit.unwrap_or(100);
+    Ok(state_sync.get_event_history(&workspaceId, limit).await)
 }
 
 /// Broadcast a test event (for debugging)
 #[command]
+#[allow(clippy::await_holding_lock)]
 pub async fn broadcast_test_event(
     #[allow(non_snake_case)] workspaceId: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let sync_guard = state.state_sync.lock();
+    let state_sync = {
+        let sync_guard = state.state_sync.lock();
+        if let Some(state_sync) = sync_guard.as_ref() {
+            state_sync.clone()
+        } else {
+            return Err("State synchronization not initialized".to_string());
+        }
+    };
 
-    if let Some(state_sync) = sync_guard.as_ref() {
-        let event = WorkspaceEvent::ProgressUpdate {
-            workspace_id: workspaceId,
-            progress: 0.5,
-        };
+    let event = WorkspaceEvent::ProgressUpdate {
+        workspace_id: workspaceId,
+        progress: 0.5,
+    };
 
-        state_sync.broadcast_workspace_event(event).await?;
-        Ok(())
-    } else {
-        Err("State synchronization not initialized".to_string())
-    }
+    state_sync.broadcast_workspace_event(event).await?;
+    Ok(())
 }

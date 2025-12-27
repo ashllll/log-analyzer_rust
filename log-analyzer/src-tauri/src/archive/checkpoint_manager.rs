@@ -42,7 +42,7 @@ impl Default for CheckpointConfig {
 }
 
 /// Accumulated metrics for checkpoint
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct CheckpointMetrics {
     /// Total files extracted so far
     pub files_extracted: usize,
@@ -54,18 +54,6 @@ pub struct CheckpointMetrics {
     pub error_count: usize,
     /// Number of path shortenings applied
     pub path_shortenings: usize,
-}
-
-impl Default for CheckpointMetrics {
-    fn default() -> Self {
-        Self {
-            files_extracted: 0,
-            bytes_extracted: 0,
-            max_depth_reached: 0,
-            error_count: 0,
-            path_shortenings: 0,
-        }
-    }
 }
 
 /// Checkpoint data structure

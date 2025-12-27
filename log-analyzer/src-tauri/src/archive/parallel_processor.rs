@@ -150,7 +150,10 @@ impl ParallelProcessor {
         info!(
             total_processed = total_processed,
             total_archives = total_archives,
-            success_rate = format!("{:.1}%", (total_processed as f64 / total_archives as f64) * 100.0),
+            success_rate = format!(
+                "{:.1}%",
+                (total_processed as f64 / total_archives as f64) * 100.0
+            ),
             "Parallel archive processing completed"
         );
 
@@ -189,8 +192,8 @@ impl ParallelProcessor {
                     &app,
                     &task_id,
                     &workspace_id,
-                    None,  // parent_archive_id
-                    0,     // depth_level
+                    None, // parent_archive_id
+                    0,    // depth_level
                 )
                 .await
             });
@@ -306,10 +309,7 @@ impl ParallelProcessor {
         );
 
         // Use rayon for parallel processing
-        let results: Vec<_> = file_paths
-            .par_iter()
-            .map(|path| processor(path))
-            .collect();
+        let results: Vec<_> = file_paths.par_iter().map(|path| processor(path)).collect();
 
         let success_count = results.iter().filter(|r| r.is_ok()).count();
         info!(

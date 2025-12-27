@@ -6,6 +6,7 @@ pub mod cache_manager;
 pub mod cancellation_manager;
 pub mod cleanup;
 pub mod encoding;
+pub mod legacy_detection;
 pub mod log_file_detector;
 pub mod path;
 pub mod path_security;
@@ -20,6 +21,10 @@ mod resource_management_property_tests;
 // 重新导出常用工具函数
 pub use cache_manager::CacheManager;
 pub use cancellation_manager::{run_with_cancellation, CancellableOperation, CancellationManager};
+pub use legacy_detection::{
+    check_workspace_legacy_format, generate_legacy_message, scan_legacy_workspaces,
+    LegacyFormatType, LegacyWorkspaceInfo,
+};
 pub use path::{canonicalize_path, normalize_path_separator};
 pub use resource_manager::{create_guarded_temp_dir, ResourceManager, TempDirGuard};
 pub use resource_tracker::{ResourceInfo, ResourceReport, ResourceTracker, ResourceType};

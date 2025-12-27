@@ -92,6 +92,12 @@ pub struct ExtractionSummary {
     pub extracted_files: Vec<PathBuf>,
 }
 
+impl Default for ExtractionSummary {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ExtractionSummary {
     /**
      * 创建新的提取摘要

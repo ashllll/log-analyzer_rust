@@ -10,11 +10,12 @@ use std::sync::Arc;
 use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
 
-use super::{FileMetadata, LogEntry};
+use super::LogEntry;
 use crate::monitoring::alerting::AlertingSystem;
 use crate::monitoring::metrics_collector::MetricsCollector;
 use crate::monitoring::recommendation_engine::RecommendationEngine;
 use crate::search_engine::SearchEngineManager;
+use crate::search_engine::advanced_features::{AutocompleteEngine, FilterEngine, RegexSearchEngine, TimePartitionedIndex};
 use crate::state_sync::StateSync;
 use crate::task_manager::TaskManager;
 use crate::utils::cache_manager::CacheManager;
@@ -45,20 +46,6 @@ pub type SearchCacheKey = (
 /// 使用 moka 企业级缓存存储搜索结果,支持 TTL/TTI 过期策略。
 pub type SearchCache = Arc<moka::sync::Cache<SearchCacheKey, Vec<LogEntry>>>;
 
-/// 路径映射类型
-///
-/// real_path -> virtual_path
-pub type PathMapType = HashMap<String, String>;
-
-/// 元数据映射类型
-///
-/// file_path -> FileMetadata
-pub type MetadataMapType = HashMap<String, FileMetadata>;
-
-/// 索引操作结果类型
-#[allow(dead_code)] // Reserved for future use
-pub type IndexResult = Result<(PathMapType, MetadataMapType), String>;
-
 // --- 状态结构体 ---
 
 /// 文件监听器状态
@@ -81,12 +68,12 @@ pub struct WatcherState {
 pub struct AppState {
     /// 临时目录（用于解压缩文件）
     pub temp_dir: Mutex<Option<TempDir>>,
-    /// 路径映射（real_path -> virtual_path）
-    pub path_map: Arc<Mutex<PathMapType>>,
-    /// 文件元数据映射
-    pub file_metadata: Arc<Mutex<MetadataMapType>>,
-    /// 工作区索引文件路径映射
-    pub workspace_indices: Mutex<HashMap<String, PathBuf>>,
+    /// CAS 存储实例映射（workspace_id -> CAS）
+    pub cas_instances: Arc<Mutex<HashMap<String, Arc<crate::storage::ContentAddressableStorage>>>>,
+    /// 元数据存储实例映射（workspace_id -> MetadataStore）
+    pub metadata_stores: Arc<Mutex<HashMap<String, Arc<crate::storage::MetadataStore>>>>,
+    /// 工作区目录路径映射（workspace_id -> workspace_dir）
+    pub workspace_dirs: Arc<Mutex<HashMap<String, PathBuf>>>,
     /// 搜索缓存
     pub search_cache: SearchCache,
     /// 最近搜索耗时（毫秒）
@@ -123,6 +110,18 @@ pub struct AppState {
     /// 任务生命周期管理器（自动清理完成的任务）
     /// 延迟初始化，在 setup hook 中创建
     pub task_manager: Arc<parking_lot::Mutex<Option<TaskManager>>>,
+    /// 高级搜索特性 - 位图索引过滤器（RoaringBitmap）
+    /// 延迟初始化，按工作区创建实例
+    pub filter_engine: Arc<Mutex<HashMap<String, Arc<FilterEngine>>>>,
+    /// 高级搜索特性 - 正则表达式搜索引擎（LRU缓存）
+    /// 全局单例，缓存所有正则表达式编译结果
+    pub regex_engine: Arc<RegexSearchEngine>,
+    /// 高级搜索特性 - 时间分区索引（时序优化）
+    /// 延迟初始化，按工作区创建实例
+    pub time_partitioned_index: Arc<Mutex<HashMap<String, Arc<TimePartitionedIndex>>>>,
+    /// 高级搜索特性 - 自动补全引擎（Trie树）
+    /// 全局单例，提供搜索建议和自动补全
+    pub autocomplete_engine: Arc<AutocompleteEngine>,
 }
 
 impl Drop for AppState {
@@ -151,6 +150,17 @@ impl Drop for AppState {
 
         // 执行最后的清理队列处理
         crate::utils::cleanup::process_cleanup_queue(&self.cleanup_queue);
+
+        // 清理所有 CAS 和 MetadataStore 实例
+        {
+            let cas_instances = self.cas_instances.lock();
+            let metadata_stores = self.metadata_stores.lock();
+            eprintln!(
+                "[INFO] Cleaning up {} CAS instances and {} metadata stores",
+                cas_instances.len(),
+                metadata_stores.len()
+            );
+        }
 
         // 打印性能统计摘要
         {

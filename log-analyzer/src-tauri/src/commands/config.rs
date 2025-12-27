@@ -35,12 +35,14 @@ pub fn load_config(app: AppHandle) -> Result<AppConfig, String> {
                 Ok(AppConfig {
                     keyword_groups: serde_json::json!([]),
                     workspaces: serde_json::json!([]),
+                    advanced_features: Default::default(),
                 })
             }
         }
     } else {
         Ok(AppConfig {
             keyword_groups: serde_json::json!([]),
+            advanced_features: Default::default(),
             workspaces: serde_json::json!([]),
         })
     }

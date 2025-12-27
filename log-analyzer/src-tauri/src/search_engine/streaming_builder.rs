@@ -1,4 +1,5 @@
 //! Streaming Index Builder
+#![allow(dead_code)]
 //!
 //! Handles indexing of large datasets that exceed available RAM by:
 //! - Processing files in streaming fashion

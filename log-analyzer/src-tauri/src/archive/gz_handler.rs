@@ -1,16 +1,16 @@
 use crate::archive::archive_handler::{ArchiveHandler, ExtractionSummary};
 use crate::error::{AppError, Result};
+use async_compression::tokio::bufread::GzipDecoder;
 use async_trait::async_trait;
 use std::path::Path;
 use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
-use async_compression::tokio::bufread::GzipDecoder;
 
 /**
  * GZ文件处理器
  *
  * 处理单个gzip压缩文件，解压为单个文件
- * 
+ *
  * 支持两种模式:
  * - 内存模式: 适用于小文件 (< 10MB)
  * - 流式模式: 适用于大文件，避免内存溢出
@@ -162,10 +162,7 @@ impl ArchiveHandler for GzHandler {
         const STREAMING_THRESHOLD: u64 = 10 * 1024 * 1024; // 10MB threshold
 
         // Check file size to decide between streaming and in-memory
-        let file_size = fs::metadata(source)
-            .await
-            .map(|m| m.len())
-            .unwrap_or(0);
+        let file_size = fs::metadata(source).await.map(|m| m.len()).unwrap_or(0);
 
         // Use streaming for large files to avoid memory issues
         if file_size > STREAMING_THRESHOLD {
@@ -343,18 +340,18 @@ mod tests {
 
         // 压缩数据
         let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-        encoder.write_all(original_data).unwrap();
-        let compressed = encoder.finish().unwrap();
+        encoder.write_all(original_data).expect("Failed to write to gzip encoder");
+        let compressed = encoder.finish().expect("Failed to finalize gzip compression");
 
         // 解压数据
-        let decompressed = decompress_gzip(&compressed).unwrap();
+        let decompressed = decompress_gzip(&compressed).expect("Failed to decompress gzip data");
 
         assert_eq!(decompressed, original_data);
     }
 
     #[tokio::test]
     async fn test_extract_gz_file() {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let source_file = temp_dir.path().join("test.txt.gz");
         let output_dir = temp_dir.path().join("output");
 
@@ -363,26 +360,26 @@ mod tests {
 
         // 压缩并写入文件
         let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-        encoder.write_all(original_data).unwrap();
-        let compressed = encoder.finish().unwrap();
+        encoder.write_all(original_data).expect("Failed to write to gzip encoder");
+        let compressed = encoder.finish().expect("Failed to finalize gzip compression");
 
-        fs::write(&source_file, compressed).await.unwrap();
+        fs::write(&source_file, compressed).await.expect("Failed to write compressed data");
 
         // 提取文件
         let handler = GzHandler;
-        let summary = handler.extract(&source_file, &output_dir).await.unwrap();
+        let summary = handler.extract(&source_file, &output_dir).await.expect("Failed to extract gz file");
 
         assert_eq!(summary.files_extracted, 1);
         assert!(output_dir.join("test.txt").exists());
 
         // 验证内容
-        let extracted_content = fs::read(output_dir.join("test.txt")).await.unwrap();
+        let extracted_content = fs::read(output_dir.join("test.txt")).await.expect("Failed to read extracted file");
         assert_eq!(extracted_content, original_data);
     }
 
     #[tokio::test]
     async fn test_stream_extract_gz_small_file() {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let source_file = temp_dir.path().join("small.txt.gz");
         let output_dir = temp_dir.path().join("output");
 
@@ -391,10 +388,10 @@ mod tests {
 
         // Compress and write file
         let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-        encoder.write_all(original_data).unwrap();
-        let compressed = encoder.finish().unwrap();
+        encoder.write_all(original_data).expect("Failed to write to gzip encoder");
+        let compressed = encoder.finish().expect("Failed to finalize gzip compression");
 
-        fs::write(&source_file, compressed).await.unwrap();
+        fs::write(&source_file, compressed).await.expect("Failed to write compressed data");
 
         // Extract using streaming
         let summary = GzHandler::stream_extract_gz(
@@ -403,19 +400,19 @@ mod tests {
             100 * 1024 * 1024, // 100MB limit
         )
         .await
-        .unwrap();
+        .expect("Failed to stream extract gz file");
 
         assert_eq!(summary.files_extracted, 1);
         assert!(output_dir.join("small.txt").exists());
 
         // Verify content
-        let extracted_content = fs::read(output_dir.join("small.txt")).await.unwrap();
+        let extracted_content = fs::read(output_dir.join("small.txt")).await.expect("Failed to read extracted file");
         assert_eq!(extracted_content, original_data);
     }
 
     #[tokio::test]
     async fn test_stream_extract_gz_large_file() {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let source_file = temp_dir.path().join("large.txt.gz");
         let output_dir = temp_dir.path().join("output");
 
@@ -424,10 +421,10 @@ mod tests {
 
         // Compress and write file
         let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-        encoder.write_all(&original_data).unwrap();
-        let compressed = encoder.finish().unwrap();
+        encoder.write_all(&original_data).expect("Failed to write to gzip encoder");
+        let compressed = encoder.finish().expect("Failed to finalize gzip compression");
 
-        fs::write(&source_file, compressed).await.unwrap();
+        fs::write(&source_file, compressed).await.expect("Failed to write compressed data");
 
         // Extract using streaming
         let summary = GzHandler::stream_extract_gz(
@@ -436,19 +433,19 @@ mod tests {
             100 * 1024 * 1024, // 100MB limit
         )
         .await
-        .unwrap();
+        .expect("Failed to stream extract gz file");
 
         assert_eq!(summary.files_extracted, 1);
         assert!(output_dir.join("large.txt").exists());
 
         // Verify content
-        let extracted_content = fs::read(output_dir.join("large.txt")).await.unwrap();
+        let extracted_content = fs::read(output_dir.join("large.txt")).await.expect("Failed to read extracted file");
         assert_eq!(extracted_content, original_data);
     }
 
     #[tokio::test]
     async fn test_stream_extract_gz_size_limit() {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let source_file = temp_dir.path().join("toolarge.txt.gz");
         let output_dir = temp_dir.path().join("output");
 
@@ -457,10 +454,10 @@ mod tests {
 
         // Compress and write file
         let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-        encoder.write_all(&original_data).unwrap();
-        let compressed = encoder.finish().unwrap();
+        encoder.write_all(&original_data).expect("Failed to write to gzip encoder");
+        let compressed = encoder.finish().expect("Failed to finalize gzip compression");
 
-        fs::write(&source_file, compressed).await.unwrap();
+        fs::write(&source_file, compressed).await.expect("Failed to write compressed data");
 
         // Try to extract with small limit (should fail)
         let result = GzHandler::stream_extract_gz(
@@ -481,7 +478,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_extract_with_limits_uses_streaming_for_large_files() {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let source_file = temp_dir.path().join("large.txt.gz");
         let output_dir = temp_dir.path().join("output");
 
@@ -490,10 +487,10 @@ mod tests {
 
         // Compress and write file
         let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-        encoder.write_all(&original_data).unwrap();
-        let compressed = encoder.finish().unwrap();
+        encoder.write_all(&original_data).expect("Failed to write to gzip encoder");
+        let compressed = encoder.finish().expect("Failed to finalize gzip compression");
 
-        fs::write(&source_file, compressed).await.unwrap();
+        fs::write(&source_file, compressed).await.expect("Failed to write compressed data");
 
         // Extract using extract_with_limits (should automatically use streaming)
         let handler = GzHandler;
@@ -501,18 +498,18 @@ mod tests {
             .extract_with_limits(
                 &source_file,
                 &output_dir,
-                100 * 1024 * 1024, // 100MB max file size
+                100 * 1024 * 1024,  // 100MB max file size
                 1024 * 1024 * 1024, // 1GB max total size
                 1000,               // max file count
             )
             .await
-            .unwrap();
+            .expect("Failed to extract gz file with limits");
 
         assert_eq!(summary.files_extracted, 1);
         assert!(output_dir.join("large.txt").exists());
 
         // Verify content
-        let extracted_content = fs::read(output_dir.join("large.txt")).await.unwrap();
+        let extracted_content = fs::read(output_dir.join("large.txt")).await.expect("Failed to read extracted file");
         assert_eq!(extracted_content, original_data);
     }
 }

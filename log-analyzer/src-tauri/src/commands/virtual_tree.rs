@@ -266,7 +266,8 @@ fn build_archive_node<'a>(
     all_archives: &'a [crate::storage::ArchiveMetadata],
     all_files: &'a [crate::storage::FileMetadata],
     metadata_store: &'a MetadataStore,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<VirtualTreeNode, String>> + Send + 'a>> {
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<VirtualTreeNode, String>> + Send + 'a>>
+{
     Box::pin(async move {
         let mut children = Vec::new();
 
@@ -284,7 +285,8 @@ fn build_archive_node<'a>(
 
         // Recursively build child archive nodes
         for child_archive in child_archives {
-            let child_node = build_archive_node(child_archive, all_archives, all_files, metadata_store).await?;
+            let child_node =
+                build_archive_node(child_archive, all_archives, all_files, metadata_store).await?;
             children.push(child_node);
         }
 

@@ -1,4 +1,5 @@
 //! Tantivy Schema Definition for Log Entries
+#![allow(dead_code)]
 //!
 //! Defines the search index schema optimized for log analysis with:
 //! - Full-text searchable content

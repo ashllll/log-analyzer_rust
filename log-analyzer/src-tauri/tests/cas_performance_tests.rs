@@ -29,9 +29,13 @@ async fn create_large_test_file(dir: &Path, name: &str, size_mb: usize) -> PathB
 }
 
 /// Helper to create nested directory structure
-async fn create_nested_structure(base_dir: &Path, depth: usize, files_per_level: usize) -> Vec<PathBuf> {
+async fn create_nested_structure(
+    base_dir: &Path,
+    depth: usize,
+    files_per_level: usize,
+) -> Vec<PathBuf> {
     let mut all_files = Vec::new();
-    
+
     async fn create_level(
         dir: &Path,
         current_depth: usize,
@@ -55,7 +59,14 @@ async fn create_nested_structure(base_dir: &Path, depth: usize, files_per_level:
         if current_depth < max_depth {
             let subdir = dir.join(format!("level_{}", current_depth + 1));
             fs::create_dir_all(&subdir).await.unwrap();
-            Box::pin(create_level(&subdir, current_depth + 1, max_depth, files_per_level, all_files)).await;
+            Box::pin(create_level(
+                &subdir,
+                current_depth + 1,
+                max_depth,
+                files_per_level,
+                all_files,
+            ))
+            .await;
         }
     }
 
@@ -72,7 +83,7 @@ async fn test_cas_vs_hashmap_performance() {
     let temp_dir = TempDir::new().unwrap();
     let cas_dir = temp_dir.path().join("cas_workspace");
     let hashmap_dir = temp_dir.path().join("hashmap_workspace");
-    
+
     fs::create_dir_all(&cas_dir).await.unwrap();
     fs::create_dir_all(&hashmap_dir).await.unwrap();
 
@@ -86,7 +97,7 @@ async fn test_cas_vs_hashmap_performance() {
 
     // --- CAS Approach ---
     let cas = ContentAddressableStorage::new(cas_dir.clone());
-    
+
     let cas_start = Instant::now();
     let mut cas_hashes = Vec::new();
     for (name, content) in &test_files {
@@ -105,7 +116,7 @@ async fn test_cas_vs_hashmap_performance() {
     // --- HashMap Approach (simulated old system) ---
     use std::collections::HashMap;
     let mut hashmap = HashMap::new();
-    
+
     let hashmap_start = Instant::now();
     for (name, content) in &test_files {
         let file_path = hashmap_dir.join(name);
@@ -127,8 +138,14 @@ async fn test_cas_vs_hashmap_performance() {
     println!("HashMap Store: {:?}", hashmap_store_duration);
     println!("CAS Retrieve: {:?}", cas_retrieve_duration);
     println!("HashMap Retrieve: {:?}", hashmap_retrieve_duration);
-    println!("CAS Total: {:?}", cas_store_duration + cas_retrieve_duration);
-    println!("HashMap Total: {:?}", hashmap_store_duration + hashmap_retrieve_duration);
+    println!(
+        "CAS Total: {:?}",
+        cas_store_duration + cas_retrieve_duration
+    );
+    println!(
+        "HashMap Total: {:?}",
+        hashmap_store_duration + hashmap_retrieve_duration
+    );
 
     // CAS should be competitive or better
     // Note: CAS has overhead for hashing but benefits from deduplication
@@ -160,7 +177,10 @@ async fn test_cas_deduplication_performance() {
     let duration = start.elapsed();
 
     // All hashes should be identical
-    assert!(hashes.iter().all(|h| h == &hashes[0]), "All hashes should be identical");
+    assert!(
+        hashes.iter().all(|h| h == &hashes[0]),
+        "All hashes should be identical"
+    );
 
     // Storage size should be minimal (only one copy)
     let storage_size = cas.get_storage_size().await.unwrap();
@@ -172,8 +192,15 @@ async fn test_cas_deduplication_performance() {
     println!("\n=== CAS Deduplication Performance ===");
     println!("Duplicate stores: {}", duplicate_count);
     println!("Duration: {:?}", duration);
-    println!("Storage size: {} bytes (content size: {} bytes)", storage_size, content.len());
-    println!("Deduplication ratio: {:.2}x", (content.len() * duplicate_count) as f64 / storage_size as f64);
+    println!(
+        "Storage size: {} bytes (content size: {} bytes)",
+        storage_size,
+        content.len()
+    );
+    println!(
+        "Deduplication ratio: {:.2}x",
+        (content.len() * duplicate_count) as f64 / storage_size as f64
+    );
 
     // Should complete quickly since most stores are deduplicated
     assert!(
@@ -205,7 +232,10 @@ async fn test_large_file_performance() {
     let store_duration = start.elapsed();
 
     println!("Store duration: {:?}", store_duration);
-    println!("Store throughput: {:.2} MB/s", 100.0 / store_duration.as_secs_f64());
+    println!(
+        "Store throughput: {:.2} MB/s",
+        100.0 / store_duration.as_secs_f64()
+    );
 
     // Test retrieval
     let retrieve_start = Instant::now();
@@ -213,9 +243,16 @@ async fn test_large_file_performance() {
     let retrieve_duration = retrieve_start.elapsed();
 
     println!("Retrieve duration: {:?}", retrieve_duration);
-    println!("Retrieve throughput: {:.2} MB/s", 100.0 / retrieve_duration.as_secs_f64());
+    println!(
+        "Retrieve throughput: {:.2} MB/s",
+        100.0 / retrieve_duration.as_secs_f64()
+    );
 
-    assert_eq!(content.len(), 100 * 1024 * 1024, "Content size should match");
+    assert_eq!(
+        content.len(),
+        100 * 1024 * 1024,
+        "Content size should match"
+    );
 
     // Should complete in reasonable time
     assert!(
@@ -244,7 +281,7 @@ async fn test_deeply_nested_structure_performance() {
     // Create deeply nested structure (15 levels, 5 files per level)
     let nested_dir = temp_dir.path().join("nested");
     fs::create_dir_all(&nested_dir).await.unwrap();
-    
+
     let files = create_nested_structure(&nested_dir, 15, 5).await;
 
     println!("\n=== Deeply Nested Structure Performance ===");
@@ -256,7 +293,7 @@ async fn test_deeply_nested_structure_performance() {
     let start = Instant::now();
     for (i, file_path) in files.iter().enumerate() {
         let hash = cas.store_file_streaming(file_path).await.unwrap();
-        
+
         let metadata = log_analyzer::storage::FileMetadata {
             id: 0,
             sha256_hash: hash,
@@ -268,17 +305,24 @@ async fn test_deeply_nested_structure_performance() {
             parent_archive_id: None,
             depth_level: file_path.components().count() as i32,
         };
-        
+
         metadata_store.insert_file(&metadata).await.unwrap();
     }
     let duration = start.elapsed();
 
     println!("Processing duration: {:?}", duration);
-    println!("Files per second: {:.2}", files.len() as f64 / duration.as_secs_f64());
+    println!(
+        "Files per second: {:.2}",
+        files.len() as f64 / duration.as_secs_f64()
+    );
 
     // Verify all files are accessible
     let all_files = metadata_store.get_all_files().await.unwrap();
-    assert_eq!(all_files.len(), files.len(), "All files should be in metadata store");
+    assert_eq!(
+        all_files.len(),
+        files.len(),
+        "All files should be in metadata store"
+    );
 
     // Verify max depth
     let max_depth = metadata_store.get_max_depth().await.unwrap();
@@ -321,10 +365,11 @@ async fn test_memory_usage_with_many_files() {
     let start = Instant::now();
     for i in 0..file_count {
         let content = format!("File content {}", i);
-        let file_path = create_test_file(&files_dir, &format!("file_{}.log", i), content.as_bytes()).await;
-        
+        let file_path =
+            create_test_file(&files_dir, &format!("file_{}.log", i), content.as_bytes()).await;
+
         let hash = cas.store_file_streaming(&file_path).await.unwrap();
-        
+
         let metadata = log_analyzer::storage::FileMetadata {
             id: 0,
             sha256_hash: hash,
@@ -336,7 +381,7 @@ async fn test_memory_usage_with_many_files() {
             parent_archive_id: None,
             depth_level: 0,
         };
-        
+
         metadata_store.insert_file(&metadata).await.unwrap();
     }
     let duration = start.elapsed();
@@ -345,13 +390,19 @@ async fn test_memory_usage_with_many_files() {
     let memory_increase = final_memory.saturating_sub(initial_memory);
 
     println!("Processing duration: {:?}", duration);
-    println!("Files per second: {:.2}", file_count as f64 / duration.as_secs_f64());
+    println!(
+        "Files per second: {:.2}",
+        file_count as f64 / duration.as_secs_f64()
+    );
     println!("Final memory: {} MB", final_memory / 1024 / 1024);
     println!("Memory increase: {} MB", memory_increase / 1024 / 1024);
 
     // Verify all files are accessible
     let file_count_db = metadata_store.count_files().await.unwrap();
-    assert_eq!(file_count_db, file_count as i64, "All files should be in database");
+    assert_eq!(
+        file_count_db, file_count as i64,
+        "All files should be in database"
+    );
 
     // Memory increase should be reasonable (< 500MB for 10k files)
     assert!(
@@ -373,7 +424,9 @@ async fn test_memory_usage_with_many_files() {
 #[tokio::test]
 async fn test_concurrent_processing_performance() {
     let temp_dir = TempDir::new().unwrap();
-    let cas = std::sync::Arc::new(ContentAddressableStorage::new(temp_dir.path().to_path_buf()));
+    let cas = std::sync::Arc::new(ContentAddressableStorage::new(
+        temp_dir.path().to_path_buf(),
+    ));
 
     let file_count = 1000;
     let concurrent_tasks = 10;
@@ -383,7 +436,7 @@ async fn test_concurrent_processing_performance() {
     println!("Concurrent tasks: {}", concurrent_tasks);
 
     let start = Instant::now();
-    
+
     let mut handles = Vec::new();
     for task_id in 0..concurrent_tasks {
         let cas_clone = cas.clone();
@@ -404,7 +457,10 @@ async fn test_concurrent_processing_performance() {
     let duration = start.elapsed();
 
     println!("Duration: {:?}", duration);
-    println!("Files per second: {:.2}", file_count as f64 / duration.as_secs_f64());
+    println!(
+        "Files per second: {:.2}",
+        file_count as f64 / duration.as_secs_f64()
+    );
 
     // Should complete in reasonable time
     assert!(
@@ -454,12 +510,21 @@ async fn test_batch_insertion_performance() {
 
     // Test batch insertion
     let batch_start = Instant::now();
-    metadata_store.insert_files_batch(test_files[file_count / 2..].to_vec()).await.unwrap();
+    metadata_store
+        .insert_files_batch(test_files[file_count / 2..].to_vec())
+        .await
+        .unwrap();
     let batch_duration = batch_start.elapsed();
 
-    println!("Individual insertion (500 files): {:?}", individual_duration);
+    println!(
+        "Individual insertion (500 files): {:?}",
+        individual_duration
+    );
     println!("Batch insertion (500 files): {:?}", batch_duration);
-    println!("Speedup: {:.2}x", individual_duration.as_secs_f64() / batch_duration.as_secs_f64());
+    println!(
+        "Speedup: {:.2}x",
+        individual_duration.as_secs_f64() / batch_duration.as_secs_f64()
+    );
 
     // Batch should be significantly faster
     assert!(
@@ -508,19 +573,19 @@ async fn test_search_performance() {
     println!("Total files: {}", file_count);
 
     // Test search queries
-    let queries = vec![
-        "app_50",
-        "file_1234",
-        "logs",
-        ".log",
-    ];
+    let queries = vec!["app_50", "file_1234", "logs", ".log"];
 
     for query in queries {
         let start = Instant::now();
         let results = metadata_store.search_files(query).await.unwrap();
         let duration = start.elapsed();
 
-        println!("Query '{}': {} results in {:?}", query, results.len(), duration);
+        println!(
+            "Query '{}': {} results in {:?}",
+            query,
+            results.len(),
+            duration
+        );
 
         // Search should be fast (< 100ms)
         assert!(
@@ -551,7 +616,7 @@ fn get_approximate_memory_usage() -> usize {
     #[cfg(target_os = "windows")]
     {
         // On Windows, use sysinfo crate
-        use sysinfo::{System, Pid};
+        use sysinfo::{Pid, System};
         let mut system = System::new_all();
         system.refresh_all();
         let pid = Pid::from_u32(std::process::id());
@@ -595,7 +660,7 @@ async fn test_storage_efficiency() {
     for content in &unique_contents {
         let hash = cas.store_content(content).await.unwrap();
         total_logical_size += content.len() as u64;
-        
+
         let metadata = log_analyzer::storage::FileMetadata {
             id: 0,
             sha256_hash: hash,
@@ -615,7 +680,7 @@ async fn test_storage_efficiency() {
     for i in 0..100 {
         let hash = cas.store_content(&duplicate_content).await.unwrap();
         total_logical_size += duplicate_content.len() as u64;
-        
+
         let metadata = log_analyzer::storage::FileMetadata {
             id: 0,
             sha256_hash: hash,
@@ -636,7 +701,10 @@ async fn test_storage_efficiency() {
     println!("Total logical size: {} bytes", total_logical_size);
     println!("Physical storage size: {} bytes", physical_size);
     println!("Deduplication ratio: {:.2}x", deduplication_ratio);
-    println!("Space saved: {:.2}%", (1.0 - 1.0 / deduplication_ratio) * 100.0);
+    println!(
+        "Space saved: {:.2}%",
+        (1.0 - 1.0 / deduplication_ratio) * 100.0
+    );
 
     // Should achieve significant deduplication
     assert!(

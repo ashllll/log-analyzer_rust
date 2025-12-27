@@ -1,4 +1,5 @@
 //! Advanced Search Features
+#![allow(dead_code)]
 //!
 //! Implements high-performance search features:
 //! - Bitmap indexing using RoaringBitmap for efficient filtering
@@ -60,7 +61,7 @@ impl FilterEngine {
             let mut level_bitmaps = self.level_bitmaps.write();
             level_bitmaps
                 .entry(log_entry.level.clone())
-                .or_insert_with(RoaringBitmap::new)
+                .or_default()
                 .insert(doc_id);
         }
 
@@ -69,7 +70,7 @@ impl FilterEngine {
             let mut file_bitmaps = self.file_bitmaps.write();
             file_bitmaps
                 .entry(log_entry.file.clone())
-                .or_insert_with(RoaringBitmap::new)
+                .or_default()
                 .insert(doc_id);
         }
 
@@ -84,10 +85,7 @@ impl FilterEngine {
 
         {
             let mut time_bitmaps = self.time_range_bitmaps.write();
-            time_bitmaps
-                .entry(time_range)
-                .or_insert_with(RoaringBitmap::new)
-                .insert(doc_id);
+            time_bitmaps.entry(time_range).or_default().insert(doc_id);
         }
 
         // Update document count
@@ -434,7 +432,7 @@ impl AutocompleteEngine {
         let mut current = &mut *trie;
 
         for ch in word.chars() {
-            current = current.children.entry(ch).or_insert_with(TrieNode::default);
+            current = current.children.entry(ch).or_default();
         }
 
         current.is_word_end = true;
@@ -514,7 +512,7 @@ impl AutocompleteEngine {
     /// Get autocomplete statistics
     pub fn get_stats(&self) -> AutocompleteStats {
         let trie = self.trie.read();
-        let (node_count, word_count) = self.count_nodes(&*trie);
+        let (node_count, word_count) = self.count_nodes(&trie);
 
         AutocompleteStats {
             node_count,

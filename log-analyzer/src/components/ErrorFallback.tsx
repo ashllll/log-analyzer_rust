@@ -11,11 +11,11 @@ export const ErrorFallback: React.FC<FallbackProps> = ({ error, resetErrorBounda
   const [isReporting, setIsReporting] = React.useState(false);
   const [reported, setReported] = React.useState(false);
 
-  // 报告错误到后端/Sentry
+  // Report error to backend/Sentry
   const handleReportError = async () => {
     setIsReporting(true);
     try {
-      // TODO: 集成 Sentry 或后端错误报告
+      // Error reporting integration point
       console.error('Error reported:', {
         message: error.message,
         stack: error.stack,

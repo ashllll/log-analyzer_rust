@@ -81,7 +81,7 @@ fn test_config_clone() {
 fn test_config_debug() {
     let config = TaskManagerConfig::default();
     let debug_str = format!("{:?}", config);
-    
+
     assert!(debug_str.contains("TaskManagerConfig"));
     assert!(debug_str.contains("completed_task_ttl"));
 }
@@ -145,5 +145,3 @@ fn test_stress_concurrent_task_creation() {
     // 这个测试需要在实际的 Tauri 应用中运行
     println!("This test requires a Tauri runtime context");
 }
-
-

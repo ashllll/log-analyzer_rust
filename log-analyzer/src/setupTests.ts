@@ -2,6 +2,16 @@
 // This file is executed before running tests
 
 import '@testing-library/jest-dom';
+import React from 'react';
+
+// Make React available globally for tests
+(global as any).React = React;
+
+// Mock react-error-boundary
+jest.mock('react-error-boundary', () => ({
+  ErrorBoundary: ({ children }: { children: React.ReactNode }) => children,
+  useErrorHandler: () => jest.fn(),
+}));
 
 // Mock Tauri API for testing
 const mockTauri = {
@@ -36,6 +46,13 @@ const originalWarn = console.warn;
 beforeAll(() => {
   console.error = jest.fn();
   console.warn = jest.fn();
+  
+  // Mock ResizeObserver
+  global.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
 });
 
 afterAll(() => {

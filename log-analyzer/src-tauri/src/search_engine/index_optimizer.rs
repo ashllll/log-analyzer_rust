@@ -1,4 +1,5 @@
 //! Automatic Index Optimizer
+#![allow(dead_code)]
 //!
 //! Detects frequently searched terms and automatically creates optimized indexes
 //! or suggests specialized index structures for common query patterns.

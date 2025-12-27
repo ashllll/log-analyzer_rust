@@ -1,6 +1,5 @@
 pub mod event_bus;
 pub mod file_watcher;
-pub mod index_store;
 pub mod index_validator;
 pub mod metadata_db;
 pub mod pattern_matcher;
@@ -31,7 +30,6 @@ pub use file_watcher::{
     append_to_workspace_index, get_file_metadata, parse_log_lines, parse_metadata,
     read_file_from_offset,
 };
-pub use index_store::{load_index, save_index};
 pub use index_validator::{IndexValidator, InvalidFileInfo, ValidationReport};
 pub use metadata_db::MetadataDB;
 pub use query_executor::{MatchDetail, QueryExecutor};

@@ -364,7 +364,7 @@ pub async fn extract_archive_async(
     let policy = policy.unwrap_or_default();
 
     // Validate policy
-    policy.validate().map_err(|e| ExtractionError::from(e))?;
+    policy.validate().map_err(ExtractionError::from)?;
 
     // Initialize components
     let metadata_db = Arc::new(
@@ -389,7 +389,7 @@ pub async fn extract_archive_async(
         security_detector.clone(),
         policy.clone(),
     )
-    .map_err(|e| ExtractionError::from(e))?;
+    .map_err(ExtractionError::from)?;
 
     // Create orchestrator for concurrency control
     let orchestrator = ExtractionOrchestrator::new(Arc::new(engine), Some(num_cpus::get() / 2));
@@ -398,7 +398,7 @@ pub async fn extract_archive_async(
     let internal_result: InternalExtractionResult = orchestrator
         .extract_archive(archive_path, target_dir, workspace_id)
         .await
-        .map_err(|e| ExtractionError::from(e))?;
+        .map_err(ExtractionError::from)?;
 
     // Calculate performance metrics
     let duration = start_time.elapsed().unwrap_or(Duration::from_secs(0));

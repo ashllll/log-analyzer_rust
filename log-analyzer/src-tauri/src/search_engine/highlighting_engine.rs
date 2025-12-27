@@ -1,4 +1,5 @@
 //! Search Result Highlighting Engine
+#![allow(dead_code)]
 //!
 //! Provides efficient text highlighting using Tantivy's snippet generation:
 //! - Fast text highlighting using Tantivy's snippet generation

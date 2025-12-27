@@ -1,0 +1,20 @@
+        // 读取配置并初始化高级特性
+        let config_path = app_handle.path().app_data_dir().unwrap().join("config.json");
+        let advanced_features_enabled = if config_path.exists() {
+            use std::fs;
+            if let Ok(config_content) = fs::read_to_string(&config_path) {
+                if let Ok(config) = serde_json::from_str::<serde_json::Value>(&config_content) {
+                    config["advanced_features"]["enable_filter_engine"].as_bool().unwrap_or(true)
+                } else {
+                    true // 默认启用
+                }
+            } else {
+                true
+            }
+        } else {
+            true
+        };
+
+        if advanced_features_enabled {
+            tracing::info!("🚀 高级特性已启用：FilterEngine位图索引加速");
+        }

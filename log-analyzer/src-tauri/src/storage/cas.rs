@@ -328,10 +328,7 @@ impl ContentAddressableStorage {
             ("00", hash)
         };
 
-        self.workspace_dir
-            .join("objects")
-            .join(prefix)
-            .join(suffix)
+        self.workspace_dir.join("objects").join(prefix).join(suffix)
     }
 
     /// Read content by hash
@@ -514,20 +511,20 @@ mod tests {
             fn prop_hash_idempotence(content in prop::collection::vec(any::<u8>(), 0..10000)) {
                 let hash1 = ContentAddressableStorage::compute_hash(&content);
                 let hash2 = ContentAddressableStorage::compute_hash(&content);
-                
+
                 prop_assert_eq!(
-                    &hash1, 
-                    &hash2, 
+                    &hash1,
+                    &hash2,
                     "Hash computation must be idempotent: same content should always produce same hash"
                 );
-                
+
                 // Also verify hash format is correct
                 prop_assert_eq!(
-                    hash1.len(), 
-                    64, 
+                    hash1.len(),
+                    64,
                     "SHA-256 hash must be 64 hexadecimal characters"
                 );
-                
+
                 // Verify hash contains only valid hex characters
                 prop_assert!(
                     hash1.chars().all(|c| c.is_ascii_hexdigit()),
@@ -541,7 +538,10 @@ mod tests {
     fn test_different_content_different_hash() {
         let hash1 = ContentAddressableStorage::compute_hash(b"content1");
         let hash2 = ContentAddressableStorage::compute_hash(b"content2");
-        assert_ne!(hash1, hash2, "Different content should produce different hashes");
+        assert_ne!(
+            hash1, hash2,
+            "Different content should produce different hashes"
+        );
     }
 
     #[tokio::test]
@@ -553,7 +553,10 @@ mod tests {
         let hash = cas.store_content(content).await.unwrap();
 
         let retrieved = cas.read_content(&hash).await.unwrap();
-        assert_eq!(retrieved, content, "Retrieved content should match original");
+        assert_eq!(
+            retrieved, content,
+            "Retrieved content should match original"
+        );
     }
 
     #[tokio::test]
@@ -594,7 +597,9 @@ mod tests {
             "Should use first 2 chars as directory, got: {}",
             path_str
         );
-        assert!(path_str.ends_with("f2e1d4c5b6a7890123456789abcdef0123456789abcdef0123456789abcdef"));
+        assert!(
+            path_str.ends_with("f2e1d4c5b6a7890123456789abcdef0123456789abcdef0123456789abcdef")
+        );
     }
 
     #[tokio::test]
@@ -649,7 +654,10 @@ mod tests {
 
         // Verify content can be read back
         let retrieved = cas.read_content(&hash).await.unwrap();
-        assert_eq!(retrieved, content, "Retrieved content should match original");
+        assert_eq!(
+            retrieved, content,
+            "Retrieved content should match original"
+        );
     }
 
     #[tokio::test]
@@ -671,11 +679,14 @@ mod tests {
     #[test]
     fn test_hash_empty_content() {
         let hash = ContentAddressableStorage::compute_hash(b"");
-        assert_eq!(hash.len(), 64, "Empty content should still produce 64-char hash");
+        assert_eq!(
+            hash.len(),
+            64,
+            "Empty content should still produce 64-char hash"
+        );
         // SHA-256 of empty string is a known value
         assert_eq!(
-            hash,
-            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            hash, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
             "Empty content should produce known SHA-256 hash"
         );
     }
@@ -733,11 +744,11 @@ mod tests {
     #[test]
     fn test_object_path_short_hash() {
         let cas = ContentAddressableStorage::new(PathBuf::from("/workspace"));
-        
+
         // Test with a hash shorter than 2 characters (edge case)
         let short_hash = "a";
         let path = cas.get_object_path(short_hash);
-        
+
         let path_str = path.to_string_lossy();
         assert!(
             path_str.contains("objects") && path_str.contains("00"),
@@ -782,12 +793,13 @@ mod tests {
 
         // Manually corrupt the stored file
         let object_path = cas.get_object_path(&hash);
-        fs::write(&object_path, b"corrupted content")
-            .await
-            .unwrap();
+        fs::write(&object_path, b"corrupted content").await.unwrap();
 
         let is_valid = cas.verify_integrity(&hash).await.unwrap();
-        assert!(!is_valid, "Integrity check should fail for corrupted content");
+        assert!(
+            !is_valid,
+            "Integrity check should fail for corrupted content"
+        );
     }
 
     #[tokio::test]
@@ -796,7 +808,7 @@ mod tests {
         let cas = ContentAddressableStorage::new(temp_dir.path().to_path_buf());
 
         let content = b"duplicate content for space test";
-        
+
         // Store the same content multiple times
         let hash1 = cas.store_content(content).await.unwrap();
         let hash2 = cas.store_content(content).await.unwrap();

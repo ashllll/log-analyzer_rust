@@ -56,7 +56,8 @@ async fn test_workspace_creation_with_cas() {
     assert!(object_path.exists(), "Object file should exist");
 
     // Insert file metadata
-    let file_meta = create_file_metadata(&hash, "test/file.log", "file.log", content.len() as i64, 0);
+    let file_meta =
+        create_file_metadata(&hash, "test/file.log", "file.log", content.len() as i64, 0);
     let file_id = metadata.insert_file(&file_meta).await.unwrap();
     assert!(file_id > 0, "File should be inserted with valid ID");
 }
@@ -73,12 +74,14 @@ async fn test_workspace_deletion_cleanup() {
     // Add some files
     let content1 = b"content 1";
     let hash1 = cas.store_content(content1).await.unwrap();
-    let file_meta1 = create_file_metadata(&hash1, "file1.log", "file1.log", content1.len() as i64, 0);
+    let file_meta1 =
+        create_file_metadata(&hash1, "file1.log", "file1.log", content1.len() as i64, 0);
     metadata.insert_file(&file_meta1).await.unwrap();
 
     let content2 = b"content 2";
     let hash2 = cas.store_content(content2).await.unwrap();
-    let file_meta2 = create_file_metadata(&hash2, "file2.log", "file2.log", content2.len() as i64, 0);
+    let file_meta2 =
+        create_file_metadata(&hash2, "file2.log", "file2.log", content2.len() as i64, 0);
     metadata.insert_file(&file_meta2).await.unwrap();
 
     // Verify files exist
@@ -153,17 +156,30 @@ async fn test_workspace_metrics_collection() {
     // Add files at different depths
     let content1 = b"depth 0";
     let hash1 = cas.store_content(content1).await.unwrap();
-    let file_meta1 = create_file_metadata(&hash1, "file0.log", "file0.log", content1.len() as i64, 0);
+    let file_meta1 =
+        create_file_metadata(&hash1, "file0.log", "file0.log", content1.len() as i64, 0);
     metadata.insert_file(&file_meta1).await.unwrap();
 
     let content2 = b"depth 1";
     let hash2 = cas.store_content(content2).await.unwrap();
-    let file_meta2 = create_file_metadata(&hash2, "archive/file1.log", "file1.log", content2.len() as i64, 1);
+    let file_meta2 = create_file_metadata(
+        &hash2,
+        "archive/file1.log",
+        "file1.log",
+        content2.len() as i64,
+        1,
+    );
     metadata.insert_file(&file_meta2).await.unwrap();
 
     let content3 = b"depth 2";
     let hash3 = cas.store_content(content3).await.unwrap();
-    let file_meta3 = create_file_metadata(&hash3, "archive/nested/file2.log", "file2.log", content3.len() as i64, 2);
+    let file_meta3 = create_file_metadata(
+        &hash3,
+        "archive/nested/file2.log",
+        "file2.log",
+        content3.len() as i64,
+        2,
+    );
     metadata.insert_file(&file_meta3).await.unwrap();
 
     // Collect metrics
@@ -222,19 +238,37 @@ async fn test_workspace_with_nested_archives() {
     // Level 1: first archive
     let content1 = b"archive level 1";
     let hash1 = cas.store_content(content1).await.unwrap();
-    let file_meta1 = create_file_metadata(&hash1, "archive1.zip/file1.log", "file1.log", content1.len() as i64, 1);
+    let file_meta1 = create_file_metadata(
+        &hash1,
+        "archive1.zip/file1.log",
+        "file1.log",
+        content1.len() as i64,
+        1,
+    );
     metadata.insert_file(&file_meta1).await.unwrap();
 
     // Level 2: nested archive
     let content2 = b"archive level 2";
     let hash2 = cas.store_content(content2).await.unwrap();
-    let file_meta2 = create_file_metadata(&hash2, "archive1.zip/archive2.zip/file2.log", "file2.log", content2.len() as i64, 2);
+    let file_meta2 = create_file_metadata(
+        &hash2,
+        "archive1.zip/archive2.zip/file2.log",
+        "file2.log",
+        content2.len() as i64,
+        2,
+    );
     metadata.insert_file(&file_meta2).await.unwrap();
 
     // Level 3: deeply nested
     let content3 = b"archive level 3";
     let hash3 = cas.store_content(content3).await.unwrap();
-    let file_meta3 = create_file_metadata(&hash3, "archive1.zip/archive2.zip/archive3.zip/file3.log", "file3.log", content3.len() as i64, 3);
+    let file_meta3 = create_file_metadata(
+        &hash3,
+        "archive1.zip/archive2.zip/archive3.zip/file3.log",
+        "file3.log",
+        content3.len() as i64,
+        3,
+    );
     metadata.insert_file(&file_meta3).await.unwrap();
 
     // Verify all files are accessible
@@ -477,16 +511,14 @@ async fn test_workspace_metrics_with_deduplication() {
     // Verify metrics
     assert_eq!(metrics.total_files, 3); // 1 duplicate + 2 unique
     assert_eq!(metrics.unique_hashes, 3); // 1 duplicate + 2 unique
-    
+
     // Logical size should be sum of all files
-    let expected_logical_size = content.len() + 
-        "unique content 0".len() + 
-        "unique content 1".len();
+    let expected_logical_size = content.len() + "unique content 0".len() + "unique content 1".len();
     assert_eq!(metrics.total_logical_size, expected_logical_size as u64);
-    
+
     // Actual storage should be same as logical since we only stored each hash once
     assert_eq!(metrics.actual_storage_size, metrics.total_logical_size);
-    
+
     // Deduplication ratio should be 0.0 (no space saved, no deduplication)
     assert_eq!(metrics.deduplication_ratio, 0.0);
 }
@@ -502,15 +534,21 @@ async fn test_workspace_creation_directory_structure() {
 
     // Verify directory structure
     assert!(workspace_dir.exists(), "Workspace directory should exist");
-    assert!(workspace_dir.join("metadata.db").exists(), "Database should exist");
-    
+    assert!(
+        workspace_dir.join("metadata.db").exists(),
+        "Database should exist"
+    );
+
     // Objects directory is created lazily when first content is stored
     let content = b"test content";
     let _hash = cas.store_content(content).await.unwrap();
-    
+
     // Now objects directory should exist
-    assert!(workspace_dir.join("objects").exists(), "Objects directory should exist after storing content");
-    
+    assert!(
+        workspace_dir.join("objects").exists(),
+        "Objects directory should exist after storing content"
+    );
+
     // Verify objects directory has correct structure (Git-style)
     let objects_dir = workspace_dir.join("objects");
     assert!(objects_dir.is_dir(), "Objects should be a directory");
@@ -525,7 +563,7 @@ async fn test_workspace_validation_report_warnings() {
     let cas = ContentAddressableStorage::new(workspace_dir.clone());
 
     // Add files with various issues
-    
+
     // 1. Valid file
     let content = b"valid";
     let hash = cas.store_content(content).await.unwrap();
@@ -543,7 +581,10 @@ async fn test_workspace_validation_report_warnings() {
 
     // Verify warnings are generated
     assert!(!report.warnings.is_empty(), "Should have warnings");
-    assert!(report.warnings.iter().any(|w| w.contains("missing") || w.contains("invalid")));
+    assert!(report
+        .warnings
+        .iter()
+        .any(|w| w.contains("missing") || w.contains("invalid")));
 }
 
 #[tokio::test]
@@ -585,13 +626,18 @@ async fn test_workspace_metrics_depth_distribution() {
     // Verify depth distribution
     assert_eq!(metrics.max_nesting_depth, 3);
     assert_eq!(metrics.depth_distribution.len(), 4);
-    
+
     for (depth, expected_count) in depth_counts {
-        let actual_count = metrics.depth_distribution
+        let actual_count = metrics
+            .depth_distribution
             .iter()
             .find(|d| d.depth == depth)
             .map(|d| d.file_count)
             .unwrap_or(0);
-        assert_eq!(actual_count, expected_count, "Depth {} should have {} files", depth, expected_count);
+        assert_eq!(
+            actual_count, expected_count,
+            "Depth {} should have {} files",
+            depth, expected_count
+        );
     }
 }
