@@ -55,8 +55,9 @@ pub async fn import_folder(
         .unwrap_or(&path)
         .to_string();
 
-    #[allow(clippy::await_holding_lock)]
-    let _task = if let Some(task_manager) = state.task_manager.lock().as_ref() {
+    // Extract task_manager before await
+    let task_manager = state.task_manager.lock().clone();
+    let _task = if let Some(task_manager) = task_manager.as_ref() {
         task_manager
             .create_task_async(
                 task_id.clone(),

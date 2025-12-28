@@ -522,6 +522,7 @@ impl AutocompleteEngine {
     }
 
     /// Count nodes and words in trie
+    #[allow(clippy::only_used_in_recursion)]
     fn count_nodes(&self, node: &TrieNode) -> (usize, usize) {
         let mut node_count = 1;
         let mut word_count = if node.is_word_end { 1 } else { 0 };

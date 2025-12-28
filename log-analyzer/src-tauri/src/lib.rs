@@ -261,7 +261,6 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use crate::utils::validation::{validate_path_param, validate_workspace_id};
-    use std::path::PathBuf;
 
     #[test]
     fn test_path_utils() {

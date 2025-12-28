@@ -593,12 +593,6 @@ mod tests {
         use super::*;
         use proptest::prelude::*;
 
-        /// **Feature: archive-search-fix, Property 1: Hash idempotence**
-        /// **Validates: Requirements 2.2**
-        ///
-        /// For any content, computing hash twice produces same result.
-        /// This is a fundamental property of cryptographic hash functions
-        /// and is essential for content-addressable storage.
         proptest! {
             #![proptest_config(ProptestConfig::with_cases(100))]
 

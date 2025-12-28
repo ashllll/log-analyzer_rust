@@ -279,13 +279,12 @@ impl ResourceManager {
         info!("Starting workspace cleanup for: {}", workspace_id);
 
         let start = SystemTime::now();
-        let mut stats = CleanupStats::default();
 
         // Release file handles
-        stats.handles_released = self.release_workspace_handles(workspace_id).await?;
+        let handles_released = self.release_workspace_handles(workspace_id).await?;
 
         // Clean up path mappings
-        stats.mappings_removed = self
+        let mappings_removed = self
             .metadata_db
             .cleanup_workspace(workspace_id)
             .await
@@ -295,8 +294,8 @@ impl ResourceManager {
 
         // Clean up temporary files (force cleanup regardless of TTL)
         let temp_dir = self.get_workspace_temp_dir(workspace_id);
-        if temp_dir.exists() {
-            stats.temp_files_removed = self.remove_directory_recursive(&temp_dir).await?;
+        let temp_files_removed = if temp_dir.exists() {
+            let removed = self.remove_directory_recursive(&temp_dir).await?;
 
             // Remove the workspace temp directory itself
             if let Err(e) = fs::remove_dir_all(&temp_dir).await {
@@ -305,10 +304,20 @@ impl ResourceManager {
                     temp_dir, e
                 );
             }
-        }
+
+            removed
+        } else {
+            0
+        };
 
         let elapsed = start.elapsed().unwrap_or(Duration::ZERO);
-        stats.cleanup_duration = elapsed;
+
+        let stats = CleanupStats {
+            handles_released,
+            mappings_removed,
+            temp_files_removed,
+            cleanup_duration: elapsed,
+        };
 
         info!(
             "Workspace cleanup completed for {}: {:?} in {:?}",
@@ -319,6 +328,7 @@ impl ResourceManager {
     }
 
     /// Remove a directory and all its contents recursively
+    #[allow(clippy::only_used_in_recursion)]
     fn remove_directory_recursive<'a>(
         &'a self,
         dir: &'a Path,
@@ -553,7 +563,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_cleanup_temp_files_with_ttl() {
-        let (manager, temp_dir) = create_test_resource_manager().await;
+        let (manager, _temp_dir) = create_test_resource_manager().await;
 
         let workspace_id = "test_workspace";
         let workspace_temp = manager.get_workspace_temp_dir(workspace_id);
@@ -589,7 +599,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_workspace_cleanup() {
-        let (manager, temp_dir) = create_test_resource_manager().await;
+        let (manager, _temp_dir) = create_test_resource_manager().await;
 
         let workspace_id = "cleanup_workspace";
 
@@ -656,7 +666,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_cleanup_nested_directories() {
-        let (manager, temp_dir) = create_test_resource_manager().await;
+        let (manager, _temp_dir) = create_test_resource_manager().await;
 
         let workspace_id = "nested_workspace";
         let workspace_temp = manager.get_workspace_temp_dir(workspace_id);

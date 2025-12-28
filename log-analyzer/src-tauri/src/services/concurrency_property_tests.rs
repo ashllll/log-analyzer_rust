@@ -6,7 +6,6 @@
  * - Property 9: Thread-Safe Cache Access
  * - Property 10: Workspace State Protection
  */
-
 #[cfg(test)]
 mod tests {
     use parking_lot::Mutex;

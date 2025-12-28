@@ -157,7 +157,7 @@ impl HighlightingEngine {
 
         // Generate snippets using Tantivy
         let snippets =
-            self.generate_snippets_with_tantivy(&parsed_query, document_content, doc_address)?;
+            self.generate_snippets_with_tantivy(parsed_query.as_ref(), document_content, doc_address)?;
 
         // Apply HTML-safe highlighting
         let highlighted_snippets = self.apply_html_highlighting(&snippets)?;
@@ -239,7 +239,7 @@ impl HighlightingEngine {
     /// Generate snippets using Tantivy's snippet generator
     fn generate_snippets_with_tantivy(
         &self,
-        query: &Box<dyn Query>,
+        query: &dyn Query,
         document_content: &str,
         _doc_address: DocAddress,
     ) -> SearchResult<Vec<Snippet>> {

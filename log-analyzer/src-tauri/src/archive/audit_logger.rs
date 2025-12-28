@@ -169,6 +169,7 @@ impl AuditLogger {
     }
 
     /// Log extraction completion event
+    #[allow(clippy::too_many_arguments)]
     pub fn log_extraction_complete(
         &self,
         workspace_id: &str,
@@ -237,6 +238,7 @@ impl AuditLogger {
     }
 
     /// Log security event
+    #[allow(clippy::too_many_arguments)]
     pub fn log_security_event(
         &self,
         workspace_id: &str,

@@ -107,13 +107,16 @@ impl StreamingIndexBuilder {
         // Reset cancellation token
         self.cancellation_token.store(false, Ordering::Relaxed);
 
+        // Estimate total lines first (without holding lock)
+        let total_lines_estimate = self.estimate_total_lines(&log_files).await?;
+
         // Initialize progress
         {
             let mut progress = self.progress.lock();
             progress.files_processed = 0;
             progress.total_files = log_files.len() as u64;
             progress.lines_processed = 0;
-            progress.total_lines_estimate = self.estimate_total_lines(&log_files).await?;
+            progress.total_lines_estimate = total_lines_estimate;
             progress.elapsed_time = Duration::ZERO;
         }
 
@@ -319,7 +322,7 @@ impl StreamingIndexBuilder {
 
     /// Estimate total lines across all files for progress tracking
     async fn estimate_total_lines(&self, files: &[PathBuf]) -> SearchResult<u64> {
-        let sample_size = (files.len() / 10).max(1).min(10); // Sample 10% or max 10 files
+        let sample_size = (files.len() / 10).clamp(1, 10); // Sample 10% or max 10 files
 
         let mut total_estimate = 0u64;
         let mut sampled_files = 0;

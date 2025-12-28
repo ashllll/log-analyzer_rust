@@ -14,7 +14,10 @@
       "Bash(cargo fmt:*)",
       "Bash(cargo clippy:*)",
       "Bash(npm test:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(clippy_errors.txt)",
+      "Bash(cat:*)",
+      "Bash(cargo build:*)"
     ],
     "deny": [],
     "ask": []

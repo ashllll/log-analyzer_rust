@@ -1201,7 +1201,7 @@ impl CacheManager {
                     AlertSeverity::Info => 2.0,
                 })
                 .sum::<f64>();
-            (health - alert_penalty).max(0.0).min(100.0)
+            (health - alert_penalty).clamp(0.0, 100.0)
         };
 
         let recommendations = {
@@ -1752,7 +1752,7 @@ impl CacheStatistics {
             0.0
         };
 
-        (hit_rate_score - eviction_penalty).max(0.0).min(100.0)
+        (hit_rate_score - eviction_penalty).clamp(0.0, 100.0)
     }
 
     /// 是否需要缓存优化

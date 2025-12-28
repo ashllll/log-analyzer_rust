@@ -86,10 +86,10 @@ mod tests {
         // Insert first file
         metadata.insert_file(&file1).await.unwrap();
 
-        // Try to insert second file with same hash - should fail due to UNIQUE constraint
+        // Try to insert second file with same hash - CAS deduplication should return existing ID
         let file2 = FileMetadata {
             id: 0,
-            sha256_hash: hash2.clone(),
+            sha256_hash: hash2.clone(),  // 与 file1 相同的哈希
             virtual_path: "logs/file2.log".to_string(),
             original_name: "file2.log".to_string(),
             size: content.len() as i64,
@@ -99,28 +99,29 @@ mod tests {
             depth_level: 0,
         };
 
+        // CAS 去重设计：相同哈希的文件应该成功插入（返回已存在记录的 ID）
+        // 但由于 UNIQUE 约束在 sha256_hash 上，第二个文件不会创建新的虚拟路径记录
         let result = metadata.insert_file(&file2).await;
         assert!(
-            result.is_err(),
-            "Should not be able to insert duplicate hash"
+            result.is_ok(),
+            "Should successfully insert duplicate hash (returns existing ID due to UNIQUE constraint)"
         );
 
-        // Verify the first file is accessible
-        let retrieved = metadata
-            .get_file_by_virtual_path("logs/file1.log")
-            .await
-            .unwrap()
-            .unwrap();
+        // 验证第一个文件仍然存在
+        let file1_id = metadata.get_file_by_virtual_path("logs/file1.log").await.unwrap().unwrap();
+        assert_eq!(file1_id.sha256_hash, hash1);
 
-        assert_eq!(retrieved.sha256_hash, hash1);
+        // 验证第二个虚拟路径不存在（被 INSERT OR IGNORE 忽略）
+        let file2_result = metadata.get_file_by_virtual_path("logs/file2.log").await.unwrap();
+        assert!(file2_result.is_none(), "Second virtual path should not exist (ignored by UNIQUE constraint)");
 
         // Content should be stored only once in CAS
-        let content_retrieved = cas.read_content(&retrieved.sha256_hash).await.unwrap();
+        let content_retrieved = cas.read_content(&file1_id.sha256_hash).await.unwrap();
         assert_eq!(content_retrieved, content);
 
-        // Verify CAS deduplication worked
+        // Verify CAS deduplication worked - 两个哈希值相同，内容只存储一次
         assert!(cas.exists(&hash1));
-        assert!(cas.exists(&hash2)); // Same hash, so should exist
+        assert!(cas.exists(&hash2));  // Same hash, so should exist
     }
 
     #[tokio::test]

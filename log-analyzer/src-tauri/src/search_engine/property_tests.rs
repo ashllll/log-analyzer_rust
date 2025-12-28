@@ -9,7 +9,6 @@
 //! - Property 23: Autocomplete Performance
 
 use proptest::prelude::*;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
 
@@ -18,8 +17,7 @@ use super::{
         AutocompleteEngine, Filter, FilterEngine, RegexSearchEngine, TimePartitionedIndex,
     },
     manager::SearchConfig,
-    streaming_builder::StreamingConfig,
-    SearchEngineManager, StreamingIndexBuilder,
+    SearchEngineManager,
 };
 use crate::models::LogEntry;
 

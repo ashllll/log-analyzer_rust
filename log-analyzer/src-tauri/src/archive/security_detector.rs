@@ -112,6 +112,12 @@ pub struct SecurityDetector {
     policy: SecurityPolicy,
 }
 
+impl Default for SecurityDetector {
+    fn default() -> Self {
+        Self::new(SecurityPolicy::default())
+    }
+}
+
 impl SecurityDetector {
     /// Create a new security detector with the given policy
     pub fn new(policy: SecurityPolicy) -> Self {
@@ -122,11 +128,6 @@ impl SecurityDetector {
             policy.exponential_backoff_threshold
         );
         Self { policy }
-    }
-
-    /// Create a security detector with default policy
-    pub fn default() -> Self {
-        Self::new(SecurityPolicy::default())
     }
 
     /// Calculate compression ratio for a file
@@ -571,12 +572,6 @@ mod property_tests {
     use super::*;
     use proptest::prelude::*;
 
-    /// **Feature: enhanced-archive-handling, Property 10: Compression ratio calculation**
-    /// **Validates: Requirements 3.1**
-    ///
-    /// Property: For any compressed and uncompressed sizes, the compression ratio
-    /// should equal uncompressed_size / compressed_size, with proper handling of
-    /// edge cases (zero values, infinity).
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(100))]
 
@@ -660,11 +655,6 @@ mod property_tests {
         }
     }
 
-    /// **Feature: enhanced-archive-handling, Property 13: Exponential backoff scoring**
-    /// **Validates: Requirements 3.4**
-    ///
-    /// Property: For any compression ratio and nesting depth, the risk score
-    /// should equal ratio^depth, with proper handling of edge cases.
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(100))]
 
@@ -746,11 +736,6 @@ mod property_tests {
         }
     }
 
-    /// **Feature: enhanced-archive-handling, Property 11: Suspicious file flagging**
-    /// **Validates: Requirements 3.2**
-    ///
-    /// Property: For any file with compression ratio exceeding the threshold,
-    /// the system should flag it as suspicious.
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(100))]
 

@@ -4,7 +4,7 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::services::{AppServices, AppServicesBuilder, HealthStatus, ServiceConfiguration};
+    use crate::services::{AppServices, HealthStatus, ServiceConfiguration};
     use std::io::Write;
     use tempfile::NamedTempFile;
 

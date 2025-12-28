@@ -182,8 +182,6 @@ impl StateSync {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     // Note: Tauri tests require a running Tauri application context
     // These tests are placeholders and should be run as integration tests
 }

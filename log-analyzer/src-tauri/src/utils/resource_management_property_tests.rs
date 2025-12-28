@@ -9,7 +9,7 @@
 #[cfg(test)]
 mod tests {
     use crate::utils::cancellation_manager::CancellationManager;
-    use crate::utils::resource_manager::{create_guarded_temp_dir, TempDirGuard};
+    use crate::utils::resource_manager::create_guarded_temp_dir;
     use crate::utils::resource_tracker::{ResourceTracker, ResourceType};
     use crossbeam::queue::SegQueue;
     use proptest::prelude::*;

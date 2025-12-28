@@ -261,6 +261,7 @@ async fn build_tree_structure(
 }
 
 /// Build archive node with its children recursively
+#[allow(clippy::only_used_in_recursion)]
 fn build_archive_node<'a>(
     archive: &'a crate::storage::ArchiveMetadata,
     all_archives: &'a [crate::storage::ArchiveMetadata],

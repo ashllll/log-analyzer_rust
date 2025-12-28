@@ -295,6 +295,7 @@ pub type Result<T> = std::result::Result<T, ExtractionError>;
 /// println!("Extracted {} files", result.extracted_files.len());
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
+#[allow(clippy::result_large_err)]
 pub fn extract_archive_sync(
     archive_path: &Path,
     target_dir: &Path,

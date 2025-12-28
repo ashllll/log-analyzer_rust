@@ -7,7 +7,6 @@
  * - Property 6: Archive Error Detail
  * - Property 7: Search Error Communication
  */
-
 #[cfg(test)]
 mod tests {
     use proptest::prelude::*;

@@ -150,7 +150,7 @@ impl ExtractionPolicy {
     }
 
     /// Load policy from TOML string
-    pub fn from_str(content: &str) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn from_toml_str(content: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let policy: ExtractionPolicy = toml::from_str(content)?;
         Ok(policy)
     }
@@ -343,7 +343,7 @@ mod tests {
             log_security_events = true
         "#;
 
-        let policy = ExtractionPolicy::from_str(toml_str).unwrap();
+        let policy = ExtractionPolicy::from_toml_str(toml_str).unwrap();
         assert_eq!(policy.extraction.max_depth, 15);
         assert!(policy.validate().is_ok());
     }

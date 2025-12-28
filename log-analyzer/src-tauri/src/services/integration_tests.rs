@@ -126,7 +126,6 @@ mod tests {
     /// 测试 scopeguard + tokio-util 取消协调
     #[tokio::test]
     async fn test_scopeguard_tokio_cancellation_integration() -> Result<()> {
-        use scopeguard::defer;
         use tokio_util::sync::CancellationToken;
 
         // 初始化 tracing
@@ -342,8 +341,6 @@ mod tests {
     /// 测试资源清理和内存管理
     #[test]
     fn test_resource_cleanup_memory_management() -> Result<()> {
-        use scopeguard::defer;
-
         // 初始化 tracing
         let _guard = tracing_subscriber::fmt().with_test_writer().try_init();
 
@@ -383,7 +380,6 @@ mod tests {
     #[tokio::test]
     async fn test_end_to_end_workflow() -> Result<()> {
         use moka::future::Cache;
-        use scopeguard::defer;
         use tokio_util::sync::CancellationToken;
 
         // 初始化 tracing
