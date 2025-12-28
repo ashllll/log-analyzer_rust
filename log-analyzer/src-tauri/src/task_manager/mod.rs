@@ -61,8 +61,8 @@ pub struct TaskManagerMetrics {
 #[derive(Debug, Clone, Serialize)]
 pub struct TaskInfo {
     // 老王备注：修改字段名以匹配前端EventBus期望
-    pub task_id: String,  // 老王备注：原名为id
-    pub task_type: String,  // 老王备注：删除了#[serde(rename = "type")]
+    pub task_id: String,   // 老王备注：原名为id
+    pub task_type: String, // 老王备注：删除了#[serde(rename = "type")]
     pub target: String,
     pub progress: u8,
     pub message: String,
@@ -176,7 +176,7 @@ impl TaskManagerActor {
                 );
 
                 let task = TaskInfo {
-                    task_id: id.clone(),  // 老王备注：原字段名为id
+                    task_id: id.clone(), // 老王备注：原字段名为id
                     task_type,
                     target,
                     progress: 0,
@@ -254,16 +254,16 @@ impl TaskManagerActor {
                     if let Err(e) = self.app.emit(
                         "task-update",
                         serde_json::json!({
-                            "task_id": id,
-                            "task_type": task.task_type,
-                        "target": task.target,
-                        "progress": task.progress,
-                        "message": task.message,
-                        "status": status,
-                        "version": task.version,
-                        "workspace_id": task.workspace_id,
-                    }),
-                ) {
+                                "task_id": id,
+                                "task_type": task.task_type,
+                            "target": task.target,
+                            "progress": task.progress,
+                            "message": task.message,
+                            "status": status,
+                            "version": task.version,
+                            "workspace_id": task.workspace_id,
+                        }),
+                    ) {
                         error!(
                             task_id = %id,
                             error = %e,
@@ -372,7 +372,7 @@ impl TaskManagerActor {
                 } else {
                     0
                 };
-                
+
                 debug!(
                     task_id = %id,
                     task_type = %task.task_type,
@@ -450,7 +450,7 @@ impl TaskManagerActor {
             .tasks
             .values()
             .filter(|t| t.status == TaskStatus::Running)
-            .map(|t| t.task_id.clone())  // 老王备注：原名为.id
+            .map(|t| t.task_id.clone()) // 老王备注：原名为.id
             .collect();
 
         if !running_tasks.is_empty() {

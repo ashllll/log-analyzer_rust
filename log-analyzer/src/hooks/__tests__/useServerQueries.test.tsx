@@ -304,7 +304,7 @@ describe('Server Queries Integration Tests', () => {
         .mockResolvedValueOnce(mockConfig2);
 
       const wrapper = createWrapper();
-      const { result, rerender } = renderHook(() => useConfigQuery(), { wrapper });
+      const { result } = renderHook(() => useConfigQuery(), { wrapper });
 
       // Wait for first load
       await waitFor(() => {

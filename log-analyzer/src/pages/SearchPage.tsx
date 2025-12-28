@@ -249,7 +249,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
       unlisteners.forEach(unlisten => {
         try {
           unlisten();
-        } catch (error) {
+        } catch {
           // 静默处理清理错误（React最佳实践）
         }
       });

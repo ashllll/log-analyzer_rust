@@ -2,11 +2,18 @@
 //!
 //! 简化的高级搜索特性测试，专注于核心功能验证
 
-use log_analyzer::search_engine::advanced_features::*;
 use log_analyzer::models::LogEntry;
+use log_analyzer::search_engine::advanced_features::*;
 use std::time::{Duration, Instant};
 
-fn create_test_entry(id: usize, timestamp: &str, level: &str, file: &str, line: usize, content: &str) -> LogEntry {
+fn create_test_entry(
+    id: usize,
+    timestamp: &str,
+    level: &str,
+    file: &str,
+    line: usize,
+    content: &str,
+) -> LogEntry {
     LogEntry {
         id,
         timestamp: timestamp.to_string(),
@@ -36,14 +43,25 @@ mod filter_engine_tests {
     fn test_filter_performance() {
         let engine = FilterEngine::new();
         for i in 0..10_000 {
-            let entry = create_test_entry(i, &format!("1640995200{}", i % 100), "ERROR", "/var/log/app.log", 100, "Test");
+            let entry = create_test_entry(
+                i,
+                &format!("1640995200{}", i % 100),
+                "ERROR",
+                "/var/log/app.log",
+                100,
+                "Test",
+            );
             engine.add_document(i as u32, &entry);
         }
         let filters = vec![Filter::Level("ERROR".to_string())];
         let start = Instant::now();
         let result = engine.apply_filters(&filters);
         let elapsed = start.elapsed();
-        assert!(elapsed.as_millis() < 10, "Too slow: {}ms", elapsed.as_millis());
+        assert!(
+            elapsed.as_millis() < 10,
+            "Too slow: {}ms",
+            elapsed.as_millis()
+        );
         println!("FilterEngine: {}ms for 10K docs", elapsed.as_millis());
     }
 }
@@ -56,11 +74,15 @@ mod regex_search_engine_tests {
     fn test_regex_search_cache_hit() {
         let engine = RegexSearchEngine::new(100);
         let pattern = r"\d{3}-\d{3}-\d{4}";
-        let _ = engine.search_with_regex(pattern, "Phone: 123-456-7890").unwrap();
-        let _ = engine.search_with_regex(pattern, "Phone: 123-456-7890").unwrap();
+        let _ = engine
+            .search_with_regex(pattern, "Phone: 123-456-7890")
+            .unwrap();
+        let _ = engine
+            .search_with_regex(pattern, "Phone: 123-456-7890")
+            .unwrap();
         let stats = engine.get_stats();
         // TODO: Fix stats check
-// TODO: Fix print
+        // TODO: Fix print
     }
 
     #[test]
@@ -68,14 +90,25 @@ mod regex_search_engine_tests {
         let engine = RegexSearchEngine::new(1000);
         let pattern = r"\d{3}-\d{3}-\d{4}";
         let start_miss = Instant::now();
-        let _ = engine.search_with_regex(pattern, "Phone: 123-456-7890").unwrap();
+        let _ = engine
+            .search_with_regex(pattern, "Phone: 123-456-7890")
+            .unwrap();
         let time_miss = start_miss.elapsed();
         let start_hit = Instant::now();
-        let _ = engine.search_with_regex(pattern, "Phone: 123-456-7890").unwrap();
+        let _ = engine
+            .search_with_regex(pattern, "Phone: 123-456-7890")
+            .unwrap();
         let time_hit = start_hit.elapsed();
-        assert!(time_hit.as_micros() * 10 < time_miss.as_micros(), "Cache not fast enough");
-        println!("Regex: cache miss {:?}, hit {:?}, {:.1}x faster", time_miss, time_hit,
-                 time_miss.as_nanos() as f64 / time_hit.as_nanos() as f64);
+        assert!(
+            time_hit.as_micros() * 10 < time_miss.as_micros(),
+            "Cache not fast enough"
+        );
+        println!(
+            "Regex: cache miss {:?}, hit {:?}, {:.1}x faster",
+            time_miss,
+            time_hit,
+            time_miss.as_nanos() as f64 / time_hit.as_nanos() as f64
+        );
     }
 }
 
@@ -94,8 +127,15 @@ mod time_partitioned_index_tests {
         let result = index.query_time_range(1640995200, 1640998799);
         let elapsed = start.elapsed();
         assert_eq!(result.len(), 100);
-        assert!(elapsed.as_millis() < 1, "Too slow: {}ms", elapsed.as_millis());
-        println!("TimePartitionedIndex: {}ms for 10K docs", elapsed.as_millis());
+        assert!(
+            elapsed.as_millis() < 1,
+            "Too slow: {}ms",
+            elapsed.as_millis()
+        );
+        println!(
+            "TimePartitionedIndex: {}ms for 10K docs",
+            elapsed.as_millis()
+        );
     }
 }
 
@@ -113,7 +153,11 @@ mod autocomplete_engine_tests {
         let result = engine.get_suggestions("word").unwrap();
         let elapsed = start.elapsed();
         assert_eq!(result.len(), 100);
-        assert!(elapsed.as_millis() < 100, "Too slow: {}ms", elapsed.as_millis());
+        assert!(
+            elapsed.as_millis() < 100,
+            "Too slow: {}ms",
+            elapsed.as_millis()
+        );
         println!("Autocomplete: {:?} for 1000 words", elapsed);
     }
 }
@@ -127,12 +171,21 @@ mod integration_tests {
         let filter_engine = FilterEngine::new();
         let regex_engine = RegexSearchEngine::new(100);
         for i in 0..100 {
-            let entry = create_test_entry(i, "1640995200", if i % 2 == 0 { "ERROR" } else { "INFO" }, "/var/log/app.log", 100, "Test message");
+            let entry = create_test_entry(
+                i,
+                "1640995200",
+                if i % 2 == 0 { "ERROR" } else { "INFO" },
+                "/var/log/app.log",
+                100,
+                "Test message",
+            );
             filter_engine.add_document(i as u32, &entry);
         }
         let filters = vec![Filter::Level("ERROR".to_string())];
         let filtered = filter_engine.apply_filters(&filters);
-        let regex_result = regex_engine.search_with_regex(r"\d{3}-\d{3}-\d{4}", "Phone: 123-456-7890").unwrap();
+        let regex_result = regex_engine
+            .search_with_regex(r"\d{3}-\d{3}-\d{4}", "Phone: 123-456-7890")
+            .unwrap();
         assert_eq!(filtered.len(), 50);
         assert_eq!(regex_result.len(), 1);
         println!("Integration test: filter + regex combined");
@@ -143,7 +196,14 @@ mod integration_tests {
         let filter_engine = FilterEngine::new();
         let time_index = TimePartitionedIndex::new(Duration::from_secs(3600));
         for i in 0..10_000 {
-            let entry = create_test_entry(i, &format!("164099520{}", i % 1000), "ERROR", "/var/log/app.log", 100, "Message");
+            let entry = create_test_entry(
+                i,
+                &format!("164099520{}", i % 1000),
+                "ERROR",
+                "/var/log/app.log",
+                100,
+                "Message",
+            );
             filter_engine.add_document(i as u32, &entry);
             time_index.add_document(i as u32, entry.timestamp.parse().unwrap());
         }
@@ -152,7 +212,14 @@ mod integration_tests {
         let filtered = filter_engine.apply_filters(&filters);
         let filter_time = start.elapsed();
         assert_eq!(filtered.len(), 10000);
-        assert!(filter_time.as_millis() < 10, "Filter too slow: {:?}", filter_time);
-        println!("Large dataset test: filter {}ms for 10K docs", filter_time.as_millis());
+        assert!(
+            filter_time.as_millis() < 10,
+            "Filter too slow: {:?}",
+            filter_time
+        );
+        println!(
+            "Large dataset test: filter {}ms for 10K docs",
+            filter_time.as_millis()
+        );
     }
 }

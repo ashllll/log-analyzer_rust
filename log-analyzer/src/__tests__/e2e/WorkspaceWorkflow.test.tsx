@@ -56,7 +56,7 @@ const TestWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 };
 
 const { invoke: mockInvoke } = require('@tauri-apps/api/core');
-const { listen: mockListen, emit: mockEmit } = require('@tauri-apps/api/event');
+const { listen: mockListen } = require('@tauri-apps/api/event');
 
 describe('E2E: Workspace Management Workflow', () => {
   let user: ReturnType<typeof userEvent.setup>;
@@ -84,7 +84,7 @@ describe('E2E: Workspace Management Workflow', () => {
   describe('Complete Workspace Creation and Management Flow', () => {
     it('should allow user to create, configure, and manage a workspace', async () => {
       // Mock workspace creation responses
-      mockInvoke.mockImplementation((command: string, args?: any) => {
+      mockInvoke.mockImplementation((command: string, _args?: any) => {
         switch (command) {
           case 'get_workspaces':
             return Promise.resolve([]);
@@ -246,7 +246,7 @@ describe('E2E: Workspace Management Workflow', () => {
         },
       ];
 
-      mockInvoke.mockImplementation((command: string, args?: any) => {
+      mockInvoke.mockImplementation((command: string, _args?: any) => {
         switch (command) {
           case 'get_workspaces':
             return Promise.resolve(mockWorkspaces);
@@ -458,7 +458,7 @@ describe('E2E: Workspace Management Workflow', () => {
       // Start with successful state
       mockInvoke.mockResolvedValue([]);
 
-      const { rerender } = render(
+      render(
         <TestWrapper>
           <App />
         </TestWrapper>

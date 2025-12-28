@@ -18,8 +18,8 @@
 
 use crate::error::{AppError, Result};
 use serde::{Deserialize, Serialize};
-use sqlx::{Row, SqlitePool};
 use sqlx::sqlite::SqlitePoolOptions;
+use sqlx::{Row, SqlitePool};
 use std::path::Path;
 use std::time::Duration;
 use tracing::{debug, info};
@@ -89,14 +89,16 @@ impl MetadataStore {
         // 老王备注：使用业内成熟的SQLite连接池配置
         // 连接池大小和超时配置基于SQLite最佳实践
         let pool = SqlitePoolOptions::new()
-            .min_connections(1)      // 最小连接数：桌面应用通常1个足够
-            .max_connections(5)      // 最大连接数：避免资源耗尽
-            .acquire_timeout(Duration::from_secs(30))  // 获取连接超时
-            .idle_timeout(Duration::from_secs(600))      // 空闲连接超时：10分钟
-            .max_lifetime(Duration::from_secs(1800))     // 连接最大生命周期：30分钟
+            .min_connections(1) // 最小连接数：桌面应用通常1个足够
+            .max_connections(5) // 最大连接数：避免资源耗尽
+            .acquire_timeout(Duration::from_secs(30)) // 获取连接超时
+            .idle_timeout(Duration::from_secs(600)) // 空闲连接超时：10分钟
+            .max_lifetime(Duration::from_secs(1800)) // 连接最大生命周期：30分钟
             .connect(&db_url)
             .await
-            .map_err(|e| AppError::database_error(format!("Failed to connect to database: {}", e)))?;
+            .map_err(|e| {
+                AppError::database_error(format!("Failed to connect to database: {}", e))
+            })?;
 
         // Initialize schema
         Self::init_schema(&pool).await?;
@@ -293,14 +295,12 @@ impl MetadataStore {
         .map_err(|e| AppError::database_error(format!("Failed to insert file: {}", e)))?;
 
         // 老王备注：查询插入的记录或已存在的记录 ID
-        let id = sqlx::query_as::<_, (i64,)>(
-            "SELECT id FROM files WHERE sha256_hash = ? LIMIT 1"
-        )
-        .bind(&metadata.sha256_hash)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|e| AppError::database_error(format!("Failed to fetch file ID: {}", e)))?
-        .0;
+        let id = sqlx::query_as::<_, (i64,)>("SELECT id FROM files WHERE sha256_hash = ? LIMIT 1")
+            .bind(&metadata.sha256_hash)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| AppError::database_error(format!("Failed to fetch file ID: {}", e)))?
+            .0;
 
         debug!(
             id = id,
@@ -336,14 +336,15 @@ impl MetadataStore {
         .map_err(|e| AppError::database_error(format!("Failed to insert archive: {}", e)))?;
 
         // 老王备注：查询插入的记录或已存在的记录 ID
-        let id = sqlx::query_as::<_, (i64,)>(
-            "SELECT id FROM archives WHERE sha256_hash = ? LIMIT 1"
-        )
-        .bind(&metadata.sha256_hash)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|e| AppError::database_error(format!("Failed to fetch archive ID: {}", e)))?
-        .0;
+        let id =
+            sqlx::query_as::<_, (i64,)>("SELECT id FROM archives WHERE sha256_hash = ? LIMIT 1")
+                .bind(&metadata.sha256_hash)
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|e| {
+                    AppError::database_error(format!("Failed to fetch archive ID: {}", e))
+                })?
+                .0;
 
         debug!(
             id = id,
@@ -580,14 +581,15 @@ impl MetadataStore {
             .map_err(|e| AppError::database_error(format!("Failed to insert file: {}", e)))?;
 
             // 老王备注：查询插入的记录或已存在的记录 ID
-            let id = sqlx::query_as::<_, (i64,)>(
-                "SELECT id FROM files WHERE sha256_hash = ? LIMIT 1"
-            )
-            .bind(&metadata.sha256_hash)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(|e| AppError::database_error(format!("Failed to fetch file ID: {}", e)))?
-            .0;
+            let id =
+                sqlx::query_as::<_, (i64,)>("SELECT id FROM files WHERE sha256_hash = ? LIMIT 1")
+                    .bind(&metadata.sha256_hash)
+                    .fetch_one(&mut *tx)
+                    .await
+                    .map_err(|e| {
+                        AppError::database_error(format!("Failed to fetch file ID: {}", e))
+                    })?
+                    .0;
 
             ids.push(id);
         }
@@ -596,7 +598,10 @@ impl MetadataStore {
             AppError::database_error(format!("Failed to commit transaction: {}", e))
         })?;
 
-        info!(count = ids.len(), "Inserted files in batch transaction (with CAS deduplication)");
+        info!(
+            count = ids.len(),
+            "Inserted files in batch transaction (with CAS deduplication)"
+        );
         Ok(ids)
     }
 
@@ -694,16 +699,14 @@ impl MetadataStore {
         })?;
 
         // 老王备注：查询插入的记录或已存在的记录 ID
-        let id = sqlx::query_as::<_, (i64,)>(
-            "SELECT id FROM files WHERE sha256_hash = ? LIMIT 1"
-        )
-        .bind(&metadata.sha256_hash)
-        .fetch_one(&mut **tx)
-        .await
-        .map_err(|e| {
-            AppError::database_error(format!("Failed to fetch file ID in transaction: {}", e))
-        })?
-        .0;
+        let id = sqlx::query_as::<_, (i64,)>("SELECT id FROM files WHERE sha256_hash = ? LIMIT 1")
+            .bind(&metadata.sha256_hash)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(|e| {
+                AppError::database_error(format!("Failed to fetch file ID in transaction: {}", e))
+            })?
+            .0;
 
         debug!(
             id = id,
@@ -757,16 +760,18 @@ impl MetadataStore {
         })?;
 
         // 老王备注：查询插入的记录或已存在的记录 ID
-        let id = sqlx::query_as::<_, (i64,)>(
-            "SELECT id FROM archives WHERE sha256_hash = ? LIMIT 1"
-        )
-        .bind(&metadata.sha256_hash)
-        .fetch_one(&mut **tx)
-        .await
-        .map_err(|e| {
-            AppError::database_error(format!("Failed to fetch archive ID in transaction: {}", e))
-        })?
-        .0;
+        let id =
+            sqlx::query_as::<_, (i64,)>("SELECT id FROM archives WHERE sha256_hash = ? LIMIT 1")
+                .bind(&metadata.sha256_hash)
+                .fetch_one(&mut **tx)
+                .await
+                .map_err(|e| {
+                    AppError::database_error(format!(
+                        "Failed to fetch archive ID in transaction: {}",
+                        e
+                    ))
+                })?
+                .0;
 
         debug!(
             id = id,

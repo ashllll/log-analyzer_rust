@@ -202,68 +202,68 @@ impl ContentAddressableStorage {
 
         // Copy file to object storage with timeout protection (industry standard)
         // Use tokio::io::copy for true async copy (fs::copy blocks on Windows!)
-        use tokio::time::{timeout, Duration};
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::time::{timeout, Duration};
 
         const FILE_COPY_TIMEOUT: u64 = 300; // 5 minutes timeout for large files
         const COPY_BUFFER_SIZE: usize = 64 * 1024; // 64KB buffer for efficient copying
 
-        let copy_result = timeout(
-            Duration::from_secs(FILE_COPY_TIMEOUT),
-            async {
-                // Open source file
-                let mut src_file = fs::File::open(file_path).await.map_err(|e| {
+        let copy_result = timeout(Duration::from_secs(FILE_COPY_TIMEOUT), async {
+            // Open source file
+            let mut src_file = fs::File::open(file_path).await.map_err(|e| {
+                AppError::io_error(
+                    format!("Failed to open source file: {}", e),
+                    Some(file_path.to_path_buf()),
+                )
+            })?;
+
+            // Create target file
+            let mut dst_file = fs::File::create(&object_path).await.map_err(|e| {
+                AppError::io_error(
+                    format!("Failed to create target file: {}", e),
+                    Some(object_path.clone()),
+                )
+            })?;
+
+            // Copy using async I/O with buffer
+            let mut buffer = vec![0u8; COPY_BUFFER_SIZE];
+            let mut total_bytes = 0u64;
+
+            loop {
+                let bytes_read = src_file.read(&mut buffer).await.map_err(|e| {
                     AppError::io_error(
-                        format!("Failed to open source file: {}", e),
+                        format!("Failed to read from source file: {}", e),
                         Some(file_path.to_path_buf()),
                     )
                 })?;
 
-                // Create target file
-                let mut dst_file = fs::File::create(&object_path).await.map_err(|e| {
-                    AppError::io_error(
-                        format!("Failed to create target file: {}", e),
-                        Some(object_path.clone()),
-                    )
-                })?;
+                if bytes_read == 0 {
+                    break; // EOF
+                }
 
-                // Copy using async I/O with buffer
-                let mut buffer = vec![0u8; COPY_BUFFER_SIZE];
-                let mut total_bytes = 0u64;
-
-                loop {
-                    let bytes_read = src_file.read(&mut buffer).await.map_err(|e| {
-                        AppError::io_error(
-                            format!("Failed to read from source file: {}", e),
-                            Some(file_path.to_path_buf()),
-                        )
-                    })?;
-
-                    if bytes_read == 0 {
-                        break; // EOF
-                    }
-
-                    dst_file.write_all(&buffer[..bytes_read]).await.map_err(|e| {
+                dst_file
+                    .write_all(&buffer[..bytes_read])
+                    .await
+                    .map_err(|e| {
                         AppError::io_error(
                             format!("Failed to write to target file: {}", e),
                             Some(object_path.clone()),
                         )
                     })?;
 
-                    total_bytes += bytes_read as u64;
-                }
-
-                // Flush to ensure all data is written
-                dst_file.flush().await.map_err(|e| {
-                    AppError::io_error(
-                        format!("Failed to flush target file: {}", e),
-                        Some(object_path.clone()),
-                    )
-                })?;
-
-                Ok::<u64, AppError>(total_bytes)
+                total_bytes += bytes_read as u64;
             }
-        )
+
+            // Flush to ensure all data is written
+            dst_file.flush().await.map_err(|e| {
+                AppError::io_error(
+                    format!("Failed to flush target file: {}", e),
+                    Some(object_path.clone()),
+                )
+            })?;
+
+            Ok::<u64, AppError>(total_bytes)
+        })
         .await;
 
         match copy_result {

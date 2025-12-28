@@ -346,10 +346,11 @@ export function useStateSynchronization(): UseStateSynchronizationReturn {
   useEffect(() => {
     return () => {
       // Clear all pending timeouts
-      optimisticUpdatesRef.current.forEach((update) => {
+      const updates = optimisticUpdatesRef.current;
+      updates.forEach((update) => {
         clearTimeout(update.timeout);
       });
-      optimisticUpdatesRef.current.clear();
+      updates.clear();
 
       if (batchTimerRef.current) {
         clearTimeout(batchTimerRef.current);

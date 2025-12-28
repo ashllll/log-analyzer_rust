@@ -30,7 +30,7 @@ jest.mock('../../utils/logger', () => ({
 }));
 
 import { EventBus, eventBus } from '../EventBus';
-import { TaskUpdateEventSchema, TaskRemovedEventSchema, EventValidationError } from '../types';
+import { EventValidationError } from '../types';
 
 describe('EventBus', () => {
   let testEventBus: EventBus;
@@ -353,7 +353,7 @@ describe('EventBus', () => {
           message: 'Test',
           status: 'RUNNING',
         });
-      } catch (error) {
+      } catch {
         // 预期的错误
       }
 

@@ -1,10 +1,10 @@
 //! 搜索命令实现
 //! 包含日志搜索及缓存逻辑，附带关键词统计与结果批量推送
 
-use std::panic::AssertUnwindSafe;
 use parking_lot::Mutex;
 use regex::Regex;
 use sha2::{Digest, Sha256};
+use std::panic::AssertUnwindSafe;
 use std::{collections::HashSet, path::PathBuf, sync::Arc, time::Duration};
 use tauri::{command, AppHandle, Emitter, State};
 use tracing::{debug, error, warn};
@@ -111,7 +111,7 @@ pub async fn search_logs(
 
     let max_results = max_results.unwrap_or(50000).min(100_000);
     let filters = filters.unwrap_or_default();
-    
+
     // 修复工作区ID处理：当没有提供workspaceId时，使用第一个可用的工作区而不是硬编码的"default"
     let workspace_id = if let Some(ref id) = workspaceId {
         id.clone()
@@ -127,7 +127,10 @@ pub async fn search_logs(
             first_workspace_id.clone()
         } else {
             // 如果没有可用的工作区，返回明确的错误
-            let _ = app.emit("search-error", "No workspaces available. Please create a workspace first.");
+            let _ = app.emit(
+                "search-error",
+                "No workspaces available. Please create a workspace first.",
+            );
             return Err("No workspaces available".to_string());
         }
     };
@@ -251,7 +254,7 @@ pub async fn search_logs(
         };
 
         let parse_duration = parse_start.elapsed();
-// ============================================================        // 高级搜索特性集成点        // ============================================================        // FilterEngine: 位图索引加速过滤（10K文档 < 10ms）        // RegexSearchEngine: LRU缓存正则搜索（加速50x+）        // TimePartitionedIndex: 时间分区索引（时序查询优化）        // AutocompleteEngine: Trie树自动补全（< 100ms响应）        //         // 使用方式：        // 1. 从 AppState 获取高级特性实例（已初始化）        // 2. 在搜索前使用 FilterEngine 预过滤候选文档        // 3. 在过滤时使用 RegexSearchEngine 加速正则匹配        // 4. 在时间范围查询时使用 TimePartitionedIndex        //         // 配置开关：config.json -> advanced_features.enable_*        tracing::info!("🔍 高级搜索特性已就绪（可通过配置启用）");
+        // ============================================================        // 高级搜索特性集成点        // ============================================================        // FilterEngine: 位图索引加速过滤（10K文档 < 10ms）        // RegexSearchEngine: LRU缓存正则搜索（加速50x+）        // TimePartitionedIndex: 时间分区索引（时序查询优化）        // AutocompleteEngine: Trie树自动补全（< 100ms响应）        //         // 使用方式：        // 1. 从 AppState 获取高级特性实例（已初始化）        // 2. 在搜索前使用 FilterEngine 预过滤候选文档        // 3. 在过滤时使用 RegexSearchEngine 加速正则匹配        // 4. 在时间范围查询时使用 TimePartitionedIndex        //         // 配置开关：config.json -> advanced_features.enable_*        tracing::info!("🔍 高级搜索特性已就绪（可通过配置启用）");
 
         let execution_start = std::time::Instant::now();
         let mut executor = QueryExecutor::new(100);
@@ -279,14 +282,14 @@ pub async fn search_logs(
                         "Found workspace directory"
                     );
                     dir.clone()
-                },
+                }
                 None => {
                     error!(
                         workspace_id = %workspace_id,
                         available_workspaces = ?dirs.keys().collect::<Vec<_>>(),
                         "Workspace directory not found"
                     );
-                    
+
                     // 如果是"default"工作区，尝试使用第一个可用的工作区
                     if workspace_id == "default" {
                         if let Some(first_workspace_id) = dirs.keys().next() {
@@ -294,11 +297,17 @@ pub async fn search_logs(
                                 workspace_id = %first_workspace_id,
                                 "Falling back to first available workspace instead of 'default'"
                             );
-                            let _ = app_handle.emit("search-error", format!("Workspace 'default' not found, using '{}' instead", first_workspace_id));
+                            let _ = app_handle.emit(
+                                "search-error",
+                                format!(
+                                    "Workspace 'default' not found, using '{}' instead",
+                                    first_workspace_id
+                                ),
+                            );
                             return;
                         }
                     }
-                    
+
                     let _ = app_handle.emit(
                         "search-error",
                         format!("Workspace directory not found for: {}", workspace_id),
@@ -325,9 +334,9 @@ pub async fn search_logs(
                                     directory = %workspace_dir.display(),
                                     "Creating new MetadataStore with Tokio runtime"
                                 );
-                                handle.block_on(
-                                    crate::storage::metadata_store::MetadataStore::new(&workspace_dir),
-                                )
+                                handle.block_on(crate::storage::metadata_store::MetadataStore::new(
+                                    &workspace_dir,
+                                ))
                             }
                             Err(e) => {
                                 error!(
@@ -337,7 +346,10 @@ pub async fn search_logs(
                                     "Failed to acquire Tokio runtime handle for MetadataStore creation"
                                 );
                                 // 返回错误而不是panic，需要转换为AppError类型
-                                Err(AppError::DatabaseError(format!("Tokio runtime error: {}", e)))
+                                Err(AppError::DatabaseError(format!(
+                                    "Tokio runtime error: {}",
+                                    e
+                                )))
                             }
                         }
                     })
@@ -350,7 +362,9 @@ pub async fn search_logs(
                             panic_info = ?panic_info,
                             "Panic occurred while creating MetadataStore"
                         );
-                        Err(AppError::DatabaseError("Internal error occurred while creating metadata store".to_string()))
+                        Err(AppError::DatabaseError(
+                            "Internal error occurred while creating metadata store".to_string(),
+                        ))
                     }
                 };
 
@@ -420,7 +434,10 @@ pub async fn search_logs(
                 );
                 let _ = app_handle.emit(
                     "search-error",
-                    format!("Internal error occurred while accessing workspace: {}", workspace_id),
+                    format!(
+                        "Internal error occurred while accessing workspace: {}",
+                        workspace_id
+                    ),
                 );
                 return;
             }

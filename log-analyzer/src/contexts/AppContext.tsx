@@ -521,10 +521,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       unlistenImportError.then(f => f());
 
       // 老王备注：清除所有toast定时器，防止内存泄漏
-      toastTimeoutsRef.current.forEach(timeoutId => {
+      const timeouts = toastTimeoutsRef.current;
+      timeouts.forEach(timeoutId => {
         clearTimeout(timeoutId);
       });
-      toastTimeoutsRef.current.clear();
+      timeouts.clear();
     };
   }, [addToast, taskDispatch, workspaceDispatch, taskState.tasks]);
 

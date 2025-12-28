@@ -99,7 +99,7 @@ export const useErrorManagement = () => {
     }
 
     return errorInfo;
-  }, [showToast, showError, showInfo]);
+  }, [showError, showInfo]);
 
   /**
    * Handle validation errors for forms

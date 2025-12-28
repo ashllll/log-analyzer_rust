@@ -31,9 +31,9 @@ struct PerformanceThresholds {
 impl Default for PerformanceThresholds {
     fn default() -> Self {
         Self {
-            import_per_mb_max_ms: 200,      // 200ms per MB (generous threshold)
+            import_per_mb_max_ms: 200,       // 200ms per MB (generous threshold)
             search_per_1k_files_max_ms: 100, // 100ms per 1000 files
-            memory_growth_max_mb: 10.0,     // 10MB max growth per 1000 ops
+            memory_growth_max_mb: 10.0,      // 10MB max growth per 1000 ops
         }
     }
 }
@@ -137,7 +137,10 @@ async fn test_import_performance() {
     println!("  Files: {}", files.len());
     println!("  Total size: ~1MB");
     println!("  Duration: {}ms", duration_ms);
-    println!("  Throughput: {:.2} files/sec", files.len() as f64 / duration.as_secs_f64());
+    println!(
+        "  Throughput: {:.2} files/sec",
+        files.len() as f64 / duration.as_secs_f64()
+    );
 
     // Validate against threshold
     assert!(
@@ -147,7 +150,10 @@ async fn test_import_performance() {
         thresholds.import_per_mb_max_ms
     );
 
-    println!("  ✓ Performance within threshold ({} < {}ms)", duration_ms, thresholds.import_per_mb_max_ms);
+    println!(
+        "  ✓ Performance within threshold ({} < {}ms)",
+        duration_ms, thresholds.import_per_mb_max_ms
+    );
 }
 
 /// Test 2: CAS Deduplication Efficiency (Requirement 5.1)
@@ -237,10 +243,7 @@ async fn test_search_performance() {
     let start = Instant::now();
 
     // Search by path pattern
-    let results = metadata_store
-        .search_files("/test/file")
-        .await
-        .unwrap();
+    let results = metadata_store.search_files("/test/file").await.unwrap();
 
     let duration = start.elapsed();
     let duration_ms = duration.as_millis();
@@ -249,7 +252,10 @@ async fn test_search_performance() {
     println!("  Total files: {}", files.len());
     println!("  Search results: {}", results.len());
     println!("  Duration: {}ms", duration_ms);
-    println!("  Throughput: {:.2} searches/sec", 1000.0 / duration.as_secs_f64());
+    println!(
+        "  Throughput: {:.2} searches/sec",
+        1000.0 / duration.as_secs_f64()
+    );
 
     // Validate search found all files
     assert_eq!(results.len(), 1000, "Search should find all 1000 files");
@@ -262,7 +268,10 @@ async fn test_search_performance() {
         thresholds.search_per_1k_files_max_ms
     );
 
-    println!("  ✓ Performance within threshold ({} < {}ms)", duration_ms, thresholds.search_per_1k_files_max_ms);
+    println!(
+        "  ✓ Performance within threshold ({} < {}ms)",
+        duration_ms, thresholds.search_per_1k_files_max_ms
+    );
 }
 
 /// Test 4: Memory Stability (Requirement 5.3)
@@ -305,7 +314,10 @@ async fn test_memory_stability() {
     println!("Memory Stability:");
     println!("  Operations: {}", operation_count);
     println!("  Duration: {}ms", duration.as_millis());
-    println!("  Avg time per operation: {:.2}ms", duration.as_millis() as f64 / operation_count as f64);
+    println!(
+        "  Avg time per operation: {:.2}ms",
+        duration.as_millis() as f64 / operation_count as f64
+    );
 
     // Note: Actual memory measurement would require platform-specific APIs
     // This test validates that operations complete without hanging or crashing
@@ -363,11 +375,18 @@ async fn test_nested_archive_performance() {
     println!("  Files per level: {}", files_per_level);
     println!("  Total files: {}", total_files);
     println!("  Duration: {}ms", duration.as_millis());
-    println!("  Avg time per file: {:.2}ms", duration.as_millis() as f64 / total_files as f64);
+    println!(
+        "  Avg time per file: {:.2}ms",
+        duration.as_millis() as f64 / total_files as f64
+    );
 
     // Verify all files were stored
     let all_files = metadata_store.get_all_files().await.unwrap();
-    assert_eq!(all_files.len(), total_files, "All nested files should be stored");
+    assert_eq!(
+        all_files.len(),
+        total_files,
+        "All nested files should be stored"
+    );
 
     println!("  ✓ Nested archive handling working correctly");
 }
@@ -415,8 +434,14 @@ async fn test_content_retrieval_performance() {
     println!("Content Retrieval Performance:");
     println!("  Files retrieved: {}", hashes.len());
     println!("  Duration: {}ms", duration.as_millis());
-    println!("  Avg time per file: {:.2}ms", duration.as_millis() as f64 / hashes.len() as f64);
-    println!("  Throughput: {:.2} files/sec", hashes.len() as f64 / duration.as_secs_f64());
+    println!(
+        "  Avg time per file: {:.2}ms",
+        duration.as_millis() as f64 / hashes.len() as f64
+    );
+    println!(
+        "  Throughput: {:.2} files/sec",
+        hashes.len() as f64 / duration.as_secs_f64()
+    );
 
     println!("  ✓ Content retrieval working efficiently");
 }
@@ -441,7 +466,8 @@ async fn test_concurrent_operations() {
         let handle = tokio::spawn(async move {
             let metadata_store = MetadataStore::new(&workspace_dir).await.unwrap();
             let test_files_dir = TempDir::new().unwrap();
-            let files = create_test_files(&test_files_dir.path().to_path_buf(), files_per_thread, 1024);
+            let files =
+                create_test_files(&test_files_dir.path().to_path_buf(), files_per_thread, 1024);
 
             for (idx, file_path) in files.iter().enumerate() {
                 let hash = cas.store_file_streaming(file_path).await.unwrap();
@@ -475,11 +501,18 @@ async fn test_concurrent_operations() {
     println!("  Files per thread: {}", files_per_thread);
     println!("  Total files: {}", total_files);
     println!("  Duration: {}ms", duration.as_millis());
-    println!("  Throughput: {:.2} files/sec", total_files as f64 / duration.as_secs_f64());
+    println!(
+        "  Throughput: {:.2} files/sec",
+        total_files as f64 / duration.as_secs_f64()
+    );
 
     // Verify all files were stored
     let all_files = metadata_store.get_all_files().await.unwrap();
-    assert_eq!(all_files.len(), total_files, "All concurrent files should be stored");
+    assert_eq!(
+        all_files.len(),
+        total_files,
+        "All concurrent files should be stored"
+    );
 
     println!("  ✓ Concurrent operations working correctly");
 }

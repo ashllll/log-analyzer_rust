@@ -6,7 +6,15 @@
       "Bash(git log:*)",
       "Bash(git reset:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(cargo test:*)",
+      "Bash(xargs:*)",
+      "mcp__web-reader__webReader",
+      "Bash(npm run lint)",
+      "Bash(cargo fmt:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(npm test:*)",
+      "Bash(npm install:*)"
     ],
     "deny": [],
     "ask": []

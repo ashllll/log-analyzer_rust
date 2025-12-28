@@ -14,8 +14,10 @@ use super::LogEntry;
 use crate::monitoring::alerting::AlertingSystem;
 use crate::monitoring::metrics_collector::MetricsCollector;
 use crate::monitoring::recommendation_engine::RecommendationEngine;
+use crate::search_engine::advanced_features::{
+    AutocompleteEngine, FilterEngine, RegexSearchEngine, TimePartitionedIndex,
+};
 use crate::search_engine::SearchEngineManager;
-use crate::search_engine::advanced_features::{AutocompleteEngine, FilterEngine, RegexSearchEngine, TimePartitionedIndex};
 use crate::state_sync::StateSync;
 use crate::task_manager::TaskManager;
 use crate::utils::cache_manager::CacheManager;

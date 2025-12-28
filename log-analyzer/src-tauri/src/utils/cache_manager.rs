@@ -1170,14 +1170,13 @@ impl CacheManager {
     }
 
     /// 生成性能报告
-    /// 
+    ///
     /// 注意：此方法在同步上下文中生成报告，内部使用 `block_on` 获取异步缓存统计。
     /// 报告生成方法通常在监控或管理界面调用，不是热路径，可以安全使用 block_on。
     pub fn generate_performance_report(&self) -> CachePerformanceReport {
         // 使用 block_on 在同步上下文中获取异步缓存统计
-        let async_cache_stats = tauri::async_runtime::block_on(async {
-            self.get_async_cache_statistics().await
-        });
+        let async_cache_stats =
+            tauri::async_runtime::block_on(async { self.get_async_cache_statistics().await });
 
         let snapshot = self.metrics.snapshot();
         let alerts = self.metrics.check_performance_alerts();
@@ -1404,7 +1403,7 @@ impl CacheManager {
     }
 
     /// 获取缓存调试信息
-    /// 
+    ///
     /// 注意：此方法在同步上下文中获取调试信息，内部使用 `block_on` 获取异步缓存信息。
     /// 调试信息获取不是热路径，可以安全使用 block_on。
     pub fn get_debug_info(&self) -> CacheDebugInfo {
@@ -1413,9 +1412,8 @@ impl CacheManager {
         let metrics = self.metrics.snapshot();
 
         // 使用 block_on 在同步上下文中获取异步缓存的条目数
-        let async_entry_count = tauri::async_runtime::block_on(async {
-            self.async_search_cache.entry_count()
-        });
+        let async_entry_count =
+            tauri::async_runtime::block_on(async { self.async_search_cache.entry_count() });
 
         // 采样一些缓存键用于调试（从同步缓存获取）
         let sample_keys: Vec<String> = self
@@ -1594,7 +1592,7 @@ impl CacheManager {
     }
 
     /// 获取缓存仪表板数据
-    /// 
+    ///
     /// 聚合缓存的各种状态信息用于仪表板展示。
     /// 注意：此方法调用 generate_performance_report，后者内部使用 block_on 获取异步统计。
     /// 仪表板数据获取不是热路径，可以接受 block_on 的开销。

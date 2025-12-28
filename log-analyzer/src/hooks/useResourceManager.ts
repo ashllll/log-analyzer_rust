@@ -14,38 +14,42 @@ export const useResourceManager = () => {
   useEffect(() => {
     return () => {
       logger.debug('[RESOURCE_MANAGER] Cleaning up all resources');
-      
+
       // Clear all timers
-      timersRef.current.forEach(timer => {
+      const timers = timersRef.current;
+      timers.forEach(timer => {
         clearTimeout(timer);
       });
-      timersRef.current.clear();
-      
+      timers.clear();
+
       // Clear all intervals
-      intervalsRef.current.forEach(interval => {
+      const intervals = intervalsRef.current;
+      intervals.forEach(interval => {
         clearInterval(interval);
       });
-      intervalsRef.current.clear();
-      
+      intervals.clear();
+
       // Clean up all subscriptions
-      subscriptionsRef.current.forEach(cleanup => {
+      const subscriptions = subscriptionsRef.current;
+      subscriptions.forEach(cleanup => {
         try {
           cleanup();
         } catch (error) {
           logger.error('[RESOURCE_MANAGER] Error during subscription cleanup:', error);
         }
       });
-      subscriptionsRef.current.clear();
-      
+      subscriptions.clear();
+
       // Abort all ongoing requests
-      abortControllersRef.current.forEach(controller => {
+      const controllers = abortControllersRef.current;
+      controllers.forEach(controller => {
         try {
           controller.abort();
         } catch (error) {
           logger.error('[RESOURCE_MANAGER] Error during request abort:', error);
         }
       });
-      abortControllersRef.current.clear();
+      controllers.clear();
     };
   }, []);
 

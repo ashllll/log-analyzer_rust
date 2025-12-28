@@ -340,8 +340,12 @@ mod tests {
 
         // 压缩数据
         let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-        encoder.write_all(original_data).expect("Failed to write to gzip encoder");
-        let compressed = encoder.finish().expect("Failed to finalize gzip compression");
+        encoder
+            .write_all(original_data)
+            .expect("Failed to write to gzip encoder");
+        let compressed = encoder
+            .finish()
+            .expect("Failed to finalize gzip compression");
 
         // 解压数据
         let decompressed = decompress_gzip(&compressed).expect("Failed to decompress gzip data");
@@ -360,20 +364,31 @@ mod tests {
 
         // 压缩并写入文件
         let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-        encoder.write_all(original_data).expect("Failed to write to gzip encoder");
-        let compressed = encoder.finish().expect("Failed to finalize gzip compression");
+        encoder
+            .write_all(original_data)
+            .expect("Failed to write to gzip encoder");
+        let compressed = encoder
+            .finish()
+            .expect("Failed to finalize gzip compression");
 
-        fs::write(&source_file, compressed).await.expect("Failed to write compressed data");
+        fs::write(&source_file, compressed)
+            .await
+            .expect("Failed to write compressed data");
 
         // 提取文件
         let handler = GzHandler;
-        let summary = handler.extract(&source_file, &output_dir).await.expect("Failed to extract gz file");
+        let summary = handler
+            .extract(&source_file, &output_dir)
+            .await
+            .expect("Failed to extract gz file");
 
         assert_eq!(summary.files_extracted, 1);
         assert!(output_dir.join("test.txt").exists());
 
         // 验证内容
-        let extracted_content = fs::read(output_dir.join("test.txt")).await.expect("Failed to read extracted file");
+        let extracted_content = fs::read(output_dir.join("test.txt"))
+            .await
+            .expect("Failed to read extracted file");
         assert_eq!(extracted_content, original_data);
     }
 
@@ -388,10 +403,16 @@ mod tests {
 
         // Compress and write file
         let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-        encoder.write_all(original_data).expect("Failed to write to gzip encoder");
-        let compressed = encoder.finish().expect("Failed to finalize gzip compression");
+        encoder
+            .write_all(original_data)
+            .expect("Failed to write to gzip encoder");
+        let compressed = encoder
+            .finish()
+            .expect("Failed to finalize gzip compression");
 
-        fs::write(&source_file, compressed).await.expect("Failed to write compressed data");
+        fs::write(&source_file, compressed)
+            .await
+            .expect("Failed to write compressed data");
 
         // Extract using streaming
         let summary = GzHandler::stream_extract_gz(
@@ -406,7 +427,9 @@ mod tests {
         assert!(output_dir.join("small.txt").exists());
 
         // Verify content
-        let extracted_content = fs::read(output_dir.join("small.txt")).await.expect("Failed to read extracted file");
+        let extracted_content = fs::read(output_dir.join("small.txt"))
+            .await
+            .expect("Failed to read extracted file");
         assert_eq!(extracted_content, original_data);
     }
 
@@ -421,10 +444,16 @@ mod tests {
 
         // Compress and write file
         let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-        encoder.write_all(&original_data).expect("Failed to write to gzip encoder");
-        let compressed = encoder.finish().expect("Failed to finalize gzip compression");
+        encoder
+            .write_all(&original_data)
+            .expect("Failed to write to gzip encoder");
+        let compressed = encoder
+            .finish()
+            .expect("Failed to finalize gzip compression");
 
-        fs::write(&source_file, compressed).await.expect("Failed to write compressed data");
+        fs::write(&source_file, compressed)
+            .await
+            .expect("Failed to write compressed data");
 
         // Extract using streaming
         let summary = GzHandler::stream_extract_gz(
@@ -439,7 +468,9 @@ mod tests {
         assert!(output_dir.join("large.txt").exists());
 
         // Verify content
-        let extracted_content = fs::read(output_dir.join("large.txt")).await.expect("Failed to read extracted file");
+        let extracted_content = fs::read(output_dir.join("large.txt"))
+            .await
+            .expect("Failed to read extracted file");
         assert_eq!(extracted_content, original_data);
     }
 
@@ -454,10 +485,16 @@ mod tests {
 
         // Compress and write file
         let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-        encoder.write_all(&original_data).expect("Failed to write to gzip encoder");
-        let compressed = encoder.finish().expect("Failed to finalize gzip compression");
+        encoder
+            .write_all(&original_data)
+            .expect("Failed to write to gzip encoder");
+        let compressed = encoder
+            .finish()
+            .expect("Failed to finalize gzip compression");
 
-        fs::write(&source_file, compressed).await.expect("Failed to write compressed data");
+        fs::write(&source_file, compressed)
+            .await
+            .expect("Failed to write compressed data");
 
         // Try to extract with small limit (should fail)
         let result = GzHandler::stream_extract_gz(
@@ -487,10 +524,16 @@ mod tests {
 
         // Compress and write file
         let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-        encoder.write_all(&original_data).expect("Failed to write to gzip encoder");
-        let compressed = encoder.finish().expect("Failed to finalize gzip compression");
+        encoder
+            .write_all(&original_data)
+            .expect("Failed to write to gzip encoder");
+        let compressed = encoder
+            .finish()
+            .expect("Failed to finalize gzip compression");
 
-        fs::write(&source_file, compressed).await.expect("Failed to write compressed data");
+        fs::write(&source_file, compressed)
+            .await
+            .expect("Failed to write compressed data");
 
         // Extract using extract_with_limits (should automatically use streaming)
         let handler = GzHandler;
@@ -509,7 +552,9 @@ mod tests {
         assert!(output_dir.join("large.txt").exists());
 
         // Verify content
-        let extracted_content = fs::read(output_dir.join("large.txt")).await.expect("Failed to read extracted file");
+        let extracted_content = fs::read(output_dir.join("large.txt"))
+            .await
+            .expect("Failed to read extracted file");
         assert_eq!(extracted_content, original_data);
     }
 }

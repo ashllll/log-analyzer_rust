@@ -167,7 +167,7 @@ describe('Error Boundary Components', () => {
         { error: new Error('Generic error'), type: 'Error' },
       ];
 
-      testCases.forEach(({ error, type }) => {
+      testCases.forEach(({ error }) => {
         const mockReset = jest.fn();
         const { unmount } = render(
           <ErrorFallback 

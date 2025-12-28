@@ -1049,7 +1049,7 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
 
         // Recursively process (supports nested archives)
         match Box::pin(process_path_with_cas_and_checkpoints(
-            &full_path,  // Use full path for file operations
+            &full_path, // Use full path for file operations
             &new_virtual,
             context,
             app,
@@ -1399,7 +1399,7 @@ async fn extract_and_process_archive(
 
         // 使用 Box::pin 递归处理（支持嵌套压缩包）
         Box::pin(process_path_recursive(
-            &full_path,  // Use full path for file operations
+            &full_path, // Use full path for file operations
             &new_virtual,
             target_root,
             map,

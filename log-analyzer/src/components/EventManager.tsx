@@ -14,15 +14,8 @@ import { logger } from '../utils/logger';
  */
 export const EventManager = () => {
   const createdTaskIdsRef = useRef(new Set<string>());
-  const isInitializedRef = useRef(false);
 
   useEffect(() => {
-    // 防止重复初始化（StrictMode 下会调用两次）
-    if (isInitializedRef.current) {
-      return;
-    }
-    isInitializedRef.current = true;
-    
     logger.debug('[EVENT_MANAGER] Initializing event listeners');
     
     // Array to store cleanup functions
@@ -141,8 +134,7 @@ export const EventManager = () => {
     // Cleanup function - this is React's native cleanup pattern
     return () => {
       logger.debug('[EVENT_MANAGER] Cleaning up event listeners');
-      isInitializedRef.current = false;
-      
+
       // Clean up all event listeners
       cleanupFunctions.forEach(cleanup => {
         try {
@@ -151,7 +143,7 @@ export const EventManager = () => {
           logger.error('[EVENT_MANAGER] Error during cleanup:', error);
         }
       });
-      
+
       // Clear the created tasks set
       createdTaskIdsRef.current.clear();
     };

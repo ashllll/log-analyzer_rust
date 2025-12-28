@@ -145,9 +145,13 @@ pub fn run() {
                 recommendation_engine,
                 task_manager: Arc::new(parking_lot::Mutex::new(None)), // 延迟初始化
                 filter_engine: Arc::new(Mutex::new(HashMap::new())),
-                regex_engine: Arc::new(search_engine::advanced_features::RegexSearchEngine::new(1000)),
+                regex_engine: Arc::new(search_engine::advanced_features::RegexSearchEngine::new(
+                    1000,
+                )),
                 time_partitioned_index: Arc::new(Mutex::new(HashMap::new())),
-                autocomplete_engine: Arc::new(search_engine::advanced_features::AutocompleteEngine::new(100)),
+                autocomplete_engine: Arc::new(
+                    search_engine::advanced_features::AutocompleteEngine::new(100),
+                ),
             }
         })
         .invoke_handler(tauri::generate_handler![
