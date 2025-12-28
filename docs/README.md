@@ -33,6 +33,7 @@
 - **CAS_MIGRATION_IMPLEMENTATION.md** - CAS迁移实施总结
 - **MIGRATION_IMPLEMENTATION_SUMMARY.md** - 迁移实施摘要
 - **IPC_MONITORING_IMPLEMENTATION.md** - IPC监控实现
+- **WORKSPACE_PROCESSING_FIX.md** - Workspace PROCESSING 停留问题修复报告
 - **TASK_22_COMPLETION_SUMMARY.md** - 任务22完成总结
 
 #### 历史归档 (`reports/archive/`)
