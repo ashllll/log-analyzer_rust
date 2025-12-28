@@ -4,6 +4,9 @@
 import '@testing-library/jest-dom';
 import React from 'react';
 
+// Initialize i18n for tests - must be before any components that use translation
+import './i18n';
+
 // Make React available globally for tests
 (global as any).React = React;
 
@@ -46,13 +49,28 @@ const originalWarn = console.warn;
 beforeAll(() => {
   console.error = jest.fn();
   console.warn = jest.fn();
-  
+
   // Mock ResizeObserver
   global.ResizeObserver = class ResizeObserver {
     observe() {}
     unobserve() {}
     disconnect() {}
   };
+
+  // Mock window.matchMedia (for react-hot-toast)
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: jest.fn().mockImplementation(query => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: jest.fn(),
+      removeListener: jest.fn(),
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+      dispatchEvent: jest.fn(),
+    })),
+  });
 });
 
 afterAll(() => {

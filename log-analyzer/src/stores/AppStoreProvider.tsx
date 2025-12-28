@@ -36,6 +36,7 @@ export const AppStoreProvider = ({ children }: AppStoreProviderProps) => {
   const addTaskIfNotExists = useTaskStore((state) => state.addTaskIfNotExists);
   const updateTask = useTaskStore((state) => state.updateTask);
   const deleteTask = useTaskStore((state) => state.deleteTask);
+  const setInitialized = useAppStore((state) => state.setInitialized);
 
   useEffect(() => {
     // 加载配置
@@ -50,9 +51,13 @@ export const AppStoreProvider = ({ children }: AppStoreProviderProps) => {
             setKeywordGroups(config.keyword_groups as KeywordGroup[]);
           }
         }
+        
+        // 标记应用已初始化
+        setInitialized(true);
       } catch (error) {
         console.error('Failed to load config:', error);
         addToast('error', '加载配置失败');
+        setInitialized(false, String(error));
       }
     };
 
@@ -152,7 +157,7 @@ export const AppStoreProvider = ({ children }: AppStoreProviderProps) => {
       // 清理Tauri监听
       cleanupPromise.then((cleanup) => cleanup());
     };
-  }, [addToast, setWorkspaces, setKeywordGroups, addTaskIfNotExists, updateTask, deleteTask, updateWorkspace]);
+  }, [addToast, setWorkspaces, setKeywordGroups, addTaskIfNotExists, updateTask, deleteTask, updateWorkspace, setInitialized]);
 
   return <>{children}</>;
 };

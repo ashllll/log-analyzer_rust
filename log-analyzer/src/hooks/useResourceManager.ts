@@ -12,25 +12,28 @@ export const useResourceManager = () => {
 
   // Cleanup function that runs on unmount
   useEffect(() => {
+    // Capture current ref values at effect execution time
+    const timers = timersRef.current;
+    const intervals = intervalsRef.current;
+    const subscriptions = subscriptionsRef.current;
+    const controllers = abortControllersRef.current;
+
     return () => {
       logger.debug('[RESOURCE_MANAGER] Cleaning up all resources');
 
       // Clear all timers
-      const timers = timersRef.current;
       timers.forEach(timer => {
         clearTimeout(timer);
       });
       timers.clear();
 
       // Clear all intervals
-      const intervals = intervalsRef.current;
       intervals.forEach(interval => {
         clearInterval(interval);
       });
       intervals.clear();
 
       // Clean up all subscriptions
-      const subscriptions = subscriptionsRef.current;
       subscriptions.forEach(cleanup => {
         try {
           cleanup();
@@ -41,7 +44,6 @@ export const useResourceManager = () => {
       subscriptions.clear();
 
       // Abort all ongoing requests
-      const controllers = abortControllersRef.current;
       controllers.forEach(controller => {
         try {
           controller.abort();

@@ -43,16 +43,23 @@ describe('Error Boundary Components', () => {
       const mockReset = jest.fn();
       const error = new Error('Test error message');
 
+      // Set NODE_ENV to development to show error details
+      const originalEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'development';
+
       render(
-        <ErrorFallback 
-          error={error} 
+        <ErrorFallback
+          error={error}
           resetErrorBoundary={mockReset}
         />
       );
 
-      expect(screen.getByText(/something went wrong/i)).toBeInTheDocument();
-      expect(screen.getByText(/test error message/i)).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
+      expect(screen.getByText(/出现了一些问题/i)).toBeInTheDocument();
+      expect(screen.getAllByText(/test error message/i)).toHaveLength(2); // p tag + pre tag
+      expect(screen.getByRole('button', { name: /重试/i })).toBeInTheDocument();
+
+      // Restore original NODE_ENV
+      process.env.NODE_ENV = originalEnv;
     });
 
     it('should call reset function when try again button is clicked', () => {
@@ -60,13 +67,13 @@ describe('Error Boundary Components', () => {
       const error = new Error('Test error');
 
       render(
-        <ErrorFallback 
-          error={error} 
+        <ErrorFallback
+          error={error}
           resetErrorBoundary={mockReset}
         />
       );
 
-      const resetButton = screen.getByRole('button', { name: /try again/i });
+      const resetButton = screen.getByRole('button', { name: /重试/i });
       resetButton.click();
 
       expect(mockReset).toHaveBeenCalledTimes(1);
@@ -77,13 +84,15 @@ describe('Error Boundary Components', () => {
       const error = new Error();
 
       render(
-        <ErrorFallback 
-          error={error} 
+        <ErrorFallback
+          error={error}
           resetErrorBoundary={mockReset}
         />
       );
 
-      expect(screen.getByText(/an unexpected error occurred/i)).toBeInTheDocument();
+      // Error without message should still show the generic error text
+      expect(screen.getByText(/出现了一些问题/i)).toBeInTheDocument();
+      expect(screen.getByText(/应用程序遇到了意外错误/i)).toBeInTheDocument();
     });
   });
 
@@ -105,7 +114,7 @@ describe('Error Boundary Components', () => {
         </ErrorBoundaryWrapper>
       );
 
-      expect(screen.getByText(/something went wrong/i)).toBeInTheDocument();
+      expect(screen.getByText(/出现了一些问题/i)).toBeInTheDocument();
       expect(screen.getByText(/test error for error boundary/i)).toBeInTheDocument();
     });
 
@@ -117,10 +126,10 @@ describe('Error Boundary Components', () => {
       );
 
       // Error should be displayed
-      expect(screen.getByText(/something went wrong/i)).toBeInTheDocument();
+      expect(screen.getByText(/出现了一些问题/i)).toBeInTheDocument();
 
       // Click reset button
-      const resetButton = screen.getByRole('button', { name: /try again/i });
+      const resetButton = screen.getByRole('button', { name: /重试/i });
       resetButton.click();
 
       // Re-render with non-throwing component
@@ -146,14 +155,14 @@ describe('Error Boundary Components', () => {
       testCases.forEach(({ error, expectedText }) => {
         const mockReset = jest.fn();
         const { unmount } = render(
-          <ErrorFallback 
-            error={error} 
+          <ErrorFallback
+            error={error}
             resetErrorBoundary={mockReset}
           />
         );
 
         expect(screen.getByText(expectedText)).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /重试/i })).toBeInTheDocument();
 
         unmount();
       });
@@ -170,15 +179,15 @@ describe('Error Boundary Components', () => {
       testCases.forEach(({ error }) => {
         const mockReset = jest.fn();
         const { unmount } = render(
-          <ErrorFallback 
-            error={error} 
+          <ErrorFallback
+            error={error}
             resetErrorBoundary={mockReset}
           />
         );
 
         // Should display error message regardless of type
-        expect(screen.getByText(/something went wrong/i)).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
+        expect(screen.getByText(/出现了一些问题/i)).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /重试/i })).toBeInTheDocument();
 
         unmount();
       });
@@ -189,19 +198,19 @@ describe('Error Boundary Components', () => {
       const error = new Error('Test error');
 
       render(
-        <ErrorFallback 
-          error={error} 
+        <ErrorFallback
+          error={error}
           resetErrorBoundary={mockReset}
         />
       );
 
       // Should provide a way to recover
-      const resetButton = screen.getByRole('button', { name: /try again/i });
+      const resetButton = screen.getByRole('button', { name: /重试/i });
       expect(resetButton).toBeInTheDocument();
       expect(resetButton).toBeEnabled();
 
       // Should provide helpful information
-      expect(screen.getByText(/something went wrong/i)).toBeInTheDocument();
+      expect(screen.getByText(/出现了一些问题/i)).toBeInTheDocument();
       expect(screen.getByText(/test error/i)).toBeInTheDocument();
     });
   });
@@ -226,7 +235,7 @@ describe('Error Boundary Components', () => {
         })
       );
 
-      expect(screen.getByText(/something went wrong/i)).toBeInTheDocument();
+      expect(screen.getByText(/出现了一些问题/i)).toBeInTheDocument();
     });
 
     it('should reset error boundary and re-render children', () => {
@@ -243,10 +252,10 @@ describe('Error Boundary Components', () => {
       );
 
       // Error should be displayed
-      expect(screen.getByText(/something went wrong/i)).toBeInTheDocument();
+      expect(screen.getByText(/出现了一些问题/i)).toBeInTheDocument();
 
       // Click reset
-      const resetButton = screen.getByRole('button', { name: /try again/i });
+      const resetButton = screen.getByRole('button', { name: /重试/i });
       resetButton.click();
 
       // Re-render

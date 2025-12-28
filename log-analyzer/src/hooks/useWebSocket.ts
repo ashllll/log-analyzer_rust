@@ -103,16 +103,16 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   // Initialize client
   useEffect(() => {
     clientRef.current = getWebSocketClient(config);
-    
+
     // Set up event handlers
     const handleMessage = (message: WebSocketMessage) => {
-      // Update metrics
-      setMetrics(clientRef.current?.getMetrics() ?? metrics);
-      setConnectionInfo(clientRef.current?.getConnectionInfo() ?? connectionInfo);
-      
+      // Update metrics using functional updates to avoid dependency issues
+      setMetrics(prev => clientRef.current?.getMetrics() ?? prev);
+      setConnectionInfo(prev => clientRef.current?.getConnectionInfo() ?? prev);
+
       // Call user callback
       callbacksRef.current.onMessage?.(message);
-      
+
       // Handle event notifications specifically
       if (message.type === 'EventNotification') {
         const eventMessage = message as EventNotificationMessage;
@@ -123,7 +123,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
 
     const handleStatus = (newStatus: ConnectionStatus) => {
       setStatus(newStatus);
-      setConnectionInfo(clientRef.current?.getConnectionInfo() ?? connectionInfo);
+      setConnectionInfo(prev => clientRef.current?.getConnectionInfo() ?? prev);
       callbacksRef.current.onStatusChange?.(newStatus);
     };
 
@@ -272,12 +272,12 @@ export function useWorkspaceEvents(options: UseWorkspaceEventsOptions = {}) {
   useEffect(() => {
     if (ws.isConnected && workspaceIds.length > 0) {
       ws.subscribe(workspaceIds);
-      
+
       return () => {
         ws.unsubscribe(workspaceIds);
       };
     }
-  }, [ws.isConnected, workspaceIds, ws.subscribe, ws.unsubscribe]);
+  }, [ws, workspaceIds]);
 
   return ws;
 }

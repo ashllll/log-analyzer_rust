@@ -27,12 +27,15 @@ export interface AppState {
   page: Page;
   toasts: Toast[];
   activeWorkspaceId: string | null;
+  isInitialized: boolean;
+  initializationError: string | null;
   
   // Actions
   setPage: (page: Page) => void;
   addToast: (type: ToastType, message: string) => void;
   removeToast: (id: number) => void;
   setActiveWorkspace: (id: string | null) => void;
+  setInitialized: (initialized: boolean, error?: string | null) => void;
 }
 
 // ============================================================================
@@ -47,6 +50,8 @@ export const useAppStore = create<AppState>()(
         page: 'workspaces',
         toasts: [],
         activeWorkspaceId: null,
+        isInitialized: false,
+        initializationError: null,
         
         // Actions
         setPage: (page) => set((state) => {
@@ -76,6 +81,11 @@ export const useAppStore = create<AppState>()(
         
         setActiveWorkspace: (id) => set((state) => {
           state.activeWorkspaceId = id;
+        }),
+        
+        setInitialized: (initialized, error = null) => set((state) => {
+          state.isInitialized = initialized;
+          state.initializationError = error;
         }),
       }))
     ),

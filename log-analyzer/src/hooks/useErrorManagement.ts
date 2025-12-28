@@ -38,7 +38,7 @@ export interface FormErrors {
 export const useErrorManagement = () => {
   const [errors, setErrors] = useState<ErrorInfo[]>([]);
   const [formErrors, setFormErrors] = useState<FormErrors>({});
-  const { showToast, showError, showInfo } = useToastManager();
+  const { showError, showInfo } = useToastManager();
 
   /**
    * Report an error to the backend and optionally to the user

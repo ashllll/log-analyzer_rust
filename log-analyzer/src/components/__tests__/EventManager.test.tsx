@@ -49,13 +49,10 @@ describe('EventManager', () => {
 
     it('should handle event callbacks correctly', async () => {
       let taskEventHandler: (event: any) => void;
-      let importCompleteHandler: (event: any) => void;
 
       mockListen.mockImplementation((eventName: string, handler: (event: any) => void) => {
         if (eventName === 'task-update') {
           taskEventHandler = handler;
-        } else if (eventName === 'import-complete') {
-          importCompleteHandler = handler;
         }
         return Promise.resolve(() => {});
       });

@@ -37,13 +37,15 @@ function AppContent() {
   const activeWorkspaceId = useAppStore((state) => state.activeWorkspaceId);
   const setPage = useAppStore((state) => state.setPage);
   const addToast = useAppStore((state) => state.addToast);
-  
+  const isInitialized = useAppStore((state) => state.isInitialized);
+  const initializationError = useAppStore((state) => state.initializationError);
+
   const { keywordGroups } = useKeywordManager();
   const { workspaces, refreshWorkspaces } = useWorkspaceOperations();
-  
+
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [importStatus] = useState("");  // 保留以兼容旧代码，但实际不再使用
-  
+
   const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId) || null;
 
   // IPC 连接预热（应用启动时）
@@ -61,6 +63,9 @@ function AppContent() {
         await invoke('init_state_sync');
         console.log('[StateSync] Initialized successfully');
 
+        // 标记应用已初始化
+        addToast('success', 'Application initialized successfully');
+
         // 监听工作区事件
         unlisten = await listen('workspace-event', (event: any) => {
           console.log('[StateSync] Received workspace event:', event.payload);
@@ -76,7 +81,7 @@ function AppContent() {
               : status?.status === 'Completed' 
                 ? 'Workspace updated' 
                 : 'Workspace status changed';
-            
+             
             addToast(toastType, toastMessage);
 
             // 刷新工作区列表
@@ -87,6 +92,7 @@ function AppContent() {
         console.log('[StateSync] Event listener registered');
       } catch (error) {
         console.error('[StateSync] Failed to initialize:', error);
+        addToast('error', 'Failed to initialize state sync');
       }
     };
 
@@ -99,6 +105,25 @@ function AppContent() {
       }
     };
   }, [addToast, refreshWorkspaces]);
+
+  // 显示初始化加载状态
+  if (!isInitialized) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-bg-main text-text-main">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+          {initializationError ? (
+            <div>
+              <p className="text-red-500 mb-2">Initialization failed</p>
+              <p className="text-sm text-text-muted">{initializationError}</p>
+            </div>
+          ) : (
+            <p>Loading application...</p>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen bg-bg-main text-text-main font-sans selection:bg-primary/30">

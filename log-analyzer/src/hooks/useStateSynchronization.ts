@@ -111,58 +111,6 @@ export function useStateSynchronization(): UseStateSynchronizationReturn {
   // Optimistic Updates
   // ============================================================================
 
-  const optimisticUpdateWorkspace = useCallback((id: string, updates: Partial<Workspace>) => {
-    const currentWorkspace = workspaces.find((w) => w.id === id);
-    
-    // Store original state for potential rollback
-    const optimisticUpdate: OptimisticUpdate = {
-      id: `workspace:${id}`,
-      type: 'workspace',
-      originalState: currentWorkspace ? { ...currentWorkspace } : null,
-      pendingState: updates,
-      timestamp: Date.now(),
-      timeout: setTimeout(() => {
-        // Rollback if server doesn't confirm within timeout
-        logger.warn('[SYNC] Optimistic update timeout, rolling back:', id);
-        rollbackOptimisticUpdate(`workspace:${id}`);
-      }, OPTIMISTIC_UPDATE_TIMEOUT),
-    };
-
-    optimisticUpdatesRef.current.set(`workspace:${id}`, optimisticUpdate);
-    
-    // Apply optimistic update immediately
-    updateWorkspace(id, updates);
-    
-    setSyncState((prev) => ({
-      ...prev,
-      pendingUpdates: prev.pendingUpdates + 1,
-    }));
-  }, [workspaces, updateWorkspace]);
-
-  const optimisticUpdateTask = useCallback((id: string, updates: Partial<Task>) => {
-    const currentTask = tasks.find((t) => t.id === id);
-    
-    const optimisticUpdate: OptimisticUpdate = {
-      id: `task:${id}`,
-      type: 'task',
-      originalState: currentTask ? { ...currentTask } : null,
-      pendingState: updates,
-      timestamp: Date.now(),
-      timeout: setTimeout(() => {
-        logger.warn('[SYNC] Optimistic update timeout, rolling back:', id);
-        rollbackOptimisticUpdate(`task:${id}`);
-      }, OPTIMISTIC_UPDATE_TIMEOUT),
-    };
-
-    optimisticUpdatesRef.current.set(`task:${id}`, optimisticUpdate);
-    updateTask(id, updates);
-    
-    setSyncState((prev) => ({
-      ...prev,
-      pendingUpdates: prev.pendingUpdates + 1,
-    }));
-  }, [tasks, updateTask]);
-
   const rollbackOptimisticUpdate = useCallback((key: string) => {
     const update = optimisticUpdatesRef.current.get(key);
     if (!update) return;
@@ -186,6 +134,58 @@ export function useStateSynchronization(): UseStateSynchronizationReturn {
 
     addToast('error', 'Update failed, changes reverted');
   }, [updateWorkspace, updateTask, addToast]);
+
+  const optimisticUpdateWorkspace = useCallback((id: string, updates: Partial<Workspace>) => {
+    const currentWorkspace = workspaces.find((w) => w.id === id);
+
+    // Store original state for potential rollback
+    const optimisticUpdate: OptimisticUpdate = {
+      id: `workspace:${id}`,
+      type: 'workspace',
+      originalState: currentWorkspace ? { ...currentWorkspace } : null,
+      pendingState: updates,
+      timestamp: Date.now(),
+      timeout: setTimeout(() => {
+        // Rollback if server doesn't confirm within timeout
+        logger.warn('[SYNC] Optimistic update timeout, rolling back:', id);
+        rollbackOptimisticUpdate(`workspace:${id}`);
+      }, OPTIMISTIC_UPDATE_TIMEOUT),
+    };
+
+    optimisticUpdatesRef.current.set(`workspace:${id}`, optimisticUpdate);
+
+    // Apply optimistic update immediately
+    updateWorkspace(id, updates);
+
+    setSyncState((prev) => ({
+      ...prev,
+      pendingUpdates: prev.pendingUpdates + 1,
+    }));
+  }, [workspaces, updateWorkspace, rollbackOptimisticUpdate]);
+
+  const optimisticUpdateTask = useCallback((id: string, updates: Partial<Task>) => {
+    const currentTask = tasks.find((t) => t.id === id);
+
+    const optimisticUpdate: OptimisticUpdate = {
+      id: `task:${id}`,
+      type: 'task',
+      originalState: currentTask ? { ...currentTask } : null,
+      pendingState: updates,
+      timestamp: Date.now(),
+      timeout: setTimeout(() => {
+        logger.warn('[SYNC] Optimistic update timeout, rolling back:', id);
+        rollbackOptimisticUpdate(`task:${id}`);
+      }, OPTIMISTIC_UPDATE_TIMEOUT),
+    };
+
+    optimisticUpdatesRef.current.set(`task:${id}`, optimisticUpdate);
+    updateTask(id, updates);
+
+    setSyncState((prev) => ({
+      ...prev,
+      pendingUpdates: prev.pendingUpdates + 1,
+    }));
+  }, [tasks, updateTask, rollbackOptimisticUpdate]);
 
   const confirmOptimisticUpdate = useCallback((key: string) => {
     const update = optimisticUpdatesRef.current.get(key);
@@ -318,7 +318,7 @@ export function useStateSynchronization(): UseStateSynchronizationReturn {
       ws.subscribe(workspaceIds);
       logger.debug('[SYNC] Subscribed to workspaces:', workspaceIds);
     }
-  }, [ws.isConnected, workspaces, ws.subscribe]);
+  }, [ws, workspaces]);
 
   // ============================================================================
   // Manual Refresh Actions
@@ -344,16 +344,19 @@ export function useStateSynchronization(): UseStateSynchronizationReturn {
   // ============================================================================
 
   useEffect(() => {
+    // Capture ref values at effect execution time
+    const updates = optimisticUpdatesRef.current;
+    const batchTimer = batchTimerRef.current;
+
     return () => {
       // Clear all pending timeouts
-      const updates = optimisticUpdatesRef.current;
       updates.forEach((update) => {
         clearTimeout(update.timeout);
       });
       updates.clear();
 
-      if (batchTimerRef.current) {
-        clearTimeout(batchTimerRef.current);
+      if (batchTimer) {
+        clearTimeout(batchTimer);
       }
     };
   }, []);

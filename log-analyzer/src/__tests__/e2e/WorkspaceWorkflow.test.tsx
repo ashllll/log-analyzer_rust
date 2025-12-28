@@ -28,9 +28,11 @@ jest.mock('@tauri-apps/plugin-dialog', () => ({
 jest.mock('../../utils/logger', () => ({
   logger: {
     debug: jest.fn(),
-    error: jest.fn(),
     info: jest.fn(),
     warn: jest.fn(),
+    error: jest.fn(),
+    getLevel: jest.fn(() => 'info'),
+    setLevel: jest.fn(),
   },
 }));
 
@@ -61,7 +63,7 @@ const { listen: mockListen } = require('@tauri-apps/api/event');
 describe('E2E: Workspace Management Workflow', () => {
   let user: ReturnType<typeof userEvent.setup>;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     user = userEvent.setup();
     jest.clearAllMocks();
     
@@ -69,16 +71,37 @@ describe('E2E: Workspace Management Workflow', () => {
     mockListen.mockResolvedValue(() => {});
     mockInvoke.mockImplementation((command: string) => {
       switch (command) {
+        case 'load_config':
+          return Promise.resolve({ workspaces: [], keyword_groups: [] });
         case 'get_workspaces':
           return Promise.resolve([]);
+        case 'init_state_sync':
+          return Promise.resolve();
         case 'get_tasks':
           return Promise.resolve([]);
         case 'get_keyword_groups':
           return Promise.resolve([]);
-        default:
-          return Promise.resolve(null);
-      }
-    });
+          default:
+            return Promise.resolve(null);
+        }
+      });
+
+      // Wait for workspaces page
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: /workspaces/i })).toBeInTheDocument();
+      });
+
+    // Render app and wait for initialization
+    render(
+      <TestWrapper>
+        <App />
+      </TestWrapper>
+    );
+
+    // Wait for app to initialize (isInitialized becomes true)
+    await waitFor(() => {
+      expect(screen.queryByText(/loading application/i)).not.toBeInTheDocument();
+    }, { timeout: 3000 });
   });
 
   describe('Complete Workspace Creation and Management Flow', () => {
@@ -86,6 +109,8 @@ describe('E2E: Workspace Management Workflow', () => {
       // Mock workspace creation responses
       mockInvoke.mockImplementation((command: string, _args?: any) => {
         switch (command) {
+          case 'load_config':
+            return Promise.resolve({ workspaces: [], keyword_groups: [] });
           case 'get_workspaces':
             return Promise.resolve([]);
           case 'create_workspace':
@@ -109,15 +134,9 @@ describe('E2E: Workspace Management Workflow', () => {
         }
       });
 
-      render(
-        <TestWrapper>
-          <App />
-        </TestWrapper>
-      );
-
       // Wait for initial load
       await waitFor(() => {
-        expect(screen.getByText(/workspaces/i)).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: /workspaces/i })).toBeInTheDocument();
       });
 
       // Step 1: Navigate to workspace creation
@@ -180,6 +199,8 @@ describe('E2E: Workspace Management Workflow', () => {
     it('should handle workspace creation errors gracefully', async () => {
       mockInvoke.mockImplementation((command: string) => {
         switch (command) {
+          case 'load_config':
+            return Promise.resolve({ workspaces: [], keyword_groups: [] });
           case 'get_workspaces':
             return Promise.resolve([]);
           case 'create_workspace':
@@ -189,14 +210,10 @@ describe('E2E: Workspace Management Workflow', () => {
         }
       });
 
-      render(
-        <TestWrapper>
-          <App />
-        </TestWrapper>
-      );
+      await renderAppAndWait();
 
       await waitFor(() => {
-        expect(screen.getByText(/workspaces/i)).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: /workspaces/i })).toBeInTheDocument();
       });
 
       // Try to create workspace
@@ -248,8 +265,12 @@ describe('E2E: Workspace Management Workflow', () => {
 
       mockInvoke.mockImplementation((command: string, _args?: any) => {
         switch (command) {
+          case 'load_config':
+            return Promise.resolve({ workspaces: mockWorkspaces, keyword_groups: [] });
           case 'get_workspaces':
             return Promise.resolve(mockWorkspaces);
+          case 'init_state_sync':
+            return Promise.resolve();
           case 'search_logs':
             return Promise.resolve(mockSearchResults);
           default:
@@ -257,11 +278,7 @@ describe('E2E: Workspace Management Workflow', () => {
         }
       });
 
-      render(
-        <TestWrapper>
-          <App />
-        </TestWrapper>
-      );
+      await renderAppAndWait();
 
       // Navigate to search page
       const searchTab = await screen.findByRole('button', { name: /search/i });
@@ -320,11 +337,7 @@ describe('E2E: Workspace Management Workflow', () => {
         }
       });
 
-      render(
-        <TestWrapper>
-          <App />
-        </TestWrapper>
-      );
+      await renderAppAndWait();
 
       // Navigate to tasks page
       const tasksTab = await screen.findByRole('button', { name: /tasks/i });
@@ -357,11 +370,7 @@ describe('E2E: Workspace Management Workflow', () => {
         }
       });
 
-      render(
-        <TestWrapper>
-          <App />
-        </TestWrapper>
-      );
+      await renderAppAndWait();
 
       // Navigate to tasks page
       const tasksTab = await screen.findByRole('button', { name: /tasks/i });
@@ -429,11 +438,7 @@ describe('E2E: Workspace Management Workflow', () => {
     it('should provide clear feedback and recovery options for network errors', async () => {
       mockInvoke.mockRejectedValue(new Error('Network connection failed'));
 
-      render(
-        <TestWrapper>
-          <App />
-        </TestWrapper>
-      );
+      await renderAppAndWait();
 
       // Wait for error to appear
       await waitFor(() => {
@@ -458,14 +463,10 @@ describe('E2E: Workspace Management Workflow', () => {
       // Start with successful state
       mockInvoke.mockResolvedValue([]);
 
-      render(
-        <TestWrapper>
-          <App />
-        </TestWrapper>
-      );
+      await renderAppAndWait();
 
       await waitFor(() => {
-        expect(screen.getByText(/workspaces/i)).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: /workspaces/i })).toBeInTheDocument();
       });
 
       // Navigate to search page

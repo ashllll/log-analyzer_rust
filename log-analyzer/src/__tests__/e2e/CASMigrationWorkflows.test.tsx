@@ -1,70 +1,30 @@
 /**
  * End-to-End tests for CAS Migration Workflows
- * 
+ *
  * Tests complete user workflows to validate CAS architecture:
  * - Import workflow (folders and archives)
  * - Search workflow (using MetadataStore and CAS)
  * - Workspace management (create, delete, verify)
- * 
+ *
  * Validates: Requirements 2.1, 2.2, 2.3, 2.4, 2.5, 4.4
- * 
+ *
  * **Feature: complete-cas-migration, Property N/A: E2E validation tests**
  */
 
-import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import App from '../../App';
 
-// Mock Tauri API
-jest.mock('@tauri-apps/api/core', () => ({
-  invoke: jest.fn(),
-}));
-
-jest.mock('@tauri-apps/api/event', () => ({
-  listen: jest.fn(),
-  emit: jest.fn(),
-}));
-
+// Mock dialog plugin
 jest.mock('@tauri-apps/plugin-dialog', () => ({
   open: jest.fn(),
 }));
 
-// Mock logger
-jest.mock('../../utils/logger', () => ({
-  logger: {
-    debug: jest.fn(),
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-  },
-}));
+// Import test utilities
+import { renderAppAndWait, setupDefaultMocks } from './testUtils';
 
 const { invoke: mockInvoke } = require('@tauri-apps/api/core');
 const { listen: mockListen } = require('@tauri-apps/api/event');
 const { open: mockDialogOpen } = require('@tauri-apps/plugin-dialog');
-
-// Test wrapper component
-const TestWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: {
-        retry: false,
-        gcTime: 0,
-      },
-      mutations: {
-        retry: false,
-      },
-    },
-  });
-
-  return (
-    <QueryClientProvider client={queryClient}>
-      {children}
-    </QueryClientProvider>
-  );
-};
 
 describe('E2E: CAS Migration - Import Workflow', () => {
   let user: ReturnType<typeof userEvent.setup>;
@@ -72,21 +32,9 @@ describe('E2E: CAS Migration - Import Workflow', () => {
   beforeEach(() => {
     user = userEvent.setup();
     jest.clearAllMocks();
-    
+
     // Setup default mock responses
-    mockListen.mockResolvedValue(() => {});
-    mockInvoke.mockImplementation((command: string) => {
-      switch (command) {
-        case 'get_workspaces':
-          return Promise.resolve([]);
-        case 'get_tasks':
-          return Promise.resolve([]);
-        case 'get_keyword_groups':
-          return Promise.resolve([]);
-        default:
-          return Promise.resolve(null);
-      }
-    });
+    setupDefaultMocks(mockInvoke, mockListen);
   });
 
   describe('Import Folder Workflow - CAS Storage', () => {
@@ -141,16 +89,10 @@ describe('E2E: CAS Migration - Import Workflow', () => {
         }
       });
 
-      render(
-        <TestWrapper>
-          <App />
-        </TestWrapper>
-      );
+      await renderAppAndWait();
 
-      // Navigate to workspaces page
-      await waitFor(() => {
-        expect(screen.getByText(/workspaces/i)).toBeInTheDocument();
-      });
+      // Verify workspaces page is displayed (page is already 'workspaces' by default)
+      expect(screen.getByRole('button', { name: /workspaces/i })).toBeInTheDocument();
 
       // Click import folder button
       const importButton = await screen.findByRole('button', { name: /import.*folder/i });
@@ -246,11 +188,7 @@ describe('E2E: CAS Migration - Import Workflow', () => {
         }
       });
 
-      render(
-        <TestWrapper>
-          <App />
-        </TestWrapper>
-      );
+      await renderAppAndWait();
 
       await waitFor(() => {
         expect(screen.getByText(/workspaces/i)).toBeInTheDocument();
@@ -348,11 +286,7 @@ describe('E2E: CAS Migration - Import Workflow', () => {
         }
       });
 
-      render(
-        <TestWrapper>
-          <App />
-        </TestWrapper>
-      );
+      await renderAppAndWait();
 
       await waitFor(() => {
         expect(screen.getByText(/workspaces/i)).toBeInTheDocument();
@@ -465,11 +399,7 @@ describe('E2E: CAS Migration - Search Workflow', () => {
         }
       });
 
-      render(
-        <TestWrapper>
-          <App />
-        </TestWrapper>
-      );
+      await renderAppAndWait();
 
       // Navigate to search page
       const searchTab = await screen.findByRole('button', { name: /search/i });
@@ -568,11 +498,7 @@ describe('E2E: CAS Migration - Search Workflow', () => {
         }
       });
 
-      render(
-        <TestWrapper>
-          <App />
-        </TestWrapper>
-      );
+      await renderAppAndWait();
 
       const searchTab = await screen.findByRole('button', { name: /search/i });
       await user.click(searchTab);
@@ -660,11 +586,7 @@ describe('E2E: CAS Migration - Search Workflow', () => {
         }
       });
 
-      render(
-        <TestWrapper>
-          <App />
-        </TestWrapper>
-      );
+      await renderAppAndWait();
 
       const searchTab = await screen.findByRole('button', { name: /search/i });
       await user.click(searchTab);
@@ -756,11 +678,7 @@ describe('E2E: CAS Migration - Workspace Management', () => {
         }
       });
 
-      render(
-        <TestWrapper>
-          <App />
-        </TestWrapper>
-      );
+      await renderAppAndWait();
 
       await waitFor(() => {
         expect(screen.getByText(/workspaces/i)).toBeInTheDocument();
@@ -847,11 +765,7 @@ describe('E2E: CAS Migration - Workspace Management', () => {
         }
       });
 
-      render(
-        <TestWrapper>
-          <App />
-        </TestWrapper>
-      );
+      await renderAppAndWait();
 
       await waitFor(() => {
         expect(screen.getByText(/workspace to delete/i)).toBeInTheDocument();
@@ -937,11 +851,7 @@ describe('E2E: CAS Migration - Workspace Management', () => {
         }
       });
 
-      render(
-        <TestWrapper>
-          <App />
-        </TestWrapper>
-      );
+      await renderAppAndWait();
 
       await waitFor(() => {
         expect(screen.getByText(/verified cas workspace/i)).toBeInTheDocument();
@@ -1021,11 +931,7 @@ describe('E2E: CAS Migration - Workspace Management', () => {
         }
       });
 
-      render(
-        <TestWrapper>
-          <App />
-        </TestWrapper>
-      );
+      await renderAppAndWait();
 
       // Verify all workspaces are CAS format
       await waitFor(() => {

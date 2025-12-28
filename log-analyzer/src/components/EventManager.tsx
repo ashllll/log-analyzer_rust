@@ -130,7 +130,10 @@ export const EventManager = () => {
     };
     
     initializeListeners();
-    
+
+    // Capture ref values at effect execution time
+    const createdTaskIds = createdTaskIdsRef.current;
+
     // Cleanup function - this is React's native cleanup pattern
     return () => {
       logger.debug('[EVENT_MANAGER] Cleaning up event listeners');
@@ -145,7 +148,7 @@ export const EventManager = () => {
       });
 
       // Clear the created tasks set
-      createdTaskIdsRef.current.clear();
+      createdTaskIds.clear();
     };
   }, []); // 空依赖数组，只在组件挂载时初始化一次
 

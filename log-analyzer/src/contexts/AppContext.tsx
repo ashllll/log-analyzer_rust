@@ -416,7 +416,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     // 使用 Set 跟踪已创建的任务 ID，避免重复创建
     const createdTaskIds = new Set<string>();
-    
+
+    // Capture ref values at effect execution time
+    const toastTimeouts = toastTimeoutsRef.current;
+
     // 监听任务更新事件
     const unlistenTaskUpdate = listen<any>('task-update', (event) => {
       const { task_id, task_type, target, status, message, progress, workspace_id } = event.payload;
@@ -521,11 +524,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       unlistenImportError.then(f => f());
 
       // 老王备注：清除所有toast定时器，防止内存泄漏
-      const timeouts = toastTimeoutsRef.current;
-      timeouts.forEach(timeoutId => {
+      toastTimeouts.forEach(timeoutId => {
         clearTimeout(timeoutId);
       });
-      timeouts.clear();
+      toastTimeouts.clear();
     };
   }, [addToast, taskDispatch, workspaceDispatch, taskState.tasks]);
 
