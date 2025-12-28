@@ -123,3 +123,38 @@ useEffect(() => {
 - [x] 搜索功能正常工作（12744 条日志）
 - [x] Toast 不再有重复 key 警告
 - [x] 配置保存不再循环触发（显示 "Configuration unchanged, skipping save"）
+
+## 补充修复：任务事件版本导致状态停留 PROCESSING
+
+### 现象
+
+- Tasks 页面无任务显示，但 Workspace 状态持续为 PROCESSING
+
+### 根本原因
+
+- 前端 EventBus 启用幂等性校验，依赖 `version` 单调递增
+- 后端 `task-update` 事件未携带 `version`，前端默认回退为 `1`
+- 更新事件与创建事件版本相同，被判定为重复事件并跳过
+- `COMPLETED` 更新无法落地，Workspace 无法切回 READY
+
+### 解决方案（业内成熟方案）
+
+- 采用事件版本号（Event Versioning）与幂等性校验配套
+- 由 TaskManager 统一维护任务版本，创建事件从 `1` 开始，后续更新递增
+- 避免前端猜测版本，保持事件源单一职责
+
+### 实施步骤（最小可执行）
+
+1. 在 TaskInfo 增加 `version` 字段并初始化为 `1`
+2. 每次 `UpdateTask` 时递增版本号（使用 `saturating_add` 防溢出）
+3. 在 `task-update` 事件 payload 中携带 `version`
+4. 保持前端逻辑不变，仅修复事件源数据
+
+### 变更文件
+
+- `log-analyzer/src-tauri/src/task_manager/mod.rs`
+
+### 验证结果
+
+- 导入完成后 Workspace 状态从 PROCESSING 正常切换为 READY
+- `task-update` 不再被幂等性过滤，任务状态可持续更新
