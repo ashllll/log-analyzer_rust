@@ -97,12 +97,13 @@ export type TaskRemovedEvent = z.infer<typeof TaskRemovedEventSchema>;
 export class EventValidationError extends Error {
   constructor(
     public eventType: string,
-    public errors: z.ZodError,
+    public errors: z.ZodError<any>,
     public rawData: any
   ) {
     // 老王备注：防御性检查，避免errors为undefined
-    const errorSummary = errors?.errors
-      ? errors.errors.map(e => `${e.path.join('.')}: ${e.message}`).join('; ')
+    const zodErrors = (errors as any).issues || [];
+    const errorSummary = zodErrors.length > 0
+      ? zodErrors.map((e: any) => `${e.path.join('.')}: ${e.message}`).join('; ')
       : 'Unknown validation error';
 
     super(`Event validation failed for ${eventType}: ${errorSummary}`);

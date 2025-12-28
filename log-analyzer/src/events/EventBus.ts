@@ -20,8 +20,8 @@
 
 import { z } from 'zod';
 import { logger } from '../utils/logger';
-import { TaskUpdateEventSchema, TaskRemovedEventSchema, EventValidationError, StaleEventError } from './types';
-import type { TaskUpdateEvent, TaskRemovedEvent } from './types';
+import { TaskUpdateEventSchema, TaskRemovedEventSchema, EventValidationError } from './types';
+import type { TaskUpdateEvent } from './types';
 
 // ============================================================================
 // 事件处理器类型
@@ -228,9 +228,9 @@ class EventBus {
       // Step 3: 分发事件
       await this.dispatchEvent(eventType, validatedEvent);
 
-    } catch (error) {
+    } catch (err: unknown) {
       // 老王备注：验证错误单独统计，其他错误算处理错误
-      const isValidationError = error?.name === 'EventValidationError';
+      const isValidationError = (err as Error)?.name === 'EventValidationError';
 
       if (isValidationError) {
         this.metrics.validationErrors++;
@@ -241,7 +241,7 @@ class EventBus {
       logger.error(
         {
           eventType,
-          error: error instanceof Error ? error.message : String(error),
+          error: err instanceof Error ? err.message : String(err),
           rawData,
         },
         'Event processing failed'
@@ -249,7 +249,7 @@ class EventBus {
 
       // 老王备注：验证错误应该抛出，让调用者能感知到
       if (isValidationError) {
-        throw error;
+        throw err;
       }
     }
   }
@@ -273,19 +273,20 @@ class EventBus {
           logger.warn({ eventType }, 'Unknown event type');
           return rawData;
       }
-    } catch (error) {
-      if (error instanceof z.ZodError) {
+    } catch (err: unknown) {
+      if (err instanceof z.ZodError) {
+        const zodErrors = (err as any).issues || [];
         if (this.config.enableLogging) {
           logger.error(
             {
               eventType,
-              errors: error.errors,
+              errors: zodErrors,
               rawData,
             },
             'Event validation failed'
           );
         }
-        throw new EventValidationError(eventType, error, rawData);
+        throw new EventValidationError(eventType, err, rawData);
       }
       return null;
     }
@@ -308,14 +309,14 @@ class EventBus {
     const promises = Array.from(handlers).map(async (handler) => {
       try {
         await handler(event);
-      } catch (error) {
+      } catch (err: unknown) {
         // 老王备注：handler抛出的错误要统计到processingErrors
         this.metrics.processingErrors++;
 
         logger.error(
           {
             eventType,
-            error: error instanceof Error ? error.message : String(error),
+            error: err instanceof Error ? err.message : String(err),
             handler: handler.name || 'anonymous',
           },
           'Handler error'
