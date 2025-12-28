@@ -465,6 +465,7 @@ impl TaskManagerActor {
 }
 
 /// 任务管理器句柄（客户端）
+#[derive(Clone)]
 pub struct TaskManager {
     sender: mpsc::UnboundedSender<ActorMessage>,
     config: TaskManagerConfig,
