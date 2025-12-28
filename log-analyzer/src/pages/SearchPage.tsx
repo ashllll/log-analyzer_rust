@@ -180,19 +180,15 @@ const SearchPage: React.FC<SearchPageProps> = ({
     };
   }, []);
 
-  // 监听搜索事件（修复内存泄漏）
+  // 监听搜索事件（使用React最佳实践 - 无需timeout）
   useEffect(() => {
-    let unlisteners: Array<() => void> = [];
-    let timeoutId: NodeJS.Timeout;
+    // 使用AbortController实现可取消的异步操作（业内成熟方案）
+    const abortController = new AbortController();
+    const unlisteners: Array<() => void> = [];
 
     const setupListeners = async () => {
       try {
-        // 设置超时保护：30秒后自动清理
-        timeoutId = setTimeout(() => {
-          console.warn('Event listeners timeout - forcing cleanup');
-          cleanup();
-        }, 30000);
-
+        // 并发注册所有监听器（Promise.all本身就是最优方案）
         const [resultsUnlisten, summaryUnlisten, completeUnlisten, errorUnlisten] = await Promise.all([
           listen<LogEntry[]>('search-results', (e) => {
             // 直接更新状态，useDeferredValue 会处理渲染优化
@@ -226,33 +222,38 @@ const SearchPage: React.FC<SearchPageProps> = ({
           })
         ]);
 
-        unlisteners = [resultsUnlisten, summaryUnlisten, completeUnlisten, errorUnlisten];
+        // 检查是否已取消（组件卸载时）
+        if (abortController.signal.aborted) {
+          // 如果已取消，立即清理监听器
+          [resultsUnlisten, summaryUnlisten, completeUnlisten, errorUnlisten].forEach(unlisten => unlisten());
+          return;
+        }
+
+        unlisteners.push(...[resultsUnlisten, summaryUnlisten, completeUnlisten, errorUnlisten]);
       } catch (error) {
-        console.error('Failed to setup event listeners:', error);
+        // 只有在未取消时才记录错误（避免卸载时的误报）
+        if (!abortController.signal.aborted) {
+          console.error('Failed to setup event listeners:', error);
+        }
       }
     };
 
-    const cleanup = () => {
-      // 清除超时定时器
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
+    setupListeners();
+
+    // React cleanup函数（标准模式，自动在卸载时调用）
+    return () => {
+      // 标记为已取消
+      abortController.abort();
 
       // 清理所有监听器
       unlisteners.forEach(unlisten => {
         try {
           unlisten();
         } catch (error) {
-          console.error('Error cleaning up listener:', error);
+          // 静默处理清理错误（React最佳实践）
         }
       });
-      unlisteners = [];
     };
-
-    setupListeners();
-
-    // 返回清理函数
-    return cleanup;
   }, [addToast, keywordColors]);
 
   // 加载保存的查询
