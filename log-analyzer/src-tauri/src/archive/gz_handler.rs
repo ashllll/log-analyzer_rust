@@ -500,7 +500,7 @@ mod tests {
         let result = GzHandler::stream_extract_gz(
             &source_file,
             &output_dir,
-            1 * 1024 * 1024, // 1MB limit (smaller than file)
+            1024 * 1024, // 1MB limit (smaller than file)
         )
         .await;
 

@@ -1176,7 +1176,7 @@ mod tests {
         let (store, _temp_dir) = create_test_store().await;
 
         // Insert files with different virtual paths
-        let paths = vec![
+        let paths = [
             "logs/app.log",
             "logs/error.log",
             "archive.zip/logs/nested.log",
@@ -1188,7 +1188,7 @@ mod tests {
                 id: 0,
                 sha256_hash: format!("hash_{}", i),
                 virtual_path: path.to_string(),
-                original_name: path.split('/').last().unwrap().to_string(),
+                original_name: path.split('/').next_back().unwrap().to_string(),
                 size: 100 * (i as i64 + 1),
                 modified_time: 0,
                 mime_type: None,
@@ -1451,7 +1451,7 @@ mod tests {
                 id: 0,
                 sha256_hash: format!("hash_{}_{}", size, depth),
                 virtual_path: format!("file_{}_{}.log", size, depth),
-                original_name: format!("file.log"),
+                original_name: "file.log".to_string(),
                 size,
                 modified_time: 0,
                 mime_type: None,
@@ -1496,10 +1496,10 @@ mod tests {
         // Try to insert another file with same hash - CAS deduplication should return existing ID
         let file2 = FileMetadata {
             id: 0,
-            sha256_hash: "duplicate_hash".to_string(),  // 相同的哈希
+            sha256_hash: "duplicate_hash".to_string(), // 相同的哈希
             virtual_path: "file2.log".to_string(),
             original_name: "file2.log".to_string(),
-            size: 200,  // 大小不同，但哈希相同
+            size: 200, // 大小不同，但哈希相同
             modified_time: 0,
             mime_type: None,
             parent_archive_id: None,
@@ -1515,12 +1515,19 @@ mod tests {
         );
 
         // 验证第一个文件仍然存在
-        let retrieved1 = store.get_file_by_virtual_path("file1.log").await.unwrap().unwrap();
+        let retrieved1 = store
+            .get_file_by_virtual_path("file1.log")
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(retrieved1.sha256_hash, "duplicate_hash");
 
         // 验证第二个虚拟路径不存在（被 INSERT OR IGNORE 忽略）
         let retrieved2 = store.get_file_by_virtual_path("file2.log").await.unwrap();
-        assert!(retrieved2.is_none(), "Second virtual path should not exist (ignored by UNIQUE constraint)");
+        assert!(
+            retrieved2.is_none(),
+            "Second virtual path should not exist (ignored by UNIQUE constraint)"
+        );
     }
 
     // ========== Property-Based Tests ==========

@@ -2,7 +2,7 @@
 
 # React 前端架构文档
 
-> React 19 + TypeScript + Tailwind CSS | 版本: 0.0.43
+> React 19 + TypeScript + Tailwind CSS | 版本: 0.0.76
 
 ## 模块职责
 

@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 📚 Documentation
+
+- **CLAUDE.md**: Updated to version 0.0.76 with comprehensive improvements
+  - Removed outdated Kiro MCP Server instructions
+  - Added detailed guides for common development tasks:
+    - Adding new Tauri commands with step-by-step instructions
+    - Debugging Tauri IPC communication
+    - Adding new frontend pages with i18n support
+  - Added "Key Architecture Decisions" section explaining:
+    - Why Aho-Corasick algorithm was chosen (80%+ performance improvement)
+    - Why CAS architecture was adopted (30%+ space savings)
+    - Why QueryExecutor responsibilities were split (60% complexity reduction)
+  - Added "Performance Benchmarks" section with concrete metrics
+  - Added comprehensive "Troubleshooting Guide" covering 5 common issues
+  - Improved document structure and removed redundant content
+
+- **README.md**: Updated version badge to 0.0.76
+
 ### 🐛 Fixes
 
 - Emit monotonically increasing task event versions to prevent EventBus idempotency from dropping updates and leaving workspaces stuck in PROCESSING.

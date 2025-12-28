@@ -89,7 +89,7 @@ mod tests {
         // Try to insert second file with same hash - CAS deduplication should return existing ID
         let file2 = FileMetadata {
             id: 0,
-            sha256_hash: hash2.clone(),  // 与 file1 相同的哈希
+            sha256_hash: hash2.clone(), // 与 file1 相同的哈希
             virtual_path: "logs/file2.log".to_string(),
             original_name: "file2.log".to_string(),
             size: content.len() as i64,
@@ -108,12 +108,22 @@ mod tests {
         );
 
         // 验证第一个文件仍然存在
-        let file1_id = metadata.get_file_by_virtual_path("logs/file1.log").await.unwrap().unwrap();
+        let file1_id = metadata
+            .get_file_by_virtual_path("logs/file1.log")
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(file1_id.sha256_hash, hash1);
 
         // 验证第二个虚拟路径不存在（被 INSERT OR IGNORE 忽略）
-        let file2_result = metadata.get_file_by_virtual_path("logs/file2.log").await.unwrap();
-        assert!(file2_result.is_none(), "Second virtual path should not exist (ignored by UNIQUE constraint)");
+        let file2_result = metadata
+            .get_file_by_virtual_path("logs/file2.log")
+            .await
+            .unwrap();
+        assert!(
+            file2_result.is_none(),
+            "Second virtual path should not exist (ignored by UNIQUE constraint)"
+        );
 
         // Content should be stored only once in CAS
         let content_retrieved = cas.read_content(&file1_id.sha256_hash).await.unwrap();
@@ -121,7 +131,7 @@ mod tests {
 
         // Verify CAS deduplication worked - 两个哈希值相同，内容只存储一次
         assert!(cas.exists(&hash1));
-        assert!(cas.exists(&hash2));  // Same hash, so should exist
+        assert!(cas.exists(&hash2)); // Same hash, so should exist
     }
 
     #[tokio::test]
@@ -292,7 +302,7 @@ mod tests {
                 modified_time: 0,
                 mime_type: None,
                 parent_archive_id: None,
-                depth_level: i as i32,
+                depth_level: i,
             };
 
             metadata.insert_file(&file_meta).await.unwrap();

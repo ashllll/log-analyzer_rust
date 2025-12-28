@@ -156,8 +156,11 @@ impl HighlightingEngine {
         let parsed_query = self.parse_query_for_highlighting(query)?;
 
         // Generate snippets using Tantivy
-        let snippets =
-            self.generate_snippets_with_tantivy(parsed_query.as_ref(), document_content, doc_address)?;
+        let snippets = self.generate_snippets_with_tantivy(
+            parsed_query.as_ref(),
+            document_content,
+            doc_address,
+        )?;
 
         // Apply HTML-safe highlighting
         let highlighted_snippets = self.apply_html_highlighting(&snippets)?;

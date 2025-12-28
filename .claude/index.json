@@ -1,9 +1,9 @@
 {
   "metadata": {
-    "generated_at": "2025-12-27T23:31:06+08:00",
+    "generated_at": "2025-12-28T00:00:00+08:00",
     "version": "1.0.0",
     "project_name": "log-analyzer_rust",
-    "project_version": "0.0.71",
+    "project_version": "0.0.76",
     "scanner_version": "adaptive-v1"
   },
   "coverage": {
