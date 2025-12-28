@@ -56,7 +56,7 @@ pub async fn import_folder(
         .to_string();
 
     #[allow(clippy::await_holding_lock)]
-    let task = if let Some(task_manager) = state.task_manager.lock().as_ref() {
+    let _task = if let Some(task_manager) = state.task_manager.lock().as_ref() {
         task_manager
             .create_task_async(
                 task_id.clone(),
@@ -70,9 +70,7 @@ pub async fn import_folder(
         return Err("Task manager not initialized".to_string());
     };
 
-    // 发送初始任务事件
-    let _ = app.emit("task-update", task);
-
+    // 老王备注：TaskManager.CreateTask 已经自动发送了 task-update 事件，不需要重复发送
     // 直接在当前异步上下文中执行，避免创建新的 runtime
     let source_path = Path::new(&path);
     let root_name = source_path
@@ -82,19 +80,17 @@ pub async fn import_folder(
         .to_string();
 
     // 更新任务进度
+    // 老王备注：TaskManager.UpdateTask 会自动发送 task-update 事件，不需要重复发送
     #[allow(clippy::await_holding_lock)]
     if let Some(task_manager) = state.task_manager.lock().as_ref() {
-        if let Ok(Some(task)) = task_manager
+        let _ = task_manager
             .update_task_async(
                 &task_id_clone,
                 10,
                 "Scanning...".to_string(),
                 crate::task_manager::TaskStatus::Running,
             )
-            .await
-        {
-            let _ = app_handle.emit("task-update", task);
-        }
+            .await;
     }
 
     // Initialize CAS and MetadataStore for this workspace
@@ -169,19 +165,17 @@ pub async fn import_folder(
     // Verify integrity after import (Task 5.2)
     // This generates a validation report to ensure all imported files are accessible
     // and have valid hashes in the CAS
+    // 老王备注：TaskManager.UpdateTask 会自动发送 task-update 事件，不需要重复发送
     #[allow(clippy::await_holding_lock)]
     if let Some(task_manager) = state.task_manager.lock().as_ref() {
-        if let Ok(Some(task)) = task_manager
+        let _ = task_manager
             .update_task_async(
                 &task_id_clone,
                 95,
                 "Verifying integrity...".to_string(),
                 crate::task_manager::TaskStatus::Running,
             )
-            .await
-        {
-            let _ = app_handle.emit("task-update", task);
-        }
+            .await;
     }
 
     match verify_after_import(&workspace_dir).await {
@@ -228,19 +222,17 @@ pub async fn import_folder(
     }
 
     // 导入完成，使用 TaskManager 更新任务状态
+    // 老王备注：TaskManager.UpdateTask 会自动发送 task-update 事件，不需要重复发送
     #[allow(clippy::await_holding_lock)]
     if let Some(task_manager) = state.task_manager.lock().as_ref() {
-        if let Ok(Some(task)) = task_manager
+        let _ = task_manager
             .update_task_async(
                 &task_id_clone,
                 100,
                 "Done".to_string(),
                 crate::task_manager::TaskStatus::Completed,
             )
-            .await
-        {
-            let _ = app_handle.emit("task-update", task);
-        }
+            .await;
     }
 
     let _ = app_handle.emit("import-complete", task_id_clone);

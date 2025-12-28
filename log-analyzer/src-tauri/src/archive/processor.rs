@@ -22,7 +22,7 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use tokio::fs;
 use tokio::sync::Mutex;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 use walkdir::WalkDir;
 
 /// 检查是否启用增强提取系统
@@ -46,7 +46,7 @@ fn is_enhanced_extraction_enabled() -> bool {
 ///
 /// # 参数
 ///
-/// - `path` - 要检查的路径
+/// - `path` - 要检查的路径（可以是相对路径或绝对路径）
 /// - `base_dir` - 基础目录，用于验证路径是否在允许范围内
 ///
 /// # 返回
@@ -54,15 +54,7 @@ fn is_enhanced_extraction_enabled() -> bool {
 /// - `Ok(())` - 路径安全
 /// - `Err(AppError)` - 路径不安全
 fn validate_path_safety(path: &Path, base_dir: &Path) -> Result<()> {
-    // 规范化路径
-    let canonical_path = path.canonicalize().map_err(|e| {
-        AppError::validation_error(format!(
-            "Failed to canonicalize path {}: {}",
-            path.display(),
-            e
-        ))
-    })?;
-
+    // 规范化基础目录
     let canonical_base = base_dir.canonicalize().map_err(|e| {
         AppError::validation_error(format!(
             "Failed to canonicalize base dir {}: {}",
@@ -71,11 +63,30 @@ fn validate_path_safety(path: &Path, base_dir: &Path) -> Result<()> {
         ))
     })?;
 
+    // 处理相对路径和绝对路径
+    // 如果 path 是相对路径，将其与 base_dir 组合得到完整路径
+    let full_path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        // 相对路径：与 base_dir 组合
+        canonical_base.join(path)
+    };
+
+    // 规范化完整路径
+    let canonical_path = full_path.canonicalize().map_err(|e| {
+        AppError::validation_error(format!(
+            "Failed to canonicalize path {}: {}",
+            full_path.display(),
+            e
+        ))
+    })?;
+
     // 验证路径是否在基础目录内
     if !canonical_path.starts_with(&canonical_base) {
         return Err(AppError::validation_error(format!(
-            "Path traversal detected: {} is outside of {}",
+            "Path traversal detected: {} (resolved to {}) is outside of {}",
             path.display(),
+            canonical_path.display(),
             base_dir.display()
         )));
     }
@@ -973,7 +984,29 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
         .await?;
 
     // Process extracted files recursively
-    for extracted_file in &extracted_files {
+    let total_files = extracted_files.len();
+    info!(
+        archive_id = archive_id,
+        total_files = total_files,
+        "Starting to process extracted files"
+    );
+
+    for (index, extracted_file) in extracted_files.iter().enumerate() {
+        let file_name = extracted_file
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+
+        info!(
+            archive_id = archive_id,
+            current = index + 1,
+            total = total_files,
+            file = %file_name,
+            path = %extracted_file.display(),
+            "Processing extracted file"
+        );
+
         // Validate path safety
         if let Err(e) = validate_path_safety(extracted_file, &extract_dir) {
             warn!(
@@ -984,12 +1017,28 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
             continue;
         }
 
-        let relative_path = extracted_file.strip_prefix(&extract_dir).map_err(|_| {
-            AppError::validation_error(format!(
-                "Failed to compute relative path for {}",
-                extracted_file.display()
-            ))
-        })?;
+        // Calculate relative path
+        // extracted_file may be relative or absolute, handle both cases
+        let relative_path = if extracted_file.is_absolute() {
+            // Absolute path: strip the extract_dir prefix
+            extracted_file.strip_prefix(&extract_dir).map_err(|_| {
+                AppError::validation_error(format!(
+                    "Failed to compute relative path for {}",
+                    extracted_file.display()
+                ))
+            })?
+        } else {
+            // Relative path: use as-is (already relative to extract_dir)
+            extracted_file
+        };
+
+        // Calculate full path for file operations
+        // extracted_file may be relative or absolute
+        let full_path = if extracted_file.is_absolute() {
+            extracted_file.to_path_buf()
+        } else {
+            extract_dir.join(extracted_file)
+        };
 
         let new_virtual = format!(
             "{}/{}/{}",
@@ -999,8 +1048,8 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
         );
 
         // Recursively process (supports nested archives)
-        Box::pin(process_path_with_cas_and_checkpoints(
-            extracted_file,
+        match Box::pin(process_path_with_cas_and_checkpoints(
+            &full_path,  // Use full path for file operations
             &new_virtual,
             context,
             app,
@@ -1009,7 +1058,27 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
             Some(archive_id),
             depth_level + 1,
         ))
-        .await?;
+        .await
+        {
+            Ok(_) => {
+                debug!(
+                    current = index + 1,
+                    total = total_files,
+                    file = %file_name,
+                    "Successfully processed file"
+                );
+            }
+            Err(e) => {
+                error!(
+                    current = index + 1,
+                    total = total_files,
+                    file = %file_name,
+                    error = %e,
+                    "Failed to process file"
+                );
+                // Continue processing other files instead of failing the entire batch
+            }
+        }
     }
 
     // Update archive status to completed
@@ -1291,12 +1360,28 @@ async fn extract_and_process_archive(
             continue;
         }
 
-        let relative_path = extracted_file.strip_prefix(&extract_dir).map_err(|_| {
-            AppError::validation_error(format!(
-                "Failed to compute relative path for {}",
-                extracted_file.display()
-            ))
-        })?;
+        // Calculate relative path
+        // extracted_file may be relative or absolute, handle both cases
+        let relative_path = if extracted_file.is_absolute() {
+            // Absolute path: strip the extract_dir prefix
+            extracted_file.strip_prefix(&extract_dir).map_err(|_| {
+                AppError::validation_error(format!(
+                    "Failed to compute relative path for {}",
+                    extracted_file.display()
+                ))
+            })?
+        } else {
+            // Relative path: use as-is (already relative to extract_dir)
+            extracted_file
+        };
+
+        // Calculate full path for file operations
+        // extracted_file may be relative or absolute
+        let full_path = if extracted_file.is_absolute() {
+            extracted_file.to_path_buf()
+        } else {
+            extract_dir.join(extracted_file)
+        };
 
         let new_virtual = format!(
             "{}/{}/{}",
@@ -1306,15 +1391,15 @@ async fn extract_and_process_archive(
         );
 
         debug!(
-            file = %extracted_file.display(),
+            file = %full_path.display(),
             virtual_path = %new_virtual,
-            exists = extracted_file.exists(),
+            exists = full_path.exists(),
             "Processing extracted file"
         );
 
         // 使用 Box::pin 递归处理（支持嵌套压缩包）
         Box::pin(process_path_recursive(
-            extracted_file,
+            &full_path,  // Use full path for file operations
             &new_virtual,
             target_root,
             map,

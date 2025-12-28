@@ -25,7 +25,7 @@ use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use tokio::fs;
 use tokio::io::{AsyncReadExt, BufReader};
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 /// Content-Addressable Storage manager
 ///
@@ -200,13 +200,108 @@ impl ContentAddressableStorage {
             })?;
         }
 
-        // Copy file to object storage
-        fs::copy(file_path, &object_path).await.map_err(|e| {
-            AppError::io_error(
-                format!("Failed to copy file to object storage: {}", e),
-                Some(object_path.clone()),
-            )
-        })?;
+        // Copy file to object storage with timeout protection (industry standard)
+        // Use tokio::io::copy for true async copy (fs::copy blocks on Windows!)
+        use tokio::time::{timeout, Duration};
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        const FILE_COPY_TIMEOUT: u64 = 300; // 5 minutes timeout for large files
+        const COPY_BUFFER_SIZE: usize = 64 * 1024; // 64KB buffer for efficient copying
+
+        let copy_result = timeout(
+            Duration::from_secs(FILE_COPY_TIMEOUT),
+            async {
+                // Open source file
+                let mut src_file = fs::File::open(file_path).await.map_err(|e| {
+                    AppError::io_error(
+                        format!("Failed to open source file: {}", e),
+                        Some(file_path.to_path_buf()),
+                    )
+                })?;
+
+                // Create target file
+                let mut dst_file = fs::File::create(&object_path).await.map_err(|e| {
+                    AppError::io_error(
+                        format!("Failed to create target file: {}", e),
+                        Some(object_path.clone()),
+                    )
+                })?;
+
+                // Copy using async I/O with buffer
+                let mut buffer = vec![0u8; COPY_BUFFER_SIZE];
+                let mut total_bytes = 0u64;
+
+                loop {
+                    let bytes_read = src_file.read(&mut buffer).await.map_err(|e| {
+                        AppError::io_error(
+                            format!("Failed to read from source file: {}", e),
+                            Some(file_path.to_path_buf()),
+                        )
+                    })?;
+
+                    if bytes_read == 0 {
+                        break; // EOF
+                    }
+
+                    dst_file.write_all(&buffer[..bytes_read]).await.map_err(|e| {
+                        AppError::io_error(
+                            format!("Failed to write to target file: {}", e),
+                            Some(object_path.clone()),
+                        )
+                    })?;
+
+                    total_bytes += bytes_read as u64;
+                }
+
+                // Flush to ensure all data is written
+                dst_file.flush().await.map_err(|e| {
+                    AppError::io_error(
+                        format!("Failed to flush target file: {}", e),
+                        Some(object_path.clone()),
+                    )
+                })?;
+
+                Ok::<u64, AppError>(total_bytes)
+            }
+        )
+        .await;
+
+        match copy_result {
+            Ok(Ok(bytes)) => {
+                debug!(
+                    file = %file_path.display(),
+                    target = %object_path.display(),
+                    bytes = bytes,
+                    "File copied successfully"
+                );
+            }
+            Ok(Err(e)) => {
+                // Copy failed with error
+                error!(
+                    file = %file_path.display(),
+                    target = %object_path.display(),
+                    error = %e,
+                    "File copy failed"
+                );
+                return Err(e);
+            }
+            Err(_) => {
+                // Timeout occurred
+                error!(
+                    file = %file_path.display(),
+                    target = %object_path.display(),
+                    timeout_secs = FILE_COPY_TIMEOUT,
+                    "File copy timeout after {} seconds",
+                    FILE_COPY_TIMEOUT
+                );
+                // Clean up partial file
+                let _ = fs::remove_file(&object_path).await;
+                return Err(AppError::io_error(
+                    format!("File copy timeout after {} seconds", FILE_COPY_TIMEOUT),
+                    Some(file_path.to_path_buf()),
+                ));
+            }
+        }
 
         let metadata = fs::metadata(&object_path).await.map_err(|e| {
             AppError::io_error(

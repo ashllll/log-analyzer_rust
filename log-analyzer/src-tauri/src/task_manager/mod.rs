@@ -67,6 +67,7 @@ pub struct TaskInfo {
     pub progress: u8,
     pub message: String,
     pub status: TaskStatus,
+    pub version: u32,
     pub workspace_id: Option<String>,
     #[serde(skip)]
     pub created_at: Instant,
@@ -181,11 +182,39 @@ impl TaskManagerActor {
                     progress: 0,
                     message: "Starting...".to_string(),
                     status: TaskStatus::Running,
+                    version: 1,
                     workspace_id,
                     created_at: Instant::now(),
                     completed_at: None,
                 };
-                self.tasks.insert(id, task.clone());
+                self.tasks.insert(id.clone(), task.clone());
+
+                // 老王备注：发送task-update事件给前端（业内成熟的事件驱动架构）
+                if let Err(e) = self.app.emit(
+                    "task-update",
+                    serde_json::json!({
+                        "task_id": id,
+                        "task_type": task.task_type,
+                        "target": task.target,
+                        "progress": task.progress,
+                        "message": task.message,
+                        "status": task.status,
+                        "version": task.version,
+                        "workspace_id": task.workspace_id,
+                    }),
+                ) {
+                    error!(
+                        task_id = %id,
+                        error = %e,
+                        "Failed to emit task-update event"
+                    );
+                } else {
+                    info!(
+                        task_id = %id,
+                        "Emitted task-update event for new task"
+                    );
+                }
+
                 let _ = respond_to.send(task);
             }
             ActorMessage::UpdateTask {
@@ -204,8 +233,9 @@ impl TaskManagerActor {
 
                 let result = if let Some(task) = self.tasks.get_mut(&id) {
                     task.progress = progress;
-                    task.message = message;
+                    task.message = message.clone();
                     task.status = status;
+                    task.version = task.version.saturating_add(1);
 
                     // 如果任务完成或失败，记录完成时间
                     if matches!(
@@ -217,6 +247,34 @@ impl TaskManagerActor {
                             task_id = %id,
                             status = ?status,
                             "Task finished"
+                        );
+                    }
+
+                    // 老王备注：发送task-update事件给前端（业内成熟的事件驱动架构）
+                    if let Err(e) = self.app.emit(
+                        "task-update",
+                        serde_json::json!({
+                            "task_id": id,
+                            "task_type": task.task_type,
+                        "target": task.target,
+                        "progress": task.progress,
+                        "message": task.message,
+                        "status": status,
+                        "version": task.version,
+                        "workspace_id": task.workspace_id,
+                    }),
+                ) {
+                        error!(
+                            task_id = %id,
+                            error = %e,
+                            "Failed to emit task-update event"
+                        );
+                    } else {
+                        info!(
+                            task_id = %id,
+                            progress = task.progress,
+                            status = ?status,
+                            "Emitted task-update event"
                         );
                     }
 
