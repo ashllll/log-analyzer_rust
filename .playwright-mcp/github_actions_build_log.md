@@ -1,0 +1,339 @@
+### Page state
+- Page URL: https://github.com/ashllll/log-analyzer_rust/actions/runs/20554289825/job/59036255471
+- Page Title: docs: 完成v0.0.76文档更新和发布准备 · ashllll/log-analyzer_rust@eb9ed71 · GitHub
+- Page Snapshot:
+```yaml
+- generic [ref=e2]:
+  - region
+  - generic [ref=e3]:
+    - link "Skip to content" [ref=e4] [cursor=pointer]:
+      - /url: "#start-of-content"
+    - banner [ref=e6]:
+      - heading "Navigation Menu" [level=2] [ref=e7]
+      - generic [ref=e8]:
+        - link "Homepage" [ref=e10] [cursor=pointer]:
+          - /url: /
+          - img [ref=e11]
+        - generic [ref=e13]:
+          - navigation "Global" [ref=e16]:
+            - list [ref=e17]:
+              - listitem [ref=e18]:
+                - button "Platform" [ref=e20] [cursor=pointer]:
+                  - text: Platform
+                  - img [ref=e21]
+              - listitem [ref=e23]:
+                - button "Solutions" [ref=e25] [cursor=pointer]:
+                  - text: Solutions
+                  - img [ref=e26]
+              - listitem [ref=e28]:
+                - button "Resources" [ref=e30] [cursor=pointer]:
+                  - text: Resources
+                  - img [ref=e31]
+              - listitem [ref=e33]:
+                - button "Open Source" [ref=e35] [cursor=pointer]:
+                  - text: Open Source
+                  - img [ref=e36]
+              - listitem [ref=e38]:
+                - button "Enterprise" [ref=e40] [cursor=pointer]:
+                  - text: Enterprise
+                  - img [ref=e41]
+              - listitem [ref=e43]:
+                - link "Pricing" [ref=e44] [cursor=pointer]:
+                  - /url: https://github.com/pricing
+                  - generic [ref=e45]: Pricing
+          - generic [ref=e46]:
+            - button "Search or jump to…" [ref=e49] [cursor=pointer]:
+              - img [ref=e51]
+            - link "Sign in" [ref=e54] [cursor=pointer]:
+              - /url: /login?return_to=https%3A%2F%2Fgithub.com%2Fashllll%2Flog-analyzer_rust%2Factions%2Fruns%2F20554289825%2Fjob%2F59036255471
+            - link "Sign up" [ref=e55] [cursor=pointer]:
+              - /url: /signup?ref_cta=Sign+up&ref_loc=header+logged+out&ref_page=%2F%3Cuser-name%3E%2F%3Crepo-name%3E%2Factions%2Fjob%2Findex&source=header-repo&source_repo=ashllll%2Flog-analyzer_rust
+            - button "Appearance settings" [ref=e58] [cursor=pointer]:
+              - img
+  - main [ref=e62]:
+    - generic [ref=e63]:
+      - generic [ref=e64]:
+        - generic [ref=e65]:
+          - generic [ref=e67]:
+            - img [ref=e68]
+            - link "ashllll" [ref=e71] [cursor=pointer]:
+              - /url: /ashllll
+            - generic [ref=e72]: /
+            - strong [ref=e73]:
+              - link "log-analyzer_rust" [ref=e74] [cursor=pointer]:
+                - /url: /ashllll/log-analyzer_rust
+            - generic [ref=e75]: Public
+          - generic [ref=e76]:
+            - list:
+              - listitem [ref=e77]:
+                - link "You must be signed in to change notification settings" [ref=e78] [cursor=pointer]:
+                  - /url: /login?return_to=%2Fashllll%2Flog-analyzer_rust
+                  - img [ref=e79]
+                  - text: Notifications
+              - listitem [ref=e81]:
+                - link "Fork 0" [ref=e82] [cursor=pointer]:
+                  - /url: /login?return_to=%2Fashllll%2Flog-analyzer_rust
+                  - img [ref=e83]
+                  - text: Fork
+                  - generic "0" [ref=e85]
+              - listitem [ref=e86]:
+                - link "You must be signed in to star a repository" [ref=e88] [cursor=pointer]:
+                  - /url: /login?return_to=%2Fashllll%2Flog-analyzer_rust
+                  - img [ref=e89]
+                  - text: Star
+                  - generic "0 users starred this repository" [ref=e91]: "0"
+        - navigation "Repository" [ref=e92]:
+          - list [ref=e93]:
+            - listitem [ref=e94]:
+              - link "Code" [ref=e95] [cursor=pointer]:
+                - /url: /ashllll/log-analyzer_rust
+                - img [ref=e96]
+                - generic [ref=e98]: Code
+            - listitem [ref=e99]:
+              - link "Issues" [ref=e100] [cursor=pointer]:
+                - /url: /ashllll/log-analyzer_rust/issues
+                - img [ref=e101]
+                - generic [ref=e104]: Issues
+            - listitem [ref=e105]:
+              - link "Pull requests" [ref=e106] [cursor=pointer]:
+                - /url: /ashllll/log-analyzer_rust/pulls
+                - img [ref=e107]
+                - generic [ref=e109]: Pull requests
+            - listitem [ref=e110]:
+              - link "Actions" [ref=e111] [cursor=pointer]:
+                - /url: /ashllll/log-analyzer_rust/actions
+                - img [ref=e112]
+                - generic [ref=e114]: Actions
+            - listitem [ref=e115]:
+              - link "Projects" [ref=e116] [cursor=pointer]:
+                - /url: /ashllll/log-analyzer_rust/projects
+                - img [ref=e117]
+                - generic [ref=e119]: Projects
+            - listitem [ref=e120]:
+              - link "Security" [ref=e121] [cursor=pointer]:
+                - /url: /ashllll/log-analyzer_rust/security
+                - img [ref=e122]
+                - generic [ref=e124]: Security
+            - listitem [ref=e125]:
+              - link "Insights" [ref=e126] [cursor=pointer]:
+                - /url: /ashllll/log-analyzer_rust/pulse
+                - img [ref=e127]
+                - generic [ref=e129]: Insights
+      - generic [ref=e134]:
+        - generic [ref=e137]:
+          - link "Release" [ref=e140] [cursor=pointer]:
+            - /url: /ashllll/log-analyzer_rust/actions/workflows/release.yml
+            - img [ref=e141]
+            - generic [ref=e143]: Release
+          - generic [ref=e144]:
+            - generic [ref=e145]:
+              - img "failed:" [ref=e149]
+              - 'heading "docs: 完成v0.0.76文档更新和发布准备 #84" [level=1] [ref=e151]':
+                - generic [ref=e152]: "docs: 完成v0.0.76文档更新和发布准备 #84"
+            - link "Sign in to view logs" [ref=e155] [cursor=pointer]:
+              - /url: /login?return_to=https%3A%2F%2Fgithub.com%2Fashllll%2Flog-analyzer_rust%2Factions%2Fruns%2F20554289825%2Fjob%2F59036255471
+        - generic [ref=e156]:
+          - navigation "Workflow run" [ref=e162]:
+            - list [ref=e163]:
+              - listitem [ref=e164]:
+                - link "Summary" [ref=e165] [cursor=pointer]:
+                  - /url: /ashllll/log-analyzer_rust/actions/runs/20554289825
+                  - generic:
+                    - img
+                  - generic [ref=e167]: Summary
+              - listitem [ref=e168]
+              - listitem [ref=e169]:
+                - list [ref=e170]:
+                  - listitem [ref=e171]:
+                    - heading "All jobs Filter by job status" [level=4] [ref=e172]:
+                      - generic [ref=e173]: All jobs
+                      - button "Filter by job status" [ref=e174] [cursor=pointer]:
+                        - img [ref=e175]
+                  - listitem [ref=e177]:
+                    - link "prepare-version" [ref=e178] [cursor=pointer]:
+                      - /url: /ashllll/log-analyzer_rust/actions/runs/20554289825/job/59036250772
+                      - generic:
+                        - img
+                      - generic [ref=e180]: prepare-version
+                  - listitem [ref=e181] [cursor=pointer]:
+                    - link "release (ubuntu-22.04, x86_64-unknown-linux-gnu, linux)" [ref=e182]:
+                      - /url: /ashllll/log-analyzer_rust/actions/runs/20554289825/job/59036255471
+                      - generic:
+                        - img
+                      - generic [ref=e184]: release (ubuntu-22.04, x86_64-unknown-linux-gnu, linux)
+                  - listitem [ref=e185]:
+                    - link "release (macos-latest, x86_64-apple-darwin, macos-x64)" [ref=e186] [cursor=pointer]:
+                      - /url: /ashllll/log-analyzer_rust/actions/runs/20554289825/job/59036255481
+                      - generic:
+                        - img
+                      - generic [ref=e188]: release (macos-latest, x86_64-apple-darwin, macos-x64)
+                  - listitem [ref=e189]:
+                    - link "release (macos-latest, aarch64-apple-darwin, macos-arm64)" [ref=e190] [cursor=pointer]:
+                      - /url: /ashllll/log-analyzer_rust/actions/runs/20554289825/job/59036255476
+                      - generic:
+                        - img
+                      - generic [ref=e192]: release (macos-latest, aarch64-apple-darwin, macos-arm64)
+                  - listitem [ref=e193]:
+                    - link "release (windows-latest, x86_64-pc-windows-msvc, windows)" [ref=e194] [cursor=pointer]:
+                      - /url: /ashllll/log-analyzer_rust/actions/runs/20554289825/job/59036255473
+                      - generic:
+                        - img
+                      - generic [ref=e196]: release (windows-latest, x86_64-pc-windows-msvc, windows)
+                  - listitem [ref=e197]:
+                    - link "create-release" [ref=e198] [cursor=pointer]:
+                      - /url: /ashllll/log-analyzer_rust/actions/runs/20554289825/job/59036307680
+                      - generic:
+                        - img
+                      - generic [ref=e200]: create-release
+              - listitem [ref=e201]
+              - listitem [ref=e202]:
+                - heading "Run details" [level=3] [ref=e204]
+                - list "Run details" [ref=e205]:
+                  - listitem [ref=e206]:
+                    - link "Usage" [ref=e207] [cursor=pointer]:
+                      - /url: /ashllll/log-analyzer_rust/actions/runs/20554289825/usage
+                      - generic:
+                        - img
+                      - generic [ref=e209]: Usage
+                  - listitem [ref=e210]:
+                    - link "Workflow file" [ref=e211] [cursor=pointer]:
+                      - /url: /ashllll/log-analyzer_rust/actions/runs/20554289825/workflow
+                      - generic:
+                        - img
+                      - generic [ref=e213]: Workflow file
+          - region "Check run summary" [ref=e215]:
+            - generic [ref=e216]:
+              - region "Annotations" [ref=e218]:
+                - generic [ref=e222]:
+                  - button "Open job annotations" [ref=e224] [cursor=pointer]:
+                    - img [ref=e227]
+                  - generic [ref=e229]:
+                    - heading "Annotations" [level=2] [ref=e230]
+                    - generic [ref=e231]: 2 errors
+              - generic [ref=e233]:
+                - generic [ref=e235]:
+                  - link "release (ubuntu-22.04, x86_64-unknown-linux-gnu, linux)" [ref=e238] [cursor=pointer]:
+                    - /url: "#logs"
+                    - generic [ref=e239]: release (ubuntu-22.04, x86_64-unknown-linux-gnu, linux)
+                  - generic [ref=e240]: failed Dec 28, 20253 minutes ago in 1m 22s
+                - generic [ref=e242]:
+                  - generic [ref=e243]:
+                    - group:
+                      - generic "Set up job 3s":
+                        - generic:
+                          - img
+                          - generic: Set up job
+                          - generic: 3s
+                  - generic [ref=e244]:
+                    - group:
+                      - generic "Checkout repository 1s":
+                        - generic:
+                          - img
+                          - generic: Checkout repository
+                          - generic: 1s
+                  - generic [ref=e245]:
+                    - group:
+                      - generic "Update version in project files 0s":
+                        - generic:
+                          - img
+                          - generic: Update version in project files
+                          - generic: 0s
+                  - generic [ref=e246]:
+                    - group:
+                      - generic "Install dependencies (Ubuntu) 36s":
+                        - generic:
+                          - img
+                          - generic: Install dependencies (Ubuntu)
+                          - generic: 36s
+                  - generic [ref=e247]:
+                    - group:
+                      - generic "Setup Node.js 5s":
+                        - generic:
+                          - img
+                          - generic: Setup Node.js
+                          - generic: 5s
+                  - generic [ref=e248]:
+                    - group:
+                      - generic "Install Rust 3s":
+                        - generic:
+                          - img
+                          - generic: Install Rust
+                          - generic: 3s
+                  - generic [ref=e249]:
+                    - group:
+                      - generic "Rust cache 14s":
+                        - generic:
+                          - img
+                          - generic: Rust cache
+                          - generic: 14s
+                  - generic [ref=e250]:
+                    - group:
+                      - generic "Install frontend dependencies 11s":
+                        - generic:
+                          - img
+                          - generic: Install frontend dependencies
+                          - generic: 11s
+                  - generic [ref=e251]:
+                    - group:
+                      - generic "Set executable permissions for bundled binaries (Unix) 0s":
+                        - generic:
+                          - img
+                          - generic: Set executable permissions for bundled binaries (Unix)
+                          - generic: 0s
+                  - generic [ref=e252]:
+                    - group:
+                      - generic "Build application 6s":
+                        - generic:
+                          - img
+                          - generic: Build application
+                          - generic: 6s
+                  - generic [ref=e253]:
+                    - group:
+                      - generic "Upload artifacts (Linux) 0s":
+                        - generic:
+                          - img
+                          - generic: Upload artifacts (Linux)
+                          - generic: 0s
+                  - generic [ref=e254]:
+                    - group:
+                      - generic "Upload artifacts (macOS) 0s":
+                        - generic:
+                          - img
+                          - generic: Upload artifacts (macOS)
+                          - generic: 0s
+                  - generic [ref=e255]:
+                    - group:
+                      - generic "Upload artifacts (Windows) 0s":
+                        - generic:
+                          - img
+                          - generic: Upload artifacts (Windows)
+                          - generic: 0s
+                  - generic [ref=e256]:
+                    - group:
+                      - generic "Post Rust cache 0s":
+                        - generic:
+                          - img
+                          - generic: Post Rust cache
+                          - generic: 0s
+                  - generic [ref=e257]:
+                    - group:
+                      - generic "Post Setup Node.js 0s":
+                        - generic:
+                          - img
+                          - generic: Post Setup Node.js
+                          - generic: 0s
+                  - generic [ref=e258]:
+                    - group:
+                      - generic "Post Checkout repository 0s":
+                        - generic:
+                          - img
+                          - generic: Post Checkout repository
+                          - generic: 0s
+                  - generic [ref=e259]:
+                    - group:
+                      - generic "Complete job 0s":
+                        - generic:
+                          - img
+                          - generic: Complete job
+                          - generic: 0s
+```

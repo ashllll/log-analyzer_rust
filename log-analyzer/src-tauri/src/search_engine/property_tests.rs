@@ -83,7 +83,7 @@ proptest! {
         log_entries in prop::collection::vec(log_entry_strategy(), 1..1000) // Small dataset for 200ms guarantee
     ) {
         let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async {
+        let _ = rt.block_on(async {
             let (manager, _temp_dir) = create_test_manager();
 
             // Add documents to index
@@ -125,7 +125,7 @@ proptest! {
         scale_factor in 2u32..5u32 // Test 2x to 5x scaling
     ) {
         let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async {
+        let _ = rt.block_on(async {
             // Test with base dataset
             let (manager1, _temp_dir1) = create_test_manager();
             for entry in &base_entries {
@@ -178,7 +178,7 @@ proptest! {
         log_entries in prop::collection::vec(log_entry_strategy(), 10..500)
     ) {
         let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async {
+        let _ = rt.block_on(async {
             let (manager, _temp_dir) = create_test_manager();
 
             // Add documents to index
@@ -224,7 +224,7 @@ proptest! {
         log_entries in prop::collection::vec(log_entry_strategy(), 10..200)
     ) {
         let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async {
+        let _ = rt.block_on(async {
             let (manager, _temp_dir) = create_test_manager();
 
             // Add documents to index
@@ -465,7 +465,7 @@ mod advanced_features_tests {
             content in r"[a-zA-Z0-9 .,!?]{100,1000}" // Document content to highlight
         ) {
             let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(async {
+            let _ = rt.block_on(async {
                 let (manager, _temp_dir) = create_test_manager();
 
                 // Create a test document

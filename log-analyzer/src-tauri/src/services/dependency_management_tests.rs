@@ -165,12 +165,14 @@ mod tests {
 
         // 测试事件总线
         let event_bus = services.event_bus();
-        assert!(event_bus.subscriber_count() >= 0);
+        // subscriber_count 返回 usize，总是 >= 0，无需比较
+        let _count = event_bus.subscriber_count();
 
         // 测试资源追踪器
         let resource_tracker = services.resource_tracker();
         let report = resource_tracker.generate_report();
-        assert!(report.total >= 0);
+        // total 是 usize，总是 >= 0，无需比较
+        let _total = report.total;
 
         // 测试取消管理器
         let cancellation_manager = services.cancellation_manager();
@@ -333,7 +335,8 @@ mod tests {
 
         // 5. 使用服务
         let event_bus = services.event_bus();
-        assert!(event_bus.subscriber_count() >= 0);
+        // subscriber_count 返回 usize，总是 >= 0，无需比较
+        let _count = event_bus.subscriber_count();
 
         // 6. 停止服务
         assert!(services.stop_all().is_ok());

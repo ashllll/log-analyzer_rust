@@ -26,21 +26,12 @@ mod tests {
         let data = Arc::new(Mutex::new(Vec::<String>::new()));
 
         // 使用 eyre 进行错误处理
-        let result: Result<()> = (|| {
-            let mut guard = data.lock();
-            guard.push("test".to_string());
+        let mut guard = data.lock();
+        guard.push("test".to_string());
 
-            info!("Successfully added item to vector");
+        info!("Successfully added item to vector");
 
-            if guard.is_empty() {
-                return Err(eyre::eyre!("Vector should not be empty"))
-                    .context("Checking vector state");
-            }
-
-            Ok(())
-        })();
-
-        assert!(result.is_ok());
+        assert!(!guard.is_empty(), "Vector should not be empty");
 
         // 验证数据
         let guard = data.lock();
@@ -202,11 +193,13 @@ mod tests {
 
         // 使用服务
         let event_bus = services.event_bus();
-        assert!(event_bus.subscriber_count() >= 0);
+        // subscriber_count 返回 usize，总是 >= 0，无需比较
+        let _count = event_bus.subscriber_count();
 
         let resource_tracker = services.resource_tracker();
         let report = resource_tracker.generate_report();
-        assert!(report.total >= 0);
+        // total 是 usize，总是 >= 0，无需比较
+        let _total = report.total;
         info!("Services are functioning correctly");
 
         // 停止所有服务
@@ -243,22 +236,17 @@ mod tests {
             let state = Arc::clone(&state);
 
             let handle = thread::spawn(move || -> Result<()> {
-                // 使用 eyre 进行错误处理
-                let result: Result<()> = (|| {
-                    // 更新状态（使用 parking_lot）
-                    {
-                        let mut guard = state.lock();
-                        *guard += 1;
-                    }
+                // 更新状态（使用 parking_lot）
+                {
+                    let mut guard = state.lock();
+                    *guard += 1;
+                }
 
-                    // 更新缓存（使用 moka）
-                    cache.insert(format!("key_{}", i), format!("value_{}", i));
+                // 更新缓存（使用 moka）
+                cache.insert(format!("key_{}", i), format!("value_{}", i));
 
-                    info!("Thread {} completed successfully", i);
-                    Ok(())
-                })();
-
-                result.context(format!("Thread {} execution", i))
+                info!("Thread {} completed successfully", i);
+                Ok(())
             });
 
             handles.push(handle);
