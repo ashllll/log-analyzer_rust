@@ -142,7 +142,13 @@ pub async fn search_logs(
     let cancellation_token = tokio_util::sync::CancellationToken::new();
     {
         let mut tokens = cancellation_tokens.lock();
-        tokens.insert(search_id.clone(), cancellation_token.clone());
+        // 检查是否已存在相同 ID 的令牌，避免覆盖
+        if tokens.insert(search_id.clone(), cancellation_token.clone()).is_some() {
+            tracing::warn!(
+                "Search ID {} already exists in cancellation tokens, overwriting",
+                search_id
+            );
+        }
     }
 
     // 缓存键：基于查询参数生成，使用查询内容的哈希作为版本号
@@ -470,6 +476,7 @@ pub async fn search_logs(
         let mut was_truncated = false;
         let mut pending_batch: Vec<LogEntry> = Vec::new(); // 当前待发送批次
         let mut all_results: Vec<LogEntry> = Vec::new(); // 用于缓存的完整结果集
+        const MAX_CACHE_SIZE: usize = 100_000; // 限制缓存中的结果数量
 
         // 先发送开始事件
         let _ = app_handle.emit("search-start", "Starting search...");
@@ -558,8 +565,16 @@ pub async fn search_logs(
                             }
                         }
 
-                        // 保存到完整结果集用于缓存
-                        all_results.push(entry.clone());
+                        // 保存到完整结果集用于缓存（限制大小）
+                        if all_results.len() < MAX_CACHE_SIZE {
+                            all_results.push(entry.clone());
+                        } else if all_results.len() == MAX_CACHE_SIZE {
+                            // 首次达到限制时记录警告
+                            tracing::warn!(
+                                "Cache size limit reached ({}), additional results will not be cached",
+                                MAX_CACHE_SIZE
+                            );
+                        }
                         batch_results.push(entry);
                         results_count += 1;
 

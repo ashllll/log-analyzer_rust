@@ -2,13 +2,23 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## 语言设置
+
+**重要**: 本项目使用中文作为主要交流语言。请：
+- 所有回答默认使用中文
+- 代码注释使用中文
+- 文档内容使用中文
+- 仅在引用英文原文或技术术语时使用英文
+
+---
+
 > **项目**: log-analyzer_rust - 高性能桌面日志分析工具
 >
-> **版本**: 0.0.76
+> **版本**: 0.0.83
 >
 > **技术栈**: Tauri 2.0 + Rust + React 19 + TypeScript
 >
-> **最后更新**: 2025-12-28
+> **最后更新**: 2025-12-31
 
 ---
 

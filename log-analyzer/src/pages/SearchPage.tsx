@@ -469,17 +469,17 @@ const SearchPage: React.FC<SearchPageProps> = ({
         <div className="flex gap-2">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-2.5 text-text-dim" size={16} />
-            <Input 
-              ref={searchInputRef} 
-              value={query} 
-              onChange={(e: any) => {
+            <Input
+              ref={searchInputRef}
+              value={query}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                 // 规范化输入：移除 | 前后的空格
                 const normalized = e.target.value.replace(/\s*\|\s*/g, '|');
                 setQuery(normalized);
-              }} 
-              className="pl-9 font-mono bg-bg-main" 
-              placeholder="Search keywords separated by | ..." 
-              onKeyDown={(e:any) => e.key === 'Enter' && handleSearch()} 
+              }}
+              className="pl-9 font-mono bg-bg-main"
+              placeholder="Search keywords separated by | ..."
+              onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => e.key === 'Enter' && handleSearch()}
             />
           </div>
           <div className="relative">
@@ -621,7 +621,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
             <label className="text-[10px] text-text-dim uppercase font-bold mb-1 block">File Pattern</label>
             <Input
               value={filterOptions.filePattern}
-              onChange={(e: any) => setFilterOptions(prev => ({ ...prev, filePattern: e.target.value }))}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFilterOptions(prev => ({ ...prev, filePattern: e.target.value }))}
               className="h-7 text-[11px]"
               placeholder="e.g. error.log"
             />
@@ -739,7 +739,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
               </div>
               <div className="p-2 bg-bg-card border border-border-base rounded mb-2">
                 <div className="text-[10px] text-text-dim uppercase">File</div>
-                <div className="break-all text-text-main">{activeLog.real_path}</div>
+                <div className="break-all text-text-main">{activeLog?.real_path || 'N/A'}</div>
               </div>
             </div>
           </div>

@@ -1,12 +1,23 @@
-import { 
-  SearchQuery, 
-  SearchTerm, 
+import {
+  SearchQuery,
+  SearchTerm,
   QueryOperator,
   QueryValidation,
   OptimizedQuery,
   ValidationIssue,
   TermSource
 } from '../types/search';
+
+/**
+ * 关键词组接口
+ */
+interface KeywordGroup {
+  id: string;
+  patterns: Array<{ regex: string; description?: string }>;
+  enabled?: boolean;
+  color?: string;
+  name?: string;
+}
 
 /**
  * 搜索查询构建器
@@ -43,7 +54,7 @@ export class SearchQueryBuilder {
    */
   static fromString(
     queryString: string,
-    keywordGroups: any[] = []
+    keywordGroups: KeywordGroup[] = []
   ): SearchQueryBuilder {
     const builder = SearchQueryBuilder.create();
     
@@ -62,7 +73,7 @@ export class SearchQueryBuilder {
       let presetGroupId: string | undefined;
 
       for (const group of keywordGroups) {
-        if (group.patterns && group.patterns.some((p: any) => p.regex === value)) {
+        if (group.patterns && group.patterns.some((p) => p.regex === value)) {
           source = 'preset';
           presetGroupId = group.id;
           break;
@@ -244,12 +255,12 @@ export class SearchQueryBuilder {
     if (term.isRegex) {
       try {
         new RegExp(term.value);
-      } catch (e: any) {
+      } catch (e) {
         issues.push({
           termId: term.id,
           severity: 'error',
           code: 'INVALID_REGEX',
-          message: `无效的正则表达式：${e.message}`
+          message: `无效的正则表达式：${e instanceof Error ? e.message : String(e)}`
         });
       }
     }

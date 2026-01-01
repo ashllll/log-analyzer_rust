@@ -205,7 +205,7 @@ const VirtualFileTree: React.FC<VirtualFileTreeProps> = ({
         logger.debug('Loaded tree with', treeData.length, 'root nodes');
         setTree(treeData);
       } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : String(err);
+        const errorMsg = err && err instanceof Error ? err.message : String(err || 'Unknown error');
         logger.error('Failed to load virtual file tree:', errorMsg);
         setError(errorMsg);
       } finally {

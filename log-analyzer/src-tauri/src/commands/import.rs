@@ -30,13 +30,16 @@ pub async fn import_folder(
         return Err(format!("Path does not exist: {}", path));
     }
 
-    let canonical_path = canonicalize_path(source_path).unwrap_or_else(|e| {
-        eprintln!(
-            "[WARNING] Path canonicalization failed: {}, using original path",
-            e
-        );
-        source_path.to_path_buf()
-    });
+    let canonical_path = match canonicalize_path(source_path) {
+        Ok(path) => path,
+        Err(e) => {
+            tracing::warn!(
+                "Path canonicalization failed: {}, using original path",
+                e
+            );
+            source_path.to_path_buf()
+        }
+    };
 
     let workspace_dir = app
         .path()
@@ -82,8 +85,12 @@ pub async fn import_folder(
 
     // 更新任务进度
     // 老王备注：TaskManager.UpdateTask 会自动发送 task-update 事件，不需要重复发送
-    #[allow(clippy::await_holding_lock)]
-    if let Some(task_manager) = state.task_manager.lock().as_ref() {
+    let task_manager_clone = {
+        let guard = state.task_manager.lock();
+        guard.as_ref().cloned()
+    };
+
+    if let Some(task_manager) = task_manager_clone {
         let _ = task_manager
             .update_task_async(
                 &task_id_clone,
@@ -108,16 +115,28 @@ pub async fn import_folder(
     };
 
     let metadata_store = {
-        let mut metadata_stores = state.metadata_stores.lock();
-        if let Some(store) = metadata_stores.get(&workspace_id_clone) {
-            store.clone()
+        // 第一步：检查是否已存在
+        let store_opt = {
+            let metadata_stores = state.metadata_stores.lock();
+            metadata_stores.get(&workspace_id_clone).cloned()
+        };
+
+        if let Some(store) = store_opt {
+            store
         } else {
+            // 第二步：创建新的 store（不持锁）
             let store = std::sync::Arc::new(
                 MetadataStore::new(&workspace_dir)
                     .await
                     .map_err(|e| format!("Failed to create metadata store: {}", e))?,
             );
-            metadata_stores.insert(workspace_id_clone.clone(), store.clone());
+
+            // 第三步：插入到 map（短暂持锁）
+            {
+                let mut metadata_stores = state.metadata_stores.lock();
+                metadata_stores.insert(workspace_id_clone.clone(), store.clone());
+            }
+
             store
         }
     };
@@ -148,8 +167,12 @@ pub async fn import_folder(
         eprintln!("[ERROR] Failed to process path: {}", e);
 
         // Update task with error
-        #[allow(clippy::await_holding_lock)]
-        if let Some(task_manager) = state.task_manager.lock().as_ref() {
+        let task_manager_clone = {
+            let guard = state.task_manager.lock();
+            guard.as_ref().cloned()
+        };
+
+        if let Some(task_manager) = task_manager_clone {
             let _ = task_manager
                 .update_task_async(
                     &task_id_clone,
@@ -167,8 +190,12 @@ pub async fn import_folder(
     // This generates a validation report to ensure all imported files are accessible
     // and have valid hashes in the CAS
     // 老王备注：TaskManager.UpdateTask 会自动发送 task-update 事件，不需要重复发送
-    #[allow(clippy::await_holding_lock)]
-    if let Some(task_manager) = state.task_manager.lock().as_ref() {
+    let task_manager_clone = {
+        let guard = state.task_manager.lock();
+        guard.as_ref().cloned()
+    };
+
+    if let Some(task_manager) = task_manager_clone {
         let _ = task_manager
             .update_task_async(
                 &task_id_clone,
@@ -224,8 +251,12 @@ pub async fn import_folder(
 
     // 导入完成，使用 TaskManager 更新任务状态
     // 老王备注：TaskManager.UpdateTask 会自动发送 task-update 事件，不需要重复发送
-    #[allow(clippy::await_holding_lock)]
-    if let Some(task_manager) = state.task_manager.lock().as_ref() {
+    let task_manager_clone = {
+        let guard = state.task_manager.lock();
+        guard.as_ref().cloned()
+    };
+
+    if let Some(task_manager) = task_manager_clone {
         let _ = task_manager
             .update_task_async(
                 &task_id_clone,

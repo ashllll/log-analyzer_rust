@@ -295,7 +295,21 @@ impl ContentAddressableStorage {
                     FILE_COPY_TIMEOUT
                 );
                 // Clean up partial file
-                let _ = fs::remove_file(&object_path).await;
+                match fs::remove_file(&object_path).await {
+                    Ok(_) => {
+                        debug!("Successfully cleaned up partial file after timeout");
+                    }
+                    Err(e) => {
+                        error!(
+                            target = %object_path.display(),
+                            error = %e,
+                            "Failed to clean up partial file after timeout: {}",
+                            e
+                        );
+                        // 注意：部分文件残留，但已经返回错误给调用者
+                        // 可以考虑添加到清理队列以便后续重试
+                    }
+                }
                 return Err(AppError::io_error(
                     format!("File copy timeout after {} seconds", FILE_COPY_TIMEOUT),
                     Some(file_path.to_path_buf()),
