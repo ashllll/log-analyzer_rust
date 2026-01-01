@@ -649,19 +649,6 @@ impl DynamicOptimizer {
             &self.config,
         );
 
-        // Additional recommendations based on cache manager state
-        if !self.cache_manager.is_l2_connected() && access_stats.hot_keys > 10 {
-            recommendations.push(OptimizationRecommendation {
-                recommendation_type: RecommendationType::EnableL2Cache,
-                description:
-                    "L2 cache (Redis) is not connected. Could improve distributed performance."
-                        .to_string(),
-                priority: Priority::Low,
-                estimated_impact: "Could provide distributed caching benefits".to_string(),
-                created_at: SystemTime::now(),
-            });
-        }
-
         let compression_stats = self.cache_manager.get_compression_stats();
         if !compression_stats.compression_enabled && cache_metrics.total_requests > 100 {
             recommendations.push(OptimizationRecommendation {

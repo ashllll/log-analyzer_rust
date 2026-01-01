@@ -15,9 +15,6 @@ writer_heap_size = 50000000       # 索引写入器堆大小（字节，50MB）
 # 缓存配置
 l1_max_capacity = 1000            # L1 内存缓存最大容量（条目数）
 l1_ttl_seconds = 3600             # L1 缓存 TTL（秒，1小时）
-enable_l2_cache = false           # 是否启用 L2 Redis 缓存
-redis_url = "redis://127.0.0.1/"  # Redis 连接 URL
-l2_prefix = "cache:search:"       # L2 缓存键前缀
 compression_threshold = 10240     # 压缩阈值（字节，10KB）
 
 [state_sync]

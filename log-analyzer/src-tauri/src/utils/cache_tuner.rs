@@ -475,9 +475,6 @@ impl CacheTuner {
             tti: Duration::from_secs(state.current_ttl_secs / 5), // TTI = TTL / 5
             enable_monitoring: true,
             monitoring_interval: Duration::from_secs(60),
-            enable_l2_cache: false,
-            redis_url: String::new(),
-            l2_prefix: "cache:".to_string(),
             compression_threshold: 10 * 1024,
             enable_compression: true,
             access_pattern_window: 1000,

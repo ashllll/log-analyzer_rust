@@ -632,7 +632,6 @@ impl AlertingSystem {
                 .to_string(),
             recommended_actions: vec![
                 "Check WebSocket connection health".to_string(),
-                "Review Redis pub/sub performance".to_string(),
                 "Verify network connectivity between components".to_string(),
                 "Consider reducing event payload sizes".to_string(),
             ],

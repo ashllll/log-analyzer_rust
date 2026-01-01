@@ -101,7 +101,7 @@ pub struct AppState {
     pub search_engine: Arc<Mutex<Option<SearchEngineManager>>>,
     /// 状态同步管理器（Tauri Events 实时同步）
     pub state_sync: Arc<Mutex<Option<StateSync>>>,
-    /// 统一缓存管理器（L1 Moka + 可选 L2 Redis）
+    /// 统一缓存管理器（L1 Moka 内存缓存）
     pub cache_manager: Arc<CacheManager>,
     /// 性能指标收集器（搜索操作计时、系统资源监控）
     pub metrics_collector: Arc<MetricsCollector>,

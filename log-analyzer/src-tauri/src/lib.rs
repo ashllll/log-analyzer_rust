@@ -104,7 +104,7 @@ pub fn run() {
                     .build(),
             );
 
-            // 初始化统一缓存管理器（支持 L1 Moka + 可选 L2 Redis）
+            // 初始化统一缓存管理器（L1 Moka 内存缓存）
             let cache_manager = Arc::new(utils::CacheManager::new(search_cache.clone()));
 
             // 初始化 Tantivy 搜索引擎（延迟初始化，首次搜索时创建）

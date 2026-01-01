@@ -18,8 +18,6 @@ use flate2::Compression;
 use moka::future::Cache as AsyncCache;
 use moka::sync::Cache;
 use parking_lot::RwLock;
-use redis::aio::ConnectionManager;
-use redis::AsyncCommands;
 use std::collections::HashMap;
 use std::future::Future;
 use std::io::{Read, Write};
@@ -34,10 +32,6 @@ pub struct CacheMetrics {
     pub l1_hit_count: AtomicU64,
     /// L1 缓存未命中次数
     pub l1_miss_count: AtomicU64,
-    /// L2 缓存命中次数
-    pub l2_hit_count: AtomicU64,
-    /// L2 缓存未命中次数
-    pub l2_miss_count: AtomicU64,
     /// 加载操作次数
     pub load_count: AtomicU64,
     /// 驱逐次数
@@ -89,12 +83,6 @@ pub struct CacheConfig {
     pub enable_monitoring: bool,
     /// 监控报告间隔
     pub monitoring_interval: Duration,
-    /// 是否启用 L2 Redis 缓存（本地应用默认禁用）
-    pub enable_l2_cache: bool,
-    /// Redis 连接 URL
-    pub redis_url: String,
-    /// L2 缓存前缀
-    pub l2_prefix: String,
     /// 压缩阈值（字节），超过此大小的数据将被压缩
     pub compression_threshold: usize,
     /// 是否启用压缩
@@ -113,9 +101,6 @@ impl Default for CacheConfig {
             tti: Duration::from_secs(60),  // 1分钟TTI
             enable_monitoring: true,
             monitoring_interval: Duration::from_secs(60), // 每分钟报告一次
-            enable_l2_cache: false,
-            redis_url: "redis://127.0.0.1/".to_string(),
-            l2_prefix: "cache:search:".to_string(),
             compression_threshold: 10 * 1024, // 10KB
             enable_compression: true,
             access_pattern_window: 1000,
@@ -261,8 +246,6 @@ impl CacheMetrics {
         Self {
             l1_hit_count: AtomicU64::new(0),
             l1_miss_count: AtomicU64::new(0),
-            l2_hit_count: AtomicU64::new(0),
-            l2_miss_count: AtomicU64::new(0),
             load_count: AtomicU64::new(0),
             eviction_count: AtomicU64::new(0),
             total_access_time: AtomicU64::new(0),
@@ -286,20 +269,6 @@ impl CacheMetrics {
             .fetch_add(access_time.as_nanos() as u64, Ordering::Relaxed);
     }
 
-    /// 记录 L2 缓存命中
-    pub fn record_l2_hit(&self, access_time: Duration) {
-        self.l2_hit_count.fetch_add(1, Ordering::Relaxed);
-        self.total_access_time
-            .fetch_add(access_time.as_nanos() as u64, Ordering::Relaxed);
-    }
-
-    /// 记录 L2 缓存未命中
-    pub fn record_l2_miss(&self, access_time: Duration) {
-        self.l2_miss_count.fetch_add(1, Ordering::Relaxed);
-        self.total_access_time
-            .fetch_add(access_time.as_nanos() as u64, Ordering::Relaxed);
-    }
-
     /// 记录加载操作
     pub fn record_load(&self, load_time: Duration) {
         self.load_count.fetch_add(1, Ordering::Relaxed);
@@ -316,8 +285,6 @@ impl CacheMetrics {
     pub fn snapshot(&self) -> CacheMetricsSnapshot {
         let l1_hit_count = self.l1_hit_count.load(Ordering::Relaxed);
         let l1_miss_count = self.l1_miss_count.load(Ordering::Relaxed);
-        let l2_hit_count = self.l2_hit_count.load(Ordering::Relaxed);
-        let l2_miss_count = self.l2_miss_count.load(Ordering::Relaxed);
         let load_count = self.load_count.load(Ordering::Relaxed);
         let eviction_count = self.eviction_count.load(Ordering::Relaxed);
         let total_access_time = self.total_access_time.load(Ordering::Relaxed);
@@ -327,11 +294,6 @@ impl CacheMetrics {
         let total_requests = l1_hit_count + l1_miss_count;
         let l1_hit_rate = if total_requests > 0 {
             l1_hit_count as f64 / total_requests as f64
-        } else {
-            0.0
-        };
-        let l2_hit_rate = if l1_miss_count > 0 {
-            l2_hit_count as f64 / l1_miss_count as f64
         } else {
             0.0
         };
@@ -358,16 +320,15 @@ impl CacheMetrics {
         CacheMetricsSnapshot {
             l1_hit_count,
             l1_miss_count,
-            l2_hit_count,
-            l2_miss_count,
+            l1_hit_rate,
             load_count,
             eviction_count,
-            l1_hit_rate,
-            l2_hit_rate,
+            total_requests,
             avg_access_time_ms,
             avg_load_time_ms,
             eviction_rate_per_minute,
-            total_requests,
+            total_access_time: total_access_time as u128,
+            total_load_time: total_load_time as u128,
             elapsed_time: last_reset.elapsed(),
         }
     }
@@ -376,8 +337,6 @@ impl CacheMetrics {
     pub fn reset(&self) {
         self.l1_hit_count.store(0, Ordering::Relaxed);
         self.l1_miss_count.store(0, Ordering::Relaxed);
-        self.l2_hit_count.store(0, Ordering::Relaxed);
-        self.l2_miss_count.store(0, Ordering::Relaxed);
         self.load_count.store(0, Ordering::Relaxed);
         self.eviction_count.store(0, Ordering::Relaxed);
         self.total_access_time.store(0, Ordering::Relaxed);
@@ -462,16 +421,15 @@ impl CacheMetrics {
 pub struct CacheMetricsSnapshot {
     pub l1_hit_count: u64,
     pub l1_miss_count: u64,
-    pub l2_hit_count: u64,
-    pub l2_miss_count: u64,
+    pub l1_hit_rate: f64,
     pub load_count: u64,
     pub eviction_count: u64,
-    pub l1_hit_rate: f64,
-    pub l2_hit_rate: f64,
+    pub total_requests: u64,
     pub avg_access_time_ms: f64,
     pub avg_load_time_ms: f64,
     pub eviction_rate_per_minute: f64,
-    pub total_requests: u64,
+    pub total_access_time: u128,
+    pub total_load_time: u128,
     pub elapsed_time: Duration,
 }
 
@@ -510,8 +468,6 @@ pub struct CacheManager {
     search_cache: Arc<Cache<SearchCacheKey, Vec<LogEntry>>>,
     /// 搜索结果缓存（异步版本，用于compute-on-miss操作）
     async_search_cache: Arc<AsyncCache<SearchCacheKey, Vec<LogEntry>>>,
-    /// L2 Redis 缓存连接管理器
-    redis_conn: Option<ConnectionManager>,
     /// 性能指标追踪器
     metrics: Arc<CacheMetrics>,
     /// 缓存配置
@@ -547,26 +503,9 @@ impl CacheManager {
             config.preload_threshold,
         ));
 
-        // 初始化 Redis 连接（如果启用）
-        let redis_conn = if config.enable_l2_cache {
-            match redis::Client::open(config.redis_url.as_str()) {
-                Ok(client) => {
-                    // 注意：这里是同步上下文，但我们需要异步连接管理器
-                    // 使用 tauri::async_runtime::block_on 替代 tokio::task::block_in_place
-                    tauri::async_runtime::block_on(async {
-                        client.get_connection_manager().await.ok()
-                    })
-                }
-                Err(_) => None,
-            }
-        } else {
-            None
-        };
-
         Self {
             search_cache,
             async_search_cache,
-            redis_conn,
             metrics,
             config,
             access_tracker,
@@ -594,21 +533,9 @@ impl CacheManager {
             config.preload_threshold,
         ));
 
-        let redis_conn = if config.enable_l2_cache {
-            match redis::Client::open(config.redis_url.as_str()) {
-                Ok(client) => tauri::async_runtime::block_on(async {
-                    client.get_connection_manager().await.ok()
-                }),
-                Err(_) => None,
-            }
-        } else {
-            None
-        };
-
         Self {
             search_cache,
             async_search_cache,
-            redis_conn,
             metrics,
             config,
             access_tracker,
@@ -680,17 +607,6 @@ impl CacheManager {
             }
         });
 
-        // 如果启用了 L2，则在异步上下文中清理 Redis
-        if self.config.enable_l2_cache && self.redis_conn.is_some() {
-            let workspace_id_owned = workspace_id.to_string();
-            // 使用 tauri::async_runtime::block_on 执行异步清理
-            tauri::async_runtime::block_on(async {
-                let _ = self
-                    .invalidate_l2_workspace_cache(&workspace_id_owned)
-                    .await;
-            });
-        }
-
         tracing::info!(
             workspace_id = %workspace_id,
             invalidated_count = invalidated_count,
@@ -720,11 +636,6 @@ impl CacheManager {
             invalidated_count += 1;
         }
 
-        // 2. 失效 L2 缓存
-        if self.config.enable_l2_cache {
-            let _ = self.invalidate_l2_workspace_cache(workspace_id).await;
-        }
-
         tracing::info!(
             workspace_id = %workspace_id,
             invalidated_count = invalidated_count,
@@ -732,24 +643,6 @@ impl CacheManager {
         );
 
         Ok(invalidated_count)
-    }
-
-    /// 清理 L2 中特定工作区的缓存
-    async fn invalidate_l2_workspace_cache(&self, workspace_id: &str) -> Result<()> {
-        if let Some(mut conn) = self.redis_conn.clone() {
-            let set_key = format!("{}index:{}", self.config.l2_prefix, workspace_id);
-
-            // 获取该工作区所有的缓存键
-            let keys: Vec<String> = conn.smembers(&set_key).await.unwrap_or_default();
-
-            if !keys.is_empty() {
-                // 删除所有缓存条目
-                let _: redis::RedisResult<()> = conn.del(&keys).await;
-                // 删除索引集合
-                let _: redis::RedisResult<()> = conn.del(&set_key).await;
-            }
-        }
-        Ok(())
     }
 
     /// 基于条件的智能缓存失效
@@ -861,12 +754,9 @@ impl CacheManager {
             estimated_size: self.search_cache.weighted_size(),
             l1_hit_count: 0,
             l1_miss_count: 0,
-            l2_hit_count: 0,
-            l2_miss_count: 0,
             load_count: 0,
             eviction_count: 0,
             l1_hit_rate: 0.0,
-            l2_hit_rate: 0.0,
         }
     }
 
@@ -878,12 +768,9 @@ impl CacheManager {
             estimated_size: self.async_search_cache.weighted_size(),
             l1_hit_count: 0,
             l1_miss_count: 0,
-            l2_hit_count: 0,
-            l2_miss_count: 0,
             load_count: 0,
             eviction_count: 0,
             l1_hit_rate: 0.0,
-            l2_hit_rate: 0.0,
         }
     }
 
@@ -920,8 +807,7 @@ impl CacheManager {
     /// 异步获取或计算缓存值（多层缓存 compute-on-miss 模式）
     ///
     /// 1. 检查 L1 (Moka)
-    /// 2. 检查 L2 (Redis)
-    /// 3. 执行计算并填充 L1 和 L2
+    /// 2. 执行计算并填充 L1
     pub async fn get_or_compute<F, Fut>(&self, key: SearchCacheKey, compute: F) -> Vec<LogEntry>
     where
         F: FnOnce() -> Fut,
@@ -942,40 +828,7 @@ impl CacheManager {
         let l1_miss_time = start_time.elapsed();
         self.metrics.record_l1_miss(l1_miss_time);
 
-        // 2. 检查 L2 缓存 (Redis)
-        if self.config.enable_l2_cache {
-            if let Some(mut conn) = self.redis_conn.clone() {
-                let redis_key = self.get_l2_key(&key);
-                let l2_start = Instant::now();
-
-                if let Ok(data) = conn.get::<_, Vec<u8>>(&redis_key).await {
-                    if !data.is_empty() {
-                        // 检查是否压缩并解压
-                        let decompressed = if self.config.enable_compression
-                            && CacheCompressor::is_compressed(&data)
-                        {
-                            CacheCompressor::decompress(&data).ok()
-                        } else {
-                            Some(data)
-                        };
-
-                        if let Some(raw_data) = decompressed {
-                            if let Ok(entries) = bincode::deserialize::<Vec<LogEntry>>(&raw_data) {
-                                let l2_access_time = l2_start.elapsed();
-                                self.metrics.record_l2_hit(l2_access_time);
-
-                                // 填充 L1
-                                self.async_search_cache.insert(key, entries.clone()).await;
-                                return entries;
-                            }
-                        }
-                    }
-                }
-                self.metrics.record_l2_miss(l2_start.elapsed());
-            }
-        }
-
-        // 3. 缓存未命中，执行计算
+        // 缓存未命中，执行计算
         let load_start = Instant::now();
         let result = compute().await;
         let load_time = load_start.elapsed();
@@ -986,42 +839,7 @@ impl CacheManager {
             .insert(key.clone(), result.clone())
             .await;
 
-        // 填充 L2（带压缩）
-        if self.config.enable_l2_cache {
-            if let Some(mut conn) = self.redis_conn.clone() {
-                let redis_key = self.get_l2_key(&key);
-                if let Ok(serialized) = bincode::serialize(&result) {
-                    // 根据大小决定是否压缩
-                    let data_to_store = if self.config.enable_compression
-                        && serialized.len() > self.config.compression_threshold
-                    {
-                        CacheCompressor::compress(&serialized).unwrap_or(serialized)
-                    } else {
-                        serialized
-                    };
-
-                    let _: redis::RedisResult<()> = conn
-                        .set_ex(&redis_key, data_to_store, self.config.ttl.as_secs())
-                        .await;
-
-                    // 记录该键属于哪个工作区，以便后续失效
-                    let set_key = format!("{}index:{}", self.config.l2_prefix, key.1);
-                    let _: redis::RedisResult<()> = conn.sadd(set_key, redis_key).await;
-                }
-            }
-        }
-
         result
-    }
-
-    /// 获取 L2 缓存键
-    fn get_l2_key(&self, key: &SearchCacheKey) -> String {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-
-        let mut hasher = DefaultHasher::new();
-        key.hash(&mut hasher);
-        format!("{}{:x}", self.config.l2_prefix, hasher.finish())
     }
 
     /// 异步获取或计算缓存值（带错误处理的compute-on-miss模式）
@@ -1045,34 +863,10 @@ impl CacheManager {
 
     /// 异步插入缓存条目 (支持多层)
     pub async fn insert_async(&self, key: SearchCacheKey, value: Vec<LogEntry>) {
-        // 1. 插入 L1
+        // 插入 L1
         self.async_search_cache
             .insert(key.clone(), value.clone())
             .await;
-
-        // 2. 插入 L2（带压缩）
-        if self.config.enable_l2_cache {
-            if let Some(mut conn) = self.redis_conn.clone() {
-                let redis_key = self.get_l2_key(&key);
-                if let Ok(serialized) = bincode::serialize(&value) {
-                    // 根据大小决定是否压缩
-                    let data_to_store = if self.config.enable_compression
-                        && serialized.len() > self.config.compression_threshold
-                    {
-                        CacheCompressor::compress(&serialized).unwrap_or(serialized)
-                    } else {
-                        serialized
-                    };
-
-                    let _: redis::RedisResult<()> = conn
-                        .set_ex(&redis_key, data_to_store, self.config.ttl.as_secs())
-                        .await;
-
-                    let set_key = format!("{}index:{}", self.config.l2_prefix, key.1);
-                    let _: redis::RedisResult<()> = conn.sadd(set_key, redis_key).await;
-                }
-            }
-        }
     }
 
     /// 异步获取缓存条目 (支持多层)
@@ -1089,40 +883,6 @@ impl CacheManager {
         }
 
         self.metrics.record_l1_miss(start_time.elapsed());
-
-        // 检查 L2
-        if self.config.enable_l2_cache {
-            if let Some(mut conn) = self.redis_conn.clone() {
-                let redis_key = self.get_l2_key(key);
-                let l2_start = Instant::now();
-
-                if let Ok(data) = conn.get::<_, Vec<u8>>(&redis_key).await {
-                    if !data.is_empty() {
-                        // 检查是否压缩并解压
-                        let decompressed = if self.config.enable_compression
-                            && CacheCompressor::is_compressed(&data)
-                        {
-                            CacheCompressor::decompress(&data).ok()
-                        } else {
-                            Some(data)
-                        };
-
-                        if let Some(raw_data) = decompressed {
-                            if let Ok(entries) = bincode::deserialize::<Vec<LogEntry>>(&raw_data) {
-                                self.metrics.record_l2_hit(l2_start.elapsed());
-                                // 填充 L1
-                                self.async_search_cache
-                                    .insert((*key).clone(), entries.clone())
-                                    .await;
-                                return Some(entries);
-                            }
-                        }
-                    }
-                }
-                self.metrics.record_l2_miss(l2_start.elapsed());
-            }
-        }
-
         None
     }
 
@@ -1358,7 +1118,6 @@ impl CacheManager {
                 // 记录性能指标
                 tracing::info!(
                     l1_hit_rate = %format!("{:.2}%", snapshot.l1_hit_rate * 100.0),
-                    l2_hit_rate = %format!("{:.2}%", snapshot.l2_hit_rate * 100.0),
                     total_requests = snapshot.total_requests,
                     avg_access_time_ms = %format!("{:.2}ms", snapshot.avg_access_time_ms),
                     avg_load_time_ms = %format!("{:.2}ms", snapshot.avg_load_time_ms),
@@ -1533,25 +1292,6 @@ impl CacheManager {
         }
     }
 
-    /// 检查 L2 缓存连接状态
-    pub fn is_l2_connected(&self) -> bool {
-        self.redis_conn.is_some()
-    }
-
-    /// 获取 L2 缓存配置
-    pub fn get_l2_config(&self) -> L2CacheConfig {
-        L2CacheConfig {
-            enabled: self.config.enable_l2_cache,
-            connected: self.is_l2_connected(),
-            redis_url: if self.config.enable_l2_cache {
-                Some(self.config.redis_url.clone())
-            } else {
-                None
-            },
-            prefix: self.config.l2_prefix.clone(),
-        }
-    }
-
     /// 智能缓存驱逐 - 在内存压力下执行
     pub async fn intelligent_eviction(&self, target_reduction_percent: f64) -> Result<usize> {
         let current_count = self.async_search_cache.entry_count();
@@ -1601,7 +1341,6 @@ impl CacheManager {
         let alerts = self.check_performance_alerts();
         let statistics = self.get_cache_statistics();
         let access_patterns = self.get_access_pattern_stats();
-        let l2_status = self.get_l2_config();
         let compression_status = self.get_compression_stats();
 
         // 生成性能报告（同步方法，内部使用 block_on 获取异步统计）
@@ -1615,7 +1354,6 @@ impl CacheManager {
             active_alerts: alerts,
             statistics,
             access_patterns,
-            l2_status,
             compression_status,
             recommendations: report.recommendations,
         }
@@ -1632,12 +1370,9 @@ pub struct CacheStatistics {
     /// 缓存命中次数
     pub l1_hit_count: u64,
     pub l1_miss_count: u64,
-    pub l2_hit_count: u64,
-    pub l2_miss_count: u64,
     pub load_count: u64,
     pub eviction_count: u64,
     pub l1_hit_rate: f64,
-    pub l2_hit_rate: f64,
 }
 
 /// 缓存性能报告
@@ -1677,8 +1412,6 @@ pub struct CacheDashboardData {
     pub statistics: CacheStatistics,
     /// 访问模式统计
     pub access_patterns: AccessPatternStats,
-    /// L2 缓存状态
-    pub l2_status: L2CacheConfig,
     /// 压缩状态
     pub compression_status: CompressionStats,
     /// 优化建议
@@ -1726,15 +1459,6 @@ pub struct CompressionStats {
     pub compression_enabled: bool,
     pub compression_threshold: usize,
     pub estimated_compression_ratio: f64,
-}
-
-/// L2 缓存配置信息
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct L2CacheConfig {
-    pub enabled: bool,
-    pub connected: bool,
-    pub redis_url: Option<String>,
-    pub prefix: String,
 }
 
 impl CacheStatistics {
@@ -1875,12 +1599,9 @@ mod tests {
             estimated_size: 1000,
             l1_hit_count: 80,
             l1_miss_count: 20,
-            l2_hit_count: 10,
-            l2_miss_count: 10,
             load_count: 20,
             eviction_count: 5,
             l1_hit_rate: 0.8,
-            l2_hit_rate: 0.5,
         };
 
         let score = stats.efficiency_score();
