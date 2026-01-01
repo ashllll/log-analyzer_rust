@@ -173,14 +173,37 @@ pub async fn import_folder(
         };
 
         if let Some(task_manager) = task_manager_clone {
-            let _ = task_manager
+            // 添加完整的错误处理和降级方案
+            if let Err(update_err) = task_manager
                 .update_task_async(
                     &task_id_clone,
                     0,
                     format!("Error: {}", e),
                     crate::task_manager::TaskStatus::Failed,
                 )
-                .await;
+                .await
+            {
+                tracing::error!(
+                    task_id = %task_id_clone,
+                    error = %update_err,
+                    "Failed to update task status to Failed"
+                );
+
+                // 降级方案：直接发送事件到前端
+                let _ = app_handle.emit(
+                    "task-update",
+                    serde_json::json!({
+                        "task_id": task_id_clone,
+                        "task_type": "import",
+                        "target": path,
+                        "progress": 0,
+                        "message": format!("Error: {}", e),
+                        "status": "FAILED",
+                        "version": 1u32,
+                        "workspace_id": workspace_id_clone,
+                    })
+                );
+            }
         }
 
         return Err(format!("Failed to process path: {}", e));
@@ -257,14 +280,43 @@ pub async fn import_folder(
     };
 
     if let Some(task_manager) = task_manager_clone {
-        let _ = task_manager
+        // 添加完整的错误处理和降级方案
+        if let Err(e) = task_manager
             .update_task_async(
                 &task_id_clone,
                 100,
                 "Done".to_string(),
                 crate::task_manager::TaskStatus::Completed,
             )
-            .await;
+            .await
+        {
+            tracing::error!(
+                task_id = %task_id_clone,
+                error = %e,
+                "Failed to update task status to Completed"
+            );
+
+            // 降级方案：直接发送事件到前端
+            if let Err(event_err) = app_handle.emit(
+                "task-update",
+                serde_json::json!({
+                    "task_id": task_id_clone,
+                    "task_type": "import",
+                    "target": path,
+                    "progress": 100,
+                    "message": "Done",
+                    "status": "COMPLETED",
+                    "version": 1u32,
+                    "workspace_id": workspace_id_clone,
+                })
+            ) {
+                tracing::error!(
+                    task_id = %task_id_clone,
+                    error = %event_err,
+                    "Failed to send fallback task-update event"
+                );
+            }
+        }
     }
 
     let _ = app_handle.emit("import-complete", task_id_clone);

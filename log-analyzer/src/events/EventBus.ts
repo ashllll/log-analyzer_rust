@@ -60,7 +60,24 @@ class IdempotencyManager {
   isProcessed(taskId: string, version: number): boolean {
     const processed = this.processed.get(taskId);
     if (!processed) return false;
-    return processed.version >= version;
+
+    // 只有严格相同版本才视为重复
+    // 版本号递增的事件应该被处理
+    if (processed.version === version) {
+      return true;
+    }
+
+    // 如果新版本小于已处理版本，跳过（防止旧事件延迟到达）
+    if (processed.version > version) {
+      console.warn(
+        `[IdempotencyManager] Skipping stale event with older version: ` +
+        `taskId=${taskId}, processedVersion=${processed.version}, incomingVersion=${version}`
+      );
+      return true;
+    }
+
+    // 新版本事件，允许处理
+    return false;
   }
 
   /**

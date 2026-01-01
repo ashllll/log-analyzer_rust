@@ -555,9 +555,44 @@ impl TaskManager {
     /// 停止任务管理器
     pub fn shutdown(&self) -> Result<()> {
         info!("Shutting down TaskManager");
-        self.sender
-            .send(ActorMessage::Shutdown)
-            .wrap_err("Failed to send shutdown message")?;
+
+        // 尝试优雅关闭，带重试机制
+        let max_retries = 50; // 5秒 (50次 * 100ms)
+        let mut retries = 0;
+
+        loop {
+            match self.sender.send(ActorMessage::Shutdown) {
+                Ok(()) => {
+                    info!("Shutdown message sent successfully");
+                    break;
+                }
+                Err(e) => {
+                    retries += 1;
+                    if retries >= max_retries {
+                        error!(
+                            error = %e,
+                            retries = retries,
+                            "Failed to send shutdown message after {} retries, forcing shutdown",
+                            max_retries
+                        );
+                        return Err(e).wrap_err("Failed to send shutdown message after timeout");
+                    }
+
+                    if retries % 10 == 0 {
+                        // 每秒记录一次警告
+                        warn!(
+                            error = %e,
+                            retries = retries,
+                            "Actor channel closed, retrying shutdown..."
+                        );
+                    }
+
+                    // 短暂等待后重试
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+            }
+        }
+
         Ok(())
     }
 }
