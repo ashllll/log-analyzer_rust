@@ -168,19 +168,20 @@ async fn perform_async_search(
             }
         };
 
-        // Convert bytes to string
-        let content_str = match String::from_utf8(content) {
-            Ok(s) => s,
-            Err(e) => {
-                tracing::warn!(
-                    search_id = %search_id,
-                    file = %file.virtual_path,
-                    error = %e,
-                    "Failed to decode file content as UTF-8"
-                );
-                continue;
-            }
-        };
+        // Convert bytes to string with encoding fallback (三层容错策略)
+        use crate::utils::encoding::decode_log_content;
+
+        let (content_str, encoding_info) = decode_log_content(&content);
+
+        if encoding_info.had_errors {
+            tracing::debug!(
+                search_id = %search_id,
+                file = %file.virtual_path,
+                encoding = %encoding_info.encoding,
+                fallback_used = encoding_info.fallback_used,
+                "File content decoded with encoding fallback in async search"
+            );
+        }
 
         // Search content line by line
         match search_content_async(&content_str, &file.virtual_path, &query, results_count).await {

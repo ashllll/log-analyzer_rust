@@ -12,14 +12,13 @@ use crate::archive::extraction_engine::ExtractionPolicy;
 use crate::archive::public_api::extract_archive_async;
 use crate::archive::ArchiveManager;
 use crate::error::{AppError, Result};
-use crate::models::log_entry::TaskProgress;
 use crate::services::file_watcher::get_file_metadata;
 use crate::storage::{ArchiveMetadata, ContentAddressableStorage, FileMetadata, MetadataStore};
 use crate::utils::path::normalize_path_separator;
 use std::collections::HashMap;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
 use tokio::fs;
 use tokio::sync::Mutex;
 use tracing::{debug, error, info, warn};
@@ -199,18 +198,12 @@ pub async fn process_path_recursive(
     )
     .await
     {
-        eprintln!("[WARNING] Failed to process {}: {}", path.display(), e);
-        let _ = app.emit(
-            "task-update",
-            TaskProgress {
-                task_id: task_id.to_string(),
-                task_type: "Import".to_string(),
-                target: "Processing".to_string(),
-                status: "RUNNING".to_string(),
-                message: format!("Warning: {}", e),
-                progress: 50,
-                workspace_id: None, // 这是内部进度更新，没有 workspace_id
-            },
+        // 老王备注：移除事件发送，所有事件都通过 TaskManager 发送
+        tracing::warn!(
+            path = %path.display(),
+            error = %e,
+            task_id = %task_id,
+            "Failed to process archive (event sent via TaskManager)"
         );
     }
 }
@@ -251,17 +244,10 @@ pub async fn process_path_recursive_with_metadata(
     .await
     {
         eprintln!("[WARNING] Failed to process {}: {}", path.display(), e);
-        let _ = app.emit(
-            "task-update",
-            TaskProgress {
-                task_id: task_id.to_string(),
-                task_type: "Import".to_string(),
-                target: "Processing".to_string(),
-                status: "RUNNING".to_string(),
-                message: format!("Warning: {}", e),
-                progress: 50,
-                workspace_id: None, // 内部进度更新
-            },
+        tracing::warn!(
+            error = %e,
+            task_id = %task_id,
+            "Warning during archive processing (event sent via TaskManager)"
         );
     }
 }
@@ -321,17 +307,10 @@ async fn process_path_recursive_inner(
         .to_string_lossy()
         .to_string();
 
-    let _ = app.emit(
-        "task-update",
-        TaskProgress {
-            task_id: task_id.to_string(),
-            task_type: "Import".to_string(),
-            target: file_name.clone(),
-            status: "RUNNING".to_string(),
-            message: format!("Processing: {}", file_name),
-            progress: 50,
-            workspace_id: None,
-        },
+    tracing::debug!(
+        task_id = %task_id,
+        file = %file_name,
+        "Processing file (event sent via TaskManager)"
     );
 
     // 创建 ArchiveManager 实例
@@ -359,18 +338,11 @@ async fn process_path_recursive_inner(
                     path.display(),
                     e
                 );
-                // 压缩文件解压失败，记录错误但继续处理
-                let _ = app.emit(
-                    "task-update",
-                    TaskProgress {
-                        task_id: task_id.to_string(),
-                        task_type: "Import".to_string(),
-                        target: file_name.clone(),
-                        status: "RUNNING".to_string(),
-                        message: format!("Warning: Failed to extract {}", file_name),
-                        progress: 50,
-                        workspace_id: None,
-                    },
+                tracing::warn!(
+                    file = %file_name,
+                    error = %e,
+                    task_id = %task_id,
+                    "Failed to extract archive (event sent via TaskManager)"
                 );
                 return Err(e);
             }
@@ -455,17 +427,10 @@ async fn process_path_recursive_inner_with_metadata(
         .to_string_lossy()
         .to_string();
 
-    let _ = app.emit(
-        "task-update",
-        TaskProgress {
-            task_id: task_id.to_string(),
-            task_type: "Import".to_string(),
-            target: file_name.clone(),
-            status: "RUNNING".to_string(),
-            message: format!("Processing: {}", file_name),
-            progress: 50,
-            workspace_id: None,
-        },
+    tracing::debug!(
+        task_id = %task_id,
+        file = %file_name,
+        "Processing file with metadata (event sent via TaskManager)"
     );
 
     // 压缩文件不收集元数据，使用原始处理逻辑
@@ -671,17 +636,10 @@ pub async fn process_path_with_cas_and_checkpoints(
         .to_string();
 
     // Report progress
-    let _ = app.emit(
-        "task-update",
-        TaskProgress {
-            task_id: task_id.to_string(),
-            task_type: "Import".to_string(),
-            target: file_name.clone(),
-            status: "RUNNING".to_string(),
-            message: format!("Processing: {}", file_name),
-            progress: 50,
-            workspace_id: None,
-        },
+    tracing::debug!(
+        task_id = %task_id,
+        file = %file_name,
+        "Processing file with CAS (event sent via TaskManager)"
     );
 
     // Check if this is an archive file

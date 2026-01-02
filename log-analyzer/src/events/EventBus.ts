@@ -221,8 +221,22 @@ class EventBus {
       if (eventType === 'task-update' && this.config.enableIdempotency) {
         const event = validatedEvent as TaskUpdateEvent;
 
-        // 确保有version字段
-        const version = event.version || 1;
+        // 严格模式：拒绝无 version 字段的事件（非 TaskManager 发送）
+        if (event.version == null) {
+          if (this.config.enableLogging) {
+            logger.warn(
+              {
+                taskId: event.task_id,
+                rawEvent: rawData,
+              },
+              'Ignoring event without version field (not from TaskManager)'
+            );
+          }
+          this.metrics.validationErrors++;
+          return;  // 直接丢弃，不处理
+        }
+
+        const version = event.version;
 
         if (this.idempotencyManager.isProcessed(event.task_id, version)) {
           if (this.config.enableLogging) {

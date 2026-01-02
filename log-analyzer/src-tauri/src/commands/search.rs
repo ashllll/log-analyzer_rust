@@ -17,6 +17,7 @@ use crate::models::search_statistics::SearchResultSummary;
 use crate::models::{AppState, LogEntry, SearchCacheKey, SearchFilters, SearchQuery};
 use crate::search_engine::manager::{SearchConfig, SearchEngineManager};
 use crate::services::{calculate_keyword_statistics, parse_metadata, ExecutionPlan, QueryExecutor};
+use crate::utils::encoding::decode_log_content;
 
 /// 计算并打印缓存统计信息
 fn log_cache_statistics(total_searches: &Arc<Mutex<u64>>, cache_hits: &Arc<Mutex<u64>>) {
@@ -698,19 +699,20 @@ fn search_single_file(
         }
     };
 
-    // Convert bytes to string
-    let content_str = match String::from_utf8(content) {
-        Ok(s) => s,
-        Err(e) => {
-            warn!(
-                hash = %sha256_hash,
-                virtual_path = %virtual_path,
-                error = %e,
-                "File content is not valid UTF-8, skipping"
-            );
-            return results;
-        }
-    };
+    // Convert bytes to string with encoding fallback (三层容错策略)
+    use crate::utils::encoding::decode_log_content;
+
+    let (content_str, encoding_info) = decode_log_content(&content);
+
+    if encoding_info.had_errors {
+        debug!(
+            hash = %sha256_hash,
+            virtual_path = %virtual_path,
+            encoding = %encoding_info.encoding,
+            fallback_used = encoding_info.fallback_used,
+            "File content decoded with encoding fallback"
+        );
+    }
 
     // Process lines
     for (i, line) in content_str.lines().enumerate() {
@@ -828,19 +830,18 @@ fn search_single_file_with_details(
             }
         };
 
-        // Convert bytes to string
-        let content_str = match String::from_utf8(content) {
-            Ok(s) => s,
-            Err(e) => {
-                warn!(
-                    hash = %sha256_hash,
-                    virtual_path = %virtual_path,
-                    error = %e,
-                    "File content is not valid UTF-8, skipping"
-                );
-                return results;
-            }
-        };
+        // Convert bytes to string with encoding fallback (三层容错策略)
+        let (content_str, encoding_info) = decode_log_content(&content);
+
+        if encoding_info.had_errors {
+            debug!(
+                hash = %sha256_hash,
+                virtual_path = %virtual_path,
+                encoding = %encoding_info.encoding,
+                fallback_used = encoding_info.fallback_used,
+                "File content decoded with encoding fallback in structured search"
+            );
+        }
 
         // Process lines
         for (i, line) in content_str.lines().enumerate() {

@@ -186,22 +186,7 @@ pub async fn import_folder(
                 tracing::error!(
                     task_id = %task_id_clone,
                     error = %update_err,
-                    "Failed to update task status to Failed"
-                );
-
-                // 降级方案：直接发送事件到前端
-                let _ = app_handle.emit(
-                    "task-update",
-                    serde_json::json!({
-                        "task_id": task_id_clone,
-                        "task_type": "import",
-                        "target": path,
-                        "progress": 0,
-                        "message": format!("Error: {}", e),
-                        "status": "FAILED",
-                        "version": 1u32,
-                        "workspace_id": workspace_id_clone,
-                    })
+                    "Failed to update task status to Failed. Not sending fallback event."
                 );
             }
         }
@@ -293,29 +278,8 @@ pub async fn import_folder(
             tracing::error!(
                 task_id = %task_id_clone,
                 error = %e,
-                "Failed to update task status to Completed"
+                "Failed to update task status to Completed. Not sending fallback event."
             );
-
-            // 降级方案：直接发送事件到前端
-            if let Err(event_err) = app_handle.emit(
-                "task-update",
-                serde_json::json!({
-                    "task_id": task_id_clone,
-                    "task_type": "import",
-                    "target": path,
-                    "progress": 100,
-                    "message": "Done",
-                    "status": "COMPLETED",
-                    "version": 1u32,
-                    "workspace_id": workspace_id_clone,
-                })
-            ) {
-                tracing::error!(
-                    task_id = %task_id_clone,
-                    error = %event_err,
-                    "Failed to send fallback task-update event"
-                );
-            }
         }
     }
 

@@ -597,15 +597,15 @@ impl TaskManager {
     }
 }
 
-impl Drop for TaskManager {
-    fn drop(&mut self) {
-        // 使用 scopeguard 确保即使 shutdown 失败也会记录
-        defer! {
-            debug!("TaskManager handle dropped");
-        }
-
-        if let Err(e) = self.shutdown() {
-            error!(error = %e, "Error during TaskManager shutdown");
-        }
-    }
-}
+// 老王备注：移除 Drop trait 中的 shutdown 调用
+// TaskManager 是单例，应该在应用生命周期内一直存在
+// Clone 的句柄被 drop 时不应该关闭整个 actor
+// 只有显式调用 shutdown() 或应用退出时才应该关闭
+//
+// impl Drop for TaskManager {
+//     fn drop(&mut self) {
+//         if let Err(e) = self.shutdown() {
+//             error!(error = %e, "Error during TaskManager shutdown");
+//         }
+//     }
+// }
