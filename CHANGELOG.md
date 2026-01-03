@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### ✨ Features
+
+- **file-filter**: 实现三层检测策略的文件类型过滤系统
+  - 第1层：二进制文件检测（JPEG、PNG、EXE、MP3 等魔数检测）
+  - 第2层：智能过滤规则（文件名模式 + 扩展名白名单/黑名单）
+  - 防御性设计：失败安全、零侵入、Feature Flag（默认禁用第2层）
+  - 新增 `FileFilterSettings` UI 组件用于配置过滤规则
+  - 性能影响：<1ms/文件，导入总开销 <5%
+  - 7个单元测试全部通过
+
 ### 📚 Documentation
 
 - **CLAUDE.md**: Updated to version 0.0.76 with comprehensive improvements
@@ -24,6 +34,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Improved document structure and removed redundant content
 
 - **README.md**: Updated version badge to 0.0.76
+
+- 新增 `FILE_FILTER_TEST_GUIDE.md`：文件类型过滤功能完整测试指南
+  - 5个测试场景（默认配置、白名单、黑名单、禁用过滤、压缩包递归）
+  - 测试数据生成说明
+  - 验证清单和故障排查指南
+
+- 新增 `generate_test_data.py`：自动生成测试数据脚本
+  - 创建日志文件、二进制文件、文本文件
+  - 支持所有测试场景的数据准备
 
 ### 🐛 Fixes
 
