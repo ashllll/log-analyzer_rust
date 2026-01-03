@@ -35,7 +35,7 @@ use models::AppState;
 
 // 命令实现位于 commands 模块
 use commands::{
-    config::{load_config, save_config},
+    config::{get_file_filter_config, load_config, save_config, save_file_filter_config},
     export::export_results,
     import::{check_rar_support, import_folder},
     legacy::{get_legacy_workspace_info, scan_legacy_formats},
@@ -157,6 +157,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             save_config,
             load_config,
+            get_file_filter_config,
+            save_file_filter_config,
             search_logs,
             cancel_search,
             import_folder,

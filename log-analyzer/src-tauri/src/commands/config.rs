@@ -4,7 +4,7 @@ use std::fs;
 
 use tauri::{command, AppHandle, Manager};
 
-use crate::models::AppConfig;
+use crate::models::{AppConfig, FileFilterConfig};
 
 #[command]
 pub fn save_config(app: AppHandle, config: AppConfig) -> Result<(), String> {
@@ -36,6 +36,7 @@ pub fn load_config(app: AppHandle) -> Result<AppConfig, String> {
                     keyword_groups: serde_json::json!([]),
                     workspaces: serde_json::json!([]),
                     advanced_features: Default::default(),
+                    file_filter: Default::default(),
                 })
             }
         }
@@ -44,6 +45,24 @@ pub fn load_config(app: AppHandle) -> Result<AppConfig, String> {
             keyword_groups: serde_json::json!([]),
             advanced_features: Default::default(),
             workspaces: serde_json::json!([]),
+            file_filter: Default::default(),
         })
     }
+}
+
+#[command]
+pub fn get_file_filter_config(app: AppHandle) -> Result<FileFilterConfig, String> {
+    let config = load_config(app)?;
+    Ok(config.file_filter)
+}
+
+#[command]
+pub fn save_file_filter_config(
+    app: AppHandle,
+    filter_config: FileFilterConfig,
+) -> Result<(), String> {
+    let mut config = load_config(app.clone())?;
+    config.file_filter = filter_config;
+    save_config(app, config)?;
+    Ok(())
 }

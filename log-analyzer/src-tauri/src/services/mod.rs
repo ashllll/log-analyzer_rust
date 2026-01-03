@@ -1,4 +1,5 @@
 pub mod event_bus;
+pub mod file_type_filter;
 pub mod file_watcher;
 pub mod index_validator;
 pub mod metadata_db;

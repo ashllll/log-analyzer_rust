@@ -8,7 +8,7 @@ pub mod search_statistics;
 pub mod state;
 
 // 重新导出核心类型
-pub use config::AppConfig;
+pub use config::{AppConfig, FileFilterConfig, FilterMode};
 pub use extraction_policy::ExtractionPolicy;
 pub use filters::{PerformanceMetrics, SearchFilters};
 pub use log_entry::{FileChangeEvent, LogEntry, TaskProgress};

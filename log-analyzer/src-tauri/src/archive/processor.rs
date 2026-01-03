@@ -12,6 +12,8 @@ use crate::archive::extraction_engine::ExtractionPolicy;
 use crate::archive::public_api::extract_archive_async;
 use crate::archive::ArchiveManager;
 use crate::error::{AppError, Result};
+use crate::models::FileFilterConfig;
+use crate::services::file_type_filter::FileTypeFilter;
 use crate::services::file_watcher::get_file_metadata;
 use crate::storage::{ArchiveMetadata, ContentAddressableStorage, FileMetadata, MetadataStore};
 use crate::utils::path::normalize_path_separator;
@@ -634,6 +636,31 @@ pub async fn process_path_with_cas_and_checkpoints(
         .ok_or_else(|| AppError::validation_error("Invalid filename"))?
         .to_string_lossy()
         .to_string();
+
+    // ========== 防御性集成：文件类型过滤检查 ==========
+    // 设计要点：
+    // 1. 不修改现有逻辑
+    // 2. 过滤失败时自动降级到旧行为（允许文件通过）
+    // 3. 详细日志记录决策过程
+    if !path.is_dir() && !is_archive_file(path) {
+        // 可选的文件过滤检查（防御性：失败时允许文件通过）
+        let import_allowed = should_import_file_defensive(path, app).await;
+
+        if !import_allowed {
+            tracing::info!(
+                file = %file_name,
+                path = %path.display(),
+                "File skipped by filter configuration (user-configured)"
+            );
+            return Ok(());  // 跳过此文件，但继续处理其他文件
+        }
+
+        tracing::debug!(
+            file = %file_name,
+            "File passed filter check, proceeding with import"
+        );
+    }
+    // ========== 集成结束 ==========
 
     // Report progress
     tracing::debug!(
@@ -1370,3 +1397,64 @@ async fn extract_and_process_archive(
 
     Ok(())
 }
+
+// ========== 防御性集成：文件过滤守卫函数 ==========
+
+/// 文件过滤守卫（失败安全：任何错误都返回 true，允许文件通过）
+///
+/// 防御性设计原则：
+/// 1. 配置加载失败 → 返回 true（允许所有文件）
+/// 2. 过滤逻辑异常 → 返回 true（允许当前文件）
+/// 3. 记录详细日志 → 便于问题排查
+async fn should_import_file_defensive(
+    path: &Path,
+    app: &AppHandle,
+) -> bool {
+    // Step 1: 安全加载配置（失败时返回 true）
+    let filter_config = match load_file_filter_config_safe(app).await {
+        Ok(config) => config,
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                "Failed to load file filter config, allowing all files (fail-safe)"
+            );
+            return true;  // 失败安全：允许所有文件
+        }
+    };
+
+    // Step 2: 如果过滤未启用，直接允许
+    if !filter_config.enabled && !filter_config.binary_detection_enabled {
+        return true;
+    }
+
+    // Step 3: 执行过滤检查（捕获所有异常）
+    match FileTypeFilter::new(filter_config).should_import_file_safe(path) {
+        Ok(should_import) => should_import,
+        Err(e) => {
+            tracing::warn!(
+                file = %path.display(),
+                error = %e,
+                "File filter check failed, allowing file (fail-safe)"
+            );
+            true  // 失败安全：允许当前文件
+        }
+    }
+}
+
+/// 安全加载配置（失败时返回默认配置）
+async fn load_file_filter_config_safe(
+    app: &AppHandle,
+) -> Result<FileFilterConfig> {
+    match crate::commands::config::load_config(app.clone()) {
+        Ok(config) => Ok(config.file_filter),
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                "Failed to load config, using default file filter config"
+            );
+            Ok(FileFilterConfig::default())
+        }
+    }
+}
+
+// ========== 防御性集成结束 ==========

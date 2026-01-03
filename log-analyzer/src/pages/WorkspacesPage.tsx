@@ -1,8 +1,9 @@
-import React from 'react';
-import { FileText, Plus, RefreshCw, Trash2, Eye, EyeOff, CheckCircle2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { FileText, Plus, RefreshCw, Trash2, Eye, EyeOff, CheckCircle2, Settings } from 'lucide-react';
 import { useAppStore } from '../stores/appStore';
 import { useWorkspaceOperations } from '../hooks/useWorkspaceOperations';
 import { Button, Card } from '../components/ui';
+import { FileFilterSettings } from '../components/modals';
 import { cn } from '../utils/classNames';
 import type { Workspace } from '../types/common';
 
@@ -18,6 +19,7 @@ import type { Workspace } from '../types/common';
 const WorkspacesPage: React.FC = () => {
   const { workspaces, importFile, importFolder, refreshWorkspace, deleteWorkspace, toggleWatch, switchWorkspace } = useWorkspaceOperations();
   const activeWorkspaceId = useAppStore((state) => state.activeWorkspaceId);
+  const [isFilterSettingsOpen, setIsFilterSettingsOpen] = useState(false);
   
   const handleDelete = async (id: string) => {
     await deleteWorkspace(id);
@@ -44,6 +46,9 @@ const WorkspacesPage: React.FC = () => {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-text-main">Workspaces</h1>
         <div className="flex gap-2">
+          <Button icon={Settings} onClick={() => setIsFilterSettingsOpen(true)} variant="secondary">
+            文件过滤设置
+          </Button>
           <Button icon={FileText} onClick={handleImportFile}>Import File</Button>
           <Button icon={Plus} onClick={handleImportFolder}>Import Folder</Button>
         </div>
@@ -69,6 +74,16 @@ const WorkspacesPage: React.FC = () => {
            </Card>
          ))}
       </div>
+
+      {/* 文件过滤设置模态框 */}
+      <FileFilterSettings
+        isOpen={isFilterSettingsOpen}
+        onClose={() => setIsFilterSettingsOpen(false)}
+        onSaved={() => {
+          // 配置保存后可以刷新工作区列表（可选）
+          console.log('File filter config saved');
+        }}
+      />
     </div>
   );
 };
