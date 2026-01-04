@@ -48,6 +48,17 @@ pub fn metaphone(word: &str) -> String {
                 i += 1;
             }
 
+            // KN开头的K省略
+            'k' => {
+                if i + 1 < len && chars[i + 1] == 'n' {
+                    // KN组合，忽略K
+                    i += 1;
+                } else {
+                    result.push('k');
+                    i += 1;
+                }
+            }
+
             // 辅音转换规则
             'c' => {
                 if i + 1 < len {
@@ -68,11 +79,24 @@ pub fn metaphone(word: &str) -> String {
                     let next = chars[i + 1];
                     if next == 'e' || next == 'i' || next == 'y' {
                         result.push('j'); // soft G
+                    } else if next == 'h' {
+                        // GH组合，忽略G
+                        i += 1;
+                        continue;
                     } else {
                         result.push('k'); // hard G
                     }
                 } else {
                     result.push('k');
+                }
+                i += 1;
+            }
+
+            // H的处理已集成到GH组合中
+            'h' => {
+                // H仅在词首保留
+                if result.is_empty() {
+                    result.push('h');
                 }
                 i += 1;
             }
@@ -107,17 +131,9 @@ pub fn metaphone(word: &str) -> String {
                 }
             }
 
-            // 其他辅音直接保留
-            'f' | 'l' | 'm' | 'n' | 'r' | 'b' | 'd' | 'j' | 'k' | 'v' | 'w' | 'x' | 'y' | 'z' => {
+            // 其他辅音直接保留（y在特定位置作为元音，应被忽略）
+            'f' | 'l' | 'm' | 'n' | 'r' | 'b' | 'd' | 'j' | 'v' | 'w' | 'x' | 'z' => {
                 result.push(c);
-                i += 1;
-            }
-
-            // 无声字母（在某些位置）
-            'h' => {
-                if result.is_empty() {
-                    result.push('h');
-                }
                 i += 1;
             }
 

@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.0.96] - 2026-01-04
 
 ### ✨ Features
 
@@ -73,36 +73,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 性能影响：<1ms/文件，导入总开销 <5%
   - 7个单元测试全部通过
 
+- **ci**: 跨平台兼容性全面改进
+  - 新增 `.github/workflows/cross-platform-tests.yml` 跨平台测试工作流
+  - 支持 Linux/macOS/Windows 多平台 CI 测试
+  - 修复多个平台特定的编译错误
+
+- **encoding**: UTF-8编码容错处理
+  - 统一事件源架构
+  - 增强编码错误处理能力
+
+### ♻️ Refactor
+
+- **移除性能监控模块**: 移除 ~9500 行性能监控代码，简化代码库
+  - 降低维护成本，提高代码可读性
+  - 保留核心功能不受影响
+
 ### 📚 Documentation
 
-- **CLAUDE.md**: Updated to version 0.0.76 with comprehensive improvements
-  - Removed outdated Kiro MCP Server instructions
-  - Added detailed guides for common development tasks:
-    - Adding new Tauri commands with step-by-step instructions
-    - Debugging Tauri IPC communication
-    - Adding new frontend pages with i18n support
-  - Added "Key Architecture Decisions" section explaining:
-    - Why Aho-Corasick algorithm was chosen (80%+ performance improvement)
-    - Why CAS architecture was adopted (30%+ space savings)
-    - Why QueryExecutor responsibilities were split (60% complexity reduction)
-  - Added "Performance Benchmarks" section with concrete metrics
-  - Added comprehensive "Troubleshooting Guide" covering 5 common issues
-  - Improved document structure and removed redundant content
+- **CLAUDE.md**: 更新至版本 0.0.96
+  - 更新版本号和日期
+  - 文档结构优化
 
-- **README.md**: Updated version badge to 0.0.76
-
-- 新增 `FILE_FILTER_TEST_GUIDE.md`：文件类型过滤功能完整测试指南
-  - 5个测试场景（默认配置、白名单、黑名单、禁用过滤、压缩包递归）
-  - 测试数据生成说明
-  - 验证清单和故障排查指南
-
-- 新增 `generate_test_data.py`：自动生成测试数据脚本
-  - 创建日志文件、二进制文件、文本文件
-  - 支持所有测试场景的数据准备
+- **文档清理**: 统一文档管理
+  - 删除重复文档目录 `log-analyzer/docs/`
+  - 删除过时计划文件 `plans/`
+  - 删除性能优化归档文档
+  - 迁移 `CAS_ARCHITECTURE.md` 到 `docs/architecture/`
+  - 更新 `docs/README.md` 文件计数
 
 ### 🐛 Fixes
 
-- Emit monotonically increasing task event versions to prevent EventBus idempotency from dropping updates and leaving workspaces stuck in PROCESSING.
+- **eventbus**: 发送单调递增的任务事件版本号，防止幂等性检查导致工作区停留在 PROCESSING 状态
+- **ci**: 修复跨平台测试 YAML 语法错误
+- **test**: 修复 Windows 路径规范化测试
+
+## [Unreleased]
+
+### 🚧 Work in Progress
+
+- 新功能开发中...
 
 ## [0.1.0] - 2025-12-27
 
