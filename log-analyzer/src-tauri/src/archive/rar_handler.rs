@@ -159,53 +159,83 @@ fn get_builtin_unrar_path() -> Result<String> {
     let (arch, os, ext) = detect_platform();
     let binary_name = format!("unrar-{}-{}{}", arch, os, ext);
 
-    // 1. 尝试从项目目录查找（使用多种方法）
+    // 尝试多个可能的路径
+    let search_paths: Vec<std::path::PathBuf> = vec![
+        // 1. CARGO_MANIFEST_DIR/binaries/ (标准cargo位置)
+        std::env::var("CARGO_MANIFEST_DIR")
+            .ok()
+            .as_ref()
+            .map(|m| std::path::Path::new(m).join("binaries").join(&binary_name))
+            .into_iter()
+            .chain(
+                // 2. 当前工作目录/src-tauri/binaries/
+                std::env::current_dir()
+                    .ok()
+                    .as_ref()
+                    .map(|p| p.join("src-tauri").join("binaries").join(&binary_name))
+                    .into_iter()
+            )
+            .chain(
+                // 3. 当前工作目录/binaries/
+                std::env::current_dir()
+                    .ok()
+                    .as_ref()
+                    .map(|p| p.join("binaries").join(&binary_name))
+                    .into_iter()
+            )
+            .chain(
+                // 4. 父目录/src-tauri/binaries/
+                std::env::current_dir()
+                    .ok()
+                    .as_ref()
+                    .and_then(|p| p.parent())
+                    .map(|p| p.join("src-tauri").join("binaries").join(&binary_name))
+                    .into_iter()
+            )
+            .chain(
+                // 5. 祖目录/src-tauri/binaries/
+                std::env::current_dir()
+                    .ok()
+                    .as_ref()
+                    .and_then(|p| p.parent().and_then(|p| p.parent()))
+                    .map(|p| p.join("src-tauri").join("binaries").join(&binary_name))
+                    .into_iter()
+            )
+            .collect(),
+    ];
 
-    // 方法1a: 使用 CARGO_MANIFEST_DIR（cargo构建时设置）
-    if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
-        let project_path = std::path::Path::new(&manifest_dir)
-            .join("binaries")
-            .join(&binary_name);
-        if project_path.exists() {
-            debug!(path = %project_path.display(), "Using built-in unrar from CARGO_MANIFEST_DIR");
-            return Ok(project_path.to_string_lossy().to_string());
+    // 添加调试日志
+    debug!("Searching for unrar binary: {}", binary_name);
+    for path in &search_paths {
+        debug!("Checking path: {}", path.display());
+        if path.exists() {
+            debug!("Found unrar at: {}", path.display());
+            return Ok(path.to_string_lossy().to_string());
         }
     }
 
-    // 方法1b: 使用当前工作目录（更可靠）
-    if let Ok(cwd) = std::env::current_dir() {
-        let project_path = cwd.join("src-tauri").join("binaries").join(&binary_name);
-        if project_path.exists() {
-            debug!(path = %project_path.display(), "Using built-in unrar from current working directory");
-            return Ok(project_path.to_string_lossy().to_string());
+    // 生产模式：从exe目录查找
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            let exe_dir = exe_dir.to_path_buf();
+
+            // 尝试 unrar-xxx 和 unrar.exe
+            for name in &[binary_name.as_str(), &format!("unrar{}", ext)] {
+                let binary_path = exe_dir.join(name);
+                debug!("Checking production path: {}", binary_path.display());
+                if binary_path.exists() {
+                    debug!("Found unrar in production at: {}", binary_path.display());
+                    return Ok(binary_path.to_string_lossy().to_string());
+                }
+
+                let binary_path = exe_dir.join("binaries").join(name);
+                debug!("Checking production path with binaries/: {}", binary_path.display());
+                if binary_path.exists() {
+                    debug!("Found unrar in production at: {}", binary_path.display());
+                    return Ok(binary_path.to_string_lossy().to_string());
+                }
+            }
         }
-
-        // 也尝试直接在cwd/binaries查找
-        let project_path = cwd.join("binaries").join(&binary_name);
-        if project_path.exists() {
-            debug!(path = %project_path.display(), "Using built-in unrar from cwd/binaries");
-            return Ok(project_path.to_string_lossy().to_string());
-        }
-    }
-
-    // 2. 生产模式：从exe目录查找
-    let exe_dir = std::env::current_exe()?
-        .parent()
-        .ok_or_else(|| AppError::archive_error("Cannot determine executable directory", None))?
-        .to_path_buf();
-
-    // 尝试从exe目录的binaries子目录查找
-    let binary_path = exe_dir.join("binaries").join(&binary_name);
-    if binary_path.exists() {
-        debug!(path = %binary_path.display(), "Using built-in unrar from binaries directory");
-        return Ok(binary_path.to_string_lossy().to_string());
-    }
-
-    // 尝试直接在exe目录查找（打包时unrar可能直接放在exe旁边）
-    let binary_path = exe_dir.join(&binary_name);
-    if binary_path.exists() {
-        debug!(path = %binary_path.display(), "Using built-in unrar from exe directory");
-        return Ok(binary_path.to_string_lossy().to_string());
     }
 
     Err(AppError::archive_error(
