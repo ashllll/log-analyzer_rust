@@ -15,5 +15,6 @@ pub use filters::{PerformanceMetrics, SearchFilters};
 pub use log_entry::{FileChangeEvent, LogEntry, TaskProgress};
 pub use policy_manager::PolicyManager;
 pub use search::*;
+pub use search_history::{SearchHistory, SearchHistoryItem, HistoryState};
 pub use state::{AppState, SearchCacheKey, WatcherState};
 pub mod validated;

@@ -1,9 +1,5 @@
-use crate::models::search_history::{SearchHistory, SearchHistoryItem};
-use std::sync::{Arc, Mutex};
+use crate::models::search_history::{SearchHistoryItem, HistoryState};
 use tauri::State;
-
-/// 搜索历史全局状态类型
-pub type HistoryState = Arc<Mutex<SearchHistory>>;
 
 /**
  * 添加搜索历史记录
@@ -25,14 +21,12 @@ pub async fn add_search_history(
         id: uuid::Uuid::new_v4().to_string(),
         query,
         timestamp: chrono::Utc::now().timestamp(),
-        result_count,
+        result_count: result_count.map(|c| c as i64),
         workspace_id,
     };
 
-    let mut h = history
-        .lock()
-        .map_err(|e| format!("Failed to lock history: {}", e))?;
-    h.add(item);
+    let mut h = history.lock();
+    h.add(item).await;
     Ok(())
 }
 
@@ -51,10 +45,19 @@ pub async fn get_search_history(
     workspace_id: String,
     history: State<'_, HistoryState>,
 ) -> Result<Vec<SearchHistoryItem>, String> {
-    let h = history
-        .lock()
-        .map_err(|e| format!("Failed to lock history: {}", e))?;
-    Ok(h.get_by_workspace(&workspace_id))
+    let h = history.lock();
+
+    // 优先从数据库获取（持久化数据）
+    if h.is_db_initialized() {
+        // 释放锁后再进行异步操作
+        drop(h);
+        let db_history = history.lock();
+        db_history.get_from_db(&workspace_id).await
+            .map_err(|e| format!("{}", e))
+    } else {
+        // 回退到内存
+        Ok(h.get_by_workspace(&workspace_id))
+    }
 }
 
 /**
@@ -74,10 +77,19 @@ pub async fn search_history_items(
     workspace_id: String,
     history: State<'_, HistoryState>,
 ) -> Result<Vec<SearchHistoryItem>, String> {
-    let h = history
-        .lock()
-        .map_err(|e| format!("Failed to lock history: {}", e))?;
-    Ok(h.search(&prefix, &workspace_id))
+    let h = history.lock();
+
+    // 优先从数据库获取
+    if h.is_db_initialized() {
+        // 释放锁后再进行异步操作
+        drop(h);
+        let db_history = history.lock();
+        db_history.search_in_db(&prefix, &workspace_id).await
+            .map_err(|e| format!("{}", e))
+    } else {
+        // 回退到内存
+        Ok(h.search(&prefix, &workspace_id))
+    }
 }
 
 /**
@@ -92,10 +104,9 @@ pub async fn delete_search_history(
     id: String,
     history: State<'_, HistoryState>,
 ) -> Result<(), String> {
-    let mut h = history
-        .lock()
-        .map_err(|e| format!("Failed to lock history: {}", e))?;
-    h.remove(&id);
+    let mut h = history.lock();
+    h.remove_from_db(&id).await.map_err(|e| format!("{}", e))?;
+    h.remove(&id); // 同时从内存删除
     Ok(())
 }
 
@@ -107,10 +118,9 @@ pub async fn delete_search_history(
  */
 #[tauri::command]
 pub async fn clear_search_history(history: State<'_, HistoryState>) -> Result<(), String> {
-    let mut h = history
-        .lock()
-        .map_err(|e| format!("Failed to lock history: {}", e))?;
-    h.clear();
+    let mut h = history.lock();
+    h.clear_all_from_db().await.map_err(|e| format!("{}", e))?;
+    h.clear(); // 同时清空内存
     Ok(())
 }
 

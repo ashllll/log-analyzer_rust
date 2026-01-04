@@ -29,6 +29,8 @@ pub mod utils; // 公开 utils 模块用于基准测试
 pub use error::{AppError, Result};
 use models::AppState;
 
+// 导入 HistoryState
+
 // --- Commands ---
 
 // 命令实现位于 commands 模块
@@ -196,6 +198,18 @@ pub fn run() {
                 Err(e) => {
                     tracing::error!(error = %e, "Failed to initialize task manager");
                     return Err(e.into());
+                }
+            }
+
+            // 初始化搜索历史数据库
+            // 同步初始化，因为 app.state() 返回的引用无法进入 async 闭包
+            let history_state = app.state::<models::HistoryState>();
+            if let Ok(app_data_dir) = app.path().app_data_dir() {
+                let mut history = history_state.lock();
+                if let Err(e) = tauri::async_runtime::block_on(history.init_db(&app_data_dir)) {
+                    tracing::error!(error = %e, "Failed to initialize search history database");
+                } else {
+                    tracing::info!("Search history database initialized successfully");
                 }
             }
 
