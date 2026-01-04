@@ -179,8 +179,8 @@ jobs:
     - name: Run tests
       run: |
         cd log-analyzer
-        # ✅ 跳过 CAS migration 测试，修复后再启用
-        npm test -- --testPathIgnorePatterns=cas-migration
+        # 跳过 E2E 测试（需要 Tauri 环境）
+        npm test -- --testPathIgnorePatterns=e2e
 
   # 集成测试
   integration-test:
