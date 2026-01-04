@@ -10,6 +10,7 @@ use std::io::BufReader;
 use std::path::Path;
 use tar::Archive;
 use tokio::fs;
+use tracing::warn;
 
 /**
  * TAR文件处理器
@@ -213,7 +214,11 @@ fn extract_entries_with_limits<R: std::io::Read>(
             }
             PathValidationResult::Valid(name) => std::path::PathBuf::from(name),
             PathValidationResult::RequiresSanitization(original, sanitized) => {
-                eprintln!("[SECURITY] Path sanitized: {} -> {}", original, sanitized);
+                warn!(
+                    original = %original,
+                    sanitized = %sanitized,
+                    "Path sanitized"
+                );
                 std::path::PathBuf::from(sanitized)
             }
         };

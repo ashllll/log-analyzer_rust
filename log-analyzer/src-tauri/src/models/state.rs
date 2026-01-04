@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
+use tracing::{info, warn};
 
 use super::LogEntry;
 use crate::monitoring::alerting::AlertingSystem;
@@ -128,7 +129,7 @@ pub struct AppState {
 
 impl Drop for AppState {
     fn drop(&mut self) {
-        eprintln!("[INFO] AppState dropping, performing final cleanup...");
+        info!("AppState dropping, performing final cleanup");
 
         // 生成资源报告
         let report = self.resource_tracker.generate_report();
@@ -139,16 +140,16 @@ impl Drop for AppState {
             .resource_tracker
             .detect_leaks(std::time::Duration::from_secs(300));
         if !leaks.is_empty() {
-            eprintln!("[WARNING] Detected {} resource leaks", leaks.len());
+            warn!(leaks = leaks.len(), "Detected resource leaks");
         }
 
         // 取消所有活跃操作
         self.cancellation_manager.cancel_all();
-        eprintln!("[INFO] Cancelled all active operations");
+        info!("Cancelled all active operations");
 
         // 清理所有资源
         self.resource_tracker.cleanup_all();
-        eprintln!("[INFO] Cleaned up all tracked resources");
+        info!("Cleaned up all tracked resources");
 
         // 执行最后的清理队列处理
         crate::utils::cleanup::process_cleanup_queue(&self.cleanup_queue);
@@ -157,10 +158,10 @@ impl Drop for AppState {
         {
             let cas_instances = self.cas_instances.lock();
             let metadata_stores = self.metadata_stores.lock();
-            eprintln!(
-                "[INFO] Cleaning up {} CAS instances and {} metadata stores",
-                cas_instances.len(),
-                metadata_stores.len()
+            info!(
+                cas_instances = cas_instances.len(),
+                metadata_stores = metadata_stores.len(),
+                "Cleaning up CAS instances and metadata stores"
             );
         }
 
@@ -173,12 +174,14 @@ impl Drop for AppState {
             } else {
                 0.0
             };
-            eprintln!(
-                "[INFO] Session stats: {} searches, {} cache hits ({:.1}% hit rate)",
-                searches, hits, hit_rate
+            info!(
+                searches = *searches,
+                hits = *hits,
+                hit_rate = hit_rate,
+                "Session statistics"
             );
         }
 
-        eprintln!("[INFO] AppState cleanup completed");
+        info!("AppState cleanup completed");
     }
 }

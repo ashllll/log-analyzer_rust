@@ -46,9 +46,12 @@ export interface SearchTerm {
   
   /** 是否启用 */
   enabled: boolean;
-  
+
   /** 是否区分大小写 */
   caseSensitive: boolean;
+
+  /** 是否启用模糊匹配（容忍拼写错误） */
+  fuzzyEnabled?: boolean;
 }
 
 /**

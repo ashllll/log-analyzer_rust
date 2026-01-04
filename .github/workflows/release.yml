@@ -111,6 +111,10 @@ jobs:
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             name: linux
+          - os: ubuntu-22.04
+            target: aarch64-unknown-linux-gnu
+            name: linux-arm64
+            cross: true
           - os: macos-latest
             target: x86_64-apple-darwin
             name: macos-x64

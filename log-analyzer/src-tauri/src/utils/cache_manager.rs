@@ -101,7 +101,7 @@ impl Default for CacheConfig {
             tti: Duration::from_secs(60),  // 1分钟TTI
             enable_monitoring: true,
             monitoring_interval: Duration::from_secs(60), // 每分钟报告一次
-            compression_threshold: 10 * 1024, // 10KB
+            compression_threshold: 10 * 1024,             // 10KB
             enable_compression: true,
             access_pattern_window: 1000,
             preload_threshold: 5,
@@ -1845,7 +1845,8 @@ mod tests {
     #[ignore = "proptest! 宏与 cargo test 的 tokio runtime 存在嵌套冲突"]
     fn test_property_performance_report_consistency() {
         // 创建 runtime 在 proptest! 外部，避免嵌套 runtime 冲突
-        let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime for property test");
+        let rt = tokio::runtime::Runtime::new()
+            .expect("Failed to create tokio runtime for property test");
 
         proptest!(|(
             operations in prop::collection::vec((any::<bool>(), "[a-zA-Z0-9_]{1,10}"), 5..20)

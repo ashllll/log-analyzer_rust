@@ -1,6 +1,7 @@
 use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, AsyncSeekExt, BufReader};
 use std::path::Path;
+use tracing::warn;
 
 /**
  * 异步文件读取器
@@ -61,7 +62,7 @@ impl AsyncFileReader {
             match line {
                 Ok(l) => lines.push(l),
                 Err(e) => {
-                    eprintln!("[WARNING] Error reading line: {}", e);
+                    warn!(error = %e, "Error reading line");
                     break;
                 }
             }
@@ -105,7 +106,7 @@ impl AsyncFileReader {
                     count += 1;
                 }
                 Err(e) => {
-                    eprintln!("[WARNING] Error reading line: {}", e);
+                    warn!(error = %e, "Error reading line");
                     break;
                 }
             }

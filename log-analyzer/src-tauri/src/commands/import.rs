@@ -4,6 +4,7 @@
 use std::{fs, path::Path};
 
 use tauri::{command, AppHandle, Emitter, Manager, State};
+use tracing::error;
 use uuid::Uuid;
 
 use crate::models::AppState;
@@ -33,10 +34,7 @@ pub async fn import_folder(
     let canonical_path = match canonicalize_path(source_path) {
         Ok(path) => path,
         Err(e) => {
-            tracing::warn!(
-                "Path canonicalization failed: {}, using original path",
-                e
-            );
+            tracing::warn!("Path canonicalization failed: {}, using original path", e);
             source_path.to_path_buf()
         }
     };
@@ -164,7 +162,7 @@ pub async fn import_folder(
     )
     .await
     {
-        eprintln!("[ERROR] Failed to process path: {}", e);
+        error!(error = %e, "Failed to process path");
 
         // Update task with error
         let task_manager_clone = {

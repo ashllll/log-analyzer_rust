@@ -245,8 +245,8 @@ pub async fn process_path_recursive_with_metadata(
     )
     .await
     {
-        eprintln!("[WARNING] Failed to process {}: {}", path.display(), e);
-        tracing::warn!(
+        warn!(
+            path = %path.display(),
             error = %e,
             task_id = %task_id,
             "Warning during archive processing (event sent via TaskManager)"
@@ -282,9 +282,19 @@ async fn process_path_recursive_inner(
         for entry in WalkDir::new(path)
             .min_depth(1)
             .max_depth(1)
+            .follow_links(false)  // 不跟随符号链接
             .into_iter()
             .filter_map(|e| e.ok())
         {
+            // 跳过符号链接
+            if entry.path_is_symlink() {
+                warn!(
+                    path = %entry.path().display(),
+                    "Skipping symlink during directory processing"
+                );
+                continue;
+            }
+
             let entry_name = entry.file_name().to_string_lossy().to_string();
             let new_virtual = format!("{}/{}", virtual_path, entry_name);
 
@@ -335,10 +345,11 @@ async fn process_path_recursive_inner(
         {
             Ok(_) => return Ok(()),
             Err(e) => {
-                eprintln!(
-                    "[WARNING] Failed to extract archive {}: {}",
-                    path.display(),
-                    e
+                warn!(
+                    file = %file_name,
+                    error = %e,
+                    task_id = %task_id,
+                    "Failed to extract archive (event sent via TaskManager)"
                 );
                 tracing::warn!(
                     file = %file_name,
@@ -401,9 +412,19 @@ async fn process_path_recursive_inner_with_metadata(
         for entry in WalkDir::new(path)
             .min_depth(1)
             .max_depth(1)
+            .follow_links(false)  // 不跟随符号链接
             .into_iter()
             .filter_map(|e| e.ok())
         {
+            // 跳过符号链接
+            if entry.path_is_symlink() {
+                warn!(
+                    path = %entry.path().display(),
+                    "Skipping symlink during directory processing with metadata"
+                );
+                continue;
+            }
+
             let entry_name = entry.file_name().to_string_lossy().to_string();
             let new_virtual = format!("{}/{}", virtual_path, entry_name);
 
@@ -610,9 +631,19 @@ pub async fn process_path_with_cas_and_checkpoints(
         for entry in WalkDir::new(path)
             .min_depth(1)
             .max_depth(1)
+            .follow_links(false)  // 不跟随符号链接
             .into_iter()
             .filter_map(|e| e.ok())
         {
+            // 跳过符号链接
+            if entry.path_is_symlink() {
+                warn!(
+                    path = %entry.path().display(),
+                    "Skipping symlink during ProcessBuilder directory processing"
+                );
+                continue;
+            }
+
             let entry_name = entry.file_name().to_string_lossy().to_string();
             let new_virtual = format!("{}/{}", virtual_path, entry_name);
 
@@ -652,7 +683,7 @@ pub async fn process_path_with_cas_and_checkpoints(
                 path = %path.display(),
                 "File skipped by filter configuration (user-configured)"
             );
-            return Ok(());  // 跳过此文件，但继续处理其他文件
+            return Ok(()); // 跳过此文件，但继续处理其他文件
         }
 
         tracing::debug!(
@@ -1251,17 +1282,20 @@ async fn extract_and_process_archive(
     // 检查是否使用增强提取系统
     let extracted_files = if is_enhanced_extraction_enabled() {
         // 使用增强提取系统
-        eprintln!("[INFO] Using enhanced extraction system for {}", file_name);
+        info!(
+            file = %file_name,
+            "Using enhanced extraction system"
+        );
 
         let policy = ExtractionPolicy::default();
 
         match extract_archive_async(archive_path, &extract_dir, workspace_id, Some(policy)).await {
             Ok(result) => {
-                eprintln!(
-                    "[INFO] Enhanced extraction: {} files from {} (total size: {} bytes)",
-                    result.extracted_files.len(),
-                    file_name,
-                    result.performance_metrics.bytes_extracted
+                info!(
+                    files = result.extracted_files.len(),
+                    archive = %file_name,
+                    bytes = result.performance_metrics.bytes_extracted,
+                    "Enhanced extraction completed"
                 );
 
                 // Log warnings
@@ -1302,7 +1336,10 @@ async fn extract_and_process_archive(
         }
     } else {
         // 使用旧的 ArchiveManager
-        eprintln!("[INFO] Using legacy extraction system for {}", file_name);
+        info!(
+            file = %file_name,
+            "Using legacy extraction system"
+        );
 
         let summary = archive_manager
             .extract_archive(archive_path, &extract_dir)
@@ -1315,13 +1352,15 @@ async fn extract_and_process_archive(
             })?;
 
         // 报告提取结果
-        eprintln!(
-            "[INFO] Extracted {} files from {} (total size: {} bytes)",
-            summary.files_extracted, file_name, summary.total_size
+        info!(
+            files = summary.files_extracted,
+            archive = %file_name,
+            bytes = summary.total_size,
+            "Legacy extraction completed"
         );
 
         if summary.has_errors() {
-            eprintln!("[WARNING] Extraction errors: {:?}", summary.errors);
+            warn!(errors = ?summary.errors, "Extraction errors");
         }
 
         summary.extracted_files
@@ -1406,10 +1445,7 @@ async fn extract_and_process_archive(
 /// 1. 配置加载失败 → 返回 true（允许所有文件）
 /// 2. 过滤逻辑异常 → 返回 true（允许当前文件）
 /// 3. 记录详细日志 → 便于问题排查
-async fn should_import_file_defensive(
-    path: &Path,
-    app: &AppHandle,
-) -> bool {
+async fn should_import_file_defensive(path: &Path, app: &AppHandle) -> bool {
     // Step 1: 安全加载配置（失败时返回 true）
     let filter_config = match load_file_filter_config_safe(app).await {
         Ok(config) => config,
@@ -1418,7 +1454,7 @@ async fn should_import_file_defensive(
                 error = %e,
                 "Failed to load file filter config, allowing all files (fail-safe)"
             );
-            return true;  // 失败安全：允许所有文件
+            return true; // 失败安全：允许所有文件
         }
     };
 
@@ -1436,15 +1472,13 @@ async fn should_import_file_defensive(
                 error = %e,
                 "File filter check failed, allowing file (fail-safe)"
             );
-            true  // 失败安全：允许当前文件
+            true // 失败安全：允许当前文件
         }
     }
 }
 
 /// 安全加载配置（失败时返回默认配置）
-async fn load_file_filter_config_safe(
-    app: &AppHandle,
-) -> Result<FileFilterConfig> {
+async fn load_file_filter_config_safe(app: &AppHandle) -> Result<FileFilterConfig> {
     match crate::commands::config::load_config(app.clone()) {
         Ok(config) => Ok(config.file_filter),
         Err(e) => {

@@ -119,9 +119,10 @@ pub async fn refresh_workspace(
     path: String,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
-    eprintln!(
-        "[INFO] [refresh_workspace] Refresh requested for workspace {} from path {}",
-        workspaceId, path
+    info!(
+        workspace_id = %workspaceId,
+        path = %path,
+        "Refresh requested for workspace"
     );
 
     let source_path = Path::new(&path);
@@ -138,7 +139,7 @@ pub async fn refresh_workspace(
 
     // Check if workspace exists and is CAS format
     if !workspace_dir.exists() {
-        eprintln!("[INFO] [refresh_workspace] Workspace not found, performing fresh import");
+        info!("Workspace not found, performing fresh import");
         return import_folder(app, path, workspaceId, state).await;
     }
 
@@ -146,15 +147,13 @@ pub async fn refresh_workspace(
     let objects_dir = workspace_dir.join("objects");
 
     if !metadata_db.exists() || !objects_dir.exists() {
-        eprintln!(
-            "[INFO] [refresh_workspace] Workspace is not CAS format, performing fresh import"
-        );
+        info!("Workspace is not CAS format, performing fresh import");
         return import_folder(app, path, workspaceId, state).await;
     }
 
     // For CAS workspaces, refresh is equivalent to re-import
     // CAS handles deduplication automatically, so re-importing is safe and simple
-    eprintln!("[INFO] [refresh_workspace] CAS workspace detected, re-importing for refresh");
+    info!("CAS workspace detected, re-importing for refresh");
 
     import_folder(app, path, workspaceId, state).await
 }
@@ -162,6 +161,7 @@ pub async fn refresh_workspace(
 use std::{fs, path::Path};
 
 use tauri::{command, AppHandle, Manager, State};
+use tracing::{error, info, warn};
 
 use crate::commands::import::import_folder;
 use crate::models::AppState;
@@ -261,30 +261,30 @@ fn cleanup_workspace_resources(
     state: &AppState,
     app: &AppHandle,
 ) -> Result<(), String> {
-    eprintln!(
-        "[INFO] [delete_workspace] Starting resource cleanup for workspace: {}",
-        workspace_id
+    info!(
+        workspace_id = %workspace_id,
+        "Starting resource cleanup for workspace"
     );
 
     let mut errors = Vec::new();
 
     // ===== 步骤1: 停止文件监听器 =====
-    eprintln!(
-        "[INFO] [delete_workspace] Step 1: Stopping file watcher for workspace: {}",
-        workspace_id
+    info!(
+        workspace_id = %workspace_id,
+        "Step 1: Stopping file watcher"
     );
     {
         let mut watchers = state.watchers.lock();
         if let Some(mut watcher_state) = watchers.remove(workspace_id) {
             watcher_state.is_active = false;
-            eprintln!(
-                "[INFO] [delete_workspace] File watcher stopped for workspace: {}",
-                workspace_id
+            info!(
+                workspace_id = %workspace_id,
+                "File watcher stopped"
             );
         } else {
-            eprintln!(
-                "[INFO] [delete_workspace] No active watcher found for workspace: {}",
-                workspace_id
+            info!(
+                workspace_id = %workspace_id,
+                "No active watcher found"
             );
         }
     }
@@ -292,20 +292,18 @@ fn cleanup_workspace_resources(
     // ===== 步骤2: 清除搜索缓存 =====
     // 优化决策: 不主动清理搜索缓存,依赖LRU自动淘汰机制
     // 这样可以避免遍历缓存键的性能开销
-    eprintln!(
-        "[INFO] [delete_workspace] Step 2: Skipping search cache cleanup (LRU auto-eviction)"
-    );
+    info!("Step 2: Skipping search cache cleanup (LRU auto-eviction)");
 
     // ===== 步骤3: 清除内存状态 =====
     // CAS架构下，不需要清理全局的 path_map 和 file_metadata
     // 这些已经在之前的任务中被移除
-    eprintln!("[INFO] [delete_workspace] Step 3: No memory state to clear (CAS architecture)");
+    info!("Step 3: No memory state to clear (CAS architecture)");
 
-    eprintln!("[INFO] [delete_workspace] Step 3 completed: Memory state cleared");
+    info!("Step 3 completed: Memory state cleared");
 
     // ===== 步骤4: 清理旧的索引文件（如果存在）=====
     // 为了向后兼容，检查并删除旧的 .idx.gz 文件
-    eprintln!("[INFO] [delete_workspace] Step 4: Checking for legacy index files");
+    info!("Step 4: Checking for legacy index files");
 
     let index_dir = app
         .path()
@@ -328,10 +326,10 @@ fn cleanup_workspace_resources(
                         match fs::remove_file(&index_path) {
                             Ok(_) => {
                                 deleted_count += 1;
-                                eprintln!(
-                                    "[INFO] [delete_workspace] Deleted legacy index file: {} ({} bytes)",
-                                    index_path.display(),
-                                    metadata.len()
+                                info!(
+                                    path = %index_path.display(),
+                                    size = metadata.len(),
+                                    "Deleted legacy index file"
                                 );
                             }
                             Err(e) => {
@@ -341,14 +339,14 @@ fn cleanup_workspace_resources(
                                     index_path.display(),
                                     e
                                 );
-                                eprintln!("[ERROR] [delete_workspace] {}", error);
+                                error!(error = %error);
                                 errors.push(error);
                             }
                         }
                     } else {
-                        eprintln!(
-                            "[WARNING] [delete_workspace] Path {} exists but is not a regular file, skipping",
-                            index_path.display()
+                        warn!(
+                            path = %index_path.display(),
+                            "Path exists but is not a regular file, skipping"
                         );
                     }
                 }
@@ -359,37 +357,37 @@ fn cleanup_workspace_resources(
                         index_path.display(),
                         e
                     );
-                    eprintln!("[ERROR] [delete_workspace] {}", error);
+                    error!(error = %error);
                     errors.push(error);
                 }
             }
         } else {
-            eprintln!(
-                "[INFO] [delete_workspace] Legacy index file does not exist, skipping: {}",
-                index_path.display()
+            info!(
+                path = %index_path.display(),
+                "Legacy index file does not exist, skipping"
             );
         }
     }
 
     if deleted_count > 0 {
-        eprintln!(
-            "[INFO] [delete_workspace] Step 4 completed: {} legacy index files deleted",
-            deleted_count
+        info!(
+            count = deleted_count,
+            "Step 4 completed: legacy index files deleted"
         );
     } else {
-        eprintln!("[INFO] [delete_workspace] Step 4 completed: No legacy index files found");
+        info!("Step 4 completed: No legacy index files found");
     }
 
     // 如果关键文件删除失败，记录警告但不中断清理流程
     if failed_count > 0 && deleted_count == 0 {
-        eprintln!(
-            "[WARNING] [delete_workspace] All legacy index file deletions failed for workspace: {}",
-            workspace_id
+        warn!(
+            workspace_id = %workspace_id,
+            "All legacy index file deletions failed"
         );
     }
 
     // ===== 步骤5: 删除解压目录 =====
-    eprintln!("[INFO] [delete_workspace] Step 5: Checking for extracted directory");
+    info!("Step 5: Checking for extracted directory");
 
     match is_extracted_workspace(workspace_id, app) {
         Ok(true) => {
@@ -399,24 +397,24 @@ fn cleanup_workspace_resources(
                 .map_err(|e| format!("Failed to get app data dir: {}", e))?;
             let extracted_dir = app_data_dir.join("extracted").join(workspace_id);
 
-            eprintln!(
-                "[INFO] [delete_workspace] Attempting to delete extracted directory: {}",
-                extracted_dir.display()
+            info!(
+                path = %extracted_dir.display(),
+                "Attempting to delete extracted directory"
             );
 
             // Check if this is a CAS workspace
             match is_cas_workspace(workspace_id, app) {
                 Ok(true) => {
-                    eprintln!("[INFO] [delete_workspace] Detected CAS workspace, cleaning up CAS resources");
+                    info!("Detected CAS workspace, cleaning up CAS resources");
 
                     // Step 5.1: Delete SQLite database
                     let metadata_db = extracted_dir.join("metadata.db");
                     if metadata_db.exists() {
                         match fs::remove_file(&metadata_db) {
                             Ok(_) => {
-                                eprintln!(
-                                    "[INFO] [delete_workspace] Deleted SQLite database: {}",
-                                    metadata_db.display()
+                                info!(
+                                    path = %metadata_db.display(),
+                                    "Deleted SQLite database"
                                 );
                             }
                             Err(e) => {
@@ -425,7 +423,7 @@ fn cleanup_workspace_resources(
                                     metadata_db.display(),
                                     e
                                 );
-                                eprintln!("[ERROR] [delete_workspace] {}", error);
+                                error!(error = %error);
                                 errors.push(error);
                             }
                         }
@@ -437,10 +435,10 @@ fn cleanup_workspace_resources(
                             extracted_dir.join(format!("metadata.db{}", journal_ext));
                         if journal_file.exists() {
                             if let Err(e) = fs::remove_file(&journal_file) {
-                                eprintln!(
-                                    "[WARNING] [delete_workspace] Failed to delete journal file {}: {}",
-                                    journal_file.display(),
-                                    e
+                                warn!(
+                                    path = %journal_file.display(),
+                                    error = %e,
+                                    "Failed to delete journal file"
                                 );
                             }
                         }
@@ -451,9 +449,9 @@ fn cleanup_workspace_resources(
                     if objects_dir.exists() {
                         match fs::remove_dir_all(&objects_dir) {
                             Ok(_) => {
-                                eprintln!(
-                                    "[INFO] [delete_workspace] Deleted CAS objects directory: {}",
-                                    objects_dir.display()
+                                info!(
+                                    path = %objects_dir.display(),
+                                    "Deleted CAS objects directory"
                                 );
                             }
                             Err(e) => {
@@ -462,22 +460,17 @@ fn cleanup_workspace_resources(
                                     objects_dir.display(),
                                     e
                                 );
-                                eprintln!("[ERROR] [delete_workspace] {}", error);
+                                error!(error = %error);
                                 errors.push(error);
                             }
                         }
                     }
                 }
                 Ok(false) => {
-                    eprintln!(
-                        "[INFO] [delete_workspace] Traditional workspace, no CAS cleanup needed"
-                    );
+                    info!("Traditional workspace, no CAS cleanup needed");
                 }
                 Err(e) => {
-                    eprintln!(
-                        "[WARNING] [delete_workspace] Failed to check CAS status: {}",
-                        e
-                    );
+                    warn!(error = %e, "Failed to check CAS status");
                 }
             }
 
@@ -487,33 +480,32 @@ fn cleanup_workspace_resources(
             // Note: try_cleanup_temp_dir handles failures internally
             // Failed deletions are automatically added to cleanup queue
 
-            eprintln!(
-                "[INFO] [delete_workspace] Step 5 completed: Extracted directory cleanup initiated"
-            );
+            info!("Step 5 completed: Extracted directory cleanup initiated");
         }
         Ok(false) => {
-            eprintln!("[INFO] [delete_workspace] Step 5 skipped: Not an extracted workspace");
+            info!("Step 5 skipped: Not an extracted workspace");
         }
         Err(e) => {
             let error = format!("Failed to check if workspace is extracted: {}", e);
-            eprintln!("[WARNING] [delete_workspace] Step 5 failed: {}", error);
+            warn!(error = %error, "Step 5 failed");
             errors.push(error);
         }
     }
 
     // ===== 汇总结果 =====
     if errors.is_empty() {
-        eprintln!(
-            "[INFO] [delete_workspace] All cleanup steps completed successfully for workspace: {}",
-            workspace_id
+        info!(
+            workspace_id = %workspace_id,
+            "All cleanup steps completed successfully"
         );
         Ok(())
     } else {
         let error_summary = errors.join("; ");
-        eprintln!(
-            "[WARNING] [delete_workspace] Cleanup completed with {} errors: {}",
-            errors.len(),
-            error_summary
+        warn!(
+            workspace_id = %workspace_id,
+            error_count = errors.len(),
+            error_summary = %error_summary,
+            "Cleanup completed with errors"
         );
         // 部分资源清理失败不影响整体删除操作
         // 主要资源(内存状态)已清理,用户可以正常使用
@@ -555,9 +547,9 @@ pub async fn delete_workspace(
 ) -> Result<(), String> {
     let start_time = std::time::Instant::now();
 
-    eprintln!(
-        "[INFO] [delete_workspace] Command called for workspace: {}",
-        workspaceId
+    info!(
+        workspace_id = %workspaceId,
+        "Delete workspace command called"
     );
 
     // 参数验证
@@ -572,14 +564,15 @@ pub async fn delete_workspace(
         .invalidate_workspace_cache_async(&workspaceId)
         .await
     {
-        eprintln!(
-            "[WARNING] Failed to invalidate cache for workspace {}: {}",
-            workspaceId, e
+        warn!(
+            workspace_id = %workspaceId,
+            error = %e,
+            "Failed to invalidate cache for workspace"
         );
     } else {
-        eprintln!(
-            "[INFO] Successfully invalidated cache for workspace: {}",
-            workspaceId
+        info!(
+            workspace_id = %workspaceId,
+            "Successfully invalidated cache for workspace"
         );
     }
 
@@ -613,9 +606,9 @@ pub async fn delete_workspace(
             .await;
     }
 
-    eprintln!(
-        "[INFO] [delete_workspace] Command completed for workspace: {}",
-        workspaceId
+    info!(
+        workspace_id = %workspaceId,
+        "Delete workspace command completed"
     );
 
     Ok(())

@@ -1,6 +1,6 @@
 use crate::error::Result;
 use crate::models::search::*;
-use crate::services::pattern_matcher::PatternMatcher;
+use crate::services::fuzzy_matcher::FuzzyMatcher;
 use crate::services::query_planner::{ExecutionPlan, QueryPlanner};
 use crate::services::query_validator::QueryValidator;
 
@@ -15,6 +15,7 @@ use crate::services::query_validator::QueryValidator;
  */
 pub struct QueryExecutor {
     planner: QueryPlanner,
+    fuzzy_matcher: Option<FuzzyMatcher>,
     // 移除未使用的 validator 字段
 }
 
@@ -28,7 +29,25 @@ impl QueryExecutor {
     pub fn new(cache_size: usize) -> Self {
         Self {
             planner: QueryPlanner::new(cache_size),
+            fuzzy_matcher: None,
         }
+    }
+
+    /**
+     * 启用模糊匹配
+     *
+     * # 参数
+     * * `enabled` - 是否启用模糊匹配
+     */
+    pub fn with_fuzzy_matching(mut self, enabled: bool) -> Self {
+        if enabled {
+            self.fuzzy_matcher = Some(FuzzyMatcher::new(2));
+            self.planner = self.planner.with_fuzzy_matching(true);
+        } else {
+            self.fuzzy_matcher = None;
+            self.planner = self.planner.with_fuzzy_matching(false);
+        }
+        self
     }
 
     /**
@@ -68,62 +87,50 @@ impl QueryExecutor {
     pub fn matches_line(&self, plan: &ExecutionPlan, line: &str) -> bool {
         match plan.strategy {
             crate::services::query_planner::SearchStrategy::And => {
-                // 收集所有模式，按大小写敏感分组
-                let mut all_patterns = Vec::new();
-                let mut case_sensitive_flags = Vec::new();
-
+                // AND 逻辑：所有term都必须匹配
                 for term in &plan.terms {
-                    all_patterns.push(term.value.clone());
-                    case_sensitive_flags.push(term.case_sensitive);
-                }
-
-                // 如果有任何大小写敏感模式，需要分别处理
-                if case_sensitive_flags.iter().any(|&x| x) {
-                    // 混合模式：分别构建两个匹配器
-                    let sensitive_patterns: Vec<_> = plan
-                        .terms
-                        .iter()
-                        .filter(|t| t.case_sensitive)
-                        .map(|t| t.value.clone())
-                        .collect();
-
-                    let insensitive_patterns: Vec<_> = plan
-                        .terms
-                        .iter()
-                        .filter(|t| !t.case_sensitive)
-                        .map(|t| t.value.clone())
-                        .collect();
-
-                    // 使用Result类型的new方法，需要处理错误
-                    let sensitive_matcher = if !sensitive_patterns.is_empty() {
-                        PatternMatcher::new(sensitive_patterns, false).unwrap_or_else(|_| {
-                            // 如果构建失败，创建一个空匹配器（不会匹配任何内容）
-                            PatternMatcher::new(Vec::new(), false).unwrap()
-                        })
+                    let term_matches = if term.fuzzy_enabled && plan.fuzzy_enabled {
+                        // 使用模糊匹配
+                        if let Some(ref matcher) = self.fuzzy_matcher {
+                            matcher.find_similar_words(&term.value, line)
+                        } else {
+                            false
+                        }
                     } else {
-                        PatternMatcher::new(Vec::new(), false).unwrap()
+                        // 使用精确匹配（正则表达式）
+                        if let Some(compiled) = plan.regexes.iter().find(|r| r.term_id == term.id) {
+                            compiled.regex.is_match(line)
+                        } else {
+                            false
+                        }
                     };
 
-                    let insensitive_matcher = if !insensitive_patterns.is_empty() {
-                        PatternMatcher::new(insensitive_patterns, true)
-                            .unwrap_or_else(|_| PatternMatcher::new(Vec::new(), true).unwrap())
-                    } else {
-                        PatternMatcher::new(Vec::new(), true).unwrap()
-                    };
-
-                    sensitive_matcher.matches_all(line) && insensitive_matcher.matches_all(line)
-                } else {
-                    // 全部大小写不敏感
-                    let patterns = plan.terms.iter().map(|t| t.value.clone()).collect();
-                    PatternMatcher::new(patterns, true)
-                        .map(|m| m.matches_all(line))
-                        .unwrap_or(false)
+                    if !term_matches {
+                        return false;
+                    }
                 }
+                true
             }
             crate::services::query_planner::SearchStrategy::Or => {
                 // OR 逻辑：匹配任意一个
-                for compiled in &plan.regexes {
-                    if compiled.regex.is_match(line) {
+                for term in &plan.terms {
+                    let term_matches = if term.fuzzy_enabled && plan.fuzzy_enabled {
+                        // 使用模糊匹配
+                        if let Some(ref matcher) = self.fuzzy_matcher {
+                            matcher.find_similar_words(&term.value, line)
+                        } else {
+                            false
+                        }
+                    } else {
+                        // 使用精确匹配（正则表达式）
+                        if let Some(compiled) = plan.regexes.iter().find(|r| r.term_id == term.id) {
+                            compiled.regex.is_match(line)
+                        } else {
+                            false
+                        }
+                    };
+
+                    if term_matches {
                         return true;
                     }
                 }
@@ -131,8 +138,24 @@ impl QueryExecutor {
             }
             crate::services::query_planner::SearchStrategy::Not => {
                 // NOT 逻辑：不能匹配任何一个
-                for compiled in &plan.regexes {
-                    if compiled.regex.is_match(line) {
+                for term in &plan.terms {
+                    let term_matches = if term.fuzzy_enabled && plan.fuzzy_enabled {
+                        // 使用模糊匹配
+                        if let Some(ref matcher) = self.fuzzy_matcher {
+                            matcher.find_similar_words(&term.value, line)
+                        } else {
+                            false
+                        }
+                    } else {
+                        // 使用精确匹配（正则表达式）
+                        if let Some(compiled) = plan.regexes.iter().find(|r| r.term_id == term.id) {
+                            compiled.regex.is_match(line)
+                        } else {
+                            false
+                        }
+                    };
+
+                    if term_matches {
                         return false;
                     }
                 }
@@ -244,6 +267,7 @@ mod tests {
             priority: 1,
             enabled: true,
             case_sensitive,
+            fuzzy_enabled: Some(false), // 默认不启用模糊匹配
         }
     }
 

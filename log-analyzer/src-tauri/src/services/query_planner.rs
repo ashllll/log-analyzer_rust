@@ -1,5 +1,6 @@
 use crate::error::{AppError, Result};
 use crate::models::search::*;
+use crate::services::fuzzy_matcher::FuzzyMatcher;
 use regex::Regex;
 use std::collections::HashMap;
 
@@ -11,6 +12,7 @@ use std::collections::HashMap;
 pub struct QueryPlanner {
     cache_size: usize,
     regex_cache: HashMap<String, Regex>,
+    fuzzy_matcher: Option<FuzzyMatcher>,
 }
 
 impl QueryPlanner {
@@ -24,7 +26,87 @@ impl QueryPlanner {
         Self {
             cache_size,
             regex_cache: HashMap::new(),
+            fuzzy_matcher: None,
         }
+    }
+
+    /**
+     * 启用模糊匹配
+     *
+     * # 参数
+     * * `enabled` - 是否启用模糊匹配
+     */
+    pub fn with_fuzzy_matching(mut self, enabled: bool) -> Self {
+        if enabled {
+            self.fuzzy_matcher = Some(FuzzyMatcher::new(2)); // 最大编辑距离为2
+        } else {
+            self.fuzzy_matcher = None;
+        }
+        self
+    }
+
+    /**
+     * 智能判断搜索词是否应该使用单词边界匹配
+     *
+     * 启发式规则：
+     * 1. 用户手动输入了 \b → 立即使用单词边界
+     * 2. 常见日志关键词（ERROR, WARN, INFO, DE H, DE N）→ 自动单词边界
+     * 3. 短的字母数字组合（≤10字符，且主要是字母+空格）→ 自动单词边界
+     * 4. 包含空格的短语（如 "database error"）→ 自动单词边界
+     * 5. 其他情况 → 保持子串匹配（兼容现有行为）
+     *
+     * # 参数
+     * * `term` - 搜索项
+     *
+     * # 返回
+     * * `true` - 应该使用单词边界
+     * * `false` - 保持子串匹配
+     */
+    fn should_use_word_boundary(term: &SearchTerm) -> bool {
+        // 规则0: 正则表达式模式不自动添加边界
+        if term.is_regex {
+            return false;
+        }
+
+        let value = &term.value;
+
+        // 规则1: 用户手动输入了 \b，尊重用户意图
+        if value.contains(r"\b") {
+            return true;
+        }
+
+        // 规则2: 常见日志关键词（大小写不敏感）
+        let common_log_keywords = [
+            "ERROR", "WARN", "INFO", "DEBUG", "FATAL", "DE H", "DE N", "DE E",
+            "DE W", // 安卓日志常见模式
+            "TRACE", "CRITICAL",
+        ];
+        let upper_value = value.to_uppercase();
+        if common_log_keywords.iter().any(|&kw| upper_value == kw) {
+            return true;
+        }
+
+        // 规则3: 短的字母数字组合
+        let is_short = value.len() <= 10;
+        let is_simple_pattern = value.chars().all(|c| c.is_alphanumeric() || c == ' ');
+        if is_short && is_simple_pattern {
+            return true;
+        }
+
+        // 规则4: 包含空格的短语（通常是精确词组搜索）
+        if value.contains(' ') && value.len() <= 30 {
+            // 但不能包含太多特殊字符（可能是正则表达式）
+            let special_char_count = value
+                .chars()
+                .filter(|&c| !c.is_alphanumeric() && c != ' ')
+                .count();
+            if special_char_count == 0 {
+                return true;
+            }
+        }
+
+        // 规则5: 默认保持子串匹配（向后兼容）
+        false
     }
 
     /**
@@ -47,6 +129,13 @@ impl QueryPlanner {
             QueryOperator::Not => SearchStrategy::Not,
         };
 
+        // 检查是否启用了模糊匹配
+        let fuzzy_enabled = self.fuzzy_matcher.is_some()
+            && query
+                .terms
+                .iter()
+                .any(|t| t.enabled && t.fuzzy_enabled.unwrap_or(false));
+
         // 编译正则表达式
         let mut regexes = Vec::new();
         let mut terms_list = Vec::new();
@@ -63,6 +152,7 @@ impl QueryPlanner {
                 id: term.id.clone(),
                 value: term.value.clone(),
                 case_sensitive: term.case_sensitive,
+                fuzzy_enabled: term.fuzzy_enabled.unwrap_or(false),
             });
         }
 
@@ -71,6 +161,7 @@ impl QueryPlanner {
             regexes,
             term_count: enabled_terms.len(),
             terms: terms_list,
+            fuzzy_enabled,
         })
     }
 
@@ -86,18 +177,32 @@ impl QueryPlanner {
      */
     fn compile_regex(&mut self, term: &SearchTerm) -> Result<Regex> {
         let pattern = if term.is_regex {
+            // 正则表达式：保持原样
             term.value.clone()
         } else {
             let escaped = regex::escape(&term.value);
-            if term.case_sensitive {
-                escaped
+
+            // 自动检测是否需要单词边界
+            let pattern_with_boundaries = if Self::should_use_word_boundary(term) {
+                // 自动添加单词边界
+                format!(r"\b{}\b", escaped)
             } else {
-                format!("(?i:{})", escaped)
+                // 保持子串匹配
+                escaped
+            };
+
+            if term.case_sensitive {
+                pattern_with_boundaries
+            } else {
+                format!("(?i:{})", pattern_with_boundaries)
             }
         };
 
+        // 缓存键（不包含match_mode，因为是自动检测）
+        let cache_key = format!("{}:{}", term.value, term.case_sensitive);
+
         // 检查缓存
-        if let Some(cached) = self.regex_cache.get(&pattern) {
+        if let Some(cached) = self.regex_cache.get(&cache_key) {
             return Ok(cached.clone());
         }
 
@@ -114,7 +219,7 @@ impl QueryPlanner {
             }
         }
 
-        self.regex_cache.insert(pattern.clone(), regex.clone());
+        self.regex_cache.insert(cache_key, regex.clone());
         Ok(regex)
     }
 }
@@ -129,6 +234,7 @@ pub struct ExecutionPlan {
     #[allow(dead_code)]
     pub term_count: usize,
     pub terms: Vec<PlanTerm>,
+    pub fuzzy_enabled: bool, // 是否启用模糊匹配
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -136,6 +242,7 @@ pub struct PlanTerm {
     pub id: String,
     pub value: String,
     pub case_sensitive: bool,
+    pub fuzzy_enabled: bool, // 该term是否启用模糊匹配
 }
 
 impl ExecutionPlan {
@@ -199,6 +306,7 @@ mod tests {
             priority: 1,
             enabled: true,
             case_sensitive: false,
+            fuzzy_enabled: Some(false), // 默认不启用模糊匹配
         }
     }
 
@@ -226,6 +334,7 @@ mod tests {
         assert_eq!(plan.term_count, 2);
         assert_eq!(plan.terms.len(), 2);
         assert!(plan.terms.iter().all(|term| !term.case_sensitive));
+        assert!(!plan.fuzzy_enabled); // 默认不启用模糊匹配
     }
 
     #[test]
@@ -334,6 +443,7 @@ mod tests {
             priority: 1,
             enabled: true,
             case_sensitive: false,
+            fuzzy_enabled: Some(false),
         };
 
         let regex = planner.compile_regex(&term).unwrap();
@@ -355,6 +465,7 @@ mod tests {
             priority: 1,
             enabled: true,
             case_sensitive: true,
+            fuzzy_enabled: Some(false),
         };
 
         let regex = planner.compile_regex(&term).unwrap();
@@ -376,6 +487,7 @@ mod tests {
             priority: 1,
             enabled: true,
             case_sensitive: false,
+            fuzzy_enabled: Some(false),
         };
 
         let regex = planner.compile_regex(&term).unwrap();
@@ -410,18 +522,22 @@ mod tests {
                     id: "1".to_string(),
                     value: "test1".to_string(),
                     case_sensitive: false,
+                    fuzzy_enabled: false,
                 },
                 PlanTerm {
                     id: "2".to_string(),
                     value: "test2".to_string(),
                     case_sensitive: false,
+                    fuzzy_enabled: false,
                 },
                 PlanTerm {
                     id: "3".to_string(),
                     value: "test3".to_string(),
                     case_sensitive: false,
+                    fuzzy_enabled: false,
                 },
             ],
+            fuzzy_enabled: false,
         };
 
         plan.sort_by_priority();
@@ -429,5 +545,165 @@ mod tests {
         assert_eq!(plan.regexes[0].priority, 3);
         assert_eq!(plan.regexes[1].priority, 2);
         assert_eq!(plan.regexes[2].priority, 1);
+    }
+
+    // ========== 自动单词边界检测测试 ==========
+
+    #[test]
+    fn test_auto_detect_common_keywords() {
+        let test_cases = vec![
+            ("DE H", true), // 常见安卓日志关键词
+            ("DE N", true),
+            ("ERROR", true), // 通用日志级别
+            ("WARN", true),
+            ("INFO", true),
+            ("de h", true), // 大小写不敏感
+            ("error", true),
+        ];
+
+        for (value, expected) in test_cases {
+            let term = create_test_term(value, QueryOperator::And);
+            assert_eq!(
+                QueryPlanner::should_use_word_boundary(&term),
+                expected,
+                "Failed for: {}",
+                value
+            );
+        }
+    }
+
+    #[test]
+    fn test_auto_detect_short_patterns() {
+        let term = create_test_term("test", QueryOperator::And);
+        assert!(QueryPlanner::should_use_word_boundary(&term));
+
+        let term2 = create_test_term("CODE", QueryOperator::And);
+        assert!(QueryPlanner::should_use_word_boundary(&term2));
+    }
+
+    #[test]
+    fn test_auto_detect_phrases() {
+        let term = create_test_term("database error", QueryOperator::And);
+        assert!(QueryPlanner::should_use_word_boundary(&term));
+
+        let term2 = create_test_term("connection timeout", QueryOperator::And);
+        assert!(QueryPlanner::should_use_word_boundary(&term2));
+    }
+
+    #[test]
+    fn test_keep_substring_for_special_chars() {
+        let test_cases = vec!["user_123", "file-name.log", "http://api", "test:value"];
+
+        for value in test_cases {
+            let term = create_test_term(value, QueryOperator::And);
+            assert!(
+                !QueryPlanner::should_use_word_boundary(&term),
+                "Should not use word boundary for: {}",
+                value
+            );
+        }
+    }
+
+    #[test]
+    fn test_detect_manual_boundaries() {
+        let term = SearchTerm {
+            id: "test".to_string(),
+            value: r"\bCODE\b".to_string(), // 用户手动输入
+            operator: QueryOperator::And,
+            source: TermSource::User,
+            preset_group_id: None,
+            is_regex: false,
+            priority: 1,
+            enabled: true,
+            case_sensitive: false,
+            fuzzy_enabled: Some(false),
+        };
+
+        assert!(QueryPlanner::should_use_word_boundary(&term));
+    }
+
+    #[test]
+    fn test_regex_mode_no_auto_boundaries() {
+        let term = SearchTerm {
+            id: "test".to_string(),
+            value: r"\d+".to_string(),
+            operator: QueryOperator::And,
+            source: TermSource::User,
+            preset_group_id: None,
+            is_regex: true, // 正则模式
+            priority: 1,
+            enabled: true,
+            case_sensitive: false,
+            fuzzy_enabled: Some(false),
+        };
+
+        assert!(!QueryPlanner::should_use_word_boundary(&term));
+    }
+
+    #[test]
+    fn test_android_log_search() {
+        // 端到端测试：DE H 不匹配 CODE HDEF
+        let mut planner = QueryPlanner::new(100);
+        let term = create_test_term("DE H", QueryOperator::And);
+
+        let regex = planner.compile_regex(&term).unwrap();
+
+        // ✅ 应该匹配：独立的 "DE H"
+        assert!(regex.is_match("DE H occurred"));
+        assert!(regex.is_match("found DE H here"));
+        assert!(regex.is_match("DE H at start"));
+
+        // ❌ 不应该匹配：子串但不独立
+        assert!(!regex.is_match("CODE HDEF"));
+        assert!(!regex.is_match("testDEHtest"));
+        assert!(!regex.is_match("CODEH-DEF"));
+    }
+
+    #[test]
+    fn test_word_boundary_with_or_operator() {
+        // 测试 OR 操作符场景
+        let mut planner = QueryPlanner::new(100);
+        let query = SearchQuery {
+            id: "test".to_string(),
+            terms: vec![
+                create_test_term("DE H", QueryOperator::Or),
+                create_test_term("DE N", QueryOperator::Or),
+            ],
+            global_operator: QueryOperator::Or,
+            filters: None,
+            metadata: QueryMetadata {
+                created_at: 0,
+                last_modified: 0,
+                execution_count: 0,
+                label: None,
+            },
+        };
+
+        let plan = planner.build_plan(&query).unwrap();
+
+        // 测试 AND 逻辑（OR操作符下，所有term应该都匹配）
+        assert!(plan.regexes[0].regex.is_match("DE H found"));
+        assert!(plan.regexes[1].regex.is_match("DE N here"));
+
+        // 确保不会错误匹配
+        assert!(!plan.regexes[0].regex.is_match("CODE HDEF"));
+        assert!(!plan.regexes[1].regex.is_match("CODE HDEF"));
+    }
+
+    #[test]
+    fn test_long_phrase_no_boundary() {
+        // 测试超过30字符的短语不自动添加边界
+        let term = create_test_term(
+            "This is a very long phrase that exceeds thirty characters",
+            QueryOperator::And,
+        );
+        assert!(!QueryPlanner::should_use_word_boundary(&term));
+    }
+
+    #[test]
+    fn test_url_no_boundary() {
+        // 测试URL不添加边界
+        let term = create_test_term("http://api.example.com", QueryOperator::And);
+        assert!(!QueryPlanner::should_use_word_boundary(&term));
     }
 }

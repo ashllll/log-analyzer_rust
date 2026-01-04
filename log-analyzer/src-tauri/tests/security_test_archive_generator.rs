@@ -119,7 +119,7 @@ pub fn create_path_traversal_archive(output_path: &Path) -> io::Result<()> {
     let options = FileOptions::default().compression_method(CompressionMethod::Stored);
 
     // Various path traversal attempts
-    let malicious_paths = vec![
+    let malicious_paths = [
         "../../../etc/passwd",
         "..\\..\\..\\windows\\system32\\config\\sam",
         "../../../../../../etc/shadow",
@@ -394,7 +394,7 @@ mod tests {
         // Verify it contains files
         let file = File::open(&output_path).unwrap();
         let archive = zip::ZipArchive::new(file).unwrap();
-        assert!(archive.len() > 0, "Should contain files");
+        assert!(!archive.is_empty(), "Should contain files");
     }
 
     #[test]

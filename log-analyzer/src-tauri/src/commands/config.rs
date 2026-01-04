@@ -3,6 +3,7 @@
 use std::fs;
 
 use tauri::{command, AppHandle, Manager};
+use tracing::warn;
 
 use crate::models::{AppConfig, FileFilterConfig};
 
@@ -31,7 +32,7 @@ pub fn load_config(app: AppHandle) -> Result<AppConfig, String> {
         match serde_json::from_str(&c) {
             Ok(config) => Ok(config),
             Err(e) => {
-                eprintln!("[WARNING] Failed to parse config, using defaults: {}", e);
+                warn!(error = %e, "Failed to parse config, using defaults");
                 Ok(AppConfig {
                     keyword_groups: serde_json::json!([]),
                     workspaces: serde_json::json!([]),

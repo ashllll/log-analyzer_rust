@@ -88,7 +88,7 @@ async fn test_path_mappings_accessibility() {
         .unwrap();
 
     // Verify extraction succeeded
-    assert!(result.extracted_files.len() > 0);
+    assert!(!result.extracted_files.is_empty());
 
     // If path shortening was used, verify MetadataDB has the mappings
     if !result.metadata_mappings.is_empty() {
@@ -123,7 +123,7 @@ async fn test_path_mappings_accessibility() {
             if cas.exists(&file.sha256_hash) {
                 // Verify content can be read
                 let content = cas.read_content(&file.sha256_hash).await.unwrap();
-                assert!(content.len() > 0);
+                assert!(!content.is_empty());
             }
         }
     }
@@ -247,15 +247,17 @@ async fn test_nested_archive_extraction() {
     zip.finish().unwrap();
 
     // Extract using enhanced system with depth limit
-    let mut policy = ExtractionPolicy::default();
-    policy.max_depth = 2; // Allow nested extraction
+    let policy = ExtractionPolicy {
+        max_depth: 2,
+        ..Default::default()
+    };
     let result =
         extract_archive_async(&outer_archive, &extract_dir, "test_workspace", Some(policy))
             .await
             .unwrap();
 
     // Should extract both outer and inner files
-    assert!(result.extracted_files.len() >= 1);
+    assert!(!result.extracted_files.is_empty());
 
     // Note: Actual nested extraction behavior depends on processor integration
     // This test verifies the API works correctly
@@ -309,7 +311,7 @@ async fn test_performance_metrics() {
         .unwrap();
 
     // Verify performance metrics are collected
-    assert!(result.performance_metrics.total_duration.as_secs() >= 0);
+    // Note: Duration is always >= 0 for u64, so we just check it's set
     assert_eq!(result.performance_metrics.files_extracted, 3);
     assert!(result.performance_metrics.bytes_extracted > 0);
 }

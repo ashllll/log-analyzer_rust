@@ -45,6 +45,10 @@ use commands::{
     },
     query::{execute_structured_query, validate_query},
     search::{cancel_search, search_logs},
+    search_history::{
+        add_search_history, clear_search_history, delete_search_history, get_search_history,
+        search_history_items,
+    },
     state_sync::{broadcast_test_event, get_event_history, get_workspace_state, init_state_sync},
     virtual_tree::{get_virtual_file_tree, read_file_by_hash},
     watch::{start_watch, stop_watch},
@@ -68,8 +72,7 @@ pub fn run() {
 
     // 设置全局 panic hook
     std::panic::set_hook(Box::new(|panic_info| {
-        tracing::error!("Application panic: {:?}", panic_info);
-        eprintln!("[PANIC] Application panic: {:?}", panic_info);
+        tracing::error!(panic_info = ?panic_info, "Application panic");
     }));
 
     // 配置 Rayon 线程池（优化多核性能）
@@ -154,6 +157,12 @@ pub fn run() {
                 ),
             }
         })
+        .manage({
+            // 独立注册 SearchHistory 状态
+            Arc::new(std::sync::Mutex::new(
+                models::search_history::SearchHistory::new(50), // 保存最近50条
+            ))
+        })
         .invoke_handler(tauri::generate_handler![
             save_config,
             load_config,
@@ -183,6 +192,11 @@ pub fn run() {
             get_virtual_file_tree,
             scan_legacy_formats,
             get_legacy_workspace_info,
+            add_search_history,
+            get_search_history,
+            search_history_items,
+            delete_search_history,
+            clear_search_history,
         ])
         .setup(|app| {
             // 获取 AppState

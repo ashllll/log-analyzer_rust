@@ -31,7 +31,7 @@ mod tests {
             ]
         )| {
             // 验证函数返回 Result 类型
-            let result = crate::utils::validation::validate_safe_path(&invalid_path);
+            let result = crate::utils::validation::validate_safe_path(invalid_path);
 
             // 应该返回 Err
             prop_assert!(result.is_err());
@@ -115,7 +115,7 @@ mod tests {
 
             // 验证错误消息格式
             prop_assert!(error_msg.starts_with("Search error:"));
-            prop_assert!(error_msg.contains(&error_type));
+            prop_assert!(error_msg.contains(error_type));
 
             // 错误消息应该足够详细以便前端显示
             prop_assert!(error_msg.len() > 10);

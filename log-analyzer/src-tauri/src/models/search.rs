@@ -41,6 +41,9 @@ pub struct SearchTerm {
     pub enabled: bool,
     #[serde(rename = "caseSensitive")]
     pub case_sensitive: bool,
+    #[serde(rename = "fuzzyEnabled")]
+    #[serde(default)]
+    pub fuzzy_enabled: Option<bool>, // 是否启用模糊匹配
 }
 
 /**
@@ -150,6 +153,7 @@ mod tests {
             priority: 10,
             enabled: true,
             case_sensitive: false,
+            fuzzy_enabled: Some(false),
         };
 
         let json = serde_json::to_string(&term).unwrap();

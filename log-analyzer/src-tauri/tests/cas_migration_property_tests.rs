@@ -392,7 +392,6 @@ fn test_comprehensive_legacy_code_scan() {
 /// entry in MetadataStore. This ensures the integrity of the CAS architecture.
 #[cfg(test)]
 mod cas_storage_consistency_tests {
-    use super::*;
     use log_analyzer::storage::{ContentAddressableStorage, FileMetadata, MetadataStore};
     use proptest::prelude::*;
     use sha2::{Digest, Sha256};
@@ -464,13 +463,13 @@ mod cas_storage_consistency_tests {
                 // Property 1: All imported files must be in CAS
                 for (original_content, hash, _) in &imported_files {
                     prop_assert!(
-                        cas.exists(&hash),
+                        cas.exists(hash),
                         "CAS object must exist for hash: {}",
                         hash
                     );
 
                     // Verify content can be retrieved
-                    let retrieved_content = cas.read_content(&hash).await.unwrap();
+                    let retrieved_content = cas.read_content(hash).await.unwrap();
                     prop_assert_eq!(
                         &retrieved_content,
                         original_content,

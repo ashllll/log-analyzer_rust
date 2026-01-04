@@ -161,8 +161,10 @@ async fn test_detect_multiple_nested_archives() {
 #[tokio::test]
 async fn test_depth_limit_enforcement() {
     // Set a low depth limit
-    let mut policy = ExtractionPolicy::default();
-    policy.max_depth = 2; // Allow only 2 levels (0 and 1)
+    let policy = ExtractionPolicy {
+        max_depth: 2,
+        ..Default::default()
+    };
 
     let (engine, temp_dir) = create_test_engine(policy).await;
 

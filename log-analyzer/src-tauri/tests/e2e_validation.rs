@@ -107,7 +107,7 @@ mod e2e_tests {
     /// 验证任务状态的所有变体
     #[test]
     fn test_all_task_status_variants() {
-        let all_statuses = vec![
+        let all_statuses = [
             TaskStatus::Running,
             TaskStatus::Completed,
             TaskStatus::Failed,

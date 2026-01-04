@@ -645,7 +645,7 @@ async fn test_storage_efficiency() {
     println!("\n=== Storage Efficiency ===");
 
     // Create files with varying duplication
-    let unique_contents = vec![
+    let unique_contents = [
         b"Unique content 1".to_vec(),
         b"Unique content 2".to_vec(),
         b"Unique content 3".to_vec(),
@@ -654,10 +654,9 @@ async fn test_storage_efficiency() {
     let duplicate_content = b"This content is duplicated many times".to_vec();
 
     let mut total_logical_size = 0u64;
-    let mut file_id = 0;
 
     // Store unique files
-    for content in &unique_contents {
+    for (file_id, content) in unique_contents.iter().enumerate() {
         let hash = cas.store_content(content).await.unwrap();
         total_logical_size += content.len() as u64;
 
@@ -673,7 +672,6 @@ async fn test_storage_efficiency() {
             depth_level: 0,
         };
         metadata_store.insert_file(&metadata).await.unwrap();
-        file_id += 1;
     }
 
     // Store many duplicates

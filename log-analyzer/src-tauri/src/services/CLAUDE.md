@@ -556,7 +556,215 @@ pub fn calculate_keyword_statistics(
 - 空结果统计
 - 无匹配统计
 
-### 7. IndexStore - 索引存储
+### 7. FuzzyMatcher - 模糊匹配器
+
+**职责**: 使用 Levenshtein 距离算法实现模糊匹配和拼写容错
+
+**核心算法**: Levenshtein 距离（编辑距离）
+- **时间复杂度**: O(n*m)，n 和 m 是字符串长度
+- **空间复杂度**: O(n*m)
+- **功能**: 计算两个字符串之间的最小编辑操作数（插入、删除、替换）
+
+**核心结构**:
+```rust
+pub struct FuzzyMatcher {
+    max_distance: usize,                        // 最大编辑距离
+    metaphone_cache: Arc<RwLock<HashMap<String, String>>>, // Metaphone编码缓存
+}
+```
+
+**关键功能**:
+
+1. **动态阈值匹配** - 根据字符串长度自适应
+```rust
+pub fn is_similar(&self, s1: &str, s2: &str) -> bool {
+    let distance = levenshtein_distance(s1, s2);
+
+    // 动态阈值：短词允许更小的距离
+    let threshold = if s1.len() <= 4 {
+        1  // 短词（≤4字符）最多1个差异
+    } else if s1.len() <= 8 {
+        2  // 中等词（5-8字符）最多2个差异
+    } else {
+        3  // 长词（>8字符）最多3个差异
+    };
+
+    distance <= threshold && distance <= self.max_distance
+}
+```
+
+2. **子串匹配** - UTF-8 安全的单词内搜索
+```rust
+pub fn find_similar_words(&self, query: &str, line: &str) -> bool {
+    // 使用 char_indices() 获取有效的UTF-8字符边界
+    let char_indices: Vec<usize> = word
+        .char_indices()
+        .map(|(idx, _)| idx)
+        .chain(std::iter::once(word.len()))
+        .collect();
+
+    // 在有效的字符边界上生成子串
+    for (i, &start) in char_indices.iter().enumerate() {
+        for &end in char_indices.iter().skip(i + 1) {
+            if let Some(substring) = word.get(start..end) {  // ✅ UTF-8安全
+                if self.is_similar(query, substring) {
+                    return true;
+                }
+            }
+        }
+    }
+}
+```
+
+3. **最佳匹配查找** - 返回最相似的单词
+```rust
+pub fn find_best_match(&self, query: &str, line: &str) -> Option<(String, usize)> {
+    words
+        .iter()
+        .filter_map(|word| {
+            let distance = levenshtein_distance(query, word);
+            if self.is_similar(query, word) {
+                Some((word.to_string(), distance))
+            } else {
+                None
+            }
+        })
+        .min_by_key(|(_, distance)| *distance)
+}
+```
+
+4. **语音相似度检查** - Metaphone算法集成
+```rust
+pub fn is_phonetically_similar(&self, s1: &str, s2: &str) -> bool {
+    let m1 = self.get_metaphone_cached(s1);
+    let m2 = self.get_metaphone_cached(s2);
+    m1 == m2
+}
+```
+
+**UTF-8 安全性改进** (2025-12-31):
+- ✅ 使用 `char_indices()` 而非字节索引
+- ✅ 使用 `word.get()` 安全访问子串
+- ✅ 支持中文、emoji、德文等多字节字符
+- ✅ 防止字符串切片panic
+
+**测试覆盖**: 20个测试用例
+- Levenshtein距离计算（6个测试）
+- 模糊匹配逻辑（9个测试）
+- UTF-8安全性测试（3个测试）
+- Metaphone集成测试（2个测试）
+
+### 8. Metaphone - 语音编码算法
+
+**职责**: 将单词编码为语音表示，用于匹配发音相似的单词
+
+**算法**: Metaphone（简化版）
+- **时间复杂度**: O(n)，n为单词长度
+- **空间复杂度**: O(n) + 缓存
+- **用途**: 拼写纠错、语音搜索
+
+**编码规则**:
+1. 转换为小写
+2. 保留首字母
+3. 移除无声字母
+4. 转换相似的辅音为同一编码
+5. 压缩连续相同的字母
+
+**辅音转换表**:
+| 辅音 | 规则 | 示例 |
+|------|------|------|
+| C | 后接 i/e/y → s，否则 → k | "city" → "s", "cat" → "k" |
+| G | 后接 e/i/y → j，否则 → k | "gem" → "j", "get" → "k" |
+| PH | → F | "phone" → "f" |
+| SH | → X | "ship" → "x" |
+| TH | → 0 | "think" → "0" |
+
+**核心实现**:
+```rust
+pub fn metaphone(word: &str) -> String {
+    let word = word.to_lowercase();
+    let mut result = String::new();
+    let chars: Vec<char> = word.chars().collect();
+    let len = chars.len();
+
+    let mut i = 0;
+    while i < len {
+        match chars[i] {
+            'a' | 'e' | 'i' | 'o' | 'u' => {
+                if result.is_empty() { result.push(chars[i]); }
+                i += 1;
+            }
+            'c' => {
+                if i + 1 < len && matches!(chars[i + 1], 'i' | 'e' | 'y') {
+                    result.push('s'); // soft C
+                } else {
+                    result.push('k'); // hard C
+                }
+                i += 1;
+            }
+            // ... 其他规则
+        }
+    }
+
+    // 压缩连续相同的字符
+    result.chars().fold(String::new(), |mut acc, c| {
+        if acc.chars().last() != Some(c) { acc.push(c); }
+        acc
+    })
+}
+
+pub fn is_phonetically_similar(s1: &str, s2: &str) -> bool {
+    metaphone(s1) == metaphone(s2)
+}
+```
+
+**匹配示例**:
+- `Smith` ≈ `Smyth` (编码: "sm0")
+- `Knight` ≈ `Nite` (编码: "nt")
+- `through` ≈ `thru` (编码: "0r")
+- `recieve` ≈ `receive` (拼写纠错)
+
+**缓存机制**:
+```rust
+pub struct FuzzyMatcher {
+    metaphone_cache: Arc<RwLock<HashMap<String, String>>>,
+}
+
+fn get_metaphone_cached(&self, word: &str) -> String {
+    // 1. 检查缓存（读锁）
+    {
+        let cache = self.metaphone_cache.read().unwrap();
+        if let Some(cached) = cache.get(word) {
+            return cached.clone();
+        }
+    }
+
+    // 2. 计算编码
+    let encoded = metaphone(word);
+
+    // 3. 更新缓存（写锁）
+    {
+        let mut cache = self.metaphone_cache.write().unwrap();
+        cache.insert(word.to_string(), encoded.clone());
+    }
+
+    encoded
+}
+```
+
+**性能优化**:
+- 线程安全缓存：`Arc<RwLock<HashMap>>`
+- 读写锁：支持并发读取
+- 缓存命中率：预估 85%+（日志词汇重复度高）
+
+**测试覆盖**: 5个测试用例
+- 基础语音编码测试
+- 语音相似度检查
+- 大小写不敏感
+- 空字符串处理
+- 常见拼写错误
+
+### 9. IndexStore - 索引存储
 
 **技术**: `bincode` + `serde` + Gzip 压缩
 
@@ -566,7 +774,7 @@ pub fn calculate_keyword_statistics(
 - 增量更新支持
 - 版本兼容性
 
-### 8. FileWatcherAsync - 异步文件监控
+### 10. FileWatcherAsync - 异步文件监控
 
 **扩展功能**:
 - 异步文件读取
@@ -659,6 +867,26 @@ A:
 2. 正则表达式编译缓存
 3. 文件元数据缓存
 4. 可配置缓存大小
+5. **Metaphone编码缓存** - 语音相似度编码缓存 ✨ [2025-12-31]
+
+### Q: 模糊匹配和语音相似度如何工作？ ✨ [2025-12-31]
+A:
+**模糊匹配 (Levenshtein距离)**:
+- 计算编辑距离（插入、删除、替换操作数）
+- 动态阈值：短词≤1个差异，中等词≤2个，长词≤3个
+- 支持子串匹配（UTF-8安全）
+- 示例：`ERROR` ≈ `ERRO` (1个差异)
+
+**语音相似度 (Metaphone算法)**:
+- 将单词编码为语音表示
+- 匹配发音相似但拼写不同的单词
+- 线程安全缓存 (`Arc<RwLock<HashMap>>`)
+- 示例：`Smith` ≈ `Smyth`, `Knight` ≈ `Nite`
+
+**使用场景**:
+- 拼写纠错：`recieve` ≈ `receive`
+- 语音搜索：支持发音相似的查询
+- 日志分析：匹配轻微拼错的日志关键词
 
 ## 相关文件清单
 
@@ -668,6 +896,8 @@ A:
 - `query_validator.rs` - 查询验证器
 - `query_planner.rs` - 查询计划器
 - `search_statistics.rs` - 搜索统计
+- `fuzzy_matcher.rs` - Levenshtein距离 + Metaphone语音相似度 ✨ [2025-12-31]
+- `metaphone.rs` - Metaphone语音编码算法 ✨ [2025-12-31]
 
 ### 文件处理
 - `file_watcher.rs` - 文件监听器
@@ -680,6 +910,25 @@ A:
 ---
 
 ## 变更记录 (Changelog)
+
+### [2025-12-31] Metaphone语音相似度 + UTF-8安全修复
+- ✅ **新增Metaphone模块** - 实现语音相似度算法
+  - 支持发音相似单词匹配 (Smith ≈ Smyth, Knight ≈ Nite)
+  - 线程安全缓存 (`Arc<RwLock<HashMap>>`)
+  - 完整单元测试覆盖 (5个测试用例)
+- ✅ **修复UTF-8字符边界Panic** - fuzzy_matcher.rs
+  - 使用 `char_indices()` 替代字节索引
+  - 使用 `word.get()` 安全访问子串
+  - 支持中文、emoji、德文等多字节字符
+  - 新增UTF-8安全性测试 (3个测试用例)
+- ✅ **FuzzyMatcher增强** - 集成Metaphone功能
+  - 新增 `is_phonetically_similar()` 方法
+  - 新增 `get_metaphone_cached()` 缓存方法
+  - 与Levenshtein距离算法并行工作
+- ✅ **代码质量保证**
+  - 所有代码通过 `cargo fmt` 格式化
+  - 所有代码通过 `cargo clippy` 检查（零警告）
+  - 编译成功无错误
 
 ### [2025-12-13] AI上下文初始化
 - ✅ 完整服务层架构分析

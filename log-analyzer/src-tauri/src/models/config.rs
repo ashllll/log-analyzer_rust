@@ -57,23 +57,19 @@ pub struct FileFilterConfig {
 /// 文件过滤模式
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum FilterMode {
+    #[default]
     Whitelist,
     Blacklist,
 }
 
-impl Default for FilterMode {
-    fn default() -> Self {
-        FilterMode::Whitelist
-    }
-}
-
 fn default_file_filter_disabled() -> bool {
-    false  // 默认禁用第2层过滤（向后兼容）
+    false // 默认禁用第2层过滤（向后兼容）
 }
 
 fn default_binary_detection_enabled() -> bool {
-    true  // 默认启用第1层二进制检测
+    true // 默认启用第1层二进制检测
 }
 
 impl Default for FileFilterConfig {

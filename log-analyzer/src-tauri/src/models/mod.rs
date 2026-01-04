@@ -4,6 +4,7 @@ pub mod filters;
 pub mod log_entry;
 pub mod policy_manager;
 pub mod search;
+pub mod search_history;
 pub mod search_statistics;
 pub mod state;
 

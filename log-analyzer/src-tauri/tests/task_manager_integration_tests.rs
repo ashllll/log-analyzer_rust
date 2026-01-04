@@ -2,15 +2,11 @@
 //!
 //! 验证任务管理器的核心功能和正确性属性
 
-use log_analyzer::task_manager::{TaskManager, TaskManagerConfig, TaskStatus};
+use log_analyzer::task_manager::{TaskManagerConfig, TaskStatus};
 use rstest::*;
-use std::sync::Arc;
-use std::time::Duration;
-
 /// 创建测试用的 TaskManager
 /// 注意：由于 TaskManager 需要 AppHandle，我们需要在实际的 Tauri 环境中测试
 /// 这些测试将作为单元测试的补充，验证核心逻辑
-
 /// Property 36: TaskManager Initialization Safety
 /// 验证配置创建不会 panic
 #[rstest]

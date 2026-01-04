@@ -2,9 +2,8 @@
 //!
 //! Tests for workspace creation, deletion, and cleanup with CAS storage.
 
-use log_analyzer::services::{IndexValidator, ValidationReport, WorkspaceMetricsCollector};
+use log_analyzer::services::{IndexValidator, WorkspaceMetricsCollector};
 use log_analyzer::storage::{ContentAddressableStorage, MetadataStore};
-use std::path::PathBuf;
 use tempfile::TempDir;
 
 /// Helper function to create FileMetadata
@@ -375,7 +374,7 @@ async fn test_workspace_deletion_with_multiple_files() {
         let file_meta = create_file_metadata(
             &hash,
             virtual_path,
-            virtual_path.split('/').last().unwrap(),
+            virtual_path.split('/').next_back().unwrap(),
             content.len() as i64,
             virtual_path.matches('/').count() as i32,
         );

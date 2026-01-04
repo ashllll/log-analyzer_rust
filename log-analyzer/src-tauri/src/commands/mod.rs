@@ -18,6 +18,7 @@ pub mod legacy;
 pub mod performance;
 pub mod query;
 pub mod search;
+pub mod search_history;
 pub mod state_sync;
 pub mod virtual_tree;
 pub mod watch;

@@ -504,7 +504,7 @@ async fn test_verification_detects_missing_objects() {
     let temp_dir = TempDir::new().unwrap();
     let workspace_dir = temp_dir.path().to_path_buf();
 
-    let cas = ContentAddressableStorage::new(workspace_dir.clone());
+    let _cas = ContentAddressableStorage::new(workspace_dir.clone());
     let metadata_store = MetadataStore::new(&workspace_dir).await.unwrap();
 
     // Add metadata for a file that doesn't exist in CAS
@@ -911,7 +911,7 @@ mod property_tests {
                         };
 
                         // Try to insert metadata (this simulates a partial failure)
-                        if let Ok(_) = metadata_store.insert_file(&file_metadata).await {
+                        if metadata_store.insert_file(&file_metadata).await.is_ok() {
                             failed_files.push((name.clone(), fake_hash));
                         }
                     } else {
@@ -930,7 +930,7 @@ mod property_tests {
                                     depth_level: 0,
                                 };
 
-                                if let Ok(_) = metadata_store.insert_file(&file_metadata).await {
+                                if metadata_store.insert_file(&file_metadata).await.is_ok() {
                                     successful_files.push((name.clone(), hash));
                                 }
                             }
@@ -1067,7 +1067,7 @@ mod property_tests {
                             depth_level: 0,
                         };
 
-                        if let Ok(_) = metadata_store.insert_file(&file_metadata).await {
+                        if (metadata_store.insert_file(&file_metadata).await).is_ok() {
                             failed_files.push((name.clone(), fake_hash));
                         }
                     } else {
@@ -1086,7 +1086,7 @@ mod property_tests {
                                     depth_level: 0,
                                 };
 
-                                if let Ok(_) = metadata_store.insert_file(&file_metadata).await {
+                                if metadata_store.insert_file(&file_metadata).await.is_ok() {
                                     successful_files.push((name.clone(), hash));
                                 }
                             }

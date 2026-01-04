@@ -7,6 +7,7 @@ use std::thread;
 
 use notify::{recommended_watcher, Event, EventKind, RecursiveMode, Watcher};
 use tauri::{command, AppHandle, Emitter, Manager, State};
+use tracing::error;
 
 use crate::models::{AppState, FileChangeEvent};
 use crate::services::{append_to_workspace_index, parse_log_lines, read_file_from_offset};
@@ -59,13 +60,13 @@ pub async fn start_watch(
         let mut watcher = match recommended_watcher(tx) {
             Ok(w) => w,
             Err(e) => {
-                eprintln!("[ERROR] Failed to create watcher: {}", e);
+                error!(error = %e, "Failed to create file watcher");
                 return;
             }
         };
 
         if let Err(e) = watcher.watch(&watch_path_clone, RecursiveMode::Recursive) {
-            eprintln!("[ERROR] Failed to start watching: {}", e);
+            error!(error = %e, "Failed to start watching path");
             return;
         }
 
@@ -147,7 +148,11 @@ pub async fn start_watch(
                                     }
                                 }
                                 Err(e) => {
-                                    eprintln!("[WARNING] Failed to read file incrementally: {}", e);
+                                    tracing::warn!(
+                                        error = %e,
+                                        file = %file_path_str,
+                                        "Failed to read file incrementally"
+                                    );
                                 }
                             }
                         }
@@ -166,7 +171,7 @@ pub async fn start_watch(
                     }
                 }
                 Err(e) => {
-                    eprintln!("[ERROR] Watch error: {}", e);
+                    error!(error = %e, "Watch error");
                 }
             }
         }

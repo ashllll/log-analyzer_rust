@@ -18,6 +18,7 @@ import { Button, Input } from '../components/ui';
 import { HybridLogRenderer } from '../components/renderers';
 import { FilterPalette } from '../components/modals';
 import { KeywordStatsPanel } from '../components/search/KeywordStatsPanel';
+import { SearchHistory } from '../components/SearchHistory';
 import { logger } from '../utils/logger';
 import { cn } from '../utils/classNames';
 import { SearchQueryBuilder } from '../services/SearchQueryBuilder';
@@ -141,6 +142,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [isFilterPaletteOpen, setIsFilterPaletteOpen] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  const [fuzzyEnabled, setFuzzyEnabled] = useState(false); // 模糊搜索开关
   
   // 搜索统计状态
   const [searchSummary, setSearchSummary] = useState<SearchResultSummary | null>(null);
@@ -208,6 +210,18 @@ const SearchPage: React.FC<SearchPageProps> = ({
           listen('search-complete', (e) => {
             setIsSearching(false);
             const count = e.payload as number;
+
+            // 保存搜索历史
+            if (query.trim() && activeWorkspace) {
+              invoke('add_search_history', {
+                query: query.trim(),
+                workspaceId: activeWorkspace.id,
+                resultCount: count,
+              }).catch(err => {
+                console.error('Failed to save search history:', err);
+              });
+            }
+
             // 使用更简洁的通知消息
             if (count > 0) {
               addToast('success', `找到 ${count.toLocaleString()} 条日志`);
@@ -254,6 +268,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
         }
       });
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addToast, keywordColors]);
 
   // 加载保存的查询
@@ -278,14 +293,28 @@ const SearchPage: React.FC<SearchPageProps> = ({
    */
   const handleSearch = async () => {
     if (!activeWorkspace) return addToast('error', 'Select a workspace first.');
-    
+
+    // ✅ 在搜索开始时保存历史记录（修复闭包问题）
+    if (query.trim()) {
+      try {
+        await invoke('add_search_history', {
+          query: query.trim(),
+          workspaceId: activeWorkspace.id,
+          resultCount: null,  // 搜索还未开始
+        });
+        console.log('✅ Search history saved:', query.trim());
+      } catch (err) {
+        console.error('❌ Failed to save search history:', err);
+      }
+    }
+
     // 清空状态
     setLogs([]);
     setSearchSummary(null);
     setKeywordStats([]);
     setIsSearching(true);
-    
-    try { 
+
+    try {
       // 构建过滤器对象
       const filters = {
         time_start: filterOptions.timeRange.start,
@@ -293,20 +322,21 @@ const SearchPage: React.FC<SearchPageProps> = ({
         levels: filterOptions.levels,
         file_pattern: filterOptions.filePattern || null
       };
-      
-      await invoke("search_logs", { 
-        query, 
+
+      await invoke("search_logs", {
+        query,
         searchPath: activeWorkspace.path,
-        filters: filters
-      }); 
-      
+        filters: filters,
+        fuzzyEnabled: fuzzyEnabled
+      });
+
       // 如果使用了结构化查询，更新执行次数
       if (currentQuery) {
         currentQuery.metadata.executionCount += 1;
         setCurrentQuery({...currentQuery});
       }
-    } catch { 
-      setIsSearching(false); 
+    } catch {
+      setIsSearching(false);
     }
   };
   
@@ -477,11 +507,33 @@ const SearchPage: React.FC<SearchPageProps> = ({
                 const normalized = e.target.value.replace(/\s*\|\s*/g, '|');
                 setQuery(normalized);
               }}
-              className="pl-9 font-mono bg-bg-main"
+              className="pl-9 pr-10 font-mono bg-bg-main"
               placeholder="Search keywords separated by | ..."
               onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => e.key === 'Enter' && handleSearch()}
             />
+            {/* 搜索历史按钮 */}
+            <div className="absolute right-2 top-1/2 -translate-y-1/2">
+              <SearchHistory
+                workspaceId={activeWorkspace?.id || ''}
+                onSelectQuery={(selectedQuery) => {
+                  setQuery(selectedQuery);
+                  handleSearch();
+                }}
+              />
+            </div>
           </div>
+
+          {/* 模糊搜索开关 */}
+          <Button
+            variant={fuzzyEnabled ? "active" : "secondary"}
+            onClick={() => setFuzzyEnabled(!fuzzyEnabled)}
+            title="启用模糊搜索：容忍拼写错误"
+            className="min-w-[100px]"
+          >
+            <span className="mr-2">🔍</span>
+            <span>{fuzzyEnabled ? '模糊: 开' : '模糊: 关'}</span>
+          </Button>
+
           <div className="relative">
             <Button 
               variant={isFilterPaletteOpen ? "active" : "secondary"} 

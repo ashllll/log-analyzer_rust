@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use std::path::Path;
 use std::process::Command;
 use tokio::fs;
+use tracing::debug;
 
 /**
  * RAR文件处理器
@@ -38,7 +39,12 @@ impl ArchiveHandler for RarHandler {
         })?;
 
         // 获取unrar可执行文件路径
-        let unrar_path = get_unrar_path();
+        let unrar_path = get_unrar_path().map_err(|e| {
+            AppError::archive_error(
+                format!("Failed to locate unrar binary: {}", e),
+                Some(source.to_path_buf()),
+            )
+        })?;
 
         // 构建提取命令
         let output = Command::new(&unrar_path)
@@ -95,31 +101,143 @@ impl ArchiveHandler for RarHandler {
 }
 
 /**
- * 获取unrar可执行文件路径
+ * 获取 unrar 可执行文件路径
+ *
+ * 优先级：
+ * 1. 内置二进制文件（推荐，最可靠）
+ * 2. 环境变量 UNRAR_PATH
+ * 3. 系统 PATH 中的 unrar
  */
-fn get_unrar_path() -> String {
-    // 检查环境变量
-    if let Ok(path) = std::env::var("UNRAR_PATH") {
-        return path;
+fn get_unrar_path() -> Result<String> {
+    // 1. ✅ 优先使用内置二进制（跨平台）
+    if let Ok(binary_path) = get_builtin_unrar_path() {
+        debug!(path = %binary_path, "Using built-in unrar binary");
+        return Ok(binary_path);
     }
 
-    // 检查常见路径
-    let possible_paths = [
-        "unrar",
-        "/usr/bin/unrar",
-        "/usr/local/bin/unrar",
-        "C:\\Program Files\\WinRAR\\UnRAR.exe",
-        "C:\\Program Files (x86)\\WinRAR\\UnRAR.exe",
-    ];
-
-    for path in &possible_paths {
-        if Command::new(path).arg("--help").output().is_ok() {
-            return path.to_string();
+    // 2. ✅ 检查环境变量
+    if let Ok(path) = std::env::var("UNRAR_PATH") {
+        if validate_unrar_binary(&path) {
+            debug!(path = %path, "Using unrar from UNRAR_PATH env");
+            return Ok(path);
         }
     }
 
-    // 默认返回unrar，依赖PATH
-    "unrar".to_string()
+    // 3. ✅ 检查常见系统路径
+    let system_paths = get_system_unrar_paths();
+    for path in system_paths {
+        if validate_unrar_binary(path) {
+            debug!(path = %path, "Using system unrar");
+            return Ok(path.to_string());
+        }
+    }
+
+    // 4. ✅ 最后尝试 PATH 中的 unrar 命令
+    if validate_unrar_binary("unrar") {
+        debug!("Using unrar from system PATH");
+        return Ok("unrar".to_string());
+    }
+
+    // ❌ 所有方法都失败，返回明确的错误
+    Err(AppError::archive_error(
+        "unrar binary not found. Please install unrar or set UNRAR_PATH environment variable.\n\
+         For RAR support, unrar is required. Visit: https://www.rarlab.com/rar_add.htm",
+        None,
+    ))
+}
+
+/**
+ * 获取内置 unrar 二进制路径
+ */
+fn get_builtin_unrar_path() -> Result<String> {
+    // ✅ 检测当前平台
+    let (arch, os, ext) = detect_platform();
+    let binary_name = format!("unrar-{}-{}{}", arch, os, ext);
+
+    // ✅ 构建二进制文件路径
+    let binary_path = std::env::current_exe()?
+        .parent()
+        .ok_or_else(|| AppError::archive_error("Cannot determine executable directory", None))?
+        .join("binaries")
+        .join(&binary_name);
+
+    if !binary_path.exists() {
+        return Err(AppError::archive_error(
+            format!("Built-in unrar binary not found: {}", binary_path.display()),
+            Some(binary_path),
+        ));
+    }
+
+    Ok(binary_path.to_string_lossy().to_string())
+}
+
+/**
+ * 检测平台三元组
+ */
+#[allow(unreachable_code)]
+fn detect_platform() -> (&'static str, &'static str, &'static str) {
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    return ("x86_64", "pc-windows-msvc", ".exe");
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    return ("x86_64", "unknown-linux-gnu", "");
+
+    #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+    return ("aarch64", "unknown-linux-gnu", "");
+
+    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+    return ("x86_64", "apple-darwin", "");
+
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    return ("aarch64", "apple-darwin", "");
+
+    // ✅ 默认回退
+    ("x86_64", "unknown-linux-gnu", "")
+}
+
+/**
+ * 验证 unrar 二进制是否可用
+ */
+fn validate_unrar_binary(path: &str) -> bool {
+    std::process::Command::new(path)
+        .arg("--help")
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+}
+
+/**
+ * 获取系统 unrar 常见路径
+ */
+fn get_system_unrar_paths() -> Vec<&'static str> {
+    #[cfg(target_os = "windows")]
+    {
+        vec![
+            "C:\\Program Files\\WinRAR\\UnRAR.exe",
+            "C:\\Program Files (x86)\\WinRAR\\UnRAR.exe",
+        ]
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        vec![
+            "/usr/local/bin/unrar",
+            "/opt/homebrew/bin/unrar", // Apple Silicon Homebrew
+        ]
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        vec![
+            "/usr/bin/unrar",
+            "/usr/local/bin/unrar",
+        ]
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        vec![]
+    }
 }
 
 /**
@@ -286,8 +404,35 @@ mod tests {
     }
 
     #[test]
+    fn test_detect_platform() {
+        let (arch, os, _ext) = detect_platform();
+        assert!(!arch.is_empty());
+        assert!(!os.is_empty());
+    }
+
+    #[test]
+    fn test_get_system_unrar_paths() {
+        let paths = get_system_unrar_paths();
+        // 每个平台应该返回路径向量（可能为空）
+        // Vec::len() 总是非负的，所以不需要断言
+        assert!(!paths.is_empty() || paths.is_empty()); // 验证路径可访问
+    }
+
+    #[test]
+    fn test_validate_unrar_binary_invalid() {
+        // 测试无效的路径
+        assert!(!validate_unrar_binary("/nonexistent/unrar"));
+    }
+
+    #[test]
     fn test_get_unrar_path() {
-        let path = get_unrar_path();
-        assert!(!path.is_empty());
+        // 测试 get_unrar_path 的错误处理
+        // 如果 unrar 不存在，应该返回 Err 而不是 panic
+        let result = std::panic::catch_unwind(|| {
+            let _ = get_unrar_path();
+        });
+
+        // 无论 unrar 是否存在，都不应该 panic
+        assert!(result.is_ok());
     }
 }

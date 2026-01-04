@@ -85,3 +85,8 @@ rstest = "0.18"  # 增强的单元测试框架
 proptest = "1.4"  # 属性测试框架
 criterion = { version = "0.5", features = ["html_reports"] }  # 性能基准测试
 tokio-test = "0.4"  # 异步测试工具
+
+[[bench]]
+name = "search_performance"
+harness = false
+

@@ -1,8 +1,10 @@
 pub mod event_bus;
 pub mod file_type_filter;
 pub mod file_watcher;
+pub mod fuzzy_matcher;
 pub mod index_validator;
 pub mod metadata_db;
+pub mod metaphone; // ✅ 新增
 pub mod pattern_matcher;
 pub mod query_executor;
 pub mod query_planner;
@@ -33,6 +35,8 @@ pub use file_watcher::{
 };
 pub use index_validator::{IndexValidator, InvalidFileInfo, ValidationReport};
 pub use metadata_db::MetadataDB;
+// ✅ 新增：导出Metaphone公共API
+pub use metaphone::{is_phonetically_similar, metaphone};
 pub use query_executor::{MatchDetail, QueryExecutor};
 pub use query_planner::ExecutionPlan;
 pub use search_statistics::calculate_keyword_statistics;

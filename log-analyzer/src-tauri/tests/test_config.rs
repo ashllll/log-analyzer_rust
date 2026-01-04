@@ -25,12 +25,14 @@ pub mod strategies {
     }
 
     /// Generate valid file paths (no path traversal)
+    #[allow(dead_code)]
     pub fn safe_file_path() -> impl Strategy<Value = String> {
         prop::collection::vec("[a-zA-Z0-9_-]{1,20}", 1..5)
             .prop_map(|parts| format!("/{}", parts.join("/")))
     }
 
     /// Generate log entries with realistic content
+    #[allow(dead_code)]
     pub fn log_entry() -> impl Strategy<Value = LogEntry> {
         (
             1usize..10000,
@@ -58,6 +60,7 @@ pub mod strategies {
     }
 
     /// Generate search queries with various patterns
+    #[allow(dead_code)]
     pub fn search_query() -> impl Strategy<Value = SearchQuery> {
         (
             "[a-zA-Z0-9_-]{1,20}",
@@ -78,6 +81,7 @@ pub mod strategies {
     }
 
     /// Generate search terms
+    #[allow(dead_code)]
     pub fn search_term() -> impl Strategy<Value = SearchTerm> {
         (
             "[a-zA-Z0-9_-]{1,20}",
@@ -95,10 +99,12 @@ pub mod strategies {
                 priority,
                 enabled: true,
                 case_sensitive: false,
+                fuzzy_enabled: Some(false),
             })
     }
 
     /// Generate potentially malicious paths for security testing
+    #[allow(dead_code)]
     pub fn malicious_path() -> impl Strategy<Value = String> {
         prop_oneof![
             Just("../../../etc/passwd".to_string()),
@@ -111,6 +117,7 @@ pub mod strategies {
     }
 
     /// Generate Unicode strings for internationalization testing
+    #[allow(dead_code)]
     pub fn unicode_string() -> impl Strategy<Value = String> {
         prop_oneof![
             "[a-zA-Z0-9 ]{1,50}",
@@ -127,6 +134,7 @@ pub mod helpers {
     use tempfile::TempDir;
 
     /// Create a temporary directory for testing
+    #[allow(dead_code)]
     pub fn create_temp_workspace() -> (TempDir, PathBuf) {
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let path = temp_dir.path().to_path_buf();
@@ -134,6 +142,7 @@ pub mod helpers {
     }
 
     /// Create test log files with specified content
+    #[allow(dead_code)]
     pub fn create_test_log_file(dir: &std::path::Path, name: &str, content: &str) -> PathBuf {
         let file_path = dir.join(name);
         std::fs::write(&file_path, content).expect("Failed to write test file");
@@ -141,6 +150,7 @@ pub mod helpers {
     }
 
     /// Generate realistic log content for testing
+    #[allow(dead_code)]
     pub fn generate_log_content(lines: usize) -> String {
         (0..lines)
             .map(|i| format!("2024-01-01 12:00:{:02} [INFO] Test log entry {}", i % 60, i))
@@ -154,6 +164,7 @@ pub mod performance {
     use std::time::{Duration, Instant};
 
     /// Measure execution time of a function
+    #[allow(dead_code)]
     pub fn measure_time<F, R>(f: F) -> (R, Duration)
     where
         F: FnOnce() -> R,
@@ -165,6 +176,7 @@ pub mod performance {
     }
 
     /// Assert that an operation completes within a time limit
+    #[allow(dead_code)]
     pub fn assert_performance<F, R>(f: F, max_duration: Duration, operation_name: &str) -> R
     where
         F: FnOnce() -> R,

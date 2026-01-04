@@ -66,7 +66,7 @@ async fn test_pause_and_resume_extraction() {
     assert_eq!(loaded_checkpoint.metrics.bytes_extracted, 6144);
 
     // Simulate second batch of files (resume phase)
-    let second_batch = vec![
+    let second_batch = [
         (PathBuf::from("/test/output/file4.txt"), 4096u64),
         (PathBuf::from("/test/output/file5.txt"), 5120u64),
     ];

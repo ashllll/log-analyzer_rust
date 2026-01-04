@@ -8,6 +8,7 @@ use std::io::Cursor;
 use std::path::Path;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
+use tracing::warn;
 use zip::ZipArchive;
 
 /**
@@ -83,15 +84,20 @@ impl ArchiveHandler for ZipHandler {
                 let safe_file_name = match validation {
                     PathValidationResult::Unsafe(reason) => {
                         files.push((file_name.clone(), None, true));
-                        eprintln!(
-                            "[SECURITY] Unsafe path rejected: {} - {}",
-                            file_name, reason
+                        warn!(
+                            path = %file_name,
+                            reason = %reason,
+                            "Unsafe path rejected"
                         );
                         continue;
                     }
                     PathValidationResult::Valid(name) => name,
                     PathValidationResult::RequiresSanitization(original, sanitized) => {
-                        eprintln!("[SECURITY] Path sanitized: {} -> {}", original, sanitized);
+                        warn!(
+                            original = %original,
+                            sanitized = %sanitized,
+                            "Path sanitized"
+                        );
                         sanitized
                     }
                 };

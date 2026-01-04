@@ -14,7 +14,7 @@ use log_analyzer::storage::cas::ContentAddressableStorage;
 use log_analyzer::storage::metadata_store::{FileMetadata, MetadataStore};
 use std::fs;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 use tempfile::TempDir;
 
@@ -24,6 +24,7 @@ struct PerformanceThresholds {
     import_per_mb_max_ms: u128,
     /// Maximum search time per 1000 files (milliseconds)
     search_per_1k_files_max_ms: u128,
+    #[allow(dead_code)]
     /// Maximum memory growth per 1000 operations (MB)
     memory_growth_max_mb: f64,
 }
@@ -50,7 +51,7 @@ async fn create_test_workspace() -> (TempDir, ContentAddressableStorage, Metadat
 }
 
 /// Create test files with specified content
-fn create_test_files(dir: &PathBuf, count: usize, size_bytes: usize) -> Vec<PathBuf> {
+fn create_test_files(dir: &Path, count: usize, size_bytes: usize) -> Vec<PathBuf> {
     let mut files = Vec::new();
 
     for i in 0..count {
@@ -74,7 +75,7 @@ fn create_test_files(dir: &PathBuf, count: usize, size_bytes: usize) -> Vec<Path
 
 /// Create duplicate files for deduplication testing
 fn create_duplicate_files(
-    dir: &PathBuf,
+    dir: &Path,
     unique_count: usize,
     duplicates_per_unique: usize,
     size_bytes: usize,
@@ -107,7 +108,7 @@ async fn test_import_performance() {
 
     // Create test files (100 files, 10KB each = 1MB total)
     let test_files_dir = TempDir::new().unwrap();
-    let files = create_test_files(&test_files_dir.path().to_path_buf(), 100, 10 * 1024);
+    let files = create_test_files(test_files_dir.path(), 100, 10 * 1024);
 
     let start = Instant::now();
 
@@ -163,7 +164,7 @@ async fn test_deduplication_efficiency() {
 
     // Create 50 unique files, each duplicated 5 times (250 total files)
     let test_files_dir = TempDir::new().unwrap();
-    let files = create_duplicate_files(&test_files_dir.path().to_path_buf(), 50, 5, 1024);
+    let files = create_duplicate_files(test_files_dir.path(), 50, 5, 1024);
 
     let mut unique_hashes = std::collections::HashSet::new();
 
@@ -219,7 +220,7 @@ async fn test_search_performance() {
 
     // Create and import 1000 test files
     let test_files_dir = TempDir::new().unwrap();
-    let files = create_test_files(&test_files_dir.path().to_path_buf(), 1000, 1024);
+    let files = create_test_files(test_files_dir.path(), 1000, 1024);
 
     for (idx, file_path) in files.iter().enumerate() {
         let hash = cas.store_file_streaming(file_path).await.unwrap();
@@ -398,7 +399,7 @@ async fn test_content_retrieval_performance() {
 
     // Create and store 100 files
     let test_files_dir = TempDir::new().unwrap();
-    let files = create_test_files(&test_files_dir.path().to_path_buf(), 100, 1024);
+    let files = create_test_files(test_files_dir.path(), 100, 1024);
 
     let mut hashes = Vec::new();
 
@@ -467,7 +468,7 @@ async fn test_concurrent_operations() {
             let metadata_store = MetadataStore::new(&workspace_dir).await.unwrap();
             let test_files_dir = TempDir::new().unwrap();
             let files =
-                create_test_files(&test_files_dir.path().to_path_buf(), files_per_thread, 1024);
+                create_test_files(test_files_dir.path(), files_per_thread, 1024);
 
             for (idx, file_path) in files.iter().enumerate() {
                 let hash = cas.store_file_streaming(file_path).await.unwrap();

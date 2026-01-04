@@ -4,6 +4,7 @@
 
 use std::thread;
 use std::time::Duration;
+use tracing::{error, info, warn};
 
 /// 文件操作重试辅助函数
 ///
@@ -57,9 +58,10 @@ where
         match operation() {
             Ok(result) => {
                 if attempt > 0 {
-                    eprintln!(
-                        "[INFO] {} succeeded after {} retries",
-                        operation_name, attempt
+                    info!(
+                        operation = %operation_name,
+                        retries = attempt,
+                        "Operation succeeded after retries"
                     );
                 }
                 return Ok(result);
@@ -74,23 +76,23 @@ where
                     || e.contains("cannot access");
 
                 if !is_retryable || attempt >= max_retries {
-                    eprintln!(
-                        "[ERROR] {} failed after {} attempts: {}",
-                        operation_name,
-                        attempt + 1,
-                        e
+                    error!(
+                        operation = %operation_name,
+                        attempts = attempt + 1,
+                        error = %e,
+                        "Operation failed after all attempts"
                     );
                     break;
                 }
 
                 // 等待后重试
                 let delay = delays_ms.get(attempt).copied().unwrap_or(500);
-                eprintln!(
-                    "[WARN] {} failed (attempt {}), retrying in {}ms: {}",
-                    operation_name,
-                    attempt + 1,
-                    delay,
-                    e
+                warn!(
+                    operation = %operation_name,
+                    attempt = attempt + 1,
+                    delay_ms = delay,
+                    error = %e,
+                    "Operation failed, retrying"
                 );
                 thread::sleep(Duration::from_millis(delay));
             }

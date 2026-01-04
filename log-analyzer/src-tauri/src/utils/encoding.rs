@@ -105,7 +105,7 @@ pub fn decode_filename(bytes: &[u8]) -> String {
 /// assert!(info.fallback_used);
 /// ```
 pub fn decode_log_content(bytes: &[u8]) -> (String, EncodingInfo) {
-    use encoding_rs::{UTF_8, GBK, WINDOWS_1252};
+    use encoding_rs::{GBK, UTF_8, WINDOWS_1252};
 
     // 第1层：UTF-8 快速路径（85%+ 场景）
     let (cow, _, had_errors) = UTF_8.decode(bytes);
@@ -206,7 +206,7 @@ mod tests {
     fn test_decode_invalid_utf8_truncated_sequence() {
         // 截断的3字节UTF-8序列（只有前2字节）
         let bytes = b"Test \xe4\xb8"; // 缺少第3字节
-        let (text, info) = decode_log_content(bytes);
+        let (_text, info) = decode_log_content(bytes);
         assert_eq!(info.encoding, "UTF-8-Lossy");
         assert!(info.had_errors);
         assert!(!info.fallback_used);
@@ -216,7 +216,7 @@ mod tests {
     fn test_decode_gbk_fallback() {
         // GBK 编码的中文 "你好"
         let bytes = b"\xc4\xe3\xba\xc3";
-        let (text, info) = decode_log_content(bytes);
+        let (_text, info) = decode_log_content(bytes);
         assert_eq!(info.encoding, "GBK");
         assert!(info.had_errors);
         assert!(info.fallback_used);
@@ -226,10 +226,7 @@ mod tests {
     #[test]
     fn test_decode_gbk_fallback_high_invalid_ratio() {
         // 高比例无效字节（>30%）应触发 GBK 回退
-        let mut bytes = Vec::new();
-        for _ in 0..100 {
-            bytes.push(0xFF); // 无效 UTF-8 字节
-        }
+        let bytes = vec![0xFF; 100]; // 100个无效 UTF-8 字节
         let (_text, info) = decode_log_content(&bytes);
         // 由于全是0xFF，GBK也会失败，最终使用Windows-1252
         assert!(info.fallback_used);
@@ -245,7 +242,10 @@ mod tests {
         // 具体行为取决于无效字节的分布和占比
         assert!(info.had_errors);
         // 应该使用某种编码解码（可能是UTF-8-Lossy、GBK或Windows-1252）
-        assert!(matches!(info.encoding, "UTF-8-Lossy" | "GBK" | "Windows-1252"));
+        assert!(matches!(
+            info.encoding,
+            "UTF-8-Lossy" | "GBK" | "Windows-1252"
+        ));
     }
 
     #[test]
@@ -285,7 +285,9 @@ mod tests {
     #[test]
     fn test_decode_performance_utf8_fast_path() {
         // 验证 UTF-8 快速路径（大文件）
-        let bytes = "2024-01-01 INFO Valid UTF-8 text\n".repeat(10000).into_bytes();
+        let bytes = "2024-01-01 INFO Valid UTF-8 text\n"
+            .repeat(10000)
+            .into_bytes();
         let (text, info) = decode_log_content(&bytes);
         assert_eq!(info.encoding, "UTF-8");
         assert!(!info.had_errors);

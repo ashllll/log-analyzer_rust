@@ -7,7 +7,7 @@ use sha2::{Digest, Sha256};
 use std::panic::AssertUnwindSafe;
 use std::{collections::HashSet, path::PathBuf, sync::Arc, time::Duration};
 use tauri::{command, AppHandle, Emitter, State};
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 // 导入AppError类型
 use crate::error::AppError;
@@ -28,9 +28,11 @@ fn log_cache_statistics(total_searches: &Arc<Mutex<u64>>, cache_hits: &Arc<Mutex
     } else {
         0.0
     };
-    println!(
-        "[CACHE STATS] Total searches: {}, Cache hits: {}, Hit rate: {:.2}%",
-        total, hits, hit_rate
+    info!(
+        total = *total,
+        hits = *hits,
+        hit_rate = hit_rate,
+        "Cache statistics"
     );
 }
 
@@ -66,15 +68,15 @@ fn get_or_init_search_engine(state: &AppState, workspace_id: &str) -> Result<(),
         // 初始化搜索引擎
         match SearchEngineManager::new(config) {
             Ok(engine) => {
-                println!(
-                    "[SEARCH ENGINE] Initialized Tantivy search engine for workspace: {}",
-                    workspace_id
+                info!(
+                    workspace_id = %workspace_id,
+                    "Initialized Tantivy search engine"
                 );
                 *engine_guard = Some(engine);
                 Ok(())
             }
             Err(e) => {
-                eprintln!("[SEARCH ENGINE] Failed to initialize: {}", e);
+                error!(error = %e, "Failed to initialize Tantivy search engine");
                 Err(format!("Failed to initialize search engine: {}", e))
             }
         }
@@ -90,6 +92,7 @@ pub async fn search_logs(
     #[allow(non_snake_case)] workspaceId: Option<String>,
     max_results: Option<usize>,
     filters: Option<SearchFilters>,
+    #[allow(non_snake_case)] fuzzyEnabled: Option<bool>, // 新增：模糊搜索开关
     state: State<'_, AppState>,
 ) -> Result<String, String> {
     if query.is_empty() {
@@ -144,7 +147,10 @@ pub async fn search_logs(
     {
         let mut tokens = cancellation_tokens.lock();
         // 检查是否已存在相同 ID 的令牌，避免覆盖
-        if tokens.insert(search_id.clone(), cancellation_token.clone()).is_some() {
+        if tokens
+            .insert(search_id.clone(), cancellation_token.clone())
+            .is_some()
+        {
             tracing::warn!(
                 "Search ID {} already exists in cancellation tokens, overwriting",
                 search_id
@@ -231,6 +237,8 @@ pub async fn search_logs(
             return;
         }
 
+        let fuzzy_enabled = fuzzyEnabled.unwrap_or(false);
+
         let search_terms: Vec<SearchTerm> = raw_terms
             .iter()
             .enumerate()
@@ -244,6 +252,7 @@ pub async fn search_logs(
                 priority: 1,
                 enabled: true,
                 case_sensitive: false,
+                fuzzy_enabled: Some(fuzzy_enabled), // 传递模糊匹配标志
             })
             .collect();
 
@@ -264,7 +273,7 @@ pub async fn search_logs(
         // ============================================================        // 高级搜索特性集成点        // ============================================================        // FilterEngine: 位图索引加速过滤（10K文档 < 10ms）        // RegexSearchEngine: LRU缓存正则搜索（加速50x+）        // TimePartitionedIndex: 时间分区索引（时序查询优化）        // AutocompleteEngine: Trie树自动补全（< 100ms响应）        //         // 使用方式：        // 1. 从 AppState 获取高级特性实例（已初始化）        // 2. 在搜索前使用 FilterEngine 预过滤候选文档        // 3. 在过滤时使用 RegexSearchEngine 加速正则匹配        // 4. 在时间范围查询时使用 TimePartitionedIndex        //         // 配置开关：config.json -> advanced_features.enable_*        tracing::info!("🔍 高级搜索特性已就绪（可通过配置启用）");
 
         let execution_start = std::time::Instant::now();
-        let mut executor = QueryExecutor::new(100);
+        let mut executor = QueryExecutor::new(100).with_fuzzy_matching(fuzzy_enabled); // 启用/禁用模糊匹配
         let plan = match executor.execute(&structured_query) {
             Ok(p) => p,
             Err(e) => {

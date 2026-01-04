@@ -55,7 +55,7 @@ mod filter_engine_tests {
         }
         let filters = vec![Filter::Level("ERROR".to_string())];
         let start = Instant::now();
-        let result = engine.apply_filters(&filters);
+        let _result = engine.apply_filters(&filters);
         let elapsed = start.elapsed();
         assert!(
             elapsed.as_millis() < 10,
@@ -80,7 +80,7 @@ mod regex_search_engine_tests {
         let _ = engine
             .search_with_regex(pattern, "Phone: 123-456-7890")
             .unwrap();
-        let stats = engine.get_stats();
+        let _stats = engine.get_stats();
         // TODO: Fix stats check
         // TODO: Fix print
     }

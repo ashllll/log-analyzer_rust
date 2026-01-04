@@ -88,7 +88,7 @@ fn test_parallel_processing_faster_than_sequential() {
 
 #[test]
 fn test_batch_size_configuration() {
-    let processor = ParallelProcessor::new();
+    let _processor = ParallelProcessor::new();
 
     // Test with different batch sizes
     let batch_sizes = vec![10, 50, 100, 200];

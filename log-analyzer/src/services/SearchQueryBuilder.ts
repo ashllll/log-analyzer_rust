@@ -242,12 +242,12 @@ export class SearchQueryBuilder {
     }
 
     // 检查长度
-    if (term.value.length > 100) {
+    if (term.value.length > 500) {
       issues.push({
         termId: term.id,
         severity: 'warning',
         code: 'VALUE_TOO_LONG',
-        message: '搜索值过长（> 100 字符），可能影响性能'
+        message: '搜索值过长（> 500 字符），可能影响性能'
       });
     }
 

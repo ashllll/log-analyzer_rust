@@ -6,6 +6,7 @@ use crossbeam::queue::SegQueue;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use tracing::{info, warn};
 
 use super::retry::retry_file_operation;
 
@@ -59,15 +60,13 @@ pub fn try_cleanup_temp_dir(path: &Path, cleanup_queue: &Arc<SegQueue<PathBuf>>)
 
     match result {
         Ok(_) => {
-            eprintln!(
-                "[INFO] Successfully cleaned up temp directory: {}",
-                path.display()
-            );
+            info!(path = %path.display(), "Successfully cleaned up temp directory");
         }
         Err(e) => {
-            eprintln!(
-                "[WARN] Failed to clean up temp directory: {}. Adding to cleanup queue.",
-                e
+            warn!(
+                error = %e,
+                path = %path.display(),
+                "Failed to clean up temp directory, adding to cleanup queue"
             );
             // 添加到无锁清理队列
             cleanup_queue.push(path.to_path_buf());
@@ -102,7 +101,7 @@ pub fn process_cleanup_queue(cleanup_queue: &Arc<SegQueue<PathBuf>>) {
 
     let total_count = paths_to_clean.len();
 
-    eprintln!("[INFO] Processing cleanup queue with {} items", total_count);
+    info!(count = total_count, "Processing cleanup queue");
 
     let mut successful = 0;
 
@@ -115,18 +114,23 @@ pub fn process_cleanup_queue(cleanup_queue: &Arc<SegQueue<PathBuf>>) {
         match fs::remove_dir_all(path) {
             Ok(_) => {
                 successful += 1;
-                eprintln!("[INFO] Cleaned up: {}", path.display());
+                info!(path = %path.display(), "Cleaned up directory");
             }
             Err(e) => {
-                eprintln!("[WARN] Still cannot clean up {}: {}", path.display(), e);
+                warn!(
+                    error = %e,
+                    path = %path.display(),
+                    "Still cannot clean up directory, re-queueing"
+                );
                 // 重新加入队列供下次尝试
                 cleanup_queue.push(path.clone());
             }
         }
     }
 
-    eprintln!(
-        "[INFO] Cleanup queue processed: {}/{} successful",
-        successful, total_count
+    info!(
+        successful = successful,
+        total = total_count,
+        "Cleanup queue processed"
     );
 }
