@@ -34,8 +34,6 @@ pub async fn load_workspace(
     #[allow(non_snake_case)] workspaceId: String,
     state: State<'_, AppState>,
 ) -> Result<WorkspaceLoadResponse, String> {
-    let start_time = std::time::Instant::now();
-
     validate_workspace_id(&workspaceId)?;
 
     // Get workspace directory
@@ -61,7 +59,6 @@ pub async fn load_workspace(
     }
 
     // Open metadata store and get file count
-    let load_start = std::time::Instant::now();
     let metadata_store = crate::storage::metadata_store::MetadataStore::new(&workspace_dir)
         .await
         .map_err(|e| format!("Failed to open metadata store: {}", e))?;
@@ -70,19 +67,6 @@ pub async fn load_workspace(
         .count_files()
         .await
         .map_err(|e| format!("Failed to count files: {}", e))? as usize;
-
-    let load_duration = load_start.elapsed();
-
-    // Record performance metrics
-    let total_duration = start_time.elapsed();
-    state.metrics_collector.record_workspace_operation(
-        "load",
-        &workspaceId,
-        file_count,
-        total_duration,
-        vec![("metadata_load", load_duration)],
-        true,
-    );
 
     // Broadcast workspace loaded event
     let state_sync_opt = {
@@ -545,8 +529,6 @@ pub async fn delete_workspace(
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<(), String> {
-    let start_time = std::time::Instant::now();
-
     info!(
         workspace_id = %workspaceId,
         "Delete workspace command called"
@@ -575,17 +557,6 @@ pub async fn delete_workspace(
             "Successfully invalidated cache for workspace"
         );
     }
-
-    // 记录性能指标
-    let total_duration = start_time.elapsed();
-    state.metrics_collector.record_workspace_operation(
-        "delete",
-        &workspaceId,
-        0,
-        total_duration,
-        vec![],
-        true,
-    );
 
     // 广播工作区删除事件
     // 注意：先克隆 state_sync，释放锁后再 await，避免跨 await 点持有锁

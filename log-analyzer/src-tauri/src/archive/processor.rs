@@ -282,7 +282,7 @@ async fn process_path_recursive_inner(
         for entry in WalkDir::new(path)
             .min_depth(1)
             .max_depth(1)
-            .follow_links(false)  // 不跟随符号链接
+            .follow_links(false) // 不跟随符号链接
             .into_iter()
             .filter_map(|e| e.ok())
         {
@@ -412,7 +412,7 @@ async fn process_path_recursive_inner_with_metadata(
         for entry in WalkDir::new(path)
             .min_depth(1)
             .max_depth(1)
-            .follow_links(false)  // 不跟随符号链接
+            .follow_links(false) // 不跟随符号链接
             .into_iter()
             .filter_map(|e| e.ok())
         {
@@ -631,7 +631,7 @@ pub async fn process_path_with_cas_and_checkpoints(
         for entry in WalkDir::new(path)
             .min_depth(1)
             .max_depth(1)
-            .follow_links(false)  // 不跟随符号链接
+            .follow_links(false) // 不跟随符号链接
             .into_iter()
             .filter_map(|e| e.ok())
         {

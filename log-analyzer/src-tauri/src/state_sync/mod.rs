@@ -12,7 +12,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::SystemTime;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter};
 use tokio::sync::RwLock;
 
 pub mod models;
@@ -58,24 +58,6 @@ impl StateSync {
             .map_err(|e| format!("Failed to emit event: {}", e));
 
         let total_duration = start_time.elapsed();
-
-        // 4. Record performance metrics
-        if let Some(app_state) = self.app_handle.try_state::<crate::models::AppState>() {
-            let success = emit_result.is_ok();
-            let event_type = match &event {
-                WorkspaceEvent::StatusChanged { .. } => "status_changed",
-                WorkspaceEvent::ProgressUpdate { .. } => "progress_update",
-                WorkspaceEvent::TaskCompleted { .. } => "task_completed",
-                WorkspaceEvent::Error { .. } => "error",
-            };
-
-            app_state.metrics_collector.record_state_sync_operation(
-                event_type,
-                event.workspace_id(),
-                total_duration,
-                success,
-            );
-        }
 
         tracing::debug!(
             event_type = ?event,

@@ -111,7 +111,6 @@ pub async fn search_logs(
     let cache_hits = Arc::clone(&state.cache_hits);
     let last_search_duration = Arc::clone(&state.last_search_duration);
     let cancellation_tokens = Arc::clone(&state.search_cancellation_tokens);
-    let metrics_collector = Arc::clone(&state.metrics_collector);
 
     let max_results = max_results.unwrap_or(50000).min(100_000);
     let filters = filters.unwrap_or_default();
@@ -223,7 +222,6 @@ pub async fn search_logs(
     // 这样tokio运行时会管理线程生命周期，避免资源泄漏
     let _handle = tokio::task::spawn_blocking(move || {
         let start_time = std::time::Instant::now();
-        let parse_start = std::time::Instant::now();
 
         let raw_terms: Vec<String> = query
             .split('|')
@@ -269,10 +267,8 @@ pub async fn search_logs(
             },
         };
 
-        let parse_duration = parse_start.elapsed();
         // ============================================================        // 高级搜索特性集成点        // ============================================================        // FilterEngine: 位图索引加速过滤（10K文档 < 10ms）        // RegexSearchEngine: LRU缓存正则搜索（加速50x+）        // TimePartitionedIndex: 时间分区索引（时序查询优化）        // AutocompleteEngine: Trie树自动补全（< 100ms响应）        //         // 使用方式：        // 1. 从 AppState 获取高级特性实例（已初始化）        // 2. 在搜索前使用 FilterEngine 预过滤候选文档        // 3. 在过滤时使用 RegexSearchEngine 加速正则匹配        // 4. 在时间范围查询时使用 TimePartitionedIndex        //         // 配置开关：config.json -> advanced_features.enable_*        tracing::info!("🔍 高级搜索特性已就绪（可通过配置启用）");
 
-        let execution_start = std::time::Instant::now();
         let mut executor = QueryExecutor::new(100).with_fuzzy_matching(fuzzy_enabled); // 启用/禁用模糊匹配
         let plan = match executor.execute(&structured_query) {
             Ok(p) => p,
@@ -620,25 +616,6 @@ pub async fn search_logs(
             let mut last_duration = last_search_duration.lock();
             *last_duration = duration;
         }
-
-        let execution_duration = execution_start.elapsed();
-        let format_duration = start_time.elapsed() - parse_duration - execution_duration;
-
-        // 记录性能指标
-        use crate::monitoring::metrics_collector::SearchPhase;
-        let phase_timings = vec![
-            (SearchPhase::Parsing, parse_duration),
-            (SearchPhase::Execution, execution_duration),
-            (SearchPhase::Formatting, format_duration),
-        ];
-
-        metrics_collector.record_search_operation(
-            &query,
-            results_count,
-            start_time.elapsed(),
-            phase_timings,
-            !was_truncated && !cancellation_token.is_cancelled(),
-        );
 
         // 使用流式统计结果构建关键词统计
         let keyword_stats: Vec<crate::models::search_statistics::KeywordStatistics> = raw_terms

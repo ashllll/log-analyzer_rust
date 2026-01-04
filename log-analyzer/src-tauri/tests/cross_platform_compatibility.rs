@@ -22,7 +22,10 @@ mod cross_platform_tests {
             let canonical = std::fs::canonicalize(&test_path).unwrap();
             assert!(canonical.exists(), "Canonicalized path should exist");
             // 路径应该指向正确的文件（带或不带 \\?\ 前缀都可以）
-            assert!(canonical.ends_with("test.txt"), "Path should end with test.txt");
+            assert!(
+                canonical.ends_with("test.txt"),
+                "Path should end with test.txt"
+            );
         }
 
         #[cfg(not(target_os = "windows"))]
@@ -53,7 +56,10 @@ mod cross_platform_tests {
 
             // 验证只读属性已设置
             let metadata = test_file.metadata().unwrap();
-            assert!(metadata.file_attributes() & 0x1 != 0, "File should be read-only");
+            assert!(
+                metadata.file_attributes() & 0x1 != 0,
+                "File should be read-only"
+            );
 
             // 使用 dunce 规范化后再删除
             let normalized = dunce::canonicalize(&test_file).unwrap();
@@ -91,7 +97,11 @@ mod cross_platform_tests {
         #[cfg(not(target_os = "windows"))]
         {
             // Unix-like: 路径分隔符应该是 /
-            assert_eq!(std::path::MAIN_SEPARATOR, '/', "Main separator should be forward slash");
+            assert_eq!(
+                std::path::MAIN_SEPARATOR,
+                '/',
+                "Main separator should be forward slash"
+            );
         }
     }
 
@@ -165,7 +175,7 @@ mod cross_platform_tests {
             // WalkDir 应该能检测符号链接
             let mut found_symlink = false;
             for entry in WalkDir::new(temp_dir.path())
-                .follow_links(false)  // 不跟随符号链接
+                .follow_links(false) // 不跟随符号链接
                 .into_iter()
                 .filter_map(|e| e.ok())
             {
@@ -230,10 +240,10 @@ mod cross_platform_tests {
         // 测试 UTF-8 编码在不同平台上的一致性
         let test_strings = vec![
             "Hello World",
-            "你好世界",  // 中文
-            "🎉🚀",      // Emoji
-            "Привет",    // 俄文
-            "مرحبا",      // 阿拉伯文
+            "你好世界", // 中文
+            "🎉🚀",     // Emoji
+            "Привет",   // 俄文
+            "مرحبا",    // 阿拉伯文
         ];
 
         for s in test_strings {

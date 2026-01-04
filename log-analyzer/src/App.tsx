@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
-import { 
-  Search, LayoutGrid, ListTodo, Settings, Layers, 
-  Zap, Loader2, FileText, Activity
+import {
+  Search, LayoutGrid, ListTodo, Settings, Layers,
+  Zap, Loader2, FileText
 } from "lucide-react";
 import { ErrorBoundary } from 'react-error-boundary';
 import { listen } from '@tauri-apps/api/event';
@@ -26,7 +26,7 @@ import { NavItem } from './components/ui';
 import { PageErrorFallback, CompactErrorFallback } from './components/ErrorFallback';
 
 // 导入页面组件
-import { SearchPage, KeywordsPage, WorkspacesPage, TasksPage, PerformancePage, PerformanceMonitoringPage } from './pages';
+import { SearchPage, KeywordsPage, WorkspacesPage, TasksPage, SettingsPage } from './pages';
 
 // 导入 IPC 预热机制
 import { initializeIPCConnection } from './utils/ipcWarmup';
@@ -134,7 +134,6 @@ function AppContent() {
             <NavItem icon={Search} label="Search Logs" active={page === 'search'} onClick={() => setPage('search')} />
             <NavItem icon={ListTodo} label="Keywords" active={page === 'keywords'} onClick={() => setPage('keywords')} />
             <NavItem icon={Layers} label="Tasks" active={page === 'tasks'} onClick={() => setPage('tasks')} />
-            <NavItem icon={Activity} label="Performance" active={page === 'performance-monitoring'} onClick={() => setPage('performance-monitoring')} />
         </div>
         {importStatus && <div className="p-3 m-3 bg-bg-card border border-primary/20 rounded text-xs text-primary animate-pulse"><div className="font-bold mb-1 flex items-center gap-2"><Loader2 size={12} className="animate-spin"/> Processing</div><div className="truncate opacity-80">{importStatus}</div></div>}
         <div className="p-3 border-t border-border-base">
@@ -156,11 +155,8 @@ function AppContent() {
            <ErrorBoundary FallbackComponent={CompactErrorFallback} onReset={() => setPage('tasks')}>
              {page === 'tasks' && <TasksPage />}
            </ErrorBoundary>
-           <ErrorBoundary FallbackComponent={CompactErrorFallback} onReset={() => setPage('performance-monitoring')}>
-             {page === 'performance-monitoring' && <PerformanceMonitoringPage />}
-           </ErrorBoundary>
            <ErrorBoundary FallbackComponent={CompactErrorFallback} onReset={() => setPage('settings')}>
-             {page === 'settings' && <PerformancePage addToast={addToast} />}
+             {page === 'settings' && <SettingsPage />}
            </ErrorBoundary>
         </div>
       </div>

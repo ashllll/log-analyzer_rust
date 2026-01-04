@@ -12,9 +12,6 @@ use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
 use super::LogEntry;
-use crate::monitoring::alerting::AlertingSystem;
-use crate::monitoring::metrics_collector::MetricsCollector;
-use crate::monitoring::recommendation_engine::RecommendationEngine;
 use crate::search_engine::advanced_features::{
     AutocompleteEngine, FilterEngine, RegexSearchEngine, TimePartitionedIndex,
 };
@@ -104,12 +101,6 @@ pub struct AppState {
     pub state_sync: Arc<Mutex<Option<StateSync>>>,
     /// 统一缓存管理器（L1 Moka 内存缓存）
     pub cache_manager: Arc<CacheManager>,
-    /// 性能指标收集器（搜索操作计时、系统资源监控）
-    pub metrics_collector: Arc<MetricsCollector>,
-    /// 告警系统（性能阈值违规、资源约束告警）
-    pub alerting_system: Arc<AlertingSystem>,
-    /// 智能优化建议引擎（基于规则引擎的性能分析）
-    pub recommendation_engine: Arc<RecommendationEngine>,
     /// 任务生命周期管理器（自动清理完成的任务）
     /// 延迟初始化，在 setup hook 中创建
     pub task_manager: Arc<parking_lot::Mutex<Option<TaskManager>>>,

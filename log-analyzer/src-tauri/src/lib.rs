@@ -15,11 +15,9 @@ use tauri::Manager;
 
 // 模块声明
 pub mod archive; // 公开 archive 模块用于集成测试
-mod benchmark;
 mod commands;
 mod error;
 pub mod models; // 公开 models 模块用于集成测试
-mod monitoring;
 pub mod search_engine; // 添加搜索引擎模块
 pub mod services; // 公开 services 模块用于基准测试
 mod state_sync; // 添加状态同步模块
@@ -39,10 +37,6 @@ use commands::{
     export::export_results,
     import::{check_rar_support, import_folder},
     legacy::{get_legacy_workspace_info, scan_legacy_formats},
-    performance::{
-        get_performance_alerts, get_performance_metrics, get_performance_recommendations,
-        reset_performance_metrics,
-    },
     query::{execute_structured_query, validate_query},
     search::{cancel_search, search_logs},
     search_history::{
@@ -116,15 +110,6 @@ pub fn run() {
             // 初始化状态同步管理器（延迟初始化，在 setup hook 中创建）
             let state_sync = Arc::new(Mutex::new(None));
 
-            // 初始化性能监控组件
-            let metrics_collector = Arc::new(
-                monitoring::MetricsCollector::new().expect("Failed to create metrics collector"),
-            );
-            let alerting_system = Arc::new(
-                monitoring::AlertingSystem::new().expect("Failed to create alerting system"),
-            );
-            let recommendation_engine = Arc::new(monitoring::RecommendationEngine::new());
-
             AppState {
                 temp_dir: Mutex::new(None),
                 cas_instances: Arc::new(Mutex::new(HashMap::new())),
@@ -143,9 +128,6 @@ pub fn run() {
                 search_engine,
                 state_sync,
                 cache_manager,
-                metrics_collector,
-                alerting_system,
-                recommendation_engine,
                 task_manager: Arc::new(parking_lot::Mutex::new(None)), // 延迟初始化
                 filter_engine: Arc::new(Mutex::new(HashMap::new())),
                 regex_engine: Arc::new(search_engine::advanced_features::RegexSearchEngine::new(
@@ -174,10 +156,6 @@ pub fn run() {
             load_workspace,
             refresh_workspace,
             export_results,
-            get_performance_metrics,
-            get_performance_alerts,
-            get_performance_recommendations,
-            reset_performance_metrics,
             check_rar_support,
             start_watch,
             stop_watch,
@@ -220,24 +198,6 @@ pub fn run() {
                     return Err(e.into());
                 }
             }
-
-            // 启动性能监控系统
-            let metrics_collector = state.metrics_collector.clone();
-            let alerting_system = state.alerting_system.clone();
-
-            tauri::async_runtime::spawn(async move {
-                // 启动指标收集
-                if let Err(e) = metrics_collector.start_collection().await {
-                    tracing::error!("Failed to start metrics collection: {}", e);
-                }
-
-                // 初始化告警系统
-                if let Err(e) = alerting_system.initialize_alerts().await {
-                    tracing::error!("Failed to initialize alerting system: {}", e);
-                }
-
-                tracing::info!("Performance monitoring system started successfully");
-            });
 
             // 检测旧格式工作区
             let app_handle = app.handle().clone();

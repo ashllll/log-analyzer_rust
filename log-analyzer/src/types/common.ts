@@ -25,17 +25,6 @@ export interface FilterOptions {
   filePattern: string;
 }
 
-// 性能指标类型
-export interface PerformanceStats {
-  memoryUsed: number;
-  pathMapSize: number;
-  cacheSize: number;
-  lastSearchDuration: number;
-  cacheHitRate: number;
-  indexedFilesCount: number;
-  indexFileSizeMb: number;
-}
-
 // 重新导出 Store 类型供外部使用
 export type { Toast, Workspace, Task, KeywordGroup };
 export type { ToastType } from '../stores/appStore';

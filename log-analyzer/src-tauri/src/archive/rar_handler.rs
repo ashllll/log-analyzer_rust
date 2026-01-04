@@ -228,10 +228,7 @@ fn get_system_unrar_paths() -> Vec<&'static str> {
 
     #[cfg(target_os = "linux")]
     {
-        vec![
-            "/usr/bin/unrar",
-            "/usr/local/bin/unrar",
-        ]
+        vec!["/usr/bin/unrar", "/usr/local/bin/unrar"]
     }
 
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]

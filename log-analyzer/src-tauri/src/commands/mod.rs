@@ -4,7 +4,6 @@
 //! - 工作区管理（导入、加载、刷新）
 //! - 搜索功能（全文搜索、结构化查询）
 //! - 导出功能
-//! - 性能监控
 //! - 实时文件监听
 //! - 配置管理
 //!
@@ -15,7 +14,6 @@ pub mod config;
 pub mod export;
 pub mod import;
 pub mod legacy;
-pub mod performance;
 pub mod query;
 pub mod search;
 pub mod search_history;
