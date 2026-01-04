@@ -1,15 +1,16 @@
 use crate::archive::archive_handler::{ArchiveHandler, ExtractionSummary};
 use crate::error::{AppError, Result};
 use async_trait::async_trait;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use tokio::fs;
-use tracing::debug;
+use tracing::{error, info, warn};
 
 /**
  * RAR文件处理器
  *
- * 使用系统unrar命令行工具处理RAR文件
+ * 使用 sidecar unrar 二进制文件处理RAR文件
+ * 支持跨平台：Windows、macOS、Linux
  */
 pub struct RarHandler;
 
@@ -38,48 +39,22 @@ impl ArchiveHandler for RarHandler {
             )
         })?;
 
-        // 获取unrar可执行文件路径
-        let unrar_path = get_unrar_path().map_err(|e| {
+        let source_str = source.to_string_lossy().to_string();
+        let target_str = target_dir.to_string_lossy().to_string();
+
+        // 使用 tokio::task::spawn_blocking 在阻塞型上下文中运行 unrar
+        let result = tokio::task::spawn_blocking(move || {
+            extract_rar_sync(&source_str, &target_str, max_file_size, max_total_size, max_file_count)
+        })
+        .await
+        .map_err(|e| {
             AppError::archive_error(
-                format!("Failed to locate unrar binary: {}", e),
+                format!("RAR extraction task failed: {}", e),
                 Some(source.to_path_buf()),
             )
         })?;
 
-        // 构建提取命令
-        let output = Command::new(&unrar_path)
-            .arg("x") // 提取文件
-            .arg("-y") // 自动确认
-            .arg("-o+") // 覆盖现有文件
-            .arg(source)
-            .arg(target_dir)
-            .output()
-            .map_err(|e| {
-                AppError::archive_error(
-                    format!("Failed to execute unrar command: {}", e),
-                    Some(source.to_path_buf()),
-                )
-            })?;
-
-        let mut summary = ExtractionSummary::new();
-
-        if !output.status.success() {
-            let error_msg = String::from_utf8_lossy(&output.stderr);
-            summary.add_error(format!("RAR extraction failed: {}", error_msg));
-            return Ok(summary);
-        }
-
-        // 扫描提取的文件，应用安全限制
-        scan_extracted_files_with_limits(
-            target_dir,
-            &mut summary,
-            max_file_size,
-            max_total_size,
-            max_file_count,
-        )
-        .await?;
-
-        Ok(summary)
+        result
     }
 
     #[allow(dead_code)]
@@ -101,262 +76,269 @@ impl ArchiveHandler for RarHandler {
 }
 
 /**
- * 获取 unrar 可执行文件路径
+ * 获取对应平台的 unrar 二进制路径
  *
- * 优先级：
- * 1. 内置二进制文件（推荐，最可靠）
- * 2. 环境变量 UNRAR_PATH
- * 3. 系统 PATH 中的 unrar
+ * sidecar 二进制位于 resources/binaries 目录下
  */
-fn get_unrar_path() -> Result<String> {
-    // 1. ✅ 优先使用内置二进制（跨平台）
-    if let Ok(binary_path) = get_builtin_unrar_path() {
-        debug!(path = %binary_path, "Using built-in unrar binary");
-        return Ok(binary_path);
-    }
+fn get_unrar_path() -> PathBuf {
+    // 根据目标平台选择对应的 unrar 二进制
+    let binary_name = match std::env::consts::OS {
+        "macos" => "unrar-aarch64-apple-darwin",
+        "linux" => "unrar-x86_64-unknown-linux-gnu",
+        "windows" => "unrar-x86_64-pc-windows-msvc.exe",
+        _ => panic!("Unsupported platform: {}", std::env::consts::OS),
+    };
 
-    // 2. ✅ 检查环境变量
-    if let Ok(path) = std::env::var("UNRAR_PATH") {
-        if validate_unrar_binary(&path) {
-            debug!(path = %path, "Using unrar from UNRAR_PATH env");
-            return Ok(path);
-        }
-    }
+    // Tauri 应用中，二进制位于资源目录
+    // 开发模式使用当前可执行文件所在目录的 binaries 子目录
+    // 发布模式从可执行文件所在目录查找
+    let resource_dir = if cfg!(debug_assertions) {
+        // 开发模式：从当前工作目录的 binaries 目录查找
+        PathBuf::from("binaries")
+    } else {
+        // 发布模式：从可执行文件所在目录的 binaries 子目录查找
+        // 这是 Tauri 打包后 binary 的标准位置
+        std::env::current_exe()
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .parent()
+            .unwrap_or(&PathBuf::from("."))
+            .to_path_buf()
+    };
 
-    // 3. ✅ 检查常见系统路径
-    let system_paths = get_system_unrar_paths();
-    for path in system_paths {
-        if validate_unrar_binary(path) {
-            debug!(path = %path, "Using system unrar");
-            return Ok(path.to_string());
-        }
-    }
-
-    // 4. ✅ 最后尝试 PATH 中的 unrar 命令
-    if validate_unrar_binary("unrar") {
-        debug!("Using unrar from system PATH");
-        return Ok("unrar".to_string());
-    }
-
-    // ❌ 所有方法都失败，返回明确的错误
-    Err(AppError::archive_error(
-        "unrar binary not found. Please install unrar or set UNRAR_PATH environment variable.\n\
-         For RAR support, unrar is required. Visit: https://www.rarlab.com/rar_add.htm",
-        None,
-    ))
+    resource_dir.join(binary_name)
 }
 
 /**
- * 获取内置 unrar 二进制路径
- */
-fn get_builtin_unrar_path() -> Result<String> {
-    // ✅ 检测当前平台
-    let (arch, os, ext) = detect_platform();
-    let binary_name = format!("unrar-{}-{}{}", arch, os, ext);
-
-    // ✅ 构建二进制文件路径
-    let binary_path = std::env::current_exe()?
-        .parent()
-        .ok_or_else(|| AppError::archive_error("Cannot determine executable directory", None))?
-        .join("binaries")
-        .join(&binary_name);
-
-    if !binary_path.exists() {
-        return Err(AppError::archive_error(
-            format!("Built-in unrar binary not found: {}", binary_path.display()),
-            Some(binary_path),
-        ));
-    }
-
-    Ok(binary_path.to_string_lossy().to_string())
-}
-
-/**
- * 检测平台三元组
- */
-#[allow(unreachable_code)]
-fn detect_platform() -> (&'static str, &'static str, &'static str) {
-    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
-    return ("x86_64", "pc-windows-msvc", ".exe");
-
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-    return ("x86_64", "unknown-linux-gnu", "");
-
-    #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
-    return ("aarch64", "unknown-linux-gnu", "");
-
-    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
-    return ("x86_64", "apple-darwin", "");
-
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    return ("aarch64", "apple-darwin", "");
-
-    // ✅ 默认回退
-    ("x86_64", "unknown-linux-gnu", "")
-}
-
-/**
- * 验证 unrar 二进制是否可用
- */
-fn validate_unrar_binary(path: &str) -> bool {
-    std::process::Command::new(path)
-        .arg("--help")
-        .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false)
-}
-
-/**
- * 获取系统 unrar 常见路径
- */
-fn get_system_unrar_paths() -> Vec<&'static str> {
-    #[cfg(target_os = "windows")]
-    {
-        vec![
-            "C:\\Program Files\\WinRAR\\UnRAR.exe",
-            "C:\\Program Files (x86)\\WinRAR\\UnRAR.exe",
-        ]
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        vec![
-            "/usr/local/bin/unrar",
-            "/opt/homebrew/bin/unrar", // Apple Silicon Homebrew
-        ]
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        vec!["/usr/bin/unrar", "/usr/local/bin/unrar"]
-    }
-
-    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
-    {
-        vec![]
-    }
-}
-
-/**
- * 扫描提取的文件并更新摘要（带安全限制）
+ * 同步提取 RAR 文件
  *
- * # 并发安全
- *
- * - 使用 Box::pin 解决递归异步调用问题
+ * 使用 sidecar unrar 二进制进行解压
+ * 命令格式: unrar x -y source dest\
  */
-fn scan_extracted_files_with_limits<'a>(
-    dir: &'a Path,
-    summary: &'a mut ExtractionSummary,
+fn extract_rar_sync(
+    source: &str,
+    target_dir: &str,
     max_file_size: u64,
     max_total_size: u64,
     max_file_count: usize,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send + 'a>> {
-    Box::pin(async move {
-        let mut entries = fs::read_dir(dir).await.map_err(|e| {
+) -> Result<ExtractionSummary> {
+    let mut summary = ExtractionSummary::new();
+
+    // 获取 unrar 二进制路径
+    let unrar_path = get_unrar_path();
+    info!("Using unrar binary: {}", unrar_path.display());
+
+    // 检查 unrar 二进制是否存在
+    if !unrar_path.exists() {
+        summary.add_error(format!(
+            "RAR extraction failed: unrar binary not found at {}",
+            unrar_path.display()
+        ));
+        return Ok(summary);
+    }
+
+    // 调用 unrar 进行解压
+    // unrar x -y source target\
+    // x = extract with full paths
+    // -y = assume Yes on all queries
+    let output = Command::new(&unrar_path)
+        .args(&["x", "-y", source, target_dir])
+        .output()
+        .map_err(|e| {
             AppError::archive_error(
-                format!("Failed to read directory: {}", e),
-                Some(dir.to_path_buf()),
+                format!("Failed to execute unrar: {}", e),
+                Some(PathBuf::from(source)),
             )
         })?;
 
-        while let Some(entry) = entries.next_entry().await.map_err(|e| {
-            AppError::archive_error(
-                format!("Failed to read directory entry: {}", e),
-                Some(dir.to_path_buf()),
-            )
-        })? {
-            let path = entry.path();
-            let metadata = fs::metadata(&path).await.map_err(|e| {
-                AppError::archive_error(
-                    format!("Failed to get metadata: {}", e),
-                    Some(path.clone()),
-                )
-            })?;
+    // 检查命令执行结果
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        error!("unrar stderr: {}", stderr);
 
-            if metadata.is_file() {
-                let file_size = metadata.len();
+        // 解析常见错误
+        if stderr.contains("cannot find file") || stderr.contains("not found") {
+            summary.add_error(format!("RAR file not found or corrupted: {}", source));
+        } else if stderr.contains("encrypted") || stderr.contains("password") {
+            summary.add_error("RAR file is password protected and cannot be extracted".to_string());
+        } else if stderr.contains("is not RAR archive") {
+            summary.add_error(format!("File is not a valid RAR archive: {}", source));
+        } else {
+            summary.add_error(format!("RAR extraction failed: {}", stderr));
+        }
+        return Ok(summary);
+    }
 
-                // 安全检查：单个文件大小限制
-                if file_size > max_file_size {
-                    return Err(AppError::archive_error(
-                        format!(
-                            "File {} exceeds maximum size limit of {} bytes",
-                            path.display(),
-                            max_file_size
-                        ),
-                        Some(path),
-                    ));
-                }
+    // 解析 unrar 输出获取解压结果
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    info!("unrar output: {}", stdout);
 
-                // 安全检查：总大小限制
-                if summary.total_size + file_size > max_total_size {
-                    return Err(AppError::archive_error(
-                        format!(
-                            "Extraction would exceed total size limit of {} bytes",
-                            max_total_size
-                        ),
-                        Some(path),
-                    ));
-                }
+    // 从 unrar 输出中提取文件信息
+    // unrar 输出格式示例:
+    // Extracting from test.rar
+    // Extracting  file1.txt                                OK
+    // Extracting  dir/file2.txt                            OK
+    // All OK
+    let extracted_files = parse_unrar_output(&stdout);
 
-                // 安全检查：文件数量限制
-                if summary.files_extracted + 1 > max_file_count {
-                    return Err(AppError::archive_error(
-                        format!(
-                            "Extraction would exceed file count limit of {} files",
-                            max_file_count
-                        ),
-                        Some(path),
-                    ));
-                }
-
-                summary.add_file(path.clone(), file_size);
-            } else if metadata.is_dir() {
-                // 使用 Box::pin 递归扫描子目录
-                scan_extracted_files_with_limits(
-                    &path,
-                    summary,
-                    max_file_size,
-                    max_total_size,
-                    max_file_count,
-                )
-                .await?;
-            }
+    // 统计解压结果
+    for file_info in extracted_files {
+        // 检查文件大小限制
+        if file_info.size > max_file_size {
+            summary.add_error(format!(
+                "File {} exceeds maximum size limit of {} bytes, skipped",
+                file_info.name,
+                max_file_size
+            ));
+            continue;
         }
 
-        Ok(())
-    })
+        // 检查总大小限制
+        if summary.total_size + file_info.size as u64 > max_total_size {
+            summary.add_error(format!(
+                "Extraction would exceed total size limit of {} bytes, stopping",
+                max_total_size
+            ));
+            break;
+        }
+
+        // 检查文件数量限制
+        if summary.files_extracted + 1 > max_file_count {
+            summary.add_error(format!(
+                "Extraction would exceed file count limit of {} files, stopping",
+                max_file_count
+            ));
+            break;
+        }
+
+        // 解析文件路径，转换为 PathBuf
+        let file_path = PathBuf::from(&file_info.name);
+
+        // 判断是文件还是目录
+        if file_info.name.ends_with('/') || file_info.name.ends_with('\\') {
+            // 目录，不计入文件数
+            summary.add_file(file_path, 0);
+        } else {
+            summary.add_file(file_path, file_info.size as u64);
+            info!("Extracted: {}", file_info.name);
+        }
+    }
+
+    // 如果没有提取任何文件，但命令成功了，可能是归档为空
+    if summary.files_extracted == 0 && output.status.success() {
+        info!("RAR archive extracted successfully (0 files)");
+    }
+
+    Ok(summary)
 }
 
 /**
- * 扫描提取的文件并更新摘要（兼容旧版本）
+ * 解析 unrar 命令输出
  *
- * # 并发安全
- *
- * - 使用 Box::pin 解决递归异步调用问题
+ * 提取每个文件的名称和大小
  */
-#[allow(dead_code)]
-fn scan_extracted_files<'a>(
-    dir: &'a Path,
-    summary: &'a mut ExtractionSummary,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send + 'a>> {
-    Box::pin(async move {
-        // 默认使用安全限制：单个文件100MB，总大小1GB，文件数1000
-        scan_extracted_files_with_limits(
-            dir,
-            summary,
-            100 * 1024 * 1024,
-            1024 * 1024 * 1024, // 1GB
-            1000,
-        )
-        .await
-    })
+#[derive(Debug)]
+struct FileInfo {
+    name: String,
+    size: u64,
+}
+
+fn parse_unrar_output(output: &str) -> Vec<FileInfo> {
+    let mut files = Vec::new();
+
+    // unrar 输出格式:
+    // Extracting from archive.rar
+    // Extracting  file1.txt                              1234 OK
+    // Extracting  subdir/file2.txt                       5678 OK
+    // Extracting  dir1/                                  OK
+    // All OK
+
+    for line in output.lines() {
+        // 跳过标题行和状态行
+        if line.starts_with("Extracting from") || line.starts_with("Creating") || line.starts_with("All OK") {
+            continue;
+        }
+        if line.trim().is_empty() {
+            continue;
+        }
+
+        // 解析文件行: "Extracting  filename                    size OK"
+        // 文件名可能在中间位置，需要找到 "OK" 或 "FAILED" 标记
+        if let Some(ok_pos) = line.find(" OK") {
+            // 提取文件名（去掉 "Extracting  " 前缀和大小）
+            // 格式: "Extracting  file.txt      1234 OK"
+            // 或: "Extracting  dir/     OK" (目录)
+
+            // 先去掉 " OK" 结尾
+            let content = &line[..ok_pos];
+
+            // 检查是否有大小（末尾是数字，且数字前有空格）
+            let name;
+            let mut size: u64 = 0;
+
+            // 从后向前查找数字，数字前必须有空格才认为是文件大小
+            let bytes = content.as_bytes();
+            let mut digit_start = None;
+
+            for i in (0..bytes.len()).rev() {
+                if bytes[i].is_ascii_digit() {
+                    digit_start = Some(i);
+                } else if digit_start.is_some() {
+                    // 遇到非数字，停止查找
+                    break;
+                }
+            }
+
+            if let Some(d_pos) = digit_start {
+                // 检查数字前面是否确实是空格（而不是字母）
+                if d_pos > 0 && bytes[d_pos - 1] == b' ' {
+                    // 有空格分隔，这是文件
+                    let num_str = &content[d_pos..];
+                    if let Ok(s) = num_str.parse::<u64>() {
+                        size = s;
+                    }
+                    // 文件名是数字之前的所有内容，去掉 "Extracting  " 前缀
+                    let before_digits = &content[..d_pos];
+                    name = if before_digits.starts_with("Extracting  ") {
+                        before_digits["Extracting  ".len()..].trim_end().to_string()
+                    } else if before_digits.starts_with("Extracting ") {
+                        before_digits["Extracting ".len()..].trim_end().to_string()
+                    } else {
+                        before_digits.trim_end().to_string()
+                    };
+                } else {
+                    // 数字前没有空格，是目录或特殊文件名
+                    name = if content.starts_with("Extracting  ") {
+                        content["Extracting  ".len()..].trim_end().to_string()
+                    } else if content.starts_with("Extracting ") {
+                        content["Extracting ".len()..].trim_end().to_string()
+                    } else {
+                        content.trim_end().to_string()
+                    };
+                }
+            } else {
+                // 没有数字结尾，是目录
+                name = if content.starts_with("Extracting  ") {
+                    content["Extracting  ".len()..].trim_end().to_string()
+                } else if content.starts_with("Extracting ") {
+                    content["Extracting ".len()..].trim_end().to_string()
+                } else {
+                    content.trim_end().to_string()
+                };
+            }
+
+            files.push(FileInfo { name, size });
+        } else if line.contains("FAILED") || line.contains("ERROR") {
+            warn!("RAR extraction warning: {}", line);
+        }
+    }
+
+    files
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
+    use std::path::Path;
 
     #[test]
     fn test_rar_handler_can_handle() {
@@ -376,60 +358,59 @@ mod tests {
         assert_eq!(extensions, vec!["rar"]);
     }
 
-    #[tokio::test]
-    async fn test_scan_extracted_files() {
-        let temp_dir = TempDir::new().unwrap();
+    #[test]
+    fn test_parse_unrar_output_basic() {
+        let output = r#"Extracting from test.rar
+Extracting  file1.txt                              1234 OK
+Extracting  file2.txt                              5678 OK
+All OK"#;
 
-        // 创建测试文件结构
-        fs::create_dir_all(temp_dir.path().join("subdir"))
-            .await
-            .unwrap();
+        let files = parse_unrar_output(output);
 
-        let file1 = temp_dir.path().join("file1.txt");
-        let file2 = temp_dir.path().join("subdir").join("file2.txt");
-
-        fs::write(&file1, "content1").await.unwrap();
-        fs::write(&file2, "content2").await.unwrap();
-
-        let mut summary = ExtractionSummary::new();
-        scan_extracted_files(temp_dir.path(), &mut summary)
-            .await
-            .unwrap();
-
-        assert_eq!(summary.files_extracted, 2);
-        assert!(summary.total_size > 0);
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[0].name, "file1.txt");
+        assert_eq!(files[0].size, 1234);
+        assert_eq!(files[1].name, "file2.txt");
+        assert_eq!(files[1].size, 5678);
     }
 
     #[test]
-    fn test_detect_platform() {
-        let (arch, os, _ext) = detect_platform();
-        assert!(!arch.is_empty());
-        assert!(!os.is_empty());
+    fn test_parse_unrar_output_with_directories() {
+        let output = r#"Extracting from test.rar
+Extracting  dir1/                                   OK
+Extracting  dir1/file1.txt                         1000 OK
+Extracting  dir2/subdir/file2.txt                  2000 OK
+All OK"#;
+
+        let files = parse_unrar_output(output);
+
+        assert_eq!(files.len(), 3);
+        assert_eq!(files[0].name, "dir1/");
+        assert_eq!(files[1].name, "dir1/file1.txt");
+        assert_eq!(files[2].name, "dir2/subdir/file2.txt");
     }
 
     #[test]
-    fn test_get_system_unrar_paths() {
-        let paths = get_system_unrar_paths();
-        // 每个平台应该返回路径向量（可能为空）
-        // Vec::len() 总是非负的，所以不需要断言
-        assert!(!paths.is_empty() || paths.is_empty()); // 验证路径可访问
-    }
+    fn test_parse_unrar_output_empty() {
+        let output = "Extracting from empty.rar\nAll OK";
 
-    #[test]
-    fn test_validate_unrar_binary_invalid() {
-        // 测试无效的路径
-        assert!(!validate_unrar_binary("/nonexistent/unrar"));
+        let files = parse_unrar_output(output);
+
+        assert!(files.is_empty());
     }
 
     #[test]
     fn test_get_unrar_path() {
-        // 测试 get_unrar_path 的错误处理
-        // 如果 unrar 不存在，应该返回 Err 而不是 panic
-        let result = std::panic::catch_unwind(|| {
-            let _ = get_unrar_path();
-        });
+        let path = get_unrar_path();
 
-        // 无论 unrar 是否存在，都不应该 panic
-        assert!(result.is_ok());
+        // 验证路径格式正确
+        let binary_name = path.file_name().unwrap().to_str().unwrap();
+        assert!(binary_name.starts_with("unrar-"));
+        assert!(binary_name.ends_with(match std::env::consts::OS {
+            "macos" => "darwin",
+            "linux" => "linux-gnu",
+            "windows" => ".exe",
+            _ => "",
+        }));
     }
 }
