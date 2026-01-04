@@ -4,7 +4,7 @@
 
 #[cfg(test)]
 mod cross_platform_tests {
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
     use tempfile::TempDir;
 
     /// 测试路径规范化
@@ -77,7 +77,6 @@ mod cross_platform_tests {
     #[test]
     fn test_path_separator_normalization() {
         let input = "folder/subfolder/file.txt";
-        let separator = std::path::MAIN_SEPARATOR;
 
         #[cfg(target_os = "windows")]
         assert!(input.contains('/'), "Input should contain forward slashes");
@@ -92,7 +91,7 @@ mod cross_platform_tests {
         #[cfg(not(target_os = "windows"))]
         {
             // Unix-like: 路径分隔符应该是 /
-            assert_eq!(separator, '/', "Main separator should be forward slash");
+            assert_eq!(std::path::MAIN_SEPARATOR, '/', "Main separator should be forward slash");
         }
     }
 
@@ -103,7 +102,7 @@ mod cross_platform_tests {
         use std::sync::Arc;
 
         let temp_dir = TempDir::new().unwrap();
-        let cleanup_queue = Arc::new(SegQueue::new());
+        let _cleanup_queue: Arc<SegQueue<PathBuf>> = Arc::new(SegQueue::new());
 
         // 创建临时目录
         let temp_path = temp_dir.path().join("cleanup_test");
@@ -125,32 +124,27 @@ mod cross_platform_tests {
         // 注意：这只是验证函数可以调用，实际值取决于编译目标
         #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
         {
-            // Windows x64
-            assert!(true); // 如果编译到这里，平台检测正确
+            // Windows x64: 如果编译到这里，平台检测正确
         }
 
         #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
         {
-            // Linux x64
-            assert!(true);
+            // Linux x64: 如果编译到这里，平台检测正确
         }
 
         #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
         {
-            // Linux ARM64
-            assert!(true);
+            // Linux ARM64: 如果编译到这里，平台检测正确
         }
 
         #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
         {
-            // macOS Intel
-            assert!(true);
+            // macOS Intel: 如果编译到这里，平台检测正确
         }
 
         #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
         {
-            // macOS ARM64
-            assert!(true);
+            // macOS ARM64: 如果编译到这里，平台检测正确
         }
     }
 
@@ -161,13 +155,12 @@ mod cross_platform_tests {
 
         let temp_dir = TempDir::new().unwrap();
         let target_file = temp_dir.path().join("target.txt");
-        let symlink = temp_dir.path().join("link.txt");
-
         std::fs::write(&target_file, "target content").unwrap();
 
         #[cfg(target_family = "unix")]
         {
-            std::os::unix::fs::symlink(&target_file, &symlink).unwrap();
+            let _symlink = temp_dir.path().join("link.txt");
+            std::os::unix::fs::symlink(&target_file, &_symlink).unwrap();
 
             // WalkDir 应该能检测符号链接
             let mut found_symlink = false;
