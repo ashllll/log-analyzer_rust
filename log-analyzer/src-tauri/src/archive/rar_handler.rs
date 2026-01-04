@@ -150,7 +150,7 @@ fn get_unrar_path() -> Result<String> {
  * 获取内置 unrar 二进制路径
  *
  * 优先级：
- * 1. 开发模式：从项目目录（CARGO_MANIFEST_DIR）查找
+ * 1. 开发模式：从项目目录（基于CARGO_MANIFEST_DIR或当前目录）
  * 2. 生产模式：从exe目录的binaries子目录查找
  * 3. 生产模式：从exe目录直接查找（打包时可能直接放在exe旁边）
  */
@@ -159,13 +159,31 @@ fn get_builtin_unrar_path() -> Result<String> {
     let (arch, os, ext) = detect_platform();
     let binary_name = format!("unrar-{}-{}{}", arch, os, ext);
 
-    // 1. 开发模式：从项目目录查找（使用CARGO_MANIFEST_DIR环境变量）
+    // 1. 尝试从项目目录查找（使用多种方法）
+
+    // 方法1a: 使用 CARGO_MANIFEST_DIR（cargo构建时设置）
     if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
         let project_path = std::path::Path::new(&manifest_dir)
             .join("binaries")
             .join(&binary_name);
         if project_path.exists() {
-            debug!(path = %project_path.display(), "Using built-in unrar from project directory");
+            debug!(path = %project_path.display(), "Using built-in unrar from CARGO_MANIFEST_DIR");
+            return Ok(project_path.to_string_lossy().to_string());
+        }
+    }
+
+    // 方法1b: 使用当前工作目录（更可靠）
+    if let Ok(cwd) = std::env::current_dir() {
+        let project_path = cwd.join("src-tauri").join("binaries").join(&binary_name);
+        if project_path.exists() {
+            debug!(path = %project_path.display(), "Using built-in unrar from current working directory");
+            return Ok(project_path.to_string_lossy().to_string());
+        }
+
+        // 也尝试直接在cwd/binaries查找
+        let project_path = cwd.join("binaries").join(&binary_name);
+        if project_path.exists() {
+            debug!(path = %project_path.display(), "Using built-in unrar from cwd/binaries");
             return Ok(project_path.to_string_lossy().to_string());
         }
     }
