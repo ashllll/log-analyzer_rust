@@ -1,3 +1,5 @@
+use crate::error::{AppError, Result};
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::FromRow;
@@ -6,9 +8,7 @@ use std::collections::VecDeque;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
-use parking_lot::Mutex;
 use tracing::info;
-use crate::error::{AppError, Result};
 
 /// 搜索历史全局状态类型（使用 parking_lot::Mutex，因为其 Guard 实现 Send）
 pub type HistoryState = Arc<Mutex<SearchHistory>>;
@@ -18,8 +18,8 @@ pub type HistoryState = Arc<Mutex<SearchHistory>>;
 pub struct SearchHistoryItem {
     pub id: String,
     pub query: String,
-    pub timestamp: i64,              // Unix timestamp (seconds)
-    pub result_count: Option<i64>,   // 搜索结果数量 (数据库使用 i64)
+    pub timestamp: i64,            // Unix timestamp (seconds)
+    pub result_count: Option<i64>, // 搜索结果数量 (数据库使用 i64)
     pub workspace_id: String,
 }
 
@@ -39,7 +39,7 @@ impl SearchHistoryItem {
 /// - 持久化到 SQLite 数据库
 pub struct SearchHistory {
     history: VecDeque<SearchHistoryItem>,
-    max_size: usize, // 最大保存数量，默认50
+    max_size: usize,          // 最大保存数量，默认50
     pool: Option<SqlitePool>, // 数据库连接池
 }
 
@@ -74,7 +74,12 @@ impl SearchHistory {
             .max_lifetime(Duration::from_secs(1800))
             .connect(&db_url)
             .await
-            .map_err(|e| AppError::database_error(format!("Failed to connect to search history database: {}", e)))?;
+            .map_err(|e| {
+                AppError::database_error(format!(
+                    "Failed to connect to search history database: {}",
+                    e
+                ))
+            })?;
 
         // 初始化数据库表
         Self::init_schema(&pool).await?;
@@ -100,7 +105,9 @@ impl SearchHistory {
         )
         .execute(pool)
         .await
-        .map_err(|e| AppError::database_error(format!("Failed to create search_history table: {}", e)))?;
+        .map_err(|e| {
+            AppError::database_error(format!("Failed to create search_history table: {}", e))
+        })?;
 
         // 创建工作区索引
         sqlx::query(
@@ -110,7 +117,9 @@ impl SearchHistory {
         )
         .execute(pool)
         .await
-        .map_err(|e| AppError::database_error(format!("Failed to create search_history index: {}", e)))?;
+        .map_err(|e| {
+            AppError::database_error(format!("Failed to create search_history index: {}", e))
+        })?;
 
         // 创建查询索引（用于去重）
         sqlx::query(
@@ -194,7 +203,9 @@ impl SearchHistory {
             .bind(self.max_size as i64)
             .fetch_all(pool)
             .await
-            .map_err(|e| AppError::database_error(format!("Failed to load search history: {}", e)))?;
+            .map_err(|e| {
+                AppError::database_error(format!("Failed to load search history: {}", e))
+            })?;
 
             // 更新内存状态
             self.history.clear();
@@ -224,7 +235,9 @@ impl SearchHistory {
             .bind(self.max_size as i64)
             .fetch_all(pool)
             .await
-            .map_err(|e| AppError::database_error(format!("Failed to load search history: {}", e)))?;
+            .map_err(|e| {
+                AppError::database_error(format!("Failed to load search history: {}", e))
+            })?;
 
             Ok(items)
         } else {
@@ -233,7 +246,11 @@ impl SearchHistory {
     }
 
     /// 搜索匹配的历史记录（从数据库，用于自动补全）
-    pub async fn search_in_db(&self, prefix: &str, workspace_id: &str) -> Result<Vec<SearchHistoryItem>> {
+    pub async fn search_in_db(
+        &self,
+        prefix: &str,
+        workspace_id: &str,
+    ) -> Result<Vec<SearchHistoryItem>> {
         if let Some(ref pool) = self.pool {
             let prefix_lower = prefix.to_lowercase();
             let items = sqlx::query_as::<_, SearchHistoryItem>(
@@ -269,7 +286,9 @@ impl SearchHistory {
             .bind(id)
             .execute(pool)
             .await
-            .map_err(|e| AppError::database_error(format!("Failed to delete search history: {}", e)))?;
+            .map_err(|e| {
+                AppError::database_error(format!("Failed to delete search history: {}", e))
+            })?;
         }
         Ok(())
     }
@@ -285,7 +304,9 @@ impl SearchHistory {
             .bind(workspace_id)
             .execute(pool)
             .await
-            .map_err(|e| AppError::database_error(format!("Failed to clear search history: {}", e)))?;
+            .map_err(|e| {
+                AppError::database_error(format!("Failed to clear search history: {}", e))
+            })?;
         }
         Ok(())
     }
@@ -300,7 +321,9 @@ impl SearchHistory {
             )
             .execute(pool)
             .await
-            .map_err(|e| AppError::database_error(format!("Failed to clear all search history: {}", e)))?;
+            .map_err(|e| {
+                AppError::database_error(format!("Failed to clear all search history: {}", e))
+            })?;
         }
         Ok(())
     }

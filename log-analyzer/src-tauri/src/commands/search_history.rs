@@ -1,4 +1,4 @@
-use crate::models::search_history::{SearchHistoryItem, HistoryState};
+use crate::models::search_history::{HistoryState, SearchHistoryItem};
 use tauri::State;
 
 /**
@@ -52,7 +52,9 @@ pub async fn get_search_history(
         // 释放锁后再进行异步操作
         drop(h);
         let db_history = history.lock();
-        db_history.get_from_db(&workspace_id).await
+        db_history
+            .get_from_db(&workspace_id)
+            .await
             .map_err(|e| format!("{}", e))
     } else {
         // 回退到内存
@@ -84,7 +86,9 @@ pub async fn search_history_items(
         // 释放锁后再进行异步操作
         drop(h);
         let db_history = history.lock();
-        db_history.search_in_db(&prefix, &workspace_id).await
+        db_history
+            .search_in_db(&prefix, &workspace_id)
+            .await
             .map_err(|e| format!("{}", e))
     } else {
         // 回退到内存

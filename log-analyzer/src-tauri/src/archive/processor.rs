@@ -1066,13 +1066,8 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
                     );
 
                     // 将归档本身作为普通文件添加到索引
-                    store_file_as_regular(
-                        archive_path,
-                        virtual_path,
-                        context,
-                        parent_archive_id,
-                    )
-                    .await?;
+                    store_file_as_regular(archive_path, virtual_path, context, parent_archive_id)
+                        .await?;
 
                     return Ok(());
                 }
@@ -1123,13 +1118,8 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
                     );
 
                     // 将归档本身作为普通文件添加到索引
-                    store_file_as_regular(
-                        archive_path,
-                        virtual_path,
-                        context,
-                        parent_archive_id,
-                    )
-                    .await?;
+                    store_file_as_regular(archive_path, virtual_path, context, parent_archive_id)
+                        .await?;
 
                     return Ok(());
                 }
