@@ -102,10 +102,11 @@ impl FuzzyMatcher {
     pub fn is_similar(&self, s1: &str, s2: &str) -> bool {
         let distance = levenshtein_distance(s1, s2);
 
-        // 动态阈值：短词允许更小的距离
-        let threshold = if s1.len() <= 4 {
+        // 动态阈值：基于较短字符串的长度
+        let len = s1.len().min(s2.len());
+        let threshold = if len <= 4 {
             1 // 短词（≤4字符）最多1个差异
-        } else if s1.len() <= 8 {
+        } else if len <= 8 {
             2 // 中等词（5-8字符）最多2个差异
         } else {
             3 // 长词（>8字符）最多3个差异
@@ -310,9 +311,10 @@ mod tests {
         // 中等词（5-8字符）最多2个差异
         assert!(matcher.is_similar("connect", "conect"));
         assert!(matcher.is_similar("timeout", "timout"));
+        assert!(matcher.is_similar("connect", "connct")); // 距离=1
 
-        // 超过阈值
-        assert!(!matcher.is_similar("connect", "cnect"));
+        // 超过阈值（距离=3）
+        assert!(!matcher.is_similar("connect", "cnet")); // 距离=3
     }
 
     #[test]
@@ -328,7 +330,8 @@ mod tests {
         let matcher = FuzzyMatcher::new(1); // 限制为1个差异
 
         assert!(matcher.is_similar("ERROR", "ERRO"));
-        assert!(!matcher.is_similar("connection", "connetion")); // 2个差异，超过限制
+        // connection vs conecton 距离=2，超过max_distance=1
+        assert!(!matcher.is_similar("connection", "conecton"));
     }
 
     #[test]
@@ -375,12 +378,16 @@ mod tests {
     fn test_find_best_match_fuzzy() {
         let matcher = FuzzyMatcher::new(2);
 
+        // 测试行包含"ERROR"完全匹配和"ERROE"模糊匹配
+        // 最佳匹配应该是"ERROR"（distance=0），因为它比"ERROE"（distance=1）更接近
         let line = "ERROE ERROR WARN";
         let result = matcher.find_best_match("ERROR", line);
 
         assert!(result.is_some());
-        let (_word, distance) = result.unwrap();
-        assert_eq!(distance, 1); // ERROE vs ERROR = 1个差异
+        let (word, distance) = result.unwrap();
+        // "ERROR"是完全匹配，返回distance=0
+        assert_eq!(word, "ERROR");
+        assert_eq!(distance, 0);
     }
 
     #[test]
