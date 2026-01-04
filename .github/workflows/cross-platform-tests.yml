@@ -1,18 +1,36 @@
 # 暂时禁用：与主 CI 工作流重复，导致测试失败
 # 这个工作流的功能已经在 ci.yml 中实现
-name: Cross-Platform Compatibility Tests (DISABLED)
+# 如需重新启用，请取消所有内容的注释
+# name: Cross-Platform Compatibility Tests
+#
+# on:
+#   push:
+#     branches: [main, develop]
+#   pull_request:
+#     branches: [main]
+#   schedule:
+#     - cron: '0 0 * * *'
+#   workflow_dispatch:
+#
+# jobs:
+#   test-platform-specific-features:
+#     name: Platform-Specific Tests
+#     runs-on: ${{ matrix.os }}
+#     ...
+
+# 临时占位符，防止空工作流文件导致错误
+name: Disabled (duplicate of main CI)
 
 on:
-  # push:
-  #   branches: [main, develop]
-  # pull_request:
-  #   branches: [main]
-  # schedule:
-  #   # 每天UTC时间0点运行，检测平台特定问题
-  #   - cron: '0 0 * * *'
-  # workflow_dispatch:  # 允许手动触发
+  push:
+    branches: [never]  # 永远不会触发
 
 jobs:
+  placeholder:
+    runs-on: ubuntu-latest
+    steps:
+      - name: This workflow is disabled
+        run: echo "This workflow is disabled. Please see ci.yml for actual tests."
   test-platform-specific-features:
     name: Platform-Specific Tests
     runs-on: ${{ matrix.os }}
