@@ -17,12 +17,12 @@ mod cross_platform_tests {
 
         #[cfg(target_os = "windows")]
         {
-            // Windows: 使用 dunce 处理 UNC 路径
+            // Windows: 使用标准库规范化路径
+            // 注意：Windows 10+ 可能会返回 \\?\ 前缀（长路径支持），这是正常的
             let canonical = std::fs::canonicalize(&test_path).unwrap();
-            assert!(canonical.exists());
-            // 验证没有 \\?\ 前缀（dunce 会处理）
-            let canonical_str = canonical.to_string_lossy();
-            assert!(!canonical_str.starts_with("\\\\?\\"), "UNC path should not have \\\\? prefix");
+            assert!(canonical.exists(), "Canonicalized path should exist");
+            // 路径应该指向正确的文件（带或不带 \\?\ 前缀都可以）
+            assert!(canonical.ends_with("test.txt"), "Path should end with test.txt");
         }
 
         #[cfg(not(target_os = "windows"))]
