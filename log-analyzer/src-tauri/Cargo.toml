@@ -1,6 +1,6 @@
 [package]
 name = "log-analyzer"
-version = "0.0.100"
+version = "0.0.103"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
