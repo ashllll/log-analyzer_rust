@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use std::path::Path;
 use std::process::Command;
 use tokio::fs;
-use tracing::debug;
+use tracing::{debug, info};
 
 /**
  * RAR文件处理器
@@ -204,12 +204,12 @@ fn get_builtin_unrar_path() -> Result<String> {
             .collect(),
     ];
 
-    // 添加调试日志
-    debug!("Searching for unrar binary: {}", binary_name);
+    // 添加诊断日志（使用info级别以确保在任何日志配置下都能看到）
+    info!("Searching for unrar binary: {}", binary_name);
     for path in &search_paths {
-        debug!("Checking path: {}", path.display());
+        info!("Checking path: {}", path.display());
         if path.exists() {
-            debug!("Found unrar at: {}", path.display());
+            info!("Found unrar at: {}", path.display());
             return Ok(path.to_string_lossy().to_string());
         }
     }
@@ -222,16 +222,16 @@ fn get_builtin_unrar_path() -> Result<String> {
             // 尝试 unrar-xxx 和 unrar.exe
             for name in &[binary_name.as_str(), &format!("unrar{}", ext)] {
                 let binary_path = exe_dir.join(name);
-                debug!("Checking production path: {}", binary_path.display());
+                info!("Checking production path: {}", binary_path.display());
                 if binary_path.exists() {
-                    debug!("Found unrar in production at: {}", binary_path.display());
+                    info!("Found unrar in production at: {}", binary_path.display());
                     return Ok(binary_path.to_string_lossy().to_string());
                 }
 
                 let binary_path = exe_dir.join("binaries").join(name);
-                debug!("Checking production path with binaries/: {}", binary_path.display());
+                info!("Checking production path with binaries/: {}", binary_path.display());
                 if binary_path.exists() {
-                    debug!("Found unrar in production at: {}", binary_path.display());
+                    info!("Found unrar in production at: {}", binary_path.display());
                     return Ok(binary_path.to_string_lossy().to_string());
                 }
             }
