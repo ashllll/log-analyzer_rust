@@ -148,27 +148,52 @@ fn get_unrar_path() -> Result<String> {
 
 /**
  * 获取内置 unrar 二进制路径
+ *
+ * 优先级：
+ * 1. 开发模式：从项目目录（CARGO_MANIFEST_DIR）查找
+ * 2. 生产模式：从exe目录的binaries子目录查找
+ * 3. 生产模式：从exe目录直接查找（打包时可能直接放在exe旁边）
  */
 fn get_builtin_unrar_path() -> Result<String> {
-    // ✅ 检测当前平台
+    // 检测当前平台
     let (arch, os, ext) = detect_platform();
     let binary_name = format!("unrar-{}-{}{}", arch, os, ext);
 
-    // ✅ 构建二进制文件路径
-    let binary_path = std::env::current_exe()?
-        .parent()
-        .ok_or_else(|| AppError::archive_error("Cannot determine executable directory", None))?
-        .join("binaries")
-        .join(&binary_name);
-
-    if !binary_path.exists() {
-        return Err(AppError::archive_error(
-            format!("Built-in unrar binary not found: {}", binary_path.display()),
-            Some(binary_path),
-        ));
+    // 1. 开发模式：从项目目录查找（使用CARGO_MANIFEST_DIR环境变量）
+    if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
+        let project_path = std::path::Path::new(&manifest_dir)
+            .join("binaries")
+            .join(&binary_name);
+        if project_path.exists() {
+            debug!(path = %project_path.display(), "Using built-in unrar from project directory");
+            return Ok(project_path.to_string_lossy().to_string());
+        }
     }
 
-    Ok(binary_path.to_string_lossy().to_string())
+    // 2. 生产模式：从exe目录查找
+    let exe_dir = std::env::current_exe()?
+        .parent()
+        .ok_or_else(|| AppError::archive_error("Cannot determine executable directory", None))?
+        .to_path_buf();
+
+    // 尝试从exe目录的binaries子目录查找
+    let binary_path = exe_dir.join("binaries").join(&binary_name);
+    if binary_path.exists() {
+        debug!(path = %binary_path.display(), "Using built-in unrar from binaries directory");
+        return Ok(binary_path.to_string_lossy().to_string());
+    }
+
+    // 尝试直接在exe目录查找（打包时unrar可能直接放在exe旁边）
+    let binary_path = exe_dir.join(&binary_name);
+    if binary_path.exists() {
+        debug!(path = %binary_path.display(), "Using built-in unrar from exe directory");
+        return Ok(binary_path.to_string_lossy().to_string());
+    }
+
+    Err(AppError::archive_error(
+        format!("Built-in unrar binary not found: {}", binary_name),
+        None,
+    ))
 }
 
 /**
