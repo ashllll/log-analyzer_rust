@@ -13,7 +13,7 @@ import toast from 'react-hot-toast';
 // Types
 // ============================================================================
 
-export type Page = 'search' | 'keywords' | 'workspaces' | 'tasks' | 'settings' | 'performance-monitoring';
+export type Page = 'search' | 'keywords' | 'workspaces' | 'tasks' | 'settings';
 export type ToastType = 'success' | 'error' | 'info';
 
 export interface Toast {
