@@ -44,7 +44,13 @@ impl ArchiveHandler for RarHandler {
 
         // 使用 tokio::task::spawn_blocking 在阻塞型上下文中运行 unrar
         let result = tokio::task::spawn_blocking(move || {
-            extract_rar_sync(&source_str, &target_str, max_file_size, max_total_size, max_file_count)
+            extract_rar_sync(
+                &source_str,
+                &target_str,
+                max_file_size,
+                max_total_size,
+                max_file_count,
+            )
         })
         .await
         .map_err(|e| {
@@ -186,8 +192,7 @@ fn extract_rar_sync(
         if file_info.size > max_file_size {
             summary.add_error(format!(
                 "File {} exceeds maximum size limit of {} bytes, skipped",
-                file_info.name,
-                max_file_size
+                file_info.name, max_file_size
             ));
             continue;
         }
@@ -254,7 +259,10 @@ fn parse_unrar_output(output: &str) -> Vec<FileInfo> {
 
     for line in output.lines() {
         // 跳过标题行和状态行
-        if line.starts_with("Extracting from") || line.starts_with("Creating") || line.starts_with("All OK") {
+        if line.starts_with("Extracting from")
+            || line.starts_with("Creating")
+            || line.starts_with("All OK")
+        {
             continue;
         }
         if line.trim().is_empty() {
