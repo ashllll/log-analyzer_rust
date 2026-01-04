@@ -784,6 +784,94 @@ pub async fn process_path_with_cas_and_checkpoints(
     Ok(())
 }
 
+/// 将归档文件作为普通文件处理的辅助函数
+///
+/// 当归档无法提取时（如RAR没有unrar），将归档本身作为普通文件添加到索引
+async fn store_file_as_regular(
+    path: &Path,
+    virtual_path: &str,
+    context: &CasProcessingContext,
+    parent_archive_id: Option<i64>,
+) -> Result<()> {
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| AppError::validation_error("Invalid file name"))?
+        .to_string_lossy()
+        .to_string();
+
+    info!(
+        file = %file_name,
+        virtual_path = %virtual_path,
+        "Storing unsupported archive as regular file"
+    );
+
+    // Store file content in CAS using streaming (memory-efficient)
+    let hash = context.cas.store_file_streaming(path).await?;
+
+    // Get file metadata
+    let file_size = fs::metadata(path)
+        .await
+        .map(|m| m.len() as i64)
+        .unwrap_or(0);
+
+    let modified_time = fs::metadata(path)
+        .await
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+
+    // Detect MIME type based on extension
+    let mime_type = path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .and_then(|ext| match ext.to_lowercase().as_str() {
+            "log" | "txt" => Some("text/plain".to_string()),
+            "json" => Some("application/json".to_string()),
+            "xml" => Some("application/xml".to_string()),
+            "gz" => Some("application/gzip".to_string()),
+            "zip" => Some("application/zip".to_string()),
+            "rar" => Some("application/x-rar-compressed".to_string()),
+            "tar" => Some("application/x-tar".to_string()),
+            _ => None,
+        });
+
+    // Create file metadata
+    let file_metadata = FileMetadata {
+        id: 0,
+        sha256_hash: hash.clone(),
+        virtual_path: normalize_path_separator(virtual_path),
+        original_name: file_name.clone(),
+        size: file_size,
+        modified_time,
+        mime_type,
+        parent_archive_id,
+        depth_level: 0,
+    };
+
+    // Insert into metadata store
+    let file_id = context.metadata_store.insert_file(&file_metadata).await?;
+
+    // Update checkpoint
+    context
+        .update_checkpoint(path.to_path_buf(), file_size as u64)
+        .await?;
+
+    // Maybe save checkpoint
+    context.maybe_save_checkpoint().await?;
+
+    debug!(
+        file_id = file_id,
+        hash = %hash,
+        virtual_path = %virtual_path,
+        size = file_size,
+        "Stored unsupported archive as regular file"
+    );
+
+    Ok(())
+}
+
 /// Process path recursively using CAS and MetadataStore
 ///
 /// This is the new CAS-based implementation that replaces the old HashMap-based approach.
@@ -957,6 +1045,34 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
                 result.extracted_files
             }
             Err(e) => {
+                let error_msg = e.to_string();
+
+                // 检测是否是无支撑的格式（如RAR没有unrar）
+                let is_unsupported_format = error_msg.contains("unrar binary not found")
+                    || error_msg.contains("Failed to locate unrar")
+                    || error_msg.contains("Failed to execute unrar");
+
+                if is_unsupported_format {
+                    // 将归档状态更新为 unsupported
+                    context
+                        .metadata_store
+                        .update_archive_status(archive_id, "unsupported")
+                        .await?;
+
+                    warn!(
+                        archive = %file_name,
+                        error = %error_msg,
+                        "Archive format not supported, treating as regular file"
+                    );
+
+                    // 将归档本身作为普通文件添加到索引
+                    store_file_as_regular(archive_path, virtual_path, context, parent_archive_id)
+                        .await?;
+
+                    return Ok(());
+                }
+
+                // 其他提取错误仍然失败
                 context
                     .metadata_store
                     .update_archive_status(archive_id, "failed")
@@ -981,6 +1097,34 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
                 summary.extracted_files
             }
             Err(e) => {
+                let error_msg = e.to_string();
+
+                // 检测是否是无支撑的格式（如RAR没有unrar）
+                let is_unsupported_format = error_msg.contains("unrar binary not found")
+                    || error_msg.contains("Failed to locate unrar")
+                    || error_msg.contains("Failed to execute unrar");
+
+                if is_unsupported_format {
+                    // 将归档状态更新为 unsupported
+                    context
+                        .metadata_store
+                        .update_archive_status(archive_id, "unsupported")
+                        .await?;
+
+                    warn!(
+                        archive = %file_name,
+                        error = %error_msg,
+                        "Archive format not supported, treating as regular file"
+                    );
+
+                    // 将归档本身作为普通文件添加到索引
+                    store_file_as_regular(archive_path, virtual_path, context, parent_archive_id)
+                        .await?;
+
+                    return Ok(());
+                }
+
+                // 其他提取错误仍然失败
                 context
                     .metadata_store
                     .update_archive_status(archive_id, "failed")
@@ -1328,10 +1472,27 @@ async fn extract_and_process_archive(
                 result.extracted_files
             }
             Err(e) => {
-                return Err(AppError::archive_error(
-                    format!("Enhanced extraction failed for {}: {}", file_name, e),
-                    Some(archive_path.to_path_buf()),
-                ));
+                // 检测是否是无支撑的格式（如RAR没有unrar）
+                // 注意：旧版实现没有context，这里只记录警告
+                let error_msg = e.to_string();
+                let is_unsupported_format = error_msg.contains("unrar binary not found")
+                    || error_msg.contains("Failed to locate unrar")
+                    || error_msg.contains("Failed to execute unrar");
+
+                if is_unsupported_format {
+                    warn!(
+                        archive = %file_name,
+                        error = %error_msg,
+                        "Archive format not supported in legacy mode, skipping"
+                    );
+                    // 返回空文件列表表示没有提取任何文件
+                    Vec::new()
+                } else {
+                    return Err(AppError::archive_error(
+                        format!("Enhanced extraction failed for {}: {}", file_name, e),
+                        Some(archive_path.to_path_buf()),
+                    ));
+                }
             }
         }
     } else {
@@ -1341,15 +1502,34 @@ async fn extract_and_process_archive(
             "Using legacy extraction system"
         );
 
-        let summary = archive_manager
+        let summary = match archive_manager
             .extract_archive(archive_path, &extract_dir)
             .await
-            .map_err(|e| {
-                AppError::archive_error(
+        {
+            Ok(s) => s,
+            Err(e) => {
+                let error_msg = e.to_string();
+
+                // 检测是否是无支撑的格式（如RAR没有unrar）
+                let is_unsupported_format = error_msg.contains("unrar binary not found")
+                    || error_msg.contains("Failed to locate unrar")
+                    || error_msg.contains("Failed to execute unrar");
+
+                if is_unsupported_format {
+                    warn!(
+                        archive = %file_name,
+                        error = %error_msg,
+                        "Archive format not supported in legacy mode, skipping"
+                    );
+                    return Ok(());
+                }
+
+                return Err(AppError::archive_error(
                     format!("Failed to extract {}: {}", file_name, e),
                     Some(archive_path.to_path_buf()),
-                )
-            })?;
+                ));
+            }
+        };
 
         // 报告提取结果
         info!(
