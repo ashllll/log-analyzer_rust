@@ -473,23 +473,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_performance_monitoring() {
-        let (manager, _temp_dir) = create_test_concurrent_manager().await;
-
-        // Initially should not be degraded
-        assert!(!manager.is_performance_degraded());
-
-        // Execute multiple searches to build baseline
-        for _ in 0..5 {
-            let _result = manager.search_concurrent("test", None, None).await;
-        }
-
-        // Performance status should be available
-        let stats = manager.get_concurrent_stats();
-        assert!(stats.average_response_time_ms >= 0.0);
-    }
-
-    #[tokio::test]
     async fn test_load_detection() {
         let (manager, _temp_dir) = create_test_concurrent_manager().await;
 

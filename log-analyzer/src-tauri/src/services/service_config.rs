@@ -26,9 +26,6 @@ pub struct ServiceConfiguration {
     /// 资源管理配置
     #[serde(default)]
     pub resource_management: ResourceManagementConfig,
-    /// 监控配置
-    #[serde(default)]
-    pub monitoring: MonitoringConfig,
 }
 
 /// 事件总线配置
@@ -151,42 +148,6 @@ impl Default for ResourceManagementConfig {
     }
 }
 
-/// 监控配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MonitoringConfig {
-    /// 是否启用性能监控
-    #[serde(default = "default_performance_monitoring")]
-    pub performance_monitoring_enabled: bool,
-    /// 是否启用健康检查
-    #[serde(default = "default_health_checks")]
-    pub health_checks_enabled: bool,
-    /// 健康检查间隔（秒）
-    #[serde(default = "default_health_check_interval")]
-    pub health_check_interval_seconds: u64,
-}
-
-fn default_performance_monitoring() -> bool {
-    true
-}
-
-fn default_health_checks() -> bool {
-    true
-}
-
-fn default_health_check_interval() -> u64 {
-    60 // 1 分钟
-}
-
-impl Default for MonitoringConfig {
-    fn default() -> Self {
-        Self {
-            performance_monitoring_enabled: default_performance_monitoring(),
-            health_checks_enabled: default_health_checks(),
-            health_check_interval_seconds: default_health_check_interval(),
-        }
-    }
-}
-
 impl ServiceConfiguration {
     /// 从 TOML 文件加载配置
     ///
@@ -281,11 +242,6 @@ impl ServiceConfiguration {
                 leak_detection_timeout_seconds: 180,
                 auto_cleanup_enabled: true,
             },
-            monitoring: MonitoringConfig {
-                performance_monitoring_enabled: true,
-                health_checks_enabled: true,
-                health_check_interval_seconds: 30,
-            },
         }
     }
 
@@ -306,11 +262,6 @@ impl ServiceConfiguration {
                 cleanup_queue_size: 2000,
                 leak_detection_timeout_seconds: 600,
                 auto_cleanup_enabled: true,
-            },
-            monitoring: MonitoringConfig {
-                performance_monitoring_enabled: true,
-                health_checks_enabled: true,
-                health_check_interval_seconds: 60,
             },
         }
     }
@@ -350,15 +301,6 @@ impl ServiceConfiguration {
         }
         if self.resource_management.leak_detection_timeout_seconds == 0 {
             eyre::bail!("Leak detection timeout must be greater than 0");
-        }
-
-        // 验证监控配置
-        if self.monitoring.health_checks_enabled
-            && self.monitoring.health_check_interval_seconds == 0
-        {
-            eyre::bail!(
-                "Health check interval must be greater than 0 when health checks are enabled"
-            );
         }
 
         tracing::debug!("Service configuration validated successfully");

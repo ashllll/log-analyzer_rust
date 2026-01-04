@@ -43,12 +43,6 @@
       "shortening_threshold": "路径缩短阈值 (0.0-1.0)",
       "hash_length": "哈希长度 (8-32)"
     },
-    "performance": {
-      "title": "性能设置",
-      "enable_streaming": "启用流式提取",
-      "streaming_description": "减少内存使用",
-      "parallel_files_per_archive": "每个压缩包的并行文件数 (1-8)"
-    },
     "errors": {
       "max_depth_range": "最大深度必须在 1-20 之间",
       "must_be_positive": "必须为正数",

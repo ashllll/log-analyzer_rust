@@ -219,7 +219,6 @@ impl Service for CacheManagerService {
 pub struct AsyncResourceManagerService {
     resource_manager: Arc<AsyncResourceManager>,
     is_running: AtomicBool,
-    monitoring_handle: Arc<parking_lot::Mutex<Option<tokio::task::JoinHandle<()>>>>,
 }
 
 impl AsyncResourceManagerService {
@@ -227,7 +226,6 @@ impl AsyncResourceManagerService {
         Self {
             resource_manager,
             is_running: AtomicBool::new(false),
-            monitoring_handle: Arc::new(parking_lot::Mutex::new(None)),
         }
     }
 
@@ -247,45 +245,6 @@ impl Service for AsyncResourceManagerService {
             "Starting async resource manager service"
         );
 
-        // 只在有 tokio runtime 的情况下启动资源监控任务
-        if let Ok(handle) = tokio::runtime::Handle::try_current() {
-            let resource_manager = self.resource_manager.clone();
-            let is_running = Arc::new(AtomicBool::new(true));
-            let is_running_clone = is_running.clone();
-
-            let monitoring_task = handle.spawn(async move {
-                let mut interval = tokio::time::interval(std::time::Duration::from_secs(60)); // 1 minute
-
-                while is_running_clone.load(Ordering::SeqCst) {
-                    interval.tick().await;
-
-                    debug!("Monitoring async resources");
-                    let active_count = resource_manager.active_operations_count().await;
-                    let resource_count = resource_manager.resources_count().await;
-
-                    debug!(
-                        active_operations = active_count,
-                        resource_count = resource_count,
-                        "Async resource statistics"
-                    );
-
-                    // 如果有太多活跃资源，发出警告
-                    if active_count > 1000 {
-                        warn!(
-                            active_operations = active_count,
-                            "High number of active async operations detected"
-                        );
-                    }
-                }
-
-                info!("Async resource monitoring task stopped");
-            });
-
-            *self.monitoring_handle.lock() = Some(monitoring_task);
-        } else {
-            debug!("No tokio runtime available, skipping monitoring task");
-        }
-
         self.is_running.store(true, Ordering::SeqCst);
 
         info!("Async resource manager service started successfully");
@@ -301,12 +260,6 @@ impl Service for AsyncResourceManagerService {
 
         self.is_running.store(false, Ordering::SeqCst);
 
-        // 停止监控任务
-        if let Some(handle) = self.monitoring_handle.lock().take() {
-            handle.abort();
-            debug!("Async resource monitoring task aborted");
-        }
-
         info!("Async resource manager service stopped successfully");
         Ok(())
     }
@@ -315,10 +268,8 @@ impl Service for AsyncResourceManagerService {
         let is_healthy = self.is_running.load(Ordering::SeqCst);
 
         if is_healthy {
-            // 异步获取统计信息需要在异步上下文中
             Ok(ServiceHealth::healthy()
-                .with_detail("status".to_string(), "running".to_string())
-                .with_detail("monitoring".to_string(), "active".to_string()))
+                .with_detail("status".to_string(), "running".to_string()))
         } else {
             Ok(ServiceHealth::unhealthy("Service not running".to_string()))
         }
@@ -413,156 +364,7 @@ impl Service for FileWatcherService {
     }
 }
 
-/// 系统监控服务实现
-pub struct SystemMonitoringService {
-    is_running: AtomicBool,
-    monitoring_interval: std::time::Duration,
-    monitoring_handle: Arc<parking_lot::Mutex<Option<tokio::task::JoinHandle<()>>>>,
-    system_info: Arc<parking_lot::Mutex<sysinfo::System>>,
-}
-
-impl SystemMonitoringService {
-    pub fn new() -> Self {
-        Self {
-            is_running: AtomicBool::new(false),
-            monitoring_interval: std::time::Duration::from_secs(30), // 30 seconds
-            monitoring_handle: Arc::new(parking_lot::Mutex::new(None)),
-            system_info: Arc::new(parking_lot::Mutex::new(sysinfo::System::new_all())),
-        }
-    }
-
-    pub fn with_monitoring_interval(mut self, interval: std::time::Duration) -> Self {
-        self.monitoring_interval = interval;
-        self
-    }
-}
-
-impl Service for SystemMonitoringService {
-    fn start(&self) -> Result<()> {
-        if self.is_running.load(Ordering::SeqCst) {
-            return Ok(());
-        }
-
-        info!(
-            service = "SystemMonitoringService",
-            monitoring_interval_secs = self.monitoring_interval.as_secs(),
-            "Starting system monitoring service"
-        );
-
-        // 只在有 tokio runtime 的情况下启动系统监控任务
-        if let Ok(handle) = tokio::runtime::Handle::try_current() {
-            let system_info = self.system_info.clone();
-            let monitoring_interval = self.monitoring_interval;
-            let is_running = Arc::new(AtomicBool::new(true));
-            let is_running_clone = is_running.clone();
-
-            let monitoring_task = handle.spawn(async move {
-                let mut interval = tokio::time::interval(monitoring_interval);
-
-                while is_running_clone.load(Ordering::SeqCst) {
-                    interval.tick().await;
-
-                    // 更新系统信息
-                    {
-                        let mut sys = system_info.lock();
-                        sys.refresh_all();
-
-                        let memory_usage =
-                            sys.used_memory() as f64 / sys.total_memory() as f64 * 100.0;
-                        let cpu_usage = sys.global_cpu_usage();
-
-                        debug!(
-                            memory_usage_percent = format!("{:.2}", memory_usage),
-                            cpu_usage_percent = format!("{:.2}", cpu_usage),
-                            "System monitoring update"
-                        );
-
-                        // 发出警告如果资源使用过高
-                        if memory_usage > 90.0 {
-                            warn!(
-                                memory_usage_percent = format!("{:.2}", memory_usage),
-                                "High memory usage detected"
-                            );
-                        }
-
-                        if cpu_usage > 90.0 {
-                            warn!(
-                                cpu_usage_percent = format!("{:.2}", cpu_usage),
-                                "High CPU usage detected"
-                            );
-                        }
-                    }
-                }
-
-                info!("System monitoring task stopped");
-            });
-
-            *self.monitoring_handle.lock() = Some(monitoring_task);
-        } else {
-            debug!("No tokio runtime available, skipping monitoring task");
-        }
-
-        self.is_running.store(true, Ordering::SeqCst);
-
-        info!("System monitoring service started successfully");
-        Ok(())
-    }
-
-    fn stop(&self) -> Result<()> {
-        if !self.is_running.load(Ordering::SeqCst) {
-            return Ok(());
-        }
-
-        info!("Stopping system monitoring service");
-
-        self.is_running.store(false, Ordering::SeqCst);
-
-        // 停止监控任务
-        if let Some(handle) = self.monitoring_handle.lock().take() {
-            handle.abort();
-            debug!("System monitoring task aborted");
-        }
-
-        info!("System monitoring service stopped successfully");
-        Ok(())
-    }
-
-    fn health_check(&self) -> Result<ServiceHealth> {
-        let is_healthy = self.is_running.load(Ordering::SeqCst);
-
-        if is_healthy {
-            let sys = self.system_info.lock();
-            let memory_usage = sys.used_memory() as f64 / sys.total_memory() as f64 * 100.0;
-            let cpu_usage = sys.global_cpu_usage();
-
-            Ok(ServiceHealth::healthy()
-                .with_detail("status".to_string(), "running".to_string())
-                .with_detail(
-                    "memory_usage_percent".to_string(),
-                    format!("{:.2}", memory_usage),
-                )
-                .with_detail("cpu_usage_percent".to_string(), format!("{:.2}", cpu_usage))
-                .with_detail(
-                    "monitoring_interval_secs".to_string(),
-                    self.monitoring_interval.as_secs().to_string(),
-                ))
-        } else {
-            Ok(ServiceHealth::unhealthy("Service not running".to_string()))
-        }
-    }
-
-    fn service_name(&self) -> &'static str {
-        "SystemMonitoringService"
-    }
-}
-
 impl Default for FileWatcherService {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Default for SystemMonitoringService {
     fn default() -> Self {
         Self::new()
     }
@@ -620,15 +422,6 @@ mod tests {
         assert!(!service.is_running.load(Ordering::SeqCst));
 
         Ok(())
-    }
-
-    #[test]
-    fn test_system_monitoring_service_configuration() {
-        let service =
-            SystemMonitoringService::new().with_monitoring_interval(Duration::from_secs(10));
-
-        assert_eq!(service.monitoring_interval, Duration::from_secs(10));
-        assert_eq!(service.service_name(), "SystemMonitoringService");
     }
 
     #[tokio::test]

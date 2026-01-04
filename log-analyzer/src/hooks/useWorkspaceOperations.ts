@@ -4,7 +4,6 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { useAppStore } from '../stores/appStore';
 import { useWorkspaceStore, Workspace } from '../stores/workspaceStore';
 import { logger } from '../utils/logger';
-import { invokeWithRetry } from '../utils/ipcRetry';
 
 /**
  * 工作区操作Hook
@@ -166,27 +165,12 @@ export const useWorkspaceOperations = () => {
   const deleteWorkspaceOp = useCallback(async (id: string) => {
     logger.debug('deleteWorkspace called for id:', id);
     setOperationLoading(true);
-    
+
     try {
-      // 使用带重试的 IPC 调用
-      const result = await invokeWithRetry<void>('delete_workspace', 
-        { workspaceId: id },
-        {
-          maxRetries: 3,           // 最多重试3次
-          initialDelayMs: 1000,    // 初始延迟1秒
-          maxDelayMs: 5000,        // 最大延迟5秒
-          backoffMultiplier: 2,    // 指数退避系数
-          timeoutMs: 30000,        // 单次调用超时30秒
-          jitter: true,            // 启用抖动
-        }
-      );
-      
-      if (!result.success) {
-        throw new Error(result.error || 'Unknown error');
-      }
-      
-      logger.debug(`deleteWorkspace succeeded after ${result.attempts} attempts (${result.totalDuration}ms)`);
-      
+      await invoke<void>('delete_workspace', { workspaceId: id });
+
+      logger.debug('deleteWorkspace succeeded');
+
       // 后端删除成功,更新前端状态
       deleteWorkspace(id);
       

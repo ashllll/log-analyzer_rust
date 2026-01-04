@@ -27,13 +27,6 @@ interface ExtractionPolicy {
     hash_algorithm: string;
     hash_length: number;
   };
-  performance: {
-    temp_dir_ttl_hours: number;
-    log_retention_days: number;
-    enable_streaming: boolean;
-    directory_batch_size: number;
-    parallel_files_per_archive: number;
-  };
   audit: {
     enable_audit_logging: boolean;
     log_format: string;
@@ -62,13 +55,6 @@ const defaultPolicy: ExtractionPolicy = {
     shortening_threshold: 0.8,
     hash_algorithm: 'SHA256',
     hash_length: 16,
-  },
-  performance: {
-    temp_dir_ttl_hours: 24,
-    log_retention_days: 90,
-    enable_streaming: true,
-    directory_batch_size: 10,
-    parallel_files_per_archive: 4,
   },
   audit: {
     enable_audit_logging: true,
@@ -122,16 +108,6 @@ export function SettingsPage() {
     // Validate hash length
     if (policy.paths.hash_length < 8 || policy.paths.hash_length > 32) {
       newErrors.hash_length = t('settings.errors.hash_length_range');
-    }
-
-    // Validate parallel files
-    if (
-      policy.performance.parallel_files_per_archive < 1 ||
-      policy.performance.parallel_files_per_archive > 8
-    ) {
-      newErrors.parallel_files_per_archive = t(
-        'settings.errors.parallel_files_range'
-      );
     }
 
     setErrors(newErrors);
@@ -396,58 +372,6 @@ export function SettingsPage() {
               }
               min={8}
               max={32}
-            />
-          </FormField>
-        </div>
-      </Card>
-
-      {/* Performance Settings */}
-      <Card>
-        <h2 className="text-xl font-semibold mb-4">
-          {t('settings.performance.title')}
-        </h2>
-        <div className="space-y-4">
-          <FormField label={t('settings.performance.enable_streaming')}>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={policy.performance.enable_streaming}
-                onChange={(e) =>
-                  setPolicy({
-                    ...policy,
-                    performance: {
-                      ...policy.performance,
-                      enable_streaming: e.target.checked,
-                    },
-                  })
-                }
-                className="w-4 h-4"
-              />
-              <span className="text-sm text-gray-600">
-                {t('settings.performance.streaming_description')}
-              </span>
-            </label>
-          </FormField>
-
-          <FormField
-            label={t('settings.performance.parallel_files_per_archive')}
-            error={errors.parallel_files_per_archive}
-          >
-            <Input
-              type="number"
-              value={policy.performance.parallel_files_per_archive}
-              onChange={(e) =>
-                setPolicy({
-                  ...policy,
-                  performance: {
-                    ...policy.performance,
-                    parallel_files_per_archive:
-                      parseInt(e.target.value) || 4,
-                  },
-                })
-              }
-              min={1}
-              max={8}
             />
           </FormField>
         </div>

@@ -28,9 +28,6 @@ import { PageErrorFallback, CompactErrorFallback } from './components/ErrorFallb
 // 导入页面组件
 import { SearchPage, KeywordsPage, WorkspacesPage, TasksPage, SettingsPage } from './pages';
 
-// 导入 IPC 预热机制
-import { initializeIPCConnection } from './utils/ipcWarmup';
-
 // --- Main App Component (Internal) ---
 function AppContent() {
   const page = useAppStore((state) => state.page);
@@ -47,11 +44,6 @@ function AppContent() {
   const [importStatus] = useState("");  // 保留以兼容旧代码，但实际不再使用
 
   const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId) || null;
-
-  // IPC 连接预热（应用启动时）
-  useEffect(() => {
-    initializeIPCConnection();
-  }, []);
 
   // 初始化状态同步并监听工作区事件
   useEffect(() => {

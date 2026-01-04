@@ -79,10 +79,6 @@ pub struct CacheConfig {
     pub ttl: Duration,
     /// TTI（空闲时间）
     pub tti: Duration,
-    /// 是否启用性能监控
-    pub enable_monitoring: bool,
-    /// 监控报告间隔
-    pub monitoring_interval: Duration,
     /// 压缩阈值（字节），超过此大小的数据将被压缩
     pub compression_threshold: usize,
     /// 是否启用压缩
@@ -99,8 +95,6 @@ impl Default for CacheConfig {
             max_capacity: 1000,
             ttl: Duration::from_secs(300), // 5分钟TTL
             tti: Duration::from_secs(60),  // 1分钟TTI
-            enable_monitoring: true,
-            monitoring_interval: Duration::from_secs(60), // 每分钟报告一次
             compression_threshold: 10 * 1024,             // 10KB
             enable_compression: true,
             access_pattern_window: 1000,
@@ -1094,71 +1088,6 @@ impl CacheManager {
         }
 
         recommendations
-    }
-
-    /// 启动性能监控任务
-    pub fn start_monitoring(&self) -> tauri::async_runtime::JoinHandle<()> {
-        if !self.config.enable_monitoring {
-            tracing::info!("Cache monitoring is disabled in configuration");
-            return tauri::async_runtime::spawn(async {});
-        }
-
-        let metrics = Arc::clone(&self.metrics);
-        let interval = self.config.monitoring_interval;
-
-        tauri::async_runtime::spawn(async move {
-            let mut interval_timer = tokio::time::interval(interval);
-
-            loop {
-                interval_timer.tick().await;
-
-                let snapshot = metrics.snapshot();
-                let alerts = metrics.check_performance_alerts();
-
-                // 记录性能指标
-                tracing::info!(
-                    l1_hit_rate = %format!("{:.2}%", snapshot.l1_hit_rate * 100.0),
-                    total_requests = snapshot.total_requests,
-                    avg_access_time_ms = %format!("{:.2}ms", snapshot.avg_access_time_ms),
-                    avg_load_time_ms = %format!("{:.2}ms", snapshot.avg_load_time_ms),
-                    eviction_rate_per_min = %format!("{:.2}", snapshot.eviction_rate_per_minute),
-                    "Cache performance metrics"
-                );
-
-                // 处理告警
-                for alert in alerts {
-                    match alert.severity {
-                        AlertSeverity::Critical => {
-                            tracing::error!(
-                                alert_type = ?alert.alert_type,
-                                message = %alert.message,
-                                current_value = alert.current_value,
-                                threshold = alert.threshold_value,
-                                "Critical cache performance alert"
-                            );
-                        }
-                        AlertSeverity::Warning => {
-                            tracing::warn!(
-                                alert_type = ?alert.alert_type,
-                                message = %alert.message,
-                                current_value = alert.current_value,
-                                threshold = alert.threshold_value,
-                                "Cache performance warning"
-                            );
-                        }
-                        AlertSeverity::Info => {
-                            tracing::info!(
-                                alert_type = ?alert.alert_type,
-                                message = %alert.message,
-                                current_value = alert.current_value,
-                                threshold = alert.threshold_value,
-                                "Cache performance info"
-                            );
-                        }
-                    }
-                }
-            }
-        })
     }
 
     /// 获取缓存调试信息
