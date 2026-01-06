@@ -51,6 +51,63 @@ function AppContent() {
 
     const setupStateSync = async () => {
       try {
+        // ============================================================================
+        // 启动时检查关键依赖
+        // ============================================================================
+        
+        // 检查 RAR 支持状态
+        const rarSupport = await invoke('check_rar_support') as {
+          available: boolean;
+          path?: string;
+          platform: string;
+          architecture: string;
+          file_exists: boolean;
+          is_executable: boolean;
+          version_info?: string;
+          validation_errors?: string[];
+          install_guide?: string;
+        };
+      
+        console.log('[Startup] RAR support check:', rarSupport);
+      
+        if (!rarSupport.available) {
+          const errorDetails = [
+            `路径：${rarSupport.path || '未知'}`,
+            `平台：${rarSupport.platform}`,
+            `架构：${rarSupport.architecture}`,
+            `文件存在：${rarSupport.file_exists ? '是' : '否'}`,
+            `可执行：${rarSupport.is_executable ? '是' : '否'}`,
+          ];
+
+          if (rarSupport.version_info) {
+            errorDetails.push(`版本：${rarSupport.version_info}`);
+          }
+
+          if (rarSupport.validation_errors && rarSupport.validation_errors.length > 0) {
+            errorDetails.push(`验证错误：`);
+            rarSupport.validation_errors.forEach((err, idx) => {
+              errorDetails.push(`  ${idx + 1}. ${err}`);
+            });
+          }
+
+          console.error('[Startup] RAR support not available:', errorDetails);
+          addToast(
+            'error',
+            `RAR 解压功能不可用。${rarSupport.validation_errors?.join('; ') || '二进制文件缺失或已损坏。'}`
+          );
+        } else {
+          console.log('[Startup] RAR support available:', {
+            path: rarSupport.path,
+            version: rarSupport.version_info,
+            platform: rarSupport.platform,
+            architecture: rarSupport.architecture,
+          });
+        }
+      
+        // ============================================================================
+        // 继续原有的状态同步代码
+        // ============================================================================
+        
         // 初始化状态同步
         await invoke('init_state_sync');
         console.log('[StateSync] Initialized successfully');

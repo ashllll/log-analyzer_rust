@@ -82,12 +82,12 @@ impl ArchiveHandler for RarHandler {
 }
 
 /**
- * 获取对应平台的 unrar 二进制路径
+ * 获取 unrar 二进制路径（带完整的 fallback 机制）
  *
- * sidecar 二进制位于 resources/binaries 目录下
+ * 尝试多个可能的路径位置，按照优先级顺序
+ * 提供详细的诊断日志
  */
-fn get_unrar_path() -> PathBuf {
-    // 根据目标平台选择对应的 unrar 二进制
+pub fn get_unrar_path() -> PathBuf {
     let binary_name = match std::env::consts::OS {
         "macos" => "unrar-aarch64-apple-darwin",
         "linux" => "unrar-x86_64-unknown-linux-gnu",
@@ -95,23 +95,213 @@ fn get_unrar_path() -> PathBuf {
         _ => panic!("Unsupported platform: {}", std::env::consts::OS),
     };
 
-    // Tauri 应用中，二进制位于资源目录
-    // 开发模式使用当前可执行文件所在目录的 binaries 子目录
-    // 发布模式从可执行文件所在目录查找
-    let resource_dir = if cfg!(debug_assertions) {
-        // 开发模式：从当前工作目录的 binaries 目录查找
-        PathBuf::from("binaries")
-    } else {
-        // 发布模式：从可执行文件所在目录的 binaries 子目录查找
-        // 这是 Tauri 打包后 binary 的标准位置
-        std::env::current_exe()
-            .unwrap_or_else(|_| PathBuf::from("."))
-            .parent()
-            .unwrap_or(&PathBuf::from("."))
-            .to_path_buf()
+    let exe_path = match std::env::current_exe() {
+        Ok(path) => {
+            info!("Detected executable path: {}", path.display());
+            path
+        }
+        Err(e) => {
+            warn!("Failed to get current exe path: {}, using fallback", e);
+            PathBuf::from(".")
+        }
     };
 
-    resource_dir.join(binary_name)
+    let exe_dir = exe_path.parent().unwrap_or(&PathBuf::from("."));
+
+    // 路径优先级列表（按 Tauri 2.0 文档）
+    let candidate_paths: Vec<(PathBuf, &'static str)> = vec![
+        // 优先级 1：开发模式（当前工作目录的 binaries/）
+        {
+            let path = PathBuf::from("binaries").join(binary_name);
+            if path.exists() {
+                info!("Found unrar in dev mode: {}", path.display());
+                return path;
+            }
+            (path, "dev mode (binaries/)")
+        },
+        // 优先级 2：发布模式（与主 exe 同一目录）
+        {
+            let path = exe_dir.join(binary_name);
+            if path.exists() {
+                info!("Found unrar in release mode (same dir): {}", path.display());
+                return path;
+            }
+            (path, "release mode (same dir)")
+        },
+        // 优先级 3：发布模式（binaries 子目录，兼容性）
+        {
+            let path = exe_dir.join("binaries").join(binary_name);
+            if path.exists() {
+                info!("Found unrar in release mode (binaries subdir): {}", path.display());
+                return path;
+            }
+            (path, "release mode (binaries/)")
+        },
+        // 优先级 4：src-tauri/binaries/（开发模式 fallback）
+        {
+            let path = PathBuf::from("src-tauri/binaries").join(binary_name);
+            if path.exists() {
+                info!("Found unrar in src-tauri/binaries (fallback): {}", path.display());
+                return path;
+            }
+            (path, "src-tauri/binaries/")
+        },
+    ];
+
+    // 记录所有尝试的路径（用于诊断）
+    for (i, (path, desc)) in candidate_paths.iter().enumerate() {
+        info!("Candidate path {} ({}): {}", i + 1, desc, path.display());
+    }
+
+    // 返回第一个路径（即使不存在，让调用方处理）
+    let first_path = &candidate_paths[0].0;
+    warn!(
+        "No valid unrar path found, using first candidate: {}",
+        first_path.display()
+    );
+    first_path.clone()
+}
+
+/**
+ * 二进制文件验证结果
+ */
+pub struct BinaryValidationResult {
+    pub path: PathBuf,
+    pub exists: bool,
+    pub is_executable: bool,
+    pub is_valid: bool,
+    pub errors: Vec<String>,
+    pub version_info: Option<String>,
+}
+
+/**
+ * 验证二进制文件的完整性（运行时验证 - 方案 B）
+ *
+ * 检查：存在性、可执行性、版本信息
+ * 通过执行 `unrar --version` 进行实际验证
+ */
+pub fn validate_unrar_binary(path: &Path) -> BinaryValidationResult {
+    let mut result = BinaryValidationResult {
+        path: path.to_path_buf(),
+        exists: false,
+        is_executable: false,
+        is_valid: false,
+        errors: Vec::new(),
+        version_info: None,
+    };
+
+    // 1. 检查文件存在性
+    result.exists = path.exists();
+    if !result.exists {
+        result.errors.push(format!(
+            "File does not exist: {}",
+            path.display()
+        ));
+        return result;
+    }
+
+    // 2. 检查可执行性
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        match std::fs::metadata(path) {
+            Ok(metadata) => {
+                let perms = metadata.permissions();
+                result.is_executable = perms.mode() & 0o111 != 0;
+                if !result.is_executable {
+                    result.errors.push("File is not executable (missing execute permission)".to_string());
+                }
+            }
+            Err(e) => {
+                result.errors.push(format!("Failed to check permissions: {}", e));
+                return result;
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        match std::fs::metadata(path) {
+            Ok(_metadata) => {
+                // Windows .exe 文件默认可执行，验证文件扩展名
+                result.is_executable = path
+                    .extension()
+                    .map(|ext| ext.eq_ignore_ascii_case("exe"))
+                    .unwrap_or(false);
+                if !result.is_executable {
+                    result.errors.push("File does not have .exe extension".to_string());
+                }
+            }
+            Err(e) => {
+                result.errors.push(format!("Failed to check metadata: {}", e));
+                return result;
+            }
+        }
+    }
+
+    // 3. 运行时验证（执行 unrar --version）
+    match Command::new(path)
+        .args(&["--version"])
+        .output()
+    {
+        Ok(output) => {
+            if output.status.success() {
+                // 检查输出是否包含版本信息
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                
+                // unrar --version 通常输出到 stderr
+                let version_output = if !stdout.is_empty() {
+                    stdout.to_string()
+                } else if !stderr.is_empty() {
+                    stderr.to_string()
+                } else {
+                    String::new()
+                };
+
+                if !version_output.is_empty()
+                    && (version_output.to_lowercase().contains("unrar")
+                        || version_output.contains("RAR")
+                {
+                    result.version_info = Some(version_output.trim().to_string());
+                    result.is_valid = true;
+                    info!(
+                        "unrar binary validation passed: version check succeeded. Version: {}",
+                        version_output.trim()
+                    );
+                } else {
+                    result.errors.push(format!(
+                        "Invalid unrar binary (unexpected output): stdout='{}', stderr='{}'",
+                        stdout.trim(),
+                        stderr.trim()
+                    ));
+                }
+            } else {
+                // 命令执行失败
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                result.errors.push(format!(
+                    "unrar --version failed with exit code {}: {}",
+                    output.status.code().unwrap_or(-1),
+                    stderr.trim()
+                ));
+            }
+        }
+        Err(e) => {
+            // 执行命令失败
+            warn!(
+                "Failed to execute unrar --version: {} (will check on actual use)",
+                e
+            );
+            // 如果基本检查都通过，认为是有效的
+            result.is_valid = result.exists && result.is_executable;
+        }
+    }
+
+    // 4. 综合验证结果
+    result.is_valid = result.exists && result.is_executable && result.errors.is_empty();
+
+    result
 }
 
 /**
@@ -133,14 +323,48 @@ fn extract_rar_sync(
     let unrar_path = get_unrar_path();
     info!("Using unrar binary: {}", unrar_path.display());
 
-    // 检查 unrar 二进制是否存在
-    if !unrar_path.exists() {
+    // 验证 unrar 二进制完整性（运行时验证）
+    let validation = validate_unrar_binary(&unrar_path);
+
+    if !validation.exists {
         summary.add_error(format!(
-            "RAR extraction failed: unrar binary not found at {}",
-            unrar_path.display()
+            "RAR extraction failed: unrar binary not found at {}. \
+            Expected locations (in order of priority):\n  \
+            1. binaries/{} (dev mode)\n  \
+            2. same directory as exe (release mode)\n  \
+            3. binaries/{} subdirectory (release mode)\n  \
+            4. src-tauri/binaries/{} (fallback)\n\n  \
+            Please reinstall the application from official source.",
+            unrar_path.display(),
+            std::env::consts::OS
         ));
         return Ok(summary);
     }
+
+    if !validation.is_valid {
+        // 记录所有验证错误
+        for error in &validation.errors {
+            error!("unrar binary validation error: {}", error);
+        }
+
+        summary.add_error(format!(
+            "RAR extraction failed: unrar binary validation failed. \
+            Path: {}, Executable: {}, Version: {}. \
+            Errors:\n  {}",
+            unrar_path.display(),
+            if validation.is_executable { "是" } else { "否" },
+            validation.version_info.as_deref().unwrap_or("未知"),
+            validation.errors.join("\n  ")
+        ));
+        return Ok(summary);
+    }
+
+    // 验证成功，继续执行
+    info!(
+        "unrar binary validation passed: path={}, version={}",
+        unrar_path.display(),
+        validation.version_info.as_deref().unwrap_or("未知")
+    );
 
     // 调用 unrar 进行解压
     // unrar x -y source target\

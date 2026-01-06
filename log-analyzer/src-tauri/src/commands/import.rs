@@ -7,29 +7,52 @@ use tauri::{command, AppHandle, Emitter, Manager, State};
 use tracing::error;
 use uuid::Uuid;
 
+use crate::archive::rar_handler::{get_unrar_path, validate_unrar_binary};
 use crate::models::AppState;
 use crate::storage::{verify_after_import, MetadataStore};
 use crate::utils::{canonicalize_path, validate_path_param, validate_workspace_id};
 
+/**
+ * 检查 RAR 支持状态
+ *
+ * 实际检查 unrar 二进制文件是否存在并验证完整性（运行时验证）
+ * 返回详细的诊断信息
+ */
 #[command]
-pub async fn import_folder(
-    app: AppHandle,
-    path: String,
-    #[allow(non_snake_case)] workspaceId: String,
-    state: State<'_, AppState>,
-) -> Result<String, String> {
-    validate_path_param(&path, "path")?;
-    validate_workspace_id(&workspaceId)?;
-
-    let app_handle = app.clone();
-    let task_id = Uuid::new_v4().to_string();
-    let task_id_clone = task_id.clone();
-    let workspace_id_clone = workspaceId.clone();
-
-    let source_path = Path::new(&path);
-    if !source_path.exists() {
-        return Err(format!("Path does not exist: {}", path));
+pub async fn check_rar_support() -> Result<serde_json::Value, String> {
+    let unrar_path = get_unrar_path();
+    let validation = validate_unrar_binary(&unrar_path);
+    
+    if !validation.exists {
+        warn!(
+            "unrar binary not found at: {}",
+            unrar_path.display()
+        );
     }
+    
+    if !validation.is_valid {
+        for error in &validation.errors {
+            warn!("unrar binary validation error: {}", error);
+        }
+    }
+    
+    Ok(serde_json::json!({
+        "available": validation.is_valid,
+        "path": unrar_path.display().to_string(),
+        "platform": std::env::consts::OS,
+        "architecture": std::env::consts::ARCH,
+        "file_exists": validation.exists,
+        "is_executable": validation.is_executable,
+        "version_info": validation.version_info,
+        "validation_errors": validation.errors,
+        "bundled": true,
+        "install_guide": if !validation.is_valid {
+            Some("unrar 二进制文件似乎缺失或已损坏。请从官方源重新安装应用程序。")
+        } else {
+            None
+        }
+    }))
+}
 
     let canonical_path = match canonicalize_path(source_path) {
         Ok(path) => path,

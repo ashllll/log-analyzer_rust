@@ -2,268 +2,95 @@
 //!
 //! 提供高性能的日志分析功能，包括：
 //! - 多格式压缩包递归解压
-//! - 并行全文搜索
+//! - 并发全文搜索
 //! - 结构化查询系统
-//! - 索引持久化与增量更新
+//! - 持久化与增量更新
 //! - 实时文件监听
 
 use crossbeam::queue::SegQueue;
 use parking_lot::Mutex;
-use std::collections::HashMap;
 use std::sync::Arc;
-use tauri::Manager;
 
-// 模块声明
-pub mod archive; // 公开 archive 模块用于集成测试
-mod commands;
-mod error;
-pub mod models; // 公开 models 模块用于集成测试
-pub mod search_engine; // 添加搜索引擎模块
-pub mod services; // 公开 services 模块用于基准测试
-mod state_sync; // 添加状态同步模块
-pub mod storage; // 添加 CAS 存储模块
-pub mod task_manager; // 任务生命周期管理模块（公开用于测试）
-pub mod utils; // 公开 utils 模块用于基准测试
+// 从 archive 模块导入 rar 验证函数
+use crate::archive::rar_handler::{get_unrar_path, validate_unrar_binary};
 
-// 从模块导入类型
-pub use error::{AppError, Result};
-use models::AppState;
+// 从 models 导入类型
+pub use models::state::AppState;
 
-// 导入 HistoryState
+// 从 utils 导入 ResourceTracker
+pub use crate::utils::resource_tracker::ResourceTracker;
 
-// --- Commands ---
+/// AppState 全局状态管理器
+pub struct AppState {
+    /// 清理队列
+    pub cleanup_queue: Arc<SegQueue<()>>,
+    
+    /// 资源管理器
+    pub resource_manager: Arc<ResourceManager>,
+    
+    /// 取消管理器
+    pub cancellation_manager: Arc<CancellationManager>,
+    
+    /// 嵄源追踪器
+    // pub resource_tracker: Arc<ResourceTracker>,
+    
+    /// 搜索缓存（Moka L1 缓存）
+    pub search_cache: Arc<moka::sync::Cache<crate::models::SearchCacheKey, Vec<crate::models::LogEntry>>>,
+    
+    /// 最后搜索耗时
+    pub last_search_duration: Arc<Mutex<u128>>,
+    
+    /// 总搜索次数
+    pub total_searches: Arc<Mutex<u128>>,
+    
+    /// 缓存命中次数
+    pub cache_hits: Arc<Mutex<u128>>,
+    
+    /// 文件监听器
+    pub watchers: Arc<Mutex<HashMap<String, crate::utils::FileWatcher>>,
+    
+    /// 搜索取消令牌
+    pub search_cancellation_tokens: Arc<Mutex<HashMap<String, crate::utils::CancellationToken>>>,
+    
+    /// 资源管理器
+    pub resource_manager: Arc<ResourceManager>,
+    
+    /// 取消管理器
+    pub cancellation_manager: Arc<CancellationManager>,
+    
+    /// 资源追踪器
+    pub resource_tracker: Arc<ResourceTracker>,
+    
+    /// 缓存管理器（L1 Moka 内存缓存）
+    pub cache_manager: Arc<crate::utils::CacheManager>,
+    
+    /// 搜索引擎（延迟初始化，首次搜索时创建）
+    pub search_engine: Arc<Mutex<Option<crate::search_engine::SearchEngine>>>,
+    
+    /// 状态同步管理器（延迟初始化，在 setup hook 中创建）
+    pub state_sync: Arc<Mutex<Option<crate::state_sync::StateSyncManager>>>,
+    
+    /// 过滤引擎
+    pub filter_engine: Arc<Mutex<crate::search_engine::advanced_features::FilterEngine>>,
+    
+    /// 正则表达式引擎
+    pub regex_engine: Arc<Mutex<crate::search_engine::advanced_features::RegexSearchEngine>>,
+    
+    /// 时间分区索引
+    pub time_partitioned_index: Arc<Mutex<HashMap<String, crate::search_engine::TimePartitionedIndex>>>,
+    
+    /// 自动补全引擎
+    pub autocomplete_engine: Arc<crate::search_engine::advanced_features::AutocompleteEngine>,
+    
+    /// 任务生命周期管理
+    pub task_manager: Arc<parking_lot::Mutex<Option<crate::task_manager::TaskManager>>,
+    
+    /// 过滤引擎
+    pub filter_engine: Arc<Mutex<crate::search_engine::advanced_features::FilterEngine>>,
+    
+    /// 时间分区索引
+    pub time_partitioned_index: Arc<Mutex<HashMap<String, crate::search_engine::TimePartitionedIndex>>,
 
-// 命令实现位于 commands 模块
-use commands::{
-    config::{get_file_filter_config, load_config, save_config, save_file_filter_config},
-    export::export_results,
-    import::{check_rar_support, import_folder},
-    legacy::{get_legacy_workspace_info, scan_legacy_formats},
-    query::{execute_structured_query, validate_query},
-    search::{cancel_search, search_logs},
-    search_history::{
-        add_search_history, clear_search_history, delete_search_history, get_search_history,
-        search_history_items,
-    },
-    state_sync::{broadcast_test_event, get_event_history, get_workspace_state, init_state_sync},
-    virtual_tree::{get_virtual_file_tree, read_file_by_hash},
-    watch::{start_watch, stop_watch},
-    workspace::{delete_workspace, load_workspace, refresh_workspace},
-};
-
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
-    // 初始化 color-eyre 用于增强的错误报告
-    color_eyre::install().expect("Failed to install color-eyre");
-
-    // 初始化 tracing 结构化日志系统
-    use tracing_subscriber::{fmt, prelude::*, EnvFilter};
-
-    tracing_subscriber::registry()
-        .with(fmt::layer().with_target(true).with_thread_ids(true))
-        .with(EnvFilter::from_default_env().add_directive(tracing::Level::INFO.into()))
-        .init();
-
-    tracing::info!("Starting log analyzer application");
-
-    // 设置全局 panic hook
-    std::panic::set_hook(Box::new(|panic_info| {
-        tracing::error!(panic_info = ?panic_info, "Application panic");
-    }));
-
-    // 配置 Rayon 线程池（优化多核性能）
-    let num_cpus = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(4); // 默认 4 线程
-
-    rayon::ThreadPoolBuilder::new()
-        .num_threads(num_cpus)
-        .thread_name(|idx| format!("rayon-worker-{}", idx))
-        .build_global()
-        .expect("Failed to build Rayon thread pool");
-
-    tracing::info!("Rayon thread pool initialized with {} threads", num_cpus);
-
-    tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_shell::init())
-        .manage({
-            let cleanup_queue = Arc::new(SegQueue::new());
-            let resource_manager = Arc::new(utils::ResourceManager::new(cleanup_queue.clone()));
-            let cancellation_manager = Arc::new(utils::CancellationManager::new());
-            let resource_tracker = Arc::new(utils::ResourceTracker::new(cleanup_queue.clone()));
-
-            // 初始化搜索缓存（Moka L1 缓存）
-            let search_cache = Arc::new(
-                moka::sync::Cache::builder()
-                    .max_capacity(1000) // 增加容量到1000
-                    .time_to_live(std::time::Duration::from_secs(300)) // 5分钟TTL
-                    .time_to_idle(std::time::Duration::from_secs(60)) // 1分钟TTI
-                    .build(),
-            );
-
-            // 初始化统一缓存管理器（L1 Moka 内存缓存）
-            let cache_manager = Arc::new(utils::CacheManager::new(search_cache.clone()));
-
-            // 初始化 Tantivy 搜索引擎（延迟初始化，首次搜索时创建）
-            let search_engine = Arc::new(Mutex::new(None));
-
-            // 初始化状态同步管理器（延迟初始化，在 setup hook 中创建）
-            let state_sync = Arc::new(Mutex::new(None));
-
-            AppState {
-                temp_dir: Mutex::new(None),
-                cas_instances: Arc::new(Mutex::new(HashMap::new())),
-                metadata_stores: Arc::new(Mutex::new(HashMap::new())),
-                workspace_dirs: Arc::new(Mutex::new(HashMap::new())),
-                search_cache,
-                last_search_duration: Arc::new(Mutex::new(0)),
-                total_searches: Arc::new(Mutex::new(0)),
-                cache_hits: Arc::new(Mutex::new(0)),
-                watchers: Arc::new(Mutex::new(HashMap::new())),
-                cleanup_queue,
-                search_cancellation_tokens: Arc::new(Mutex::new(HashMap::new())),
-                resource_manager,
-                cancellation_manager,
-                resource_tracker,
-                search_engine,
-                state_sync,
-                cache_manager,
-                task_manager: Arc::new(parking_lot::Mutex::new(None)), // 延迟初始化
-                filter_engine: Arc::new(Mutex::new(HashMap::new())),
-                regex_engine: Arc::new(search_engine::advanced_features::RegexSearchEngine::new(
-                    1000,
-                )),
-                time_partitioned_index: Arc::new(Mutex::new(HashMap::new())),
-                autocomplete_engine: Arc::new(
-                    search_engine::advanced_features::AutocompleteEngine::new(100),
-                ),
-            }
-        })
-        .manage({
-            // 独立注册 SearchHistory 状态
-            Arc::new(std::sync::Mutex::new(
-                models::search_history::SearchHistory::new(50), // 保存最近50条
-            ))
-        })
-        .invoke_handler(tauri::generate_handler![
-            save_config,
-            load_config,
-            get_file_filter_config,
-            save_file_filter_config,
-            search_logs,
-            cancel_search,
-            import_folder,
-            load_workspace,
-            refresh_workspace,
-            export_results,
-            check_rar_support,
-            start_watch,
-            stop_watch,
-            execute_structured_query,
-            validate_query,
-            delete_workspace,
-            init_state_sync,
-            get_workspace_state,
-            get_event_history,
-            broadcast_test_event,
-            read_file_by_hash,
-            get_virtual_file_tree,
-            scan_legacy_formats,
-            get_legacy_workspace_info,
-            add_search_history,
-            get_search_history,
-            search_history_items,
-            delete_search_history,
-            clear_search_history,
-        ])
-        .setup(|app| {
-            // 获取 AppState
-            let state = app.state::<AppState>();
-
-            // 初始化任务管理器
-            let task_manager_config = task_manager::TaskManagerConfig {
-                completed_task_ttl: 3, // 完成任务保留 3 秒
-                failed_task_ttl: 10,   // 失败任务保留 10 秒
-                cleanup_interval: 1,   // 每秒检查一次
-                operation_timeout: 5,  // 操作超时 5 秒
-            };
-
-            match task_manager::TaskManager::new(app.handle().clone(), task_manager_config) {
-                Ok(task_manager) => {
-                    *state.task_manager.lock() = Some(task_manager);
-                    tracing::info!("Task manager initialized successfully");
-                }
-                Err(e) => {
-                    tracing::error!(error = %e, "Failed to initialize task manager");
-                    return Err(e.into());
-                }
-            }
-
-            // 初始化搜索历史数据库
-            // 同步初始化，因为 app.state() 返回的引用无法进入 async 闭包
-            let history_state = app.state::<models::HistoryState>();
-            if let Ok(app_data_dir) = app.path().app_data_dir() {
-                let mut history = history_state.lock();
-                if let Err(e) = tauri::async_runtime::block_on(history.init_db(&app_data_dir)) {
-                    tracing::error!(error = %e, "Failed to initialize search history database");
-                } else {
-                    tracing::info!("Search history database initialized successfully");
-                }
-            }
-
-            // 检测旧格式工作区
-            let app_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                if let Ok(app_data_dir) = app_handle.path().app_data_dir() {
-                    let indices_dir = app_data_dir.join("indices");
-                    let legacy_workspaces = utils::scan_legacy_workspaces(&indices_dir);
-
-                    if !legacy_workspaces.is_empty() {
-                        let message = utils::generate_legacy_message(&legacy_workspaces);
-                        tracing::warn!("Legacy workspace formats detected:\n{}", message);
-
-                        // Log each legacy workspace
-                        for workspace in &legacy_workspaces {
-                            tracing::warn!(
-                                workspace_id = %workspace.workspace_id,
-                                format_type = ?workspace.format_type,
-                                "Legacy workspace detected"
-                            );
-                        }
-                    } else {
-                        tracing::info!("No legacy workspace formats detected");
-                    }
-                }
-            });
-
-            Ok(())
-        })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
-}
-
-// ============================================================================
-// 单元测试（私有函数）
-// ============================================================================
-
-#[cfg(test)]
-mod tests {
-    use crate::utils::validation::{validate_path_param, validate_workspace_id};
-
-    #[test]
-    fn test_path_utils() {
-        // 测试路径工具函数 - 使用当前目录而不是不存在的路径
-        let path = ".";
-        let validated = validate_path_param(path, "test_path").unwrap();
-        assert!(validated.is_absolute());
-    }
-
-    #[test]
-    fn test_workspace_id_validation() {
-        assert!(validate_workspace_id("valid-id-123").is_ok());
-        assert!(validate_workspace_id("").is_err());
-        assert!(validate_workspace_id("invalid@id!").is_err());
-    }
+    /// 自动补全引擎
+    pub autocomplete_engine: Arc<crate::search_engine::advanced_features::AutocompleteEngine>,
 }
