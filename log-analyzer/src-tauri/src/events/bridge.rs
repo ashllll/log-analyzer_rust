@@ -166,7 +166,8 @@ pub async fn init_tauri_bridge(app_handle: AppHandle) -> TauriBridge {
 pub mod emit {
     use super::*;
     use crate::events::emit_event;
-    use crate::models::{FileChangeEvent, LogEntry, SearchResultSummary, TaskProgress};
+    use crate::models::{FileChangeEvent, LogEntry, TaskProgress};
+    use crate::models::search_statistics::SearchResultSummary;
 
     /// Emit a search start event
     pub fn search_start(

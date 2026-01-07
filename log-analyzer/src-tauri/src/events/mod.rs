@@ -28,7 +28,7 @@ pub enum AppEvent {
         results: Vec<crate::models::LogEntry>,
     },
     SearchSummary {
-        summary: crate::models::SearchResultSummary,
+        summary: crate::models::search_statistics::SearchResultSummary,
     },
     SearchComplete {
         count: usize,

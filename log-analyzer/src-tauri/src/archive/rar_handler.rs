@@ -106,7 +106,8 @@ pub fn get_unrar_path() -> PathBuf {
         }
     };
 
-    let exe_dir = exe_path.parent().unwrap_or(&PathBuf::from("."));
+    let binding = PathBuf::from(".");
+    let exe_dir = exe_path.parent().unwrap_or(&binding);
 
     // 路径优先级列表（按 Tauri 2.0 文档）
     let candidate_paths: Vec<(PathBuf, &'static str)> = vec![
@@ -221,7 +222,6 @@ pub fn validate_unrar_binary(path: &Path) -> BinaryValidationResult {
 
     #[cfg(windows)]
     {
-        use std::os::windows::fs::MetadataExt;
         match std::fs::metadata(path) {
             Ok(_metadata) => {
                 // Windows .exe 文件默认可执行，验证文件扩展名
@@ -250,7 +250,7 @@ pub fn validate_unrar_binary(path: &Path) -> BinaryValidationResult {
                 // 检查输出是否包含版本信息
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 let stderr = String::from_utf8_lossy(&output.stderr);
-                
+
                 // unrar --version 通常输出到 stderr
                 let version_output = if !stdout.is_empty() {
                     stdout.to_string()
@@ -262,7 +262,7 @@ pub fn validate_unrar_binary(path: &Path) -> BinaryValidationResult {
 
                 if !version_output.is_empty()
                     && (version_output.to_lowercase().contains("unrar")
-                        || version_output.contains("RAR")
+                        || version_output.contains("RAR"))
                 {
                     result.version_info = Some(version_output.trim().to_string());
                     result.is_valid = true;
@@ -328,15 +328,8 @@ fn extract_rar_sync(
 
     if !validation.exists {
         summary.add_error(format!(
-            "RAR extraction failed: unrar binary not found at {}. \
-            Expected locations (in order of priority):\n  \
-            1. binaries/{} (dev mode)\n  \
-            2. same directory as exe (release mode)\n  \
-            3. binaries/{} subdirectory (release mode)\n  \
-            4. src-tauri/binaries/{} (fallback)\n\n  \
-            Please reinstall the application from official source.",
-            unrar_path.display(),
-            std::env::consts::OS
+            "RAR extraction failed: unrar binary not found at {}. Expected locations (in order of priority):\n  1. binaries/ (dev mode)\n  2. same directory as exe (release mode)\n  3. binaries/ subdirectory (release mode)\n  4. src-tauri/binaries/ (fallback)\n\n  Please reinstall the application from official source.",
+            unrar_path.display()
         ));
         return Ok(summary);
     }
@@ -477,7 +470,7 @@ fn parse_unrar_output(output: &str) -> Vec<FileInfo> {
     // unrar 输出格式:
     // Extracting from archive.rar
     // Extracting  file1.txt                              1234 OK
-    // Extracting  subdir/file2.txt                       5678 OK
+    // Extracting  dir/file2.txt                       5678 OK
     // Extracting  dir1/                                  OK
     // All OK
 
@@ -552,7 +545,7 @@ fn parse_unrar_output(output: &str) -> Vec<FileInfo> {
                 name = if content.starts_with("Extracting  ") {
                     content["Extracting  ".len()..].trim_end().to_string()
                 } else if content.starts_with("Extracting ") {
-                    content["Extracting ".len()..].trim_end().to_string()
+                    content["Extracting  ".len()..].trim_end().to_string()
                 } else {
                     content.trim_end().to_string()
                 };

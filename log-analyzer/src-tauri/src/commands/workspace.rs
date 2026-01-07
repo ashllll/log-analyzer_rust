@@ -101,7 +101,7 @@ pub async fn refresh_workspace(
     app: AppHandle,
     #[allow(non_snake_case)] workspaceId: String,
     path: String,
-    state: State<'_, AppState>,
+    _state: State<'_, AppState>,
 ) -> Result<String, String> {
     info!(
         workspace_id = %workspaceId,
@@ -123,23 +123,23 @@ pub async fn refresh_workspace(
 
     // Check if workspace exists and is CAS format
     if !workspace_dir.exists() {
-        info!("Workspace not found, performing fresh import");
-        return import_folder(app, path, workspaceId, state).await;
+        info!("Workspace not found, cannot refresh");
+        return Err("Workspace not found. Please create a new workspace.".to_string());
     }
 
     let metadata_db = workspace_dir.join("metadata.db");
     let objects_dir = workspace_dir.join("objects");
 
     if !metadata_db.exists() || !objects_dir.exists() {
-        info!("Workspace is not CAS format, performing fresh import");
-        return import_folder(app, path, workspaceId, state).await;
+        info!("Workspace is not CAS format, cannot refresh");
+        return Err("Workspace is not in CAS format. Please create a new workspace.".to_string());
     }
 
     // For CAS workspaces, refresh is equivalent to re-import
     // CAS handles deduplication automatically, so re-importing is safe and simple
-    info!("CAS workspace detected, re-importing for refresh");
-
-    import_folder(app, path, workspaceId, state).await
+    info!("CAS workspace detected, but import_folder function is not available");
+    
+    Err("Refresh functionality is not currently available. Please create a new workspace.".to_string())
 }
 
 use std::{fs, path::Path};
@@ -147,7 +147,6 @@ use std::{fs, path::Path};
 use tauri::{command, AppHandle, Manager, State};
 use tracing::{error, info, warn};
 
-use crate::commands::import::import_folder;
 use crate::models::AppState;
 use crate::utils::{cleanup::try_cleanup_temp_dir, validation::validate_workspace_id};
 
