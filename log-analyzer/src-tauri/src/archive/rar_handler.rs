@@ -147,7 +147,7 @@ fn extract_rar_sync(
     // x = extract with full paths
     // -y = assume Yes on all queries
     let output = Command::new(&unrar_path)
-        .args(&["x", "-y", source, target_dir])
+        .args(["x", "-y", source, target_dir])
         .output()
         .map_err(|e| {
             AppError::archive_error(
@@ -198,7 +198,7 @@ fn extract_rar_sync(
         }
 
         // 检查总大小限制
-        if summary.total_size + file_info.size as u64 > max_total_size {
+        if summary.total_size + file_info.size > max_total_size {
             summary.add_error(format!(
                 "Extraction would exceed total size limit of {} bytes, stopping",
                 max_total_size
@@ -223,7 +223,7 @@ fn extract_rar_sync(
             // 目录，不计入文件数
             summary.add_file(file_path, 0);
         } else {
-            summary.add_file(file_path, file_info.size as u64);
+            summary.add_file(file_path, file_info.size);
             info!("Extracted: {}", file_info.name);
         }
     }
@@ -306,29 +306,29 @@ fn parse_unrar_output(output: &str) -> Vec<FileInfo> {
                     }
                     // 文件名是数字之前的所有内容，去掉 "Extracting  " 前缀
                     let before_digits = &content[..d_pos];
-                    name = if before_digits.starts_with("Extracting  ") {
-                        before_digits["Extracting  ".len()..].trim_end().to_string()
-                    } else if before_digits.starts_with("Extracting ") {
-                        before_digits["Extracting ".len()..].trim_end().to_string()
+                    name = if let Some(stripped) = before_digits.strip_prefix("Extracting  ") {
+                        stripped.trim_end().to_string()
+                    } else if let Some(stripped) = before_digits.strip_prefix("Extracting ") {
+                        stripped.trim_end().to_string()
                     } else {
                         before_digits.trim_end().to_string()
                     };
                 } else {
                     // 数字前没有空格，是目录或特殊文件名
-                    name = if content.starts_with("Extracting  ") {
-                        content["Extracting  ".len()..].trim_end().to_string()
-                    } else if content.starts_with("Extracting ") {
-                        content["Extracting ".len()..].trim_end().to_string()
+                    name = if let Some(stripped) = content.strip_prefix("Extracting  ") {
+                        stripped.trim_end().to_string()
+                    } else if let Some(stripped) = content.strip_prefix("Extracting ") {
+                        stripped.trim_end().to_string()
                     } else {
                         content.trim_end().to_string()
                     };
                 }
             } else {
                 // 没有数字结尾，是目录
-                name = if content.starts_with("Extracting  ") {
-                    content["Extracting  ".len()..].trim_end().to_string()
-                } else if content.starts_with("Extracting ") {
-                    content["Extracting ".len()..].trim_end().to_string()
+                name = if let Some(stripped) = content.strip_prefix("Extracting  ") {
+                    stripped.trim_end().to_string()
+                } else if let Some(stripped) = content.strip_prefix("Extracting ") {
+                    stripped.trim_end().to_string()
                 } else {
                     content.trim_end().to_string()
                 };

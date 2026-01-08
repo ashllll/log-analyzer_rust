@@ -15,8 +15,9 @@
 /// # 规则
 /// - 转换为小写
 /// - 保留首字母
-/// - 移除无声字母
-/// - 转换相似的辅音为同一编码
+/// - 处理特殊辅音组合（TH→0, SH→X, PH→F）
+/// - 元音只在首字母位置保留
+/// - 忽略Y（除非是唯一元音）
 /// - 压缩连续相同的字母
 ///
 /// # 参数
@@ -40,20 +41,34 @@ pub fn metaphone(word: &str) -> String {
         let c = chars[i];
 
         match c {
-            // 元音：仅首字母保留
-            'a' | 'e' | 'i' | 'o' | 'u' => {
-                if result.is_empty() {
-                    result.push(c);
+            // 首字母特殊处理
+            _ if i == 0 => {
+                // KN 组合时省略 K（开头的 K 在 N 前不发音）
+                if c == 'k' && i + 1 < len && chars[i + 1] == 'n' {
+                    // 跳过 K
+                    i += 1;
+                    continue;
                 }
+                result.push(c);
                 i += 1;
             }
 
-            // 辅音转换规则
+            // 元音：仅首字母保留
+            'a' | 'e' | 'i' | 'o' | 'u' => {
+                // 元音只在开头保留，中间忽略
+                i += 1;
+            }
+
+            // C: CAE/CE/CI/CY -> S, 否则 -> K
             'c' => {
                 if i + 1 < len {
                     let next = chars[i + 1];
                     if next == 'i' || next == 'e' || next == 'y' {
                         result.push('s'); // soft C
+                    } else if next == 'h' && i + 2 < len && chars[i + 2] == ' ' {
+                        // 特例：-chs -> K
+                        result.push('k');
+                        i += 1;
                     } else {
                         result.push('k'); // hard C
                     }
@@ -63,11 +78,17 @@ pub fn metaphone(word: &str) -> String {
                 i += 1;
             }
 
+            // G: GE/GI/GY -> J, GH (后跟非元音) -> 忽略, 其他 -> K
             'g' => {
                 if i + 1 < len {
                     let next = chars[i + 1];
                     if next == 'e' || next == 'i' || next == 'y' {
                         result.push('j'); // soft G
+                    } else if next == 'h' {
+                        // GH 后跟非元音时，GH 不发音
+                        // 跳过 G，H 后面会处理
+                        i += 1; // 只增加 i，让下一个循环处理 h
+                        continue;
                     } else {
                         result.push('k'); // hard G
                     }
@@ -77,6 +98,19 @@ pub fn metaphone(word: &str) -> String {
                 i += 1;
             }
 
+            // H: 只在元音前保留
+            'h' => {
+                if i + 1 < len {
+                    let next = chars[i + 1];
+                    // 如果后面是元音，H发音
+                    if matches!(next, 'a' | 'e' | 'i' | 'o' | 'u') {
+                        result.push('h');
+                    }
+                }
+                i += 1;
+            }
+
+            // P: PH -> F
             'p' => {
                 if i + 1 < len && chars[i + 1] == 'h' {
                     result.push('f'); // PH -> F
@@ -87,6 +121,7 @@ pub fn metaphone(word: &str) -> String {
                 }
             }
 
+            // S: SH -> X, 其他 -> S
             's' => {
                 if i + 1 < len && chars[i + 1] == 'h' {
                     result.push('x'); // SH sound
@@ -97,6 +132,7 @@ pub fn metaphone(word: &str) -> String {
                 }
             }
 
+            // T: TH -> 0 (数字0), 其他 -> T
             't' => {
                 if i + 1 < len && chars[i + 1] == 'h' {
                     result.push('0'); // TH sound (use digit 0)
@@ -107,27 +143,41 @@ pub fn metaphone(word: &str) -> String {
                 }
             }
 
-            // 其他辅音直接保留
-            'f' | 'l' | 'm' | 'n' | 'r' | 'b' | 'd' | 'j' | 'k' | 'v' | 'w' | 'x' | 'y' | 'z' => {
-                result.push(c);
-                i += 1;
-            }
-
-            // 无声字母（在某些位置）
-            'h' => {
-                if result.is_empty() {
-                    result.push('h');
+            // W: 只在元音前保留
+            'w' => {
+                if i + 1 < len {
+                    let next = chars[i + 1];
+                    if matches!(next, 'a' | 'e' | 'i' | 'o' | 'u') {
+                        result.push('w');
+                    }
                 }
                 i += 1;
             }
 
+            // Y: 忽略（在英语中通常不是独立辅音）
+            'y' => {
+                i += 1;
+            }
+
+            // 其他辅音直接保留
+            'f' | 'l' | 'm' | 'n' | 'r' | 'b' | 'd' | 'j' | 'k' | 'v' | 'x' | 'z' => {
+                result.push(c);
+                i += 1;
+            }
+
+            // 空格和标点：跳过
+            ' ' | '-' | '\'' => {
+                i += 1;
+            }
+
+            // 其他字符：跳过
             _ => {
                 i += 1;
             }
         }
     }
 
-    // 压缩连续相同的字符（使用标准库实现）
+    // 压缩连续相同的字符
     let compressed: String = result.chars().fold(String::new(), |mut acc, c| {
         if !acc.ends_with(c) {
             acc.push(c);

@@ -311,8 +311,8 @@ mod tests {
         assert!(matcher.is_similar("connect", "conect"));
         assert!(matcher.is_similar("timeout", "timout"));
 
-        // 超过阈值
-        assert!(!matcher.is_similar("connect", "cnect"));
+        // cnect 缺少两个字符，距离为2，阈值也是2，应该匹配
+        assert!(matcher.is_similar("connect", "cnect"));
     }
 
     #[test]
@@ -328,7 +328,7 @@ mod tests {
         let matcher = FuzzyMatcher::new(1); // 限制为1个差异
 
         assert!(matcher.is_similar("ERROR", "ERRO"));
-        assert!(!matcher.is_similar("connection", "connetion")); // 2个差异，超过限制
+        assert!(matcher.is_similar("connection", "connetion")); // 1个差异，未超过限制
     }
 
     #[test]
@@ -375,7 +375,7 @@ mod tests {
     fn test_find_best_match_fuzzy() {
         let matcher = FuzzyMatcher::new(2);
 
-        let line = "ERROE ERROR WARN";
+        let line = "ERROE WARN INFO"; // 移除精确匹配，只保留模糊匹配
         let result = matcher.find_best_match("ERROR", line);
 
         assert!(result.is_some());
