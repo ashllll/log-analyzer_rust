@@ -78,6 +78,11 @@ sqlx = { version = "0.7", features = ["runtime-tokio-native-tls", "sqlite"] }  #
 async-compression = { version = "0.4", features = ["tokio", "gzip", "zstd"] }  # 流式压缩/解压
 num_cpus = "1.16"  # CPU 核心数检测
 
+# Phase 5: Archive Support (Pure Rust Priority)
+# Prefer pure Rust implementations, fall back to C bindings for edge cases
+# Note: unarc-rs has dependency conflicts, using rar crate instead for pure Rust RAR support
+rar = "0.4"  # Pure Rust RAR library (basic extraction support)
+
 # Phase 4: Testing Infrastructure
 [dev-dependencies]
 rstest = "0.18"  # 增强的单元测试框架

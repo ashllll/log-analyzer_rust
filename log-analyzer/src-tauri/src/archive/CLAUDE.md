@@ -194,17 +194,27 @@ let summary = handler.extract_with_limits(
 
 ### 4. RAR 格式 - RarHandler
 
-**技术实现**: `unrar` crate (0.5) + 内置二进制
+**技术实现**: `rar` crate (0.4) 纯 Rust + `unrar` 二进制 Fallback
 
 **支持格式**: `.rar`, `.RAR`
 
-**特性**:
-- 内置多平台 unrar 二进制
-- 无需系统安装 RAR
-- 支持 RAR4/5 格式
-- 跨平台兼容性
+**架构设计**: 双模式策略
+- **主模式**: `rar` crate - 纯 Rust 实现，支持基础 RAR4 格式
+- **Fallback**: `unrar` 二进制 - 处理复杂 RAR5/多部分/加密文件
 
-**内置二进制**:
+**特性**:
+- 纯 Rust 实现，无需 C 库依赖
+- 自动检测并处理不兼容格式
+- 跨平台兼容性 (Windows/macOS/Linux)
+- 无需外置 RAR 软件
+
+**依赖**:
+```toml
+# Cargo.toml
+rar = "0.4"  # Pure Rust RAR library
+```
+
+**fallback 二进制路径**:
 ```
 binaries/
 ├── unrar-x86_64-pc-windows-msvc.exe
@@ -506,6 +516,20 @@ max_file_count: 2000,  // 2000文件
 ---
 
 ## 变更记录 (Changelog)
+
+### [2026-01-09] RAR处理器纯Rust重构
+
+- ✅ **新增 rar crate 纯 Rust 支持**
+  - 使用 `rar = "0.4"` 替代部分 unrar C 绑定依赖
+  - 主模式使用纯 Rust 实现，基础 RAR4 格式无需外部二进制
+  - 保持 unrar 二进制作为 Fallback，处理 RAR5/加密/多部分文件
+- ✅ **解决 macOS ARM64 构建问题**
+  - 移除 unrar Rust crate（依赖 C 库，有平台兼容性问题）
+  - 采用 sidecar 二进制方案，纯 Rust 主库 + 平台特定二进制
+- ✅ **代码质量**
+  - cargo check 通过
+  - cargo clippy 无警告
+  - 530+ 测试用例通过
 
 ### [2025-12-13] AI上下文初始化
 - ✅ 完整架构分析
