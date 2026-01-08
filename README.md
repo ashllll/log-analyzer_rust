@@ -9,7 +9,7 @@
 [![React](https://img.shields.io/badge/React-19+-61dafb.svg)](https://reactjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8+-3178c6.svg)](https://www.typescriptlang.org/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.0.104-brightgreen.svg)](https://github.com/joeash/log-analyzer)
+[![Version](https://img.shields.io/badge/version-0.0.109-brightgreen.svg)](https://github.com/joeash/log-analyzer)
 
 支持多格式压缩包 · 递归解压 · Aho-Corasick搜索 · CAS存储 · 虚拟滚动 · 跨平台 · 实时监听
 
@@ -397,7 +397,7 @@ A: 应用会自动处理只读文件和UNC路径。如果仍有问题，请以�
 
 ## 📝 更新日志
 
-### [0.0.104] - 2026-01-09
+### [0.0.109] - 2026-01-09
 
 #### 🎉 重大改进：RAR处理器纯Rust重构
 
