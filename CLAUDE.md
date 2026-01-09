@@ -14,11 +14,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 > **项目**: log-analyzer_rust - 高性能桌面日志分析工具
 >
-> **版本**: 0.0.96
+> **版本**: 0.0.109
 >
 > **技术栈**: Tauri 2.0 + Rust + React 19 + TypeScript
 >
-> **最后更新**: 2026-01-04
+> **最后更新**: 2026-01-09
 
 ---
 
@@ -278,13 +278,12 @@ npm test -- --coverage
 
 ### Rust后端
 - **测试覆盖率**: 80%+
-- **测试用例数**: 87个
+- **测试用例数**: 530+个
 - **核心测试模块**:
-  - `pattern_matcher.rs`: 9个测试
-  - `query_validator.rs`: 6个测试
-  - `query_planner.rs`: 7个测试
-  - `file_watcher_async.rs`: 5个测试
-  - `error.rs`: 17个测试
+  - `storage/`: CAS存储、完整性验证 (53个测试)
+  - `archive/`: 压缩包处理 (130+个测试)
+  - `search_engine/`: 搜索引擎、性能优化 (50+个测试)
+  - `services/`: 服务层、业务逻辑 (80+个测试)
 
 ### React前端
 - **测试框架**: Jest + React Testing Library
@@ -571,6 +570,19 @@ pub async fn insert_file(&self, metadata: &FileMetadata) -> Result<i64> {
 ---
 
 ## 最近重大变更
+
+### [0.0.109] - 2026-01-09
+
+#### 🎉 CAS架构性能优化
+- ✅ **对象存在性缓存优化**: 使用 `DashSet` 缓存已存在对象
+- ✅ **存储大小计算优化**: 使用 `walkdir` 替代递归遍历
+- ✅ **SQLite性能优化**: 启用WAL模式，提升并发读写性能
+
+#### [0.0.104] - 2026-01-09
+
+#### 🎉 RAR处理器纯Rust重构
+- ✅ **新增 rar crate 纯Rust支持**: 使用 `rar = "0.4"` 替代外部unrar
+- ✅ **解决macOS ARM64构建问题**: sidecar二进制方案
 
 ### [0.0.76] - 2025-12-28
 - ✅ 更新版本号到 0.0.76

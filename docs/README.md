@@ -30,10 +30,9 @@
 项目进展报告和验证文档
 
 #### 当前报告 (`reports/current/`)
+- **CAS_OPTIMIZATION_20260109.md** - CAS架构性能优化 (2026-01-09)
+- **RAR_PURE_RUST_20260109.md** - RAR处理器纯Rust重构 (2026-01-09)
 - **MIGRATION_IMPLEMENTATION_SUMMARY.md** - 迁移实施摘要
-- **IPC_MONITORING_IMPLEMENTATION.md** - IPC监控实现
-- **WORKSPACE_PROCESSING_FIX.md** - Workspace PROCESSING 停留问题修复报告
-- **TASK_22_COMPLETION_SUMMARY.md** - 任务22完成总结
 
 #### 历史归档 (`reports/archive/`)
 已完成的历史报告、任务文档和验证文档
