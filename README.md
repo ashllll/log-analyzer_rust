@@ -1,4 +1,4 @@
-# 📊 Log Analyzer
+# Log Analyzer
 
 <div align="center">
 
@@ -9,7 +9,7 @@
 [![React](https://img.shields.io/badge/React-19+-61dafb.svg)](https://reactjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8+-3178c6.svg)](https://www.typescriptlang.org/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.0.109-brightgreen.svg)](https://github.com/joeash/log-analyzer)
+[![Version](https://img.shields.io/badge/version-0.0.111-brightgreen.svg)](https://github.com/joeash/log-analyzer)
 
 支持多格式压缩包 · 递归解压 · Aho-Corasick搜索 · CAS存储 · 虚拟滚动 · 跨平台 · 实时监听
 
@@ -19,35 +19,35 @@
 
 ---
 
-## ✨ 项目简介
+## 项目简介
 
 Log Analyzer 是一款专为开发者和运维人员打造的**桌面端日志分析工具**，采用 Rust + Tauri + React 技术栈，提供高性能的日志检索与可视化体验。
 
-### 🚀 核心优势
+### 核心优势
 
-- **🎯 极致性能**: Aho-Corasick多模式匹配算法，搜索复杂度从O(n×m)降至O(n+m)，性能提升**80%+**，吞吐量达**10,000+次/秒**
-- **💾 内容寻址存储(CAS)**: Git风格的内容寻址存储系统，自动去重，节省磁盘空间**30%+**
-- **📊 SQLite + FTS5**: 全文搜索索引，查询性能提升**10倍+**
-- **🏗️ 清晰架构**: QueryExecutor职责拆分(Validator/Planner/Executor)，代码复杂度降低**60%**
-- **⚡ 异步I/O**: tokio非阻塞文件操作，UI响应性大幅提升
-- **🖥️ 跨平台**: Windows/macOS/Linux完整兼容，UNC路径、长路径、只读文件自动处理
+- **极致性能**: Aho-Corasick多模式匹配算法，搜索复杂度从O(n×m)降至O(n+m)，性能提升**80%+**，吞吐量达**10,000+次/秒**
+- **内容寻址存储(CAS)**: Git风格的内容寻址存储系统，自动去重，节省磁盘空间**30%+**
+- **SQLite + FTS5**: 全文搜索索引，查询性能提升**10倍+**
+- **清晰架构**: QueryExecutor职责拆分(Validator/Planner/Executor)，代码复杂度降低**60%**
+- **异步I/O**: tokio非阻塞文件操作，UI响应性大幅提升
+- **跨平台**: Windows/macOS/Linux完整兼容，UNC路径、长路径、只读文件自动处理
 
-### 📋 关键特性
+### 关键特性
 
 | 特性 | 说明 |
 |------|------|
-| 🔍 **智能搜索** | Aho-Corasick算法 + 正则表达式 + LRU缓存 + OR/AND逻辑组合，毫秒级响应 |
-| 📦 **多格式支持** | ZIP/RAR/GZ/TAR等格式，RAR采用纯Rust方案（rar crate），递归解压任意层级嵌套 |
-| 🖼️ **虚拟滚动** | 高性能渲染，轻松处理数十万条日志记录 |
-| 🎨 **现代UI** | 基于Tailwind CSS，支持关键词高亮、智能截断、多关键词统计 |
-| 🌐 **国际化** | 完整的中英文i18n支持 |
-| 🔒 **隐私优先** | 所有数据本地处理，保护隐私安全 |
-| 📡 **实时监听** | 文件系统监听，增量更新索引，实时推送搜索结果 |
-| 📤 **导出功能** | 支持导出为CSV格式，便于外部分析 |
+| 智能搜索 | Aho-Corasick算法 + 正则表达式 + LRU缓存 + OR/AND逻辑组合，毫秒级响应 |
+| 多格式支持 | ZIP/RAR/GZ/TAR等格式，RAR采用sidecar二进制方案，递归解压任意层级嵌套 |
+| 虚拟滚动 | 高性能渲染，轻松处理数十万条日志记录 |
+| 现代UI | 基于Tailwind CSS，支持关键词高亮、智能截断、多关键词统计 |
+| 国际化 | 完整的中英文i18n支持 |
+| 隐私优先 | 所有数据本地处理，保护隐私安全 |
+| 实时监听 | 文件系统监听，增量更新索引，实时推送搜索结果 |
+| 导出功能 | 支持导出为CSV格式，便于外部分析 |
 
 ---
 
-## 🚀 快速开始
+## 快速开始
 
 ### 环境要求
 
@@ -83,11 +83,11 @@ bash setup_log_analyzer.sh
 
 ---
 
-## 📖 使用指南
+## 使用指南
 
 ### 基础工作流
 
-#### 1️⃣ 创建工作区
+#### 1. 创建工作区
 
 1. 启动应用，点击左侧 **"Workspaces"（工作区）** 标签
 2. 点击 **"Import File"** 或 **"Import Folder"** 按钮
@@ -98,7 +98,7 @@ bash setup_log_analyzer.sh
 
 **支持的格式**: `.log`, `.txt`, `.zip`, `.tar`, `.gz`, `.rar` 等
 
-#### 2️⃣ 搜索日志
+#### 2. 搜索日志
 
 1. 点击左侧 **"Search"（搜索）** 标签
 2. 输入关键词或正则表达式
@@ -114,7 +114,7 @@ bash setup_log_analyzer.sh
 - **多关键词高亮**: 所有匹配的关键词用不同颜色高亮显示
 - **持久化查询**: 搜索查询自动保存，刷新页面后恢复
 
-#### 3️⃣ 配置关键词高亮（可选）
+#### 3. 配置关键词高亮（可选）
 
 1. 点击 **"Keywords"（关键词）** 标签
 2. 创建关键词组，设置高亮颜色和匹配模式
@@ -135,50 +135,121 @@ bash setup_log_analyzer.sh
 
 ---
 
-## 📁 项目结构
+## 项目结构
 
 ```
 log-analyzer_rust/
 ├── log-analyzer/              # 主项目
 │   ├── src/                   # React前端
-│   │   ├── components/        # UI组件
-│   │   ├── pages/            # 页面组件
-│   │   ├── services/         # API封装
-│   │   ├── stores/           # Zustand状态管理
-│   │   └── types/            # TypeScript类型
-│   ├── src-tauri/            # Rust后端
+│   │   ├── components/        # UI组件 (ui/, modals/, renderers/, search/)
+│   │   ├── pages/             # 页面组件 (SearchPage, KeywordsPage, WorkspacesPage等)
+│   │   ├── services/          # API封装 (SearchQueryBuilder, queryApi, websocketClient等)
+│   │   ├── stores/            # Zustand状态管理 (appStore, workspaceStore, taskStore等)
+│   │   ├── hooks/             # 自定义Hooks (20+个: useStateSynchronization, useWebSocket等)
+│   │   ├── types/             # TypeScript类型定义
+│   │   ├── i18n/              # 国际化 (中英文)
+│   │   └── providers/         # Context Providers
+│   ├── src-tauri/             # Rust后端
 │   │   ├── src/
-│   │   │   ├── commands/     # Tauri命令
-│   │   │   ├── services/     # 业务逻辑
-│   │   │   ├── storage/      # CAS存储系统
-│   │   │   ├── archive/      # 压缩包处理
-│   │   │   └── models/       # 数据模型
-│   │   └── tests/            # 集成测试
+│   │   │   ├── commands/      # Tauri命令 (13个模块)
+│   │   │   ├── search_engine/ # 【核心】搜索引擎 (10个模块)
+│   │   │   ├── services/      # 业务逻辑 (20+模块)
+│   │   │   ├── archive/       # 压缩包处理 (36个文件)
+│   │   │   ├── storage/       # CAS存储系统
+│   │   │   ├── task_manager/  # 任务管理 (Actor Model)
+│   │   │   ├── state_sync/    # 状态同步 (<10ms延迟)
+│   │   │   ├── utils/         # 工具模块 (20+模块)
+│   │   │   ├── models/        # 数据模型
+│   │   │   └── error.rs       # 统一错误处理
+│   │   └── tests/             # 集成测试
 │   └── package.json
-├── docs/                     # 项目文档
-├── CLAUDE.md                 # AI上下文文档
-├── CHANGELOG.md              # 更新日志
-└── README.md                 # 本文件
+├── docs/                      # 项目文档
+├── CLAUDE.md                  # AI上下文文档
+├── CHANGELOG.md               # 更新日志
+└── README.md                  # 本文件
 ```
+
+### Rust后端核心模块
+
+| 模块 | 功能 | 复杂度 |
+|------|------|--------|
+| **commands/** | Tauri命令层 (search, import, workspace, query, export, watch等13个模块) | 13个文件 |
+| **search_engine/** | 高性能搜索引擎 (Tantivy) | 10个模块 |
+| `manager.rs` | 搜索引擎管理器 | - |
+| `boolean_query_processor.rs` | 布尔查询处理 (AND/OR/NOT) | - |
+| `concurrent_search.rs` | 并发搜索 ( rayon并行) | - |
+| `highlighting_engine.rs` | 高亮引擎 | - |
+| `index_optimizer.rs` | 索引优化器 | - |
+| `query_optimizer.rs` | 查询优化器 | - |
+| `streaming_builder.rs` | 流式索引构建器 | - |
+| **services/** | 业务逻辑服务 | 20+模块 |
+| `event_bus.rs` | 事件总线 | - |
+| `service_container.rs` | 服务容器 | - |
+| `service_lifecycle.rs` | 服务生命周期 | - |
+| `pattern_matcher.rs` | Aho-Corasick多模式匹配 | - |
+| `fuzzy_matcher.rs` | 模糊匹配 (Levenshtein + Metaphone) | - |
+| **archive/** | 压缩包处理 | 36个文件 |
+| `processor.rs` | 主处理器 | 47KB |
+| `parallel_processor.rs` | 并行处理 | - |
+| `security_detector.rs` | 安全检测 | - |
+| **storage/** | CAS存储系统 | - |
+| `cas.rs` | 内容寻址存储 | - |
+| `metadata_store.rs` | SQLite元数据 + FTS5 | - |
+| **task_manager/** | 任务管理 | Actor Model |
+| **state_sync/** | 状态同步 | Tauri Events |
+| **utils/** | 工具模块 | 20+模块 |
 
 ---
 
-## 🎯 功能特性
+## 功能特性
 
 ### 核心功能
 
 | 功能 | 描述 |
 |------|------|
-| 📦 **多格式压缩包** | 支持 `.zip`, `.tar`, `.tar.gz`, `.tgz`, `.gz`, `.rar`（内置unrar） |
-| 🔄 **递归解压** | 自动处理任意层级嵌套的压缩包（如 `.zip` → `.tar.gz` → `.gz`） |
-| 💾 **CAS存储** | Git风格的内容寻址存储，自动去重，节省磁盘空间 |
-| 🗄️ **SQLite + FTS5** | 全文搜索索引，查询性能提升10倍+ |
-| 🔍 **多关键词搜索** | `\|` 符号OR逻辑、关键词统计面板、智能截断、多关键词高亮 |
-| ⚡ **并行搜索** | Rayon多线程并行搜索，充分利用多核CPU |
-| 🖼️ **虚拟滚动** | 高性能渲染，轻松处理数十万条日志记录 |
-| 🖥️ **跨平台兼容** | Windows/macOS/Linux完整支持，UNC路径、长路径自动处理 |
-| 👁️ **实时监听** | 自动监听文件变化，增量更新索引 |
-| 📤 **导出功能** | 支持导出为CSV格式（UTF-8 BOM编码） |
+| 多格式压缩包 | 支持 `.zip`, `.tar`, `.tar.gz`, `.tgz`, `.gz`, `.rar`（sidecar二进制方案） |
+| 递归解压 | 自动处理任意层级嵌套的压缩包（如 `.zip` → `.tar.gz` → `.gz`） |
+| CAS存储 | Git风格的内容寻址存储，自动去重，节省磁盘空间 |
+| SQLite + FTS5 | 全文搜索索引，查询性能提升10倍+ |
+| 多关键词搜索 | `|` 符号OR逻辑、关键词统计面板、智能截断、多关键词高亮 |
+| 并行搜索 | Rayon多线程并行搜索，充分利用多核CPU |
+| 虚拟滚动 | 高性能渲染，轻松处理数十万条日志记录 |
+| 跨平台兼容 | Windows/macOS/Linux完整支持，UNC路径、长路径自动处理 |
+| 实时监听 | 自动监听文件变化，增量更新索引 |
+| 导出功能 | 支持导出为CSV格式（UTF-8 BOM编码） |
+
+### 搜索引擎 (search_engine)
+
+| 组件 | 功能 |
+|------|------|
+| **SearchEngineManager** | 搜索引擎管理器，支持子200ms响应 |
+| **BooleanQueryProcessor** | 布尔查询处理 (AND/OR/NOT逻辑) |
+| **ConcurrentSearch** | 并发搜索，充分利用多核CPU |
+| **HighlightingEngine** | 搜索结果高亮引擎 |
+| **QueryOptimizer** | 查询优化，自动建议和纠错 |
+| **StreamingBuilder** | 流式索引构建，支持大数据集 |
+| **AutocompleteEngine** | 自动补全引擎 |
+| **RegexSearchEngine** | 正则表达式搜索 |
+| **TimePartitionedIndex** | 时间分区索引 |
+
+### 任务管理 (task_manager)
+
+| 特性 | 说明 |
+|------|------|
+| Actor Model | 基于消息传递的任务管理 |
+| 状态追踪 | Running/Completed/Failed/Stopped |
+| 事件驱动 | 实时推送任务进度 (<10ms延迟) |
+| 自动清理 | TTL过期自动清理已完成任务 |
+| 健康检查 | Actor健康状态监控 |
+
+### 状态同步 (state_sync)
+
+| 特性 | 说明 |
+|------|------|
+| Tauri Events | 使用Tauri原生事件系统 |
+| <10ms延迟 | 进程内通信，极低延迟 |
+| 状态缓存 | HashMap缓存workspace状态 |
+| 事件历史 | 保留最近1000个事件用于调试 |
 
 ### 技术亮点
 
@@ -190,11 +261,11 @@ log-analyzer_rust/
   </tr>
   <tr>
     <td align="center">⚡<br/><b>异步I/O</b><br/>tokio非阻塞<br/>UI响应性提升</td>
-    <td align="center">📦<br/><b>纯Rust RAR</b><br/>rar crate主方案<br/>unrar二进制Fallback</td>
+    <td align="center">📦<br/><b>sidecar RAR</b><br/>纯Rust主库<br/>平台二进制Fallback</td>
     <td align="center">🧪<br/><b>测试覆盖</b><br/>530+测试用例<br/>覆盖率80%+</td>
   </tr>
   <tr>
-    <td align="center">🎯<br/><b>性能基准</b><br/>Criterion框架<br/>吞吐量10,000+/秒</td>
+    <td align="center">🎯<br/><b>Tantivy引擎</b><br/>子200ms响应<br/>高级搜索功能</td>
     <td align="center">🛡️<br/><b>统一错误处理</b><br/>thiserror + AppError<br/>错误一致性100%</td>
     <td align="center">📡<br/><b>实时事件</b><br/>Tauri事件系统<br/>状态同步推送</td>
   </tr>
@@ -202,7 +273,7 @@ log-analyzer_rust/
 
 ---
 
-## 🛠️ 技术栈
+## 技术栈
 
 ### 前端
 
@@ -220,31 +291,34 @@ log-analyzer_rust/
 - **语言**: Rust 1.70+
 - **框架**: Tauri 2.0
 - **异步运行时**: tokio 1.x (full features)
-- **搜索算法**: aho-corasick 1.0
+- **搜索算法**: aho-corasick 1.0 + tantivy 0.22
 - **并行处理**: rayon 1.8
 - **缓存系统**: moka 0.12 + lru 0.12
-- **数据库**: sqlx 0.7 (SQLite)
-- **压缩支持**: zip 0.6, tar 0.4, flate2 1.0, rar 0.4（纯Rust主方案）
+- **数据库**: sqlx 0.7 (SQLite) + FTS5
+- **压缩支持**: zip 0.6, tar 0.4, flate2 1.0, rar 0.4（sidecar方案）
 - **错误处理**: thiserror 1.0, eyre 0.6, miette 5.0
 - **日志追踪**: tracing 0.1, tracing-subscriber 0.3
 
 ---
 
-## 🧪 测试与质量
+## 测试与质量
 
 ### 测试覆盖
 
 #### Rust后端
+
 - **测试覆盖率**: 80%+
 - **测试用例数**: 530+个
 - **核心测试模块**:
-  - `pattern_matcher.rs`: 9个测试（Aho-Corasick算法正确性）
-  - `query_validator.rs`: 6个测试（查询验证逻辑）
-  - `query_planner.rs`: 7个测试（查询计划构建）
-  - `file_watcher_async.rs`: 5个测试（异步文件读取）
-  - `error.rs`: 17个测试（错误处理和上下文）
+  - `pattern_matcher.rs`: Aho-Corasick算法正确性
+  - `query_validator.rs`: 查询验证逻辑
+  - `query_planner.rs`: 查询计划构建
+  - `file_watcher_async.rs`: 异步文件读取
+  - `error.rs`: 错误处理和上下文
+  - `search_history.rs`: 搜索历史管理
 
 #### React前端
+
 - **测试框架**: Jest + React Testing Library
 - **当前覆盖**: SearchQueryBuilder完整覆盖（40+测试用例）
 - **目标覆盖**: 80%+
@@ -280,90 +354,99 @@ npm run type-check                     # TypeScript类型检查
 
 ---
 
-## 📚 文档
+## 文档
 
 ### 核心文档
 
 | 文档 | 说明 |
 |------|------|
-| **[CLAUDE.md](CLAUDE.md)** | AI上下文文档（快速上手指南） |
-| **[CHANGELOG.md](CHANGELOG.md)** | 完整的更新日志 |
-| **[docs/README.md](docs/README.md)** | 项目文档中心 |
+| [CLAUDE.md](CLAUDE.md) | AI上下文文档（快速上手指南） |
+| [CHANGELOG.md](CHANGELOG.md) | 完整的更新日志 |
+| [docs/README.md](docs/README.md) | 项目文档中心 |
 
 ### 架构文档
 
-- **[CAS_ARCHITECTURE.md](docs/architecture/CAS_ARCHITECTURE.md)** - 内容寻址存储架构详解
-- **[API.md](docs/architecture/API.md)** - API接口文档
-- **[ADVANCED_SEARCH_FEATURES_EXPLANATION.md](docs/architecture/ADVANCED_SEARCH_FEATURES_EXPLANATION.md)** - 高级搜索功能说明
+- [CAS_ARCHITECTURE.md](docs/architecture/CAS_ARCHITECTURE.md) - 内容寻址存储架构详解
+- [API.md](docs/architecture/API.md) - API接口文档
+- [ADVANCED_SEARCH_FEATURES_EXPLANATION.md](docs/architecture/ADVANCED_SEARCH_FEATURES_EXPLANATION.md) - 高级搜索功能说明
 
 ### 用户指南
 
-- **[QUICK_REFERENCE.md](docs/guides/QUICK_REFERENCE.md)** - 快速参考指南
-- **[MULTI_KEYWORD_SEARCH_GUIDE.md](docs/guides/MULTI_KEYWORD_SEARCH_GUIDE.md)** - 多关键词搜索功能指南
+- [QUICK_REFERENCE.md](docs/guides/QUICK_REFERENCE.md) - 快速参考指南
+- [MULTI_KEYWORD_SEARCH_GUIDE.md](docs/guides/MULTI_KEYWORD_SEARCH_GUIDE.md) - 多关键词搜索功能指南
 
 ### 开发文档
 
-- **[AGENTS.md](docs/development/AGENTS.md)** - AI Agent开发指南
-- **[CLAUDE.md](docs/development/CLAUDE.md)** - Claude AI使用说明
-- **[Rust后端文档](log-analyzer/src-tauri/CLAUDE.md)** - 后端模块详细实现
-- **[React前端文档](log-analyzer/src/CLAUDE.md)** - 前端模块详细实现
+- [AGENTS.md](docs/development/AGENTS.md) - AI Agent开发指南
+- [CLAUDE.md](docs/development/CLAUDE.md) - Claude AI使用说明
+- [Rust后端文档](log-analyzer/src-tauri/CLAUDE.md) - 后端模块详细实现
+- [React前端文档](log-analyzer/src/CLAUDE.md) - 前端模块详细实现
 
 ---
 
-## 🛣️ 开发路线图
+## 开发路线图
 
-### ✅ 已完成（2025-12）
+### 已完成（2025-12 ~ 2026-01）
 
 #### 核心功能
-- ✅ **多格式压缩包支持** - ZIP/RAR/GZ/TAR，递归解压
-- ✅ **Aho-Corasick搜索** - 多模式匹配，性能提升80%+
-- ✅ **CAS存储系统** - Git风格内容寻址，自动去重
-- ✅ **实时事件系统** - Tauri原生事件，状态同步
-- ✅ **虚拟滚动** - 高性能渲染，支持数十万条记录
-- ✅ **国际化** - 完整的中英文i18n支持
+
+- ✅ 多格式压缩包支持 - ZIP/RAR/GZ/TAR，递归解压
+- ✅ Aho-Corasick搜索 - 多模式匹配，性能提升80%+
+- ✅ CAS存储系统 - Git风格内容寻址，自动去重
+- ✅ 实时事件系统 - Tauri原生事件，状态同步
+- ✅ 虚拟滚动 - 高性能渲染，支持数十万条记录
+- ✅ 国际化 - 完整的中英文i18n支持
+- ✅ 搜索引擎重构 - Tantivy引擎，并发搜索，高亮引擎
 
 #### 架构优化
-- ✅ **QueryExecutor职责拆分** - Validator/Planner/Executor
-- ✅ **现代错误处理** - eyre + miette + tracing
-- ✅ **压缩处理器统一** - 策略模式+Trait
-- ✅ **异步I/O优化** - tokio非阻塞操作
+
+- ✅ QueryExecutor职责拆分 - Validator/Planner/Executor
+- ✅ 现代错误处理 - eyre + miette + tracing
+- ✅ 压缩处理器统一 - 策略模式+Trait
+- ✅ 异步I/O优化 - tokio非阻塞操作
+- ✅ 任务管理系统 - Actor Model实现
+- ✅ 状态同步系统 - Tauri Events (<10ms延迟)
+- ✅ 服务容器 - 依赖注入和生命周期管理
 
 #### 测试与质量
-- ✅ **530+测试用例** - 覆盖率80%+
-- ✅ **性能基准测试** - Criterion框架，4个场景
-- ✅ **CI/CD验证** - 所有检查通过
-- ✅ **代码质量** - 零Clippy警告
+
+- ✅ 530+测试用例 - 覆盖率80%+
+- ✅ 性能基准测试 - Criterion框架
+- ✅ CI/CD验证 - 所有检查通过
+- ✅ 代码质量 - 零Clippy警告
 
 #### 近期更新（2026-01）
-- ✅ **RAR处理器纯Rust重构** - 使用 rar crate 替代 unrar C绑定
-- ✅ **macOS ARM64兼容** - 解决 sidecar 二进制跨平台问题
-- ✅ **FuzzyMatcher增强** - Levenshtein + Metaphone 语音相似度
 
-### 🔜 短期目标（1-2周）
+- ✅ RAR处理器纯Rust重构 - 使用 rar crate + sidecar二进制
+- ✅ CAS架构性能优化 - DashSet缓存，WAL模式
+- ✅ FuzzyMatcher增强 - Levenshtein + Metaphone 语音相似度
+- ✅ 搜索历史功能 - 最近50条记录
 
-- [ ] **前端单元测试** - SearchPage、KeywordsPage等核心组件测试
-- [ ] **性能监控上线** - 建立性能基线，设置阈值告警
-- [ ] **集成测试** - 端到端测试，覆盖完整用户流程
-- [ ] **文档完善** - API文档、架构说明、用户手册
+### 短期目标（1-2周）
 
-### 💡 中期规划（1-2月）
+- [ ] 前端单元测试 - SearchPage、KeywordsPage等核心组件测试
+- [ ] 性能监控上线 - 建立性能基线，设置阈值告警
+- [ ] 集成测试 - 端到端测试，覆盖完整用户流程
+- [ ] 文档完善 - API文档、架构说明、用户手册
 
-- [ ] **增量索引优化** - 支持大文件增量索引，减少内存占用
-- [ ] **高级搜索语法** - 支持字段搜索、时间范围、正则组合
-- [ ] **导出增强** - 支持JSON、Excel格式导出
-- [ ] **插件系统** - 支持自定义日志解析器和过滤器
-- [ ] **性能优化** - 进一步优化搜索和索引性能
+### 中期规划（1-2月）
 
-### 🚀 长期愿景（3-6月）
+- [ ] 增量索引优化 - 支持大文件增量索引，减少内存占用
+- [ ] 高级搜索语法 - 支持字段搜索、时间范围、正则组合
+- [ ] 导出增强 - 支持JSON、Excel格式导出
+- [ ] 插件系统 - 支持自定义日志解析器和过滤器
+- [ ] 性能优化 - 进一步优化搜索和索引性能
 
-- [ ] **分布式索引** - 支持多机协同索引和搜索
-- [ ] **机器学习** - 日志异常检测和模式识别
-- [ ] **可视化增强** - 时间线视图、关系图谱
-- [ ] **云端同步** - 可选的云端备份和同步功能
+### 长期愿景（3-6月）
+
+- [ ] 分布式索引 - 支持多机协同索引和搜索
+- [ ] 机器学习 - 日志异常检测和模式识别
+- [ ] 可视化增强 - 时间线视图、关系图谱
+- [ ] 云端同步 - 可选的云端备份和同步功能
 
 ---
 
-## ❓ 常见问题
+## 常见问题
 
 **Q: 支持哪些日志格式？**
 A: 支持所有文本格式的日志文件（.log, .txt等），以及常见压缩格式（.zip, .tar, .gz, .rar等）。
@@ -395,11 +478,19 @@ A: 应用会自动处理只读文件和UNC路径。如果仍有问题，请以�
 
 ---
 
-## 📝 更新日志
+## 更新日志
 
-### [0.0.109] - 2026-01-09
+### [0.0.111] - 2026-01-09
 
-#### 🎉 重大改进：RAR处理器纯Rust重构
+#### 🎉 CAS架构性能优化
+
+- ✅ **对象存在性缓存优化**: 使用 `DashSet` 缓存已存在对象
+- ✅ **存储大小计算优化**: 使用 `walkdir` 替代递归遍历
+- ✅ **SQLite性能优化**: 启用WAL模式，提升并发读写性能
+
+### [0.0.110] - 2026-01-09
+
+#### 🎉 RAR处理器纯Rust重构
 
 - ✅ **新增 rar crate 纯 Rust 支持**
   - 使用 `rar = "0.4"` 替代部分 unrar C 绑定依赖
@@ -410,41 +501,29 @@ A: 应用会自动处理只读文件和UNC路径。如果仍有问题，请以�
   - 移除 unrar Rust crate（依赖 C 库，有平台兼容性问题）
   - 采用 sidecar 二进制方案，纯 Rust 主库 + 平台特定二进制
 
-- ✅ **代码质量提升**
-  - cargo check 通过
-  - cargo clippy 无警告
-  - 530+ 测试用例通过
+### [0.0.109] - 2026-01-09
 
-### [0.1.0] - 2025-12-27
+#### 🎉 FuzzyMatcher增强
 
-#### 🎉 重大发布：CAS架构迁移完成
+- ✅ **Levenshtein距离算法**: 拼写容错 (ERROR ≈ ERRO)
+- ✅ **Metaphone语音相似度**: 发音匹配 (Smith ≈ Smyth)
+- ✅ **UTF-8安全**: 支持中文、emoji、德文等多字节字符
+- ✅ **线程安全缓存**: 85%+ 命中率
 
-- ✅ **完整CAS架构**: 从legacy `path_map`系统迁移到Content-Addressable Storage
-- ✅ **统一MetadataStore**: 新的高效文件元数据管理系统
-- ✅ **流式压缩处理**: 改进的归档处理，支持流式处理
-- ✅ **增强搜索**: 搜索使用CAS进行文件内容检索
+### [0.0.104] - 2025-12-31
 
-#### ⚠️ 破坏性变更
-- **Legacy格式支持已移除**: 不再支持旧的 `.idx.gz` 索引文件
-- **无迁移路径**: 旧工作区格式的用户需要创建新工作区
-- **数据库架构变更**: 用 `files` 和 `archives` 表替换 `path_mappings` 表
+#### 🎉 搜索引擎重构
 
-#### 🛠️ 技术改进
-- CAS存储实现内容寻址文件存储
-- 基于SQLite的元数据存储，支持适当索引
-- 流式文件处理，提高内存效率
-- 并行归档处理支持
-
-### [Unreleased] - 当前开发版本
-
-#### 🐛 Bug修复
-- 修复EventBus幂等性导致工作区卡在PROCESSING状态的问题
+- ✅ **Tantivy搜索引擎**: 子200ms响应时间
+- ✅ **并发搜索**: Rayon并行处理
+- ✅ **高亮引擎**: 搜索结果高亮显示
+- ✅ **布尔查询**: AND/OR/NOT逻辑支持
 
 **查看完整更新日志**: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
-## 🤝 贡献
+## 贡献
 
 欢迎贡献代码、报告问题或提出建议！
 
@@ -464,7 +543,7 @@ A: 应用会自动处理只读文件和UNC路径。如果仍有问题，请以�
 
 ---
 
-## 📝 许可证
+## 许可证
 
 本项目采用 **Apache License 2.0** 开源协议。
 
