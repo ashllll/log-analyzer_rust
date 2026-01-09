@@ -90,7 +90,7 @@ impl MetadataStore {
         // 连接池大小和超时配置基于SQLite最佳实践
         let pool = SqlitePoolOptions::new()
             .min_connections(1) // 最小连接数：桌面应用通常1个足够
-            .max_connections(5) // 最大连接数：避免资源耗尽
+            .max_connections(10) // 最大连接数：WAL模式支持更多并发
             .acquire_timeout(Duration::from_secs(30)) // 获取连接超时
             .idle_timeout(Duration::from_secs(600)) // 空闲连接超时：10分钟
             .max_lifetime(Duration::from_secs(1800)) // 连接最大生命周期：30分钟
@@ -99,6 +99,31 @@ impl MetadataStore {
             .map_err(|e| {
                 AppError::database_error(format!("Failed to connect to database: {}", e))
             })?;
+
+        // Enable WAL mode for better concurrent read performance
+        // WAL (Write-Ahead Logging) allows concurrent reads while writing
+        sqlx::query("PRAGMA journal_mode = WAL")
+            .execute(&pool)
+            .await
+            .map_err(|e| {
+                AppError::database_error(format!("Failed to enable WAL mode: {}", e))
+            })?;
+
+        // Optimize for performance
+        sqlx::query("PRAGMA synchronous = NORMAL")
+            .execute(&pool)
+            .await
+            .map_err(|e| {
+                AppError::database_error(format!("Failed to set synchronous mode: {}", e))
+            })?;
+
+        // Increase cache size for better performance (default is -2000, we use -8000 for ~8MB)
+        sqlx::query("PRAGMA cache_size = -8000")
+            .execute(&pool)
+            .await
+            .ok(); // Ignore errors for cache size (may not be supported on all platforms)
+
+        info!(path = %db_path.display(), "WAL mode enabled for better concurrency");
 
         // Initialize schema
         Self::init_schema(&pool).await?;

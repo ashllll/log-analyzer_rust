@@ -5,6 +5,7 @@
 //! - Flat directory structure (avoids path length limits)
 //! - Automatic deduplication (same content = same hash)
 //! - Efficient storage and retrieval
+//! - Object existence cache for performance optimization
 //!
 //! ## Storage Layout
 //!
@@ -21,19 +22,31 @@
 //! to avoid having too many files in a single directory.
 
 use crate::error::{AppError, Result};
+use dashmap::DashSet;
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use tokio::fs;
 use tokio::io::{AsyncReadExt, BufReader};
 use tracing::{debug, error, info, warn};
+use walkdir::WalkDir;
 
 /// Content-Addressable Storage manager
 ///
 /// Provides Git-style content storage with SHA-256 hashing.
 /// All files are stored in a flat structure under `workspace_dir/objects/`.
+///
+/// ## Performance Optimization
+///
+/// Uses an in-memory DashSet for object existence checks to avoid
+/// redundant filesystem operations. DashSet provides thread-safe
+/// concurrent access with minimal locking overhead.
 #[derive(Debug, Clone)]
 pub struct ContentAddressableStorage {
     workspace_dir: PathBuf,
+    /// In-memory cache for object existence checks (performance optimization)
+    /// Uses DashSet for thread-safe concurrent access
+    existence_cache: Arc<DashSet<String>>,
 }
 
 impl ContentAddressableStorage {
@@ -52,7 +65,12 @@ impl ContentAddressableStorage {
     /// let cas = ContentAddressableStorage::new(PathBuf::from("./workspace_123"));
     /// ```
     pub fn new(workspace_dir: PathBuf) -> Self {
-        Self { workspace_dir }
+        // Create a DashSet for object existence checks
+        // DashSet provides thread-safe concurrent access with minimal locking
+        Self {
+            workspace_dir,
+            existence_cache: Arc::new(DashSet::new()),
+        }
     }
 
     /// Compute SHA-256 hash of content
@@ -180,8 +198,20 @@ impl ContentAddressableStorage {
         let hash = Self::compute_hash_incremental(file_path).await?;
         let object_path = self.get_object_path(&hash);
 
+        // Check cache first for performance (high-frequency optimization)
+        if self.existence_cache.contains(&hash) {
+            debug!(
+                hash = %hash,
+                file = %file_path.display(),
+                "Content already exists (cached), skipping write (deduplication)"
+            );
+            return Ok(hash);
+        }
+
         // Check if object already exists (deduplication)
         if object_path.exists() {
+            // Cache the result for future checks
+            self.existence_cache.insert(hash.clone());
             debug!(
                 hash = %hash,
                 file = %file_path.display(),
@@ -324,6 +354,9 @@ impl ContentAddressableStorage {
             )
         })?;
 
+        // Cache the newly created object for future existence checks
+        self.existence_cache.insert(hash.clone());
+
         info!(
             hash = %hash,
             size = metadata.len(),
@@ -368,8 +401,19 @@ impl ContentAddressableStorage {
         let hash = Self::compute_hash(content);
         let object_path = self.get_object_path(&hash);
 
+        // Check cache first for performance
+        if self.existence_cache.contains(&hash) {
+            debug!(
+                hash = %hash,
+                "Content already exists (cached), skipping write (deduplication)"
+            );
+            return Ok(hash);
+        }
+
         // Check if object already exists (deduplication)
         if object_path.exists() {
+            // Cache the result
+            self.existence_cache.insert(hash.clone());
             debug!(
                 hash = %hash,
                 "Content already exists, skipping write (deduplication)"
@@ -394,6 +438,9 @@ impl ContentAddressableStorage {
                 Some(object_path.clone()),
             )
         })?;
+
+        // Cache the newly created object
+        self.existence_cache.insert(hash.clone());
 
         info!(
             hash = %hash,
@@ -485,7 +532,7 @@ impl ContentAddressableStorage {
         })
     }
 
-    /// Check if content exists in storage
+    /// Check if content exists in storage (sync version)
     ///
     /// # Arguments
     ///
@@ -495,13 +542,43 @@ impl ContentAddressableStorage {
     ///
     /// `true` if the object exists, `false` otherwise
     pub fn exists(&self, hash: &str) -> bool {
-        self.get_object_path(hash).exists()
+        // Check cache first for performance
+        if self.existence_cache.contains(hash) {
+            return true;
+        }
+        let result = self.get_object_path(hash).exists();
+        if result {
+            self.existence_cache.insert(hash.to_string());
+        }
+        result
+    }
+
+    /// Check if content exists in storage (async version with cache)
+    ///
+    /// # Arguments
+    ///
+    /// * `hash` - SHA-256 hash to check
+    ///
+    /// # Returns
+    ///
+    /// `true` if the object exists, `false` otherwise
+    pub async fn exists_async(&self, hash: &str) -> bool {
+        // Check cache first for performance
+        if self.existence_cache.contains(hash) {
+            return true;
+        }
+        let result = self.get_object_path(hash).exists();
+        if result {
+            self.existence_cache.insert(hash.to_string());
+        }
+        result
     }
 
     /// Get the total size of stored objects
     ///
-    /// Walks the objects directory and sums file sizes.
-    /// Useful for monitoring storage usage.
+    /// Uses walkdir for efficient directory traversal instead of
+    /// recursive async calls. This significantly improves performance
+    /// for workspaces with many files.
     ///
     /// # Returns
     ///
@@ -513,51 +590,15 @@ impl ContentAddressableStorage {
             return Ok(0);
         }
 
+        // Use walkdir for efficient parallel directory traversal
         let mut total_size = 0u64;
-        let mut entries = fs::read_dir(&objects_dir).await.map_err(|e| {
-            AppError::io_error(
-                format!("Failed to read objects directory: {}", e),
-                Some(objects_dir.clone()),
-            )
-        })?;
-
-        while let Some(entry) = entries.next_entry().await.map_err(|e| {
-            AppError::io_error(
-                format!("Failed to read directory entry: {}", e),
-                Some(objects_dir.clone()),
-            )
-        })? {
-            let path = entry.path();
-            if path.is_dir() {
-                // Recursively sum subdirectory
-                total_size += self.get_directory_size(&path).await?;
-            }
-        }
-
-        Ok(total_size)
-    }
-
-    /// Helper: Get size of a directory recursively
-    async fn get_directory_size(&self, dir: &Path) -> Result<u64> {
-        let mut total_size = 0u64;
-        let mut entries = fs::read_dir(dir).await.map_err(|e| {
-            AppError::io_error(
-                format!("Failed to read directory: {}", e),
-                Some(dir.to_path_buf()),
-            )
-        })?;
-
-        while let Some(entry) = entries.next_entry().await.map_err(|e| {
-            AppError::io_error(
-                format!("Failed to read directory entry: {}", e),
-                Some(dir.to_path_buf()),
-            )
-        })? {
-            let path = entry.path();
-            if path.is_file() {
-                if let Ok(metadata) = fs::metadata(&path).await {
-                    total_size += metadata.len();
-                }
+        for entry in WalkDir::new(&objects_dir)
+            .follow_links(false)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            if entry.file_type().is_file() {
+                total_size += entry.metadata().map(|m| m.len()).unwrap_or(0);
             }
         }
 
