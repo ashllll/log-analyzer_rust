@@ -105,9 +105,7 @@ impl MetadataStore {
         sqlx::query("PRAGMA journal_mode = WAL")
             .execute(&pool)
             .await
-            .map_err(|e| {
-                AppError::database_error(format!("Failed to enable WAL mode: {}", e))
-            })?;
+            .map_err(|e| AppError::database_error(format!("Failed to enable WAL mode: {}", e)))?;
 
         // Optimize for performance
         sqlx::query("PRAGMA synchronous = NORMAL")

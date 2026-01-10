@@ -93,9 +93,9 @@ impl Default for CacheConfig {
     fn default() -> Self {
         Self {
             max_capacity: 1000,
-            ttl: Duration::from_secs(300), // 5分钟TTL
-            tti: Duration::from_secs(60),  // 1分钟TTI
-            compression_threshold: 10 * 1024,             // 10KB
+            ttl: Duration::from_secs(300),    // 5分钟TTL
+            tti: Duration::from_secs(60),     // 1分钟TTI
+            compression_threshold: 10 * 1024, // 10KB
             enable_compression: true,
             access_pattern_window: 1000,
             preload_threshold: 5,

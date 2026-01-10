@@ -46,7 +46,15 @@ impl ArchiveHandler for RarHandler {
         let target_str = target_dir.to_string_lossy().to_string();
 
         // 尝试使用纯Rust的 rar crate
-        match RarHandler::extract_with_rar_crate(&source_str, &target_str, max_file_size, max_total_size, max_file_count).await {
+        match RarHandler::extract_with_rar_crate(
+            &source_str,
+            &target_str,
+            max_file_size,
+            max_total_size,
+            max_file_count,
+        )
+        .await
+        {
             Ok(summary) => {
                 if summary.files_extracted > 0 {
                     info!("Successfully extracted RAR using rar crate (pure Rust)");
@@ -60,7 +68,14 @@ impl ArchiveHandler for RarHandler {
         }
 
         // Fallback: 使用 unrar 二进制处理
-        RarHandler::extract_with_unrar_fallback(&source_str, &target_str, max_file_size, max_total_size, max_file_count).await
+        RarHandler::extract_with_unrar_fallback(
+            &source_str,
+            &target_str,
+            max_file_size,
+            max_total_size,
+            max_file_count,
+        )
+        .await
     }
 
     #[allow(dead_code)]
@@ -92,9 +107,8 @@ impl RarHandler {
         max_file_count: usize,
     ) -> Result<ExtractionSummary> {
         // rar v0.4 API: extract_all returns Result<Archive>
-        let archive = rar::Archive::extract_all(source, target_dir, "").map_err(|e| {
-            AppError::archive_error(format!("RAR extraction failed: {}", e), None)
-        })?;
+        let archive = rar::Archive::extract_all(source, target_dir, "")
+            .map_err(|e| AppError::archive_error(format!("RAR extraction failed: {}", e), None))?;
 
         let mut summary = ExtractionSummary::new();
         let mut total_size = 0u64;
@@ -139,7 +153,10 @@ impl RarHandler {
             debug!("Extracted (rar crate): {}", entry_name);
         }
 
-        info!("rar crate extracted {} files, {} bytes", file_count, total_size);
+        info!(
+            "rar crate extracted {} files, {} bytes",
+            file_count, total_size
+        );
         Ok(summary)
     }
 
