@@ -1,6 +1,5 @@
 use crate::error::{AppError, Result};
 use crate::models::search::*;
-use crate::services::fuzzy_matcher::FuzzyMatcher;
 use regex::Regex;
 use std::collections::HashMap;
 
@@ -8,11 +7,13 @@ use std::collections::HashMap;
  * 查询计划构建器
  *
  * 负责构建搜索查询的执行计划
+ *
+ * 设计决策：所有搜索默认使用正则表达式，与 ripgrep 等工具保持一致。
+ * 用户如需精确匹配，可使用 \Q...\E 语法（Perl 风格）。
  */
 pub struct QueryPlanner {
     cache_size: usize,
     regex_cache: HashMap<String, Regex>,
-    fuzzy_matcher: Option<FuzzyMatcher>,
 }
 
 impl QueryPlanner {
@@ -26,23 +27,7 @@ impl QueryPlanner {
         Self {
             cache_size,
             regex_cache: HashMap::new(),
-            fuzzy_matcher: None,
         }
-    }
-
-    /**
-     * 启用模糊匹配
-     *
-     * # 参数
-     * * `enabled` - 是否启用模糊匹配
-     */
-    pub fn with_fuzzy_matching(mut self, enabled: bool) -> Self {
-        if enabled {
-            self.fuzzy_matcher = Some(FuzzyMatcher::new(2)); // 最大编辑距离为2
-        } else {
-            self.fuzzy_matcher = None;
-        }
-        self
     }
 
     /**
@@ -129,13 +114,6 @@ impl QueryPlanner {
             QueryOperator::Not => SearchStrategy::Not,
         };
 
-        // 检查是否启用了模糊匹配
-        let fuzzy_enabled = self.fuzzy_matcher.is_some()
-            && query
-                .terms
-                .iter()
-                .any(|t| t.enabled && t.fuzzy_enabled.unwrap_or(false));
-
         // 编译正则表达式
         let mut regexes = Vec::new();
         let mut terms_list = Vec::new();
@@ -152,7 +130,6 @@ impl QueryPlanner {
                 id: term.id.clone(),
                 value: term.value.clone(),
                 case_sensitive: term.case_sensitive,
-                fuzzy_enabled: term.fuzzy_enabled.unwrap_or(false),
             });
         }
 
@@ -161,7 +138,6 @@ impl QueryPlanner {
             regexes,
             term_count: enabled_terms.len(),
             terms: terms_list,
-            fuzzy_enabled,
         })
     }
 
@@ -234,7 +210,6 @@ pub struct ExecutionPlan {
     #[allow(dead_code)]
     pub term_count: usize,
     pub terms: Vec<PlanTerm>,
-    pub fuzzy_enabled: bool, // 是否启用模糊匹配
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -242,7 +217,6 @@ pub struct PlanTerm {
     pub id: String,
     pub value: String,
     pub case_sensitive: bool,
-    pub fuzzy_enabled: bool, // 该term是否启用模糊匹配
 }
 
 impl ExecutionPlan {
@@ -306,7 +280,6 @@ mod tests {
             priority: 1,
             enabled: true,
             case_sensitive: false,
-            fuzzy_enabled: Some(false), // 默认不启用模糊匹配
         }
     }
 

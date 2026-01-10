@@ -92,7 +92,6 @@ pub async fn search_logs(
     #[allow(non_snake_case)] workspaceId: Option<String>,
     max_results: Option<usize>,
     filters: Option<SearchFilters>,
-    #[allow(non_snake_case)] fuzzyEnabled: Option<bool>, // 新增：模糊搜索开关
     state: State<'_, AppState>,
 ) -> Result<String, String> {
     if query.is_empty() {
@@ -235,8 +234,6 @@ pub async fn search_logs(
             return;
         }
 
-        let fuzzy_enabled = fuzzyEnabled.unwrap_or(false);
-
         let search_terms: Vec<SearchTerm> = raw_terms
             .iter()
             .enumerate()
@@ -250,7 +247,6 @@ pub async fn search_logs(
                 priority: 1,
                 enabled: true,
                 case_sensitive: false,
-                fuzzy_enabled: Some(fuzzy_enabled), // 传递模糊匹配标志
             })
             .collect();
 
@@ -269,7 +265,7 @@ pub async fn search_logs(
 
         // ============================================================        // 高级搜索特性集成点        // ============================================================        // FilterEngine: 位图索引加速过滤（10K文档 < 10ms）        // RegexSearchEngine: LRU缓存正则搜索（加速50x+）        // TimePartitionedIndex: 时间分区索引（时序查询优化）        // AutocompleteEngine: Trie树自动补全（< 100ms响应）        //         // 使用方式：        // 1. 从 AppState 获取高级特性实例（已初始化）        // 2. 在搜索前使用 FilterEngine 预过滤候选文档        // 3. 在过滤时使用 RegexSearchEngine 加速正则匹配        // 4. 在时间范围查询时使用 TimePartitionedIndex        //         // 配置开关：config.json -> advanced_features.enable_*        tracing::info!("🔍 高级搜索特性已就绪（可通过配置启用）");
 
-        let mut executor = QueryExecutor::new(100).with_fuzzy_matching(fuzzy_enabled); // 启用/禁用模糊匹配
+        let mut executor = QueryExecutor::new(100);
         let plan = match executor.execute(&structured_query) {
             Ok(p) => p,
             Err(e) => {

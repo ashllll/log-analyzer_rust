@@ -41,9 +41,6 @@ pub struct SearchTerm {
     pub enabled: bool,
     #[serde(rename = "caseSensitive")]
     pub case_sensitive: bool,
-    #[serde(rename = "fuzzyEnabled")]
-    #[serde(default)]
-    pub fuzzy_enabled: Option<bool>, // 是否启用模糊匹配
 }
 
 /**

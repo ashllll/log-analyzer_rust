@@ -1,6 +1,5 @@
 use crate::error::Result;
 use crate::models::search::*;
-use crate::services::fuzzy_matcher::FuzzyMatcher;
 use crate::services::query_planner::{ExecutionPlan, QueryPlanner};
 use crate::services::query_validator::QueryValidator;
 
@@ -12,11 +11,12 @@ use crate::services::query_validator::QueryValidator;
  * - QueryPlanner: 构建执行计划
  * - PatternMatcher: 模式匹配（Aho-Corasick）
  * - QueryExecutor: 执行查询和结果匹配
+ *
+ * 设计决策：所有搜索默认使用正则表达式，与 ripgrep 等工具保持一致。
+ * 用户如需精确匹配，可使用 \Q...\E 语法（Perl 风格）。
  */
 pub struct QueryExecutor {
     planner: QueryPlanner,
-    fuzzy_matcher: Option<FuzzyMatcher>,
-    // 移除未使用的 validator 字段
 }
 
 impl QueryExecutor {
@@ -29,25 +29,7 @@ impl QueryExecutor {
     pub fn new(cache_size: usize) -> Self {
         Self {
             planner: QueryPlanner::new(cache_size),
-            fuzzy_matcher: None,
         }
-    }
-
-    /**
-     * 启用模糊匹配
-     *
-     * # 参数
-     * * `enabled` - 是否启用模糊匹配
-     */
-    pub fn with_fuzzy_matching(mut self, enabled: bool) -> Self {
-        if enabled {
-            self.fuzzy_matcher = Some(FuzzyMatcher::new(2));
-            self.planner = self.planner.with_fuzzy_matching(true);
-        } else {
-            self.fuzzy_matcher = None;
-            self.planner = self.planner.with_fuzzy_matching(false);
-        }
-        self
     }
 
     /**
@@ -74,7 +56,7 @@ impl QueryExecutor {
     }
 
     /**
-     * 测试单行是否匹配
+     * 测试单行是否匹配（统一使用正则表达式）
      *
      * # 参数
      * * `plan` - 执行计划
@@ -89,20 +71,12 @@ impl QueryExecutor {
             crate::services::query_planner::SearchStrategy::And => {
                 // AND 逻辑：所有term都必须匹配
                 for term in &plan.terms {
-                    let term_matches = if term.fuzzy_enabled && plan.fuzzy_enabled {
-                        // 使用模糊匹配
-                        if let Some(ref matcher) = self.fuzzy_matcher {
-                            matcher.find_similar_words(&term.value, line)
-                        } else {
-                            false
-                        }
+                    let term_matches = if let Some(compiled) =
+                        plan.regexes.iter().find(|r| r.term_id == term.id)
+                    {
+                        compiled.regex.is_match(line)
                     } else {
-                        // 使用精确匹配（正则表达式）
-                        if let Some(compiled) = plan.regexes.iter().find(|r| r.term_id == term.id) {
-                            compiled.regex.is_match(line)
-                        } else {
-                            false
-                        }
+                        false
                     };
 
                     if !term_matches {
@@ -114,20 +88,12 @@ impl QueryExecutor {
             crate::services::query_planner::SearchStrategy::Or => {
                 // OR 逻辑：匹配任意一个
                 for term in &plan.terms {
-                    let term_matches = if term.fuzzy_enabled && plan.fuzzy_enabled {
-                        // 使用模糊匹配
-                        if let Some(ref matcher) = self.fuzzy_matcher {
-                            matcher.find_similar_words(&term.value, line)
-                        } else {
-                            false
-                        }
+                    let term_matches = if let Some(compiled) =
+                        plan.regexes.iter().find(|r| r.term_id == term.id)
+                    {
+                        compiled.regex.is_match(line)
                     } else {
-                        // 使用精确匹配（正则表达式）
-                        if let Some(compiled) = plan.regexes.iter().find(|r| r.term_id == term.id) {
-                            compiled.regex.is_match(line)
-                        } else {
-                            false
-                        }
+                        false
                     };
 
                     if term_matches {
@@ -139,20 +105,12 @@ impl QueryExecutor {
             crate::services::query_planner::SearchStrategy::Not => {
                 // NOT 逻辑：不能匹配任何一个
                 for term in &plan.terms {
-                    let term_matches = if term.fuzzy_enabled && plan.fuzzy_enabled {
-                        // 使用模糊匹配
-                        if let Some(ref matcher) = self.fuzzy_matcher {
-                            matcher.find_similar_words(&term.value, line)
-                        } else {
-                            false
-                        }
+                    let term_matches = if let Some(compiled) =
+                        plan.regexes.iter().find(|r| r.term_id == term.id)
+                    {
+                        compiled.regex.is_match(line)
                     } else {
-                        // 使用精确匹配（正则表达式）
-                        if let Some(compiled) = plan.regexes.iter().find(|r| r.term_id == term.id) {
-                            compiled.regex.is_match(line)
-                        } else {
-                            false
-                        }
+                        false
                     };
 
                     if term_matches {
@@ -267,7 +225,6 @@ mod tests {
             priority: 1,
             enabled: true,
             case_sensitive,
-            fuzzy_enabled: Some(false), // 默认不启用模糊匹配
         }
     }
 
