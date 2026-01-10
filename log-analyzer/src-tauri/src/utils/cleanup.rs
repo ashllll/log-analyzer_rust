@@ -53,8 +53,9 @@ pub fn try_cleanup_temp_dir(path: &Path, cleanup_queue: &Arc<SegQueue<PathBuf>>)
 
             fs::remove_dir_all(path).map_err(|e| format!("Failed to remove directory: {}", e))
         },
-        3,
-        &[100, 500, 1000],
+        3,    // 最多重试3次
+        100,  // 基础延迟 100ms
+        5000, // 最大延迟 5s
         &format!("cleanup_temp_dir({})", path.display()),
     );
 

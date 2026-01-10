@@ -70,8 +70,9 @@ pub fn remove_readonly(path: &Path) -> Result<(), String> {
             }
             Ok(())
         },
-        2,           // 最多重试2次
-        &[100, 300], // 延迟100ms和300ms
+        2,    // 最多重试2次
+        100,  // 基础延迟 100ms
+        1000, // 最大延迟 1s
         &format!("remove_readonly({})", path.display()),
     )
 }
