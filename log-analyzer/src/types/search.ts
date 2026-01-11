@@ -25,33 +25,30 @@ export type ValidationSeverity = 'error' | 'warning' | 'info';
 export interface SearchTerm {
   /** 唯一标识符 */
   id: string;
-  
+
   /** 搜索值 */
   value: string;
-  
+
   /** 操作符（AND/OR/NOT） */
   operator: QueryOperator;
-  
+
   /** 来源（用户输入/预置） */
   source: TermSource;
-  
+
   /** 关联的预置组 ID（如果是预置关键词） */
   presetGroupId?: string;
-  
+
   /** 是否为正则表达式 */
   isRegex: boolean;
-  
+
   /** 优先级（0-100） */
   priority: number;
-  
+
   /** 是否启用 */
   enabled: boolean;
 
   /** 是否区分大小写 */
   caseSensitive: boolean;
-
-  /** 是否启用模糊匹配（容忍拼写错误） */
-  fuzzyEnabled?: boolean;
 }
 
 /**

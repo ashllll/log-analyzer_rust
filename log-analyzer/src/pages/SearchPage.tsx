@@ -142,8 +142,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [isFilterPaletteOpen, setIsFilterPaletteOpen] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
-  const [fuzzyEnabled, setFuzzyEnabled] = useState(false); // 模糊搜索开关
-  
+
   // 搜索统计状态
   const [searchSummary, setSearchSummary] = useState<SearchResultSummary | null>(null);
   const [keywordStats, setKeywordStats] = useState<KeywordStat[]>([]);
@@ -327,7 +326,6 @@ const SearchPage: React.FC<SearchPageProps> = ({
         query,
         searchPath: activeWorkspace.path,
         filters: filters,
-        fuzzyEnabled: fuzzyEnabled
       });
 
       // 如果使用了结构化查询，更新执行次数
@@ -522,17 +520,6 @@ const SearchPage: React.FC<SearchPageProps> = ({
               />
             </div>
           </div>
-
-          {/* 模糊搜索开关 */}
-          <Button
-            variant={fuzzyEnabled ? "active" : "secondary"}
-            onClick={() => setFuzzyEnabled(!fuzzyEnabled)}
-            title="启用模糊搜索：容忍拼写错误"
-            className="min-w-[100px]"
-          >
-            <span className="mr-2">🔍</span>
-            <span>{fuzzyEnabled ? '模糊: 开' : '模糊: 关'}</span>
-          </Button>
 
           <div className="relative">
             <Button 
