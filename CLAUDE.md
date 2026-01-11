@@ -14,21 +14,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 > **项目**: log-analyzer_rust - 高性能桌面日志分析工具
 >
-> **版本**: 0.0.109
+> **版本**: 0.0.123
 >
 > **技术栈**: Tauri 2.0 + Rust + React 19 + TypeScript
 >
-> **最后更新**: 2026-01-09
+> **最后更新**: 2026-01-11
 
 ---
 
 ## 📚 快速链接
 
-- **[完整项目文档](CLAUDE.md)** - 包含架构、编码规范、AI使用指引的完整文档
+- **[项目文档中心](docs/README.md)** - 架构文档、用户指南、开发指南
 - **[Rust后端文档](log-analyzer/src-tauri/CLAUDE.md)** - 后端模块详细实现
 - **[React前端文档](log-analyzer/src/CLAUDE.md)** - 前端模块详细实现
-- **[项目文档中心](docs/README.md)** - 架构文档、用户指南、开发指南
-- **[改进建议](CLAUDE_IMPROVEMENTS.md)** - 对现有CLAUDE.md的改进建议
+- **[全局编码原则](C:\Users\white\.claude\rules\global-principles.md)** - 必须使用成熟方案 + CI/CD验证
 
 ---
 
@@ -53,6 +52,7 @@ log-analyzer_rust/
 │   └── src-tauri/            # Rust后端
 │       ├── src/
 │       │   ├── commands/     # Tauri命令(search, import, workspace等)
+│       │   ├── search_engine/ # 搜索引擎(Tantivy,布尔查询,高亮引擎)
 │       │   ├── services/     # 业务逻辑(PatternMatcher, QueryExecutor等)
 │       │   ├── storage/      # CAS存储系统
 │       │   ├── archive/      # 压缩包处理(ZIP/RAR/GZ/TAR)
@@ -571,7 +571,13 @@ pub async fn insert_file(&self, metadata: &FileMetadata) -> Result<i64> {
 
 ## 最近重大变更
 
-### [0.0.109] - 2026-01-09
+### [0.0.123] - 2026-01-11
+
+#### ⚠️ CI/CD 验证规则强化
+- ✅ 新增全局规则：提交前必须通过 GitHub CI/CD 和发布版本编译
+- ✅ 明确本地验证清单（cargo fmt, clippy, test, npm lint, build）
+
+### [0.0.111] - 2026-01-09
 
 #### 🎉 CAS架构性能优化
 - ✅ **对象存在性缓存优化**: 使用 `DashSet` 缓存已存在对象
