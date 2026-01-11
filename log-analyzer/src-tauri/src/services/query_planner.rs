@@ -1,7 +1,7 @@
 use crate::error::{AppError, Result};
 use crate::models::search::*;
+use moka::sync::Cache;
 use regex::Regex;
-use std::collections::HashMap;
 
 /**
  * 查询计划构建器
@@ -10,10 +10,14 @@ use std::collections::HashMap;
  *
  * 设计决策：所有搜索默认使用正则表达式，与 ripgrep 等工具保持一致。
  * 用户如需精确匹配，可使用 \Q...\E 语法（Perl 风格）。
+ *
+ * 使用 moka 库实现 LRU 正则表达式缓存，具有以下优势：
+ * - 线程安全：支持并发访问
+ * - 自动淘汰：LRU 策略自动淘汰最久未使用的条目
+ * - 高性能：使用高效的内部数据结构
  */
 pub struct QueryPlanner {
-    cache_size: usize,
-    regex_cache: HashMap<String, Regex>,
+    regex_cache: Cache<String, Regex>,
 }
 
 impl QueryPlanner {
@@ -21,12 +25,21 @@ impl QueryPlanner {
      * 创建新的计划构建器
      *
      * # 参数
-     * * `cache_size` - 正则表达式缓存大小
+     * * `max_capacity` - 正则表达式缓存最大容量
      */
-    pub fn new(cache_size: usize) -> Self {
+    #[allow(dead_code)]
+    pub fn new(max_capacity: usize) -> Self {
         Self {
-            cache_size,
-            regex_cache: HashMap::new(),
+            regex_cache: Cache::new(max_capacity as u64),
+        }
+    }
+
+    /**
+     * 使用默认容量创建计划构建器（默认 1000 条）
+     */
+    pub fn with_default_capacity() -> Self {
+        Self {
+            regex_cache: Cache::new(1000),
         }
     }
 
@@ -177,24 +190,16 @@ impl QueryPlanner {
         // 缓存键（不包含match_mode，因为是自动检测）
         let cache_key = format!("{}:{}", term.value, term.case_sensitive);
 
-        // 检查缓存
+        // 检查缓存（moka 自动 LRU 淘汰）
         if let Some(cached) = self.regex_cache.get(&cache_key) {
-            return Ok(cached.clone());
+            return Ok(cached);
         }
 
         // 编译新的正则表达式
         let regex = Regex::new(&pattern)
             .map_err(|e| AppError::validation_error(format!("Invalid pattern: {}", e)))?;
 
-        // 添加到缓存
-        if self.regex_cache.len() >= self.cache_size {
-            // 缓存满了，清空一半
-            let keys: Vec<String> = self.regex_cache.keys().cloned().collect();
-            for key in keys.iter().take(self.cache_size / 2) {
-                self.regex_cache.remove(key);
-            }
-        }
-
+        // 添加到缓存（moka 自动管理容量）
         self.regex_cache.insert(cache_key, regex.clone());
         Ok(regex)
     }
@@ -394,7 +399,8 @@ mod tests {
         let regex1 = planner.compile_regex(&term1).unwrap();
         let _regex2 = planner.compile_regex(&term2).unwrap();
 
-        assert!(planner.regex_cache.len() == 2);
+        // moka::Cache 使用 entry_count() 获取条目数
+        assert!(planner.regex_cache.entry_count() == 2);
 
         // 第二次应该命中缓存
         let regex1_cached = planner.compile_regex(&term1).unwrap();

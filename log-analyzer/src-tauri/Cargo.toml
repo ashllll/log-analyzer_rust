@@ -55,6 +55,10 @@ tokio-util = { version = "0.7", features = ["rt"] }  # 异步工具和取消令�
 # Phase 2: Enterprise-Grade Caching
 moka = { version = "0.12", features = ["future", "sync"] }  # 企业级缓存系统
 
+# Rate limiting using governor (industry-standard)
+governor = { version = "0.6", features = ["std"] }  # 速率限制器
+nonzero_ext = "0.3"  # 辅助库，用于 governor
+
 # Phase 2: High-Performance Search Engine
 tantivy = { version = "0.22", features = ["mmap"] }  # Rust 原生全文搜索引擎
 roaring = "0.10"  # 高效位图索引

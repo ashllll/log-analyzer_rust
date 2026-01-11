@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, lazy, Suspense } from "react";
 import {
   Search, LayoutGrid, ListTodo, Settings, Layers,
   Zap, Loader2, FileText
@@ -25,8 +25,22 @@ import { useKeywordManager } from './hooks/useKeywordManager';
 import { NavItem } from './components/ui';
 import { PageErrorFallback, CompactErrorFallback } from './components/ErrorFallback';
 
-// 导入页面组件
-import { SearchPage, KeywordsPage, WorkspacesPage, TasksPage, SettingsPage } from './pages';
+// 懒加载页面组件 - 减少首屏加载体积
+const SearchPage = lazy(() => import('./pages/SearchPage'));
+const KeywordsPage = lazy(() => import('./pages/KeywordsPage'));
+const WorkspacesPage = lazy(() => import('./pages/WorkspacesPage'));
+const TasksPage = lazy(() => import('./pages/TasksPage'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+
+// 懒加载页面加载骨架
+const PageSkeleton: React.FC = () => (
+  <div className="flex items-center justify-center h-full">
+    <div className="text-center">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+      <p className="text-sm text-text-muted">Loading...</p>
+    </div>
+  </div>
+);
 
 // --- Main App Component (Internal) ---
 function AppContent() {
@@ -135,21 +149,23 @@ function AppContent() {
       <div className="flex-1 flex flex-col min-w-0 bg-bg-main">
         <div className="h-14 border-b border-border-base bg-bg-main flex items-center justify-between px-6 shrink-0 z-40"><div className="flex items-center text-sm text-text-muted select-none"><span className="opacity-50">Workspace / </span><span className="font-medium text-text-main ml-2 flex items-center gap-2"><FileText size={14} className="text-primary"/> {activeWorkspace ? activeWorkspace.name : "Select Workspace"}</span></div></div>
         <div className="flex-1 overflow-hidden relative">
-           <ErrorBoundary FallbackComponent={CompactErrorFallback} onReset={() => setPage('workspaces')}>
-             {page === 'search' && <SearchPage keywordGroups={keywordGroups} addToast={addToast} searchInputRef={searchInputRef} activeWorkspace={activeWorkspace} />}
-           </ErrorBoundary>
-           <ErrorBoundary FallbackComponent={CompactErrorFallback} onReset={() => setPage('keywords')}>
-             {page === 'keywords' && <KeywordsPage />}
-           </ErrorBoundary>
-           <ErrorBoundary FallbackComponent={CompactErrorFallback} onReset={() => setPage('workspaces')}>
-             {page === 'workspaces' && <WorkspacesPage />}
-           </ErrorBoundary>
-           <ErrorBoundary FallbackComponent={CompactErrorFallback} onReset={() => setPage('tasks')}>
-             {page === 'tasks' && <TasksPage />}
-           </ErrorBoundary>
-           <ErrorBoundary FallbackComponent={CompactErrorFallback} onReset={() => setPage('settings')}>
-             {page === 'settings' && <SettingsPage />}
-           </ErrorBoundary>
+           <Suspense fallback={<PageSkeleton />}>
+             <ErrorBoundary FallbackComponent={CompactErrorFallback} onReset={() => setPage('search')}>
+               {page === 'search' && <SearchPage keywordGroups={keywordGroups} addToast={addToast} searchInputRef={searchInputRef} activeWorkspace={activeWorkspace} />}
+             </ErrorBoundary>
+             <ErrorBoundary FallbackComponent={CompactErrorFallback} onReset={() => setPage('keywords')}>
+               {page === 'keywords' && <KeywordsPage />}
+             </ErrorBoundary>
+             <ErrorBoundary FallbackComponent={CompactErrorFallback} onReset={() => setPage('workspaces')}>
+               {page === 'workspaces' && <WorkspacesPage />}
+             </ErrorBoundary>
+             <ErrorBoundary FallbackComponent={CompactErrorFallback} onReset={() => setPage('tasks')}>
+               {page === 'tasks' && <TasksPage />}
+             </ErrorBoundary>
+             <ErrorBoundary FallbackComponent={CompactErrorFallback} onReset={() => setPage('settings')}>
+               {page === 'settings' && <SettingsPage />}
+             </ErrorBoundary>
+           </Suspense>
         </div>
       </div>
       <Toaster

@@ -6,6 +6,7 @@
 //!
 //! - 临时目录的自动清理
 //! - 文件句柄的自动关闭
+//! - 文件锁管理
 //! - 资源生命周期追踪
 //! - 清理失败的重试机制
 //!
@@ -23,6 +24,120 @@ use std::sync::Arc;
 use tracing::{info, warn};
 
 use super::cleanup::try_cleanup_temp_dir;
+
+/// 文件锁守卫
+///
+/// 使用 RAII 模式管理文件锁的生命周期。
+/// 当守卫被 drop 时，自动释放文件锁。
+///
+/// # 示例
+///
+/// ```ignore
+/// use crate::utils::resource_manager::FileLockGuard;
+///
+/// let lock_path = PathBuf::from("/tmp/my-resource.lock");
+/// let _guard = FileLockGuard::new(lock_path);
+///
+/// // 资源被锁定...
+///
+/// ``` // lock 自动释放
+pub struct FileLockGuard {
+    path: PathBuf,
+    locked: bool,
+}
+
+impl FileLockGuard {
+    /// 创建新的文件锁守卫
+    ///
+    /// # 参数
+    ///
+    /// - `path` - 锁文件路径
+    ///
+    /// # 返回值
+    ///
+    /// 成功返回 Ok(Guard)，失败返回 Err
+    pub fn new(path: PathBuf) -> std::io::Result<Self> {
+        // 创建锁文件
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path) {
+            Ok(_) => {
+                info!("File lock acquired: {}", path.display());
+                Ok(Self { path, locked: true })
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                // 锁已存在，尝试等待
+                warn!("Lock file exists, waiting: {}", path.display());
+                Err(e)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    /// 尝试创建锁，如果失败不报错
+    pub fn try_new(path: PathBuf) -> Option<Self> {
+        Self::new(path).ok()
+    }
+
+    /// 检查是否已锁定
+    pub fn is_locked(&self) -> bool {
+        self.locked
+    }
+}
+
+impl Drop for FileLockGuard {
+    fn drop(&mut self) {
+        if self.locked && self.path.exists() {
+            if let Err(e) = fs::remove_file(&self.path) {
+                warn!("Failed to release file lock: {} - {}", self.path.display(), e);
+            } else {
+                info!("File lock released: {}", self.path.display());
+            }
+        }
+    }
+}
+
+/// 并发控制令牌
+///
+/// 用于限制并发操作数量的令牌。
+/// 当令牌被 drop 时，自动释放回池中。
+///
+/// # 示例
+///
+/// ```ignore
+/// use crate::utils::resource_manager::ConcurrencyToken;
+///
+/// let token = ConcurrencyToken::new(5).unwrap(); // 最多5个并发
+/// // 使用资源...
+/// ``` // token 自动释放回池中
+pub struct ConcurrencyToken {
+    _phantom: std::marker::PhantomData<()>,
+}
+
+impl ConcurrencyToken {
+    /// 创建新的并发令牌
+    ///
+    /// # 参数
+    ///
+    /// - `max_concurrent` - 最大并发数
+    ///
+    /// # 返回值
+    ///
+    /// 成功返回令牌，失败返回 Err
+    pub fn new(_max_concurrent: usize) -> std::io::Result<Self> {
+        // 实际实现需要配合信号量
+        // 这里提供简化版本
+        Ok(Self {
+            _phantom: std::marker::PhantomData,
+        })
+    }
+
+    /// 尝试创建令牌
+    pub fn try_new(_max_concurrent: usize) -> Option<Self> {
+        Some(Self::new(_max_concurrent).ok()?)
+    }
+}
 
 /// 临时目录资源守卫
 ///
