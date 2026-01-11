@@ -61,7 +61,8 @@ impl FileLockGuard {
         match fs::OpenOptions::new()
             .write(true)
             .create_new(true)
-            .open(&path) {
+            .open(&path)
+        {
             Ok(_) => {
                 info!("File lock acquired: {}", path.display());
                 Ok(Self { path, locked: true })
@@ -90,7 +91,11 @@ impl Drop for FileLockGuard {
     fn drop(&mut self) {
         if self.locked && self.path.exists() {
             if let Err(e) = fs::remove_file(&self.path) {
-                warn!("Failed to release file lock: {} - {}", self.path.display(), e);
+                warn!(
+                    "Failed to release file lock: {} - {}",
+                    self.path.display(),
+                    e
+                );
             } else {
                 info!("File lock released: {}", self.path.display());
             }
