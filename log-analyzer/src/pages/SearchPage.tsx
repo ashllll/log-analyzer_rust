@@ -3,33 +3,32 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { save } from '@tauri-apps/plugin-dialog';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { 
-  Search, 
-  Download, 
-  Filter, 
-  X, 
-  ChevronDown, 
-  Hash, 
-  Copy, 
-  Loader2, 
-  RotateCcw 
+import {
+  Search,
+  Download,
+  Filter,
+  X,
+  ChevronDown,
+  Hash,
+  Copy,
+  Loader2,
+  RotateCcw
 } from 'lucide-react';
 import { Button, Input } from '../components/ui';
 import { HybridLogRenderer } from '../components/renderers';
 import { FilterPalette } from '../components/modals';
 import { KeywordStatsPanel } from '../components/search/KeywordStatsPanel';
-import { SearchHistory } from '../components/SearchHistory';
 import { logger } from '../utils/logger';
 import { cn } from '../utils/classNames';
 import { SearchQueryBuilder } from '../services/SearchQueryBuilder';
 import { SearchQuery, SearchResultSummary, KeywordStat } from '../types/search';
 import { saveQuery, loadQuery } from '../services/queryStorage';
-import type { 
-  LogEntry, 
-  FilterOptions, 
-  Workspace, 
+import type {
+  LogEntry,
+  FilterOptions,
+  Workspace,
   KeywordGroup,
-  ToastType 
+  ToastType
 } from '../types/common';
 
 /**
@@ -293,20 +292,6 @@ const SearchPage: React.FC<SearchPageProps> = ({
   const handleSearch = async () => {
     if (!activeWorkspace) return addToast('error', 'Select a workspace first.');
 
-    // ✅ 在搜索开始时保存历史记录（修复闭包问题）
-    if (query.trim()) {
-      try {
-        await invoke('add_search_history', {
-          query: query.trim(),
-          workspaceId: activeWorkspace.id,
-          resultCount: null,  // 搜索还未开始
-        });
-        console.log('✅ Search history saved:', query.trim());
-      } catch (err) {
-        console.error('❌ Failed to save search history:', err);
-      }
-    }
-
     // 清空状态
     setLogs([]);
     setSearchSummary(null);
@@ -509,16 +494,6 @@ const SearchPage: React.FC<SearchPageProps> = ({
               placeholder="Search keywords separated by | ..."
               onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => e.key === 'Enter' && handleSearch()}
             />
-            {/* 搜索历史按钮 */}
-            <div className="absolute right-2 top-1/2 -translate-y-1/2">
-              <SearchHistory
-                workspaceId={activeWorkspace?.id || ''}
-                onSelectQuery={(selectedQuery) => {
-                  setQuery(selectedQuery);
-                  handleSearch();
-                }}
-              />
-            </div>
           </div>
 
           <div className="relative">
