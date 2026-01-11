@@ -19,8 +19,10 @@ pub enum AppError {
         help("Try simplifying your search query or checking the workspace status")
     )]
     Search {
+        #[allow(unused_assignments)]
         message: String,
         #[source]
+        #[allow(unused_assignments)]
         source: Option<Box<dyn std::error::Error + Send + Sync>>,
     },
 
@@ -30,7 +32,9 @@ pub enum AppError {
         help("Ensure the archive file is not corrupted and is a supported format")
     )]
     Archive {
+        #[allow(unused_assignments)]
         message: String,
+        #[allow(unused_assignments)]
         path: Option<PathBuf>,
     },
 

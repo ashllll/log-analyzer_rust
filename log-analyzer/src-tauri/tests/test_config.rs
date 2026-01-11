@@ -99,7 +99,6 @@ pub mod strategies {
                 priority,
                 enabled: true,
                 case_sensitive: false,
-                fuzzy_enabled: Some(false),
             })
     }
 

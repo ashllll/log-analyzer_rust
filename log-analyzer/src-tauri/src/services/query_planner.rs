@@ -307,7 +307,6 @@ mod tests {
         assert_eq!(plan.term_count, 2);
         assert_eq!(plan.terms.len(), 2);
         assert!(plan.terms.iter().all(|term| !term.case_sensitive));
-        assert!(!plan.fuzzy_enabled); // 默认不启用模糊匹配
     }
 
     #[test]
@@ -416,7 +415,6 @@ mod tests {
             priority: 1,
             enabled: true,
             case_sensitive: false,
-            fuzzy_enabled: Some(false),
         };
 
         let regex = planner.compile_regex(&term).unwrap();
@@ -438,7 +436,6 @@ mod tests {
             priority: 1,
             enabled: true,
             case_sensitive: true,
-            fuzzy_enabled: Some(false),
         };
 
         let regex = planner.compile_regex(&term).unwrap();
@@ -460,7 +457,6 @@ mod tests {
             priority: 1,
             enabled: true,
             case_sensitive: false,
-            fuzzy_enabled: Some(false),
         };
 
         let regex = planner.compile_regex(&term).unwrap();
@@ -495,22 +491,18 @@ mod tests {
                     id: "1".to_string(),
                     value: "test1".to_string(),
                     case_sensitive: false,
-                    fuzzy_enabled: false,
                 },
                 PlanTerm {
                     id: "2".to_string(),
                     value: "test2".to_string(),
                     case_sensitive: false,
-                    fuzzy_enabled: false,
                 },
                 PlanTerm {
                     id: "3".to_string(),
                     value: "test3".to_string(),
                     case_sensitive: false,
-                    fuzzy_enabled: false,
                 },
             ],
-            fuzzy_enabled: false,
         };
 
         plan.sort_by_priority();
@@ -589,7 +581,6 @@ mod tests {
             priority: 1,
             enabled: true,
             case_sensitive: false,
-            fuzzy_enabled: Some(false),
         };
 
         assert!(QueryPlanner::should_use_word_boundary(&term));
@@ -607,7 +598,6 @@ mod tests {
             priority: 1,
             enabled: true,
             case_sensitive: false,
-            fuzzy_enabled: Some(false),
         };
 
         assert!(!QueryPlanner::should_use_word_boundary(&term));

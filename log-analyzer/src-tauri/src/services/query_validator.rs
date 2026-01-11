@@ -90,7 +90,6 @@ mod tests {
             priority: 1,
             enabled,
             case_sensitive: false,
-            fuzzy_enabled: Some(false),
         }
     }
 
@@ -154,7 +153,6 @@ mod tests {
             priority: 1,
             enabled: true,
             case_sensitive: false,
-            fuzzy_enabled: Some(false),
         };
 
         let query = SearchQuery {
@@ -218,7 +216,6 @@ mod tests {
             priority: 1,
             enabled: true,
             case_sensitive: false,
-            fuzzy_enabled: Some(false),
         };
 
         let query = SearchQuery {
@@ -277,7 +274,6 @@ mod tests {
             priority: 1,
             enabled: true,
             case_sensitive: false,
-            fuzzy_enabled: Some(false),
         };
 
         let query = SearchQuery {

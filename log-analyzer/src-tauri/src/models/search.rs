@@ -150,7 +150,6 @@ mod tests {
             priority: 10,
             enabled: true,
             case_sensitive: false,
-            fuzzy_enabled: Some(false),
         };
 
         let json = serde_json::to_string(&term).unwrap();
