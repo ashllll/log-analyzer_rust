@@ -19,10 +19,8 @@ pub enum AppError {
         help("Try simplifying your search query or checking the workspace status")
     )]
     Search {
-        #[allow(unused_assignments)]
         message: String,
         #[source]
-        #[allow(unused_assignments)]
         source: Option<Box<dyn std::error::Error + Send + Sync>>,
     },
 
@@ -32,9 +30,7 @@ pub enum AppError {
         help("Ensure the archive file is not corrupted and is a supported format")
     )]
     Archive {
-        #[allow(unused_assignments)]
         message: String,
-        #[allow(unused_assignments)]
         path: Option<PathBuf>,
     },
 
@@ -85,6 +81,34 @@ pub enum AppError {
         help("Check database connection and schema integrity")
     )]
     DatabaseError(String),
+
+    #[error("Configuration error: {0}")]
+    #[diagnostic(code(app::config_error))]
+    Config(String),
+
+    #[error("Network error: {0}")]
+    #[diagnostic(code(app::network_error))]
+    Network(String),
+
+    #[error("Internal error: {0}")]
+    #[diagnostic(code(app::internal_error))]
+    Internal(String),
+
+    #[error("Resource cleanup error: {0}")]
+    #[diagnostic(code(app::resource_cleanup_error))]
+    ResourceCleanup(String),
+
+    #[error("Concurrency error: {0}")]
+    #[diagnostic(code(app::concurrency_error))]
+    Concurrency(String),
+
+    #[error("Parse error: {0}")]
+    #[diagnostic(code(app::parse_error))]
+    Parse(String),
+
+    #[error("Timeout error: {0}")]
+    #[diagnostic(code(app::timeout_error))]
+    Timeout(String),
 
     #[error("IO error: {message}")]
     #[diagnostic(code(app::io_error_detailed))]

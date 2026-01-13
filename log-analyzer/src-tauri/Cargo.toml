@@ -17,7 +17,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 uuid = { version = "1.0", features = ["v4", "serde"] }
 regex = "1.10"
-chrono = "0.4"
+chrono = { version = "0.4", features = ["serde"] }  # 时间序列化支持
 walkdir = "2.4"
 tempfile = "3.10"
 zip = "0.6"
@@ -83,9 +83,18 @@ async-compression = { version = "0.4", features = ["tokio", "gzip", "zstd"] }  #
 num_cpus = "1.16"  # CPU 核心数检测
 
 # Phase 5: Archive Support (Pure Rust Priority)
-# Prefer pure Rust implementations, fall back to C bindings for edge cases
 # Note: unarc-rs has dependency conflicts, using rar crate instead for pure Rust RAR support
 rar = "0.4"  # Pure Rust RAR library (basic extraction support)
+
+# Monitoring and Observability
+tracing-opentelemetry = "0.24"  # OpenTelemetry集成
+opentelemetry = "0.23"  # 分布式追踪
+opentelemetry-jaeger = "0.22"  # Jaeger导出器
+prometheus = "0.13"  # 指标收集
+metrics = "0.22"  # 应用指标
+
+# Phase 5: Archive Support (Pure Rust Priority)
+# Prefer pure Rust implementations, fall back to C bindings for edge cases
 
 # Phase 4: Testing Infrastructure
 [dev-dependencies]

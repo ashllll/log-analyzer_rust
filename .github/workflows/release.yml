@@ -1,4 +1,4 @@
-name: Release
+>name: Release
 
 on:
   push:
@@ -7,6 +7,16 @@ on:
     tags:
       - 'v*'  # 推送 v* 标签时触发指定版本（如 v1.0.0）
   workflow_dispatch:  # 允许手动触发
+    inputs:
+      version:
+        description: 'Version to release (e.g., 1.0.0)'
+        required: false
+        default: ''
+      prerelease:
+        description: 'Mark as prerelease'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   prepare-version:
@@ -34,67 +44,80 @@ jobs:
             exit 0
           fi
           
-          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+          # 处理手动触发的情况
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            MANUAL_VERSION="${{ github.event.inputs.version }}"
+            if [[ -n "$MANUAL_VERSION" ]]; then
+              VERSION="$MANUAL_VERSION"
+              echo "Using manual version: $VERSION"
+            else
+              # 如果是main分支推送，自动递增patch版本号
+              LATEST_TAG=$(git tag -l "v*" --sort=-v:refname | head -n 1)
+              if [ -z "$LATEST_TAG" ]; then
+                LATEST_TAG="v0.0.125"
+              fi
+              LATEST_VERSION="${LATEST_TAG#v}"
+              IFS='.' read -r MAJOR MINOR PATCH <<< "$LATEST_VERSION"
+              PATCH=$((PATCH + 1))
+              VERSION="${MAJOR}.${MINOR}.${PATCH}"
+              echo "Auto-incremented version: $VERSION"
+            fi
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
             # 如果是tag推送，使用tag名作为版本号
             VERSION="${GITHUB_REF_NAME#v}"
             echo "Using tag version: $VERSION"
-            echo "skip_release=false" >> $GITHUB_OUTPUT
           else
             # 如果是main分支推送，自动递增patch版本号
             LATEST_TAG=$(git tag -l "v*" --sort=-v:refname | head -n 1)
-            
             if [ -z "$LATEST_TAG" ]; then
-              LATEST_TAG="v0.0.41"
+              LATEST_TAG="v0.0.125"
             fi
-            
-            echo "Latest tag: $LATEST_TAG"
             LATEST_VERSION="${LATEST_TAG#v}"
             IFS='.' read -r MAJOR MINOR PATCH <<< "$LATEST_VERSION"
             PATCH=$((PATCH + 1))
             VERSION="${MAJOR}.${MINOR}.${PATCH}"
-            
             echo "Auto-incremented version: $VERSION"
-            
-            # 更新源码中的版本号
-            cd log-analyzer
-            
-            # 跨平台兼容的 sed 命令
-            if [ "$(uname)" = "Darwin" ]; then
-              sed -i '' "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
-              sed -i '' "s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
-              sed -i '' "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
-            else
-              sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
-              sed -i "s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
-              sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
-            fi
-            
-            cd ..
-            
-            # 提交版本号变更
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add log-analyzer/package.json log-analyzer/src-tauri/Cargo.toml log-analyzer/src-tauri/tauri.conf.json
-            
-            if git diff --staged --quiet; then
-              echo "No version changes to commit"
-            else
-              git commit -m "chore: bump version to $VERSION [skip ci]"
-              git push origin main
-              echo "Pushed version bump commit"
-            fi
-            
-            # 创建并推送新tag
-            if ! git rev-parse "v${VERSION}" >/dev/null 2>&1; then
-              git tag "v${VERSION}"
-              git push origin "v${VERSION}"
-              echo "Created and pushed tag: v${VERSION}"
-            else
-              echo "Tag v${VERSION} already exists"
-            fi
-            
-            echo "skip_release=false" >> $GITHUB_OUTPUT
           fi
+          
+          # 更新源码中的版本号
+          cd log-analyzer
+          
+          # 跨平台兼容的 sed 命令
+          if [ "$(uname)" = "Darwin" ]; then
+            sed -i '' "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
+            sed -i '' "s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
+            sed -i '' "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+          else
+            sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
+            sed -i "s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
+            sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+          fi
+          
+          cd ..
+          
+          # 提交版本号变更
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add log-analyzer/package.json log-analyzer/src-tauri/Cargo.toml log-analyzer/src-tauri/tauri.conf.json
+          
+          if git diff --staged --quiet; then
+            echo "No version changes to commit"
+          else
+            git commit -m "chore: bump version to $VERSION [skip ci]"
+            git push origin main
+            echo "Pushed version bump commit"
+          fi
+          
+          # 创建并推送新tag
+          if ! git rev-parse "v${VERSION}" >/dev/null 2>&1; then
+            git tag "v${VERSION}"
+            git push origin "v${VERSION}"
+            echo "Created and pushed tag: v${VERSION}"
+          else
+            echo "Tag v${VERSION} already exists"
+          fi
+          
+          echo "skip_release=false" >> $GITHUB_OUTPUT
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Final version: $VERSION"
         shell: bash

@@ -169,6 +169,8 @@ pub struct TempDirGuard {
     cleanup_queue: Arc<SegQueue<PathBuf>>,
     /// 是否已被手动清理（避免重复清理）
     cleaned: bool,
+    /// 清理尝试次数计数器
+    cleanup_attempts: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 impl TempDirGuard {
@@ -184,6 +186,7 @@ impl TempDirGuard {
             path,
             cleanup_queue,
             cleaned: false,
+            cleanup_attempts: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         }
     }
 
@@ -206,19 +209,53 @@ impl TempDirGuard {
             "Manually cleaning up temp directory: {}",
             self.path.display()
         );
+        self.cleanup_attempts.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         try_cleanup_temp_dir(&self.path, &self.cleanup_queue);
         self.cleaned = true;
+    }
+
+    /// 强制立即清理目录
+    pub fn force_cleanup(&mut self) -> std::io::Result<()> {
+        self.cleanup_attempts.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        if self.path.exists() {
+            match fs::remove_dir_all(&self.path) {
+                Ok(_) => {
+                    info!("Temp directory cleaned up: {}", self.path.display());
+                    self.cleaned = true;
+                    Ok(())
+                }
+                Err(e) => {
+                    warn!("Failed to cleanup temp directory: {} - {}", self.path.display(), e);
+                    // 加入清理队列重试
+                    self.cleanup_queue.push(self.path.clone());
+                    Err(e)
+                }
+            }
+        } else {
+            self.cleaned = true;
+            Ok(())
+        }
     }
 }
 
 impl Drop for TempDirGuard {
     fn drop(&mut self) {
-        if !self.cleaned {
+        if !self.cleaned && self.path.exists() {
+            let attempts = self.cleanup_attempts.load(std::sync::atomic::Ordering::Acquire);
             info!(
-                "TempDirGuard dropping, cleaning up: {}",
-                self.path.display()
+                "Cleaning up temp directory: {} (attempt: {})",
+                self.path.display(),
+                attempts + 1
             );
+
+            // 使用try_cleanup_temp_dir进行异步清理
             try_cleanup_temp_dir(&self.path, &self.cleanup_queue);
+
+            // 如果清理队列失败，尝试立即清理
+            if self.path.exists() {
+                let _ = fs::remove_dir_all(&self.path);
+            }
+
             self.cleaned = true;
         }
     }

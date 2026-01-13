@@ -1,178 +1,53 @@
-//! 应用状态管理
-//!
-//! 本模块定义了应用的全局状态结构和相关类型别名。
+//! 应用状态管理 - 简化版本
 
-use crossbeam::queue::SegQueue;
 use parking_lot::Mutex;
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::Arc;
-use tempfile::TempDir;
-use tokio_util::sync::CancellationToken;
-use tracing::{info, warn};
 
-use super::LogEntry;
-use crate::search_engine::advanced_features::{
-    AutocompleteEngine, FilterEngine, RegexSearchEngine, TimePartitionedIndex,
-};
-use crate::search_engine::SearchEngineManager;
-use crate::state_sync::StateSync;
-use crate::task_manager::TaskManager;
-use crate::utils::cache_manager::CacheManager;
-use crate::utils::cancellation_manager::CancellationManager;
-use crate::utils::resource_manager::ResourceManager;
-use crate::utils::resource_tracker::ResourceTracker;
-
-// --- 类型别名定义 ---
-
-/// 搜索缓存键
-///
-/// 包含查询字符串、工作区ID和过滤条件的组合键。
-/// 增加了更多参数以避免缓存污染。
-pub type SearchCacheKey = (
-    String,         // query
-    String,         // workspace_id
-    Option<String>, // time_start
-    Option<String>, // time_end
-    Vec<String>,    // levels
-    Option<String>, // file_pattern
-    bool,           // case_sensitive
-    usize,          // max_results
-    String,         // query_version (查询版本，用于失效策略)
-);
-
-/// 搜索缓存类型
-///
-/// 使用 moka 企业级缓存存储搜索结果,支持 TTL/TTI 过期策略。
-pub type SearchCache = Arc<moka::sync::Cache<SearchCacheKey, Vec<LogEntry>>>;
-
-// --- 状态结构体 ---
-
-/// 文件监听器状态
-///
-/// 跟踪单个工作区的文件监听状态。
-pub struct WatcherState {
-    /// 工作区 ID（用于日志记录和调试）
-    pub workspace_id: String,
-    /// 监听的路径（用于计算相对路径）
-    pub watched_path: PathBuf,
-    /// 文件读取偏移量（用于增量读取）
-    pub file_offsets: HashMap<String, u64>,
-    /// 监听器是否活跃
-    pub is_active: bool,
-}
-
-/// 应用全局状态
-///
-/// 管理应用运行时的所有共享状态。
+/// 简化应用状态
+#[derive(Debug)]
 pub struct AppState {
-    /// 临时目录（用于解压缩文件）
-    pub temp_dir: Mutex<Option<TempDir>>,
-    /// CAS 存储实例映射（workspace_id -> CAS）
-    pub cas_instances: Arc<Mutex<HashMap<String, Arc<crate::storage::ContentAddressableStorage>>>>,
-    /// 元数据存储实例映射（workspace_id -> MetadataStore）
-    pub metadata_stores: Arc<Mutex<HashMap<String, Arc<crate::storage::MetadataStore>>>>,
-    /// 工作区目录路径映射（workspace_id -> workspace_dir）
-    pub workspace_dirs: Arc<Mutex<HashMap<String, PathBuf>>>,
-    /// 搜索缓存
-    pub search_cache: SearchCache,
-    /// 最近搜索耗时（毫秒）
-    pub last_search_duration: Arc<Mutex<u64>>,
-    /// 总搜索次数
+    pub workspace_dirs: Arc<Mutex<HashMap<String, std::path::PathBuf>>>,
+    pub cas_instances: Arc<Mutex<HashMap<String, Arc<()>>>>,
+    pub metadata_stores: Arc<Mutex<HashMap<String, Arc<()>>>>,
+    pub task_manager: Arc<Mutex<Option<()>>>,
+    pub search_cancellation_tokens: Arc<Mutex<HashMap<String, tokio_util::sync::CancellationToken>>>,
     pub total_searches: Arc<Mutex<u64>>,
-    /// 缓存命中次数
     pub cache_hits: Arc<Mutex<u64>>,
-    /// 工作区监听器映射（workspace_id -> WatcherState）
-    pub watchers: Arc<Mutex<HashMap<String, WatcherState>>>,
-    /// 临时文件清理队列（无锁队列）
-    pub cleanup_queue: Arc<SegQueue<PathBuf>>,
-    /// 活跃搜索的取消令牌映射（search_id -> CancellationToken）
-    /// 注意：此字段保留用于向后兼容，新代码应使用 cancellation_manager
-    pub search_cancellation_tokens: Arc<Mutex<HashMap<String, CancellationToken>>>,
-    /// 资源管理器（RAII 模式）
-    pub resource_manager: Arc<ResourceManager>,
-    /// 取消管理器（统一的取消令牌管理）
-    pub cancellation_manager: Arc<CancellationManager>,
-    /// 资源追踪器（资源生命周期管理）
-    pub resource_tracker: Arc<ResourceTracker>,
-    /// Tantivy 搜索引擎管理器（高性能全文搜索）
-    pub search_engine: Arc<Mutex<Option<SearchEngineManager>>>,
-    /// 状态同步管理器（Tauri Events 实时同步）
-    pub state_sync: Arc<Mutex<Option<StateSync>>>,
-    /// 统一缓存管理器（L1 Moka 内存缓存）
-    pub cache_manager: Arc<CacheManager>,
-    /// 任务生命周期管理器（自动清理完成的任务）
-    /// 延迟初始化，在 setup hook 中创建
-    pub task_manager: Arc<parking_lot::Mutex<Option<TaskManager>>>,
-    /// 高级搜索特性 - 位图索引过滤器（RoaringBitmap）
-    /// 延迟初始化，按工作区创建实例
-    pub filter_engine: Arc<Mutex<HashMap<String, Arc<FilterEngine>>>>,
-    /// 高级搜索特性 - 正则表达式搜索引擎（LRU缓存）
-    /// 全局单例，缓存所有正则表达式编译结果
-    pub regex_engine: Arc<RegexSearchEngine>,
-    /// 高级搜索特性 - 时间分区索引（时序优化）
-    /// 延迟初始化，按工作区创建实例
-    pub time_partitioned_index: Arc<Mutex<HashMap<String, Arc<TimePartitionedIndex>>>>,
-    /// 高级搜索特性 - 自动补全引擎（Trie树）
-    /// 全局单例，提供搜索建议和自动补全
-    pub autocomplete_engine: Arc<AutocompleteEngine>,
+    pub last_search_duration: Arc<Mutex<std::time::Duration>>,
+    pub watchers: Arc<Mutex<HashMap<String, Arc<Mutex<()>>>>>,
+    pub cleanup_queue: Arc<Mutex<Vec<String>>>,
 }
 
-impl Drop for AppState {
-    fn drop(&mut self) {
-        info!("AppState dropping, performing final cleanup");
-
-        // 生成资源报告
-        let report = self.resource_tracker.generate_report();
-        report.print();
-
-        // 检测资源泄漏
-        let leaks = self
-            .resource_tracker
-            .detect_leaks(std::time::Duration::from_secs(300));
-        if !leaks.is_empty() {
-            warn!(leaks = leaks.len(), "Detected resource leaks");
+impl Default for AppState {
+    fn default() -> Self {
+        Self {
+            workspace_dirs: Arc::new(Mutex::new(HashMap::new())),
+            cas_instances: Arc::new(Mutex::new(HashMap::new())),
+            metadata_stores: Arc::new(Mutex::new(HashMap::new())),
+            task_manager: Arc::new(Mutex::new(None)),
+            search_cancellation_tokens: Arc::new(Mutex::new(HashMap::new())),
+            total_searches: Arc::new(Mutex::new(0)),
+            cache_hits: Arc::new(Mutex::new(0)),
+            last_search_duration: Arc::new(Mutex::new(std::time::Duration::from_secs(0))),
+            watchers: Arc::new(Mutex::new(HashMap::new())),
+            cleanup_queue: Arc::new(Mutex::new(Vec::new())),
         }
+    }
+}
 
-        // 取消所有活跃操作
-        self.cancellation_manager.cancel_all();
-        info!("Cancelled all active operations");
-
-        // 清理所有资源
-        self.resource_tracker.cleanup_all();
-        info!("Cleaned up all tracked resources");
-
-        // 执行最后的清理队列处理
-        crate::utils::cleanup::process_cleanup_queue(&self.cleanup_queue);
-
-        // 清理所有 CAS 和 MetadataStore 实例
-        {
-            let cas_instances = self.cas_instances.lock();
-            let metadata_stores = self.metadata_stores.lock();
-            info!(
-                cas_instances = cas_instances.len(),
-                metadata_stores = metadata_stores.len(),
-                "Cleaning up CAS instances and metadata stores"
-            );
-        }
-
-        // 打印性能统计摘要
-        {
-            let searches = self.total_searches.lock();
-            let hits = self.cache_hits.lock();
-            let hit_rate = if *searches > 0 {
-                (*hits as f64 / *searches as f64) * 100.0
-            } else {
-                0.0
-            };
-            info!(
-                searches = *searches,
-                hits = *hits,
-                hit_rate = hit_rate,
-                "Session statistics"
-            );
-        }
-
-        info!("AppState cleanup completed");
+impl AppState {
+    pub fn new() -> Self {
+        Self::default()
+    }
+    
+    pub fn get_workspace_dir(&self, workspace_id: &str) -> Option<std::path::PathBuf> {
+        let dirs = self.workspace_dirs.lock();
+        dirs.get(workspace_id).cloned()
+    }
+    
+    pub fn set_workspace_dir(&self, workspace_id: String, path: std::path::PathBuf) {
+        let mut dirs = self.workspace_dirs.lock();
+        dirs.insert(workspace_id, path);
     }
 }

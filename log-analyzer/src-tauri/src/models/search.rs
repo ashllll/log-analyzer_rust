@@ -1,4 +1,19 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+/// 搜索缓存键类型
+/// 用于唯一标识搜索查询的缓存条目
+pub type SearchCacheKey = (
+    String,           // query
+    String,           // workspace_id
+    Option<String>,   // time_start
+    Option<String>,   // time_end
+    Vec<String>,      // levels
+    Option<String>,   // file_pattern
+    bool,             // case_sensitive
+    usize,            // max_results
+    String,           // query_version
+);
 
 /**
  * 查询操作符

@@ -8,10 +8,20 @@
 
 use crate::error::{AppError, Result};
 use crate::models::log_entry::LogEntry;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 use tauri::{AppHandle, Emitter};
+
+/// 文件监听器状态
+#[derive(Debug, Clone)]
+pub struct WatcherState {
+    pub workspace_id: String,
+    pub watched_path: std::path::PathBuf,
+    pub file_offsets: HashMap<String, u64>,
+    pub is_active: bool,
+}
 use tracing::{debug, warn};
 
 /// 时间戳解析器
@@ -30,6 +40,11 @@ impl TimestampParser {
         "%m/%d/%Y %H:%M:%S",    // US format
         "%Y/%m/%d %H:%M:%S%.f", // Asian format with fractional seconds
         "%Y/%m/%d %H:%M:%S",    // Asian format
+        "%d-%m-%Y %H:%M:%S",    // Additional formats
+        "%m-%d-%Y %H:%M:%S",
+        "%Y%m%d %H:%M:%S",
+        "%b %d %H:%M:%S",      // Syslog format
+        "%d/%b/%Y:%H:%M:%S",   // Apache format
     ];
 
     /// 解析时间戳

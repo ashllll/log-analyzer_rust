@@ -363,10 +363,9 @@ impl LogFileDetector {
     /// 检测行中是否包含时间戳
     #[allow(dead_code)]
     fn contains_timestamp(&self, line: &str) -> bool {
-        // ISO 8601: 2024-01-20T10:30:45 或 2024-01-20 10:30:45
-        if (line.contains("2024-") || line.contains("2023-") || line.contains("2025-"))
-            && line.contains(':')
-        {
+        // ISO 8601: 支持任意年份 19xx/20xx
+        let iso_pattern = regex::Regex::new(r"\b(?:19|20)\d{2}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])(?:T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9])?\b").unwrap();
+        if iso_pattern.is_match(line) {
             return true;
         }
 

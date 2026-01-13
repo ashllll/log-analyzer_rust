@@ -39,6 +39,15 @@ impl StateSync {
         }
     }
 
+    /// Create a dummy StateSync instance for testing
+    pub fn new_dummy() -> Self {
+        use tauri::test::MockRuntime;
+        let mock_app = tauri::Builder::<tauri::Wry>::new("dummy")
+            .build(tauri::test::mock_context())
+            .unwrap();
+        Self::new(mock_app.handle())
+    }
+
     /// Broadcast workspace event to frontend
     ///
     /// Uses Tauri's event system for <10ms latency
