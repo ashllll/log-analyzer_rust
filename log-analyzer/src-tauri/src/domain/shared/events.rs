@@ -75,7 +75,10 @@ impl DomainEventBus {
         self.sender.subscribe()
     }
 
-    pub fn publish(&self, event: LogAnalysisEvent) -> Result<(), broadcast::error::SendError<LogAnalysisEvent>> {
+    pub fn publish(
+        &self,
+        event: LogAnalysisEvent,
+    ) -> Result<(), broadcast::error::SendError<LogAnalysisEvent>> {
         self.sender.send(event).map(|_| ())
     }
 
@@ -103,11 +106,25 @@ pub struct LogEventHandler;
 impl EventHandler for LogEventHandler {
     async fn handle(&self, event: &LogAnalysisEvent) -> Result<(), Box<dyn std::error::Error>> {
         match event {
-            LogAnalysisEvent::LogFileDiscovered { file_path, file_size, .. } => {
+            LogAnalysisEvent::LogFileDiscovered {
+                file_path,
+                file_size,
+                ..
+            } => {
                 tracing::info!("Discovered log file: {} ({} bytes)", file_path, file_size);
             }
-            LogAnalysisEvent::SearchExecuted { query, result_count, duration_ms, .. } => {
-                tracing::info!("Search executed: '{}' returned {} results in {}ms", query, result_count, duration_ms);
+            LogAnalysisEvent::SearchExecuted {
+                query,
+                result_count,
+                duration_ms,
+                ..
+            } => {
+                tracing::info!(
+                    "Search executed: '{}' returned {} results in {}ms",
+                    query,
+                    result_count,
+                    duration_ms
+                );
             }
             _ => {}
         }

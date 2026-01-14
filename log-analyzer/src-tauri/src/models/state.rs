@@ -43,7 +43,9 @@ impl Default for AppState {
             last_search_duration: Arc::new(Mutex::new(std::time::Duration::from_secs(0))),
             watchers: Arc::new(Mutex::new(HashMap::new())),
             cleanup_queue: Arc::new(SegQueue::new()),
-            cache_manager: Arc::new(Mutex::new(lru::LruCache::new(std::num::NonZeroUsize::new(1000).unwrap()))),
+            cache_manager: Arc::new(Mutex::new(lru::LruCache::new(
+                std::num::NonZeroUsize::new(1000).unwrap(),
+            ))),
             state_sync: Arc::new(Mutex::new(None)),
         }
     }

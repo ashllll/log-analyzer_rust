@@ -1,6 +1,6 @@
 //! 应用命令
 
-use crate::application::services::{LogAnalysisService, ConfigurationService};
+use crate::application::services::{ConfigurationService, LogAnalysisService};
 use crate::error::Result;
 use serde::{Deserialize, Serialize};
 
@@ -59,36 +59,41 @@ impl CommandHandler {
             config_service,
         }
     }
-    
-    pub async fn handle_analyze_log_file(&self, cmd: AnalyzeLogFileCommand) -> Result<AnalyzeLogFileResult> {
+
+    pub async fn handle_analyze_log_file(
+        &self,
+        cmd: AnalyzeLogFileCommand,
+    ) -> Result<AnalyzeLogFileResult> {
         let start = std::time::Instant::now();
         let entries = self.log_service.analyze_log_file(&cmd.file_path).await?;
         let duration = start.elapsed();
-        
+
         Ok(AnalyzeLogFileResult {
             file_id: uuid::Uuid::new_v4().to_string(),
             entries_count: entries.len(),
             processing_time_ms: duration.as_millis() as u64,
         })
     }
-    
+
     pub async fn handle_search_logs(&self, cmd: SearchLogsCommand) -> Result<SearchLogsResult> {
         let start = std::time::Instant::now();
         let results = self.log_service.search_logs(&cmd.query).await?;
         let duration = start.elapsed();
-        
+
         let limited_results = results
             .into_iter()
             .skip(cmd.offset.unwrap_or(0))
             .take(cmd.limit.unwrap_or(100))
-            .map(|entry| serde_json::json!({
-                "id": entry.id.to_string(),
-                "timestamp": entry.timestamp.to_rfc3339(),
-                "level": entry.level.as_str(),
-                "message": entry.message.as_str(),
-                "source_file": entry.source_file,
-                "line_number": entry.line_number,
-            }))
+            .map(|entry| {
+                serde_json::json!({
+                    "id": entry.id.to_string(),
+                    "timestamp": entry.timestamp.to_rfc3339(),
+                    "level": entry.level.as_str(),
+                    "message": entry.message.as_str(),
+                    "source_file": entry.source_file,
+                    "line_number": entry.line_number,
+                })
+            })
             .collect::<Vec<_>>();
 
         let total_count = limited_results.len();
@@ -99,8 +104,11 @@ impl CommandHandler {
             query_time_ms: duration.as_millis() as u64,
         })
     }
-    
-    pub async fn handle_update_config(&self, cmd: UpdateConfigCommand) -> Result<UpdateConfigResult> {
+
+    pub async fn handle_update_config(
+        &self,
+        cmd: UpdateConfigCommand,
+    ) -> Result<UpdateConfigResult> {
         // 这里将实现配置更新逻辑
         Ok(UpdateConfigResult {
             success: true,

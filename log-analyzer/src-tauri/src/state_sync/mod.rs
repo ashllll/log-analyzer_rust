@@ -53,7 +53,9 @@ impl StateSync {
     #[cfg(not(feature = "test"))]
     pub fn new_dummy() -> Self {
         // Fallback: panic with a helpful message
-        panic!("new_dummy() requires the 'test' feature. Enable it with: cargo test --features test");
+        panic!(
+            "new_dummy() requires the 'test' feature. Enable it with: cargo test --features test"
+        );
     }
 
     /// Broadcast workspace event to frontend

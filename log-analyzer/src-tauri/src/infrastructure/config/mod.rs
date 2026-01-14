@@ -19,13 +19,13 @@ use validator::Validate;
 pub enum ConfigError {
     #[error("配置验证失败: {0}")]
     Validation(String),
-    
+
     #[error("配置文件不存在: {0}")]
     FileNotFound(PathBuf),
-    
+
     #[error("配置文件格式错误: {0}")]
     FormatError(String),
-    
+
     #[error("配置值无效: {0}")]
     InvalidValue(String),
 }
@@ -49,13 +49,13 @@ pub struct AppConfig {
 pub struct ServerConfig {
     #[validate(range(min = 1, max = 65535))]
     pub port: u16,
-    
+
     #[validate(length(min = 1, max = 100))]
     pub host: String,
-    
+
     #[validate(range(min = 1, max = 100))]
     pub max_connections: usize,
-    
+
     #[validate(range(min = 1, max = 3600))]
     pub timeout_seconds: u64,
 }
@@ -65,15 +65,15 @@ pub struct ServerConfig {
 pub struct StorageConfig {
     #[validate(length(min = 1, max = 500))]
     pub data_dir: String,
-    
+
     #[validate(range(min = 1, max = 1024))]
     pub max_file_size_mb: u64,
-    
+
     #[validate(range(min = 1, max = 100))]
     pub max_concurrent_files: usize,
-    
+
     pub compression_enabled: bool,
-    
+
     pub encryption_enabled: bool,
 }
 
@@ -82,17 +82,17 @@ pub struct StorageConfig {
 pub struct SearchConfig {
     #[validate(range(min = 1, max = 10000))]
     pub max_results: usize,
-    
+
     #[validate(range(min = 1, max = 60))]
     pub timeout_seconds: u64,
-    
+
     #[validate(range(min = 1, max = 100))]
     pub max_concurrent_searches: usize,
-    
+
     pub fuzzy_search_enabled: bool,
-    
+
     pub case_sensitive: bool,
-    
+
     pub regex_enabled: bool,
 }
 
@@ -101,14 +101,14 @@ pub struct SearchConfig {
 pub struct MonitoringConfig {
     #[validate(length(min = 1, max = 100))]
     pub log_level: String,
-    
+
     pub metrics_enabled: bool,
-    
+
     pub tracing_enabled: bool,
-    
+
     #[validate(length(min = 1, max = 500))]
     pub log_file: String,
-    
+
     #[validate(range(min = 1, max = 100))]
     pub max_log_files: usize,
 }
@@ -117,17 +117,17 @@ pub struct MonitoringConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, Validate)]
 pub struct SecurityConfig {
     pub auth_enabled: bool,
-    
+
     #[validate(length(min = 8, max = 100))]
     pub api_key: Option<String>,
-    
+
     pub rate_limit_enabled: bool,
-    
+
     #[validate(range(min = 1, max = 1000))]
     pub rate_limit_per_minute: u64,
-    
+
     pub cors_enabled: bool,
-    
+
     #[validate(length(min = 1, max = 500))]
     pub allowed_origins: Vec<String>,
 }

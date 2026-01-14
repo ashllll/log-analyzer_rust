@@ -23,14 +23,13 @@ pub fn init_monitoring() -> Result<(), Box<dyn std::error::Error>> {
 
 /// 初始化追踪系统
 fn init_tracing() -> Result<(), Box<dyn std::error::Error>> {
-    let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info"));
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
     let subscriber = Registry::default()
         .with(env_filter)
         .with(tracing_subscriber::fmt::layer());
-        // TODO: tracing_opentelemetry 模块缺失，暂时注释
-        // .with(tracing_opentelemetry::layer());
+    // TODO: tracing_opentelemetry 模块缺失，暂时注释
+    // .with(tracing_opentelemetry::layer());
 
     tracing::subscriber::set_global_default(subscriber)?;
 

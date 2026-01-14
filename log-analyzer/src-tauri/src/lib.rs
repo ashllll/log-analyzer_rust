@@ -20,16 +20,16 @@ pub mod services;
 pub mod storage;
 
 // 任务和状态管理
-pub mod task_manager;
 pub mod state_sync;
+pub mod task_manager;
 
 // 事件和监控
 pub mod events;
 pub mod monitoring;
 
 // 领域驱动设计模块
-pub mod domain;
 pub mod application;
+pub mod domain;
 pub mod infrastructure;
 
 pub use error::{AppError, Result};

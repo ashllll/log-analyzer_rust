@@ -321,10 +321,7 @@ impl ConcurrentSearchManager {
             .into_iter()
             .map(|join_result| {
                 join_result.unwrap_or_else(|e| {
-                    Err(SearchError::IndexError(format!(
-                        "Task join failed: {}",
-                        e
-                    )))
+                    Err(SearchError::IndexError(format!("Task join failed: {}", e)))
                 })
             })
             .collect();

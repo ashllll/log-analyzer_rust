@@ -43,8 +43,8 @@ impl TimestampParser {
         "%d-%m-%Y %H:%M:%S",    // Additional formats
         "%m-%d-%Y %H:%M:%S",
         "%Y%m%d %H:%M:%S",
-        "%b %d %H:%M:%S",      // Syslog format
-        "%d/%b/%Y:%H:%M:%S",   // Apache format
+        "%b %d %H:%M:%S",    // Syslog format
+        "%d/%b/%Y:%H:%M:%S", // Apache format
     ];
 
     /// 解析时间戳

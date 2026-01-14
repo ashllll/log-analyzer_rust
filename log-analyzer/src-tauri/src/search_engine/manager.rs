@@ -59,9 +59,9 @@ impl SearchResults {
 
     /// Get entry with its document address at the given index
     pub fn get_entry_with_address(&self, index: usize) -> Option<(&LogEntry, DocAddress)> {
-        self.entries.get(index).and_then(|entry| {
-            self.doc_addresses.get(index).map(|addr| (entry, *addr))
-        })
+        self.entries
+            .get(index)
+            .and_then(|entry| self.doc_addresses.get(index).map(|addr| (entry, *addr)))
     }
 }
 
