@@ -14,11 +14,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 > **项目**: log-analyzer_rust - 高性能桌面日志分析工具
 >
-> **版本**: 0.0.123
+> **版本**: 0.0.125
 >
 > **技术栈**: Tauri 2.0 + Rust + React 19 + TypeScript
 >
-> **最后更新**: 2026-01-11
+> **最后更新**: 2026-01-14
 
 ---
 
@@ -65,6 +65,12 @@ log-analyzer_rust/
 ---
 
 ## 常用命令
+
+### 环境要求
+- **Node.js**: 22.12.0+
+- **npm**: 10.0+
+- **Rust**: 1.70+
+- **系统依赖**: [Tauri前置依赖](https://tauri.app/v1/guides/getting-started/prerequisites)
 
 ### 开发
 ```bash
@@ -278,7 +284,7 @@ npm test -- --coverage
 
 ### Rust后端
 - **测试覆盖率**: 80%+
-- **测试用例数**: 530+个
+- **测试用例数**: 580+个
 - **核心测试模块**:
   - `storage/`: CAS存储、完整性验证 (53个测试)
   - `archive/`: 压缩包处理 (130+个测试)
@@ -302,6 +308,10 @@ cargo test --all-features
 npm run lint
 npm run type-check
 npm run build
+
+# 发布前验证（推荐）
+./scripts/validate-release.sh    # Linux/macOS
+.\scripts\validate-release.ps1   # Windows PowerShell
 ```
 
 ---
@@ -571,6 +581,13 @@ pub async fn insert_file(&self, metadata: &FileMetadata) -> Result<i64> {
 
 ## 最近重大变更
 
+### [0.0.125] - 2026-01-14
+
+#### 📝 文档更新
+- ✅ 更新版本号至 0.0.125
+- ✅ 完善项目架构说明
+- ✅ 补充 CI/CD 验证流程
+
 ### [0.0.123] - 2026-01-11
 
 #### ⚠️ CI/CD 验证规则强化
@@ -589,13 +606,6 @@ pub async fn insert_file(&self, metadata: &FileMetadata) -> Result<i64> {
 #### 🎉 RAR处理器纯Rust重构
 - ✅ **新增 rar crate 纯Rust支持**: 使用 `rar = "0.4"` 替代外部unrar
 - ✅ **解决macOS ARM64构建问题**: sidecar二进制方案
-
-### [0.0.76] - 2025-12-28
-- ✅ 更新版本号到 0.0.76
-- ✅ 优化文档结构,移除过时的 Kiro MCP Server 调用指令
-- ✅ 补充常见开发任务指南(添加 Tauri 命令、调试 IPC 等)
-- ✅ 补充关键架构决策说明和性能基准数据
-- ✅ 添加完善的故障排查指南
 
 ### [0.1.0] - 2025-12-27
 - ✅ 完成CAS架构迁移
