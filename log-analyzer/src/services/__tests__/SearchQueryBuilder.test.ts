@@ -236,10 +236,10 @@ describe('SearchQueryBuilder', () => {
     });
 
     it('should warn on value too long', () => {
-      const longValue = 'a'.repeat(101);
+      const longValue = 'a'.repeat(501);  // Threshold is 500 characters
       const builder = SearchQueryBuilder.create().addTerm(longValue);
       const result = builder.validate();
-      
+
       const warnings = result.issues.filter(i => i.severity === 'warning');
       expect(warnings.some(w => w.code === 'VALUE_TOO_LONG')).toBe(true);
     });
