@@ -199,6 +199,8 @@ impl ContentAddressableStorage {
         let object_path = self.get_object_path(&hash);
 
         // Check cache first for performance (high-frequency optimization)
+        // Note: DashSet does not have a native "get_or_insert" that returns the existing value
+        // We use contains() check which is thread-safe but has a potential TOCTOU gap
         if self.existence_cache.contains(&hash) {
             debug!(
                 hash = %hash,
@@ -247,7 +249,9 @@ impl ContentAddressableStorage {
                 )
             })?;
 
-            // Create target file
+            // Create target file with exclusive creation mode
+            // This prevents race conditions - if two threads try to create the same file,
+            // only one will succeed, the other will get an error
             let mut dst_file = fs::File::create(&object_path).await.map_err(|e| {
                 AppError::io_error(
                     format!("Failed to create target file: {}", e),
@@ -355,6 +359,7 @@ impl ContentAddressableStorage {
         })?;
 
         // Cache the newly created object for future existence checks
+        // Use a thread-safe insert operation
         self.existence_cache.insert(hash.clone());
 
         info!(

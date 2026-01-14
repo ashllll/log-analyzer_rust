@@ -11,6 +11,7 @@ use tracing::error;
 
 use crate::models::{AppState, FileChangeEvent};
 use crate::services::{append_to_workspace_index, parse_log_lines, read_file_from_offset};
+use crate::services::file_watcher::WatcherState;
 use crate::utils::{validate_path_param, validate_workspace_id};
 
 #[command]
@@ -36,7 +37,7 @@ pub async fn start_watch(
         }
     }
 
-    let watcher_state = crate::models::WatcherState {
+    let watcher_state = WatcherState {
         workspace_id: workspaceId.clone(),
         watched_path: watch_path.clone(),
         file_offsets: HashMap::new(),

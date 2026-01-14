@@ -24,14 +24,45 @@ use super::{
     SearchResult,
 };
 use crate::models::LogEntry;
+use tantivy::DocAddress;
+
+/// Search result entry with document address for highlighting
+#[derive(Debug, Clone)]
+pub struct SearchResultEntry {
+    pub entry: LogEntry,
+    pub doc_address: DocAddress,
+}
 
 /// Search results with metadata
 #[derive(Debug, Clone)]
 pub struct SearchResults {
     pub entries: Vec<LogEntry>,
+    /// DocAddress for each entry, aligned with entries vector
+    /// Used for highlighting functionality
+    pub doc_addresses: Vec<DocAddress>,
     pub total_count: usize,
     pub query_time_ms: u64,
     pub was_timeout: bool,
+}
+
+impl SearchResults {
+    /// Create empty search results
+    pub fn empty() -> Self {
+        Self {
+            entries: Vec::new(),
+            doc_addresses: Vec::new(),
+            total_count: 0,
+            query_time_ms: 0,
+            was_timeout: false,
+        }
+    }
+
+    /// Get entry with its document address at the given index
+    pub fn get_entry_with_address(&self, index: usize) -> Option<(&LogEntry, DocAddress)> {
+        self.entries.get(index).and_then(|entry| {
+            self.doc_addresses.get(index).map(|addr| (entry, *addr))
+        })
+    }
 }
 
 /// Search results with highlighting metadata
@@ -264,19 +295,22 @@ impl SearchEngineManager {
         let top_docs_collector = TopDocs::with_limit(limit);
         let top_docs = searcher.search(&*query, &top_docs_collector)?;
 
-        // Convert documents to LogEntry
+        // Convert documents to LogEntry, capturing DocAddress for each
         let mut entries = Vec::with_capacity(top_docs.len());
+        let mut doc_addresses = Vec::with_capacity(top_docs.len());
 
         for (_score, doc_address) in top_docs {
             let retrieved_doc = searcher.doc(doc_address)?;
 
             if let Some(log_entry) = self.document_to_log_entry(&retrieved_doc) {
                 entries.push(log_entry);
+                doc_addresses.push(doc_address); // Store DocAddress for highlighting
             }
         }
 
         Ok(SearchResults {
             entries,
+            doc_addresses, // Include DocAddresses in results
             total_count,
             query_time_ms: 0, // Will be set by caller
             was_timeout: false,
@@ -359,19 +393,22 @@ impl SearchEngineManager {
                 self.boolean_processor
                     .process_multi_keyword_query(keywords, require_all, limit)?;
 
-            // Convert document addresses to LogEntry
+            // Convert document addresses to LogEntry, preserving DocAddress for highlighting
             let searcher = self.reader.searcher();
             let mut entries = Vec::with_capacity(doc_addresses.len());
+            let mut addresses = Vec::with_capacity(doc_addresses.len());
 
             for doc_address in doc_addresses {
                 let retrieved_doc = searcher.doc(doc_address)?;
                 if let Some(log_entry) = self.document_to_log_entry(&retrieved_doc) {
                     entries.push(log_entry);
+                    addresses.push(doc_address); // Store DocAddress for highlighting
                 }
             }
 
             Ok(SearchResults {
                 entries,
+                doc_addresses: addresses, // Include DocAddresses in results
                 total_count,
                 query_time_ms: 0, // Will be set by caller
                 was_timeout: false,
@@ -443,13 +480,23 @@ impl SearchEngineManager {
             .search_with_timeout(query, limit, timeout_duration)
             .await?;
 
-        // Then, add highlighting to the results
+        // Then, add highlighting to the results using actual DocAddress
         let mut highlighted_entries = Vec::new();
 
-        for entry in &search_results.entries {
-            // For now, we'll use the entry content directly for highlighting
-            // In a real implementation, we'd need the document address
-            let doc_address = tantivy::DocAddress::new(0, 0); // Placeholder
+        for (i, entry) in search_results.entries.iter().enumerate() {
+            // Get the actual DocAddress for this entry
+            let doc_address = match search_results.doc_addresses.get(i) {
+                Some(&addr) => addr,
+                None => {
+                    warn!(
+                        index = i,
+                        "Missing DocAddress for entry, using fallback highlighting"
+                    );
+                    // Fallback: highlight the content directly without Tantivy
+                    highlighted_entries.push(entry.clone());
+                    continue;
+                }
+            };
 
             match self
                 .highlighting_engine

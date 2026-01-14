@@ -7,16 +7,16 @@ use tracing::{info, instrument};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Registry};
 
 pub mod metrics;
-pub mod tracing;
+// pub mod tracing; // TODO: 模块文件缺失，暂时注释
 
 /// 初始化监控系统
 pub fn init_monitoring() -> Result<(), Box<dyn std::error::Error>> {
     // 初始化日志
     init_tracing()?;
-    
+
     // 初始化指标
     metrics::init_metrics()?;
-    
+
     info!("Monitoring system initialized");
     Ok(())
 }
@@ -28,11 +28,12 @@ fn init_tracing() -> Result<(), Box<dyn std::error::Error>> {
 
     let subscriber = Registry::default()
         .with(env_filter)
-        .with(tracing_subscriber::fmt::layer())
-        .with(tracing_opentelemetry::layer());
+        .with(tracing_subscriber::fmt::layer());
+        // TODO: tracing_opentelemetry 模块缺失，暂时注释
+        // .with(tracing_opentelemetry::layer());
 
     tracing::subscriber::set_global_default(subscriber)?;
-    
+
     Ok(())
 }
 

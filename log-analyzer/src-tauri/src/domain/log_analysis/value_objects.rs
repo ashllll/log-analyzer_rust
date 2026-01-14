@@ -30,7 +30,7 @@ impl fmt::Display for Timestamp {
 }
 
 /// 日志级别值对象
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LogLevel {
     Trace,
     Debug,

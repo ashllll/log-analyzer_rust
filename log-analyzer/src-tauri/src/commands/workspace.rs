@@ -540,23 +540,16 @@ pub async fn delete_workspace(
     // 执行清理
     cleanup_workspace_resources(&workspaceId, &state, &app)?;
 
-    // 失效该工作区的所有缓存（使用异步版本，避免在 async 上下文中调用 block_on）
-    if let Err(e) = state
-        .cache_manager
-        .invalidate_workspace_cache_async(&workspaceId)
-        .await
+    // 失效该工作区的所有缓存
+    // LruCache 不支持按前缀删除，需要清空整个缓存
     {
-        warn!(
-            workspace_id = %workspaceId,
-            error = %e,
-            "Failed to invalidate cache for workspace"
-        );
-    } else {
-        info!(
-            workspace_id = %workspaceId,
-            "Successfully invalidated cache for workspace"
-        );
+        let mut cache = state.cache_manager.lock();
+        cache.clear();
     }
+    info!(
+        workspace_id = %workspaceId,
+        "Successfully invalidated cache for workspace"
+    );
 
     // 广播工作区删除事件
     // 注意：先克隆 state_sync，释放锁后再 await，避免跨 await 点持有锁

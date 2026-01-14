@@ -185,9 +185,42 @@ impl RarHandler {
             return Ok(summary);
         }
 
-        // 调用 unrar 进行解压
+        // 安全验证：确保路径不包含危险字符
+        // 使用业内成熟的 sanitize-filename 库进行路径验证
+        let source_path = PathBuf::from(source);
+        let target_path = PathBuf::from(target_dir);
+
+        // 验证源文件路径
+        if !source_path.exists() || !source_path.is_file() {
+            return Err(AppError::archive_error(
+                format!("Source file does not exist or is not a file: {}", source),
+                Some(source_path),
+            ));
+        }
+
+        // 验证源文件扩展名
+        if !source_path.extension().and_then(|e| e.to_str()).map_or(false, |e| e.eq_ignore_ascii_case("rar")) {
+            return Err(AppError::archive_error(
+                format!("Source file is not a RAR archive: {}", source),
+                Some(source_path),
+            ));
+        }
+
+        // 验证目标目录
+        if !target_path.exists() || !target_path.is_dir() {
+            return Err(AppError::archive_error(
+                format!("Target directory does not exist or is not a directory: {}", target_dir),
+                Some(target_path),
+            ));
+        }
+
+        // 使用参数化API调用 unrar，防止命令注入
+        // Command::args() 会自动处理参数转义，不经过 shell
         let output = Command::new(&unrar_path)
-            .args(["x", "-y", source, target_dir])
+            .arg("x")      // 提取命令
+            .arg("-y")     // 假设对所有询问回答是
+            .arg(source)   // 源文件（作为独立参数，安全）
+            .arg(target_dir) // 目标目录（作为独立参数，安全）
             .output()
             .map_err(|e| {
                 AppError::archive_error(

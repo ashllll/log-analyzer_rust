@@ -6,9 +6,20 @@
 //! - Connection pooling for concurrent index reader access
 //! - Load balancing for concurrent queries across CPU cores
 //! - Performance monitoring to detect concurrent search degradation
+//!
+//! ## Architecture Decision: Pure Tokio vs Rayon+Tokio
+//!
+//! **Historical Issue**: Previously used Rayon parallel iterators with Tokio runtime creation
+//! inside the loop, which was inefficient and potentially unsafe.
+//!
+//! **Current Solution**: Pure Tokio approach using `tokio::spawn` + `futures::join_all`
+//! - Single Tokio runtime (no runtime creation inside loops)
+//! - Proper async/await semantics
+//! - Better resource management
+//! - Industry-standard pattern for concurrent async operations
 
+use futures::future::join_all;
 use parking_lot::{Mutex, RwLock};
-use rayon::prelude::*;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tantivy::{Index, IndexReader, ReloadPolicy};
@@ -99,6 +110,7 @@ impl ReaderPool {
 
 /// Concurrent search manager with performance monitoring
 pub struct ConcurrentSearchManager {
+    /// Arc-wrapped search engine for safe sharing across async tasks
     search_engine: Arc<SearchEngineManager>,
     reader_pool: ReaderPool,
     config: ConcurrentSearchConfig,
@@ -270,6 +282,9 @@ impl ConcurrentSearchManager {
     }
 
     /// Execute multiple searches concurrently with load balancing
+    ///
+    /// Uses pure Tokio approach with `tokio::spawn` and `futures::join_all`.
+    /// This is more efficient than creating new runtimes inside Rayon threads.
     pub async fn search_batch_concurrent(
         &self,
         queries: Vec<String>,
@@ -283,18 +298,34 @@ impl ConcurrentSearchManager {
             "Starting batch concurrent search"
         );
 
-        // Use rayon for CPU-bound parallel processing
-        let results: Vec<_> = queries
-            .into_par_iter()
+        // Create futures for each query, using tokio::spawn for true concurrent execution
+        let search_futures: Vec<_> = queries
+            .into_iter()
             .map(|query| {
-                // Create a new tokio runtime for each thread
-                let rt = tokio::runtime::Runtime::new().map_err(|e| {
-                    SearchError::IndexError(format!(
-                        "Failed to create tokio runtime for parallel search: {}",
+                let manager = Arc::clone(&self.search_engine);
+                let limit_clone = limit;
+                let timeout_clone = timeout;
+
+                // Spawn each search in its own task for true concurrent execution
+                tokio::spawn(async move {
+                    manager
+                        .search_with_timeout(&query, limit_clone, timeout_clone)
+                        .await
+                })
+            })
+            .collect();
+
+        // Wait for all searches to complete using futures::join_all
+        let results: Vec<_> = join_all(search_futures)
+            .await
+            .into_iter()
+            .map(|join_result| {
+                join_result.unwrap_or_else(|e| {
+                    Err(SearchError::IndexError(format!(
+                        "Task join failed: {}",
                         e
-                    ))
-                })?;
-                rt.block_on(self.search_concurrent(&query, limit, timeout))
+                    )))
+                })
             })
             .collect();
 

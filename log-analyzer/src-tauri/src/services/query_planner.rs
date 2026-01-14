@@ -187,8 +187,15 @@ impl QueryPlanner {
             }
         };
 
-        // 缓存键（不包含match_mode，因为是自动检测）
-        let cache_key = format!("{}:{}", term.value, term.case_sensitive);
+        // 缓存键：包含所有影响正则编译的因素
+        // 修复缓存键冲突问题 - 包含 is_regex 和 case_sensitive
+        let cache_key = format!(
+            "{}|{}|{}|{}",
+            term.value,
+            term.is_regex,
+            term.case_sensitive,
+            Self::should_use_word_boundary(term) // match_mode 影响最终模式
+        );
 
         // 检查缓存（moka 自动 LRU 淘汰）
         if let Some(cached) = self.regex_cache.get(&cache_key) {

@@ -36,7 +36,7 @@ pub trait Plugin: Send + Sync {
 }
 
 /// 插件管理器
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct PluginManager {
     plugins: Arc<RwLock<HashMap<String, Box<dyn Plugin>>>>,
     loaded_libraries: Arc<RwLock<Vec<Library>>>,
@@ -115,7 +115,7 @@ impl PluginManager {
     
     /// 初始化所有插件
     pub async fn initialize_all(&self, config: &serde_json::Value) -> Result<()> {
-        let plugins = self.plugins.read().await;
+        let mut plugins = self.plugins.write().await;
         for plugin in plugins.values_mut() {
             plugin.initialize(config)?;
         }

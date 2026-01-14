@@ -89,11 +89,13 @@ impl CommandHandler {
                 "source_file": entry.source_file,
                 "line_number": entry.line_number,
             }))
-            .collect();
-        
+            .collect::<Vec<_>>();
+
+        let total_count = limited_results.len();
+
         Ok(SearchLogsResult {
             results: limited_results,
-            total_count: limited_results.len(),
+            total_count,
             query_time_ms: duration.as_millis() as u64,
         })
     }

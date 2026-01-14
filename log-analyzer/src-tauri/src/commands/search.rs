@@ -46,45 +46,6 @@ fn compute_query_version(query: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-/// 获取或初始化 SearchEngineManager
-///
-/// 使用延迟初始化模式，首次调用时创建索引
-#[allow(dead_code)]
-fn get_or_init_search_engine(state: &AppState, workspace_id: &str) -> Result<(), String> {
-    let mut engine_guard = state.search_engine.lock();
-
-    if engine_guard.is_none() {
-        // 创建索引目录路径
-        let index_path = PathBuf::from(format!("./search_index/{}", workspace_id));
-
-        // 配置搜索引擎
-        let config = SearchConfig {
-            default_timeout: Duration::from_millis(200),
-            max_results: 50_000,
-            index_path,
-            writer_heap_size: 50_000_000, // 50MB
-        };
-
-        // 初始化搜索引擎
-        match SearchEngineManager::new(config) {
-            Ok(engine) => {
-                info!(
-                    workspace_id = %workspace_id,
-                    "Initialized Tantivy search engine"
-                );
-                *engine_guard = Some(engine);
-                Ok(())
-            }
-            Err(e) => {
-                error!(error = %e, "Failed to initialize Tantivy search engine");
-                Err(format!("Failed to initialize search engine: {}", e))
-            }
-        }
-    } else {
-        Ok(())
-    }
-}
-
 #[command]
 pub async fn search_logs(
     app: AppHandle,
@@ -173,7 +134,8 @@ pub async fn search_logs(
 
     {
         // 使用 CacheManager 的同步 get 方法
-        let cache_result = state.cache_manager.get_sync(&cache_key);
+        let mut cache = state.cache_manager.lock();
+        let cache_result = cache.get(&cache_key);
 
         if let Some(cached_results) = cache_result {
             {
@@ -610,7 +572,7 @@ pub async fn search_logs(
         let duration = start_time.elapsed().as_millis() as u64;
         {
             let mut last_duration = last_search_duration.lock();
-            *last_duration = duration;
+            *last_duration = std::time::Duration::from_millis(duration);
         }
 
         // 使用流式统计结果构建关键词统计
@@ -635,7 +597,7 @@ pub async fn search_logs(
 
         // 将结果插入缓存(仅在未截断且未取消时缓存)
         if !was_truncated && !cancellation_token.is_cancelled() {
-            cache_manager.insert_sync(cache_key, all_results);
+            cache_manager.lock().put(cache_key, all_results);
         }
 
         let _ = app_handle.emit("search-summary", &summary);

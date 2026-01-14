@@ -66,6 +66,7 @@ roaring = "0.10"  # 高效位图索引
 # Phase 2: Real-time State Synchronization
 tokio-tungstenite = "0.21"  # WebSocket 服务器实现
 futures-util = "0.3"  # 异步工具（WebSocket 流处理）
+futures = "0.3"  # 异步工具（join_all 等）
 
 # Phase 3: Production Validation Framework
 validator = { version = "0.18", features = ["derive"] }  # 结构化验证框架
@@ -95,6 +96,9 @@ metrics = "0.22"  # 应用指标
 
 # Phase 5: Archive Support (Pure Rust Priority)
 # Prefer pure Rust implementations, fall back to C bindings for edge cases
+
+# Plugin system
+libloading = "0.8"  # 动态库加载（插件系统）
 
 # Phase 4: Testing Infrastructure
 [dev-dependencies]

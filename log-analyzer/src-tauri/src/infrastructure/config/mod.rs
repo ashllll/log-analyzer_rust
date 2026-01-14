@@ -10,9 +10,9 @@ use std::path::PathBuf;
 use thiserror::Error;
 use validator::Validate;
 
-pub mod application;
-pub mod domain;
-pub mod infrastructure;
+// pub mod application; // TODO: 模块文件缺失，暂时注释
+// pub mod domain; // TODO: 模块文件缺失，暂时注释
+// pub mod infrastructure; // TODO: 模块文件缺失，暂时注释
 
 /// 配置错误类型
 #[derive(Error, Debug)]
@@ -33,19 +33,14 @@ pub enum ConfigError {
 /// 全局配置根结构
 #[derive(Debug, Clone, Serialize, Deserialize, Validate)]
 pub struct AppConfig {
-    #[validate]
     pub server: ServerConfig,
-    
-    #[validate]
+
     pub storage: StorageConfig,
-    
-    #[validate]
+
     pub search: SearchConfig,
-    
-    #[validate]
+
     pub monitoring: MonitoringConfig,
-    
-    #[validate]
+
     pub security: SecurityConfig,
 }
 

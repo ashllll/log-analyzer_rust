@@ -209,14 +209,16 @@ impl TempDirGuard {
             "Manually cleaning up temp directory: {}",
             self.path.display()
         );
-        self.cleanup_attempts.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.cleanup_attempts
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         try_cleanup_temp_dir(&self.path, &self.cleanup_queue);
         self.cleaned = true;
     }
 
     /// 强制立即清理目录
     pub fn force_cleanup(&mut self) -> std::io::Result<()> {
-        self.cleanup_attempts.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.cleanup_attempts
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         if self.path.exists() {
             match fs::remove_dir_all(&self.path) {
                 Ok(_) => {
@@ -225,7 +227,11 @@ impl TempDirGuard {
                     Ok(())
                 }
                 Err(e) => {
-                    warn!("Failed to cleanup temp directory: {} - {}", self.path.display(), e);
+                    warn!(
+                        "Failed to cleanup temp directory: {} - {}",
+                        self.path.display(),
+                        e
+                    );
                     // 加入清理队列重试
                     self.cleanup_queue.push(self.path.clone());
                     Err(e)
@@ -241,7 +247,9 @@ impl TempDirGuard {
 impl Drop for TempDirGuard {
     fn drop(&mut self) {
         if !self.cleaned && self.path.exists() {
-            let attempts = self.cleanup_attempts.load(std::sync::atomic::Ordering::Acquire);
+            let attempts = self
+                .cleanup_attempts
+                .load(std::sync::atomic::Ordering::Acquire);
             info!(
                 "Cleaning up temp directory: {} (attempt: {})",
                 self.path.display(),

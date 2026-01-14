@@ -4,5 +4,6 @@
 
 pub mod services;
 pub mod commands;
-pub mod queries;
-pub mod handlers;
+pub mod plugins;
+// pub mod queries; // TODO: 模块文件缺失，暂时注释
+// pub mod handlers; // TODO: 模块文件缺失，暂时注释
