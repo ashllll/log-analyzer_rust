@@ -7,10 +7,10 @@
 //! - 实时文件监听
 //! - 配置管理
 //!
-//! 注意：当前阶段模块已创建，但命令实现仍在lib.rs中。
-//! 在阶段5整合时将命令从lib.rs迁移到此处。
+//! 注意：部分命令模块暂时禁用，因为它们需要额外的依赖修复
 
 pub mod config;
+pub mod error_reporting;
 pub mod export;
 pub mod import;
 pub mod legacy;
@@ -20,3 +20,8 @@ pub mod state_sync;
 pub mod virtual_tree;
 pub mod watch;
 pub mod workspace;
+
+// 暂时禁用的模块（需要修复编译错误）:
+// - async_search: 需要 async_resource_manager 模块
+// - cache: 导入路径需要更新
+// - validation: 需要 lazy_static 依赖和导入路径修复
