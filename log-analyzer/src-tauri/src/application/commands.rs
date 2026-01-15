@@ -1,6 +1,6 @@
 //! 应用命令
 
-use crate::application::services::{ConfigurationService, LogAnalysisService};
+use crate::application::services::LogAnalysisService;
 use crate::error::Result;
 use serde::{Deserialize, Serialize};
 
@@ -49,15 +49,11 @@ pub struct UpdateConfigResult {
 /// 命令处理器
 pub struct CommandHandler {
     log_service: LogAnalysisService,
-    config_service: ConfigurationService,
 }
 
 impl CommandHandler {
-    pub fn new(log_service: LogAnalysisService, config_service: ConfigurationService) -> Self {
-        Self {
-            log_service,
-            config_service,
-        }
+    pub fn new(log_service: LogAnalysisService) -> Self {
+        Self { log_service }
     }
 
     pub async fn handle_analyze_log_file(
@@ -107,7 +103,7 @@ impl CommandHandler {
 
     pub async fn handle_update_config(
         &self,
-        cmd: UpdateConfigCommand,
+        _cmd: UpdateConfigCommand,
     ) -> Result<UpdateConfigResult> {
         // 这里将实现配置更新逻辑
         Ok(UpdateConfigResult {

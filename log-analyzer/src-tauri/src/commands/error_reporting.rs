@@ -81,7 +81,7 @@ pub async fn submit_user_feedback(feedback: UserFeedback) -> Result<(), String> 
     sentry::with_scope(
         |scope| {
             scope.set_tag("feedback_category", &feedback.category);
-            scope.set_tag("feedback_rating", &feedback.rating.to_string());
+            scope.set_tag("feedback_rating", feedback.rating.to_string());
             if let Some(error_id) = &feedback.error_id {
                 scope.set_tag("related_error_id", error_id);
             }

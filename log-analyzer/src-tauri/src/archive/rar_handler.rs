@@ -202,7 +202,7 @@ impl RarHandler {
         if !source_path
             .extension()
             .and_then(|e| e.to_str())
-            .map_or(false, |e| e.eq_ignore_ascii_case("rar"))
+            .is_some_and(|e| e.eq_ignore_ascii_case("rar"))
         {
             return Err(AppError::archive_error(
                 format!("Source file is not a RAR archive: {}", source),

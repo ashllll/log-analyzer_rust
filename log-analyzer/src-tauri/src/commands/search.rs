@@ -5,7 +5,7 @@ use parking_lot::Mutex;
 use regex::Regex;
 use sha2::{Digest, Sha256};
 use std::panic::AssertUnwindSafe;
-use std::{collections::HashSet, path::PathBuf, sync::Arc, time::Duration};
+use std::{collections::HashSet, sync::Arc};
 use tauri::{command, AppHandle, Emitter, State};
 use tracing::{debug, error, info, warn};
 
@@ -15,7 +15,7 @@ use crate::error::AppError;
 use crate::models::search::{QueryMetadata, QueryOperator, SearchTerm, TermSource};
 use crate::models::search_statistics::SearchResultSummary;
 use crate::models::{AppState, LogEntry, SearchCacheKey, SearchFilters, SearchQuery};
-use crate::search_engine::manager::{SearchConfig, SearchEngineManager};
+// 导入移除: SearchEngineManager 相关类型未使用
 use crate::services::{calculate_keyword_statistics, parse_metadata, ExecutionPlan, QueryExecutor};
 use crate::utils::encoding::decode_log_content;
 
@@ -164,6 +164,7 @@ pub async fn search_logs(
                 .map(|t| t.to_string())
                 .collect();
 
+            #[allow(clippy::needless_borrow)]
             let keyword_stats = calculate_keyword_statistics(&cached_results, &raw_terms);
             let summary = SearchResultSummary::new(cached_results.len(), keyword_stats, 0, false);
 

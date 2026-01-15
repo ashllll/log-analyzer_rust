@@ -29,7 +29,7 @@ jest.mock('react-hot-toast', () => ({
   },
 }));
 
-const mockToast = require('react-hot-toast').toast;
+const _mockToast = require('react-hot-toast').toast;
 
 // Mock logger
 jest.mock('../../utils/logger', () => ({

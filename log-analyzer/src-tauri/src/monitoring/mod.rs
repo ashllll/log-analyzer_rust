@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 use tracing::{info, instrument};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Registry};
+use tracing_subscriber::{layer::SubscriberExt, EnvFilter, Registry};
 
 pub mod metrics;
 // pub mod tracing; // TODO: 模块文件缺失，暂时注释

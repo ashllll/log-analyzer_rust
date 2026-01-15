@@ -8,8 +8,8 @@
 
 // 导入 log_analyzer 库的模块
 use log_analyzer::commands::{
-    config::*, error_reporting::*, export::*, import::*, legacy::*, query::*,
-    search::*, state_sync::*, virtual_tree::*, watch::*, workspace::*,
+    config::*, error_reporting::*, export::*, import::*, legacy::*, query::*, search::*,
+    state_sync::*, virtual_tree::*, watch::*, workspace::*,
 };
 use log_analyzer::models::AppState;
 use tracing::info;

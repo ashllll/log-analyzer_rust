@@ -140,7 +140,7 @@ impl ConcurrencyToken {
 
     /// 尝试创建令牌
     pub fn try_new(_max_concurrent: usize) -> Option<Self> {
-        Some(Self::new(_max_concurrent).ok()?)
+        Self::new(_max_concurrent).ok()
     }
 }
 

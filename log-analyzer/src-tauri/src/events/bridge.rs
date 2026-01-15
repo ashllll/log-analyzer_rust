@@ -5,7 +5,7 @@ use tauri::{AppHandle, Emitter};
 use tokio::sync::broadcast;
 use tracing::{debug, error, info, warn};
 
-use super::{get_event_bus, AppEvent};
+use super::{get_event_bus, AppEvent, BroadcastResult};
 
 /// Bridge that forwards events from the internal event bus to Tauri's frontend
 pub struct TauriBridge {
@@ -169,51 +169,41 @@ pub mod emit {
     use crate::models::{FileChangeEvent, LogEntry, SearchResultSummary, TaskProgress};
 
     /// Emit a search start event
-    pub fn search_start(
-        message: impl Into<String>,
-    ) -> Result<usize, broadcast::error::SendError<AppEvent>> {
+    pub fn search_start(message: impl Into<String>) -> BroadcastResult<usize> {
         emit_event(AppEvent::SearchStart {
             message: message.into(),
         })
     }
 
     /// Emit a search progress event
-    pub fn search_progress(progress: i32) -> Result<usize, broadcast::error::SendError<AppEvent>> {
+    pub fn search_progress(progress: i32) -> BroadcastResult<usize> {
         emit_event(AppEvent::SearchProgress { progress })
     }
 
     /// Emit search results
-    pub fn search_results(
-        results: Vec<LogEntry>,
-    ) -> Result<usize, broadcast::error::SendError<AppEvent>> {
+    pub fn search_results(results: Vec<LogEntry>) -> BroadcastResult<usize> {
         emit_event(AppEvent::SearchResults { results })
     }
 
     /// Emit search summary
-    pub fn search_summary(
-        summary: SearchResultSummary,
-    ) -> Result<usize, broadcast::error::SendError<AppEvent>> {
+    pub fn search_summary(summary: SearchResultSummary) -> BroadcastResult<usize> {
         emit_event(AppEvent::SearchSummary { summary })
     }
 
     /// Emit search complete event
-    pub fn search_complete(count: usize) -> Result<usize, broadcast::error::SendError<AppEvent>> {
+    pub fn search_complete(count: usize) -> BroadcastResult<usize> {
         emit_event(AppEvent::SearchComplete { count })
     }
 
     /// Emit search error
-    pub fn search_error(
-        error: impl Into<String>,
-    ) -> Result<usize, broadcast::error::SendError<AppEvent>> {
+    pub fn search_error(error: impl Into<String>) -> BroadcastResult<usize> {
         emit_event(AppEvent::SearchError {
             error: error.into(),
         })
     }
 
     /// Emit async search start event
-    pub fn async_search_start(
-        search_id: impl Into<String>,
-    ) -> Result<usize, broadcast::error::SendError<AppEvent>> {
+    pub fn async_search_start(search_id: impl Into<String>) -> BroadcastResult<usize> {
         emit_event(AppEvent::AsyncSearchStart {
             search_id: search_id.into(),
         })
@@ -223,7 +213,7 @@ pub mod emit {
     pub fn async_search_progress(
         search_id: impl Into<String>,
         progress: u32,
-    ) -> Result<usize, broadcast::error::SendError<AppEvent>> {
+    ) -> BroadcastResult<usize> {
         emit_event(AppEvent::AsyncSearchProgress {
             search_id: search_id.into(),
             progress,
@@ -231,9 +221,7 @@ pub mod emit {
     }
 
     /// Emit async search results
-    pub fn async_search_results(
-        results: Vec<LogEntry>,
-    ) -> Result<usize, broadcast::error::SendError<AppEvent>> {
+    pub fn async_search_results(results: Vec<LogEntry>) -> BroadcastResult<usize> {
         emit_event(AppEvent::AsyncSearchResults { results })
     }
 
@@ -241,7 +229,7 @@ pub mod emit {
     pub fn async_search_complete(
         search_id: impl Into<String>,
         count: usize,
-    ) -> Result<usize, broadcast::error::SendError<AppEvent>> {
+    ) -> BroadcastResult<usize> {
         emit_event(AppEvent::AsyncSearchComplete {
             search_id: search_id.into(),
             count,
@@ -252,7 +240,7 @@ pub mod emit {
     pub fn async_search_error(
         search_id: impl Into<String>,
         error: impl Into<String>,
-    ) -> Result<usize, broadcast::error::SendError<AppEvent>> {
+    ) -> BroadcastResult<usize> {
         emit_event(AppEvent::AsyncSearchError {
             search_id: search_id.into(),
             error: error.into(),
@@ -260,32 +248,24 @@ pub mod emit {
     }
 
     /// Emit task update
-    pub fn task_update(
-        progress: TaskProgress,
-    ) -> Result<usize, broadcast::error::SendError<AppEvent>> {
+    pub fn task_update(progress: TaskProgress) -> BroadcastResult<usize> {
         emit_event(AppEvent::TaskUpdate { progress })
     }
 
     /// Emit import complete
-    pub fn import_complete(
-        task_id: impl Into<String>,
-    ) -> Result<usize, broadcast::error::SendError<AppEvent>> {
+    pub fn import_complete(task_id: impl Into<String>) -> BroadcastResult<usize> {
         emit_event(AppEvent::ImportComplete {
             task_id: task_id.into(),
         })
     }
 
     /// Emit file changed event
-    pub fn file_changed(
-        event: FileChangeEvent,
-    ) -> Result<usize, broadcast::error::SendError<AppEvent>> {
+    pub fn file_changed(event: FileChangeEvent) -> BroadcastResult<usize> {
         emit_event(AppEvent::FileChanged { event })
     }
 
     /// Emit new logs
-    pub fn new_logs(
-        entries: Vec<LogEntry>,
-    ) -> Result<usize, broadcast::error::SendError<AppEvent>> {
+    pub fn new_logs(entries: Vec<LogEntry>) -> BroadcastResult<usize> {
         emit_event(AppEvent::NewLogs { entries })
     }
 
@@ -293,7 +273,7 @@ pub mod emit {
     pub fn system_error(
         error: impl Into<String>,
         context: Option<String>,
-    ) -> Result<usize, broadcast::error::SendError<AppEvent>> {
+    ) -> BroadcastResult<usize> {
         emit_event(AppEvent::SystemError {
             error: error.into(),
             context,
@@ -304,7 +284,7 @@ pub mod emit {
     pub fn system_warning(
         warning: impl Into<String>,
         context: Option<String>,
-    ) -> Result<usize, broadcast::error::SendError<AppEvent>> {
+    ) -> BroadcastResult<usize> {
         emit_event(AppEvent::SystemWarning {
             warning: warning.into(),
             context,
@@ -312,10 +292,7 @@ pub mod emit {
     }
 
     /// Emit system info
-    pub fn system_info(
-        info: impl Into<String>,
-        context: Option<String>,
-    ) -> Result<usize, broadcast::error::SendError<AppEvent>> {
+    pub fn system_info(info: impl Into<String>, context: Option<String>) -> BroadcastResult<usize> {
         emit_event(AppEvent::SystemInfo {
             info: info.into(),
             context,

@@ -1,11 +1,11 @@
 //! 应用服务层
 
 use crate::domain::log_analysis::entities::{LogEntry, LogFile};
-use crate::domain::log_analysis::value_objects::{LogLevel, Timestamp};
+use crate::domain::log_analysis::value_objects::LogLevel;
 // use crate::application::plugins::PluginManager; // TODO: 插件系统暂未完全集成
 use crate::error::Result;
 use crate::infrastructure::config::AppConfig;
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -22,7 +22,7 @@ impl LogAnalysisService {
 
     /// 分析日志文件
     pub async fn analyze_log_file(&self, file_path: &str) -> Result<Vec<LogEntry>> {
-        let file = LogFile::new(
+        let _file = LogFile::new(
             file_path.to_string(),
             0, // 将在实际处理时更新
             Utc::now(),

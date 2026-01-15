@@ -31,7 +31,7 @@ pub enum ConfigError {
 }
 
 /// 全局配置根结构
-#[derive(Debug, Clone, Serialize, Deserialize, Validate)]
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, Default)]
 pub struct AppConfig {
     pub server: ServerConfig,
 
@@ -130,18 +130,6 @@ pub struct SecurityConfig {
 
     #[validate(length(min = 1, max = 500))]
     pub allowed_origins: Vec<String>,
-}
-
-impl Default for AppConfig {
-    fn default() -> Self {
-        Self {
-            server: ServerConfig::default(),
-            storage: StorageConfig::default(),
-            search: SearchConfig::default(),
-            monitoring: MonitoringConfig::default(),
-            security: SecurityConfig::default(),
-        }
-    }
 }
 
 impl Default for ServerConfig {

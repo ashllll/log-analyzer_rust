@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use std::fmt;
+use std::str::FromStr;
 
 /// 时间戳值对象
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -42,18 +43,6 @@ pub enum LogLevel {
 }
 
 impl LogLevel {
-    pub fn from_str(level: &str) -> Self {
-        match level.to_lowercase().as_str() {
-            "trace" | "trc" => LogLevel::Trace,
-            "debug" | "dbg" => LogLevel::Debug,
-            "info" | "inf" => LogLevel::Info,
-            "warn" | "warning" | "wrn" => LogLevel::Warn,
-            "error" | "err" => LogLevel::Error,
-            "fatal" | "ftl" => LogLevel::Fatal,
-            _ => LogLevel::Unknown(level.to_string()),
-        }
-    }
-
     pub fn as_str(&self) -> &str {
         match self {
             LogLevel::Trace => "TRACE",
@@ -82,6 +71,22 @@ impl LogLevel {
 impl fmt::Display for LogLevel {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.as_str())
+    }
+}
+
+impl FromStr for LogLevel {
+    type Err = String;
+
+    fn from_str(level: &str) -> Result<Self, Self::Err> {
+        match level.to_lowercase().as_str() {
+            "trace" | "trc" => Ok(LogLevel::Trace),
+            "debug" | "dbg" => Ok(LogLevel::Debug),
+            "info" | "inf" => Ok(LogLevel::Info),
+            "warn" | "warning" | "wrn" => Ok(LogLevel::Warn),
+            "error" | "err" => Ok(LogLevel::Error),
+            "fatal" | "ftl" => Ok(LogLevel::Fatal),
+            _ => Ok(LogLevel::Unknown(level.to_string())),
+        }
     }
 }
 

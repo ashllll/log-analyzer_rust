@@ -8,6 +8,10 @@ use std::sync::Arc;
 use tokio::sync::broadcast;
 use tracing::{debug, error, info, warn};
 
+/// Type alias for broadcast results to avoid large error types on stack
+/// Using Box reduces stack size since AppEvent contains large data like Vec<LogEntry>
+pub type BroadcastResult<T> = Result<T, Box<broadcast::error::SendError<AppEvent>>>;
+
 use crate::models::{FileChangeEvent, TaskProgress};
 
 /// Maximum number of events to buffer in each channel
@@ -124,7 +128,7 @@ impl EventBus {
     }
 
     /// Emit an event to all subscribers
-    pub fn emit(&self, event: AppEvent) -> Result<usize, broadcast::error::SendError<AppEvent>> {
+    pub fn emit(&self, event: AppEvent) -> BroadcastResult<usize> {
         // Update statistics
         {
             let mut stats = self.stats.lock();
@@ -173,7 +177,7 @@ impl EventBus {
                 error!(error = %e, "Failed to send event");
                 let mut stats = self.stats.lock();
                 stats.dropped_events += 1;
-                Err(e)
+                Err(Box::new(e))
             }
         }
     }
@@ -260,7 +264,7 @@ pub fn init_event_bus() -> &'static EventBus {
 }
 
 /// Convenience function to emit an event using the global event bus
-pub fn emit_event(event: AppEvent) -> Result<usize, broadcast::error::SendError<AppEvent>> {
+pub fn emit_event(event: AppEvent) -> BroadcastResult<usize> {
     get_event_bus().emit(event)
 }
 

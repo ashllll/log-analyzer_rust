@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// 搜索缓存键类型
 /// 用于唯一标识搜索查询的缓存条目

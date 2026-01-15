@@ -16,9 +16,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 >
 > **版本**: 0.0.125
 >
-> **技术栈**: Tauri 2.0 + Rust + React 19 + TypeScript
+> **技术栈**: Tauri 2.0 + Rust 1.70+ + React 19.1.0 + TypeScript 5.8.3
 >
-> **最后更新**: 2026-01-14
+> **最后更新**: 2026-01-15
 
 ---
 

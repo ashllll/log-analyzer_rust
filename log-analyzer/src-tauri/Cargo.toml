@@ -107,3 +107,6 @@ proptest = "1.4"  # 属性测试框架
 criterion = { version = "0.5", features = ["html_reports"] }  # 性能基准测试
 tokio-test = "0.4"  # 异步测试工具
 
+[features]
+test = []  # 用于测试时的 mock 功能
+
