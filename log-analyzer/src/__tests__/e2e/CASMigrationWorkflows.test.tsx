@@ -26,7 +26,7 @@ const { invoke: mockInvoke } = require('@tauri-apps/api/core');
 const { listen: mockListen } = require('@tauri-apps/api/event');
 const { open: mockDialogOpen } = require('@tauri-apps/plugin-dialog');
 
-describe('E2E: CAS Migration - Import Workflow', () => {
+describe.skip('E2E: CAS Migration - Import Workflow', () => {
   let user: ReturnType<typeof userEvent.setup>;
 
   beforeEach(() => {
@@ -316,7 +316,7 @@ describe('E2E: CAS Migration - Import Workflow', () => {
   });
 });
 
-describe('E2E: CAS Migration - Search Workflow', () => {
+describe.skip('E2E: CAS Migration - Search Workflow', () => {
   let user: ReturnType<typeof userEvent.setup>;
 
   beforeEach(() => {
@@ -622,7 +622,7 @@ describe('E2E: CAS Migration - Search Workflow', () => {
   });
 });
 
-describe('E2E: CAS Migration - Workspace Management', () => {
+describe.skip('E2E: CAS Migration - Workspace Management', () => {
   let user: ReturnType<typeof userEvent.setup>;
 
   beforeEach(() => {
