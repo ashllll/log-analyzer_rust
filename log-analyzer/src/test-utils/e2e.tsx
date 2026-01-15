@@ -6,7 +6,7 @@
 import React from 'react';
 import { render, waitFor, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import App from '../../App';
+import App from '../App';
 
 // Mock Tauri API
 jest.mock('@tauri-apps/api/core', () => ({
@@ -19,7 +19,7 @@ jest.mock('@tauri-apps/api/event', () => ({
 }));
 
 // Mock logger
-jest.mock('../../utils/logger', () => ({
+jest.mock('../utils/logger', () => ({
   logger: {
     debug: jest.fn(),
     info: jest.fn(),
