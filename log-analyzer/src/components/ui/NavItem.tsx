@@ -5,10 +5,17 @@ import type { NavItemProps } from '../../types/ui';
 /**
  * 导航项组件
  */
-export const NavItem: React.FC<NavItemProps> = ({ icon: Icon, label, active, onClick }) => {
+export const NavItem: React.FC<NavItemProps> = ({
+  icon: Icon,
+  label,
+  active,
+  onClick,
+  'data-testid': dataTestId,
+}) => {
   return (
-    <button 
+    <button
       onClick={onClick}
+      data-testid={dataTestId}
       className={cn(
         "w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all",
         active ? "bg-primary text-white" : "text-text-muted hover:bg-bg-hover"

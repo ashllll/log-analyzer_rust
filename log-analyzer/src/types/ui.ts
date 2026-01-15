@@ -14,6 +14,7 @@ export interface NavItemProps {
   label: string;
   active: boolean;
   onClick: () => void;
+  'data-testid'?: string;
 }
 
 // 按钮属性

@@ -577,3 +577,179 @@ pub async fn delete_workspace(
 
     Ok(())
 }
+
+/// 取消任务命令
+///
+/// 将任务状态设置为 Stopped
+///
+/// # 参数
+///
+/// - `taskId` - 任务ID
+/// - `state` - 全局状态
+///
+/// # 返回值
+///
+/// - `Ok(())` - 取消成功
+/// - `Err(String)` - 取消失败
+#[command]
+pub async fn cancel_task(
+    #[allow(non_snake_case)] taskId: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    info!(
+        task_id = %taskId,
+        "Cancel task command called"
+    );
+
+    let task_manager = state.task_manager.lock()
+        .as_ref()
+        .ok_or_else(|| "Task manager not initialized".to_string())?
+        .clone();
+
+    // 更新任务状态为 Stopped
+    let _ = task_manager.update_task_async(
+        &taskId,
+        0,  // progress 保持不变
+        "Task cancelled by user".to_string(),
+        crate::task_manager::TaskStatus::Stopped,
+    ).await
+    .map_err(|e| format!("Failed to cancel task: {}", e))?;
+
+    info!(
+        task_id = %taskId,
+        "Task cancelled successfully"
+    );
+
+    Ok(())
+}
+
+/// 工作区状态响应
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct WorkspaceStatusResponse {
+    pub id: String,
+    pub name: String,
+    pub status: String,
+    pub size: String,
+    pub files: usize,
+}
+
+/// 获取工作区状态命令
+///
+/// 返回工作区的详细信息
+///
+/// # 参数
+///
+/// - `workspaceId` - 工作区ID
+/// - `app` - Tauri应用句柄
+/// - `state` - 全局状态
+///
+/// # 返回值
+///
+/// - `Ok(WorkspaceStatusResponse)` - 工作区状态信息
+/// - `Err(String)` - 获取失败
+#[command]
+pub async fn get_workspace_status(
+    #[allow(non_snake_case)] workspaceId: String,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<WorkspaceStatusResponse, String> {
+    validate_workspace_id(&workspaceId)?;
+
+    // 获取工作区目录
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
+    let workspace_dir = app_data_dir.join("extracted").join(&workspaceId);
+
+    // 检查工作区是否存在
+    if !workspace_dir.exists() {
+        return Err(format!("Workspace not found: {}", workspaceId));
+    }
+
+    // 检查是否为 CAS 格式
+    let metadata_db = workspace_dir.join("metadata.db");
+    let objects_dir = workspace_dir.join("objects");
+
+    let is_cas = metadata_db.exists() && objects_dir.exists();
+
+    if !is_cas {
+        return Err(format!(
+            "Workspace {} is not in CAS format. Please create a new workspace.",
+            workspaceId
+        ));
+    }
+
+    // 获取 MetadataStore
+    let metadata_store = state.metadata_stores.lock()
+        .get(&workspaceId)
+        .cloned()
+        .ok_or_else(|| format!("Workspace store not initialized: {}", workspaceId))?;
+
+    let file_count = metadata_store.count_files().await.unwrap_or(0);
+
+    // 计算目录大小
+    let total_size = walkdir::WalkDir::new(&workspace_dir)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter_map(|e| e.metadata().ok())
+        .filter(|m| m.is_file())
+        .map(|m| m.len())
+        .sum::<u64>();
+
+    let size_mb = total_size / (1024 * 1024);
+    let size_str = if size_mb > 1024 {
+        format!("{:.1}GB", size_mb as f64 / 1024.0)
+    } else {
+        format!("{}MB", size_mb)
+    };
+
+    Ok(WorkspaceStatusResponse {
+        id: workspaceId.clone(),
+        name: workspaceId,  // TODO: 从配置中读取实际名称
+        status: "READY".to_string(),
+        size: size_str,
+        files: file_count as usize,
+    })
+}
+
+/// 创建工作区命令（import_folder 的语义化别名）
+///
+/// 提供更符合用户预期的命令名来创建工作区
+///
+/// # 参数
+///
+/// - `name` - 工作区名称
+/// - `path` - 文件夹路径
+/// - `app` - Tauri应用句柄
+/// - `state` - 全局状态
+///
+/// # 返回值
+///
+/// - `Ok(String)` - 返回任务ID
+/// - `Err(String)` - 创建失败
+#[command]
+pub async fn create_workspace(
+    name: String,
+    path: String,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    info!(
+        name = %name,
+        path = %path,
+        "Create workspace command called"
+    );
+
+    // 验证路径存在
+    let path_obj = std::path::Path::new(&path);
+    if !path_obj.exists() {
+        return Err(format!("Path does not exist: {}", path));
+    }
+
+    // 生成 workspace ID（使用名称作为基础，转换为合法 ID）
+    let workspace_id = format!("ws-{}", name.to_lowercase().replace([' ', '/', '\\'], "-"));
+
+    // 调用 import_folder 逻辑
+    import_folder(app, path, workspace_id, state).await
+}
