@@ -20,7 +20,7 @@ jest.mock('@tauri-apps/plugin-dialog', () => ({
 }));
 
 // Import test utilities
-import { renderAppAndWait, setupDefaultMocks } from './testUtils';
+import { renderAppAndWait, setupDefaultMocks } from '../../test-utils/e2e';
 
 const { invoke: mockInvoke } = require('@tauri-apps/api/core');
 const { listen: mockListen } = require('@tauri-apps/api/event');
