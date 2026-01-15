@@ -55,7 +55,6 @@ mod tests {
             let event = WorkspaceEvent::StatusChanged {
                 workspace_id: workspace_id.clone(),
                 status: status.clone(),
-                timestamp: SystemTime::now(),
             };
 
             // Serialize event (simulating network transmission)
@@ -94,7 +93,6 @@ mod tests {
             let initial_event = WorkspaceEvent::StatusChanged {
                 workspace_id: workspace_id.clone(),
                 status: status.clone(),
-                timestamp: SystemTime::now(),
             };
 
             apply_event_to_map(&mut states, &initial_event);
@@ -106,7 +104,6 @@ mod tests {
             let progress_event = WorkspaceEvent::ProgressUpdate {
                 workspace_id: workspace_id.clone(),
                 progress,
-                timestamp: SystemTime::now(),
             };
 
             apply_event_to_map(&mut states, &progress_event);
@@ -131,7 +128,6 @@ mod tests {
                 let event = WorkspaceEvent::StatusChanged {
                     workspace_id: workspace_id.clone(),
                     status,
-                    timestamp: SystemTime::now(),
                 };
                 apply_event_to_map(&mut states, &event);
             }
@@ -152,14 +148,13 @@ mod tests {
             let mut missed_events: Vec<WorkspaceEvent> = Vec::new();
             let mut expected_final_progress = 0.0;
 
-            for (i, seq) in event_sequence.iter().enumerate() {
+            for (_i, seq) in event_sequence.iter().enumerate() {
                 let progress = (*seq as f64) / 1000.0;
                 expected_final_progress = progress;
 
                 missed_events.push(WorkspaceEvent::ProgressUpdate {
                     workspace_id: workspace_id.clone(),
                     progress,
-                    timestamp: SystemTime::UNIX_EPOCH + Duration::from_secs(*seq + i as u64),
                 });
             }
 
