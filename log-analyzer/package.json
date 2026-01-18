@@ -16,6 +16,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "validate:ci": "bash ../scripts/validate-ci.sh",
     "preview": "vite preview",
     "tauri": "tauri",
     "type-check": "tsc --noEmit",
