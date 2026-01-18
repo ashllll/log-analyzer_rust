@@ -932,6 +932,22 @@ impl CacheManager {
         let async_cache_stats =
             tauri::async_runtime::block_on(async { self.get_async_cache_statistics().await });
 
+        self.generate_performance_report_with_stats(async_cache_stats)
+    }
+
+    /// 生成性能报告（异步版本，用于已在 tokio runtime 中的上下文）
+    ///
+    /// 此方法避免使用 block_on，适合在异步测试或异步上下文中调用。
+    pub async fn generate_performance_report_async(&self) -> CachePerformanceReport {
+        let async_cache_stats = self.get_async_cache_statistics().await;
+        self.generate_performance_report_with_stats(async_cache_stats)
+    }
+
+    /// 使用给定的异步统计信息生成性能报告
+    fn generate_performance_report_with_stats(
+        &self,
+        async_cache_stats: CacheStatistics,
+    ) -> CachePerformanceReport {
         let snapshot = self.metrics.snapshot();
         let alerts = self.metrics.check_performance_alerts();
 
@@ -1768,68 +1784,92 @@ mod tests {
     ///
     /// For any cache performance report generation, all metrics should be consistent
     ///
-    /// **Note**: 暂时跳过此测试，因为 proptest! 宏与 tokio runtime 存在嵌套冲突
-    /// TODO: 重构为使用 tokio::test 宏或独立测试进程
-    #[test]
-    #[ignore = "proptest! 宏与 cargo test 的 tokio runtime 存在嵌套冲突"]
-    fn test_property_performance_report_consistency() {
-        // 创建 runtime 在 proptest! 外部，避免嵌套 runtime 冲突
-        let rt = tokio::runtime::Runtime::new()
-            .expect("Failed to create tokio runtime for property test");
+    /// 使用 tokio::test 宏 + 异步版本的 report 方法，避免嵌套 runtime 问题
+    #[tokio::test]
+    async fn test_performance_report_consistency() {
+        let cache = create_test_cache();
+        let manager = CacheManager::new(cache.clone());
 
-        proptest!(|(
-            operations in prop::collection::vec((any::<bool>(), "[a-zA-Z0-9_]{1,10}"), 5..20)
-        )| {
-            rt.block_on(async {
-                let cache = create_test_cache();
-                let manager = CacheManager::new(cache.clone());
+        // Reset metrics
+        manager.reset_metrics();
 
-                // Reset metrics
-                manager.reset_metrics();
+        // 测试用例 1: 混合 hit/miss 操作
+        let test_cases = vec![
+            // (should_hit, query)
+            (true, "error_log"),
+            (true, "error_log"),
+            (false, "warning_log"),
+            (true, "info_log"),
+            (false, "debug_log"),
+            (true, "error_log"),
+            (false, "trace_log"),
+        ];
 
-                // Perform various cache operations
-                for (should_hit, query) in operations {
-                    let key = (
-                        query,
-                        "test_workspace".to_string(),
-                        None, None, vec![], None, false, 100, String::new()
-                    );
+        // 执行缓存操作
+        for (should_hit, query) in &test_cases {
+            let key = (
+                query.to_string(),
+                "test_workspace".to_string(),
+                None,
+                None,
+                vec![],
+                None,
+                false,
+                100,
+                String::new(),
+            );
 
-                    if should_hit {
-                        // Insert then get (hit)
-                        manager.insert_async(key.clone(), vec![]).await;
-                        let _result = manager.get_async(&key).await;
-                    } else {
-                        // Just get (miss)
-                        let _result = manager.get_async(&key).await;
-                    }
-                }
+            if *should_hit {
+                // Insert then get (hit)
+                manager.insert_async(key.clone(), vec![]).await;
+                let _result = manager.get_async(&key).await;
+            } else {
+                // Just get (miss)
+                let _result = manager.get_async(&key).await;
+            }
+        }
 
-                // Generate performance report (同步方法)
-                let report = manager.generate_performance_report();
+        // 生成性能报告（使用异步版本避免嵌套 runtime）
+        let report = manager.generate_performance_report_async().await;
 
-                // Property: Report metrics should match current metrics
-                let current_metrics = manager.get_performance_metrics();
-                assert_eq!(report.metrics.l1_hit_count, current_metrics.l1_hit_count,
-                    "Report hit count should match current metrics");
-                assert_eq!(report.metrics.l1_miss_count, current_metrics.l1_miss_count,
-                    "Report miss count should match current metrics");
-                assert_eq!(report.metrics.total_requests, current_metrics.total_requests,
-                    "Report total requests should match current metrics");
+        // 验证: 报告指标应与当前指标匹配
+        let current_metrics = manager.get_performance_metrics();
+        assert_eq!(
+            report.metrics.l1_hit_count, current_metrics.l1_hit_count,
+            "Report hit count should match current metrics"
+        );
+        assert_eq!(
+            report.metrics.l1_miss_count, current_metrics.l1_miss_count,
+            "Report miss count should match current metrics"
+        );
+        assert_eq!(
+            report.metrics.total_requests, current_metrics.total_requests,
+            "Report total requests should match current metrics"
+        );
 
-                // Property: Overall health should be between 0 and 100
-                assert!(report.overall_health >= 0.0 && report.overall_health <= 100.0,
-                    "Overall health should be between 0 and 100, got {}", report.overall_health);
+        // 验证: 整体健康评分应在 0-100 之间
+        assert!(
+            report.overall_health >= 0.0 && report.overall_health <= 100.0,
+            "Overall health should be between 0 and 100, got {}",
+            report.overall_health
+        );
 
-                // Property: Recommendations should not be empty
-                assert!(!report.recommendations.is_empty(),
-                    "Performance report should always include recommendations");
+        // 验证: 推荐列表不应为空
+        assert!(
+            !report.recommendations.is_empty(),
+            "Performance report should always include recommendations"
+        );
 
-                // Property: Report should have a valid timestamp
-                assert!(report.timestamp <= std::time::SystemTime::now(),
-                    "Report timestamp should not be in the future");
-            });
-        });
+        // 验证: 报告时间戳应有效
+        assert!(
+            report.timestamp <= std::time::SystemTime::now(),
+            "Report timestamp should not be in the future"
+        );
+
+        println!(
+            "Performance report: health={:.1}%, hits={}, misses={}",
+            report.overall_health, report.metrics.l1_hit_count, report.metrics.l1_miss_count
+        );
     }
 
     /// **Feature: bug-fixes, Property 30: Cache Metrics Tracking**

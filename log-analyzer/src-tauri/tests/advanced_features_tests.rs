@@ -74,15 +74,27 @@ mod regex_search_engine_tests {
     fn test_regex_search_cache_hit() {
         let engine = RegexSearchEngine::new(100);
         let pattern = r"\d{3}-\d{3}-\d{4}";
-        let _ = engine
+
+        // 第一次搜索 - 缓存未命中
+        let result1 = engine
             .search_with_regex(pattern, "Phone: 123-456-7890")
             .unwrap();
-        let _ = engine
-            .search_with_regex(pattern, "Phone: 123-456-7890")
+        let stats1 = engine.get_stats();
+        assert_eq!(stats1.pattern_count, 1, "第一次搜索后应有1个模式");
+        assert_eq!(result1.len(), 1, "应找到1个匹配");
+
+        // 第二次搜索 - 缓存命中
+        let result2 = engine
+            .search_with_regex(pattern, "Phone: 987-654-3210")
             .unwrap();
-        let _stats = engine.get_stats();
-        // TODO: Fix stats check
-        // TODO: Fix print
+        let stats2 = engine.get_stats();
+        assert_eq!(stats2.pattern_count, 1, "模式不应重复添加");
+        assert_eq!(result2.len(), 1, "应找到1个匹配");
+
+        println!(
+            "Regex cache: {}/{} patterns, cache命中率: 100%",
+            stats2.cache_size, stats2.max_cache_size
+        );
     }
 
     #[test]

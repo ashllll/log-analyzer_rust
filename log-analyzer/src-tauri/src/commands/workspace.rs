@@ -601,19 +601,23 @@ pub async fn cancel_task(
         "Cancel task command called"
     );
 
-    let task_manager = state.task_manager.lock()
+    let task_manager = state
+        .task_manager
+        .lock()
         .as_ref()
         .ok_or_else(|| "Task manager not initialized".to_string())?
         .clone();
 
     // 更新任务状态为 Stopped
-    let _ = task_manager.update_task_async(
-        &taskId,
-        0,  // progress 保持不变
-        "Task cancelled by user".to_string(),
-        crate::task_manager::TaskStatus::Stopped,
-    ).await
-    .map_err(|e| format!("Failed to cancel task: {}", e))?;
+    let _ = task_manager
+        .update_task_async(
+            &taskId,
+            0, // progress 保持不变
+            "Task cancelled by user".to_string(),
+            crate::task_manager::TaskStatus::Stopped,
+        )
+        .await
+        .map_err(|e| format!("Failed to cancel task: {}", e))?;
 
     info!(
         task_id = %taskId,
@@ -681,7 +685,9 @@ pub async fn get_workspace_status(
     }
 
     // 获取 MetadataStore
-    let metadata_store = state.metadata_stores.lock()
+    let metadata_store = state
+        .metadata_stores
+        .lock()
         .get(&workspaceId)
         .cloned()
         .ok_or_else(|| format!("Workspace store not initialized: {}", workspaceId))?;
@@ -706,7 +712,7 @@ pub async fn get_workspace_status(
 
     Ok(WorkspaceStatusResponse {
         id: workspaceId.clone(),
-        name: workspaceId,  // TODO: 从配置中读取实际名称
+        name: workspaceId, // TODO: 从配置中读取实际名称
         status: "READY".to_string(),
         size: size_str,
         files: file_count as usize,
