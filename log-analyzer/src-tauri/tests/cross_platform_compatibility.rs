@@ -81,6 +81,7 @@ mod cross_platform_tests {
 
     /// 测试路径分隔符规范化
     #[test]
+    #[allow(unused_variables)]
     fn test_path_separator_normalization() {
         let input = "folder/subfolder/file.txt";
 

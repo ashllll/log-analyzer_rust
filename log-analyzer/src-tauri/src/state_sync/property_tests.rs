@@ -148,7 +148,7 @@ mod tests {
             let mut missed_events: Vec<WorkspaceEvent> = Vec::new();
             let mut expected_final_progress = 0.0;
 
-            for (_i, seq) in event_sequence.iter().enumerate() {
+            for seq in event_sequence.iter() {
                 let progress = (*seq as f64) / 1000.0;
                 expected_final_progress = progress;
 
@@ -221,9 +221,7 @@ mod tests {
                 status,
                 ..
             } => {
-                let state = states
-                    .entry(workspace_id.clone())
-                    .or_insert(TestState::default());
+                let state = states.entry(workspace_id.clone()).or_default();
                 state.status = status_to_name(status);
             }
             WorkspaceEvent::ProgressUpdate {
@@ -231,9 +229,7 @@ mod tests {
                 progress,
                 ..
             } => {
-                let state = states
-                    .entry(workspace_id.clone())
-                    .or_insert(TestState::default());
+                let state = states.entry(workspace_id.clone()).or_default();
                 state.progress = *progress;
             }
             _ => {}
