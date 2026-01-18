@@ -297,14 +297,61 @@ npm test -- --coverage
 - **目标覆盖**: 80%+
 
 ### 代码质量检查
-提交前必须通过:
+
+#### ⚠️ 推送前强制验证 (Git Pre-Push Hook)
+
+本项目已配置 **Git pre-push hook**，使用 Husky 管理。每次 `git push` 前会自动运行 CI 验证：
+
+```bash
+# 推送前自动执行
+npm run validate:ci
+```
+
+**如果验证失败，推送将被中止。**
+
+#### 手动运行验证
+
+如需手动验证（不推送），运行：
+
+```bash
+# 方式 1: npm 命令（推荐）
+npm run validate:ci
+
+# 方式 2: 直接运行脚本
+./scripts/validate-ci.sh      # macOS/Linux
+.\scripts\validate-ci.ps1     # Windows PowerShell
+```
+
+#### 验证内容
+
+| 检查项 | 命令 |
+|--------|------|
+| ESLint | `npm run lint` |
+| TypeScript 类型 | `npm run type-check` |
+| 前端测试 | `npm test -- --testPathIgnorePatterns=e2e` |
+| 前端构建 | `npm run build` |
+| Rust 格式 | `cargo fmt -- --check` |
+| Rust Clippy | `cargo clippy --all-features --all-targets -- -D warnings` |
+
+#### 跳过 Hook (不推荐)
+
+如需临时跳过验证（不推荐）：
+
+```bash
+git push --no-verify
+```
+
+#### 提交前手动验证清单
+
 ```bash
 # Rust
+cd log-analyzer/src-tauri
 cargo fmt --check
 cargo clippy -- -D warnings
 cargo test --all-features
 
 # 前端
+cd log-analyzer
 npm run lint
 npm run type-check
 npm run build

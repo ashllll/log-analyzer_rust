@@ -1,0 +1,40 @@
+#!/bin/bash
+# Git Pre-Push Hook (Husky)
+# 在推送前强制执行 CI 验证，确保远程 CI 不会失败
+
+. "$(dirname "$0")/_/husky.sh"
+
+set -e
+
+# 颜色输出
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+echo -e "${YELLOW}=== 推送前 CI 验证 ===${NC}"
+echo "正在运行本地 CI 检查..."
+echo ""
+
+# 获取项目根目录
+PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+cd "$PROJECT_ROOT/log-analyzer"
+
+# 检查是否有未提交的更改
+if [ -n "$(git status --porcelain)" ]; then
+  echo -e "${YELLOW}⚠️  检测到未提交的更改，建议先提交${NC}"
+  git status --short
+  echo ""
+fi
+
+# 运行 CI 验证
+if ! npm run validate:ci; then
+  echo ""
+  echo -e "${RED}❌ CI 验证失败，推送已中止${NC}"
+  echo "请修复问题后重试"
+  exit 1
+fi
+
+echo ""
+echo -e "${GREEN}✅ CI 验证通过，可以安全推送${NC}"
+exit 0
