@@ -78,7 +78,15 @@ jobs:
     - name: Run clippy linter
       run: |
         cd log-analyzer/src-tauri
-        cargo clippy --all-features --all-targets --no-deps -- -D warnings
+        cargo clippy --all-features --all-targets --no-deps -- -D warnings 2>&1 | tee clippy-output.txt
+      continue-on-error: false
+
+    - name: Upload clippy output
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: clippy-output-${{ matrix.os }}
+        path: log-analyzer/src-tauri/clippy-output.txt
 
     - name: Run tests
       run: |
