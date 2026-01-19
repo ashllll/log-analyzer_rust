@@ -42,25 +42,6 @@ impl StateSync {
         }
     }
 
-    /// Create a dummy StateSync instance for testing
-    #[cfg(feature = "test")]
-    pub fn new_dummy() -> Self {
-        use tauri::test::MockRuntime;
-        let mock_app = tauri::Builder::<tauri::Wry>::new("dummy")
-            .build(tauri::test::mock_context())
-            .unwrap();
-        Self::new(mock_app.handle())
-    }
-
-    /// Create a dummy StateSync instance for testing (when test feature is not available)
-    #[cfg(not(feature = "test"))]
-    pub fn new_dummy() -> Self {
-        // Fallback: panic with a helpful message
-        panic!(
-            "new_dummy() requires the 'test' feature. Enable it with: cargo test --features test"
-        );
-    }
-
     /// Broadcast workspace event to frontend
     ///
     /// Uses Tauri's event system for <10ms latency
