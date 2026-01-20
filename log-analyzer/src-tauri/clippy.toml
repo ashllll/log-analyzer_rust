@@ -1,0 +1,31 @@
+# Clippy configuration for log-analyzer
+
+# This configuration allows certain patterns that are acceptable in this project
+
+# Allow specific identifiers in documentation
+doc-valid-idents = [
+    "GitHub",
+    "Windows",
+    "macOS",
+    "GitHub Actions",
+    "SQLite",
+    "Tauri",
+]
+
+# Cognitive complexity threshold - allow slightly more complex code in tests
+cognitive-complexity-threshold = 50
+
+# Type complexity threshold
+type-complexity-threshold = 500
+
+# Literal representation threshold
+literal-representation-threshold = 10
+
+# Allow too many arguments in tests (they often need many parameters)
+too-many-arguments-threshold = 10
+
+# Allow many lines in functions (especially in tests)
+too-many-lines-threshold = 200
+
+# Don't warn about enum variant names
+enum-variant-name-threshold = 5

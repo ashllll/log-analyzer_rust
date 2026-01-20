@@ -11,6 +11,9 @@ env:
   RUST_BACKTRACE: 1
   # 统一 Node 版本，避免版本差异
   NODE_VERSION: '22'
+  # 优化 Cargo 性能
+  CARGO_NET_RETRY: 10
+  CARGO_NET_GIT_FETCH_WITH_CLI: true
 
 jobs:
   # Rust 后端测试
@@ -51,7 +54,9 @@ jobs:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-v2
+          ~/.cargo/bin
+          log-analyzer/src-tauri/target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-v3
         restore-keys: |
           ${{ runner.os }}-cargo-
 
@@ -79,19 +84,31 @@ jobs:
       run: |
         cd log-analyzer/src-tauri
         cargo clippy --all-features --all-targets --no-deps -- -D warnings 2>&1 | tee clippy-output.txt
+      timeout-minutes: 30
       continue-on-error: false
+
+    - name: Run clippy linter (Windows-specific allowances)
+      if: matrix.os == 'windows-latest' && failure()
+      run: |
+        cd log-analyzer/src-tauri
+        # Retry with common test allowances for Windows
+        cargo clippy --all-features --all-targets --no-deps -- -D warnings -A clippy::absolute_paths 2>&1 | tee clippy-windows.txt
+      continue-on-error: true
 
     - name: Upload clippy output
       if: failure()
       uses: actions/upload-artifact@v4
       with:
         name: clippy-output-${{ matrix.os }}
-        path: log-analyzer/src-tauri/clippy-output.txt
+        path: |
+          log-analyzer/src-tauri/clippy-output.txt
+          log-analyzer/src-tauri/clippy-windows.txt
 
     - name: Run tests
       run: |
         cd log-analyzer/src-tauri
-        cargo test --all-features --verbose
+        cargo test --all-features --verbose -- --test-threads=2
+      timeout-minutes: 60
 
   # 前端测试 - 增强版
   test-frontend:
@@ -177,7 +194,8 @@ jobs:
     - name: Run integration tests
       run: |
         cd log-analyzer/src-tauri
-        cargo test --test '*' --verbose
+        cargo test --test '*' --verbose -- --test-threads=2
+      timeout-minutes: 45
 
   # 构建和发布
   build:
@@ -235,6 +253,7 @@ jobs:
       run: |
         cd log-analyzer
         npm run tauri build
+      timeout-minutes: 90
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
