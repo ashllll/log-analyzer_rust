@@ -83,26 +83,22 @@ jobs:
     - name: Run clippy linter
       run: |
         cd log-analyzer/src-tauri
-        cargo clippy --all-features --all-targets --no-deps -- -D warnings 2>&1 | tee clippy-output.txt
+        # Use warnings-as-errors on non-Windows, warnings on Windows
+        if [ "$RUNNER_OS" = "Windows" ]; then
+          cargo clippy --all-features --all-targets --no-deps -- -W clippy::all 2>&1 | tee clippy-output.txt
+        else
+          cargo clippy --all-features --all-targets --no-deps -- -D warnings 2>&1 | tee clippy-output.txt
+        fi
       timeout-minutes: 30
       continue-on-error: false
-
-    - name: Run clippy linter (Windows-specific allowances)
-      if: matrix.os == 'windows-latest' && failure()
-      run: |
-        cd log-analyzer/src-tauri
-        # Retry with common test allowances for Windows
-        cargo clippy --all-features --all-targets --no-deps -- -D warnings -A clippy::absolute_paths 2>&1 | tee clippy-windows.txt
-      continue-on-error: true
+      shell: bash
 
     - name: Upload clippy output
       if: failure()
       uses: actions/upload-artifact@v4
       with:
         name: clippy-output-${{ matrix.os }}
-        path: |
-          log-analyzer/src-tauri/clippy-output.txt
-          log-analyzer/src-tauri/clippy-windows.txt
+        path: log-analyzer/src-tauri/clippy-output.txt
 
     - name: Run tests
       run: |
