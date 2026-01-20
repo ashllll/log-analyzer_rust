@@ -4,4 +4,5 @@ export { Input } from './Input';
 export { Card } from './Card';
 export { NavItem } from './NavItem';
 export { FormField } from './FormField';
-export { ConnectionStatus } from './ConnectionStatus';
+export { ConnectionStatusIndicator } from './ConnectionStatus';
+export type { ConnectionStatusProps, ConnectionDotProps, ConnectionToastProps } from './ConnectionStatus';
