@@ -76,7 +76,8 @@ sanitize-filename = "0.5"  # 文件名安全化
 scopeguard = "1.2"  # RAII模式和自动资源清理
 
 # Phase 4: Configuration Management
-toml = "0.8"  # TOML配置文件解析
+config = "0.14"  # 行业标准配置管理（多层配置、env支持）
+toml = "0.8"  # TOML 配置文件解析
 dashmap = "5.5"  # 并发哈希映射
 sha2 = "0.10"  # SHA-256 哈希算法
 sqlx = { version = "0.7", features = ["runtime-tokio-native-tls", "sqlite"] }  # SQLite 数据库

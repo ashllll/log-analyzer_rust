@@ -50,16 +50,18 @@ pub use progress_tracker::ProgressTracker;
 pub use resource_manager::ResourceManager as ArchiveResourceManager;
 
 use crate::error::Result;
+use crate::models::config::ArchiveConfig;
 use std::path::Path;
 
 /**
  * 压缩处理器管理器
  *
  * 管理所有支持的压缩格式处理器
+ * 配置使用统一的配置系统，支持从配置文件或环境变量加载
  */
 pub struct ArchiveManager {
     handlers: Vec<Box<dyn ArchiveHandler>>,
-    // 安全配置
+    // 安全配置（来自 ArchiveConfig）
     max_file_size: u64,    // 单个文件最大大小（字节）
     max_total_size: u64,   // 解压后总大小限制（字节）
     max_file_count: usize, // 解压文件数量限制
@@ -67,9 +69,20 @@ pub struct ArchiveManager {
 
 impl ArchiveManager {
     /**
-     * 创建新的压缩处理器管理器
+     * 创建新的压缩处理器管理器（使用默认配置）
      */
     pub fn new() -> Self {
+        Self::with_config(ArchiveConfig::default())
+    }
+
+    /**
+     * 使用自定义配置创建压缩处理器管理器
+     *
+     * # Arguments
+     *
+     * * `config` - 压缩包处理配置
+     */
+    pub fn with_config(config: ArchiveConfig) -> Self {
         let handlers: Vec<Box<dyn ArchiveHandler>> = vec![
             Box::new(TarHandler), // 先检查TAR（包括tar.gz等）
             Box::new(GzHandler),  // 再检查纯GZ
@@ -79,9 +92,21 @@ impl ArchiveManager {
 
         Self {
             handlers,
-            max_file_size: 100 * 1024 * 1024, // 默认单个文件最大100MB
-            max_total_size: 1024 * 1024 * 1024, // 默认总大小最大1GB
-            max_file_count: 1000,             // 默认最大文件数1000
+            max_file_size: config.max_file_size,
+            max_total_size: config.max_total_size,
+            max_file_count: config.max_file_count,
+        }
+    }
+
+    /**
+     * 获取当前配置引用
+     */
+    pub fn get_config(&self) -> ArchiveConfig {
+        ArchiveConfig {
+            max_file_size: self.max_file_size,
+            max_total_size: self.max_total_size,
+            max_file_count: self.max_file_count,
+            ..Default::default()
         }
     }
 

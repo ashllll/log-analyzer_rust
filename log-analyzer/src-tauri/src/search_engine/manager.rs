@@ -23,6 +23,7 @@ use super::{
     BooleanQueryProcessor, HighlightingConfig, HighlightingEngine, LogSchema, SearchError,
     SearchResult,
 };
+use crate::models::config::SearchConfig as AppSearchConfig;
 use crate::models::LogEntry;
 use tantivy::DocAddress;
 
@@ -183,6 +184,30 @@ impl SearchEngineManager {
             boolean_processor,
             highlighting_engine,
         })
+    }
+
+    /// Create a new search engine manager using application configuration
+    ///
+    /// This method uses the unified config system for settings while keeping
+    /// Tantivy-specific defaults for engine internals.
+    ///
+    /// # Arguments
+    ///
+    /// * `app_config` - Application search configuration
+    /// * `index_path` - Path to store the search index
+    /// * `writer_heap_size` - Heap size for Tantivy index writer (bytes)
+    pub fn with_app_config(
+        app_config: AppSearchConfig,
+        index_path: PathBuf,
+        writer_heap_size: usize,
+    ) -> SearchResult<Self> {
+        let engine_config = SearchConfig {
+            default_timeout: Duration::from_secs(app_config.timeout_seconds),
+            max_results: app_config.max_results,
+            index_path,
+            writer_heap_size,
+        };
+        Self::new(engine_config)
     }
 
     /// Search with timeout support

@@ -13,21 +13,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ---
 
 > **项目**: log-analyzer_rust - 高性能桌面日志分析工具
->
 > **版本**: 0.0.125
->
 > **技术栈**: Tauri 2.0 + Rust 1.70+ + React 19.1.0 + TypeScript 5.8.3
->
-> **最后更新**: 2026-01-15
+> **最后更新**: 2026-01-20
 
 ---
 
-## 📚 快速链接
+## 快速链接
 
 - **[项目文档中心](docs/README.md)** - 架构文档、用户指南、开发指南
 - **[Rust后端文档](log-analyzer/src-tauri/CLAUDE.md)** - 后端模块详细实现
 - **[React前端文档](log-analyzer/src/CLAUDE.md)** - 前端模块详细实现
-- **[全局编码原则](C:\Users\white\.claude\rules\global-principles.md)** - 必须使用成熟方案 + CI/CD验证
 
 ---
 
@@ -475,6 +471,22 @@ npm run build
 - **样式**: Tailwind Utility类
 - **国际化**: 文案走 `i18n` 字典
 
+### 核心架构原则（铁律）
+
+**必须使用业内成熟方案**：
+| 需求 | ✅ 推荐 | ❌ 禁止 |
+|------|--------|--------|
+| 超时控制 | AbortController | 手写setTimeout + flag |
+| 状态管理 | Zustand / React Query | 自造useState管理 |
+| 多模式匹配 | Aho-Corasick算法库 | 逐行正则表达式 |
+| 异步重试 | retry / tokio-retry | 手写loop + sleep |
+| 表单验证 | Zod / Yup | 手写正则校验 |
+| 日期处理 | date-fns / Day.js | moment.js（已过时） |
+| HTTP客户端 | fetch / axios | XMLHttpRequest原生 |
+| 路由管理 | React Router / TanStack Router | 自造hash路由 |
+
+**例外**: 只有当不存在任何成熟方案时，经过用户明确批准才可实施自定义方案。
+
 ---
 
 ## 前后端集成规范
@@ -666,7 +678,3 @@ pub async fn insert_file(&self, metadata: &FileMetadata) -> Result<i64> {
 - [项目文档中心](docs/README.md)
 - [Rust后端文档](log-analyzer/src-tauri/CLAUDE.md)
 - [React前端文档](log-analyzer/src/CLAUDE.md)
-
----
-
-*详细的项目愿景、模块索引、AI使用指引等内容请查看[完整CLAUDE.md](CLAUDE.md)*

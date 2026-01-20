@@ -1,11 +1,31 @@
 //! 配置管理命令
+//!
+//! 使用行业标准的 `config` crate 实现配置管理：
+//! - 支持多层配置：默认值 → 配置文件 → 环境变量
+//! - 环境变量前缀：`LOG_ANALYZER_`
+//! - 保持向后兼容 JSON 配置文件
 
 use std::fs;
 
 use tauri::{command, AppHandle, Manager};
-use tracing::warn;
 
-use crate::models::{AppConfig, FileFilterConfig};
+use crate::models::config::{AppConfig, AppConfigLoader, FileFilterConfig};
+
+/// 加载配置（使用新的 ConfigLoader 系统）
+fn load_config_internal(app: &AppHandle) -> Result<AppConfig, String> {
+    let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+
+    let config_path = config_dir.join("config.json");
+
+    if config_path.exists() {
+        AppConfigLoader::load(Some(config_path))
+            .map(|loader| loader.get_config().clone())
+            .map_err(|e| e.to_string())
+    } else {
+        // 返回默认配置
+        Ok(AppConfig::default())
+    }
+}
 
 #[command]
 pub fn save_config(app: AppHandle, config: AppConfig) -> Result<(), String> {
@@ -22,33 +42,7 @@ pub fn save_config(app: AppHandle, config: AppConfig) -> Result<(), String> {
 
 #[command]
 pub fn load_config(app: AppHandle) -> Result<AppConfig, String> {
-    let path = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| e.to_string())?
-        .join("config.json");
-    if path.exists() {
-        let c = fs::read_to_string(path).map_err(|e| e.to_string())?;
-        match serde_json::from_str(&c) {
-            Ok(config) => Ok(config),
-            Err(e) => {
-                warn!(error = %e, "Failed to parse config, using defaults");
-                Ok(AppConfig {
-                    keyword_groups: serde_json::json!([]),
-                    workspaces: serde_json::json!([]),
-                    advanced_features: Default::default(),
-                    file_filter: Default::default(),
-                })
-            }
-        }
-    } else {
-        Ok(AppConfig {
-            keyword_groups: serde_json::json!([]),
-            advanced_features: Default::default(),
-            workspaces: serde_json::json!([]),
-            file_filter: Default::default(),
-        })
-    }
+    load_config_internal(&app)
 }
 
 #[command]
