@@ -600,7 +600,7 @@ async fn test_mixed_nested_and_regular_files() {
     assert_eq!(summary.files_extracted, 3, "Should extract 3 files");
 
     // Process all files - walk the extract directory
-    let mut file_count = 0;
+    let mut _file_count = 0;
     for entry in WalkDir::new(&extract_dir)
         .into_iter()
         .filter_map(|e| e.ok())
@@ -627,12 +627,12 @@ async fn test_mixed_nested_and_regular_files() {
                 };
 
                 metadata.insert_file(&file_meta).await.unwrap();
-                file_count += 1;
+                _file_count += 1;
             }
         }
     }
 
-    assert_eq!(file_count, 2, "Should index 2 regular log files");
+    assert_eq!(_file_count, 2, "Should index 2 regular log files");
 
     // Extract and process nested archive
     let inner_extracted = extract_dir.join("inner.zip");
@@ -669,7 +669,7 @@ async fn test_mixed_nested_and_regular_files() {
                 };
 
                 metadata.insert_file(&file_meta).await.unwrap();
-                file_count += 1;
+                _file_count += 1;
             }
         }
     }

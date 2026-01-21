@@ -34,16 +34,16 @@ impl ErrorCategory {
     pub fn from_error(error: &AppError) -> Self {
         match error {
             AppError::InvalidPath(_) => ErrorCategory::PathTooLong,
-            AppError::Archive { message, .. } => {
-                if message.contains("unsupported") || message.contains("Unsupported") {
+            AppError::Archive { _message, .. } => {
+                if _message.contains("unsupported") || _message.contains("Unsupported") {
                     ErrorCategory::UnsupportedFormat
-                } else if message.contains("corrupted") || message.contains("Corrupted") {
+                } else if _message.contains("corrupted") || _message.contains("Corrupted") {
                     ErrorCategory::CorruptedArchive
-                } else if message.contains("zip bomb") || message.contains("Zip bomb") {
+                } else if _message.contains("zip bomb") || _message.contains("Zip bomb") {
                     ErrorCategory::ZipBombDetected
-                } else if message.contains("depth") || message.contains("Depth") {
+                } else if _message.contains("depth") || _message.contains("Depth") {
                     ErrorCategory::DepthLimitExceeded
-                } else if message.contains("space") || message.contains("Space") {
+                } else if _message.contains("space") || _message.contains("Space") {
                     ErrorCategory::DiskSpaceExhausted
                 } else {
                     ErrorCategory::Other

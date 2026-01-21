@@ -13,25 +13,25 @@ pub enum AppError {
     #[diagnostic(code(app::io_error))]
     Io(#[from] std::io::Error),
 
-    #[error("Search error: {message}")]
+    #[error("Search error: {_message}")]
     #[diagnostic(
         code(app::search_error),
         help("Try simplifying your search query or checking the workspace status")
     )]
     Search {
-        message: String,
+        _message: String,
         #[source]
-        source: Option<Box<dyn std::error::Error + Send + Sync>>,
+        _source: Option<Box<dyn std::error::Error + Send + Sync>>,
     },
 
-    #[error("Archive error: {message}")]
+    #[error("Archive error: {_message}")]
     #[diagnostic(
         code(app::archive_error),
         help("Ensure the archive file is not corrupted and is a supported format")
     )]
     Archive {
-        message: String,
-        path: Option<PathBuf>,
+        _message: String,
+        _path: Option<PathBuf>,
     },
 
     #[error("Validation error: {0}")]
@@ -125,13 +125,13 @@ impl AppError {
     pub fn with_context(self, context: impl Into<String>) -> Self {
         let context = context.into();
         match self {
-            AppError::Search { message, source } => AppError::Search {
-                message: format!("{}: {}", context, message),
-                source,
+            AppError::Search { _message, _source } => AppError::Search {
+                _message: format!("{}: {}", context, _message),
+                _source,
             },
-            AppError::Archive { message, path } => AppError::Archive {
-                message: format!("{}: {}", context, message),
-                path,
+            AppError::Archive { _message, _path } => AppError::Archive {
+                _message: format!("{}: {}", context, _message),
+                _path,
             },
             other => other,
         }
@@ -142,8 +142,8 @@ impl AppError {
      */
     pub fn search_error(message: impl Into<String>) -> Self {
         AppError::Search {
-            message: message.into(),
-            source: None,
+            _message: message.into(),
+            _source: None,
         }
     }
 
@@ -152,8 +152,8 @@ impl AppError {
      */
     pub fn archive_error(message: impl Into<String>, path: Option<PathBuf>) -> Self {
         AppError::Archive {
-            message: message.into(),
-            path,
+            _message: message.into(),
+            _path: path,
         }
     }
 
@@ -237,9 +237,9 @@ mod tests {
         let with_context = error.with_context("Validation");
 
         match with_context {
-            AppError::Search { message, .. } => {
-                assert!(message.contains("Validation"));
-                assert!(message.contains("Query failed"));
+            AppError::Search { _message, .. } => {
+                assert!(_message.contains("Validation"));
+                assert!(_message.contains("Query failed"));
             }
             _ => panic!("Expected Search error"),
         }
