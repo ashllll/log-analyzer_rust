@@ -23,7 +23,7 @@ mod property_tests {
     /// 这个属性确保所有包含路径遍历模式的输入都被正确拒绝
     #[test]
     fn property_22_path_traversal_protection() {
-        proptest!(ProptestConfig::with_cases(100), |(
+        proptest!(|(
             // 生成包含路径遍历模式的路径
             prefix in "[a-zA-Z0-9_-]{0,10}",
             traversal_pattern in prop_oneof![
@@ -55,7 +55,7 @@ mod property_tests {
     /// *For any* safe path (without traversal patterns), the system should accept it
     #[test]
     fn property_22_safe_paths_accepted() {
-        proptest!(ProptestConfig::with_cases(100), |(
+        proptest!(|(
             // 生成安全的路径组件
             components in prop::collection::vec("[a-zA-Z0-9_-]{1,20}", 1..5)
         )| {
@@ -82,7 +82,7 @@ mod property_tests {
     /// *For any* path containing null bytes, the system should reject it
     #[test]
     fn property_22_null_byte_protection() {
-        proptest!(ProptestConfig::with_cases(100), |(
+        proptest!(|(
             prefix in "[a-zA-Z0-9_/-]{0,20}",
             suffix in "[a-zA-Z0-9_/-]{0,20}"
         )| {
@@ -109,7 +109,7 @@ mod property_tests {
     /// 这个属性确保工作区 ID 只包含字母数字、连字符和下划线
     #[test]
     fn property_23_workspace_id_safety() {
-        proptest!(ProptestConfig::with_cases(100), |(
+        proptest!(|(
             // 生成只包含安全字符的 ID
             id in "[a-zA-Z0-9_-]{1,50}"
         )| {
@@ -129,7 +129,7 @@ mod property_tests {
     /// *For any* workspace ID containing unsafe characters, it should be rejected
     #[test]
     fn property_23_unsafe_workspace_id_rejected() {
-        proptest!(ProptestConfig::with_cases(100), |(
+        proptest!(|(
             // 生成包含不安全字符的 ID
             prefix in "[a-zA-Z0-9_-]{0,10}",
             unsafe_char in "[^a-zA-Z0-9_-]",
@@ -158,7 +158,7 @@ mod property_tests {
     /// *For any* workspace ID exceeding length limits, it should be rejected
     #[test]
     fn property_23_workspace_id_length_limits() {
-        proptest!(ProptestConfig::with_cases(100), |(
+        proptest!(|(
             // 生成超长的 ID
             id in "[a-zA-Z0-9_-]{51,100}"
         )| {
@@ -181,7 +181,7 @@ mod property_tests {
     /// *For any* filename, sanitization should produce a safe result
     #[test]
     fn property_filename_sanitization_safety() {
-        proptest!(ProptestConfig::with_cases(100), |(
+        proptest!(|(
             // 生成各种文件名
             name in "[a-zA-Z0-9_.-]{1,50}"
         )| {
@@ -205,7 +205,7 @@ mod property_tests {
     /// *For any* Windows reserved filename, it should be rejected
     #[test]
     fn property_reserved_filename_rejection() {
-        proptest!(ProptestConfig::with_cases(100), |(
+        proptest!(|(
             reserved in prop_oneof![
                 Just("CON"),
                 Just("PRN"),

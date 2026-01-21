@@ -103,7 +103,8 @@ jobs:
     - name: Run tests
       run: |
         cd log-analyzer/src-tauri
-        cargo test --all-features --verbose -- --test-threads=2
+        # 使用更多线程加速测试，并设置每个测试的超时
+        cargo test --all-features --verbose -- --test-threads=4 --timeout=300
       timeout-minutes: 60
 
   # 前端测试 - 增强版

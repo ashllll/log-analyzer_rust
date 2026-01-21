@@ -104,7 +104,7 @@ libloading = "0.8"  # 动态库加载（插件系统）
 # Phase 4: Testing Infrastructure
 [dev-dependencies]
 rstest = "0.18"  # 增强的单元测试框架
-proptest = "1.4"  # 属性测试框架
+proptest = { version = "1.4", default-features = false, features = ["std"] }  # 属性测试框架
 criterion = { version = "0.5", features = ["html_reports"] }  # 性能基准测试
 tokio-test = "0.4"  # 异步测试工具
 
