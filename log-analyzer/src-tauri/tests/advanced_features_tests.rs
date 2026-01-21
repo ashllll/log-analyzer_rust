@@ -143,9 +143,7 @@ mod regex_search_engine_tests {
         );
         println!(
             "Regex: cache miss {:?}, hit {:?}, {:.1}x faster",
-            avg_miss,
-            avg_hit,
-            speedup
+            avg_miss, avg_hit, speedup
         );
     }
 }
