@@ -630,11 +630,15 @@ impl ExtractionEngine {
                         "Depth limit reached, skipping nested archive: {:?}",
                         file_path
                     );
+                    // Still count the file itself as extracted (it exists in the parent archive)
+                    extracted_files.push(item.target_dir.join(file_path));
                     depth_limit_skips += 1;
                     continue;
                 }
 
                 // Create nested extraction item
+                // Use the full path to the nested archive for proper handler lookup
+                let nested_archive_path = item.target_dir.join(file_path);
                 let nested_target = item.target_dir.join(
                     file_path
                         .file_stem()
@@ -642,7 +646,7 @@ impl ExtractionEngine {
                 );
 
                 let nested_item = ExtractionItem::new(
-                    file_path.to_path_buf(),
+                    nested_archive_path,
                     nested_target,
                     item.depth + 1,
                     item.parent_context.clone(),
