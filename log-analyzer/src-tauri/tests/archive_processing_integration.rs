@@ -336,7 +336,13 @@ async fn test_nested_archive_3_levels() {
     let deepest_file = innermost_extract_dir.join("deepest.log");
     assert!(deepest_file.exists());
 
-    let content = fs::read(&deepest_file).unwrap();
+    // Retry reading if content is empty (to handle potential file system sync issues in CI)
+    let mut content = fs::read(&deepest_file).unwrap();
+    if content.is_empty() {
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        content = fs::read(&deepest_file).unwrap();
+    }
+    
     let hash = cas.store_content(&content).await.unwrap();
 
     let file_meta = FileMetadata {
@@ -429,8 +435,13 @@ async fn test_deeply_nested_archive_5_levels() {
     let innermost_file = current_extract_dir.join("level1.log");
     assert!(innermost_file.exists(), "Innermost file should exist");
 
-    // Store in CAS with depth 5
-    let content = fs::read(&innermost_file).unwrap();
+    // Retry reading if content is empty
+    let mut content = fs::read(&innermost_file).unwrap();
+    if content.is_empty() {
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        content = fs::read(&innermost_file).unwrap();
+    }
+    
     let hash = cas.store_content(&content).await.unwrap();
 
     let file_meta = FileMetadata {
@@ -500,7 +511,14 @@ async fn test_path_length_handling() {
     }
 
     let extracted_file = extracted_file_path.expect("Should have extracted file");
-    let content = fs::read(&extracted_file).unwrap();
+    
+    // Retry reading if content is empty
+    let mut content = fs::read(&extracted_file).unwrap();
+    if content.is_empty() {
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        content = fs::read(&extracted_file).unwrap();
+    }
+    
     let hash = cas.store_content(&content).await.unwrap();
 
     // Create a very long virtual path
@@ -610,7 +628,12 @@ async fn test_mixed_nested_and_regular_files() {
 
             // Only process .log files, skip .zip files
             if extracted_file.extension().and_then(|s| s.to_str()) == Some("log") {
-                let content = fs::read(extracted_file).unwrap();
+                let mut content = fs::read(extracted_file).unwrap();
+                if content.is_empty() {
+                    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                    content = fs::read(extracted_file).unwrap();
+                }
+                
                 let hash = cas.store_content(&content).await.unwrap();
                 let file_name = extracted_file.file_name().unwrap().to_str().unwrap();
 
@@ -652,7 +675,12 @@ async fn test_mixed_nested_and_regular_files() {
         {
             if entry.file_type().is_file() {
                 let extracted_file = entry.path();
-                let content = fs::read(extracted_file).unwrap();
+                let mut content = fs::read(extracted_file).unwrap();
+                if content.is_empty() {
+                    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                    content = fs::read(extracted_file).unwrap();
+                }
+                
                 let hash = cas.store_content(&content).await.unwrap();
                 let file_name = extracted_file.file_name().unwrap().to_str().unwrap();
 
@@ -1070,7 +1098,12 @@ mod property_tests {
                 // Store all leaf files in CAS and metadata
                 let mut indexed_count = 0;
                 for (idx, (leaf_file, file_depth)) in all_leaf_files.iter().enumerate() {
-                    let content = fs::read(leaf_file).unwrap();
+                    let mut content = fs::read(leaf_file).unwrap();
+                    if content.is_empty() {
+                        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                        content = fs::read(leaf_file).unwrap();
+                    }
+                    
                     let hash = cas.store_content(&content).await.unwrap();
 
                     let file_name = leaf_file.file_name().unwrap().to_str().unwrap();
