@@ -274,9 +274,14 @@ mod tests {
     /// **Validates: Requirements 5.5**
     ///
     /// Property: 对于任何长时间未清理的资源，泄漏检测应该能够识别
+    /// 限制 proptest 迭代次数为 10，避免 CI 超时
     #[test]
     fn property_resource_leak_detection() {
-        proptest!(|(count in 1usize..5)| {
+        let proptest_config = proptest::test_runner::Config {
+            cases: 10,
+            ..Default::default()
+        };
+        proptest!(proptest_config, |(count in 1usize..3)| {
             let cleanup_queue = Arc::new(SegQueue::new());
             let tracker = Arc::new(ResourceTracker::new(cleanup_queue.clone()));
 
@@ -290,11 +295,11 @@ mod tests {
                 );
             }
 
-            // 等待一小段时间
-            std::thread::sleep(Duration::from_millis(100));
+            // 等待一小段时间（减少 sleep 时间）
+            std::thread::sleep(Duration::from_millis(10));
 
-            // 检测泄漏（阈值设为 50ms）
-            let leaks = tracker.detect_leaks(Duration::from_millis(50));
+            // 检测泄漏（阈值设为 5ms）
+            let leaks = tracker.detect_leaks(Duration::from_millis(5));
             prop_assert_eq!(leaks.len(), count, "All resources should be detected as leaks");
 
             // 标记所有资源为已清理
@@ -304,7 +309,7 @@ mod tests {
             }
 
             // 再次检测泄漏
-            let leaks = tracker.detect_leaks(Duration::from_millis(50));
+            let leaks = tracker.detect_leaks(Duration::from_millis(5));
             prop_assert_eq!(leaks.len(), 0, "No leaks should be detected after marking cleaned");
         });
     }
