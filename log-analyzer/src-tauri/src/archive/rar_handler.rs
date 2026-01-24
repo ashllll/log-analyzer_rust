@@ -304,10 +304,12 @@ fn get_unrar_path() -> Result<PathBuf> {
         "macos" => "unrar-aarch64-apple-darwin",
         "linux" => "unrar-x86_64-unknown-linux-gnu",
         "windows" => "unrar-x86_64-pc-windows-msvc.exe",
-        os => return Err(AppError::archive_error(
-            format!("Unsupported platform for unrar fallback: {}", os),
-            None
-        )),
+        os => {
+            return Err(AppError::archive_error(
+                format!("Unsupported platform for unrar fallback: {}", os),
+                None,
+            ))
+        }
     };
 
     let resource_dir = if cfg!(debug_assertions) {

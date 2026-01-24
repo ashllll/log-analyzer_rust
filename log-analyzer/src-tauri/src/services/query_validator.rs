@@ -113,7 +113,11 @@ mod tests {
 
         let error = result.unwrap_err();
         if let AppError::Validation(msg) = &error {
-            assert!(msg.contains("empty"), "Expected error message containing 'empty', got: {}", msg);
+            assert!(
+                msg.contains("empty"),
+                "Expected error message containing 'empty', got: {}",
+                msg
+            );
         } else {
             panic!("Expected Validation error, got: {:?}", error);
         }
@@ -135,11 +139,18 @@ mod tests {
         };
 
         let result = QueryValidator::validate(&query);
-        assert!(result.is_err(), "Expected validation error for no enabled terms");
+        assert!(
+            result.is_err(),
+            "Expected validation error for no enabled terms"
+        );
 
         let error = result.unwrap_err();
         if let AppError::Validation(msg) = &error {
-            assert!(msg.contains("No enabled terms"), "Expected error message containing 'No enabled terms', got: {}", msg);
+            assert!(
+                msg.contains("No enabled terms"),
+                "Expected error message containing 'No enabled terms', got: {}",
+                msg
+            );
         } else {
             panic!("Expected Validation error, got: {:?}", error);
         }
@@ -173,11 +184,18 @@ mod tests {
         };
 
         let result = QueryValidator::validate(&query);
-        assert!(result.is_err(), "Expected validation error for empty term value");
+        assert!(
+            result.is_err(),
+            "Expected validation error for empty term value"
+        );
 
         let error = result.unwrap_err();
         if let AppError::Validation(msg) = &error {
-            assert!(msg.contains("empty value"), "Expected error message containing 'empty value', got: {}", msg);
+            assert!(
+                msg.contains("empty value"),
+                "Expected error message containing 'empty value', got: {}",
+                msg
+            );
         } else {
             panic!("Expected Validation error, got: {:?}", error);
         }
@@ -202,11 +220,18 @@ mod tests {
         };
 
         let result = QueryValidator::validate(&query);
-        assert!(result.is_err(), "Expected validation error for term value too long");
+        assert!(
+            result.is_err(),
+            "Expected validation error for term value too long"
+        );
 
         let error = result.unwrap_err();
         if let AppError::Validation(msg) = &error {
-            assert!(msg.contains("too long"), "Expected error message containing 'too long', got: {}", msg);
+            assert!(
+                msg.contains("too long"),
+                "Expected error message containing 'too long', got: {}",
+                msg
+            );
         } else {
             panic!("Expected Validation error, got: {:?}", error);
         }
@@ -240,11 +265,18 @@ mod tests {
         };
 
         let result = QueryValidator::validate(&query);
-        assert!(result.is_err(), "Expected validation error for invalid regex");
+        assert!(
+            result.is_err(),
+            "Expected validation error for invalid regex"
+        );
 
         let error = result.unwrap_err();
         if let AppError::Validation(msg) = &error {
-            assert!(msg.contains("invalid regex"), "Expected error message containing 'invalid regex', got: {}", msg);
+            assert!(
+                msg.contains("invalid regex"),
+                "Expected error message containing 'invalid regex', got: {}",
+                msg
+            );
         } else {
             panic!("Expected Validation error, got: {:?}", error);
         }
