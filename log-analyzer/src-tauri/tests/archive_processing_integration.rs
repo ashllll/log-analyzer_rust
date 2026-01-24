@@ -342,7 +342,7 @@ async fn test_nested_archive_3_levels() {
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         content = fs::read(&deepest_file).unwrap();
     }
-    
+
     let hash = cas.store_content(&content).await.unwrap();
 
     let file_meta = FileMetadata {
@@ -441,7 +441,7 @@ async fn test_deeply_nested_archive_5_levels() {
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         content = fs::read(&innermost_file).unwrap();
     }
-    
+
     let hash = cas.store_content(&content).await.unwrap();
 
     let file_meta = FileMetadata {
@@ -511,14 +511,14 @@ async fn test_path_length_handling() {
     }
 
     let extracted_file = extracted_file_path.expect("Should have extracted file");
-    
+
     // Retry reading if content is empty
     let mut content = fs::read(&extracted_file).unwrap();
     if content.is_empty() {
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         content = fs::read(&extracted_file).unwrap();
     }
-    
+
     let hash = cas.store_content(&content).await.unwrap();
 
     // Create a very long virtual path
@@ -633,7 +633,7 @@ async fn test_mixed_nested_and_regular_files() {
                     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
                     content = fs::read(extracted_file).unwrap();
                 }
-                
+
                 let hash = cas.store_content(&content).await.unwrap();
                 let file_name = extracted_file.file_name().unwrap().to_str().unwrap();
 
@@ -680,7 +680,7 @@ async fn test_mixed_nested_and_regular_files() {
                     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
                     content = fs::read(extracted_file).unwrap();
                 }
-                
+
                 let hash = cas.store_content(&content).await.unwrap();
                 let file_name = extracted_file.file_name().unwrap().to_str().unwrap();
 
@@ -1103,7 +1103,7 @@ mod property_tests {
                         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
                         content = fs::read(leaf_file).unwrap();
                     }
-                    
+
                     let hash = cas.store_content(&content).await.unwrap();
 
                     let file_name = leaf_file.file_name().unwrap().to_str().unwrap();
