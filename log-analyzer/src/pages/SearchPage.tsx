@@ -403,9 +403,9 @@ const SearchPage: React.FC<SearchPageProps> = ({
   /**
    * 复制到剪贴板
    */
-  const copyToClipboard = (text: string) => { 
-    navigator.clipboard.writeText(text).then(() => addToast('success', 'Copied')); 
-  };
+  const copyToClipboard = useCallback((text: string) => {
+    navigator.clipboard.writeText(text).then(() => addToast('success', 'Copied'));
+  }, [addToast]);
   
   /**
    * 尝试格式化JSON
