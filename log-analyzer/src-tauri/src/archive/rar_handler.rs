@@ -173,7 +173,10 @@ impl RarHandler {
         let mut summary = ExtractionSummary::new();
 
         // 获取 unrar 二进制路径
-        let unrar_path = get_unrar_path();
+        let unrar_path = get_unrar_path().map_err(|e| {
+            summary.add_error(format!("RAR extraction failed: {}", e));
+            e
+        })?;
         debug!("Using unrar binary fallback: {}", unrar_path.display());
 
         // 检查 unrar 二进制是否存在
@@ -291,13 +294,20 @@ impl RarHandler {
 
 /**
  * 获取对应平台的 unrar 二进制路径 (Fallback方案)
+ *
+ * # Returns
+ * * `Ok(PathBuf)` - 平台支持时返回二进制路径
+ * * `Err(AppError)` - 平台不支持时返回错误
  */
-fn get_unrar_path() -> PathBuf {
+fn get_unrar_path() -> Result<PathBuf> {
     let binary_name = match std::env::consts::OS {
         "macos" => "unrar-aarch64-apple-darwin",
         "linux" => "unrar-x86_64-unknown-linux-gnu",
         "windows" => "unrar-x86_64-pc-windows-msvc.exe",
-        _ => panic!("Unsupported platform: {}", std::env::consts::OS),
+        os => return Err(AppError::archive_error(
+            format!("Unsupported platform for unrar fallback: {}", os),
+            None
+        )),
     };
 
     let resource_dir = if cfg!(debug_assertions) {
@@ -310,7 +320,7 @@ fn get_unrar_path() -> PathBuf {
             .to_path_buf()
     };
 
-    resource_dir.join(binary_name)
+    Ok(resource_dir.join(binary_name))
 }
 
 /**

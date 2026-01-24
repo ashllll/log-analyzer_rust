@@ -284,7 +284,7 @@ mod tests {
                 assert_eq!(p.task_id, "test-task");
                 assert_eq!(p.progress, 50);
             }
-            _ => panic!("Expected TaskUpdate event"),
+            other => panic!("Expected TaskUpdate event, got: {:?}", other),
         }
     }
 
@@ -311,7 +311,7 @@ mod tests {
 
         match (event1, event2) {
             (AppEvent::SearchError { .. }, AppEvent::SearchError { .. }) => {}
-            _ => panic!("Expected SearchError events"),
+            (e1, e2) => panic!("Expected SearchError events, got: {:?}, {:?}", e1, e2),
         }
     }
 

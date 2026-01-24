@@ -141,12 +141,14 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       clientRef.current.connect();
     }
 
-    // Cleanup
+    // Cleanup - disconnect WebSocket and remove all event listeners
     return () => {
       if (clientRef.current) {
         clientRef.current.off('message', handleMessage);
         clientRef.current.off('status', handleStatus);
         clientRef.current.off('error', handleError);
+        // 断开连接以避免资源泄漏
+        clientRef.current.disconnect();
       }
     };
   }, [config, autoConnect]);

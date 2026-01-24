@@ -342,7 +342,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
     // 老王备注：将定时器添加到Set中
     toastTimeoutsRef.current.add(timeoutId);
-  }, [toastTimeoutsRef]);
+    // 注意：toastTimeoutsRef 不应加入依赖数组，因为 ref.current 变化不会触发重新渲染
+  }, []); // 移除 toastTimeoutsRef 依赖，ref 变化不会触发重新渲染
 
   const removeToast = useCallback((id: number) => {
     appDispatch({ type: 'REMOVE_TOAST', payload: id });

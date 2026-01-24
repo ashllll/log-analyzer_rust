@@ -657,7 +657,9 @@ mod tests {
             Err(SearchError::Timeout(_)) => {
                 // Search timed out as expected
             }
-            Err(e) => panic!("Unexpected error: {}", e),
+            Err(e) => {
+                panic!("Unexpected error during empty index search: {}", e);
+            }
         }
     }
 }

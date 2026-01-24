@@ -285,10 +285,11 @@ mod tests {
     fn test_validate_windows_reserved_chars() {
         let config = SecurityConfig::default();
         let result = validate_and_sanitize_path("file<name>.log", &config);
-        if let PathValidationResult::RequiresSanitization(_, sanitized) = result {
-            assert_eq!(sanitized, "file_name_.log");
-        } else {
-            panic!("Expected RequiresSanitization");
+        match result {
+            PathValidationResult::RequiresSanitization(_, sanitized) => {
+                assert_eq!(sanitized, "file_name_.log");
+            }
+            other => panic!("Expected RequiresSanitization, got: {:?}", other),
         }
     }
 
@@ -296,10 +297,11 @@ mod tests {
     fn test_validate_windows_reserved_name() {
         let config = SecurityConfig::default();
         let result = validate_and_sanitize_path("CON", &config);
-        if let PathValidationResult::RequiresSanitization(_, sanitized) = result {
-            assert_eq!(sanitized, "_CON");
-        } else {
-            panic!("Expected RequiresSanitization");
+        match result {
+            PathValidationResult::RequiresSanitization(_, sanitized) => {
+                assert_eq!(sanitized, "_CON");
+            }
+            other => panic!("Expected RequiresSanitization, got: {:?}", other),
         }
     }
 
@@ -307,10 +309,11 @@ mod tests {
     fn test_validate_control_characters() {
         let config = SecurityConfig::default();
         let result = validate_and_sanitize_path("file\x00name.log", &config);
-        if let PathValidationResult::RequiresSanitization(_, sanitized) = result {
-            assert_eq!(sanitized, "filename.log");
-        } else {
-            panic!("Expected RequiresSanitization");
+        match result {
+            PathValidationResult::RequiresSanitization(_, sanitized) => {
+                assert_eq!(sanitized, "filename.log");
+            }
+            other => panic!("Expected RequiresSanitization, got: {:?}", other),
         }
     }
 

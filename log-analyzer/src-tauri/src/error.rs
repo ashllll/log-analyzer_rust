@@ -236,12 +236,13 @@ mod tests {
         let error = AppError::search_error("Query failed");
         let with_context = error.with_context("Validation");
 
-        match with_context {
-            AppError::Search { _message, .. } => {
-                assert!(_message.contains("Validation"));
-                assert!(_message.contains("Query failed"));
-            }
-            _ => panic!("Expected Search error"),
+        if let AppError::Search { _message, .. } = with_context {
+            assert!(_message.contains("Validation"),
+                "Expected context to contain 'Validation', got: {:?}", _message);
+            assert!(_message.contains("Query failed"),
+                "Expected original error message to be preserved, got: {:?}", _message);
+        } else {
+            panic!("Expected Search error variant");
         }
     }
 
