@@ -129,56 +129,6 @@ pub mod strategies {
             "[\u{0400}-\u{04ff}]{1,20}", // Cyrillic characters
         ]
     }
-
-    /// Strategy for generating archive file extensions
-    pub fn archive_extension() -> impl Strategy<Value = String> {
-        prop_oneof![
-            Just("zip".to_string()),
-            Just("ZIP".to_string()),
-            Just("rar".to_string()),
-            Just("RAR".to_string()),
-            Just("tar".to_string()),
-            Just("TAR".to_string()),
-            Just("gz".to_string()),
-            Just("GZ".to_string()),
-            Just("tgz".to_string()),
-            Just("TGZ".to_string()),
-        ]
-    }
-
-    /// Strategy for generating tar.gz extensions
-    pub fn tar_gz_extension() -> impl Strategy<Value = String> {
-        prop_oneof![
-            Just("tar.gz".to_string()),
-            Just("TAR.GZ".to_string()),
-            Just("Tar.Gz".to_string()),
-            Just("tar.GZ".to_string()),
-        ]
-    }
-
-    /// Strategy for generating non-archive file extensions
-    pub fn non_archive_extension() -> impl Strategy<Value = String> {
-        prop_oneof![
-            Just("txt".to_string()),
-            Just("doc".to_string()),
-            Just("pdf".to_string()),
-            Just("jpg".to_string()),
-            Just("png".to_string()),
-            Just("exe".to_string()),
-            Just("dll".to_string()),
-            Just("log".to_string()),
-        ]
-    }
-
-    /// Strategy for generating valid filenames
-    pub fn filename() -> impl Strategy<Value = String> {
-        prop::string::string_regex("[a-zA-Z0-9_-]{1,50}").unwrap()
-    }
-
-    /// Strategy for generating valid path components
-    pub fn path_component() -> impl Strategy<Value = String> {
-        "[a-zA-Z0-9_-]{1,20}"
-    }
 }
 
 /// Helper functions for test setup
