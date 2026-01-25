@@ -32,4 +32,8 @@ pub mod application;
 pub mod domain;
 pub mod infrastructure;
 
+// 测试策略模块
+#[cfg(test)]
+pub mod proptest_strategies;
+
 pub use error::{AppError, Result};

@@ -18,8 +18,8 @@ pub fn proptest_config() -> Config {
 /// Custom strategies for domain-specific types
 pub mod strategies {
     use super::*;
-    use log_analyzer::models::log_entry::LogEntry;
-    use log_analyzer::models::search::{
+    use crate::models::log_entry::LogEntry;
+    use crate::models::search::{
         QueryMetadata, QueryOperator, SearchQuery, SearchTerm, TermSource,
     };
 
@@ -178,11 +178,6 @@ pub mod strategies {
     /// Strategy for generating valid path components
     pub fn path_component() -> impl Strategy<Value = String> {
         "[a-zA-Z0-9_-]{1,20}"
-    }
-
-    /// Strategy for generating valid workspace IDs
-    pub fn workspace_id() -> impl Strategy<Value = String> {
-        "[a-zA-Z0-9_-]{1,50}"
     }
 }
 

@@ -4,53 +4,9 @@
  * Tests correctness properties using proptest framework.
  */
 use super::{is_archive_file, HandlerRegistry, ZipHandler};
+use crate::proptest_strategies::strategies::{archive_extension, filename, non_archive_extension, tar_gz_extension};
 use proptest::prelude::*;
 use std::path::PathBuf;
-
-/// Strategy for generating archive file extensions
-fn archive_extension_strategy() -> impl Strategy<Value = String> {
-    prop_oneof![
-        Just("zip".to_string()),
-        Just("ZIP".to_string()),
-        Just("rar".to_string()),
-        Just("RAR".to_string()),
-        Just("tar".to_string()),
-        Just("TAR".to_string()),
-        Just("gz".to_string()),
-        Just("GZ".to_string()),
-        Just("tgz".to_string()),
-        Just("TGZ".to_string()),
-    ]
-}
-
-/// Strategy for generating tar.gz extensions
-fn tar_gz_extension_strategy() -> impl Strategy<Value = String> {
-    prop_oneof![
-        Just("tar.gz".to_string()),
-        Just("TAR.GZ".to_string()),
-        Just("Tar.Gz".to_string()),
-        Just("tar.GZ".to_string()),
-    ]
-}
-
-/// Strategy for generating non-archive file extensions
-fn non_archive_extension_strategy() -> impl Strategy<Value = String> {
-    prop_oneof![
-        Just("txt".to_string()),
-        Just("doc".to_string()),
-        Just("pdf".to_string()),
-        Just("jpg".to_string()),
-        Just("png".to_string()),
-        Just("exe".to_string()),
-        Just("dll".to_string()),
-        Just("log".to_string()),
-    ]
-}
-
-/// Strategy for generating valid filenames
-fn filename_strategy() -> impl Strategy<Value = String> {
-    prop::string::string_regex("[a-zA-Z0-9_-]{1,50}").unwrap()
-}
 
 /// **Feature: extraction-engine-implementation, Property 5: 格式处理正确性**
 /// **Validates: Requirements 5.1, 5.2, 5.3, 5.4**
@@ -67,7 +23,7 @@ mod property_5_format_handling_correctness {
         /// Test that ZIP files are correctly identified and handled
         #[test]
         fn prop_zip_handler_selection(
-            filename in filename_strategy(),
+            filename in filename(),
             ext in prop_oneof![Just("zip"), Just("ZIP"), Just("Zip")]
         ) {
             let registry = HandlerRegistry::new();
@@ -100,7 +56,7 @@ mod property_5_format_handling_correctness {
         /// Test that RAR files are correctly identified and handled
         #[test]
         fn prop_rar_handler_selection(
-            filename in filename_strategy(),
+            filename in filename(),
             ext in prop_oneof![Just("rar"), Just("RAR"), Just("Rar")]
         ) {
             let registry = HandlerRegistry::new();
@@ -133,7 +89,7 @@ mod property_5_format_handling_correctness {
         /// Test that TAR files are correctly identified and handled
         #[test]
         fn prop_tar_handler_selection(
-            filename in filename_strategy(),
+            filename in filename(),
             ext in prop_oneof![Just("tar"), Just("TAR"), Just("Tar")]
         ) {
             let registry = HandlerRegistry::new();
@@ -166,7 +122,7 @@ mod property_5_format_handling_correctness {
         /// Test that GZ files are correctly identified and handled
         #[test]
         fn prop_gz_handler_selection(
-            filename in filename_strategy(),
+            filename in filename(),
             ext in prop_oneof![Just("gz"), Just("GZ"), Just("Gz")]
         ) {
             let registry = HandlerRegistry::new();
@@ -199,8 +155,8 @@ mod property_5_format_handling_correctness {
         /// Test that TAR.GZ files are correctly identified and handled
         #[test]
         fn prop_tar_gz_handler_selection(
-            filename in filename_strategy(),
-            ext in tar_gz_extension_strategy()
+            filename in filename(),
+            ext in tar_gz_extension()
         ) {
             let registry = HandlerRegistry::new();
             let path = PathBuf::from(format!("{}.{}", filename, ext));
@@ -225,7 +181,7 @@ mod property_5_format_handling_correctness {
         /// Test that TGZ files are correctly identified and handled
         #[test]
         fn prop_tgz_handler_selection(
-            filename in filename_strategy(),
+            filename in filename(),
             ext in prop_oneof![Just("tgz"), Just("TGZ"), Just("Tgz")]
         ) {
             let registry = HandlerRegistry::new();
@@ -251,8 +207,8 @@ mod property_5_format_handling_correctness {
         /// Test that non-archive files are correctly rejected
         #[test]
         fn prop_non_archive_rejection(
-            filename in filename_strategy(),
-            ext in non_archive_extension_strategy()
+            filename in filename(),
+            ext in non_archive_extension()
         ) {
             let registry = HandlerRegistry::new();
             let path = PathBuf::from(format!("{}.{}", filename, ext));
@@ -269,8 +225,8 @@ mod property_5_format_handling_correctness {
         /// Test that all supported archive formats are recognized
         #[test]
         fn prop_all_formats_supported(
-            filename in filename_strategy(),
-            ext in archive_extension_strategy()
+            filename in filename(),
+            ext in archive_extension()
         ) {
             let registry = HandlerRegistry::new();
             let path = PathBuf::from(format!("{}.{}", filename, ext));
@@ -288,7 +244,7 @@ mod property_5_format_handling_correctness {
         /// Test that handler selection is case-insensitive
         #[test]
         fn prop_case_insensitive_selection(
-            filename in filename_strategy(),
+            filename in filename(),
             base_ext in prop_oneof![Just("zip"), Just("rar"), Just("tar"), Just("gz")],
             case_variant in 0u8..4u8
         ) {
@@ -323,8 +279,8 @@ mod property_5_format_handling_correctness {
         /// Test that is_archive_file function agrees with handler registry
         #[test]
         fn prop_is_archive_file_consistency(
-            filename in filename_strategy(),
-            ext in archive_extension_strategy()
+            filename in filename(),
+            ext in archive_extension()
         ) {
             let registry = HandlerRegistry::new();
             let path = PathBuf::from(format!("{}.{}", filename, ext));
@@ -405,8 +361,8 @@ mod is_archive_file_properties {
         /// Test that is_archive_file correctly identifies archive files
         #[test]
         fn prop_is_archive_file_positive(
-            filename in filename_strategy(),
-            ext in archive_extension_strategy()
+            filename in filename(),
+            ext in archive_extension()
         ) {
             let path = PathBuf::from(format!("{}.{}", filename, ext));
 
@@ -422,8 +378,8 @@ mod is_archive_file_properties {
         /// Test that is_archive_file correctly rejects non-archive files
         #[test]
         fn prop_is_archive_file_negative(
-            filename in filename_strategy(),
-            ext in non_archive_extension_strategy()
+            filename in filename(),
+            ext in non_archive_extension()
         ) {
             let path = PathBuf::from(format!("{}.{}", filename, ext));
 
@@ -439,7 +395,7 @@ mod is_archive_file_properties {
         /// Test that is_archive_file handles files without extensions
         #[test]
         fn prop_is_archive_file_no_extension(
-            filename in filename_strategy()
+            filename in filename()
         ) {
             let path = PathBuf::from(&filename);
 
@@ -454,8 +410,8 @@ mod is_archive_file_properties {
         /// Test that is_archive_file handles tar.gz correctly
         #[test]
         fn prop_is_archive_file_tar_gz(
-            filename in filename_strategy(),
-            ext in tar_gz_extension_strategy()
+            filename in filename(),
+            ext in tar_gz_extension()
         ) {
             let path = PathBuf::from(format!("{}.{}", filename, ext));
 
@@ -470,7 +426,7 @@ mod is_archive_file_properties {
         /// Test that is_archive_file is case-insensitive
         #[test]
         fn prop_is_archive_file_case_insensitive(
-            filename in filename_strategy(),
+            filename in filename(),
             base_ext in prop_oneof![Just("zip"), Just("rar"), Just("tar"), Just("gz"), Just("tgz")],
             uppercase in prop::bool::ANY
         ) {
@@ -525,7 +481,7 @@ mod handler_registration_properties {
         /// Test that handler priority is maintained (first match wins)
         #[test]
         fn prop_handler_priority_order(
-            filename in filename_strategy()
+            filename in filename()
         ) {
             let mut registry = HandlerRegistry::new();
 
@@ -569,7 +525,7 @@ mod property_2_nested_archive_recognition {
     }
 
     /// Strategy for generating archive file extensions
-    fn nested_archive_extension_strategy() -> impl Strategy<Value = String> {
+    fn nested_archive_extension() -> impl Strategy<Value = String> {
         prop_oneof![
             Just("zip".to_string()),
             Just("tar".to_string()),
@@ -632,7 +588,7 @@ mod property_2_nested_archive_recognition {
         #[test]
         fn prop_nested_archives_identified(
             nested_count in nested_archive_count_strategy(),
-            nested_ext in nested_archive_extension_strategy()
+            nested_ext in nested_archive_extension()
         ) {
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async {
@@ -895,8 +851,8 @@ mod property_2_nested_archive_recognition {
         /// Test that is_archive_file correctly identifies nested archives
         #[test]
         fn prop_is_archive_file_identifies_nested(
-            filename in filename_strategy(),
-            ext in nested_archive_extension_strategy()
+            filename in filename(),
+            ext in nested_archive_extension()
         ) {
             let path = PathBuf::from(format!("{}.{}", filename, ext));
 
@@ -1829,7 +1785,7 @@ mod property_3_path_shortening_consistency {
         fn prop_path_shortening_nested_directories(
             components in prop::collection::vec(long_path_component_strategy(), 1..=5),
             workspace_id in workspace_id_strategy(),
-            filename in filename_strategy(),
+            filename in filename(),
             extension in file_extension_strategy()
         ) {
             let rt = tokio::runtime::Runtime::new().unwrap();
