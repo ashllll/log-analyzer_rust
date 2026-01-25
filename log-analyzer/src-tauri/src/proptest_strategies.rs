@@ -179,6 +179,51 @@ pub mod strategies {
     pub fn path_component() -> impl Strategy<Value = String> {
         "[a-zA-Z0-9_-]{1,20}"
     }
+
+    /// Generate log entries with realistic content (for search engine testing)
+    #[allow(dead_code)]
+    pub fn search_log_entry() -> impl Strategy<Value = crate::models::LogEntry> {
+        (
+            0usize..1000000,
+            "[0-9]{10}",
+            "(ERROR|WARN|INFO|DEBUG)",
+            "[a-zA-Z0-9_/\\.-]{5,50}",
+            "[a-zA-Z0-9_/\\.-]{5,100}",
+            1usize..10000,
+            "[a-zA-Z0-9 ]{10,200}",
+        )
+            .prop_map(
+                |(id, timestamp, level, file, real_path, line, content)| crate::models::LogEntry {
+                    id,
+                    timestamp,
+                    level,
+                    file,
+                    real_path,
+                    line,
+                    content,
+                    tags: vec![],
+                    match_details: None,
+                    matched_keywords: None,
+                },
+            )
+    }
+
+    /// Generate search query strings for performance testing
+    #[allow(dead_code)]
+    pub fn search_query_string() -> impl Strategy<Value = String> {
+        prop_oneof![
+            "[a-zA-Z]{3,20}",
+            "[a-zA-Z]{3,10} [a-zA-Z]{3,10}",
+            "[a-zA-Z]{3,10} AND [a-zA-Z]{3,10}",
+            "[a-zA-Z]{3,10} OR [a-zA-Z]{3,10}",
+        ]
+    }
+
+    /// Generate keywords for multi-keyword search testing
+    #[allow(dead_code)]
+    pub fn search_keywords() -> impl Strategy<Value = Vec<String>> {
+        prop::collection::vec(r"[a-zA-Z]{3,10}", 2..5)
+    }
 }
 
 /// Helper functions for test setup

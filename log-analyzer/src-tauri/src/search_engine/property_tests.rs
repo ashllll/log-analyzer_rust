@@ -19,44 +19,8 @@ use super::{
     manager::SearchConfig,
     SearchEngineManager,
 };
+use crate::proptest_strategies::strategies::{search_log_entry, search_query_string, search_keywords};
 use crate::models::LogEntry;
-
-/// Generate random log entries for testing
-fn log_entry_strategy() -> impl Strategy<Value = LogEntry> {
-    (
-        0usize..1000000,
-        "[0-9]{10}",
-        "(ERROR|WARN|INFO|DEBUG)",
-        "[a-zA-Z0-9_/\\.-]{5,50}",
-        "[a-zA-Z0-9_/\\.-]{5,100}",
-        1usize..10000,
-        "[a-zA-Z0-9 ]{10,200}",
-    )
-        .prop_map(
-            |(id, timestamp, level, file, real_path, line, content)| LogEntry {
-                id,
-                timestamp,
-                level,
-                file,
-                real_path,
-                line,
-                content,
-                tags: vec![],
-                match_details: None,
-                matched_keywords: None,
-            },
-        )
-}
-
-/// Generate search query strings
-fn search_query_strategy() -> impl Strategy<Value = String> {
-    prop_oneof![
-        "[a-zA-Z]{3,20}",
-        "[a-zA-Z]{3,10} [a-zA-Z]{3,10}",
-        "[a-zA-Z]{3,10} AND [a-zA-Z]{3,10}",
-        "[a-zA-Z]{3,10} OR [a-zA-Z]{3,10}",
-    ]
-}
 
 /// Create test search engine manager
 fn create_test_manager() -> (SearchEngineManager, TempDir) {
@@ -79,8 +43,8 @@ proptest! {
     /// **Validates: Requirements 1.1, 1.4**
     #[test]
     fn property_search_response_time_guarantee(
-        query in search_query_strategy(),
-        log_entries in prop::collection::vec(log_entry_strategy(), 1..1000) // Small dataset for 200ms guarantee
+        query in search_query_string(),
+        log_entries in prop::collection::vec(search_log_entry(), 1..1000) // Small dataset for 200ms guarantee
     ) {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let _ = rt.block_on(async {
@@ -120,8 +84,8 @@ proptest! {
     /// **Validates: Requirements 1.4**
     #[test]
     fn property_logarithmic_search_complexity(
-        query in search_query_strategy(),
-        base_entries in prop::collection::vec(log_entry_strategy(), 100..200),
+        query in search_query_string(),
+        base_entries in prop::collection::vec(search_log_entry(), 100..200),
         scale_factor in 2u32..5u32 // Test 2x to 5x scaling
     ) {
         let rt = tokio::runtime::Runtime::new().unwrap();
@@ -175,7 +139,7 @@ proptest! {
     #[test]
     fn property_multi_keyword_query_performance(
         keywords in prop::collection::vec(r"[a-zA-Z]{3,10}", 2..5), // 2-5 keywords
-        log_entries in prop::collection::vec(log_entry_strategy(), 10..500)
+        log_entries in prop::collection::vec(search_log_entry(), 10..500)
     ) {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let _ = rt.block_on(async {
@@ -220,8 +184,8 @@ proptest! {
     /// **Validates: Requirements 1.5**
     #[test]
     fn property_concurrent_search_performance_stability(
-        queries in prop::collection::vec(search_query_strategy(), 2..8), // 2-8 concurrent queries
-        log_entries in prop::collection::vec(log_entry_strategy(), 10..200)
+        queries in prop::collection::vec(search_query_string(), 2..8), // 2-8 concurrent queries
+        log_entries in prop::collection::vec(search_log_entry(), 10..200)
     ) {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let _ = rt.block_on(async {
@@ -294,7 +258,7 @@ mod advanced_features_tests {
         /// **Validates: Requirements 5.1**
         #[test]
         fn property_bitmap_filter_efficiency(
-            log_entries in prop::collection::vec(log_entry_strategy(), 10..100),
+            log_entries in prop::collection::vec(search_log_entry(), 10..100),
             filter_count in 1usize..4
         ) {
             let filter_engine = FilterEngine::new();
@@ -461,7 +425,7 @@ mod advanced_features_tests {
         /// **Validates: Requirements 5.5**
         #[test]
         fn property_highlighting_efficiency(
-            query in search_query_strategy(),
+            query in search_query_string(),
             content in r"[a-zA-Z0-9 .,!?]{100,1000}" // Document content to highlight
         ) {
             let rt = tokio::runtime::Runtime::new().unwrap();
