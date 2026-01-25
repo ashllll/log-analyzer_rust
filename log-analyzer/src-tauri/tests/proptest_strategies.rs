@@ -1,3 +1,7 @@
+//! Property-based testing strategies and helpers
+//!
+//! This module provides shared proptest strategies for use across test files.
+
 use proptest::prelude::*;
 use proptest::test_runner::Config;
 

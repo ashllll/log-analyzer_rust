@@ -14,8 +14,8 @@ use std::panic;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-mod test_config;
-use test_config::{proptest_config, strategies};
+mod proptest_strategies;
+use proptest_strategies::{proptest_config, strategies};
 
 // =============================================================================
 // Property 40: No block_on in Async Context

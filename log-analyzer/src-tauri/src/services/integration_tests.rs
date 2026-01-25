@@ -32,9 +32,6 @@ mod tests {
         info!("Successfully added item to vector");
 
         assert!(!guard.is_empty(), "Vector should not be empty");
-
-        // 验证数据
-        let guard = data.lock();
         assert_eq!(guard.len(), 1);
         assert_eq!(guard[0], "test");
 
