@@ -192,8 +192,8 @@ pub mod strategies {
             1usize..10000,
             "[a-zA-Z0-9 ]{10,200}",
         )
-            .prop_map(
-                |(id, timestamp, level, file, real_path, line, content)| crate::models::LogEntry {
+            .prop_map(|(id, timestamp, level, file, real_path, line, content)| {
+                crate::models::LogEntry {
                     id,
                     timestamp,
                     level,
@@ -204,8 +204,8 @@ pub mod strategies {
                     tags: vec![],
                     match_details: None,
                     matched_keywords: None,
-                },
-            )
+                }
+            })
     }
 
     /// Generate search query strings for performance testing

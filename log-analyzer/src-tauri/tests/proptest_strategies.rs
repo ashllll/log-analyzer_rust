@@ -179,11 +179,6 @@ pub mod strategies {
     pub fn path_component() -> impl Strategy<Value = String> {
         "[a-zA-Z0-9_-]{1,20}"
     }
-
-    /// Strategy for generating valid workspace IDs
-    pub fn workspace_id() -> impl Strategy<Value = String> {
-        "[a-zA-Z0-9_-]{1,50}"
-    }
 }
 
 /// Helper functions for test setup

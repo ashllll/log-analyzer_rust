@@ -19,8 +19,10 @@ use super::{
     manager::SearchConfig,
     SearchEngineManager,
 };
-use crate::proptest_strategies::strategies::{search_log_entry, search_query_string, search_keywords};
 use crate::models::LogEntry;
+use crate::proptest_strategies::strategies::{
+    search_keywords, search_log_entry, search_query_string,
+};
 
 /// Create test search engine manager
 fn create_test_manager() -> (SearchEngineManager, TempDir) {
