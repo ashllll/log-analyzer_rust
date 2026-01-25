@@ -12,6 +12,7 @@ use log_analyzer::commands::{
     state_sync::*, virtual_tree::*, watch::*, workspace::*,
 };
 use log_analyzer::models::AppState;
+use log_analyzer::task_manager::TaskManager;
 use tracing::info;
 
 #[tokio::main]
@@ -22,8 +23,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("🚀 Log Analyzer v{} - 启动中...", env!("CARGO_PKG_VERSION"));
 
     tauri::Builder::default()
+        // 初始化 dialog 插件（供前端使用）
+        .plugin(tauri_plugin_dialog::init())
         // 管理应用状态
         .manage(AppState::default())
+        // 初始化后设置 TaskManager
+        .setup(|app| {
+            use log_analyzer::models::AppState;
+            use tauri::Manager;
+
+            let app_state: tauri::State<'_, AppState> = app.state();
+
+            // 初始化 TaskManager
+            let task_manager = TaskManager::new(
+                app.handle().clone(),
+                log_analyzer::task_manager::TaskManagerConfig::default(),
+            )?;
+
+            // 设置到 AppState
+            let mut state_guard = app_state.task_manager.lock();
+            *state_guard = Some(task_manager);
+
+            info!("✅ TaskManager 初始化成功");
+            Ok(())
+        })
         // 注册所有命令
         .invoke_handler(tauri::generate_handler![
             // ===== 配置管理 =====

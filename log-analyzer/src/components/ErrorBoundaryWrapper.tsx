@@ -14,7 +14,7 @@ declare global {
 interface ErrorBoundaryWrapperProps {
   children: React.ReactNode;
   fallback?: React.ComponentType<any>;
-  onError?: (error: Error, errorInfo: React.ErrorInfo) => void;
+  onError?: (error: unknown, errorInfo: React.ErrorInfo) => void;
   resetKeys?: Array<string | number | boolean | null | undefined>;
   level?: 'page' | 'component' | 'critical';
 }
@@ -29,15 +29,17 @@ export const ErrorBoundaryWrapper: React.FC<ErrorBoundaryWrapperProps> = ({
   resetKeys,
   level = 'component'
 }) => {
-  const handleError = (error: Error, errorInfo: React.ErrorInfo) => {
+  const handleError = (error: unknown, errorInfo: React.ErrorInfo) => {
     // Log error to console
     console.error('Error caught by boundary:', error, errorInfo);
 
-    // Report to backend if available
+    // Extract error message and stack safely
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
     if (window.__TAURI__) {
       window.__TAURI__.invoke('report_frontend_error', {
-        error: error.message,
-        stack: error.stack,
+        error: errorMessage,
+        stack: errorStack,
         timestamp: new Date().toISOString(),
         userAgent: navigator.userAgent,
         url: window.location.href,
@@ -93,11 +95,11 @@ export const PageErrorBoundary: React.FC<{ children: React.ReactNode }> = ({ chi
 /**
  * Component-level error boundary for wrapping individual components
  */
-export const ComponentErrorBoundary: React.FC<{ 
+export const ComponentErrorBoundary: React.FC<{
   children: React.ReactNode;
   componentName?: string;
 }> = ({ children, componentName }) => {
-  const handleError = (error: Error, errorInfo: React.ErrorInfo) => {
+  const handleError = (error: unknown, errorInfo: React.ErrorInfo) => {
     console.error(`Error in ${componentName || 'component'}:`, error, errorInfo);
   };
 

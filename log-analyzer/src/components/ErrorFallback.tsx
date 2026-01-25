@@ -4,12 +4,16 @@ import { Button } from './ui/Button';
 
 /**
  * 错误回退组件 - 当组件树中发生错误时显示
- * 
+ *
  * 提供用户友好的错误信息和恢复选项
  */
 export const ErrorFallback: React.FC<FallbackProps> = ({ error, resetErrorBoundary }) => {
   const [isReporting, setIsReporting] = React.useState(false);
   const [reported, setReported] = React.useState(false);
+
+  // 安全提取错误信息（React 19 中 error 可能是 unknown 类型）
+  const errorMessage = error instanceof Error ? error.message : String(error);
+  const errorStack = error instanceof Error ? error.stack : undefined;
 
   // Report error to backend/Sentry
   const handleReportError = async () => {
@@ -17,8 +21,8 @@ export const ErrorFallback: React.FC<FallbackProps> = ({ error, resetErrorBounda
     try {
       // Error reporting integration point
       console.error('Error reported:', {
-        message: error.message,
-        stack: error.stack,
+        message: errorMessage,
+        stack: errorStack,
         timestamp: new Date().toISOString(),
       });
       
@@ -78,14 +82,14 @@ export const ErrorFallback: React.FC<FallbackProps> = ({ error, resetErrorBounda
               <div>
                 <p className="text-xs font-semibold text-gray-600 dark:text-gray-400">消息:</p>
                 <p className="text-sm text-red-600 dark:text-red-400 font-mono">
-                  {error.message}
+                  {errorMessage}
                 </p>
               </div>
-              {error.stack && (
+              {errorStack && (
                 <div>
                   <p className="text-xs font-semibold text-gray-600 dark:text-gray-400">堆栈跟踪:</p>
                   <pre className="text-xs text-gray-700 dark:text-gray-300 overflow-auto max-h-40 bg-gray-50 dark:bg-gray-900 p-2 rounded">
-                    {error.stack}
+                    {errorStack}
                   </pre>
                 </div>
               )}
@@ -205,6 +209,9 @@ export const PageErrorFallback: React.FC<FallbackProps> = ({ error, resetErrorBo
  * 小型错误回退组件 - 用于组件级别的错误边界
  */
 export const MinimalErrorFallback: React.FC<FallbackProps> = ({ error, resetErrorBoundary }) => {
+  // 安全提取错误信息
+  const errorMessage = error instanceof Error ? error.message : String(error);
+
   return (
     <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
       <div className="flex items-start gap-3">
@@ -226,7 +233,7 @@ export const MinimalErrorFallback: React.FC<FallbackProps> = ({ error, resetErro
             加载失败
           </h3>
           <p className="text-sm text-red-700 dark:text-red-400 mt-1">
-            {error.message}
+            {errorMessage}
           </p>
           <button
             onClick={resetErrorBoundary}
@@ -241,6 +248,9 @@ export const MinimalErrorFallback: React.FC<FallbackProps> = ({ error, resetErro
 };
 
 export const CompactErrorFallback: React.FC<FallbackProps> = ({ error, resetErrorBoundary }) => {
+  // 安全提取错误信息
+  const errorMessage = error instanceof Error ? error.message : String(error);
+
   return (
     <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
       <div className="flex items-start gap-3">
@@ -262,7 +272,7 @@ export const CompactErrorFallback: React.FC<FallbackProps> = ({ error, resetErro
             加载失败
           </h3>
           <p className="text-sm text-red-700 dark:text-red-400 mt-1">
-            {error.message}
+            {errorMessage}
           </p>
           <button
             onClick={resetErrorBoundary}

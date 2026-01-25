@@ -39,7 +39,7 @@ export const AppStoreProvider = ({ children }: AppStoreProviderProps) => {
   const setInitialized = useAppStore((state) => state.setInitialized);
 
   useEffect(() => {
-    // 加载配置
+    // 加载配置 - 不阻塞UI渲染
     const loadConfig = async () => {
       try {
         const config = await invoke<Record<string, unknown>>('load_config');
@@ -51,17 +51,21 @@ export const AppStoreProvider = ({ children }: AppStoreProviderProps) => {
             setKeywordGroups(config.keyword_groups as KeywordGroup[]);
           }
         }
-        
+
         // 标记应用已初始化
         setInitialized(true);
       } catch (error) {
         console.error('Failed to load config:', error);
-        addToast('error', '加载配置失败');
-        setInitialized(false, String(error));
+        // 即使配置加载失败，也允许应用渲染
+        addToast('error', '加载配置失败，使用默认配置');
+        setInitialized(true); // 关键：即使失败也标记为已初始化
       }
     };
 
-    loadConfig();
+    // 延迟加载配置，避免阻塞首屏渲染
+    const timer = setTimeout(() => {
+      loadConfig();
+    }, 100);
 
     // ============================================================================
        // 企业级事件系统 - EventBus集成
@@ -148,8 +152,9 @@ export const AppStoreProvider = ({ children }: AppStoreProviderProps) => {
 
     const cleanupPromise = setupTauriListeners();
 
-    // 清理函数：同时清理EventBus订阅和Tauri监听
+    // 清理函数：同时清理EventBus订阅、Tauri监听和定时器
     return () => {
+      clearTimeout(timer);
       // 清理EventBus订阅
       unsubscribeTaskUpdate();
       unsubscribeTaskRemoved();
