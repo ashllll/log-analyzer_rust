@@ -1,7 +1,5 @@
 import React, { useState } from 'react';
-import { Button } from './ui/Button';
-import { FormField, FormGroup } from './ui/FormField';
-import { Input } from './ui/Input';
+import { Button, FormField, FormGroup, Input } from './ui';
 import { useErrorManagement } from '../hooks/useErrorManagement';
 
 // Tauri API types

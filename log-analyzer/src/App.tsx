@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, lazy, Suspense } from "react";
 import {
-  Search, LayoutGrid, ListTodo, Settings, Layers,
+  Search, LayoutGrid, ListTodo, Cog, Layers,
   Zap, Loader2, FileText
 } from "lucide-react";
 import { ErrorBoundary } from 'react-error-boundary';
@@ -25,7 +25,7 @@ import { useKeywordManager } from './hooks/useKeywordManager';
 import { NavItem } from './components/ui';
 import { PageErrorFallback, CompactErrorFallback } from './components/ErrorFallback';
 
-// 懒加载页面组件 - 减少首屏加载体积
+// 恢复懒加载以优化性能，但确保 ErrorBoundary 在外层
 const SearchPage = lazy(() => import('./pages/SearchPage'));
 const KeywordsPage = lazy(() => import('./pages/KeywordsPage'));
 const WorkspacesPage = lazy(() => import('./pages/WorkspacesPage'));
@@ -67,15 +67,12 @@ function AppContent() {
       try {
         // 初始化状态同步
         await invoke('init_state_sync');
-        console.log('[StateSync] Initialized successfully');
 
         // 标记应用已初始化
         addToast('success', 'Application initialized successfully');
 
         // 监听工作区事件
         unlisten = await listen('workspace-event', (event: any) => {
-          console.log('[StateSync] Received workspace event:', event.payload);
-          
           const { status } = event.payload;
 
           // 根据事件类型更新UI
@@ -143,29 +140,44 @@ function AppContent() {
         </div>
         {importStatus && <div className="p-3 m-3 bg-bg-card border border-primary/20 rounded text-xs text-primary animate-pulse"><div className="font-bold mb-1 flex items-center gap-2"><Loader2 size={12} className="animate-spin"/> Processing</div><div className="truncate opacity-80">{importStatus}</div></div>}
         <div className="p-3 border-t border-border-base">
-          <NavItem icon={Settings} label="Settings" active={page === 'settings'} onClick={() => setPage('settings')} data-testid="nav-settings" />
+          <NavItem icon={Cog} label="Settings" active={page === 'settings'} onClick={() => setPage('settings')} data-testid="nav-settings" />
         </div>
       </div>
       <div className="flex-1 flex flex-col min-w-0 bg-bg-main">
-        <div className="h-14 border-b border-border-base bg-bg-main flex items-center justify-between px-6 shrink-0 z-40"><div className="flex items-center text-sm text-text-muted select-none"><span className="opacity-50">Workspace / </span><span className="font-medium text-text-main ml-2 flex items-center gap-2"><FileText size={14} className="text-primary"/> {activeWorkspace ? activeWorkspace.name : "Select Workspace"}</span></div></div>
+        <div className="h-14 border-b border-border-base bg-bg-main flex items-center justify-between px-6 shrink-0 z-40">
+          <div className="flex items-center text-sm text-text-muted select-none">
+            {page === 'settings' ? (
+              <span className="font-medium text-text-main flex items-center gap-2">
+                <Cog size={14} className="text-primary"/> Settings
+              </span>
+            ) : (
+              <>
+                <span className="opacity-50">Workspace / </span>
+                <span className="font-medium text-text-main ml-2 flex items-center gap-2">
+                  <FileText size={14} className="text-primary"/> {activeWorkspace ? activeWorkspace.name : "Select Workspace"}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
         <div className="flex-1 overflow-hidden relative">
-           <Suspense fallback={<PageSkeleton />}>
-             <ErrorBoundary FallbackComponent={CompactErrorFallback} onReset={() => setPage('search')}>
-               {page === 'search' && <SearchPage keywordGroups={keywordGroups} addToast={addToast} searchInputRef={searchInputRef} activeWorkspace={activeWorkspace} />}
-             </ErrorBoundary>
-             <ErrorBoundary FallbackComponent={CompactErrorFallback} onReset={() => setPage('keywords')}>
-               {page === 'keywords' && <KeywordsPage />}
-             </ErrorBoundary>
-             <ErrorBoundary FallbackComponent={CompactErrorFallback} onReset={() => setPage('workspaces')}>
-               {page === 'workspaces' && <WorkspacesPage />}
-             </ErrorBoundary>
-             <ErrorBoundary FallbackComponent={CompactErrorFallback} onReset={() => setPage('tasks')}>
-               {page === 'tasks' && <TasksPage />}
-             </ErrorBoundary>
-             <ErrorBoundary FallbackComponent={CompactErrorFallback} onReset={() => setPage('settings')}>
-               {page === 'settings' && <SettingsPage />}
-             </ErrorBoundary>
-           </Suspense>
+          {/* ErrorBoundary 移到 Suspense 外部 - React 19 最佳实践 */}
+          <ErrorBoundary 
+            FallbackComponent={CompactErrorFallback} 
+            onReset={() => {
+              // 清除错误状态并保持在当前页面
+              console.log('Error boundary reset, staying on page:', page);
+            }}
+            resetKeys={[page]}
+          >
+            <Suspense fallback={<PageSkeleton />}>
+              {page === 'search' && <SearchPage keywordGroups={keywordGroups} addToast={addToast} searchInputRef={searchInputRef} activeWorkspace={activeWorkspace} />}
+              {page === 'keywords' && <KeywordsPage />}
+              {page === 'workspaces' && <WorkspacesPage />}
+              {page === 'tasks' && <TasksPage />}
+              {page === 'settings' && <SettingsPage />}
+            </Suspense>
+          </ErrorBoundary>
         </div>
       </div>
       <Toaster

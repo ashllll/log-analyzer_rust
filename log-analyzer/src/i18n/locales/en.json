@@ -11,5 +11,43 @@
     },
     "expand_full_text": "Expand Full Text",
     "collapse_text": "Collapse"
+  },
+  "settings": {
+    "title": "Extraction Policy Settings",
+    "save": "Save Settings",
+    "saving": "Saving...",
+    "reset": "Reset",
+    "save_success": "Settings saved successfully",
+    "save_error": "Failed to save settings: {{error}}",
+    "reset_success": "Settings reset to defaults",
+    "validation_failed": "Validation failed, please check your input",
+    "extraction": {
+      "title": "Extraction Settings",
+      "use_enhanced": "Use Enhanced Extraction System",
+      "use_enhanced_description": "Enable advanced features like long path support, deep nesting, and zip bomb detection",
+      "max_depth": "Max Nesting Depth (1-20)",
+      "max_file_size": "Max File Size (Bytes)",
+      "concurrent_extractions": "Concurrent Extractions (0=auto)",
+      "concurrent_auto": "0 means auto-detect based on CPU cores"
+    },
+    "security": {
+      "title": "Security Settings",
+      "enable_zip_bomb_detection": "Enable Zip Bomb Detection",
+      "zip_bomb_description": "Detect and block maliciously crafted archives",
+      "compression_ratio_threshold": "Compression Ratio Threshold"
+    },
+    "paths": {
+      "title": "Path Settings",
+      "enable_long_paths": "Enable Long Path Support",
+      "long_paths_description": "Support filenames longer than 255 characters (Windows UNC paths)",
+      "shortening_threshold": "Path Shortening Threshold (0.0-1.0)",
+      "hash_length": "Hash Length (8-32)"
+    },
+    "errors": {
+      "max_depth_range": "Max depth must be between 1 and 20",
+      "must_be_positive": "Value must be positive",
+      "threshold_range": "Threshold must be between 0.0 and 1.0",
+      "hash_length_range": "Hash length must be between 8 and 32"
+    }
   }
 }

@@ -70,6 +70,8 @@ export const FormError: React.FC<FormErrorProps> = ({
 
 /**
  * 表单字段包装器 - 自动处理错误显示和无障碍属性
+ * 注意：这是旧版本的 FormField，新代码应使用 components/ui/FormField
+ * @deprecated 使用 components/ui/FormField 替代
  */
 interface FormFieldProps {
   /**
@@ -102,7 +104,10 @@ interface FormFieldProps {
   className?: string;
 }
 
-export const FormField: React.FC<FormFieldProps> = ({
+/**
+ * @deprecated 使用 components/ui/FormField 替代
+ */
+export const LegacyFormField: React.FC<FormFieldProps> = ({
   id,
   label,
   error,

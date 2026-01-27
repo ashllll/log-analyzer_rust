@@ -1,6 +1,6 @@
 import React from 'react';
 import { FallbackProps } from 'react-error-boundary';
-import { Button } from './ui/Button';
+import { Button } from './ui';
 
 /**
  * 错误回退组件 - 当组件树中发生错误时显示

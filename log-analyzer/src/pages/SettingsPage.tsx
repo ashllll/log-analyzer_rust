@@ -1,5 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+
+// 采用最稳健的物理隔离导入，彻底杜绝索引文件导致的循环依赖
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
@@ -27,12 +29,6 @@ interface ExtractionPolicy {
     hash_algorithm: string;
     hash_length: number;
   };
-  audit: {
-    enable_audit_logging: boolean;
-    log_format: string;
-    log_level: string;
-    log_security_events: boolean;
-  };
 }
 
 const defaultPolicy: ExtractionPolicy = {
@@ -56,12 +52,6 @@ const defaultPolicy: ExtractionPolicy = {
     hash_algorithm: 'SHA256',
     hash_length: 16,
   },
-  audit: {
-    enable_audit_logging: true,
-    log_format: 'json',
-    log_level: 'info',
-    log_security_events: true,
-  },
 };
 
 export function SettingsPage() {
@@ -71,45 +61,17 @@ export function SettingsPage() {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Load current policy on mount
-  useEffect(() => {
-    // Use default policy for now
-  }, []);
-
   const validatePolicy = (): boolean => {
     const newErrors: Record<string, string> = {};
-
-    // Validate max_depth
     if (policy.extraction.max_depth < 1 || policy.extraction.max_depth > 20) {
       newErrors.max_depth = t('settings.errors.max_depth_range');
     }
-
-    // Validate positive sizes
     if (policy.extraction.max_file_size <= 0) {
       newErrors.max_file_size = t('settings.errors.must_be_positive');
     }
-
-    if (policy.extraction.max_total_size <= 0) {
-      newErrors.max_total_size = t('settings.errors.must_be_positive');
-    }
-
-    if (policy.extraction.max_workspace_size <= 0) {
-      newErrors.max_workspace_size = t('settings.errors.must_be_positive');
-    }
-
-    // Validate shortening threshold
-    if (
-      policy.paths.shortening_threshold <= 0 ||
-      policy.paths.shortening_threshold > 1.0
-    ) {
+    if (policy.paths.shortening_threshold <= 0 || policy.paths.shortening_threshold > 1.0) {
       newErrors.shortening_threshold = t('settings.errors.threshold_range');
     }
-
-    // Validate hash length
-    if (policy.paths.hash_length < 8 || policy.paths.hash_length > 32) {
-      newErrors.hash_length = t('settings.errors.hash_length_range');
-    }
-
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -119,16 +81,11 @@ export function SettingsPage() {
       showToast('error', t('settings.validation_failed'));
       return;
     }
-
     setLoading(true);
     try {
-      // Policy saving will be implemented when backend API is ready
       showToast('success', t('settings.save_success'));
     } catch (error) {
-      showToast(
-        'error',
-        t('settings.save_error', { error: String(error) })
-      );
+      showToast('error', t('settings.save_error', { error: String(error) }));
     } finally {
       setLoading(false);
     }
@@ -141,9 +98,9 @@ export function SettingsPage() {
   };
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-6 space-y-6 overflow-y-auto h-full">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">{t('settings.title')}</h1>
+        <h1 className="text-2xl font-bold text-text-main">{t('settings.title')}</h1>
         <div className="flex gap-2">
           <Button onClick={handleReset} variant="secondary">
             {t('settings.reset')}
@@ -155,223 +112,131 @@ export function SettingsPage() {
       </div>
 
       {/* Extraction Settings */}
-      <Card>
-        <h2 className="text-xl font-semibold mb-4">
+      <Card className="p-6">
+        <h2 className="text-xl font-semibold mb-4 text-text-main">
           {t('settings.extraction.title')}
         </h2>
         <div className="space-y-4">
-          <FormField
-            label={t('settings.extraction.use_enhanced')}
-            error={errors.use_enhanced_extraction}
-          >
-            <label className="flex items-center gap-2">
+          <FormField label={t('settings.extraction.use_enhanced')} error={errors.use_enhanced_extraction}>
+            <div className="flex items-center gap-2">
               <input
                 type="checkbox"
                 checked={policy.extraction.use_enhanced_extraction}
-                onChange={(e) =>
-                  setPolicy({
-                    ...policy,
-                    extraction: {
-                      ...policy.extraction,
-                      use_enhanced_extraction: e.target.checked,
-                    },
-                  })
-                }
-                className="w-4 h-4"
+                onChange={(e) => setPolicy({
+                  ...policy,
+                  extraction: { ...policy.extraction, use_enhanced_extraction: e.target.checked }
+                })}
+                className="w-4 h-4 rounded border-border-base text-primary focus:ring-primary/50"
               />
-              <span className="text-sm text-gray-600">
+              <span className="text-sm text-text-muted">
                 {t('settings.extraction.use_enhanced_description')}
               </span>
-            </label>
+            </div>
           </FormField>
 
-          <FormField
-            label={t('settings.extraction.max_depth')}
-            error={errors.max_depth}
-          >
+          <FormField label={t('settings.extraction.max_depth')} error={errors.max_depth}>
             <Input
               type="number"
               value={policy.extraction.max_depth}
-              onChange={(e) =>
-                setPolicy({
-                  ...policy,
-                  extraction: {
-                    ...policy.extraction,
-                    max_depth: parseInt(e.target.value) || 10,
-                  },
-                })
-              }
+              onChange={(e) => setPolicy({
+                ...policy,
+                extraction: { ...policy.extraction, max_depth: parseInt(e.target.value) || 10 }
+              })}
               min={1}
               max={20}
             />
           </FormField>
 
-          <FormField
-            label={t('settings.extraction.max_file_size')}
-            error={errors.max_file_size}
-          >
-            <Input
-              type="number"
-              value={policy.extraction.max_file_size}
-              onChange={(e) =>
-                setPolicy({
+          <FormField label={t('settings.extraction.max_file_size')} error={errors.max_file_size}>
+            <div className="flex flex-col gap-1">
+              <Input
+                type="number"
+                value={policy.extraction.max_file_size}
+                onChange={(e) => setPolicy({
                   ...policy,
-                  extraction: {
-                    ...policy.extraction,
-                    max_file_size: parseInt(e.target.value) || 104857600,
-                  },
-                })
-              }
-            />
-            <span className="text-sm text-gray-500">
-              {(policy.extraction.max_file_size / 1024 / 1024).toFixed(2)} MB
-            </span>
-          </FormField>
-
-          <FormField
-            label={t('settings.extraction.concurrent_extractions')}
-            error={errors.concurrent_extractions}
-          >
-            <Input
-              type="number"
-              value={policy.extraction.concurrent_extractions}
-              onChange={(e) =>
-                setPolicy({
-                  ...policy,
-                  extraction: {
-                    ...policy.extraction,
-                    concurrent_extractions: parseInt(e.target.value) || 0,
-                  },
-                })
-              }
-              min={0}
-            />
-            <span className="text-sm text-gray-500">
-              {t('settings.extraction.concurrent_auto')}
-            </span>
+                  extraction: { ...policy.extraction, max_file_size: parseInt(e.target.value) || 104857600 }
+                })}
+              />
+              <span className="text-xs text-text-dim">
+                {(policy.extraction.max_file_size / 1024 / 1024).toFixed(2)} MB
+              </span>
+            </div>
           </FormField>
         </div>
       </Card>
 
       {/* Security Settings */}
-      <Card>
-        <h2 className="text-xl font-semibold mb-4">
+      <Card className="p-6">
+        <h2 className="text-xl font-semibold mb-4 text-text-main">
           {t('settings.security.title')}
         </h2>
         <div className="space-y-4">
           <FormField label={t('settings.security.enable_zip_bomb_detection')}>
-            <label className="flex items-center gap-2">
+            <div className="flex items-center gap-2">
               <input
                 type="checkbox"
                 checked={policy.security.enable_zip_bomb_detection}
-                onChange={(e) =>
-                  setPolicy({
-                    ...policy,
-                    security: {
-                      ...policy.security,
-                      enable_zip_bomb_detection: e.target.checked,
-                    },
-                  })
-                }
-                className="w-4 h-4"
+                onChange={(e) => setPolicy({
+                  ...policy,
+                  security: { ...policy.security, enable_zip_bomb_detection: e.target.checked }
+                })}
+                className="w-4 h-4 rounded border-border-base text-primary focus:ring-primary/50"
               />
-              <span className="text-sm text-gray-600">
+              <span className="text-sm text-text-muted">
                 {t('settings.security.zip_bomb_description')}
               </span>
-            </label>
-          </FormField>
-
-          <FormField
-            label={t('settings.security.compression_ratio_threshold')}
-            error={errors.compression_ratio_threshold}
-          >
-            <Input
-              type="number"
-              value={policy.security.compression_ratio_threshold}
-              onChange={(e) =>
-                setPolicy({
-                  ...policy,
-                  security: {
-                    ...policy.security,
-                    compression_ratio_threshold:
-                      parseFloat(e.target.value) || 100.0,
-                  },
-                })
-              }
-              step={0.1}
-            />
+            </div>
           </FormField>
         </div>
       </Card>
 
       {/* Path Settings */}
-      <Card>
-        <h2 className="text-xl font-semibold mb-4">
+      <Card className="p-6">
+        <h2 className="text-xl font-semibold mb-4 text-text-main">
           {t('settings.paths.title')}
         </h2>
         <div className="space-y-4">
           <FormField label={t('settings.paths.enable_long_paths')}>
-            <label className="flex items-center gap-2">
+            <div className="flex items-center gap-2">
               <input
                 type="checkbox"
                 checked={policy.paths.enable_long_paths}
-                onChange={(e) =>
-                  setPolicy({
-                    ...policy,
-                    paths: {
-                      ...policy.paths,
-                      enable_long_paths: e.target.checked,
-                    },
-                  })
-                }
-                className="w-4 h-4"
+                onChange={(e) => setPolicy({
+                  ...policy,
+                  paths: { ...policy.paths, enable_long_paths: e.target.checked }
+                })}
+                className="w-4 h-4 rounded border-border-base text-primary focus:ring-primary/50"
               />
-              <span className="text-sm text-gray-600">
+              <span className="text-sm text-text-muted">
                 {t('settings.paths.long_paths_description')}
               </span>
-            </label>
+            </div>
           </FormField>
 
-          <FormField
-            label={t('settings.paths.shortening_threshold')}
-            error={errors.shortening_threshold}
-          >
+          <FormField label={t('settings.paths.shortening_threshold')} error={errors.shortening_threshold}>
             <Input
               type="number"
+              step="0.1"
+              min="0.1"
+              max="1.0"
               value={policy.paths.shortening_threshold}
-              onChange={(e) =>
-                setPolicy({
-                  ...policy,
-                  paths: {
-                    ...policy.paths,
-                    shortening_threshold: parseFloat(e.target.value) || 0.8,
-                  },
-                })
-              }
-              step={0.1}
-              min={0}
-              max={1}
+              onChange={(e) => setPolicy({
+                ...policy,
+                paths: { ...policy.paths, shortening_threshold: parseFloat(e.target.value) || 0.8 }
+              })}
             />
           </FormField>
 
-          <FormField
-            label={t('settings.paths.hash_length')}
-            error={errors.hash_length}
-          >
+          <FormField label={t('settings.paths.hash_length')}>
             <Input
               type="number"
-              value={policy.paths.hash_length}
-              onChange={(e) =>
-                setPolicy({
-                  ...policy,
-                  paths: {
-                    ...policy.paths,
-                    hash_length: parseInt(e.target.value) || 16,
-                  },
-                })
-              }
               min={8}
               max={32}
+              value={policy.paths.hash_length}
+              onChange={(e) => setPolicy({
+                ...policy,
+                paths: { ...policy.paths, hash_length: parseInt(e.target.value) || 16 }
+              })}
             />
           </FormField>
         </div>

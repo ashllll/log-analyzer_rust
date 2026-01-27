@@ -1,9 +1,3 @@
 {
-  "mcpServers": {
-    "kiro-prompts": {
-      "command": "uvx",
-      "args": ["kiro-mcp-server"],
-      "disabled": false
-    }
-  }
+  "mcpServers": {}
 }

@@ -64,17 +64,29 @@ export const FormField: React.FC<FormFieldProps> = ({
 
       {/* Input Field */}
       <div className="relative">
-        {React.cloneElement(children as React.ReactElement<any>, {
-          id: fieldId,
-          'aria-invalid': hasError,
-          'aria-describedby': cn(
-            description && descriptionId,
-            hasError && errorId
-          ).trim() || undefined,
-          className: cn(
-            (children as React.ReactElement<any>).props?.className,
-            hasError && 'border-red-500 focus:border-red-500 focus:ring-red-500'
-          )
+        {React.Children.map(children, child => {
+          if (!React.isValidElement(child)) return child;
+          
+          // 仅对 Input 或类似交互组件注入属性
+          const isInput = typeof child.type === 'string' || 
+                         (child.type as any).displayName === 'Input' ||
+                         (child.type as any).name === 'Input';
+
+          if (isInput) {
+            return React.cloneElement(child as React.ReactElement<any>, {
+              id: fieldId,
+              'aria-invalid': hasError,
+              'aria-describedby': cn(
+                description && descriptionId,
+                hasError && errorId
+              ).trim() || undefined,
+              className: cn(
+                (child as React.ReactElement<any>).props?.className,
+                hasError && 'border-red-500 focus:border-red-500 focus:ring-red-500'
+              )
+            });
+          }
+          return child;
         })}
       </div>
 
@@ -199,5 +211,3 @@ export const FormErrorSummary: React.FC<{
     </div>
   );
 };
-
-export default FormField;

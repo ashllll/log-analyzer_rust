@@ -206,4 +206,5 @@ export const ConnectionToast: React.FC<ConnectionToastProps> = ({
   );
 };
 
-export default ConnectionStatusIndicator;
+// 注意：已移除默认导出，请使用命名导出：
+// import { ConnectionStatusIndicator } from './ConnectionStatus';
