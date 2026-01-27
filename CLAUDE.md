@@ -13,9 +13,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ---
 
 > **项目**: log-analyzer_rust - 高性能桌面日志分析工具
-> **版本**: 0.0.125
+> **版本**: 0.0.128
 > **技术栈**: Tauri 2.0 + Rust 1.70+ + React 19.1.0 + TypeScript 5.8.3
-> **最后更新**: 2026-01-20
+> **最后更新**: 2026-01-28
 
 ---
 

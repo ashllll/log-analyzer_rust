@@ -10,11 +10,12 @@ use parking_lot::{Mutex, RwLock};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio_util::sync::CancellationToken;
 use tantivy::{
     collector::{Count, TopDocs},
     query::{Query, QueryParser, TermQuery},
     schema::Value,
-    Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument, Term,
+    DocAddress, Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument, Term,
 };
 use tokio::time::timeout;
 use tracing::{debug, error, info, warn};
@@ -25,7 +26,8 @@ use super::{
 };
 use crate::models::config::SearchConfig as AppSearchConfig;
 use crate::models::LogEntry;
-use tantivy::DocAddress;
+
+
 
 /// Search result entry with document address for highlighting
 #[derive(Debug, Clone)]
@@ -107,6 +109,8 @@ pub struct SearchEngineManager {
     stats: Arc<RwLock<SearchStats>>,
     boolean_processor: BooleanQueryProcessor,
     highlighting_engine: HighlightingEngine,
+    /// **NEW**: Integrated IndexOptimizer for query pattern analysis
+    optimizer: Option<Arc<crate::search_engine::index_optimizer::IndexOptimizer>>,
 }
 
 #[derive(Debug, Default)]
@@ -166,10 +170,17 @@ impl SearchEngineManager {
             schema.content,
             highlighting_config,
         );
+        
+        // **NEW**: Initialize IndexOptimizer
+        // Enabled by default with threshold of 100 queries
+        let optimizer = Some(Arc::new(
+            crate::search_engine::index_optimizer::IndexOptimizer::new(100)
+        ));
 
         info!(
             index_path = %config.index_path.display(),
             heap_size = config.writer_heap_size,
+            optimizer_enabled = optimizer.is_some(),
             "Search engine initialized"
         );
 
@@ -183,6 +194,7 @@ impl SearchEngineManager {
             stats: Arc::new(RwLock::new(SearchStats::default())),
             boolean_processor,
             highlighting_engine,
+            optimizer,
         })
     }
 
@@ -216,28 +228,41 @@ impl SearchEngineManager {
         query: &str,
         limit: Option<usize>,
         timeout_duration: Option<Duration>,
+        token: Option<CancellationToken>,
     ) -> SearchResult<SearchResults> {
         let start_time = Instant::now();
         let limit = limit.unwrap_or(self.config.max_results);
         let timeout_duration = timeout_duration.unwrap_or(self.config.default_timeout);
+        let token = token.unwrap_or_default();
 
         debug!(query = %query, limit = limit, timeout_ms = timeout_duration.as_millis(), "Starting search");
 
         // Parse query
         let parsed_query = self.parse_query(query)?;
 
-        // Execute search with timeout
-        let search_future = self.execute_search(parsed_query, limit);
+        // Execute search with timeout and cancellation
+        let search_future = self.execute_search(parsed_query, limit, Some(token.clone()));
 
         match timeout(timeout_duration, search_future).await {
             Ok(result) => {
                 let query_time = start_time.elapsed();
                 self.update_stats(query_time, false);
+                // ...
+
 
                 match result {
                     Ok(mut search_results) => {
                         search_results.query_time_ms = query_time.as_millis() as u64;
                         search_results.was_timeout = false;
+                        
+                        // **NEW**: Record query for optimization analysis
+                        if let Some(ref optimizer) = self.optimizer {
+                            optimizer.record_query_with_results(
+                                query, 
+                                query_time,
+                                search_results.entries.len()
+                            );
+                        }
 
                         info!(
                             query = %query,
@@ -259,6 +284,9 @@ impl SearchEngineManager {
                 let query_time = start_time.elapsed();
                 self.update_stats(query_time, true);
 
+                // Cancel the underlying search
+                token.cancel();
+
                 warn!(
                     query = %query,
                     timeout_ms = timeout_duration.as_millis(),
@@ -273,6 +301,7 @@ impl SearchEngineManager {
             }
         }
     }
+
 
     /// Parse query string into Tantivy query
     fn parse_query(&self, query_str: &str) -> SearchResult<Box<dyn Query>> {
@@ -309,16 +338,37 @@ impl SearchEngineManager {
         &self,
         query: Box<dyn Query>,
         limit: usize,
+        token: Option<CancellationToken>,
     ) -> SearchResult<SearchResults> {
         let searcher = self.reader.searcher();
+        let token = token.unwrap_or_default();
 
-        // Get total count
-        let count_collector = Count;
-        let total_count = searcher.search(&*query, &count_collector)?;
+        // Get total count with cancellation support
+        let count_collector = super::boolean_query_processor::CancellableCollector::new(Count, token.clone());
+        let total_count = match searcher.search(&*query, &count_collector) {
+            Ok(count) => count,
+            Err(e) => {
+                if token.is_cancelled() {
+                    return Err(SearchError::QueryError("Search cancelled".to_string()));
+                }
+                return Err(SearchError::IndexError(e.to_string()));
+            }
+        };
 
-        // Get top documents
+        // Get top documents with cancellation support
         let top_docs_collector = TopDocs::with_limit(limit);
-        let top_docs = searcher.search(&*query, &top_docs_collector)?;
+        let cancellable_top_docs = super::boolean_query_processor::CancellableCollector::new(top_docs_collector, token.clone());
+        
+        let top_docs = match searcher.search(&*query, &cancellable_top_docs) {
+            Ok(docs) => docs,
+            Err(e) => {
+                if token.is_cancelled() {
+                    return Err(SearchError::QueryError("Search cancelled".to_string()));
+                }
+                return Err(SearchError::IndexError(e.to_string()));
+            }
+        };
+
 
         // Convert documents to LogEntry, capturing DocAddress for each
         let mut entries = Vec::with_capacity(top_docs.len());
@@ -399,10 +449,12 @@ impl SearchEngineManager {
         require_all: bool,
         limit: Option<usize>,
         timeout_duration: Option<Duration>,
+        token: Option<CancellationToken>,
     ) -> SearchResult<SearchResults> {
         let start_time = Instant::now();
         let limit = limit.unwrap_or(self.config.max_results);
         let timeout_duration = timeout_duration.unwrap_or(self.config.default_timeout);
+        let token = token.unwrap_or_default();
 
         debug!(
             keywords = ?keywords,
@@ -413,10 +465,13 @@ impl SearchEngineManager {
         );
 
         // Use boolean query processor for optimized multi-keyword search
-        let search_future = async {
+        let token_inner = token.clone();
+        let search_future = async move {
             let (doc_addresses, total_count) =
                 self.boolean_processor
-                    .process_multi_keyword_query(keywords, require_all, limit)?;
+                    .process_multi_keyword_query(keywords, require_all, limit, Some(token_inner))?;
+            // ...
+
 
             // Convert document addresses to LogEntry, preserving DocAddress for highlighting
             let searcher = self.reader.searcher();
@@ -476,6 +531,9 @@ impl SearchEngineManager {
                 let query_time = start_time.elapsed();
                 self.update_stats(query_time, true);
 
+                // Cancel underlying search
+                token.cancel();
+
                 warn!(
                     keywords = ?keywords,
                     timeout_ms = timeout_duration.as_millis(),
@@ -497,13 +555,15 @@ impl SearchEngineManager {
         query: &str,
         limit: Option<usize>,
         timeout_duration: Option<Duration>,
+        token: Option<CancellationToken>,
     ) -> SearchResult<SearchResultsWithHighlighting> {
         let start_time = Instant::now();
 
         // First, perform the regular search
         let search_results = self
-            .search_with_timeout(query, limit, timeout_duration)
+            .search_with_timeout(query, limit, timeout_duration, token)
             .await?;
+
 
         // Then, add highlighting to the results using actual DocAddress
         let mut highlighted_entries = Vec::new();
@@ -583,6 +643,23 @@ impl SearchEngineManager {
     pub fn get_highlighting_stats(&self) -> super::HighlightingStats {
         self.highlighting_engine.get_highlighting_stats()
     }
+    
+    /// **NEW**: Get index optimization analysis
+    /// 
+    /// Analyzes query patterns and returns recommendations for index optimization
+    /// Returns None if optimizer is disabled
+    pub fn get_optimization_analysis(&self) -> Option<crate::search_engine::index_optimizer::IndexPerformanceAnalysis> {
+        self.optimizer.as_ref().map(|opt| opt.analyze_performance())
+    }
+    
+    /// **NEW**: Get hot query patterns
+    /// 
+    /// Returns the most frequently executed queries for optimization
+    pub fn get_hot_queries(&self) -> Vec<(String, crate::search_engine::index_optimizer::QueryPatternStats)> {
+        self.optimizer.as_ref()
+            .map(|opt| opt.identify_hot_queries())
+            .unwrap_or_default()
+    }
 
     /// Clear the index
     pub fn clear_index(&self) -> SearchResult<()> {
@@ -634,7 +711,7 @@ mod tests {
     async fn test_empty_search() {
         let (manager, _temp_dir) = create_test_manager();
 
-        let result = manager.search_with_timeout("", None, None).await;
+        let result = manager.search_with_timeout("", None, None, None).await;
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), SearchError::QueryError(_)));
     }
@@ -645,8 +722,9 @@ mod tests {
 
         // Search with very short timeout should succeed on empty index
         let result = manager
-            .search_with_timeout("test", None, Some(Duration::from_millis(100)))
+            .search_with_timeout("test", None, Some(Duration::from_millis(100)), None)
             .await;
+
 
         // Should either succeed quickly or timeout - both are valid outcomes
         match result {

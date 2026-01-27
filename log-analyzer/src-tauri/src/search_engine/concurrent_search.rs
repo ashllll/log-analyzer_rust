@@ -18,12 +18,12 @@
 //! - Better resource management
 //! - Industry-standard pattern for concurrent async operations
 
-use futures::future::join_all;
 use parking_lot::{Mutex, RwLock};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tantivy::{Index, IndexReader, ReloadPolicy};
 use tokio::sync::Semaphore;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
 use super::manager::SearchResults;
@@ -211,6 +211,7 @@ impl ConcurrentSearchManager {
         query: &str,
         limit: Option<usize>,
         timeout: Option<Duration>,
+        token: Option<CancellationToken>,
     ) -> SearchResult<SearchResults> {
         let start_time = Instant::now();
 
@@ -237,10 +238,10 @@ impl ConcurrentSearchManager {
             "Starting concurrent search"
         );
 
-        // Execute search using the main search engine
+        // Execute search using the main search engine with cancellation token
         let result = self
             .search_engine
-            .search_with_timeout(query, limit, timeout)
+            .search_with_timeout(query, limit, timeout, token)
             .await;
 
         // Record performance metrics
@@ -283,53 +284,67 @@ impl ConcurrentSearchManager {
 
     /// Execute multiple searches concurrently with load balancing
     ///
-    /// Uses pure Tokio approach with `tokio::spawn` and `futures::join_all`.
-    /// This is more efficient than creating new runtimes inside Rayon threads.
+    /// **Architecture**: Uses stream-based processing to prevent resource exhaustion
+    /// 
+    /// **Fixed Issue**: Previous implementation created all tokio tasks upfront via `collect()`,
+    /// causing memory exhaustion when handling thousands of queries. Even with semaphore limits,
+    /// all tasks were spawned immediately and queued in memory.
+    /// 
+    /// **Current Solution**: Stream-based processing with `futures::stream::iter` + `buffer_unordered`
+    /// - Only creates tasks as capacity allows (controlled by max_concurrent_searches)
+    /// - Memory usage bounded: O(max_concurrent_searches) instead of O(queries.len())
+    /// - Proper backpressure: new futures created only when old ones complete
+    /// 
+    /// **Industry Pattern**: This follows Tokio best practices for batch async operations
+    /// See: https://docs.rs/futures/latest/futures/stream/trait.StreamExt.html#method.buffer_unordered
     pub async fn search_batch_concurrent(
         &self,
         queries: Vec<String>,
         limit: Option<usize>,
         timeout: Option<Duration>,
+        token: Option<CancellationToken>,
     ) -> Vec<SearchResult<SearchResults>> {
+        use futures::stream::{self, StreamExt};
+        
         let start_time = Instant::now();
 
         debug!(
             query_count = queries.len(),
-            "Starting batch concurrent search"
+            max_concurrent = self.config.max_concurrent_searches,
+            "Starting stream-based batch concurrent search"
         );
 
-        // Create futures for each query, using tokio::spawn for true concurrent execution
-        let search_futures: Vec<_> = queries
-            .into_iter()
+        // Stream-based processing: creates futures on-demand as capacity allows
+        let results: Vec<_> = stream::iter(queries)
             .map(|query| {
                 let manager = Arc::clone(&self.search_engine);
+                let semaphore = Arc::clone(&self.search_semaphore);
                 let limit_clone = limit;
                 let timeout_clone = timeout;
+                let token_clone = token.clone();
 
-                // Spawn each search in its own task for true concurrent execution
-                tokio::spawn(async move {
+                // Return a future (NOT spawned yet)
+                async move {
+                    // Acquire semaphore permit to enforce concurrency limits
+                    let _permit = semaphore.acquire().await.map_err(|_| {
+                        SearchError::IndexError("Search semaphore closed".to_string())
+                    })?;
+
                     manager
-                        .search_with_timeout(&query, limit_clone, timeout_clone)
+                        .search_with_timeout(&query, limit_clone, timeout_clone, token_clone)
                         .await
-                })
+                }
             })
-            .collect();
-
-        // Wait for all searches to complete using futures::join_all
-        let results: Vec<_> = join_all(search_futures)
-            .await
-            .into_iter()
-            .map(|join_result| {
-                join_result.unwrap_or_else(|e| {
-                    Err(SearchError::IndexError(format!("Task join failed: {}", e)))
-                })
-            })
-            .collect();
+            // buffer_unordered: executes up to N futures concurrently
+            // Key difference: only N futures exist in memory at any time
+            .buffer_unordered(self.config.max_concurrent_searches)
+            .collect()
+            .await;
 
         info!(
             batch_size = results.len(),
             total_time_ms = start_time.elapsed().as_millis(),
-            "Batch concurrent search completed"
+            "Stream-based batch concurrent search completed"
         );
 
         results
@@ -454,7 +469,7 @@ mod tests {
         let (manager, _temp_dir) = create_test_concurrent_manager().await;
 
         // 在空索引上搜索应该返回空结果
-        let result = manager.search_concurrent("test", None, None).await;
+        let result = manager.search_concurrent("test", None, None, None).await;
 
         // Should succeed even on empty index
         assert!(
@@ -476,7 +491,7 @@ mod tests {
             "info".to_string(),
         ];
 
-        let results = manager.search_batch_concurrent(queries, None, None).await;
+        let results = manager.search_batch_concurrent(queries, None, None, None).await;
 
         assert_eq!(results.len(), 3);
         for result in results {
@@ -493,7 +508,7 @@ mod tests {
         let (manager, _temp_dir) = create_test_concurrent_manager().await;
 
         // Execute a search to generate stats
-        let _result = manager.search_concurrent("test", None, None).await;
+        let _result = manager.search_concurrent("test", None, None, None).await;
 
         let stats = manager.get_concurrent_stats();
         assert_eq!(stats.total_concurrent_searches, 1);

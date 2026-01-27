@@ -41,6 +41,47 @@ impl ArchiveHandler for ZipHandler {
             )
         })?;
 
+        // **MEMORY WARNING**: Current implementation loads entire ZIP into memory
+        // This is a limitation of the `zip` crate which requires `Read + Seek`
+        // 
+        // **Current mitigation**:
+        // - Check file size before loading
+        // - Reject files > 500MB to prevent OOM
+        // - Log warning for files > 100MB
+        //
+        // **Future improvement** (TODO):
+        // Consider migrating to `async-zip` crate for true streaming support
+        // See: https://docs.rs/async-zip/latest/async_zip/
+        
+        const MAX_ZIP_SIZE: u64 = 500 * 1024 * 1024; // 500MB hard limit
+        const WARN_ZIP_SIZE: u64 = 100 * 1024 * 1024; // 100MB warning threshold
+        
+        let file_size = fs::metadata(source).await.map_err(|e| {
+            AppError::archive_error(
+                format!("Failed to read ZIP file metadata: {}", e),
+                Some(source.to_path_buf()),
+            )
+        })?.len();
+        
+        if file_size > MAX_ZIP_SIZE {
+            return Err(AppError::archive_error(
+                format!(
+                    "ZIP file too large ({} bytes exceeds {} MB limit). \
+                     This prevents memory exhaustion.",
+                    file_size, MAX_ZIP_SIZE / (1024 * 1024)
+                ),
+                Some(source.to_path_buf()),
+            ));
+        }
+        
+        if file_size > WARN_ZIP_SIZE {
+            warn!(
+                file = %source.display(),
+                size_mb = file_size / (1024 * 1024),
+                "Large ZIP file detected - may cause high memory usage"
+            );
+        }
+
         // 读取ZIP文件内容
         let zip_data = fs::read(source).await.map_err(|e| {
             AppError::archive_error(

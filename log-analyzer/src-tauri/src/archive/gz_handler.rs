@@ -159,7 +159,10 @@ impl ArchiveHandler for GzHandler {
         max_total_size: u64,
         max_file_count: usize,
     ) -> Result<ExtractionSummary> {
-        const STREAMING_THRESHOLD: u64 = 10 * 1024 * 1024; // 10MB threshold
+        // **MEMORY OPTIMIZATION**: Lowered threshold from 10MB to 1MB
+        // Reason: 9.9MB file with 10x compression ratio = 99MB memory spike
+        // With 1MB threshold: worst case ~10MB memory usage (acceptable)
+        const STREAMING_THRESHOLD: u64 = 1024 * 1024; // 1MB threshold
 
         // Check file size to decide between streaming and in-memory
         let file_size = fs::metadata(source).await.map(|m| m.len()).unwrap_or(0);

@@ -1,4 +1,5 @@
 use crate::archive::archive_handler::{ArchiveHandler, ExtractionSummary};
+use crate::archive::path_validator::PathValidator;
 use crate::error::{AppError, Result};
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
@@ -98,6 +99,13 @@ impl ArchiveHandler for RarHandler {
 impl RarHandler {
     /**
      * 使用纯Rust的 rar crate 提取RAR文件
+     * 
+     * **安全改进**:
+     * - 路径遍历防护：使用PathValidator验证所有提取路径
+     * - 符号链接检测：拒绝符号链接
+     * - 资源限制：文件大小/数量/总大小限制
+     * 
+     * **限制**: rar crate v0.4只支持批量提取，需要后处理验证
      */
     async fn extract_with_rar_crate(
         source: &str,
@@ -106,55 +114,140 @@ impl RarHandler {
         max_total_size: u64,
         max_file_count: usize,
     ) -> Result<ExtractionSummary> {
-        // rar v0.4 API: extract_all returns Result<Archive>
-        let archive = rar::Archive::extract_all(source, target_dir, "")
-            .map_err(|e| AppError::archive_error(format!("RAR extraction failed: {}", e), None))?;
-
         let mut summary = ExtractionSummary::new();
+        
+        // 创建临时目录用于初始提取
+        let temp_dir = tempfile::tempdir().map_err(|e| {
+            AppError::archive_error(
+                format!("Failed to create temp directory: {}", e),
+                None,
+            )
+        })?;
+        let temp_path = temp_dir.path();
+        
+        // 使用rar crate提取到临时目录
+        let _archive = rar::Archive::extract_all(
+            source,
+            temp_path.to_str().ok_or_else(|| {
+                AppError::archive_error(
+                    "Invalid temp path".to_string(),
+                    Some(temp_path.to_path_buf()),
+                )
+            })?,
+            "" // 密码为空
+        ).map_err(|e| {
+            AppError::archive_error(
+                format!("RAR extraction failed: {}", e),
+                Some(PathBuf::from(source)),
+            )
+        })?;
+
+        let target_path = PathBuf::from(target_dir);
+        fs::create_dir_all(&target_path).await.map_err(|e| {
+            AppError::archive_error(
+                format!("Failed to create target directory: {}", e),
+                Some(target_path.clone()),
+            )
+        })?;
+
+        // 创建严格的路径验证器
+        let validator = PathValidator::strict();
         let mut total_size = 0u64;
         let mut file_count = 0usize;
 
-        // 遍历已提取的文件
-        for entry in archive.files.into_iter() {
-            // rar crate 返回 FileBlock，使用文件名作为路径
-            // FileBlock 的文件名存储在 header 中
-            let entry_name = format!("{:?}", entry.head);
-            let entry_path = PathBuf::from(&entry_name);
-
-            // 跳过目录 (检查文件名是否以/结尾或 attributes 表明是目录)
-            if entry_name.ends_with('/') || entry_path.is_dir() {
+        // 遍历临时目录中已提取的文件（使用walkdir）
+        use walkdir::WalkDir;
+        for entry in WalkDir::new(temp_path)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            let entry_path = entry.path();
+            
+            // 跳过目录
+            if entry_path.is_dir() {
                 continue;
             }
 
-            // 检查文件大小
-            let file_size = entry_path.metadata().map(|m| m.len()).unwrap_or(0);
+            // 计算相对于temp_path的相对路径
+            let relative_path = entry_path.strip_prefix(temp_path)
+                .map_err(|e| {
+                    AppError::archive_error(
+                        format!("Failed to compute relative path: {}", e),
+                        Some(entry_path.to_path_buf()),
+                    )
+                })?;
 
+            let file_name = relative_path.to_string_lossy().to_string();
+
+            // **安全检查**: 使用PathValidator验证路径
+            let validated_path = match validator.validate_extraction_path(&file_name, &target_path) {
+                Ok(path) => path,
+                Err(e) => {
+                    summary.add_error(format!("Path validation failed for {}: {}", file_name, e));
+                    continue;
+                }
+            };
+
+            // 检查文件大小
+            let metadata = match fs::metadata(&entry_path).await {
+                Ok(m) => m,
+                Err(e) => {
+                    summary.add_error(format!("Failed to get metadata for {}: {}", file_name, e));
+                    continue;
+                }
+            };
+
+            let file_size = metadata.len();
+
+            // **安全检查**: 文件大小限制
             if file_size > max_file_size {
                 summary.add_error(format!(
-                    "File {} exceeds maximum size limit, skipped",
-                    entry_name
+                    "File {} exceeds maximum size limit ({} > {}), skipped",
+                    file_name, file_size, max_file_size
                 ));
                 continue;
             }
 
+            // **安全检查**: 总大小限制
             if total_size + file_size > max_total_size {
                 summary.add_error("Extraction would exceed total size limit, stopping".to_string());
                 break;
             }
 
+            // **安全检查**: 文件数量限制
             if file_count + 1 > max_file_count {
                 summary.add_error("Extraction would exceed file count limit, stopping".to_string());
                 break;
             }
 
+            // 创建目标文件的父目录
+            if let Some(parent) = validated_path.parent() {
+                if let Err(e) = fs::create_dir_all(parent).await {
+                    summary.add_error(format!(
+                        "Failed to create directory for {}: {}",
+                        file_name, e
+                    ));
+                    continue;
+                }
+            }
+
+            // 移动文件从临时目录到目标目录
+            if let Err(e) = fs::rename(&entry_path, &validated_path).await {
+                summary.add_error(format!(
+                    "Failed to move file {} to target: {}",
+                    file_name, e
+                ));
+                continue;
+            }
+
             total_size += file_size;
             file_count += 1;
-            summary.add_file(entry_path, file_size);
-            debug!("Extracted (rar crate): {}", entry_name);
+            summary.add_file(validated_path.clone(), file_size);
+            debug!("Extracted (rar crate): {} ({} bytes)", file_name, file_size);
         }
 
         info!(
-            "rar crate extracted {} files, {} bytes",
+            "rar crate extracted {} files, {} bytes total",
             file_count, total_size
         );
         Ok(summary)

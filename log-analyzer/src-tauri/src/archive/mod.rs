@@ -13,6 +13,7 @@ pub mod extraction_orchestrator;
 pub mod gz_handler;
 pub mod parallel_processor;
 pub mod path_manager;
+pub mod path_validator;  // 新增：路径安全验证器
 pub mod processor;
 pub mod progress_tracker;
 pub mod public_api;
@@ -28,6 +29,7 @@ pub use extraction_engine::{ExtractionEngine, ExtractionPolicy};
 pub use extraction_orchestrator::ExtractionOrchestrator;
 pub use gz_handler::GzHandler;
 pub use parallel_processor::{ParallelConfig, ParallelProcessor};
+pub use path_validator::{PathValidator, PathValidatorConfig};  // 导出验证器
 pub use path_manager::{PathConfig, PathManager};
 #[allow(unused_imports)]
 #[allow(deprecated)]

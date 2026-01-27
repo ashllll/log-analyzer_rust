@@ -249,15 +249,35 @@ impl ContentAddressableStorage {
                 )
             })?;
 
-            // Create target file with exclusive creation mode
-            // This prevents race conditions - if two threads try to create the same file,
-            // only one will succeed, the other will get an error
-            let mut dst_file = fs::File::create(&object_path).await.map_err(|e| {
-                AppError::io_error(
-                    format!("Failed to create target file: {}", e),
-                    Some(object_path.clone()),
-                )
-            })?;
+            // **SECURITY FIX**: Use create_new() for atomic file creation (O_EXCL flag)
+            // This prevents TOCTOU race condition - if two threads try to create the same file,
+            // only one will succeed with Ok(), the other gets ErrorKind::AlreadyExists
+            use tokio::fs::OpenOptions;
+            let mut dst_file = match OpenOptions::new()
+                .write(true)
+                .create_new(true)  // O_EXCL: atomic check-and-create
+                .open(&object_path)
+                .await
+            {
+                Ok(file) => file,
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                    // Another thread created the file - this is expected in concurrent scenarios
+                    // Update cache and return early (deduplication win)
+                    self.existence_cache.insert(hash.clone());
+                    debug!(
+                        hash = %hash,
+                        file = %file_path.display(),
+                        "Content already exists (concurrent write detected), skipping"
+                    );
+                    return Ok(0u64); // Signal early return with 0 bytes
+                }
+                Err(e) => {
+                    return Err(AppError::io_error(
+                        format!("Failed to create target file: {}", e),
+                        Some(object_path.clone()),
+                    ));
+                }
+            };
 
             // Copy using async I/O with buffer
             let mut buffer = vec![0u8; COPY_BUFFER_SIZE];
@@ -436,13 +456,48 @@ impl ContentAddressableStorage {
             })?;
         }
 
-        // Write content to file
-        fs::write(&object_path, content).await.map_err(|e| {
-            AppError::io_error(
-                format!("Failed to write object file: {}", e),
-                Some(object_path.clone()),
-            )
-        })?;
+        // **SECURITY FIX**: Use atomic write with create_new() to prevent TOCTOU race
+        use tokio::fs::OpenOptions;
+        use tokio::io::AsyncWriteExt;
+        
+        match OpenOptions::new()
+            .write(true)
+            .create_new(true)  // O_EXCL: atomic check-and-create
+            .open(&object_path)
+            .await
+        {
+            Ok(mut file) => {
+                // Successfully created new file, write content
+                file.write_all(content).await.map_err(|e| {
+                    AppError::io_error(
+                        format!("Failed to write object file: {}", e),
+                        Some(object_path.clone()),
+                    )
+                })?;
+                
+                file.flush().await.map_err(|e| {
+                    AppError::io_error(
+                        format!("Failed to flush object file: {}", e),
+                        Some(object_path.clone()),
+                    )
+                })?;
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                // Another thread created the file concurrently - deduplication win
+                self.existence_cache.insert(hash.clone());
+                debug!(
+                    hash = %hash,
+                    "Content already exists (concurrent write detected), skipping"
+                );
+                return Ok(hash);
+            }
+            Err(e) => {
+                return Err(AppError::io_error(
+                    format!("Failed to create object file: {}", e),
+                    Some(object_path.clone()),
+                ));
+            }
+        }
 
         // Cache the newly created object
         self.existence_cache.insert(hash.clone());

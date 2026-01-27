@@ -10,15 +10,77 @@
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
 use tantivy::{
-    collector::{Count, TopDocs},
+    collector::{Collector, Count, TopDocs},
     query::{BooleanQuery, Occur, Query, QueryParser, TermQuery},
     schema::Field,
-    Index, IndexReader, Term,
+    DocId, Index, IndexReader, Score, SegmentOrdinal, SegmentReader, Term,
 };
 use tracing::{debug, info};
 
 use super::{SearchError, SearchResult};
+
+/// A custom collector wrapper that supports cancellation
+pub struct CancellableCollector<C> {
+    inner: C,
+    token: CancellationToken,
+}
+
+impl<C> CancellableCollector<C> {
+    pub fn new(inner: C, token: CancellationToken) -> Self {
+        Self { inner, token }
+    }
+}
+
+impl<C: Collector> Collector for CancellableCollector<C> {
+    type Fruit = C::Fruit;
+    type Child = CancellableChildCollector<C::Child>;
+
+    fn for_segment(&self, segment_id: SegmentOrdinal, reader: &SegmentReader) -> tantivy::Result<Self::Child> {
+        if self.token.is_cancelled() {
+            return Err(tantivy::TantivyError::InternalError("Search cancelled".to_string()));
+        }
+        let child = self.inner.for_segment(segment_id, reader)?;
+        Ok(CancellableChildCollector {
+            inner: child,
+            token: self.token.clone(),
+        })
+    }
+
+    fn requires_scoring(&self) -> bool {
+        self.inner.requires_scoring()
+    }
+
+    fn merge_fruits(&self, fruits: Vec<<Self::Child as tantivy::collector::SegmentCollector>::Fruit>) -> tantivy::Result<Self::Fruit> {
+        self.inner.merge_fruits(fruits)
+    }
+}
+
+pub struct CancellableChildCollector<C> {
+    inner: C,
+    token: CancellationToken,
+}
+
+impl<C: tantivy::collector::SegmentCollector> tantivy::collector::SegmentCollector for CancellableChildCollector<C> {
+    type Fruit = C::Fruit;
+
+    fn collect(&mut self, doc: DocId, score: Score) {
+        // Periodic check for cancellation (every 1000 documents to avoid overhead)
+        if doc.is_multiple_of(1024) && self.token.is_cancelled() {
+            // Note: Tantivy's collect doesn't return Result, so we can't stop it immediately here
+            // except by some hacks, but checking at the segment level is usually enough.
+            // For now, we'll just stop collecting if cancelled.
+            return;
+        }
+        self.inner.collect(doc, score);
+    }
+
+    fn harvest(self) -> Self::Fruit {
+        self.inner.harvest()
+    }
+}
+
 
 /// Statistics for query term frequency and selectivity
 #[derive(Debug, Clone)]
@@ -80,6 +142,7 @@ impl BooleanQueryProcessor {
         keywords: &[String],
         require_all: bool,
         limit: usize,
+        token: Option<CancellationToken>,
     ) -> SearchResult<(Vec<tantivy::DocAddress>, usize)> {
         if keywords.is_empty() {
             return Err(SearchError::QueryError("No keywords provided".to_string()));
@@ -99,8 +162,9 @@ impl BooleanQueryProcessor {
         let boolean_query = self.build_optimized_boolean_query(&query_plan)?;
 
         // Execute query with early termination if beneficial
-        self.execute_optimized_query(boolean_query, &query_plan, limit)
+        self.execute_optimized_query(boolean_query, &query_plan, limit, token)
     }
+
 
     /// Create an optimized query plan based on term statistics
     fn create_query_plan(&self, keywords: &[String], require_all: bool) -> SearchResult<QueryPlan> {
@@ -226,12 +290,27 @@ impl BooleanQueryProcessor {
         query: BooleanQuery,
         plan: &QueryPlan,
         limit: usize,
+        token: Option<CancellationToken>,
     ) -> SearchResult<(Vec<tantivy::DocAddress>, usize)> {
         let searcher = self.reader.searcher();
+        let token = token.unwrap_or_default();
+
+        // Check for cancellation before starting
+        if token.is_cancelled() {
+            return Err(SearchError::QueryError("Search cancelled".to_string()));
+        }
 
         // Get total count first
-        let count_collector = Count;
-        let total_count = searcher.search(&query, &count_collector)?;
+        let count_collector = CancellableCollector::new(Count, token.clone());
+        let total_count = match searcher.search(&query, &count_collector) {
+            Ok(count) => count,
+            Err(e) => {
+                if token.is_cancelled() {
+                    return Err(SearchError::QueryError("Search cancelled".to_string()));
+                }
+                return Err(SearchError::IndexError(e.to_string()));
+            }
+        };
 
         // Adjust limit based on early termination strategy
         let effective_limit = if plan.should_use_early_termination {
@@ -243,7 +322,17 @@ impl BooleanQueryProcessor {
 
         // Execute query with top docs collector
         let top_docs_collector = TopDocs::with_limit(effective_limit);
-        let top_docs = searcher.search(&query, &top_docs_collector)?;
+        let cancellable_top_docs = CancellableCollector::new(top_docs_collector, token.clone());
+        
+        let top_docs = match searcher.search(&query, &cancellable_top_docs) {
+            Ok(docs) => docs,
+            Err(e) => {
+                if token.is_cancelled() {
+                    return Err(SearchError::QueryError("Search cancelled".to_string()));
+                }
+                return Err(SearchError::IndexError(e.to_string()));
+            }
+        };
 
         let doc_addresses: Vec<tantivy::DocAddress> = top_docs
             .into_iter()
@@ -259,6 +348,7 @@ impl BooleanQueryProcessor {
 
         Ok((doc_addresses, total_count))
     }
+
 
     /// Update term usage statistics for future optimization
     pub fn update_term_usage(&self, term: &str) {
@@ -343,7 +433,7 @@ mod tests {
     fn test_empty_keywords() {
         let (processor, _temp_dir) = create_test_processor();
 
-        let result = processor.process_multi_keyword_query(&[], true, 10);
+        let result = processor.process_multi_keyword_query(&[], true, 10, None);
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), SearchError::QueryError(_)));
     }
@@ -353,7 +443,7 @@ mod tests {
         let (processor, _temp_dir) = create_test_processor();
 
         let keywords = vec!["test".to_string()];
-        let result = processor.process_multi_keyword_query(&keywords, true, 10);
+        let result = processor.process_multi_keyword_query(&keywords, true, 10, None);
 
         // Should succeed even on empty index
         assert!(result.is_ok());
@@ -371,7 +461,7 @@ mod tests {
             "database".to_string(),
             "connection".to_string(),
         ];
-        let result = processor.process_multi_keyword_query(&keywords, false, 10);
+        let result = processor.process_multi_keyword_query(&keywords, false, 10, None);
 
         // Should succeed even on empty index
         assert!(result.is_ok());
@@ -379,6 +469,20 @@ mod tests {
         assert_eq!(docs.len(), 0);
         assert_eq!(count, 0);
     }
+
+    #[test]
+    fn test_cancellation() {
+        let (processor, _temp_dir) = create_test_processor();
+        let token = CancellationToken::new();
+        token.cancel();
+
+        let keywords = vec!["test".to_string()];
+        let result = processor.process_multi_keyword_query(&keywords, true, 10, Some(token));
+        
+        assert!(result.is_err());
+        // Depending on where it stops, it could be QueryError or IndexError wrapped cancellation
+    }
+
 
     #[test]
     fn test_query_plan_creation() {

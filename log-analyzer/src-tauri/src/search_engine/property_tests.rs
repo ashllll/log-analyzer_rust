@@ -58,7 +58,7 @@ proptest! {
 
             // Measure search time
             let start = Instant::now();
-            let result = manager.search_with_timeout(&query, Some(1000), Some(Duration::from_millis(200))).await;
+            let result = manager.search_with_timeout(&query, Some(1000), Some(Duration::from_millis(200)), None).await;
             let elapsed = start.elapsed();
 
             // Property: Search should complete within 200ms or timeout gracefully
@@ -98,7 +98,7 @@ proptest! {
             let _ = manager1.commit();
 
             let start1 = Instant::now();
-            let _ = manager1.search_with_timeout(&query, Some(100), Some(Duration::from_secs(1))).await;
+            let _ = manager1.search_with_timeout(&query, Some(100), Some(Duration::from_secs(1)), None).await;
             let time1 = start1.elapsed();
 
             // Test with scaled dataset
@@ -116,7 +116,7 @@ proptest! {
             let _ = manager2.commit();
 
             let start2 = Instant::now();
-            let _ = manager2.search_with_timeout(&query, Some(100), Some(Duration::from_secs(1))).await;
+            let _ = manager2.search_with_timeout(&query, Some(100), Some(Duration::from_secs(1)), None).await;
             let time2 = start2.elapsed();
 
             // Property: Time should not increase linearly with dataset size
@@ -157,7 +157,8 @@ proptest! {
                 &keywords,
                 true, // require all keywords
                 Some(1000),
-                Some(Duration::from_secs(1))
+                Some(Duration::from_secs(1)),
+                None
             ).await;
             let elapsed = start.elapsed();
 
@@ -199,7 +200,7 @@ proptest! {
 
             // Measure single query performance (baseline)
             let start_single = Instant::now();
-            let _ = manager.search_with_timeout(&queries[0], Some(100), Some(Duration::from_secs(1))).await;
+            let _ = manager.search_with_timeout(&queries[0], Some(100), Some(Duration::from_secs(1)), None).await;
             let single_time = start_single.elapsed();
 
             // Measure concurrent query performance
@@ -211,7 +212,7 @@ proptest! {
                 let manager_clone = manager_arc.clone();
                 let query_clone = query.clone();
                 let handle = tokio::spawn(async move {
-                    manager_clone.search_with_timeout(&query_clone, Some(100), Some(Duration::from_secs(2))).await
+                    manager_clone.search_with_timeout(&query_clone, Some(100), Some(Duration::from_secs(2)), None).await
                 });
                 handles.push(handle);
             }
@@ -454,7 +455,7 @@ mod advanced_features_tests {
 
                 // Measure highlighting performance
                 let start = Instant::now();
-                let result = manager.search_with_highlighting(&query, Some(10), Some(Duration::from_secs(1))).await;
+                let result = manager.search_with_highlighting(&query, Some(10), Some(Duration::from_secs(1)), None).await;
                 let elapsed = start.elapsed();
 
                 // Property: Highlighting should complete efficiently
@@ -543,7 +544,7 @@ mod integration_tests {
         // Test search performance
         let start = Instant::now();
         let result = manager
-            .search_with_timeout("database", Some(10), Some(Duration::from_secs(5)))
+            .search_with_timeout("database", Some(10), Some(Duration::from_secs(5)), None)
             .await;
         let elapsed = start.elapsed();
 
