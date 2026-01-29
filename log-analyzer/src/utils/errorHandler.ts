@@ -14,8 +14,8 @@ const ERROR_MAP: Record<string, { message: string; suggestion: string }> = {
     suggestion: '稍后重试'
   },
   'unrar command not found': {
-    message: 'RAR支持异常',
-    suggestion: '内置unrar工具加载失败,请重启应用'
+    message: 'RAR 支持异常',
+    suggestion: 'RAR 解压组件异常，请重新安装或联系维护'
   },
   'Invalid Regex': {
     message: '搜索表达式语法错误',

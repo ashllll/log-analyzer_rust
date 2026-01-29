@@ -2,7 +2,7 @@
 
 ## 项目结构与模块组织
 - 根目录 `log-analyzer/` 为主工程；`src/` 存放 React 界面与业务逻辑（pages、components、contexts、services、types、utils），`public/` 为静态资源。
-- `src-tauri/src/` 为 Rust 后端（models/services/utils 等），`src-tauri/tests/` 为集成测试，`src-tauri/binaries/` 存放跨平台 `unrar` 可执行文件，发布和本地运行都依赖。
+- `src-tauri/src/` 为 Rust 后端（models/services/utils 等），`src-tauri/tests/` 为集成测试；RAR 解压不再依赖 sidecar 二进制。
 - `docs/` 汇总交付与参考文档，`setup_log_analyzer.sh` 用于一键初始化开发环境。
 
 ## 构建、测试与开发命令
@@ -30,7 +30,7 @@
 - 提交发生错误时，不要允许删除、修改最新的本地代码，本地修改后的最新代码必须保留。
 
 ## 安全与配置提示
-- 本地要求 Node 18+ 与 Rust 1.70+；遵循 Tauri 官方依赖安装指引，确保 `src-tauri/binaries/` 未被误删。
+- 本地要求 Node 18+ 与 Rust 1.70+；遵循 Tauri 官方依赖安装指引。
 - 不要提交真实日志、索引或体积巨大的压缩包；如需示例，使用最小化匿名样本。
 - 涉及文件路径操作时保持跨平台写法（正斜杠、避免硬编码盘符），与现有 `PathBuf` 封装保持一致。
 

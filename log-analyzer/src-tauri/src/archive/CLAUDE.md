@@ -13,7 +13,7 @@ Archive 模块负责统一处理各种压缩格式的日志文件，采用策略
 - **安全限制**: 文件大小/数量/总大小限制
 - **统一接口**: ArchiveHandler Trait 标准化
 - **错误处理**: 详细错误信息和路径追踪
-- **跨平台**: 内置多平台 unrar 二进制
+- **跨平台**: 不依赖 sidecar 二进制
 - **Builder 模式**: v0.0.47+ 采用 Builder 模式重构参数管理
 
 ## v0.0.47 重大更新：Builder 模式重构
@@ -194,43 +194,23 @@ let summary = handler.extract_with_limits(
 
 ### 4. RAR 格式 - RarHandler
 
-**技术实现**: `rar` crate (0.4) 纯 Rust + `unrar` 二进制 Fallback
+**技术实现**: `unrar` crate (0.5, libunrar 绑定)
 
 **支持格式**: `.rar`, `.RAR`
 
-**架构设计**: 双模式策略
-- **主模式**: `rar` crate - 纯 Rust 实现，支持基础 RAR4 格式
-- **Fallback**: `unrar` 二进制 - 处理复杂 RAR5/多部分/加密文件
+**架构设计**: 单模式策略（无 sidecar）
+- 直接使用 `unrar` crate 处理 RAR 文件
 
 **特性**:
-- 纯 Rust 实现，无需 C 库依赖
-- 自动检测并处理不兼容格式
+- 无外置二进制依赖
 - 跨平台兼容性 (Windows/macOS/Linux)
-- 无需外置 RAR 软件
 
 **依赖**:
 ```toml
 # Cargo.toml
-rar = "0.4"  # Pure Rust RAR library
+unrar = "0.5"  # libunrar C bindings
 ```
 
-**fallback 二进制路径**:
-```
-binaries/
-├── unrar-x86_64-pc-windows-msvc.exe
-├── unrar-x86_64-apple-darwin
-├── unrar-aarch64-apple-darwin
-└── unrar-x86_64-unknown-linux-gnu
-```
-
-**平台选择逻辑**:
-```rust
-fn get_unrar_path() -> Result<PathBuf> {
-    let (arch, os, ext) = detect_platform();
-    let binary_name = format!("unrar-{arch}-{os}{ext}");
-    Ok(assets_dir().join("binaries").join(binary_name))
-}
-```
 
 ## 核心组件
 
@@ -534,19 +514,16 @@ max_file_count: 2000,  // 2000文件
   - 增加连接池大小 (5 → 10)
   - 增大缓存大小 (-8000 pages ≈ 8MB)
 
-### [2026-01-09] RAR处理器纯Rust重构
+### [2026-01-09] RAR处理器调整（无 sidecar）
 
-- ✅ **新增 rar crate 纯 Rust 支持**
-  - 使用 `rar = "0.4"` 替代部分 unrar C 绑定依赖
-  - 主模式使用纯 Rust 实现，基础 RAR4 格式无需外部二进制
-  - 保持 unrar 二进制作为 Fallback，处理 RAR5/加密/多部分文件
-- ✅ **解决 macOS ARM64 构建问题**
-  - 移除 unrar Rust crate（依赖 C 库，有平台兼容性问题）
-  - 采用 sidecar 二进制方案，纯 Rust 主库 + 平台特定二进制
+- ✅ **统一 RAR 解压实现**
+  - 仅使用 `unrar` crate（libunrar 绑定）处理 RAR
+  - 取消 sidecar 二进制依赖，跨平台构建一致
 - ✅ **代码质量**
   - cargo check 通过
   - cargo clippy 无警告
   - 530+ 测试用例通过
+
 
 ### [2025-12-13] AI上下文初始化
 - ✅ 完整架构分析

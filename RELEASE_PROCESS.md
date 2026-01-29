@@ -106,7 +106,8 @@ gh workflow run release.yml --ref main -f version=1.2.3 -f prerelease=false
 - **Linux**: x86_64-unknown-linux-gnu
 
 ### Temporarily Disabled
-- **Linux ARM64**: aarch64-unknown-linux-gnu (missing unrar binary)
+- **Linux ARM64**: aarch64-unknown-linux-gnu (待验证)
+
 
 ## Release Artifacts
 

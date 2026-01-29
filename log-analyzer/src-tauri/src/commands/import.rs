@@ -286,12 +286,12 @@ pub async fn import_folder(
     Ok(task_id)
 }
 
-/// 检查RAR支持状态（内置unrar始终可用）
+/// 检查 RAR 支持状态（无 sidecar 依赖）
 #[command]
 pub async fn check_rar_support() -> Result<serde_json::Value, String> {
     Ok(serde_json::json!({
         "available": true,
         "install_guide": null,
-        "bundled": true,
+        "bundled": false,
     }))
 }

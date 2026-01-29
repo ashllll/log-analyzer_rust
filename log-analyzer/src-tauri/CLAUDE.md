@@ -151,7 +151,7 @@ pub struct SearchQuery {
 - **ZIP**: `zip` crate，高兼容性
 - **TAR**: `tar` crate，支持 .tar/.tar.gz/.tgz
 - **GZ**: `flate2` crate，纯 gzip 文件
-- **RAR**: `rar` crate 纯Rust + unrar 二进制 Fallback
+- **RAR**: `unrar` crate（libunrar 绑定），无 sidecar
 
 ### 安全特性
 - 文件大小限制 (默认 100MB)
@@ -200,7 +200,7 @@ async-trait = "0.1"     # 异步trait支持
 zip = "0.6"             # ZIP格式
 tar = "0.4"             # TAR格式
 flate2 = "1.0"          # GZIP压缩/解压
-rar = "0.4"             # RAR格式（纯Rust主方案，unrar二进制Fallback）
+unrar = "0.5"           # RAR格式（libunrar 绑定，无 sidecar）
 
 # 系统支持
 dunce = "1.0"           # Windows路径规范化
