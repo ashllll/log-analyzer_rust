@@ -1,14 +1,14 @@
 //! Path Validator Module - Archive Security Enhancement
-//! 
+//!
 //! 提供统一的路径安全验证，防止路径遍历、符号链接攻击等安全问题。
-//! 
+//!
 //! **安全原则**:
 //! 1. Defense in Depth - 多层验证
 //! 2. Fail Secure - 验证失败时拒绝操作
 //! 3. Whitelist Approach - 明确允许的模式
 
 use crate::error::{AppError, Result};
-use std::path::{Path, PathBuf, Component};
+use std::path::{Component, Path, PathBuf};
 use tracing::warn;
 
 /// 路径验证结果
@@ -75,9 +75,7 @@ impl PathValidatorConfig {
             allow_absolute_paths: false,
             allow_parent_references: false,
             max_path_depth: 200,
-            forbidden_patterns: vec![
-                r"^(CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])$".to_string(),
-            ],
+            forbidden_patterns: vec![r"^(CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])$".to_string()],
         }
     }
 }
@@ -105,19 +103,15 @@ impl PathValidator {
     }
 
     /// 验证归档条目路径是否安全
-    /// 
+    ///
     /// # Arguments
     /// * `entry_path` - 归档中的条目路径
     /// * `base_dir` - 提取的基础目录
-    /// 
+    ///
     /// # Returns
     /// * `Ok(PathBuf)` - 验证通过，返回规范化的完整路径
     /// * `Err(AppError)` - 验证失败，包含具体原因
-    pub fn validate_extraction_path(
-        &self,
-        entry_path: &str,
-        base_dir: &Path,
-    ) -> Result<PathBuf> {
+    pub fn validate_extraction_path(&self, entry_path: &str, base_dir: &Path) -> Result<PathBuf> {
         // 1. 检查空路径
         if entry_path.is_empty() {
             return Err(AppError::archive_error(
@@ -163,15 +157,18 @@ impl PathValidator {
                 Component::Normal(name) => {
                     components.push(name);
                     depth += 1;
-                    
+
                     // 检查路径深度
                     if depth > self.config.max_path_depth {
                         return Err(AppError::archive_error(
-                            format!("Path depth {} exceeds maximum {}", depth, self.config.max_path_depth),
+                            format!(
+                                "Path depth {} exceeds maximum {}",
+                                depth, self.config.max_path_depth
+                            ),
                             Some(PathBuf::from(entry_path)),
                         ));
                     }
-                    
+
                     // 检查文件名合法性
                     if let Some(name_str) = name.to_str() {
                         self.validate_filename(name_str)?;
@@ -201,7 +198,7 @@ impl PathValidator {
 
         // 6. 构建最终路径并验证是否在base_dir内
         let final_path = base_dir.join(entry_path);
-        
+
         // 7. 规范化路径（解析符号链接和相对路径）
         // 注意：这一步在文件不存在时会失败，所以我们使用逐步验证
         self.validate_path_within_base(&final_path, base_dir)?;
@@ -213,20 +210,16 @@ impl PathValidator {
     fn validate_filename(&self, filename: &str) -> Result<()> {
         // 检查空文件名
         if filename.is_empty() {
-            return Err(AppError::archive_error(
-                "Empty filename".to_string(),
-                None,
-            ));
+            return Err(AppError::archive_error("Empty filename".to_string(), None));
         }
 
         // 检查Windows保留设备名
         let uppercase = filename.to_uppercase();
         let reserved_names = [
-            "CON", "PRN", "AUX", "NUL",
-            "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
-            "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+            "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7",
+            "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
         ];
-        
+
         // 处理类似 "CON.txt" 的情况
         let base_name = uppercase.split('.').next().unwrap_or("");
         if reserved_names.contains(&base_name) {
@@ -236,7 +229,7 @@ impl PathValidator {
             ));
         }
 
-        // 检查Windows非法字符 < > : " | ? * 
+        // 检查Windows非法字符 < > : " | ? *
         #[cfg(target_os = "windows")]
         {
             let illegal_chars = ['<', '>', ':', '"', '|', '?', '*'];
@@ -264,11 +257,11 @@ impl PathValidator {
         // 使用字符串比较进行初步验证
         let path_str = path.to_string_lossy();
         let base_str = base_dir.to_string_lossy();
-        
+
         // 规范化路径分隔符
         let normalized_path = path_str.replace('\\', "/");
         let normalized_base = base_str.replace('\\', "/");
-        
+
         if !normalized_path.starts_with(&normalized_base) {
             warn!(
                 "Path escape detected: {} not within {}",
@@ -284,11 +277,7 @@ impl PathValidator {
     }
 
     /// 批量验证多个路径
-    pub fn validate_batch(
-        &self,
-        entries: &[String],
-        base_dir: &Path,
-    ) -> Vec<Result<PathBuf>> {
+    pub fn validate_batch(&self, entries: &[String], base_dir: &Path) -> Vec<Result<PathBuf>> {
         entries
             .iter()
             .map(|entry| self.validate_extraction_path(entry, base_dir))
@@ -324,7 +313,7 @@ mod tests {
         assert!(validator
             .validate_extraction_path("/etc/passwd", &base)
             .is_err());
-        
+
         #[cfg(target_os = "windows")]
         assert!(validator
             .validate_extraction_path("C:\\Windows\\System32", &base)
@@ -337,15 +326,11 @@ mod tests {
         let base = PathBuf::from("/tmp/extract");
 
         // Windows保留设备名
-        assert!(validator
-            .validate_extraction_path("CON", &base)
-            .is_err());
+        assert!(validator.validate_extraction_path("CON", &base).is_err());
         assert!(validator
             .validate_extraction_path("PRN.txt", &base)
             .is_err());
-        assert!(validator
-            .validate_extraction_path("COM1", &base)
-            .is_err());
+        assert!(validator.validate_extraction_path("COM1", &base).is_err());
     }
 
     #[test]
@@ -355,9 +340,7 @@ mod tests {
         let base = temp_dir.path();
 
         // 这些路径应该是安全的
-        assert!(validator
-            .validate_extraction_path("file.txt", base)
-            .is_ok());
+        assert!(validator.validate_extraction_path("file.txt", base).is_ok());
         assert!(validator
             .validate_extraction_path("dir/subdir/file.txt", base)
             .is_ok());

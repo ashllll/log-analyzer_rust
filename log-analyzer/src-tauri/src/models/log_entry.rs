@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 use crate::services::MatchDetail;
 
@@ -6,12 +7,12 @@ use crate::services::MatchDetail;
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct LogEntry {
     pub id: usize,
-    pub timestamp: String,
-    pub level: String,
-    pub file: String,
-    pub real_path: String,
+    pub timestamp: Arc<str>,
+    pub level: Arc<str>,
+    pub file: Arc<str>,
+    pub real_path: Arc<str>,
     pub line: usize,
-    pub content: String,
+    pub content: Arc<str>,
     pub tags: Vec<String>,
     /// 匹配详情（可选）
     #[serde(skip_serializing_if = "Option::is_none")]

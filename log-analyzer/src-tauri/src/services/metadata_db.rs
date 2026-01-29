@@ -28,7 +28,7 @@ impl MetadataDB {
     /// # Returns
     ///
     /// A new MetadataDB instance with in-memory storage
-    pub async fn new(_db_path: &str) -> Result<Self, String> {
+    pub async fn new(_db_path: &str) -> eyre::Result<Self> {
         Ok(Self {
             mappings: Arc::new(DashMap::new()),
         })
@@ -48,7 +48,7 @@ impl MetadataDB {
         &self,
         workspace_id: &str,
         original_path: &str,
-    ) -> Result<Option<String>, String> {
+    ) -> eyre::Result<Option<String>> {
         let key = format!("{}:{}", workspace_id, original_path);
         Ok(self.mappings.get(&key).map(|v| v.value().clone()))
     }
@@ -67,7 +67,7 @@ impl MetadataDB {
         &self,
         workspace_id: &str,
         short_path: &str,
-    ) -> Result<Option<String>, String> {
+    ) -> eyre::Result<Option<String>> {
         // Search through mappings to find the original path
         let prefix = format!("{}:", workspace_id);
         for entry in self.mappings.iter() {
@@ -92,7 +92,7 @@ impl MetadataDB {
         workspace_id: &str,
         short_path: &str,
         original_path: &str,
-    ) -> Result<(), String> {
+    ) -> eyre::Result<()> {
         let key = format!("{}:{}", workspace_id, original_path);
         self.mappings.insert(key, short_path.to_string());
         Ok(())
@@ -107,7 +107,7 @@ impl MetadataDB {
     /// # Returns
     ///
     /// Number of mappings removed
-    pub async fn cleanup_workspace(&self, workspace_id: &str) -> Result<usize, String> {
+    pub async fn cleanup_workspace(&self, workspace_id: &str) -> eyre::Result<usize> {
         let prefix = format!("{}:", workspace_id);
         let mut count = 0;
 
@@ -140,7 +140,7 @@ impl MetadataDB {
     pub async fn get_workspace_mappings(
         &self,
         workspace_id: &str,
-    ) -> Result<Vec<(String, String)>, String> {
+    ) -> eyre::Result<Vec<(String, String)>> {
         let prefix = format!("{}:", workspace_id);
         let mut mappings = Vec::new();
 

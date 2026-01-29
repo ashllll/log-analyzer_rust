@@ -41,6 +41,10 @@ pub enum AppError {
     )]
     Validation(String),
 
+    #[error("Security error: {0}")]
+    #[diagnostic(code(app::security_error))]
+    Security(String),
+
     #[error("Not found: {0}")]
     #[diagnostic(code(app::not_found))]
     NotFound(String),

@@ -4,8 +4,6 @@
 //! 支持扩展名白名单、文件名模式匹配、内容特征检测和Android日志特殊识别
 
 use regex::Regex;
-use std::fs::File;
-use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 /// 文件识别结果
@@ -133,7 +131,7 @@ impl LogFileDetector {
 
     /// 检测文件是否为日志文件
     #[allow(dead_code)]
-    pub fn detect(&self, path: &Path) -> Result<FileTypeResult, String> {
+    pub async fn detect(&self, path: &Path) -> Result<FileTypeResult, String> {
         // 1. 扩展名黑名单检测(最高优先级,直接拒绝)
         if let Some(result) = self.detect_by_blacklist(path) {
             return Ok(result);
@@ -151,7 +149,7 @@ impl LogFileDetector {
 
         // 4. 内容特征检测
         if self.config.enable_content_detection {
-            return self.detect_by_content(path);
+            return self.detect_by_content(path).await;
         }
 
         // 默认:未知
@@ -214,23 +212,27 @@ impl LogFileDetector {
 
     /// 基于内容检测
     #[allow(dead_code)]
-    fn detect_by_content(&self, path: &Path) -> Result<FileTypeResult, String> {
+    async fn detect_by_content(&self, path: &Path) -> Result<FileTypeResult, String> {
+        use tokio::fs::File;
+        use tokio::io::{AsyncBufReadExt, BufReader};
+
         // 打开文件并读取前N行
-        let file = match File::open(path) {
+        let file = match File::open(path).await {
             Ok(f) => f,
             Err(_) => return Ok(FileTypeResult::Unknown),
         };
 
         let reader = BufReader::new(file);
         let mut lines: Vec<String> = Vec::new();
+        let mut lines_stream = reader.lines();
+        let mut count = 0;
 
-        for (i, line_result) in reader.lines().enumerate() {
-            if i >= self.config.content_sample_lines {
+        while let Ok(Some(line)) = lines_stream.next_line().await {
+            if count >= self.config.content_sample_lines {
                 break;
             }
-            if let Ok(line) = line_result {
-                lines.push(line);
-            }
+            lines.push(line);
+            count += 1;
         }
 
         if lines.is_empty() {
@@ -283,9 +285,12 @@ impl LogFileDetector {
         for line in lines.iter().take(50) {
             // 特征1: MM-DD HH:MM:SS.mmm 格式时间戳
             if line.len() > 18 {
-                let time_part = &line[0..18.min(line.len())];
-                if time_part.contains('-') && time_part.contains(':') && time_part.contains('.') {
-                    logcat_features += 1;
+                // 使用 char_indices 或 safer slice 来避免在字符中间切分导致 panic
+                if let Some(time_part) = line.get(0..18) {
+                    if time_part.contains('-') && time_part.contains(':') && time_part.contains('.')
+                    {
+                        logcat_features += 1;
+                    }
                 }
             }
 
@@ -363,10 +368,17 @@ impl LogFileDetector {
     /// 检测行中是否包含时间戳
     #[allow(dead_code)]
     fn contains_timestamp(&self, line: &str) -> bool {
+        use once_cell::sync::Lazy;
+
         // ISO 8601: 支持任意年份 19xx/20xx
-        let iso_pattern = regex::Regex::new(r"\b(?:19|20)\d{2}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])(?:T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9])?\b").unwrap();
-        if iso_pattern.is_match(line) {
-            return true;
+        static ISO_PATTERN: Lazy<Option<regex::Regex>> = Lazy::new(|| {
+            regex::Regex::new(r"\b(?:19|20)\d{2}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])(?:T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9])?\b").ok()
+        });
+
+        if let Some(ref pattern) = *ISO_PATTERN {
+            if pattern.is_match(line) {
+                return true;
+            }
         }
 
         // Syslog: Jan 20 10:30:45
@@ -503,15 +515,15 @@ mod tests {
         assert!(detector.is_android_tombstone(&lines));
     }
 
-    #[test]
-    fn test_detect_generic_log() -> Result<(), Box<dyn std::error::Error>> {
+    #[tokio::test]
+    async fn test_detect_generic_log() -> Result<(), Box<dyn std::error::Error>> {
         let mut temp_file = NamedTempFile::new()?;
         writeln!(temp_file, "2024-01-20 10:30:45 INFO Application started")?;
         writeln!(temp_file, "2024-01-20 10:30:46 DEBUG Loading configuration")?;
         writeln!(temp_file, "2024-01-20 10:30:47 ERROR Failed to connect")?;
 
         let detector = LogFileDetector::default();
-        let result = detector.detect(temp_file.path())?;
+        let result = detector.detect(temp_file.path()).await?;
         assert!(matches!(result, FileTypeResult::LogFile(_)));
         Ok(())
     }

@@ -138,12 +138,18 @@ pub fn normalize_path_separator(path: &str) -> String {
 /// ```
 #[allow(dead_code)]
 pub fn safe_path_join(base: &Path, component: &str) -> PathBuf {
-    // 移除路径穿越尝试
-    let sanitized = component
-        .replace("..", "")
-        .replace(":", "") // Windows 驱动器符号
-        .trim()
-        .to_string();
+    let mut safe_path = base.to_path_buf();
 
-    base.join(sanitized)
+    // 遍历组件并只添加安全的部分
+    for comp in Path::new(component).components() {
+        match comp {
+            std::path::Component::Normal(c) => {
+                safe_path.push(c);
+            }
+            // 忽略根目录、驱动器符号和父目录引用
+            _ => continue,
+        }
+    }
+
+    safe_path
 }

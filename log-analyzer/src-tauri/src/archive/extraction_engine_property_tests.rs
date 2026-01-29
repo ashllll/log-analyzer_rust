@@ -204,6 +204,39 @@ mod property_5_format_handling_correctness {
             );
         }
 
+        /// Test that 7Z files are correctly identified and handled
+        #[test]
+        fn prop_sevenz_handler_selection(
+            filename in filename(),
+            ext in prop_oneof![Just("7z"), Just("7Z")]
+        ) {
+            let registry = HandlerRegistry::new();
+            let path = PathBuf::from(format!("{}.{}", filename, ext));
+
+            // Property: 7Z files should be handled by a handler
+            let handler = registry.find_handler(&path);
+            prop_assert!(
+                handler.is_some(),
+                "7Z file should have a handler: {}",
+                path.display()
+            );
+
+            // Property: The handler should be able to handle 7Z files
+            let handler = handler.unwrap();
+            prop_assert!(
+                handler.can_handle(&path),
+                "Handler should be able to handle 7Z file: {}",
+                path.display()
+            );
+
+            // Property: 7Z extension should be in supported extensions
+            let extensions = handler.file_extensions();
+            prop_assert!(
+                extensions.contains(&"7z"),
+                "Handler should support '7z' extension"
+            );
+        }
+
         /// Test that non-archive files are correctly rejected
         #[test]
         fn prop_non_archive_rejection(
@@ -531,6 +564,7 @@ mod property_2_nested_archive_recognition {
             Just("tar".to_string()),
             Just("gz".to_string()),
             Just("rar".to_string()),
+            Just("7z".to_string()),
         ]
     }
 

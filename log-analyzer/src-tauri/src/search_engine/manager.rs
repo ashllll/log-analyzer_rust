@@ -10,7 +10,6 @@ use parking_lot::{Mutex, RwLock};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio_util::sync::CancellationToken;
 use tantivy::{
     collector::{Count, TopDocs},
     query::{Query, QueryParser, TermQuery},
@@ -18,6 +17,7 @@ use tantivy::{
     DocAddress, Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument, Term,
 };
 use tokio::time::timeout;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
 use super::{
@@ -26,8 +26,6 @@ use super::{
 };
 use crate::models::config::SearchConfig as AppSearchConfig;
 use crate::models::LogEntry;
-
-
 
 /// Search result entry with document address for highlighting
 #[derive(Debug, Clone)]
@@ -170,11 +168,11 @@ impl SearchEngineManager {
             schema.content,
             highlighting_config,
         );
-        
+
         // **NEW**: Initialize IndexOptimizer
         // Enabled by default with threshold of 100 queries
         let optimizer = Some(Arc::new(
-            crate::search_engine::index_optimizer::IndexOptimizer::new(100)
+            crate::search_engine::index_optimizer::IndexOptimizer::new(100),
         ));
 
         info!(
@@ -249,18 +247,17 @@ impl SearchEngineManager {
                 self.update_stats(query_time, false);
                 // ...
 
-
                 match result {
                     Ok(mut search_results) => {
                         search_results.query_time_ms = query_time.as_millis() as u64;
                         search_results.was_timeout = false;
-                        
+
                         // **NEW**: Record query for optimization analysis
                         if let Some(ref optimizer) = self.optimizer {
                             optimizer.record_query_with_results(
-                                query, 
+                                query,
                                 query_time,
-                                search_results.entries.len()
+                                search_results.entries.len(),
                             );
                         }
 
@@ -301,7 +298,6 @@ impl SearchEngineManager {
             }
         }
     }
-
 
     /// Parse query string into Tantivy query
     fn parse_query(&self, query_str: &str) -> SearchResult<Box<dyn Query>> {
@@ -344,7 +340,8 @@ impl SearchEngineManager {
         let token = token.unwrap_or_default();
 
         // Get total count with cancellation support
-        let count_collector = super::boolean_query_processor::CancellableCollector::new(Count, token.clone());
+        let count_collector =
+            super::boolean_query_processor::CancellableCollector::new(Count, token.clone());
         let total_count = match searcher.search(&*query, &count_collector) {
             Ok(count) => count,
             Err(e) => {
@@ -357,8 +354,11 @@ impl SearchEngineManager {
 
         // Get top documents with cancellation support
         let top_docs_collector = TopDocs::with_limit(limit);
-        let cancellable_top_docs = super::boolean_query_processor::CancellableCollector::new(top_docs_collector, token.clone());
-        
+        let cancellable_top_docs = super::boolean_query_processor::CancellableCollector::new(
+            top_docs_collector,
+            token.clone(),
+        );
+
         let top_docs = match searcher.search(&*query, &cancellable_top_docs) {
             Ok(docs) => docs,
             Err(e) => {
@@ -368,7 +368,6 @@ impl SearchEngineManager {
                 return Err(SearchError::IndexError(e.to_string()));
             }
         };
-
 
         // Convert documents to LogEntry, capturing DocAddress for each
         let mut entries = Vec::with_capacity(top_docs.len());
@@ -394,22 +393,22 @@ impl SearchEngineManager {
 
     /// Convert Tantivy document to LogEntry
     fn document_to_log_entry(&self, doc: &TantivyDocument) -> Option<LogEntry> {
-        let content = doc.get_first(self.schema.content)?.as_str()?.to_string();
+        let content = doc.get_first(self.schema.content)?.as_str()?;
         let timestamp_i64 = doc.get_first(self.schema.timestamp)?.as_i64()?;
         let timestamp = timestamp_i64.to_string(); // Convert back to string for LogEntry
-        let level = doc.get_first(self.schema.level)?.as_str()?.to_string();
-        let file_path = doc.get_first(self.schema.file_path)?.as_str()?.to_string();
-        let real_path = doc.get_first(self.schema.real_path)?.as_str()?.to_string();
+        let level = doc.get_first(self.schema.level)?.as_str()?;
+        let file_path = doc.get_first(self.schema.file_path)?.as_str()?;
+        let real_path = doc.get_first(self.schema.real_path)?.as_str()?;
         let line_number = doc.get_first(self.schema.line_number)?.as_u64()? as usize;
 
         Some(LogEntry {
             id: 0, // Will be set by caller if needed
-            timestamp,
-            level,
-            file: file_path,
-            real_path,
+            timestamp: timestamp.into(),
+            level: level.into(),
+            file: file_path.into(),
+            real_path: real_path.into(),
             line: line_number,
-            content,
+            content: content.into(),
             tags: vec![],
             match_details: None,
             matched_keywords: None,
@@ -466,34 +465,34 @@ impl SearchEngineManager {
 
         // Use boolean query processor for optimized multi-keyword search
         let token_inner = token.clone();
-        let search_future = async move {
-            let (doc_addresses, total_count) =
-                self.boolean_processor
+        let search_future =
+            async move {
+                let (doc_addresses, total_count) = self
+                    .boolean_processor
                     .process_multi_keyword_query(keywords, require_all, limit, Some(token_inner))?;
-            // ...
+                // ...
 
+                // Convert document addresses to LogEntry, preserving DocAddress for highlighting
+                let searcher = self.reader.searcher();
+                let mut entries = Vec::with_capacity(doc_addresses.len());
+                let mut addresses = Vec::with_capacity(doc_addresses.len());
 
-            // Convert document addresses to LogEntry, preserving DocAddress for highlighting
-            let searcher = self.reader.searcher();
-            let mut entries = Vec::with_capacity(doc_addresses.len());
-            let mut addresses = Vec::with_capacity(doc_addresses.len());
-
-            for doc_address in doc_addresses {
-                let retrieved_doc = searcher.doc(doc_address)?;
-                if let Some(log_entry) = self.document_to_log_entry(&retrieved_doc) {
-                    entries.push(log_entry);
-                    addresses.push(doc_address); // Store DocAddress for highlighting
+                for doc_address in doc_addresses {
+                    let retrieved_doc = searcher.doc(doc_address)?;
+                    if let Some(log_entry) = self.document_to_log_entry(&retrieved_doc) {
+                        entries.push(log_entry);
+                        addresses.push(doc_address); // Store DocAddress for highlighting
+                    }
                 }
-            }
 
-            Ok(SearchResults {
-                entries,
-                doc_addresses: addresses, // Include DocAddresses in results
-                total_count,
-                query_time_ms: 0, // Will be set by caller
-                was_timeout: false,
-            })
-        };
+                Ok(SearchResults {
+                    entries,
+                    doc_addresses: addresses, // Include DocAddresses in results
+                    total_count,
+                    query_time_ms: 0, // Will be set by caller
+                    was_timeout: false,
+                })
+            };
 
         // Execute with timeout
         match timeout(timeout_duration, search_future).await {
@@ -564,7 +563,6 @@ impl SearchEngineManager {
             .search_with_timeout(query, limit, timeout_duration, token)
             .await?;
 
-
         // Then, add highlighting to the results using actual DocAddress
         let mut highlighted_entries = Vec::new();
 
@@ -589,7 +587,7 @@ impl SearchEngineManager {
             {
                 Ok(highlights) => {
                     let mut highlighted_entry = entry.clone();
-                    highlighted_entry.content = highlights.join(" ... ");
+                    highlighted_entry.content = highlights.join(" ... ").into();
                     highlighted_entries.push(highlighted_entry);
                 }
                 Err(e) => {
@@ -643,20 +641,28 @@ impl SearchEngineManager {
     pub fn get_highlighting_stats(&self) -> super::HighlightingStats {
         self.highlighting_engine.get_highlighting_stats()
     }
-    
+
     /// **NEW**: Get index optimization analysis
-    /// 
+    ///
     /// Analyzes query patterns and returns recommendations for index optimization
     /// Returns None if optimizer is disabled
-    pub fn get_optimization_analysis(&self) -> Option<crate::search_engine::index_optimizer::IndexPerformanceAnalysis> {
+    pub fn get_optimization_analysis(
+        &self,
+    ) -> Option<crate::search_engine::index_optimizer::IndexPerformanceAnalysis> {
         self.optimizer.as_ref().map(|opt| opt.analyze_performance())
     }
-    
+
     /// **NEW**: Get hot query patterns
-    /// 
+    ///
     /// Returns the most frequently executed queries for optimization
-    pub fn get_hot_queries(&self) -> Vec<(String, crate::search_engine::index_optimizer::QueryPatternStats)> {
-        self.optimizer.as_ref()
+    pub fn get_hot_queries(
+        &self,
+    ) -> Vec<(
+        String,
+        crate::search_engine::index_optimizer::QueryPatternStats,
+    )> {
+        self.optimizer
+            .as_ref()
             .map(|opt| opt.identify_hot_queries())
             .unwrap_or_default()
     }
@@ -724,7 +730,6 @@ mod tests {
         let result = manager
             .search_with_timeout("test", None, Some(Duration::from_millis(100)), None)
             .await;
-
 
         // Should either succeed quickly or timeout - both are valid outcomes
         match result {

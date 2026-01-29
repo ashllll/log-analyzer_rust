@@ -3,7 +3,14 @@
  *
  * 提供统一的接口处理各种压缩格式（ZIP、RAR、TAR、GZ）
  */
+pub mod actors;
+pub mod fault_tolerance;
+pub mod streaming;
+
 pub mod archive_handler;
+pub mod resource_manager;
+pub mod security_detector;
+
 pub mod audit_logger;
 pub mod checkpoint_manager;
 pub mod edge_case_handlers;
@@ -13,13 +20,12 @@ pub mod extraction_orchestrator;
 pub mod gz_handler;
 pub mod parallel_processor;
 pub mod path_manager;
-pub mod path_validator;  // 新增：路径安全验证器
+pub mod path_validator; // 新增：路径安全验证器
 pub mod processor;
 pub mod progress_tracker;
 pub mod public_api;
 pub mod rar_handler;
-pub mod resource_manager;
-pub mod security_detector;
+pub mod sevenz_handler;
 pub mod tar_handler;
 pub mod zip_handler;
 
@@ -29,8 +35,8 @@ pub use extraction_engine::{ExtractionEngine, ExtractionPolicy};
 pub use extraction_orchestrator::ExtractionOrchestrator;
 pub use gz_handler::GzHandler;
 pub use parallel_processor::{ParallelConfig, ParallelProcessor};
-pub use path_validator::{PathValidator, PathValidatorConfig};  // 导出验证器
 pub use path_manager::{PathConfig, PathManager};
+pub use path_validator::{PathValidator, PathValidatorConfig}; // 导出验证器
 #[allow(unused_imports)]
 #[allow(deprecated)]
 pub use processor::process_path_recursive_with_metadata;
@@ -38,6 +44,8 @@ pub use processor::{process_path_with_cas, CasProcessingContext}; // Export CAS-
 pub use public_api::{extract_archive_async, extract_archive_sync, ExtractionResult};
 pub use rar_handler::RarHandler;
 pub use security_detector::{SecurityDetector, SecurityPolicy};
+pub use sevenz_handler::SevenZHandler;
+
 pub use tar_handler::TarHandler;
 pub use zip_handler::ZipHandler;
 // 导出 checkpoint 相关类型供测试使用
@@ -86,10 +94,11 @@ impl ArchiveManager {
      */
     pub fn with_config(config: ArchiveConfig) -> Self {
         let handlers: Vec<Box<dyn ArchiveHandler>> = vec![
-            Box::new(TarHandler), // 先检查TAR（包括tar.gz等）
-            Box::new(GzHandler),  // 再检查纯GZ
-            Box::new(ZipHandler), // 然后ZIP
-            Box::new(RarHandler), // 最后RAR
+            Box::new(TarHandler),    // 先检查TAR（包括tar.gz等）
+            Box::new(GzHandler),     // 再检查纯GZ
+            Box::new(ZipHandler),    // 然后ZIP
+            Box::new(RarHandler),    // 然后RAR
+            Box::new(SevenZHandler), // 最后7z支持
         ];
 
         Self {

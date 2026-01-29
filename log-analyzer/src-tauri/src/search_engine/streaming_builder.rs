@@ -264,7 +264,9 @@ impl StreamingIndexBuilder {
 
         let mut batch = Vec::with_capacity(config.batch_size);
         let mut line_number = 0;
-        let global_offset = (batch_idx * 1000000) + (file_idx * 100000);
+        let global_offset = batch_idx
+            .saturating_mul(1000000)
+            .saturating_add(file_idx.saturating_mul(100000));
 
         for line_result in reader.lines() {
             // Check for cancellation
@@ -272,19 +274,25 @@ impl StreamingIndexBuilder {
                 break;
             }
 
-            let line = line_result?;
+            let line = match line_result {
+                Ok(l) => l,
+                Err(e) => {
+                    error!(file = %file_path.display(), error = %e, "Error reading line from file");
+                    break; // Stop processing this file on IO error
+                }
+            };
             line_number += 1;
 
             // Parse log entry
             let (timestamp, level) = parse_metadata(&line);
             let log_entry = LogEntry {
                 id: global_offset + line_number,
-                timestamp,
-                level,
-                file: file_path.to_string_lossy().to_string(),
-                real_path: file_path.to_string_lossy().to_string(),
+                timestamp: timestamp.into(),
+                level: level.into(),
+                file: file_path.to_string_lossy().into(),
+                real_path: file_path.to_string_lossy().into(),
                 line: line_number,
-                content: line,
+                content: line.into(),
                 tags: vec![],
                 match_details: None,
                 matched_keywords: None,

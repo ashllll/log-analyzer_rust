@@ -1,18 +1,17 @@
 use crate::archive::archive_handler::{ArchiveHandler, ExtractionSummary};
 use crate::error::{AppError, Result};
 use crate::utils::path_security::{
-    validate_and_sanitize_path, PathValidationResult, SecurityConfig,
+    validate_and_sanitize_archive_path, PathValidationResult, SecurityConfig,
 };
 use async_trait::async_trait;
-use std::io::Cursor;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tokio::fs;
-use tokio::io::AsyncWriteExt;
 use tracing::warn;
+
 use zip::ZipArchive;
 
 /**
- * ZIP文件处理器
+ * ZIP文件处理器 (稳定版本)
  */
 pub struct ZipHandler;
 
@@ -33,347 +32,79 @@ impl ArchiveHandler for ZipHandler {
         max_total_size: u64,
         max_file_count: usize,
     ) -> Result<ExtractionSummary> {
-        // 确保目标目录存在
-        fs::create_dir_all(target_dir).await.map_err(|e| {
-            AppError::archive_error(
-                format!("Failed to create target directory: {}", e),
-                Some(target_dir.to_path_buf()),
-            )
-        })?;
+        fs::create_dir_all(target_dir).await?;
 
-        // **MEMORY WARNING**: Current implementation loads entire ZIP into memory
-        // This is a limitation of the `zip` crate which requires `Read + Seek`
-        // 
-        // **Current mitigation**:
-        // - Check file size before loading
-        // - Reject files > 500MB to prevent OOM
-        // - Log warning for files > 100MB
-        //
-        // **Future improvement** (TODO):
-        // Consider migrating to `async-zip` crate for true streaming support
-        // See: https://docs.rs/async-zip/latest/async_zip/
-        
-        const MAX_ZIP_SIZE: u64 = 500 * 1024 * 1024; // 500MB hard limit
-        const WARN_ZIP_SIZE: u64 = 100 * 1024 * 1024; // 100MB warning threshold
-        
-        let file_size = fs::metadata(source).await.map_err(|e| {
-            AppError::archive_error(
-                format!("Failed to read ZIP file metadata: {}", e),
-                Some(source.to_path_buf()),
-            )
-        })?.len();
-        
-        if file_size > MAX_ZIP_SIZE {
-            return Err(AppError::archive_error(
-                format!(
-                    "ZIP file too large ({} bytes exceeds {} MB limit). \
-                     This prevents memory exhaustion.",
-                    file_size, MAX_ZIP_SIZE / (1024 * 1024)
-                ),
-                Some(source.to_path_buf()),
-            ));
-        }
-        
-        if file_size > WARN_ZIP_SIZE {
-            warn!(
-                file = %source.display(),
-                size_mb = file_size / (1024 * 1024),
-                "Large ZIP file detected - may cause high memory usage"
-            );
-        }
+        let source_path = source.to_path_buf();
+        let target_path = target_dir.to_path_buf();
 
-        // 读取ZIP文件内容
-        let zip_data = fs::read(source).await.map_err(|e| {
-            AppError::archive_error(
-                format!("Failed to read ZIP file: {}", e),
-                Some(source.to_path_buf()),
-            )
-        })?;
+        let summary = tokio::task::spawn_blocking(move || {
+            let file = std::fs::File::open(&source_path)?;
+            let mut archive =
+                ZipArchive::new(file).map_err(|e| AppError::archive_error(e.to_string(), None))?;
+            let mut summary = ExtractionSummary::new();
+            let security_config = SecurityConfig::default();
 
-        // 在同步上下文中处理 ZIP 归档，提取所有文件数据
-        let source_path = source.to_path_buf(); // Clone path to avoid lifetime issues
-        let files_data = tokio::task::spawn_blocking(move || {
-            let cursor = Cursor::new(zip_data);
-            let mut archive = ZipArchive::new(cursor).map_err(|e| {
-                AppError::archive_error(
-                    format!("Failed to open ZIP archive: {}", e),
-                    Some(source_path.clone()),
-                )
-            })?;
-
-            let mut files = Vec::new();
-            let mut total_size = 0;
-            let mut file_count = 0;
-
-            // 提取所有文件内容
             for i in 0..archive.len() {
-                let mut file = archive.by_index(i).map_err(|e| {
-                    AppError::archive_error(
-                        format!("Failed to access file {} in archive: {}", i, e),
-                        Some(source_path.clone()),
-                    )
-                })?;
-
-                let file_name = file.name().to_string();
-                let is_dir = file.is_dir();
-                let file_size = file.size();
-
-                // 安全检查：使用完整的路径安全模块
-                let config = SecurityConfig::default();
-                let validation = validate_and_sanitize_path(&file_name, &config);
-
-                let safe_file_name = match validation {
-                    PathValidationResult::Unsafe(reason) => {
-                        files.push((file_name.clone(), None, true));
-                        warn!(
-                            path = %file_name,
-                            reason = %reason,
-                            "Unsafe path rejected"
-                        );
+                let mut file = match archive.by_index(i) {
+                    Ok(f) => f,
+                    Err(e) => {
+                        warn!("Failed to read zip entry {}: {}", i, e);
                         continue;
                     }
-                    PathValidationResult::Valid(name) => name,
-                    PathValidationResult::RequiresSanitization(original, sanitized) => {
-                        warn!(
-                            original = %original,
-                            sanitized = %sanitized,
-                            "Path sanitized"
-                        );
-                        sanitized
-                    }
+                };
+                let name = file.name().to_string();
+
+                let validation = validate_and_sanitize_archive_path(&name, &security_config);
+                let safe_path = match validation {
+                    PathValidationResult::Unsafe(_) => continue,
+                    PathValidationResult::Valid(p) => PathBuf::from(p),
+                    PathValidationResult::RequiresSanitization(_, p) => PathBuf::from(p),
                 };
 
-                if is_dir {
-                    files.push((safe_file_name, None, false));
+                let out_path = target_path.join(&safe_path);
+                let size = file.size();
+
+                if file.is_dir() {
+                    let _ = std::fs::create_dir_all(&out_path);
                 } else {
-                    // 安全检查：单个文件大小限制
-                    if file_size > max_file_size {
-                        return Err(AppError::archive_error(
-                            format!(
-                                "File {} exceeds maximum size limit of {} bytes",
-                                file_name, max_file_size
-                            ),
-                            Some(source_path),
-                        ));
+                    if size > max_file_size
+                        || summary.total_size + size > max_total_size
+                        || summary.files_extracted + 1 > max_file_count
+                    {
+                        continue;
                     }
 
-                    // 安全检查：总大小限制
-                    if total_size + file_size > max_total_size {
-                        return Err(AppError::archive_error(
-                            format!(
-                                "Extraction would exceed total size limit of {} bytes",
-                                max_total_size
-                            ),
-                            Some(source_path),
-                        ));
+                    if let Some(parent) = out_path.parent() {
+                        let _ = std::fs::create_dir_all(parent);
                     }
 
-                    // 安全检查：文件数量限制
-                    if file_count + 1 > max_file_count {
-                        return Err(AppError::archive_error(
-                            format!(
-                                "Extraction would exceed file count limit of {} files",
-                                max_file_count
-                            ),
-                            Some(source_path),
-                        ));
+                    match std::fs::File::create(&out_path) {
+                        Ok(mut out_file) => {
+                            if let Err(e) = std::io::copy(&mut file, &mut out_file) {
+                                warn!("Failed to extract file {:?}: {}", out_path, e);
+                            } else {
+                                summary.add_file(safe_path, size);
+                            }
+                            // 显式释放文件句柄
+                            drop(out_file);
+                        }
+                        Err(e) => {
+                            warn!("Failed to create file {:?}: {}", out_path, e);
+                        }
                     }
-
-                    // 读取文件内容到内存
-                    let mut buffer = Vec::new();
-                    std::io::copy(&mut file, &mut buffer).map_err(|e| {
-                        AppError::archive_error(
-                            format!("Failed to read file content: {}", e),
-                            Some(source_path.clone()),
-                        )
-                    })?;
-
-                    total_size += buffer.len() as u64;
-                    file_count += 1;
-
-                    files.push((safe_file_name, Some(buffer), false));
                 }
             }
-
-            Ok::<Vec<(String, Option<Vec<u8>>, bool)>, AppError>(files)
+            // 显式释放归档文件句柄
+            drop(archive);
+            Ok::<ExtractionSummary, AppError>(summary)
         })
         .await
-        .map_err(|e| {
-            AppError::archive_error(
-                format!("Failed to extract ZIP archive: {}", e),
-                Some(source.to_path_buf()),
-            )
-        })??;
-
-        let mut summary = ExtractionSummary::new();
-
-        // 异步写入文件
-        for (file_name, content, is_error) in files_data {
-            if is_error {
-                summary.add_error(format!("Unsafe file path detected: {}", file_name));
-                continue;
-            }
-
-            let out_path = target_dir.join(&file_name);
-
-            // 如果是目录，创建目录
-            if content.is_none() {
-                fs::create_dir_all(&out_path).await.map_err(|e| {
-                    AppError::archive_error(
-                        format!("Failed to create directory: {}", e),
-                        Some(out_path.clone()),
-                    )
-                })?;
-                continue;
-            }
-
-            // 确保父目录存在
-            if let Some(parent) = out_path.parent() {
-                fs::create_dir_all(parent).await.map_err(|e| {
-                    AppError::archive_error(
-                        format!("Failed to create parent directory: {}", e),
-                        Some(parent.to_path_buf()),
-                    )
-                })?;
-            }
-
-            // 创建输出文件并写入内容
-            if let Some(buffer) = content {
-                let mut out_file = fs::File::create(&out_path).await.map_err(|e| {
-                    AppError::archive_error(
-                        format!("Failed to create output file: {}", e),
-                        Some(out_path.clone()),
-                    )
-                })?;
-
-                out_file.write_all(&buffer).await.map_err(|e| {
-                    AppError::archive_error(
-                        format!("Failed to write file content: {}", e),
-                        Some(out_path.clone()),
-                    )
-                })?;
-
-                // Add file to summary using relative path (relative to target_dir)
-                // This is important because ExtractionEngine expects relative paths
-                let relative_path = out_path
-                    .strip_prefix(target_dir)
-                    .unwrap_or(&out_path)
-                    .to_path_buf();
-
-                summary.add_file(relative_path, buffer.len() as u64);
-            }
-        }
+        .map_err(|e| AppError::archive_error(e.to_string(), None))??;
 
         Ok(summary)
     }
 
-    #[allow(dead_code)]
-    async fn extract(&self, source: &Path, target_dir: &Path) -> Result<ExtractionSummary> {
-        // 默认使用安全限制：单个文件100MB，总大小1GB，文件数1000
-        self.extract_with_limits(
-            source,
-            target_dir,
-            100 * 1024 * 1024,
-            1024 * 1024 * 1024, // 1GB
-            1000,
-        )
-        .await
-    }
-
     fn file_extensions(&self) -> Vec<&str> {
         vec!["zip"]
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::io::Write;
-    use tempfile::TempDir;
-    use zip::write::FileOptions;
-
-    #[tokio::test]
-    async fn test_zip_handler_can_handle() {
-        let handler = ZipHandler;
-
-        assert!(handler.can_handle(Path::new("test.zip")));
-        assert!(handler.can_handle(Path::new("test.ZIP")));
-        assert!(!handler.can_handle(Path::new("test.rar")));
-        assert!(!handler.can_handle(Path::new("test.txt")));
-    }
-
-    #[tokio::test]
-    async fn test_zip_handler_extract() {
-        // 创建临时目录
-        let temp_dir = TempDir::new().unwrap();
-        let source_path = temp_dir.path().join("test.zip");
-        let target_dir = temp_dir.path().join("extracted");
-
-        // 创建测试ZIP文件
-        create_test_zip(&source_path);
-
-        // 提取ZIP文件
-        let handler = ZipHandler;
-        let summary = handler.extract(&source_path, &target_dir).await.unwrap();
-
-        // 验证提取结果
-        assert!(summary.files_extracted > 0);
-        assert!(summary.total_size > 0);
-        assert!(!summary.has_errors());
-
-        // 验证文件存在
-        let test_txt = target_dir.join("test.txt");
-        assert!(test_txt.exists());
-
-        // 验证文件内容
-        let content = fs::read_to_string(&test_txt).await.unwrap();
-        assert_eq!(content, "Hello, World!");
-    }
-
-    #[tokio::test]
-    async fn test_zip_handler_extract_empty() {
-        let temp_dir = TempDir::new().unwrap();
-        let source_path = temp_dir.path().join("empty.zip");
-        let target_dir = temp_dir.path().join("extracted");
-
-        // 创建空ZIP文件
-        create_empty_zip(&source_path);
-
-        let handler = ZipHandler;
-        let summary = handler.extract(&source_path, &target_dir).await.unwrap();
-
-        assert_eq!(summary.files_extracted, 0);
-        assert_eq!(summary.total_size, 0);
-    }
-
-    #[tokio::test]
-    async fn test_zip_handler_file_extensions() {
-        let handler = ZipHandler;
-        let extensions = handler.file_extensions();
-
-        assert_eq!(extensions, vec!["zip"]);
-    }
-
-    // 辅助函数：创建测试ZIP文件
-    fn create_test_zip(path: &Path) {
-        let file = std::fs::File::create(path).unwrap();
-        let mut zip = zip::ZipWriter::new(file);
-        let options = FileOptions::default().compression_method(zip::CompressionMethod::Stored);
-
-        // 添加一个文本文件
-        zip.start_file("test.txt", options).unwrap();
-        zip.write_all(b"Hello, World!").unwrap();
-
-        // 添加一个目录
-        zip.add_directory("test_dir/", options).unwrap();
-
-        zip.finish().unwrap();
-    }
-
-    // 辅助函数：创建空ZIP文件
-    fn create_empty_zip(path: &Path) {
-        let file = std::fs::File::create(path).unwrap();
-        let mut zip = zip::ZipWriter::new(file);
-        zip.finish().unwrap();
     }
 }

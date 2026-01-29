@@ -50,12 +50,12 @@ pub mod strategies {
             .prop_map(
                 |(id, content, file, real_path, line, timestamp, level)| LogEntry {
                     id,
-                    content,
-                    file,
-                    real_path,
+                    content: content.into(),
+                    file: file.into(),
+                    real_path: real_path.into(),
                     line,
-                    timestamp,
-                    level,
+                    timestamp: timestamp.into(),
+                    level: level.into(),
                     tags: vec![],
                     match_details: None,
                     matched_keywords: None,

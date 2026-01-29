@@ -84,7 +84,7 @@ pub fn decode_filename(bytes: &[u8]) -> String {
 /// # 示例
 ///
 /// ```
-/// use crate::utils::encoding::decode_log_content;
+/// use log_analyzer::utils::encoding::decode_log_content;
 ///
 /// // 纯 UTF-8
 /// let bytes = b"2024-01-01 INFO Hello \xe4\xb8\x96\xe7\x95\x8c";

@@ -60,7 +60,7 @@ impl FilterEngine {
         {
             let mut level_bitmaps = self.level_bitmaps.write();
             level_bitmaps
-                .entry(log_entry.level.clone())
+                .entry(log_entry.level.to_string())
                 .or_default()
                 .insert(doc_id);
         }
@@ -69,7 +69,7 @@ impl FilterEngine {
         {
             let mut file_bitmaps = self.file_bitmaps.write();
             file_bitmaps
-                .entry(log_entry.file.clone())
+                .entry(log_entry.file.to_string())
                 .or_default()
                 .insert(doc_id);
         }
@@ -200,7 +200,7 @@ impl RegexSearchEngine {
     pub fn new(cache_size: usize) -> Self {
         Self {
             compiled_patterns: Arc::new(Mutex::new(LruCache::new(
-                NonZeroUsize::new(cache_size).unwrap(),
+                NonZeroUsize::new(cache_size).unwrap_or(NonZeroUsize::new(100).unwrap()),
             ))),
             pattern_stats: Arc::new(RwLock::new(HashMap::new())),
             cache_size,
@@ -584,12 +584,12 @@ mod tests {
 
         let log_entry = LogEntry {
             id: 0,
-            timestamp: "1640995200".to_string(), // 2022-01-01 00:00:00
-            level: "ERROR".to_string(),
-            file: "test.log".to_string(),
-            real_path: "/path/to/test.log".to_string(),
+            timestamp: "1640995200".into(), // 2022-01-01 00:00:00
+            level: "ERROR".into(),
+            file: "test.log".into(),
+            real_path: "/path/to/test.log".into(),
             line: 1,
-            content: "Test error message".to_string(),
+            content: "Test error message".into(),
             tags: vec![],
             match_details: None,
             matched_keywords: None,

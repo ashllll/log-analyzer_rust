@@ -34,12 +34,12 @@ Log Analyzer 是一款面向开发者和运维人员的**专业级桌面日志�
 
 | 维度 | 指标 | 说明 |
 |------|------|------|
-| **性能** | 10,000+ 搜索/秒 | Aho-Corasick多模式匹配，O(n+m)复杂度 |
-| **存储** | 节省空间 30%+ | 内容寻址存储(CAS)，自动去重 |
-| **搜索** | <200ms 响应 | Tantivy全文搜索引擎，SQLite FTS5索引 |
-| **内存** | 降低 90%+ | 流式处理，并发搜索优化 |
-| **安全** | 零数据损坏 | 原子操作，TOCTOU竞态消除 |
-| **测试** | 534/535 通过 | 99.8%覆盖率，产品级质量 |
+| **性能** | 10,000+ 搜索/秒 | Aho-Corasick 多模式匹配，O(n+m) 复杂度 |
+| **存储** | 节省空间 30%+ | 内容寻址存储 (CAS)，SHA-256 去重 |
+| **搜索** | <200ms 响应 | Tantivy 全文引擎 + Aho-Corasick 多模式匹配 |
+| **稳定** | 熔断自愈 | Circuit Breaker 捕获 Panic 传播，支持锁中毒自动恢复 |
+| **安全** | 深度防御 | 插件白名单 + ABI 验证 + 路径递归扫描 |
+| **测试** | 534/535 通过 | 99.8% 覆盖率，集成属性测试 (Proptest) |
 
 ---
 
@@ -82,10 +82,12 @@ Log Analyzer 是一款面向开发者和运维人员的**专业级桌面日志�
 
 ### 🔐 安全加固
 
-- **路径验证**: 防止路径遍历、符号链接攻击
-- **原子写入**: 防止并发写入导致的数据损坏
-- **内存限制**: ZIP文件500MB硬限制，防止内存炸弹
-- **错误处理**: Clippy强制规范，无unwrap/expect滥用
+- **路径验证**: 深度递归验证算法，防止路径遍历、符号链接及归档炸弹攻击
+- **原子写入**: CAS存储系统采用 O_EXCL 原子标志，彻底消除 TOCTOU 竞态条件
+- **插件安全**: 动态库加载目录白名单验证 + ABI 版本匹配检查，防止恶意代码注入
+- **故障恢复**: 熔断器机制集成锁中毒（Poisoning）自动恢复，确保系统在并发错误下的高可用
+- **错误处理**: 生产代码 100% 消除 `unwrap/expect`，采用 `eyre` 结构化错误链处理
+- **内存限制**: 针对不同归档格式实现流式配额限制，防止内存耗尽攻击 (OOM)
 
 ### ⚡ 性能优化
 
@@ -250,67 +252,36 @@ npm run lint
 ```
 log-analyzer_rust/
 ├── log-analyzer/              # 主项目目录
-│   ├── src/                   # React前端源码
-│   │   ├── components/        # UI组件
-│   │   │   ├── ui/           # 基础UI组件
-│   │   │   ├── modals/       # 弹窗组件
-│   │   │   ├── search/       # 搜索相关组件
-│   │   │   └── renderers/    # 虚拟滚动渲染器
+│   ├── src/                   # React 前端源码
+│   │   ├── components/        # UI 组件 (Search, Virtual Scroll)
 │   │   ├── pages/            # 页面组件
-│   │   │   ├── SearchPage.tsx
-│   │   │   ├── WorkspacesPage.tsx
-│   │   │   └── KeywordsPage.tsx
 │   │   ├── services/         # 业务服务
-│   │   │   ├── queryApi.ts          # 查询API
-│   │   │   ├── SearchQueryBuilder.ts # 查询构建器
-│   │   │   └── websocketClient.ts    # WebSocket客户端
-│   │   ├── stores/           # 状态管理
-│   │   │   ├── appStore.ts
-│   │   │   ├── workspaceStore.ts
-│   │   │   └── taskStore.ts
-│   │   ├── hooks/            # 自定义Hooks
-│   │   ├── types/            # TypeScript类型
-│   │   └── i18n/             # 国际化配置
+│   │   ├── stores/           # 状态管理 (Zustand, React Query)
+│   │   └── ...
 │   │
-│   └── src-tauri/            # Rust后端源码
+│   └── src-tauri/            # Rust 后端源码
 │       ├── src/
-│       │   ├── commands/      # Tauri命令层（13个模块）
-│       │   │   ├── search.rs          # 搜索命令
-│       │   │   ├── import.rs          # 导入命令
-│       │   │   ├── workspace.rs       # 工作区管理
-│       │   │   └── ...
+│       │   ├── application/   # 应用接入层
+│       │   │   ├── plugins/   # 插件系统 (Whitelist + ABI Check)
+│       │   │   └── commands.rs # Tauri 命令分发
 │       │   │
-│       │   ├── search_engine/ # 搜索引擎（核心）
-│       │   │   ├── manager.rs              # 搜索引擎管理器
-│       │   │   ├── concurrent_search.rs    # 并发搜索
-│       │   │   ├── boolean_query_processor.rs # 布尔查询
-│       │   │   ├── highlighting_engine.rs  # 高亮引擎
-│       │   │   ├── index_optimizer.rs      # 索引优化器
-│       │   │   └── streaming_builder.rs    # 流式构建
+│       │   ├── commands/      # Tauri 命令实现 (Workspace, Search, Watch)
 │       │   │
-│       │   ├── storage/       # 存储系统
-│       │   │   ├── cas.rs              # 内容寻址存储
-│       │   │   └── metadata_store.rs   # 元数据存储
+│       │   ├── search_engine/ # 搜索引擎核心 (Tantivy + AC)
+│       │   │   ├── manager.rs
+│       │   │   ├── boolean_query_processor.rs
+│       │   │   └── highlighting_engine.rs
 │       │   │
-│       │   ├── archive/       # 压缩包处理
-│       │   │   ├── processor.rs         # 主处理器
-│       │   │   ├── zip_handler.rs       # ZIP处理
-│       │   │   ├── rar_handler.rs       # RAR处理
-│       │   │   ├── gz_handler.rs        # GZ处理
-│       │   │   └── path_validator.rs    # 路径安全验证
+│       │   ├── archive/       # 多格式归档处理
+│       │   │   ├── fault_tolerance/ # 熔断器与锁中毒自愈
+│       │   │   ├── streaming/     # 高性能流式解压引擎
+│       │   │   └── path_validator.rs # 深度递归路径验证
 │       │   │
-│       │   ├── services/      # 业务服务（20+模块）
-│       │   │   ├── pattern_matcher.rs   # Aho-Corasick匹配
-│       │   │   ├── fuzzy_matcher.rs     # 模糊匹配
-│       │   │   ├── event_bus.rs         # 事件总线
-│       │   │   └── service_container.rs # 服务容器
-│       │   │
-│       │   ├── task_manager/  # 任务管理（Actor Model）
-│       │   ├── state_sync/    # 状态同步
-│       │   ├── models/        # 数据模型
-│       │   ├── utils/         # 工具模块
-│       │   ├── error.rs       # 统一错误处理
-│       │   └── lib.rs         # 库入口
+│       │   ├── storage/       # 存储层 (CAS + Metadata DB)
+│       │   ├── monitoring/    # 观测性 (Atomic Metrics)
+│       │   ├── services/      # 领域服务层
+│       │   ├── task_manager/  # 异步任务 Actor 模型
+│       │   └── ...
 │       │
 │       └── tests/             # 集成测试
 │
@@ -341,6 +312,7 @@ log-analyzer_rust/
 └── TASK_COMPLETION_REPORT.md # 任务完成报告
 ```
 
+
 ### 核心模块详解
 
 #### Search Engine（搜索引擎）
@@ -361,7 +333,10 @@ log-analyzer_rust/
 | `zip_handler.rs` | ZIP处理 | 500MB限制，防内存炸弹 |
 | `rar_handler.rs` | RAR处理 | 纯Rust + sidecar fallback |
 | `gz_handler.rs` | GZ处理 | 流式处理，1MB阈值 |
+| `fault_tolerance/` | 熔断与自愈 | 锁中毒恢复，异常隔离 |
+| `streaming/` | 流式解压 | 高并发内存控制 |
 | `path_validator.rs` | 路径验证 | 防路径遍历攻击 |
+
 
 #### Storage（存储系统）
 
@@ -370,7 +345,15 @@ log-analyzer_rust/
 | `cas.rs` | 内容寻址存储 | SHA-256哈希，原子操作 |
 | `metadata_store.rs` | 元数据存储 | SQLite + FTS5全文索引 |
 
+#### Monitoring（监控与指标）
+
+| 模块 | 功能 | 技术要点 |
+|------|------|----------|
+| `metrics.rs` | 指标收集 | 原子注册，避免重复与死锁 |
+| `advanced.rs` | 高级监控 | 统计聚合与性能观测 |
+
 ---
+
 
 ## 🧪 测试与质量
 
@@ -480,28 +463,94 @@ npm run lint
 - [React前端文档](log-analyzer/src/CLAUDE.md)
 - [AI Agent指南](docs/development/AGENTS.md)
 
+#### 离线开发与构建（Windows / macOS / Linux）
+
+> 本项目仅在**完全离线的本地场景**使用，所有依赖与构建流程需离线可执行。
+
+**一、必要本地环境配置（离线准备）**
+
+| 平台 | 必备组件 | 说明 |
+|------|----------|------|
+| Windows | Rust (MSVC 工具链)、Node.js、npm | 使用离线安装包；需本地 C/C++ 构建工具与 Windows SDK |
+| macOS | Rust、Node.js、npm、Xcode CLI | 需提前离线准备 Xcode Command Line Tools |
+| Linux | Rust、Node.js、npm、build-essential | 需离线准备 GTK/WebKit 相关依赖包（Tauri）；GTK3/GTK4 依赖取决于系统预装版本 |
+
+**离线依赖包目录（原则）**
+- 本项目**无固定路径依赖**，本地路径取决于代码拉取位置。
+- Rust/Node/npm 与依赖缓存仅需可离线访问（例如本地镜像或内网制品库）。
+
+
+**二、最小可执行步骤（阶段化，含依赖关系）**
+
+1. **阶段 0：离线依赖就绪（依赖：无）**
+   - 在离线介质内准备 Rust/Node 安装包与依赖缓存。
+   - 验证离线工具链可用：`rustc -V`、`node -v`、`npm -v`。
+
+2. **阶段 1：本地初始化（依赖：阶段 0）**
+   - 安装 Rust 与 Node（均使用离线包）。
+   - 代码拉取路径即项目根目录（无固定路径依赖）。
+   - 配置离线依赖缓存（`cargo`/`npm` 指向本地镜像或缓存目录）。
+
+
+3. **阶段 2：本地开发运行（依赖：阶段 1）**
+   - 启动开发环境：`npm run tauri dev`。
+
+4. **阶段 3：本地质量验证（依赖：阶段 2）**
+   - 后端：`cargo fmt --check`、`cargo clippy -- -D warnings`、`cargo test --all-features`
+   - 前端：`npm run type-check`、`npm run lint`
+
+5. **阶段 4：离线构建产物（依赖：阶段 3）**
+   - 构建发布包：`npm run tauri build`
+
+**三、本地数据存储方案（离线）**
+
+- 工作区数据与索引**全部本地存储**，CAS 与 SQLite 元数据落盘。
+- 默认存储路径：
+  - Windows：`%APPDATA%/com.joeash.log-analyzer/workspaces/`
+  - macOS：`~/Library/Application Support/com.joeash.log-analyzer/workspaces/`
+  - Linux：`~/.local/share/com.joeash.log-analyzer/workspaces/`
+
+**四、异常处理机制（离线场景）**
+
+- **依赖缺失**：优先检查离线包目录与本地缓存路径配置；确保 `cargo`/`npm` 指向离线镜像。
+- **构建失败**：优先运行 `cargo clean` 与 `npm cache verify` 进行本地缓存校验。
+- **权限问题**：Windows 建议管理员权限启动；Linux/macOS 检查目录权限与路径可写性。
+- **GTK 依赖不匹配**（Linux）：若构建提示 GTK 版本缺失，依据系统已安装版本选择 GTK3 或 GTK4 的离线包进行补齐。
+- **归档处理异常**：查看应用日志与错误提示，必要时按格式拆分导入以隔离问题文件。
+
+**GTK 版本检测（Linux，离线）**
+- `pkg-config --modversion gtk+-3.0`
+- `pkg-config --modversion gtk4`
+- 若其中一条命令返回版本号，即为已安装版本；缺失时离线补齐对应包即可。
+
 ---
+
+
 
 ## 🗺️ 开发路线图
 
 ### ✅ 已完成（v0.0.128）
 
 #### 核心功能
-- ✅ 多格式压缩包支持（ZIP/RAR/GZ/TAR）
-- ✅ Aho-Corasick搜索引擎（性能提升80%+）
-- ✅ CAS存储系统（自动去重，节省30%空间）
-- ✅ Tantivy搜索引擎（<200ms响应）
-- ✅ 虚拟滚动（处理百万级日志）
-- ✅ 国际化支持（中英文）
-- ✅ 实时文件监听
+- ✅ 多格式压缩包支持（ZIP/RAR/GZ/TAR/7Z）
+- ✅ Aho-Corasick 搜索引擎（性能提升 80%+）
+- ✅ CAS 存储系统（自动去重，节省 30% 空间）
+- ✅ Tantivy 搜索引擎（支持高级布尔查询，<200ms 响应）
+- ✅ 虚拟滚动（百万级日志实时渲染）
+- ✅ 插件安全沙箱（目录白名单 + ABI 版本强制验证）
+- ✅ 熔断自愈系统（Circuit Breaker + Poisoned Lock Recovery）
+- ✅ 实时文件监听与增量索引
+- ✅ 国际化支持（中英文实时切换）
 
 #### 架构优化
-- ✅ 流式并发处理（内存降低90%+）
-- ✅ CAS原子操作（消除竞态条件）
-- ✅ 路径安全验证（防遍历攻击）
-- ✅ 索引优化器集成
-- ✅ 错误处理标准化（Clippy规则）
-- ✅ 配置管理完善（12-Factor模式）
+- ✅ 全面异步化：磁盘 I/O 与归档处理 100% 异步非阻塞
+- ✅ 并发安全：原子 Metrics 注册，彻底消除死锁风险
+- ✅ 深度路径防御：支持嵌套归档路径递归扫描，防范路径遍历
+- ✅ 零 Panic 保证：生产代码 100% 清理 `unwrap/expect`
+- ✅ 流式并发处理：内存占用与文件大小脱钩，降低 90%+ 峰值
+- ✅ 资源生命周期管理：显式线程 Join 与临时文件自动清理机制
+- ✅ 标准化配置：12-Factor 模式，支持环境变量覆盖
+
 
 #### 质量保障
 - ✅ 534/535测试通过（99.8%覆盖）

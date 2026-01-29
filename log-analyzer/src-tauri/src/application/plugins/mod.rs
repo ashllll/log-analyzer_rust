@@ -11,6 +11,9 @@ use tokio::sync::RwLock;
 use crate::domain::log_analysis::entities::LogEntry;
 use crate::error::Result;
 
+/// 插件 ABI 版本，用于确保插件与主程序兼容
+pub const PLUGIN_ABI_VERSION: u32 = 1;
+
 /// 插件接口定义
 pub trait Plugin: Send + Sync {
     /// 插件名称
@@ -18,6 +21,11 @@ pub trait Plugin: Send + Sync {
 
     /// 插件版本
     fn version(&self) -> &'static str;
+
+    /// 插件 ABI 版本
+    fn abi_version(&self) -> u32 {
+        PLUGIN_ABI_VERSION
+    }
 
     /// 插件描述
     fn description(&self) -> &'static str;
@@ -36,25 +44,44 @@ pub trait Plugin: Send + Sync {
 }
 
 /// 插件管理器
-#[derive(Default)]
 pub struct PluginManager {
     plugins: Arc<RwLock<HashMap<String, Box<dyn Plugin>>>>,
     loaded_libraries: Arc<RwLock<Vec<Library>>>,
+    plugin_directory: std::path::PathBuf,
 }
 
 impl PluginManager {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(plugin_dir: std::path::PathBuf) -> Self {
+        Self {
+            plugins: Arc::new(RwLock::new(HashMap::new())),
+            loaded_libraries: Arc::new(RwLock::new(Vec::new())),
+            plugin_directory: plugin_dir,
+        }
     }
 
     /// 加载插件
     pub async fn load_plugin(&self, path: &Path) -> Result<()> {
-        let lib = unsafe { Library::new(path) }.map_err(|e| {
+        // 1. 安全性检查：规范化路径并验证
+        let canonical_path = path
+            .canonicalize()
+            .map_err(|e| crate::error::AppError::Internal(format!("Invalid plugin path: {}", e)))?;
+
+        // ✅ 安全性检查：仅允许从指定目录加载插件，防止非法路径加载恶意库
+        if !canonical_path.starts_with(&self.plugin_directory) {
+            return Err(crate::error::AppError::Security(format!(
+                "Plugin path not in whitelist: {:?}",
+                canonical_path
+            )));
+        }
+
+        // 2. 加载动态库
+        let lib = unsafe { Library::new(&canonical_path) }.map_err(|e| {
             crate::error::AppError::Internal(format!("Failed to load plugin: {}", e))
         })?;
 
         type PluginCreate = unsafe fn() -> *mut dyn Plugin;
 
+        // 3. 获取创建函数
         let create_plugin: Symbol<PluginCreate> = unsafe {
             lib.get(b"create_plugin").map_err(|e| {
                 crate::error::AppError::Internal(format!(
@@ -64,8 +91,24 @@ impl PluginManager {
             })?
         };
 
+        // 4. 调用创建函数并进行安全检查
         let plugin_raw = unsafe { create_plugin() };
+        if plugin_raw.is_null() {
+            return Err(crate::error::AppError::Internal(
+                "Plugin creation returned null pointer".to_string(),
+            ));
+        }
+
+        // 5. 转换为 Box 并验证 ABI 版本
         let plugin = unsafe { Box::from_raw(plugin_raw) };
+
+        if plugin.abi_version() != PLUGIN_ABI_VERSION {
+            return Err(crate::error::AppError::Internal(format!(
+                "Plugin ABI mismatch: expected {}, found {}",
+                PLUGIN_ABI_VERSION,
+                plugin.abi_version()
+            )));
+        }
 
         let name = plugin.name().to_string();
 

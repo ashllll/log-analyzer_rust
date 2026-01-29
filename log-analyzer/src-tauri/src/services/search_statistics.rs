@@ -62,12 +62,12 @@ mod tests {
         // entry1: 匹配 error
         let entry1 = LogEntry {
             id: 1,
-            timestamp: "2024-01-01 12:00:00".to_string(),
-            level: "ERROR".to_string(),
-            file: "app.log".to_string(),
-            real_path: "/path/app.log".to_string(),
+            timestamp: "2024-01-01 12:00:00".into(),
+            level: "ERROR".into(),
+            file: "app.log".into(),
+            real_path: "/path/app.log".into(),
             line: 1,
-            content: "An error occurred".to_string(),
+            content: "An error occurred".into(),
             tags: vec![],
             match_details: Some(vec![MatchDetail {
                 term_id: "term_1".to_string(),
@@ -81,12 +81,12 @@ mod tests {
         // entry2: 匹配 timeout 和 warning
         let entry2 = LogEntry {
             id: 2,
-            timestamp: "2024-01-01 12:01:00".to_string(),
-            level: "WARN".to_string(),
-            file: "app.log".to_string(),
-            real_path: "/path/app.log".to_string(),
+            timestamp: "2024-01-01 12:01:00".into(),
+            level: "WARN".into(),
+            file: "app.log".into(),
+            real_path: "/path/app.log".into(),
             line: 2,
-            content: "Timeout and warning".to_string(),
+            content: "Timeout and warning".into(),
             tags: vec![],
             match_details: Some(vec![
                 MatchDetail {
@@ -108,12 +108,12 @@ mod tests {
         // entry3: 再次匹配 error
         let entry3 = LogEntry {
             id: 3,
-            timestamp: "2024-01-01 12:02:00".to_string(),
-            level: "ERROR".to_string(),
-            file: "app.log".to_string(),
-            real_path: "/path/app.log".to_string(),
+            timestamp: "2024-01-01 12:02:00".into(),
+            level: "ERROR".into(),
+            file: "app.log".into(),
+            real_path: "/path/app.log".into(),
             line: 3,
-            content: "Another error".to_string(),
+            content: "Another error".into(),
             tags: vec![],
             match_details: Some(vec![MatchDetail {
                 term_id: "term_1".to_string(),
@@ -139,7 +139,11 @@ mod tests {
         assert!((stats[0].match_percentage - 66.67).abs() < 0.1);
 
         // 后两个是 timeout 和 warning，顺序不确定，都是1次匹配
-        let remaining: Vec<_> = stats[1..].iter().collect();
+        let remaining: Vec<_> = if stats.len() > 1 {
+            stats[1..].iter().collect()
+        } else {
+            Vec::new()
+        };
         assert!(remaining
             .iter()
             .any(|s| s.keyword == "timeout" && s.match_count == 1));
@@ -169,12 +173,12 @@ mod tests {
         let keywords = vec!["error".to_string()];
         let entry = LogEntry {
             id: 1,
-            timestamp: "2024-01-01 12:00:00".to_string(),
-            level: "INFO".to_string(),
-            file: "app.log".to_string(),
-            real_path: "/path/app.log".to_string(),
+            timestamp: "2024-01-01 12:00:00".into(),
+            level: "INFO".into(),
+            file: "app.log".into(),
+            real_path: "/path/app.log".into(),
             line: 1,
-            content: "Information message".to_string(),
+            content: "Information message".into(),
             tags: vec![],
             match_details: None,
             matched_keywords: None,

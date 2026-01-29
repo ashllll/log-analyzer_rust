@@ -285,16 +285,16 @@ impl ConcurrentSearchManager {
     /// Execute multiple searches concurrently with load balancing
     ///
     /// **Architecture**: Uses stream-based processing to prevent resource exhaustion
-    /// 
+    ///
     /// **Fixed Issue**: Previous implementation created all tokio tasks upfront via `collect()`,
     /// causing memory exhaustion when handling thousands of queries. Even with semaphore limits,
     /// all tasks were spawned immediately and queued in memory.
-    /// 
+    ///
     /// **Current Solution**: Stream-based processing with `futures::stream::iter` + `buffer_unordered`
     /// - Only creates tasks as capacity allows (controlled by max_concurrent_searches)
     /// - Memory usage bounded: O(max_concurrent_searches) instead of O(queries.len())
     /// - Proper backpressure: new futures created only when old ones complete
-    /// 
+    ///
     /// **Industry Pattern**: This follows Tokio best practices for batch async operations
     /// See: https://docs.rs/futures/latest/futures/stream/trait.StreamExt.html#method.buffer_unordered
     pub async fn search_batch_concurrent(
@@ -305,7 +305,7 @@ impl ConcurrentSearchManager {
         token: Option<CancellationToken>,
     ) -> Vec<SearchResult<SearchResults>> {
         use futures::stream::{self, StreamExt};
-        
+
         let start_time = Instant::now();
 
         debug!(
@@ -491,7 +491,9 @@ mod tests {
             "info".to_string(),
         ];
 
-        let results = manager.search_batch_concurrent(queries, None, None, None).await;
+        let results = manager
+            .search_batch_concurrent(queries, None, None, None)
+            .await;
 
         assert_eq!(results.len(), 3);
         for result in results {

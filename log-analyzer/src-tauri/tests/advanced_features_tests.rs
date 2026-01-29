@@ -16,12 +16,12 @@ fn create_test_entry(
 ) -> LogEntry {
     LogEntry {
         id,
-        timestamp: timestamp.to_string(),
-        level: level.to_string(),
-        file: file.to_string(),
+        timestamp: timestamp.to_string().into(),
+        level: level.to_string().into(),
+        file: file.to_string().into(),
         line,
-        real_path: format!("cas://hash{}", id),
-        content: content.to_string(),
+        real_path: format!("cas://hash{}", id).into(),
+        content: content.to_string().into(),
         tags: vec![],
         match_details: None,
         matched_keywords: None,

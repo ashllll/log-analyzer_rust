@@ -34,10 +34,10 @@ pub enum ConfigError {
 
     #[error("配置值无效: {0}")]
     InvalidValue(String),
-    
+
     #[error("IO错误: {0}")]
     IoError(#[from] std::io::Error),
-    
+
     #[error("环境变量错误: {0}")]
     EnvError(#[from] std::env::VarError),
 }
@@ -66,7 +66,7 @@ impl Environment {
             _ => Environment::Development,
         }
     }
-    
+
     pub fn as_str(&self) -> &'static str {
         match self {
             Environment::Development => "development",
@@ -241,7 +241,7 @@ impl Default for SecurityConfig {
 
 impl AppConfig {
     /// 从文件加载配置并验证
-    /// 
+    ///
     /// **Industry Pattern**: Config loading with validation
     /// - Loads from file (TOML/JSON/YAML)
     /// - Applies environment variable overrides
@@ -260,25 +260,25 @@ impl AppConfig {
         //     Some("json") => serde_json::from_str(&content).map_err(|e| ConfigError::FormatError(e.to_string()))?,
         //     _ => return Err(ConfigError::FormatError("Unsupported file format".to_string())),
         // };
-        
+
         let mut config = Self::default();
-        
+
         // 应用环境变量覆盖
         config.apply_env_overrides()?;
-        
+
         // 验证配置
-        config.validate().map_err(|e| {
-            ConfigError::Validation(format!("Validation errors: {}", e))
-        })?;
-        
+        config
+            .validate()
+            .map_err(|e| ConfigError::Validation(format!("Validation errors: {}", e)))?;
+
         Ok(config)
     }
-    
+
     /// 应用环境变量覆盖
-    /// 
+    ///
     /// **Pattern**: 12-Factor App Configuration
     /// Environment variables override file-based config
-    /// 
+    ///
     /// Examples:
     /// - `APP_SERVER_PORT=8080` overrides server.port
     /// - `APP_SEARCH_MAX_RESULTS=5000` overrides search.max_results
@@ -289,50 +289,59 @@ impl AppConfig {
                 ConfigError::InvalidValue(format!("Invalid APP_SERVER_PORT: {}", port))
             })?;
         }
-        
+
         if let Ok(host) = std::env::var("APP_SERVER_HOST") {
             self.server.host = host;
         }
-        
+
         if let Ok(max_conn) = std::env::var("APP_SERVER_MAX_CONNECTIONS") {
             self.server.max_connections = max_conn.parse().map_err(|_| {
-                ConfigError::InvalidValue(format!("Invalid APP_SERVER_MAX_CONNECTIONS: {}", max_conn))
+                ConfigError::InvalidValue(format!(
+                    "Invalid APP_SERVER_MAX_CONNECTIONS: {}",
+                    max_conn
+                ))
             })?;
         }
-        
+
         // Storage config overrides
         if let Ok(data_dir) = std::env::var("APP_STORAGE_DATA_DIR") {
             self.storage.data_dir = data_dir;
         }
-        
+
         if let Ok(max_size) = std::env::var("APP_STORAGE_MAX_FILE_SIZE_MB") {
             self.storage.max_file_size_mb = max_size.parse().map_err(|_| {
-                ConfigError::InvalidValue(format!("Invalid APP_STORAGE_MAX_FILE_SIZE_MB: {}", max_size))
+                ConfigError::InvalidValue(format!(
+                    "Invalid APP_STORAGE_MAX_FILE_SIZE_MB: {}",
+                    max_size
+                ))
             })?;
         }
-        
+
         // Search config overrides
         if let Ok(max_results) = std::env::var("APP_SEARCH_MAX_RESULTS") {
             self.search.max_results = max_results.parse().map_err(|_| {
-                ConfigError::InvalidValue(format!("Invalid APP_SEARCH_MAX_RESULTS: {}", max_results))
+                ConfigError::InvalidValue(format!(
+                    "Invalid APP_SEARCH_MAX_RESULTS: {}",
+                    max_results
+                ))
             })?;
         }
-        
+
         // Monitoring config overrides
         if let Ok(log_level) = std::env::var("APP_LOG_LEVEL") {
             self.monitoring.log_level = log_level;
         }
-        
+
         // Security config overrides
         if let Ok(api_key) = std::env::var("APP_API_KEY") {
             self.security.api_key = Some(api_key);
         }
-        
+
         Ok(())
     }
-    
+
     /// 热重载配置
-    /// 
+    ///
     /// **Use Case**: Update config without restarting application
     /// - Reloads from file
     /// - Validates new config
@@ -343,14 +352,14 @@ impl AppConfig {
         tracing::info!("Configuration reloaded successfully from {:?}", path);
         Ok(())
     }
-    
+
     /// 获取针对特定环境的配置
-    /// 
+    ///
     /// **Pattern**: Environment-specific configuration
     /// Adjusts defaults based on environment (dev/prod/test)
     pub fn for_environment(env: Environment) -> Self {
         let mut config = Self::default();
-        
+
         match env {
             Environment::Production => {
                 config.server.host = "0.0.0.0".to_string();
@@ -370,37 +379,38 @@ impl AppConfig {
                 config.monitoring.log_level = "debug".to_string();
             }
         }
-        
+
         config
     }
-    
+
     /// 验证配置的额外业务规则
-    /// 
+    ///
     /// **Beyond validator crate**: Custom business logic validation
     pub fn validate_business_rules(&self) -> ConfigResult<()> {
         // 验证端口不在保留范围
         if self.server.port < 1024 && self.server.port != 0 {
             return Err(ConfigError::Validation(
-                "Port must be >= 1024 (unprivileged) or 0 (random)".to_string()
+                "Port must be >= 1024 (unprivileged) or 0 (random)".to_string(),
             ));
         }
-        
+
         // 验证数据目录路径合法
         let data_path = PathBuf::from(&self.storage.data_dir);
         if data_path.to_string_lossy().contains("..") {
             return Err(ConfigError::Validation(
-                "Data directory path must not contain '..'".to_string()
+                "Data directory path must not contain '..'".to_string(),
             ));
         }
-        
+
         // 验证日志级别有效
         let valid_levels = ["trace", "debug", "info", "warn", "error"];
         if !valid_levels.contains(&self.monitoring.log_level.to_lowercase().as_str()) {
-            return Err(ConfigError::Validation(
-                format!("Invalid log level: {}", self.monitoring.log_level)
-            ));
+            return Err(ConfigError::Validation(format!(
+                "Invalid log level: {}",
+                self.monitoring.log_level
+            )));
         }
-        
+
         Ok(())
     }
 }

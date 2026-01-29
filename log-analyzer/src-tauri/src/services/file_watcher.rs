@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
+use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 
 /// 文件监听器状态
@@ -21,6 +22,10 @@ pub struct WatcherState {
     pub watched_path: std::path::PathBuf,
     pub file_offsets: HashMap<String, u64>,
     pub is_active: bool,
+    /// 监听线程的 JoinHandle，用于确保正确退出并清理资源
+    pub thread_handle: Arc<std::sync::Mutex<Option<std::thread::JoinHandle<()>>>>,
+    /// 底层文件监听器，存放在这里确保其生命周期与状态同步
+    pub watcher: Arc<std::sync::Mutex<Option<notify::RecommendedWatcher>>>,
 }
 use tracing::{debug, warn};
 
@@ -52,42 +57,23 @@ impl TimestampParser {
         use once_cell::sync::Lazy;
         use regex::Regex;
 
-        // 使用 Lazy 静态初始化正则表达式，避免重复编译
+        // 使用 OnceCell 或直接在这里处理 Result，避免 unwrap
         static TIMESTAMP_PATTERNS: Lazy<Vec<(Regex, usize)>> = Lazy::new(|| {
-            vec![
-                (
-                    Regex::new(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}").unwrap(),
-                    23,
-                ), // ISO 8601 with ms
-                (
-                    Regex::new(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}").unwrap(),
-                    19,
-                ), // ISO 8601
-                (
-                    Regex::new(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}").unwrap(),
-                    23,
-                ), // Common with ms
-                (
-                    Regex::new(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}").unwrap(),
-                    19,
-                ), // Common
-                (
-                    Regex::new(r"\d{2}/\d{2}/\d{4} \d{2}:\d{2}:\d{2}\.\d{3}").unwrap(),
-                    23,
-                ), // US with ms
-                (
-                    Regex::new(r"\d{2}/\d{2}/\d{4} \d{2}:\d{2}:\d{2}").unwrap(),
-                    19,
-                ), // US
-                (
-                    Regex::new(r"\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}\.\d{3}").unwrap(),
-                    23,
-                ), // Asian with ms
-                (
-                    Regex::new(r"\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}").unwrap(),
-                    19,
-                ), // Asian
-            ]
+            let patterns = [
+                (r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}", 23), // ISO 8601 with ms
+                (r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", 19),        // ISO 8601
+                (r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}", 23), // Common with ms
+                (r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", 19),        // Common
+                (r"\d{2}/\d{2}/\d{4} \d{2}:\d{2}:\d{2}\.\d{3}", 23), // US with ms
+                (r"\d{2}/\d{2}/\d{4} \d{2}:\d{2}:\d{2}", 19),        // US
+                (r"\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}\.\d{3}", 23), // Asian with ms
+                (r"\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}", 19),        // Asian
+            ];
+
+            patterns
+                .iter()
+                .filter_map(|(pat, len)| Regex::new(pat).ok().map(|r| (r, *len)))
+                .collect()
         });
 
         for (pattern, _length) in TIMESTAMP_PATTERNS.iter() {
@@ -219,7 +205,10 @@ pub fn parse_metadata(line: &str) -> (String, String) {
     };
 
     // 使用改进的时间戳解析器
-    let timestamp = TimestampParser::parse_timestamp(line).unwrap_or_default();
+    let timestamp = TimestampParser::parse_timestamp(line).unwrap_or_else(|| {
+        debug!(line = %line, "No timestamp found in line");
+        String::new()
+    });
 
     (timestamp, level.to_string())
 }
@@ -257,12 +246,12 @@ pub fn parse_log_lines(
             let (timestamp, level) = parse_metadata(line);
             LogEntry {
                 id: start_id + i,
-                timestamp,
-                level,
-                file: file_path.to_string(),
-                real_path: real_path.to_string(),
+                timestamp: timestamp.into(),
+                level: level.into(),
+                file: file_path.to_string().into(),
+                real_path: real_path.to_string().into(),
                 line: start_line_number + i,
-                content: line.clone(),
+                content: line.clone().into(),
                 tags: vec![],
                 match_details: None,    // 无搜索情境下不包含匹配详情
                 matched_keywords: None, // 无搜索情境下不包含匹配关键词

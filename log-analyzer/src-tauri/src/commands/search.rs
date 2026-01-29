@@ -472,6 +472,11 @@ pub async fn search_logs(
                 .iter()
                 .enumerate()
                 .map(|(idx, file_metadata)| {
+                    // 如果已经取消，尽早退出单个文件的搜索（虽然是同步的，但检查可以减少无效工作）
+                    if cancellation_token.is_cancelled() {
+                        return Vec::new();
+                    }
+
                     // Use CAS-based access with hash
                     let file_identifier = format!("cas://{}", file_metadata.sha256_hash);
                     search_single_file_with_details(
@@ -485,6 +490,11 @@ pub async fn search_logs(
                 })
                 .collect();
 
+            // 如果批次处理过程中取消了，直接退出
+            if cancellation_token.is_cancelled() {
+                continue 'outer; // 下次循环首部会处理取消逻辑
+            }
+
             // 收集当前批次的结果
             for file_results in batch {
                 for entry in file_results {
@@ -497,19 +507,21 @@ pub async fn search_logs(
                     // 应用过滤器
                     let mut include = true;
 
-                    if !filters.levels.is_empty() && !filters.levels.contains(&entry.level) {
+                    if !filters.levels.is_empty()
+                        && !filters.levels.contains(&entry.level.to_string())
+                    {
                         include = false;
                     }
                     if include && filters.time_start.is_some() {
                         if let Some(ref start) = filters.time_start {
-                            if entry.timestamp < *start {
+                            if entry.timestamp.as_ref() < start.as_str() {
                                 include = false;
                             }
                         }
                     }
                     if include && filters.time_end.is_some() {
                         if let Some(ref end) = filters.time_end {
-                            if entry.timestamp > *end {
+                            if entry.timestamp.as_ref() > end.as_str() {
                                 include = false;
                             }
                         }
@@ -665,12 +677,12 @@ fn search_single_file(
             let (ts, lvl) = parse_metadata(line);
             results.push(LogEntry {
                 id: global_offset + i,
-                timestamp: ts,
-                level: lvl,
-                file: virtual_path.to_string(),
-                real_path: format!("cas://{}", sha256_hash),
+                timestamp: ts.into(),
+                level: lvl.into(),
+                file: virtual_path.to_string().into(),
+                real_path: format!("cas://{}", sha256_hash).into(),
                 line: i + 1,
-                content: line.to_string(),
+                content: line.to_string().into(),
                 tags: vec![],
                 match_details: None,
                 matched_keywords: None,
@@ -777,6 +789,8 @@ fn search_single_file_with_details(
 
         // Convert bytes to string with encoding fallback (三层容错策略)
         let (content_str, encoding_info) = decode_log_content(&content);
+        // Explicitly drop content bytes as early as possible to free memory and avoid holding potentially large buffers
+        drop(content);
 
         if encoding_info.had_errors {
             debug!(
@@ -804,12 +818,12 @@ fn search_single_file_with_details(
 
                 results.push(LogEntry {
                     id: global_offset + i,
-                    timestamp: ts,
-                    level: lvl,
-                    file: virtual_path.to_string(),
-                    real_path: file_identifier.to_string(),
+                    timestamp: ts.into(),
+                    level: lvl.into(),
+                    file: virtual_path.into(),
+                    real_path: file_identifier.into(),
                     line: i + 1,
-                    content: line.to_string(),
+                    content: line.into(),
                     tags: vec![],
                     match_details,
                     matched_keywords: matched_keywords.filter(|v| !v.is_empty()),
@@ -860,12 +874,12 @@ fn search_single_file_with_details(
 
                             results.push(LogEntry {
                                 id: global_offset + i,
-                                timestamp: ts,
-                                level: lvl,
-                                file: virtual_path.to_string(),
-                                real_path: real_path.to_string(),
+                                timestamp: ts.into(),
+                                level: lvl.into(),
+                                file: virtual_path.into(),
+                                real_path: real_path.into(),
                                 line: i + 1,
-                                content: line,
+                                content: line.into(),
                                 tags: vec![],
                                 match_details,
                                 matched_keywords: matched_keywords.filter(|v| !v.is_empty()),

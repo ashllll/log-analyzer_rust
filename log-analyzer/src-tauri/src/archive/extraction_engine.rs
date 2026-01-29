@@ -707,13 +707,14 @@ impl ExtractionEngine {
         registry.register(Box::new(crate::archive::tar_handler::TarHandler));
         registry.register(Box::new(crate::archive::gz_handler::GzHandler));
         registry.register(Box::new(crate::archive::rar_handler::RarHandler));
+        registry.register(Box::new(crate::archive::sevenz_handler::SevenZHandler));
 
         registry
     }
 
     /// Check if a file is an archive based on extension
     fn is_archive_file(&self, path: &Path) -> bool {
-        let extensions = ["zip", "rar", "tar", "gz", "tgz"];
+        let extensions = ["zip", "rar", "tar", "gz", "tgz", "7z"];
 
         if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
             let ext_lower = ext.to_lowercase();

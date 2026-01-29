@@ -10,13 +10,13 @@
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio_util::sync::CancellationToken;
 use tantivy::{
     collector::{Collector, Count, TopDocs},
     query::{BooleanQuery, Occur, Query, QueryParser, TermQuery},
     schema::Field,
     DocId, Index, IndexReader, Score, SegmentOrdinal, SegmentReader, Term,
 };
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, info};
 
 use super::{SearchError, SearchResult};
@@ -37,9 +37,15 @@ impl<C: Collector> Collector for CancellableCollector<C> {
     type Fruit = C::Fruit;
     type Child = CancellableChildCollector<C::Child>;
 
-    fn for_segment(&self, segment_id: SegmentOrdinal, reader: &SegmentReader) -> tantivy::Result<Self::Child> {
+    fn for_segment(
+        &self,
+        segment_id: SegmentOrdinal,
+        reader: &SegmentReader,
+    ) -> tantivy::Result<Self::Child> {
         if self.token.is_cancelled() {
-            return Err(tantivy::TantivyError::InternalError("Search cancelled".to_string()));
+            return Err(tantivy::TantivyError::InternalError(
+                "Search cancelled".to_string(),
+            ));
         }
         let child = self.inner.for_segment(segment_id, reader)?;
         Ok(CancellableChildCollector {
@@ -52,7 +58,10 @@ impl<C: Collector> Collector for CancellableCollector<C> {
         self.inner.requires_scoring()
     }
 
-    fn merge_fruits(&self, fruits: Vec<<Self::Child as tantivy::collector::SegmentCollector>::Fruit>) -> tantivy::Result<Self::Fruit> {
+    fn merge_fruits(
+        &self,
+        fruits: Vec<<Self::Child as tantivy::collector::SegmentCollector>::Fruit>,
+    ) -> tantivy::Result<Self::Fruit> {
         self.inner.merge_fruits(fruits)
     }
 }
@@ -62,7 +71,9 @@ pub struct CancellableChildCollector<C> {
     token: CancellationToken,
 }
 
-impl<C: tantivy::collector::SegmentCollector> tantivy::collector::SegmentCollector for CancellableChildCollector<C> {
+impl<C: tantivy::collector::SegmentCollector> tantivy::collector::SegmentCollector
+    for CancellableChildCollector<C>
+{
     type Fruit = C::Fruit;
 
     fn collect(&mut self, doc: DocId, score: Score) {
@@ -80,7 +91,6 @@ impl<C: tantivy::collector::SegmentCollector> tantivy::collector::SegmentCollect
         self.inner.harvest()
     }
 }
-
 
 /// Statistics for query term frequency and selectivity
 #[derive(Debug, Clone)]
@@ -164,7 +174,6 @@ impl BooleanQueryProcessor {
         // Execute query with early termination if beneficial
         self.execute_optimized_query(boolean_query, &query_plan, limit, token)
     }
-
 
     /// Create an optimized query plan based on term statistics
     fn create_query_plan(&self, keywords: &[String], require_all: bool) -> SearchResult<QueryPlan> {
@@ -323,7 +332,7 @@ impl BooleanQueryProcessor {
         // Execute query with top docs collector
         let top_docs_collector = TopDocs::with_limit(effective_limit);
         let cancellable_top_docs = CancellableCollector::new(top_docs_collector, token.clone());
-        
+
         let top_docs = match searcher.search(&query, &cancellable_top_docs) {
             Ok(docs) => docs,
             Err(e) => {
@@ -348,7 +357,6 @@ impl BooleanQueryProcessor {
 
         Ok((doc_addresses, total_count))
     }
-
 
     /// Update term usage statistics for future optimization
     pub fn update_term_usage(&self, term: &str) {
@@ -478,11 +486,10 @@ mod tests {
 
         let keywords = vec!["test".to_string()];
         let result = processor.process_multi_keyword_query(&keywords, true, 10, Some(token));
-        
+
         assert!(result.is_err());
         // Depending on where it stops, it could be QueryError or IndexError wrapped cancellation
     }
-
 
     #[test]
     fn test_query_plan_creation() {

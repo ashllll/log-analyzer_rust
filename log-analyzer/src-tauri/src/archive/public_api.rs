@@ -283,7 +283,8 @@ pub type Result<T> = std::result::Result<T, ExtractionError>;
 ///
 /// ```no_run
 /// use std::path::Path;
-/// use log_analyzer::archive::public_api::{extract_archive_sync, ExtractionPolicy};
+/// use log_analyzer::archive::public_api::extract_archive_sync;
+/// use log_analyzer::archive::ExtractionPolicy;
 ///
 /// let result = extract_archive_sync(
 ///     Path::new("archive.zip"),
@@ -339,7 +340,8 @@ pub fn extract_archive_sync(
 ///
 /// ```no_run
 /// use std::path::Path;
-/// use log_analyzer::archive::public_api::{extract_archive_async, ExtractionPolicy};
+/// use log_analyzer::archive::public_api::extract_archive_async;
+/// use log_analyzer::archive::ExtractionPolicy;
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 /// let result = extract_archive_async(

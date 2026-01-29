@@ -1,17 +1,16 @@
 //! 应用状态管理 - 简化版本
 
-use crossbeam::queue::SegQueue;
-use parking_lot::Mutex;
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::Arc;
-
 use crate::models::search::SearchCacheKey;
 use crate::services::file_watcher::WatcherState;
 use crate::state_sync::StateSync;
 use crate::storage::ContentAddressableStorage;
 use crate::storage::MetadataStore;
 use crate::task_manager::TaskManager;
+use crate::utils::cleanup::CleanupQueue;
+use crossbeam::queue::SegQueue;
+use parking_lot::Mutex;
+use std::collections::HashMap;
+use std::sync::Arc;
 
 /// 简化应用状态
 pub struct AppState {
@@ -25,7 +24,7 @@ pub struct AppState {
     pub cache_hits: Arc<Mutex<u64>>,
     pub last_search_duration: Arc<Mutex<std::time::Duration>>,
     pub watchers: Arc<Mutex<HashMap<String, WatcherState>>>,
-    pub cleanup_queue: Arc<SegQueue<PathBuf>>,
+    pub cleanup_queue: Arc<CleanupQueue>,
     pub cache_manager: Arc<Mutex<lru::LruCache<SearchCacheKey, Vec<crate::models::LogEntry>>>>,
     pub state_sync: Arc<Mutex<Option<StateSync>>>,
 }

@@ -28,36 +28,42 @@ fn load_config_internal(app: &AppHandle) -> Result<AppConfig, String> {
 }
 
 #[command]
-pub fn save_config(app: AppHandle, config: AppConfig) -> Result<(), String> {
-    let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
-    if !config_dir.exists() {
-        fs::create_dir_all(&config_dir).map_err(|e| e.to_string())?;
-    }
-    let path = config_dir.join("config.json");
-    let json = serde_json::to_string_pretty(&config)
-        .map_err(|e| format!("Failed to serialize config: {}", e))?;
-    fs::write(path, json).map_err(|e| e.to_string())?;
-    Ok(())
+pub async fn save_config(app: AppHandle, config: AppConfig) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+        if !config_dir.exists() {
+            fs::create_dir_all(&config_dir).map_err(|e| e.to_string())?;
+        }
+        let path = config_dir.join("config.json");
+        let json = serde_json::to_string_pretty(&config)
+            .map_err(|e| format!("Failed to serialize config: {}", e))?;
+        fs::write(path, json).map_err(|e| e.to_string())?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("Task panicked: {}", e))?
 }
 
 #[command]
-pub fn load_config(app: AppHandle) -> Result<AppConfig, String> {
-    load_config_internal(&app)
+pub async fn load_config(app: AppHandle) -> Result<AppConfig, String> {
+    tokio::task::spawn_blocking(move || load_config_internal(&app))
+        .await
+        .map_err(|e| format!("Task panicked: {}", e))?
 }
 
 #[command]
-pub fn get_file_filter_config(app: AppHandle) -> Result<FileFilterConfig, String> {
-    let config = load_config(app)?;
+pub async fn get_file_filter_config(app: AppHandle) -> Result<FileFilterConfig, String> {
+    let config = load_config(app).await?;
     Ok(config.file_filter)
 }
 
 #[command]
-pub fn save_file_filter_config(
+pub async fn save_file_filter_config(
     app: AppHandle,
     filter_config: FileFilterConfig,
 ) -> Result<(), String> {
-    let mut config = load_config(app.clone())?;
+    let mut config = load_config(app.clone()).await?;
     config.file_filter = filter_config;
-    save_config(app, config)?;
+    save_config(app, config).await?;
     Ok(())
 }

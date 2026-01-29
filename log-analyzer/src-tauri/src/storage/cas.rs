@@ -255,7 +255,7 @@ impl ContentAddressableStorage {
             use tokio::fs::OpenOptions;
             let mut dst_file = match OpenOptions::new()
                 .write(true)
-                .create_new(true)  // O_EXCL: atomic check-and-create
+                .create_new(true) // O_EXCL: atomic check-and-create
                 .open(&object_path)
                 .await
             {
@@ -459,10 +459,10 @@ impl ContentAddressableStorage {
         // **SECURITY FIX**: Use atomic write with create_new() to prevent TOCTOU race
         use tokio::fs::OpenOptions;
         use tokio::io::AsyncWriteExt;
-        
+
         match OpenOptions::new()
             .write(true)
-            .create_new(true)  // O_EXCL: atomic check-and-create
+            .create_new(true) // O_EXCL: atomic check-and-create
             .open(&object_path)
             .await
         {
@@ -474,7 +474,7 @@ impl ContentAddressableStorage {
                         Some(object_path.clone()),
                     )
                 })?;
-                
+
                 file.flush().await.map_err(|e| {
                     AppError::io_error(
                         format!("Failed to flush object file: {}", e),

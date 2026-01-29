@@ -6,7 +6,7 @@ use crossbeam::queue::SegQueue;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use super::retry::retry_file_operation;
 
@@ -16,6 +16,16 @@ use super::path::remove_readonly;
 #[cfg(target_os = "windows")]
 use walkdir::WalkDir;
 
+/// 清理任务条目，包含重试计数
+#[derive(Debug)]
+pub struct CleanupItem {
+    pub path: PathBuf,
+    pub retry_count: u32,
+}
+
+/// 共享清理队列
+pub type CleanupQueue = SegQueue<CleanupItem>;
+
 /// 尝试清理临时目录
 ///
 /// 尝试删除指定的临时目录,如果失败则将路径添加到清理队列供后续处理。
@@ -23,19 +33,8 @@ use walkdir::WalkDir;
 /// # 参数
 ///
 /// - `path` - 要清理的路径
-/// - `cleanup_queue` - 清理队列的Arc引用（无锁队列）
-///
-/// # 功能
-///
-/// 1. 检查路径是否存在
-/// 2. 在Windows上递归移除只读属性
-/// 3. 重试删除目录(最多3次)
-/// 4. 失败时添加到清理队列
-///
-/// # 使用场景
-///
-/// 用于删除工作区时清理解压目录,支持重试机制和延迟清理。
-pub fn try_cleanup_temp_dir(path: &Path, cleanup_queue: &Arc<SegQueue<PathBuf>>) {
+/// - `cleanup_queue` - 清理队列的Arc引用
+pub fn try_cleanup_temp_dir(path: &Path, cleanup_queue: &Arc<CleanupQueue>) {
     if !path.exists() {
         return;
     }
@@ -69,8 +68,11 @@ pub fn try_cleanup_temp_dir(path: &Path, cleanup_queue: &Arc<SegQueue<PathBuf>>)
                 path = %path.display(),
                 "Failed to clean up temp directory, adding to cleanup queue"
             );
-            // 添加到无锁清理队列
-            cleanup_queue.push(path.to_path_buf());
+            // 添加到无锁清理队列，重试计数从 0 开始
+            cleanup_queue.push(CleanupItem {
+                path: path.to_path_buf(),
+                retry_count: 0,
+            });
         }
     }
 }
@@ -81,56 +83,70 @@ pub fn try_cleanup_temp_dir(path: &Path, cleanup_queue: &Arc<SegQueue<PathBuf>>)
 ///
 /// # 参数
 ///
-/// - `cleanup_queue` - 清理队列的Arc引用（无锁队列）
-///
-/// # 功能
-///
-/// 1. 从队列中弹出所有路径
-/// 2. 逐个尝试删除
-/// 3. 统计成功和失败的数量
-/// 4. 将失败的路径重新加入队列
-pub fn process_cleanup_queue(cleanup_queue: &Arc<SegQueue<PathBuf>>) {
-    // 收集所有待清理的路径
-    let mut paths_to_clean = Vec::new();
-    while let Some(path) = cleanup_queue.pop() {
-        paths_to_clean.push(path);
+/// - `cleanup_queue` - 清理队列的Arc引用
+pub fn process_cleanup_queue(cleanup_queue: &Arc<CleanupQueue>) {
+    // 限制最大重试次数，防止无限循环
+    const MAX_QUEUE_RETRIES: u32 = 5;
+
+    // 收集所有待清理的项
+    let mut items_to_clean = Vec::new();
+    while let Some(item) = cleanup_queue.pop() {
+        items_to_clean.push(item);
     }
 
-    if paths_to_clean.is_empty() {
+    if items_to_clean.is_empty() {
         return;
     }
 
-    let total_count = paths_to_clean.len();
-
+    let total_count = items_to_clean.len();
     info!(count = total_count, "Processing cleanup queue");
 
     let mut successful = 0;
+    let mut dropped = 0;
 
-    for path in &paths_to_clean {
-        if !path.exists() {
+    for mut item in items_to_clean {
+        if !item.path.exists() {
             successful += 1;
             continue;
         }
 
-        match fs::remove_dir_all(path) {
+        match fs::remove_dir_all(&item.path) {
             Ok(_) => {
                 successful += 1;
-                info!(path = %path.display(), "Cleaned up directory");
+                info!(path = %item.path.display(), "Cleaned up directory from queue");
             }
             Err(e) => {
-                warn!(
-                    error = %e,
-                    path = %path.display(),
-                    "Still cannot clean up directory, re-queueing"
-                );
-                // 重新加入队列供下次尝试
-                cleanup_queue.push(path.clone());
+                // 检查是否为可重试错误（例如文件被占用）
+                let err_msg = e.to_string();
+                let is_retryable = err_msg.contains("Access is denied")
+                    || err_msg.contains("being used")
+                    || err_msg.contains("cannot access");
+
+                if is_retryable && item.retry_count < MAX_QUEUE_RETRIES {
+                    item.retry_count += 1;
+                    warn!(
+                        error = %e,
+                        path = %item.path.display(),
+                        retry = item.retry_count,
+                        "Still cannot clean up directory, re-queueing"
+                    );
+                    cleanup_queue.push(item);
+                } else {
+                    dropped += 1;
+                    error!(
+                        error = %e,
+                        path = %item.path.display(),
+                        "Abandoned cleanup of directory after {} attempts or non-retryable error",
+                        item.retry_count + 1
+                    );
+                }
             }
         }
     }
 
     info!(
         successful = successful,
+        dropped = dropped,
         total = total_count,
         "Cleanup queue processed"
     );

@@ -85,10 +85,16 @@ async-compression = { version = "0.4", features = ["tokio", "gzip", "zstd"] }  #
 num_cpus = "1.16"  # CPU 核心数检测
 
 # Phase 5: Archive Support (Pure Rust Priority)
-# Note: unarc-rs has dependency conflicts, using rar crate instead for pure Rust RAR support
-rar = "0.4"  # Pure Rust RAR library (basic extraction support)
+unrar = "0.5"  # libunrar C bindings
+sevenz-rust = "0.5"  # Pure Rust 7z support
+async_zip = { version = "0.0.17", features = ["full"] }
+tokio-tar = "0.3"
+tokio-retry = "0.3"
+bytes = "1.0"
 
 # Monitoring and Observability
+
+
 tracing-opentelemetry = "0.24"  # OpenTelemetry集成
 opentelemetry = "0.23"  # 分布式追踪
 opentelemetry-jaeger = "0.22"  # Jaeger导出器

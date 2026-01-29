@@ -231,7 +231,7 @@ impl QueryOptimizer {
         sorted_suggestions.sort_by(|a, b| {
             b.estimated_improvement
                 .partial_cmp(&a.estimated_improvement)
-                .unwrap()
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         for suggestion in sorted_suggestions.iter().take(3) {
@@ -402,7 +402,7 @@ impl QueryOptimizer {
             b.priority.cmp(&a.priority).then(
                 b.estimated_improvement
                     .partial_cmp(&a.estimated_improvement)
-                    .unwrap(),
+                    .unwrap_or(std::cmp::Ordering::Equal),
             )
         });
 

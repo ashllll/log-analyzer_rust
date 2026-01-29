@@ -1,0 +1,10 @@
+---
+description: 
+alwaysApply: true
+enabled: true
+updatedAt: 2026-01-28T17:08:07.828Z
+provider: 
+---
+
+此项目只在完全离线的本地场景使用
+需要针对不同平台完整适配所有功能

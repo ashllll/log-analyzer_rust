@@ -86,8 +86,12 @@ pub fn validate_and_sanitize_path(
     }
 
     // 检查路径穿越
-    if component.contains("..") {
-        return PathValidationResult::Unsafe("包含路径穿越(..)".to_string());
+    if component.contains("..")
+        || component.contains('/')
+        || component.contains('\\')
+        || component.contains(':')
+    {
+        return PathValidationResult::Unsafe("包含非法路径字符(.. , / , \\ , :)".to_string());
     }
 
     // 检查当前目录
@@ -164,6 +168,78 @@ pub fn validate_and_sanitize_path(
         PathValidationResult::Valid(sanitized)
     } else {
         PathValidationResult::RequiresSanitization(component.to_string(), sanitized)
+    }
+}
+
+/// 验证并清理完整的归档内部路径(支持多级目录)
+///
+/// # Arguments
+///
+/// * `full_path` - 归档内的完整路径
+/// * `config` - 安全检查配置
+///
+/// # Returns
+///
+/// 返回验证结果,包含清理后的路径或错误原因
+pub fn validate_and_sanitize_archive_path(
+    full_path: &str,
+    config: &SecurityConfig,
+) -> PathValidationResult {
+    if full_path.is_empty() {
+        return PathValidationResult::Unsafe("路径为空".to_string());
+    }
+
+    // 预检：如果包含驱动器字母且是Windows兼容模式，直接拒绝
+    if config.windows_compatible && full_path.contains(':') {
+        let chars: Vec<char> = full_path.chars().collect();
+        for i in 0..chars.len().saturating_sub(1) {
+            if chars[i].is_ascii_alphabetic() && chars[i + 1] == ':' {
+                return PathValidationResult::Unsafe("路径包含驱动器字母".to_string());
+            }
+        }
+    }
+
+    let mut sanitized_components = Vec::new();
+    let mut needs_sanitization = false;
+
+    // 统一使用 / 和 \ 作为分隔符进行拆分
+    let components = full_path.split(['/', '\\']);
+
+    for component in components {
+        if component.is_empty() || component == "." {
+            // 跳过空组件(如 //)或当前目录组件(.)
+            if !full_path.is_empty() {
+                needs_sanitization = true;
+            }
+            continue;
+        }
+
+        match validate_and_sanitize_path(component, config) {
+            PathValidationResult::Valid(s) => sanitized_components.push(s),
+            PathValidationResult::RequiresSanitization(_, s) => {
+                sanitized_components.push(s);
+                needs_sanitization = true;
+            }
+            PathValidationResult::Unsafe(reason) => {
+                return PathValidationResult::Unsafe(format!(
+                    "路径组件 '{}' 不安全: {}",
+                    component, reason
+                ));
+            }
+        }
+    }
+
+    if sanitized_components.is_empty() {
+        return PathValidationResult::Unsafe("路径不包含有效的文件名组件".to_string());
+    }
+
+    // 内部统一使用正斜杠
+    let sanitized_path = sanitized_components.join("/");
+
+    if needs_sanitization || sanitized_path != full_path.replace('\\', "/") {
+        PathValidationResult::RequiresSanitization(full_path.to_string(), sanitized_path)
+    } else {
+        PathValidationResult::Valid(sanitized_path)
     }
 }
 

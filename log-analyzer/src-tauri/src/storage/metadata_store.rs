@@ -660,7 +660,7 @@ impl MetadataStore {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust,ignore
     /// let mut tx = metadata_store.begin_transaction().await?;
     /// // Perform operations...
     /// tx.commit().await?;

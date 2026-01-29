@@ -179,9 +179,16 @@ pub fn init_metrics() -> Result<(), Box<dyn std::error::Error>> {
     let error_counter = Arc::new(Counter::new("errors_total"));
     let search_duration = Arc::new(Histogram::new("search_duration_seconds"));
 
-    registry.lock().unwrap().register_counter(search_counter);
-    registry.lock().unwrap().register_counter(error_counter);
-    registry.lock().unwrap().register_histogram(search_duration);
+    // ✅ 修复：单次锁定，批量注册，避免死锁风险
+    {
+        let mut reg = registry
+            .lock()
+            .map_err(|e| format!("Failed to lock metrics registry: {}", e))?;
+
+        reg.register_counter(search_counter);
+        reg.register_counter(error_counter);
+        reg.register_histogram(search_duration);
+    } // 锁在此自动释放
 
     Ok(())
 }

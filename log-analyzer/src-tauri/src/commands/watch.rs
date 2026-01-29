@@ -37,12 +37,32 @@ pub async fn start_watch(
         }
     }
 
+    // 创建通信通道
+    let (tx, rx) = crossbeam::channel::unbounded::<Result<Event, notify::Error>>();
+
+    // 创建监听器
+    let mut watcher = match recommended_watcher(tx) {
+        Ok(w) => w,
+        Err(e) => {
+            return Err(format!("Failed to create file watcher: {}", e));
+        }
+    };
+
+    // 开始监听
+    if let Err(e) = watcher.watch(&watch_path, RecursiveMode::Recursive) {
+        return Err(format!("Failed to start watching path: {}", e));
+    }
+
     let watcher_state = WatcherState {
         workspace_id: workspaceId.clone(),
         watched_path: watch_path.clone(),
         file_offsets: HashMap::new(),
         is_active: true,
+        thread_handle: Arc::new(std::sync::Mutex::new(None)),
+        watcher: Arc::new(std::sync::Mutex::new(Some(watcher))),
     };
+
+    let thread_handle_arc = Arc::clone(&watcher_state.thread_handle);
 
     {
         let mut watchers = state.watchers.lock();
@@ -51,26 +71,9 @@ pub async fn start_watch(
 
     let app_handle = app.clone();
     let workspace_id_clone = workspaceId.clone();
-    let watch_path_clone = watch_path.clone();
     let watchers_arc = Arc::clone(&state.watchers);
 
-    thread::spawn(move || {
-        // 使用 crossbeam 的无界通道以获得更高的吞吐量
-        let (tx, rx) = crossbeam::channel::unbounded::<Result<Event, notify::Error>>();
-
-        let mut watcher = match recommended_watcher(tx) {
-            Ok(w) => w,
-            Err(e) => {
-                error!(error = %e, "Failed to create file watcher");
-                return;
-            }
-        };
-
-        if let Err(e) = watcher.watch(&watch_path_clone, RecursiveMode::Recursive) {
-            error!(error = %e, "Failed to start watching path");
-            return;
-        }
-
+    let handle = thread::spawn(move || {
         for res in rx {
             match res {
                 Ok(event) => {
@@ -178,6 +181,11 @@ pub async fn start_watch(
         }
     });
 
+    // 保存线程句柄以便后续 join
+    if let Ok(mut guard) = thread_handle_arc.lock() {
+        *guard = Some(handle);
+    }
+
     Ok(())
 }
 
@@ -188,12 +196,35 @@ pub async fn stop_watch(
 ) -> Result<(), String> {
     let mut watchers = state.watchers.lock();
 
-    if let Some(watcher_state) = watchers.get_mut(&workspaceId) {
+    let (thread_handle, watcher) = if let Some(watcher_state) = watchers.get_mut(&workspaceId) {
         watcher_state.is_active = false;
+        // 获取句柄和监听器以便清理
+        let h = watcher_state
+            .thread_handle
+            .lock()
+            .ok()
+            .and_then(|mut h| h.take());
+        let w = watcher_state.watcher.lock().ok().and_then(|mut w| w.take());
+        (h, w)
     } else {
         return Err("No active watcher found for this workspace".to_string());
+    };
+
+    // 从 map 中移除
+    watchers.remove(&workspaceId);
+
+    // 释放锁以便线程可以完成最后的循环并退出（如果它正在检查 is_active）
+    drop(watchers);
+
+    // 显式释放归档句柄，这会关闭 tx 通道，从而使 rx.iter() 终止
+    drop(watcher);
+
+    // 在锁外进行 join，避免死锁并确保线程资源回收
+    if let Some(handle) = thread_handle {
+        if let Err(e) = handle.join() {
+            error!("Failed to join watcher thread: {:?}", e);
+        }
     }
 
-    watchers.remove(&workspaceId);
     Ok(())
 }

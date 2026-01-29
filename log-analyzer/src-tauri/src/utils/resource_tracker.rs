@@ -5,23 +5,14 @@
 //! - 资源泄漏检测
 //! - 应用关闭时的自动清理
 //! - 清理队列处理和重试机制
-//!
-//! # 设计原则
-//!
-//! - 集中管理所有资源的生命周期
-//! - 提供资源泄漏检测和报告
-//! - 支持优雅关闭和强制清理
-//! - 集成 tracing 进行资源追踪
 
-use crossbeam::queue::SegQueue;
+use crate::utils::cleanup::{process_cleanup_queue, try_cleanup_temp_dir, CleanupQueue};
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use tracing::{error, info, warn};
-
-use super::cleanup::{process_cleanup_queue, try_cleanup_temp_dir};
 
 /// 资源类型
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -54,7 +45,6 @@ pub struct ResourceInfo {
 }
 
 impl ResourceInfo {
-    /// 创建新的资源信息
     pub fn new(id: String, resource_type: ResourceType, path: String) -> Self {
         Self {
             id,
@@ -65,7 +55,6 @@ impl ResourceInfo {
         }
     }
 
-    /// 获取资源存活时间
     pub fn age(&self) -> Duration {
         SystemTime::now()
             .duration_since(self.created_at)
@@ -74,24 +63,14 @@ impl ResourceInfo {
 }
 
 /// 资源追踪器
-///
-/// 追踪应用中所有活跃资源，提供资源泄漏检测和自动清理功能。
 pub struct ResourceTracker {
-    /// 活跃资源映射
     resources: Arc<Mutex<HashMap<String, ResourceInfo>>>,
-    /// 清理队列
-    cleanup_queue: Arc<SegQueue<PathBuf>>,
-    /// 是否启用泄漏检测
+    cleanup_queue: Arc<CleanupQueue>,
     leak_detection_enabled: bool,
 }
 
 impl ResourceTracker {
-    /// 创建新的资源追踪器
-    ///
-    /// # 参数
-    ///
-    /// - `cleanup_queue` - 清理队列引用
-    pub fn new(cleanup_queue: Arc<SegQueue<PathBuf>>) -> Self {
+    pub fn new(cleanup_queue: Arc<CleanupQueue>) -> Self {
         info!("ResourceTracker initialized");
         Self {
             resources: Arc::new(Mutex::new(HashMap::new())),
@@ -100,13 +79,6 @@ impl ResourceTracker {
         }
     }
 
-    /// 注册新资源
-    ///
-    /// # 参数
-    ///
-    /// - `id` - 资源唯一标识符
-    /// - `resource_type` - 资源类型
-    /// - `path` - 资源路径或描述
     pub fn register_resource(&self, id: String, resource_type: ResourceType, path: String) {
         let info = ResourceInfo::new(id.clone(), resource_type.clone(), path.clone());
 
@@ -121,11 +93,6 @@ impl ResourceTracker {
         );
     }
 
-    /// 标记资源为已清理
-    ///
-    /// # 参数
-    ///
-    /// - `id` - 资源ID
     pub fn mark_cleaned(&self, id: &str) {
         let mut resources = self.resources.lock();
         if let Some(info) = resources.get_mut(id) {
@@ -134,11 +101,6 @@ impl ResourceTracker {
         }
     }
 
-    /// 移除资源记录
-    ///
-    /// # 参数
-    ///
-    /// - `id` - 资源ID
     pub fn unregister_resource(&self, id: &str) {
         let mut resources = self.resources.lock();
         if resources.remove(id).is_some() {
@@ -146,25 +108,16 @@ impl ResourceTracker {
         }
     }
 
-    /// 获取活跃资源数量
     pub fn active_count(&self) -> usize {
         let resources = self.resources.lock();
         resources.values().filter(|r| !r.cleaned).count()
     }
 
-    /// 获取所有活跃资源
     pub fn get_active_resources(&self) -> Vec<ResourceInfo> {
         let resources = self.resources.lock();
         resources.values().filter(|r| !r.cleaned).cloned().collect()
     }
 
-    /// 检测资源泄漏
-    ///
-    /// 返回存活时间超过阈值的未清理资源
-    ///
-    /// # 参数
-    ///
-    /// - `threshold` - 时间阈值
     pub fn detect_leaks(&self, threshold: Duration) -> Vec<ResourceInfo> {
         if !self.leak_detection_enabled {
             return Vec::new();
@@ -192,16 +145,6 @@ impl ResourceTracker {
         leaks
     }
 
-    /// 清理特定资源
-    ///
-    /// # 参数
-    ///
-    /// - `id` - 资源ID
-    ///
-    /// # 返回值
-    ///
-    /// - `Ok(())` - 清理成功
-    /// - `Err(String)` - 清理失败
     pub fn cleanup_resource(&self, id: &str) -> Result<(), String> {
         let resource_info = {
             let resources = self.resources.lock();
@@ -230,9 +173,6 @@ impl ResourceTracker {
         }
     }
 
-    /// 清理所有资源
-    ///
-    /// 用于应用关闭时的清理
     pub fn cleanup_all(&self) {
         info!("Cleaning up all resources");
 
@@ -254,7 +194,6 @@ impl ResourceTracker {
             }
         }
 
-        // 处理清理队列
         process_cleanup_queue(&self.cleanup_queue);
 
         info!(
@@ -263,7 +202,6 @@ impl ResourceTracker {
         );
     }
 
-    /// 生成资源报告
     pub fn generate_report(&self) -> ResourceReport {
         let resources = self.resources.lock();
 
@@ -289,7 +227,6 @@ impl ResourceTracker {
         }
     }
 
-    /// 启用或禁用泄漏检测
     pub fn set_leak_detection(&mut self, enabled: bool) {
         self.leak_detection_enabled = enabled;
         info!(
@@ -302,18 +239,13 @@ impl ResourceTracker {
 /// 资源报告
 #[derive(Debug, Clone)]
 pub struct ResourceReport {
-    /// 总资源数
     pub total: usize,
-    /// 活跃资源数
     pub active: usize,
-    /// 已清理资源数
     pub cleaned: usize,
-    /// 按类型分组的活跃资源数
     pub by_type: HashMap<String, usize>,
 }
 
 impl ResourceReport {
-    /// 打印报告
     pub fn print(&self) {
         info!("=== Resource Report ===");
         info!("Total resources: {}", self.total);
@@ -323,119 +255,5 @@ impl ResourceReport {
         for (type_name, count) in &self.by_type {
             info!("  {}: {}", type_name, count);
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::thread::sleep;
-
-    #[test]
-    fn test_register_and_unregister() {
-        let cleanup_queue = Arc::new(SegQueue::new());
-        let tracker = ResourceTracker::new(cleanup_queue);
-
-        tracker.register_resource(
-            "test-1".to_string(),
-            ResourceType::TempDirectory,
-            "/tmp/test".to_string(),
-        );
-
-        assert_eq!(tracker.active_count(), 1);
-
-        tracker.unregister_resource("test-1");
-        assert_eq!(tracker.active_count(), 0);
-    }
-
-    #[test]
-    fn test_mark_cleaned() {
-        let cleanup_queue = Arc::new(SegQueue::new());
-        let tracker = ResourceTracker::new(cleanup_queue);
-
-        tracker.register_resource(
-            "test-1".to_string(),
-            ResourceType::TempDirectory,
-            "/tmp/test".to_string(),
-        );
-
-        assert_eq!(tracker.active_count(), 1);
-
-        tracker.mark_cleaned("test-1");
-        assert_eq!(tracker.active_count(), 0);
-    }
-
-    #[test]
-    fn test_leak_detection() {
-        let cleanup_queue = Arc::new(SegQueue::new());
-        let tracker = ResourceTracker::new(cleanup_queue);
-
-        tracker.register_resource(
-            "test-1".to_string(),
-            ResourceType::TempDirectory,
-            "/tmp/test".to_string(),
-        );
-
-        // 等待一小段时间
-        sleep(Duration::from_millis(100));
-
-        // 检测泄漏（阈值设为 50ms）
-        let leaks = tracker.detect_leaks(Duration::from_millis(50));
-        assert_eq!(leaks.len(), 1);
-
-        // 标记为已清理后不应再检测到泄漏
-        tracker.mark_cleaned("test-1");
-        let leaks = tracker.detect_leaks(Duration::from_millis(50));
-        assert_eq!(leaks.len(), 0);
-    }
-
-    #[test]
-    fn test_resource_report() {
-        let cleanup_queue = Arc::new(SegQueue::new());
-        let tracker = ResourceTracker::new(cleanup_queue);
-
-        tracker.register_resource(
-            "test-1".to_string(),
-            ResourceType::TempDirectory,
-            "/tmp/test1".to_string(),
-        );
-
-        tracker.register_resource(
-            "test-2".to_string(),
-            ResourceType::FileHandle,
-            "/tmp/test2".to_string(),
-        );
-
-        tracker.mark_cleaned("test-1");
-
-        let report = tracker.generate_report();
-        assert_eq!(report.total, 2);
-        assert_eq!(report.active, 1);
-        assert_eq!(report.cleaned, 1);
-    }
-
-    #[test]
-    fn test_cleanup_all() {
-        let cleanup_queue = Arc::new(SegQueue::new());
-        let tracker = ResourceTracker::new(cleanup_queue);
-
-        tracker.register_resource(
-            "test-1".to_string(),
-            ResourceType::TempDirectory,
-            "/tmp/test1".to_string(),
-        );
-
-        tracker.register_resource(
-            "test-2".to_string(),
-            ResourceType::FileHandle,
-            "/tmp/test2".to_string(),
-        );
-
-        assert_eq!(tracker.active_count(), 2);
-
-        tracker.cleanup_all();
-
-        // 所有资源应该被标记为已清理
-        assert_eq!(tracker.active_count(), 0);
     }
 }

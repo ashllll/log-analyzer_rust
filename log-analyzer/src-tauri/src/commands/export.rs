@@ -14,11 +14,13 @@ pub async fn export_results(
     format: String,
     #[allow(non_snake_case)] savePath: String,
 ) -> Result<String, String> {
-    match format.as_str() {
+    tokio::task::spawn_blocking(move || match format.as_str() {
         "csv" => export_to_csv(&results, &savePath),
         "json" => export_to_json(&results, &savePath),
         _ => Err(format!("Unsupported export format: {}", format)),
-    }
+    })
+    .await
+    .map_err(|e| format!("Export task panicked: {}", e))?
 }
 
 fn export_to_csv(results: &[LogEntry], path: &str) -> Result<String, String> {

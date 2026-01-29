@@ -1479,7 +1479,7 @@ async fn should_import_file_defensive(path: &Path, app: &AppHandle) -> bool {
 
 /// 安全加载配置（失败时返回默认配置）
 async fn load_file_filter_config_safe(app: &AppHandle) -> Result<FileFilterConfig> {
-    match crate::commands::config::load_config(app.clone()) {
+    match crate::commands::config::load_config(app.clone()).await {
         Ok(config) => Ok(config.file_filter),
         Err(e) => {
             tracing::warn!(
