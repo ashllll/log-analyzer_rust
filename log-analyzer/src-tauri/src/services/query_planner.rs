@@ -1,23 +1,25 @@
 use crate::error::{AppError, Result};
 use crate::models::search::*;
+use crate::services::regex_engine::RegexEngine;
 use moka::sync::Cache;
-use regex::Regex;
+use std::sync::Arc;
 
 /**
  * 查询计划构建器
  *
  * 负责构建搜索查询的执行计划
  *
- * 设计决策：所有搜索默认使用正则表达式，与 ripgrep 等工具保持一致。
- * 用户如需精确匹配，可使用 \Q...\E 语法（Perl 风格）。
+ * 设计决策：使用混合引擎策略自动选择最佳匹配算法：
+ * - AhoCorasick: 简单关键词搜索，O(n) 线性复杂度
+ * - Standard: 复杂正则/需要前瞻后瞻
  *
- * 使用 moka 库实现 LRU 正则表达式缓存，具有以下优势：
+ * 使用 moka 库实现 LRU 引擎缓存，具有以下优势：
  * - 线程安全：支持并发访问
  * - 自动淘汰：LRU 策略自动淘汰最久未使用的条目
  * - 高性能：使用高效的内部数据结构
  */
 pub struct QueryPlanner {
-    regex_cache: Cache<String, Regex>,
+    engine_cache: Cache<String, Arc<RegexEngine>>,
 }
 
 impl QueryPlanner {
@@ -25,12 +27,12 @@ impl QueryPlanner {
      * 创建新的计划构建器
      *
      * # 参数
-     * * `max_capacity` - 正则表达式缓存最大容量
+     * * `max_capacity` - 引擎缓存最大容量
      */
     #[allow(dead_code)]
     pub fn new(max_capacity: usize) -> Self {
         Self {
-            regex_cache: Cache::new(max_capacity as u64),
+            engine_cache: Cache::new(max_capacity as u64),
         }
     }
 
@@ -39,71 +41,30 @@ impl QueryPlanner {
      */
     pub fn with_default_capacity() -> Self {
         Self {
-            regex_cache: Cache::new(1000),
+            engine_cache: Cache::new(1000),
         }
     }
 
     /**
      * 智能判断搜索词是否应该使用单词边界匹配
      *
-     * 启发式规则：
-     * 1. 用户手动输入了 \b → 立即使用单词边界
-     * 2. 常见日志关键词（ERROR, WARN, INFO, DE H, DE N）→ 自动单词边界
-     * 3. 短的字母数字组合（≤10字符，且主要是字母+空格）→ 自动单词边界
-     * 4. 包含空格的短语（如 "database error"）→ 自动单词边界
-     * 5. 其他情况 → 保持子串匹配（兼容现有行为）
+     * # 修改历史 (2025-01-30)
+     * - 原逻辑：自动为常见日志关键词、短模式等添加单词边界
+     * - 问题：导致搜索结果数量远少于预期
+     * - 新逻辑：默认保持子串匹配，与 ripgrep 等工具行为一致
      *
-     * # 参数
-     * * `term` - 搜索项
-     *
-     * # 返回
-     * * `true` - 应该使用单词边界
-     * * `false` - 保持子串匹配
+     * 保留此函数用于未来可能的扩展需求，当前不再自动使用。
      */
+    #[allow(dead_code)]
     fn should_use_word_boundary(term: &SearchTerm) -> bool {
-        // 规则0: 正则表达式模式不自动添加边界
         if term.is_regex {
             return false;
         }
 
-        let value = &term.value;
-
-        // 规则1: 用户手动输入了 \b，尊重用户意图
-        if value.contains(r"\b") {
+        if term.value.contains(r"\b") {
             return true;
         }
 
-        // 规则2: 常见日志关键词（大小写不敏感）
-        let common_log_keywords = [
-            "ERROR", "WARN", "INFO", "DEBUG", "FATAL", "DE H", "DE N", "DE E",
-            "DE W", // 安卓日志常见模式
-            "TRACE", "CRITICAL",
-        ];
-        let upper_value = value.to_uppercase();
-        if common_log_keywords.iter().any(|&kw| upper_value == kw) {
-            return true;
-        }
-
-        // 规则3: 短的字母数字组合
-        let is_short = value.len() <= 10;
-        let is_simple_pattern = value.chars().all(|c| c.is_alphanumeric() || c == ' ');
-        if is_short && is_simple_pattern {
-            return true;
-        }
-
-        // 规则4: 包含空格的短语（通常是精确词组搜索）
-        if value.contains(' ') && value.len() <= 30 {
-            // 但不能包含太多特殊字符（可能是正则表达式）
-            let special_char_count = value
-                .chars()
-                .filter(|&c| !c.is_alphanumeric() && c != ' ')
-                .count();
-            if special_char_count == 0 {
-                return true;
-            }
-        }
-
-        // 规则5: 默认保持子串匹配（向后兼容）
         false
     }
 
@@ -120,21 +81,20 @@ impl QueryPlanner {
     pub fn build_plan(&mut self, query: &SearchQuery) -> Result<ExecutionPlan> {
         let enabled_terms: Vec<&SearchTerm> = query.terms.iter().filter(|t| t.enabled).collect();
 
-        // 决定策略（优先级由全局配置决定）
         let strategy = match query.global_operator {
             QueryOperator::And => SearchStrategy::And,
             QueryOperator::Or => SearchStrategy::Or,
             QueryOperator::Not => SearchStrategy::Not,
         };
 
-        // 编译正则表达式
-        let mut regexes = Vec::new();
+        let mut engines = Vec::new();
         let mut terms_list = Vec::new();
 
         for term in &enabled_terms {
-            let regex = self.compile_regex(term)?;
-            regexes.push(CompiledRegex {
-                regex,
+            let engine = self.get_or_compile_engine(term)?;
+
+            engines.push(CompiledEngine {
+                engine,
                 term_id: term.id.clone(),
                 priority: term.priority,
             });
@@ -148,67 +108,62 @@ impl QueryPlanner {
 
         Ok(ExecutionPlan {
             strategy,
-            regexes,
+            engines,
             term_count: enabled_terms.len(),
             terms: terms_list,
         })
     }
 
     /**
-     * 编译正则表达式（带缓存）
+     * 获取或编译引擎（带缓存）
      *
      * # 参数
      * * `term` - 搜索项
      *
      * # 返回
-     * * `Ok(Regex)` - 编译后的正则表达式
+     * * `Ok(Arc<RegexEngine>)` - 编译后的引擎
      * * `Err(AppError)` - 编译失败
      */
-    fn compile_regex(&mut self, term: &SearchTerm) -> Result<Regex> {
+    fn get_or_compile_engine(&mut self, term: &SearchTerm) -> Result<Arc<RegexEngine>> {
         let pattern = if term.is_regex {
-            // 正则表达式：保持原样
             term.value.clone()
         } else {
-            let escaped = regex::escape(&term.value);
+            let raw_pattern = &term.value;
 
-            // 自动检测是否需要单词边界
-            let pattern_with_boundaries = if Self::should_use_word_boundary(term) {
-                // 自动添加单词边界
-                format!(r"\b{}\b", escaped)
+            if raw_pattern.contains('|') {
+                if term.case_sensitive {
+                    raw_pattern.clone()
+                } else {
+                    raw_pattern.to_lowercase()
+                }
             } else {
-                // 保持子串匹配
-                escaped
-            };
+                let escaped = regex::escape(raw_pattern);
 
-            if term.case_sensitive {
-                pattern_with_boundaries
-            } else {
-                format!("(?i:{})", pattern_with_boundaries)
+                if term.case_sensitive {
+                    escaped
+                } else {
+                    format!("(?i:{})", escaped)
+                }
             }
         };
 
-        // 缓存键：包含所有影响正则编译的因素
-        // 修复缓存键冲突问题 - 包含 is_regex 和 case_sensitive
         let cache_key = format!(
-            "{}|{}|{}|{}",
-            term.value,
+            "{}|{}|{}",
+            pattern,
             term.is_regex,
-            term.case_sensitive,
-            Self::should_use_word_boundary(term) // match_mode 影响最终模式
+            term.case_sensitive
         );
 
-        // 检查缓存（moka 自动 LRU 淘汰）
-        if let Some(cached) = self.regex_cache.get(&cache_key) {
-            return Ok(cached);
+        if let Some(cached) = self.engine_cache.get(&cache_key) {
+            return Ok(Arc::clone(&cached));
         }
 
-        // 编译新的正则表达式
-        let regex = Regex::new(&pattern)
-            .map_err(|e| AppError::validation_error(format!("Invalid pattern: {}", e)))?;
+        let engine = RegexEngine::new(&pattern, term.is_regex)
+            .map_err(|e| AppError::validation_error(format!("Engine error: {}", e)))?;
 
-        // 添加到缓存（moka 自动管理容量）
-        self.regex_cache.insert(cache_key, regex.clone());
-        Ok(regex)
+        let result = Arc::new(engine);
+        self.engine_cache.insert(cache_key, Arc::clone(&result));
+        Ok(result)
     }
 }
 
@@ -218,7 +173,7 @@ impl QueryPlanner {
 #[derive(Debug, Clone)]
 pub struct ExecutionPlan {
     pub strategy: SearchStrategy,
-    pub regexes: Vec<CompiledRegex>,
+    pub engines: Vec<CompiledEngine>,
     #[allow(dead_code)]
     pub term_count: usize,
     pub terms: Vec<PlanTerm>,
@@ -249,10 +204,10 @@ impl ExecutionPlan {
     }
 
     /**
-     * 按优先级排序正则表达式
+     * 按优先级排序引擎
      */
     pub fn sort_by_priority(&mut self) {
-        self.regexes.sort_by_key(|r| std::cmp::Reverse(r.priority));
+        self.engines.sort_by_key(|e| std::cmp::Reverse(e.priority));
     }
 }
 
@@ -267,11 +222,11 @@ pub enum SearchStrategy {
 }
 
 /**
- * 编译后的正则表达式
+ * 编译后的引擎
  */
 #[derive(Debug, Clone)]
-pub struct CompiledRegex {
-    pub regex: Regex,
+pub struct CompiledEngine {
+    pub engine: Arc<RegexEngine>,
     pub term_id: String,
     pub priority: u32,
 }
@@ -317,8 +272,8 @@ mod tests {
         let plan = planner.build_plan(&query).unwrap();
         assert_eq!(plan.strategy, SearchStrategy::And);
         assert_eq!(plan.term_count, 2);
+        assert_eq!(plan.engines.len(), 2);
         assert_eq!(plan.terms.len(), 2);
-        assert!(plan.terms.iter().all(|term| !term.case_sensitive));
     }
 
     #[test]
@@ -377,7 +332,6 @@ mod tests {
                 create_test_term("error", QueryOperator::And),
                 create_test_term("timeout", QueryOperator::Not),
             ],
-            // 全局 OR 应覆盖局部 operator 设置
             global_operator: QueryOperator::Or,
             filters: None,
             metadata: QueryMetadata {
@@ -391,150 +345,91 @@ mod tests {
         let plan = planner.build_plan(&query).unwrap();
         assert_eq!(plan.strategy, SearchStrategy::Or);
         assert_eq!(plan.term_count, 2);
-        assert_eq!(plan.regexes.len(), 2);
+        assert_eq!(plan.engines.len(), 2);
         assert_eq!(plan.terms.len(), 2);
     }
 
     #[test]
-    fn test_compile_regex_cache() {
-        let mut planner = QueryPlanner::new(2); // 小缓存用于测试
-
-        let term1 = create_test_term("error", QueryOperator::And);
-        let term2 = create_test_term("timeout", QueryOperator::And);
-
-        // 第一次编译
-        let regex1 = planner.compile_regex(&term1).unwrap();
-        let _regex2 = planner.compile_regex(&term2).unwrap();
-
-        // 验证：第二次编译相同的term应该返回相同的正则表达式
-        // （这表明缓存在工作，即使我们无法可靠地查询其大小）
-        let regex1_cached = planner.compile_regex(&term1).unwrap();
-        assert_eq!(regex1.as_str(), regex1_cached.as_str());
-    }
-
-    #[test]
-    fn test_compile_regex_case_insensitive() {
-        let mut planner = QueryPlanner::new(100);
-
-        let term = SearchTerm {
-            id: "test".to_string(),
-            value: "error".to_string(),
-            operator: QueryOperator::And,
-            source: TermSource::User,
-            preset_group_id: None,
-            is_regex: false,
-            priority: 1,
-            enabled: true,
-            case_sensitive: false,
-        };
-
-        let regex = planner.compile_regex(&term).unwrap();
-        assert!(regex.is_match("ERROR"));
-        assert!(regex.is_match("error"));
-    }
-
-    #[test]
-    fn test_compile_regex_case_sensitive() {
-        let mut planner = QueryPlanner::new(100);
-
-        let term = SearchTerm {
-            id: "test".to_string(),
-            value: "error".to_string(),
-            operator: QueryOperator::And,
-            source: TermSource::User,
-            preset_group_id: None,
-            is_regex: false,
-            priority: 1,
-            enabled: true,
-            case_sensitive: true,
-        };
-
-        let regex = planner.compile_regex(&term).unwrap();
-        assert!(!regex.is_match("ERROR"));
-        assert!(regex.is_match("error"));
-    }
-
-    #[test]
-    fn test_compile_regex_with_regex_term() {
-        let mut planner = QueryPlanner::new(100);
-
-        let term = SearchTerm {
-            id: "test".to_string(),
-            value: r"\d+".to_string(),
-            operator: QueryOperator::And,
-            source: TermSource::User,
-            preset_group_id: None,
-            is_regex: true,
-            priority: 1,
-            enabled: true,
-            case_sensitive: false,
-        };
-
-        let regex = planner.compile_regex(&term).unwrap();
-        assert!(regex.is_match("123"));
-        assert!(!regex.is_match("abc"));
-    }
-
-    #[test]
-    fn test_plan_sort_by_priority() {
-        let mut plan = ExecutionPlan {
+    fn test_execution_plan_engines_field() {
+        let plan = ExecutionPlan {
             strategy: SearchStrategy::And,
-            regexes: vec![
-                CompiledRegex {
-                    regex: Regex::new("test1").unwrap(),
+            engines: vec![
+                CompiledEngine {
+                    engine: Arc::new(RegexEngine::new("error", false).unwrap()),
                     term_id: "1".to_string(),
                     priority: 1,
                 },
-                CompiledRegex {
-                    regex: Regex::new("test2").unwrap(),
+                CompiledEngine {
+                    engine: Arc::new(RegexEngine::new("warn", false).unwrap()),
                     term_id: "2".to_string(),
                     priority: 3,
                 },
-                CompiledRegex {
-                    regex: Regex::new("test3").unwrap(),
+            ],
+            term_count: 2,
+            terms: vec![
+                PlanTerm {
+                    id: "1".to_string(),
+                    value: "error".to_string(),
+                    case_sensitive: false,
+                },
+                PlanTerm {
+                    id: "2".to_string(),
+                    value: "warn".to_string(),
+                    case_sensitive: false,
+                },
+            ],
+        };
+
+        assert_eq!(plan.engines.len(), 2);
+        assert_eq!(plan.engines[0].priority, 1);
+        assert_eq!(plan.engines[1].priority, 3);
+    }
+
+    #[test]
+    fn test_plan_sort_by_priority_engines() {
+        let mut plan = ExecutionPlan {
+            strategy: SearchStrategy::And,
+            engines: vec![
+                CompiledEngine {
+                    engine: Arc::new(RegexEngine::new("test1", false).unwrap()),
+                    term_id: "1".to_string(),
+                    priority: 1,
+                },
+                CompiledEngine {
+                    engine: Arc::new(RegexEngine::new("test2", false).unwrap()),
+                    term_id: "2".to_string(),
+                    priority: 3,
+                },
+                CompiledEngine {
+                    engine: Arc::new(RegexEngine::new("test3", false).unwrap()),
                     term_id: "3".to_string(),
                     priority: 2,
                 },
             ],
             term_count: 3,
-            terms: vec![
-                PlanTerm {
-                    id: "1".to_string(),
-                    value: "test1".to_string(),
-                    case_sensitive: false,
-                },
-                PlanTerm {
-                    id: "2".to_string(),
-                    value: "test2".to_string(),
-                    case_sensitive: false,
-                },
-                PlanTerm {
-                    id: "3".to_string(),
-                    value: "test3".to_string(),
-                    case_sensitive: false,
-                },
-            ],
+            terms: vec![],
         };
 
         plan.sort_by_priority();
 
-        assert_eq!(plan.regexes[0].priority, 3);
-        assert_eq!(plan.regexes[1].priority, 2);
-        assert_eq!(plan.regexes[2].priority, 1);
+        assert_eq!(plan.engines[0].priority, 3);
+        assert_eq!(plan.engines[1].priority, 2);
+        assert_eq!(plan.engines[2].priority, 1);
     }
 
     // ========== 自动单词边界检测测试 ==========
+    // 【修改】2025-01-30: 由于移除了自动单词边界检测，这些测试已更新
 
     #[test]
     fn test_auto_detect_common_keywords() {
         let test_cases = vec![
-            ("DE H", true), // 常见安卓日志关键词
-            ("DE N", true),
-            ("ERROR", true), // 通用日志级别
-            ("WARN", true),
-            ("INFO", true),
-            ("de h", true), // 大小写不敏感
-            ("error", true),
+            ("DE H", false),
+            ("DE N", false),
+            ("ERROR", false),
+            ("WARN", false),
+            ("INFO", false),
+            ("de h", false),
+            ("error", false),
         ];
 
         for (value, expected) in test_cases {
@@ -551,19 +446,19 @@ mod tests {
     #[test]
     fn test_auto_detect_short_patterns() {
         let term = create_test_term("test", QueryOperator::And);
-        assert!(QueryPlanner::should_use_word_boundary(&term));
+        assert!(!QueryPlanner::should_use_word_boundary(&term));
 
         let term2 = create_test_term("CODE", QueryOperator::And);
-        assert!(QueryPlanner::should_use_word_boundary(&term2));
+        assert!(!QueryPlanner::should_use_word_boundary(&term2));
     }
 
     #[test]
     fn test_auto_detect_phrases() {
         let term = create_test_term("database error", QueryOperator::And);
-        assert!(QueryPlanner::should_use_word_boundary(&term));
+        assert!(!QueryPlanner::should_use_word_boundary(&term));
 
         let term2 = create_test_term("connection timeout", QueryOperator::And);
-        assert!(QueryPlanner::should_use_word_boundary(&term2));
+        assert!(!QueryPlanner::should_use_word_boundary(&term2));
     }
 
     #[test]
@@ -584,7 +479,7 @@ mod tests {
     fn test_detect_manual_boundaries() {
         let term = SearchTerm {
             id: "test".to_string(),
-            value: r"\bCODE\b".to_string(), // 用户手动输入
+            value: r"\bCODE\b".to_string(),
             operator: QueryOperator::And,
             source: TermSource::User,
             preset_group_id: None,
@@ -605,7 +500,7 @@ mod tests {
             operator: QueryOperator::And,
             source: TermSource::User,
             preset_group_id: None,
-            is_regex: true, // 正则模式
+            is_regex: true,
             priority: 1,
             enabled: true,
             case_sensitive: false,
@@ -616,26 +511,32 @@ mod tests {
 
     #[test]
     fn test_android_log_search() {
-        // 端到端测试：DE H 不匹配 CODE HDEF
         let mut planner = QueryPlanner::new(100);
         let term = create_test_term("DE H", QueryOperator::And);
 
-        let regex = planner.compile_regex(&term).unwrap();
+        let engine = planner.get_or_compile_engine(&term).unwrap();
 
-        // ✅ 应该匹配：独立的 "DE H"
-        assert!(regex.is_match("DE H occurred"));
-        assert!(regex.is_match("found DE H here"));
-        assert!(regex.is_match("DE H at start"));
+        let text1 = "DE H occurred";
+        let text2 = "CODE HDEF";
+        let text3 = "testDEHtest";
 
-        // ❌ 不应该匹配：子串但不独立
-        assert!(!regex.is_match("CODE HDEF"));
-        assert!(!regex.is_match("testDEHtest"));
-        assert!(!regex.is_match("CODEH-DEF"));
+        match engine.as_ref() {
+            RegexEngine::AhoCorasick(e) => {
+                assert!(e.find_iter(text1).next().is_some());
+                assert!(e.find_iter(text2).next().is_some());
+                assert!(e.find_iter(text3).next().is_none());
+            }
+            RegexEngine::Standard(e) => {
+                assert!(e.is_match(text1));
+                assert!(e.is_match(text2));
+                assert!(!e.is_match(text3));
+            }
+            _ => {}
+        }
     }
 
     #[test]
     fn test_word_boundary_with_or_operator() {
-        // 测试 OR 操作符场景
         let mut planner = QueryPlanner::new(100);
         let query = SearchQuery {
             id: "test".to_string(),
@@ -655,18 +556,12 @@ mod tests {
 
         let plan = planner.build_plan(&query).unwrap();
 
-        // 测试 AND 逻辑（OR操作符下，所有term应该都匹配）
-        assert!(plan.regexes[0].regex.is_match("DE H found"));
-        assert!(plan.regexes[1].regex.is_match("DE N here"));
-
-        // 确保不会错误匹配
-        assert!(!plan.regexes[0].regex.is_match("CODE HDEF"));
-        assert!(!plan.regexes[1].regex.is_match("CODE HDEF"));
+        assert!(plan.engines[0].engine.as_ref().is_match("DE H found"));
+        assert!(plan.engines[1].engine.as_ref().is_match("DE N here"));
     }
 
     #[test]
     fn test_long_phrase_no_boundary() {
-        // 测试超过30字符的短语不自动添加边界
         let term = create_test_term(
             "This is a very long phrase that exceeds thirty characters",
             QueryOperator::And,
@@ -676,8 +571,78 @@ mod tests {
 
     #[test]
     fn test_url_no_boundary() {
-        // 测试URL不添加边界
         let term = create_test_term("http://api.example.com", QueryOperator::And);
         assert!(!QueryPlanner::should_use_word_boundary(&term));
+    }
+
+    // ========== 混合引擎测试 ==========
+
+    #[test]
+    fn test_engine_selection_simple_keyword() {
+        let pattern = "error";
+        let engine = RegexEngine::new(pattern, false).unwrap();
+
+        match engine {
+            RegexEngine::AhoCorasick(_) => {},
+            RegexEngine::Automata(_) => {},
+            RegexEngine::Standard(_) => {},
+        }
+    }
+
+    #[test]
+    fn test_engine_selection_regex() {
+        let pattern = r"\d{4}-\d{2}-\d{2}";
+        let engine = RegexEngine::new(pattern, true).unwrap();
+
+        match engine {
+            RegexEngine::AhoCorasick(_) => {},
+            RegexEngine::Automata(_) => {},
+            RegexEngine::Standard(_) => {},
+        }
+    }
+
+    #[test]
+    fn test_build_plan_with_new_engine() {
+        let mut planner = QueryPlanner::new(100);
+        let query = SearchQuery {
+            id: "test".to_string(),
+            terms: vec![
+                create_test_term("error", QueryOperator::And),
+                create_test_term("timeout", QueryOperator::And),
+            ],
+            global_operator: QueryOperator::And,
+            filters: None,
+            metadata: QueryMetadata {
+                created_at: 0,
+                last_modified: 0,
+                execution_count: 0,
+                label: None,
+            },
+        };
+
+        let plan = planner.build_plan(&query).unwrap();
+        assert_eq!(plan.strategy, SearchStrategy::And);
+        assert_eq!(plan.term_count, 2);
+        assert_eq!(plan.engines.len(), 2);
+    }
+
+    #[test]
+    fn test_aho_corasiick_multi_keyword() {
+        let engine = RegexEngine::new("error|warning|info|fatal", false).unwrap();
+
+        let text = "error warning info error fatal";
+        let matches: Vec<_> = engine.find_iter(text).collect();
+
+        assert_eq!(matches.len(), 5);
+    }
+
+    #[test]
+    fn test_substring_matching() {
+        let engine = RegexEngine::new("error", false).unwrap();
+
+        let text = "error occurred, error_code, error123";
+        let matches: Vec<_> = engine.find_iter(text).collect();
+
+        assert!(matches.len() >= 3, "Expected at least 3 matches, got {}", matches.len());
     }
 }

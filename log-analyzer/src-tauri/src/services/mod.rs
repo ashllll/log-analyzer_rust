@@ -7,6 +7,7 @@ pub mod pattern_matcher;
 pub mod query_executor;
 pub mod query_planner;
 pub mod query_validator;
+pub mod regex_engine;
 pub mod search_statistics;
 pub mod service_config;
 pub mod service_container;
@@ -35,6 +36,10 @@ pub use index_validator::{IndexValidator, InvalidFileInfo, ValidationReport};
 pub use metadata_db::MetadataDB;
 pub use query_executor::{MatchDetail, QueryExecutor};
 pub use query_planner::ExecutionPlan;
+pub use regex_engine::{
+    AutomataEngine, EngineError, EngineInfo, EngineMatches, EngineType, MatchResult, RegexEngine,
+    StandardEngine, AhoCorasickEngine,
+};
 pub use search_statistics::calculate_keyword_statistics;
 pub use service_config::ServiceConfiguration;
 pub use service_container::{AppServices, AppServicesBuilder};

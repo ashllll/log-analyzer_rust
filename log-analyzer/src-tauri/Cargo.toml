@@ -16,7 +16,8 @@ tauri-plugin-shell = "2.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 uuid = { version = "1.0", features = ["v4", "serde"] }
-regex = "1.10"
+regex = "1.11"          # 正则表达式库
+aho-corasick = "1.1"     # 多模式匹配算法（搜索性能优化）
 chrono = { version = "0.4", features = ["serde"] }  # 时间序列化支持
 walkdir = "2.4"
 tempfile = "3.10"
@@ -32,7 +33,6 @@ dunce = "1.0"   # Windows 路径规范化（UNC路径处理）
 lru = "0.12"    # LRU 缓存（搜索结果缓存）
 notify = "6.1"  # 文件系统监听
 unicode-normalization = "0.1"  # Unicode规范化
-aho-corasick = "1.0"  # 多模式匹配算法（搜索性能优化）
 thiserror = "1.0"  # 错误处理
 async-trait = "0.1"  # 异步trait支持
 sysinfo = { version = "0.31", default-features = true }
@@ -116,4 +116,3 @@ tokio-test = "0.4"  # 异步测试工具
 
 [features]
 test = []  # 用于测试时的 mock 功能
-
