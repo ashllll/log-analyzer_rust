@@ -141,6 +141,19 @@ const SearchPage: React.FC<SearchPageProps> = ({
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [isFilterPaletteOpen, setIsFilterPaletteOpen] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  
+  // 防抖搜索触发器
+  const [searchTrigger, setSearchTrigger] = useState(0);
+
+  // 刷新状态管理
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const isRefreshingRef = useRef(false);
+  const lastRefreshTimeRef = useRef(0);
+  const lastScrollTopRef = useRef(0);
+  const refreshLogsRef = useRef<(() => void) | null>(null);
+  const isNearBottomRef = useRef<((scrollTop: number, clientHeight: number, scrollHeight: number) => boolean) | null>(null);
+  const REFRESH_THRESHOLD = 50;
+  const REFRESH_DEBOUNCE_MS = 1000;
 
   // 搜索统计状态
   const [searchSummary, setSearchSummary] = useState<SearchResultSummary | null>(null);
@@ -163,6 +176,9 @@ const SearchPage: React.FC<SearchPageProps> = ({
   });
   
   const parentRef = useRef<HTMLDivElement>(null);
+  
+  // 使用 ref 存储虚拟滚动器实例，避免声明顺序问题
+  const rowVirtualizerRef = useRef<ReturnType<typeof useVirtualizer<HTMLDivElement, Element>>>(null);
 
   // ResizeObserver优化：监听容器尺寸变化，即时更新虚拟滚动
   useEffect(() => {
@@ -180,25 +196,61 @@ const SearchPage: React.FC<SearchPageProps> = ({
     };
   }, []);
 
-  // 监听搜索事件（使用React最佳实践 - 无需timeout）
+  // 滚动事件监听（用于底部刷新）
   useEffect(() => {
-    // 使用AbortController实现可取消的异步操作（业内成熟方案）
+    const element = parentRef.current;
+    if (!element) return;
+
+    const handleScrollEvent = (event: Event) => {
+      const target = event.target as HTMLDivElement;
+      const { scrollTop, clientHeight, scrollHeight } = target;
+      
+      lastScrollTopRef.current = scrollTop;
+      
+      if (isRefreshingRef.current) return;
+      
+      if (isNearBottomRef.current && !isNearBottomRef.current(scrollTop, clientHeight, scrollHeight)) return;
+      
+      const now = Date.now();
+      if (now - lastRefreshTimeRef.current < REFRESH_DEBOUNCE_MS) return;
+      
+      lastRefreshTimeRef.current = now;
+      isRefreshingRef.current = true;
+      setIsRefreshing(true);
+      
+      if (refreshLogsRef.current) {
+        refreshLogsRef.current();
+      }
+    };
+
+    element.addEventListener('scroll', handleScrollEvent, { passive: true });
+
+    return () => {
+      element.removeEventListener('scroll', handleScrollEvent);
+    };
+  }, []);
+
+  // 监听搜索事件
+  useEffect(() => {
     const abortController = new AbortController();
     const unlisteners: Array<() => void> = [];
 
     const setupListeners = async () => {
       try {
-        // 并发注册所有监听器（Promise.all本身就是最优方案）
-        const [resultsUnlisten, summaryUnlisten, completeUnlisten, errorUnlisten] = await Promise.all([
+        const [
+          resultsUnlisten,
+          summaryUnlisten,
+          completeUnlisten,
+          errorUnlisten,
+          startUnlisten
+        ] = await Promise.all([
           listen<LogEntry[]>('search-results', (e) => {
-            // 直接更新状态，useDeferredValue 会处理渲染优化
             setLogs(prev => [...prev, ...e.payload]);
           }),
           listen<SearchResultSummary>('search-summary', (e) => {
             const summary = e.payload;
             setSearchSummary(summary);
 
-            // 转换为KeywordStat，添加颜色
             const stats: KeywordStat[] = summary.keywordStats.map((stat, index) => ({
               ...stat,
               color: keywordColors[index % keywordColors.length]
@@ -209,7 +261,6 @@ const SearchPage: React.FC<SearchPageProps> = ({
             setIsSearching(false);
             const count = e.payload as number;
 
-            // 保存搜索历史
             if (query.trim() && activeWorkspace) {
               invoke('add_search_history', {
                 query: query.trim(),
@@ -220,7 +271,17 @@ const SearchPage: React.FC<SearchPageProps> = ({
               });
             }
 
-            // 使用更简洁的通知消息
+            // 滚动到顶部显示最新结果
+            setTimeout(() => {
+              if (deferredLogs.length > 0 && rowVirtualizerRef.current) {
+                try {
+                  rowVirtualizerRef.current.scrollToIndex(0);
+                } catch {
+                  // 静默处理滚动错误
+                }
+              }
+            }, 50);
+
             if (count > 0) {
               addToast('success', `找到 ${count.toLocaleString()} 条日志`);
             } else {
@@ -231,19 +292,28 @@ const SearchPage: React.FC<SearchPageProps> = ({
             setIsSearching(false);
             const errorMsg = String(e.payload);
             addToast('error', `搜索失败: ${errorMsg}`);
+          }),
+          listen('search-start', () => {
+            // 清空并重置滚动
+            setLogs([]);
+            setSearchSummary(null);
+            setKeywordStats([]);
+            if (parentRef.current) {
+              parentRef.current.scrollTop = 0;
+            }
+            if (rowVirtualizerRef.current) {
+              rowVirtualizerRef.current.scrollOffset = 0;
+            }
           })
         ]);
 
-        // 检查是否已取消（组件卸载时）
         if (abortController.signal.aborted) {
-          // 如果已取消，立即清理监听器
-          [resultsUnlisten, summaryUnlisten, completeUnlisten, errorUnlisten].forEach(unlisten => unlisten());
+          [resultsUnlisten, summaryUnlisten, completeUnlisten, errorUnlisten, startUnlisten].forEach(unlisten => unlisten());
           return;
         }
 
-        unlisteners.push(...[resultsUnlisten, summaryUnlisten, completeUnlisten, errorUnlisten]);
+        unlisteners.push(...[resultsUnlisten, summaryUnlisten, completeUnlisten, errorUnlisten, startUnlisten]);
       } catch (error) {
-        // 只有在未取消时才记录错误（避免卸载时的误报）
         if (!abortController.signal.aborted) {
           console.error('Failed to setup event listeners:', error);
         }
@@ -252,22 +322,13 @@ const SearchPage: React.FC<SearchPageProps> = ({
 
     setupListeners();
 
-    // React cleanup函数（标准模式，自动在卸载时调用）
     return () => {
-      // 标记为已取消
       abortController.abort();
-
-      // 清理所有监听器
       unlisteners.forEach(unlisten => {
-        try {
-          unlisten();
-        } catch {
-          // 静默处理清理错误（React最佳实践）
-        }
+        try { unlisten(); } catch {}
       });
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [addToast, keywordColors]);
+  }, [addToast, keywordColors, rowVirtualizerRef, deferredLogs.length, parentRef, query, activeWorkspace]);
 
   // 加载保存的查询
   useEffect(() => {
@@ -286,17 +347,143 @@ const SearchPage: React.FC<SearchPageProps> = ({
     }
   }, [currentQuery]);
 
-  /**
-   * 执行搜索
-   */
-  const handleSearch = async () => {
-    if (!activeWorkspace) return addToast('error', 'Select a workspace first.');
+  // 监听查询变化，自动触发搜索（防抖500ms）
+  useEffect(() => {
+    if (!query.trim()) {
+      setLogs([]);
+      return;
+    }
+    
+    const timer = setTimeout(() => {
+      setSearchTrigger(prev => prev + 1);
+    }, 500);
+    
+    return () => clearTimeout(timer);
+  }, [query]);
 
-    // 清空状态
+  // 搜索触发器变化时执行搜索
+  useEffect(() => {
+    if (searchTrigger > 0 && activeWorkspace) {
+      handleSearch();
+    }
+  }, [searchTrigger, activeWorkspace]);
+
+  /**
+   * 检查是否接近滚动底部
+   * @param scrollTop - 当前滚动位置
+   * @param clientHeight - 视口高度
+   * @param scrollHeight - 内容总高度
+   * @returns 是否接近底部
+   */
+  const isNearBottom = useCallback((
+    scrollTop: number,
+    clientHeight: number,
+    scrollHeight: number
+  ): boolean => {
+    return scrollHeight - scrollTop - clientHeight <= REFRESH_THRESHOLD;
+  }, []);
+
+  // 存储 isNearBottom 到 ref 供滚动事件使用
+  useEffect(() => {
+    isNearBottomRef.current = isNearBottom;
+  }, [isNearBottom]);
+
+  /**
+   * 刷新日志数据
+   * 追加获取新数据，不替换现有结果
+   */
+  const refreshLogs = useCallback(async () => {
+    if (!activeWorkspace) {
+      isRefreshingRef.current = false;
+      setIsRefreshing(false);
+      return;
+    }
+
+    const trimmedQuery = query.trim();
+    if (!trimmedQuery) {
+      isRefreshingRef.current = false;
+      setIsRefreshing(false);
+      return;
+    }
+
+    const currentCount = logs.length;
+    const refreshLimit = 100;
+
+    try {
+      const filters = {
+        time_start: filterOptions.timeRange.start,
+        time_end: filterOptions.timeRange.end,
+        levels: filterOptions.levels,
+        file_pattern: filterOptions.filePattern || null
+      };
+
+      const result = await invoke<{results: Array<{id: {to_string: () => string}, timestamp: string, level: string, message: string, source_file: string, line_number: number}>, total_count: number}>("search_logs", {
+        query: trimmedQuery,
+        searchPath: activeWorkspace.path,
+        filters,
+        offset: currentCount,
+        limit: refreshLimit,
+      });
+
+      if (result.results && result.results.length > 0) {
+        const newLogs: LogEntry[] = result.results.map((r, i) => ({
+          id: currentCount + i + 1,
+          timestamp: r.timestamp,
+          level: r.level,
+          content: r.message,
+          file: r.source_file,
+          line: r.line_number,
+          real_path: r.source_file,
+          tags: [],
+          match_details: null,
+          matched_keywords: undefined,
+        }));
+
+        setLogs(prev => [...prev, ...newLogs]);
+      }
+    } catch (err) {
+      console.error('Refresh failed:', err);
+      addToast('error', `刷新失败: ${err}`);
+    } finally {
+      isRefreshingRef.current = false;
+      setIsRefreshing(false);
+    }
+  }, [query, activeWorkspace, filterOptions, logs.length, addToast]);
+
+  // 存储 refreshLogs 到 ref 供滚动事件使用
+  useEffect(() => {
+    refreshLogsRef.current = refreshLogs;
+  }, [refreshLogs]);
+
+  /**
+   * 执行搜索 - 使用 useCallback 确保稳定性
+   */
+  const handleSearch = useCallback(async () => {
+    if (!activeWorkspace) {
+      addToast('error', 'Select a workspace first.');
+      return;
+    }
+
+    const trimmedQuery = query.trim();
+    if (!trimmedQuery) {
+      setLogs([]);
+      return;
+    }
+
+    // 重置状态
     setLogs([]);
     setSearchSummary(null);
     setKeywordStats([]);
     setIsSearching(true);
+    setSelectedId(null);
+
+    // 重置滚动位置到顶部
+    if (parentRef.current) {
+      parentRef.current.scrollTop = 0;
+    }
+    if (rowVirtualizerRef.current && rowVirtualizerRef.current.scrollOffset !== 0) {
+      rowVirtualizerRef.current.scrollOffset = 0;
+    }
 
     try {
       // 构建过滤器对象
@@ -308,9 +495,9 @@ const SearchPage: React.FC<SearchPageProps> = ({
       };
 
       await invoke("search_logs", {
-        query,
+        query: trimmedQuery,
         searchPath: activeWorkspace.path,
-        filters: filters,
+        filters,
       });
 
       // 如果使用了结构化查询，更新执行次数
@@ -318,10 +505,12 @@ const SearchPage: React.FC<SearchPageProps> = ({
         currentQuery.metadata.executionCount += 1;
         setCurrentQuery({...currentQuery});
       }
-    } catch {
+    } catch (err) {
+      console.error('Search failed:', err);
       setIsSearching(false);
+      addToast('error', `搜索失败: ${err}`);
     }
-  };
+  }, [query, activeWorkspace, filterOptions, currentQuery, addToast, rowVirtualizerRef, parentRef]);
   
   /**
    * 重置过滤器
@@ -462,15 +651,30 @@ const SearchPage: React.FC<SearchPageProps> = ({
   
   /**
    * 虚拟滚动配置
-   * 优化：固定 estimateSize 避免依赖 logs，完全依赖动态测量
+   * 优化：固定 estimateSize 避免依赖 logs，添加边界条件处理
+   * 将结果存储到 ref 中以便在其他 useEffect 中访问
    */
   const rowVirtualizer = useVirtualizer({ 
     count: deferredLogs.length, 
-    getScrollElement: () => parentRef.current, 
-    estimateSize: useCallback(() => 32, []),  // 固定估算高度，依赖动态测量
-    overscan: 15,  // 适当的 overscan 值
-    measureElement: (element) => element?.getBoundingClientRect().height || 32,
+    getScrollElement: () => {
+      if (!parentRef.current) return null;
+      return parentRef.current;
+    }, 
+    estimateSize: useCallback(() => 32, []),
+    overscan: 15,
+    measureElement: (element) => {
+      if (!element) return 32;
+      try {
+        const rect = element.getBoundingClientRect();
+        return rect.height > 0 ? rect.height : 32;
+      } catch {
+        return 32;
+      }
+    },
   });
+  
+  // 将虚拟滚动器存储到 ref 中
+  rowVirtualizerRef.current = rowVirtualizer;
   
   const activeLog = deferredLogs.find(l => l.id === selectedId);
 
@@ -709,6 +913,14 @@ const SearchPage: React.FC<SearchPageProps> = ({
               );
             })}
           </div>
+          
+          {/* 加载指示器 - 底部刷新时显示 */}
+          {isRefreshing && (
+            <div className="flex items-center justify-center py-4">
+              <Loader2 className="animate-spin text-primary" size={20} />
+              <span className="ml-2 text-sm text-text-muted">加载更多...</span>
+            </div>
+          )}
           
           {/* 空状态 */}
           {logs.length === 0 && !isSearching && (
