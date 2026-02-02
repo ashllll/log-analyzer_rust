@@ -48,11 +48,11 @@ pub use security_detector::{SecurityDetector, SecurityPolicy};
 pub use sevenz_handler::SevenZHandler;
 
 pub use tar_handler::TarHandler;
-pub use zip_handler::ZipHandler;
 pub use traversal::{
     DirectoryTraverser, PathNodeIterator, TraversalConfig, TraversalEntry, TraversalError,
     TraversalStats, TraversalStatsSnapshot,
 };
+pub use zip_handler::ZipHandler;
 // 导出 checkpoint 相关类型供测试使用
 pub use checkpoint_manager::{Checkpoint, CheckpointConfig, CheckpointManager};
 // 导出 audit logger 相关类型供测试使用

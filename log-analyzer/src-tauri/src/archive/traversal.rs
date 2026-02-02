@@ -45,7 +45,10 @@ pub enum TraversalError {
 
     /// Symbolic link resolution failed
     #[error("Failed to resolve symlink: {path}")]
-    SymlinkResolutionFailed { path: PathBuf, source: std::io::Error },
+    SymlinkResolutionFailed {
+        path: PathBuf,
+        source: std::io::Error,
+    },
 
     /// WalkDir encountered an error
     #[error("WalkDir error: {source}")]
@@ -518,8 +521,7 @@ mod tests {
     #[test]
     fn test_directory_traverser_basic() {
         let temp = create_test_directory();
-        let config = TraversalConfig::new(temp.path().to_path_buf())
-            .with_max_depth(1);
+        let config = TraversalConfig::new(temp.path().to_path_buf()).with_max_depth(1);
 
         let mut traverser = DirectoryTraverser::new(config).unwrap();
         let mut count = 0;
@@ -548,8 +550,7 @@ mod tests {
     #[test]
     fn test_traversal_entry_is_file() {
         let temp = create_test_directory();
-        let config = TraversalConfig::new(temp.path().to_path_buf())
-            .with_max_depth(1);
+        let config = TraversalConfig::new(temp.path().to_path_buf()).with_max_depth(1);
 
         let mut traverser = DirectoryTraverser::new(config).unwrap();
 
@@ -568,8 +569,7 @@ mod tests {
     fn test_traversal_error_from_walkdir() {
         // This tests that walkdir errors are properly converted
         let temp = create_test_directory();
-        let config = TraversalConfig::new(temp.path().to_path_buf())
-            .with_max_depth(1);
+        let config = TraversalConfig::new(temp.path().to_path_buf()).with_max_depth(1);
 
         let mut traverser = DirectoryTraverser::new(config).unwrap();
 
@@ -581,8 +581,7 @@ mod tests {
     #[test]
     fn test_traversal_entry_file_name() {
         let temp = create_test_directory();
-        let config = TraversalConfig::new(temp.path().to_path_buf())
-            .with_max_depth(1);
+        let config = TraversalConfig::new(temp.path().to_path_buf()).with_max_depth(1);
 
         let mut traverser = DirectoryTraverser::new(config).unwrap();
 
@@ -600,8 +599,7 @@ mod tests {
     #[test]
     fn test_traversal_stats_recording() {
         let temp = create_test_directory();
-        let config = TraversalConfig::new(temp.path().to_path_buf())
-            .with_max_depth(1);
+        let config = TraversalConfig::new(temp.path().to_path_buf()).with_max_depth(1);
 
         let mut traverser = DirectoryTraverser::new(config).unwrap();
 
@@ -617,8 +615,7 @@ mod tests {
     #[test]
     fn test_traversal_entry_metadata() {
         let temp = create_test_directory();
-        let config = TraversalConfig::new(temp.path().to_path_buf())
-            .with_max_depth(1);
+        let config = TraversalConfig::new(temp.path().to_path_buf()).with_max_depth(1);
 
         let mut traverser = DirectoryTraverser::new(config).unwrap();
 
@@ -636,8 +633,7 @@ mod tests {
     #[test]
     fn test_traversal_entry_is_symlink() {
         let temp = create_test_directory();
-        let config = TraversalConfig::new(temp.path().to_path_buf())
-            .with_max_depth(1);
+        let config = TraversalConfig::new(temp.path().to_path_buf()).with_max_depth(1);
 
         let mut traverser = DirectoryTraverser::new(config).unwrap();
 
@@ -681,8 +677,7 @@ mod tests {
     #[test]
     fn test_directory_traverser_empty_directory() {
         let temp = TempDir::new().unwrap();
-        let config = TraversalConfig::new(temp.path().to_path_buf())
-            .with_max_depth(1);
+        let config = TraversalConfig::new(temp.path().to_path_buf()).with_max_depth(1);
 
         let mut traverser = DirectoryTraverser::new(config).unwrap();
 
@@ -694,8 +689,7 @@ mod tests {
     #[test]
     fn test_traversal_entry_effective_path_for_regular_file() {
         let temp = create_test_directory();
-        let config = TraversalConfig::new(temp.path().to_path_buf())
-            .with_max_depth(1);
+        let config = TraversalConfig::new(temp.path().to_path_buf()).with_max_depth(1);
 
         let mut traverser = DirectoryTraverser::new(config).unwrap();
 
@@ -704,10 +698,7 @@ mod tests {
 
             // For non-symlinks, effective_path should equal original path
             if !traversal_entry.is_symlink() {
-                assert_eq!(
-                    traversal_entry.effective_path(),
-                    traversal_entry.path()
-                );
+                assert_eq!(traversal_entry.effective_path(), traversal_entry.path());
             }
         }
     }
@@ -760,8 +751,7 @@ mod tests {
     #[test]
     fn test_traversal_entry_is_dir() {
         let temp = create_test_directory();
-        let config = TraversalConfig::new(temp.path().to_path_buf())
-            .with_max_depth(1);
+        let config = TraversalConfig::new(temp.path().to_path_buf()).with_max_depth(1);
 
         let mut traverser = DirectoryTraverser::new(config).unwrap();
 
