@@ -392,17 +392,97 @@ impl SearchEngineManager {
     }
 
     /// Convert Tantivy document to LogEntry
+    ///
+    /// Returns None if any required field is missing, with detailed logging.
     fn document_to_log_entry(&self, doc: &TantivyDocument) -> Option<LogEntry> {
-        let content = doc.get_first(self.schema.content)?.as_str()?;
-        let timestamp_i64 = doc.get_first(self.schema.timestamp)?.as_i64()?;
-        let timestamp = timestamp_i64.to_string(); // Convert back to string for LogEntry
-        let level = doc.get_first(self.schema.level)?.as_str()?;
-        let file_path = doc.get_first(self.schema.file_path)?.as_str()?;
-        let real_path = doc.get_first(self.schema.real_path)?.as_str()?;
-        let line_number = doc.get_first(self.schema.line_number)?.as_u64()? as usize;
+        // Extract all fields with detailed error tracking
+        let content = match doc.get_first(self.schema.content) {
+            Some(v) => match v.as_str() {
+                Some(s) => s.to_string(),
+                None => {
+                    tracing::warn!("Document has non-string content field, skipping");
+                    return None;
+                }
+            },
+            None => {
+                tracing::warn!("Document missing required content field, skipping");
+                return None;
+            }
+        };
+
+        let timestamp_i64 = match doc.get_first(self.schema.timestamp) {
+            Some(v) => match v.as_i64() {
+                Some(n) => n,
+                None => {
+                    tracing::warn!("Document has non-i64 timestamp field, skipping");
+                    return None;
+                }
+            },
+            None => {
+                tracing::warn!("Document missing required timestamp field, skipping");
+                return None;
+            }
+        };
+        let timestamp = timestamp_i64.to_string();
+
+        let level = match doc.get_first(self.schema.level) {
+            Some(v) => match v.as_str() {
+                Some(s) => s.to_string(),
+                None => {
+                    tracing::warn!("Document has non-string level field, skipping");
+                    return None;
+                }
+            },
+            None => {
+                tracing::warn!("Document missing required level field, skipping");
+                return None;
+            }
+        };
+
+        let file_path = match doc.get_first(self.schema.file_path) {
+            Some(v) => match v.as_str() {
+                Some(s) => s.to_string(),
+                None => {
+                    tracing::warn!("Document has non-string file_path field, skipping");
+                    return None;
+                }
+            },
+            None => {
+                tracing::warn!("Document missing required file_path field, skipping");
+                return None;
+            }
+        };
+
+        let real_path = match doc.get_first(self.schema.real_path) {
+            Some(v) => match v.as_str() {
+                Some(s) => s.to_string(),
+                None => {
+                    tracing::warn!("Document has non-string real_path field, skipping");
+                    return None;
+                }
+            },
+            None => {
+                tracing::warn!("Document missing required real_path field, skipping");
+                return None;
+            }
+        };
+
+        let line_number = match doc.get_first(self.schema.line_number) {
+            Some(v) => match v.as_u64() {
+                Some(n) => n as usize,
+                None => {
+                    tracing::warn!("Document has non-u64 line_number field, skipping");
+                    return None;
+                }
+            },
+            None => {
+                tracing::warn!("Document missing required line_number field, skipping");
+                return None;
+            }
+        };
 
         Some(LogEntry {
-            id: 0, // Will be set by caller if needed
+            id: 0,
             timestamp: timestamp.into(),
             level: level.into(),
             file: file_path.into(),

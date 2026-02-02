@@ -166,6 +166,10 @@ impl PerformanceMonitor {
 
     fn is_performance_degraded(&self, threshold: f64) -> bool {
         if let Some(baseline) = self.baseline_response_time {
+            if baseline.as_millis() == 0 {
+                // Avoid divide-by-zero if baseline is zero
+                return false;
+            }
             let current_avg = self.calculate_average_response_time();
             let degradation_ratio = current_avg.as_millis() as f64 / baseline.as_millis() as f64;
             degradation_ratio > threshold

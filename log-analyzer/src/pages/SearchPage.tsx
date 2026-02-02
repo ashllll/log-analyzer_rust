@@ -245,10 +245,18 @@ const SearchPage: React.FC<SearchPageProps> = ({
           startUnlisten
         ] = await Promise.all([
           listen<LogEntry[]>('search-results', (e) => {
+            if (!e.payload || !Array.isArray(e.payload)) {
+              console.warn('Invalid search results payload:', e.payload);
+              return;
+            }
             setLogs(prev => [...prev, ...e.payload]);
           }),
           listen<SearchResultSummary>('search-summary', (e) => {
             const summary = e.payload;
+            if (!summary) {
+              console.warn('Invalid search summary payload:', e.payload);
+              return;
+            }
             setSearchSummary(summary);
 
             const stats: KeywordStat[] = summary.keywordStats.map((stat, index) => ({
@@ -259,7 +267,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
           }),
           listen('search-complete', (e) => {
             setIsSearching(false);
-            const count = e.payload as number;
+            const count = typeof e.payload === 'number' ? e.payload : 0;
 
             if (query.trim() && activeWorkspace) {
               invoke('add_search_history', {
@@ -325,7 +333,11 @@ const SearchPage: React.FC<SearchPageProps> = ({
     return () => {
       abortController.abort();
       unlisteners.forEach(unlisten => {
-        try { unlisten(); } catch {}
+        try {
+          unlisten();
+        } catch (error) {
+          console.debug('Failed to unlisten:', error);
+        }
       });
     };
   }, [addToast, keywordColors, rowVirtualizerRef, deferredLogs.length, parentRef, query, activeWorkspace]);
@@ -366,6 +378,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
     if (searchTrigger > 0 && activeWorkspace) {
       handleSearch();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchTrigger, activeWorkspace]);
 
   /**

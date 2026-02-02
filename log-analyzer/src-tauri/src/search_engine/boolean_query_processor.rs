@@ -322,9 +322,13 @@ impl BooleanQueryProcessor {
         };
 
         // Adjust limit based on early termination strategy
+        // NOTE: Remove artificial limit to prevent result truncation
+        // The early termination should be based on query cost estimation,
+        // not on arbitrarily limiting result count
         let effective_limit = if plan.should_use_early_termination {
-            // Use smaller limit for expensive queries to enable early termination
-            std::cmp::min(limit, 1000)
+            // Use a reasonable soft limit for performance, but respect user's limit
+            // This prevents excessive memory usage while ensuring user gets requested results
+            std::cmp::min(limit, 100_000)
         } else {
             limit
         };
@@ -348,11 +352,25 @@ impl BooleanQueryProcessor {
             .map(|(_score, doc_address)| doc_address)
             .collect();
 
+        let was_truncated = total_count > doc_addresses.len();
+        let truncated_info = if was_truncated {
+            format!(
+                " (results truncated from {} to {} due to limit)",
+                total_count,
+                doc_addresses.len()
+            )
+        } else {
+            String::new()
+        };
+
         info!(
             returned_docs = doc_addresses.len(),
             total_count = total_count,
             early_termination = plan.should_use_early_termination,
-            "Query executed successfully"
+            limit_applied = effective_limit,
+            was_truncated = was_truncated,
+            "Query executed successfully{}",
+            truncated_info
         );
 
         Ok((doc_addresses, total_count))

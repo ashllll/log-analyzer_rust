@@ -184,6 +184,7 @@ export class SearchQueryBuilder {
    */
   validate(): QueryValidation {
     const issues: ValidationIssue[] = [];
+    let errorCount = 0;
 
     // 检查是否为空
     if (this.query.terms.length === 0) {
@@ -192,6 +193,7 @@ export class SearchQueryBuilder {
         code: 'EMPTY_QUERY',
         message: '查询不能为空（至少需要一个搜索项）'
       });
+      errorCount++;
       return { isValid: false, issues };
     }
 
@@ -203,12 +205,18 @@ export class SearchQueryBuilder {
         code: 'NO_ENABLED_TERMS',
         message: '至少需要启用一个搜索项'
       });
+      errorCount++;
     }
 
     // 验证每个项
     this.query.terms.forEach(term => {
       const termIssues = this.validateTerm(term);
-      issues.push(...termIssues);
+      termIssues.forEach(issue => {
+        issues.push(issue);
+        if (issue.severity === 'error') {
+          errorCount++;
+        }
+      });
     });
 
     // 检查重复
@@ -223,7 +231,7 @@ export class SearchQueryBuilder {
     });
 
     return {
-      isValid: issues.filter(i => i.severity === 'error').length === 0,
+      isValid: errorCount === 0,
       issues
     };
   }

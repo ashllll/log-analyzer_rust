@@ -27,6 +27,7 @@ pub mod public_api;
 pub mod rar_handler;
 pub mod sevenz_handler;
 pub mod tar_handler;
+pub mod traversal; // 新增：统一遍历模块
 pub mod zip_handler;
 
 pub use archive_handler::{ArchiveHandler, ExtractionSummary};
@@ -48,6 +49,10 @@ pub use sevenz_handler::SevenZHandler;
 
 pub use tar_handler::TarHandler;
 pub use zip_handler::ZipHandler;
+pub use traversal::{
+    DirectoryTraverser, PathNodeIterator, TraversalConfig, TraversalEntry, TraversalError,
+    TraversalStats, TraversalStatsSnapshot,
+};
 // 导出 checkpoint 相关类型供测试使用
 pub use checkpoint_manager::{Checkpoint, CheckpointConfig, CheckpointManager};
 // 导出 audit logger 相关类型供测试使用

@@ -139,10 +139,37 @@ impl TarHandler {
             let size = entry.header().size().unwrap_or(0);
 
             if entry.header().entry_type().is_file() {
-                if size > max_file_size
+                // Check limits before extraction
+                let would_exceed_limits = size > max_file_size
                     || summary.total_size + size > max_total_size
-                    || summary.files_extracted + 1 > max_file_count
-                {
+                    || summary.files_extracted + 1 > max_file_count;
+
+                if would_exceed_limits {
+                    // Log skipped file details instead of silently skipping
+                    let path_str = safe_path.to_string_lossy();
+                    if size > max_file_size {
+                        warn!(
+                            file = %path_str,
+                            file_size = size,
+                            max_allowed = max_file_size,
+                            "Skipping file exceeding max_file_size limit"
+                        );
+                    } else if summary.total_size + size > max_total_size {
+                        warn!(
+                            file = %path_str,
+                            file_size = size,
+                            current_total = summary.total_size,
+                            max_total = max_total_size,
+                            "Skipping file - would exceed max_total_size limit"
+                        );
+                    } else {
+                        warn!(
+                            file = %path_str,
+                            current_count = summary.files_extracted,
+                            max_count = max_file_count,
+                            "Skipping file - would exceed max_file_count limit"
+                        );
+                    }
                     continue;
                 }
 

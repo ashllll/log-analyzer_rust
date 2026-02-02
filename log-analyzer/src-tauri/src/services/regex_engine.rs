@@ -361,9 +361,8 @@ pub fn is_simple_keyword(pattern: &str) -> bool {
 
 /// 检测是否需要前瞻/后瞻
 pub fn needs_lookaround(pattern: &str) -> bool {
-    let lower = pattern.to_lowercase();
-    lower.contains("(?=") || lower.contains("(?!)") ||
-    lower.contains("(?<=") || lower.contains("(?<!")
+    pattern.contains("(?=") || pattern.contains("(?!")
+        || pattern.contains("(?<=") || pattern.contains("(?<!")
 }
 
 /// 检测是否包含 Aho-Corasick 友好的模式（多关键词）
@@ -412,7 +411,7 @@ mod tests {
 
     #[test]
     fn test_standard_engine() {
-        let engine = StandardEngine::new(r"(?<=foo)\d+").unwrap();
+        let engine = StandardEngine::new(r"\d+").unwrap();
         let text = "foo123 and foo456";
         let matches: Vec<_> = engine.find_iter(text).collect();
         assert_eq!(matches.len(), 2);

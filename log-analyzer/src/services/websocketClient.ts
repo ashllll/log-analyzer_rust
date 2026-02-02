@@ -394,9 +394,18 @@ export class WebSocketClient {
   }
 
   private flushPendingMessages(): void {
-    while (this.pendingMessages.length > 0 && this.isConnected()) {
+    const MAX_PENDING_MESSAGES = 1000;
+    let processedCount = 0;
+
+    while (this.pendingMessages.length > 0 && this.isConnected() && processedCount < MAX_PENDING_MESSAGES) {
       const message = this.pendingMessages.shift();
-      if (message && this.ws) {
+      processedCount++;
+
+      if (!message) {
+        continue;
+      }
+
+      if (this.ws) {
         try {
           this.ws.send(message);
           this.metrics.messagesSent++;
@@ -406,6 +415,11 @@ export class WebSocketClient {
           this.metrics.failedDeliveries++;
         }
       }
+    }
+
+    if (this.pendingMessages.length > MAX_PENDING_MESSAGES) {
+      logger.warn('[WS] Pending messages overflow, clearing queue');
+      this.pendingMessages = this.pendingMessages.slice(-MAX_PENDING_MESSAGES);
     }
   }
 

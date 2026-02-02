@@ -2,7 +2,6 @@
 //! 包含日志搜索及缓存逻辑，附带关键词统计与结果批量推送
 
 use parking_lot::Mutex;
-use regex::Regex;
 use sha2::{Digest, Sha256};
 use std::panic::AssertUnwindSafe;
 use std::{collections::HashSet, sync::Arc};
@@ -624,73 +623,6 @@ pub async fn search_logs(
     });
 
     Ok(search_id)
-}
-
-/// Legacy search function using regex (kept for backward compatibility)
-///
-/// This function is marked as dead_code but kept for potential future use.
-/// New code should use `search_single_file_with_details` instead.
-#[allow(dead_code)]
-fn search_single_file(
-    sha256_hash: &str,
-    virtual_path: &str,
-    cas: &crate::storage::ContentAddressableStorage,
-    re: &Regex,
-    global_offset: usize,
-) -> Vec<LogEntry> {
-    let mut results = Vec::new();
-
-    // Read content from CAS using hash
-    let content = match tokio::task::block_in_place(|| {
-        tokio::runtime::Handle::current().block_on(cas.read_content(sha256_hash))
-    }) {
-        Ok(bytes) => bytes,
-        Err(e) => {
-            warn!(
-                hash = %sha256_hash,
-                virtual_path = %virtual_path,
-                error = %e,
-                "Failed to read content from CAS"
-            );
-            return results;
-        }
-    };
-
-    // Convert bytes to string with encoding fallback (三层容错策略)
-    use crate::utils::encoding::decode_log_content;
-
-    let (content_str, encoding_info) = decode_log_content(&content);
-
-    if encoding_info.had_errors {
-        debug!(
-            hash = %sha256_hash,
-            virtual_path = %virtual_path,
-            encoding = %encoding_info.encoding,
-            fallback_used = encoding_info.fallback_used,
-            "File content decoded with encoding fallback"
-        );
-    }
-
-    // Process lines
-    for (i, line) in content_str.lines().enumerate() {
-        if re.is_match(line) {
-            let (ts, lvl) = parse_metadata(line);
-            results.push(LogEntry {
-                id: global_offset + i,
-                timestamp: ts.into(),
-                level: lvl.into(),
-                file: virtual_path.to_string().into(),
-                real_path: format!("cas://{}", sha256_hash).into(),
-                line: i + 1,
-                content: line.to_string().into(),
-                tags: vec![],
-                match_details: None,
-                matched_keywords: None,
-            });
-        }
-    }
-
-    results
 }
 
 /// 取消正在进行的搜索

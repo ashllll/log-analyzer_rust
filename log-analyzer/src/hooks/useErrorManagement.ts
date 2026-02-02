@@ -55,7 +55,7 @@ export const useErrorManagement = () => {
   ) => {
     const errorMessage = typeof error === 'string' ? error : error.message;
     const errorStack = typeof error === 'string' ? undefined : error.stack;
-    
+
     const errorInfo: ErrorInfo = {
       id: `error_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       message: errorMessage,
@@ -67,8 +67,12 @@ export const useErrorManagement = () => {
       recoverable: context?.recoverable ?? true
     };
 
-    // Add to local error list
-    setErrors(prev => [...prev.slice(-9), errorInfo]); // Keep last 10 errors
+    // Add to local error list with max size limit
+    const MAX_ERRORS = 50;
+    setErrors(prev => {
+      const newErrors = [...prev, errorInfo];
+      return newErrors.slice(-MAX_ERRORS);
+    });
 
     // Report to backend
     try {

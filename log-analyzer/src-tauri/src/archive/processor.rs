@@ -43,6 +43,23 @@ fn is_enhanced_extraction_enabled() -> bool {
     false
 }
 
+/// 检查是否跟随目录中的符号链接
+///
+/// 优先级：
+/// 1. 环境变量 FOLLOW_SYMLINKS（用于测试和临时覆盖）
+/// 2. 默认为 false（不跟随符号链接）
+///
+/// # 安全说明
+///
+/// 启用此选项可能存在安全风险，因为符号链接可能指向目录外的位置。
+/// 路径遍历检查会捕获大多数此类情况，但仍需谨慎使用。
+fn should_follow_symlinks() -> bool {
+    if let Ok(env_value) = std::env::var("FOLLOW_SYMLINKS") {
+        return env_value.to_lowercase() == "true";
+    }
+    false
+}
+
 /// 检查路径是否安全（防止路径遍历攻击）
 ///
 /// # 参数
@@ -108,6 +125,36 @@ fn validate_path_safety(path: &Path, base_dir: &Path) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Helper struct to track directory processing statistics
+struct DirectoryProcessingStats {
+    processed_count: usize,
+    skipped_error_count: usize,
+    skipped_symlink_count: usize,
+}
+
+impl Default for DirectoryProcessingStats {
+    fn default() -> Self {
+        Self {
+            processed_count: 0,
+            skipped_error_count: 0,
+            skipped_symlink_count: 0,
+        }
+    }
+}
+
+impl DirectoryProcessingStats {
+    fn log_summary(&self, path: &Path, context: &str) {
+        debug!(
+            path = %path.display(),
+            processed = self.processed_count,
+            skipped_symlinks = self.skipped_symlink_count,
+            skipped_errors = self.skipped_error_count,
+            "{} completed",
+            context
+        );
+    }
 }
 
 /// Validate virtual path to prevent path traversal attacks
@@ -201,11 +248,11 @@ pub async fn process_path_recursive(
     .await
     {
         // 老王备注：移除事件发送，所有事件都通过 TaskManager 发送
-        tracing::warn!(
+        warn!(
             path = %path.display(),
             error = %e,
             task_id = %task_id,
-            "Failed to process archive (event sent via TaskManager)"
+            "Failed to process archive"
         );
     }
 }
@@ -279,37 +326,91 @@ async fn process_path_recursive_inner(
 ) -> Result<()> {
     // 处理目录
     if path.is_dir() {
-        for entry in WalkDir::new(path)
+        // Track processing statistics for debugging
+        let mut stats = DirectoryProcessingStats::default();
+        let follow_symlinks = should_follow_symlinks();
+
+        let walkdir_iter = WalkDir::new(path)
             .min_depth(1)
             .max_depth(1)
-            .follow_links(false) // 不跟随符号链接
-            .into_iter()
-            .filter_map(|e| e.ok())
-        {
-            // 跳过符号链接
-            if entry.path_is_symlink() {
-                warn!(
-                    path = %entry.path().display(),
-                    "Skipping symlink during directory processing"
-                );
-                continue;
+            .follow_links(follow_symlinks)
+            .into_iter();
+
+        for entry_result in walkdir_iter {
+            match entry_result {
+                Ok(entry) => {
+                    // 处理符号链接
+                    let target_path: Option<PathBuf> = if entry.path_is_symlink() {
+                        if follow_symlinks {
+                            // 尝试解析符号链接目标
+                            match entry.path().read_link() {
+                                Ok(target) => {
+                                    let resolved = if target.is_absolute() {
+                                        target
+                                    } else {
+                                        entry.path().parent().unwrap().join(&target)
+                                    };
+                                    info!(
+                                        symlink = %entry.path().display(),
+                                        target = %resolved.display(),
+                                        "Following symlink to target"
+                                    );
+                                    Some(resolved)
+                                }
+                                Err(e) => {
+                                    warn!(
+                                        path = %entry.path().display(),
+                                        error = %e,
+                                        "Failed to read symlink target, skipping"
+                                    );
+                                    stats.skipped_symlink_count += 1;
+                                    continue;
+                                }
+                            }
+                        } else {
+                            warn!(
+                                path = %entry.path().display(),
+                                "Skipping symlink during directory processing (set FOLLOW_SYMLINKS=true to follow)"
+                            );
+                            stats.skipped_symlink_count += 1;
+                            continue;
+                        }
+                    } else {
+                        None
+                    };
+
+                    // 确定实际要处理的路径
+                    let path_to_process = target_path.as_ref().map(|p| p.as_path()).unwrap_or_else(|| entry.path());
+                    let entry_name = entry.file_name().to_string_lossy().to_string();
+                    let new_virtual = format!("{}/{}", virtual_path, entry_name);
+
+                    // 使用 Box::pin 解决递归异步调用
+                    Box::pin(process_path_recursive(
+                        path_to_process,
+                        &new_virtual,
+                        target_root,
+                        map,
+                        app,
+                        task_id,
+                        workspace_id,
+                    ))
+                    .await;
+                    stats.processed_count += 1;
+                }
+                Err(e) => {
+                    // Log the error instead of silently skipping
+                    warn!(
+                        path = %path.display(),
+                        error = %e,
+                        "Failed to read directory entry, skipping"
+                    );
+                    stats.skipped_error_count += 1;
+                    // Continue processing other entries instead of failing entirely
+                }
             }
-
-            let entry_name = entry.file_name().to_string_lossy().to_string();
-            let new_virtual = format!("{}/{}", virtual_path, entry_name);
-
-            // 使用 Box::pin 解决递归异步调用
-            Box::pin(process_path_recursive(
-                entry.path(),
-                &new_virtual,
-                target_root,
-                map,
-                app,
-                task_id,
-                workspace_id,
-            ))
-            .await;
         }
+
+        stats.log_summary(path, "Directory processing");
         return Ok(());
     }
 
@@ -345,17 +446,11 @@ async fn process_path_recursive_inner(
         {
             Ok(_) => return Ok(()),
             Err(e) => {
-                warn!(
+                error!(
                     file = %file_name,
                     error = %e,
                     task_id = %task_id,
-                    "Failed to extract archive (event sent via TaskManager)"
-                );
-                tracing::warn!(
-                    file = %file_name,
-                    error = %e,
-                    task_id = %task_id,
-                    "Failed to extract archive (event sent via TaskManager)"
+                    "Failed to extract archive"
                 );
                 return Err(e);
             }
@@ -409,38 +504,92 @@ async fn process_path_recursive_inner_with_metadata(
 ) -> Result<()> {
     // 处理目录
     if path.is_dir() {
-        for entry in WalkDir::new(path)
+        // Track processing statistics for debugging
+        let mut stats = DirectoryProcessingStats::default();
+        let follow_symlinks = should_follow_symlinks();
+
+        let walkdir_iter = WalkDir::new(path)
             .min_depth(1)
             .max_depth(1)
-            .follow_links(false) // 不跟随符号链接
-            .into_iter()
-            .filter_map(|e| e.ok())
-        {
-            // 跳过符号链接
-            if entry.path_is_symlink() {
-                warn!(
-                    path = %entry.path().display(),
-                    "Skipping symlink during directory processing with metadata"
-                );
-                continue;
+            .follow_links(follow_symlinks)
+            .into_iter();
+
+        for entry_result in walkdir_iter {
+            match entry_result {
+                Ok(entry) => {
+                    // 处理符号链接
+                    let target_path: Option<PathBuf> = if entry.path_is_symlink() {
+                        if follow_symlinks {
+                            // 尝试解析符号链接目标
+                            match entry.path().read_link() {
+                                Ok(target) => {
+                                    let resolved = if target.is_absolute() {
+                                        target
+                                    } else {
+                                        entry.path().parent().unwrap().join(&target)
+                                    };
+                                    info!(
+                                        symlink = %entry.path().display(),
+                                        target = %resolved.display(),
+                                        "Following symlink to target during metadata collection"
+                                    );
+                                    Some(resolved)
+                                }
+                                Err(e) => {
+                                    warn!(
+                                        path = %entry.path().display(),
+                                        error = %e,
+                                        "Failed to read symlink target, skipping"
+                                    );
+                                    stats.skipped_symlink_count += 1;
+                                    continue;
+                                }
+                            }
+                        } else {
+                            warn!(
+                                path = %entry.path().display(),
+                                "Skipping symlink during directory processing with metadata (set FOLLOW_SYMLINKS=true to follow)"
+                            );
+                            stats.skipped_symlink_count += 1;
+                            continue;
+                        }
+                    } else {
+                        None
+                    };
+
+                    // 确定实际要处理的路径
+                    let path_to_process = target_path.as_ref().map(|p| p.as_path()).unwrap_or_else(|| entry.path());
+                    let entry_name = entry.file_name().to_string_lossy().to_string();
+                    let new_virtual = format!("{}/{}", virtual_path, entry_name);
+
+                    // 使用 Box::pin 解决递归异步调用
+                    Box::pin(process_path_recursive_with_metadata(
+                        path_to_process,
+                        &new_virtual,
+                        target_root,
+                        map,
+                        metadata_map,
+                        app,
+                        task_id,
+                        workspace_id,
+                    ))
+                    .await;
+                    stats.processed_count += 1;
+                }
+                Err(e) => {
+                    // Log the error instead of silently skipping
+                    warn!(
+                        path = %path.display(),
+                        error = %e,
+                        "Failed to read directory entry during metadata collection, skipping"
+                    );
+                    stats.skipped_error_count += 1;
+                    // Continue processing other entries instead of failing entirely
+                }
             }
-
-            let entry_name = entry.file_name().to_string_lossy().to_string();
-            let new_virtual = format!("{}/{}", virtual_path, entry_name);
-
-            // 使用 Box::pin 解决递归异步调用
-            Box::pin(process_path_recursive_with_metadata(
-                entry.path(),
-                &new_virtual,
-                target_root,
-                map,
-                metadata_map,
-                app,
-                task_id,
-                workspace_id,
-            ))
-            .await;
         }
+
+        stats.log_summary(path, "Directory processing with metadata");
         return Ok(());
     }
 
@@ -628,37 +777,98 @@ pub async fn process_path_with_cas_and_checkpoints(
 
     // Handle directories
     if path.is_dir() {
-        for entry in WalkDir::new(path)
+        // Track processing statistics for debugging
+        let mut stats = DirectoryProcessingStats::default();
+        let follow_symlinks = should_follow_symlinks();
+
+        let walkdir_iter = WalkDir::new(path)
             .min_depth(1)
             .max_depth(1)
-            .follow_links(false) // 不跟随符号链接
-            .into_iter()
-            .filter_map(|e| e.ok())
-        {
-            // 跳过符号链接
-            if entry.path_is_symlink() {
-                warn!(
-                    path = %entry.path().display(),
-                    "Skipping symlink during ProcessBuilder directory processing"
-                );
-                continue;
+            .follow_links(follow_symlinks)
+            .into_iter();
+
+        for entry_result in walkdir_iter {
+            match entry_result {
+                Ok(entry) => {
+                    // 处理符号链接
+                    let target_path: Option<PathBuf> = if entry.path_is_symlink() {
+                        if follow_symlinks {
+                            // 尝试解析符号链接目标
+                            match entry.path().read_link() {
+                                Ok(target) => {
+                                    let resolved = if target.is_absolute() {
+                                        target
+                                    } else {
+                                        entry.path().parent().unwrap().join(&target)
+                                    };
+                                    info!(
+                                        symlink = %entry.path().display(),
+                                        target = %resolved.display(),
+                                        "Following symlink to target during CAS processing"
+                                    );
+                                    Some(resolved)
+                                }
+                                Err(e) => {
+                                    warn!(
+                                        path = %entry.path().display(),
+                                        error = %e,
+                                        "Failed to read symlink target, skipping"
+                                    );
+                                    stats.skipped_symlink_count += 1;
+                                    continue;
+                                }
+                            }
+                        } else {
+                            warn!(
+                                path = %entry.path().display(),
+                                "Skipping symlink during CAS directory processing (set FOLLOW_SYMLINKS=true to follow)"
+                            );
+                            stats.skipped_symlink_count += 1;
+                            continue;
+                        }
+                    } else {
+                        None
+                    };
+
+                    // 确定实际要处理的路径
+                    let path_to_process = target_path.as_ref().map(|p| p.as_path()).unwrap_or_else(|| entry.path());
+                    let entry_name = entry.file_name().to_string_lossy().to_string();
+                    let new_virtual = format!("{}/{}", virtual_path, entry_name);
+
+                    if let Err(e) = Box::pin(process_path_with_cas_and_checkpoints(
+                        path_to_process,
+                        &new_virtual,
+                        context,
+                        app,
+                        task_id,
+                        workspace_id,
+                        parent_archive_id,
+                        depth_level,
+                    ))
+                    .await
+                    {
+                        warn!(
+                            file = %path_to_process.display(),
+                            error = %e,
+                            "Failed to process directory entry, continuing with others"
+                        );
+                    }
+                    stats.processed_count += 1;
+                }
+                Err(e) => {
+                    // Log the error instead of silently skipping
+                    warn!(
+                        path = %path.display(),
+                        error = %e,
+                        "Failed to read directory entry during CAS processing, skipping"
+                    );
+                    stats.skipped_error_count += 1;
+                    // Continue processing other entries instead of failing entirely
+                }
             }
-
-            let entry_name = entry.file_name().to_string_lossy().to_string();
-            let new_virtual = format!("{}/{}", virtual_path, entry_name);
-
-            Box::pin(process_path_with_cas_and_checkpoints(
-                entry.path(),
-                &new_virtual,
-                context,
-                app,
-                task_id,
-                workspace_id,
-                parent_archive_id,
-                depth_level,
-            ))
-            .await?;
         }
+
+        stats.log_summary(path, "CAS directory processing");
         return Ok(());
     }
 
@@ -867,14 +1077,15 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
 ) -> Result<()> {
     const MAX_NESTING_DEPTH: i32 = 10;
 
-    // Check depth limit to prevent infinite recursion
-    if depth_level >= MAX_NESTING_DEPTH {
+    // Check depth limit - if reached, still extract but don't recurse into nested archives
+    let is_at_max_depth = depth_level >= MAX_NESTING_DEPTH;
+
+    if is_at_max_depth {
         warn!(
             archive = %archive_path.display(),
             depth = depth_level,
-            "Maximum nesting depth reached, skipping archive"
+            "Maximum nesting depth reached, will extract but not recurse into nested archives"
         );
-        return Ok(());
     }
 
     let file_name = archive_path
@@ -1064,6 +1275,17 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
         );
 
         // Recursively process (supports nested archives)
+        // Skip recursion if at max depth to prevent infinite loops
+        if is_at_max_depth && is_archive_file(&full_path) {
+            warn!(
+                file = %file_name,
+                depth = depth_level,
+                "Skipping nested archive at max depth (content will still be accessible)"
+            );
+            // Still add file metadata to tracking, but don't recurse
+            continue;
+        }
+
         match Box::pin(process_path_with_cas_and_checkpoints(
             &full_path, // Use full path for file operations
             &new_virtual,

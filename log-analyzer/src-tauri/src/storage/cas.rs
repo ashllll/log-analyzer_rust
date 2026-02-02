@@ -198,29 +198,20 @@ impl ContentAddressableStorage {
         let hash = Self::compute_hash_incremental(file_path).await?;
         let object_path = self.get_object_path(&hash);
 
-        // Check cache first for performance (high-frequency optimization)
-        // Note: DashSet does not have a native "get_or_insert" that returns the existing value
-        // We use contains() check which is thread-safe but has a potential TOCTOU gap
+        // Fast path: Check cache first (lock-free, high-frequency optimization)
+        // This is a hint, not authoritative - actual existence is checked atomically below
         if self.existence_cache.contains(&hash) {
             debug!(
                 hash = %hash,
                 file = %file_path.display(),
-                "Content already exists (cached), skipping write (deduplication)"
+                "Content likely exists (cached), skipping write (deduplication)"
             );
             return Ok(hash);
         }
 
-        // Check if object already exists (deduplication)
-        if object_path.exists() {
-            // Cache the result for future checks
-            self.existence_cache.insert(hash.clone());
-            debug!(
-                hash = %hash,
-                file = %file_path.display(),
-                "Content already exists, skipping write (deduplication)"
-            );
-            return Ok(hash);
-        }
+        // Atomic file creation with O_EXCL flag prevents TOCTOU race conditions
+        // This is the authoritative check - no separate exists() check needed
+        // If file already exists, we'll get AlreadyExists error and handle it gracefully
 
         // Create parent directory (e.g., objects/a3/)
         if let Some(parent) = object_path.parent() {
