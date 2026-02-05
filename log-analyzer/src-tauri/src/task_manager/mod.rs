@@ -91,10 +91,10 @@ pub struct TaskManagerConfig {
 impl Default for TaskManagerConfig {
     fn default() -> Self {
         Self {
-            completed_task_ttl: 3, // 完成任务保留 3 秒
-            failed_task_ttl: 10,   // 失败任务保留 10 秒
-            cleanup_interval: 1,   // 每秒检查一次
-            operation_timeout: 5,  // 操作超时 5 秒
+            completed_task_ttl: 300, // 完成任务保留 5 分钟（给用户足够时间查看）
+            failed_task_ttl: 1800,   // 失败任务保留 30 分钟（便于问题排查）
+            cleanup_interval: 60,    // 每分钟检查一次（减少开销）
+            operation_timeout: 30,   // 操作超时 30 秒
         }
     }
 }

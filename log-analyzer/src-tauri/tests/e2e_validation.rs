@@ -11,10 +11,10 @@ mod e2e_tests {
     fn test_config_system() {
         // 测试默认配置
         let default_config = TaskManagerConfig::default();
-        assert_eq!(default_config.completed_task_ttl, 3);
-        assert_eq!(default_config.failed_task_ttl, 10);
-        assert_eq!(default_config.cleanup_interval, 1);
-        assert_eq!(default_config.operation_timeout, 5);
+        assert_eq!(default_config.completed_task_ttl, 300); // 5分钟
+        assert_eq!(default_config.failed_task_ttl, 1800); // 30分钟
+        assert_eq!(default_config.cleanup_interval, 60); // 1分钟
+        assert_eq!(default_config.operation_timeout, 30); // 30秒
 
         // 测试自定义配置
         let custom_config = TaskManagerConfig {

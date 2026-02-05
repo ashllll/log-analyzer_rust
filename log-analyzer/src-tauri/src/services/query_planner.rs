@@ -147,12 +147,7 @@ impl QueryPlanner {
             }
         };
 
-        let cache_key = format!(
-            "{}|{}|{}",
-            pattern,
-            term.is_regex,
-            term.case_sensitive
-        );
+        let cache_key = format!("{}|{}|{}", pattern, term.is_regex, term.case_sensitive);
 
         if let Some(cached) = self.engine_cache.get(&cache_key) {
             return Ok(Arc::clone(&cached));
@@ -583,9 +578,9 @@ mod tests {
         let engine = RegexEngine::new(pattern, false).unwrap();
 
         match engine {
-            RegexEngine::AhoCorasick(_) => {},
-            RegexEngine::Automata(_) => {},
-            RegexEngine::Standard(_) => {},
+            RegexEngine::AhoCorasick(_) => {}
+            RegexEngine::Automata(_) => {}
+            RegexEngine::Standard(_) => {}
         }
     }
 
@@ -595,9 +590,9 @@ mod tests {
         let engine = RegexEngine::new(pattern, true).unwrap();
 
         match engine {
-            RegexEngine::AhoCorasick(_) => {},
-            RegexEngine::Automata(_) => {},
-            RegexEngine::Standard(_) => {},
+            RegexEngine::AhoCorasick(_) => {}
+            RegexEngine::Automata(_) => {}
+            RegexEngine::Standard(_) => {}
         }
     }
 
@@ -643,6 +638,10 @@ mod tests {
         let text = "error occurred, error_code, error123";
         let matches: Vec<_> = engine.find_iter(text).collect();
 
-        assert!(matches.len() >= 3, "Expected at least 3 matches, got {}", matches.len());
+        assert!(
+            matches.len() >= 3,
+            "Expected at least 3 matches, got {}",
+            matches.len()
+        );
     }
 }

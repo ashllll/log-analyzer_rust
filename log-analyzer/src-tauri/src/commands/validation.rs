@@ -2,11 +2,12 @@
 //!
 //! 提供数据验证功能
 
-use crate::models::validated::{validate_search_query, validate_workspace_config};
-use crate::models::{
-    ValidatedImportConfig, ValidatedSearchQuery, ValidatedWorkspaceConfig, ValidationResult,
+use crate::models::validated::{
+    ValidatedImportConfig, ValidatedSearchQuery, ValidatedWorkspaceConfig,
 };
+use crate::utils::validation::{validate_path_param, validate_workspace_id, WORKSPACE_ID_REGEX};
 use tauri::command;
+use validator::Validate;
 
 /// 验证工作区配置
 #[command]
@@ -85,11 +86,10 @@ pub async fn batch_validate_workspace_configs(
 /// 验证工作区ID格式
 #[command]
 pub async fn validate_workspace_id_format(workspace_id: String) -> Result<bool, String> {
-    use regex::Regex;
+    use once_cell::sync::Lazy;
 
-    lazy_static::lazy_static! {
-        static ref WORKSPACE_ID_REGEX: Regex = Regex::new(r"^[a-zA-Z0-9_-]+$").unwrap();
-    }
+    static WORKSPACE_ID_REGEX: Lazy<regex::Regex> =
+        Lazy::new(|| regex::Regex::new(r"^[a-zA-Z0-9_-]+$").unwrap());
 
     if workspace_id.is_empty() || workspace_id.len() > 100 {
         return Ok(false);

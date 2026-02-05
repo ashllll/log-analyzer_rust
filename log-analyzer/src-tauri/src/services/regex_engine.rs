@@ -13,8 +13,8 @@
 //! | Automata | O(n) | O(n) | 不支持 | 原生支持 |
 //! | Standard | 可变 | 可变 | 支持 | 受限 |
 
-use std::sync::Arc;
 use std::fmt;
+use std::sync::Arc;
 
 use aho_corasick::AhoCorasick;
 use regex::Regex;
@@ -39,7 +39,11 @@ pub struct EngineInfo {
 
 impl EngineInfo {
     pub fn new(engine_type: EngineType, pattern: String, is_regex: bool) -> Self {
-        Self { engine_type, pattern, is_regex }
+        Self {
+            engine_type,
+            pattern,
+            is_regex,
+        }
     }
 }
 
@@ -70,13 +74,16 @@ pub enum RegexEngine {
 impl fmt::Debug for RegexEngine {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            RegexEngine::AhoCorasick(e) => f.debug_struct("AhoCorasick")
+            RegexEngine::AhoCorasick(e) => f
+                .debug_struct("AhoCorasick")
                 .field("pattern_count", &e.pattern_count())
                 .finish(),
-            RegexEngine::Automata(e) => f.debug_struct("Automata")
+            RegexEngine::Automata(e) => f
+                .debug_struct("Automata")
                 .field("pattern", &e.pattern())
                 .finish(),
-            RegexEngine::Standard(e) => f.debug_struct("Standard")
+            RegexEngine::Standard(e) => f
+                .debug_struct("Standard")
                 .field("pattern", &e.pattern())
                 .finish(),
         }
@@ -92,14 +99,13 @@ impl RegexEngine {
         }
     }
 
-    pub fn new(pattern: &str, is_regex: bool) -> Result<Self, EngineError> {
+    pub fn new(pattern: &str, _is_regex: bool) -> Result<Self, EngineError> {
         let has_pipe = pattern.contains('|');
 
         if has_pipe {
             AhoCorasickEngine::new(pattern).map(RegexEngine::AhoCorasick)
-        } else if is_regex {
-            StandardEngine::new(pattern).map(RegexEngine::Standard)
         } else {
+            // 对于没有多模式分隔符的情况，无论是否标记为正则，都使用 StandardEngine
             StandardEngine::new(pattern).map(RegexEngine::Standard)
         }
     }
@@ -137,7 +143,7 @@ impl AhoCorasickEngine {
 
         if patterns.iter().any(|p| p.is_empty()) {
             return Err(EngineError::CompilationError(
-                "Empty pattern in Aho-Corasick".to_string()
+                "Empty pattern in Aho-Corasick".to_string(),
             ));
         }
 
@@ -207,13 +213,11 @@ pub struct AutomataEngine {
 impl AutomataEngine {
     pub fn new(pattern: &str) -> Result<Self, EngineError> {
         if pattern.trim().is_empty() {
-            return Err(EngineError::CompilationError(
-                "Empty pattern".to_string()
-            ));
+            return Err(EngineError::CompilationError("Empty pattern".to_string()));
         }
 
-        let regex = Regex::new(pattern)
-            .map_err(|e| EngineError::CompilationError(e.to_string()))?;
+        let regex =
+            Regex::new(pattern).map_err(|e| EngineError::CompilationError(e.to_string()))?;
 
         Ok(Self {
             regex,
@@ -261,13 +265,11 @@ pub struct StandardEngine {
 impl StandardEngine {
     pub fn new(pattern: &str) -> Result<Self, EngineError> {
         if pattern.trim().is_empty() {
-            return Err(EngineError::CompilationError(
-                "Empty pattern".to_string()
-            ));
+            return Err(EngineError::CompilationError("Empty pattern".to_string()));
         }
 
-        let regex = Regex::new(pattern)
-            .map_err(|e| EngineError::CompilationError(e.to_string()))?;
+        let regex =
+            Regex::new(pattern).map_err(|e| EngineError::CompilationError(e.to_string()))?;
 
         Ok(Self {
             regex,
@@ -353,16 +355,20 @@ pub fn is_simple_keyword(pattern: &str) -> bool {
     if trimmed.is_empty() {
         return false;
     }
-    !trimmed.contains(|c: char| matches!(
-        c,
-        '(' | ')' | '[' | ']' | '{' | '}' | '+' | '*' | '?' | '|' | '^' | '$' | '.' | '\\'
-    ))
+    !trimmed.contains(|c: char| {
+        matches!(
+            c,
+            '(' | ')' | '[' | ']' | '{' | '}' | '+' | '*' | '?' | '|' | '^' | '$' | '.' | '\\'
+        )
+    })
 }
 
 /// 检测是否需要前瞻/后瞻
 pub fn needs_lookaround(pattern: &str) -> bool {
-    pattern.contains("(?=") || pattern.contains("(?!")
-        || pattern.contains("(?<=") || pattern.contains("(?<!")
+    pattern.contains("(?=")
+        || pattern.contains("(?!")
+        || pattern.contains("(?<=")
+        || pattern.contains("(?<!")
 }
 
 /// 检测是否包含 Aho-Corasick 友好的模式（多关键词）
@@ -379,9 +385,9 @@ mod tests {
         assert!(is_simple_keyword("error"));
         assert!(is_simple_keyword("error_code"));
         assert!(is_simple_keyword("test123"));
-        assert!(!is_simple_keyword(r"\d+"));       // 正则
+        assert!(!is_simple_keyword(r"\d+")); // 正则
         assert!(!is_simple_keyword(r"error|warn")); // 多模式
-        assert!(!is_simple_keyword(""));            // 空
+        assert!(!is_simple_keyword("")); // 空
     }
 
     #[test]

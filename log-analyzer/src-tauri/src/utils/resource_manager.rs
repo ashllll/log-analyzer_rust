@@ -225,6 +225,15 @@ impl ResourceManager {
         );
         success_count
     }
+
+    /// 清理所有资源（在关闭时调用）
+    ///
+    /// 目前 ResourceManager 使用 RAII 模式自动清理，所以这个方法暂时为空。
+    /// 未来可以扩展以清理任何未自动清理的残留资源。
+    pub fn cleanup_all(&self) -> Result<(), eyre::Error> {
+        info!("ResourceManager::cleanup_all called (no-op for now)");
+        Ok(())
+    }
 }
 
 /// 创建带自动清理的临时目录

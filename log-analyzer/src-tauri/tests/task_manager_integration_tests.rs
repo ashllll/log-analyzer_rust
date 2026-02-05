@@ -13,10 +13,10 @@ use rstest::*;
 fn test_task_manager_config_creation() {
     // 创建默认配置应该成功
     let config = TaskManagerConfig::default();
-    assert_eq!(config.completed_task_ttl, 3);
-    assert_eq!(config.failed_task_ttl, 10);
-    assert_eq!(config.cleanup_interval, 1);
-    assert_eq!(config.operation_timeout, 5);
+    assert_eq!(config.completed_task_ttl, 300); // 5分钟
+    assert_eq!(config.failed_task_ttl, 1800); // 30分钟
+    assert_eq!(config.cleanup_interval, 60); // 1分钟
+    assert_eq!(config.operation_timeout, 30); // 30秒
 }
 
 /// Property 36: TaskManager Initialization Safety (自定义配置)

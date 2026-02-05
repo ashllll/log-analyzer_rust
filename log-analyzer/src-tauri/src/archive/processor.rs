@@ -128,20 +128,11 @@ fn validate_path_safety(path: &Path, base_dir: &Path) -> Result<()> {
 }
 
 /// Helper struct to track directory processing statistics
+#[derive(Default)]
 struct DirectoryProcessingStats {
     processed_count: usize,
     skipped_error_count: usize,
     skipped_symlink_count: usize,
-}
-
-impl Default for DirectoryProcessingStats {
-    fn default() -> Self {
-        Self {
-            processed_count: 0,
-            skipped_error_count: 0,
-            skipped_symlink_count: 0,
-        }
-    }
 }
 
 impl DirectoryProcessingStats {
@@ -380,10 +371,7 @@ async fn process_path_recursive_inner(
                     };
 
                     // 确定实际要处理的路径
-                    let path_to_process = target_path
-                        .as_ref()
-                        .map(|p| p.as_path())
-                        .unwrap_or_else(|| entry.path());
+                    let path_to_process = target_path.as_deref().unwrap_or_else(|| entry.path());
                     let entry_name = entry.file_name().to_string_lossy().to_string();
                     let new_virtual = format!("{}/{}", virtual_path, entry_name);
 
@@ -561,10 +549,7 @@ async fn process_path_recursive_inner_with_metadata(
                     };
 
                     // 确定实际要处理的路径
-                    let path_to_process = target_path
-                        .as_ref()
-                        .map(|p| p.as_path())
-                        .unwrap_or_else(|| entry.path());
+                    let path_to_process = target_path.as_deref().unwrap_or_else(|| entry.path());
                     let entry_name = entry.file_name().to_string_lossy().to_string();
                     let new_virtual = format!("{}/{}", virtual_path, entry_name);
 
@@ -837,10 +822,7 @@ pub async fn process_path_with_cas_and_checkpoints(
                     };
 
                     // 确定实际要处理的路径
-                    let path_to_process = target_path
-                        .as_ref()
-                        .map(|p| p.as_path())
-                        .unwrap_or_else(|| entry.path());
+                    let path_to_process = target_path.as_deref().unwrap_or_else(|| entry.path());
                     let entry_name = entry.file_name().to_string_lossy().to_string();
                     let new_virtual = format!("{}/{}", virtual_path, entry_name);
 

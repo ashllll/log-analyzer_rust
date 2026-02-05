@@ -2,6 +2,7 @@
 //!
 //! 提供路径处理、编码转换、参数验证、重试机制和清理功能等通用工具。
 
+pub mod async_resource_manager;
 pub mod cache_manager;
 pub mod cancellation_manager;
 pub mod cleanup;
@@ -13,12 +14,13 @@ pub mod path_security;
 pub mod resource_manager;
 pub mod resource_tracker;
 pub mod retry;
-pub mod validation;
+pub mod validation; // ✅ 添加缺失的模块导出
 
 #[cfg(test)]
 mod resource_management_property_tests;
 
 // 重新导出常用工具函数
+pub use async_resource_manager::{AsyncResourceManager, OperationType}; // ✅ 添加异步资源管理
 pub use cache_manager::CacheManager;
 pub use cancellation_manager::{run_with_cancellation, CancellableOperation, CancellationManager};
 pub use legacy_detection::{

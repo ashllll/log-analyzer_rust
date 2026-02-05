@@ -1,13 +1,14 @@
 //! 应用状态管理 - 简化版本
 
-use crate::models::search::SearchCacheKey;
 use crate::services::file_watcher::WatcherState;
 use crate::state_sync::StateSync;
 use crate::storage::ContentAddressableStorage;
 use crate::storage::MetadataStore;
 use crate::task_manager::TaskManager;
+use crate::utils::cache_manager::CacheManager;
 use crate::utils::cleanup::CleanupQueue;
 use crossbeam::queue::SegQueue;
+use moka::sync::Cache;
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -25,12 +26,19 @@ pub struct AppState {
     pub last_search_duration: Arc<Mutex<std::time::Duration>>,
     pub watchers: Arc<Mutex<HashMap<String, WatcherState>>>,
     pub cleanup_queue: Arc<CleanupQueue>,
-    pub cache_manager: Arc<Mutex<lru::LruCache<SearchCacheKey, Vec<crate::models::LogEntry>>>>,
+    /// 使用 CacheManager 提供高级缓存功能
+    pub cache_manager: Arc<Mutex<CacheManager>>,
     pub state_sync: Arc<Mutex<Option<StateSync>>>,
 }
 
 impl Default for AppState {
     fn default() -> Self {
+        // 创建同步缓存 (L1 cache)
+        let sync_cache = Cache::builder().max_capacity(1000).build();
+
+        // 使用 CacheManager 包装缓存
+        let cache_manager = CacheManager::new(Arc::new(sync_cache));
+
         Self {
             workspace_dirs: Arc::new(Mutex::new(HashMap::new())),
             cas_instances: Arc::new(Mutex::new(HashMap::new())),
@@ -42,9 +50,7 @@ impl Default for AppState {
             last_search_duration: Arc::new(Mutex::new(std::time::Duration::from_secs(0))),
             watchers: Arc::new(Mutex::new(HashMap::new())),
             cleanup_queue: Arc::new(SegQueue::new()),
-            cache_manager: Arc::new(Mutex::new(lru::LruCache::new(
-                std::num::NonZeroUsize::new(1000).unwrap(),
-            ))),
+            cache_manager: Arc::new(Mutex::new(cache_manager)),
             state_sync: Arc::new(Mutex::new(None)),
         }
     }

@@ -119,15 +119,9 @@ impl QueryExecutor {
 
     fn engine_is_match(engine: &RegexEngine, text: &str) -> bool {
         match engine {
-            RegexEngine::AhoCorasick(e) => {
-                e.find_iter(text).next().is_some()
-            }
-            RegexEngine::Automata(e) => {
-                e.is_match(text)
-            }
-            RegexEngine::Standard(e) => {
-                e.is_match(text)
-            }
+            RegexEngine::AhoCorasick(e) => e.find_iter(text).next().is_some(),
+            RegexEngine::Automata(e) => e.is_match(text),
+            RegexEngine::Standard(e) => e.is_match(text),
         }
     }
 
@@ -194,7 +188,10 @@ impl QueryExecutor {
         }
     }
 
-    fn engine_find_all(engine: &RegexEngine, text: &str) -> Vec<crate::services::regex_engine::MatchResult> {
+    fn engine_find_all(
+        engine: &RegexEngine,
+        text: &str,
+    ) -> Vec<crate::services::regex_engine::MatchResult> {
         engine.find_iter(text).collect()
     }
 }
@@ -263,9 +260,18 @@ mod tests {
         );
         let plan = executor.execute(&query).unwrap();
 
-        assert!(executor.matches_line(&plan, "error: something failed"), "Should match lowercase error");
-        assert!(executor.matches_line(&plan, "ERROR: something failed"), "Should match uppercase ERROR");
-        assert!(executor.matches_line(&plan, "Error: something failed"), "Should match mixed case Error");
+        assert!(
+            executor.matches_line(&plan, "error: something failed"),
+            "Should match lowercase error"
+        );
+        assert!(
+            executor.matches_line(&plan, "ERROR: something failed"),
+            "Should match uppercase ERROR"
+        );
+        assert!(
+            executor.matches_line(&plan, "Error: something failed"),
+            "Should match mixed case Error"
+        );
     }
 
     #[test]
@@ -292,7 +298,7 @@ mod tests {
         let plan = executor.execute(&query).unwrap();
 
         assert!(!executor.matches_line(&plan, "debug: starting")); // Should NOT match
-        assert!(executor.matches_line(&plan, "info: running"));   // Should match
+        assert!(executor.matches_line(&plan, "info: running")); // Should match
     }
 
     #[test]
@@ -347,7 +353,7 @@ mod tests {
         let details = executor.match_with_details(&plan, "Error: operation failed");
         assert!(details.is_some());
         let details = details.unwrap();
-        assert!(details.len() >= 1);
+        assert!(!details.is_empty());
     }
 
     #[test]
@@ -365,7 +371,7 @@ mod tests {
 
         let line = "error: timeout occurred, warning: system overloaded";
         let details = executor.match_with_details(&plan, line);
-        
+
         assert!(details.is_some());
         let details = details.unwrap();
         assert_eq!(details.len(), 3, "Should match all 3 keywords");
@@ -385,26 +391,39 @@ mod tests {
 
         let line = "error error error";
         let details = executor.match_with_details(&plan, line);
-        
+
         assert!(details.is_some());
         let details = details.unwrap();
-        assert!(details.len() >= 2, "Should match at least 2 keyword occurrences, got {}", details.len());
+        assert!(
+            details.len() >= 2,
+            "Should match at least 2 keyword occurrences, got {}",
+            details.len()
+        );
     }
 
     #[test]
     fn test_match_with_details_aho_corasiick_multi_keyword() {
         let mut executor = QueryExecutor::new(10);
         let query = build_query(
-            vec![build_term("t1", "error|warning|info", QueryOperator::And, false)],
+            vec![build_term(
+                "t1",
+                "error|warning|info",
+                QueryOperator::And,
+                false,
+            )],
             QueryOperator::And,
         );
         let plan = executor.execute(&query).unwrap();
 
         let line = "error found, warning issued, info logged";
-        let details = executor.match_with_details(&plan, &line);
-        
+        let details = executor.match_with_details(&plan, line);
+
         assert!(details.is_some());
         let details = details.unwrap();
-        assert_eq!(details.len(), 3, "Should match all 3 keywords from Aho-Corasick pattern");
+        assert_eq!(
+            details.len(),
+            3,
+            "Should match all 3 keywords from Aho-Corasick pattern"
+        );
     }
 }

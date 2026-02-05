@@ -4,9 +4,9 @@
 
 use crate::models::AppState;
 use crate::utils::cache_manager::{
-    CacheDashboardData, CacheHealthCheck, CacheMetricsSnapshot, CachePerformanceReport,
+    AccessPatternStats, CacheDashboardData, CacheHealthCheck, CacheMetricsSnapshot,
+    CachePerformanceReport, CacheStatistics, CompressionStats, L2CacheConfig,
 };
-use crate::utils::{AccessPatternStats, CacheStatistics, CompressionStats, L2CacheConfig};
 use tauri::{command, State};
 
 /// 获取缓存统计信息

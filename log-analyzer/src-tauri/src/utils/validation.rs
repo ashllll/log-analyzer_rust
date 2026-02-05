@@ -10,6 +10,7 @@ use unicode_normalization::UnicodeNormalization;
 use validator::ValidationError;
 
 /// 工作区 ID 正则表达式 - 只允许字母数字、连字符和下划线
+/// 使用 Lazy<Regex> 避免启动时 panic，使用 unwrap 因为正则表达式在编译时已知是有效的
 pub static WORKSPACE_ID_REGEX: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^[a-zA-Z0-9\-_]+$").unwrap());
 

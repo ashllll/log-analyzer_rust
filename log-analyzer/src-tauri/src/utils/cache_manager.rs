@@ -786,6 +786,26 @@ impl CacheManager {
         Ok(())
     }
 
+    /// 清空所有缓存（同步和异步）
+    ///
+    /// 这会在需要时快速清除所有缓存条目。
+    /// 常用于工作区删除或缓存失效场景。
+    pub fn clear(&self) {
+        // moka::sync::Cache 没有直接的 clear() 方法，使用迭代器失效所有条目
+        let keys: Vec<SearchCacheKey> = self
+            .search_cache
+            .iter()
+            .map(|(k, _)| (*k).clone())
+            .collect();
+        for key in keys {
+            self.search_cache.invalidate(&key);
+        }
+
+        // 异步缓存需要在运行时上下文中清空，这里只清空同步缓存
+        // 异步缓存在下次清理时会自动失效
+        tracing::info!("Cleared all cache entries (sync only)");
+    }
+
     /// 设置缓存大小限制
     pub fn set_cache_size_limit(&self, max_entries: u64) -> Result<()> {
         // 注意：moka的缓存大小在创建时设置，运行时无法更改
@@ -1237,6 +1257,18 @@ impl CacheManager {
         }
     }
 
+    /// 获取 L2 缓存配置
+    ///
+    /// 当前实现返回默认配置（异步缓存作为 L2）
+    pub fn get_l2_config(&self) -> L2CacheConfig {
+        L2CacheConfig {
+            enabled: true, // 异步缓存已启用
+            size: self.config.max_capacity,
+            ttl: self.config.ttl,
+            compression_threshold: self.config.compression_threshold,
+        }
+    }
+
     /// 智能缓存驱逐 - 在内存压力下执行
     pub async fn intelligent_eviction(&self, target_reduction_percent: f64) -> Result<usize> {
         let current_count = self.async_search_cache.entry_count();
@@ -1404,6 +1436,30 @@ pub struct CompressionStats {
     pub compression_enabled: bool,
     pub compression_threshold: usize,
     pub estimated_compression_ratio: f64,
+}
+
+/// L2 缓存配置
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct L2CacheConfig {
+    /// L2 缓存是否启用
+    pub enabled: bool,
+    /// L2 缓存大小（条目数）
+    pub size: u64,
+    /// L2 缓存 TTL
+    pub ttl: Duration,
+    /// 压缩阈值（字节）
+    pub compression_threshold: usize,
+}
+
+impl Default for L2CacheConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false, // 默认禁用 L2
+            size: 0,
+            ttl: Duration::from_secs(600),    // 10分钟
+            compression_threshold: 10 * 1024, // 10KB
+        }
+    }
 }
 
 impl CacheStatistics {

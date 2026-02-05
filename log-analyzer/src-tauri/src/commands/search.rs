@@ -133,8 +133,8 @@ pub async fn search_logs(
 
     {
         // 使用 CacheManager 的同步 get 方法
-        let mut cache = state.cache_manager.lock();
-        let cache_result = cache.get(&cache_key);
+        let cache = state.cache_manager.lock();
+        let cache_result = cache.get_sync(&cache_key);
 
         if let Some(cached_results) = cache_result {
             {
@@ -609,7 +609,7 @@ pub async fn search_logs(
 
         // 将结果插入缓存(仅在未截断且未取消时缓存)
         if !was_truncated && !cancellation_token.is_cancelled() {
-            cache_manager.lock().put(cache_key, all_results);
+            cache_manager.lock().insert_sync(cache_key, all_results);
         }
 
         let _ = app_handle.emit("search-summary", &summary);

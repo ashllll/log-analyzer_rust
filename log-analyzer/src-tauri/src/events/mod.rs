@@ -99,9 +99,21 @@ pub struct EventBus {
     /// Receiver for the main channel (kept alive to prevent channel closure)
     _receiver: broadcast::Receiver<AppEvent>,
     /// Named subscribers for debugging and monitoring
-    subscribers: Arc<parking_lot::Mutex<HashMap<String, broadcast::Receiver<AppEvent>>>>,
+    /// 只存储订阅者信息，不存储 receiver 避免内存泄漏
+    /// receiver 由调用者持有和释放
+    subscribers: Arc<parking_lot::Mutex<HashMap<String, SubscriberInfo>>>,
     /// Event statistics for monitoring
     stats: Arc<parking_lot::Mutex<EventStats>>,
+}
+
+/// 订阅者信息（不包含 receiver，避免内存泄漏）
+#[derive(Debug, Clone)]
+struct SubscriberInfo {
+    /// 订阅时间（用于清理和统计）
+    subscribed_at: std::time::Instant,
+    /// 是否活跃（调用者是否还持有 receiver）
+    /// 注意：我们无法直接检测 receiver 是否被 drop，这里主要用于监控
+    is_active: bool,
 }
 
 /// Event statistics for monitoring and debugging
@@ -189,20 +201,33 @@ impl EventBus {
     pub fn subscribe(&self, subscriber_name: String) -> broadcast::Receiver<AppEvent> {
         let receiver = self.sender.subscribe();
 
-        // Store subscriber name for monitoring (不创建额外的receiver)
         {
             let mut subscribers = self.subscribers.lock();
-            // 只存储订阅者名称用于监控，不创建额外的receiver
-            // 使用一个占位receiver来跟踪订阅者（这个receiver不会被使用）
-            if !subscribers.contains_key(&subscriber_name) {
-                subscribers.insert(subscriber_name.clone(), self.sender.subscribe());
+
+            // 检查是否已存在同名订阅者
+            if subscribers.contains_key(&subscriber_name) {
+                // 如果已存在，更新订阅时间（视为重新订阅）
+                let info = subscribers.get_mut(&subscriber_name).unwrap();
+                info.subscribed_at = std::time::Instant::now();
+                info.is_active = true;
+                debug!(subscriber_name, "Existing subscriber renewed");
+            } else {
+                // 新增订阅者
+                subscribers.insert(
+                    subscriber_name.clone(),
+                    SubscriberInfo {
+                        subscribed_at: std::time::Instant::now(),
+                        is_active: true,
+                    },
+                );
+                debug!(subscriber_name, "New subscriber registered");
             }
 
+            // 更新统计：活跃订阅者数量
             let mut stats = self.stats.lock();
-            stats.total_subscribers += 1;
+            stats.total_subscribers = subscribers.len() as u64;
         }
 
-        info!(subscriber_name, "New subscriber registered");
         receiver
     }
 
@@ -217,6 +242,9 @@ impl EventBus {
                 "Attempted to remove non-existent subscriber"
             );
         }
+        // 更新统计
+        let mut stats = self.stats.lock();
+        stats.total_subscribers = subscribers.len() as u64;
     }
 
     /// Get current event statistics
@@ -241,6 +269,30 @@ impl EventBus {
     pub fn clear_stats(&self) {
         let mut stats = self.stats.lock();
         *stats = EventStats::default();
+    }
+
+    /// Force cleanup of stale subscribers (public API)
+    /// Removes entries that haven't been active for a while
+    pub fn cleanup_stale_subscribers(&self, max_age_secs: u64) {
+        let mut subscribers = self.subscribers.lock();
+        let now = std::time::Instant::now();
+        let mut stale = Vec::new();
+
+        for (name, info) in subscribers.iter() {
+            let age = now.duration_since(info.subscribed_at).as_secs();
+            if age > max_age_secs && !info.is_active {
+                stale.push(name.clone());
+            }
+        }
+
+        for name in stale {
+            subscribers.remove(&name);
+            debug!(subscriber_name = %name, max_age_secs, "Removed stale subscriber");
+        }
+
+        // 更新统计
+        let mut stats = self.stats.lock();
+        stats.total_subscribers = subscribers.len() as u64;
     }
 }
 

@@ -541,9 +541,9 @@ pub async fn delete_workspace(
     cleanup_workspace_resources(&workspaceId, &state, &app)?;
 
     // 失效该工作区的所有缓存
-    // LruCache 不支持按前缀删除，需要清空整个缓存
+    // 使用 CacheManager 的 clear 方法
     {
-        let mut cache = state.cache_manager.lock();
+        let cache = state.cache_manager.lock();
         cache.clear();
     }
     info!(

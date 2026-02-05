@@ -223,7 +223,7 @@ impl Default for TraversalConfig {
         Self {
             root: PathBuf::new(),
             min_depth: 1,
-            max_depth: std::usize::MAX,
+            max_depth: usize::MAX,
             follow_symlinks: false,
             files_only: false,
             dirs_only: false,
@@ -267,16 +267,17 @@ impl TraversalConfig {
 /// # Examples
 ///
 /// ```rust
+/// use log_analyzer::archive::{DirectoryTraverser, TraversalConfig};
 /// use std::path::PathBuf;
 ///
 /// let config = TraversalConfig::new(PathBuf::from("/tmp"))
 ///     .with_max_depth(1)
 ///     .with_follow_symlinks(false);
 ///
-/// let mut traverser = DirectoryTraverser::new(config);
-/// while let Some(entry) = traverser.try_next().unwrap() {
-///     println!("Found: {:?}", entry.path());
-/// }
+/// // DirectoryTraverser::new 返回 Result<Self, TraversalError>
+/// let traverser = DirectoryTraverser::new(config);
+/// // 遍历使用 try_next() 方法，返回 Result<Option<DirEntry>, TraversalError>
+/// // 详见模块内集成测试
 /// ```
 #[derive(Debug)]
 pub struct DirectoryTraverser {
@@ -434,8 +435,7 @@ impl TraversalEntry {
     /// Get the effective path (resolved target for symlinks)
     pub fn effective_path(&self) -> &Path {
         self.resolved_path
-            .as_ref()
-            .map(|p| p.as_path())
+            .as_deref()
             .unwrap_or_else(|| self.entry.path())
     }
 
@@ -503,7 +503,7 @@ mod tests {
 
         assert!(config.root.as_os_str().is_empty());
         assert_eq!(config.min_depth, 1);
-        assert_eq!(config.max_depth, std::usize::MAX);
+        assert_eq!(config.max_depth, usize::MAX);
         assert!(!config.follow_symlinks);
     }
 
@@ -653,11 +653,10 @@ mod tests {
         config.files_only = true;
         config.max_depth = 2;
 
-        let traverser = DirectoryTraverser::new(config).unwrap();
+        let _traverser = DirectoryTraverser::new(config).unwrap();
 
         // Note: This test verifies the config is set, actual filtering
         // depends on how the caller uses the traverser
-        assert!(true);
     }
 
     #[test]
@@ -667,11 +666,10 @@ mod tests {
         config.dirs_only = true;
         config.max_depth = 2;
 
-        let traverser = DirectoryTraverser::new(config).unwrap();
+        let _traverser = DirectoryTraverser::new(config).unwrap();
 
         // Note: This test verifies the config is set, actual filtering
         // depends on how the caller uses the traverser
-        assert!(true);
     }
 
     #[test]

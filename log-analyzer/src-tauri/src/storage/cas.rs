@@ -22,7 +22,7 @@
 //! to avoid having too many files in a single directory.
 
 use crate::error::{AppError, Result};
-use dashmap::DashSet;
+use moka::sync::Cache; // ✅ 使用 moka LRU 缓存替代 DashSet
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -38,15 +38,16 @@ use walkdir::WalkDir;
 ///
 /// ## Performance Optimization
 ///
-/// Uses an in-memory DashSet for object existence checks to avoid
-/// redundant filesystem operations. DashSet provides thread-safe
-/// concurrent access with minimal locking overhead.
+/// Uses an LRU cache for object existence checks to avoid
+/// redundant filesystem operations. The cache has a maximum capacity
+/// of 10,000 entries to prevent unbounded memory growth.
+/// LruCache provides thread-safe concurrent access with minimal locking overhead.
 #[derive(Debug, Clone)]
 pub struct ContentAddressableStorage {
     workspace_dir: PathBuf,
-    /// In-memory cache for object existence checks (performance optimization)
-    /// Uses DashSet for thread-safe concurrent access
-    existence_cache: Arc<DashSet<String>>,
+    /// In-memory LRU cache for object existence checks (performance optimization)
+    /// Limits memory usage by evicting least recently used entries
+    existence_cache: Arc<Cache<String, ()>>,
 }
 
 impl ContentAddressableStorage {
@@ -65,11 +66,11 @@ impl ContentAddressableStorage {
     /// let cas = ContentAddressableStorage::new(PathBuf::from("./workspace_123"));
     /// ```
     pub fn new(workspace_dir: PathBuf) -> Self {
-        // Create a DashSet for object existence checks
-        // DashSet provides thread-safe concurrent access with minimal locking
+        // Create an LRU cache for object existence checks
+        // Capacity: 10,000 entries to balance performance and memory usage
         Self {
             workspace_dir,
-            existence_cache: Arc::new(DashSet::new()),
+            existence_cache: Arc::new(Cache::new(10_000)),
         }
     }
 
@@ -200,7 +201,7 @@ impl ContentAddressableStorage {
 
         // Fast path: Check cache first (lock-free, high-frequency optimization)
         // This is a hint, not authoritative - actual existence is checked atomically below
-        if self.existence_cache.contains(&hash) {
+        if self.existence_cache.get(&hash).is_some() {
             debug!(
                 hash = %hash,
                 file = %file_path.display(),
@@ -254,7 +255,7 @@ impl ContentAddressableStorage {
                 Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
                     // Another thread created the file - this is expected in concurrent scenarios
                     // Update cache and return early (deduplication win)
-                    self.existence_cache.insert(hash.clone());
+                    self.existence_cache.insert(hash.clone(), ());
                     debug!(
                         hash = %hash,
                         file = %file_path.display(),
@@ -371,7 +372,7 @@ impl ContentAddressableStorage {
 
         // Cache the newly created object for future existence checks
         // Use a thread-safe insert operation
-        self.existence_cache.insert(hash.clone());
+        self.existence_cache.insert(hash.clone(), ());
 
         info!(
             hash = %hash,
@@ -418,7 +419,7 @@ impl ContentAddressableStorage {
         let object_path = self.get_object_path(&hash);
 
         // Check cache first for performance
-        if self.existence_cache.contains(&hash) {
+        if self.existence_cache.get(&hash).is_some() {
             debug!(
                 hash = %hash,
                 "Content already exists (cached), skipping write (deduplication)"
@@ -429,7 +430,7 @@ impl ContentAddressableStorage {
         // Check if object already exists (deduplication)
         if object_path.exists() {
             // Cache the result
-            self.existence_cache.insert(hash.clone());
+            self.existence_cache.insert(hash.clone(), ());
             debug!(
                 hash = %hash,
                 "Content already exists, skipping write (deduplication)"
@@ -475,7 +476,7 @@ impl ContentAddressableStorage {
             }
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
                 // Another thread created the file concurrently - deduplication win
-                self.existence_cache.insert(hash.clone());
+                self.existence_cache.insert(hash.clone(), ());
                 debug!(
                     hash = %hash,
                     "Content already exists (concurrent write detected), skipping"
@@ -491,7 +492,7 @@ impl ContentAddressableStorage {
         }
 
         // Cache the newly created object
-        self.existence_cache.insert(hash.clone());
+        self.existence_cache.insert(hash.clone(), ());
 
         info!(
             hash = %hash,
@@ -594,12 +595,12 @@ impl ContentAddressableStorage {
     /// `true` if the object exists, `false` otherwise
     pub fn exists(&self, hash: &str) -> bool {
         // Check cache first for performance
-        if self.existence_cache.contains(hash) {
+        if self.existence_cache.get(hash).is_some() {
             return true;
         }
         let result = self.get_object_path(hash).exists();
         if result {
-            self.existence_cache.insert(hash.to_string());
+            self.existence_cache.insert(hash.to_string(), ());
         }
         result
     }
@@ -615,12 +616,12 @@ impl ContentAddressableStorage {
     /// `true` if the object exists, `false` otherwise
     pub async fn exists_async(&self, hash: &str) -> bool {
         // Check cache first for performance
-        if self.existence_cache.contains(hash) {
+        if self.existence_cache.get(hash).is_some() {
             return true;
         }
         let result = self.get_object_path(hash).exists();
         if result {
-            self.existence_cache.insert(hash.to_string());
+            self.existence_cache.insert(hash.to_string(), ());
         }
         result
     }

@@ -37,8 +37,8 @@ pub use metadata_db::MetadataDB;
 pub use query_executor::{MatchDetail, QueryExecutor};
 pub use query_planner::ExecutionPlan;
 pub use regex_engine::{
-    AutomataEngine, EngineError, EngineInfo, EngineMatches, EngineType, MatchResult, RegexEngine,
-    StandardEngine, AhoCorasickEngine,
+    AhoCorasickEngine, AutomataEngine, EngineError, EngineInfo, EngineMatches, EngineType,
+    MatchResult, RegexEngine, StandardEngine,
 };
 pub use search_statistics::calculate_keyword_statistics;
 pub use service_config::ServiceConfiguration;
