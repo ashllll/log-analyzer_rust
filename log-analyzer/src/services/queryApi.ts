@@ -1,44 +1,27 @@
-import { invoke } from '@tauri-apps/api/core';
 import { SearchQuery } from '../types/search';
+import { safeInvoke, isEmptyArray } from './nullSafeApi';
+import { logger } from '../utils/logger';
 
 /**
- * 带超时的 IPC 调用包装器
- */
-async function invokeWithTimeout<T>(
-  command: string,
-  args: Record<string, any>,
-  timeoutMs: number = 30000
-): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timeoutId = setTimeout(() => {
-      reject(new Error(`操作超时（${timeoutMs}ms）: ${command}`));
-    }, timeoutMs);
-
-    invoke<T>(command, args)
-      .then((result) => {
-        clearTimeout(timeoutId);
-        resolve(result);
-      })
-      .catch((error) => {
-        clearTimeout(timeoutId);
-        reject(error);
-      });
-  });
-}
-
-/**
- * 执行结构化查询（带超时控制）
+ * 执行结构化查询（带超时控制 + 空值保护）
  */
 export async function executeStructuredQuery(
   query: SearchQuery,
   logs: string[]
 ): Promise<string[]> {
   try {
-    const result = await invokeWithTimeout<string[]>('execute_structured_query', {
+    // 空值检查
+    if (isEmptyArray(logs)) {
+      logger.warn('executeStructuredQuery: logs 数组为空');
+      return [];
+    }
+
+    const result = await safeInvoke<string[]>('execute_structured_query', {
       query,
       logs
-    }, 30000); // 30秒超时
-    return result;
+    }, { timeoutMs: 30000 });
+
+    return Array.isArray(result) ? result : [];
   } catch (error: any) {
     console.error('Failed to execute query:', error);
     throw new Error(`查询执行失败: ${error}`);
@@ -46,12 +29,19 @@ export async function executeStructuredQuery(
 }
 
 /**
- * 验证查询（带超时控制）
+ * 验证查询（带超时控制 + 空值保护）
  */
 export async function validateQuery(query: SearchQuery): Promise<boolean> {
   try {
-    const result = await invokeWithTimeout<boolean>('validate_query', { query }, 5000); // 5秒超时
-    return result;
+    if (!query || typeof query !== 'object') {
+      logger.warn('validateQuery: 无效的 query 参数');
+      return false;
+    }
+
+    return await safeInvoke<boolean>('validate_query', { query }, {
+      timeoutMs: 5000,
+      fallback: false
+    });
   } catch (error: any) {
     console.error('Failed to validate query:', error);
     return false;

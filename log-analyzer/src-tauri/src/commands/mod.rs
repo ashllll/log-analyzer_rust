@@ -9,6 +9,8 @@
 //!
 //! 注意：部分命令模块暂时禁用，因为它们需要额外的依赖修复
 
+pub mod async_search;
+pub mod cache;
 pub mod config;
 pub mod error_reporting;
 pub mod export;
@@ -17,11 +19,7 @@ pub mod legacy;
 pub mod query;
 pub mod search;
 pub mod state_sync;
+pub mod validation;
 pub mod virtual_tree;
 pub mod watch;
 pub mod workspace;
-
-// 暂时禁用的模块（需要修复编译错误）:
-// - async_search: 需要 async_resource_manager 模块
-// - cache: 导入路径需要更新
-// - validation: 需要 lazy_static 依赖和导入路径修复

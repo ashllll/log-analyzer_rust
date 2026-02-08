@@ -1,5 +1,5 @@
-import { invoke } from '@tauri-apps/api/core';
 import { logger } from '../utils/logger';
+import { safeInvoke, isEmptyString } from './nullSafeApi';
 
 /**
  * File content response from backend
@@ -11,34 +11,39 @@ export interface FileContentResponse {
 }
 
 /**
- * Read file content by SHA-256 hash
- * 
- * This function retrieves file content from the Content-Addressable Storage
- * using the file's SHA-256 hash.
- * 
- * @param workspaceId - ID of the workspace containing the file
- * @param hash - SHA-256 hash of the file
- * @returns File content and metadata
- * 
- * @example
- * ```typescript
- * const content = await readFileByHash('workspace_123', 'a3f2e1d4...');
- * console.log(content.content);
- * ```
+ * 空值安全的文件读取（增强版）
  */
 export async function readFileByHash(
   workspaceId: string,
   hash: string
-): Promise<FileContentResponse> {
+): Promise<FileContentResponse | null> {
   try {
+    // 空值检查
+    if (isEmptyString(workspaceId)) {
+      logger.warn('readFileByHash: workspaceId 为空');
+      return null;
+    }
+    if (isEmptyString(hash)) {
+      logger.warn('readFileByHash: hash 为空');
+      return null;
+    }
+
     logger.debug('Reading file by hash:', { workspaceId, hash });
-    
-    const response = await invoke<FileContentResponse>('read_file_by_hash', {
-      workspaceId,
-      hash
-    });
-    
-    logger.debug('Successfully read file:', { hash, size: response.size });
+
+    const response = await safeInvoke<FileContentResponse | null>(
+      'read_file_by_hash',
+      { workspaceId, hash },
+      {
+        timeoutMs: 10000,
+        fallback: null,
+        onError: (err) => logger.error('读取文件失败', { error: err.message })
+      }
+    );
+
+    if (response) {
+      logger.debug('Successfully read file:', { hash, size: response.size });
+    }
+
     return response;
   } catch (error) {
     logger.error('Failed to read file by hash:', error);
@@ -47,7 +52,7 @@ export async function readFileByHash(
 }
 
 /**
- * File API
+ * 文件 API
  */
 export const fileApi = {
   readByHash: readFileByHash

@@ -2,10 +2,8 @@
 //!
 //! 提供支持取消和超时的异步搜索功能
 
-use std::path::Path;
 use std::time::Duration;
-use tauri::{command, AppHandle, State};
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tauri::{command, AppHandle, Manager, State};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -38,8 +36,7 @@ pub async fn async_search_logs(
 
     // 注册异步操作
     let cancellation_token = state
-        .async_resource_manager
-        .register_operation(
+        .register_async_operation(
             search_id.clone(),
             OperationType::Search,
             Some(workspace_id.clone()),
@@ -83,18 +80,14 @@ pub async fn cancel_async_search(
     search_id: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    state
-        .async_resource_manager
-        .cancel_operation(&search_id)
-        .await
-        .map_err(|e| e.to_string())?;
+    state.cancel_async_operation(&search_id).await?;
     Ok(())
 }
 
 /// 获取活跃搜索数量
 #[command]
 pub async fn get_active_searches_count(state: State<'_, AppState>) -> Result<usize, String> {
-    Ok(state.async_resource_manager.active_operations_count().await)
+    Ok(state.get_active_operations_count().await)
 }
 
 /// 执行异步搜索的核心逻辑
@@ -127,7 +120,7 @@ async fn perform_async_search(
     let metadata_store = MetadataStore::new(&workspace_dir)
         .await
         .map_err(|e| format!("Failed to open metadata store: {}", e))?;
-    
+
     let cas = ContentAddressableStorage::new(workspace_dir);
 
     // Get file list from MetadataStore
@@ -255,12 +248,12 @@ async fn search_content_async(
             let (ts, lvl) = parse_metadata(line);
             results.push(LogEntry {
                 id: global_offset + line_number,
-                timestamp: ts,
-                level: lvl,
-                file: virtual_path.to_string(),
-                real_path: virtual_path.to_string(), // In CAS, virtual_path is the canonical path
+                timestamp: ts.into(),
+                level: lvl.into(),
+                file: virtual_path.into(),
+                real_path: virtual_path.into(),
                 line: line_number,
-                content: line.to_string(),
+                content: line.into(),
                 tags: vec![],
                 match_details: None,
                 // 使用 Option 类型，只有当有匹配关键词时才包装为 Some
@@ -282,7 +275,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_search_content_async() {
-        let content = "2023-01-01 10:00:00 INFO Test log entry\n2023-01-01 10:01:00 ERROR Another entry\n";
+        let content =
+            "2023-01-01 10:00:00 INFO Test log entry\n2023-01-01 10:01:00 ERROR Another entry\n";
 
         // Test search
         let results = search_content_async(content, "test.log", "Test", 0)
@@ -291,7 +285,7 @@ mod tests {
 
         assert_eq!(results.len(), 1);
         assert_eq!(
-            results[0].content,
+            results[0].content.as_ref(),
             "2023-01-01 10:00:00 INFO Test log entry"
         );
         assert_eq!(results[0].line, 1);

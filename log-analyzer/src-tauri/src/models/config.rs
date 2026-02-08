@@ -564,6 +564,64 @@ impl Default for CacheConfig {
     }
 }
 
+// ============ 任务管理器配置 ============
+
+/// 任务管理器配置（可外部化）
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct TaskManagerConfig {
+    /// 完成任务的保留时间（秒）
+    #[serde(default = "default_300_u64_task")]
+    pub completed_task_ttl: u64,
+
+    /// 失败任务的保留时间（秒）
+    #[serde(default = "default_1800_u64_task")]
+    pub failed_task_ttl: u64,
+
+    /// 清理检查间隔（秒）
+    #[serde(default = "default_60_u64_task")]
+    pub cleanup_interval: u64,
+
+    /// 操作超时时间（秒）
+    #[serde(default = "default_30_u64_task")]
+    pub operation_timeout: u64,
+
+    /// 最大并发任务数
+    #[serde(default = "default_10_usize_task")]
+    pub max_concurrent_tasks: usize,
+}
+
+fn default_300_u64_task() -> u64 {
+    300 // 5 分钟
+}
+
+fn default_1800_u64_task() -> u64 {
+    1800 // 30 分钟
+}
+
+fn default_60_u64_task() -> u64 {
+    60 // 1 分钟
+}
+
+fn default_30_u64_task() -> u64 {
+    30 // 30 秒
+}
+
+fn default_10_usize_task() -> usize {
+    10
+}
+
+impl Default for TaskManagerConfig {
+    fn default() -> Self {
+        Self {
+            completed_task_ttl: 300,
+            failed_task_ttl: 1800,
+            cleanup_interval: 60,
+            operation_timeout: 30,
+            max_concurrent_tasks: 10,
+        }
+    }
+}
+
 // ============ 数据库配置 ============
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -878,6 +936,9 @@ pub struct AppConfig {
     pub cache: CacheConfig,
 
     #[serde(default)]
+    pub task_manager: TaskManagerConfig,
+
+    #[serde(default)]
     pub database: DatabaseConfig,
 
     #[serde(default)]
@@ -901,6 +962,7 @@ impl Default for AppConfig {
             security: SecurityConfig::default(),
             archive: ArchiveConfig::default(),
             cache: CacheConfig::default(),
+            task_manager: TaskManagerConfig::default(),
             database: DatabaseConfig::default(),
             rate_limit: RateLimitConfig::default(),
             frontend: FrontendConfig::default(),
@@ -966,6 +1028,10 @@ impl ConfigLoader {
 
     pub fn get_cache_config(&self) -> &CacheConfig {
         &self.config.cache
+    }
+
+    pub fn get_task_manager_config(&self) -> &TaskManagerConfig {
+        &self.config.task_manager
     }
 
     pub fn get_database_config(&self) -> &DatabaseConfig {

@@ -10,6 +10,7 @@
 import { create } from 'zustand';
 import { devtools, subscribeWithSelector } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
+import { logger } from '../utils/logger';
 
 // ============================================================================
 // Types
@@ -43,6 +44,51 @@ interface TaskState {
 }
 
 // ============================================================================
+// 空值安全工具函数
+// ============================================================================
+
+/**
+ * 安全地创建 Task 对象
+ * 防御性编程：确保 Task 对象的所有必要字段都有有效值
+ */
+export function createSafeTask(partial: Partial<Task> | null | undefined): Task | null {
+  if (!partial || typeof partial !== 'object') {
+    return null;
+  }
+
+  // 必要字段检查
+  if (!partial.id || typeof partial.id !== 'string') {
+    logger.warn('createSafeTask: 无效的 task id');
+    return null;
+  }
+
+  return {
+    id: partial.id,
+    type: partial.type || 'unknown',
+    target: partial.target || '',
+    progress: typeof partial.progress === 'number' ? Math.max(0, Math.min(100, partial.progress)) : 0,
+    message: partial.message || '',
+    status: partial.status || 'RUNNING',
+    workspaceId: partial.workspaceId,
+    completedAt: partial.completedAt
+  };
+}
+
+/**
+ * 安全地过滤任务列表
+ * 移除无效的任务对象
+ */
+export function sanitizeTaskList(tasks: Task[] | null | undefined): Task[] {
+  if (!Array.isArray(tasks)) {
+    return [];
+  }
+
+  return tasks
+    .map(task => createSafeTask(task))
+    .filter((task): task is Task => task !== null);
+}
+
+// ============================================================================
 // Store
 // ============================================================================
 
@@ -57,11 +103,16 @@ export const useTaskStore = create<TaskState>()(
         
         // Actions
         setTasks: (tasks) => set((state) => {
-          state.tasks = tasks;
+          // 空值安全：过滤无效的任务
+          state.tasks = sanitizeTaskList(tasks);
         }),
         
         addTask: (task) => set((state) => {
-          state.tasks.push(task);
+          // 空值安全：验证任务对象
+          const safeTask = createSafeTask(task);
+          if (safeTask) {
+            state.tasks.push(safeTask);
+          }
         }),
         
         // 带去重的添加 - 防止重复创建任务

@@ -9,7 +9,9 @@ use std::fs;
 
 use tauri::{command, AppHandle, Manager};
 
-use crate::models::config::{AppConfig, AppConfigLoader, FileFilterConfig};
+use crate::models::config::{
+    AppConfig, AppConfigLoader, CacheConfig, FileFilterConfig, SearchConfig, TaskManagerConfig,
+};
 
 /// 加载配置（使用新的 ConfigLoader 系统）
 fn load_config_internal(app: &AppHandle) -> Result<AppConfig, String> {
@@ -64,6 +66,57 @@ pub async fn save_file_filter_config(
 ) -> Result<(), String> {
     let mut config = load_config(app.clone()).await?;
     config.file_filter = filter_config;
+    save_config(app, config).await?;
+    Ok(())
+}
+
+// ============ 缓存配置命令 ============
+
+#[command]
+pub async fn get_cache_config(app: AppHandle) -> Result<CacheConfig, String> {
+    let config = load_config(app).await?;
+    Ok(config.cache)
+}
+
+#[command]
+pub async fn save_cache_config(app: AppHandle, cache_config: CacheConfig) -> Result<(), String> {
+    let mut config = load_config(app.clone()).await?;
+    config.cache = cache_config;
+    save_config(app, config).await?;
+    Ok(())
+}
+
+// ============ 搜索配置命令 ============
+
+#[command]
+pub async fn get_search_config(app: AppHandle) -> Result<SearchConfig, String> {
+    let config = load_config(app).await?;
+    Ok(config.search)
+}
+
+#[command]
+pub async fn save_search_config(app: AppHandle, search_config: SearchConfig) -> Result<(), String> {
+    let mut config = load_config(app.clone()).await?;
+    config.search = search_config;
+    save_config(app, config).await?;
+    Ok(())
+}
+
+// ============ 任务管理器配置命令 ============
+
+#[command]
+pub async fn get_task_manager_config(app: AppHandle) -> Result<TaskManagerConfig, String> {
+    let config = load_config(app).await?;
+    Ok(config.task_manager)
+}
+
+#[command]
+pub async fn save_task_manager_config(
+    app: AppHandle,
+    task_manager_config: TaskManagerConfig,
+) -> Result<(), String> {
+    let mut config = load_config(app.clone()).await?;
+    config.task_manager = task_manager_config;
     save_config(app, config).await?;
     Ok(())
 }

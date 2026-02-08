@@ -32,7 +32,11 @@ export enum LogLevelEnum {
  * Logger类
  */
 class LoggerImpl {
-  private isDev = import.meta.env.DEV;
+  // 使用 process.env 兼容所有环境（Jest/Vite）
+  private isDev = typeof process !== 'undefined'
+    ? process.env.NODE_ENV !== 'production'
+    : true; // 默认开发模式
+
   private logLevel: LogLevel = 'info';
 
   private shouldLog(level: LogLevel): boolean {

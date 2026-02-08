@@ -91,10 +91,22 @@ pub struct TaskManagerConfig {
 impl Default for TaskManagerConfig {
     fn default() -> Self {
         Self {
-            completed_task_ttl: 300, // 完成任务保留 5 分钟（给用户足够时间查看）
-            failed_task_ttl: 1800,   // 失败任务保留 30 分钟（便于问题排查）
-            cleanup_interval: 60,    // 每分钟检查一次（减少开销）
-            operation_timeout: 30,   // 操作超时 30 秒
+            completed_task_ttl: 300, // 5 分钟
+            failed_task_ttl: 1800,   // 30 分钟
+            cleanup_interval: 60,    // 1 分钟
+            operation_timeout: 30,   // 30 秒
+        }
+    }
+}
+
+impl TaskManagerConfig {
+    /// 从 AppConfig 创建配置
+    pub fn from_app_config(config: &crate::models::config::TaskManagerConfig) -> Self {
+        Self {
+            completed_task_ttl: config.completed_task_ttl,
+            failed_task_ttl: config.failed_task_ttl,
+            cleanup_interval: config.cleanup_interval,
+            operation_timeout: config.operation_timeout,
         }
     }
 }

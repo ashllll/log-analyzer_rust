@@ -8,8 +8,8 @@
 
 // 导入 log_analyzer 库的模块
 use log_analyzer::commands::{
-    config::*, error_reporting::*, export::*, import::*, legacy::*, query::*, search::*,
-    state_sync::*, virtual_tree::*, watch::*, workspace::*,
+    async_search::*, cache::*, config::*, error_reporting::*, export::*, import::*, legacy::*,
+    query::*, search::*, state_sync::*, validation::*, virtual_tree::*, watch::*, workspace::*,
 };
 use log_analyzer::models::AppState;
 use log_analyzer::task_manager::TaskManager;
@@ -29,16 +29,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .manage(AppState::default())
         // 初始化后设置 TaskManager
         .setup(|app| {
+            use log_analyzer::models::config::AppConfigLoader;
             use log_analyzer::models::AppState;
             use tauri::Manager;
 
             let app_state: tauri::State<'_, AppState> = app.state();
 
+            // 从配置文件加载 TaskManager 配置
+            let config_path = app
+                .path()
+                .app_config_dir()
+                .ok()
+                .map(|p| p.join("config.json"));
+            let task_manager_config = if let Some(ref path) = config_path {
+                if path.exists() {
+                    AppConfigLoader::load(Some(path.clone()))
+                        .ok()
+                        .map(|loader| {
+                            let config = loader.get_config();
+                            log_analyzer::task_manager::TaskManagerConfig::from_app_config(
+                                &config.task_manager,
+                            )
+                        })
+                        .unwrap_or_default()
+                } else {
+                    log_analyzer::task_manager::TaskManagerConfig::default()
+                }
+            } else {
+                log_analyzer::task_manager::TaskManagerConfig::default()
+            };
+
             // 初始化 TaskManager
-            let task_manager = TaskManager::new(
-                app.handle().clone(),
-                log_analyzer::task_manager::TaskManagerConfig::default(),
-            )?;
+            let task_manager = TaskManager::new(app.handle().clone(), task_manager_config)?;
 
             // 设置到 AppState
             let mut state_guard = app_state.task_manager.lock();
@@ -54,6 +76,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             save_config,
             get_file_filter_config,
             save_file_filter_config,
+            get_cache_config,
+            save_cache_config,
+            get_search_config,
+            save_search_config,
+            get_task_manager_config,
+            save_task_manager_config,
             // ===== 工作区管理 =====
             load_workspace,
             refresh_workspace,
@@ -90,6 +118,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             broadcast_test_event,
             // ===== 导出 =====
             export_results,
+            // ===== 缓存管理 =====
+            get_cache_statistics,
+            get_async_cache_statistics,
+            invalidate_workspace_cache,
+            cleanup_expired_cache,
+            get_cache_performance_metrics,
+            get_cache_performance_report,
+            cache_health_check,
+            get_access_pattern_stats,
+            get_compression_stats,
+            get_l2_cache_config,
+            intelligent_cache_eviction,
+            reset_cache_metrics,
+            reset_access_tracker,
+            get_cache_dashboard_data,
+            // ===== 数据验证 =====
+            validate_workspace_config_cmd,
+            validate_search_query_cmd,
+            validate_archive_config_cmd,
+            batch_validate_workspace_configs,
+            validate_workspace_id_format,
+            validate_path_security,
+            // ===== 异步搜索 =====
+            async_search_logs,
+            cancel_async_search,
+            get_active_searches_count,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
