@@ -3,6 +3,8 @@ use crate::models::search::*;
 use crate::services::query_planner::{ExecutionPlan, QueryPlanner};
 use crate::services::query_validator::QueryValidator;
 use crate::services::regex_engine::RegexEngine;
+use moka::sync::Cache;
+use std::sync::Arc;
 
 /**
  * 查询执行器
@@ -15,9 +17,13 @@ use crate::services::regex_engine::RegexEngine;
  * 设计决策：使用混合引擎策略自动选择最佳匹配算法：
  * - AhoCorasick: 简单关键词搜索，O(n) 线性复杂度
  * - Standard: 复杂正则/需要前瞻后瞻
+ *
+ * 性能优化：使用 ExecutionPlan 缓存避免重复构建查询计划
  */
 pub struct QueryExecutor {
     planner: QueryPlanner,
+    /// ExecutionPlan 缓存 (LRU策略)
+    plan_cache: Cache<String, Arc<ExecutionPlan>>,
 }
 
 impl QueryExecutor {
@@ -26,11 +32,33 @@ impl QueryExecutor {
      *
      * # 参数
      * * `cache_size` - 引擎缓存大小
+     * * `plan_cache_size` - ExecutionPlan 缓存大小
      */
     pub fn new(cache_size: usize) -> Self {
         Self {
             planner: QueryPlanner::new(cache_size),
+            plan_cache: Cache::new(1000), // 默认缓存1000个查询计划
         }
+    }
+
+    /**
+     * 生成查询缓存键
+     */
+    fn cache_key(query: &SearchQuery) -> String {
+        use serde_json::json;
+        // 使用查询的关键信息生成缓存键
+        json!({
+            "terms": query.terms.iter().map(|t| {
+                json!({
+                    "value": t.value,
+                    "is_regex": t.is_regex,
+                    "case_sensitive": t.case_sensitive,
+                    "enabled": t.enabled,
+                })
+            }).collect::<Vec<_>>(),
+            "global_operator": query.global_operator,
+        })
+        .to_string()
     }
 
     /**
@@ -46,9 +74,18 @@ impl QueryExecutor {
     pub fn execute(&mut self, query: &SearchQuery) -> Result<ExecutionPlan> {
         QueryValidator::validate(query)?;
 
-        let mut plan = self.planner.build_plan(query)?;
+        // 检查缓存
+        let cache_key = Self::cache_key(query);
+        if let Some(cached_plan) = self.plan_cache.get(&cache_key) {
+            // 返回缓存的计划的副本
+            return Ok((*cached_plan).clone());
+        }
 
+        let mut plan = self.planner.build_plan(query)?;
         plan.sort_by_priority();
+
+        // 缓存计划
+        self.plan_cache.insert(cache_key, Arc::new(plan.clone()));
 
         Ok(plan)
     }

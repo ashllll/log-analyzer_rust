@@ -67,7 +67,9 @@ pub struct TaskInfo {
     pub progress: u8,
     pub message: String,
     pub status: TaskStatus,
-    pub version: u32,
+    /// 版本号 - 使用 u64 防止长时间运行时溢出
+    /// 单调递增，用于前端幂等性检查
+    pub version: u64,
     pub workspace_id: Option<String>,
     #[serde(skip)]
     pub created_at: Instant,
@@ -194,7 +196,7 @@ impl TaskManagerActor {
                     progress: 0,
                     message: "Starting...".to_string(),
                     status: TaskStatus::Running,
-                    version: 1,
+                    version: 1u64, // 使用 u64 字面量
                     workspace_id,
                     created_at: Instant::now(),
                     completed_at: None,
