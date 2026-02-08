@@ -13,11 +13,13 @@ pub mod security_detector;
 
 pub mod audit_logger;
 pub mod checkpoint_manager;
+pub mod compression_analyzer;
 pub mod edge_case_handlers;
 pub mod extraction_context;
 pub mod extraction_engine;
 pub mod extraction_orchestrator;
 pub mod gz_handler;
+pub mod nested_archive_config;
 pub mod parallel_processor;
 pub mod path_manager;
 pub mod path_validator; // 新增：路径安全验证器
@@ -31,10 +33,12 @@ pub mod traversal; // 新增：统一遍历模块
 pub mod zip_handler;
 
 pub use archive_handler::{ArchiveHandler, ExtractionSummary};
+pub use compression_analyzer::{CompressionAnalyzer, FileDistribution};
 pub use extraction_context::{ExtractionContext, ExtractionItem, ExtractionStack};
 pub use extraction_engine::{ExtractionEngine, ExtractionPolicy};
 pub use extraction_orchestrator::ExtractionOrchestrator;
 pub use gz_handler::GzHandler;
+pub use nested_archive_config::NestedArchiveConfig;
 pub use parallel_processor::{ParallelConfig, ParallelProcessor};
 pub use path_manager::{PathConfig, PathManager};
 pub use path_validator::{PathValidator, PathValidatorConfig}; // 导出验证器

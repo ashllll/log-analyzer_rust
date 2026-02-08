@@ -361,6 +361,312 @@ impl Default for SecurityConfig {
 
 // ============ 压缩解压配置 ============
 
+/// 文件大小处理策略
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum FileSizeStrategy {
+    /// 完全解压后搜索
+    #[default]
+    FullExtraction,
+    /// 流式搜索（适用于大文件）
+    StreamingSearch,
+    /// 跳过大文件
+    Skip,
+}
+
+/// 嵌套压缩包策略配置
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct NestedArchivePolicy {
+    /// 文件数量阈值（超过此数量则限制嵌套深度）
+    #[serde(default = "default_5000_usize")]
+    pub file_count_threshold: usize,
+
+    /// 总大小阈值（字节）
+    #[serde(default = "default_20gb")]
+    pub total_size_threshold: u64,
+
+    /// 压缩比阈值（检测压缩炸弹）
+    #[serde(default = "default_100_0_f64")]
+    pub compression_ratio_threshold: f64,
+
+    /// 指数退避阈值（ratio^depth）
+    #[serde(default = "default_1000000_0_f64")]
+    pub exponential_backoff_threshold: f64,
+
+    /// 启用压缩炸弹检测
+    #[serde(default = "default_true")]
+    pub enable_zip_bomb_detection: bool,
+}
+
+fn default_5000_usize() -> usize {
+    5000
+}
+
+fn default_20gb() -> u64 {
+    20 * 1024 * 1024 * 1024
+}
+
+impl Default for NestedArchivePolicy {
+    fn default() -> Self {
+        Self {
+            file_count_threshold: 5000,
+            total_size_threshold: 20 * 1024 * 1024 * 1024,
+            compression_ratio_threshold: 100.0,
+            exponential_backoff_threshold: 1_000_000.0,
+            enable_zip_bomb_detection: true,
+        }
+    }
+}
+
+/// 文件大小策略配置
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct FileSizePolicy {
+    /// 处理策略
+    #[serde(default)]
+    pub strategy: FileSizeStrategy,
+
+    /// 完全解压的文件大小限制（字节）
+    #[serde(default = "default_500mb")]
+    pub full_extraction_limit: u64,
+
+    /// 流式搜索的文件大小限制（字节）
+    #[serde(default = "default_2gb")]
+    pub streaming_search_limit: u64,
+
+    /// 超过限制时的行为（warn/error/silent）
+    #[serde(default = "default_warn_action")]
+    pub oversized_file_action: String,
+}
+
+fn default_500mb() -> u64 {
+    500 * 1024 * 1024
+}
+
+fn default_2gb() -> u64 {
+    2 * 1024 * 1024 * 1024
+}
+
+fn default_warn_action() -> String {
+    "warn".to_string()
+}
+
+impl Default for FileSizePolicy {
+    fn default() -> Self {
+        Self {
+            strategy: FileSizeStrategy::default(),
+            full_extraction_limit: 500 * 1024 * 1024,
+            streaming_search_limit: 2 * 1024 * 1024 * 1024,
+            oversized_file_action: "warn".to_string(),
+        }
+    }
+}
+
+/// 扩展的压缩包处理配置
+///
+/// 这个配置扩展了基础的 ArchiveConfig，增加了：
+/// - 大文件处理策略
+/// - 嵌套压缩包智能处理
+/// - 流式搜索支持
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ArchiveProcessingConfig {
+    /// 最大文件大小（字节），0 表示无限制
+    #[serde(default = "default_10gb")]
+    pub max_file_size: u64,
+
+    /// 最大总大小（字节），0 表示无限制
+    #[serde(default = "default_zero_u64")]
+    pub max_total_size: u64,
+
+    /// 最大文件数量，0 表示无限制
+    #[serde(default = "default_zero_usize")]
+    pub max_file_count: usize,
+
+    /// 最大嵌套深度
+    #[serde(default = "default_15_usize")]
+    pub max_nesting_depth: usize,
+
+    /// 嵌套压缩包策略
+    #[serde(default)]
+    pub nested_archive_policy: NestedArchivePolicy,
+
+    /// 文件大小策略
+    #[serde(default)]
+    pub file_size_policy: FileSizePolicy,
+
+    /// 启用智能文件类型检测
+    #[serde(default = "default_true")]
+    pub enable_intelligent_file_filter: bool,
+
+    /// 内容采样大小（字节）
+    #[serde(default = "default_10kb_v2")]
+    pub content_sample_size: u64,
+
+    /// 最小文本可读性评分（0.0-1.0）
+    #[serde(default = "default_0_3_f64")]
+    pub min_readability_score: f64,
+
+    /// 启用进度报告
+    #[serde(default = "default_true")]
+    pub enable_progress_reporting: bool,
+
+    /// 进度报告间隔（毫秒）
+    #[serde(default = "default_500_u64")]
+    pub progress_report_interval_ms: u64,
+}
+
+fn default_zero_u64() -> u64 {
+    0
+}
+
+fn default_zero_usize() -> usize {
+    0
+}
+
+fn default_15_usize() -> usize {
+    15
+}
+
+fn default_10kb_v2() -> u64 {
+    10 * 1024
+}
+
+fn default_0_3_f64() -> f64 {
+    0.3
+}
+
+fn default_500_u64() -> u64 {
+    500
+}
+
+impl Default for ArchiveProcessingConfig {
+    fn default() -> Self {
+        Self {
+            max_file_size: 10 * 1024 * 1024 * 1024, // 10GB
+            max_total_size: 0,                      // 无限制
+            max_file_count: 0,                      // 无限制
+            max_nesting_depth: 15,
+            nested_archive_policy: NestedArchivePolicy::default(),
+            file_size_policy: FileSizePolicy::default(),
+            enable_intelligent_file_filter: true,
+            content_sample_size: 10 * 1024,
+            min_readability_score: 0.3,
+            enable_progress_reporting: true,
+            progress_report_interval_ms: 500,
+        }
+    }
+}
+
+impl ArchiveProcessingConfig {
+    /// 验证配置有效性
+    pub fn validate(&self) -> Result<(), ConfigError> {
+        // 验证嵌套深度
+        if self.max_nesting_depth == 0 || self.max_nesting_depth > 30 {
+            return Err(ConfigError::ValidationError(format!(
+                "max_nesting_depth must be between 1 and 30, got {}",
+                self.max_nesting_depth
+            )));
+        }
+
+        // 验证文件大小策略限制
+        if self.file_size_policy.full_extraction_limit == 0 {
+            return Err(ConfigError::ValidationError(
+                "full_extraction_limit must be positive".to_string(),
+            ));
+        }
+
+        if self.file_size_policy.streaming_search_limit == 0 {
+            return Err(ConfigError::ValidationError(
+                "streaming_search_limit must be positive".to_string(),
+            ));
+        }
+
+        // 验证可读性评分范围
+        if self.min_readability_score < 0.0 || self.min_readability_score > 1.0 {
+            return Err(ConfigError::ValidationError(format!(
+                "min_readability_score must be between 0.0 and 1.0, got {}",
+                self.min_readability_score
+            )));
+        }
+
+        Ok(())
+    }
+
+    /// 根据文件大小决定处理策略
+    pub fn decide_file_strategy(&self, file_size: u64) -> FileSizeStrategy {
+        let config = &self.file_size_policy;
+
+        // 检查是否超过最大文件大小限制
+        if self.max_file_size > 0 && file_size > self.max_file_size {
+            match config.oversized_file_action.as_str() {
+                "skip" => return FileSizeStrategy::Skip,
+                "error" => return FileSizeStrategy::Skip,
+                _ => return FileSizeStrategy::StreamingSearch,
+            }
+        }
+
+        // 根据文件大小决定策略
+        if file_size <= config.full_extraction_limit {
+            FileSizeStrategy::FullExtraction
+        } else if file_size <= config.streaming_search_limit {
+            FileSizeStrategy::StreamingSearch
+        } else {
+            match config.strategy {
+                FileSizeStrategy::Skip => FileSizeStrategy::Skip,
+                _ => FileSizeStrategy::StreamingSearch,
+            }
+        }
+    }
+
+    /// 计算动态嵌套深度限制
+    pub fn calculate_dynamic_depth_limit(
+        &self,
+        current_file_count: usize,
+        current_total_size: u64,
+    ) -> usize {
+        let policy = &self.nested_archive_policy;
+
+        let mut depth_limit = self.max_nesting_depth;
+
+        // 根据文件数量调整
+        if current_file_count > policy.file_count_threshold {
+            let reduction = ((current_file_count - policy.file_count_threshold) / 1000).min(5);
+            depth_limit = depth_limit.saturating_sub(reduction);
+        }
+
+        // 根据总大小调整
+        if current_total_size > policy.total_size_threshold {
+            let reduction = ((current_total_size - policy.total_size_threshold)
+                / (1024 * 1024 * 1024))
+                .min(3) as usize;
+            depth_limit = depth_limit.saturating_sub(reduction);
+        }
+
+        depth_limit.max(1) // 至少允许1层
+    }
+
+    /// 检查是否为潜在的压缩炸弹
+    pub fn is_potential_zip_bomb(&self, compression_ratio: f64, depth: usize) -> bool {
+        if !self.nested_archive_policy.enable_zip_bomb_detection {
+            return false;
+        }
+
+        let policy = &self.nested_archive_policy;
+
+        // 检查压缩比
+        if compression_ratio > policy.compression_ratio_threshold {
+            return true;
+        }
+
+        // 检查指数退避阈值
+        let exponential_factor = compression_ratio.powi(depth as i32);
+        if exponential_factor > policy.exponential_backoff_threshold {
+            return true;
+        }
+
+        false
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ArchiveConfig {
     // 安全限制
@@ -933,6 +1239,9 @@ pub struct AppConfig {
     pub archive: ArchiveConfig,
 
     #[serde(default)]
+    pub archive_processing: ArchiveProcessingConfig,
+
+    #[serde(default)]
     pub cache: CacheConfig,
 
     #[serde(default)]
@@ -961,6 +1270,7 @@ impl Default for AppConfig {
             monitoring: MonitoringConfig::default(),
             security: SecurityConfig::default(),
             archive: ArchiveConfig::default(),
+            archive_processing: ArchiveProcessingConfig::default(),
             cache: CacheConfig::default(),
             task_manager: TaskManagerConfig::default(),
             database: DatabaseConfig::default(),
@@ -1020,6 +1330,10 @@ impl ConfigLoader {
     /// 获取单个配置节
     pub fn get_archive_config(&self) -> &ArchiveConfig {
         &self.config.archive
+    }
+
+    pub fn get_archive_processing_config(&self) -> &ArchiveProcessingConfig {
+        &self.config.archive_processing
     }
 
     pub fn get_search_config(&self) -> &SearchConfig {

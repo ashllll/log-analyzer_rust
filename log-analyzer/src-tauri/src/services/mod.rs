@@ -2,12 +2,14 @@ pub mod event_bus;
 pub mod file_type_filter;
 pub mod file_watcher;
 pub mod index_validator;
+pub mod intelligent_file_filter;
 pub mod metadata_db;
 pub mod pattern_matcher;
 pub mod query_executor;
 pub mod query_planner;
 pub mod query_validator;
 pub mod regex_engine;
+pub mod report_collector;
 pub mod search_statistics;
 pub mod service_config;
 pub mod service_container;
@@ -28,17 +30,22 @@ mod integration_tests;
 
 // 重新导出所有公共类型和函数
 pub use event_bus::{get_event_bus, AppEvent, EventBus, EventSubscriber};
+pub use file_type_filter::FileTypeFilter;
 pub use file_watcher::{
     append_to_workspace_index, get_file_metadata, parse_log_lines, parse_metadata,
     read_file_from_offset,
 };
 pub use index_validator::{IndexValidator, InvalidFileInfo, ValidationReport};
+pub use intelligent_file_filter::IntelligentFileFilter;
 pub use metadata_db::MetadataDB;
 pub use query_executor::{MatchDetail, QueryExecutor};
 pub use query_planner::ExecutionPlan;
 pub use regex_engine::{
     AhoCorasickEngine, AutomataEngine, EngineError, EngineInfo, EngineMatches, EngineType,
     MatchResult, RegexEngine, StandardEngine,
+};
+pub use report_collector::{
+    create_archive_error, create_error, create_io_error, create_security_error, ReportCollector,
 };
 pub use search_statistics::calculate_keyword_statistics;
 pub use service_config::ServiceConfiguration;
