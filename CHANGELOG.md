@@ -5,6 +5,77 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.140] - 2026-02-11
+
+### ✨ Features
+
+#### 增量索引优化（Task 3）
+- **偏移量持久化**: 应用重启后从上次位置继续读取日志文件
+  - 新增 `IndexState` 和 `IndexedFile` 数据结构
+  - SQLite 表 `index_state` 和 `indexed_files` 存储索引状态
+  - 10 个单元测试覆盖所有 CRUD 操作
+  - 位置: `src-tauri/src/storage/metadata_store.rs`
+
+- **索引实时更新**: 监听的新内容可立即搜索
+  - 修改 `append_to_workspace_index` 函数集成 Tantivy 持久化
+  - `AppState` 新增 `search_engine_managers` 字段
+  - 自动 commit 确保数据持久化
+
+- **智能变更检测**: 基于 SHA-256 CAS 哈希避免无效索引
+  - 新建 `file_change_detector.rs` 服务模块
+  - `FileChangeStatus` 枚举: NewFile, ContentChanged, Unchanged, Truncated
+  - 7 个单元测试覆盖变更检测逻辑
+  - 支持批量处理和缓存管理
+
+- **删除文件处理**: 删除文件时自动清理索引结果
+  - 新增 `delete_file_documents` 方法到 SearchEngineManager
+  - 删除时同时清理 Tantivy 索引和 indexed_files 表
+  - 使用 TermQuery 精确匹配文件路径
+
+#### 性能监控命令增强
+- **P95/P99 延迟计算**: 使用业内成熟的排序算法计算百分位数
+- **历史数据存储**: SQLite 时序数据存储 (metrics_store)
+- **定时快照**: tokio::time::interval 异步定时器
+- **修复运行时恐慌**: `try_lock()` 避免异步运行时阻塞
+
+#### 新增文件
+- `src-tauri/src/services/file_change_detector.rs` - 智能变更检测
+- `src-tauri/src/storage/metrics_store.rs` - 性能指标时序存储
+- `src/components/charts/` - 图表组件
+- `src/hooks/__tests__/` - Hooks 单元测试
+- `src/pages/__tests__/` - 页面单元测试
+
+### ♻️ Refactor
+
+#### 代码质量改进
+- 修复 Clippy 警告:
+  - 移除未使用的 `AppError` 导入
+  - 修复 `ptr_arg` 警告 (`&PathBuf` → `&Path`, `&mut Vec<u64>` → `&mut [u64]`)
+  - 修复 `await_holding_lock` 警告 (metrics_store.rs)
+- 修复运行时恐慌: performance.rs:209 使用 `try_lock()` 替代 `blocking_lock()`
+
+#### 代码组织
+- 更新 `storage/mod.rs` 导出新类型
+- 更新 `models/state.rs` 添加 `search_engine_managers` 字段
+
+### 📚 Documentation
+
+- **TODO.md**: 新增未完成任务清单文档
+  - 记录 10 项未完成任务（Rust: 8项，前端: 2项）
+  - 按优先级分类（P0: 1项，P1: 3项，P2: 6项）
+
+- **README.md**:
+  - 版本号更新至 0.0.140
+  - 添加"增量索引优化"到已完成功能列表
+  - 从"进行中"移除"增量索引优化"
+
+### 🐛 Bug Fixes
+
+- **WebView2 崩溃**: `cargo clean` 重建解决链接错误
+- **async 运行时恐慌**: 修复 performance.rs 中的阻塞锁问题
+
+---
+
 ## [0.0.96] - 2026-01-04
 
 ### ✨ Features

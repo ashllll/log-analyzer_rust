@@ -11,7 +11,7 @@
 [![React](https://img.shields.io/badge/React-19.1.0-61dafb.svg)](https://reactjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8.3-3178c6.svg)](https://www.typescriptlang.org/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.0.139-brightgreen.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.0.140-brightgreen.svg)](CHANGELOG.md)
 
 [快速开始](#-快速开始) · [核心特性](#-核心特性) · [技术架构](#-技术架构) · [开发指南](#-开发指南) · [文档](#-文档)
 
@@ -592,7 +592,7 @@ npm run lint
 
 ## 🗺️ 开发路线图
 
-### ✅ 已完成（v0.0.139）
+### ✅ 已完成（v0.0.140）
 
 #### 核心功能
 - ✅ 多格式压缩包支持（ZIP/RAR/GZ/TAR/7Z）
@@ -610,6 +610,7 @@ npm run lint
 - ✅ React Query 性能监控重构
 - ✅ Rust 后端性能监控命令
 - ✅ 全局错误处理系统（错误边界 + 日志持久化）
+- ✅ **增量索引优化（偏移量持久化 + 智能变更检测 + 删除处理）**
 
 #### 架构优化
 - ✅ 全面异步化：磁盘 I/O 与归档处理 100% 异步非阻塞
@@ -632,7 +633,6 @@ npm run lint
 
 - [ ] 前端单元测试扩展
 - [ ] 性能监控仪表板增强
-- [ ] 增量索引优化
 
 ### 📅 短期计划（1-2个月）
 

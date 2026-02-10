@@ -51,6 +51,25 @@ pub struct ArchiveMetadata {
     pub extraction_status: String,
 }
 
+/// Index state for tracking indexing progress
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IndexState {
+    pub workspace_id: String,
+    pub last_commit_time: i64,
+    pub index_version: i32,
+}
+
+/// Indexed file tracking for incremental indexing
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IndexedFile {
+    pub file_path: String,
+    pub workspace_id: String,
+    pub last_offset: u64,
+    pub file_size: i64,
+    pub modified_time: i64,
+    pub hash: String, // SHA-256
+}
+
 /// SQLite metadata store manager
 pub struct MetadataStore {
     pool: SqlitePool,
@@ -278,6 +297,44 @@ impl MetadataStore {
         .map_err(|e| {
             AppError::database_error(format!("Failed to create FTS update trigger: {}", e))
         })?;
+
+        // Create index_state table for tracking indexing progress
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS index_state (
+                workspace_id TEXT PRIMARY KEY,
+                last_commit_time INTEGER NOT NULL,
+                index_version INTEGER NOT NULL DEFAULT 1
+            )
+            "#,
+        )
+        .execute(pool)
+        .await
+        .map_err(|e| AppError::database_error(format!("Failed to create index_state table: {}", e)))?;
+
+        // Create indexed_files table for incremental indexing
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS indexed_files (
+                file_path TEXT PRIMARY KEY,
+                workspace_id TEXT NOT NULL,
+                last_offset INTEGER NOT NULL DEFAULT 0,
+                file_size INTEGER NOT NULL,
+                modified_time INTEGER NOT NULL,
+                hash TEXT NOT NULL,
+                FOREIGN KEY (workspace_id) REFERENCES index_state(workspace_id) ON DELETE CASCADE
+            )
+            "#,
+        )
+        .execute(pool)
+        .await
+        .map_err(|e| AppError::database_error(format!("Failed to create indexed_files table: {}", e)))?;
+
+        // Create index on workspace_id for faster queries
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_indexed_files_workspace ON indexed_files(workspace_id)")
+            .execute(pool)
+            .await
+            .map_err(|e| AppError::database_error(format!("Failed to create index: {}", e)))?;
 
         info!("Database schema initialized successfully");
         Ok(())
@@ -848,6 +905,237 @@ impl MetadataStore {
                 extraction_status: r.get("extraction_status"),
             })
             .collect())
+    }
+
+    // ========== Index State Management for Incremental Indexing ==========
+
+    /// Save index state for a workspace
+    ///
+    /// # Arguments
+    ///
+    /// * `state` - Index state to save
+    ///
+    /// # Errors
+    ///
+    /// Returns error if database operation fails
+    pub async fn save_index_state(&self, state: &IndexState) -> Result<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO index_state (workspace_id, last_commit_time, index_version)
+            VALUES (?, ?, ?)
+            ON CONFLICT(workspace_id) DO UPDATE SET
+                last_commit_time = excluded.last_commit_time,
+                index_version = excluded.index_version
+            "#,
+        )
+        .bind(&state.workspace_id)
+        .bind(state.last_commit_time)
+        .bind(state.index_version)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| AppError::database_error(format!("Failed to save index state: {}", e)))?;
+
+        debug!(
+            workspace_id = %state.workspace_id,
+            last_commit_time = state.last_commit_time,
+            index_version = state.index_version,
+            "Saved index state"
+        );
+
+        Ok(())
+    }
+
+    /// Load index state for a workspace
+    ///
+    /// # Arguments
+    ///
+    /// * `workspace_id` - Workspace ID to load state for
+    ///
+    /// # Returns
+    ///
+    /// - `Some(IndexState)` if state exists
+    /// - `None` if no state exists for this workspace
+    ///
+    /// # Errors
+    ///
+    /// Returns error if database operation fails
+    pub async fn load_index_state(&self, workspace_id: &str) -> Result<Option<IndexState>> {
+        let row = sqlx::query("SELECT workspace_id, last_commit_time, index_version FROM index_state WHERE workspace_id = ?")
+            .bind(workspace_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| AppError::database_error(format!("Failed to load index state: {}", e)))?;
+
+        Ok(row.map(|r| IndexState {
+            workspace_id: r.get("workspace_id"),
+            last_commit_time: r.get("last_commit_time"),
+            index_version: r.get("index_version"),
+        }))
+    }
+
+    /// Save indexed file record (UPSERT)
+    ///
+    /// # Arguments
+    ///
+    /// * `file` - Indexed file record to save
+    ///
+    /// # Errors
+    ///
+    /// Returns error if database operation fails
+    pub async fn save_indexed_file(&self, file: &IndexedFile) -> Result<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO indexed_files (file_path, workspace_id, last_offset, file_size, modified_time, hash)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(file_path) DO UPDATE SET
+                last_offset = excluded.last_offset,
+                file_size = excluded.file_size,
+                modified_time = excluded.modified_time,
+                hash = excluded.hash
+            "#,
+        )
+        .bind(&file.file_path)
+        .bind(&file.workspace_id)
+        .bind(file.last_offset as i64)
+        .bind(file.file_size)
+        .bind(file.modified_time)
+        .bind(&file.hash)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| AppError::database_error(format!("Failed to save indexed file: {}", e)))?;
+
+        debug!(
+            file_path = %file.file_path,
+            workspace_id = %file.workspace_id,
+            last_offset = file.last_offset,
+            "Saved indexed file record"
+        );
+
+        Ok(())
+    }
+
+    /// Load all indexed files for a workspace
+    ///
+    /// # Arguments
+    ///
+    /// * `workspace_id` - Workspace ID to load files for
+    ///
+    /// # Returns
+    ///
+    /// Vector of indexed file records
+    ///
+    /// # Errors
+    ///
+    /// Returns error if database operation fails
+    pub async fn load_indexed_files(&self, workspace_id: &str) -> Result<Vec<IndexedFile>> {
+        let rows = sqlx::query(
+            "SELECT file_path, workspace_id, last_offset, file_size, modified_time, hash FROM indexed_files WHERE workspace_id = ?"
+        )
+        .bind(workspace_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| AppError::database_error(format!("Failed to load indexed files: {}", e)))?;
+
+        Ok(rows
+            .into_iter()
+            .map(|r| IndexedFile {
+                file_path: r.get("file_path"),
+                workspace_id: r.get("workspace_id"),
+                last_offset: {
+                    let val: i64 = r.get("last_offset");
+                    val as u64
+                },
+                file_size: r.get("file_size"),
+                modified_time: r.get("modified_time"),
+                hash: r.get("hash"),
+            })
+            .collect())
+    }
+
+    /// Load indexed file record by file path
+    ///
+    /// # Arguments
+    ///
+    /// * `file_path` - File path to load record for
+    ///
+    /// # Returns
+    ///
+    /// - `Some(IndexedFile)` if record exists
+    /// - `None` if no record exists for this file
+    ///
+    /// # Errors
+    ///
+    /// Returns error if database operation fails
+    pub async fn load_indexed_file(&self, file_path: &str) -> Result<Option<IndexedFile>> {
+        let row = sqlx::query(
+            "SELECT file_path, workspace_id, last_offset, file_size, modified_time, hash FROM indexed_files WHERE file_path = ?"
+        )
+        .bind(file_path)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| AppError::database_error(format!("Failed to load indexed file: {}", e)))?;
+
+        Ok(row.map(|r| IndexedFile {
+            file_path: r.get("file_path"),
+            workspace_id: r.get("workspace_id"),
+            last_offset: {
+                let val: i64 = r.get("last_offset");
+                val as u64
+            },
+            file_size: r.get("file_size"),
+            modified_time: r.get("modified_time"),
+            hash: r.get("hash"),
+        }))
+    }
+
+    /// Delete indexed file record
+    ///
+    /// # Arguments
+    ///
+    /// * `file_path` - File path to delete record for
+    ///
+    /// # Errors
+    ///
+    /// Returns error if database operation fails
+    pub async fn delete_indexed_file(&self, file_path: &str) -> Result<()> {
+        let result = sqlx::query("DELETE FROM indexed_files WHERE file_path = ?")
+            .bind(file_path)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| AppError::database_error(format!("Failed to delete indexed file: {}", e)))?;
+
+        debug!(
+            file_path = %file_path,
+            rows_affected = result.rows_affected(),
+            "Deleted indexed file record"
+        );
+
+        Ok(())
+    }
+
+    /// Clear all indexed files for a workspace
+    ///
+    /// # Arguments
+    ///
+    /// * `workspace_id` - Workspace ID to clear files for
+    ///
+    /// # Errors
+    ///
+    /// Returns error if database operation fails
+    pub async fn clear_indexed_files(&self, workspace_id: &str) -> Result<()> {
+        let result = sqlx::query("DELETE FROM indexed_files WHERE workspace_id = ?")
+            .bind(workspace_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| AppError::database_error(format!("Failed to clear indexed files: {}", e)))?;
+
+        debug!(
+            workspace_id = %workspace_id,
+            rows_affected = result.rows_affected(),
+            "Cleared indexed files for workspace"
+        );
+
+        Ok(())
     }
 }
 
@@ -1551,6 +1839,271 @@ mod tests {
             retrieved2.is_none(),
             "Second virtual path should not exist (ignored by UNIQUE constraint)"
         );
+    }
+
+    // ========== Index State Management Tests ==========
+
+    /// Test save and load index state
+    #[tokio::test]
+    async fn test_save_and_load_index_state() {
+        let (store, _temp_dir) = create_test_store().await;
+
+        let workspace_id = "test_workspace";
+        let state = IndexState {
+            workspace_id: workspace_id.to_string(),
+            last_commit_time: 1234567890,
+            index_version: 1,
+        };
+
+        // Save state
+        store.save_index_state(&state).await.unwrap();
+
+        // Load state
+        let loaded = store.load_index_state(workspace_id).await.unwrap();
+        assert!(loaded.is_some(), "Should load saved state");
+        let loaded = loaded.unwrap();
+        assert_eq!(loaded.workspace_id, workspace_id);
+        assert_eq!(loaded.last_commit_time, 1234567890);
+        assert_eq!(loaded.index_version, 1);
+    }
+
+    /// Test load non-existent index state returns None
+    #[tokio::test]
+    async fn test_load_nonexistent_index_state() {
+        let (store, _temp_dir) = create_test_store().await;
+
+        let loaded = store.load_index_state("nonexistent_workspace").await.unwrap();
+        assert!(loaded.is_none(), "Should return None for non-existent workspace");
+    }
+
+    /// Test update existing index state
+    #[tokio::test]
+    async fn test_update_index_state() {
+        let (store, _temp_dir) = create_test_store().await;
+
+        let workspace_id = "test_workspace";
+        let state1 = IndexState {
+            workspace_id: workspace_id.to_string(),
+            last_commit_time: 1000,
+            index_version: 1,
+        };
+
+        // Save initial state
+        store.save_index_state(&state1).await.unwrap();
+
+        // Update with new values
+        let state2 = IndexState {
+            workspace_id: workspace_id.to_string(),
+            last_commit_time: 2000,
+            index_version: 2,
+        };
+        store.save_index_state(&state2).await.unwrap();
+
+        // Load and verify updated state
+        let loaded = store.load_index_state(workspace_id).await.unwrap().unwrap();
+        assert_eq!(loaded.last_commit_time, 2000);
+        assert_eq!(loaded.index_version, 2);
+    }
+
+    /// Test save and load indexed file
+    #[tokio::test]
+    async fn test_save_and_load_indexed_file() {
+        let (store, _temp_dir) = create_test_store().await;
+
+        let workspace_id = "test_workspace";
+        let file_path = "/path/to/file.log";
+
+        let indexed_file = IndexedFile {
+            file_path: file_path.to_string(),
+            workspace_id: workspace_id.to_string(),
+            last_offset: 1024,
+            file_size: 2048,
+            modified_time: 1234567890,
+            hash: "abc123def456".to_string(),
+        };
+
+        // Save indexed file
+        store.save_indexed_file(&indexed_file).await.unwrap();
+
+        // Load indexed file
+        let loaded = store.load_indexed_file(file_path).await.unwrap();
+        assert!(loaded.is_some(), "Should load saved indexed file");
+        let loaded = loaded.unwrap();
+        assert_eq!(loaded.file_path, file_path);
+        assert_eq!(loaded.workspace_id, workspace_id);
+        assert_eq!(loaded.last_offset, 1024);
+        assert_eq!(loaded.file_size, 2048);
+        assert_eq!(loaded.modified_time, 1234567890);
+        assert_eq!(loaded.hash, "abc123def456");
+    }
+
+    /// Test upsert indexed file (update existing)
+    #[tokio::test]
+    async fn test_upsert_indexed_file() {
+        let (store, _temp_dir) = create_test_store().await;
+
+        let file_path = "/path/to/file.log";
+
+        // Insert initial record
+        let file1 = IndexedFile {
+            file_path: file_path.to_string(),
+            workspace_id: "workspace1".to_string(),
+            last_offset: 100,
+            file_size: 200,
+            modified_time: 1000,
+            hash: "hash1".to_string(),
+        };
+        store.save_indexed_file(&file1).await.unwrap();
+
+        // Update with new values
+        let file2 = IndexedFile {
+            file_path: file_path.to_string(),
+            workspace_id: "workspace1".to_string(),
+            last_offset: 500,  // Updated offset
+            file_size: 600,     // Updated size
+            modified_time: 2000, // Updated time
+            hash: "hash2".to_string(),
+        };
+        store.save_indexed_file(&file2).await.unwrap();
+
+        // Load and verify updated values
+        let loaded = store.load_indexed_file(file_path).await.unwrap().unwrap();
+        assert_eq!(loaded.last_offset, 500);
+        assert_eq!(loaded.file_size, 600);
+        assert_eq!(loaded.modified_time, 2000);
+        assert_eq!(loaded.hash, "hash2");
+    }
+
+    /// Test load indexed files for workspace
+    #[tokio::test]
+    async fn test_load_indexed_files_for_workspace() {
+        let (store, _temp_dir) = create_test_store().await;
+
+        let workspace_id = "test_workspace";
+
+        // Insert multiple files for the same workspace
+        let files = vec![
+            IndexedFile {
+                file_path: "/path/file1.log".to_string(),
+                workspace_id: workspace_id.to_string(),
+                last_offset: 100,
+                file_size: 200,
+                modified_time: 1000,
+                hash: "hash1".to_string(),
+            },
+            IndexedFile {
+                file_path: "/path/file2.log".to_string(),
+                workspace_id: workspace_id.to_string(),
+                last_offset: 300,
+                file_size: 400,
+                modified_time: 2000,
+                hash: "hash2".to_string(),
+            },
+            IndexedFile {
+                file_path: "/path/file3.log".to_string(),
+                workspace_id: workspace_id.to_string(),
+                last_offset: 500,
+                file_size: 600,
+                modified_time: 3000,
+                hash: "hash3".to_string(),
+            },
+        ];
+
+        for file in files {
+            store.save_indexed_file(&file).await.unwrap();
+        }
+
+        // Load all files for workspace
+        let loaded = store.load_indexed_files(workspace_id).await.unwrap();
+        assert_eq!(loaded.len(), 3);
+
+        // Verify files are loaded correctly
+        let file_paths: Vec<_> = loaded.iter().map(|f| f.file_path.as_str()).collect();
+        assert!(file_paths.contains(&"/path/file1.log"));
+        assert!(file_paths.contains(&"/path/file2.log"));
+        assert!(file_paths.contains(&"/path/file3.log"));
+    }
+
+    /// Test delete indexed file
+    #[tokio::test]
+    async fn test_delete_indexed_file() {
+        let (store, _temp_dir) = create_test_store().await;
+
+        let file_path = "/path/to/file.log";
+
+        // Insert indexed file
+        let indexed_file = IndexedFile {
+            file_path: file_path.to_string(),
+            workspace_id: "workspace1".to_string(),
+            last_offset: 100,
+            file_size: 200,
+            modified_time: 1000,
+            hash: "hash1".to_string(),
+        };
+        store.save_indexed_file(&indexed_file).await.unwrap();
+
+        // Verify it exists
+        let loaded = store.load_indexed_file(file_path).await.unwrap();
+        assert!(loaded.is_some(), "File should exist before deletion");
+
+        // Delete file
+        store.delete_indexed_file(file_path).await.unwrap();
+
+        // Verify it's deleted
+        let loaded = store.load_indexed_file(file_path).await.unwrap();
+        assert!(loaded.is_none(), "File should not exist after deletion");
+    }
+
+    /// Test clear indexed files for workspace
+    #[tokio::test]
+    async fn test_clear_indexed_files_for_workspace() {
+        let (store, _temp_dir) = create_test_store().await;
+
+        let workspace_id = "test_workspace";
+
+        // Insert multiple files
+        for i in 1..=3 {
+            let file = IndexedFile {
+                file_path: format!("/path/file{}.log", i),
+                workspace_id: workspace_id.to_string(),
+                last_offset: i * 100,
+                file_size: (i * 200) as i64,
+                modified_time: (i * 1000) as i64,
+                hash: format!("hash{}", i),
+            };
+            store.save_indexed_file(&file).await.unwrap();
+        }
+
+        // Insert file for different workspace
+        let other_file = IndexedFile {
+            file_path: "/path/other.log".to_string(),
+            workspace_id: "other_workspace".to_string(),
+            last_offset: 999,
+            file_size: 888i64,
+            modified_time: 777i64,
+            hash: "other_hash".to_string(),
+        };
+        store.save_indexed_file(&other_file).await.unwrap();
+
+        // Clear files for workspace
+        store.clear_indexed_files(workspace_id).await.unwrap();
+
+        // Verify workspace files are cleared
+        let loaded = store.load_indexed_files(workspace_id).await.unwrap();
+        assert_eq!(loaded.len(), 0, "All files for workspace should be cleared");
+
+        // Verify other workspace files are not affected
+        let other_loaded = store.load_indexed_file("/path/other.log").await.unwrap();
+        assert!(other_loaded.is_some(), "Other workspace files should not be affected");
+    }
+
+    /// Test load non-existent indexed file returns None
+    #[tokio::test]
+    async fn test_load_nonexistent_indexed_file() {
+        let (store, _temp_dir) = create_test_store().await;
+
+        let loaded = store.load_indexed_file("/nonexistent/file.log").await.unwrap();
+        assert!(loaded.is_none(), "Should return None for non-existent file");
     }
 
     // ========== Property-Based Tests ==========

@@ -134,6 +134,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             get_active_searches_count,
             // ===== 性能监控 =====
             get_performance_metrics,
+            get_historical_metrics,
+            get_aggregated_metrics,
+            get_search_events,
+            get_metrics_stats,
+            cleanup_metrics_data,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

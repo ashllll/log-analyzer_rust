@@ -23,6 +23,7 @@
 pub mod cas;
 pub mod integrity;
 pub mod metadata_store;
+pub mod metrics_store;
 
 #[cfg(test)]
 mod integration_tests;
@@ -32,4 +33,8 @@ pub use integrity::{
     verify_after_import, verify_file_integrity, verify_workspace_integrity, InvalidFileInfo,
     ValidationReport,
 };
-pub use metadata_store::{ArchiveMetadata, FileMetadata, MetadataStore};
+pub use metadata_store::{ArchiveMetadata, FileMetadata, IndexState, IndexedFile, MetadataStore};
+pub use metrics_store::{
+    MetricsSnapshot, MetricsSnapshotScheduler, MetricsStore, MetricsStoreStats, SearchEvent,
+    TimeRange,
+};

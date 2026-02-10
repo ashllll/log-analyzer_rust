@@ -168,3 +168,68 @@ export interface PerformanceMetrics {
     indexSize: number;      // 索引大小 (bytes)
   };
 }
+
+// ========== 性能监控历史数据类型 ==========
+
+/**
+ * 时间范围类型（与后端一致）
+ */
+export type TimeRangeDto = 'LastHour' | 'Last6Hours' | 'Last24Hours' | 'Last7Days' | 'Last30Days';
+
+/**
+ * 指标快照数据结构（与后端 MetricsSnapshot 一致）
+ */
+export interface MetricsSnapshot {
+  timestamp: number;
+  search_latency_current: number;
+  search_latency_average: number;
+  search_latency_p95: number;
+  search_latency_p99: number;
+  throughput_current: number;
+  throughput_average: number;
+  throughput_peak: number;
+  cache_hit_rate: number;
+  cache_hit_count: number;
+  cache_miss_count: number;
+  cache_size: number;
+  cache_capacity: number;
+  memory_used: number;
+  memory_total: number;
+  task_total: number;
+  task_running: number;
+  task_completed: number;
+  task_failed: number;
+  index_total_files: number;
+  index_indexed_files: number;
+}
+
+/**
+ * 搜索事件数据结构
+ */
+export interface SearchEvent {
+  id?: number;
+  timestamp: number;
+  workspace_id?: string;
+  query: string;
+  results_count: number;
+  duration_ms: number;
+  cache_hit: boolean;
+}
+
+/**
+ * 指标存储统计信息
+ */
+export interface MetricsStoreStats {
+  snapshot_count: number;
+  event_count: number;
+  latest_timestamp?: number;
+  oldest_timestamp?: number;
+}
+
+/**
+ * 历史指标数据响应
+ */
+export interface HistoricalMetricsData {
+  snapshots: MetricsSnapshot[];
+  stats: MetricsStoreStats;
+}

@@ -754,6 +754,53 @@ impl SearchEngineManager {
         writer.commit()?;
         Ok(())
     }
+
+    /// Delete all documents for a specific file
+    ///
+    /// This is used when a file is deleted or removed from the workspace.
+    /// It uses TermQuery to match and delete all documents with the given file_path.
+    ///
+    /// # Arguments
+    ///
+    /// * `file_path` - The file path to delete documents for
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(deleted_count)` - Number of documents deleted
+    /// - `Err(SearchError)` - If deletion or commit fails
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let count = manager.delete_file_documents("/path/to/file.log")?;
+    /// info!("Deleted {} documents for file", count);
+    /// ```
+    pub fn delete_file_documents(&self, file_path: &str) -> SearchResult<usize> {
+        use tantivy::query::TermQuery;
+        use tantivy::Term;
+
+        let term = Term::from_field_text(self.schema.file_path, file_path);
+
+        // First, get the count of documents to be deleted
+        let searcher = self.reader.searcher();
+        let query = TermQuery::new(term.clone(), tantivy::schema::IndexRecordOption::Basic);
+        let count = searcher.search(&query, &Count)?;
+
+        // Now delete all matching documents
+        let mut writer = self.writer.lock();
+        let _opstamp = writer.delete_term(term);
+
+        // Commit the changes
+        writer.commit()?;
+
+        info!(
+            file_path = %file_path,
+            deleted_count = count,
+            "Deleted documents for file"
+        );
+
+        Ok(count)
+    }
 }
 
 impl Clone for SearchStats {
@@ -824,5 +871,88 @@ mod tests {
                 panic!("Unexpected error during empty index search: {}", e);
             }
         }
+    }
+
+    /// Test delete_file_documents functionality
+    #[tokio::test]
+    async fn test_delete_file_documents() {
+        let (manager, _temp_dir) = create_test_manager();
+
+        let file_path = "/test/path/file.log";
+
+        // Add some documents for the file
+        let entry1 = crate::models::LogEntry {
+            id: 1,
+            timestamp: "2024-01-01T00:00:00".into(),
+            level: "INFO".into(),
+            file: file_path.into(),
+            real_path: "/real/path/file.log".into(),
+            line: 1,
+            content: "First log entry".into(),
+            tags: vec![],
+            match_details: None,
+            matched_keywords: None,
+        };
+
+        let entry2 = crate::models::LogEntry {
+            id: 2,
+            timestamp: "2024-01-01T00:00:01".into(),
+            level: "ERROR".into(),
+            file: file_path.into(),
+            real_path: "/real/path/file.log".into(),
+            line: 2,
+            content: "Second log entry".into(),
+            tags: vec![],
+            match_details: None,
+            matched_keywords: None,
+        };
+
+        let entry3 = crate::models::LogEntry {
+            id: 3,
+            timestamp: "2024-01-01T00:00:02".into(),
+            level: "DEBUG".into(),
+            file: "/other/path/other.log".into(),
+            real_path: "/real/other.log".into(),
+            line: 1,
+            content: "Entry from other file".into(),
+            tags: vec![],
+            match_details: None,
+            matched_keywords: None,
+        };
+
+        // Add documents to index
+        manager.add_document(&entry1).unwrap();
+        manager.add_document(&entry2).unwrap();
+        manager.add_document(&entry3).unwrap();
+        manager.commit().unwrap();
+
+        // Verify documents are in the index
+        let results = manager
+            .search_with_timeout("log entry", None, None, None)
+            .await
+            .unwrap();
+        assert_eq!(results.entries.len(), 3, "Should have 3 documents initially");
+
+        // Delete documents for the first file
+        let deleted_count = manager.delete_file_documents(file_path).unwrap();
+        assert_eq!(deleted_count, 2, "Should delete 2 documents");
+
+        // Verify only the third document remains
+        let results = manager
+            .search_with_timeout("log entry", None, None, None)
+            .await
+            .unwrap();
+        assert_eq!(results.entries.len(), 1, "Should have 1 document remaining");
+        assert_eq!(&*results.entries[0].file, "/other/path/other.log");
+    }
+
+    /// Test delete_file_documents for non-existent file
+    #[tokio::test]
+    async fn test_delete_nonexistent_file() {
+        let (manager, _temp_dir) = create_test_manager();
+
+        // Try to delete documents for a file that doesn't exist in the index
+        let deleted_count = manager.delete_file_documents("/nonexistent/file.log").unwrap();
+        assert_eq!(deleted_count, 0, "Should delete 0 documents for non-existent file");
     }
 }

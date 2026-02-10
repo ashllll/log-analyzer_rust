@@ -7,6 +7,10 @@ export { useKeywordManager } from './useKeywordManager';
 export {
   usePerformanceMetrics,
   useAutoRefreshPerformanceMetrics,
+  useHistoricalMetrics,
+  useAggregatedMetrics,
+  useSearchEvents,
+  useMetricsStats,
   performanceQueryKeys,
   DEFAULT_PERFORMANCE_METRICS,
 } from './usePerformanceQueries';

@@ -1,4 +1,5 @@
 pub mod event_bus;
+pub mod file_change_detector;
 pub mod file_type_filter;
 pub mod file_watcher;
 pub mod index_validator;
@@ -30,6 +31,7 @@ mod integration_tests;
 
 // 重新导出所有公共类型和函数
 pub use event_bus::{get_event_bus, AppEvent, EventBus, EventSubscriber};
+pub use file_change_detector::{FileChangeDetector, FileChangeStatus};
 pub use file_type_filter::FileTypeFilter;
 pub use file_watcher::{
     append_to_workspace_index, get_file_metadata, parse_log_lines, parse_metadata,

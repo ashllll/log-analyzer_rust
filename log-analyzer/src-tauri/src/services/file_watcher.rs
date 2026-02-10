@@ -267,7 +267,7 @@ pub fn parse_log_lines(
 /// * `workspace_id` - 工作区 ID
 /// * `new_entries` - 新的日志条目列表
 /// * `app` - Tauri 应用句柄
-/// * `_state` - 应用状态（为未来扩展保留，可用于持久化索引更新）
+/// * `state` - 应用状态，用于访问 SearchEngineManager 进行索引持久化
 ///
 /// # Returns
 ///
@@ -277,13 +277,13 @@ pub fn parse_log_lines(
 /// # 行为
 ///
 /// - 通过 Tauri 事件系统发送新日志到前端（事件名：`new-logs`）
-/// - 当前实现不立即持久化索引（性能优化）
-/// - 可选择性地批量更新或定期保存索引
+/// - 持久化新日志条目到 Tantivy 索引（通过 SearchEngineManager）
+/// - 提交索引变更（commit）
 pub fn append_to_workspace_index(
     workspace_id: &str,
     new_entries: &[LogEntry],
     app: &AppHandle,
-    _state: &crate::models::state::AppState, // 为未来扩展保留（可用于持久化索引更新）
+    state: &crate::models::state::AppState,
 ) -> Result<()> {
     if new_entries.is_empty() {
         return Ok(());
@@ -297,6 +297,45 @@ pub fn append_to_workspace_index(
 
     // Send new logs to frontend (real-time update)
     let _ = app.emit("new-logs", new_entries);
+
+    // 持久化到 Tantivy 索引
+    // 获取工作区的 SearchEngineManager
+    let managers = state.search_engine_managers.lock();
+    if let Some(manager) = managers.get(workspace_id) {
+        // 添加每个新日志条目到索引
+        for entry in new_entries {
+            if let Err(e) = manager.add_document(entry) {
+                tracing::warn!(
+                    error = %e,
+                    file = %entry.file,
+                    line = entry.line,
+                    "Failed to add document to index"
+                );
+                // 继续处理其他条目，不中断整个流程
+                continue;
+            }
+        }
+
+        // 提交索引变更
+        if let Err(e) = manager.commit() {
+            tracing::warn!(
+                error = %e,
+                workspace_id = %workspace_id,
+                "Failed to commit index changes"
+            );
+        } else {
+            debug!(
+                workspace_id = %workspace_id,
+                count = new_entries.len(),
+                "Successfully persisted new entries to Tantivy index"
+            );
+        }
+    } else {
+        tracing::warn!(
+            workspace_id = %workspace_id,
+            "SearchEngineManager not found for workspace, entries not persisted to index"
+        );
+    }
 
     Ok(())
 }

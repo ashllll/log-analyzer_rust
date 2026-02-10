@@ -1,35 +1,67 @@
 /**
- * 性能监控页面
+ * 性能监控页面（增强版）
  *
  * 显示系统性能指标，包括：
  * - 搜索性能（延迟、吞吐量）
  * - 缓存命中率
  * - 内存使用情况
  * - 任务执行统计
+ * - 时间序列图表
+ * - 历史数据查询
  *
  * 使用 React Query 进行数据管理，符合项目"必须使用业内成熟方案"原则
  */
 
-import { useState, useCallback } from 'react';
-import { Activity, Cpu, HardDrive, Database, Zap, TrendingUp, Clock, Pause, Play } from 'lucide-react';
+import { useState, useCallback, useMemo } from 'react';
+import {
+  Activity,
+  Cpu,
+  HardDrive,
+  Database,
+  Zap,
+  TrendingUp,
+  Clock,
+  Pause,
+  Play,
+  AlertTriangle,
+} from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
+import { MetricsTimeSeriesChart, type MetricType } from '../components/charts';
+import { TimeRangeSelector } from '../components/charts/TimeRangeSelector';
 import { getFullErrorMessage } from '../services/errors';
 import {
   useAutoRefreshPerformanceMetrics,
+  useHistoricalMetrics,
+  useMetricsStats,
   DEFAULT_PERFORMANCE_METRICS,
 } from '../hooks';
+import type { TimeRangeDto } from '../types/common';
 
-/**
- * 格式化数字（添加千分位分隔符）
- */
+// ============================================================================
+// 类型定义
+// ============================================================================
+
+type TimeRangeValue = '1h' | '6h' | '24h' | '7d' | '30d';
+
+const TIME_RANGE_MAP: Record<TimeRangeValue, TimeRangeDto> = {
+  '1h': 'LastHour',
+  '6h': 'Last6Hours',
+  '24h': 'Last24Hours',
+  '7d': 'Last7Days',
+  '30d': 'Last30Days',
+};
+
+// ============================================================================
+// 工具函数
+// ============================================================================
+
+/** 格式化数字（添加千分位分隔符） */
 function formatNumber(num: number): string {
   return num.toLocaleString('en-US');
 }
 
-/**
- * 格式化字节数为可读形式
- */
+/** 格式化字节数为可读形式 */
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
   const k = 1024;
@@ -38,62 +70,117 @@ function formatBytes(bytes: number): string {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 }
 
-/**
- * 格式化百分比
- */
+/** 格式化百分比 */
 function formatPercent(value: number): string {
   return `${value.toFixed(1)}%`;
 }
 
-/**
- * 指标行组件
- */
+// ============================================================================
+// 指标行组件
+// ============================================================================
+
 interface MetricRowProps {
   label: string;
   value: string | number;
   color?: string;
   unit?: string;
+  alert?: boolean;
 }
 
-function MetricRow({ label, value, color = 'text-text-main', unit = '' }: MetricRowProps) {
+function MetricRow({ label, value, color = 'text-text-main', unit = '', alert = false }: MetricRowProps) {
   return (
     <div className="flex justify-between items-center py-2 border-b border-border-base/50 last:border-0">
       <span className="text-sm text-text-dim">{label}</span>
       <span className={`text-sm font-medium ${color}`}>
-        {typeof value === 'number' ? formatNumber(value) : value}{unit && ` ${unit}`}
+        {typeof value === 'number' ? formatNumber(value) : value}
+        {unit && ` ${unit}`}
+        {alert && (
+          <span className="ml-2">
+            <AlertTriangle size={12} className="inline text-red-500" />
+          </span>
+        )}
       </span>
     </div>
   );
 }
 
-/**
- * 性能监控页面组件
- */
+// ============================================================================
+// 主组件
+// ============================================================================
+
 export function PerformancePage() {
+  // 状态管理
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [timeRange, setTimeRange] = useState<TimeRangeValue>('24h');
+  const [chartMetrics, setChartMetrics] = useState<MetricType[]>([
+    'search_latency_current',
+    'search_latency_p95',
+    'throughput_current',
+    'cache_hit_rate',
+  ]);
+
   const refreshInterval = 5000; // 5秒
 
-  // 使用 React Query 获取性能指标（符合项目成熟方案原则）
+  // 实时指标查询
   const { data: metrics = DEFAULT_PERFORMANCE_METRICS, isLoading, error, refetch } =
     useAutoRefreshPerformanceMetrics(autoRefresh, refreshInterval);
 
-  /**
-   * 切换自动刷新
-   */
+  // 历史数据查询
+  const { data: historicalData, isLoading: isLoadingHistorical } = useHistoricalMetrics(
+    TIME_RANGE_MAP[timeRange],
+    {
+      enabled: true,
+      refetchInterval: autoRefresh ? 30000 : false, // 历史数据30秒刷新一次
+    }
+  );
+
+  // 存储统计信息
+  const { data: stats } = useMetricsStats({
+    enabled: true,
+    refetchInterval: autoRefresh ? 60000 : false,
+  });
+
+  // 切换自动刷新
   const handleToggleRefresh = useCallback(() => {
     setAutoRefresh((prev) => !prev);
   }, []);
 
-  /**
-   * 手动刷新
-   */
+  // 手动刷新
   const handleRefresh = useCallback(() => {
     refetch();
   }, [refetch]);
 
+  // 时间范围变化
+  const handleTimeRangeChange = useCallback((value: TimeRangeValue) => {
+    setTimeRange(value);
+  }, []);
+
+  // 切换图表指标显示
+  const handleToggleMetric = useCallback((metric: MetricType) => {
+    setChartMetrics((prev) =>
+      prev.includes(metric)
+        ? prev.filter((m) => m !== metric)
+        : [...prev, metric]
+    );
+  }, []);
+
+  // 检查是否需要显示警告
+  const hasLatencyAlert = useMemo(() => {
+    return metrics.searchLatency.p95 > 500 || metrics.searchLatency.p99 > 1000;
+  }, [metrics]);
+
+  const hasMemoryAlert = useMemo(() => {
+    return metrics.memoryMetrics.used / metrics.memoryMetrics.total > 0.9;
+  }, [metrics]);
+
+  // 准备图表数据
+  const chartData = useMemo(() => {
+    return historicalData?.snapshots || [];
+  }, [historicalData]);
+
   return (
     <div className="h-full p-6 overflow-y-auto bg-bg-main">
-      <div className="max-w-6xl mx-auto space-y-6">
+      <div className="max-w-7xl mx-auto space-y-6">
         {/* 标题栏 */}
         <div className="flex justify-between items-center">
           <div>
@@ -103,7 +190,13 @@ export function PerformancePage() {
             </h1>
             <p className="text-sm text-text-dim mt-1">系统性能指标实时监控</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
+            <TimeRangeSelector
+              value={timeRange}
+              onChange={handleTimeRangeChange}
+              disabled={isLoadingHistorical}
+              size="sm"
+            />
             <Button
               variant="ghost"
               icon={autoRefresh ? Pause : Play}
@@ -132,6 +225,57 @@ export function PerformancePage() {
           </div>
         )}
 
+        {/* 时间序列图表 */}
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-text-main flex items-center gap-2">
+              <TrendingUp size={18} className="text-primary" />
+              Performance Trends
+            </h3>
+            <div className="flex items-center gap-2 text-sm text-text-dim">
+              {stats && (
+                <span>
+                  {stats.snapshot_count} snapshots · {stats.event_count} events
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* 指标选择器 */}
+          <div className="flex flex-wrap gap-2 mb-4">
+            {[
+              { key: 'search_latency_current' as MetricType, label: 'Current Latency' },
+              { key: 'search_latency_p95' as MetricType, label: 'P95 Latency' },
+              { key: 'throughput_current' as MetricType, label: 'Throughput' },
+              { key: 'cache_hit_rate' as MetricType, label: 'Cache Hit Rate' },
+            ].map((metric) => (
+              <button
+                key={metric.key}
+                onClick={() => handleToggleMetric(metric.key)}
+                className={`px-3 py-1 text-xs rounded-full transition-colors ${
+                  chartMetrics.includes(metric.key)
+                    ? 'bg-primary text-white'
+                    : 'bg-bg-subtle text-text-dim hover:text-text-main'
+                }`}
+              >
+                {metric.label}
+              </button>
+            ))}
+          </div>
+
+          {/* 图表 */}
+          <MetricsTimeSeriesChart
+            data={chartData}
+            metrics={chartMetrics}
+            height={300}
+            alertThreshold={
+              hasLatencyAlert && chartMetrics.includes('search_latency_p95')
+                ? { metric: 'search_latency_p95', value: 500, label: 'High Latency' }
+                : undefined
+            }
+          />
+        </Card>
+
         {/* 性能指标卡片网格 */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* 搜索性能 */}
@@ -143,10 +287,29 @@ export function PerformancePage() {
               </h3>
               {isLoading && <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>}
             </div>
-            <MetricRow label="Current Latency" value={metrics.searchLatency.current} unit="ms" />
-            <MetricRow label="Average Latency" value={metrics.searchLatency.average} unit="ms" />
-            <MetricRow label="P95 Latency" value={metrics.searchLatency.p95} unit="ms" />
-            <MetricRow label="P99 Latency" value={metrics.searchLatency.p99} unit="ms" />
+            <MetricRow
+              label="Current Latency"
+              value={metrics.searchLatency.current}
+              unit="ms"
+              alert={metrics.searchLatency.current > 200}
+            />
+            <MetricRow
+              label="Average Latency"
+              value={metrics.searchLatency.average}
+              unit="ms"
+            />
+            <MetricRow
+              label="P95 Latency"
+              value={metrics.searchLatency.p95}
+              unit="ms"
+              alert={metrics.searchLatency.p95 > 500}
+            />
+            <MetricRow
+              label="P99 Latency"
+              value={metrics.searchLatency.p99}
+              unit="ms"
+              alert={metrics.searchLatency.p99 > 1000}
+            />
           </Card>
 
           {/* 吞吐量 */}
@@ -176,6 +339,7 @@ export function PerformancePage() {
               label="Hit Rate"
               value={formatPercent(metrics.cacheMetrics.hitRate)}
               color={metrics.cacheMetrics.hitRate >= 80 ? 'text-green-500' : metrics.cacheMetrics.hitRate >= 60 ? 'text-yellow-500' : 'text-red-500'}
+              alert={metrics.cacheMetrics.hitRate < 60}
             />
             <MetricRow label="Hit Count" value={metrics.cacheMetrics.hitCount} />
             <MetricRow label="Miss Count" value={metrics.cacheMetrics.missCount} color="text-red-400" />
@@ -197,6 +361,7 @@ export function PerformancePage() {
               value={metrics.memoryMetrics.used}
               unit="MB"
               color={metrics.memoryMetrics.used / metrics.memoryMetrics.total > 0.8 ? 'text-red-500' : 'text-text-main'}
+              alert={hasMemoryAlert}
             />
             <MetricRow label="Total" value={metrics.memoryMetrics.total} unit="MB" />
             <MetricRow label="Heap Used" value={metrics.memoryMetrics.heapUsed} unit="MB" />
@@ -238,7 +403,7 @@ export function PerformancePage() {
         {/* 自动刷新状态 */}
         {autoRefresh && (
           <div className="text-center text-xs text-text-dim">
-            Auto-refreshing every {refreshInterval / 1000}s
+            Auto-refreshing every {refreshInterval / 1000}s · Historical data every 30s
           </div>
         )}
       </div>

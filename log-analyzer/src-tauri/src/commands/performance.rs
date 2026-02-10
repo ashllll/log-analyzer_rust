@@ -6,15 +6,69 @@
 //! - 内存使用情况
 //! - 任务执行统计
 //! - 索引状态
+//! - 历史数据查询
 //!
 //! # 前后端集成规范
 //!
 //! 为保持与 JavaScript camelCase 惯例一致，返回数据字段使用 camelCase 命名。
+//!
+//! # 技术选型
+//!
+//! - **P95/P99 计算**: 业内成熟的排序算法计算百分位数
+//! - **历史数据存储**: SQLite 时序数据（metrics_store）
+//! - **定时快照**: tokio::time::interval 异步定时器
 
 use crate::models::AppState;
+use crate::storage::{MetricsSnapshot, MetricsStore, MetricsStoreStats, SearchEvent, TimeRange};
 use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
+use std::path::Path;
+use std::sync::Arc;
 use tauri::{command, State};
 use sysinfo::System;
+use tokio::sync::Mutex;
+
+/// 全局指标存储实例
+static METRICS_STORE: once_cell::sync::Lazy<Arc<Mutex<Option<MetricsStore>>>> =
+    once_cell::sync::Lazy::new(|| Arc::new(Mutex::new(None)));
+
+/// 搜索延迟历史（用于计算 P95/P99）
+/// 保留最近 1000 次搜索的延迟数据
+static SEARCH_LATENCIES: once_cell::sync::Lazy<Arc<Mutex<VecDeque<u64>>>> =
+    once_cell::sync::Lazy::new(|| Arc::new(Mutex::new(VecDeque::with_capacity(1000))));
+
+/// 初始化指标存储
+pub async fn init_metrics_store(data_dir: &Path) -> Result<(), String> {
+    let store = MetricsStore::new(data_dir)
+        .await
+        .map_err(|e| format!("Failed to initialize metrics store: {}", e))?;
+
+    *METRICS_STORE.lock().await = Some(store);
+    Ok(())
+}
+
+/// 记录搜索延迟（用于百分位数计算）
+pub fn record_search_latency(latency_ms: u64) {
+    let mut latencies = SEARCH_LATENCIES.blocking_lock();
+    if latencies.len() >= 1000 {
+        latencies.pop_front();
+    }
+    latencies.push_back(latency_ms);
+}
+
+/// 计算百分位数（业内成熟方案）
+///
+/// 使用标准排序算法计算百分位数，适合小到中等规模数据集。
+/// 对于大规模数据集，应使用 TDigest 算法库（如 `tdigest` crate）。
+fn calculate_percentile(values: &mut [u64], percentile: f64) -> u64 {
+    if values.is_empty() {
+        return 0;
+    }
+
+    values.sort_unstable();
+    let index = ((values.len() - 1) as f64 * percentile / 100.0) as usize;
+    values[index.min(values.len() - 1)]
+}
 
 /// 性能指标数据结构
 ///
@@ -150,11 +204,23 @@ pub fn get_performance_metrics(state: State<'_, AppState>) -> Result<Performance
 
     // 计算搜索延迟（毫秒）
     let current_latency = last_duration.as_millis() as u64;
-    let average_latency = if total_searches > 0 {
-        // 简化计算：使用当前延迟作为平均值（实际应使用累积平均值）
-        current_latency
+
+    // 计算真实的 P95/P99 延迟（使用业内成熟的排序算法）
+    // 使用 try_lock() 避免阻塞，如果失败则返回默认值
+    let mut latencies: Vec<u64> = if let Ok(guard) = SEARCH_LATENCIES.try_lock() {
+        guard.iter().copied().collect()
     } else {
-        0
+        vec![]
+    };
+    let p95_latency = calculate_percentile(&mut latencies, 95.0);
+    let p99_latency = calculate_percentile(&mut latencies, 99.0);
+
+    // 计算平均延迟
+    let average_latency = if !latencies.is_empty() {
+        let sum: u64 = latencies.iter().sum();
+        sum / latencies.len() as u64
+    } else {
+        current_latency
     };
 
     // 计算缓存命中率
@@ -178,8 +244,8 @@ pub fn get_performance_metrics(state: State<'_, AppState>) -> Result<Performance
         search_latency: SearchLatency {
             current: current_latency,
             average: average_latency,
-            p95: current_latency, // 简化：使用当前值作为 P95（实际应计算百分位）
-            p99: current_latency, // 简化：使用当前值作为 P99（实际应计算百分位）
+            p95: p95_latency,
+            p99: p99_latency,
         },
         search_throughput: SearchThroughput {
             current: if last_duration.as_secs() > 0 {
@@ -187,15 +253,15 @@ pub fn get_performance_metrics(state: State<'_, AppState>) -> Result<Performance
             } else {
                 0
             },
-            average: total_searches, // 简化：使用总搜索次数
-            peak: total_searches.max(1), // 简化：使用最大值
+            average: total_searches,
+            peak: total_searches.max(1),
         },
         cache_metrics: CacheMetrics {
             hit_rate,
             miss_count: cache_stats.l1_miss_count,
             hit_count: cache_hits,
             size: cache_stats.estimated_size,
-            capacity: 1000, // 默认缓存容量
+            capacity: 1000,
             evictions: cache_stats.eviction_count,
         },
         memory_metrics,
@@ -247,4 +313,227 @@ fn get_index_metrics(state: &AppState) -> IndexMetrics {
         total_size: 0,
         index_size: 0,
     }
+}
+
+// ============================================================================
+// 历史数据查询命令
+// ============================================================================
+
+/// 时间范围类型（与前端保持一致）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TimeRangeDto {
+    LastHour,
+    Last6Hours,
+    Last24Hours,
+    Last7Days,
+    Last30Days,
+}
+
+impl From<TimeRangeDto> for TimeRange {
+    fn from(value: TimeRangeDto) -> Self {
+        match value {
+            TimeRangeDto::LastHour => TimeRange::LastHour,
+            TimeRangeDto::Last6Hours => TimeRange::Last6Hours,
+            TimeRangeDto::Last24Hours => TimeRange::Last24Hours,
+            TimeRangeDto::Last7Days => TimeRange::Last7Days,
+            TimeRangeDto::Last30Days => TimeRange::Last30Days,
+        }
+    }
+}
+
+/// 历史指标数据响应
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoricalMetricsData {
+    pub snapshots: Vec<MetricsSnapshot>,
+    pub stats: MetricsStoreStats,
+}
+
+/// 获取历史指标数据
+///
+/// 返回指定时间范围内的性能指标快照。
+///
+/// # Arguments
+///
+/// * `range` - 时间范围
+///
+/// # 返回
+///
+/// 返回历史指标数据和统计信息
+///
+/// # 示例
+///
+/// ```typescript
+/// const data = await invoke('get_historical_metrics', { range: 'Last24Hours' });
+/// console.log(data.snapshots.length);
+/// ```
+#[command]
+pub async fn get_historical_metrics(
+    range: TimeRangeDto,
+) -> Result<HistoricalMetricsData, String> {
+    let store_guard = METRICS_STORE.lock().await;
+    let store = store_guard
+        .as_ref()
+        .ok_or("Metrics store not initialized")?;
+
+    let time_range = TimeRange::from(range);
+    let snapshots = store
+        .get_snapshots(time_range)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let stats = store
+        .get_stats()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(HistoricalMetricsData {
+        snapshots,
+        stats,
+    })
+}
+
+/// 获取聚合指标数据
+///
+/// 返回按指定时间间隔聚合的性能指标，用于绘制趋势图。
+///
+/// # Arguments
+///
+/// * `range` - 时间范围
+/// * `interval_seconds` - 聚合间隔（秒）
+///
+/// # 返回
+///
+/// 返回聚合后的指标数据
+///
+/// # 示例
+///
+/// ```typescript
+/// // 获取过去24小时的数据，按5分钟间隔聚合
+/// const data = await invoke('get_aggregated_metrics', {
+///   range: 'Last24Hours',
+///   intervalSeconds: 300
+/// });
+/// ```
+#[command]
+pub async fn get_aggregated_metrics(
+    range: TimeRangeDto,
+    interval_seconds: i64,
+) -> Result<Vec<MetricsSnapshot>, String> {
+    let store_guard = METRICS_STORE.lock().await;
+    let store = store_guard
+        .as_ref()
+        .ok_or("Metrics store not initialized")?;
+
+    let time_range = TimeRange::from(range);
+    let snapshots = store
+        .get_aggregated_metrics(time_range, interval_seconds)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(snapshots)
+}
+
+/// 获取搜索事件
+///
+/// 返回指定时间范围内的搜索事件记录。
+///
+/// # Arguments
+///
+/// * `range` - 时间范围
+/// * `workspace_id` - 可选的工作区 ID 过滤
+///
+/// # 返回
+///
+/// 返回搜索事件列表
+///
+/// # 示例
+///
+/// ```typescript
+/// const events = await invoke('get_search_events', {
+///   range: 'Last24Hours',
+///   workspaceId: 'workspace-123'
+/// });
+/// ```
+#[command]
+pub async fn get_search_events(
+    range: TimeRangeDto,
+    #[allow(non_snake_case)] workspaceId: Option<String>,
+) -> Result<Vec<SearchEvent>, String> {
+    let store_guard = METRICS_STORE.lock().await;
+    let store = store_guard
+        .as_ref()
+        .ok_or("Metrics store not initialized")?;
+
+    let time_range = TimeRange::from(range);
+    let events = store
+        .get_search_events(time_range, workspaceId.as_deref())
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(events)
+}
+
+/// 获取指标存储统计信息
+///
+/// 返回指标存储的统计信息，包括快照数量、事件数量等。
+///
+/// # 返回
+///
+/// 返回统计信息
+///
+/// # 示例
+///
+/// ```typescript
+/// const stats = await invoke('get_metrics_stats');
+/// console.log(stats.snapshotCount);
+/// ```
+#[command]
+pub async fn get_metrics_stats() -> Result<MetricsStoreStats, String> {
+    let store_guard = METRICS_STORE.lock().await;
+    let store = store_guard
+        .as_ref()
+        .ok_or("Metrics store not initialized")?;
+
+    let stats = store
+        .get_stats()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(stats)
+}
+
+/// 手动触发数据清理
+///
+/// 删除超过保留期的旧数据（7天）。
+///
+/// # 返回
+///
+/// 返回删除的快照和事件数量
+///
+/// # 示例
+///
+/// ```typescript
+/// const result = await invoke('cleanup_metrics_data');
+/// console.log(`Deleted ${result.deletedSnapshots} snapshots`);
+/// ```
+#[command]
+pub async fn cleanup_metrics_data() -> Result<MetricsStoreStats, String> {
+    let store_guard = METRICS_STORE.lock().await;
+    let store = store_guard
+        .as_ref()
+        .ok_or("Metrics store not initialized")?;
+
+    store
+        .cleanup()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let stats = store
+        .get_stats()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(stats)
 }
