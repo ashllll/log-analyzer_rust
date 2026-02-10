@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, lazy, Suspense } from "react";
 import {
   Search, LayoutGrid, ListTodo, Cog, Layers,
-  Zap, Loader2, FileText
+  Zap, Loader2, FileText, Activity
 } from "lucide-react";
 import { ErrorBoundary } from 'react-error-boundary';
 import { listen } from '@tauri-apps/api/event';
@@ -23,7 +23,8 @@ import { useKeywordManager } from './hooks/useKeywordManager';
 
 // 导入UI组件
 import { NavItem } from './components/ui';
-import { PageErrorFallback, CompactErrorFallback } from './components/ErrorFallback';
+// 导入错误边界组件
+import { PageErrorFallback, CompactErrorFallback, initGlobalErrorHandlers } from './components/ErrorBoundary';
 
 // 恢复懒加载以优化性能，但确保 ErrorBoundary 在外层
 const SearchPage = lazy(() => import('./pages/SearchPage'));
@@ -31,6 +32,7 @@ const KeywordsPage = lazy(() => import('./pages/KeywordsPage'));
 const WorkspacesPage = lazy(() => import('./pages/WorkspacesPage'));
 const TasksPage = lazy(() => import('./pages/TasksPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const PerformancePage = lazy(() => import('./pages/PerformancePage'));
 
 // 懒加载页面加载骨架
 const PageSkeleton: React.FC = () => (
@@ -137,6 +139,7 @@ function AppContent() {
             <NavItem icon={Search} label="Search Logs" active={page === 'search'} onClick={() => setPage('search')} data-testid="nav-search" />
             <NavItem icon={ListTodo} label="Keywords" active={page === 'keywords'} onClick={() => setPage('keywords')} data-testid="nav-keywords" />
             <NavItem icon={Layers} label="Tasks" active={page === 'tasks'} onClick={() => setPage('tasks')} data-testid="nav-tasks" />
+            <NavItem icon={Activity} label="Performance" active={page === 'performance'} onClick={() => setPage('performance')} data-testid="nav-performance" />
         </div>
         {importStatus && <div className="p-3 m-3 bg-bg-card border border-primary/20 rounded text-xs text-primary animate-pulse"><div className="font-bold mb-1 flex items-center gap-2"><Loader2 size={12} className="animate-spin"/> Processing</div><div className="truncate opacity-80">{importStatus}</div></div>}
         <div className="p-3 border-t border-border-base">
@@ -149,6 +152,10 @@ function AppContent() {
             {page === 'settings' ? (
               <span className="font-medium text-text-main flex items-center gap-2">
                 <Cog size={14} className="text-primary"/> Settings
+              </span>
+            ) : page === 'performance' ? (
+              <span className="font-medium text-text-main flex items-center gap-2">
+                <Activity size={14} className="text-primary"/> Performance
               </span>
             ) : (
               <>
@@ -175,6 +182,7 @@ function AppContent() {
               {page === 'keywords' && <KeywordsPage />}
               {page === 'workspaces' && <WorkspacesPage />}
               {page === 'tasks' && <TasksPage />}
+              {page === 'performance' && <PerformancePage />}
               {page === 'settings' && <SettingsPage />}
             </Suspense>
           </ErrorBoundary>
@@ -221,6 +229,18 @@ function AppContent() {
 
 // --- Main App (Wrapped with Provider) ---
 export default function App() {
+  // 初始化全局错误处理器
+  useEffect(() => {
+    const cleanup = initGlobalErrorHandlers();
+    console.log('[App] Global error handlers initialized');
+
+    return () => {
+      if (cleanup) {
+        cleanup();
+      }
+    };
+  }, []);
+
   return (
     <ErrorBoundary FallbackComponent={PageErrorFallback}>
       <QueryClientProvider client={queryClient}>

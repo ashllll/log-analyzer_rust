@@ -2,3 +2,11 @@
 export { useWorkspaceOperations } from './useWorkspaceOperations';
 export { useTaskManager } from './useTaskManager';
 export { useKeywordManager } from './useKeywordManager';
+
+// 性能监控查询
+export {
+  usePerformanceMetrics,
+  useAutoRefreshPerformanceMetrics,
+  performanceQueryKeys,
+  DEFAULT_PERFORMANCE_METRICS,
+} from './usePerformanceQueries';

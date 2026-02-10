@@ -1,5 +1,9 @@
 //! 导入相关命令实现
 //! 包含工作区导入与 RAR 支持检查
+//!
+//! # 前后端集成规范
+//!
+//! 为保持与 JavaScript camelCase 惯例一致，Tauri 命令参数使用 camelCase 命名。
 
 use std::{fs, path::Path};
 

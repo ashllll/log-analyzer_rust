@@ -9,7 +9,8 @@
 // 导入 log_analyzer 库的模块
 use log_analyzer::commands::{
     async_search::*, cache::*, config::*, error_reporting::*, export::*, import::*, legacy::*,
-    query::*, search::*, state_sync::*, validation::*, virtual_tree::*, watch::*, workspace::*,
+    performance::*, query::*, search::*, state_sync::*, validation::*, virtual_tree::*, watch::*,
+    workspace::*,
 };
 use log_analyzer::models::AppState;
 use log_analyzer::task_manager::TaskManager;
@@ -119,20 +120,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // ===== 导出 =====
             export_results,
             // ===== 缓存管理 =====
-            get_cache_statistics,
-            get_async_cache_statistics,
             invalidate_workspace_cache,
-            cleanup_expired_cache,
-            get_cache_performance_metrics,
-            get_cache_performance_report,
-            cache_health_check,
-            get_access_pattern_stats,
-            get_compression_stats,
-            get_l2_cache_config,
-            intelligent_cache_eviction,
-            reset_cache_metrics,
-            reset_access_tracker,
-            get_cache_dashboard_data,
             // ===== 数据验证 =====
             validate_workspace_config_cmd,
             validate_search_query_cmd,
@@ -144,6 +132,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             async_search_logs,
             cancel_async_search,
             get_active_searches_count,
+            // ===== 性能监控 =====
+            get_performance_metrics,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

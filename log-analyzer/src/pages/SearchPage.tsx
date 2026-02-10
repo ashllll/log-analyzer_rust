@@ -23,6 +23,8 @@ import { cn } from '../utils/classNames';
 import { SearchQueryBuilder } from '../services/SearchQueryBuilder';
 import { SearchQuery, SearchResultSummary, KeywordStat } from '../types/search';
 import { saveQuery, loadQuery } from '../services/queryStorage';
+import { api } from '../services/api';
+import { getFullErrorMessage } from '../services/errors';
 import type {
   LogEntry,
   FilterOptions,
@@ -270,12 +272,14 @@ const SearchPage: React.FC<SearchPageProps> = ({
             const count = typeof e.payload === 'number' ? e.payload : 0;
 
             if (query.trim() && activeWorkspace) {
+              // TODO: 添加到 API 层
+              // await api.addSearchHistory(...) when implemented
               invoke('add_search_history', {
                 query: query.trim(),
                 workspaceId: activeWorkspace.id,
                 resultCount: count,
               }).catch(err => {
-                console.error('Failed to save search history:', err);
+                logger.error('Failed to save search history:', getFullErrorMessage(err));
               });
             }
 
@@ -507,9 +511,9 @@ const SearchPage: React.FC<SearchPageProps> = ({
         file_pattern: filterOptions.filePattern || null
       };
 
-      await invoke("search_logs", {
+      await api.searchLogs({
         query: trimmedQuery,
-        searchPath: activeWorkspace.path,
+        workspaceId: activeWorkspace.id,
         filters,
       });
 
@@ -519,9 +523,9 @@ const SearchPage: React.FC<SearchPageProps> = ({
         setCurrentQuery({...currentQuery});
       }
     } catch (err) {
-      console.error('Search failed:', err);
+      logger.error('Search failed:', err);
       setIsSearching(false);
-      addToast('error', `搜索失败: ${err}`);
+      addToast('error', `搜索失败: ${getFullErrorMessage(err)}`);
     }
   }, [query, activeWorkspace, filterOptions, currentQuery, addToast, rowVirtualizerRef, parentRef]);
   
@@ -649,7 +653,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
       }
 
       logger.debug('Exporting to:', savePath);
-      await invoke('export_results', {
+      await api.exportResults({
         results: logs,
         format,
         savePath
@@ -658,7 +662,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
       addToast('success', `已导出 ${logs.length} 条日志到 ${format.toUpperCase()}`);
     } catch (e) {
       logger.error('Export error:', e);
-      addToast('error', `导出失败: ${e}`);
+      addToast('error', `导出失败: ${getFullErrorMessage(e)}`);
     }
   };
   

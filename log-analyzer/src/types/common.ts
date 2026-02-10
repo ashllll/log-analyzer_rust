@@ -114,3 +114,57 @@ export interface AppConfig {
 }
 
 // ========== 文件过滤配置类型结束 ==========
+
+// ========== 性能监控类型 ==========
+
+/**
+ * 性能指标数据结构
+ *
+ * 用于展示系统性能、搜索性能、缓存命中率等信息
+ */
+export interface PerformanceMetrics {
+  /** 搜索延迟指标 */
+  searchLatency: {
+    current: number;  // 当前延迟 (ms)
+    average: number;  // 平均延迟 (ms)
+    p95: number;      // 95分位延迟 (ms)
+    p99: number;      // 99分位延迟 (ms)
+  };
+  /** 搜索吞吐量指标 */
+  searchThroughput: {
+    current: number;  // 当前吞吐量 (次/秒)
+    average: number;  // 平均吞吐量 (次/秒)
+    peak: number;     // 峰值吞吐量 (次/秒)
+  };
+  /** 缓存性能指标 */
+  cacheMetrics: {
+    hitRate: number;     // 命中率 (0-100)
+    missCount: number;   // 未命中次数
+    hitCount: number;    // 命中次数
+    size: number;        // 当前缓存大小
+    capacity: number;    // 缓存容量
+    evictions: number;   // 驱逐次数
+  };
+  /** 内存使用指标 */
+  memoryMetrics: {
+    used: number;        // 已用内存 (MB)
+    total: number;       // 总内存 (MB)
+    heapUsed: number;    // 堆内存使用 (MB)
+    external: number;    // 外部内存 (MB)
+  };
+  /** 任务执行指标 */
+  taskMetrics: {
+    total: number;       // 总任务数
+    running: number;     // 运行中任务数
+    completed: number;   // 已完成任务数
+    failed: number;      // 失败任务数
+    averageDuration: number; // 平均执行时间 (ms)
+  };
+  /** 索引指标 */
+  indexMetrics: {
+    totalFiles: number;     // 总文件数
+    indexedFiles: number;   // 已索引文件数
+    totalSize: number;      // 总大小 (bytes)
+    indexSize: number;      // 索引大小 (bytes)
+  };
+}

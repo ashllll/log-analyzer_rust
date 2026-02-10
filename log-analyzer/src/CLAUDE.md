@@ -167,6 +167,55 @@ interface LogRowProps {
   - 颜色编码区分
   - 交互式过滤
 
+### 5. 错误处理 (components/ErrorBoundary.tsx)
+
+#### 全局错误处理系统
+- **功能**: 统一的错误捕获和显示机制
+- **组件**:
+  - **ErrorCard**: 错误信息卡片显示组件
+  - **AppErrorBoundary**: 应用级错误边界（类组件）
+  - **CompactErrorFallback**: 紧凑错误回退组件
+  - **PageErrorBoundary**: 页面级错误边界
+  - **PageErrorFallback**: 页面级错误回退组件（用于 react-error-boundary）
+  - **initGlobalErrorHandlers**: 全局错误处理器初始化函数
+
+**核心功能**:
+- React Error Boundary 捕获组件树错误
+- 全局未捕获错误处理（unhandledrejection）
+- Promise rejection 处理
+- 与错误服务集成（createApiError、ErrorCode）
+
+**使用示例**:
+```typescript
+import { AppErrorBoundary, initGlobalErrorHandlers } from './components/ErrorBoundary';
+
+// 初始化全局错误处理器
+useEffect(() => {
+  const cleanup = initGlobalErrorHandlers();
+  return cleanup;
+}, []);
+
+// 使用应用级错误边界
+<AppErrorBoundary>
+  <YourComponent />
+</AppErrorBoundary>
+
+// 使用 react-error-boundary 的回退组件
+import { ErrorBoundary } from 'react-error-boundary';
+import { PageErrorFallback } from './components/ErrorBoundary';
+
+<ErrorBoundary FallbackComponent={PageErrorFallback}>
+  <YourComponent />
+</ErrorBoundary>
+```
+
+**错误显示特性**:
+- 错误代码显示（ErrorCode）
+- 详细信息可展开查看
+- 堆栈跟踪可展开查看
+- 操作按钮（重试、返回首页、报告问题）
+- 支持可重试错误判断（isRetryableError）
+
 ## 页面组件 (pages/)
 
 ### 1. SearchPage - 搜索页面
@@ -548,6 +597,27 @@ A:
 3. Toast 提示用户
 4. 自动重试机制
 
+### Q: 如何处理应用中的错误？
+A:
+应用使用多层错误处理机制：
+1. **全局错误处理器**: `initGlobalErrorHandlers()` 捕获未处理的 Promise rejection 和全局错误
+2. **错误边界**: 使用 `AppErrorBoundary` 或 `PageErrorBoundary` 包裹组件树
+3. **错误服务**: 使用 `createApiError()` 创建结构化错误，`isRetryableError()` 判断是否可重试
+4. **用户反馈**: 通过 `ErrorCard` 显示友好的错误信息和恢复选项
+
+```typescript
+// 初始化全局错误处理（在 App.tsx 中）
+useEffect(() => {
+  const cleanup = initGlobalErrorHandlers();
+  return cleanup;
+}, []);
+
+// 使用错误边界包裹应用
+<ErrorBoundary FallbackComponent={PageErrorFallback}>
+  <AppContent />
+</ErrorBoundary>
+```
+
 ### Q: 如何添加国际化？
 A:
 1. 在 `i18n/locales/` 添加语言文件
@@ -567,6 +637,8 @@ A:
 - `components/modals/` - 模态框组件
 - `components/renderers/` - 渲染器组件
 - `components/search/` - 搜索组件
+- `components/ErrorBoundary.tsx` - 错误边界和全局错误处理
+- `components/ErrorFallback.tsx` - 错误回退组件（兼容 react-error-boundary）
 
 ### 页面
 - `pages/SearchPage.tsx` - 搜索页面
@@ -604,6 +676,12 @@ A:
 ---
 
 ## 变更记录 (Changelog)
+
+### [2025-02-10] 错误处理和性能监控完善
+- ✅ 完成全局错误处理系统（ErrorBoundary.tsx）
+- ✅ 创建性能监控页面（PerformancePage.tsx）
+- ✅ 在所有表单中添加验证（KeywordModal.tsx）
+- ✅ 更新错误处理文档
 
 ### [2025-12-13] AI上下文初始化
 - ✅ 完成前端架构分析

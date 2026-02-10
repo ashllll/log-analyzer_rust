@@ -1,8 +1,9 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
 import { useAppStore } from '../stores/appStore';
 import { useWorkspaceStore, Workspace } from '../stores/workspaceStore';
 import { logger } from '../utils/logger';
+import { api } from '../services/api';
+import { getFullErrorMessage } from '../services/errors';
 
 /**
  * 工作区 Mutations Hook
@@ -45,10 +46,7 @@ export const useWorkspaceMutations = () => {
   const importPathMutation = useMutation({
     mutationFn: async ({ path, workspaceId }: ImportPathParams) => {
       logger.debug('Invoking import_folder with:', { path, workspaceId });
-      const taskId = await invoke<string>('import_folder', {
-        path,
-        workspaceId,
-      });
+      const taskId = await api.importFolder(path, workspaceId);
       return { taskId, workspaceId };
     },
     onMutate: async ({ path, workspaceId }) => {
@@ -77,7 +75,7 @@ export const useWorkspaceMutations = () => {
     },
     onError: (error, _variables, context) => {
       logger.error('importPath error:', error);
-      addToast('error', `导入失败: ${error}`);
+      addToast('error', `导入失败: ${getFullErrorMessage(error)}`);
 
       // 回滚：删除刚创建的工作区
       if (context?.workspaceId) {
@@ -95,12 +93,9 @@ export const useWorkspaceMutations = () => {
    * 刷新工作区 Mutation
    */
   const refreshWorkspaceMutation = useMutation({
-    mutationFn: async ({ workspaceId, path }: RefreshWorkspaceParams) => {
-      logger.debug('Invoking refresh_workspace with:', { workspaceId, path });
-      const taskId = await invoke<string>('refresh_workspace', {
-        workspaceId,
-        path,
-      });
+    mutationFn: async ({ workspaceId }: RefreshWorkspaceParams) => {
+      logger.debug('Invoking refresh_workspace with:', { workspaceId });
+      const taskId = await api.refreshWorkspace(workspaceId);
       return { taskId, workspaceId };
     },
     onSuccess: () => {
@@ -109,7 +104,7 @@ export const useWorkspaceMutations = () => {
     },
     onError: (error) => {
       logger.error('refreshWorkspace error:', error);
-      addToast('error', `刷新失败: ${error}`);
+      addToast('error', `刷新失败: ${getFullErrorMessage(error)}`);
     },
   });
 
@@ -120,7 +115,7 @@ export const useWorkspaceMutations = () => {
   const deleteWorkspaceMutation = useMutation({
     mutationFn: async ({ workspaceId }: DeleteWorkspaceParams) => {
       logger.debug('Invoking delete_workspace with:', workspaceId);
-      await invoke('delete_workspace', { workspaceId });
+      await api.deleteWorkspace(workspaceId);
       return workspaceId;
     },
     onMutate: async ({ workspaceId }) => {
@@ -152,7 +147,7 @@ export const useWorkspaceMutations = () => {
     },
     onError: (error, _variables, context) => {
       logger.error('deleteWorkspace error:', error);
-      addToast('error', `删除失败: ${error}`);
+      addToast('error', `删除失败: ${getFullErrorMessage(error)}`);
 
       // 回滚：恢复工作区列表
       if (context?.previousWorkspaces) {
@@ -177,12 +172,11 @@ export const useWorkspaceMutations = () => {
   const toggleWatchMutation = useMutation({
     mutationFn: async ({ workspace }: ToggleWatchParams) => {
       if (workspace.watching) {
-        await invoke('stop_watch', { workspaceId: workspace.id });
+        await api.stopWatch(workspace.id);
         return { workspaceId: workspace.id, watching: false };
       } else {
-        await invoke('start_watch', {
+        await api.startWatch({
           workspaceId: workspace.id,
-          path: workspace.path,
           autoSearch: false,
         });
         return { workspaceId: workspace.id, watching: true };
@@ -203,7 +197,7 @@ export const useWorkspaceMutations = () => {
     },
     onError: (error, _variables, context) => {
       logger.error('toggleWatch error:', error);
-      addToast('error', `监听操作失败: ${error}`);
+      addToast('error', `监听操作失败: ${getFullErrorMessage(error)}`);
 
       // 回滚：恢复之前的监听状态
       if (context) {

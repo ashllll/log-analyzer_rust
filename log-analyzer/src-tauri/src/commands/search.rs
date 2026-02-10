@@ -1,5 +1,9 @@
 //! 搜索命令实现
 //! 包含日志搜索及缓存逻辑，附带关键词统计与结果批量推送
+//!
+//! # 前后端集成规范
+//!
+//! 为保持与 JavaScript camelCase 惯例一致，Tauri 命令参数使用 camelCase 命名。
 
 use parking_lot::Mutex;
 use sha2::{Digest, Sha256};

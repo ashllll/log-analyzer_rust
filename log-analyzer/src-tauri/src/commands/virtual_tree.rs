@@ -11,6 +11,10 @@
 //! # Requirements
 //!
 //! Validates: Requirements 1.4, 4.2
+//!
+//! # 前后端集成规范
+//!
+//! 为保持与 JavaScript camelCase 惯例一致，Tauri 命令参数使用 camelCase 命名。
 
 use crate::storage::{ContentAddressableStorage, MetadataStore};
 use serde::{Deserialize, Serialize};

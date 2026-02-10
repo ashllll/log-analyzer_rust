@@ -13,6 +13,24 @@
 //! - 提供友好的错误提示
 //! - 支持重试和清理队列机制
 //! - 只支持CAS格式工作区
+//!
+//! # 前后端集成规范
+//!
+//! 为保持与 JavaScript camelCase 惯例一致，Tauri 命令参数使用 camelCase 命名。
+//! 这确保了前后端接口的一致性，避免了参数名转换带来的混乱。
+//!
+//! ```rust
+//! #[allow(non_snake_case)]
+//! pub async fn load_workspace(
+//!     workspaceId: String,  // 对应前端 invoke('load_workspace', { workspaceId })
+//!     // ...
+//! ) -> Result<WorkspaceLoadResponse, String>
+//! ```
+//!
+//! 对应的前端调用：
+//! ```typescript
+//! await invoke('load_workspace', { workspaceId: 'workspace-123' });
+//! ```
 
 /// Workspace load response
 #[derive(Debug, Clone, serde::Serialize)]
@@ -28,10 +46,14 @@ pub struct WorkspaceLoadResponse {
 /// 只支持CAS格式工作区：
 /// - 检查工作区是否存在metadata.db和objects目录
 /// - 返回文件数量信息
+///
+/// # 前后端集成规范
+/// 为保持与 JavaScript camelCase 惯例一致，Tauri 命令参数使用 camelCase 命名，
+/// 与前端 invoke('load_workspace', { workspaceId }) 调用保持一致
 #[command]
 pub async fn load_workspace(
     app: AppHandle,
-    #[allow(non_snake_case)] workspaceId: String,
+    #[allow(non_snake_case)] workspaceId: String,  // 对应前端 invoke('load_workspace', { workspaceId })
     state: State<'_, AppState>,
 ) -> Result<WorkspaceLoadResponse, String> {
     validate_workspace_id(&workspaceId)?;

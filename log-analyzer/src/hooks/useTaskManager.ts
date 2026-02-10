@@ -1,7 +1,8 @@
 import { useCallback } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { useAppStore } from '../stores/appStore';
 import { useTaskStore } from '../stores/taskStore';
+import { api } from '../services/api';
+import { getFullErrorMessage } from '../services/errors';
 
 /**
  * 任务管理Hook
@@ -29,12 +30,12 @@ export const useTaskManager = () => {
    */
   const cancelTask = useCallback(async (id: string) => {
     try {
-      await invoke('cancel_task', { taskId: id });
+      await api.cancelTask(id);
       // 更新本地状态
       updateTaskAction(id, { status: 'STOPPED' });
       addToast('info', '任务已取消');
     } catch (error) {
-      addToast('error', `取消任务失败: ${error}`);
+      addToast('error', `取消任务失败: ${getFullErrorMessage(error)}`);
     }
   }, [addToast, updateTaskAction]);
 

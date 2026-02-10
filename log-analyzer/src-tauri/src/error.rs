@@ -1,4 +1,5 @@
 use miette::Diagnostic;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use thiserror::Error;
 
@@ -222,6 +223,152 @@ pub fn eyre_to_app_error(error: eyre::Error) -> AppError {
     AppError::search_error(error.to_string())
 }
 
+// ============================================================================
+// 命令层错误类型
+// ============================================================================
+
+/**
+ * 命令层错误结构
+ *
+ * 用于 Tauri 命令的返回值，提供结构化的错误信息
+ * 包含错误码、用户友好消息和帮助提示
+ */
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommandError {
+    /// 错误码 (对应 AppError 的 diagnostic code)
+    pub code: String,
+
+    /// 用户友好的错误消息
+    pub message: String,
+
+    /// 帮助提示 (可选)
+    pub help: Option<String>,
+
+    /// 错误详情 (可选，用于调试)
+    pub details: Option<serde_json::Value>,
+}
+
+impl CommandError {
+    /// 从 AppError 创建 CommandError
+    pub fn from_app_error(err: &AppError) -> Self {
+        let code = err.code();
+        let message = err.to_string();
+        let help = err.help();
+
+        CommandError {
+            code,
+            message,
+            help: help.map(|h| h.to_string()),
+            details: None,
+        }
+    }
+
+    /// 创建简单错误
+    pub fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
+        CommandError {
+            code: code.into(),
+            message: message.into(),
+            help: None,
+            details: None,
+        }
+    }
+
+    /// 添加帮助信息
+    pub fn with_help(mut self, help: impl Into<String>) -> Self {
+        self.help = Some(help.into());
+        self
+    }
+
+    /// 添加详情信息
+    pub fn with_details(mut self, details: serde_json::Value) -> Self {
+        self.details = Some(details);
+        self
+    }
+}
+
+impl std::fmt::Display for CommandError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[{}] {}", self.code, self.message)
+    }
+}
+
+impl std::error::Error for CommandError {}
+
+/// 从 AppError 自动转换
+impl From<AppError> for CommandError {
+    fn from(err: AppError) -> Self {
+        CommandError::from_app_error(&err)
+    }
+}
+
+/// 从字符串自动转换 (向后兼容)
+impl From<String> for CommandError {
+    fn from(s: String) -> Self {
+        CommandError::new("UNKNOWN", s)
+    }
+}
+
+/// 从 &str 自动转换
+impl From<&str> for CommandError {
+    fn from(s: &str) -> Self {
+        CommandError::new("UNKNOWN", s)
+    }
+}
+
+/**
+ * AppError 扩展方法
+ */
+impl AppError {
+    /// 获取错误码
+    pub fn code(&self) -> String {
+        match self {
+            AppError::Io(_) => "IO_ERROR".to_string(),
+            AppError::Search { .. } => "SEARCH_ERROR".to_string(),
+            AppError::Archive { .. } => "ARCHIVE_ERROR".to_string(),
+            AppError::Validation(_) => "VALIDATION_ERROR".to_string(),
+            AppError::Security(_) => "SECURITY_ERROR".to_string(),
+            AppError::NotFound(_) => "NOT_FOUND".to_string(),
+            AppError::InvalidPath(_) => "INVALID_PATH".to_string(),
+            AppError::Encoding(_) => "ENCODING_ERROR".to_string(),
+            AppError::QueryExecution(_) => "QUERY_EXECUTION_ERROR".to_string(),
+            AppError::FileWatcher(_) => "FILE_WATCHER_ERROR".to_string(),
+            AppError::IndexError(_) => "INDEX_ERROR".to_string(),
+            AppError::PatternError(_) => "PATTERN_ERROR".to_string(),
+            AppError::DatabaseError(_) => "DATABASE_ERROR".to_string(),
+            AppError::Config(_) => "CONFIG_ERROR".to_string(),
+            AppError::Network(_) => "NETWORK_ERROR".to_string(),
+            AppError::Internal(_) => "INTERNAL_ERROR".to_string(),
+            AppError::ResourceCleanup(_) => "RESOURCE_CLEANUP_ERROR".to_string(),
+            AppError::Concurrency(_) => "CONCURRENCY_ERROR".to_string(),
+            AppError::Parse(_) => "PARSE_ERROR".to_string(),
+            AppError::Timeout(_) => "TIMEOUT_ERROR".to_string(),
+            AppError::IoDetailed { .. } => "IO_ERROR".to_string(),
+        }
+    }
+
+    /// 获取帮助提示
+    pub fn help(&self) -> Option<&str> {
+        match self {
+            AppError::Search { .. } => Some("Try simplifying your search query or checking the workspace status"),
+            AppError::Archive { .. } => Some("Ensure the archive file is not corrupted and is a supported format"),
+            AppError::Validation(_) => Some("Check that your input meets the required format and constraints"),
+            AppError::InvalidPath(_) => Some("Ensure the path is valid and accessible"),
+            AppError::QueryExecution(_) => Some("Try simplifying your query or checking the syntax"),
+            AppError::DatabaseError(_) => Some("Check database connection and schema integrity"),
+            AppError::PatternError(_) => Some("Check your regex pattern syntax"),
+            _ => None,
+        }
+    }
+}
+
+/**
+ * 命令层统一结果类型
+ *
+ * 使用 CommandResult<T> 作为 Tauri 命令的返回值类型
+ * 这样前端可以接收到结构化的错误信息
+ */
+pub type CommandResult<T> = std::result::Result<T, CommandError>;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -270,5 +417,104 @@ mod tests {
         let display = format!("{}", error);
         assert!(display.contains("Search error"));
         assert!(display.contains("Query failed"));
+    }
+
+    #[test]
+    fn test_error_code() {
+        let error = AppError::search_error("Query failed");
+        assert_eq!(error.code(), "SEARCH_ERROR");
+
+        let error = AppError::validation_error("Invalid input");
+        assert_eq!(error.code(), "VALIDATION_ERROR");
+    }
+
+    #[test]
+    fn test_error_help() {
+        let error = AppError::search_error("Query failed");
+        assert!(error.help().is_some());
+
+        let error = AppError::validation_error("Invalid input");
+        assert!(error.help().is_some());
+    }
+}
+
+// ============================================================================
+// CommandError 测试
+// ============================================================================
+
+#[cfg(test)]
+mod command_error_tests {
+    use super::*;
+
+    #[test]
+    fn test_command_error_from_app_error() {
+        let app_error = AppError::search_error("Query failed");
+        let cmd_error = CommandError::from_app_error(&app_error);
+
+        assert_eq!(cmd_error.code, "SEARCH_ERROR");
+        assert!(cmd_error.message.contains("Query failed"));
+        assert!(cmd_error.help.is_some());
+    }
+
+    #[test]
+    fn test_command_error_new() {
+        let error = CommandError::new("CUSTOM_ERROR", "Something went wrong");
+
+        assert_eq!(error.code, "CUSTOM_ERROR");
+        assert_eq!(error.message, "Something went wrong");
+        assert!(error.help.is_none());
+        assert!(error.details.is_none());
+    }
+
+    #[test]
+    fn test_command_error_with_help() {
+        let error = CommandError::new("CUSTOM_ERROR", "Something went wrong")
+            .with_help("Try again later");
+
+        assert_eq!(error.help, Some("Try again later".to_string()));
+    }
+
+    #[test]
+    fn test_command_error_with_details() {
+        let details = serde_json::json!({"attempt": 3, "max_retries": 5});
+        let error = CommandError::new("CUSTOM_ERROR", "Something went wrong")
+            .with_details(details.clone());
+
+        assert_eq!(error.details, Some(details));
+    }
+
+    #[test]
+    fn test_command_error_display() {
+        let error = CommandError::new("TEST_ERROR", "Test message");
+        let display = format!("{}", error);
+
+        assert_eq!(display, "[TEST_ERROR] Test message");
+    }
+
+    #[test]
+    fn test_command_error_from_app_error_auto() {
+        let app_error = AppError::validation_error("Invalid input");
+        let cmd_error: CommandError = app_error.into();
+
+        assert_eq!(cmd_error.code, "VALIDATION_ERROR");
+        assert!(cmd_error.message.contains("Invalid input"));
+    }
+
+    #[test]
+    fn test_command_error_from_string() {
+        let msg = "Simple error message";
+        let cmd_error: CommandError = msg.to_string().into();
+
+        assert_eq!(cmd_error.code, "UNKNOWN");
+        assert_eq!(cmd_error.message, msg);
+    }
+
+    #[test]
+    fn test_command_error_from_str() {
+        let msg = "Simple error message";
+        let cmd_error: CommandError = msg.into();
+
+        assert_eq!(cmd_error.code, "UNKNOWN");
+        assert_eq!(cmd_error.message, msg);
     }
 }

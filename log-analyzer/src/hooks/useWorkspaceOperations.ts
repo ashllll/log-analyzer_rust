@@ -1,9 +1,10 @@
 import { useCallback, useState, useTransition } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useAppStore } from '../stores/appStore';
 import { useWorkspaceStore, Workspace } from '../stores/workspaceStore';
 import { logger } from '../utils/logger';
+import { api } from '../services/api';
+import { getFullErrorMessage } from '../services/errors';
 
 /**
  * 工作区操作Hook
@@ -32,39 +33,36 @@ export const useWorkspaceOperations = () => {
     setOperationLoading(true);
     const previousActive = activeWorkspaceId;
     let tempWorkspaceId: string | null = null;
-    
+
     try {
       const fileName = pathStr.split(/[/\\]/).pop() || "New";
       const workspaceId = Date.now().toString();
-      const newWs: Workspace = { 
-        id: workspaceId, 
-        name: fileName, 
-        path: pathStr, 
-        status: 'PROCESSING', 
-        size: '-', 
-        files: 0 
+      const newWs: Workspace = {
+        id: workspaceId,
+        name: fileName,
+        path: pathStr,
+        status: 'PROCESSING',
+        size: '-',
+        files: 0
       };
       tempWorkspaceId = workspaceId;
-      
+
       logger.debug('Creating workspace:', newWs);
       addWorkspace(newWs);
-      
+
       logger.debug('Invoking import_folder with:', { path: pathStr, workspaceId: newWs.id });
-      const taskId = await invoke<string>("import_folder", { 
-        path: pathStr, 
-        workspaceId: newWs.id
-      });
-      
+      const taskId = await api.importFolder(pathStr, newWs.id);
+
       logger.debug('import_folder returned taskId:', taskId);
-      
+
       // 任务由后端事件自动创建，不需要手动添加
-      
+
       setActiveWorkspace(newWs.id);
       addToast('info', '导入已开始');
     } catch (e) {
       logger.error('importPath error:', e);
-      addToast('error', `导入失败: ${e}`);
-      
+      addToast('error', `导入失败: ${getFullErrorMessage(e)}`);
+
       // 删除刚创建的工作区
       if (tempWorkspaceId) {
         deleteWorkspace(tempWorkspaceId);
@@ -129,24 +127,21 @@ export const useWorkspaceOperations = () => {
   const refreshWorkspace = useCallback(async (workspace: Workspace) => {
     logger.debug('refreshWorkspace called for workspace:', workspace.id);
     setOperationLoading(true);
-    
+
     try {
-      const taskId = await invoke<string>("refresh_workspace", { 
-        workspaceId: workspace.id,
-        path: workspace.path
-      });
-      
+      const taskId = await api.refreshWorkspace(workspace.id);
+
       logger.debug('refresh_workspace returned taskId:', taskId);
-      
+
       // 不再手动设置 PROCESSING 状态，让后端事件处理
       // 工作区状态由后端 task-update 事件自动更新
-      
+
       // 任务由后端事件自动创建，不需要手动添加
-      
+
       addToast('info', '刷新工作区中...');
     } catch (e) {
       logger.error('refreshWorkspace error:', e);
-      addToast('error', `刷新失败: ${e}`);
+      addToast('error', `刷新失败: ${getFullErrorMessage(e)}`);
     } finally {
       setOperationLoading(false);
     }
@@ -155,7 +150,7 @@ export const useWorkspaceOperations = () => {
   /**
    * 删除工作区
    * 调用后端命令删除工作区及其所有相关资源
-   * 
+   *
    * 使用业内成熟方案：
    * 1. 指数退避重试机制
    * 2. IPC 健康检查
@@ -167,13 +162,13 @@ export const useWorkspaceOperations = () => {
     setOperationLoading(true);
 
     try {
-      await invoke<void>('delete_workspace', { workspaceId: id });
+      await api.deleteWorkspace(id);
 
       logger.debug('deleteWorkspace succeeded');
 
       // 后端删除成功,更新前端状态
       deleteWorkspace(id);
-      
+
       // 如果删除的是当前活跃工作区,清空活跃状态
       if (activeWorkspaceId === id) {
         // 切换到其他工作区或清空
@@ -184,20 +179,11 @@ export const useWorkspaceOperations = () => {
           setActiveWorkspace(null);
         }
       }
-      
+
       addToast('success', '工作区已删除');
     } catch (e) {
       logger.error('deleteWorkspace error:', e);
-      
-      // 提供更友好的错误提示
-      const errorMessage = String(e);
-      if (errorMessage.includes('circuit breaker')) {
-        addToast('error', 'IPC 连接暂时不可用，请稍后重试');
-      } else if (errorMessage.includes('timeout')) {
-        addToast('error', '删除操作超时，请检查工作区状态');
-      } else {
-        addToast('error', `删除失败: ${e}`);
-      }
+      addToast('error', `删除失败: ${getFullErrorMessage(e)}`);
     } finally {
       setOperationLoading(false);
     }
@@ -214,28 +200,28 @@ export const useWorkspaceOperations = () => {
       logger.debug('Already active workspace, skipping reload:', id);
       return;
     }
-    
+
     logger.debug('switchWorkspace called for id:', id);
-    
+
     const workspace = workspaces.find(w => w.id === id);
     if (!workspace) {
       addToast('error', 'Workspace not found');
       return;
     }
-    
+
     // 先立即更新UI，然后异步加载索引
     startTransition(() => {
       setActiveWorkspace(id);
     });
-    
+
     // 如果工作区已准备好，异步加载索引（不阻塞UI）
     if (workspace.status === 'READY') {
       try {
-        await invoke('load_workspace', { workspaceId: id });
+        await api.loadWorkspace(id);
         // 加载成功后不显示 toast，避免频繁提示
       } catch (e) {
         logger.error('switchWorkspace error:', e);
-        addToast('error', `加载索引失败: ${e}`);
+        addToast('error', `加载索引失败: ${getFullErrorMessage(e)}`);
       }
     }
   }, [addToast, setActiveWorkspace, workspaces, activeWorkspaceId]);
@@ -245,24 +231,23 @@ export const useWorkspaceOperations = () => {
    */
   const toggleWatch = useCallback(async (workspace: Workspace) => {
     setOperationLoading(true);
-    
+
     try {
       if (workspace.watching) {
-        await invoke('stop_watch', { workspaceId: workspace.id });
+        await api.stopWatch(workspace.id);
         updateWorkspace(workspace.id, { watching: false });
         addToast('info', '停止监听');
       } else {
-        await invoke('start_watch', { 
-          workspaceId: workspace.id, 
-          path: workspace.path,
-          autoSearch: false 
+        await api.startWatch({
+          workspaceId: workspace.id,
+          autoSearch: false
         });
         updateWorkspace(workspace.id, { watching: true });
         addToast('info', '开始监听');
       }
     } catch (e) {
       logger.error('toggleWatch error:', e);
-      addToast('error', `监听操作失败: ${e}`);
+      addToast('error', `监听操作失败: ${getFullErrorMessage(e)}`);
     } finally {
       setOperationLoading(false);
     }

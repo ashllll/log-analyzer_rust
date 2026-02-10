@@ -1,13 +1,14 @@
 import { createContext, useContext, useReducer, useCallback, ReactNode, useEffect, useRef } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { logger } from '../utils/logger';
+import { api } from '../services/api';
+import { getFullErrorMessage } from '../services/errors';
 
 // ============================================================================
 // Types
 // ============================================================================
 
-export type Page = 'search' | 'keywords' | 'workspaces' | 'tasks' | 'settings';
+export type Page = 'search' | 'keywords' | 'workspaces' | 'tasks' | 'performance' | 'settings';
 export type ColorKey = 'blue' | 'green' | 'red' | 'orange' | 'purple';
 export type ToastType = 'success' | 'error' | 'info';
 
@@ -357,7 +358,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const loadConfig = async () => {
       try {
-        const config = await invoke<any>('load_config');
+        const config = await api.loadConfig();
         if (config.keyword_groups) {
           keywordDispatch({ type: 'SET_KEYWORD_GROUPS', payload: config.keyword_groups });
         }
@@ -365,7 +366,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           workspaceDispatch({ type: 'SET_WORKSPACES', payload: config.workspaces });
         }
       } catch (e) {
-        console.error('Failed to load config:', e);
+        console.error('Failed to load config:', getFullErrorMessage(e));
       }
     };
     loadConfig();
@@ -398,12 +399,27 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     // 防抖：500ms 后保存
     saveTimeoutRef.current = window.setTimeout(() => {
       lastSavedRef.current = configFingerprint;
-      invoke('save_config', {
-        config: {
-          keyword_groups: keywordState.keywordGroups,
-          workspaces: workspaceState.workspaces
+      api.saveConfig({
+        keyword_groups: keywordState.keywordGroups,
+        workspaces: workspaceState.workspaces,
+        advanced_features: {
+          enable_filter_engine: true,
+          enable_regex_engine: true,
+          enable_time_partition: false,
+          enable_autocomplete: false,
+          regex_cache_size: 1000,
+          autocomplete_limit: 100,
+          time_partition_size_secs: 3600
+        },
+        file_filter: {
+          enabled: false,
+          binary_detection_enabled: true,
+          mode: 'blacklist',
+          filename_patterns: [],
+          allowed_extensions: [],
+          forbidden_extensions: []
         }
-      }).catch(e => console.error('Failed to save config:', e));
+      }).catch(e => console.error('Failed to save config:', getFullErrorMessage(e)));
     }, 500);
     
     return () => {

@@ -3,7 +3,8 @@ import { X, Plus, Trash2, Info } from 'lucide-react';
 import { Button } from '../ui';
 import type { FileFilterConfig } from '../../types/common';
 import { FilterMode } from '../../types/common';
-import { invoke } from '@tauri-apps/api/core';
+import { api } from '../../services/api';
+import { getFullErrorMessage } from '../../services/errors';
 
 interface FileFilterSettingsProps {
   isOpen: boolean;
@@ -45,11 +46,11 @@ const FileFilterSettings: React.FC<FileFilterSettingsProps> = ({
     try {
       setIsLoading(true);
       setError(null);
-      const loadedConfig = await invoke<FileFilterConfig>('get_file_filter_config');
+      const loadedConfig = await api.getFileFilterConfig();
       setConfig(loadedConfig);
     } catch (err) {
       console.error('Failed to load file filter config:', err);
-      setError('无法加载配置');
+      setError(`无法加载配置: ${getFullErrorMessage(err)}`);
     } finally {
       setIsLoading(false);
     }
@@ -59,12 +60,12 @@ const FileFilterSettings: React.FC<FileFilterSettingsProps> = ({
     try {
       setIsLoading(true);
       setError(null);
-      await invoke('save_file_filter_config', { filterConfig: config });
+      await api.saveFileFilterConfig(config);
       onSaved?.();
       onClose();
     } catch (err) {
       console.error('Failed to save file filter config:', err);
-      setError('保存配置失败');
+      setError(`保存配置失败: ${getFullErrorMessage(err)}`);
     } finally {
       setIsLoading(false);
     }
