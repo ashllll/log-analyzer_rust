@@ -3,6 +3,9 @@ log-analyzer/node_modules
 log-analyzer/dist
 log-analyzer/dist-ssr
 log-analyzer/src-tauri/target
+
+# 测试覆盖率报告
+log-analyzer/coverage/
 .qoder/
 !.qoder/rules/
 *.backup
