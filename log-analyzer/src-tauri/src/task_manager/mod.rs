@@ -602,6 +602,10 @@ impl TaskManager {
                     }
 
                     // 短暂等待后重试
+                    // 注意：在异步上下文中使用 std::thread::sleep 可能阻塞运行时
+                    // 但由于 shutdown() 是同步函数且只在应用退出时调用，
+                    // 这里保留为同步 sleep 以避免大规模重构
+                    // 理想情况下应该使用 tokio::time::sleep，但需要将整个函数改为异步
                     std::thread::sleep(std::time::Duration::from_millis(100));
                 }
             }

@@ -310,7 +310,9 @@ impl MetadataStore {
         )
         .execute(pool)
         .await
-        .map_err(|e| AppError::database_error(format!("Failed to create index_state table: {}", e)))?;
+        .map_err(|e| {
+            AppError::database_error(format!("Failed to create index_state table: {}", e))
+        })?;
 
         // Create indexed_files table for incremental indexing
         sqlx::query(
@@ -328,13 +330,17 @@ impl MetadataStore {
         )
         .execute(pool)
         .await
-        .map_err(|e| AppError::database_error(format!("Failed to create indexed_files table: {}", e)))?;
+        .map_err(|e| {
+            AppError::database_error(format!("Failed to create indexed_files table: {}", e))
+        })?;
 
         // Create index on workspace_id for faster queries
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_indexed_files_workspace ON indexed_files(workspace_id)")
-            .execute(pool)
-            .await
-            .map_err(|e| AppError::database_error(format!("Failed to create index: {}", e)))?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_indexed_files_workspace ON indexed_files(workspace_id)",
+        )
+        .execute(pool)
+        .await
+        .map_err(|e| AppError::database_error(format!("Failed to create index: {}", e)))?;
 
         info!("Database schema initialized successfully");
         Ok(())
@@ -983,6 +989,16 @@ impl MetadataStore {
     ///
     /// Returns error if database operation fails
     pub async fn save_indexed_file(&self, file: &IndexedFile) -> Result<()> {
+        // Ensure workspace exists in index_state before inserting indexed file
+        // This prevents FOREIGN KEY constraint failures
+        sqlx::query(
+            "INSERT OR IGNORE INTO index_state (workspace_id, last_commit_time, index_version) VALUES (?, 0, 1)"
+        )
+        .bind(&file.workspace_id)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| AppError::database_error(format!("Failed to ensure workspace exists: {}", e)))?;
+
         sqlx::query(
             r#"
             INSERT INTO indexed_files (file_path, workspace_id, last_offset, file_size, modified_time, hash)
@@ -1102,7 +1118,9 @@ impl MetadataStore {
             .bind(file_path)
             .execute(&self.pool)
             .await
-            .map_err(|e| AppError::database_error(format!("Failed to delete indexed file: {}", e)))?;
+            .map_err(|e| {
+                AppError::database_error(format!("Failed to delete indexed file: {}", e))
+            })?;
 
         debug!(
             file_path = %file_path,
@@ -1127,7 +1145,9 @@ impl MetadataStore {
             .bind(workspace_id)
             .execute(&self.pool)
             .await
-            .map_err(|e| AppError::database_error(format!("Failed to clear indexed files: {}", e)))?;
+            .map_err(|e| {
+                AppError::database_error(format!("Failed to clear indexed files: {}", e))
+            })?;
 
         debug!(
             workspace_id = %workspace_id,
@@ -1872,8 +1892,14 @@ mod tests {
     async fn test_load_nonexistent_index_state() {
         let (store, _temp_dir) = create_test_store().await;
 
-        let loaded = store.load_index_state("nonexistent_workspace").await.unwrap();
-        assert!(loaded.is_none(), "Should return None for non-existent workspace");
+        let loaded = store
+            .load_index_state("nonexistent_workspace")
+            .await
+            .unwrap();
+        assert!(
+            loaded.is_none(),
+            "Should return None for non-existent workspace"
+        );
     }
 
     /// Test update existing index state
@@ -1959,8 +1985,8 @@ mod tests {
         let file2 = IndexedFile {
             file_path: file_path.to_string(),
             workspace_id: "workspace1".to_string(),
-            last_offset: 500,  // Updated offset
-            file_size: 600,     // Updated size
+            last_offset: 500,    // Updated offset
+            file_size: 600,      // Updated size
             modified_time: 2000, // Updated time
             hash: "hash2".to_string(),
         };
@@ -2094,7 +2120,10 @@ mod tests {
 
         // Verify other workspace files are not affected
         let other_loaded = store.load_indexed_file("/path/other.log").await.unwrap();
-        assert!(other_loaded.is_some(), "Other workspace files should not be affected");
+        assert!(
+            other_loaded.is_some(),
+            "Other workspace files should not be affected"
+        );
     }
 
     /// Test load non-existent indexed file returns None
@@ -2102,7 +2131,10 @@ mod tests {
     async fn test_load_nonexistent_indexed_file() {
         let (store, _temp_dir) = create_test_store().await;
 
-        let loaded = store.load_indexed_file("/nonexistent/file.log").await.unwrap();
+        let loaded = store
+            .load_indexed_file("/nonexistent/file.log")
+            .await
+            .unwrap();
         assert!(loaded.is_none(), "Should return None for non-existent file");
     }
 

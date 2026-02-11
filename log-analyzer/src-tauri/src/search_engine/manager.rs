@@ -518,6 +518,8 @@ impl SearchEngineManager {
     pub fn commit(&self) -> SearchResult<()> {
         let mut writer = self.writer.lock();
         writer.commit()?;
+        // Immediately reload the reader to make committed changes visible
+        self.reader.reload()?;
         Ok(())
     }
 
@@ -790,8 +792,9 @@ impl SearchEngineManager {
         let mut writer = self.writer.lock();
         let _opstamp = writer.delete_term(term);
 
-        // Commit the changes
+        // Commit the changes and reload reader
         writer.commit()?;
+        self.reader.reload()?;
 
         info!(
             file_path = %file_path,
@@ -931,7 +934,11 @@ mod tests {
             .search_with_timeout("log entry", None, None, None)
             .await
             .unwrap();
-        assert_eq!(results.entries.len(), 3, "Should have 3 documents initially");
+        assert_eq!(
+            results.entries.len(),
+            3,
+            "Should have 3 documents initially"
+        );
 
         // Delete documents for the first file
         let deleted_count = manager.delete_file_documents(file_path).unwrap();
@@ -952,7 +959,12 @@ mod tests {
         let (manager, _temp_dir) = create_test_manager();
 
         // Try to delete documents for a file that doesn't exist in the index
-        let deleted_count = manager.delete_file_documents("/nonexistent/file.log").unwrap();
-        assert_eq!(deleted_count, 0, "Should delete 0 documents for non-existent file");
+        let deleted_count = manager
+            .delete_file_documents("/nonexistent/file.log")
+            .unwrap();
+        assert_eq!(
+            deleted_count, 0,
+            "Should delete 0 documents for non-existent file"
+        );
     }
 }

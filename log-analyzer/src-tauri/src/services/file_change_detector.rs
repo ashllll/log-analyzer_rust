@@ -92,12 +92,18 @@ impl FileChangeDetector {
     ) -> Result<FileChangeStatus> {
         // 获取当前文件元数据
         let metadata = fs::metadata(path).await.map_err(|e| {
-            AppError::io_error(format!("Failed to read file metadata: {}", e), Some(path.to_path_buf()))
+            AppError::io_error(
+                format!("Failed to read file metadata: {}", e),
+                Some(path.to_path_buf()),
+            )
         })?;
 
         let current_size = metadata.len();
         let modified = metadata.modified().map_err(|e| {
-            AppError::io_error(format!("Failed to get modified time: {}", e), Some(path.to_path_buf()))
+            AppError::io_error(
+                format!("Failed to get modified time: {}", e),
+                Some(path.to_path_buf()),
+            )
         })?;
         let current_modified_time = modified
             .duration_since(std::time::UNIX_EPOCH)
@@ -330,12 +336,16 @@ mod tests {
             hash: old_hash,
         };
 
-        // 等待一段时间确保修改时间不同
-        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+        // 等待足够时间确保修改时间不同（某些文件系统精度较低）
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 
         // 修改文件内容
         let mut file = std::fs::File::create(&file_path).unwrap();
         file.write_all(b"new content").unwrap();
+        file.sync_all().unwrap(); // 确保内容写入磁盘
+
+        // 再次等待以确保修改时间被更新
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
         // 检查已变更文件
         let status = detector
@@ -400,11 +410,13 @@ mod tests {
         let mut file = std::fs::File::create(&file1_path).unwrap();
         file.write_all(b"content1").unwrap();
 
-        // 文件2不创建（模拟新文件）
+        // 创建文件2
+        let mut file = std::fs::File::create(&file2_path).unwrap();
+        file.write_all(b"content2").unwrap();
 
         let files: Vec<(std::path::PathBuf, Option<&IndexedFile>)> = vec![
-            (file1_path.clone(), None),  // 新文件
-            (file2_path.clone(), None),  // 新文件
+            (file1_path.clone(), None), // 新文件
+            (file2_path.clone(), None), // 新文件
         ];
 
         let statuses = detector

@@ -152,14 +152,12 @@ impl MetricsStore {
     /// - 表创建失败
     pub async fn new(data_dir: &Path) -> Result<Self> {
         // 创建数据目录
-        tokio::fs::create_dir_all(data_dir)
-            .await
-            .map_err(|e| {
-                AppError::io_error(
-                    format!("Failed to create metrics data directory: {}", e),
-                    Some(data_dir.to_path_buf()),
-                )
-            })?;
+        tokio::fs::create_dir_all(data_dir).await.map_err(|e| {
+            AppError::io_error(
+                format!("Failed to create metrics data directory: {}", e),
+                Some(data_dir.to_path_buf()),
+            )
+        })?;
 
         let db_path = data_dir.join("metrics.db");
         let db_url = format!("sqlite://{}?mode=rwc", db_path.display());
@@ -237,12 +235,14 @@ impl MetricsStore {
         })?;
 
         // 创建时间戳索引（用于快速范围查询）
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_metrics_timestamp ON metrics_snapshots(timestamp)")
-            .execute(pool)
-            .await
-            .map_err(|e| {
-                AppError::database_error(format!("Failed to create timestamp index: {}", e))
-            })?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_metrics_timestamp ON metrics_snapshots(timestamp)",
+        )
+        .execute(pool)
+        .await
+        .map_err(|e| {
+            AppError::database_error(format!("Failed to create timestamp index: {}", e))
+        })?;
 
         // 创建搜索事件表
         sqlx::query(
@@ -265,19 +265,29 @@ impl MetricsStore {
         })?;
 
         // 创建搜索事件索引
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_search_events_timestamp ON search_events(timestamp)")
-            .execute(pool)
-            .await
-            .map_err(|e| {
-                AppError::database_error(format!("Failed to create search events timestamp index: {}", e))
-            })?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_search_events_timestamp ON search_events(timestamp)",
+        )
+        .execute(pool)
+        .await
+        .map_err(|e| {
+            AppError::database_error(format!(
+                "Failed to create search events timestamp index: {}",
+                e
+            ))
+        })?;
 
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_search_events_workspace ON search_events(workspace_id)")
-            .execute(pool)
-            .await
-            .map_err(|e| {
-                AppError::database_error(format!("Failed to create search events workspace index: {}", e))
-            })?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_search_events_workspace ON search_events(workspace_id)",
+        )
+        .execute(pool)
+        .await
+        .map_err(|e| {
+            AppError::database_error(format!(
+                "Failed to create search events workspace index: {}",
+                e
+            ))
+        })?;
 
         info!("Database schema initialized successfully");
         Ok(())
@@ -322,10 +332,7 @@ impl MetricsStore {
         .await
         .map_err(|e| AppError::database_error(format!("Failed to save snapshot: {}", e)))?;
 
-        debug!(
-            timestamp = snapshot.timestamp,
-            "Saved metrics snapshot"
-        );
+        debug!(timestamp = snapshot.timestamp, "Saved metrics snapshot");
 
         Ok(())
     }
@@ -577,9 +584,8 @@ impl MetricsStore {
 
     /// 清理超过保留期的旧数据
     async fn cleanup_old_data(pool: &SqlitePool) -> Result<()> {
-        let retention_timestamp = Utc::now()
-            - Duration::days(DATA_RETENTION_DAYS)
-            - Duration::hours(1); // 额外多删除1小时，确保边界数据也被清理
+        let retention_timestamp =
+            Utc::now() - Duration::days(DATA_RETENTION_DAYS) - Duration::hours(1); // 额外多删除1小时，确保边界数据也被清理
 
         let cutoff = retention_timestamp.timestamp();
 
@@ -598,16 +604,12 @@ impl MetricsStore {
             .bind(cutoff)
             .execute(pool)
             .await
-            .map_err(|e| {
-                AppError::database_error(format!("Failed to cleanup old events: {}", e))
-            })?
+            .map_err(|e| AppError::database_error(format!("Failed to cleanup old events: {}", e)))?
             .rows_affected();
 
         info!(
             cutoff,
-            deleted_snapshots,
-            deleted_events,
-            "Cleaned up old metrics data"
+            deleted_snapshots, deleted_events, "Cleaned up old metrics data"
         );
 
         Ok(())
@@ -633,22 +635,24 @@ impl MetricsStore {
             .get("count");
 
         // 获取最新快照时间戳
-        let latest_timestamp: Option<i64> = sqlx::query(
-            "SELECT timestamp FROM metrics_snapshots ORDER BY timestamp DESC LIMIT 1",
-        )
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| AppError::database_error(format!("Failed to get latest timestamp: {}", e)))?
-        .map(|row| row.get("timestamp"));
+        let latest_timestamp: Option<i64> =
+            sqlx::query("SELECT timestamp FROM metrics_snapshots ORDER BY timestamp DESC LIMIT 1")
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|e| {
+                    AppError::database_error(format!("Failed to get latest timestamp: {}", e))
+                })?
+                .map(|row| row.get("timestamp"));
 
         // 获取最旧快照时间戳
-        let oldest_timestamp: Option<i64> = sqlx::query(
-            "SELECT timestamp FROM metrics_snapshots ORDER BY timestamp ASC LIMIT 1",
-        )
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| AppError::database_error(format!("Failed to get oldest timestamp: {}", e)))?
-        .map(|row| row.get("timestamp"));
+        let oldest_timestamp: Option<i64> =
+            sqlx::query("SELECT timestamp FROM metrics_snapshots ORDER BY timestamp ASC LIMIT 1")
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|e| {
+                    AppError::database_error(format!("Failed to get oldest timestamp: {}", e))
+                })?
+                .map(|row| row.get("timestamp"));
 
         Ok(MetricsStoreStats {
             snapshot_count: snapshot_count as u64,
@@ -715,7 +719,8 @@ impl MetricsSnapshotScheduler {
         let is_running_clone = is_running.clone();
 
         let handle = tokio::spawn(async move {
-            let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(interval_seconds));
+            let mut interval =
+                tokio::time::interval(tokio::time::Duration::from_secs(interval_seconds));
             interval.tick().await; // 跳过第一次立即触发
 
             while *is_running_clone.lock().unwrap() {
@@ -773,11 +778,7 @@ impl MetricsSnapshotScheduler {
         // 等待任务结束（先释放锁再await）
         let handle = self._handle.lock().unwrap().take();
         if let Some(handle) = handle {
-            let _ = tokio::time::timeout(
-                tokio::time::Duration::from_secs(5),
-                handle,
-            )
-            .await;
+            let _ = tokio::time::timeout(tokio::time::Duration::from_secs(5), handle).await;
         }
     }
 
@@ -802,15 +803,15 @@ mod tests {
     use super::*;
 
     /// 创建测试用的临时数据库
-    async fn create_test_store() -> MetricsStore {
-        let temp_dir = std::env::temp_dir().join("metrics_test");
-        let _ = std::fs::remove_dir_all(&temp_dir);
-        MetricsStore::new(&temp_dir).await.unwrap()
+    async fn create_test_store() -> (MetricsStore, tempfile::TempDir) {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let store = MetricsStore::new(temp_dir.path()).await.unwrap();
+        (store, temp_dir)
     }
 
     #[tokio::test]
     async fn test_save_and_get_snapshot() {
-        let store = create_test_store().await;
+        let (store, _temp_dir) = create_test_store().await;
 
         let snapshot = MetricsSnapshot {
             timestamp: Utc::now().timestamp(),
@@ -838,10 +839,7 @@ mod tests {
 
         store.save_snapshot(&snapshot).await.unwrap();
 
-        let snapshots = store
-            .get_snapshots(TimeRange::Last24Hours)
-            .await
-            .unwrap();
+        let snapshots = store.get_snapshots(TimeRange::Last24Hours).await.unwrap();
 
         assert_eq!(snapshots.len(), 1);
         assert_eq!(snapshots[0].search_latency_current, 100);
@@ -849,7 +847,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_record_search_event() {
-        let store = create_test_store().await;
+        let (store, _temp_dir) = create_test_store().await;
 
         let event = SearchEvent {
             id: None,
@@ -875,7 +873,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_cleanup_old_data() {
-        let store = create_test_store().await;
+        let (store, _temp_dir) = create_test_store().await;
 
         // 创建一个 10 天前的快照
         let old_timestamp = (Utc::now() - Duration::days(10)).timestamp();
@@ -918,10 +916,7 @@ mod tests {
         store.cleanup().await.unwrap();
 
         // 验证只保留了最近的快照
-        let snapshots = store
-            .get_snapshots(TimeRange::Last30Days)
-            .await
-            .unwrap();
+        let snapshots = store.get_snapshots(TimeRange::Last30Days).await.unwrap();
 
         assert_eq!(snapshots.len(), 1);
         assert!(snapshots[0].timestamp > old_timestamp);
@@ -929,7 +924,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_aggregated_metrics() {
-        let store = create_test_store().await;
+        let (store, _temp_dir) = create_test_store().await;
 
         let now = Utc::now().timestamp();
 
