@@ -28,7 +28,7 @@ use tauri::{command, State};
 /// ```
 #[command]
 pub async fn invalidate_workspace_cache(
-    #[allow(non_snake_case)] workspaceId: String,  // 对应前端 invoke('invalidate_workspace_cache', { workspaceId })
+    #[allow(non_snake_case)] workspaceId: String, // 对应前端 invoke('invalidate_workspace_cache', { workspaceId })
     state: State<'_, AppState>,
 ) -> Result<usize, String> {
     state.invalidate_workspace_cache(&workspaceId)

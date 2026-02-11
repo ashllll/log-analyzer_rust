@@ -349,11 +349,19 @@ impl AppError {
     /// 获取帮助提示
     pub fn help(&self) -> Option<&str> {
         match self {
-            AppError::Search { .. } => Some("Try simplifying your search query or checking the workspace status"),
-            AppError::Archive { .. } => Some("Ensure the archive file is not corrupted and is a supported format"),
-            AppError::Validation(_) => Some("Check that your input meets the required format and constraints"),
+            AppError::Search { .. } => {
+                Some("Try simplifying your search query or checking the workspace status")
+            }
+            AppError::Archive { .. } => {
+                Some("Ensure the archive file is not corrupted and is a supported format")
+            }
+            AppError::Validation(_) => {
+                Some("Check that your input meets the required format and constraints")
+            }
             AppError::InvalidPath(_) => Some("Ensure the path is valid and accessible"),
-            AppError::QueryExecution(_) => Some("Try simplifying your query or checking the syntax"),
+            AppError::QueryExecution(_) => {
+                Some("Try simplifying your query or checking the syntax")
+            }
             AppError::DatabaseError(_) => Some("Check database connection and schema integrity"),
             AppError::PatternError(_) => Some("Check your regex pattern syntax"),
             _ => None,
@@ -468,8 +476,8 @@ mod command_error_tests {
 
     #[test]
     fn test_command_error_with_help() {
-        let error = CommandError::new("CUSTOM_ERROR", "Something went wrong")
-            .with_help("Try again later");
+        let error =
+            CommandError::new("CUSTOM_ERROR", "Something went wrong").with_help("Try again later");
 
         assert_eq!(error.help, Some("Try again later".to_string()));
     }
@@ -477,8 +485,8 @@ mod command_error_tests {
     #[test]
     fn test_command_error_with_details() {
         let details = serde_json::json!({"attempt": 3, "max_retries": 5});
-        let error = CommandError::new("CUSTOM_ERROR", "Something went wrong")
-            .with_details(details.clone());
+        let error =
+            CommandError::new("CUSTOM_ERROR", "Something went wrong").with_details(details.clone());
 
         assert_eq!(error.details, Some(details));
     }

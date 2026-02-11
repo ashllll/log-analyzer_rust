@@ -24,8 +24,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::path::Path;
 use std::sync::Arc;
-use tauri::{command, State};
 use sysinfo::System;
+use tauri::{command, State};
 use tokio::sync::Mutex;
 
 /// 全局指标存储实例
@@ -292,10 +292,10 @@ fn get_system_memory_metrics() -> MemoryMetrics {
     let used_memory = sys.used_memory();
 
     MemoryMetrics {
-        used: used_memory / 1024, // 转换为 MB
-        total: total_memory / 1024, // 转换为 MB
+        used: used_memory / 1024,      // 转换为 MB
+        total: total_memory / 1024,    // 转换为 MB
         heap_used: used_memory / 1024, // 简化：与 used 相同
-        external: 0, // 外部内存（对于 Rust 应用通常是 0）
+        external: 0,                   // 外部内存（对于 Rust 应用通常是 0）
     }
 }
 
@@ -369,9 +369,7 @@ pub struct HistoricalMetricsData {
 /// console.log(data.snapshots.length);
 /// ```
 #[command]
-pub async fn get_historical_metrics(
-    range: TimeRangeDto,
-) -> Result<HistoricalMetricsData, String> {
+pub async fn get_historical_metrics(range: TimeRangeDto) -> Result<HistoricalMetricsData, String> {
     let store_guard = METRICS_STORE.lock().await;
     let store = store_guard
         .as_ref()
@@ -383,15 +381,9 @@ pub async fn get_historical_metrics(
         .await
         .map_err(|e| e.to_string())?;
 
-    let stats = store
-        .get_stats()
-        .await
-        .map_err(|e| e.to_string())?;
+    let stats = store.get_stats().await.map_err(|e| e.to_string())?;
 
-    Ok(HistoricalMetricsData {
-        snapshots,
-        stats,
-    })
+    Ok(HistoricalMetricsData { snapshots, stats })
 }
 
 /// 获取聚合指标数据
@@ -496,10 +488,7 @@ pub async fn get_metrics_stats() -> Result<MetricsStoreStats, String> {
         .as_ref()
         .ok_or("Metrics store not initialized")?;
 
-    let stats = store
-        .get_stats()
-        .await
-        .map_err(|e| e.to_string())?;
+    let stats = store.get_stats().await.map_err(|e| e.to_string())?;
 
     Ok(stats)
 }
@@ -525,15 +514,9 @@ pub async fn cleanup_metrics_data() -> Result<MetricsStoreStats, String> {
         .as_ref()
         .ok_or("Metrics store not initialized")?;
 
-    store
-        .cleanup()
-        .await
-        .map_err(|e| e.to_string())?;
+    store.cleanup().await.map_err(|e| e.to_string())?;
 
-    let stats = store
-        .get_stats()
-        .await
-        .map_err(|e| e.to_string())?;
+    let stats = store.get_stats().await.map_err(|e| e.to_string())?;
 
     Ok(stats)
 }

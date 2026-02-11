@@ -53,7 +53,7 @@ pub struct WorkspaceLoadResponse {
 #[command]
 pub async fn load_workspace(
     app: AppHandle,
-    #[allow(non_snake_case)] workspaceId: String,  // 对应前端 invoke('load_workspace', { workspaceId })
+    #[allow(non_snake_case)] workspaceId: String, // 对应前端 invoke('load_workspace', { workspaceId })
     state: State<'_, AppState>,
 ) -> Result<WorkspaceLoadResponse, String> {
     validate_workspace_id(&workspaceId)?;
