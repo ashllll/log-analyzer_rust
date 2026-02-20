@@ -1,0 +1,87 @@
+# Log Analyzer Flutter - 日志分析工具 Flutter 版本
+# 从 React + Tauri 迁移到 Flutter + Rust FFI
+
+name: log_analyzer_flutter
+description: High-performance desktop log analysis tool with Flutter frontend and Rust backend.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.8.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Flutter 官方本地化支持
+  flutter_localizations:
+    sdk: flutter
+  intl: any
+
+  # 状态管理 - Riverpod 3.0 (2026年推荐方案)
+  flutter_riverpod: ^3.0.0
+  riverpod_annotation: ^3.0.0
+  hooks_riverpod: ^3.0.0
+  riverpod_lint: ^3.0.0
+
+  # 路由 - go_router 14+
+  go_router: ^14.0.0
+
+  # 虚拟滚动 - 处理大量日志数据
+  flutter_virtual_scroll: ^0.1.0
+
+  # 图标 - Lucide Icons (与 React 版本一致)
+  lucide_icons_flutter: ^1.0.0
+
+  # 图表 - 性能监控页面
+  fl_chart: ^0.70.0
+
+  # Flutter Hooks - 替代 React Hooks
+  flutter_hooks: ^0.21.0
+
+  # 代码生成 - Freezed + JSON Serializable
+  freezed_annotation: ^3.0.0
+  json_annotation: ^4.9.0
+
+  # 工具库
+  collection: ^1.18.0
+  meta: ^1.15.0
+  uuid: ^4.0.0
+
+  # Rust FFI - flutter_rust_bridge (已启用)
+  flutter_rust_bridge: ^2.0.0
+
+  # HTTP 客户端 - 用于调用 Rust HTTP API
+  dio: ^5.4.0
+
+  # 文件选择器 - 跨平台文件/文件夹选择
+  file_picker: ^8.0.0
+
+  # 错误追踪 - Sentry 远程错误监控
+  sentry_flutter: ^8.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  # 代码生成工具
+  build_runner: ^2.4.0
+  freezed: ^3.2.3
+  json_serializable: ^6.11.2
+  riverpod_generator: ^3.0.0
+
+# Flutter 配置
+flutter:
+  uses-material-design: true
+
+  # 资源文件
+  assets:
+    - assets/images/
+    - assets/icons/
+
+  # GLSL 着色器 (PRD V6.0 4.2 GPU 着色器缩略图)
+  shaders:
+    - shaders/heatmap.frag
+
+  # 国际化配置
+  generate: true

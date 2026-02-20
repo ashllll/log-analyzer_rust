@@ -5,11 +5,23 @@ description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
 
+# Flutter FFI 支持 - 生成 cdylib
+[lib]
+name = "log_analyzer"
+crate-type = ["cdylib", "lib"]
+
+# 允许 flutter_rust_bridge 宏生成的 cfg 条件
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(frb_expand)"] }
+
 [build-dependencies]
 tauri-build = { version = "2.0.0", features = [] }
 
 [dependencies]
 tauri = { version = "2.0.0", features = [] }
+
+# FFI Bridge for Flutter (flutter_rust_bridge 2.x)
+flutter_rust_bridge = { version = "=2.11.1", features = [] }
 tauri-plugin-opener = "2.5"
 tauri-plugin-dialog = "2.6"
 tauri-plugin-shell = "2.3"
@@ -17,6 +29,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 uuid = { version = "1.0", features = ["v4", "serde"] }
 regex = "1.11"          # 正则表达式库
+regex-automata = "0.4"  # DFA 正则引擎（高性能流式匹配）
 aho-corasick = "1.1"     # 多模式匹配算法（搜索性能优化）
 chrono = { version = "0.4", features = ["serde"] }  # 时间序列化支持
 walkdir = "2.4"
@@ -26,6 +39,7 @@ tar = "0.4"
 flate2 = "1.0"
 mime_guess = "2.0"
 encoding_rs = "0.8"
+chardetng = "0.1"  # 编码探测库
 tokio = { version = "1", features = ["full"] }
 bincode = "1.3"
 rayon = "1.8"  # 并行处理
@@ -61,7 +75,9 @@ nonzero_ext = "0.3"  # 辅助库，用于 governor
 
 # Phase 2: High-Performance Search Engine
 tantivy = { version = "0.22", features = ["mmap"] }  # Rust 原生全文搜索引擎
-roaring = "0.10"  # 高效位图索引
+roaring = { version = "0.10", features = ["serde"] }  # 高效位图索引
+memmap2 = "0.9"  # 内存映射文件（PageManager 使用）
+base64 = "0.22"  # Base64 编码（FFI 数据传输）
 
 # Phase 2: Real-time State Synchronization
 tokio-tungstenite = "0.21"  # WebSocket 服务器实现
@@ -93,11 +109,11 @@ tokio-retry = "0.3"
 bytes = "1.0"
 
 # Monitoring and Observability
-
-
-tracing-opentelemetry = "0.24"  # OpenTelemetry集成
-opentelemetry = "0.23"  # 分布式追踪
-opentelemetry-jaeger = "0.22"  # Jaeger导出器
+tracing-opentelemetry = { version = "0.24", optional = true }  # OpenTelemetry集成
+opentelemetry = { version = "0.23", optional = true }  # 分布式追踪
+opentelemetry_sdk = { version = "0.23", features = ["rt-tokio"], optional = true }  # OpenTelemetry SDK
+opentelemetry-otlp = { version = "0.16", features = ["grpc-tonic"], optional = true }  # OTLP导出器（推荐，替代Jaeger）
+opentelemetry-semantic-conventions = { version = "0.15", optional = true }  # 语义约定
 prometheus = "0.13"  # 指标收集
 metrics = "0.22"  # 应用指标
 
@@ -107,12 +123,48 @@ metrics = "0.22"  # 应用指标
 # Plugin system
 libloading = "0.8"  # 动态库加载（插件系统）
 
+# HTTP Server for Flutter communication
+axum = "0.7"  # HTTP 服务器（供 Flutter 调用）
+tower = "0.4"  # HTTP 中间件
+tower-http = { version = "0.5", features = ["cors"] }  # CORS 支持
+
+# Phase 3: LogLexer (Procedural Macros)
+log-lexer = { path = "crates/log-lexer" }
+log-lexer-derive = { path = "crates/log-lexer-derive" }
+
 # Phase 4: Testing Infrastructure
 [dev-dependencies]
 rstest = "0.18"  # 增强的单元测试框架
 proptest = { version = "1.4", default-features = false, features = ["std"] }  # 属性测试框架
 criterion = { version = "0.5", features = ["html_reports"] }  # 性能基准测试
 tokio-test = "0.4"  # 异步测试工具
+rand = "0.8"  # 随机数生成（benchmark 测试用）
+rand_pcg = "0.3"  # PCG 随机数生成器（可重现的随机序列）
 
 [features]
+default = []  # 默认不启用 FFI，保持 Tauri 兼容
 test = []  # 用于测试时的 mock 功能
+ffi = []  # 启用 Flutter FFI 桥接
+rar = []  # 启用 RAR 解压支持
+telemetry = [
+    "dep:tracing-opentelemetry",
+    "dep:opentelemetry",
+    "dep:opentelemetry_sdk",
+    "dep:opentelemetry-otlp",
+    "dep:opentelemetry-semantic-conventions",
+]  # 启用 OpenTelemetry 遥测功能
+
+# =============================================================================
+# Benchmark 配置 (M1.3 性能验证)
+# =============================================================================
+# 运行命令: cargo bench --bench m1_benchmark
+#
+# PRD V6.0 SLA 指标:
+# - FFI 视口拉取延迟 < 1ms
+# - 全量并发盲搜吞吐量 3-5GB/s
+# - 10GB 单体文件驻留内存 < 50MB
+# - 千万级搜索结果 Roaring Bitmap 压缩 < 5MB
+
+[[bench]]
+name = "m1_benchmark"
+harness = false
