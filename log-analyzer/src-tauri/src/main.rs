@@ -74,6 +74,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let http_addr = "127.0.0.1:8080".to_string();
             let http_addr_for_log = http_addr.clone();
             let http_app_data_dir = app_data_dir.clone();
+            
+            // 初始化 HTTP API 上下文（必须在启动服务器之前）
+            let app_state_clone = app_state.inner().clone();
+            http_api::init_http_api_context(app_state_clone, app_data_dir.clone());
+            info!("✅ HTTP API 上下文初始化成功");
 
             std::thread::spawn(move || {
                 let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
