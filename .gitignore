@@ -1,4 +1,4 @@
-.DS_Store
+./log-analyzer
 log-analyzer/node_modules
 log-analyzer/dist
 log-analyzer/dist-ssr
@@ -9,6 +9,10 @@ log-analyzer/coverage/
 .qoder/
 !.qoder/rules/
 *.backup
+
+# CocoIndex code search index (large files)
+.cocoindex/
+.cocoindex_code/
 
 # 临时文件和脚本
 *.ps1
