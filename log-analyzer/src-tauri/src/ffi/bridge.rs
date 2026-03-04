@@ -367,3 +367,70 @@ pub fn clear_search_history(workspace_id: Option<String>) -> i32 {
         "清空搜索历史失败",
     )
 }
+
+// ==================== 虚拟文件树操作 ====================
+
+/// 获取虚拟文件树（根节点）
+///
+/// 获取指定工作区的虚拟文件树结构
+///
+/// # 参数
+///
+/// * `workspace_id` - 工作区 ID
+///
+/// # 返回
+///
+/// 返回根节点列表
+#[frb(sync)]
+pub fn get_virtual_file_tree(workspace_id: String) -> Vec<VirtualTreeNodeData> {
+    unwrap_result(
+        commands_bridge::ffi_get_virtual_file_tree(workspace_id),
+        "获取虚拟文件树失败",
+    )
+}
+
+/// 获取树子节点（懒加载）
+///
+/// 获取指定父节点下的子节点
+///
+/// # 参数
+///
+/// * `workspace_id` - 工作区 ID
+/// * `parent_path` - 父节点路径
+///
+/// # 返回
+///
+/// 返回子节点列表
+#[frb(sync)]
+pub fn get_tree_children(
+    workspace_id: String,
+    parent_path: String,
+) -> Vec<VirtualTreeNodeData> {
+    unwrap_result(
+        commands_bridge::ffi_get_tree_children(workspace_id, parent_path),
+        "获取子节点失败",
+    )
+}
+
+/// 通过哈希读取文件内容
+///
+/// 从 CAS 存储读取指定哈希的文件内容
+///
+/// # 参数
+///
+/// * `workspace_id` - 工作区 ID
+/// * `hash` - 文件 SHA-256 哈希
+///
+/// # 返回
+///
+/// 返回文件内容响应
+#[frb(sync)]
+pub fn read_file_by_hash(
+    workspace_id: String,
+    hash: String,
+) -> FileContentResponseData {
+    unwrap_result(
+        commands_bridge::ffi_read_file_by_hash(workspace_id, hash),
+        "读取文件失败",
+    )
+}
