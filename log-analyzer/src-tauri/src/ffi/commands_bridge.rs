@@ -1403,6 +1403,801 @@ pub fn ffi_export_results(
     Ok(output_path)
 }
 
+// ==================== 搜索历史命令适配 ====================
+
+use crate::ffi::types::SearchHistoryData;
+
+/// FFI 适配：添加搜索历史
+///
+/// 将搜索记录添加到历史管理器
+///
+/// # 参数
+///
+/// * `query` - 搜索查询字符串
+/// * `workspace_id` - 工作区 ID
+/// * `result_count` - 搜索结果数量
+///
+/// # 返回
+///
+/// 成功返回 true
+pub fn ffi_add_search_history(
+    query: String,
+    workspace_id: String,
+    result_count: usize,
+) -> Result<bool, String> {
+    tracing::debug!(
+        query = %query,
+        workspace_id = %workspace_id,
+        result_count = result_count,
+        "FFI: add_search_history 调用"
+    );
+
+    // 获取全局状态
+    let app_state = get_app_state().ok_or_else(|| "FFI 全局状态未初始化".to_string())?;
+
+    // 创建历史条目
+    let entry = crate::models::SearchHistoryEntry::new(query, workspace_id.clone(), result_count);
+
+    // 添加到历史管理器
+    {
+        let mut history = app_state.search_history.lock();
+        history.add_entry(entry);
+    }
+
+    tracing::info!(workspace_id = %workspace_id, "搜索历史已添加");
+    Ok(true)
+}
+
+/// FFI 适配：获取搜索历史
+///
+/// 获取指定工作区或所有工作区的搜索历史
+///
+/// # 参数
+///
+/// * `workspace_id` - 工作区 ID（可选，None 表示获取所有）
+/// * `limit` - 最大返回数量（可选）
+///
+/// # 返回
+///
+/// 返回搜索历史列表
+pub fn ffi_get_search_history(
+    workspace_id: Option<String>,
+    limit: Option<usize>,
+) -> Result<Vec<SearchHistoryData>, String> {
+    tracing::debug!(
+        workspace_id = ?workspace_id,
+        limit = ?limit,
+        "FFI: get_search_history 调用"
+    );
+
+    // 获取全局状态
+    let app_state = get_app_state().ok_or_else(|| "FFI 全局状态未初始化".to_string())?;
+
+    let history = app_state.search_history.lock();
+
+    let entries: Vec<SearchHistoryData> = if let Some(ws_id) = workspace_id {
+        history
+            .get_history(&ws_id, limit)
+            .into_iter()
+            .map(|e| SearchHistoryData::from(e.clone()))
+            .collect()
+    } else {
+        history
+            .get_all_history(limit)
+            .into_iter()
+            .map(|e| SearchHistoryData::from(e.clone()))
+            .collect()
+    };
+
+    Ok(entries)
+}
+
+/// FFI 适配：删除搜索历史（按查询词）
+///
+/// 删除指定工作区中特定查询的历史记录
+///
+/// # 参数
+///
+/// * `query` - 查询字符串
+/// * `workspace_id` - 工作区 ID
+///
+/// # 返回
+///
+/// 成功返回 true（即使没有删除任何记录）
+pub fn ffi_delete_search_history(query: String, workspace_id: String) -> Result<bool, String> {
+    tracing::debug!(
+        query = %query,
+        workspace_id = %workspace_id,
+        "FFI: delete_search_history 调用"
+    );
+
+    // 获取全局状态
+    let app_state = get_app_state().ok_or_else(|| "FFI 全局状态未初始化".to_string())?;
+
+    let mut history = app_state.search_history.lock();
+
+    // 手动删除匹配的条目
+    let initial_count = history.total_count();
+    history
+        .entries
+        .retain(|e| !(e.query == query && e.workspace_id == workspace_id));
+    let deleted = initial_count > history.total_count();
+
+    if deleted {
+        tracing::info!(
+            query = %query,
+            workspace_id = %workspace_id,
+            "搜索历史已删除"
+        );
+    }
+
+    Ok(deleted)
+}
+
+/// FFI 适配：批量删除搜索历史（按查询词列表）
+///
+/// 批量删除指定工作区中多个查询的历史记录
+///
+/// # 参数
+///
+/// * `queries` - 查询字符串列表
+/// * `workspace_id` - 工作区 ID
+///
+/// # 返回
+///
+/// 返回实际删除的数量
+pub fn ffi_delete_search_histories(
+    queries: Vec<String>,
+    workspace_id: String,
+) -> Result<i32, String> {
+    tracing::debug!(
+        queries_count = queries.len(),
+        workspace_id = %workspace_id,
+        "FFI: delete_search_histories 调用"
+    );
+
+    // 获取全局状态
+    let app_state = get_app_state().ok_or_else(|| "FFI 全局状态未初始化".to_string())?;
+
+    let mut history = app_state.search_history.lock();
+
+    // 批量删除匹配的条目
+    let initial_count = history.total_count();
+    history
+        .entries
+        .retain(|e| !(queries.contains(&e.query) && e.workspace_id == workspace_id));
+    let deleted_count = initial_count - history.total_count();
+
+    tracing::info!(deleted_count = deleted_count, "批量删除搜索历史完成");
+    Ok(deleted_count as i32)
+}
+
+/// FFI 适配：清空搜索历史
+///
+/// 清空指定工作区或所有工作区的搜索历史
+///
+/// # 参数
+///
+/// * `workspace_id` - 工作区 ID（可选，None 表示清空所有）
+///
+/// # 返回
+///
+/// 返回实际删除的数量
+pub fn ffi_clear_search_history(workspace_id: Option<String>) -> Result<i32, String> {
+    tracing::info!(
+        workspace_id = ?workspace_id,
+        "FFI: clear_search_history 调用"
+    );
+
+    // 获取全局状态
+    let app_state = get_app_state().ok_or_else(|| "FFI 全局状态未初始化".to_string())?;
+
+    let mut history = app_state.search_history.lock();
+
+    let removed_count = if let Some(ws_id) = workspace_id {
+        history.clear_workspace_history(&ws_id)
+    } else {
+        let count = history.total_count();
+        history.clear_all_history();
+        count
+    };
+
+    tracing::info!(removed_count = removed_count, "搜索历史已清空");
+    Ok(removed_count as i32)
+}
+
+// ==================== 虚拟文件树命令适配 ====================
+
+use crate::ffi::types::{FileContentResponseData, VirtualTreeNodeData};
+
+// ==================== 多关键词组合搜索命令适配 ====================
+
+use crate::ffi::types::{
+    QueryOperatorData, SearchResultEntry, SearchTermData, StructuredSearchQueryData,
+};
+
+/// FFI 适配：执行结构化搜索（多关键词组合搜索）
+///
+/// 支持多个关键词的 AND/OR/NOT 组合搜索
+///
+/// # 参数
+///
+/// * `query` - 结构化搜索查询
+/// * `workspace_id` - 工作区 ID（可选）
+/// * `max_results` - 最大结果数量
+///
+/// # 返回
+///
+/// 返回匹配的搜索结果列表
+pub fn ffi_search_structured(
+    query: StructuredSearchQueryData,
+    workspace_id: Option<String>,
+    max_results: i32,
+) -> Result<Vec<SearchResultEntry>, String> {
+    tracing::info!(
+        terms_count = query.terms.len(),
+        global_operator = ?query.global_operator,
+        workspace_id = ?workspace_id,
+        max_results,
+        "FFI: search_structured 调用"
+    );
+
+    // 获取全局状态
+    let app_state = get_app_state().ok_or_else(|| "FFI 全局状态未初始化".to_string())?;
+
+    // 确定工作区目录
+    let workspace_id = if let Some(id) = workspace_id {
+        id
+    } else {
+        let dirs = app_state.workspace_dirs.lock();
+        if let Some(first_id) = dirs.keys().next() {
+            first_id.clone()
+        } else {
+            return Err("没有可用的工作区".to_string());
+        }
+    };
+
+    let app_data_dir = get_app_data_dir().ok_or_else(|| "FFI 全局状态未初始化".to_string())?;
+    let workspace_dir = app_data_dir.join("workspaces").join(&workspace_id);
+
+    if !workspace_dir.exists() {
+        return Err(format!("工作区不存在: {}", workspace_id));
+    }
+
+    // 使用 tokio 运行时执行异步搜索
+    let rt = tokio::runtime::Runtime::new().map_err(|e| format!("创建运行时失败: {}", e))?;
+
+    rt.block_on(async {
+        // 打开元数据存储
+        let metadata_store = crate::storage::MetadataStore::new(&workspace_dir)
+            .await
+            .map_err(|e| format!("打开元数据存储失败: {}", e))?;
+
+        // 获取所有文件
+        let files = metadata_store
+            .get_all_files()
+            .await
+            .map_err(|e| format!("获取文件失败: {}", e))?;
+
+        // 提取启用关键词
+        let keywords: Vec<String> = query
+            .terms
+            .iter()
+            .filter(|t| t.enabled)
+            .map(|t| t.value.clone())
+            .collect();
+
+        if keywords.is_empty() {
+            return Ok(vec![]);
+        }
+
+        // 全局操作符
+        let use_and = matches!(query.global_operator, QueryOperatorData::And);
+        let use_not = matches!(query.global_operator, QueryOperatorData::Not);
+
+        // 构建 Aho-Corasick 自动机
+        let ac = aho_corasick::AhoCorasick::new_auto_configured(&keywords)
+            .map_err(|e| format!("构建匹配器失败: {}", e))?;
+
+        let mut results = Vec::new();
+        let max_results = max_results as usize;
+
+        // 遍历所有文件
+        for file in files {
+            if results.len() >= max_results {
+                break;
+            }
+
+            // 跳过二进制文件
+            if let Some(mime) = &file.mime_type {
+                if mime.starts_with("application/") || mime.starts_with("image/") {
+                    continue;
+                }
+            }
+
+            // 读取文件内容
+            let cas = crate::storage::ContentAddressableStorage::new(&workspace_dir);
+            if !cas.exists(&file.sha256_hash) {
+                continue;
+            }
+
+            let content_bytes = match cas.read_content(&file.sha256_hash).await {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            let content = match String::from_utf8(content_bytes) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            // 搜索匹配行
+            for (line_idx, line) in content.lines().enumerate() {
+                if results.len() >= max_results {
+                    break;
+                }
+
+                // 使用 Aho-Corasick 查找所有匹配
+                let matches: Vec<&str> = ac.find_iter(line).map(|m| m.as_str()).collect();
+
+                let should_include = if keywords.len() == 1 {
+                    !matches.is_empty()
+                } else if use_and {
+                    // AND: 所有关键词都必须匹配
+                    keywords.iter().all(|kw| {
+                        if kw.is_empty() {
+                            true
+                        } else {
+                            line.contains(kw)
+                        }
+                    })
+                } else if use_not {
+                    // NOT: 排除包含任一关键词的行
+                    matches.is_empty()
+                } else {
+                    // OR: 任一关键词匹配即可
+                    !matches.is_empty()
+                };
+
+                if should_include {
+                    // 计算匹配位置
+                    let (match_start, match_end) = if !matches.is_empty() {
+                        let first_match = ac.find_iter(line).next().unwrap();
+                        (first_match.start() as i64, first_match.end() as i64)
+                    } else {
+                        (0, line.len() as i64)
+                    };
+
+                    results.push(SearchResultEntry {
+                        line_number: (line_idx + 1) as i64,
+                        content: line.to_string(),
+                        match_start,
+                        match_end,
+                    });
+                }
+            }
+        }
+
+        tracing::info!(results_count = results.len(), "结构化搜索完成");
+        Ok(results)
+    })
+}
+
+/// FFI 适配：构建搜索查询对象
+///
+/// 从关键词列表构建结构化搜索查询
+///
+/// # 参数
+///
+/// * `keywords` - 关键词列表
+/// * `global_operator` - 全局操作符
+/// * `is_regex` - 是否使用正则表达式
+/// * `case_sensitive` - 是否大小写敏感
+///
+/// # 返回
+///
+/// 返回构建的结构化搜索查询
+pub fn ffi_build_search_query(
+    keywords: Vec<String>,
+    global_operator: QueryOperatorData,
+    is_regex: bool,
+    case_sensitive: bool,
+) -> StructuredSearchQueryData {
+    tracing::debug!(
+        keywords_count = keywords.len(),
+        global_operator = ?global_operator,
+        is_regex,
+        case_sensitive,
+        "FFI: build_search_query 调用"
+    );
+
+    let terms: Vec<SearchTermData> = keywords
+        .into_iter()
+        .enumerate()
+        .map(|(idx, value)| SearchTermData {
+            id: format!("term_{}", idx),
+            value,
+            operator: QueryOperatorData::And, // 默认为 AND
+            is_regex,
+            priority: idx as u32,
+            enabled: true,
+            case_sensitive,
+        })
+        .collect();
+
+    StructuredSearchQueryData {
+        terms,
+        global_operator,
+        filters: None,
+    }
+}
+
+/// FFI 适配：获取虚拟文件树
+///
+/// 获取工作区的虚拟文件树结构（根节点）
+///
+/// # 参数
+///
+/// * `workspace_id` - 工作区 ID
+///
+/// # 返回
+///
+/// 返回根节点列表
+pub fn ffi_get_virtual_file_tree(workspace_id: String) -> Result<Vec<VirtualTreeNodeData>, String> {
+    tracing::info!(workspace_id = %workspace_id, "FFI: get_virtual_file_tree 调用");
+
+    // 获取应用数据目录
+    let app_data_dir = get_app_data_dir().ok_or_else(|| "FFI 全局状态未初始化".to_string())?;
+
+    // 构建工作区目录路径
+    let workspace_dir = app_data_dir.join("workspaces").join(&workspace_id);
+
+    if !workspace_dir.exists() {
+        return Err(format!("工作区不存在: {}", workspace_id));
+    }
+
+    // 使用 tokio 运行时执行异步操作
+    let rt = tokio::runtime::Runtime::new().map_err(|e| format!("创建运行时失败: {}", e))?;
+
+    rt.block_on(async {
+        // 打开元数据存储
+        let metadata_store = crate::storage::MetadataStore::new(&workspace_dir)
+            .await
+            .map_err(|e| format!("打开元数据存储失败: {}", e))?;
+
+        // 获取所有归档和文件
+        let archives = metadata_store
+            .get_all_archives()
+            .await
+            .map_err(|e| format!("获取归档失败: {}", e))?;
+
+        let all_files = metadata_store
+            .get_all_files()
+            .await
+            .map_err(|e| format!("获取文件失败: {}", e))?;
+
+        // 构建树结构
+        let tree = crate::commands::virtual_tree::build_tree_structure(&archives, &all_files, &metadata_store).await?;
+
+        // 转换为 FFI 类型
+        Ok(tree.into_iter().map(VirtualTreeNodeData::from).collect())
+    })
+}
+
+/// FFI 适配：获取树子节点（懒加载）
+///
+/// 获取指定父节点下的子节点
+///
+/// # 参数
+///
+/// * `workspace_id` - 工作区 ID
+/// * `parent_path` - 父节点路径
+///
+/// # 返回
+///
+/// 返回子节点列表
+pub fn ffi_get_tree_children(
+    workspace_id: String,
+    parent_path: String,
+) -> Result<Vec<VirtualTreeNodeData>, String> {
+    tracing::debug!(workspace_id = %workspace_id, parent_path = %parent_path, "FFI: get_tree_children 调用");
+
+    // 获取应用数据目录
+    let app_data_dir = get_app_data_dir().ok_or_else(|| "FFI 全局状态未初始化".to_string())?;
+
+    // 构建工作区目录路径
+    let workspace_dir = app_data_dir.join("workspaces").join(&workspace_id);
+
+    if !workspace_dir.exists() {
+        return Err(format!("工作区不存在: {}", workspace_id));
+    }
+
+    // 使用 tokio 运行时执行异步操作
+    let rt = tokio::runtime::Runtime::new().map_err(|e| format!("创建运行时失败: {}", e))?;
+
+    rt.block_on(async {
+        // 打开元数据存储
+        let metadata_store = crate::storage::MetadataStore::new(&workspace_dir)
+            .await
+            .map_err(|e| format!("打开元数据存储失败: {}", e))?;
+
+        // 获取所有归档和文件
+        let archives = metadata_store
+            .get_all_archives()
+            .await
+            .map_err(|e| format!("获取归档失败: {}", e))?;
+
+        let all_files = metadata_store
+            .get_all_files()
+            .await
+            .map_err(|e| format!("获取文件失败: {}", e))?;
+
+        // 查找父归档
+        let parent_archive = archives.iter().find(|a| a.virtual_path == parent_path);
+
+        if let Some(parent) = parent_archive {
+            // 获取子归档
+            let child_archives: Vec<_> = archives
+                .iter()
+                .filter(|a| a.parent_archive_id == Some(parent.id))
+                .collect();
+
+            // 获取子文件
+            let child_files: Vec<_> = all_files
+                .iter()
+                .filter(|f| f.parent_archive_id == Some(parent.id))
+                .collect();
+
+            let mut children = Vec::new();
+
+            // 添加子归档
+            for archive in child_archives {
+                children.push(VirtualTreeNodeData::from(
+                    crate::commands::virtual_tree::VirtualTreeNode::Archive {
+                        name: archive.original_name.clone(),
+                        path: archive.virtual_path.clone(),
+                        hash: archive.sha256_hash.clone(),
+                        archive_type: archive.archive_type.clone(),
+                        children: vec![], // 懒加载，不展开子节点
+                    },
+                ));
+            }
+
+            // 添加子文件
+            for file in child_files {
+                children.push(VirtualTreeNodeData::from(
+                    crate::commands::virtual_tree::VirtualTreeNode::File {
+                        name: file.original_name.clone(),
+                        path: file.virtual_path.clone(),
+                        hash: file.sha256_hash.clone(),
+                        size: file.size,
+                        mime_type: file.mime_type.clone(),
+                    },
+                ));
+            }
+
+            Ok(children)
+        } else {
+            Err(format!("未找到父路径: {}", parent_path))
+        }
+    })
+}
+
+/// FFI 适配：通过哈希读取文件内容
+///
+/// 从 CAS 存储读取指定哈希的文件内容
+///
+/// # 参数
+///
+/// * `workspace_id` - 工作区 ID
+/// * `hash` - 文件 SHA-256 哈希
+///
+/// # 返回
+///
+/// 返回文件内容响应
+pub fn ffi_read_file_by_hash(
+    workspace_id: String,
+    hash: String,
+) -> Result<FileContentResponseData, String> {
+    tracing::debug!(workspace_id = %workspace_id, hash = %hash, "FFI: read_file_by_hash 调用");
+
+    // 获取应用数据目录
+    let app_data_dir = get_app_data_dir().ok_or_else(|| "FFI 全局状态未初始化".to_string())?;
+
+    // 构建工作区目录路径
+    let workspace_dir = app_data_dir.join("workspaces").join(&workspace_id);
+
+    // 使用 tokio 运行时执行异步操作
+    let rt = tokio::runtime::Runtime::new().map_err(|e| format!("创建运行时失败: {}", e))?;
+
+    rt.block_on(async {
+        // 初始化 CAS
+        let cas = crate::storage::ContentAddressableStorage::new(workspace_dir);
+
+        // 检查文件是否存在
+        if !cas.exists(&hash) {
+            return Err(format!("文件不存在: {}", hash));
+        }
+
+        // 读取内容
+        let content_bytes = cas
+            .read_content(&hash)
+            .await
+            .map_err(|e| format!("读取文件失败: {}", e))?;
+
+        // 转换为 UTF-8 字符串
+        let content = String::from_utf8(content_bytes.clone())
+            .map_err(|e| format!("文件内容不是有效的 UTF-8: {}", e))?;
+
+        Ok(FileContentResponseData {
+            content,
+            hash,
+            size: content_bytes.len() as i64,
+        })
+    })
+}
+
+// ==================== 正则搜索命令适配 ====================
+
+/// FFI 适配：验证正则表达式语法
+///
+/// 验证正则表达式是否有效
+///
+/// # 参数
+///
+/// * `pattern` - 正则表达式模式
+///
+/// # 返回
+///
+/// 返回验证结果
+pub fn ffi_validate_regex(pattern: String) -> RegexValidationResult {
+    tracing::debug!(pattern = %pattern, "FFI: validate_regex 调用");
+
+    // 尝试编译正则表达式
+    match regex::Regex::new(&pattern) {
+        Ok(_) => RegexValidationResult {
+            valid: true,
+            error_message: None,
+        },
+        Err(e) => RegexValidationResult {
+            valid: false,
+            error_message: Some(e.to_string()),
+        },
+    }
+}
+
+/// FFI 适配：执行正则表达式搜索
+///
+/// 在工作区中搜索匹配正则表达式的行
+///
+/// # 参数
+///
+/// * `pattern` - 正则表达式模式
+/// * `workspace_id` - 工作区 ID（可选）
+/// * `max_results` - 最大结果数量
+/// * `case_sensitive` - 是否大小写敏感
+///
+/// # 返回
+///
+/// 返回搜索结果列表
+pub fn ffi_search_regex(
+    pattern: String,
+    workspace_id: Option<String>,
+    max_results: i32,
+    case_sensitive: bool,
+) -> Result<Vec<SearchResultEntry>, String> {
+    tracing::info!(
+        pattern = %pattern,
+        workspace_id = ?workspace_id,
+        max_results,
+        case_sensitive,
+        "FFI: search_regex 调用"
+    );
+
+    // 验证正则表达式
+    if let Err(e) = regex::Regex::new(&pattern) {
+        return Err(format!("无效的正则表达式: {}", e));
+    }
+
+    // 获取全局状态
+    let app_state = get_app_state().ok_or_else(|| "FFI 全局状态未初始化".to_string())?;
+
+    // 确定工作区目录
+    let workspace_id = if let Some(id) = workspace_id {
+        id
+    } else {
+        let dirs = app_state.workspace_dirs.lock();
+        if let Some(first_id) = dirs.keys().next() {
+            first_id.clone()
+        } else {
+            return Err("没有可用的工作区".to_string());
+        }
+    };
+
+    let app_data_dir = get_app_data_dir().ok_or_else(|| "FFI 全局状态未初始化".to_string())?;
+    let workspace_dir = app_data_dir.join("workspaces").join(&workspace_id);
+
+    if !workspace_dir.exists() {
+        return Err(format!("工作区不存在: {}", workspace_id));
+    }
+
+    // 使用 tokio 运行时执行异步搜索
+    let rt = tokio::runtime::Runtime::new().map_err(|e| format!("创建运行时失败: {}", e))?;
+
+    rt.block_on(async {
+        // 打开元数据存储
+        let metadata_store = crate::storage::MetadataStore::new(&workspace_dir)
+            .await
+            .map_err(|e| format!("打开元数据存储失败: {}", e))?;
+
+        // 获取所有文件
+        let files = metadata_store
+            .get_all_files()
+            .await
+            .map_err(|e| format!("获取文件失败: {}", e))?;
+
+        // 创建正则表达式
+        let regex_pattern = if case_sensitive {
+            regex::Regex::new(&pattern).map_err(|e| format!("正则表达式错误: {}", e))?
+        } else {
+            regex::Regex::new(&format!("(?i){}", pattern))
+                .map_err(|e| format!("正则表达式错误: {}", e))?
+        };
+
+        let mut results = Vec::new();
+        let max_results = max_results as usize;
+
+        // 遍历所有文件
+        for file in files {
+            if results.len() >= max_results {
+                break;
+            }
+
+            // 跳过二进制文件
+            if let Some(mime) = &file.mime_type {
+                if mime.starts_with("application/") || mime.starts_with("image/") {
+                    continue;
+                }
+            }
+
+            // 读取文件内容
+            let cas = crate::storage::ContentAddressableStorage::new(&workspace_dir);
+            if !cas.exists(&file.sha256_hash) {
+                continue;
+            }
+
+            let content_bytes = match cas.read_content(&file.sha256_hash).await {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            let content = match String::from_utf8(content_bytes) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            // 搜索匹配行
+            for (line_idx, line) in content.lines().enumerate() {
+                if results.len() >= max_results {
+                    break;
+                }
+
+                if let Some(m) = regex_pattern.find(line) {
+                    results.push(SearchResultEntry {
+                        line_number: (line_idx + 1) as i64,
+                        content: line.to_string(),
+                        match_start: m.start() as i64,
+                        match_end: m.end() as i64,
+                    });
+                }
+            }
+        }
+
+        tracing::info!(results_count = results.len(), "正则搜索完成");
+        Ok(results)
+    })
+}
+
 // ==================== 测试模块 ====================
 
 #[cfg(test)]

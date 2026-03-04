@@ -310,3 +310,228 @@ pub fn export_results(search_id: String, format: String, output_path: String) ->
         "导出结果失败",
     )
 }
+
+// ==================== 搜索历史操作 ====================
+
+/// 添加搜索历史记录
+///
+/// 将搜索查询添加到历史记录
+#[frb(sync)]
+pub fn add_search_history(query: String, workspace_id: String, result_count: i32) -> bool {
+    unwrap_result(
+        commands_bridge::ffi_add_search_history(query, workspace_id, result_count as usize),
+        "添加搜索历史失败",
+    )
+}
+
+/// 获取搜索历史记录
+///
+/// 获取指定工作区或所有工作区的搜索历史
+#[frb(sync)]
+pub fn get_search_history(workspace_id: Option<String>, limit: Option<i32>) -> Vec<SearchHistoryData> {
+    unwrap_result(
+        commands_bridge::ffi_get_search_history(workspace_id, limit.map(|l| l as usize)),
+        "获取搜索历史失败",
+    )
+}
+
+/// 删除搜索历史记录（按查询词）
+///
+/// 删除指定工作区中特定查询的历史记录
+#[frb(sync)]
+pub fn delete_search_history(query: String, workspace_id: String) -> bool {
+    unwrap_result(
+        commands_bridge::ffi_delete_search_history(query, workspace_id),
+        "删除搜索历史失败",
+    )
+}
+
+/// 批量删除搜索历史记录（按查询词列表）
+///
+/// 批量删除指定工作区中多个查询的历史记录
+#[frb(sync)]
+pub fn delete_search_histories(queries: Vec<String>, workspace_id: String) -> i32 {
+    unwrap_result(
+        commands_bridge::ffi_delete_search_histories(queries, workspace_id),
+        "批量删除搜索历史失败",
+    )
+}
+
+/// 清空搜索历史
+///
+/// 清空指定工作区或所有工作区的搜索历史
+#[frb(sync)]
+pub fn clear_search_history(workspace_id: Option<String>) -> i32 {
+    unwrap_result(
+        commands_bridge::ffi_clear_search_history(workspace_id),
+        "清空搜索历史失败",
+    )
+}
+
+// ==================== 虚拟文件树操作 ====================
+
+/// 获取虚拟文件树（根节点）
+///
+/// 获取指定工作区的虚拟文件树结构
+///
+/// # 参数
+///
+/// * `workspace_id` - 工作区 ID
+///
+/// # 返回
+///
+/// 返回根节点列表
+#[frb(sync)]
+pub fn get_virtual_file_tree(workspace_id: String) -> Vec<VirtualTreeNodeData> {
+    unwrap_result(
+        commands_bridge::ffi_get_virtual_file_tree(workspace_id),
+        "获取虚拟文件树失败",
+    )
+}
+
+/// 获取树子节点（懒加载）
+///
+/// 获取指定父节点下的子节点
+///
+/// # 参数
+///
+/// * `workspace_id` - 工作区 ID
+/// * `parent_path` - 父节点路径
+///
+/// # 返回
+///
+/// 返回子节点列表
+#[frb(sync)]
+pub fn get_tree_children(
+    workspace_id: String,
+    parent_path: String,
+) -> Vec<VirtualTreeNodeData> {
+    unwrap_result(
+        commands_bridge::ffi_get_tree_children(workspace_id, parent_path),
+        "获取子节点失败",
+    )
+}
+
+/// 通过哈希读取文件内容
+///
+/// 从 CAS 存储读取指定哈希的文件内容
+///
+/// # 参数
+///
+/// * `workspace_id` - 工作区 ID
+/// * `hash` - 文件 SHA-256 哈希
+///
+/// # 返回
+///
+/// 返回文件内容响应
+#[frb(sync)]
+pub fn read_file_by_hash(
+    workspace_id: String,
+    hash: String,
+) -> FileContentResponseData {
+    unwrap_result(
+        commands_bridge::ffi_read_file_by_hash(workspace_id, hash),
+        "读取文件失败",
+    )
+}
+
+// ==================== 多关键词组合搜索操作 ====================
+
+/// 执行结构化搜索（多关键词组合搜索）
+///
+/// 支持多个关键词的 AND/OR/NOT 组合搜索
+///
+/// # 参数
+///
+/// * `query` - 结构化搜索查询对象
+/// * `workspace_id` - 工作区 ID（可选，默认使用第一个可用工作区）
+/// * `max_results` - 最大返回结果数量
+///
+/// # 返回
+///
+/// 返回匹配的搜索结果列表
+#[frb(sync)]
+pub fn search_structured(
+    query: StructuredSearchQueryData,
+    workspace_id: Option<String>,
+    max_results: i32,
+) -> Vec<SearchResultEntry> {
+    unwrap_result(
+        commands_bridge::ffi_search_structured(query, workspace_id, max_results),
+        "结构化搜索失败",
+    )
+}
+
+/// 构建搜索查询对象
+///
+/// 从关键词列表构建结构化搜索查询，便于 Flutter 端使用
+///
+/// # 参数
+///
+/// * `keywords` - 关键词列表
+/// * `global_operator` - 全局操作符 ("AND", "OR", "NOT")
+/// * `is_regex` - 是否使用正则表达式
+/// * `case_sensitive` - 是否大小写敏感
+///
+/// # 返回
+///
+/// 返回构建的结构化搜索查询对象
+#[frb(sync)]
+pub fn build_search_query(
+    keywords: Vec<String>,
+    global_operator: String,
+    is_regex: bool,
+    case_sensitive: bool,
+) -> StructuredSearchQueryData {
+    let op = match global_operator.to_uppercase().as_str() {
+        "OR" => QueryOperatorData::Or,
+        "NOT" => QueryOperatorData::Not,
+        _ => QueryOperatorData::And,
+    };
+    commands_bridge::ffi_build_search_query(keywords, op, is_regex, case_sensitive)
+}
+
+// ==================== 正则搜索操作 ====================
+
+/// 验证正则表达式语法
+///
+/// 验证正则表达式是否有效，返回验证结果和错误信息
+///
+/// # 参数
+///
+/// * `pattern` - 正则表达式模式
+///
+/// # 返回
+///
+/// 返回验证结果，包含是否有效和可能的错误信息
+#[frb(sync)]
+pub fn validate_regex(pattern: String) -> RegexValidationResult {
+    commands_bridge::ffi_validate_regex(pattern)
+}
+
+/// 执行正则表达式搜索
+///
+/// 在工作区中搜索匹配正则表达式的行
+///
+/// # 参数
+///
+/// * `pattern` - 正则表达式模式
+/// * `workspace_id` - 工作区 ID（可选，默认使用第一个可用工作区）
+/// * `max_results` - 最大结果数量
+/// * `case_sensitive` - 是否大小写敏感
+///
+/// # 返回
+///
+/// 返回匹配的搜索结果列表
+#[frb(sync)]
+pub fn search_regex(
+    pattern: String,
+    workspace_id: Option<String>,
+    max_results: i32,
+    case_sensitive: bool,
+) -> Vec<SearchResultEntry> {
+    unwrap_result(
+        commands_bridge::ffi_search_regex(pattern, workspace_id, max_results, case_sensitive),
+        "正则搜索失败",
+    )
+}

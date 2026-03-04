@@ -539,6 +539,354 @@ class BridgeService {
     }
   }
 
+  // ==================== 搜索历史操作 ====================
+
+  /// 添加搜索历史记录
+  ///
+  /// 将搜索查询添加到历史记录
+  Future<bool> addSearchHistory({
+    required String query,
+    required String workspaceId,
+    required int resultCount,
+  }) async {
+    if (!isFfiEnabled) {
+      throw FfiInitializationException('FFI not initialized');
+    }
+
+    try {
+      final result = ffi.addSearchHistory(
+        query: query,
+        workspaceId: workspaceId,
+        resultCount: resultCount,
+      );
+      return result;
+    } catch (e) {
+      debugPrint('addSearchHistory error: $e');
+      rethrow;
+    }
+  }
+
+  /// 获取搜索历史记录
+  ///
+  /// 获取指定工作区或所有工作区的搜索历史
+  Future<List<ffi.SearchHistoryData>> getSearchHistory({
+    String? workspaceId,
+    int? limit,
+  }) async {
+    if (!isFfiEnabled) {
+      return [];
+    }
+
+    try {
+      return ffi.getSearchHistory(
+        workspaceId: workspaceId,
+        limit: limit,
+      );
+    } catch (e) {
+      debugPrint('getSearchHistory error: $e');
+      return [];
+    }
+  }
+
+  /// 删除搜索历史记录
+  ///
+  /// 删除指定工作区中特定查询的历史记录
+  Future<bool> deleteSearchHistory({
+    required String query,
+    required String workspaceId,
+  }) async {
+    if (!isFfiEnabled) {
+      return false;
+    }
+
+    try {
+      final result = ffi.deleteSearchHistory(
+        query: query,
+        workspaceId: workspaceId,
+      );
+      return result;
+    } catch (e) {
+      debugPrint('deleteSearchHistory error: $e');
+      return false;
+    }
+  }
+
+  /// 批量删除搜索历史记录
+  ///
+  /// 批量删除指定工作区中多个查询的历史记录
+  Future<int> deleteSearchHistories({
+    required List<String> queries,
+    required String workspaceId,
+  }) async {
+    if (!isFfiEnabled) {
+      return 0;
+    }
+
+    try {
+      final result = ffi.deleteSearchHistories(
+        queries: queries,
+        workspaceId: workspaceId,
+      );
+      return result;
+    } catch (e) {
+      debugPrint('deleteSearchHistories error: $e');
+      return 0;
+    }
+  }
+
+  /// 清空搜索历史
+  ///
+  /// 清空指定工作区或所有工作区的搜索历史
+  Future<int> clearSearchHistory({String? workspaceId}) async {
+    if (!isFfiEnabled) {
+      return 0;
+    }
+
+    try {
+      final result = ffi.clearSearchHistory(workspaceId: workspaceId);
+      return result;
+    } catch (e) {
+      debugPrint('clearSearchHistory error: $e');
+      return 0;
+    }
+  }
+
+  // ==================== 虚拟文件树操作 ====================
+
+  /// 获取虚拟文件树（根节点）
+  ///
+  /// 获取指定工作区的虚拟文件树结构
+  ///
+  /// # 参数
+  ///
+  /// * `workspaceId` - 工作区 ID
+  ///
+  /// # 返回
+  ///
+  /// 返回根节点列表
+  Future<List<ffi.VirtualTreeNodeData>> getVirtualFileTree(String workspaceId) async {
+    if (!isFfiEnabled) {
+      return [];
+    }
+
+    try {
+      return ffi.getVirtualFileTree(workspaceId: workspaceId);
+    } catch (e) {
+      debugPrint('getVirtualFileTree error: $e');
+      return [];
+    }
+  }
+
+  /// 获取树子节点（懒加载）
+  ///
+  /// 获取指定父节点下的子节点
+  ///
+  /// # 参数
+  ///
+  /// * `workspaceId` - 工作区 ID
+  /// * `parentPath` - 父节点路径
+  ///
+  /// # 返回
+  ///
+  /// 返回子节点列表
+  Future<List<ffi.VirtualTreeNodeData>> getTreeChildren({
+    required String workspaceId,
+    required String parentPath,
+  }) async {
+    if (!isFfiEnabled) {
+      return [];
+    }
+
+    try {
+      return ffi.getTreeChildren(
+        workspaceId: workspaceId,
+        parentPath: parentPath,
+      );
+    } catch (e) {
+      debugPrint('getTreeChildren error: $e');
+      return [];
+    }
+  }
+
+  /// 通过哈希读取文件内容
+  ///
+  /// 从 CAS 存储读取指定哈希的文件内容
+  ///
+  /// # 参数
+  ///
+  /// * `workspaceId` - 工作区 ID
+  /// * `hash` - 文件 SHA-256 哈希
+  ///
+  /// # 返回
+  ///
+  /// 返回文件内容响应
+  Future<ffi.FileContentResponseData?> readFileByHash({
+    required String workspaceId,
+    required String hash,
+  }) async {
+    if (!isFfiEnabled) {
+      return null;
+    }
+
+    try {
+      return ffi.readFileByHash(
+        workspaceId: workspaceId,
+        hash: hash,
+      );
+    } catch (e) {
+      debugPrint('readFileByHash error: $e');
+      return null;
+    }
+  }
+
+  // ==================== 多关键词组合搜索操作 ====================
+
+  /// 执行结构化搜索（多关键词组合搜索）
+  ///
+  /// 支持多个关键词的 AND/OR/NOT 组合搜索
+  ///
+  /// # 参数
+  ///
+  /// * `query` - 结构化搜索查询对象
+  /// * `workspaceId` - 工作区 ID（可选，默认使用第一个可用工作区）
+  /// * `maxResults` - 最大返回结果数量
+  ///
+  /// # 返回
+  ///
+  /// 返回匹配的搜索结果列表
+  Future<List<ffi.SearchResultEntry>> searchStructured({
+    required ffi.StructuredSearchQueryData query,
+    String? workspaceId,
+    int maxResults = 10000,
+  }) async {
+    if (!isFfiEnabled) {
+      return [];
+    }
+
+    try {
+      return ffi.searchStructured(
+        query: query,
+        workspaceId: workspaceId,
+        maxResults: maxResults,
+      );
+    } catch (e) {
+      debugPrint('searchStructured error: $e');
+      return [];
+    }
+  }
+
+  /// 构建搜索查询对象
+  ///
+  /// 从关键词列表构建结构化搜索查询，便于使用
+  ///
+  /// # 参数
+  ///
+  /// * `keywords` - 关键词列表
+  /// * `globalOperator` - 全局操作符 ("AND", "OR", "NOT")
+  /// * `isRegex` - 是否使用正则表达式
+  /// * `caseSensitive` - 是否大小写敏感
+  ///
+  /// # 返回
+  ///
+  /// 返回构建的结构化搜索查询对象
+  Future<ffi.StructuredSearchQueryData> buildSearchQuery({
+    required List<String> keywords,
+    String globalOperator = 'AND',
+    bool isRegex = false,
+    bool caseSensitive = false,
+  }) async {
+    if (!isFfiEnabled) {
+      return ffi.StructuredSearchQueryData(
+        terms: [],
+        globalOperator: ffi.QueryOperatorData.and,
+      );
+    }
+
+    try {
+      return ffi.buildSearchQuery(
+        keywords: keywords,
+        globalOperator: globalOperator,
+        isRegex: isRegex,
+        caseSensitive: caseSensitive,
+      );
+    } catch (e) {
+      debugPrint('buildSearchQuery error: $e');
+      return ffi.StructuredSearchQueryData(
+        terms: [],
+        globalOperator: ffi.QueryOperatorData.and,
+      );
+    }
+  }
+
+  // ==================== 正则搜索操作 ====================
+
+  /// 验证正则表达式语法
+  ///
+  /// 验证正则表达式是否有效，返回验证结果和错误信息
+  ///
+  /// # 参数
+  ///
+  /// * `pattern` - 正则表达式模式
+  ///
+  /// # 返回
+  ///
+  /// 返回验证结果，包含是否有效和可能的错误信息
+  Future<ffi.RegexValidationResult> validateRegex(String pattern) async {
+    if (!isFfiEnabled) {
+      return ffi.RegexValidationResult(
+        valid: false,
+        errorMessage: 'FFI not initialized',
+      );
+    }
+
+    try {
+      return ffi.validateRegex(pattern: pattern);
+    } catch (e) {
+      debugPrint('validateRegex error: $e');
+      return ffi.RegexValidationResult(
+        valid: false,
+        errorMessage: e.toString(),
+      );
+    }
+  }
+
+  /// 执行正则表达式搜索
+  ///
+  /// 在工作区中搜索匹配正则表达式的行
+  ///
+  /// # 参数
+  ///
+  /// * `pattern` - 正则表达式模式
+  /// * `workspaceId` - 工作区 ID（可选，默认使用第一个可用工作区）
+  /// * `maxResults` - 最大结果数量
+  /// * `caseSensitive` - 是否大小写敏感
+  ///
+  /// # 返回
+  ///
+  /// 返回匹配的搜索结果列表
+  Future<List<ffi.SearchResultEntry>> searchRegex({
+    required String pattern,
+    String? workspaceId,
+    int maxResults = 10000,
+    bool caseSensitive = false,
+  }) async {
+    if (!isFfiEnabled) {
+      return [];
+    }
+
+    try {
+      return ffi.searchRegex(
+        pattern: pattern,
+        workspaceId: workspaceId,
+        maxResults: maxResults,
+        caseSensitive: caseSensitive,
+      );
+    } catch (e) {
+      debugPrint('searchRegex error: $e');
+      return [];
+    }
+  }
+
   /// 释放资源
   void dispose() {
     LogAnalyzerBridge.dispose();

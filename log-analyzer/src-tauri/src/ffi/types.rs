@@ -275,3 +275,223 @@ pub struct LineData {
     /// 下一行偏移
     pub next_offset: u64,
 }
+
+// ==================== 搜索历史类型 ====================
+
+/// 搜索历史条目数据（FFI 格式）
+///
+/// 用于 Flutter 端搜索历史展示
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SearchHistoryData {
+    /// 查询内容
+    pub query: String,
+    /// 工作区ID
+    pub workspace_id: String,
+    /// 结果数量
+    pub result_count: i32,
+    /// 搜索时间（ISO 8601 格式）
+    pub searched_at: String,
+}
+
+impl From<crate::models::SearchHistoryEntry> for SearchHistoryData {
+    fn from(entry: crate::models::SearchHistoryEntry) -> Self {
+        Self {
+            query: entry.query,
+            workspace_id: entry.workspace_id,
+            result_count: entry.result_count as i32,
+            searched_at: entry.searched_at.to_rfc3339(),
+        }
+    }
+}
+
+// ==================== 虚拟文件树类型 ====================
+
+/// 虚拟文件树节点数据（FFI 格式）
+///
+/// 用于 Flutter 端虚拟文件树展示
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum VirtualTreeNodeData {
+    /// 文件节点
+    #[serde(rename = "file")]
+    File {
+        /// 文件名
+        name: String,
+        /// 虚拟路径
+        path: String,
+        /// SHA-256 哈希
+        hash: String,
+        /// 文件大小（字节）
+        size: i64,
+        /// MIME 类型
+        #[serde(rename = "mimeType")]
+        mime_type: Option<String>,
+    },
+    /// 归档节点（压缩包）
+    #[serde(rename = "archive")]
+    Archive {
+        /// 归档名
+        name: String,
+        /// 虚拟路径
+        path: String,
+        /// SHA-256 哈希
+        hash: String,
+        /// 归档类型（zip, tar, gz 等）
+        #[serde(rename = "archiveType")]
+        archive_type: String,
+        /// 子节点（懒加载时为空）
+        children: Vec<VirtualTreeNodeData>,
+    },
+}
+
+impl From<crate::commands::virtual_tree::VirtualTreeNode> for VirtualTreeNodeData {
+    fn from(node: crate::commands::virtual_tree::VirtualTreeNode) -> Self {
+        match node {
+            crate::commands::virtual_tree::VirtualTreeNode::File {
+                name,
+                path,
+                hash,
+                size,
+                mime_type,
+            } => VirtualTreeNodeData::File {
+                name,
+                path,
+                hash,
+                size,
+                mime_type,
+            },
+            crate::commands::virtual_tree::VirtualTreeNode::Archive {
+                name,
+                path,
+                hash,
+                archive_type,
+                children,
+            } => VirtualTreeNodeData::Archive {
+                name,
+                path,
+                hash,
+                archive_type,
+                children: children.into_iter().map(VirtualTreeNodeData::from).collect(),
+            },
+        }
+    }
+}
+
+/// 文件内容响应数据（FFI 格式）
+///
+/// 用于通过哈希读取文件内容
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FileContentResponseData {
+    /// 文件内容（UTF-8 字符串）
+    pub content: String,
+    /// SHA-256 哈希
+    pub hash: String,
+    /// 文件大小（字节）
+    pub size: i64,
+}
+
+impl From<crate::commands::virtual_tree::FileContentResponse> for FileContentResponseData {
+    fn from(response: crate::commands::virtual_tree::FileContentResponse) -> Self {
+        Self {
+            content: response.content,
+            hash: response.hash,
+            size: response.size as i64,
+        }
+    }
+}
+
+// ==================== 正则表达式验证类型 ====================
+
+/// 正则表达式验证结果（FFI 格式）
+///
+/// 用于验证正则表达式语法是否正确
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RegexValidationResult {
+    /// 是否有效
+    pub valid: bool,
+    /// 错误消息（如果无效）
+    pub error_message: Option<String>,
+}
+
+// ==================== 多关键词组合搜索类型 ====================
+
+/// 查询操作符（FFI 格式）
+///
+/// 用于多关键词组合搜索的逻辑操作
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum QueryOperatorData {
+    /// AND 操作 - 所有关键词都必须匹配
+    #[serde(rename = "AND")]
+    And,
+    /// OR 操作 - 任一关键词匹配即可
+    #[serde(rename = "OR")]
+    Or,
+    /// NOT 操作 - 排除包含该关键词的行
+    #[serde(rename = "NOT")]
+    Not,
+}
+
+impl Default for QueryOperatorData {
+    fn default() -> Self {
+        Self::And
+    }
+}
+
+/// 搜索条件数据（FFI 格式）
+///
+/// 用于结构化搜索的单个搜索条件
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SearchTermData {
+    /// 条件唯一标识
+    pub id: String,
+    /// 搜索值/关键词
+    pub value: String,
+    /// 该条件的操作符（相对于前一个条件）
+    pub operator: QueryOperatorData,
+    /// 是否为正则表达式
+    pub is_regex: bool,
+    /// 优先级（数字越小优先级越高）
+    pub priority: u32,
+    /// 是否启用该条件
+    pub enabled: bool,
+    /// 是否大小写敏感
+    pub case_sensitive: bool,
+}
+
+/// 完整搜索查询数据（FFI 格式）
+///
+/// 用于多关键词组合搜索的完整查询结构
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct StructuredSearchQueryData {
+    /// 搜索条件列表
+    pub terms: Vec<SearchTermData>,
+    /// 全局操作符（用于组合多个条件）
+    pub global_operator: QueryOperatorData,
+    /// 搜索过滤器
+    pub filters: Option<SearchFiltersData>,
+}
+
+impl Default for StructuredSearchQueryData {
+    fn default() -> Self {
+        Self {
+            terms: vec![],
+            global_operator: QueryOperatorData::And,
+            filters: None,
+        }
+    }
+}
+
+/// 搜索结果条目（FFI 格式）
+///
+/// 单行搜索结果
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SearchResultEntry {
+    /// 行号（从 1 开始）
+    pub line_number: i64,
+    /// 行内容
+    pub content: String,
+    /// 匹配起始位置
+    pub match_start: i64,
+    /// 匹配结束位置
+    pub match_end: i64,
+}
