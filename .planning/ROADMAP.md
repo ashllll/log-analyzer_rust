@@ -15,14 +15,9 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: 架构基础设施** - Flutter 项目结构、共享服务、错误处理框架
 - [ ] **Phase 2: 工作区与文件导入** - 工作区管理、文件夹/压缩包导入
 - [ ] **Phase 3: 搜索功能与结果展示** - 全文搜索、关键词高亮、多条件筛选
-<<<<<<< HEAD
-- [ ] **Phase 4: 压缩包浏览** - 压缩包内文件浏览、预览、内嵌搜索
-- [ ] **Phase 5: 实时监控** - 文件监控、自动索引更新
-=======
 - [x] **Phase 4: 压缩包浏览** - 压缩包内文件浏览、预览、内嵌搜索
 - [x] **Phase 5: 实时监控** - 文件监控、自动索引更新
->>>>>>> gsd/phase-06-completion
-- [ ] **Phase 6: 完成与优化** - 任务进度、设置、用户体验完善
+- [x] **Phase 6: 完成与优化** - 任务进度、设置、用户体验完善
 
 ## Phase Details
 
