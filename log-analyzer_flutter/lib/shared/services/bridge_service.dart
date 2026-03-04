@@ -539,6 +539,118 @@ class BridgeService {
     }
   }
 
+  // ==================== 搜索历史操作 ====================
+
+  /// 添加搜索历史记录
+  ///
+  /// 将搜索查询添加到历史记录
+  Future<bool> addSearchHistory({
+    required String query,
+    required String workspaceId,
+    required int resultCount,
+  }) async {
+    if (!isFfiEnabled) {
+      throw FfiInitializationException('FFI not initialized');
+    }
+
+    try {
+      final result = ffi.addSearchHistory(
+        query: query,
+        workspaceId: workspaceId,
+        resultCount: resultCount,
+      );
+      return result;
+    } catch (e) {
+      debugPrint('addSearchHistory error: $e');
+      rethrow;
+    }
+  }
+
+  /// 获取搜索历史记录
+  ///
+  /// 获取指定工作区或所有工作区的搜索历史
+  Future<List<ffi.SearchHistoryData>> getSearchHistory({
+    String? workspaceId,
+    int? limit,
+  }) async {
+    if (!isFfiEnabled) {
+      return [];
+    }
+
+    try {
+      return ffi.getSearchHistory(
+        workspaceId: workspaceId,
+        limit: limit,
+      );
+    } catch (e) {
+      debugPrint('getSearchHistory error: $e');
+      return [];
+    }
+  }
+
+  /// 删除搜索历史记录
+  ///
+  /// 删除指定工作区中特定查询的历史记录
+  Future<bool> deleteSearchHistory({
+    required String query,
+    required String workspaceId,
+  }) async {
+    if (!isFfiEnabled) {
+      return false;
+    }
+
+    try {
+      final result = ffi.deleteSearchHistory(
+        query: query,
+        workspaceId: workspaceId,
+      );
+      return result;
+    } catch (e) {
+      debugPrint('deleteSearchHistory error: $e');
+      return false;
+    }
+  }
+
+  /// 批量删除搜索历史记录
+  ///
+  /// 批量删除指定工作区中多个查询的历史记录
+  Future<int> deleteSearchHistories({
+    required List<String> queries,
+    required String workspaceId,
+  }) async {
+    if (!isFfiEnabled) {
+      return 0;
+    }
+
+    try {
+      final result = ffi.deleteSearchHistories(
+        queries: queries,
+        workspaceId: workspaceId,
+      );
+      return result;
+    } catch (e) {
+      debugPrint('deleteSearchHistories error: $e');
+      return 0;
+    }
+  }
+
+  /// 清空搜索历史
+  ///
+  /// 清空指定工作区或所有工作区的搜索历史
+  Future<int> clearSearchHistory({String? workspaceId}) async {
+    if (!isFfiEnabled) {
+      return 0;
+    }
+
+    try {
+      final result = ffi.clearSearchHistory(workspaceId: workspaceId);
+      return result;
+    } catch (e) {
+      debugPrint('clearSearchHistory error: $e');
+      return 0;
+    }
+  }
+
   /// 释放资源
   void dispose() {
     LogAnalyzerBridge.dispose();
