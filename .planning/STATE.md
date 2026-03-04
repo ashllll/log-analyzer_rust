@@ -2,26 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: 高级搜索与虚拟文件系统
-status: unknown
-last_updated: "2026-03-04T14:45:57.081Z"
-progress:
-  total_phases: 7
-  completed_phases: 6
-  total_plans: 19
-  completed_plans: 18
----
-
----
-gsd_state_version: 1.0
-milestone: v1.1
-milestone_name: 高级搜索与虚拟文件系统
 status: in_progress
-last_updated: "2026-03-04T14:45:00.000Z"
+last_updated: "2026-03-04T15:30:00.000Z"
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 16
-  completed_plans: 3
+  completed_plans: 4
 ---
 
 # Project State
@@ -36,24 +23,24 @@ See: .planning/PROJECT.md (updated 2026-03-04)
 ## Current Position
 
 Phase: 7 of 11 (后端 API 集成)
-Plan: 4 of 4 in current phase
-Status: Phase Complete
-Last activity: 2026-03-04 — Plan 07-04 completed (Multi-Keyword Search FFI)
+Plan: 3 of 4 in current phase
+Status: In Progress
+Last activity: 2026-03-04 — Plan 07-03 completed (Regex Search FFI Bridge)
 
-Progress: [██░░░░░░░░] 19%
+Progress: [██░░░░░░░░] 25%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 3 (v1.1)
-- Average duration: 8 min
-- Total execution time: 0.3 hours
+- Total plans completed: 4 (v1.1)
+- Average duration: 9 min
+- Total execution time: 0.4 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 7. 后端 API 集成 | 3/4 | 26min | 8min |
+| 7. 后端 API 集成 | 4/4 | 36min | 9min |
 | 8. 状态管理 | 0/2 | - | - |
 | 9. 高级搜索 UI | 0/4 | - | - |
 | 10. 虚拟文件系统 UI | 0/3 | - | - |
@@ -61,10 +48,9 @@ Progress: [██░░░░░░░░] 19%
 
 **Recent Trend:**
 - v1.0 已完成: 16 个计划
-- v1.1 开始规划
+- v1.1 进度: 4/16 个计划
 
 *Updated after each plan completion*
-| Phase 07-api P04 | 5 | 4 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -83,10 +69,13 @@ From Phase 07 Plan 01:
 - Follow existing FFI patterns with sync functions and unwrap_result for error handling
 - Flutter service methods return empty/default values when FFI not initialized
 
+From Phase 07 Plan 03:
+- Reuse existing SearchResultEntry type for regex search results
+- Support case-sensitive and case-insensitive regex modes via (?i) prefix
+
 From Phase 07 Plan 04:
 - Reuse Aho-Corasick algorithm for multi-pattern matching (O(n+m) complexity)
 - Three-layer FFI architecture: bridge.rs (export) -> commands_bridge.rs (adapter) -> business logic
-- [Phase 07-api]: Reuse Aho-Corasick algorithm for multi-pattern matching O(n+m) complexity
 
 ### Pending Todos
 
@@ -99,5 +88,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-04
-Stopped at: Plan 07-04 completed (Multi-Keyword Search FFI)
+Stopped at: Plan 07-03 completed (Regex Search FFI Bridge)
 Resume file: None
