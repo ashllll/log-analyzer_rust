@@ -1403,6 +1403,209 @@ pub fn ffi_export_results(
     Ok(output_path)
 }
 
+// ==================== 搜索历史命令适配 ====================
+
+use crate::ffi::types::SearchHistoryData;
+
+/// FFI 适配：添加搜索历史
+///
+/// 将搜索记录添加到历史管理器
+///
+/// # 参数
+///
+/// * `query` - 搜索查询字符串
+/// * `workspace_id` - 工作区 ID
+/// * `result_count` - 搜索结果数量
+///
+/// # 返回
+///
+/// 成功返回 true
+pub fn ffi_add_search_history(
+    query: String,
+    workspace_id: String,
+    result_count: usize,
+) -> Result<bool, String> {
+    tracing::debug!(
+        query = %query,
+        workspace_id = %workspace_id,
+        result_count = result_count,
+        "FFI: add_search_history 调用"
+    );
+
+    // 获取全局状态
+    let app_state = get_app_state().ok_or_else(|| "FFI 全局状态未初始化".to_string())?;
+
+    // 创建历史条目
+    let entry = crate::models::SearchHistoryEntry::new(query, workspace_id.clone(), result_count);
+
+    // 添加到历史管理器
+    {
+        let mut history = app_state.search_history.lock();
+        history.add_entry(entry);
+    }
+
+    tracing::info!(workspace_id = %workspace_id, "搜索历史已添加");
+    Ok(true)
+}
+
+/// FFI 适配：获取搜索历史
+///
+/// 获取指定工作区或所有工作区的搜索历史
+///
+/// # 参数
+///
+/// * `workspace_id` - 工作区 ID（可选，None 表示获取所有）
+/// * `limit` - 最大返回数量（可选）
+///
+/// # 返回
+///
+/// 返回搜索历史列表
+pub fn ffi_get_search_history(
+    workspace_id: Option<String>,
+    limit: Option<usize>,
+) -> Result<Vec<SearchHistoryData>, String> {
+    tracing::debug!(
+        workspace_id = ?workspace_id,
+        limit = ?limit,
+        "FFI: get_search_history 调用"
+    );
+
+    // 获取全局状态
+    let app_state = get_app_state().ok_or_else(|| "FFI 全局状态未初始化".to_string())?;
+
+    let history = app_state.search_history.lock();
+
+    let entries: Vec<SearchHistoryData> = if let Some(ws_id) = workspace_id {
+        history
+            .get_history(&ws_id, limit)
+            .into_iter()
+            .map(|e| SearchHistoryData::from(e.clone()))
+            .collect()
+    } else {
+        history
+            .get_all_history(limit)
+            .into_iter()
+            .map(|e| SearchHistoryData::from(e.clone()))
+            .collect()
+    };
+
+    Ok(entries)
+}
+
+/// FFI 适配：删除搜索历史（按查询词）
+///
+/// 删除指定工作区中特定查询的历史记录
+///
+/// # 参数
+///
+/// * `query` - 查询字符串
+/// * `workspace_id` - 工作区 ID
+///
+/// # 返回
+///
+/// 成功返回 true（即使没有删除任何记录）
+pub fn ffi_delete_search_history(query: String, workspace_id: String) -> Result<bool, String> {
+    tracing::debug!(
+        query = %query,
+        workspace_id = %workspace_id,
+        "FFI: delete_search_history 调用"
+    );
+
+    // 获取全局状态
+    let app_state = get_app_state().ok_or_else(|| "FFI 全局状态未初始化".to_string())?;
+
+    let mut history = app_state.search_history.lock();
+
+    // 手动删除匹配的条目
+    let initial_count = history.total_count();
+    history
+        .entries
+        .retain(|e| !(e.query == query && e.workspace_id == workspace_id));
+    let deleted = initial_count > history.total_count();
+
+    if deleted {
+        tracing::info!(
+            query = %query,
+            workspace_id = %workspace_id,
+            "搜索历史已删除"
+        );
+    }
+
+    Ok(deleted)
+}
+
+/// FFI 适配：批量删除搜索历史（按查询词列表）
+///
+/// 批量删除指定工作区中多个查询的历史记录
+///
+/// # 参数
+///
+/// * `queries` - 查询字符串列表
+/// * `workspace_id` - 工作区 ID
+///
+/// # 返回
+///
+/// 返回实际删除的数量
+pub fn ffi_delete_search_histories(
+    queries: Vec<String>,
+    workspace_id: String,
+) -> Result<i32, String> {
+    tracing::debug!(
+        queries_count = queries.len(),
+        workspace_id = %workspace_id,
+        "FFI: delete_search_histories 调用"
+    );
+
+    // 获取全局状态
+    let app_state = get_app_state().ok_or_else(|| "FFI 全局状态未初始化".to_string())?;
+
+    let mut history = app_state.search_history.lock();
+
+    // 批量删除匹配的条目
+    let initial_count = history.total_count();
+    history
+        .entries
+        .retain(|e| !(queries.contains(&e.query) && e.workspace_id == workspace_id));
+    let deleted_count = initial_count - history.total_count();
+
+    tracing::info!(deleted_count = deleted_count, "批量删除搜索历史完成");
+    Ok(deleted_count as i32)
+}
+
+/// FFI 适配：清空搜索历史
+///
+/// 清空指定工作区或所有工作区的搜索历史
+///
+/// # 参数
+///
+/// * `workspace_id` - 工作区 ID（可选，None 表示清空所有）
+///
+/// # 返回
+///
+/// 返回实际删除的数量
+pub fn ffi_clear_search_history(workspace_id: Option<String>) -> Result<i32, String> {
+    tracing::info!(
+        workspace_id = ?workspace_id,
+        "FFI: clear_search_history 调用"
+    );
+
+    // 获取全局状态
+    let app_state = get_app_state().ok_or_else(|| "FFI 全局状态未初始化".to_string())?;
+
+    let mut history = app_state.search_history.lock();
+
+    let removed_count = if let Some(ws_id) = workspace_id {
+        history.clear_workspace_history(&ws_id)
+    } else {
+        let count = history.total_count();
+        history.clear_all_history();
+        count
+    };
+
+    tracing::info!(removed_count = removed_count, "搜索历史已清空");
+    Ok(removed_count as i32)
+}
+
 // ==================== 测试模块 ====================
 
 #[cfg(test)]
