@@ -400,6 +400,19 @@ impl From<crate::commands::virtual_tree::FileContentResponse> for FileContentRes
     }
 }
 
+// ==================== 正则表达式验证类型 ====================
+
+/// 正则表达式验证结果（FFI 格式）
+///
+/// 用于验证正则表达式语法是否正确
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RegexValidationResult {
+    /// 是否有效
+    pub valid: bool,
+    /// 错误消息（如果无效）
+    pub error_message: Option<String>,
+}
+
 // ==================== 多关键词组合搜索类型 ====================
 
 /// 查询操作符（FFI 格式）
