@@ -98,9 +98,9 @@ Plans:
 
 Plans:
 - [x] 07-01-PLAN.md — 搜索历史 API 集成（添加、获取、删除、清空） ✓ 2026-03-04
-- [x] 07-02-PLAN.md — 虚拟文件树 API 集成（获取树结构）
-- [x] 07-03-PLAN.md — 正则表达式搜索 API 集成
-- [x] 07-04-PLAN.md — 多关键词组合搜索 API 集成
+- [x] 07-02-PLAN.md — 虚拟文件树 API 集成（获取树结构） ✓ 2026-03-04
+- [ ] 07-03-PLAN.md — 正则表达式搜索 API 集成
+- [ ] 07-04-PLAN.md — 多关键词组合搜索 API 集成
 
 ### Phase 8: 状态管理
 **Goal**: 使用 Riverpod 管理搜索历史和虚拟文件树的状态
@@ -180,7 +180,7 @@ Phases execute in numeric order: 7 → 8 → 9 → 10 → 11
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 7. 后端 API 集成 | 1/4 | In Progress | 07-01 |
+| 7. 后端 API 集成 | 2/4 | In Progress | 07-01, 07-02 |
 | 8. 状态管理 | 0/2 | Not started | - |
 | 9. 高级搜索 UI | 0/4 | Not started | - |
 | 10. 虚拟文件系统 UI | 0/3 | Not started | - |
