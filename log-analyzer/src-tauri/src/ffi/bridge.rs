@@ -310,3 +310,60 @@ pub fn export_results(search_id: String, format: String, output_path: String) ->
         "导出结果失败",
     )
 }
+
+// ==================== 搜索历史操作 ====================
+
+/// 添加搜索历史记录
+///
+/// 将搜索查询添加到历史记录
+#[frb(sync)]
+pub fn add_search_history(query: String, workspace_id: String, result_count: i32) -> bool {
+    unwrap_result(
+        commands_bridge::ffi_add_search_history(query, workspace_id, result_count as usize),
+        "添加搜索历史失败",
+    )
+}
+
+/// 获取搜索历史记录
+///
+/// 获取指定工作区或所有工作区的搜索历史
+#[frb(sync)]
+pub fn get_search_history(workspace_id: Option<String>, limit: Option<i32>) -> Vec<SearchHistoryData> {
+    unwrap_result(
+        commands_bridge::ffi_get_search_history(workspace_id, limit.map(|l| l as usize)),
+        "获取搜索历史失败",
+    )
+}
+
+/// 删除搜索历史记录（按查询词）
+///
+/// 删除指定工作区中特定查询的历史记录
+#[frb(sync)]
+pub fn delete_search_history(query: String, workspace_id: String) -> bool {
+    unwrap_result(
+        commands_bridge::ffi_delete_search_history(query, workspace_id),
+        "删除搜索历史失败",
+    )
+}
+
+/// 批量删除搜索历史记录（按查询词列表）
+///
+/// 批量删除指定工作区中多个查询的历史记录
+#[frb(sync)]
+pub fn delete_search_histories(queries: Vec<String>, workspace_id: String) -> i32 {
+    unwrap_result(
+        commands_bridge::ffi_delete_search_histories(queries, workspace_id),
+        "批量删除搜索历史失败",
+    )
+}
+
+/// 清空搜索历史
+///
+/// 清空指定工作区或所有工作区的搜索历史
+#[frb(sync)]
+pub fn clear_search_history(workspace_id: Option<String>) -> i32 {
+    unwrap_result(
+        commands_bridge::ffi_clear_search_history(workspace_id),
+        "清空搜索历史失败",
+    )
+}
