@@ -303,3 +303,99 @@ impl From<crate::models::SearchHistoryEntry> for SearchHistoryData {
         }
     }
 }
+
+// ==================== 虚拟文件树类型 ====================
+
+/// 虚拟文件树节点数据（FFI 格式）
+///
+/// 用于 Flutter 端虚拟文件树展示
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum VirtualTreeNodeData {
+    /// 文件节点
+    #[serde(rename = "file")]
+    File {
+        /// 文件名
+        name: String,
+        /// 虚拟路径
+        path: String,
+        /// SHA-256 哈希
+        hash: String,
+        /// 文件大小（字节）
+        size: i64,
+        /// MIME 类型
+        #[serde(rename = "mimeType")]
+        mime_type: Option<String>,
+    },
+    /// 归档节点（压缩包）
+    #[serde(rename = "archive")]
+    Archive {
+        /// 归档名
+        name: String,
+        /// 虚拟路径
+        path: String,
+        /// SHA-256 哈希
+        hash: String,
+        /// 归档类型（zip, tar, gz 等）
+        #[serde(rename = "archiveType")]
+        archive_type: String,
+        /// 子节点（懒加载时为空）
+        children: Vec<VirtualTreeNodeData>,
+    },
+}
+
+impl From<crate::commands::virtual_tree::VirtualTreeNode> for VirtualTreeNodeData {
+    fn from(node: crate::commands::virtual_tree::VirtualTreeNode) -> Self {
+        match node {
+            crate::commands::virtual_tree::VirtualTreeNode::File {
+                name,
+                path,
+                hash,
+                size,
+                mime_type,
+            } => VirtualTreeNodeData::File {
+                name,
+                path,
+                hash,
+                size,
+                mime_type,
+            },
+            crate::commands::virtual_tree::VirtualTreeNode::Archive {
+                name,
+                path,
+                hash,
+                archive_type,
+                children,
+            } => VirtualTreeNodeData::Archive {
+                name,
+                path,
+                hash,
+                archive_type,
+                children: children.into_iter().map(VirtualTreeNodeData::from).collect(),
+            },
+        }
+    }
+}
+
+/// 文件内容响应数据（FFI 格式）
+///
+/// 用于通过哈希读取文件内容
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FileContentResponseData {
+    /// 文件内容（UTF-8 字符串）
+    pub content: String,
+    /// SHA-256 哈希
+    pub hash: String,
+    /// 文件大小（字节）
+    pub size: i64,
+}
+
+impl From<crate::commands::virtual_tree::FileContentResponse> for FileContentResponseData {
+    fn from(response: crate::commands::virtual_tree::FileContentResponse) -> Self {
+        Self {
+            content: response.content,
+            hash: response.hash,
+            size: response.size as i64,
+        }
+    }
+}
