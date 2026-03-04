@@ -490,3 +490,48 @@ pub fn build_search_query(
     };
     commands_bridge::ffi_build_search_query(keywords, op, is_regex, case_sensitive)
 }
+
+// ==================== 正则搜索操作 ====================
+
+/// 验证正则表达式语法
+///
+/// 验证正则表达式是否有效，返回验证结果和错误信息
+///
+/// # 参数
+///
+/// * `pattern` - 正则表达式模式
+///
+/// # 返回
+///
+/// 返回验证结果，包含是否有效和可能的错误信息
+#[frb(sync)]
+pub fn validate_regex(pattern: String) -> RegexValidationResult {
+    commands_bridge::ffi_validate_regex(pattern)
+}
+
+/// 执行正则表达式搜索
+///
+/// 在工作区中搜索匹配正则表达式的行
+///
+/// # 参数
+///
+/// * `pattern` - 正则表达式模式
+/// * `workspace_id` - 工作区 ID（可选，默认使用第一个可用工作区）
+/// * `max_results` - 最大结果数量
+/// * `case_sensitive` - 是否大小写敏感
+///
+/// # 返回
+///
+/// 返回匹配的搜索结果列表
+#[frb(sync)]
+pub fn search_regex(
+    pattern: String,
+    workspace_id: Option<String>,
+    max_results: i32,
+    case_sensitive: bool,
+) -> Vec<SearchResultEntry> {
+    unwrap_result(
+        commands_bridge::ffi_search_regex(pattern, workspace_id, max_results, case_sensitive),
+        "正则搜索失败",
+    )
+}
