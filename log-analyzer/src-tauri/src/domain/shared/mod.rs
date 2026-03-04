@@ -1,7 +1,16 @@
 //! 共享领域模型
 
 pub mod events;
-// pub mod value_objects; // TODO: value_objects 在 log_analysis 中，暂时注释
-// pub mod specifications; // TODO: 模块文件缺失，暂时注释
+pub mod specifications;
+pub mod value_objects;
 
-pub use events::{DomainEvent, DomainEventBus, EventHandler};
+pub use events::{DomainEvent, DomainEventBus, EventHandler, LogAnalysisEvent};
+pub use specifications::{
+    AndSpec, KeywordSpecification, LogLevelSpecification, NotSpec, OrSpec,
+    SearchQuerySpecification, SourceFileSpecification, Specification, TagSpecification,
+    TimeRangeSpecification, WorkspaceNameSpecification, WorkspacePathFilterSpecification,
+    WorkspacePathValidationSpecification, WorkspaceStatusSpecification,
+};
+pub use value_objects::{
+    BoundedString, Email, FilePath, NonEmptyString, PositiveInteger, Url, ValueError,
+};

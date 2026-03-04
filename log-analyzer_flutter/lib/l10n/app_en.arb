@@ -1,0 +1,88 @@
+{
+  "@@locale": "en",
+  "appTitle": "Log Analyzer",
+
+  "search_title": "Search",
+  "search_statistics_title": "Search Statistics (OR Logic)",
+  "search_total_matches": "Total: {count} matches, {duration}ms",
+  "@search_total_matches": {
+    "placeholders": {
+      "count": {"type": "int"},
+      "duration": {"type": "int"}
+    }
+  },
+  "search_matches_count": "{count} matches",
+  "@search_matches_count": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "search_percentage": "{value}%",
+  "@search_percentage": {
+    "placeholders": {
+      "value": {"type": "double"}
+    }
+  },
+  "search_placeholder": "Search logs...",
+  "search_no_results": "No results found",
+  "search_loading": "Searching...",
+
+  "keywords_title": "Keywords",
+  "keywords_add_group": "Add Keyword Group",
+  "keywords_edit_group": "Edit Keyword Group",
+  "keywords_delete_confirm": "Are you sure you want to delete this keyword group?",
+  "keywords_name": "Group Name",
+  "keywords_color": "Color",
+  "keywords_enabled": "Enabled",
+  "keywords_patterns": "Patterns",
+  "keywords_import": "Import",
+  "keywords_export": "Export",
+
+  "workspaces_title": "Workspaces",
+  "workspaces_add": "Add Workspace",
+  "workspaces_delete_confirm": "Are you sure you want to delete this workspace?",
+  "workspaces_import": "Import Folder",
+  "workspaces_refresh": "Refresh",
+  "workspaces_watch": "Watch for Changes",
+  "workspaces_status_ready": "Ready",
+  "workspaces_status_scanning": "Scanning",
+  "workspaces_status_offline": "Offline",
+  "workspaces_status_processing": "Processing",
+
+  "tasks_title": "Tasks",
+  "tasks_no_tasks": "No running tasks",
+  "tasks_cancel": "Cancel Task",
+  "tasks_cancel_confirm": "Are you sure you want to cancel this task?",
+
+  "settings_title": "Settings",
+  "settings_save": "Save",
+  "settings_saved": "Settings saved successfully",
+  "settings_save_failed": "Failed to save settings",
+
+  "settings_extraction_title": "Extraction Strategy Settings",
+  "settings_file_filters": "File Filters",
+  "settings_security": "Security",
+  "settings_paths": "Paths",
+
+  "performance_title": "Performance",
+  "performance_search_latency": "Search Latency",
+  "performance_search_throughput": "Search Throughput",
+  "performance_cache_metrics": "Cache Metrics",
+  "performance_memory_metrics": "Memory Metrics",
+  "performance_task_metrics": "Task Metrics",
+  "performance_index_metrics": "Index Metrics",
+
+  "toast_success": "Success",
+  "toast_error": "Error",
+  "toast_info": "Info",
+  "toast_warning": "Warning",
+
+  "common_confirm": "Confirm",
+  "common_cancel": "Cancel",
+  "common_delete": "Delete",
+  "common_edit": "Edit",
+  "common_save": "Save",
+  "common_close": "Close",
+  "common_loading": "Loading...",
+  "common_no_data": "No data available"
+}

@@ -1,6 +1,24 @@
 use crate::error::Result;
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+
+/**
+ * 压缩包条目（用于浏览和预览）
+ */
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArchiveEntry {
+    /// 文件/目录名称
+    pub name: String,
+    /// 完整路径
+    pub path: String,
+    /// 是否为目录
+    pub is_dir: bool,
+    /// 文件大小（字节）
+    pub size: u64,
+    /// 压缩后大小
+    pub compressed_size: u64,
+}
 
 /**
  * 压缩文件处理器trait
@@ -75,6 +93,31 @@ pub trait ArchiveHandler: Send + Sync {
      * * 扩展名列表
      */
     fn file_extensions(&self) -> Vec<&str>;
+
+    /**
+     * 列出压缩包内容（不解压）
+     *
+     * # 参数
+     * * `path` - 压缩包文件路径
+     *
+     * # 返回
+     * * `Ok(Vec<ArchiveEntry>)` - 条目列表
+     * * `Err(AppError)` - 读取失败
+     */
+    async fn list_contents(&self, path: &Path) -> Result<Vec<ArchiveEntry>>;
+
+    /**
+     * 读取单个文件内容（带大小限制，防止内存爆炸）
+     *
+     * # 参数
+     * * `path` - 压缩包文件路径
+     * * `file_name` - 要读取的文件名（完整路径）
+     *
+     * # 返回
+     * * `Ok(String)` - 文件内容（超过10MB自动截断）
+     * * `Err(AppError)` - 读取失败
+     */
+    async fn read_file(&self, path: &Path, file_name: &str) -> Result<String>;
 }
 
 /**

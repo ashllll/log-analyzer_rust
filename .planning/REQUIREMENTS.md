@@ -45,10 +45,17 @@
 
 ### 用户界面
 
+<<<<<<< HEAD
 - [ ] **UI-01**: 用户可以看到搜索结果列表
 - [ ] **UI-02**: 用户可以查看单条日志详情
 - [ ] **UI-03**: 用户可以查看任务进度
 - [ ] **UI-04**: 应用程序可以正常启动
+=======
+- [x] **UI-01**: 用户可以看到搜索结果列表
+- [x] **UI-02**: 用户可以查看单条日志详情
+- [x] **UI-03**: 用户可以查看任务进度
+- [x] **UI-04**: 应用程序可以正常启动
+>>>>>>> gsd/phase-06-completion
 
 ## v2 Requirements
 
@@ -106,7 +113,11 @@
 | UI-01 | Phase 3 | Pending |
 | UI-02 | Phase 3 | Pending |
 | UI-03 | Phase 3 | Pending |
+<<<<<<< HEAD
 | UI-04 | Phase 6 | Pending |
+=======
+| UI-04 | Phase 6 | Done |
+>>>>>>> gsd/phase-06-completion
 
 **Coverage:**
 - v1 requirements: 25 total

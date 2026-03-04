@@ -6,6 +6,7 @@
 //! - Memory-mapped file access for datasets over 1GB
 //! - Parallel indexing across multiple CPU cores
 //! - Progress tracking and cancellation support
+//! - JSON 炸弹防护：自动截断超长行
 
 use parking_lot::Mutex;
 use std::fs::File;
@@ -19,6 +20,7 @@ use tracing::{debug, error, info, warn};
 
 use super::{SearchEngineManager, SearchError, SearchResult};
 use crate::models::LogEntry;
+use crate::security::LineGuard;
 use crate::services::parse_metadata;
 
 /// Progress callback for indexing operations
@@ -262,6 +264,10 @@ impl StreamingIndexBuilder {
         let file = File::open(&file_path)?;
         let reader = BufReader::with_capacity(64 * 1024, file); // 64KB buffer
 
+        // 创建行防护器，防止 JSON 炸弹攻击
+        let line_guard = LineGuard::default();
+        let mut truncated_count = 0u64;
+
         let mut batch = Vec::with_capacity(config.batch_size);
         let mut line_number = 0;
         let global_offset = batch_idx
@@ -283,8 +289,23 @@ impl StreamingIndexBuilder {
             };
             line_number += 1;
 
+            // 使用 LineGuard 检查并截断超长行（防止 JSON 炸弹）
+            let guarded_line = line_guard.guard_line(&line);
+            let safe_content = if guarded_line.was_truncated {
+                truncated_count += 1;
+                debug!(
+                    file = %file_path.display(),
+                    line = line_number,
+                    original_length = guarded_line.original_length,
+                    "Line truncated for security"
+                );
+                guarded_line.content
+            } else {
+                guarded_line.content
+            };
+
             // Parse log entry
-            let (timestamp, level) = parse_metadata(&line);
+            let (timestamp, level) = parse_metadata(&safe_content);
             let log_entry = LogEntry {
                 id: global_offset + line_number,
                 timestamp: timestamp.into(),
@@ -292,7 +313,7 @@ impl StreamingIndexBuilder {
                 file: file_path.to_string_lossy().into(),
                 real_path: file_path.to_string_lossy().into(),
                 line: line_number,
-                content: line.into(),
+                content: safe_content.into(),
                 tags: vec![],
                 match_details: None,
                 matched_keywords: None,
@@ -313,6 +334,15 @@ impl StreamingIndexBuilder {
 
                 batch = Vec::with_capacity(config.batch_size);
             }
+        }
+
+        // 记录截断统计信息
+        if truncated_count > 0 {
+            info!(
+                file = %file_path.display(),
+                truncated_lines = truncated_count,
+                "File processed with line truncation"
+            );
         }
 
         // Send remaining entries

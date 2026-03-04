@@ -9,16 +9,19 @@
 //!
 //! 注意：部分命令模块暂时禁用，因为它们需要额外的依赖修复
 
+pub mod archive;
 pub mod async_search;
 pub mod cache;
 pub mod config;
 pub mod error_reporting;
 pub mod export;
+pub mod http_api;
 pub mod import;
 pub mod legacy;
 pub mod performance;
 pub mod query;
 pub mod search;
+pub mod search_history;
 pub mod state_sync;
 pub mod validation;
 pub mod virtual_tree;

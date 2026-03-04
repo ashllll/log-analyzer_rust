@@ -32,6 +32,51 @@
 //! await invoke('load_workspace', { workspaceId: 'workspace-123' });
 //! ```
 
+use serde::{Deserialize, Serialize};
+
+/// 工作区元数据
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkspaceMetadata {
+    /// 工作区显示名称
+    pub name: String,
+    /// 创建时间 (ISO 8601 格式)
+    pub created_at: String,
+    /// 原始导入路径
+    pub source_path: Option<String>,
+}
+
+impl WorkspaceMetadata {
+    /// 创建新的工作区元数据
+    pub fn new(name: String, source_path: Option<String>) -> Self {
+        Self {
+            name,
+            created_at: chrono::Utc::now().to_rfc3339(),
+            source_path,
+        }
+    }
+
+    /// 保存元数据到工作区目录
+    pub async fn save(&self, workspace_dir: &std::path::Path) -> Result<(), String> {
+        let metadata_path = workspace_dir.join("workspace.json");
+        let content = serde_json::to_string_pretty(self)
+            .map_err(|e| format!("Failed to serialize workspace metadata: {}", e))?;
+        tokio::fs::write(&metadata_path, content)
+            .await
+            .map_err(|e| format!("Failed to write workspace metadata: {}", e))?;
+        Ok(())
+    }
+
+    /// 从工作区目录加载元数据
+    pub async fn load(workspace_dir: &std::path::Path) -> Option<Self> {
+        let metadata_path = workspace_dir.join("workspace.json");
+        if !metadata_path.exists() {
+            return None;
+        }
+        let content = tokio::fs::read_to_string(&metadata_path).await.ok()?;
+        serde_json::from_str(&content).ok()
+    }
+}
+
 /// Workspace load response
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct WorkspaceLoadResponse {
@@ -732,9 +777,22 @@ pub async fn get_workspace_status(
         format!("{}MB", size_mb)
     };
 
+    // 尝试从元数据文件读取工作区名称
+    let workspace_name = match WorkspaceMetadata::load(&workspace_dir).await {
+        Some(metadata) => metadata.name,
+        None => {
+            // 如果没有元数据文件，尝试从 workspaceId 提取名称
+            // 格式: ws-{name} -> 提取 {name} 部分
+            workspaceId
+                .strip_prefix("ws-")
+                .unwrap_or(&workspaceId)
+                .replace('-', " ")
+        }
+    };
+
     Ok(WorkspaceStatusResponse {
         id: workspaceId.clone(),
-        name: workspaceId, // TODO: 从配置中读取实际名称
+        name: workspace_name,
         status: "READY".to_string(),
         size: size_str,
         files: file_count as usize,
@@ -777,6 +835,29 @@ pub async fn create_workspace(
 
     // 生成 workspace ID（使用名称作为基础，转换为合法 ID）
     let workspace_id = format!("ws-{}", name.to_lowercase().replace([' ', '/', '\\'], "-"));
+
+    // 创建工作区目录
+    let workspace_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data dir: {}", e))?
+        .join("extracted")
+        .join(&workspace_id);
+
+    // 确保目录存在
+    tokio::fs::create_dir_all(&workspace_dir)
+        .await
+        .map_err(|e| format!("Failed to create workspace dir: {}", e))?;
+
+    // 保存工作区元数据
+    let metadata = WorkspaceMetadata::new(name.clone(), Some(path.clone()));
+    metadata.save(&workspace_dir).await?;
+
+    info!(
+        workspace_id = %workspace_id,
+        name = %name,
+        "Workspace metadata saved"
+    );
 
     // 调用 import_folder 逻辑
     import_folder(app, path, workspace_id, state).await

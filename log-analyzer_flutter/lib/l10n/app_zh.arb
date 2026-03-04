@@ -1,0 +1,88 @@
+{
+  "@@locale": "zh",
+  "appTitle": "日志分析器",
+
+  "search_title": "搜索",
+  "search_statistics_title": "搜索统计 (或逻辑)",
+  "search_total_matches": "总计: {{count}} 条匹配, 耗时 {{duration}}ms",
+  "@search_total_matches": {
+    "placeholders": {
+      "count": {"type": "int"},
+      "duration": {"type": "int"}
+    }
+  },
+  "search_matches_count": "{{count}} 条匹配",
+  "@search_matches_count": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "search_percentage": "{{value}}%",
+  "@search_percentage": {
+    "placeholders": {
+      "value": {"type": "double"}
+    }
+  },
+  "search_placeholder": "搜索日志...",
+  "search_no_results": "未找到匹配结果",
+  "search_loading": "搜索中...",
+
+  "keywords_title": "关键词",
+  "keywords_add_group": "添加关键词组",
+  "keywords_edit_group": "编辑关键词组",
+  "keywords_delete_confirm": "确定要删除此关键词组吗？",
+  "keywords_name": "组名称",
+  "keywords_color": "颜色",
+  "keywords_enabled": "启用",
+  "keywords_patterns": "模式",
+  "keywords_import": "导入",
+  "keywords_export": "导出",
+
+  "workspaces_title": "工作区",
+  "workspaces_add": "添加工作区",
+  "workspaces_delete_confirm": "确定要删除此工作区吗？",
+  "workspaces_import": "导入文件夹",
+  "workspaces_refresh": "刷新",
+  "workspaces_watch": "监听文件变化",
+  "workspaces_status_ready": "就绪",
+  "workspaces_status_scanning": "扫描中",
+  "workspaces_status_offline": "离线",
+  "workspaces_status_processing": "处理中",
+
+  "tasks_title": "任务",
+  "tasks_no_tasks": "没有运行中的任务",
+  "tasks_cancel": "取消任务",
+  "tasks_cancel_confirm": "确定要取消此任务吗？",
+
+  "settings_title": "设置",
+  "settings_save": "保存",
+  "settings_saved": "设置保存成功",
+  "settings_save_failed": "设置保存失败",
+
+  "settings_extraction_title": "提取策略设置",
+  "settings_file_filters": "文件过滤器",
+  "settings_security": "安全",
+  "settings_paths": "路径",
+
+  "performance_title": "性能",
+  "performance_search_latency": "搜索延迟",
+  "performance_search_throughput": "搜索吞吐量",
+  "performance_cache_metrics": "缓存指标",
+  "performance_memory_metrics": "内存指标",
+  "performance_task_metrics": "任务指标",
+  "performance_index_metrics": "索引指标",
+
+  "toast_success": "成功",
+  "toast_error": "错误",
+  "toast_info": "信息",
+  "toast_warning": "警告",
+
+  "common_confirm": "确认",
+  "common_cancel": "取消",
+  "common_delete": "删除",
+  "common_edit": "编辑",
+  "common_save": "保存",
+  "common_close": "关闭",
+  "common_loading": "加载中...",
+  "common_no_data": "暂无数据"
+}

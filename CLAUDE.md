@@ -13,9 +13,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ---
 
 > **项目**: log-analyzer_rust - 高性能桌面日志分析工具
-> **版本**: 0.0.138
-> **技术栈**: Tauri 2.0 + Rust 1.70+ + React 19.1.0 + TypeScript 5.8.3
-> **最后更新**: 2026-02-09
+> **版本**: 0.0.143
+> **技术栈**: Tauri 2.0 + Rust 1.70+ + Flutter FFI (重构中)
+> **最后更新**: 2026-02-20
 
 ---
 
@@ -23,18 +23,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - **[项目文档中心](docs/README.md)** - 架构文档、用户指南、开发指南
 - **[Rust后端文档](log-analyzer/src-tauri/CLAUDE.md)** - 后端模块详细实现
-- **[React前端文档](log-analyzer/src/CLAUDE.md)** - 前端模块详细实现
 
 ---
 
 ## 核心架构
 
 ### 技术栈
-- **前端**: React 19.1.0 + TypeScript 5.8.3 + Zustand 5.0.9 + @tanstack/react-query 5.90.12 + Tailwind CSS 3.4.17
-- **后端**: Rust 1.70+ + Tauri 2.0 + tokio 1.x + SQLite (sqlx 0.7)
-- **搜索**: Aho-Corasick 算法 + Tantivy 0.22 全文搜索引擎 (性能提升 80%+)
+- **框架**: Tauri 2.0 (桌面应用) + Flutter FFI (跨语言绑定)
+- **后端**: Rust 1.70+ + tokio 1.x (异步运行时) + SQLite (sqlx 0.7)
+- **搜索**: Aho-Corasick 算法 + Tantivy 0.22 全文搜索引擎 + DFA 正则引擎
 - **存储**: 内容寻址存储(CAS) + SQLite + FTS5 全文搜索
+- **缓存**: Moka (企业级) + LRU (搜索结果)
+- **压缩**: ZIP/TAR/GZ/RAR/7Z + async_zip 异步处理
 - **插件系统**: libloading 动态库加载 + ABI 版本验证 + 目录白名单
+- **观测性**: Tracing + OpenTelemetry + Prometheus Metrics
 
 ### 应用数据目录 (离线存储)
 - **Windows**: `%APPDATA%/com.joeash.log-analyzer/workspaces/`
@@ -45,26 +47,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```
 log-analyzer_rust/
 ├── log-analyzer/
-│   ├── src/                   # React前端
-│   │   ├── components/        # UI组件 (ui/, modals/, renderers/, search/)
-│   │   ├── pages/            # 页面(SearchPage, WorkspacesPage等)
-│   │   ├── services/         # API封装、SearchQueryBuilder
-│   │   ├── hooks/            # 自定义Hooks (useKeyboardShortcuts等)
-│   │   ├── stores/           # Zustand状态管理
-│   │   ├── types/            # TypeScript类型定义
-│   │   └── i18n/             # 国际化翻译 (zh.json, en.json)
+│   ├── src/                   # (重构中 - Flutter前端)
 │   └── src-tauri/            # Rust后端
 │       ├── src/
-│       │   ├── application/   # 应用接入层 (plugins/, commands.rs)
-│       │   ├── commands/     # Tauri命令(search, import, workspace等)
-│       │   ├── search_engine/ # 搜索引擎(Tantivy,布尔查询,高亮引擎)
-│       │   ├── services/     # 业务逻辑(PatternMatcher, QueryExecutor等)
+│       │   ├── application/   # 应用接入层 (handlers/, queries/)
+│       │   ├── commands/      # Tauri命令(search, import, workspace等)
+│       │   ├── domain/       # 领域模型 (log_analysis/, search/, export/)
+│       │   ├── search_engine/ # 搜索引擎(Tantivy, DFA, Roaring索引)
+│       │   ├── services/     # 业务逻辑(FileWatcher, Typestate)
 │       │   ├── storage/      # CAS存储系统 + SQLite元数据
-│       │   ├── archive/      # 压缩包处理(ZIP/RAR/GZ/TAR), 熔断自愈
+│       │   ├── archive/      # 压缩包处理(ZIP/RAR/GZ/TAR/7Z)
 │       │   ├── task_manager/ # 异步任务Actor模型
-│       │   ├── monitoring/   # 观测性 (metrics, advanced)
-│       │   └── models/       # 数据模型
-│       └── tests/            # 集成测试
+│       │   ├── monitoring/   # 观测性 (metrics, tracing)
+│       │   ├── models/       # 数据模型 (state, search_history)
+│       │   ├── security/     # 安全模块
+│       │   ├── ffi/          # Flutter FFI 桥接
+│       │   └── utils/        # 工具函数
+│       ├── crates/           # 内部crate
+│       │   ├── log-lexer/   # 日志词法分析器
+│       │   └── log-lexer-derive/ # 过程宏
+│       └── benches/          # 性能基准测试
 ├── docs/                     # 项目文档
 │   ├── architecture/         # 架构文档 (CAS, API, 搜索功能)
 │   ├── guides/              # 用户指南 (快速参考, 多关键词搜索)
@@ -140,16 +142,16 @@ cargo clippy -- -D warnings
 cargo clippy --all-features --all-targets -- -D warnings
 ```
 
-### 前端测试
+### Flutter开发 (重构中)
 ```bash
-# 运行Jest测试
-npm test
+# Flutter 项目位于 log-analyzer_flutter/
+cd log-analyzer_flutter
 
-# 监听模式
-npm run test:watch
+# 运行 Flutter
+flutter run
 
-# 生成覆盖率报告
-npm test -- --coverage
+# 构建桌面应用
+flutter build tauri
 ```
 
 ---
@@ -236,15 +238,11 @@ pub async fn insert_file(&self, metadata: &FileMetadata) -> Result<i64> {
 - **测试框架**: rstest (增强单元测试) + proptest (属性测试) + criterion (基准测试)
 - **核心测试模块**:
   - `storage/`: CAS存储、完整性验证
-  - `archive/`: 压缩包处理 (130+测试)
-  - `search_engine/`: Tantivy搜索引擎、布尔查询、高亮引擎
+  - `archive/`: 压缩包处理 (ZIP/RAR/GZ/TAR/7Z)
+  - `search_engine/`: Tantivy搜索引擎、DFA引擎、Roaring索引
   - `services/`: PatternMatcher、QueryExecutor、FileWatcher
   - `task_manager/`: Actor模型任务管理
-  - `application/plugins/`: 插件安全验证
-
-### React前端
-- **测试框架**: Jest + React Testing Library
-- **目标覆盖**: 80%+
+  - `domain/`: 领域模型、业务规则验证
 
 ---
 
@@ -266,10 +264,6 @@ bash ../scripts/validate-ci.sh
 
 | 检查项 | 命令 |
 |--------|------|
-| ESLint | `npm run lint` |
-| TypeScript 类型 | `npm run type-check` |
-| 前端测试 | `npm test -- --testPathIgnorePatterns=e2e` |
-| 前端构建 | `npm run build` |
 | Rust 格式 | `cargo fmt -- --check` |
 | Rust Clippy | `cargo clippy --all-features --all-targets -- -D warnings` |
 | Rust 测试 | `cargo test --all-features --lib --bins` |
@@ -311,14 +305,12 @@ git push --no-verify
 - **并发安全**: 使用 `parking_lot` 高性能锁，`DashMap` 并发哈希映射
 - **异步编程**: 使用 `tokio` 运行时，`async-trait` 异步trait
 
-### TypeScript/React编码规范
+### Flutter/跨语言编码规范
+- **Flutter FFI**: 使用 `flutter_rust_bridge` 2.x 绑定 Rust 后端
+- **状态管理**: Provider / Riverpod (Flutter)
 - **命名**: `PascalCase` (组件/类型), `camelCase` (变量/函数)
-- **组件**: 函数式组件 + Hooks，避免 class 组件
-- **样式**: Tailwind Utility类 + `clsx` 条件类名 + `tailwind-merge` 合并
-- **国际化**: 文案走 `i18next` 字典，使用 `useTranslation` Hook
-- **类型安全**: 严格模式 TypeScript，避免 `any`
-- **性能优化**: React.memo、useCallback、useMemo、虚拟滚动
-- **状态管理**: Zustand (全局状态) + @tanstack/react-query (服务端状态)
+- **类型安全**: 严格模式 Dart，避免 `dynamic`
+- **UI构建**: Widget组合优于继承，使用 `const` 构造函数优化
 
 ---
 
@@ -378,32 +370,50 @@ pkg-config --modversion gtk4
 
 | 依赖 | 版本 | 用途 |
 |------|------|------|
+| **框架** | | |
 | `tauri` | 2.0.0 | 跨平台桌面应用框架 |
-| `tokio` | 1.x (full) | 异步运行时 |
+| `flutter_rust_bridge` | 2.11.1 | Flutter FFI 桥接 |
+| **异步/并发** | | |
+| `tokio` | 1.x | 异步运行时 |
+| `parking_lot` | 0.12 | 高性能锁 |
+| `crossbeam` | 0.8 | 无锁数据结构 |
+| `dashmap` | 5.5 | 并发哈希映射 |
+| **搜索/索引** | | |
 | `tantivy` | 0.22 | 全文搜索引擎 (Rust版Lucene) |
 | `aho-corasick` | 1.1 | 多模式字符串匹配算法 |
+| `regex-automata` | 0.4 | DFA正则引擎 (流式匹配) |
+| `roaring` | 0.10 | 高效位图索引 |
+| **存储/缓存** | | |
 | `sqlx` | 0.7 | 异步SQL工具包 (SQLite + FTS5) |
+| `moka` | 0.12 | 企业级缓存系统 |
+| `lru` | 0.12 | LRU缓存 |
+| **压缩/存档** | | |
+| `zip` | 0.6 | ZIP格式支持 |
+| `tar` / `tokio-tar` | 0.4 / 0.3 | TAR格式支持 |
+| `flate2` | 1.0 | GZIP压缩/解压 |
 | `unrar` | 0.5 | RAR格式支持 (libunrar绑定) |
+| `sevenz-rust` | 0.5 | 7Z格式支持 (纯Rust) |
 | `async_zip` | 0.0.17 | 异步ZIP处理 |
+| **错误处理/日志** | | |
 | `thiserror` | 1.0 | 错误处理derive宏 |
-| `eyre/miette` | 0.6/5.0 | 结构化错误报告 |
-| `parking_lot` | 0.12 | 高性能锁 |
-| `dashmap` | 5.5 | 并发哈希映射 |
+| `eyre` / `miette` | 0.6 / 5.0 | 结构化错误报告 |
 | `tracing` | 0.1 | 结构化日志追踪 |
+| `sentry` | 0.32 | 错误监控 |
+| **观测性** | | |
+| `prometheus` | 0.13 | 指标收集 |
+| `metrics` | 0.22 | 应用指标 |
+| **其他** | | |
 | `libloading` | 0.8 | 动态库加载 (插件系统) |
 | `notify` | 6.1 | 文件系统监听 |
+| `governor` | 0.6 | 速率限制器 |
+| `sysinfo` | 0.31 | 系统信息 |
 
-### React前端核心依赖 (package.json)
+### 内部 crate
 
-| 依赖 | 版本 | 用途 |
-|------|------|------|
-| `react` | 19.1.0 | UI框架 |
-| `@tauri-apps/api` | 2.x | Tauri前端API |
-| `@tanstack/react-query` | 5.90.12 | 服务端状态管理 |
-| `@tanstack/react-virtual` | 3.13.12 | 虚拟滚动 |
-| `zustand` | 5.0.9 | 客户端状态管理 |
-| `framer-motion` | 12.23.24 | 动画库 |
-| `i18next` | 25.7.1 | 国际化 |
+| crate | 用途 |
+|-------|------|
+| `log-lexer` | 日志词法分析器 |
+| `log-lexer-derive` | 过程宏 (自定义派生) |
 
 ### 开发工具依赖
 
@@ -412,8 +422,6 @@ pkg-config --modversion gtk4
 | `rstest` | 增强单元测试 |
 | `proptest` | 属性测试 (模糊测试) |
 | `criterion` | 性能基准测试 |
-| `husky` | Git hooks管理 |
-| `jest` | 前端测试框架 |
 
 ---
 

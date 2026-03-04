@@ -703,11 +703,11 @@ impl ExtractionEngine {
         let mut registry = HandlerRegistry::new();
 
         // Register all handlers
-        registry.register(Box::new(crate::archive::zip_handler::ZipHandler));
-        registry.register(Box::new(crate::archive::tar_handler::TarHandler));
-        registry.register(Box::new(crate::archive::gz_handler::GzHandler));
-        registry.register(Box::new(crate::archive::rar_handler::RarHandler));
-        registry.register(Box::new(crate::archive::sevenz_handler::SevenZHandler));
+        registry.register(Box::new(crate::archive::zip_handler::ZipHandler {}));
+        registry.register(Box::new(crate::archive::tar_handler::TarHandler {}));
+        registry.register(Box::new(crate::archive::gz_handler::GzHandler {}));
+        registry.register(Box::new(crate::archive::rar_handler::RarHandler {}));
+        registry.register(Box::new(crate::archive::sevenz_handler::SevenZHandler {}));
 
         registry
     }

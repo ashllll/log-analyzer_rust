@@ -32,7 +32,7 @@ pub mod tar_handler;
 pub mod traversal; // 新增：统一遍历模块
 pub mod zip_handler;
 
-pub use archive_handler::{ArchiveHandler, ExtractionSummary};
+pub use archive_handler::{ArchiveEntry, ArchiveHandler, ExtractionSummary};
 pub use compression_analyzer::{CompressionAnalyzer, FileDistribution};
 pub use extraction_context::{ExtractionContext, ExtractionItem, ExtractionStack};
 pub use extraction_engine::{ExtractionEngine, ExtractionPolicy};
@@ -103,11 +103,11 @@ impl ArchiveManager {
      */
     pub fn with_config(config: ArchiveConfig) -> Self {
         let handlers: Vec<Box<dyn ArchiveHandler>> = vec![
-            Box::new(TarHandler),    // 先检查TAR（包括tar.gz等）
-            Box::new(GzHandler),     // 再检查纯GZ
-            Box::new(ZipHandler),    // 然后ZIP
-            Box::new(RarHandler),    // 然后RAR
-            Box::new(SevenZHandler), // 最后7z支持
+            Box::new(TarHandler {}),    // 先检查TAR（包括tar.gz等）
+            Box::new(GzHandler {}),     // 再检查纯GZ
+            Box::new(ZipHandler {}),    // 然后ZIP
+            Box::new(RarHandler {}),    // 然后RAR
+            Box::new(SevenZHandler {}), // 最后7z支持
         ];
 
         Self {
@@ -186,6 +186,30 @@ impl Default for ArchiveManager {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/**
+ * 查找支持该文件格式的处理器
+ *
+ * # 参数
+ * * `path` - 压缩包文件路径
+ *
+ * # 返回
+ * * `Some(Box<dyn ArchiveHandler>)` - 支持该格式的处理器
+ * * `None` - 不支持的格式
+ */
+pub fn find_handler(path: &Path) -> Option<Box<dyn ArchiveHandler>> {
+    let handlers: Vec<Box<dyn ArchiveHandler>> = vec![
+        Box::new(TarHandler {}),
+        Box::new(GzHandler {}),
+        Box::new(ZipHandler {}),
+        Box::new(RarHandler {}),
+        Box::new(SevenZHandler {}),
+    ];
+
+    handlers
+        .into_iter()
+        .find(|handler| handler.can_handle(path))
 }
 
 #[cfg(test)]

@@ -1,0 +1,43 @@
+# Flutter/Dart 相关
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+buildlog.txt
+
+ # IDE 相关
+.vscode/
+.idea/
+*.iml
+*.ipr
+*.iws
+.idea/
+
+ # macOS 相关
+.DS_Store
+.AppleDouble
+.LSOverride
+
+ # Windows 相关
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+ # Linux 相关
+*~
+
+ # 测试覆盖率
+coverage/
+
+ # 生成代码
+*.g.dart
+*.freezed.dart
+
+ # 但保留模板文件
+!lib/**.template.dart
+
+ # Rust FFI 相关 (如果使用 flutter_rust_bridge)
+# frb_generated/

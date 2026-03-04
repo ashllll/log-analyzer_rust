@@ -1,5 +1,6 @@
 //! 应用状态管理 - 简化版本
 
+use crate::models::search_history::SearchHistoryManager;
 use crate::search_engine::manager::SearchEngineManager;
 use crate::services::file_watcher::WatcherState;
 use crate::state_sync::StateSync;
@@ -16,6 +17,13 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 /// 简化应用状态
+///
+/// # Clone 行为
+///
+/// `AppState` 实现了 `Clone`，克隆操作只会增加 `Arc` 的引用计数，
+/// 所有内部数据（如 HashMap、TaskManager 等）仍然是共享的。
+/// 这使得 `AppState` 可以安全地在 FFI 边界传递。
+#[derive(Clone)]
 pub struct AppState {
     pub workspace_dirs: Arc<Mutex<HashMap<String, std::path::PathBuf>>>,
     pub cas_instances: Arc<Mutex<HashMap<String, Arc<ContentAddressableStorage>>>>,
@@ -36,6 +44,8 @@ pub struct AppState {
     /// 搜索引擎管理器映射 (每个工作区独立)
     /// 用于增量索引时持久化新日志条目到 Tantivy 索引
     pub search_engine_managers: Arc<Mutex<HashMap<String, Arc<SearchEngineManager>>>>,
+    /// 搜索历史管理器
+    pub search_history: Arc<Mutex<SearchHistoryManager>>,
 }
 
 impl Default for AppState {
@@ -61,6 +71,7 @@ impl Default for AppState {
             state_sync: Arc::new(Mutex::new(None)),
             async_resource_manager: Arc::new(AsyncResourceManager::new()),
             search_engine_managers: Arc::new(Mutex::new(HashMap::new())),
+            search_history: Arc::new(Mutex::new(SearchHistoryManager::new())),
         }
     }
 }

@@ -170,7 +170,7 @@ impl MetricsRegistry {
 }
 
 /// 初始化指标系统
-pub fn init_metrics() -> Result<(), Box<dyn std::error::Error>> {
+pub fn init_metrics() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // 创建全局指标注册表
     let registry = Arc::new(std::sync::Mutex::new(MetricsRegistry::new()));
 
@@ -181,9 +181,12 @@ pub fn init_metrics() -> Result<(), Box<dyn std::error::Error>> {
 
     // ✅ 修复：单次锁定，批量注册，避免死锁风险
     {
-        let mut reg = registry
-            .lock()
-            .map_err(|e| format!("Failed to lock metrics registry: {}", e))?;
+        let mut reg = registry.lock().map_err(|e| {
+            Box::new(std::io::Error::other(format!(
+                "Failed to lock metrics registry: {}",
+                e
+            ))) as Box<dyn std::error::Error + Send + Sync>
+        })?;
 
         reg.register_counter(search_counter);
         reg.register_counter(error_counter);

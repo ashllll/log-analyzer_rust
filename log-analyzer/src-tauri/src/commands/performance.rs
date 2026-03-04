@@ -271,15 +271,58 @@ pub fn get_performance_metrics(state: State<'_, AppState>) -> Result<Performance
 }
 
 /// 获取任务管理器指标
-fn get_task_manager_metrics(_state: &AppState) -> TaskMetrics {
-    // 简化处理：返回默认值
-    // TODO: 通过异步消息获取实际的任务管理器指标
-    TaskMetrics {
-        total: 0,
-        running: 0,
-        completed: 0,
-        failed: 0,
-        average_duration: 0,
+fn get_task_manager_metrics(state: &AppState) -> TaskMetrics {
+    // 获取 TaskManager 实例
+    let task_manager_guard = state.task_manager.lock();
+    if let Some(ref task_manager) = *task_manager_guard {
+        // 使用 block_in_place 避免阻塞整个 tokio 运行时
+        // 这允许在同步上下文中调用异步方法
+        tokio::task::block_in_place(|| {
+            tauri::async_runtime::block_on(async {
+                match task_manager.get_metrics_async().await {
+                    Ok(metrics) => {
+                        // 计算平均执行时间（基于已完成任务）
+                        let average_duration = if metrics.completed_tasks > 0 {
+                            // 由于 TaskInfo 中的时间信息不是持久化的，
+                            // 这里返回估算值。实际实现可能需要跟踪历史数据
+                            0u64 // 暂时返回 0，后续可以添加更精确的计算
+                        } else {
+                            0u64
+                        };
+
+                        TaskMetrics {
+                            total: metrics.total_tasks as u64,
+                            running: metrics.running_tasks as u64,
+                            completed: metrics.completed_tasks as u64,
+                            failed: metrics.failed_tasks as u64,
+                            average_duration,
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            error = %e,
+                            "Failed to get task manager metrics, returning defaults"
+                        );
+                        TaskMetrics {
+                            total: 0,
+                            running: 0,
+                            completed: 0,
+                            failed: 0,
+                            average_duration: 0,
+                        }
+                    }
+                }
+            })
+        })
+    } else {
+        // TaskManager 未初始化，返回默认值
+        TaskMetrics {
+            total: 0,
+            running: 0,
+            completed: 0,
+            failed: 0,
+            average_duration: 0,
+        }
     }
 }
 
@@ -303,15 +346,43 @@ fn get_system_memory_metrics() -> MemoryMetrics {
 fn get_index_metrics(state: &AppState) -> IndexMetrics {
     // 从所有元数据存储中聚合索引信息
     let stores = state.metadata_stores.lock();
-    let store_count = stores.len() as u64;
 
-    // 简化处理：使用存储数量作为文件计数
-    // TODO: 从 MetadataStore 获取实际的文件统计信息
+    if stores.is_empty() {
+        return IndexMetrics {
+            total_files: 0,
+            indexed_files: 0,
+            total_size: 0,
+            index_size: 0,
+        };
+    }
+
+    // 聚合所有工作区的统计数据
+    let mut total_files: u64 = 0;
+    let mut total_size: u64 = 0;
+
+    for store in stores.values() {
+        // 使用 block_in_place 避免阻塞整个 tokio 运行时
+        let (file_count, file_size) = tokio::task::block_in_place(|| {
+            tauri::async_runtime::block_on(async {
+                let count = store.count_files().await.unwrap_or(0);
+                let size = store.sum_file_sizes().await.unwrap_or(0);
+                (count as u64, size as u64)
+            })
+        });
+
+        total_files += file_count;
+        total_size += file_size;
+    }
+
+    // 估算索引大小（通常是原始数据大小的 10-30%）
+    // 使用保守估计 20%
+    let index_size = (total_size as f64 * 0.2) as u64;
+
     IndexMetrics {
-        total_files: store_count,
-        indexed_files: store_count,
-        total_size: 0,
-        index_size: 0,
+        total_files,
+        indexed_files: total_files, // 假设所有文件都已索引
+        total_size,
+        index_size,
     }
 }
 

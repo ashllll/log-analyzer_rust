@@ -1,9 +1,10 @@
-use crate::archive::archive_handler::{ArchiveHandler, ExtractionSummary};
+use crate::archive::archive_handler::{ArchiveEntry, ArchiveHandler, ExtractionSummary};
 use crate::error::{AppError, Result};
 use crate::utils::path_security::{
     validate_and_sanitize_archive_path, PathValidationResult, SecurityConfig,
 };
 use async_trait::async_trait;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use tokio::fs;
 use tracing::warn;
@@ -13,7 +14,7 @@ use zip::ZipArchive;
 /**
  * ZIP文件处理器 (稳定版本)
  */
-pub struct ZipHandler;
+pub struct ZipHandler {}
 
 #[async_trait]
 impl ArchiveHandler for ZipHandler {
@@ -132,5 +133,80 @@ impl ArchiveHandler for ZipHandler {
 
     fn file_extensions(&self) -> Vec<&str> {
         vec!["zip"]
+    }
+
+    async fn list_contents(&self, path: &Path) -> Result<Vec<ArchiveEntry>> {
+        let path_owned = path.to_path_buf();
+        let entries = tokio::task::spawn_blocking(move || {
+            let file = std::fs::File::open(&path_owned)
+                .map_err(|e| AppError::archive_error(e.to_string(), Some(path_owned.clone())))?;
+            let mut archive = ZipArchive::new(file)
+                .map_err(|e| AppError::archive_error(e.to_string(), Some(path_owned.clone())))?;
+            let mut entries = Vec::new();
+
+            for i in 0..archive.len() {
+                let file = match archive.by_index(i) {
+                    Ok(f) => f,
+                    Err(e) => {
+                        warn!("Failed to read zip entry {}: {}", i, e);
+                        continue;
+                    }
+                };
+
+                let name = PathBuf::from(file.name())
+                    .file_name()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_default();
+
+                entries.push(ArchiveEntry {
+                    name,
+                    path: file.name().to_string(),
+                    is_dir: file.is_dir(),
+                    size: file.size(),
+                    compressed_size: file.compressed_size(),
+                });
+            }
+            Ok::<Vec<ArchiveEntry>, AppError>(entries)
+        })
+        .await
+        .map_err(|e| AppError::archive_error(e.to_string(), None))??;
+
+        Ok(entries)
+    }
+
+    async fn read_file(&self, path: &Path, file_name: &str) -> Result<String> {
+        let path_owned = path.to_path_buf();
+        let file_name_owned = file_name.to_string();
+
+        tokio::task::spawn_blocking(move || {
+            let file = std::fs::File::open(&path_owned)
+                .map_err(|e| AppError::archive_error(e.to_string(), Some(path_owned.clone())))?;
+            let mut archive = ZipArchive::new(file)
+                .map_err(|e| AppError::archive_error(e.to_string(), Some(path_owned.clone())))?;
+            let mut zip_file = archive.by_name(&file_name_owned)
+                .map_err(|e| AppError::archive_error(e.to_string(), None))?;
+
+            // 大小限制：10MB
+            const MAX_SIZE: u64 = 10 * 1024 * 1024;
+            let size = zip_file.size();
+
+            if size > MAX_SIZE {
+                // 大文件截断读取
+                let mut buffer = vec![0u8; MAX_SIZE as usize];
+                let bytes_read = zip_file.read(&mut buffer)?;
+                let mut content = String::from_utf8_lossy(&buffer[..bytes_read]).to_string();
+                content.push_str(&format!(
+                    "\n\n[文件过大，已截断显示. 完整大小: {} bytes]",
+                    size
+                ));
+                Ok(content)
+            } else {
+                let mut contents = String::new();
+                zip_file.read_to_string(&mut contents)?;
+                Ok(contents)
+            }
+        })
+        .await
+        .map_err(|e| AppError::archive_error(e.to_string(), None))?
     }
 }

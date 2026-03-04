@@ -561,6 +561,23 @@ impl TaskManager {
             .wrap_err("Actor dropped response channel")
     }
 
+    /// 获取任务管理器指标（异步版本）
+    pub async fn get_metrics_async(&self) -> Result<TaskManagerMetrics> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+
+        let msg = ActorMessage::GetMetrics { respond_to: tx };
+
+        self.sender
+            .send(msg)
+            .wrap_err("TaskManager actor has stopped")?;
+
+        let timeout_duration = Duration::from_secs(self.config.operation_timeout);
+        timeout(timeout_duration, rx)
+            .await
+            .wrap_err("Operation timed out")?
+            .wrap_err("Actor dropped response channel")
+    }
+
     /// 健康检查
     pub fn health_check(&self) -> bool {
         !self.sender.is_closed()

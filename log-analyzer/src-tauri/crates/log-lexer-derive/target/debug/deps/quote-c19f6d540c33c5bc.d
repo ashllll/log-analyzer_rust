@@ -1,0 +1,11 @@
+G:\github\log-analyzer_rust\log-analyzer\src-tauri\crates\log-lexer-derive\target\debug\deps\quote-c19f6d540c33c5bc.d: C:\Users\white\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\quote-1.0.44\src\lib.rs C:\Users\white\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\quote-1.0.44\src\ext.rs C:\Users\white\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\quote-1.0.44\src\format.rs C:\Users\white\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\quote-1.0.44\src\ident_fragment.rs C:\Users\white\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\quote-1.0.44\src\to_tokens.rs C:\Users\white\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\quote-1.0.44\src\runtime.rs C:\Users\white\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\quote-1.0.44\src\spanned.rs
+
+G:\github\log-analyzer_rust\log-analyzer\src-tauri\crates\log-lexer-derive\target\debug\deps\libquote-c19f6d540c33c5bc.rmeta: C:\Users\white\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\quote-1.0.44\src\lib.rs C:\Users\white\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\quote-1.0.44\src\ext.rs C:\Users\white\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\quote-1.0.44\src\format.rs C:\Users\white\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\quote-1.0.44\src\ident_fragment.rs C:\Users\white\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\quote-1.0.44\src\to_tokens.rs C:\Users\white\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\quote-1.0.44\src\runtime.rs C:\Users\white\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\quote-1.0.44\src\spanned.rs
+
+C:\Users\white\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\quote-1.0.44\src\lib.rs:
+C:\Users\white\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\quote-1.0.44\src\ext.rs:
+C:\Users\white\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\quote-1.0.44\src\format.rs:
+C:\Users\white\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\quote-1.0.44\src\ident_fragment.rs:
+C:\Users\white\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\quote-1.0.44\src\to_tokens.rs:
+C:\Users\white\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\quote-1.0.44\src\runtime.rs:
+C:\Users\white\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\quote-1.0.44\src\spanned.rs:

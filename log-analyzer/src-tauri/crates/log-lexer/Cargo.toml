@@ -1,0 +1,19 @@
+[package]
+name = "log-lexer"
+version = "0.1.0"
+edition = "2021"
+description = "高性能日志词法分析器 - Trait 定义和运行时支持"
+license = "MIT"
+
+[dependencies]
+thiserror = "1.0"
+serde = { version = "1", features = ["derive"], optional = true }
+rkyv = { version = "0.7", features = ["validation"], optional = true }
+
+[features]
+default = []
+serde = ["dep:serde"]
+rkyv = ["dep:rkyv"]
+
+[dev-dependencies]
+log-lexer-derive = { path = "../log-lexer-derive" }

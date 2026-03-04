@@ -1,0 +1,39 @@
+# Flutter 分析配置
+# 与 React 版本的 ESLint 配置对应
+
+analyzer:
+  errors:
+    # 将提示作为错误处理（严格模式）
+    missing_required_param: error
+    missing_return: error
+    todo: ignore  # TODO 注释不报错
+    # Freezed + json_serializable 组合使用时的已知警告
+    invalid_annotation_target: ignore
+
+  exclude:
+    - '**/*.g.dart'
+    - '**/*.freezed.dart'
+    - 'build/**'
+
+linter:
+  rules:
+    # 推荐 Flutter 规则
+    - prefer_const_constructors
+    - prefer_const_declarations
+    - prefer_const_literals_to_create_immutables
+    - avoid_print
+    - avoid_unnecessary_containers
+    - prefer_single_quotes
+    - sort_child_properties_last
+
+    # 类型安全
+    - always_declare_return_types
+    - avoid_dynamic_calls
+
+    # 代码质量
+    - avoid_empty_else
+    - avoid_relative_lib_imports
+    - prefer_is_empty
+    - prefer_is_not_empty
+    - unnecessary_await_in_return
+    - use_key_in_widget_constructors

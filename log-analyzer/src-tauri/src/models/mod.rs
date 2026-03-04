@@ -6,6 +6,7 @@ pub mod log_entry;
 pub mod policy_manager;
 pub mod processing_report;
 pub mod search;
+pub mod search_history;
 pub mod search_statistics;
 pub mod state;
 
@@ -22,6 +23,7 @@ pub use processing_report::{
 };
 pub use search::SearchCacheKey;
 pub use search::*;
+pub use search_history::{SearchHistoryEntry, SearchHistoryManager};
 pub use search_statistics::{KeywordStatistics, SearchResultSummary};
 pub use state::AppState;
 pub mod validated;

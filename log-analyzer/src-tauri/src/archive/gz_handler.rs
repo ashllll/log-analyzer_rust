@@ -1,7 +1,9 @@
-use crate::archive::archive_handler::{ArchiveHandler, ExtractionSummary};
+use crate::archive::archive_handler::{ArchiveEntry, ArchiveHandler, ExtractionSummary};
 use crate::error::{AppError, Result};
 use async_compression::tokio::bufread::GzipDecoder;
 use async_trait::async_trait;
+use flate2::read::GzDecoder as SyncGzDecoder;
+use std::io::Read;
 use std::path::Path;
 use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
@@ -15,7 +17,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
  * - 内存模式: 适用于小文件 (< 10MB)
  * - 流式模式: 适用于大文件，避免内存溢出
  */
-pub struct GzHandler;
+pub struct GzHandler {}
 
 impl GzHandler {
     /// Stream extract a gzip file without loading entire content into memory
@@ -272,6 +274,67 @@ impl ArchiveHandler for GzHandler {
     fn file_extensions(&self) -> Vec<&str> {
         vec!["gz"]
     }
+
+    async fn list_contents(&self, path: &Path) -> Result<Vec<ArchiveEntry>> {
+        let path_owned = path.to_path_buf();
+        let entries = tokio::task::spawn_blocking(move || {
+            let file = std::fs::File::open(&path_owned)?;
+            let mut decoder = SyncGzDecoder::new(file);
+            let mut decompressed = Vec::new();
+            decoder.read_to_end(&mut decompressed)?;
+
+            // GZ 文件只包含一个文件，文件名是去掉 .gz 扩展名
+            let name = path_owned
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| "unknown".to_string());
+
+            let size = decompressed.len() as u64;
+            let path = name.clone(); // 克隆用于 path 字段
+
+            Ok::<Vec<ArchiveEntry>, AppError>(vec![ArchiveEntry {
+                name,
+                path,
+                is_dir: false,
+                size,
+                compressed_size: path_owned.metadata()?.len(),
+            }])
+        })
+        .await
+        .map_err(|e| AppError::archive_error(e.to_string(), None))??;
+
+        Ok(entries)
+    }
+
+    async fn read_file(&self, path: &Path, _file_name: &str) -> Result<String> {
+        let path_owned = path.to_path_buf();
+
+        tokio::task::spawn_blocking(move || {
+            let file = std::fs::File::open(&path_owned)?;
+            let mut decoder = SyncGzDecoder::new(file);
+
+            // 大小限制：10MB
+            const MAX_SIZE: u64 = 10 * 1024 * 1024;
+
+            // 先检查解压后大小
+            let mut decompressed = Vec::new();
+            decoder.read_to_end(&mut decompressed)?;
+            let size = decompressed.len() as u64;
+
+            if size > MAX_SIZE {
+                let truncated: String = String::from_utf8_lossy(&decompressed[..MAX_SIZE as usize]).to_string();
+                Ok(format!(
+                    "{}\n\n[文件过大，已截断显示. 完整大小: {} bytes]",
+                    truncated, size
+                ))
+            } else {
+                String::from_utf8(decompressed)
+                    .map_err(|e| AppError::archive_error(format!("Invalid UTF-8: {}", e), None))
+            }
+        })
+        .await
+        .map_err(|e| AppError::archive_error(e.to_string(), None))?
+    }
 }
 
 /**
@@ -313,7 +376,7 @@ mod tests {
 
     #[test]
     fn test_gz_handler_can_handle() {
-        let handler = GzHandler;
+        let handler = GzHandler {};
 
         assert!(handler.can_handle(Path::new("test.gz")));
         assert!(!handler.can_handle(Path::new("test.tar.gz"))); // tar.gz由TarHandler处理
@@ -331,7 +394,7 @@ mod tests {
 
     #[test]
     fn test_gz_handler_file_extensions() {
-        let handler = GzHandler;
+        let handler = GzHandler {};
         let extensions = handler.file_extensions();
 
         assert_eq!(extensions, vec!["gz"]);
@@ -379,7 +442,7 @@ mod tests {
             .expect("Failed to write compressed data");
 
         // 提取文件
-        let handler = GzHandler;
+        let handler = GzHandler {};
         let summary = handler
             .extract(&source_file, &output_dir)
             .await
@@ -539,7 +602,7 @@ mod tests {
             .expect("Failed to write compressed data");
 
         // Extract using extract_with_limits (should automatically use streaming)
-        let handler = GzHandler;
+        let handler = GzHandler {};
         let summary = handler
             .extract_with_limits(
                 &source_file,

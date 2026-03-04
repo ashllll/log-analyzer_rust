@@ -7,9 +7,9 @@
 //! - 领域事件(Domain Event)
 //! - 仓储接口(Repository Interface)
 
+pub mod export;
 pub mod log_analysis;
-// pub mod search; // TODO: 模块文件缺失，暂时注释
-// pub mod export; // TODO: 模块文件缺失，暂时注释
+pub mod search;
 pub mod shared;
 
 /// 领域事件总线

@@ -5,14 +5,18 @@
 //! - Streaming index builder for large datasets
 //! - Query optimization and suggestion engine
 //! - Advanced search features (bitmap filtering, regex, time-partitioned indexes)
+//! - Roaring Bitmap compression for search results (10M+ hits < 5MB)
+//! - DFA regex engine for high-performance pattern matching
 
 pub mod advanced_features;
 pub mod boolean_query_processor;
 pub mod concurrent_search;
+pub mod dfa_engine;
 pub mod highlighting_engine;
 pub mod index_optimizer;
 pub mod manager;
 pub mod query_optimizer;
+pub mod roaring_index;
 pub mod schema;
 pub mod streaming_builder;
 
@@ -29,10 +33,14 @@ pub use boolean_query_processor::BooleanQueryProcessor;
 pub use concurrent_search::{
     ConcurrentSearchConfig, ConcurrentSearchManager, ConcurrentSearchStats,
 };
+pub use dfa_engine::{
+    DfaError, DfaRegexEngine, DfaSearchResult, SearchProgress, SearchStats, SearchStatus,
+};
 pub use highlighting_engine::{HighlightingConfig, HighlightingEngine, HighlightingStats};
 pub use manager::SearchEngineManager;
 #[allow(unused_imports)]
 pub use query_optimizer::QueryOptimizer;
+pub use roaring_index::SearchIndex;
 pub use schema::LogSchema;
 #[allow(unused_imports)]
 pub use streaming_builder::StreamingIndexBuilder;

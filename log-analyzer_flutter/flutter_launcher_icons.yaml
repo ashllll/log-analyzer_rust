@@ -1,0 +1,40 @@
+# flutter_launcher_icons 配置
+#
+# 使用方法：
+# flutter pub run flutter_launcher_icons
+#
+# 遵循编码规范：使用 flutter_launcher_icons 成熟方案
+
+flutter_icons:
+  android: true
+  ios: true
+  windows: true
+  macos: true
+  linux: true
+  web:
+    generate: false
+
+  image_path: "assets/icon/icon.png"
+
+  # Android 配置
+  android_configs:
+    - image_path: "assets/icon/icon.png"
+      size: "mipmap-mdpi"
+    - image_path: "assets/icon/icon.png"
+      size: "mipmap-hdpi"
+    - image_path: "assets/icon/icon.png"
+      size: "mipmap-xhdpi"
+    - image_path: "assets/icon/icon.png"
+      size: "mipmap-xxhdpi"
+    - image_path: "assets/icon/icon.png"
+      size: "mipmap-xxxhdpi"
+
+  # Windows 配置
+  windows:
+    image_path: "assets/icon/icon.png"
+    icon_size: 48
+
+  # macOS 配置
+  macos:
+    image_path: "assets/icon/icon.png"
+    icon_size: 512

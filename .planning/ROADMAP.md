@@ -15,8 +15,13 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: 架构基础设施** - Flutter 项目结构、共享服务、错误处理框架
 - [ ] **Phase 2: 工作区与文件导入** - 工作区管理、文件夹/压缩包导入
 - [ ] **Phase 3: 搜索功能与结果展示** - 全文搜索、关键词高亮、多条件筛选
+<<<<<<< HEAD
 - [ ] **Phase 4: 压缩包浏览** - 压缩包内文件浏览、预览、内嵌搜索
 - [ ] **Phase 5: 实时监控** - 文件监控、自动索引更新
+=======
+- [x] **Phase 4: 压缩包浏览** - 压缩包内文件浏览、预览、内嵌搜索
+- [x] **Phase 5: 实时监控** - 文件监控、自动索引更新
+>>>>>>> gsd/phase-06-completion
 - [ ] **Phase 6: 完成与优化** - 任务进度、设置、用户体验完善
 
 ## Phase Details
@@ -65,13 +70,26 @@ Plans:
   1. 用户可以输入关键词进行全文搜索
   2. 搜索结果中高亮显示匹配的关键词
   3. 用户可以按日期范围筛选搜索结果
+<<<<<<< HEAD
   4. 用户可以按日志级别筛选 (ERROR, WARN, INFO, DEBUG)
   5. 用户可以按文件类型筛选
+=======
+  4. 用户可以按日志级别筛选 (ERROR, WARN, INFO, DEBUG) — 用户选择不实现
+  5. 用户可以按文件类型筛选 — 用户选择不实现
+>>>>>>> gsd/phase-06-completion
   6. 搜索响应时间 <200ms
   7. 用户可以看到搜索结果列表
   8. 用户可以查看单条日志详情
   9. 用户可以查看任务进度
+<<<<<<< HEAD
 **Plans**: TBD
+=======
+**Plans**: 4 plans
+
+Plans:
+- [x] 03-01-PLAN.md — 搜索增强（进度条+日期选择器+快捷键） ✓
+- [x] 03-02-PLAN.md — 结果展示（详情面板+关键词高亮） ✓
+>>>>>>> gsd/phase-06-completion
 
 ### Phase 4: 压缩包浏览
 **Goal**: 用户可以浏览压缩包内的文件、预览文本文件内容、在压缩包内搜索
@@ -81,7 +99,15 @@ Plans:
   1. 用户可以浏览压缩包内的文件列表
   2. 用户可以预览压缩包内的文本文件内容
   3. 用户可以在压缩包内搜索关键词
+<<<<<<< HEAD
 **Plans**: TBD
+=======
+**Plans**: 2 plans
+
+Plans:
+- [x] 04-01-PLAN.md — 后端实现（ArchiveHandler 扩展 + Tauri 命令）
+- [x] 04-02-PLAN.md — 前端实现（树形视图 + 预览面板 + 搜索）
+>>>>>>> gsd/phase-06-completion
 
 ### Phase 5: 实时监控
 **Goal**: 用户可以启用文件监控，文件变化时自动更新索引
@@ -91,7 +117,15 @@ Plans:
   1. 用户可以启用文件监控
   2. 文件变化时自动更新索引
   3. 用户可以查看监控状态
+<<<<<<< HEAD
 **Plans**: TBD
+=======
+**Plans**: 2 plans
+
+Plans:
+- [x] 05-01-PLAN.md — 核心实现（MonitoringState + MonitoringProvider）
+- [x] 05-02-PLAN.md — UI实现（工具栏按钮 + 状态面板）
+>>>>>>> gsd/phase-06-completion
 
 ### Phase 6: 完成与优化
 **Goal**: 完善用户体验，提供设置功能，应用可以正常启动
@@ -101,7 +135,15 @@ Plans:
   1. 应用程序可以正常启动
   2. 用户可以访问设置/配置界面
   3. 所有核心功能可用且稳定
+<<<<<<< HEAD
 **Plans**: TBD
+=======
+**Plans**: 2 plans
+
+Plans:
+- [x] 06-01-PLAN.md — 设置基础设施（SettingsService + ThemeProvider + 页面重构）
+- [x] 06-02-PLAN.md — 启动恢复 + UX优化（Splash工作区恢复 + 空状态组件）
+>>>>>>> gsd/phase-06-completion
 
 ## Progress
 
@@ -112,10 +154,17 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 |-------|----------------|--------|-----------|
 | 1. 架构基础设施 | 4/4 | Completed | 2026-02-28 |
 | 2. 工作区与文件导入 | 3/3 | Completed | 2026-03-01 |
+<<<<<<< HEAD
 | 3. 搜索功能与结果展示 | 0/N | Not started | - |
 | 4. 压缩包浏览 | 0/N | Not started | - |
 | 5. 实时监控 | 0/N | Not started | - |
 | 6. 完成与优化 | 0/N | Not started | - |
+=======
+| 3. 搜索功能与结果展示 | 2/4 | Completed | - |
+| 4. 压缩包浏览 | 2/2 | Completed | 2026-03-02 |
+| 5. 实时监控 | 2/2 | Completed | 2026-03-03 |
+| 6. 完成与优化 | 2/2 | Completed | 2026-03-03 |
+>>>>>>> gsd/phase-06-completion
 
 ## Coverage
 
@@ -123,6 +172,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
+<<<<<<< HEAD
 | WORK-01 | Phase 2 | Pending |
 | WORK-02 | Phase 2 | Pending |
 | WORK-03 | Phase 2 | Pending |
@@ -149,6 +199,34 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | UI-01 | Phase 3 | Pending |
 | UI-02 | Phase 3 | Pending |
 | UI-03 | Phase 3 | Pending |
+=======
+| WORK-01 | Phase 2 | Done |
+| WORK-02 | Phase 2 | Done |
+| WORK-03 | Phase 2 | Done |
+| WORK-04 | Phase 2 | Done |
+| FILE-01 | Phase 2 | Done |
+| FILE-02 | Phase 2 | Done |
+| FILE-03 | Phase 2 | Done |
+| FILE-04 | Phase 2 | Done |
+| FILE-05 | Phase 2 | Done |
+| FILE-06 | Phase 2 | Done |
+| FILE-07 | Phase 2 | Done |
+| SEARCH-01 | Phase 3 | Done |
+| SEARCH-02 | Phase 3 | Done |
+| SEARCH-03 | Phase 3 | Done |
+| SEARCH-04 | Phase 3 | Deferred |
+| SEARCH-05 | Phase 3 | Deferred |
+| SEARCH-06 | Phase 3 | Done |
+| ARCH-01 | Phase 4 | Done |
+| ARCH-02 | Phase 4 | Done |
+| ARCH-03 | Phase 4 | Done |
+| MON-01 | Phase 5 | Done |
+| MON-02 | Phase 5 | Done |
+| MON-03 | Phase 5 | Done |
+| UI-01 | Phase 3 | Done |
+| UI-02 | Phase 3 | Done |
+| UI-03 | Phase 3 | Done |
+>>>>>>> gsd/phase-06-completion
 | UI-04 | Phase 6 | Pending |
 
 **Coverage:**

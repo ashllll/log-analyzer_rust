@@ -1,0 +1,51 @@
+# flutter_native_splash 配置
+#
+# 使用方法：
+# flutter pub run flutter_native_splash:create
+#
+# 遵循编码规范：使用 flutter_native_splash 成熟方案
+
+flutter_native_splash:
+  # 图片配置
+  image: assets/splash/splash.png
+  color: "#1a1a2e"
+
+  # 品牌图片（可选，显示在底部）
+  branding: assets/splash/branding.png
+  branding_bottom_padding: 24
+
+  # 颜色配置
+  color_dark: "#1a1a2e"
+  background_image_dark: assets/splash/splash_background.png
+
+  # Android 配置
+  android: true
+  android_gravity: center
+  android_screen_orientation: portrait
+
+  # iOS 配置
+  ios: true
+  ios_content_mode: center
+
+  # Web 配置
+  web: false
+
+  # Windows 配置
+  windows:
+    image: assets/splash/splash.png
+    color: "#1a1a2e"
+    image_dark: assets/splash/splash.png
+    color_dark: "#1a1a2e"
+
+  # macOS 配置
+  macos:
+    image: assets/splash/splash.png
+    color: "#1a1a2e"
+    image_dark: assets/splash/splash.png
+    color_dark: "#1a1a2e"
+
+  # Android 12+ 配置
+  android_12:
+    image: assets/splash/splash_android12.png
+    color: "#1a1a2e"
+    icon_background_color: "#1a1a2e"

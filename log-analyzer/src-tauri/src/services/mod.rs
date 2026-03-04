@@ -2,6 +2,7 @@ pub mod event_bus;
 pub mod file_change_detector;
 pub mod file_type_filter;
 pub mod file_watcher;
+pub mod file_watcher_async;
 pub mod index_validator;
 pub mod intelligent_file_filter;
 pub mod metadata_db;
@@ -15,6 +16,7 @@ pub mod search_statistics;
 pub mod service_config;
 pub mod service_container;
 pub mod service_lifecycle;
+pub mod typestate;
 pub mod workspace_metrics;
 
 #[cfg(test)]
@@ -37,6 +39,7 @@ pub use file_watcher::{
     append_to_workspace_index, get_file_metadata, parse_log_lines, parse_metadata,
     read_file_from_offset,
 };
+pub use file_watcher_async::{get_file_id, AsyncFileReader, FileTracker, RotationState};
 pub use index_validator::{IndexValidator, InvalidFileInfo, ValidationReport};
 pub use intelligent_file_filter::IntelligentFileFilter;
 pub use metadata_db::MetadataDB;
@@ -56,3 +59,10 @@ pub use service_lifecycle::{
     HealthStatus, OverallHealth, Service, ServiceHealth, ServiceLifecycleManager,
 };
 pub use workspace_metrics::{DepthDistribution, WorkspaceMetrics, WorkspaceMetricsCollector};
+
+// Typestate 模块导出
+pub use typestate::{
+    ChunkedArray, FileMetadata, IndexEntry, Indexed, Mapped, PageManager, PageManagerConfig,
+    PageManagerError, Session, SessionError, SharedChunkedArray, SharedPageManager, Unmapped,
+    Viewport,
+};

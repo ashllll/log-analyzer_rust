@@ -1,0 +1,17 @@
+[package]
+name = "log-lexer-derive"
+version = "0.1.0"
+edition = "2021"
+description = "过程宏：为 LogLexer 生成 SIMD 优化的词法分析器"
+license = "MIT"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1.0"
+quote = "1.0"
+syn = { version = "2.0", features = ["full", "parsing", "extra-traits"] }
+
+[dev-dependencies]
+log-lexer = { path = "../log-lexer" }

@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd:*)",
+      "Edit",
+      "Bash(node:*)",
+      "Bash(npm:*)",
+      "Bash(rustc:*)",
+      "Bash(cargo:*)",
+      "Bash(test:*)",
+      "Bash(npx tsc:*)",
+      "mcp__serena__list_dir"
+    ],
+    "defaultMode": "bypassPermissions"
+  },
+  "model": "opus",
+  "enabledPlugins": {
+    "feature-dev@claude-code-plugins": true,
+    "glm-plan-bug@zai-coding-plugins": true,
+    "glm-plan-usage@zai-coding-plugins": true,
+    "ralph-wiggum@claude-code-plugins": true
+  },
+  "outputStyle": "Explanatory"
+}

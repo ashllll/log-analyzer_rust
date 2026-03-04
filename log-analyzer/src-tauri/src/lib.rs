@@ -7,6 +7,10 @@
 //! - 错误处理统一 ✅
 //! - 监控体系建立 ✅
 
+// FFI 桥接代码生成（仅在启用 ffi feature 时编译）
+#[cfg(feature = "ffi")]
+mod frb_generated; /* AUTO INJECTED BY flutter_rust_bridge. This line may not be accurate, and you can change it according to your needs. */
+
 // 核心模块
 pub mod commands;
 pub mod error;
@@ -27,10 +31,17 @@ pub mod task_manager;
 pub mod events;
 pub mod monitoring;
 
+// 安全防护
+pub mod security;
+
 // 领域驱动设计模块
 pub mod application;
 pub mod domain;
 pub mod infrastructure;
+
+// FFI 桥接模块（仅在启用 ffi feature 时编译）
+#[cfg(feature = "ffi")]
+pub mod ffi;
 
 // 测试策略模块
 #[cfg(test)]

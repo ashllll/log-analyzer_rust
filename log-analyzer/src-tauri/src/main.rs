@@ -8,9 +8,9 @@
 
 // 导入 log_analyzer 库的模块
 use log_analyzer::commands::{
-    async_search::*, cache::*, config::*, error_reporting::*, export::*, import::*, legacy::*,
-    performance::*, query::*, search::*, state_sync::*, validation::*, virtual_tree::*, watch::*,
-    workspace::*,
+    archive::*, async_search::*, cache::*, config::*, error_reporting::*, export::*, http_api, import::*,
+    legacy::*, performance::*, query::*, search::*, search_history::*, state_sync::*,
+    validation::*, virtual_tree::*, watch::*, workspace::*,
 };
 use log_analyzer::models::AppState;
 use log_analyzer::task_manager::TaskManager;
@@ -68,6 +68,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             *state_guard = Some(task_manager);
 
             info!("✅ TaskManager 初始化成功");
+
+            // 启动 HTTP API 服务器（供 Flutter 调用）
+            let app_data_dir = app.path().app_data_dir().expect("Failed to get app data dir");
+            let http_addr = "127.0.0.1:8080".to_string();
+            let http_addr_for_log = http_addr.clone();
+            let http_app_data_dir = app_data_dir.clone();
+            
+            // 初始化 HTTP API 上下文（必须在启动服务器之前）
+            let app_state_clone = app_state.inner().clone();
+            http_api::init_http_api_context(app_state_clone, app_data_dir.clone());
+            info!("✅ HTTP API 上下文初始化成功");
+
+            std::thread::spawn(move || {
+                let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
+                rt.block_on(async {
+                    if let Err(e) = http_api::start_http_server(http_app_data_dir, http_addr.clone()).await {
+                        tracing::error!("HTTP API 服务器启动失败: {}", e);
+                    }
+                });
+            });
+
+            info!("✅ HTTP API 服务器启动于 http://{}", http_addr_for_log);
+
+            // 初始化 FFI 全局状态（用于 Flutter FFI 调用）
+            #[cfg(feature = "ffi")]
+            {
+                use log_analyzer::ffi::init_global_state;
+                let app_state_clone = app_state.inner().clone();
+                let app_data_dir = app
+                    .path()
+                    .app_data_dir()
+                    .expect("Failed to get app data dir");
+                init_global_state(app_state_clone, app_data_dir);
+                info!("✅ FFI 全局状态初始化成功");
+            }
+
             Ok(())
         })
         // 注册所有命令
@@ -108,6 +144,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // ===== 导入 =====
             import_folder,
             check_rar_support,
+            // ===== 压缩包浏览 =====
+            list_archive_contents,
+            read_archive_file,
             // ===== 错误报告 =====
             report_frontend_error,
             submit_user_feedback,
@@ -139,6 +178,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             get_search_events,
             get_metrics_stats,
             cleanup_metrics_data,
+            // ===== 搜索历史 =====
+            add_search_history,
+            get_search_history,
+            clear_search_history,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
