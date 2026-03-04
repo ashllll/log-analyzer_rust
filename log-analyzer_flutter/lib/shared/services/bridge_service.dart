@@ -739,6 +739,85 @@ class BridgeService {
     }
   }
 
+  // ==================== 多关键词组合搜索操作 ====================
+
+  /// 执行结构化搜索（多关键词组合搜索）
+  ///
+  /// 支持多个关键词的 AND/OR/NOT 组合搜索
+  ///
+  /// # 参数
+  ///
+  /// * `query` - 结构化搜索查询对象
+  /// * `workspaceId` - 工作区 ID（可选，默认使用第一个可用工作区）
+  /// * `maxResults` - 最大返回结果数量
+  ///
+  /// # 返回
+  ///
+  /// 返回匹配的搜索结果列表
+  Future<List<ffi.SearchResultEntry>> searchStructured({
+    required ffi.StructuredSearchQueryData query,
+    String? workspaceId,
+    int maxResults = 10000,
+  }) async {
+    if (!isFfiEnabled) {
+      return [];
+    }
+
+    try {
+      return ffi.searchStructured(
+        query: query,
+        workspaceId: workspaceId,
+        maxResults: maxResults,
+      );
+    } catch (e) {
+      debugPrint('searchStructured error: $e');
+      return [];
+    }
+  }
+
+  /// 构建搜索查询对象
+  ///
+  /// 从关键词列表构建结构化搜索查询，便于使用
+  ///
+  /// # 参数
+  ///
+  /// * `keywords` - 关键词列表
+  /// * `globalOperator` - 全局操作符 ("AND", "OR", "NOT")
+  /// * `isRegex` - 是否使用正则表达式
+  /// * `caseSensitive` - 是否大小写敏感
+  ///
+  /// # 返回
+  ///
+  /// 返回构建的结构化搜索查询对象
+  Future<ffi.StructuredSearchQueryData> buildSearchQuery({
+    required List<String> keywords,
+    String globalOperator = 'AND',
+    bool isRegex = false,
+    bool caseSensitive = false,
+  }) async {
+    if (!isFfiEnabled) {
+      return ffi.StructuredSearchQueryData(
+        terms: [],
+        globalOperator: ffi.QueryOperatorData.and,
+      );
+    }
+
+    try {
+      return ffi.buildSearchQuery(
+        keywords: keywords,
+        globalOperator: globalOperator,
+        isRegex: isRegex,
+        caseSensitive: caseSensitive,
+      );
+    } catch (e) {
+      debugPrint('buildSearchQuery error: $e');
+      return ffi.StructuredSearchQueryData(
+        terms: [],
+        globalOperator: ffi.QueryOperatorData.and,
+      );
+    }
+  }
+
   /// 释放资源
   void dispose() {
     LogAnalyzerBridge.dispose();
