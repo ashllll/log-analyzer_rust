@@ -399,3 +399,86 @@ impl From<crate::commands::virtual_tree::FileContentResponse> for FileContentRes
         }
     }
 }
+
+// ==================== 多关键词组合搜索类型 ====================
+
+/// 查询操作符（FFI 格式）
+///
+/// 用于多关键词组合搜索的逻辑操作
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum QueryOperatorData {
+    /// AND 操作 - 所有关键词都必须匹配
+    #[serde(rename = "AND")]
+    And,
+    /// OR 操作 - 任一关键词匹配即可
+    #[serde(rename = "OR")]
+    Or,
+    /// NOT 操作 - 排除包含该关键词的行
+    #[serde(rename = "NOT")]
+    Not,
+}
+
+impl Default for QueryOperatorData {
+    fn default() -> Self {
+        Self::And
+    }
+}
+
+/// 搜索条件数据（FFI 格式）
+///
+/// 用于结构化搜索的单个搜索条件
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SearchTermData {
+    /// 条件唯一标识
+    pub id: String,
+    /// 搜索值/关键词
+    pub value: String,
+    /// 该条件的操作符（相对于前一个条件）
+    pub operator: QueryOperatorData,
+    /// 是否为正则表达式
+    pub is_regex: bool,
+    /// 优先级（数字越小优先级越高）
+    pub priority: u32,
+    /// 是否启用该条件
+    pub enabled: bool,
+    /// 是否大小写敏感
+    pub case_sensitive: bool,
+}
+
+/// 完整搜索查询数据（FFI 格式）
+///
+/// 用于多关键词组合搜索的完整查询结构
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct StructuredSearchQueryData {
+    /// 搜索条件列表
+    pub terms: Vec<SearchTermData>,
+    /// 全局操作符（用于组合多个条件）
+    pub global_operator: QueryOperatorData,
+    /// 搜索过滤器
+    pub filters: Option<SearchFiltersData>,
+}
+
+impl Default for StructuredSearchQueryData {
+    fn default() -> Self {
+        Self {
+            terms: vec![],
+            global_operator: QueryOperatorData::And,
+            filters: None,
+        }
+    }
+}
+
+/// 搜索结果条目（FFI 格式）
+///
+/// 单行搜索结果
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SearchResultEntry {
+    /// 行号（从 1 开始）
+    pub line_number: i64,
+    /// 行内容
+    pub content: String,
+    /// 匹配起始位置
+    pub match_start: i64,
+    /// 匹配结束位置
+    pub match_end: i64,
+}
