@@ -2037,6 +2037,167 @@ pub fn ffi_read_file_by_hash(
     })
 }
 
+// ==================== 正则搜索命令适配 ====================
+
+/// FFI 适配：验证正则表达式语法
+///
+/// 验证正则表达式是否有效
+///
+/// # 参数
+///
+/// * `pattern` - 正则表达式模式
+///
+/// # 返回
+///
+/// 返回验证结果
+pub fn ffi_validate_regex(pattern: String) -> RegexValidationResult {
+    tracing::debug!(pattern = %pattern, "FFI: validate_regex 调用");
+
+    // 尝试编译正则表达式
+    match regex::Regex::new(&pattern) {
+        Ok(_) => RegexValidationResult {
+            valid: true,
+            error_message: None,
+        },
+        Err(e) => RegexValidationResult {
+            valid: false,
+            error_message: Some(e.to_string()),
+        },
+    }
+}
+
+/// FFI 适配：执行正则表达式搜索
+///
+/// 在工作区中搜索匹配正则表达式的行
+///
+/// # 参数
+///
+/// * `pattern` - 正则表达式模式
+/// * `workspace_id` - 工作区 ID（可选）
+/// * `max_results` - 最大结果数量
+/// * `case_sensitive` - 是否大小写敏感
+///
+/// # 返回
+///
+/// 返回搜索结果列表
+pub fn ffi_search_regex(
+    pattern: String,
+    workspace_id: Option<String>,
+    max_results: i32,
+    case_sensitive: bool,
+) -> Result<Vec<SearchResultEntry>, String> {
+    tracing::info!(
+        pattern = %pattern,
+        workspace_id = ?workspace_id,
+        max_results,
+        case_sensitive,
+        "FFI: search_regex 调用"
+    );
+
+    // 验证正则表达式
+    if let Err(e) = regex::Regex::new(&pattern) {
+        return Err(format!("无效的正则表达式: {}", e));
+    }
+
+    // 获取全局状态
+    let app_state = get_app_state().ok_or_else(|| "FFI 全局状态未初始化".to_string())?;
+
+    // 确定工作区目录
+    let workspace_id = if let Some(id) = workspace_id {
+        id
+    } else {
+        let dirs = app_state.workspace_dirs.lock();
+        if let Some(first_id) = dirs.keys().next() {
+            first_id.clone()
+        } else {
+            return Err("没有可用的工作区".to_string());
+        }
+    };
+
+    let app_data_dir = get_app_data_dir().ok_or_else(|| "FFI 全局状态未初始化".to_string())?;
+    let workspace_dir = app_data_dir.join("workspaces").join(&workspace_id);
+
+    if !workspace_dir.exists() {
+        return Err(format!("工作区不存在: {}", workspace_id));
+    }
+
+    // 使用 tokio 运行时执行异步搜索
+    let rt = tokio::runtime::Runtime::new().map_err(|e| format!("创建运行时失败: {}", e))?;
+
+    rt.block_on(async {
+        // 打开元数据存储
+        let metadata_store = crate::storage::MetadataStore::new(&workspace_dir)
+            .await
+            .map_err(|e| format!("打开元数据存储失败: {}", e))?;
+
+        // 获取所有文件
+        let files = metadata_store
+            .get_all_files()
+            .await
+            .map_err(|e| format!("获取文件失败: {}", e))?;
+
+        // 创建正则表达式
+        let regex_pattern = if case_sensitive {
+            regex::Regex::new(&pattern).map_err(|e| format!("正则表达式错误: {}", e))?
+        } else {
+            regex::Regex::new(&format!("(?i){}", pattern))
+                .map_err(|e| format!("正则表达式错误: {}", e))?
+        };
+
+        let mut results = Vec::new();
+        let max_results = max_results as usize;
+
+        // 遍历所有文件
+        for file in files {
+            if results.len() >= max_results {
+                break;
+            }
+
+            // 跳过二进制文件
+            if let Some(mime) = &file.mime_type {
+                if mime.starts_with("application/") || mime.starts_with("image/") {
+                    continue;
+                }
+            }
+
+            // 读取文件内容
+            let cas = crate::storage::ContentAddressableStorage::new(&workspace_dir);
+            if !cas.exists(&file.sha256_hash) {
+                continue;
+            }
+
+            let content_bytes = match cas.read_content(&file.sha256_hash).await {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            let content = match String::from_utf8(content_bytes) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            // 搜索匹配行
+            for (line_idx, line) in content.lines().enumerate() {
+                if results.len() >= max_results {
+                    break;
+                }
+
+                if let Some(m) = regex_pattern.find(line) {
+                    results.push(SearchResultEntry {
+                        line_number: (line_idx + 1) as i64,
+                        content: line.to_string(),
+                        match_start: m.start() as i64,
+                        match_end: m.end() as i64,
+                    });
+                }
+            }
+        }
+
+        tracing::info!(results_count = results.len(), "正则搜索完成");
+        Ok(results)
+    })
+}
+
 // ==================== 测试模块 ====================
 
 #[cfg(test)]
