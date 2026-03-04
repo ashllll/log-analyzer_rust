@@ -1,213 +1,187 @@
-# Pitfalls Research: Flutter + Rust Backend Integration
+# Pitfalls Research: v1.1 高级搜索与虚拟文件系统
 
-**Domain:** Flutter Desktop + Rust Backend FFI Integration
-**Researched:** 2026-02-28
+**Domain:** Flutter Desktop + Rust Backend 高级搜索功能集成
+**Researched:** 2026-03-04
 **Confidence:** MEDIUM
 
-Based on analysis of the codebase, FFI documentation, and community patterns.
+基于 Rust 后端 API 分析、Flutter 桌面开发经验和现有项目陷阱总结。注意：部分发现未能通过 WebSearch 验证 (工具返回错误)，基于代码分析和经验推断。
 
 ---
 
 ## Critical Pitfalls
 
-### Pitfall 1: Field Name Mismatch (snake_case vs camelCase)
+### Pitfall 1: 正则表达式搜索 ReDoS 攻击风险
 
 **What goes wrong:**
-Flutter前端发送 `taskId`，但 Rust 后端期望 `task_id`，导致序列化/反序列化失败，搜索功能完全不可用。
+用户输入恶意正则表达式（如 `a+*`、`(a+){20}` 等 catastrophic backtracking 模式）导致搜索线程阻塞，CPU 占用 100%，应用无响应。
 
 **Why it happens:**
-- Dart 惯例是 camelCase (`taskId`, `workspaceId`)
-- Rust 惯例是 snake_case (`task_id`, `workspace_id`)
-- flutter_rust_bridge 默认不转换字段名
+- Rust 后端使用 `regex-automata` 库，默认未启用 timeout 或回溯限制
+- Flutter 前端未验证正则表达式有效性就发送到后端
+- 用户不理解正则表达式复杂度与性能的关系
 
 **How to avoid:**
-1. **统一约定**: 在整个项目中强制使用 snake_case
-2. **Dart 端**: 所有与 Rust 通信的模型使用 snake_case 字段名
-3. **Rust 端**: 所有对外暴露的结构体使用 snake_case
+1. **前端验证**: 使用 Dart 的 `RegExp` 构造函数在发送前验证正则语法是否有效
+2. **后端超时**: 在 Rust 端为正则搜索设置超时机制（使用 `regex-automata` 的 `MatchAt` 或超时检测）
+3. **复杂度警告**: 识别潜在危险模式，提示用户简化
 
 ```dart
-// ❌ 错误 - Dart 惯例
-class SearchResult {
-  String searchId;      // camelCase
-  String workspaceId;   // camelCase
-}
-
-// ✅ 正确 - 与 Rust 保持一致
-class SearchResult {
-  String search_id;     // snake_case
-  String workspace_id;  // snake_case
-}
-```
-
-**Warning signs:**
-- 编译通过但运行时数据为 null
-- 序列化错误日志: "missing field `task_id`"
-- 前后端 API 联调时数据不一致
-
-**Phase to address:**
-- 架构设计阶段 (Phase 1-2)
-
----
-
-### Pitfall 2: FFI Boundary Error Handling Lost
-
-**What goes wrong:**
-Rust 中的 `Result<T, E>` 错误在 FFI 边界丢失，Flutter 端只收到 panic 或 null，无法获取具体错误信息。
-
-**Why it happens:**
-- flutter_rust_bridge 2.x 将 Rust panic 转换为 Dart 异常
-- 但错误详情可能丢失或格式不正确
-- 异步函数错误传播机制不完善
-
-**How to avoid:**
-1. 使用 `thiserror` 定义结构化错误类型
-2. 在 Rust 端使用 `?` 传播错误，确保 panic 信息包含上下文
-3. Flutter 端实现全局错误边界 (ErrorWidget)
-
-```rust
-// ✅ 正确 - 错误包含上下文
-#[derive(thiserror::Error, Debug)]
-pub enum AppError {
-    #[error("Workspace not found: {0}")]
-    WorkspaceNotFound(String),
-}
-
-#[tauri::command]
-pub fn get_workspace(id: String) -> Result<Workspace, String> {
-    // 使用 ? 自动转换，错误信息包含 id
-    workspace_repo.find(&id).map_err(|e| format!("Failed to get workspace {}: {}", id, e))
-}
-```
-
-**Warning signs:**
-- Flutter 端收到笼统的 "FFI error" 消息
-- 无法区分不同类型的错误 (网络/文件/权限)
-- 错误日志缺少调试信息
-
-**Phase to address:**
-- API 设计阶段 (Phase 2-3)
-
----
-
-### Pitfall 3: Blocking the Main Thread with FFI Calls
-
-**What goes wrong:**
-在 Flutter 主线程执行同步 FFI 调用，导致 UI 冻结，尤其是在处理大文件或复杂搜索时。
-
-**Why it happens:**
-- 同步函数 (`#[frb(sync)]`) 在主线程执行
-- Dart 的 isolate 不与 Rust 线程直接对应
-- 没有实现真正的异步流
-
-**How to avoid:**
-1. **优先使用异步函数**: Rust 端使用 `async fn`，Dart 端使用 `Future`
-2. **实现后台任务**: 使用 Flutter isolates 处理耗时操作
-3. **流式结果**: 对于大结果集，使用分页或流式返回
-
-```rust
-// ✅ 正确 - 异步函数
-#[frb]
-pub async fn search_logs(query: String) -> SearchResult {
-    // 异步执行，不阻塞主线程
-}
-
-// ❌ 避免 - 同步函数用于耗时操作
-#[frb(sync)]
-pub fn search_logs_blocking(query: String) -> SearchResult {
-    // 会阻塞调用线程
-}
-```
-
-**Warning signs:**
-- UI 在搜索时卡顿
-- "Frame skipped" 警告
-- 大文件操作时应用无响应
-
-**Phase to address:**
-- 性能优化阶段 (Phase 4-5)
-
----
-
-### Pitfall 4: State Synchronization Race Conditions
-
-**What goes wrong:**
-Flutter 端状态与 Rust 后端状态不一致，导致显示过期数据或任务状态错误。
-
-**Why it happens:**
-- 事件驱动更新 vs 轮询更新机制冲突
-- 并发操作导致版本冲突
-- 网络中断/重连时状态丢失
-
-**How to avoid:**
-1. **实现版本号机制**: 每个状态变更携带递增版本号
-2. **幂等事件处理**: 相同版本号的事件重复处理不产生副作用
-3. **乐观更新 + 回滚**: 先更新 UI，后验证，失败时回滚
-
-```dart
-// ✅ 正确 - 版本号校验
-class WorkspaceState {
-  final String id;
-  final int version;
-
-  bool canUpdate(int newVersion) => newVersion > version;
-
-  WorkspaceState apply(WorkspaceEvent event) {
-    if (event.version <= version) return this; // 忽略过期事件
-    return applyEvent(event);
+// Flutter 端预验证
+bool isValidRegex(String pattern) {
+  try {
+    RegExp(pattern);
+    return true;
+  } catch (e) {
+    return false;
   }
 }
 ```
 
 **Warning signs:**
-- 任务进度显示不正确
-- 搜索结果列表闪烁或重复
-- "Version conflict" 错误日志
+- 搜索响应时间 > 5 秒
+- CPU 占用持续 100%
+- 日志中出现 "Regex search timeout"
 
 **Phase to address:**
-- 状态管理设计阶段 (Phase 3)
+- Phase 搜索 UI 实现阶段 (regex 输入组件)
 
 ---
 
-### Pitfall 5: Memory Leaks at FFI Boundary
+### Pitfall 2: 多关键词 AND/OR/NOT 逻辑解析错误
 
 **What goes wrong:**
-Rust 分配的内存在 Dart 端未正确释放，或反之，导致内存持续增长。
+用户输入 `error AND warning OR critical` 期望 `(error AND warning) OR critical`，但实际解析为 `error AND (warning OR critical)`，导致搜索结果与预期不符。
 
 **Why it happens:**
-- 跨语言内存管理语义不同
-- Rust 的 `Box<T>` 在 Dart 端需要手动 drop
-- 不对称的 alloc/dealloc
+- 没有明确的优先级规则文档
+- 用户对布尔逻辑理解不一致
+- 前端解析与后端解析逻辑不一致
 
 **How to avoid:**
-1. **使用 opaque 类型**: FRB 的 `#[frb(opaque)]` 自动处理生命周期
-2. **避免裸指针传递**: 使用智能指针和 FRB 的所有权语义
-3. **添加内存监控**: 定期检查内存使用趋势
+1. **明确优先级**: 实现 `NOT > AND > OR` 标准布尔逻辑
+2. **括号支持**: 允许用户使用括号明确分组
+3. **预览确认**: 搜索前显示解析后的查询树，让用户确认
+
+```dart
+// 推荐的解析结果展示
+QueryPreview(
+  tokens: [
+    Token(type: 'TERM', value: 'error'),
+    Token(type: 'AND'),
+    Token(type: 'GROUP', children: [...], operator: 'OR'),
+  ],
+)
+```
+
+**Warning signs:**
+- 高级用户反馈搜索结果"不对"
+- 测试用例 `error AND warning OR critical` 结果异常
+
+**Phase to address:**
+- Phase 布尔搜索功能实现阶段
+
+---
+
+### Pitfall 3: 搜索历史数据无限增长
+
+**What goes wrong:**
+搜索历史记录不断累积，未实现清理策略，导致：
+- 内存占用持续增长
+- 下拉列表渲染性能下降
+- 存储空间浪费
+
+**Why it happens:**
+- 只有 `clear_search_history` 命令，没有自动清理
+- 前端可能每次搜索都调用 `add_search_history`
+- 没有限制单工作区历史条目数量
+
+**How to avoid:**
+1. **自动清理**: 实现 LRU 策略，限制单工作区历史数量（如 100 条）
+2. **去重**: 相同查询不重复添加，更新时间戳
+3. **过期清理**: 30 天前的历史自动删除
 
 ```rust
-// ✅ 正确 - 使用 FRB 管理生命周期
-#[frb(opaque)]
-pub struct SearchContext {
-    // FRB 自动处理 drop
-}
-
-#[frb]
-pub fn create_context() -> SearchContext {
-    SearchContext::new()
-}
-
-// ❌ 避免 - 手动内存管理
-pub fn create_raw_pointer() -> *mut SearchContext {
-    Box::into_raw(Box::new(SearchContext::new()))
+// Rust 后端 SearchHistoryManager 应实现
+impl SearchHistoryManager {
+    const MAX_ENTRIES_PER_WORKSPACE: usize = 100;
+    const MAX_AGE_DAYS: u32 = 30;
 }
 ```
 
 **Warning signs:**
-- 内存持续增长不释放
-- 应用空闲时内存占用高
-- 长时间运行后应用变慢
+- 内存分析显示 SearchHistory 持续增长
+- UI 渲染搜索历史下拉列表卡顿
 
 **Phase to address:**
-- 内存管理设计阶段 (Phase 2-3)
+- Phase 搜索历史 UI 集成阶段
+
+---
+
+### Pitfall 4: 虚拟文件系统大数据集性能崩溃
+
+**What goes wrong:**
+工作区包含数千个文件时，`get_virtual_file_tree` 返回完整树结构，Flutter 端尝试渲染所有节点导致：
+- UI 冻结
+- 内存暴涨
+- 树展开/收起操作卡顿
+
+**Why it happens:**
+- 后端返回完整递归树，一次性传输所有数据
+- Flutter `TreeView` 组件默认渲染所有节点
+- 未实现按需加载（lazy loading）
+
+**How to avoid:**
+1. **分层加载**: 先返回根节点，点击展开时再加载子节点
+2. **虚拟滚动**: 使用 `ListView.builder` 构建扁平化树
+3. **限制深度**: 初始只加载 2-3 层，避免深层嵌套
+
+```dart
+// 推荐的按需加载模式
+class VirtualTreeNode {
+  final String name;
+  final bool isExpanded;
+  final List<VirtualTreeNode>? children; // null = 未加载
+
+  Future<void> expand() async {
+    if (children == null) {
+      children = await _loadChildren(); // 按需加载
+    }
+  }
+}
+```
+
+**Warning signs:**
+- 1000+ 文件时 UI 明显卡顿
+- `get_virtual_file_tree` 响应时间 > 1 秒
+
+**Phase to address:**
+- Phase 虚拟文件系统 UI 实现阶段
+
+---
+
+### Pitfall 5: 虚拟文件树与实际文件系统状态不同步
+
+**What goes wrong:**
+用户通过其他方式（系统文件管理器）修改了工作区文件，但虚拟文件树显示的是旧数据，导致：
+- 点击文件显示内容不匹配
+- 用户困惑哪个是"正确"状态
+
+**Why it happens:**
+- 虚拟文件树从元数据数据库构建，不是实时读取文件系统
+- 只有显式刷新才更新
+- 缺少"最后更新时间"提示
+
+**How to address:**
+1. **显示时间戳**: 树节点显示"最后更新: X 分钟前"
+2. **手动刷新按钮**: 提供刷新功能
+3. **自动刷新**: 结合文件监听事件，变化时提示刷新
+
+**Warning signs:**
+- 用户报告"文件内容不对"
+- 差异检测显示数据库与实际不一致
+
+**Phase to address:**
+- Phase 虚拟文件系统 UI 完善阶段
 
 ---
 
@@ -215,11 +189,10 @@ pub fn create_raw_pointer() -> *mut SearchContext {
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|----------------|------------------|
-| 使用 `String` 替代结构化错误 | 简单快速 | 错误类型丢失，调试困难 | MVP 阶段临时 |
-| 跳过 FFI 集成测试 | 节省时间 | 边界问题在生产暴露 | - |
-| 同步 FFI 调用简化代码 | 代码简洁 | UI 卡顿，用户体验差 | - |
-| 手动管理内存引用计数 | 细微性能提升 | 内存泄漏风险 | - |
-| 忽略版本号的幂等性 | 快速实现 | 状态同步 Bug | - |
+| 不实现正则超时 | 简单快速 | ReDoS 风险，应用卡死 | 永不 (安全风险) |
+| 搜索历史不做去重 | 简单快速 | 列表重复，数据冗余 | MVP 阶段 |
+| 虚拟树全量加载 | UI 简单 | 性能崩溃 | 100 文件以下 |
+| 忽略括号支持 | 快速实现 | 用户无法明确意图 | MVP 阶段 |
 
 ---
 
@@ -227,11 +200,11 @@ pub fn create_raw_pointer() -> *mut SearchContext {
 
 | Integration | Common Mistake | Correct Approach |
 |-------------|----------------|------------------|
-| **flutter_rust_bridge** | 字段名不转换 | 统一 snake_case |
-| **Tauri 事件系统** | 事件版本号重复 | 维护单调递增版本号 |
-| **HTTP API** | 超时未处理 | 实现重试 + 超时回退 |
-| **文件选择器** | 路径未验证 | 白名单验证目录 |
-| **热更新** | 状态未持久化 | 分离瞬态/持久状态 |
+| **正则搜索** | 前端不做验证直接发后端 | 先 Dart RegExp 验证用语法 |
+| **布尔搜索** | 假设 AND 优先级高于 OR | 实现标准 NOT>AND>OR 或支持括号 |
+| **搜索历史** | 每次搜索都添加 | 去重 + LRU 限制 |
+| **虚拟文件树** | 一次性加载全部 | 按需展开 + 虚拟滚动 |
+| **文件读取** | 读取大文件到内存 | 流式读取 + 分页 |
 
 ---
 
@@ -239,10 +212,10 @@ pub fn create_raw_pointer() -> *mut SearchContext {
 
 | Trap | Symptoms | Prevention | When It Breaks |
 |------|----------|------------|----------------|
-| 大型 Vector 跨 FFI 边界 | 复制耗时，内存翻倍 | 使用流式/分页 API | 1000+ 结果集 |
-| 同步搜索调用 | UI 冻结 100ms+ | 异步 + isolates | 任何搜索操作 |
-| 未缓存的正则表达式 | CPU 占用飙升 | RegexCache 预编译 | 正则搜索 |
-| 事件流未限流 | 内存暴涨 | 背压控制 | 文件监听高频率更新 |
+| 复杂正则搜索 | UI 冻结 10s+ | 前端复杂度检查 + 后端超时 | 恶意输入或复杂模式 |
+| 虚拟树全量渲染 | 帧率 < 10fps | 虚拟滚动 + 按需加载 | 1000+ 文件 |
+| 搜索历史全量传输 | 内存暴涨 | 分页加载 + LRU 缓存 | 10000+ 历史条目 |
+| 嵌套归档递归加载 | 响应时间 > 5s | 限制展开深度 | 5+ 层嵌套 |
 
 ---
 
@@ -250,10 +223,9 @@ pub fn create_raw_pointer() -> *mut SearchContext {
 
 | Mistake | Risk | Prevention |
 |---------|------|------------|
-| 未验证的文件路径 | 路径遍历攻击 | 白名单 + 路径规范化 |
-| 插件动态加载 | 恶意代码执行 | 目录白名单 + ABI 验证 |
-| FFI 边界数据未校验 | 缓冲区溢出 | 输入验证 + 类型检查 |
-| 敏感数据日志 | 信息泄露 | 脱敏处理 + 日志级别控制 |
+| 正则 ReDoS | 服务拒绝 (DoS) | 超时 + 复杂度限制 |
+| 路径遍历读取 | 读取任意文件 | 验证 hash 属于工作区 |
+| 搜索历史泄露 | 敏感搜索暴露 | 敏感词过滤 |
 
 ---
 
@@ -261,22 +233,21 @@ pub fn create_raw_pointer() -> *mut SearchContext {
 
 | Pitfall | User Impact | Better Approach |
 |---------|-------------|------------------|
-| 搜索无结果无提示 | 用户困惑 | 空结果页面 + 搜索建议 |
-| 长时间操作无反馈 | 用户以为卡死 | 进度指示器 + 取消按钮 |
-| 错误信息不友好 | 用户无法理解问题 | 人类可读的错误消息 |
-| 状态突变无动画 | 界面闪烁 | 过渡动画 |
+| 正则语法错误无提示 | 用户不知道搜索失败 | 友好错误消息 + 修正建议 |
+| 布尔逻辑不明确 | 结果与预期不符 | 显示解析后的查询树 |
+| 虚拟树无反馈 | 加载时用户等待困惑 | 骨架屏/加载指示器 |
+| 历史列表过长 | 难以找到常用搜索 | 按使用频率排序 + 搜索过滤 |
 
 ---
 
 ## "Looks Done But Isn't" Checklist
 
-- [ ] **搜索功能**: 实现分页/流式加载了吗？全量加载大数据集会崩溃
-- [ ] **错误处理**: Rust 错误正确映射到 Dart 异常了吗？测试各种边界情况
-- [ ] **状态同步**: 版本号机制实现了吗？跳过会导致状态 Bug
-- [ ] **内存管理**: 所有 FFI 资源正确释放了吗？运行长时间测试检查内存
-- [ ] **异步处理**: 耗时操作不阻塞 UI 吗？测试大文件场景
-- [ ] **取消机制**: 搜索/导入可取消吗？实现 AbortController
-- [ ] **离线处理**: FFI 初始化失败有降级方案吗？HTTP API 备选
+- [ ] **正则搜索**: 验证 ReDoS 防护已实现了吗？测试恶意输入
+- [ ] **布尔逻辑**: 测试 `A AND B OR C AND D` 优先级正确吗？
+- [ ] **搜索历史**: 实现去重和 LRU 限制了吗？1000+ 条历史测试
+- [ ] **虚拟树**: 1000 文件性能测试了吗？展开/收起流畅吗？
+- [ ] **文件读取**: 大文件 (100MB+) 流式读取测试了吗？
+- [ ] **刷新机制**: 虚拟树显示最后更新时间了吗？
 
 ---
 
@@ -284,10 +255,10 @@ pub fn create_raw_pointer() -> *mut SearchContext {
 
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|---------------|----------------|
-| 字段名不匹配 | LOW | 重命名 Dart 模型字段，regenerate FRB |
-| 状态同步 Bug | MEDIUM | 添加版本号，重启应用清除状态 |
-| 内存泄漏 | HIGH | 重启应用，代码审计 FRB 边界 |
-| FFI 崩溃 | MEDIUM | 添加错误边界，降级到 HTTP API |
+| ReDoS 卡死 | MEDIUM | 添加超时，强制终止搜索线程 |
+| 布尔逻辑错误 | LOW | 修复解析器，数据库无状态 |
+| 历史数据膨胀 | LOW | 添加清理 job，重启应用 |
+| 虚拟树性能 | HIGH | 重构为按需加载，需 UI 调整 |
 
 ---
 
@@ -295,25 +266,30 @@ pub fn create_raw_pointer() -> *mut SearchContext {
 
 | Pitfall | Prevention Phase | Verification |
 |---------|------------------|--------------|
-| 字段名不一致 | Phase 1-2: 架构设计 | 代码审查 + 集成测试 |
-| 错误处理丢失 | Phase 2-3: API 设计 | 单元测试 + 边界测试 |
-| 阻塞主线程 | Phase 4-5: 性能优化 | 性能测试 + UI 响应测试 |
-| 状态同步问题 | Phase 3: 状态管理 | 并发测试 + 事件测试 |
-| 内存泄漏 | Phase 2-3: 内存设计 | 压力测试 + 内存分析 |
-| 事件流问题 | Phase 3: 事件系统 | 集成测试 + 断网重连测试 |
+| ReDoS 风险 | Phase: 正则搜索 UI 实现 | 恶意输入压力测试 |
+| 布尔逻辑错误 | Phase: 多关键词搜索实现 | 单元测试覆盖边界情况 |
+| 历史无限增长 | Phase: 搜索历史集成 | 内存长期运行测试 |
+| 虚拟树性能 | Phase: 虚拟文件系统 UI | 1000+ 文件性能测试 |
+| 文件状态不同步 | Phase: 虚拟文件系统完善 | UI 测试刷新机制 |
 
 ---
 
 ## Sources
 
-- flutter_rust_bridge 官方文档: https://cjycode.com/flutter_rust_bridge/
-- FRB 状态管理指南: https://cjycode.com/flutter_rust_bridge/guides/how-to/stateful-rust
-- FRB 错误处理: https://cjycode.com/flutter_rust_bridge/guides/how-to/report-error
-- 项目现有 FFI 实现: `log-analyzer/src-tauri/src/ffi/bridge.rs`
-- 项目现有代码规范: `.planning/codebase/CONCERNS.md`
-- Rust FFI 最佳实践: https://microsoft.github.io/rust-guidelines/guidelines/ffi/
+### Primary (HIGH confidence)
+- Rust 后端代码分析: `commands/search_history.rs`, `commands/virtual_tree.rs`, `search_engine/boolean_query_processor.rs`
+- 项目现有陷阱: `.planning/research/PITFALLS.md` (FFI 集成陷阱)
+- Flutter 官方文档: TreeView,虚拟滚动最佳实践
+
+### Secondary (MEDIUM confidence)
+- Flutter 桌面开发经验: 虚拟滚动性能优化
+- Rust regex-automata 文档: 超时和复杂度控制
+
+### Tertiary (LOW confidence - 未能验证)
+- WebSearch 返回错误，部分发现基于经验推断
+- 建议在实际实现中验证这些陷阱的准确性
 
 ---
 
-*Pitfalls research for: Flutter Desktop + Rust Backend Integration*
-*Researched: 2026-02-28*
+*Pitfalls research for: Flutter Desktop 高级搜索与虚拟文件系统 (v1.1)*
+*Researched: 2026-03-04*

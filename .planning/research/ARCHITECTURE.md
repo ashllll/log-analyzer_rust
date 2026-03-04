@@ -1,479 +1,447 @@
-# Architecture Research
+# Architecture Research: Advanced Search & Virtual File System Integration
 
-**Domain:** Flutter Desktop Application - Log Analyzer Frontend
-**Researched:** 2026-02-28
+**Project:** log-analyzer_rust (Flutter Desktop App v1.1)
+**Researched:** 2026-03-04
 **Confidence:** HIGH
 
-## Standard Architecture
-
-### System Overview
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        Flutter UI Layer                             │
-├─────────────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌──────────┐ │
-│  │   Screens   │  │   Widgets   │  │   Dialogs   │  │  Router  │ │
-│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └─────┬────┘ │
-│         │                │                │               │        │
-├─────────┴────────────────┴────────────────┴───────────────┴────────┤
-│                    Presentation Layer (Riverpod)                    │
-├─────────────────────────────────────────────────────────────────────┤
-│  ┌─────────────────────┐  ┌─────────────────────┐                  │
-│  │   StateNotifiers    │  │      Providers      │                  │
-│  │  (UI State Mgmt)    │  │  (Dependency Inject)│                  │
-│  └──────────┬───────────┘  └──────────┬───────────┘                  │
-├─────────────┴─────────────────────────┴─────────────────────────────┤
-│                         Domain Layer                                 │
-├─────────────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                 │
-│  │  Entities  │  │  Use Cases  │  │ Repo Interfaces│               │
-│  └─────────────┘  └─────────────┘  └─────────────┘                 │
-├─────────────────────────────────────────────────────────────────────┤
-│                          Data Layer                                 │
-├─────────────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                 │
-│  │ Repositories│  │  DataSources │  │    Models   │                 │
-│  │  (Impl)     │  │ (FFI/HTTP)   │  │  (JSON)     │                 │
-│  └─────────────┘  └─────────────┘  └─────────────┘                 │
-├─────────────────────────────────────────────────────────────────────┤
-│                    External Integrations                            │
-├─────────────────────────────────────────────────────────────────────┤
-│  ┌─────────────────────────────┐  ┌──────────────────────────────┐ │
-│  │   Rust Backend (FFI/HTTP)   │  │      Local Storage           │ │
-│  │   - Search Engine           │  │      (path_provider)        │ │
-│  │   - Archive Handlers        │  │                              │ │
-│  │   - CAS Storage             │  │                              │ │
-│  └─────────────────────────────┘  └──────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-### Component Responsibilities
-
-| Component | Responsibility | Typical Implementation |
-|-----------|----------------|------------------------|
-| **Screens** | Top-level page widgets, orchestrate sub-widgets | `ConsumerWidget` / `ConsumerStatefulWidget` |
-| **Widgets** | Reusable UI components | Stateless/Stateful Widgets |
-| **StateNotifiers** | UI state management, business logic delegation | `Notifier` / `AsyncNotifier` (Riverpod 2.x) |
-| **Providers** | Dependency injection, instance management | `Riverpod` providers |
-| **Use Cases** | Single-responsibility business operations | Pure Dart classes |
-| **Entities** | Core business data structures | Immutable classes with `Equatable` |
-| **Repository Interfaces** | Contracts for data access | Abstract classes |
-| **Repository Implementations** | Concrete data access logic | Implements interfaces |
-| **DataSources** | Low-level FFI/HTTP communication | `flutter_rust_bridge` / `dio` |
-
-## Recommended Project Structure
-
-```
-log-analyzer_flutter/lib/
-├── main.dart                           # App entry point
-├── app.dart                           # MaterialApp configuration
-│
-├── core/                              # Core utilities & shared
-│   ├── constants/                    # App constants
-│   ├── theme/                        # Theme configuration
-│   ├── router/                      # go_router configuration
-│   ├── utils/                        # Utility functions
-│   └── errors/                       # Error handling (Failure classes)
-│
-├── shared/                           # Shared across features
-│   ├── models/                       # Shared data models (generated)
-│   ├── providers/                    # Global providers
-│   ├── services/                     # Services (API, FFI bridge)
-│   │   ├── api_service.dart         # HTTP API client
-│   │   ├── bridge_service.dart      # FFI bridge wrapper
-│   │   └── event_stream_service.dart
-│   └── widgets/                      # Shared UI components
-│
-└── features/                         # Feature modules
-    ├── search/
-    │   ├── domain/
-    │   │   ├── entities/            # SearchResult, LogEntry entities
-    │   │   ├── repositories/        # Repository interfaces
-    │   │   └── usecases/            # SearchUseCase, FilterUseCase
-    │   ├── data/
-    │   │   ├── models/              # API response models
-    │   │   ├── datasources/         # FFI/HTTP data sources
-    │   │   └── repositories/        # Repository implementations
-    │   └── presentation/
-    │       ├── providers/           # SearchNotifier, SearchProvider
-    │       ├── screens/             # SearchPage
-    │       └── widgets/             # SearchBar, ResultList, FilterPanel
-    │
-    ├── workspace/
-    │   ├── domain/
-    │   ├── data/
-    │   └── presentation/
-    │
-    ├── task/
-    │   ├── domain/
-    │   ├── data/
-    │   └── presentation/
-    │
-    ├── settings/
-    │   ├── domain/
-    │   ├── data/
-    │   └── presentation/
-    │
-    └── keyword/
-        ├── domain/
-        ├── data/
-        └── presentation/
-```
-
-### Structure Rationale
-
-- **Feature-first organization:** Each feature (search, workspace, task, settings) contains its own Clean Architecture layers. This keeps related code together and makes feature removal straightforward.
-
-- **Core folder:** Contains app-wide utilities that don't belong to any specific feature (theme, routing, constants).
-
-- **Shared folder:** Holds cross-cutting concerns like API services, FFI bridge, and global state providers.
-
-- **Domain/Data/Presentation split:** Follows Clean Architecture principles with strict dependency rules.
-
-## Architectural Patterns
-
-### Pattern 1: Clean Architecture with Riverpod
-
-**What:** Four-layer architecture (Domain, Data, Presentation, DI) with strict dependency rules.
-
-**When to use:** Medium to large applications requiring testability and maintainability.
-
-**Trade-offs:**
-- Pros: Clear separation, testable, scalable
-- Cons: More boilerplate, potential overkill for small apps
-
-**Example:**
-```dart
-// Domain Layer - Entity
-class LogEntry extends Equatable {
-  final String id;
-  final String content;
-  final DateTime timestamp;
-  final String level;
-}
-
-// Domain Layer - Repository Interface
-abstract class SearchRepository {
-  Future<Either<Failure, List<SearchResult>>> search(SearchQuery query);
-}
-
-// Domain Layer - Use Case
-class SearchLogsUseCase {
-  final SearchRepository repository;
-
-  Future<Either<Failure, List<SearchResult>>> call(SearchQuery query) {
-    return repository.search(query);
-  }
-}
-
-// Data Layer - Repository Implementation
-class SearchRepositoryImpl implements SearchRepository {
-  final SearchDataSource dataSource;
-
-  @override
-  Future<Either<Failure, List<SearchResult>>> search(SearchQuery query) async {
-    try {
-      final results = await dataSource.search(query);
-      return Right(results);
-    } catch (e) {
-      return Left(SearchFailure(e.toString()));
-    }
-  }
-}
-
-// Presentation Layer - Notifier
-class SearchNotifier extends Notifier<SearchState> {
-  @override
-  SearchState build() => const SearchState();
-
-  Future<void> search(String query) async {
-    state = state.copyWith(isLoading: true);
-
-    final useCase = ref.read(searchLogsUseCaseProvider);
-    final result = await useCase(SearchQuery(query));
-
-    result.fold(
-      (failure) => state = state.copyWith(error: failure.message),
-      (results) => state = state.copyWith(results: results, isLoading: false),
-    );
-  }
-}
-```
-
-### Pattern 2: Feature-First Organization
-
-**What:** Each feature contains its own complete set of layers, rather than grouping all layers together.
-
-**When to use:** Medium to large apps with multiple distinct functional areas.
-
-**Trade-offs:**
-- Pros: All feature code in one place, easy to add/remove features
-- Cons: Potential code duplication for shared logic
-
-**Example:**
-```
-features/
-├── search/          # All search-related code
-│   ├── domain/     # Entities, use cases for search
-│   ├── data/      # Data sources, models for search
-│   └── presentation/  # UI for search
-├── workspace/      # All workspace-related code
-│   ├── domain/
-│   ├── data/
-│   └── presentation/
-```
-
-### Pattern 3: Unidirectional Data Flow
-
-**What:** Data flows in one direction: Data Layer -> Presentation Layer. User events flow back.
-
-**When to use:** All Flutter apps (Flutter recommended pattern).
-
-**Trade-offs:**
-- Pros: Predictable state changes, easier debugging
-- Cons: More initial setup
-
-**Example:**
-```
-User types in search bar
-    ↓
-SearchNotifier.search() called
-    ↓
-SearchLogsUseCase.execute(query)
-    ↓
-SearchRepository.search() via FFI/HTTP
-    ↓
-Rust backend processes search
-    ↓
-Result returned to SearchNotifier
-    ↓
-State updated, UI rebuilds
-```
-
-### Pattern 4: FFI/HTTP Bridge Pattern
-
-**What:** Abstract Rust backend communication behind repository interface, allowing FFI or HTTP implementation.
-
-**When to use:** When backend might be accessed via multiple protocols.
-
-**Trade-offs:**
-- Pros: Flexibility, easy to switch implementations
-- Cons: Additional abstraction layer
-
-**Example:**
-```dart
-// Abstract data source
-abstract class SearchDataSource {
-  Future<List<LogEntry>> search(String query);
-}
-
-// FFI implementation
-class FFISearchDataSource implements SearchDataSource {
-  @override
-  Future<List<LogEntry>> search(String query) async {
-    final result = await RustBridge.searchLogs(query);
-    return result.map((e) => e.toLogEntry()).toList();
-  }
-}
-
-// HTTP implementation
-class HttpSearchDataSource implements SearchDataSource {
-  final ApiService api;
-
-  @override
-  Future<List<LogEntry>> search(String query) async {
-    final response = await api.post('/search', {'query': query});
-    return response.data.map((e) => LogEntry.fromJson(e)).toList();
-  }
-}
-```
-
-## Data Flow
-
-### Request Flow (Search Example)
-
-```
-[User Action: Enter search query]
-    │
-    ▼
-[SearchPage] → calls ref.read(searchNotifierProvider.notifier).search(query)
-    │
-    ▼
-[SearchNotifier] → state = state.copyWith(isLoading: true)
-    │
-    ▼
-[SearchNotifier] → ref.read(searchLogsUseCaseProvider).call(query)
-    │
-    ▼
-[SearchLogsUseCase] → repository.search(query)
-    │
-    ▼
-[SearchRepositoryImpl] → dataSource.search(query)
-    │
-    ▼
-[FFISearchDataSource] → await RustBridge.searchLogs(ffi_request)
-    │
-    ▼
-[Rust Backend] → Tantivy/DFA search → returns results
-    │
-    ▼
-[FFISearchDataSource] → converts to LogEntry entities
-    │
-    ▼
-[SearchNotifier] → state = state.copyWith(results: results, isLoading: false)
-    │
-    ▼
-[SearchPage] → Consumer rebuilds with new state
-```
-
-### State Management (Riverpod)
-
-```
-┌─────────────────────────────────────────────────────┐
-│                   Riverpod Providers                 │
-├─────────────────────────────────────────────────────┤
-│                                                      │
-│  ┌──────────────────┐    ┌──────────────────────┐  │
-│  │ Infrastructure   │    │   Feature Providers  │  │
-│  │ Providers        │    │                       │  │
-│  │ - apiClient      │    │ - searchNotifier     │  │
-│  │ - ffiBridge      │    │ - workspaceNotifier  │  │
-│  │ - storage        │    │ - taskNotifier       │  │
-│  └────────┬─────────┘    └──────────┬───────────┘  │
-│           │                          │               │
-│           └──────────┬───────────────┘               │
-│                      ▼                               │
-│           ┌──────────────────────┐                   │
-│           │   Use Case Providers │                   │
-│           │ - searchLogsUseCase  │                   │
-│           │ - importFolderUseCase│                   │
-│           └──────────┬───────────┘                   │
-│                      ▼                               │
-│           ┌──────────────────────┐                   │
-│           │ Repository Providers │                   │
-│           │ - searchRepository   │                   │
-│           └──────────────────────┘                   │
-└─────────────────────────────────────────────────────┘
-```
-
-### Key Data Flows
-
-1. **Search Flow:** User enters query → Notifier → UseCase → Repository → FFI → Rust → Results → State update → UI rebuild
-
-2. **Import Flow:** User selects folder → Notifier → UseCase → Repository → FFI → Rust (CAS storage, indexing) → Progress events → UI update
-
-3. **Workspace Flow:** User manages workspace → Notifier → UseCase → Repository → FFI → Rust (SQLite operations) → State update
-
-## Integration with Rust Backend
-
-### FFI Integration Points
-
-| Rust Module | Flutter Integration | Data Flow |
-|------------|-------------------|-----------|
-| Search Engine (Tantivy) | `SearchRepository` | Query → Results |
-| Archive Handlers | `ArchiveRepository` | File → Extracted Content |
-| File Watcher | `WorkspaceNotifier` | Events → State Update |
-| CAS Storage | `StorageRepository` | File metadata |
-| Task Manager | `TaskNotifier` | Progress events |
-
-### Communication Patterns
-
-1. **FFI (Primary):** Use `flutter_rust_bridge` for direct Rust function calls
-   - Better performance for frequent operations
-   - Type-safe bindings generated automatically
-
-2. **HTTP API (Fallback):** Use `dio` for REST API calls
-   - Useful when FFI is unavailable
-   - Better for debugging
-
-## Scaling Considerations
-
-| Scale | Architecture Adjustments |
-|-------|--------------------------|
-| 0-1K users | Single instance, basic Clean Architecture sufficient |
-| 1K-100K users | Optimize FFI calls, add result caching, lazy loading |
-| 100K+ users | Consider background isolates, incremental loading, pagination |
-
-### Scaling Priorities
-
-1. **First bottleneck:** Large log file loading → Implement virtual scrolling, pagination
-2. **Second bottleneck:** Search responsiveness → Leverage Rust backend, add result caching
-3. **Third bottleneck:** UI responsiveness → Use isolates for heavy computation
-
-## Anti-Patterns
-
-### Anti-Pattern 1: Business Logic in Widgets
-
-**What people do:** Putting search logic, data transformation directly in `build()` methods.
-
-**Why it's wrong:** Hard to test, mixed concerns, poor maintainability.
-
-**Do this instead:** Use Notifiers/UseCases to handle business logic, widgets only render state.
-
-### Anti-Pattern 2: Direct FFI Calls in UI
-
-**What people do:** Calling `RustBridge.searchLogs()` directly from widget event handlers.
-
-**Why it's wrong:** Tight coupling, hard to swap implementations, poor testability.
-
-**Do this instead:** Use repository pattern, inject via providers, test against mock implementations.
-
-### Anti-Pattern 3: Mutable State
-
-**What people do:** Using `StatefulWidget` with direct state mutation.
-
-**Why it's wrong:** Unpredictable state, harder to debug, doesn't scale.
-
-**Do this instead:** Use immutable state with `copyWith`, update via Riverpod Notifiers.
-
-### Anti-Pattern 4: Feature by Screen
-
-**What people do:** Creating features named `search_page`, `settings_page`, etc.
-
-**Why it's wrong:** Features should be defined by functionality (what user *does*), not UI (what user *sees*).
-
-**Do this instead:** Name features by domain: `search`, `workspace`, `settings`, `task_management`.
-
-## Build Order (Dependencies)
-
-Based on Clean Architecture and Flutter best practices:
-
-### Phase 1: Foundation
-1. **Core utilities** - Theme, router, constants
-2. **Shared services** - API client, FFI bridge wrapper
-3. **Error handling** - Failure classes, error mapping
-
-### Phase 2: Domain Layer
-4. **Entities** - Define core business objects
-5. **Repository interfaces** - Define contracts
-6. **Use cases** - Implement business logic
-
-### Phase 3: Data Layer
-7. **Models** - API/FFI response models
-8. **Data sources** - FFI/HTTP implementations
-9. **Repository implementations** - Bridge domain and data
-
-### Phase 4: Presentation Layer
-10. **Providers** - Wire dependencies
-11. **Notifiers** - State management
-12. **Widgets** - Reusable UI components
-13. **Screens** - Top-level pages
-
-### Rationale
-- Domain layer has no external dependencies → build first
-- Data layer depends on Domain → build after Domain
-- Presentation layer depends on Domain abstraction → build last
-- This ensures testability and proper dependency inversion
-
-## Sources
-
-- [Flutter Architecture Recommendations](https://docs.flutter.dev/app-architecture/recommendations) - HIGH
-- [Flutter Riverpod Clean Architecture Template](https://ssoad.github.io/flutter_riverpod_clean_architecture/) - HIGH
-- [Flutter Project Structure: Feature-first vs Layer-first](https://codewithandrea.com/articles/flutter-project-structure/) - HIGH
-- [Layer Structure | DeepWiki](https://deepwiki.com/ssoad/flutter_riverpod_clean_architecture/3.2-layer-structure) - HIGH
+## Executive Summary
+
+This document outlines how to integrate advanced search (regex, multi-keyword, search history) and virtual file system features into the existing Flutter application architecture. The research reveals that **the Rust backend already implements most required functionality** - the main work is on the Flutter frontend integration.
+
+**Key Findings:**
+- Rust backend has `search_history` commands ready to use
+- Rust backend has `get_virtual_file_tree` command ready to use
+- Existing `SearchQuery` model already supports multiple terms with AND/OR/NOT operators
+- Flutter frontend has existing patterns to follow (ArchiveTreeView, Riverpod providers)
 
 ---
 
-*Architecture research for: Flutter Desktop Log Analyzer*
-*Researched: 2026-02-28*
+## Existing Architecture Analysis
+
+### Current Stack
+
+| Layer | Technology | Notes |
+|-------|------------|-------|
+| UI Framework | Flutter 3.8+ | Desktop target |
+| State Management | Riverpod | Provider, StateNotifier, AsyncNotifier |
+| FFI Bridge | flutter_rust_bridge | Auto-generated bindings |
+| Backend | Rust + Tauri | Already implements core features |
+
+### Current Component Structure
+
+```
+log-analyzer_flutter/lib/
+├── shared/
+│   ├── services/
+│   │   ├── api_service.dart      # Main API wrapper
+│   │   ├── bridge_service.dart   # FFI communication
+│   │   └── generated/           # Auto-generated FFI
+│   ├── providers/
+│   │   ├── workspace_provider.dart
+│   │   ├── task_provider.dart
+│   │   └── keyword_provider.dart
+│   └── models/
+│       ├── search.dart           # SearchQuery, SearchTerm
+│       └── common.dart           # Workspace, Filter types
+├── features/
+│   ├── search/                   # Search UI
+│   ├── archive_browsing/        # Archive tree view
+│   ├── workspace/               # Workspace management
+│   └── realtime_monitoring/     # File monitoring
+└── core/
+    └── router/                   # go_router
+```
+
+### Backend API Availability (Ready to Use)
+
+#### Search History Commands (`src-tauri/src/commands/search_history.rs`)
+
+| Command | Function | Status |
+|---------|----------|--------|
+| `add_search_history` | Save search query with result count | Implemented |
+| `get_search_history` | Retrieve history with optional workspace filter | Implemented |
+| `clear_search_history` | Delete history entries | Implemented |
+
+#### Virtual File System Commands (`src-tauri/src/commands/virtual_tree.rs`)
+
+| Command | Function | Status |
+|---------|----------|--------|
+| `get_virtual_file_tree` | Get hierarchical file/folder structure | Implemented |
+| `read_file_by_hash` | Read file content by CAS SHA-256 hash | Implemented |
+
+#### Search Engine (Existing)
+
+- **Regex Support:** `PatternMatcher` in Rust backend supports regex via `regex-automata` crate
+- **Multi-keyword:** `SearchQuery` + `SearchTerm` already support AND/OR/NOT operators
+- **Query Builder:** `SearchQueryBuilder` service exists in Flutter
+
+---
+
+## Integration Points
+
+### 1. Advanced Search Integration
+
+#### New API Methods Needed in `api_service.dart`
+
+```dart
+// Search History
+Future<void> addSearchHistory({
+  required String query,
+  required String workspaceId,
+  required int resultCount,
+});
+
+Future<List<SearchHistoryEntry>> getSearchHistory({
+  String? workspaceId,
+  int? limit,
+});
+
+Future<int> clearSearchHistory({String? workspaceId});
+```
+
+#### New Provider: `SearchHistoryProvider`
+
+```dart
+// Location: lib/shared/providers/search_history_provider.dart
+@riverpod
+class SearchHistory extends _$SearchHistory {
+  @override
+  Future<List<SearchHistoryEntry>> build(String? workspaceId) async {
+    return apiService.getSearchHistory(workspaceId: workspaceId, limit: 50);
+  }
+
+  Future<void> addEntry(String query, String workspaceId, int resultCount) async {
+    await apiService.addSearchHistory(
+      query: query,
+      workspaceId: workspaceId,
+      resultCount: resultCount,
+    );
+    ref.invalidateSelf();
+  }
+
+  Future<void> clear({String? workspaceId}) async {
+    await apiService.clearSearchHistory(workspaceId: workspaceId);
+    ref.invalidateSelf();
+  }
+}
+```
+
+#### New Components for Advanced Search UI
+
+| Component | Location | Purpose |
+|-----------|----------|---------|
+| `SearchInputBar` | `features/search/presentation/widgets/` | Enhanced search input with regex toggle |
+| `SearchHistoryPanel` | `features/search/presentation/widgets/` | Sidebar showing recent searches |
+| `KeywordChip` | `features/search/presentation/widgets/` | Individual keyword tag with operator |
+| `SearchOperatorSelector` | `features/search/presentation/widgets/` | AND/OR/NOT dropdown |
+
+### 2. Virtual File System Integration
+
+#### New API Methods Needed
+
+```dart
+// Virtual File Tree
+Future<List<VirtualTreeNode>> getVirtualFileTree(String workspaceId);
+
+Future<FileContentResponse> readFileByHash({
+  required String workspaceId,
+  required String hash,
+});
+```
+
+#### New Provider: `VirtualFileTreeProvider`
+
+```dart
+// Location: lib/features/virtual_file_system/providers/virtual_file_tree_provider.dart
+@riverpod
+class VirtualFileTree extends _$VirtualFileTree {
+  @override
+  Future<List<VfsNode>> build(String workspaceId) async {
+    return apiService.getVirtualFileTree(workspaceId);
+  }
+
+  Future<void> refresh() async {
+    ref.invalidateSelf();
+  }
+}
+```
+
+#### New Components for Virtual File System
+
+| Component | Location | Purpose |
+|-----------|----------|---------|
+| `VirtualFileTreeView` | `features/virtual_file_system/presentation/widgets/` | Main tree view (replaces ArchiveTreeView) |
+| `VfsNodeTile` | `features/virtual_file_system/presentation/widgets/` | Individual node row |
+| `VfsBreadcrumb` | `features/virtual_file_system/presentation/widgets/` | Path breadcrumb navigation |
+| `VfsPreviewPanel` | `features/virtual_file_system/presentation/widgets/` | File content preview |
+
+---
+
+## Data Flow Changes
+
+### Advanced Search Data Flow
+
+```
+User Input
+    │
+    ▼
+SearchInputBar (regex toggle, keyword chips)
+    │
+    ▼
+SearchQueryBuilder (builds SearchQuery with multiple terms)
+    │
+    ▼
+ApiService.searchLogs(SearchQuery)
+    │
+    ▼
+Rust Backend (regex engine, pattern matcher)
+    │
+    ▼
+SearchHistoryProvider.addEntry() ──New──
+    │
+    ▼
+SearchResultsProvider (existing)
+    │
+    ▼
+SearchPage (results display)
+```
+
+### Virtual File System Data Flow
+
+```
+Workspace Load
+    │
+    ▼
+VirtualFileTreeProvider.getVirtualFileTree()
+    │
+    ▼
+ApiService.getVirtualFileTree()
+    │
+    ▼
+Rust Backend (queries metadata store)
+    │
+    ▼
+VirtualTreeNode[] response
+    │
+    ▼
+VirtualFileTreeView (lazy-load children)
+    │
+    ▼
+User selects file
+    │
+    ▼
+ApiService.readFileByHash()
+    │
+    ▼
+VfsPreviewPanel (displays content)
+```
+
+---
+
+## New vs Modified Components
+
+### New Components (Create Fresh)
+
+| Component | Type | Reason |
+|-----------|------|--------|
+| `search_history_provider.dart` | Provider | New functionality |
+| `virtual_file_tree_provider.dart` | Provider | New functionality |
+| `SearchHistoryPanel` | Widget | New UI feature |
+| `SearchInputBar` | Widget | Enhanced search UI |
+| `VirtualFileTreeView` | Widget | New navigation |
+| `VfsPreviewPanel` | Widget | File preview |
+| `VirtualFileTreePage` | Page | New main page |
+
+### Modified Components (Extend Existing)
+
+| Component | Changes |
+|-----------|---------|
+| `api_service.dart` | Add new methods for search history + VFS |
+| `search.dart` | Add `SearchHistoryEntry` model |
+| `common.dart` | Add `VfsNode` model |
+| `app_router.dart` | Add routes for new pages |
+| `SearchPage` | Integrate advanced search UI |
+
+### Reusable Existing Components
+
+| Component | Reuse Pattern |
+|-----------|---------------|
+| `ArchiveTreeView` | Reference for `VirtualFileTreeView` implementation |
+| `ArchiveNode` | Extend or reference for `VfsNode` |
+| `ArchiveBrowserProvider` | Reference for `VirtualFileTreeProvider` |
+| `SearchQuery` / `SearchTerm` | Already supports multi-term + regex |
+
+---
+
+## Suggested Build Order
+
+### Phase 1: Backend API Integration (Foundation)
+
+1. **Add API methods to `api_service.dart`**
+   - `getSearchHistory()`, `addSearchHistory()`, `clearSearchHistory()`
+   - `getVirtualFileTree()`, `readFileByHash()`
+
+2. **Add data models**
+   - `SearchHistoryEntry` (in `search.dart` or new file)
+   - `VfsNode` / `VirtualTreeNode` (in `common.dart` or new file)
+
+**Dependencies:** None (pure Flutter changes)
+**Risk:** Low
+
+### Phase 2: State Management (Providers)
+
+3. **Create `SearchHistoryProvider`**
+   - AsyncNotifier pattern following existing providers
+   - CRUD operations for history
+
+4. **Create `VirtualFileTreeProvider`**
+   - AsyncNotifier pattern
+   - Lazy loading support
+
+**Dependencies:** Phase 1 complete
+**Risk:** Low
+
+### Phase 3: Advanced Search UI
+
+5. **Create `SearchInputBar` widget**
+   - Regex toggle button
+   - Keyword chip display
+   - Operator selector (AND/OR/NOT)
+
+6. **Create `SearchHistoryPanel` widget**
+   - List of recent searches
+   - Click to reuse
+   - Delete option
+
+7. **Integrate into `SearchPage`**
+   - Replace existing simple input
+   - Add history panel sidebar
+
+**Dependencies:** Phase 2 complete
+**Risk:** Medium (UI changes may need iteration)
+
+### Phase 4: Virtual File System UI
+
+8. **Create `VirtualFileTreeView` widget**
+   - Similar to `ArchiveTreeView` but for workspace files
+   - Expand/collapse directories
+   - Lazy loading for large trees
+
+9. **Create `VfsPreviewPanel` widget**
+   - Display file content by hash
+   - Handle text/binary detection
+
+10. **Create `VirtualFileTreePage`**
+    - Main page combining tree + preview
+    - Split pane layout
+
+11. **Add route to `app_router.dart`**
+
+**Dependencies:** Phase 2 complete
+**Risk:** Medium (tree view performance important)
+
+### Phase 5: Integration & Polish
+
+12. **Connect search to file tree**
+    - Click search result -> highlight in tree
+
+13. **Add keyboard navigation**
+    - Arrow keys for tree navigation
+    - Enter to select
+
+14. **Performance optimization**
+    - Virtual scrolling for large trees
+    - Debounce search input
+
+**Dependencies:** Phase 3 + 4 complete
+**Risk:** Medium
+
+---
+
+## Architecture Diagram
+
+```
++-----------------------------------------------------------------+
+|                        Flutter Frontend                         |
++-----------------------------------------------------------------+
+|  Pages                                                          |
+|  +------------------------------------------------------------+|
+|  | SearchPage (enhanced)                                     ||
+|  |   +-- SearchInputBar <- NEW                               ||
+|  |   +-- SearchHistoryPanel <- NEW                           ||
+|  |   +-- SearchResultsPanel (existing)                      ||
+|  +------------------------------------------------------------+|
+|  | VirtualFileTreePage <- NEW                                ||
+|  |   +-- VirtualFileTreeView <- NEW                          ||
+|  |   +-- VfsPreviewPanel <- NEW                              ||
+|  +------------------------------------------------------------+|
++-----------------------------------------------------------------+
+|  Providers (Riverpod)                                          |
+|  +-- SearchHistoryProvider <- NEW                              |
+|  +-- VirtualFileTreeProvider <- NEW                            |
+|  +-- SearchResultsProvider (existing)                          |
+|  +-- WorkspaceProvider (existing)                              |
++-----------------------------------------------------------------+
+|  Services                                                      |
+|  +-- ApiService <- ADD METHODS                                |
+|  +-- BridgeService (existing)                                 |
++-----------------------------------------------------------------+
+|  Models                                                        |
+|  +-- SearchHistoryEntry <- NEW                                 |
+|  +-- VfsNode <- NEW                                           |
+|  +-- SearchQuery / SearchTerm (existing)                      |
++-----------------------------------------------------------------+
+                              |
+                              | FFI (flutter_rust_bridge)
+                              v
++-----------------------------------------------------------------+
+|                        Rust Backend                             |
++-----------------------------------------------------------------+
+|  Commands (existing, ready to use)                             |
+|  +-- search_history: add/get/clear                             |
+|  +-- virtual_tree: get_virtual_file_tree, read_file_by_hash   |
+|  +-- search: search_logs (supports regex + multi-term)        |
++-----------------------------------------------------------------+
+|  Services (existing)                                           |
+|  +-- PatternMatcher (regex + Aho-Corasick)                    |
+|  +-- MetadataStore (CAS + SQLite)                             |
+|  +-- ContentAddressableStorage                                 |
++-----------------------------------------------------------------+
+```
+
+---
+
+## Risks and Mitigations
+
+| Risk | Severity | Mitigation |
+|------|----------|------------|
+| Large file tree performance | Medium | Lazy loading + virtual scrolling |
+| Regex performance | Medium | Backend already optimizes; add client-side timeout |
+| History storage growth | Low | Limit entries (default 50) + user clear option |
+| FFI serialization errors | Low | Already tested pattern; follow existing naming |
+
+---
+
+## Confidence Assessment
+
+| Area | Confidence | Notes |
+|------|------------|-------|
+| Backend API availability | HIGH | All required commands already implemented |
+| Flutter architecture fit | HIGH | Follows existing Riverpod + Provider patterns |
+| Component estimates | MEDIUM | Based on existing similar components |
+| Build order | MEDIUM | Dependency chain seems correct, may need adjustment |
+
+---
+
+## Sources
+
+- Rust backend search history: `src-tauri/src/commands/search_history.rs` - HIGH
+- Rust backend VFS: `src-tauri/src/commands/virtual_tree.rs` - HIGH
+- Flutter API service: `log-analyzer_flutter/lib/shared/services/api_service.dart` - HIGH
+- Archive tree view: `log-analyzer_flutter/lib/features/archive_browsing/presentation/widgets/archive_tree_view.dart` - HIGH
+- Search models: `log-analyzer_flutter/lib/shared/models/search.dart` - HIGH
+
+---
+
+*Architecture research for: Flutter Desktop Log Analyzer v1.1*
+*Researched: 2026-03-04*
