@@ -2,6 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: 高级搜索与虚拟文件系统
+status: unknown
+last_updated: "2026-03-04T14:52:24.673Z"
+progress:
+  total_phases: 7
+  completed_phases: 7
+  total_plans: 19
+  completed_plans: 19
+---
+
+---
+gsd_state_version: 1.0
+milestone: v1.1
+milestone_name: 高级搜索与虚拟文件系统
 status: in_progress
 last_updated: "2026-03-04T15:30:00.000Z"
 progress:
