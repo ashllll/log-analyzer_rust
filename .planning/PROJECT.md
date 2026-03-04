@@ -2,22 +2,17 @@
 
 ## What This Is
 
-使用 Flutter 全新实现的桌面日志分析应用，通过 FFI 或 HTTP API 与现有 Rust 后端通信。替代现有 Tauri 前端，提供更现代化的 UI 和更好的开发效率。
+使用 Flutter 全新实现的桌面日志分析应用，通过 FFI 与现有 Rust 后端通信。已完成 Phase 7 后端 API 集成（搜索历史、虚拟文件树、正则搜索、多关键词搜索），为后续 UI 阶段提供 FFI 桥接支持。
 
 ## Core Value
 
 让用户能够高效地搜索、分析和监控日志文件，支持多种压缩包格式，提供实时更新能力。
 
-## Current Milestone: v1.1 高级搜索与虚拟文件系统
+## Current Milestone: v2.0 (待规划)
 
-**Goal:** 实现高级搜索功能（正则表达式、多关键词组合、搜索历史）和虚拟文件系统（文件树、目录导航）
-
-**Target features:**
-- 正则表达式搜索
-- 多关键词组合搜索 (AND/OR/NOT)
-- 搜索历史记录
-- 虚拟文件树导航
-- 目录层级浏览
+**上一个里程碑:** v1.1 高级搜索与虚拟文件系统 (2026-03-04, 部分完成)
+- ✅ Phase 7 完成: 后端 API 集成 (搜索历史、虚拟文件树、正则搜索、多关键词搜索 FFI)
+- ⏳ Phases 8-11 未开始: 状态管理、高级搜索 UI、虚拟文件系统 UI、集成优化
 
 ## Requirements
 
@@ -29,11 +24,7 @@
 - ✓ 多模式匹配 (Aho-Corasick) — 现有后端已实现
 - ✓ 正则表达式搜索 — 现有后端已实现
 - ✓ 关键词高亮 — 现有后端已实现
-- ✓ ZIP 压缩包解压 — 现有后端已实现
-- ✓ TAR 压缩包解压 — 现有后端已实现
-- ✓ GZIP 压缩包解压 — 现有后端已实现
-- ✓ RAR 压缩包解压 — 现有后端已实现
-- ✓ 7Z 压缩包解压 — 现有后端已实现
+- ✓ ZIP/TAR/GZ/RAR/7Z 压缩包解压 — 现有后端已实现
 - ✓ 文件系统监控 — 现有后端已实现
 - ✓ 增量索引更新 — 现有后端已实现
 - ✓ CAS 内容寻址存储 — 现有后端已实现
@@ -47,14 +38,20 @@
 - ✓ 实时监控面板 — v1.0 MVP 已完成
 - ✓ 设置/配置界面 — v1.0 MVP 已完成
 - ✓ 任务进度显示 UI — v1.0 MVP 已完成
+- ✓ 搜索历史 FFI 桥接 — v1.1 Phase 7 已完成
+- ✓ 虚拟文件树 FFI 桥接 — v1.1 Phase 7 已完成
+- ✓ 正则表达式搜索 FFI 桥接 — v1.1 Phase 7 已完成
+- ✓ 多关键词组合搜索 FFI 桥接 — v1.1 Phase 7 已完成
 
 ### Active
 
-- [ ] 正则表达式搜索功能
-- [ ] 多关键词组合搜索 (AND/OR/NOT)
-- [ ] 搜索历史记录 (保存与快速访问)
-- [ ] 虚拟文件树 UI (TreeView 组件)
-- [ ] 目录层级导航
+从 v1.1 继承的未完成需求:
+- [ ] 正则表达式搜索 UI (ASEARCH-01, ASEARCH-02)
+- [ ] 多关键词组合搜索 UI (ASEARCH-03, ASEARCH-04, ASEARCH-05, ASEARCH-06)
+- [ ] 搜索历史记录 UI (HIST-01, HIST-02, HIST-03, HIST-04, HIST-05)
+- [ ] 虚拟文件树 UI (VFS-01, VFS-02, VFS-03, VFS-04)
+- [ ] SearchHistoryProvider 状态管理
+- [ ] VirtualFileTreeProvider 状态管理
 
 ### Out of Scope
 
@@ -76,6 +73,11 @@
 - 通过 flutter_rust_bridge 或 HTTP API 与 Rust 后端通信
 - Windows/macOS/Linux 桌面平台
 
+**v1.1 Phase 7 实现的 FFI 模式**:
+- 三层 FFI 架构: `bridge.rs` (导出) → `commands_bridge.rs` (适配) → 业务逻辑
+- 同步 FFI: 使用 `#[frb(sync)]` 简化 Flutter 集成
+- 懒加载模式: 虚拟文件树支持按需加载子节点
+
 ## Constraints
 
 - **性能**: 搜索响应时间 <200ms (继承现有后端能力)
@@ -86,9 +88,12 @@
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Flutter 替代 Tauri 前端 | 更好的开发效率，更现代化的 UI | — Pending |
-| 保留 Rust 后端所有功能 | 已有完整实现，无需重写 | — Pending |
-| FFI + HTTP API 双通道 | FFI 优先，HTTP 作为备选 | — Pending |
+| Flutter 替代 Tauri 前端 | 更好的开发效率，更现代化的 UI | ✓ Good |
+| 保留 Rust 后端所有功能 | 已有完整实现，无需重写 | ✓ Good |
+| FFI + HTTP API 双通道 | FFI 优先，HTTP 作为备选 | ✓ Good |
+| 三层 FFI 架构 | 分离关注点，易于维护和测试 | ✓ Good (Phase 7 验证) |
+| 复用 SearchHistoryManager | 避免重复实现，保持代码一致性 | ✓ Good |
+| 复用 PatternMatcher (Aho-Corasick) | O(n+m) 复杂度，高性能多模式匹配 | ✓ Good |
 
 ---
-*Last updated: 2026-03-04 after v1.1 milestone started*
+*Last updated: 2026-03-04 after v1.1 milestone archived*
