@@ -434,3 +434,59 @@ pub fn read_file_by_hash(
         "读取文件失败",
     )
 }
+
+// ==================== 多关键词组合搜索操作 ====================
+
+/// 执行结构化搜索（多关键词组合搜索）
+///
+/// 支持多个关键词的 AND/OR/NOT 组合搜索
+///
+/// # 参数
+///
+/// * `query` - 结构化搜索查询对象
+/// * `workspace_id` - 工作区 ID（可选，默认使用第一个可用工作区）
+/// * `max_results` - 最大返回结果数量
+///
+/// # 返回
+///
+/// 返回匹配的搜索结果列表
+#[frb(sync)]
+pub fn search_structured(
+    query: StructuredSearchQueryData,
+    workspace_id: Option<String>,
+    max_results: i32,
+) -> Vec<SearchResultEntry> {
+    unwrap_result(
+        commands_bridge::ffi_search_structured(query, workspace_id, max_results),
+        "结构化搜索失败",
+    )
+}
+
+/// 构建搜索查询对象
+///
+/// 从关键词列表构建结构化搜索查询，便于 Flutter 端使用
+///
+/// # 参数
+///
+/// * `keywords` - 关键词列表
+/// * `global_operator` - 全局操作符 ("AND", "OR", "NOT")
+/// * `is_regex` - 是否使用正则表达式
+/// * `case_sensitive` - 是否大小写敏感
+///
+/// # 返回
+///
+/// 返回构建的结构化搜索查询对象
+#[frb(sync)]
+pub fn build_search_query(
+    keywords: Vec<String>,
+    global_operator: String,
+    is_regex: bool,
+    case_sensitive: bool,
+) -> StructuredSearchQueryData {
+    let op = match global_operator.to_uppercase().as_str() {
+        "OR" => QueryOperatorData::Or,
+        "NOT" => QueryOperatorData::Not,
+        _ => QueryOperatorData::And,
+    };
+    commands_bridge::ffi_build_search_query(keywords, op, is_regex, case_sensitive)
+}
