@@ -1606,6 +1606,215 @@ pub fn ffi_clear_search_history(workspace_id: Option<String>) -> Result<i32, Str
     Ok(removed_count as i32)
 }
 
+// ==================== 虚拟文件树命令适配 ====================
+
+use crate::ffi::types::{FileContentResponseData, VirtualTreeNodeData};
+
+/// FFI 适配：获取虚拟文件树
+///
+/// 获取工作区的虚拟文件树结构（根节点）
+///
+/// # 参数
+///
+/// * `workspace_id` - 工作区 ID
+///
+/// # 返回
+///
+/// 返回根节点列表
+pub fn ffi_get_virtual_file_tree(workspace_id: String) -> Result<Vec<VirtualTreeNodeData>, String> {
+    tracing::info!(workspace_id = %workspace_id, "FFI: get_virtual_file_tree 调用");
+
+    // 获取应用数据目录
+    let app_data_dir = get_app_data_dir().ok_or_else(|| "FFI 全局状态未初始化".to_string())?;
+
+    // 构建工作区目录路径
+    let workspace_dir = app_data_dir.join("workspaces").join(&workspace_id);
+
+    if !workspace_dir.exists() {
+        return Err(format!("工作区不存在: {}", workspace_id));
+    }
+
+    // 使用 tokio 运行时执行异步操作
+    let rt = tokio::runtime::Runtime::new().map_err(|e| format!("创建运行时失败: {}", e))?;
+
+    rt.block_on(async {
+        // 打开元数据存储
+        let metadata_store = crate::storage::MetadataStore::new(&workspace_dir)
+            .await
+            .map_err(|e| format!("打开元数据存储失败: {}", e))?;
+
+        // 获取所有归档和文件
+        let archives = metadata_store
+            .get_all_archives()
+            .await
+            .map_err(|e| format!("获取归档失败: {}", e))?;
+
+        let all_files = metadata_store
+            .get_all_files()
+            .await
+            .map_err(|e| format!("获取文件失败: {}", e))?;
+
+        // 构建树结构
+        let tree = crate::commands::virtual_tree::build_tree_structure(&archives, &all_files, &metadata_store).await?;
+
+        // 转换为 FFI 类型
+        Ok(tree.into_iter().map(VirtualTreeNodeData::from).collect())
+    })
+}
+
+/// FFI 适配：获取树子节点（懒加载）
+///
+/// 获取指定父节点下的子节点
+///
+/// # 参数
+///
+/// * `workspace_id` - 工作区 ID
+/// * `parent_path` - 父节点路径
+///
+/// # 返回
+///
+/// 返回子节点列表
+pub fn ffi_get_tree_children(
+    workspace_id: String,
+    parent_path: String,
+) -> Result<Vec<VirtualTreeNodeData>, String> {
+    tracing::debug!(workspace_id = %workspace_id, parent_path = %parent_path, "FFI: get_tree_children 调用");
+
+    // 获取应用数据目录
+    let app_data_dir = get_app_data_dir().ok_or_else(|| "FFI 全局状态未初始化".to_string())?;
+
+    // 构建工作区目录路径
+    let workspace_dir = app_data_dir.join("workspaces").join(&workspace_id);
+
+    if !workspace_dir.exists() {
+        return Err(format!("工作区不存在: {}", workspace_id));
+    }
+
+    // 使用 tokio 运行时执行异步操作
+    let rt = tokio::runtime::Runtime::new().map_err(|e| format!("创建运行时失败: {}", e))?;
+
+    rt.block_on(async {
+        // 打开元数据存储
+        let metadata_store = crate::storage::MetadataStore::new(&workspace_dir)
+            .await
+            .map_err(|e| format!("打开元数据存储失败: {}", e))?;
+
+        // 获取所有归档和文件
+        let archives = metadata_store
+            .get_all_archives()
+            .await
+            .map_err(|e| format!("获取归档失败: {}", e))?;
+
+        let all_files = metadata_store
+            .get_all_files()
+            .await
+            .map_err(|e| format!("获取文件失败: {}", e))?;
+
+        // 查找父归档
+        let parent_archive = archives.iter().find(|a| a.virtual_path == parent_path);
+
+        if let Some(parent) = parent_archive {
+            // 获取子归档
+            let child_archives: Vec<_> = archives
+                .iter()
+                .filter(|a| a.parent_archive_id == Some(parent.id))
+                .collect();
+
+            // 获取子文件
+            let child_files: Vec<_> = all_files
+                .iter()
+                .filter(|f| f.parent_archive_id == Some(parent.id))
+                .collect();
+
+            let mut children = Vec::new();
+
+            // 添加子归档
+            for archive in child_archives {
+                children.push(VirtualTreeNodeData::from(
+                    crate::commands::virtual_tree::VirtualTreeNode::Archive {
+                        name: archive.original_name.clone(),
+                        path: archive.virtual_path.clone(),
+                        hash: archive.sha256_hash.clone(),
+                        archive_type: archive.archive_type.clone(),
+                        children: vec![], // 懒加载，不展开子节点
+                    },
+                ));
+            }
+
+            // 添加子文件
+            for file in child_files {
+                children.push(VirtualTreeNodeData::from(
+                    crate::commands::virtual_tree::VirtualTreeNode::File {
+                        name: file.original_name.clone(),
+                        path: file.virtual_path.clone(),
+                        hash: file.sha256_hash.clone(),
+                        size: file.size,
+                        mime_type: file.mime_type.clone(),
+                    },
+                ));
+            }
+
+            Ok(children)
+        } else {
+            Err(format!("未找到父路径: {}", parent_path))
+        }
+    })
+}
+
+/// FFI 适配：通过哈希读取文件内容
+///
+/// 从 CAS 存储读取指定哈希的文件内容
+///
+/// # 参数
+///
+/// * `workspace_id` - 工作区 ID
+/// * `hash` - 文件 SHA-256 哈希
+///
+/// # 返回
+///
+/// 返回文件内容响应
+pub fn ffi_read_file_by_hash(
+    workspace_id: String,
+    hash: String,
+) -> Result<FileContentResponseData, String> {
+    tracing::debug!(workspace_id = %workspace_id, hash = %hash, "FFI: read_file_by_hash 调用");
+
+    // 获取应用数据目录
+    let app_data_dir = get_app_data_dir().ok_or_else(|| "FFI 全局状态未初始化".to_string())?;
+
+    // 构建工作区目录路径
+    let workspace_dir = app_data_dir.join("workspaces").join(&workspace_id);
+
+    // 使用 tokio 运行时执行异步操作
+    let rt = tokio::runtime::Runtime::new().map_err(|e| format!("创建运行时失败: {}", e))?;
+
+    rt.block_on(async {
+        // 初始化 CAS
+        let cas = crate::storage::ContentAddressableStorage::new(workspace_dir);
+
+        // 检查文件是否存在
+        if !cas.exists(&hash) {
+            return Err(format!("文件不存在: {}", hash));
+        }
+
+        // 读取内容
+        let content_bytes = cas
+            .read_content(&hash)
+            .await
+            .map_err(|e| format!("读取文件失败: {}", e))?;
+
+        // 转换为 UTF-8 字符串
+        let content = String::from_utf8(content_bytes.clone())
+            .map_err(|e| format!("文件内容不是有效的 UTF-8: {}", e))?;
+
+        Ok(FileContentResponseData {
+            content,
+            hash,
+            size: content_bytes.len() as i64,
+        })
+    })
+}
+
 // ==================== 测试模块 ====================
 
 #[cfg(test)]
