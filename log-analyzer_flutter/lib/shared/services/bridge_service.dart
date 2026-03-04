@@ -818,6 +818,75 @@ class BridgeService {
     }
   }
 
+  // ==================== 正则搜索操作 ====================
+
+  /// 验证正则表达式语法
+  ///
+  /// 验证正则表达式是否有效，返回验证结果和错误信息
+  ///
+  /// # 参数
+  ///
+  /// * `pattern` - 正则表达式模式
+  ///
+  /// # 返回
+  ///
+  /// 返回验证结果，包含是否有效和可能的错误信息
+  Future<ffi.RegexValidationResult> validateRegex(String pattern) async {
+    if (!isFfiEnabled) {
+      return ffi.RegexValidationResult(
+        valid: false,
+        errorMessage: 'FFI not initialized',
+      );
+    }
+
+    try {
+      return ffi.validateRegex(pattern: pattern);
+    } catch (e) {
+      debugPrint('validateRegex error: $e');
+      return ffi.RegexValidationResult(
+        valid: false,
+        errorMessage: e.toString(),
+      );
+    }
+  }
+
+  /// 执行正则表达式搜索
+  ///
+  /// 在工作区中搜索匹配正则表达式的行
+  ///
+  /// # 参数
+  ///
+  /// * `pattern` - 正则表达式模式
+  /// * `workspaceId` - 工作区 ID（可选，默认使用第一个可用工作区）
+  /// * `maxResults` - 最大结果数量
+  /// * `caseSensitive` - 是否大小写敏感
+  ///
+  /// # 返回
+  ///
+  /// 返回匹配的搜索结果列表
+  Future<List<ffi.SearchResultEntry>> searchRegex({
+    required String pattern,
+    String? workspaceId,
+    int maxResults = 10000,
+    bool caseSensitive = false,
+  }) async {
+    if (!isFfiEnabled) {
+      return [];
+    }
+
+    try {
+      return ffi.searchRegex(
+        pattern: pattern,
+        workspaceId: workspaceId,
+        maxResults: maxResults,
+        caseSensitive: caseSensitive,
+      );
+    } catch (e) {
+      debugPrint('searchRegex error: $e');
+      return [];
+    }
+  }
+
   /// 释放资源
   void dispose() {
     LogAnalyzerBridge.dispose();
