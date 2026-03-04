@@ -1,8 +1,10 @@
 # Roadmap: Flutter 日志分析桌面应用
 
-## Overview
+## Milestones
 
-使用 Flutter 全新实现的桌面日志分析应用，通过 FFI 与现有 Rust 后端通信。路线图从架构基础设施开始，逐步构建工作区管理、文件导入、核心搜索功能、压缩包管理和实时监控能力，最终完成用户体验优化。
+- [x] **v1.0 MVP** - Phases 1-6 (已交付 2026-03-01)
+- [ ] **v1.1 高级搜索与虚拟文件系统** - Phases 7-11 (进行中)
+- [ ] **v2.0 [待定]** - Phases 12+ (计划中)
 
 ## Phases
 
@@ -12,224 +14,208 @@
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [x] **Phase 1: 架构基础设施** - Flutter 项目结构、共享服务、错误处理框架
-- [ ] **Phase 2: 工作区与文件导入** - 工作区管理、文件夹/压缩包导入
-- [ ] **Phase 3: 搜索功能与结果展示** - 全文搜索、关键词高亮、多条件筛选
-- [x] **Phase 4: 压缩包浏览** - 压缩包内文件浏览、预览、内嵌搜索
-- [x] **Phase 5: 实时监控** - 文件监控、自动索引更新
-- [x] **Phase 6: 完成与优化** - 任务进度、设置、用户体验完善
-
-## Phase Details
+<details>
+<summary>v1.0 MVP (Phases 1-6) - SHIPPED 2026-03-01</summary>
 
 ### Phase 1: 架构基础设施
 **Goal**: Flutter 应用具备与 Rust 后端通信的基础设施，包括项目结构、共享服务、错误处理框架
-**Depends on**: Nothing (first phase)
-**Success Criteria** (what must be TRUE):
-  1. Flutter 桌面应用可以正常启动并显示主窗口
-  2. ApiService 能够与 Rust 后端 FFI 通信
-  3. BridgeService 能够通过 FFI 与 Rust 后端通信
-  4. 错误处理框架能够显示用户友好的错误信息
-  5. Riverpod Provider 基础配置完成并正常工作
 **Plans**: 4 plans
 
 Plans:
-- [x] 01-01-PLAN.md — FFI 桥接服务重构（纯 FFI 模式）
-- [x] 01-02-PLAN.md — 错误处理框架（错误码 + ErrorView）
-- [x] 01-03-PLAN.md — 启动流程与路由（Splash Screen + go_router）
-- [x] 01-04-PLAN.md — Riverpod Provider 基础配置验证
+- [x] 01-01 — FFI 桥接服务重构（纯 FFI 模式）
+- [x] 01-02 — 错误处理框架（错误码 + ErrorView）
+- [x] 01-03 — 启动流程与路由（Splash Screen + go_router）
+- [x] 01-04 — Riverpod Provider 基础配置验证
 
 ### Phase 2: 工作区与文件导入
 **Goal**: 用户可以管理工作区、导入文件和压缩包
-**Depends on**: Phase 1
-**Requirements**: WORK-01, WORK-02, WORK-03, WORK-04, FILE-01, FILE-02, FILE-03, FILE-04, FILE-05, FILE-06, FILE-07
-**Success Criteria** (what must be TRUE):
-  1. 用户可以创建新的工作区
-  2. 用户可以打开已有工作区
-  3. 用户可以删除工作区
-  4. 用户可以查看工作区状态 (文件数、索引状态)
-  5. 用户可以导入文件夹
-  6. 用户可以导入 ZIP/TAR/GZ/RAR/7Z 压缩包
-  7. 文件导入时显示进度
 **Plans**: 3 plans
 
 Plans:
-- [x] 02-01-PLAN.md — 工作区增强（键盘导航、最近优先排序）
-- [x] 02-02-PLAN.md — 文件导入（拖放支持、导入进度显示）
-- [x] 02-03-PLAN.md — 压缩包导入（ZIP/TAR/GZ/RAR/7Z 支持）
+- [x] 02-01 — 工作区增强（键盘导航、最近优先排序）
+- [x] 02-02 — 文件导入（拖放支持、导入进度显示）
+- [x] 02-03 — 压缩包导入（ZIP/TAR/GZ/RAR/7Z 支持）
 
 ### Phase 3: 搜索功能与结果展示
 **Goal**: 用户可以搜索日志并查看结果，具备关键词高亮和多条件筛选能力
-**Depends on**: Phase 2
-**Requirements**: SEARCH-01, SEARCH-02, SEARCH-03, SEARCH-04, SEARCH-05, SEARCH-06, UI-01, UI-02, UI-03
-**Success Criteria** (what must be TRUE):
-  1. 用户可以输入关键词进行全文搜索
-  2. 搜索结果中高亮显示匹配的关键词
-  3. 用户可以按日期范围筛选搜索结果
-<<<<<<< HEAD
-  4. 用户可以按日志级别筛选 (ERROR, WARN, INFO, DEBUG)
-  5. 用户可以按文件类型筛选
-=======
-  4. 用户可以按日志级别筛选 (ERROR, WARN, INFO, DEBUG) — 用户选择不实现
-  5. 用户可以按文件类型筛选 — 用户选择不实现
->>>>>>> gsd/phase-06-completion
-  6. 搜索响应时间 <200ms
-  7. 用户可以看到搜索结果列表
-  8. 用户可以查看单条日志详情
-  9. 用户可以查看任务进度
-<<<<<<< HEAD
-**Plans**: TBD
-=======
-**Plans**: 4 plans
+**Plans**: 2 plans
 
 Plans:
-- [x] 03-01-PLAN.md — 搜索增强（进度条+日期选择器+快捷键） ✓
-- [x] 03-02-PLAN.md — 结果展示（详情面板+关键词高亮） ✓
->>>>>>> gsd/phase-06-completion
+- [x] 03-01 — 搜索增强（进度条+日期选择器+快捷键）
+- [x] 03-02 — 结果展示（详情面板+关键词高亮）
 
 ### Phase 4: 压缩包浏览
 **Goal**: 用户可以浏览压缩包内的文件、预览文本文件内容、在压缩包内搜索
-**Depends on**: Phase 3
-**Requirements**: ARCH-01, ARCH-02, ARCH-03
-**Success Criteria** (what must be TRUE):
-  1. 用户可以浏览压缩包内的文件列表
-  2. 用户可以预览压缩包内的文本文件内容
-  3. 用户可以在压缩包内搜索关键词
-<<<<<<< HEAD
-**Plans**: TBD
-=======
 **Plans**: 2 plans
 
 Plans:
-- [x] 04-01-PLAN.md — 后端实现（ArchiveHandler 扩展 + Tauri 命令）
-- [x] 04-02-PLAN.md — 前端实现（树形视图 + 预览面板 + 搜索）
->>>>>>> gsd/phase-06-completion
+- [x] 04-01 — 后端实现（ArchiveHandler 扩展 + Tauri 命令）
+- [x] 04-02 — 前端实现（树形视图 + 预览面板 + 搜索）
 
 ### Phase 5: 实时监控
 **Goal**: 用户可以启用文件监控，文件变化时自动更新索引
-**Depends on**: Phase 4
-**Requirements**: MON-01, MON-02, MON-03
-**Success Criteria** (what must be TRUE):
-  1. 用户可以启用文件监控
-  2. 文件变化时自动更新索引
-  3. 用户可以查看监控状态
-<<<<<<< HEAD
-**Plans**: TBD
-=======
 **Plans**: 2 plans
 
 Plans:
-- [x] 05-01-PLAN.md — 核心实现（MonitoringState + MonitoringProvider）
-- [x] 05-02-PLAN.md — UI实现（工具栏按钮 + 状态面板）
->>>>>>> gsd/phase-06-completion
+- [x] 05-01 — 核心实现（MonitoringState + MonitoringProvider）
+- [x] 05-02 — UI实现（工具栏按钮 + 状态面板）
 
 ### Phase 6: 完成与优化
 **Goal**: 完善用户体验，提供设置功能，应用可以正常启动
-**Depends on**: Phase 5
-**Requirements**: UI-04
-**Success Criteria** (what must be TRUE):
-  1. 应用程序可以正常启动
-  2. 用户可以访问设置/配置界面
-  3. 所有核心功能可用且稳定
-<<<<<<< HEAD
-**Plans**: TBD
-=======
 **Plans**: 2 plans
 
 Plans:
-- [x] 06-01-PLAN.md — 设置基础设施（SettingsService + ThemeProvider + 页面重构）
-- [x] 06-02-PLAN.md — 启动恢复 + UX优化（Splash工作区恢复 + 空状态组件）
->>>>>>> gsd/phase-06-completion
+- [x] 06-01 — 设置基础设施（SettingsService + ThemeProvider + 页面重构）
+- [x] 06-02 — 启动恢复 + UX优化（Splash工作区恢复 + 空状态组件）
+
+</details>
+
+### v1.1 高级搜索与虚拟文件系统 (Phases 7-11)
+
+**Milestone Goal:** 实现高级搜索功能（正则表达式、多关键词组合、搜索历史）和虚拟文件系统（文件树、目录导航）
+
+---
+
+- [ ] **Phase 7: 后端 API 集成** - 扩展 API 服务，支持搜索历史和虚拟文件树
+- [ ] **Phase 8: 状态管理** - 实现 SearchHistoryProvider 和 VirtualFileTreeProvider
+- [ ] **Phase 9: 高级搜索 UI** - 正则表达式、多关键词组合、搜索历史界面
+- [ ] **Phase 10: 虚拟文件系统 UI** - 文件树导航、目录展开折叠、文件预览
+- [ ] **Phase 11: 集成与优化** - 功能联动、键盘导航、性能优化
+
+---
+
+## Phase Details
+
+### Phase 7: 后端 API 集成
+**Goal**: Flutter 应用能够通过 FFI 调用 Rust 后端的搜索历史和虚拟文件树 API
+**Depends on**: Nothing (first phase of v1.1)
+**Success Criteria** (what must be TRUE):
+  1. ApiService 扩展了搜索历史相关方法 (add, get, delete, clear)
+  2. ApiService 扩展了虚拟文件树获取方法
+  3. 正则表达式搜索功能可在 Flutter 端调用后端
+  4. 多关键词组合搜索 (AND/OR/NOT) 可在后端执行
+**Plans**: TBD
+
+Plans:
+- [ ] 07-01: 搜索历史 API 集成（添加、获取、删除、清空）
+- [ ] 07-02: 虚拟文件树 API 集成（获取树结构）
+- [ ] 07-03: 正则表达式搜索 API 集成
+- [ ] 07-04: 多关键词组合搜索 API 集成
+
+### Phase 8: 状态管理
+**Goal**: 使用 Riverpod 管理搜索历史和虚拟文件树的状态
+**Depends on**: Phase 7
+**Success Criteria** (what must be TRUE):
+  1. SearchHistoryProvider 可以增删改查搜索历史
+  2. VirtualFileTreeProvider 可以获取和刷新文件树
+  3. 历史记录支持 LRU 限制（最多100条）
+  4. 虚拟文件树支持懒加载
+**Plans**: TBD
+
+Plans:
+- [ ] 08-01: SearchHistoryProvider 实现（CRUD + LRU 限制）
+- [ ] 08-02: VirtualFileTreeProvider 实现（懒加载支持）
+
+### Phase 9: 高级搜索 UI
+**Goal**: 用户可以使用正则表达式搜索、多关键词组合、查看搜索历史
+**Depends on**: Phase 8
+**Requirements**: ASEARCH-01, ASEARCH-02, ASEARCH-03, ASEARCH-04, ASEARCH-05, ASEARCH-06, HIST-01, HIST-02, HIST-03, HIST-04, HIST-05
+**Success Criteria** (what must be TRUE):
+  1. 用户可以切换到正则表达式搜索模式
+  2. 正则表达式搜索时显示语法有效/无效反馈
+  3. 用户可以输入多个关键词并选择 AND 组合
+  4. 用户可以输入多个关键词并选择 OR 组合
+  5. 用户可以输入多个关键词并选择 NOT 组合
+  6. 用户可以查看组合后的搜索条件预览
+  7. 搜索自动保存到历史记录
+  8. 用户可以在下拉列表中查看历史搜索记录
+  9. 用户可以点击历史记录快速填充搜索框
+  10. 用户可以删除单条历史记录
+  11. 用户可以清空所有搜索历史
+**Plans**: TBD
+
+Plans:
+- [ ] 09-01: SearchInputBar 组件（正则模式切换、语法反馈）
+- [ ] 09-02: 关键词组合 UI（AND/OR/NOT 选择器、条件预览）
+- [ ] 09-03: SearchHistoryPanel 组件（历史列表、点击填充）
+- [ ] 09-04: 历史管理（删除单条、清空全部）
+
+### Phase 10: 虚拟文件系统 UI
+**Goal**: 用户可以浏览虚拟文件树、展开目录、预览文件内容
+**Depends on**: Phase 8
+**Requirements**: VFS-01, VFS-02, VFS-03, VFS-04
+**Success Criteria** (what must be TRUE):
+  1. 用户可以查看工作区的虚拟文件树结构
+  2. 目录节点可以展开/折叠
+  3. 用户可以点击文件预览内容
+  4. 文件树显示文件/目录图标区分
+**Plans**: TBD
+
+Plans:
+- [ ] 10-01: VirtualFileTreeView 组件（文件树展示、图标区分）
+- [ ] 10-02: 目录展开/折叠功能
+- [ ] 10-03: 文件预览面板
+
+### Phase 11: 集成与优化
+**Goal**: 高级搜索与虚拟文件系统联动，提供流畅的用户体验
+**Depends on**: Phase 9, Phase 10
+**Success Criteria** (what must be TRUE):
+  1. 搜索结果可以关联到虚拟文件树中的文件
+  2. 支持键盘导航（上下箭头 + 回车）
+  3. 文件树支持手动刷新
+  4. 整体性能优化（懒加载、虚拟滚动）
+**Plans**: TBD
+
+Plans:
+- [ ] 11-01: 搜索结果与文件树关联
+- [ ] 11-02: 键盘导航支持
+- [ ] 11-03: 性能优化（懒加载、虚拟滚动）
+
+---
 
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
+Phases execute in numeric order: 7 → 8 → 9 → 10 → 11
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. 架构基础设施 | 4/4 | Completed | 2026-02-28 |
-| 2. 工作区与文件导入 | 3/3 | Completed | 2026-03-01 |
-<<<<<<< HEAD
-| 3. 搜索功能与结果展示 | 0/N | Not started | - |
-| 4. 压缩包浏览 | 0/N | Not started | - |
-| 5. 实时监控 | 0/N | Not started | - |
-| 6. 完成与优化 | 0/N | Not started | - |
-=======
-| 3. 搜索功能与结果展示 | 2/4 | Completed | - |
-| 4. 压缩包浏览 | 2/2 | Completed | 2026-03-02 |
-| 5. 实时监控 | 2/2 | Completed | 2026-03-03 |
-| 6. 完成与优化 | 2/2 | Completed | 2026-03-03 |
->>>>>>> gsd/phase-06-completion
+| 7. 后端 API 集成 | 0/4 | Not started | - |
+| 8. 状态管理 | 0/2 | Not started | - |
+| 9. 高级搜索 UI | 0/4 | Not started | - |
+| 10. 虚拟文件系统 UI | 0/3 | Not started | - |
+| 11. 集成与优化 | 0/3 | Not started | - |
+
+---
 
 ## Coverage
 
-### Requirement Mapping
+### v1.1 Requirement Mapping
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-<<<<<<< HEAD
-| WORK-01 | Phase 2 | Pending |
-| WORK-02 | Phase 2 | Pending |
-| WORK-03 | Phase 2 | Pending |
-| WORK-04 | Phase 2 | Pending |
-| FILE-01 | Phase 2 | Pending |
-| FILE-02 | Phase 2 | Pending |
-| FILE-03 | Phase 2 | Pending |
-| FILE-04 | Phase 2 | Pending |
-| FILE-05 | Phase 2 | Pending |
-| FILE-06 | Phase 2 | Pending |
-| FILE-07 | Phase 2 | Pending |
-| SEARCH-01 | Phase 3 | Pending |
-| SEARCH-02 | Phase 3 | Pending |
-| SEARCH-03 | Phase 3 | Pending |
-| SEARCH-04 | Phase 3 | Pending |
-| SEARCH-05 | Phase 3 | Pending |
-| SEARCH-06 | Phase 3 | Pending |
-| ARCH-01 | Phase 4 | Pending |
-| ARCH-02 | Phase 4 | Pending |
-| ARCH-03 | Phase 4 | Pending |
-| MON-01 | Phase 5 | Pending |
-| MON-02 | Phase 5 | Pending |
-| MON-03 | Phase 5 | Pending |
-| UI-01 | Phase 3 | Pending |
-| UI-02 | Phase 3 | Pending |
-| UI-03 | Phase 3 | Pending |
-=======
-| WORK-01 | Phase 2 | Done |
-| WORK-02 | Phase 2 | Done |
-| WORK-03 | Phase 2 | Done |
-| WORK-04 | Phase 2 | Done |
-| FILE-01 | Phase 2 | Done |
-| FILE-02 | Phase 2 | Done |
-| FILE-03 | Phase 2 | Done |
-| FILE-04 | Phase 2 | Done |
-| FILE-05 | Phase 2 | Done |
-| FILE-06 | Phase 2 | Done |
-| FILE-07 | Phase 2 | Done |
-| SEARCH-01 | Phase 3 | Done |
-| SEARCH-02 | Phase 3 | Done |
-| SEARCH-03 | Phase 3 | Done |
-| SEARCH-04 | Phase 3 | Deferred |
-| SEARCH-05 | Phase 3 | Deferred |
-| SEARCH-06 | Phase 3 | Done |
-| ARCH-01 | Phase 4 | Done |
-| ARCH-02 | Phase 4 | Done |
-| ARCH-03 | Phase 4 | Done |
-| MON-01 | Phase 5 | Done |
-| MON-02 | Phase 5 | Done |
-| MON-03 | Phase 5 | Done |
-| UI-01 | Phase 3 | Done |
-| UI-02 | Phase 3 | Done |
-| UI-03 | Phase 3 | Done |
->>>>>>> gsd/phase-06-completion
-| UI-04 | Phase 6 | Pending |
+| ASEARCH-01 | Phase 9 | Pending |
+| ASEARCH-02 | Phase 9 | Pending |
+| ASEARCH-03 | Phase 9 | Pending |
+| ASEARCH-04 | Phase 9 | Pending |
+| ASEARCH-05 | Phase 9 | Pending |
+| ASEARCH-06 | Phase 9 | Pending |
+| HIST-01 | Phase 9 | Pending |
+| HIST-02 | Phase 9 | Pending |
+| HIST-03 | Phase 9 | Pending |
+| HIST-04 | Phase 9 | Pending |
+| HIST-05 | Phase 9 | Pending |
+| VFS-01 | Phase 10 | Pending |
+| VFS-02 | Phase 10 | Pending |
+| VFS-03 | Phase 10 | Pending |
+| VFS-04 | Phase 10 | Pending |
 
 **Coverage:**
-- v1 requirements: 25 total
-- Mapped to phases: 25
+- v1.1 requirements: 15 total
+- Mapped to phases: 15
 - Unmapped: 0 ✓
 
 ---
 
-*Roadmap created: 2026-02-28*
+*Roadmap created: 2026-03-04*
 *Ready for planning: yes*

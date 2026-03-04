@@ -59,27 +59,28 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ASEARCH-01 | — | Pending |
-| ASEARCH-02 | — | Pending |
-| ASEARCH-03 | — | Pending |
-| ASEARCH-04 | — | Pending |
-| ASEARCH-05 | — | Pending |
-| ASEARCH-06 | — | Pending |
-| HIST-01 | — | Pending |
-| HIST-02 | — | Pending |
-| HIST-03 | — | Pending |
-| HIST-04 | — | Pending |
-| HIST-05 | — | Pending |
-| VFS-01 | — | Pending |
-| VFS-02 | — | Pending |
-| VFS-03 | — | Pending |
-| VFS-04 | — | Pending |
+| ASEARCH-01 | Phase 9 | Pending |
+| ASEARCH-02 | Phase 9 | Pending |
+| ASEARCH-03 | Phase 9 | Pending |
+| ASEARCH-04 | Phase 9 | Pending |
+| ASEARCH-05 | Phase 9 | Pending |
+| ASEARCH-06 | Phase 9 | Pending |
+| HIST-01 | Phase 9 | Pending |
+| HIST-02 | Phase 9 | Pending |
+| HIST-03 | Phase 9 | Pending |
+| HIST-04 | Phase 9 | Pending |
+| HIST-05 | Phase 9 | Pending |
+| VFS-01 | Phase 10 | Pending |
+| VFS-02 | Phase 10 | Pending |
+| VFS-03 | Phase 10 | Pending |
+| VFS-04 | Phase 10 | Pending |
 
 **Coverage:**
 - v1 requirements: 15 total
-- Mapped to phases: 0
-- Unmapped: 15 ⚠️
+- Mapped to phases: 15
+- Unmapped: 0 ✓
 
 ---
+
 *Requirements defined: 2026-03-04*
-*Last updated: 2026-03-04 after milestone v1.1 requirements gathering*
+*Last updated: 2026-03-04 after v1.1 roadmap created*
