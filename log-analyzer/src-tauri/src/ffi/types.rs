@@ -275,3 +275,31 @@ pub struct LineData {
     /// 下一行偏移
     pub next_offset: u64,
 }
+
+// ==================== 搜索历史类型 ====================
+
+/// 搜索历史条目数据（FFI 格式）
+///
+/// 用于 Flutter 端搜索历史展示
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SearchHistoryData {
+    /// 查询内容
+    pub query: String,
+    /// 工作区ID
+    pub workspace_id: String,
+    /// 结果数量
+    pub result_count: i32,
+    /// 搜索时间（ISO 8601 格式）
+    pub searched_at: String,
+}
+
+impl From<crate::models::SearchHistoryEntry> for SearchHistoryData {
+    fn from(entry: crate::models::SearchHistoryEntry) -> Self {
+        Self {
+            query: entry.query,
+            workspace_id: entry.workspace_id,
+            result_count: entry.result_count as i32,
+            searched_at: entry.searched_at.to_rfc3339(),
+        }
+    }
+}
