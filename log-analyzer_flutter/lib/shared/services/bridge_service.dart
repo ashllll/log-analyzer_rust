@@ -651,6 +651,94 @@ class BridgeService {
     }
   }
 
+  // ==================== 虚拟文件树操作 ====================
+
+  /// 获取虚拟文件树（根节点）
+  ///
+  /// 获取指定工作区的虚拟文件树结构
+  ///
+  /// # 参数
+  ///
+  /// * `workspaceId` - 工作区 ID
+  ///
+  /// # 返回
+  ///
+  /// 返回根节点列表
+  Future<List<ffi.VirtualTreeNodeData>> getVirtualFileTree(String workspaceId) async {
+    if (!isFfiEnabled) {
+      return [];
+    }
+
+    try {
+      return ffi.getVirtualFileTree(workspaceId: workspaceId);
+    } catch (e) {
+      debugPrint('getVirtualFileTree error: $e');
+      return [];
+    }
+  }
+
+  /// 获取树子节点（懒加载）
+  ///
+  /// 获取指定父节点下的子节点
+  ///
+  /// # 参数
+  ///
+  /// * `workspaceId` - 工作区 ID
+  /// * `parentPath` - 父节点路径
+  ///
+  /// # 返回
+  ///
+  /// 返回子节点列表
+  Future<List<ffi.VirtualTreeNodeData>> getTreeChildren({
+    required String workspaceId,
+    required String parentPath,
+  }) async {
+    if (!isFfiEnabled) {
+      return [];
+    }
+
+    try {
+      return ffi.getTreeChildren(
+        workspaceId: workspaceId,
+        parentPath: parentPath,
+      );
+    } catch (e) {
+      debugPrint('getTreeChildren error: $e');
+      return [];
+    }
+  }
+
+  /// 通过哈希读取文件内容
+  ///
+  /// 从 CAS 存储读取指定哈希的文件内容
+  ///
+  /// # 参数
+  ///
+  /// * `workspaceId` - 工作区 ID
+  /// * `hash` - 文件 SHA-256 哈希
+  ///
+  /// # 返回
+  ///
+  /// 返回文件内容响应
+  Future<ffi.FileContentResponseData?> readFileByHash({
+    required String workspaceId,
+    required String hash,
+  }) async {
+    if (!isFfiEnabled) {
+      return null;
+    }
+
+    try {
+      return ffi.readFileByHash(
+        workspaceId: workspaceId,
+        hash: hash,
+      );
+    } catch (e) {
+      debugPrint('readFileByHash error: $e');
+      return null;
+    }
+  }
+
   /// 释放资源
   void dispose() {
     LogAnalyzerBridge.dispose();
