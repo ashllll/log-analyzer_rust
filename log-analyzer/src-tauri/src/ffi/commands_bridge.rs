@@ -1610,6 +1610,228 @@ pub fn ffi_clear_search_history(workspace_id: Option<String>) -> Result<i32, Str
 
 use crate::ffi::types::{FileContentResponseData, VirtualTreeNodeData};
 
+// ==================== 多关键词组合搜索命令适配 ====================
+
+use crate::ffi::types::{
+    QueryOperatorData, SearchResultEntry, SearchTermData, StructuredSearchQueryData,
+};
+
+/// FFI 适配：执行结构化搜索（多关键词组合搜索）
+///
+/// 支持多个关键词的 AND/OR/NOT 组合搜索
+///
+/// # 参数
+///
+/// * `query` - 结构化搜索查询
+/// * `workspace_id` - 工作区 ID（可选）
+/// * `max_results` - 最大结果数量
+///
+/// # 返回
+///
+/// 返回匹配的搜索结果列表
+pub fn ffi_search_structured(
+    query: StructuredSearchQueryData,
+    workspace_id: Option<String>,
+    max_results: i32,
+) -> Result<Vec<SearchResultEntry>, String> {
+    tracing::info!(
+        terms_count = query.terms.len(),
+        global_operator = ?query.global_operator,
+        workspace_id = ?workspace_id,
+        max_results,
+        "FFI: search_structured 调用"
+    );
+
+    // 获取全局状态
+    let app_state = get_app_state().ok_or_else(|| "FFI 全局状态未初始化".to_string())?;
+
+    // 确定工作区目录
+    let workspace_id = if let Some(id) = workspace_id {
+        id
+    } else {
+        let dirs = app_state.workspace_dirs.lock();
+        if let Some(first_id) = dirs.keys().next() {
+            first_id.clone()
+        } else {
+            return Err("没有可用的工作区".to_string());
+        }
+    };
+
+    let app_data_dir = get_app_data_dir().ok_or_else(|| "FFI 全局状态未初始化".to_string())?;
+    let workspace_dir = app_data_dir.join("workspaces").join(&workspace_id);
+
+    if !workspace_dir.exists() {
+        return Err(format!("工作区不存在: {}", workspace_id));
+    }
+
+    // 使用 tokio 运行时执行异步搜索
+    let rt = tokio::runtime::Runtime::new().map_err(|e| format!("创建运行时失败: {}", e))?;
+
+    rt.block_on(async {
+        // 打开元数据存储
+        let metadata_store = crate::storage::MetadataStore::new(&workspace_dir)
+            .await
+            .map_err(|e| format!("打开元数据存储失败: {}", e))?;
+
+        // 获取所有文件
+        let files = metadata_store
+            .get_all_files()
+            .await
+            .map_err(|e| format!("获取文件失败: {}", e))?;
+
+        // 提取启用关键词
+        let keywords: Vec<String> = query
+            .terms
+            .iter()
+            .filter(|t| t.enabled)
+            .map(|t| t.value.clone())
+            .collect();
+
+        if keywords.is_empty() {
+            return Ok(vec![]);
+        }
+
+        // 全局操作符
+        let use_and = matches!(query.global_operator, QueryOperatorData::And);
+        let use_not = matches!(query.global_operator, QueryOperatorData::Not);
+
+        // 构建 Aho-Corasick 自动机
+        let ac = aho_corasick::AhoCorasick::new_auto_configured(&keywords)
+            .map_err(|e| format!("构建匹配器失败: {}", e))?;
+
+        let mut results = Vec::new();
+        let max_results = max_results as usize;
+
+        // 遍历所有文件
+        for file in files {
+            if results.len() >= max_results {
+                break;
+            }
+
+            // 跳过二进制文件
+            if let Some(mime) = &file.mime_type {
+                if mime.starts_with("application/") || mime.starts_with("image/") {
+                    continue;
+                }
+            }
+
+            // 读取文件内容
+            let cas = crate::storage::ContentAddressableStorage::new(&workspace_dir);
+            if !cas.exists(&file.sha256_hash) {
+                continue;
+            }
+
+            let content_bytes = match cas.read_content(&file.sha256_hash).await {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            let content = match String::from_utf8(content_bytes) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            // 搜索匹配行
+            for (line_idx, line) in content.lines().enumerate() {
+                if results.len() >= max_results {
+                    break;
+                }
+
+                // 使用 Aho-Corasick 查找所有匹配
+                let matches: Vec<&str> = ac.find_iter(line).map(|m| m.as_str()).collect();
+
+                let should_include = if keywords.len() == 1 {
+                    !matches.is_empty()
+                } else if use_and {
+                    // AND: 所有关键词都必须匹配
+                    keywords.iter().all(|kw| {
+                        if kw.is_empty() {
+                            true
+                        } else {
+                            line.contains(kw)
+                        }
+                    })
+                } else if use_not {
+                    // NOT: 排除包含任一关键词的行
+                    matches.is_empty()
+                } else {
+                    // OR: 任一关键词匹配即可
+                    !matches.is_empty()
+                };
+
+                if should_include {
+                    // 计算匹配位置
+                    let (match_start, match_end) = if !matches.is_empty() {
+                        let first_match = ac.find_iter(line).next().unwrap();
+                        (first_match.start() as i64, first_match.end() as i64)
+                    } else {
+                        (0, line.len() as i64)
+                    };
+
+                    results.push(SearchResultEntry {
+                        line_number: (line_idx + 1) as i64,
+                        content: line.to_string(),
+                        match_start,
+                        match_end,
+                    });
+                }
+            }
+        }
+
+        tracing::info!(results_count = results.len(), "结构化搜索完成");
+        Ok(results)
+    })
+}
+
+/// FFI 适配：构建搜索查询对象
+///
+/// 从关键词列表构建结构化搜索查询
+///
+/// # 参数
+///
+/// * `keywords` - 关键词列表
+/// * `global_operator` - 全局操作符
+/// * `is_regex` - 是否使用正则表达式
+/// * `case_sensitive` - 是否大小写敏感
+///
+/// # 返回
+///
+/// 返回构建的结构化搜索查询
+pub fn ffi_build_search_query(
+    keywords: Vec<String>,
+    global_operator: QueryOperatorData,
+    is_regex: bool,
+    case_sensitive: bool,
+) -> StructuredSearchQueryData {
+    tracing::debug!(
+        keywords_count = keywords.len(),
+        global_operator = ?global_operator,
+        is_regex,
+        case_sensitive,
+        "FFI: build_search_query 调用"
+    );
+
+    let terms: Vec<SearchTermData> = keywords
+        .into_iter()
+        .enumerate()
+        .map(|(idx, value)| SearchTermData {
+            id: format!("term_{}", idx),
+            value,
+            operator: QueryOperatorData::And, // 默认为 AND
+            is_regex,
+            priority: idx as u32,
+            enabled: true,
+            case_sensitive,
+        })
+        .collect();
+
+    StructuredSearchQueryData {
+        terms,
+        global_operator,
+        filters: None,
+    }
+}
+
 /// FFI 适配：获取虚拟文件树
 ///
 /// 获取工作区的虚拟文件树结构（根节点）
