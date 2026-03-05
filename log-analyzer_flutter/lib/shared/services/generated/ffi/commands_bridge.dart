@@ -12,33 +12,38 @@ import 'types.dart';
 /// FFI 适配：加载工作区
 ///
 /// 检查工作区是否存在并返回基本信息
-Future<WorkspaceLoadResponseData> ffiLoadWorkspace(
-        {required String workspaceId}) =>
-    LogAnalyzerBridge.instance.api
-        .crateFfiCommandsBridgeFfiLoadWorkspace(workspaceId: workspaceId);
+Future<WorkspaceLoadResponseData> ffiLoadWorkspace({
+  required String workspaceId,
+}) => LogAnalyzerBridge.instance.api.crateFfiCommandsBridgeFfiLoadWorkspace(
+  workspaceId: workspaceId,
+);
 
 /// FFI 适配：删除工作区
 ///
 /// 删除工作区及其所有相关资源
 Future<bool> ffiDeleteWorkspace({required String workspaceId}) =>
-    LogAnalyzerBridge.instance.api
-        .crateFfiCommandsBridgeFfiDeleteWorkspace(workspaceId: workspaceId);
+    LogAnalyzerBridge.instance.api.crateFfiCommandsBridgeFfiDeleteWorkspace(
+      workspaceId: workspaceId,
+    );
 
 /// FFI 适配：刷新工作区
 ///
 /// 刷新工作区索引（对于 CAS 架构等同于重新导入）
-Future<String> ffiRefreshWorkspace(
-        {required String workspaceId, required String path}) =>
-    LogAnalyzerBridge.instance.api.crateFfiCommandsBridgeFfiRefreshWorkspace(
-        workspaceId: workspaceId, path: path);
+Future<String> ffiRefreshWorkspace({
+  required String workspaceId,
+  required String path,
+}) => LogAnalyzerBridge.instance.api.crateFfiCommandsBridgeFfiRefreshWorkspace(
+  workspaceId: workspaceId,
+  path: path,
+);
 
 /// FFI 适配：获取工作区状态
 ///
 /// 返回工作区的详细状态信息
-Future<WorkspaceStatusData> ffiGetWorkspaceStatus(
-        {required String workspaceId}) =>
-    LogAnalyzerBridge.instance.api
-        .crateFfiCommandsBridgeFfiGetWorkspaceStatus(workspaceId: workspaceId);
+Future<WorkspaceStatusData> ffiGetWorkspaceStatus({
+  required String workspaceId,
+}) => LogAnalyzerBridge.instance.api
+    .crateFfiCommandsBridgeFfiGetWorkspaceStatus(workspaceId: workspaceId);
 
 /// FFI 适配：执行搜索
 ///
@@ -54,16 +59,17 @@ Future<WorkspaceStatusData> ffiGetWorkspaceStatus(
 /// # 返回
 ///
 /// 返回搜索 ID，用于取消搜索或追踪结果
-Future<String> ffiSearchLogs(
-        {required String query,
-        String? workspaceId,
-        required int maxResults,
-        String? filtersJson}) =>
-    LogAnalyzerBridge.instance.api.crateFfiCommandsBridgeFfiSearchLogs(
-        query: query,
-        workspaceId: workspaceId,
-        maxResults: maxResults,
-        filtersJson: filtersJson);
+Future<String> ffiSearchLogs({
+  required String query,
+  String? workspaceId,
+  required int maxResults,
+  String? filtersJson,
+}) => LogAnalyzerBridge.instance.api.crateFfiCommandsBridgeFfiSearchLogs(
+  query: query,
+  workspaceId: workspaceId,
+  maxResults: maxResults,
+  filtersJson: filtersJson,
+);
 
 /// FFI 适配：取消搜索
 ///
@@ -76,9 +82,10 @@ Future<String> ffiSearchLogs(
 /// # 返回
 ///
 /// 成功返回 true，失败返回错误信息
-Future<bool> ffiCancelSearch({required String searchId}) =>
-    LogAnalyzerBridge.instance.api
-        .crateFfiCommandsBridgeFfiCancelSearch(searchId: searchId);
+Future<bool> ffiCancelSearch({required String searchId}) => LogAnalyzerBridge
+    .instance
+    .api
+    .crateFfiCommandsBridgeFfiCancelSearch(searchId: searchId);
 
 /// FFI 适配：获取活跃搜索数量
 ///
@@ -99,10 +106,13 @@ Future<int> ffiGetActiveSearchesCount() => LogAnalyzerBridge.instance.api
 /// # 返回
 ///
 /// 返回任务 ID，用于追踪导入进度
-Future<String> ffiImportFolder(
-        {required String path, required String workspaceId}) =>
-    LogAnalyzerBridge.instance.api.crateFfiCommandsBridgeFfiImportFolder(
-        path: path, workspaceId: workspaceId);
+Future<String> ffiImportFolder({
+  required String path,
+  required String workspaceId,
+}) => LogAnalyzerBridge.instance.api.crateFfiCommandsBridgeFfiImportFolder(
+  path: path,
+  workspaceId: workspaceId,
+);
 
 /// FFI 适配：启动文件监听
 ///
@@ -118,12 +128,15 @@ Future<String> ffiImportFolder(
 /// # 返回
 ///
 /// 成功返回 true
-Future<bool> ffiStartWatch(
-        {required String workspaceId,
-        required List<String> paths,
-        required bool recursive}) =>
-    LogAnalyzerBridge.instance.api.crateFfiCommandsBridgeFfiStartWatch(
-        workspaceId: workspaceId, paths: paths, recursive: recursive);
+Future<bool> ffiStartWatch({
+  required String workspaceId,
+  required List<String> paths,
+  required bool recursive,
+}) => LogAnalyzerBridge.instance.api.crateFfiCommandsBridgeFfiStartWatch(
+  workspaceId: workspaceId,
+  paths: paths,
+  recursive: recursive,
+);
 
 /// FFI 适配：停止文件监听
 ///
@@ -136,16 +149,18 @@ Future<bool> ffiStartWatch(
 /// # 返回
 ///
 /// 成功返回 true
-Future<bool> ffiStopWatch({required String workspaceId}) =>
-    LogAnalyzerBridge.instance.api
-        .crateFfiCommandsBridgeFfiStopWatch(workspaceId: workspaceId);
+Future<bool> ffiStopWatch({required String workspaceId}) => LogAnalyzerBridge
+    .instance
+    .api
+    .crateFfiCommandsBridgeFfiStopWatch(workspaceId: workspaceId);
 
 /// FFI 适配：检查是否正在监听
 ///
 /// 检查指定工作区是否正在监听文件变化
-Future<bool> ffiIsWatching({required String workspaceId}) =>
-    LogAnalyzerBridge.instance.api
-        .crateFfiCommandsBridgeFfiIsWatching(workspaceId: workspaceId);
+Future<bool> ffiIsWatching({required String workspaceId}) => LogAnalyzerBridge
+    .instance
+    .api
+    .crateFfiCommandsBridgeFfiIsWatching(workspaceId: workspaceId);
 
 /// FFI 适配：获取关键词列表
 ///
@@ -157,23 +172,29 @@ Future<List<KeywordGroupData>> ffiGetKeywords() =>
 ///
 /// 添加新的关键词组到配置文件
 Future<bool> ffiAddKeywordGroup({required KeywordGroupInput group}) =>
-    LogAnalyzerBridge.instance.api
-        .crateFfiCommandsBridgeFfiAddKeywordGroup(group: group);
+    LogAnalyzerBridge.instance.api.crateFfiCommandsBridgeFfiAddKeywordGroup(
+      group: group,
+    );
 
 /// FFI 适配：更新关键词组
 ///
 /// 更新现有的关键词组
-Future<bool> ffiUpdateKeywordGroup(
-        {required String groupId, required KeywordGroupInput group}) =>
+Future<bool> ffiUpdateKeywordGroup({
+  required String groupId,
+  required KeywordGroupInput group,
+}) =>
     LogAnalyzerBridge.instance.api.crateFfiCommandsBridgeFfiUpdateKeywordGroup(
-        groupId: groupId, group: group);
+      groupId: groupId,
+      group: group,
+    );
 
 /// FFI 适配：删除关键词组
 ///
 /// 从配置文件删除关键词组
 Future<bool> ffiDeleteKeywordGroup({required String groupId}) =>
-    LogAnalyzerBridge.instance.api
-        .crateFfiCommandsBridgeFfiDeleteKeywordGroup(groupId: groupId);
+    LogAnalyzerBridge.instance.api.crateFfiCommandsBridgeFfiDeleteKeywordGroup(
+      groupId: groupId,
+    );
 
 /// FFI 适配：获取任务指标
 ///
@@ -192,9 +213,10 @@ Future<TaskMetricsData> ffiGetTaskMetrics() =>
 /// # 返回
 ///
 /// 成功返回 true
-Future<bool> ffiCancelTask({required String taskId}) =>
-    LogAnalyzerBridge.instance.api
-        .crateFfiCommandsBridgeFfiCancelTask(taskId: taskId);
+Future<bool> ffiCancelTask({required String taskId}) => LogAnalyzerBridge
+    .instance
+    .api
+    .crateFfiCommandsBridgeFfiCancelTask(taskId: taskId);
 
 /// FFI 适配：加载配置
 ///
@@ -205,17 +227,18 @@ Future<ConfigData> ffiLoadConfig() =>
 /// FFI 适配：保存配置
 ///
 /// 保存配置到文件
-Future<bool> ffiSaveConfig({required ConfigData config}) =>
-    LogAnalyzerBridge.instance.api
-        .crateFfiCommandsBridgeFfiSaveConfig(config: config);
+Future<bool> ffiSaveConfig({required ConfigData config}) => LogAnalyzerBridge
+    .instance
+    .api
+    .crateFfiCommandsBridgeFfiSaveConfig(config: config);
 
 /// FFI 适配：获取性能指标
 ///
 /// 返回性能监控数据
-Future<PerformanceMetricsData> ffiGetPerformanceMetrics(
-        {required String timeRange}) =>
-    LogAnalyzerBridge.instance.api
-        .crateFfiCommandsBridgeFfiGetPerformanceMetrics(timeRange: timeRange);
+Future<PerformanceMetricsData> ffiGetPerformanceMetrics({
+  required String timeRange,
+}) => LogAnalyzerBridge.instance.api
+    .crateFfiCommandsBridgeFfiGetPerformanceMetrics(timeRange: timeRange);
 
 /// FFI 适配：导出结果
 ///
@@ -230,9 +253,12 @@ Future<PerformanceMetricsData> ffiGetPerformanceMetrics(
 /// # 返回
 ///
 /// 返回输出文件路径
-Future<String> ffiExportResults(
-        {required String searchId,
-        required String format,
-        required String outputPath}) =>
-    LogAnalyzerBridge.instance.api.crateFfiCommandsBridgeFfiExportResults(
-        searchId: searchId, format: format, outputPath: outputPath);
+Future<String> ffiExportResults({
+  required String searchId,
+  required String format,
+  required String outputPath,
+}) => LogAnalyzerBridge.instance.api.crateFfiCommandsBridgeFfiExportResults(
+  searchId: searchId,
+  format: format,
+  outputPath: outputPath,
+);

@@ -6,19 +6,22 @@
 import 'dart:async';
 import 'dart:convert';
 import 'ffi/bridge.dart';
-import 'ffi/commands_bridge.dart';
-import 'ffi/global_state.dart';
 import 'ffi/types.dart';
 import 'frb_generated.dart';
 import 'frb_generated.io.dart'
     if (dart.library.js_interop) 'frb_generated.web.dart';
-import 'lib.dart';
-import 'models/state.dart';
+import 'infrastructure/persistence.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
+import 'search_engine/manager.dart';
 
 /// Main entrypoint of the Rust API
-class LogAnalyzerBridge extends BaseEntrypoint<LogAnalyzerBridgeApi,
-    LogAnalyzerBridgeApiImpl, LogAnalyzerBridgeWire> {
+class LogAnalyzerBridge
+    extends
+        BaseEntrypoint<
+          LogAnalyzerBridgeApi,
+          LogAnalyzerBridgeApiImpl,
+          LogAnalyzerBridgeWire
+        > {
   @internal
   static final instance = LogAnalyzerBridge._();
 
@@ -41,12 +44,8 @@ class LogAnalyzerBridge extends BaseEntrypoint<LogAnalyzerBridgeApi,
 
   /// Initialize flutter_rust_bridge in mock mode.
   /// No libraries for FFI are loaded.
-  static void initMock({
-    required LogAnalyzerBridgeApi api,
-  }) {
-    instance.initMockImpl(
-      api: api,
-    );
+  static void initMock({required LogAnalyzerBridgeApi api}) {
+    instance.initMockImpl(api: api);
   }
 
   /// Dispose flutter_rust_bridge
@@ -57,7 +56,7 @@ class LogAnalyzerBridge extends BaseEntrypoint<LogAnalyzerBridgeApi,
 
   @override
   ApiImplConstructor<LogAnalyzerBridgeApiImpl, LogAnalyzerBridgeWire>
-      get apiImplConstructor => LogAnalyzerBridgeApiImpl.new;
+  get apiImplConstructor => LogAnalyzerBridgeApiImpl.new;
 
   @override
   WireConstructor<LogAnalyzerBridgeWire> get wireConstructor =>
@@ -76,258 +75,171 @@ class LogAnalyzerBridge extends BaseEntrypoint<LogAnalyzerBridgeApi,
   String get codegenVersion => '2.11.1';
 
   @override
-  int get rustContentHash => 1437094353;
+  int get rustContentHash => 1200571378;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
-    stem: 'log_analyzer',
-    ioDirectory: '../log-analyzer/src-tauri/target/release/',
-    webPrefix: 'pkg/',
-  );
+        stem: 'log_analyzer',
+        ioDirectory: '../log-analyzer/src-tauri/target/release/',
+        webPrefix: 'pkg/',
+      );
 }
 
 abstract class LogAnalyzerBridgeApi extends BaseApi {
-  PathBuf crateFfiGlobalStateFfiContextAutoAccessorGetAppDataDir(
-      {required FfiContext that});
+  bool crateFfiBridgeAddKeywordGroup({required KeywordGroupInput group});
 
-  AppState crateFfiGlobalStateFfiContextAutoAccessorGetAppState(
-      {required FfiContext that});
-
-  void crateFfiGlobalStateFfiContextAutoAccessorSetAppDataDir(
-      {required FfiContext that, required PathBuf appDataDir});
-
-  void crateFfiGlobalStateFfiContextAutoAccessorSetAppState(
-      {required FfiContext that, required AppState appState});
-
-  FfiResultBool crateFfiBridgeAddKeywordGroup(
-      {required KeywordGroupInput group});
-
-  Future<AdvancedFeaturesConfigData>
-      crateFfiTypesAdvancedFeaturesConfigDataDefault();
+  bool crateFfiBridgeAddSearchHistory({
+    required String query,
+    required String workspaceId,
+    required int resultCount,
+  });
 
   Future<BridgeContext> crateFfiBridgeBridgeContextDefault();
 
   Future<BridgeContext> crateFfiBridgeBridgeContextNew();
 
-  Future<PlatformInt64> crateFfiBridgeBridgeContextUptimeSeconds(
-      {required BridgeContext that});
+  Future<PlatformInt64> crateFfiBridgeBridgeContextUptimeSeconds({
+    required BridgeContext that,
+  });
 
-  FfiResultBool crateFfiBridgeCancelSearch({required String searchId});
+  StructuredSearchQueryData crateFfiBridgeBuildSearchQuery({
+    required List<String> keywords,
+    required String globalOperator,
+    required bool isRegex,
+    required bool caseSensitive,
+  });
 
-  FfiResultBool crateFfiBridgeCancelTask({required String taskId});
+  bool crateFfiBridgeCancelSearch({required String searchId});
+
+  bool crateFfiBridgeCancelTask({required String taskId});
 
   bool crateFfiBridgeCheckRarSupport();
 
-  Future<void> crateFfiGlobalStateClearGlobalState();
+  int crateFfiBridgeClearSearchHistory({String? workspaceId});
 
-  Future<ConfigData> crateFfiTypesConfigDataDefault();
+  String crateFfiBridgeCreateWorkspace({
+    required String name,
+    required String path,
+  });
 
-  FfiResultString crateFfiBridgeCreateWorkspace(
-      {required String name, required String path});
+  bool crateFfiBridgeDeleteKeywordGroup({required String groupId});
 
-  FfiResultBool crateFfiBridgeDeleteKeywordGroup({required String groupId});
+  int crateFfiBridgeDeleteSearchHistories({
+    required List<String> queries,
+    required String workspaceId,
+  });
 
-  FfiResultBool crateFfiBridgeDeleteWorkspace({required String workspaceId});
+  bool crateFfiBridgeDeleteSearchHistory({
+    required String query,
+    required String workspaceId,
+  });
 
-  FfiResultString crateFfiBridgeExportResults(
-      {required String searchId,
-      required String format,
-      required String outputPath});
+  bool crateFfiBridgeDeleteWorkspace({required String workspaceId});
 
-  Future<bool> crateFfiCommandsBridgeFfiAddKeywordGroup(
-      {required KeywordGroupInput group});
+  String crateFfiBridgeExportResults({
+    required String searchId,
+    required String format,
+    required String outputPath,
+  });
 
-  Future<bool> crateFfiCommandsBridgeFfiCancelSearch(
-      {required String searchId});
-
-  Future<bool> crateFfiCommandsBridgeFfiCancelTask({required String taskId});
-
-  Future<bool> crateFfiCommandsBridgeFfiDeleteKeywordGroup(
-      {required String groupId});
-
-  Future<bool> crateFfiCommandsBridgeFfiDeleteWorkspace(
-      {required String workspaceId});
-
-  Future<String> crateFfiCommandsBridgeFfiExportResults(
-      {required String searchId,
-      required String format,
-      required String outputPath});
-
-  Future<int> crateFfiCommandsBridgeFfiGetActiveSearchesCount();
-
-  Future<List<KeywordGroupData>> crateFfiCommandsBridgeFfiGetKeywords();
-
-  Future<PerformanceMetricsData> crateFfiCommandsBridgeFfiGetPerformanceMetrics(
-      {required String timeRange});
-
-  Future<TaskMetricsData> crateFfiCommandsBridgeFfiGetTaskMetrics();
-
-  Future<WorkspaceStatusData> crateFfiCommandsBridgeFfiGetWorkspaceStatus(
-      {required String workspaceId});
-
-  Future<String> crateFfiCommandsBridgeFfiImportFolder(
-      {required String path, required String workspaceId});
-
-  Future<bool> crateFfiCommandsBridgeFfiIsWatching(
-      {required String workspaceId});
-
-  Future<ConfigData> crateFfiCommandsBridgeFfiLoadConfig();
-
-  Future<WorkspaceLoadResponseData> crateFfiCommandsBridgeFfiLoadWorkspace(
-      {required String workspaceId});
-
-  Future<String> crateFfiCommandsBridgeFfiRefreshWorkspace(
-      {required String workspaceId, required String path});
-
-  Future<bool> crateFfiCommandsBridgeFfiSaveConfig(
-      {required ConfigData config});
-
-  Future<String> crateFfiCommandsBridgeFfiSearchLogs(
-      {required String query,
-      String? workspaceId,
-      required int maxResults,
-      String? filtersJson});
-
-  Future<bool> crateFfiCommandsBridgeFfiStartWatch(
-      {required String workspaceId,
-      required List<String> paths,
-      required bool recursive});
-
-  Future<bool> crateFfiCommandsBridgeFfiStopWatch(
-      {required String workspaceId});
-
-  Future<bool> crateFfiCommandsBridgeFfiUpdateKeywordGroup(
-      {required String groupId, required KeywordGroupInput group});
-
-  Future<FileFilterConfigData> crateFfiTypesFileFilterConfigDataDefault();
-
-  FfiResultI32 crateFfiBridgeGetActiveSearchesCount();
-
-  Future<PathBuf?> crateFfiGlobalStateGetAppDataDir();
-
-  Future<AppState?> crateFfiGlobalStateGetAppState();
-
-  Future<FfiContext?> crateFfiGlobalStateGetGlobalState();
+  int crateFfiBridgeGetActiveSearchesCount();
 
   List<KeywordGroupData> crateFfiBridgeGetKeywords();
 
-  PerformanceMetricsData crateFfiBridgeGetPerformanceMetrics(
-      {required String timeRange});
+  PerformanceMetricsData crateFfiBridgeGetPerformanceMetrics({
+    required String timeRange,
+  });
 
-  FfiResultTaskMetricsData crateFfiBridgeGetTaskMetrics();
+  List<SearchHistoryData> crateFfiBridgeGetSearchHistory({
+    String? workspaceId,
+    int? limit,
+  });
 
-  FfiResultWorkspaceStatusData crateFfiBridgeGetWorkspaceStatus(
-      {required String workspaceId});
+  TaskMetricsData crateFfiBridgeGetTaskMetrics();
+
+  List<VirtualTreeNodeData> crateFfiBridgeGetTreeChildren({
+    required String workspaceId,
+    required String parentPath,
+  });
+
+  List<VirtualTreeNodeData> crateFfiBridgeGetVirtualFileTree({
+    required String workspaceId,
+  });
+
+  WorkspaceStatusData crateFfiBridgeGetWorkspaceStatus({
+    required String workspaceId,
+  });
 
   List<WorkspaceData> crateFfiBridgeGetWorkspaces();
 
   String crateFfiBridgeHealthCheck();
 
-  FfiResultString crateFfiBridgeImportFolder(
-      {required String path, required String workspaceId});
+  String crateFfiBridgeImportFolder({
+    required String path,
+    required String workspaceId,
+  });
 
   Future<BridgeContext> crateFfiBridgeInitBridge();
 
-  Future<void> crateFfiGlobalStateInitGlobalState(
-      {required AppState state, required PathBuf appDataDir});
-
-  Future<bool> crateFfiGlobalStateIsInitialized();
-
-  FfiResultBool crateFfiBridgeIsWatching({required String workspaceId});
+  bool crateFfiBridgeIsWatching({required String workspaceId});
 
   ConfigData crateFfiBridgeLoadConfig();
 
-  Future<PerformanceMetricsData> crateFfiTypesPerformanceMetricsDataDefault();
+  FileContentResponseData crateFfiBridgeReadFileByHash({
+    required String workspaceId,
+    required String hash,
+  });
 
-  FfiResultString crateFfiBridgeRefreshWorkspace(
-      {required String workspaceId, required String path});
+  String crateFfiBridgeRefreshWorkspace({
+    required String workspaceId,
+    required String path,
+  });
 
-  FfiResultBool crateFfiBridgeSaveConfig({required ConfigData config});
+  bool crateFfiBridgeSaveConfig({required ConfigData config});
 
-  FfiResultString crateFfiBridgeSearchLogs(
-      {required String query,
-      String? workspaceId,
-      required int maxResults,
-      String? filters});
+  String crateFfiBridgeSearchLogs({
+    required String query,
+    String? workspaceId,
+    required int maxResults,
+    String? filters,
+  });
 
-  FfiResultBool crateFfiBridgeStartWatch(
-      {required String workspaceId,
-      required List<String> paths,
-      required bool recursive});
+  List<SearchResultEntry> crateFfiBridgeSearchRegex({
+    required String pattern,
+    String? workspaceId,
+    required int maxResults,
+    required bool caseSensitive,
+  });
 
-  FfiResultBool crateFfiBridgeStopWatch({required String workspaceId});
+  List<SearchResultEntry> crateFfiBridgeSearchStructured({
+    required StructuredSearchQueryData query,
+    String? workspaceId,
+    required int maxResults,
+  });
 
-  Future<void> crateFfiGlobalStateUpdateGlobalState(
-      {required FfiContext context});
+  bool crateFfiBridgeStartWatch({
+    required String workspaceId,
+    required List<String> paths,
+    required bool recursive,
+  });
 
-  FfiResultBool crateFfiBridgeUpdateKeywordGroup(
-      {required String groupId, required KeywordGroupInput group});
+  bool crateFfiBridgeStopWatch({required String workspaceId});
+
+  bool crateFfiBridgeUpdateKeywordGroup({
+    required String groupId,
+    required KeywordGroupInput group,
+  });
+
+  RegexValidationResult crateFfiBridgeValidateRegex({required String pattern});
 
   RustArcIncrementStrongCountFnType
-      get rust_arc_increment_strong_count_AppState;
+  get rust_arc_increment_strong_count_SearchResultEntry;
 
   RustArcDecrementStrongCountFnType
-      get rust_arc_decrement_strong_count_AppState;
-
-  CrossPlatformFinalizerArg get rust_arc_decrement_strong_count_AppStatePtr;
-
-  RustArcIncrementStrongCountFnType
-      get rust_arc_increment_strong_count_FfiContext;
-
-  RustArcDecrementStrongCountFnType
-      get rust_arc_decrement_strong_count_FfiContext;
-
-  CrossPlatformFinalizerArg get rust_arc_decrement_strong_count_FfiContextPtr;
-
-  RustArcIncrementStrongCountFnType
-      get rust_arc_increment_strong_count_FfiResultString;
-
-  RustArcDecrementStrongCountFnType
-      get rust_arc_decrement_strong_count_FfiResultString;
+  get rust_arc_decrement_strong_count_SearchResultEntry;
 
   CrossPlatformFinalizerArg
-      get rust_arc_decrement_strong_count_FfiResultStringPtr;
-
-  RustArcIncrementStrongCountFnType
-      get rust_arc_increment_strong_count_FfiResultTaskMetricsData;
-
-  RustArcDecrementStrongCountFnType
-      get rust_arc_decrement_strong_count_FfiResultTaskMetricsData;
-
-  CrossPlatformFinalizerArg
-      get rust_arc_decrement_strong_count_FfiResultTaskMetricsDataPtr;
-
-  RustArcIncrementStrongCountFnType
-      get rust_arc_increment_strong_count_FfiResultWorkspaceStatusData;
-
-  RustArcDecrementStrongCountFnType
-      get rust_arc_decrement_strong_count_FfiResultWorkspaceStatusData;
-
-  CrossPlatformFinalizerArg
-      get rust_arc_decrement_strong_count_FfiResultWorkspaceStatusDataPtr;
-
-  RustArcIncrementStrongCountFnType
-      get rust_arc_increment_strong_count_FfiResultBool;
-
-  RustArcDecrementStrongCountFnType
-      get rust_arc_decrement_strong_count_FfiResultBool;
-
-  CrossPlatformFinalizerArg
-      get rust_arc_decrement_strong_count_FfiResultBoolPtr;
-
-  RustArcIncrementStrongCountFnType
-      get rust_arc_increment_strong_count_FfiResultI32;
-
-  RustArcDecrementStrongCountFnType
-      get rust_arc_decrement_strong_count_FfiResultI32;
-
-  CrossPlatformFinalizerArg get rust_arc_decrement_strong_count_FfiResultI32Ptr;
-
-  RustArcIncrementStrongCountFnType get rust_arc_increment_strong_count_PathBuf;
-
-  RustArcDecrementStrongCountFnType get rust_arc_decrement_strong_count_PathBuf;
-
-  CrossPlatformFinalizerArg get rust_arc_decrement_strong_count_PathBufPtr;
+  get rust_arc_decrement_strong_count_SearchResultEntryPtr;
 }
 
 class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
@@ -340,238 +252,139 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
   });
 
   @override
-  PathBuf crateFfiGlobalStateFfiContextAutoAccessorGetAppDataDir(
-      {required FfiContext that}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-            that, serializer);
-        return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 1)!;
-      },
-      codec: SseCodec(
-        decodeSuccessData:
-            sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf,
-        decodeErrorData: null,
+  bool crateFfiBridgeAddKeywordGroup({required KeywordGroupInput group}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_box_autoadd_keyword_group_input(group, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 1)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateFfiBridgeAddKeywordGroupConstMeta,
+        argValues: [group],
+        apiImpl: this,
       ),
-      constMeta:
-          kCrateFfiGlobalStateFfiContextAutoAccessorGetAppDataDirConstMeta,
-      argValues: [that],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta
-      get kCrateFfiGlobalStateFfiContextAutoAccessorGetAppDataDirConstMeta =>
-          const TaskConstMeta(
-            debugName: 'FfiContext_auto_accessor_get_app_data_dir',
-            argNames: ['that'],
-          );
-
-  @override
-  AppState crateFfiGlobalStateFfiContextAutoAccessorGetAppState(
-      {required FfiContext that}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-            that, serializer);
-        return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 2)!;
-      },
-      codec: SseCodec(
-        decodeSuccessData:
-            sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState,
-        decodeErrorData: null,
-      ),
-      constMeta: kCrateFfiGlobalStateFfiContextAutoAccessorGetAppStateConstMeta,
-      argValues: [that],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta
-      get kCrateFfiGlobalStateFfiContextAutoAccessorGetAppStateConstMeta =>
-          const TaskConstMeta(
-            debugName: 'FfiContext_auto_accessor_get_app_state',
-            argNames: ['that'],
-          );
-
-  @override
-  void crateFfiGlobalStateFfiContextAutoAccessorSetAppDataDir(
-      {required FfiContext that, required PathBuf appDataDir}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-            that, serializer);
-        sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf(
-            appDataDir, serializer);
-        return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 3)!;
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_unit,
-        decodeErrorData: null,
-      ),
-      constMeta:
-          kCrateFfiGlobalStateFfiContextAutoAccessorSetAppDataDirConstMeta,
-      argValues: [that, appDataDir],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta
-      get kCrateFfiGlobalStateFfiContextAutoAccessorSetAppDataDirConstMeta =>
-          const TaskConstMeta(
-            debugName: 'FfiContext_auto_accessor_set_app_data_dir',
-            argNames: ['that', 'appDataDir'],
-          );
-
-  @override
-  void crateFfiGlobalStateFfiContextAutoAccessorSetAppState(
-      {required FfiContext that, required AppState appState}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-            that, serializer);
-        sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState(
-            appState, serializer);
-        return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 4)!;
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_unit,
-        decodeErrorData: null,
-      ),
-      constMeta: kCrateFfiGlobalStateFfiContextAutoAccessorSetAppStateConstMeta,
-      argValues: [that, appState],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta
-      get kCrateFfiGlobalStateFfiContextAutoAccessorSetAppStateConstMeta =>
-          const TaskConstMeta(
-            debugName: 'FfiContext_auto_accessor_set_app_state',
-            argNames: ['that', 'appState'],
-          );
-
-  @override
-  FfiResultBool crateFfiBridgeAddKeywordGroup(
-      {required KeywordGroupInput group}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_box_autoadd_keyword_group_input(group, serializer);
-        return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 5)!;
-      },
-      codec: SseCodec(
-        decodeSuccessData:
-            sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultbool,
-        decodeErrorData: null,
-      ),
-      constMeta: kCrateFfiBridgeAddKeywordGroupConstMeta,
-      argValues: [group],
-      apiImpl: this,
-    ));
+    );
   }
 
   TaskConstMeta get kCrateFfiBridgeAddKeywordGroupConstMeta =>
-      const TaskConstMeta(
-        debugName: 'add_keyword_group',
-        argNames: ['group'],
-      );
+      const TaskConstMeta(debugName: 'add_keyword_group', argNames: ['group']);
 
   @override
-  Future<AdvancedFeaturesConfigData>
-      crateFfiTypesAdvancedFeaturesConfigDataDefault() {
-    return handler.executeNormal(NormalTask(
-      callFfi: (port_) {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 6, port: port_);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_advanced_features_config_data,
-        decodeErrorData: null,
+  bool crateFfiBridgeAddSearchHistory({
+    required String query,
+    required String workspaceId,
+    required int resultCount,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(query, serializer);
+          sse_encode_String(workspaceId, serializer);
+          sse_encode_i_32(resultCount, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 2)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateFfiBridgeAddSearchHistoryConstMeta,
+        argValues: [query, workspaceId, resultCount],
+        apiImpl: this,
       ),
-      constMeta: kCrateFfiTypesAdvancedFeaturesConfigDataDefaultConstMeta,
-      argValues: [],
-      apiImpl: this,
-    ));
+    );
   }
 
-  TaskConstMeta get kCrateFfiTypesAdvancedFeaturesConfigDataDefaultConstMeta =>
+  TaskConstMeta get kCrateFfiBridgeAddSearchHistoryConstMeta =>
       const TaskConstMeta(
-        debugName: 'advanced_features_config_data_default',
-        argNames: [],
+        debugName: 'add_search_history',
+        argNames: ['query', 'workspaceId', 'resultCount'],
       );
 
   @override
   Future<BridgeContext> crateFfiBridgeBridgeContextDefault() {
-    return handler.executeNormal(NormalTask(
-      callFfi: (port_) {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 7, port: port_);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_bridge_context,
-        decodeErrorData: null,
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 3,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bridge_context,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateFfiBridgeBridgeContextDefaultConstMeta,
+        argValues: [],
+        apiImpl: this,
       ),
-      constMeta: kCrateFfiBridgeBridgeContextDefaultConstMeta,
-      argValues: [],
-      apiImpl: this,
-    ));
+    );
   }
 
   TaskConstMeta get kCrateFfiBridgeBridgeContextDefaultConstMeta =>
-      const TaskConstMeta(
-        debugName: 'bridge_context_default',
-        argNames: [],
-      );
+      const TaskConstMeta(debugName: 'bridge_context_default', argNames: []);
 
   @override
   Future<BridgeContext> crateFfiBridgeBridgeContextNew() {
-    return handler.executeNormal(NormalTask(
-      callFfi: (port_) {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 8, port: port_);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_bridge_context,
-        decodeErrorData: null,
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 4,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bridge_context,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateFfiBridgeBridgeContextNewConstMeta,
+        argValues: [],
+        apiImpl: this,
       ),
-      constMeta: kCrateFfiBridgeBridgeContextNewConstMeta,
-      argValues: [],
-      apiImpl: this,
-    ));
+    );
   }
 
   TaskConstMeta get kCrateFfiBridgeBridgeContextNewConstMeta =>
-      const TaskConstMeta(
-        debugName: 'bridge_context_new',
-        argNames: [],
-      );
+      const TaskConstMeta(debugName: 'bridge_context_new', argNames: []);
 
   @override
-  Future<PlatformInt64> crateFfiBridgeBridgeContextUptimeSeconds(
-      {required BridgeContext that}) {
-    return handler.executeNormal(NormalTask(
-      callFfi: (port_) {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_box_autoadd_bridge_context(that, serializer);
-        pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 9, port: port_);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_i_64,
-        decodeErrorData: null,
+  Future<PlatformInt64> crateFfiBridgeBridgeContextUptimeSeconds({
+    required BridgeContext that,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_box_autoadd_bridge_context(that, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 5,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_i_64,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateFfiBridgeBridgeContextUptimeSecondsConstMeta,
+        argValues: [that],
+        apiImpl: this,
       ),
-      constMeta: kCrateFfiBridgeBridgeContextUptimeSecondsConstMeta,
-      argValues: [that],
-      apiImpl: this,
-    ));
+    );
   }
 
   TaskConstMeta get kCrateFfiBridgeBridgeContextUptimeSecondsConstMeta =>
@@ -581,143 +394,155 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
       );
 
   @override
-  FfiResultBool crateFfiBridgeCancelSearch({required String searchId}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(searchId, serializer);
-        return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 10)!;
-      },
-      codec: SseCodec(
-        decodeSuccessData:
-            sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultbool,
-        decodeErrorData: null,
+  StructuredSearchQueryData crateFfiBridgeBuildSearchQuery({
+    required List<String> keywords,
+    required String globalOperator,
+    required bool isRegex,
+    required bool caseSensitive,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_list_String(keywords, serializer);
+          sse_encode_String(globalOperator, serializer);
+          sse_encode_bool(isRegex, serializer);
+          sse_encode_bool(caseSensitive, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 6)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_structured_search_query_data,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateFfiBridgeBuildSearchQueryConstMeta,
+        argValues: [keywords, globalOperator, isRegex, caseSensitive],
+        apiImpl: this,
       ),
-      constMeta: kCrateFfiBridgeCancelSearchConstMeta,
-      argValues: [searchId],
-      apiImpl: this,
-    ));
+    );
   }
 
-  TaskConstMeta get kCrateFfiBridgeCancelSearchConstMeta => const TaskConstMeta(
-        debugName: 'cancel_search',
-        argNames: ['searchId'],
+  TaskConstMeta get kCrateFfiBridgeBuildSearchQueryConstMeta =>
+      const TaskConstMeta(
+        debugName: 'build_search_query',
+        argNames: ['keywords', 'globalOperator', 'isRegex', 'caseSensitive'],
       );
 
   @override
-  FfiResultBool crateFfiBridgeCancelTask({required String taskId}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(taskId, serializer);
-        return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 11)!;
-      },
-      codec: SseCodec(
-        decodeSuccessData:
-            sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultbool,
-        decodeErrorData: null,
+  bool crateFfiBridgeCancelSearch({required String searchId}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(searchId, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 7)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateFfiBridgeCancelSearchConstMeta,
+        argValues: [searchId],
+        apiImpl: this,
       ),
-      constMeta: kCrateFfiBridgeCancelTaskConstMeta,
-      argValues: [taskId],
-      apiImpl: this,
-    ));
+    );
   }
 
-  TaskConstMeta get kCrateFfiBridgeCancelTaskConstMeta => const TaskConstMeta(
-        debugName: 'cancel_task',
-        argNames: ['taskId'],
-      );
+  TaskConstMeta get kCrateFfiBridgeCancelSearchConstMeta =>
+      const TaskConstMeta(debugName: 'cancel_search', argNames: ['searchId']);
+
+  @override
+  bool crateFfiBridgeCancelTask({required String taskId}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(taskId, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 8)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateFfiBridgeCancelTaskConstMeta,
+        argValues: [taskId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateFfiBridgeCancelTaskConstMeta =>
+      const TaskConstMeta(debugName: 'cancel_task', argNames: ['taskId']);
 
   @override
   bool crateFfiBridgeCheckRarSupport() {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 12)!;
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_bool,
-        decodeErrorData: null,
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 9)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateFfiBridgeCheckRarSupportConstMeta,
+        argValues: [],
+        apiImpl: this,
       ),
-      constMeta: kCrateFfiBridgeCheckRarSupportConstMeta,
-      argValues: [],
-      apiImpl: this,
-    ));
+    );
   }
 
   TaskConstMeta get kCrateFfiBridgeCheckRarSupportConstMeta =>
-      const TaskConstMeta(
-        debugName: 'check_rar_support',
-        argNames: [],
-      );
+      const TaskConstMeta(debugName: 'check_rar_support', argNames: []);
 
   @override
-  Future<void> crateFfiGlobalStateClearGlobalState() {
-    return handler.executeNormal(NormalTask(
-      callFfi: (port_) {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 13, port: port_);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_unit,
-        decodeErrorData: null,
+  int crateFfiBridgeClearSearchHistory({String? workspaceId}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_opt_String(workspaceId, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 10)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_i_32,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateFfiBridgeClearSearchHistoryConstMeta,
+        argValues: [workspaceId],
+        apiImpl: this,
       ),
-      constMeta: kCrateFfiGlobalStateClearGlobalStateConstMeta,
-      argValues: [],
-      apiImpl: this,
-    ));
+    );
   }
 
-  TaskConstMeta get kCrateFfiGlobalStateClearGlobalStateConstMeta =>
+  TaskConstMeta get kCrateFfiBridgeClearSearchHistoryConstMeta =>
       const TaskConstMeta(
-        debugName: 'clear_global_state',
-        argNames: [],
+        debugName: 'clear_search_history',
+        argNames: ['workspaceId'],
       );
 
   @override
-  Future<ConfigData> crateFfiTypesConfigDataDefault() {
-    return handler.executeNormal(NormalTask(
-      callFfi: (port_) {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 14, port: port_);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_config_data,
-        decodeErrorData: null,
+  String crateFfiBridgeCreateWorkspace({
+    required String name,
+    required String path,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(name, serializer);
+          sse_encode_String(path, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 11)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateFfiBridgeCreateWorkspaceConstMeta,
+        argValues: [name, path],
+        apiImpl: this,
       ),
-      constMeta: kCrateFfiTypesConfigDataDefaultConstMeta,
-      argValues: [],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiTypesConfigDataDefaultConstMeta =>
-      const TaskConstMeta(
-        debugName: 'config_data_default',
-        argNames: [],
-      );
-
-  @override
-  FfiResultString crateFfiBridgeCreateWorkspace(
-      {required String name, required String path}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(name, serializer);
-        sse_encode_String(path, serializer);
-        return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 15)!;
-      },
-      codec: SseCodec(
-        decodeSuccessData:
-            sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultString,
-        decodeErrorData: null,
-      ),
-      constMeta: kCrateFfiBridgeCreateWorkspaceConstMeta,
-      argValues: [name, path],
-      apiImpl: this,
-    ));
+    );
   }
 
   TaskConstMeta get kCrateFfiBridgeCreateWorkspaceConstMeta =>
@@ -727,22 +552,23 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
       );
 
   @override
-  FfiResultBool crateFfiBridgeDeleteKeywordGroup({required String groupId}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(groupId, serializer);
-        return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 16)!;
-      },
-      codec: SseCodec(
-        decodeSuccessData:
-            sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultbool,
-        decodeErrorData: null,
+  bool crateFfiBridgeDeleteKeywordGroup({required String groupId}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(groupId, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 12)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateFfiBridgeDeleteKeywordGroupConstMeta,
+        argValues: [groupId],
+        apiImpl: this,
       ),
-      constMeta: kCrateFfiBridgeDeleteKeywordGroupConstMeta,
-      argValues: [groupId],
-      apiImpl: this,
-    ));
+    );
   }
 
   TaskConstMeta get kCrateFfiBridgeDeleteKeywordGroupConstMeta =>
@@ -752,22 +578,83 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
       );
 
   @override
-  FfiResultBool crateFfiBridgeDeleteWorkspace({required String workspaceId}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(workspaceId, serializer);
-        return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 17)!;
-      },
-      codec: SseCodec(
-        decodeSuccessData:
-            sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultbool,
-        decodeErrorData: null,
+  int crateFfiBridgeDeleteSearchHistories({
+    required List<String> queries,
+    required String workspaceId,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_list_String(queries, serializer);
+          sse_encode_String(workspaceId, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 13)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_i_32,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateFfiBridgeDeleteSearchHistoriesConstMeta,
+        argValues: [queries, workspaceId],
+        apiImpl: this,
       ),
-      constMeta: kCrateFfiBridgeDeleteWorkspaceConstMeta,
-      argValues: [workspaceId],
-      apiImpl: this,
-    ));
+    );
+  }
+
+  TaskConstMeta get kCrateFfiBridgeDeleteSearchHistoriesConstMeta =>
+      const TaskConstMeta(
+        debugName: 'delete_search_histories',
+        argNames: ['queries', 'workspaceId'],
+      );
+
+  @override
+  bool crateFfiBridgeDeleteSearchHistory({
+    required String query,
+    required String workspaceId,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(query, serializer);
+          sse_encode_String(workspaceId, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 14)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateFfiBridgeDeleteSearchHistoryConstMeta,
+        argValues: [query, workspaceId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateFfiBridgeDeleteSearchHistoryConstMeta =>
+      const TaskConstMeta(
+        debugName: 'delete_search_history',
+        argNames: ['query', 'workspaceId'],
+      );
+
+  @override
+  bool crateFfiBridgeDeleteWorkspace({required String workspaceId}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(workspaceId, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 15)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateFfiBridgeDeleteWorkspaceConstMeta,
+        argValues: [workspaceId],
+        apiImpl: this,
+      ),
+    );
   }
 
   TaskConstMeta get kCrateFfiBridgeDeleteWorkspaceConstMeta =>
@@ -777,27 +664,29 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
       );
 
   @override
-  FfiResultString crateFfiBridgeExportResults(
-      {required String searchId,
-      required String format,
-      required String outputPath}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(searchId, serializer);
-        sse_encode_String(format, serializer);
-        sse_encode_String(outputPath, serializer);
-        return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 18)!;
-      },
-      codec: SseCodec(
-        decodeSuccessData:
-            sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultString,
-        decodeErrorData: null,
+  String crateFfiBridgeExportResults({
+    required String searchId,
+    required String format,
+    required String outputPath,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(searchId, serializer);
+          sse_encode_String(format, serializer);
+          sse_encode_String(outputPath, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 16)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateFfiBridgeExportResultsConstMeta,
+        argValues: [searchId, format, outputPath],
+        apiImpl: this,
       ),
-      constMeta: kCrateFfiBridgeExportResultsConstMeta,
-      argValues: [searchId, format, outputPath],
-      apiImpl: this,
-    ));
+    );
   }
 
   TaskConstMeta get kCrateFfiBridgeExportResultsConstMeta =>
@@ -807,721 +696,69 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
       );
 
   @override
-  Future<bool> crateFfiCommandsBridgeFfiAddKeywordGroup(
-      {required KeywordGroupInput group}) {
-    return handler.executeNormal(NormalTask(
-      callFfi: (port_) {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_box_autoadd_keyword_group_input(group, serializer);
-        pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 19, port: port_);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_bool,
-        decodeErrorData: sse_decode_String,
+  int crateFfiBridgeGetActiveSearchesCount() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 17)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_i_32,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateFfiBridgeGetActiveSearchesCountConstMeta,
+        argValues: [],
+        apiImpl: this,
       ),
-      constMeta: kCrateFfiCommandsBridgeFfiAddKeywordGroupConstMeta,
-      argValues: [group],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiCommandsBridgeFfiAddKeywordGroupConstMeta =>
-      const TaskConstMeta(
-        debugName: 'ffi_add_keyword_group',
-        argNames: ['group'],
-      );
-
-  @override
-  Future<bool> crateFfiCommandsBridgeFfiCancelSearch(
-      {required String searchId}) {
-    return handler.executeNormal(NormalTask(
-      callFfi: (port_) {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(searchId, serializer);
-        pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 20, port: port_);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_bool,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiCommandsBridgeFfiCancelSearchConstMeta,
-      argValues: [searchId],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiCommandsBridgeFfiCancelSearchConstMeta =>
-      const TaskConstMeta(
-        debugName: 'ffi_cancel_search',
-        argNames: ['searchId'],
-      );
-
-  @override
-  Future<bool> crateFfiCommandsBridgeFfiCancelTask({required String taskId}) {
-    return handler.executeNormal(NormalTask(
-      callFfi: (port_) {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(taskId, serializer);
-        pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 21, port: port_);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_bool,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiCommandsBridgeFfiCancelTaskConstMeta,
-      argValues: [taskId],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiCommandsBridgeFfiCancelTaskConstMeta =>
-      const TaskConstMeta(
-        debugName: 'ffi_cancel_task',
-        argNames: ['taskId'],
-      );
-
-  @override
-  Future<bool> crateFfiCommandsBridgeFfiDeleteKeywordGroup(
-      {required String groupId}) {
-    return handler.executeNormal(NormalTask(
-      callFfi: (port_) {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(groupId, serializer);
-        pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 22, port: port_);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_bool,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiCommandsBridgeFfiDeleteKeywordGroupConstMeta,
-      argValues: [groupId],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiCommandsBridgeFfiDeleteKeywordGroupConstMeta =>
-      const TaskConstMeta(
-        debugName: 'ffi_delete_keyword_group',
-        argNames: ['groupId'],
-      );
-
-  @override
-  Future<bool> crateFfiCommandsBridgeFfiDeleteWorkspace(
-      {required String workspaceId}) {
-    return handler.executeNormal(NormalTask(
-      callFfi: (port_) {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(workspaceId, serializer);
-        pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 23, port: port_);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_bool,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiCommandsBridgeFfiDeleteWorkspaceConstMeta,
-      argValues: [workspaceId],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiCommandsBridgeFfiDeleteWorkspaceConstMeta =>
-      const TaskConstMeta(
-        debugName: 'ffi_delete_workspace',
-        argNames: ['workspaceId'],
-      );
-
-  @override
-  Future<String> crateFfiCommandsBridgeFfiExportResults(
-      {required String searchId,
-      required String format,
-      required String outputPath}) {
-    return handler.executeNormal(NormalTask(
-      callFfi: (port_) {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(searchId, serializer);
-        sse_encode_String(format, serializer);
-        sse_encode_String(outputPath, serializer);
-        pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 24, port: port_);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_String,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiCommandsBridgeFfiExportResultsConstMeta,
-      argValues: [searchId, format, outputPath],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiCommandsBridgeFfiExportResultsConstMeta =>
-      const TaskConstMeta(
-        debugName: 'ffi_export_results',
-        argNames: ['searchId', 'format', 'outputPath'],
-      );
-
-  @override
-  Future<int> crateFfiCommandsBridgeFfiGetActiveSearchesCount() {
-    return handler.executeNormal(NormalTask(
-      callFfi: (port_) {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 25, port: port_);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_i_32,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiCommandsBridgeFfiGetActiveSearchesCountConstMeta,
-      argValues: [],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiCommandsBridgeFfiGetActiveSearchesCountConstMeta =>
-      const TaskConstMeta(
-        debugName: 'ffi_get_active_searches_count',
-        argNames: [],
-      );
-
-  @override
-  Future<List<KeywordGroupData>> crateFfiCommandsBridgeFfiGetKeywords() {
-    return handler.executeNormal(NormalTask(
-      callFfi: (port_) {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 26, port: port_);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_list_keyword_group_data,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiCommandsBridgeFfiGetKeywordsConstMeta,
-      argValues: [],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiCommandsBridgeFfiGetKeywordsConstMeta =>
-      const TaskConstMeta(
-        debugName: 'ffi_get_keywords',
-        argNames: [],
-      );
-
-  @override
-  Future<PerformanceMetricsData> crateFfiCommandsBridgeFfiGetPerformanceMetrics(
-      {required String timeRange}) {
-    return handler.executeNormal(NormalTask(
-      callFfi: (port_) {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(timeRange, serializer);
-        pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 27, port: port_);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_performance_metrics_data,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiCommandsBridgeFfiGetPerformanceMetricsConstMeta,
-      argValues: [timeRange],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiCommandsBridgeFfiGetPerformanceMetricsConstMeta =>
-      const TaskConstMeta(
-        debugName: 'ffi_get_performance_metrics',
-        argNames: ['timeRange'],
-      );
-
-  @override
-  Future<TaskMetricsData> crateFfiCommandsBridgeFfiGetTaskMetrics() {
-    return handler.executeNormal(NormalTask(
-      callFfi: (port_) {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 28, port: port_);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_task_metrics_data,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiCommandsBridgeFfiGetTaskMetricsConstMeta,
-      argValues: [],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiCommandsBridgeFfiGetTaskMetricsConstMeta =>
-      const TaskConstMeta(
-        debugName: 'ffi_get_task_metrics',
-        argNames: [],
-      );
-
-  @override
-  Future<WorkspaceStatusData> crateFfiCommandsBridgeFfiGetWorkspaceStatus(
-      {required String workspaceId}) {
-    return handler.executeNormal(NormalTask(
-      callFfi: (port_) {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(workspaceId, serializer);
-        pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 29, port: port_);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_workspace_status_data,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiCommandsBridgeFfiGetWorkspaceStatusConstMeta,
-      argValues: [workspaceId],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiCommandsBridgeFfiGetWorkspaceStatusConstMeta =>
-      const TaskConstMeta(
-        debugName: 'ffi_get_workspace_status',
-        argNames: ['workspaceId'],
-      );
-
-  @override
-  Future<String> crateFfiCommandsBridgeFfiImportFolder(
-      {required String path, required String workspaceId}) {
-    return handler.executeNormal(NormalTask(
-      callFfi: (port_) {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(path, serializer);
-        sse_encode_String(workspaceId, serializer);
-        pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 30, port: port_);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_String,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiCommandsBridgeFfiImportFolderConstMeta,
-      argValues: [path, workspaceId],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiCommandsBridgeFfiImportFolderConstMeta =>
-      const TaskConstMeta(
-        debugName: 'ffi_import_folder',
-        argNames: ['path', 'workspaceId'],
-      );
-
-  @override
-  Future<bool> crateFfiCommandsBridgeFfiIsWatching(
-      {required String workspaceId}) {
-    return handler.executeNormal(NormalTask(
-      callFfi: (port_) {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(workspaceId, serializer);
-        pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 31, port: port_);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_bool,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiCommandsBridgeFfiIsWatchingConstMeta,
-      argValues: [workspaceId],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiCommandsBridgeFfiIsWatchingConstMeta =>
-      const TaskConstMeta(
-        debugName: 'ffi_is_watching',
-        argNames: ['workspaceId'],
-      );
-
-  @override
-  Future<ConfigData> crateFfiCommandsBridgeFfiLoadConfig() {
-    return handler.executeNormal(NormalTask(
-      callFfi: (port_) {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 32, port: port_);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_config_data,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiCommandsBridgeFfiLoadConfigConstMeta,
-      argValues: [],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiCommandsBridgeFfiLoadConfigConstMeta =>
-      const TaskConstMeta(
-        debugName: 'ffi_load_config',
-        argNames: [],
-      );
-
-  @override
-  Future<WorkspaceLoadResponseData> crateFfiCommandsBridgeFfiLoadWorkspace(
-      {required String workspaceId}) {
-    return handler.executeNormal(NormalTask(
-      callFfi: (port_) {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(workspaceId, serializer);
-        pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 33, port: port_);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_workspace_load_response_data,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiCommandsBridgeFfiLoadWorkspaceConstMeta,
-      argValues: [workspaceId],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiCommandsBridgeFfiLoadWorkspaceConstMeta =>
-      const TaskConstMeta(
-        debugName: 'ffi_load_workspace',
-        argNames: ['workspaceId'],
-      );
-
-  @override
-  Future<String> crateFfiCommandsBridgeFfiRefreshWorkspace(
-      {required String workspaceId, required String path}) {
-    return handler.executeNormal(NormalTask(
-      callFfi: (port_) {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(workspaceId, serializer);
-        sse_encode_String(path, serializer);
-        pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 34, port: port_);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_String,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiCommandsBridgeFfiRefreshWorkspaceConstMeta,
-      argValues: [workspaceId, path],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiCommandsBridgeFfiRefreshWorkspaceConstMeta =>
-      const TaskConstMeta(
-        debugName: 'ffi_refresh_workspace',
-        argNames: ['workspaceId', 'path'],
-      );
-
-  @override
-  Future<bool> crateFfiCommandsBridgeFfiSaveConfig(
-      {required ConfigData config}) {
-    return handler.executeNormal(NormalTask(
-      callFfi: (port_) {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_box_autoadd_config_data(config, serializer);
-        pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 35, port: port_);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_bool,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiCommandsBridgeFfiSaveConfigConstMeta,
-      argValues: [config],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiCommandsBridgeFfiSaveConfigConstMeta =>
-      const TaskConstMeta(
-        debugName: 'ffi_save_config',
-        argNames: ['config'],
-      );
-
-  @override
-  Future<String> crateFfiCommandsBridgeFfiSearchLogs(
-      {required String query,
-      String? workspaceId,
-      required int maxResults,
-      String? filtersJson}) {
-    return handler.executeNormal(NormalTask(
-      callFfi: (port_) {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(query, serializer);
-        sse_encode_opt_String(workspaceId, serializer);
-        sse_encode_i_32(maxResults, serializer);
-        sse_encode_opt_String(filtersJson, serializer);
-        pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 36, port: port_);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_String,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiCommandsBridgeFfiSearchLogsConstMeta,
-      argValues: [query, workspaceId, maxResults, filtersJson],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiCommandsBridgeFfiSearchLogsConstMeta =>
-      const TaskConstMeta(
-        debugName: 'ffi_search_logs',
-        argNames: ['query', 'workspaceId', 'maxResults', 'filtersJson'],
-      );
-
-  @override
-  Future<bool> crateFfiCommandsBridgeFfiStartWatch(
-      {required String workspaceId,
-      required List<String> paths,
-      required bool recursive}) {
-    return handler.executeNormal(NormalTask(
-      callFfi: (port_) {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(workspaceId, serializer);
-        sse_encode_list_String(paths, serializer);
-        sse_encode_bool(recursive, serializer);
-        pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 37, port: port_);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_bool,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiCommandsBridgeFfiStartWatchConstMeta,
-      argValues: [workspaceId, paths, recursive],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiCommandsBridgeFfiStartWatchConstMeta =>
-      const TaskConstMeta(
-        debugName: 'ffi_start_watch',
-        argNames: ['workspaceId', 'paths', 'recursive'],
-      );
-
-  @override
-  Future<bool> crateFfiCommandsBridgeFfiStopWatch(
-      {required String workspaceId}) {
-    return handler.executeNormal(NormalTask(
-      callFfi: (port_) {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(workspaceId, serializer);
-        pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 38, port: port_);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_bool,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiCommandsBridgeFfiStopWatchConstMeta,
-      argValues: [workspaceId],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiCommandsBridgeFfiStopWatchConstMeta =>
-      const TaskConstMeta(
-        debugName: 'ffi_stop_watch',
-        argNames: ['workspaceId'],
-      );
-
-  @override
-  Future<bool> crateFfiCommandsBridgeFfiUpdateKeywordGroup(
-      {required String groupId, required KeywordGroupInput group}) {
-    return handler.executeNormal(NormalTask(
-      callFfi: (port_) {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(groupId, serializer);
-        sse_encode_box_autoadd_keyword_group_input(group, serializer);
-        pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 39, port: port_);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_bool,
-        decodeErrorData: sse_decode_String,
-      ),
-      constMeta: kCrateFfiCommandsBridgeFfiUpdateKeywordGroupConstMeta,
-      argValues: [groupId, group],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiCommandsBridgeFfiUpdateKeywordGroupConstMeta =>
-      const TaskConstMeta(
-        debugName: 'ffi_update_keyword_group',
-        argNames: ['groupId', 'group'],
-      );
-
-  @override
-  Future<FileFilterConfigData> crateFfiTypesFileFilterConfigDataDefault() {
-    return handler.executeNormal(NormalTask(
-      callFfi: (port_) {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 40, port: port_);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_file_filter_config_data,
-        decodeErrorData: null,
-      ),
-      constMeta: kCrateFfiTypesFileFilterConfigDataDefaultConstMeta,
-      argValues: [],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiTypesFileFilterConfigDataDefaultConstMeta =>
-      const TaskConstMeta(
-        debugName: 'file_filter_config_data_default',
-        argNames: [],
-      );
-
-  @override
-  FfiResultI32 crateFfiBridgeGetActiveSearchesCount() {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 41)!;
-      },
-      codec: SseCodec(
-        decodeSuccessData:
-            sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResulti32,
-        decodeErrorData: null,
-      ),
-      constMeta: kCrateFfiBridgeGetActiveSearchesCountConstMeta,
-      argValues: [],
-      apiImpl: this,
-    ));
+    );
   }
 
   TaskConstMeta get kCrateFfiBridgeGetActiveSearchesCountConstMeta =>
-      const TaskConstMeta(
-        debugName: 'get_active_searches_count',
-        argNames: [],
-      );
-
-  @override
-  Future<PathBuf?> crateFfiGlobalStateGetAppDataDir() {
-    return handler.executeNormal(NormalTask(
-      callFfi: (port_) {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 42, port: port_);
-      },
-      codec: SseCodec(
-        decodeSuccessData:
-            sse_decode_opt_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf,
-        decodeErrorData: null,
-      ),
-      constMeta: kCrateFfiGlobalStateGetAppDataDirConstMeta,
-      argValues: [],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiGlobalStateGetAppDataDirConstMeta =>
-      const TaskConstMeta(
-        debugName: 'get_app_data_dir',
-        argNames: [],
-      );
-
-  @override
-  Future<AppState?> crateFfiGlobalStateGetAppState() {
-    return handler.executeNormal(NormalTask(
-      callFfi: (port_) {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 43, port: port_);
-      },
-      codec: SseCodec(
-        decodeSuccessData:
-            sse_decode_opt_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState,
-        decodeErrorData: null,
-      ),
-      constMeta: kCrateFfiGlobalStateGetAppStateConstMeta,
-      argValues: [],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiGlobalStateGetAppStateConstMeta =>
-      const TaskConstMeta(
-        debugName: 'get_app_state',
-        argNames: [],
-      );
-
-  @override
-  Future<FfiContext?> crateFfiGlobalStateGetGlobalState() {
-    return handler.executeNormal(NormalTask(
-      callFfi: (port_) {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 44, port: port_);
-      },
-      codec: SseCodec(
-        decodeSuccessData:
-            sse_decode_opt_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext,
-        decodeErrorData: null,
-      ),
-      constMeta: kCrateFfiGlobalStateGetGlobalStateConstMeta,
-      argValues: [],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiGlobalStateGetGlobalStateConstMeta =>
-      const TaskConstMeta(
-        debugName: 'get_global_state',
-        argNames: [],
-      );
+      const TaskConstMeta(debugName: 'get_active_searches_count', argNames: []);
 
   @override
   List<KeywordGroupData> crateFfiBridgeGetKeywords() {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 45)!;
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_list_keyword_group_data,
-        decodeErrorData: null,
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 18)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_keyword_group_data,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateFfiBridgeGetKeywordsConstMeta,
+        argValues: [],
+        apiImpl: this,
       ),
-      constMeta: kCrateFfiBridgeGetKeywordsConstMeta,
-      argValues: [],
-      apiImpl: this,
-    ));
+    );
   }
 
-  TaskConstMeta get kCrateFfiBridgeGetKeywordsConstMeta => const TaskConstMeta(
-        debugName: 'get_keywords',
-        argNames: [],
-      );
+  TaskConstMeta get kCrateFfiBridgeGetKeywordsConstMeta =>
+      const TaskConstMeta(debugName: 'get_keywords', argNames: []);
 
   @override
-  PerformanceMetricsData crateFfiBridgeGetPerformanceMetrics(
-      {required String timeRange}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(timeRange, serializer);
-        return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 46)!;
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_performance_metrics_data,
-        decodeErrorData: null,
+  PerformanceMetricsData crateFfiBridgeGetPerformanceMetrics({
+    required String timeRange,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(timeRange, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 19)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_performance_metrics_data,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateFfiBridgeGetPerformanceMetricsConstMeta,
+        argValues: [timeRange],
+        apiImpl: this,
       ),
-      constMeta: kCrateFfiBridgeGetPerformanceMetricsConstMeta,
-      argValues: [timeRange],
-      apiImpl: this,
-    ));
+    );
   }
 
   TaskConstMeta get kCrateFfiBridgeGetPerformanceMetricsConstMeta =>
@@ -1531,47 +768,135 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
       );
 
   @override
-  FfiResultTaskMetricsData crateFfiBridgeGetTaskMetrics() {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 47)!;
-      },
-      codec: SseCodec(
-        decodeSuccessData:
-            sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultTaskMetricsData,
-        decodeErrorData: null,
+  List<SearchHistoryData> crateFfiBridgeGetSearchHistory({
+    String? workspaceId,
+    int? limit,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_opt_String(workspaceId, serializer);
+          sse_encode_opt_box_autoadd_i_32(limit, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 20)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_search_history_data,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateFfiBridgeGetSearchHistoryConstMeta,
+        argValues: [workspaceId, limit],
+        apiImpl: this,
       ),
-      constMeta: kCrateFfiBridgeGetTaskMetricsConstMeta,
-      argValues: [],
-      apiImpl: this,
-    ));
+    );
   }
 
-  TaskConstMeta get kCrateFfiBridgeGetTaskMetricsConstMeta =>
+  TaskConstMeta get kCrateFfiBridgeGetSearchHistoryConstMeta =>
       const TaskConstMeta(
-        debugName: 'get_task_metrics',
-        argNames: [],
+        debugName: 'get_search_history',
+        argNames: ['workspaceId', 'limit'],
       );
 
   @override
-  FfiResultWorkspaceStatusData crateFfiBridgeGetWorkspaceStatus(
-      {required String workspaceId}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(workspaceId, serializer);
-        return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 48)!;
-      },
-      codec: SseCodec(
-        decodeSuccessData:
-            sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultWorkspaceStatusData,
-        decodeErrorData: null,
+  TaskMetricsData crateFfiBridgeGetTaskMetrics() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 21)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_task_metrics_data,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateFfiBridgeGetTaskMetricsConstMeta,
+        argValues: [],
+        apiImpl: this,
       ),
-      constMeta: kCrateFfiBridgeGetWorkspaceStatusConstMeta,
-      argValues: [workspaceId],
-      apiImpl: this,
-    ));
+    );
+  }
+
+  TaskConstMeta get kCrateFfiBridgeGetTaskMetricsConstMeta =>
+      const TaskConstMeta(debugName: 'get_task_metrics', argNames: []);
+
+  @override
+  List<VirtualTreeNodeData> crateFfiBridgeGetTreeChildren({
+    required String workspaceId,
+    required String parentPath,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(workspaceId, serializer);
+          sse_encode_String(parentPath, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 22)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_virtual_tree_node_data,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateFfiBridgeGetTreeChildrenConstMeta,
+        argValues: [workspaceId, parentPath],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateFfiBridgeGetTreeChildrenConstMeta =>
+      const TaskConstMeta(
+        debugName: 'get_tree_children',
+        argNames: ['workspaceId', 'parentPath'],
+      );
+
+  @override
+  List<VirtualTreeNodeData> crateFfiBridgeGetVirtualFileTree({
+    required String workspaceId,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(workspaceId, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 23)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_virtual_tree_node_data,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateFfiBridgeGetVirtualFileTreeConstMeta,
+        argValues: [workspaceId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateFfiBridgeGetVirtualFileTreeConstMeta =>
+      const TaskConstMeta(
+        debugName: 'get_virtual_file_tree',
+        argNames: ['workspaceId'],
+      );
+
+  @override
+  WorkspaceStatusData crateFfiBridgeGetWorkspaceStatus({
+    required String workspaceId,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(workspaceId, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 24)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_workspace_status_data,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateFfiBridgeGetWorkspaceStatusConstMeta,
+        argValues: [workspaceId],
+        apiImpl: this,
+      ),
+    );
   }
 
   TaskConstMeta get kCrateFfiBridgeGetWorkspaceStatusConstMeta =>
@@ -1582,240 +907,201 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
 
   @override
   List<WorkspaceData> crateFfiBridgeGetWorkspaces() {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 49)!;
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_list_workspace_data,
-        decodeErrorData: null,
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 25)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_workspace_data,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateFfiBridgeGetWorkspacesConstMeta,
+        argValues: [],
+        apiImpl: this,
       ),
-      constMeta: kCrateFfiBridgeGetWorkspacesConstMeta,
-      argValues: [],
-      apiImpl: this,
-    ));
+    );
   }
 
   TaskConstMeta get kCrateFfiBridgeGetWorkspacesConstMeta =>
-      const TaskConstMeta(
-        debugName: 'get_workspaces',
-        argNames: [],
-      );
+      const TaskConstMeta(debugName: 'get_workspaces', argNames: []);
 
   @override
   String crateFfiBridgeHealthCheck() {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 50)!;
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_String,
-        decodeErrorData: null,
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 26)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateFfiBridgeHealthCheckConstMeta,
+        argValues: [],
+        apiImpl: this,
       ),
-      constMeta: kCrateFfiBridgeHealthCheckConstMeta,
-      argValues: [],
-      apiImpl: this,
-    ));
+    );
   }
 
-  TaskConstMeta get kCrateFfiBridgeHealthCheckConstMeta => const TaskConstMeta(
-        debugName: 'health_check',
-        argNames: [],
-      );
+  TaskConstMeta get kCrateFfiBridgeHealthCheckConstMeta =>
+      const TaskConstMeta(debugName: 'health_check', argNames: []);
 
   @override
-  FfiResultString crateFfiBridgeImportFolder(
-      {required String path, required String workspaceId}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(path, serializer);
-        sse_encode_String(workspaceId, serializer);
-        return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 51)!;
-      },
-      codec: SseCodec(
-        decodeSuccessData:
-            sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultString,
-        decodeErrorData: null,
+  String crateFfiBridgeImportFolder({
+    required String path,
+    required String workspaceId,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(path, serializer);
+          sse_encode_String(workspaceId, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 27)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateFfiBridgeImportFolderConstMeta,
+        argValues: [path, workspaceId],
+        apiImpl: this,
       ),
-      constMeta: kCrateFfiBridgeImportFolderConstMeta,
-      argValues: [path, workspaceId],
-      apiImpl: this,
-    ));
+    );
   }
 
   TaskConstMeta get kCrateFfiBridgeImportFolderConstMeta => const TaskConstMeta(
-        debugName: 'import_folder',
-        argNames: ['path', 'workspaceId'],
-      );
+    debugName: 'import_folder',
+    argNames: ['path', 'workspaceId'],
+  );
 
   @override
   Future<BridgeContext> crateFfiBridgeInitBridge() {
-    return handler.executeNormal(NormalTask(
-      callFfi: (port_) {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 52, port: port_);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_bridge_context,
-        decodeErrorData: null,
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 28,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bridge_context,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateFfiBridgeInitBridgeConstMeta,
+        argValues: [],
+        apiImpl: this,
       ),
-      constMeta: kCrateFfiBridgeInitBridgeConstMeta,
-      argValues: [],
-      apiImpl: this,
-    ));
+    );
   }
 
-  TaskConstMeta get kCrateFfiBridgeInitBridgeConstMeta => const TaskConstMeta(
-        debugName: 'init_bridge',
-        argNames: [],
-      );
+  TaskConstMeta get kCrateFfiBridgeInitBridgeConstMeta =>
+      const TaskConstMeta(debugName: 'init_bridge', argNames: []);
 
   @override
-  Future<void> crateFfiGlobalStateInitGlobalState(
-      {required AppState state, required PathBuf appDataDir}) {
-    return handler.executeNormal(NormalTask(
-      callFfi: (port_) {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState(
-            state, serializer);
-        sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf(
-            appDataDir, serializer);
-        pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 53, port: port_);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_unit,
-        decodeErrorData: null,
+  bool crateFfiBridgeIsWatching({required String workspaceId}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(workspaceId, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 29)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateFfiBridgeIsWatchingConstMeta,
+        argValues: [workspaceId],
+        apiImpl: this,
       ),
-      constMeta: kCrateFfiGlobalStateInitGlobalStateConstMeta,
-      argValues: [state, appDataDir],
-      apiImpl: this,
-    ));
+    );
   }
 
-  TaskConstMeta get kCrateFfiGlobalStateInitGlobalStateConstMeta =>
-      const TaskConstMeta(
-        debugName: 'init_global_state',
-        argNames: ['state', 'appDataDir'],
-      );
-
-  @override
-  Future<bool> crateFfiGlobalStateIsInitialized() {
-    return handler.executeNormal(NormalTask(
-      callFfi: (port_) {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 54, port: port_);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_bool,
-        decodeErrorData: null,
-      ),
-      constMeta: kCrateFfiGlobalStateIsInitializedConstMeta,
-      argValues: [],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiGlobalStateIsInitializedConstMeta =>
-      const TaskConstMeta(
-        debugName: 'is_initialized',
-        argNames: [],
-      );
-
-  @override
-  FfiResultBool crateFfiBridgeIsWatching({required String workspaceId}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(workspaceId, serializer);
-        return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 55)!;
-      },
-      codec: SseCodec(
-        decodeSuccessData:
-            sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultbool,
-        decodeErrorData: null,
-      ),
-      constMeta: kCrateFfiBridgeIsWatchingConstMeta,
-      argValues: [workspaceId],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiBridgeIsWatchingConstMeta => const TaskConstMeta(
-        debugName: 'is_watching',
-        argNames: ['workspaceId'],
-      );
+  TaskConstMeta get kCrateFfiBridgeIsWatchingConstMeta =>
+      const TaskConstMeta(debugName: 'is_watching', argNames: ['workspaceId']);
 
   @override
   ConfigData crateFfiBridgeLoadConfig() {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 56)!;
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_config_data,
-        decodeErrorData: null,
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 30)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_config_data,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateFfiBridgeLoadConfigConstMeta,
+        argValues: [],
+        apiImpl: this,
       ),
-      constMeta: kCrateFfiBridgeLoadConfigConstMeta,
-      argValues: [],
-      apiImpl: this,
-    ));
+    );
   }
 
-  TaskConstMeta get kCrateFfiBridgeLoadConfigConstMeta => const TaskConstMeta(
-        debugName: 'load_config',
-        argNames: [],
-      );
+  TaskConstMeta get kCrateFfiBridgeLoadConfigConstMeta =>
+      const TaskConstMeta(debugName: 'load_config', argNames: []);
 
   @override
-  Future<PerformanceMetricsData> crateFfiTypesPerformanceMetricsDataDefault() {
-    return handler.executeNormal(NormalTask(
-      callFfi: (port_) {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 57, port: port_);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_performance_metrics_data,
-        decodeErrorData: null,
+  FileContentResponseData crateFfiBridgeReadFileByHash({
+    required String workspaceId,
+    required String hash,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(workspaceId, serializer);
+          sse_encode_String(hash, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 31)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_file_content_response_data,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateFfiBridgeReadFileByHashConstMeta,
+        argValues: [workspaceId, hash],
+        apiImpl: this,
       ),
-      constMeta: kCrateFfiTypesPerformanceMetricsDataDefaultConstMeta,
-      argValues: [],
-      apiImpl: this,
-    ));
+    );
   }
 
-  TaskConstMeta get kCrateFfiTypesPerformanceMetricsDataDefaultConstMeta =>
+  TaskConstMeta get kCrateFfiBridgeReadFileByHashConstMeta =>
       const TaskConstMeta(
-        debugName: 'performance_metrics_data_default',
-        argNames: [],
+        debugName: 'read_file_by_hash',
+        argNames: ['workspaceId', 'hash'],
       );
 
   @override
-  FfiResultString crateFfiBridgeRefreshWorkspace(
-      {required String workspaceId, required String path}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(workspaceId, serializer);
-        sse_encode_String(path, serializer);
-        return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 58)!;
-      },
-      codec: SseCodec(
-        decodeSuccessData:
-            sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultString,
-        decodeErrorData: null,
+  String crateFfiBridgeRefreshWorkspace({
+    required String workspaceId,
+    required String path,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(workspaceId, serializer);
+          sse_encode_String(path, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 32)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateFfiBridgeRefreshWorkspaceConstMeta,
+        argValues: [workspaceId, path],
+        apiImpl: this,
       ),
-      constMeta: kCrateFfiBridgeRefreshWorkspaceConstMeta,
-      argValues: [workspaceId, path],
-      apiImpl: this,
-    ));
+    );
   }
 
   TaskConstMeta get kCrateFfiBridgeRefreshWorkspaceConstMeta =>
@@ -1825,159 +1111,207 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
       );
 
   @override
-  FfiResultBool crateFfiBridgeSaveConfig({required ConfigData config}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_box_autoadd_config_data(config, serializer);
-        return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 59)!;
-      },
-      codec: SseCodec(
-        decodeSuccessData:
-            sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultbool,
-        decodeErrorData: null,
+  bool crateFfiBridgeSaveConfig({required ConfigData config}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_box_autoadd_config_data(config, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 33)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateFfiBridgeSaveConfigConstMeta,
+        argValues: [config],
+        apiImpl: this,
       ),
-      constMeta: kCrateFfiBridgeSaveConfigConstMeta,
-      argValues: [config],
-      apiImpl: this,
-    ));
+    );
   }
 
-  TaskConstMeta get kCrateFfiBridgeSaveConfigConstMeta => const TaskConstMeta(
-        debugName: 'save_config',
-        argNames: ['config'],
-      );
+  TaskConstMeta get kCrateFfiBridgeSaveConfigConstMeta =>
+      const TaskConstMeta(debugName: 'save_config', argNames: ['config']);
 
   @override
-  FfiResultString crateFfiBridgeSearchLogs(
-      {required String query,
-      String? workspaceId,
-      required int maxResults,
-      String? filters}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(query, serializer);
-        sse_encode_opt_String(workspaceId, serializer);
-        sse_encode_i_32(maxResults, serializer);
-        sse_encode_opt_String(filters, serializer);
-        return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 60)!;
-      },
-      codec: SseCodec(
-        decodeSuccessData:
-            sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultString,
-        decodeErrorData: null,
+  String crateFfiBridgeSearchLogs({
+    required String query,
+    String? workspaceId,
+    required int maxResults,
+    String? filters,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(query, serializer);
+          sse_encode_opt_String(workspaceId, serializer);
+          sse_encode_i_32(maxResults, serializer);
+          sse_encode_opt_String(filters, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 34)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateFfiBridgeSearchLogsConstMeta,
+        argValues: [query, workspaceId, maxResults, filters],
+        apiImpl: this,
       ),
-      constMeta: kCrateFfiBridgeSearchLogsConstMeta,
-      argValues: [query, workspaceId, maxResults, filters],
-      apiImpl: this,
-    ));
+    );
   }
 
   TaskConstMeta get kCrateFfiBridgeSearchLogsConstMeta => const TaskConstMeta(
-        debugName: 'search_logs',
-        argNames: ['query', 'workspaceId', 'maxResults', 'filters'],
+    debugName: 'search_logs',
+    argNames: ['query', 'workspaceId', 'maxResults', 'filters'],
+  );
+
+  @override
+  List<SearchResultEntry> crateFfiBridgeSearchRegex({
+    required String pattern,
+    String? workspaceId,
+    required int maxResults,
+    required bool caseSensitive,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(pattern, serializer);
+          sse_encode_opt_String(workspaceId, serializer);
+          sse_encode_i_32(maxResults, serializer);
+          sse_encode_bool(caseSensitive, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 35)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData:
+              sse_decode_list_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateFfiBridgeSearchRegexConstMeta,
+        argValues: [pattern, workspaceId, maxResults, caseSensitive],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateFfiBridgeSearchRegexConstMeta => const TaskConstMeta(
+    debugName: 'search_regex',
+    argNames: ['pattern', 'workspaceId', 'maxResults', 'caseSensitive'],
+  );
+
+  @override
+  List<SearchResultEntry> crateFfiBridgeSearchStructured({
+    required StructuredSearchQueryData query,
+    String? workspaceId,
+    required int maxResults,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_box_autoadd_structured_search_query_data(
+            query,
+            serializer,
+          );
+          sse_encode_opt_String(workspaceId, serializer);
+          sse_encode_i_32(maxResults, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 36)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData:
+              sse_decode_list_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateFfiBridgeSearchStructuredConstMeta,
+        argValues: [query, workspaceId, maxResults],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateFfiBridgeSearchStructuredConstMeta =>
+      const TaskConstMeta(
+        debugName: 'search_structured',
+        argNames: ['query', 'workspaceId', 'maxResults'],
       );
 
   @override
-  FfiResultBool crateFfiBridgeStartWatch(
-      {required String workspaceId,
-      required List<String> paths,
-      required bool recursive}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(workspaceId, serializer);
-        sse_encode_list_String(paths, serializer);
-        sse_encode_bool(recursive, serializer);
-        return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 61)!;
-      },
-      codec: SseCodec(
-        decodeSuccessData:
-            sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultbool,
-        decodeErrorData: null,
+  bool crateFfiBridgeStartWatch({
+    required String workspaceId,
+    required List<String> paths,
+    required bool recursive,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(workspaceId, serializer);
+          sse_encode_list_String(paths, serializer);
+          sse_encode_bool(recursive, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 37)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateFfiBridgeStartWatchConstMeta,
+        argValues: [workspaceId, paths, recursive],
+        apiImpl: this,
       ),
-      constMeta: kCrateFfiBridgeStartWatchConstMeta,
-      argValues: [workspaceId, paths, recursive],
-      apiImpl: this,
-    ));
+    );
   }
 
   TaskConstMeta get kCrateFfiBridgeStartWatchConstMeta => const TaskConstMeta(
-        debugName: 'start_watch',
-        argNames: ['workspaceId', 'paths', 'recursive'],
-      );
+    debugName: 'start_watch',
+    argNames: ['workspaceId', 'paths', 'recursive'],
+  );
 
   @override
-  FfiResultBool crateFfiBridgeStopWatch({required String workspaceId}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(workspaceId, serializer);
-        return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 62)!;
-      },
-      codec: SseCodec(
-        decodeSuccessData:
-            sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultbool,
-        decodeErrorData: null,
+  bool crateFfiBridgeStopWatch({required String workspaceId}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(workspaceId, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 38)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateFfiBridgeStopWatchConstMeta,
+        argValues: [workspaceId],
+        apiImpl: this,
       ),
-      constMeta: kCrateFfiBridgeStopWatchConstMeta,
-      argValues: [workspaceId],
-      apiImpl: this,
-    ));
+    );
   }
 
-  TaskConstMeta get kCrateFfiBridgeStopWatchConstMeta => const TaskConstMeta(
-        debugName: 'stop_watch',
-        argNames: ['workspaceId'],
-      );
+  TaskConstMeta get kCrateFfiBridgeStopWatchConstMeta =>
+      const TaskConstMeta(debugName: 'stop_watch', argNames: ['workspaceId']);
 
   @override
-  Future<void> crateFfiGlobalStateUpdateGlobalState(
-      {required FfiContext context}) {
-    return handler.executeNormal(NormalTask(
-      callFfi: (port_) {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-            context, serializer);
-        pdeCallFfi(generalizedFrbRustBinding, serializer,
-            funcId: 63, port: port_);
-      },
-      codec: SseCodec(
-        decodeSuccessData: sse_decode_unit,
-        decodeErrorData: null,
+  bool crateFfiBridgeUpdateKeywordGroup({
+    required String groupId,
+    required KeywordGroupInput group,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(groupId, serializer);
+          sse_encode_box_autoadd_keyword_group_input(group, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 39)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateFfiBridgeUpdateKeywordGroupConstMeta,
+        argValues: [groupId, group],
+        apiImpl: this,
       ),
-      constMeta: kCrateFfiGlobalStateUpdateGlobalStateConstMeta,
-      argValues: [context],
-      apiImpl: this,
-    ));
-  }
-
-  TaskConstMeta get kCrateFfiGlobalStateUpdateGlobalStateConstMeta =>
-      const TaskConstMeta(
-        debugName: 'update_global_state',
-        argNames: ['context'],
-      );
-
-  @override
-  FfiResultBool crateFfiBridgeUpdateKeywordGroup(
-      {required String groupId, required KeywordGroupInput group}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
-        final serializer = SseSerializer(generalizedFrbRustBinding);
-        sse_encode_String(groupId, serializer);
-        sse_encode_box_autoadd_keyword_group_input(group, serializer);
-        return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 64)!;
-      },
-      codec: SseCodec(
-        decodeSuccessData:
-            sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultbool,
-        decodeErrorData: null,
-      ),
-      constMeta: kCrateFfiBridgeUpdateKeywordGroupConstMeta,
-      argValues: [groupId, group],
-      apiImpl: this,
-    ));
+    );
   }
 
   TaskConstMeta get kCrateFfiBridgeUpdateKeywordGroupConstMeta =>
@@ -1986,216 +1320,59 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
         argNames: ['groupId', 'group'],
       );
 
-  RustArcIncrementStrongCountFnType
-      get rust_arc_increment_strong_count_AppState => wire
-          .rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState;
+  @override
+  RegexValidationResult crateFfiBridgeValidateRegex({required String pattern}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(pattern, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 40)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_regex_validation_result,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateFfiBridgeValidateRegexConstMeta,
+        argValues: [pattern],
+        apiImpl: this,
+      ),
+    );
+  }
 
-  RustArcDecrementStrongCountFnType
-      get rust_arc_decrement_strong_count_AppState => wire
-          .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState;
-
-  RustArcIncrementStrongCountFnType
-      get rust_arc_increment_strong_count_FfiContext => wire
-          .rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext;
-
-  RustArcDecrementStrongCountFnType
-      get rust_arc_decrement_strong_count_FfiContext => wire
-          .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext;
-
-  RustArcIncrementStrongCountFnType
-      get rust_arc_increment_strong_count_FfiResultString => wire
-          .rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultString;
-
-  RustArcDecrementStrongCountFnType
-      get rust_arc_decrement_strong_count_FfiResultString => wire
-          .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultString;
-
-  RustArcIncrementStrongCountFnType
-      get rust_arc_increment_strong_count_FfiResultTaskMetricsData => wire
-          .rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultTaskMetricsData;
-
-  RustArcDecrementStrongCountFnType
-      get rust_arc_decrement_strong_count_FfiResultTaskMetricsData => wire
-          .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultTaskMetricsData;
+  TaskConstMeta get kCrateFfiBridgeValidateRegexConstMeta =>
+      const TaskConstMeta(debugName: 'validate_regex', argNames: ['pattern']);
 
   RustArcIncrementStrongCountFnType
-      get rust_arc_increment_strong_count_FfiResultWorkspaceStatusData => wire
-          .rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultWorkspaceStatusData;
+  get rust_arc_increment_strong_count_SearchResultEntry => wire
+      .rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry;
 
   RustArcDecrementStrongCountFnType
-      get rust_arc_decrement_strong_count_FfiResultWorkspaceStatusData => wire
-          .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultWorkspaceStatusData;
-
-  RustArcIncrementStrongCountFnType
-      get rust_arc_increment_strong_count_FfiResultBool => wire
-          .rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultbool;
-
-  RustArcDecrementStrongCountFnType
-      get rust_arc_decrement_strong_count_FfiResultBool => wire
-          .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultbool;
-
-  RustArcIncrementStrongCountFnType
-      get rust_arc_increment_strong_count_FfiResultI32 => wire
-          .rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResulti32;
-
-  RustArcDecrementStrongCountFnType
-      get rust_arc_decrement_strong_count_FfiResultI32 => wire
-          .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResulti32;
-
-  RustArcIncrementStrongCountFnType
-      get rust_arc_increment_strong_count_PathBuf => wire
-          .rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf;
-
-  RustArcDecrementStrongCountFnType
-      get rust_arc_decrement_strong_count_PathBuf => wire
-          .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf;
+  get rust_arc_decrement_strong_count_SearchResultEntry => wire
+      .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry;
 
   @protected
-  AppState
-      dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState(
-          dynamic raw) {
+  SearchResultEntry
+  dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
+    dynamic raw,
+  ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
-    return AppStateImpl.frbInternalDcoDecode(raw as List<dynamic>);
+    return SearchResultEntryImpl.frbInternalDcoDecode(raw as List<dynamic>);
   }
 
   @protected
-  FfiContext
-      dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          dynamic raw) {
+  DateTime dco_decode_Chrono_Utc(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
-    return FfiContextImpl.frbInternalDcoDecode(raw as List<dynamic>);
+    return dcoDecodeTimestamp(ts: dco_decode_i_64(raw).toInt(), isUtc: true);
   }
 
   @protected
-  FfiResultString
-      dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultString(
-          dynamic raw) {
+  SearchResultEntry
+  dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
+    dynamic raw,
+  ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
-    return FfiResultStringImpl.frbInternalDcoDecode(raw as List<dynamic>);
-  }
-
-  @protected
-  FfiResultTaskMetricsData
-      dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultTaskMetricsData(
-          dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return FfiResultTaskMetricsDataImpl.frbInternalDcoDecode(
-        raw as List<dynamic>);
-  }
-
-  @protected
-  FfiResultWorkspaceStatusData
-      dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultWorkspaceStatusData(
-          dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return FfiResultWorkspaceStatusDataImpl.frbInternalDcoDecode(
-        raw as List<dynamic>);
-  }
-
-  @protected
-  FfiResultBool
-      dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultbool(
-          dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return FfiResultBoolImpl.frbInternalDcoDecode(raw as List<dynamic>);
-  }
-
-  @protected
-  FfiResultI32
-      dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResulti32(
-          dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return FfiResultI32Impl.frbInternalDcoDecode(raw as List<dynamic>);
-  }
-
-  @protected
-  PathBuf
-      dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf(
-          dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return PathBufImpl.frbInternalDcoDecode(raw as List<dynamic>);
-  }
-
-  @protected
-  FfiContext
-      dco_decode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return FfiContextImpl.frbInternalDcoDecode(raw as List<dynamic>);
-  }
-
-  @protected
-  FfiContext
-      dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return FfiContextImpl.frbInternalDcoDecode(raw as List<dynamic>);
-  }
-
-  @protected
-  AppState
-      dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState(
-          dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return AppStateImpl.frbInternalDcoDecode(raw as List<dynamic>);
-  }
-
-  @protected
-  FfiContext
-      dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return FfiContextImpl.frbInternalDcoDecode(raw as List<dynamic>);
-  }
-
-  @protected
-  FfiResultString
-      dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultString(
-          dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return FfiResultStringImpl.frbInternalDcoDecode(raw as List<dynamic>);
-  }
-
-  @protected
-  FfiResultTaskMetricsData
-      dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultTaskMetricsData(
-          dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return FfiResultTaskMetricsDataImpl.frbInternalDcoDecode(
-        raw as List<dynamic>);
-  }
-
-  @protected
-  FfiResultWorkspaceStatusData
-      dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultWorkspaceStatusData(
-          dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return FfiResultWorkspaceStatusDataImpl.frbInternalDcoDecode(
-        raw as List<dynamic>);
-  }
-
-  @protected
-  FfiResultBool
-      dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultbool(
-          dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return FfiResultBoolImpl.frbInternalDcoDecode(raw as List<dynamic>);
-  }
-
-  @protected
-  FfiResultI32
-      dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResulti32(
-          dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return FfiResultI32Impl.frbInternalDcoDecode(raw as List<dynamic>);
-  }
-
-  @protected
-  PathBuf
-      dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf(
-          dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return PathBufImpl.frbInternalDcoDecode(raw as List<dynamic>);
+    return SearchResultEntryImpl.frbInternalDcoDecode(raw as List<dynamic>);
   }
 
   @protected
@@ -2206,7 +1383,8 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
 
   @protected
   AdvancedFeaturesConfigData dco_decode_advanced_features_config_data(
-      dynamic raw) {
+    dynamic raw,
+  ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
     if (arr.length != 7)
@@ -2229,33 +1407,6 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
   }
 
   @protected
-  AppState
-      dco_decode_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState(
-          dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState(
-        raw);
-  }
-
-  @protected
-  FfiContext
-      dco_decode_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-        raw);
-  }
-
-  @protected
-  PathBuf
-      dco_decode_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf(
-          dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf(
-        raw);
-  }
-
-  @protected
   bool dco_decode_box_autoadd_bool(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as bool;
@@ -2274,9 +1425,35 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
   }
 
   @protected
+  int dco_decode_box_autoadd_i_32(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw as int;
+  }
+
+  @protected
   KeywordGroupInput dco_decode_box_autoadd_keyword_group_input(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_keyword_group_input(raw);
+  }
+
+  @protected
+  SearchFiltersData dco_decode_box_autoadd_search_filters_data(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_search_filters_data(raw);
+  }
+
+  @protected
+  StructuredSearchQueryData dco_decode_box_autoadd_structured_search_query_data(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_structured_search_query_data(raw);
+  }
+
+  @protected
+  TimeRangeData dco_decode_box_autoadd_time_range_data(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_time_range_data(raw);
   }
 
   @protected
@@ -2285,9 +1462,7 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
     final arr = raw as List<dynamic>;
     if (arr.length != 1)
       throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
-    return BridgeContext(
-      initTime: dco_decode_i_64(arr[0]),
-    );
+    return BridgeContext(initTime: dco_decode_i_64(arr[0]));
   }
 
   @protected
@@ -2306,6 +1481,19 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
   double dco_decode_f_64(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as double;
+  }
+
+  @protected
+  FileContentResponseData dco_decode_file_content_response_data(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return FileContentResponseData(
+      content: dco_decode_String(arr[0]),
+      hash: dco_decode_String(arr[1]),
+      size: dco_decode_i_64(arr[2]),
+    );
   }
 
   @protected
@@ -2340,14 +1528,16 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
   KeywordGroupData dco_decode_keyword_group_data(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 5)
-      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
     return KeywordGroupData(
       id: dco_decode_String(arr[0]),
       name: dco_decode_String(arr[1]),
       color: dco_decode_String(arr[2]),
       patterns: dco_decode_list_String(arr[3]),
       enabled: dco_decode_bool(arr[4]),
+      createdAt: dco_decode_Chrono_Utc(arr[5]),
+      updatedAt: dco_decode_Chrono_Utc(arr[6]),
     );
   }
 
@@ -2363,6 +1553,19 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
       patterns: dco_decode_list_String(arr[2]),
       enabled: dco_decode_bool(arr[3]),
     );
+  }
+
+  @protected
+  List<SearchResultEntry>
+  dco_decode_list_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>)
+        .map(
+          dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry,
+        )
+        .toList();
   }
 
   @protected
@@ -2390,6 +1593,28 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
   }
 
   @protected
+  List<SearchHistoryData> dco_decode_list_search_history_data(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_search_history_data).toList();
+  }
+
+  @protected
+  List<SearchTermData> dco_decode_list_search_term_data(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_search_term_data).toList();
+  }
+
+  @protected
+  List<VirtualTreeNodeData> dco_decode_list_virtual_tree_node_data(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>)
+        .map(dco_decode_virtual_tree_node_data)
+        .toList();
+  }
+
+  @protected
   List<WorkspaceData> dco_decode_list_workspace_data(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_workspace_data).toList();
@@ -2402,42 +1627,29 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
   }
 
   @protected
-  AppState?
-      dco_decode_opt_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState(
-          dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return raw == null
-        ? null
-        : dco_decode_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState(
-            raw);
-  }
-
-  @protected
-  FfiContext?
-      dco_decode_opt_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return raw == null
-        ? null
-        : dco_decode_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-            raw);
-  }
-
-  @protected
-  PathBuf?
-      dco_decode_opt_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf(
-          dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return raw == null
-        ? null
-        : dco_decode_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf(
-            raw);
-  }
-
-  @protected
   bool? dco_decode_opt_box_autoadd_bool(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_bool(raw);
+  }
+
+  @protected
+  int? dco_decode_opt_box_autoadd_i_32(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_i_32(raw);
+  }
+
+  @protected
+  SearchFiltersData? dco_decode_opt_box_autoadd_search_filters_data(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_search_filters_data(raw);
+  }
+
+  @protected
+  TimeRangeData? dco_decode_opt_box_autoadd_time_range_data(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_time_range_data(raw);
   }
 
   @protected
@@ -2459,6 +1671,83 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
   }
 
   @protected
+  QueryOperatorData dco_decode_query_operator_data(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return QueryOperatorData.values[raw as int];
+  }
+
+  @protected
+  RegexValidationResult dco_decode_regex_validation_result(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return RegexValidationResult(
+      valid: dco_decode_bool(arr[0]),
+      errorMessage: dco_decode_opt_String(arr[1]),
+    );
+  }
+
+  @protected
+  SearchFiltersData dco_decode_search_filters_data(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return SearchFiltersData(
+      timeRange: dco_decode_opt_box_autoadd_time_range_data(arr[0]),
+      levels: dco_decode_list_String(arr[1]),
+      filePattern: dco_decode_opt_String(arr[2]),
+    );
+  }
+
+  @protected
+  SearchHistoryData dco_decode_search_history_data(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return SearchHistoryData(
+      query: dco_decode_String(arr[0]),
+      workspaceId: dco_decode_String(arr[1]),
+      resultCount: dco_decode_i_32(arr[2]),
+      searchedAt: dco_decode_String(arr[3]),
+    );
+  }
+
+  @protected
+  SearchTermData dco_decode_search_term_data(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    return SearchTermData(
+      id: dco_decode_String(arr[0]),
+      value: dco_decode_String(arr[1]),
+      operator_: dco_decode_query_operator_data(arr[2]),
+      isRegex: dco_decode_bool(arr[3]),
+      priority: dco_decode_u_32(arr[4]),
+      enabled: dco_decode_bool(arr[5]),
+      caseSensitive: dco_decode_bool(arr[6]),
+    );
+  }
+
+  @protected
+  StructuredSearchQueryData dco_decode_structured_search_query_data(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return StructuredSearchQueryData(
+      terms: dco_decode_list_search_term_data(arr[0]),
+      globalOperator: dco_decode_query_operator_data(arr[1]),
+      filters: dco_decode_opt_box_autoadd_search_filters_data(arr[2]),
+    );
+  }
+
+  @protected
   TaskMetricsData dco_decode_task_metrics_data(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -2471,6 +1760,24 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
       failedTasks: dco_decode_i_32(arr[3]),
       stoppedTasks: dco_decode_i_32(arr[4]),
     );
+  }
+
+  @protected
+  TimeRangeData dco_decode_time_range_data(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return TimeRangeData(
+      start: dco_decode_opt_String(arr[0]),
+      end: dco_decode_opt_String(arr[1]),
+    );
+  }
+
+  @protected
+  int dco_decode_u_32(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw as int;
   }
 
   @protected
@@ -2492,6 +1799,31 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
   }
 
   @protected
+  VirtualTreeNodeData dco_decode_virtual_tree_node_data(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    switch (raw[0]) {
+      case 0:
+        return VirtualTreeNodeData_File(
+          name: dco_decode_String(raw[1]),
+          path: dco_decode_String(raw[2]),
+          hash: dco_decode_String(raw[3]),
+          size: dco_decode_i_64(raw[4]),
+          mimeType: dco_decode_opt_String(raw[5]),
+        );
+      case 1:
+        return VirtualTreeNodeData_Archive(
+          name: dco_decode_String(raw[1]),
+          path: dco_decode_String(raw[2]),
+          hash: dco_decode_String(raw[3]),
+          archiveType: dco_decode_String(raw[4]),
+          children: dco_decode_list_virtual_tree_node_data(raw[5]),
+        );
+      default:
+        throw Exception('unreachable');
+    }
+  }
+
+  @protected
   WorkspaceData dco_decode_workspace_data(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -2505,21 +1837,6 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
       size: dco_decode_String(arr[4]),
       files: dco_decode_i_32(arr[5]),
       watching: dco_decode_opt_box_autoadd_bool(arr[6]),
-    );
-  }
-
-  @protected
-  WorkspaceLoadResponseData dco_decode_workspace_load_response_data(
-      dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    final arr = raw as List<dynamic>;
-    if (arr.length != 4)
-      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
-    return WorkspaceLoadResponseData(
-      workspaceId: dco_decode_String(arr[0]),
-      status: dco_decode_String(arr[1]),
-      fileCount: dco_decode_i_32(arr[2]),
-      totalSize: dco_decode_String(arr[3]),
     );
   }
 
@@ -2539,165 +1856,34 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
   }
 
   @protected
-  AppState
-      sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState(
-          SseDeserializer deserializer) {
+  SearchResultEntry
+  sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
+    SseDeserializer deserializer,
+  ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    return AppStateImpl.frbInternalSseDecode(
-        sse_decode_usize(deserializer), sse_decode_i_32(deserializer));
+    return SearchResultEntryImpl.frbInternalSseDecode(
+      sse_decode_usize(deserializer),
+      sse_decode_i_32(deserializer),
+    );
   }
 
   @protected
-  FfiContext
-      sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          SseDeserializer deserializer) {
+  DateTime sse_decode_Chrono_Utc(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    return FfiContextImpl.frbInternalSseDecode(
-        sse_decode_usize(deserializer), sse_decode_i_32(deserializer));
+    var inner = sse_decode_i_64(deserializer);
+    return DateTime.fromMicrosecondsSinceEpoch(inner.toInt(), isUtc: true);
   }
 
   @protected
-  FfiResultString
-      sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultString(
-          SseDeserializer deserializer) {
+  SearchResultEntry
+  sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
+    SseDeserializer deserializer,
+  ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    return FfiResultStringImpl.frbInternalSseDecode(
-        sse_decode_usize(deserializer), sse_decode_i_32(deserializer));
-  }
-
-  @protected
-  FfiResultTaskMetricsData
-      sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultTaskMetricsData(
-          SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    return FfiResultTaskMetricsDataImpl.frbInternalSseDecode(
-        sse_decode_usize(deserializer), sse_decode_i_32(deserializer));
-  }
-
-  @protected
-  FfiResultWorkspaceStatusData
-      sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultWorkspaceStatusData(
-          SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    return FfiResultWorkspaceStatusDataImpl.frbInternalSseDecode(
-        sse_decode_usize(deserializer), sse_decode_i_32(deserializer));
-  }
-
-  @protected
-  FfiResultBool
-      sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultbool(
-          SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    return FfiResultBoolImpl.frbInternalSseDecode(
-        sse_decode_usize(deserializer), sse_decode_i_32(deserializer));
-  }
-
-  @protected
-  FfiResultI32
-      sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResulti32(
-          SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    return FfiResultI32Impl.frbInternalSseDecode(
-        sse_decode_usize(deserializer), sse_decode_i_32(deserializer));
-  }
-
-  @protected
-  PathBuf
-      sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf(
-          SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    return PathBufImpl.frbInternalSseDecode(
-        sse_decode_usize(deserializer), sse_decode_i_32(deserializer));
-  }
-
-  @protected
-  FfiContext
-      sse_decode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    return FfiContextImpl.frbInternalSseDecode(
-        sse_decode_usize(deserializer), sse_decode_i_32(deserializer));
-  }
-
-  @protected
-  FfiContext
-      sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    return FfiContextImpl.frbInternalSseDecode(
-        sse_decode_usize(deserializer), sse_decode_i_32(deserializer));
-  }
-
-  @protected
-  AppState
-      sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState(
-          SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    return AppStateImpl.frbInternalSseDecode(
-        sse_decode_usize(deserializer), sse_decode_i_32(deserializer));
-  }
-
-  @protected
-  FfiContext
-      sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    return FfiContextImpl.frbInternalSseDecode(
-        sse_decode_usize(deserializer), sse_decode_i_32(deserializer));
-  }
-
-  @protected
-  FfiResultString
-      sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultString(
-          SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    return FfiResultStringImpl.frbInternalSseDecode(
-        sse_decode_usize(deserializer), sse_decode_i_32(deserializer));
-  }
-
-  @protected
-  FfiResultTaskMetricsData
-      sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultTaskMetricsData(
-          SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    return FfiResultTaskMetricsDataImpl.frbInternalSseDecode(
-        sse_decode_usize(deserializer), sse_decode_i_32(deserializer));
-  }
-
-  @protected
-  FfiResultWorkspaceStatusData
-      sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultWorkspaceStatusData(
-          SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    return FfiResultWorkspaceStatusDataImpl.frbInternalSseDecode(
-        sse_decode_usize(deserializer), sse_decode_i_32(deserializer));
-  }
-
-  @protected
-  FfiResultBool
-      sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultbool(
-          SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    return FfiResultBoolImpl.frbInternalSseDecode(
-        sse_decode_usize(deserializer), sse_decode_i_32(deserializer));
-  }
-
-  @protected
-  FfiResultI32
-      sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResulti32(
-          SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    return FfiResultI32Impl.frbInternalSseDecode(
-        sse_decode_usize(deserializer), sse_decode_i_32(deserializer));
-  }
-
-  @protected
-  PathBuf
-      sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf(
-          SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    return PathBufImpl.frbInternalSseDecode(
-        sse_decode_usize(deserializer), sse_decode_i_32(deserializer));
+    return SearchResultEntryImpl.frbInternalSseDecode(
+      sse_decode_usize(deserializer),
+      sse_decode_i_32(deserializer),
+    );
   }
 
   @protected
@@ -2709,7 +1895,8 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
 
   @protected
   AdvancedFeaturesConfigData sse_decode_advanced_features_config_data(
-      SseDeserializer deserializer) {
+    SseDeserializer deserializer,
+  ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_enableFilterEngine = sse_decode_bool(deserializer);
     var var_enableRegexEngine = sse_decode_bool(deserializer);
@@ -2719,46 +1906,20 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
     var var_autocompleteLimit = sse_decode_i_32(deserializer);
     var var_timePartitionSizeSecs = sse_decode_i_32(deserializer);
     return AdvancedFeaturesConfigData(
-        enableFilterEngine: var_enableFilterEngine,
-        enableRegexEngine: var_enableRegexEngine,
-        enableTimePartition: var_enableTimePartition,
-        enableAutocomplete: var_enableAutocomplete,
-        regexCacheSize: var_regexCacheSize,
-        autocompleteLimit: var_autocompleteLimit,
-        timePartitionSizeSecs: var_timePartitionSizeSecs);
+      enableFilterEngine: var_enableFilterEngine,
+      enableRegexEngine: var_enableRegexEngine,
+      enableTimePartition: var_enableTimePartition,
+      enableAutocomplete: var_enableAutocomplete,
+      regexCacheSize: var_regexCacheSize,
+      autocompleteLimit: var_autocompleteLimit,
+      timePartitionSizeSecs: var_timePartitionSizeSecs,
+    );
   }
 
   @protected
   bool sse_decode_bool(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return deserializer.buffer.getUint8() != 0;
-  }
-
-  @protected
-  AppState
-      sse_decode_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState(
-          SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    return (sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState(
-        deserializer));
-  }
-
-  @protected
-  FfiContext
-      sse_decode_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    return (sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-        deserializer));
-  }
-
-  @protected
-  PathBuf
-      sse_decode_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf(
-          SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    return (sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf(
-        deserializer));
   }
 
   @protected
@@ -2769,7 +1930,8 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
 
   @protected
   BridgeContext sse_decode_box_autoadd_bridge_context(
-      SseDeserializer deserializer) {
+    SseDeserializer deserializer,
+  ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_bridge_context(deserializer));
   }
@@ -2781,10 +1943,41 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
   }
 
   @protected
+  int sse_decode_box_autoadd_i_32(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_i_32(deserializer));
+  }
+
+  @protected
   KeywordGroupInput sse_decode_box_autoadd_keyword_group_input(
-      SseDeserializer deserializer) {
+    SseDeserializer deserializer,
+  ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_keyword_group_input(deserializer));
+  }
+
+  @protected
+  SearchFiltersData sse_decode_box_autoadd_search_filters_data(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_search_filters_data(deserializer));
+  }
+
+  @protected
+  StructuredSearchQueryData sse_decode_box_autoadd_structured_search_query_data(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_structured_search_query_data(deserializer));
+  }
+
+  @protected
+  TimeRangeData sse_decode_box_autoadd_time_range_data(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_time_range_data(deserializer));
   }
 
   @protected
@@ -2798,10 +1991,13 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
   ConfigData sse_decode_config_data(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_fileFilter = sse_decode_file_filter_config_data(deserializer);
-    var var_advancedFeatures =
-        sse_decode_advanced_features_config_data(deserializer);
+    var var_advancedFeatures = sse_decode_advanced_features_config_data(
+      deserializer,
+    );
     return ConfigData(
-        fileFilter: var_fileFilter, advancedFeatures: var_advancedFeatures);
+      fileFilter: var_fileFilter,
+      advancedFeatures: var_advancedFeatures,
+    );
   }
 
   @protected
@@ -2811,8 +2007,24 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
   }
 
   @protected
+  FileContentResponseData sse_decode_file_content_response_data(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_content = sse_decode_String(deserializer);
+    var var_hash = sse_decode_String(deserializer);
+    var var_size = sse_decode_i_64(deserializer);
+    return FileContentResponseData(
+      content: var_content,
+      hash: var_hash,
+      size: var_size,
+    );
+  }
+
+  @protected
   FileFilterConfigData sse_decode_file_filter_config_data(
-      SseDeserializer deserializer) {
+    SseDeserializer deserializer,
+  ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_enabled = sse_decode_bool(deserializer);
     var var_binaryDetectionEnabled = sse_decode_bool(deserializer);
@@ -2821,12 +2033,13 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
     var var_allowedExtensions = sse_decode_list_String(deserializer);
     var var_forbiddenExtensions = sse_decode_list_String(deserializer);
     return FileFilterConfigData(
-        enabled: var_enabled,
-        binaryDetectionEnabled: var_binaryDetectionEnabled,
-        mode: var_mode,
-        filenamePatterns: var_filenamePatterns,
-        allowedExtensions: var_allowedExtensions,
-        forbiddenExtensions: var_forbiddenExtensions);
+      enabled: var_enabled,
+      binaryDetectionEnabled: var_binaryDetectionEnabled,
+      mode: var_mode,
+      filenamePatterns: var_filenamePatterns,
+      allowedExtensions: var_allowedExtensions,
+      forbiddenExtensions: var_forbiddenExtensions,
+    );
   }
 
   @protected
@@ -2849,27 +2062,53 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
     var var_color = sse_decode_String(deserializer);
     var var_patterns = sse_decode_list_String(deserializer);
     var var_enabled = sse_decode_bool(deserializer);
+    var var_createdAt = sse_decode_Chrono_Utc(deserializer);
+    var var_updatedAt = sse_decode_Chrono_Utc(deserializer);
     return KeywordGroupData(
-        id: var_id,
-        name: var_name,
-        color: var_color,
-        patterns: var_patterns,
-        enabled: var_enabled);
+      id: var_id,
+      name: var_name,
+      color: var_color,
+      patterns: var_patterns,
+      enabled: var_enabled,
+      createdAt: var_createdAt,
+      updatedAt: var_updatedAt,
+    );
   }
 
   @protected
   KeywordGroupInput sse_decode_keyword_group_input(
-      SseDeserializer deserializer) {
+    SseDeserializer deserializer,
+  ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_name = sse_decode_String(deserializer);
     var var_color = sse_decode_String(deserializer);
     var var_patterns = sse_decode_list_String(deserializer);
     var var_enabled = sse_decode_bool(deserializer);
     return KeywordGroupInput(
-        name: var_name,
-        color: var_color,
-        patterns: var_patterns,
-        enabled: var_enabled);
+      name: var_name,
+      color: var_color,
+      patterns: var_patterns,
+      enabled: var_enabled,
+    );
+  }
+
+  @protected
+  List<SearchResultEntry>
+  sse_decode_list_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <SearchResultEntry>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(
+        sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
+          deserializer,
+        ),
+      );
+    }
+    return ans_;
   }
 
   @protected
@@ -2886,7 +2125,8 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
 
   @protected
   List<KeywordGroupData> sse_decode_list_keyword_group_data(
-      SseDeserializer deserializer) {
+    SseDeserializer deserializer,
+  ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
     var len_ = sse_decode_i_32(deserializer);
@@ -2912,8 +2152,51 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
   }
 
   @protected
+  List<SearchHistoryData> sse_decode_list_search_history_data(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <SearchHistoryData>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_search_history_data(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<SearchTermData> sse_decode_list_search_term_data(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <SearchTermData>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_search_term_data(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<VirtualTreeNodeData> sse_decode_list_virtual_tree_node_data(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <VirtualTreeNodeData>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_virtual_tree_node_data(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   List<WorkspaceData> sse_decode_list_workspace_data(
-      SseDeserializer deserializer) {
+    SseDeserializer deserializer,
+  ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
     var len_ = sse_decode_i_32(deserializer);
@@ -2936,48 +2219,6 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
   }
 
   @protected
-  AppState?
-      sse_decode_opt_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState(
-          SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-
-    if (sse_decode_bool(deserializer)) {
-      return (sse_decode_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState(
-          deserializer));
-    } else {
-      return null;
-    }
-  }
-
-  @protected
-  FfiContext?
-      sse_decode_opt_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-
-    if (sse_decode_bool(deserializer)) {
-      return (sse_decode_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          deserializer));
-    } else {
-      return null;
-    }
-  }
-
-  @protected
-  PathBuf?
-      sse_decode_opt_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf(
-          SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-
-    if (sse_decode_bool(deserializer)) {
-      return (sse_decode_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf(
-          deserializer));
-    } else {
-      return null;
-    }
-  }
-
-  @protected
   bool? sse_decode_opt_box_autoadd_bool(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -2989,8 +2230,46 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
   }
 
   @protected
+  int? sse_decode_opt_box_autoadd_i_32(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_i_32(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  SearchFiltersData? sse_decode_opt_box_autoadd_search_filters_data(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_search_filters_data(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  TimeRangeData? sse_decode_opt_box_autoadd_time_range_data(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_time_range_data(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   PerformanceMetricsData sse_decode_performance_metrics_data(
-      SseDeserializer deserializer) {
+    SseDeserializer deserializer,
+  ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_searchLatency = sse_decode_f_64(deserializer);
     var var_searchThroughput = sse_decode_f_64(deserializer);
@@ -3001,14 +2280,109 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
     var var_latencyHistory = sse_decode_list_prim_f_64_strict(deserializer);
     var var_avgLatency = sse_decode_f_64(deserializer);
     return PerformanceMetricsData(
-        searchLatency: var_searchLatency,
-        searchThroughput: var_searchThroughput,
-        cacheHitRate: var_cacheHitRate,
-        cacheSize: var_cacheSize,
-        totalQueries: var_totalQueries,
-        cacheHits: var_cacheHits,
-        latencyHistory: var_latencyHistory,
-        avgLatency: var_avgLatency);
+      searchLatency: var_searchLatency,
+      searchThroughput: var_searchThroughput,
+      cacheHitRate: var_cacheHitRate,
+      cacheSize: var_cacheSize,
+      totalQueries: var_totalQueries,
+      cacheHits: var_cacheHits,
+      latencyHistory: var_latencyHistory,
+      avgLatency: var_avgLatency,
+    );
+  }
+
+  @protected
+  QueryOperatorData sse_decode_query_operator_data(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return QueryOperatorData.values[inner];
+  }
+
+  @protected
+  RegexValidationResult sse_decode_regex_validation_result(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_valid = sse_decode_bool(deserializer);
+    var var_errorMessage = sse_decode_opt_String(deserializer);
+    return RegexValidationResult(
+      valid: var_valid,
+      errorMessage: var_errorMessage,
+    );
+  }
+
+  @protected
+  SearchFiltersData sse_decode_search_filters_data(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_timeRange = sse_decode_opt_box_autoadd_time_range_data(
+      deserializer,
+    );
+    var var_levels = sse_decode_list_String(deserializer);
+    var var_filePattern = sse_decode_opt_String(deserializer);
+    return SearchFiltersData(
+      timeRange: var_timeRange,
+      levels: var_levels,
+      filePattern: var_filePattern,
+    );
+  }
+
+  @protected
+  SearchHistoryData sse_decode_search_history_data(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_query = sse_decode_String(deserializer);
+    var var_workspaceId = sse_decode_String(deserializer);
+    var var_resultCount = sse_decode_i_32(deserializer);
+    var var_searchedAt = sse_decode_String(deserializer);
+    return SearchHistoryData(
+      query: var_query,
+      workspaceId: var_workspaceId,
+      resultCount: var_resultCount,
+      searchedAt: var_searchedAt,
+    );
+  }
+
+  @protected
+  SearchTermData sse_decode_search_term_data(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_id = sse_decode_String(deserializer);
+    var var_value = sse_decode_String(deserializer);
+    var var_operator_ = sse_decode_query_operator_data(deserializer);
+    var var_isRegex = sse_decode_bool(deserializer);
+    var var_priority = sse_decode_u_32(deserializer);
+    var var_enabled = sse_decode_bool(deserializer);
+    var var_caseSensitive = sse_decode_bool(deserializer);
+    return SearchTermData(
+      id: var_id,
+      value: var_value,
+      operator_: var_operator_,
+      isRegex: var_isRegex,
+      priority: var_priority,
+      enabled: var_enabled,
+      caseSensitive: var_caseSensitive,
+    );
+  }
+
+  @protected
+  StructuredSearchQueryData sse_decode_structured_search_query_data(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_terms = sse_decode_list_search_term_data(deserializer);
+    var var_globalOperator = sse_decode_query_operator_data(deserializer);
+    var var_filters = sse_decode_opt_box_autoadd_search_filters_data(
+      deserializer,
+    );
+    return StructuredSearchQueryData(
+      terms: var_terms,
+      globalOperator: var_globalOperator,
+      filters: var_filters,
+    );
   }
 
   @protected
@@ -3020,11 +2394,26 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
     var var_failedTasks = sse_decode_i_32(deserializer);
     var var_stoppedTasks = sse_decode_i_32(deserializer);
     return TaskMetricsData(
-        totalTasks: var_totalTasks,
-        runningTasks: var_runningTasks,
-        completedTasks: var_completedTasks,
-        failedTasks: var_failedTasks,
-        stoppedTasks: var_stoppedTasks);
+      totalTasks: var_totalTasks,
+      runningTasks: var_runningTasks,
+      completedTasks: var_completedTasks,
+      failedTasks: var_failedTasks,
+      stoppedTasks: var_stoppedTasks,
+    );
+  }
+
+  @protected
+  TimeRangeData sse_decode_time_range_data(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_start = sse_decode_opt_String(deserializer);
+    var var_end = sse_decode_opt_String(deserializer);
+    return TimeRangeData(start: var_start, end: var_end);
+  }
+
+  @protected
+  int sse_decode_u_32(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return deserializer.buffer.getUint32();
   }
 
   @protected
@@ -3045,6 +2434,45 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
   }
 
   @protected
+  VirtualTreeNodeData sse_decode_virtual_tree_node_data(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var tag_ = sse_decode_i_32(deserializer);
+    switch (tag_) {
+      case 0:
+        var var_name = sse_decode_String(deserializer);
+        var var_path = sse_decode_String(deserializer);
+        var var_hash = sse_decode_String(deserializer);
+        var var_size = sse_decode_i_64(deserializer);
+        var var_mimeType = sse_decode_opt_String(deserializer);
+        return VirtualTreeNodeData_File(
+          name: var_name,
+          path: var_path,
+          hash: var_hash,
+          size: var_size,
+          mimeType: var_mimeType,
+        );
+      case 1:
+        var var_name = sse_decode_String(deserializer);
+        var var_path = sse_decode_String(deserializer);
+        var var_hash = sse_decode_String(deserializer);
+        var var_archiveType = sse_decode_String(deserializer);
+        var var_children = sse_decode_list_virtual_tree_node_data(deserializer);
+        return VirtualTreeNodeData_Archive(
+          name: var_name,
+          path: var_path,
+          hash: var_hash,
+          archiveType: var_archiveType,
+          children: var_children,
+        );
+      default:
+        throw UnimplementedError('');
+    }
+  }
+
+  @protected
   WorkspaceData sse_decode_workspace_data(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_id = sse_decode_String(deserializer);
@@ -3055,33 +2483,20 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
     var var_files = sse_decode_i_32(deserializer);
     var var_watching = sse_decode_opt_box_autoadd_bool(deserializer);
     return WorkspaceData(
-        id: var_id,
-        name: var_name,
-        path: var_path,
-        status: var_status,
-        size: var_size,
-        files: var_files,
-        watching: var_watching);
-  }
-
-  @protected
-  WorkspaceLoadResponseData sse_decode_workspace_load_response_data(
-      SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_workspaceId = sse_decode_String(deserializer);
-    var var_status = sse_decode_String(deserializer);
-    var var_fileCount = sse_decode_i_32(deserializer);
-    var var_totalSize = sse_decode_String(deserializer);
-    return WorkspaceLoadResponseData(
-        workspaceId: var_workspaceId,
-        status: var_status,
-        fileCount: var_fileCount,
-        totalSize: var_totalSize);
+      id: var_id,
+      name: var_name,
+      path: var_path,
+      status: var_status,
+      size: var_size,
+      files: var_files,
+      watching: var_watching,
+    );
   }
 
   @protected
   WorkspaceStatusData sse_decode_workspace_status_data(
-      SseDeserializer deserializer) {
+    SseDeserializer deserializer,
+  ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_id = sse_decode_String(deserializer);
     var var_name = sse_decode_String(deserializer);
@@ -3089,185 +2504,47 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
     var var_size = sse_decode_String(deserializer);
     var var_files = sse_decode_i_32(deserializer);
     return WorkspaceStatusData(
-        id: var_id,
-        name: var_name,
-        status: var_status,
-        size: var_size,
-        files: var_files);
+      id: var_id,
+      name: var_name,
+      status: var_status,
+      size: var_size,
+      files: var_files,
+    );
   }
 
   @protected
   void
-      sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState(
-          AppState self, SseSerializer serializer) {
+  sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
+    SearchResultEntry self,
+    SseSerializer serializer,
+  ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_usize(
-        (self as AppStateImpl).frbInternalSseEncode(move: true), serializer);
+      (self as SearchResultEntryImpl).frbInternalSseEncode(move: true),
+      serializer,
+    );
+  }
+
+  @protected
+  void sse_encode_Chrono_Utc(DateTime self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_64(
+      PlatformInt64Util.from(self.microsecondsSinceEpoch),
+      serializer,
+    );
   }
 
   @protected
   void
-      sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          FfiContext self, SseSerializer serializer) {
+  sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
+    SearchResultEntry self,
+    SseSerializer serializer,
+  ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_usize(
-        (self as FfiContextImpl).frbInternalSseEncode(move: true), serializer);
-  }
-
-  @protected
-  void
-      sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultString(
-          FfiResultString self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_usize(
-        (self as FfiResultStringImpl).frbInternalSseEncode(move: true),
-        serializer);
-  }
-
-  @protected
-  void
-      sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultTaskMetricsData(
-          FfiResultTaskMetricsData self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_usize(
-        (self as FfiResultTaskMetricsDataImpl).frbInternalSseEncode(move: true),
-        serializer);
-  }
-
-  @protected
-  void
-      sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultWorkspaceStatusData(
-          FfiResultWorkspaceStatusData self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_usize(
-        (self as FfiResultWorkspaceStatusDataImpl)
-            .frbInternalSseEncode(move: true),
-        serializer);
-  }
-
-  @protected
-  void
-      sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultbool(
-          FfiResultBool self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_usize(
-        (self as FfiResultBoolImpl).frbInternalSseEncode(move: true),
-        serializer);
-  }
-
-  @protected
-  void
-      sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResulti32(
-          FfiResultI32 self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_usize(
-        (self as FfiResultI32Impl).frbInternalSseEncode(move: true),
-        serializer);
-  }
-
-  @protected
-  void
-      sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf(
-          PathBuf self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_usize(
-        (self as PathBufImpl).frbInternalSseEncode(move: true), serializer);
-  }
-
-  @protected
-  void
-      sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          FfiContext self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_usize(
-        (self as FfiContextImpl).frbInternalSseEncode(move: false), serializer);
-  }
-
-  @protected
-  void
-      sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          FfiContext self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_usize(
-        (self as FfiContextImpl).frbInternalSseEncode(move: false), serializer);
-  }
-
-  @protected
-  void
-      sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState(
-          AppState self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_usize(
-        (self as AppStateImpl).frbInternalSseEncode(move: null), serializer);
-  }
-
-  @protected
-  void
-      sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          FfiContext self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_usize(
-        (self as FfiContextImpl).frbInternalSseEncode(move: null), serializer);
-  }
-
-  @protected
-  void
-      sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultString(
-          FfiResultString self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_usize(
-        (self as FfiResultStringImpl).frbInternalSseEncode(move: null),
-        serializer);
-  }
-
-  @protected
-  void
-      sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultTaskMetricsData(
-          FfiResultTaskMetricsData self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_usize(
-        (self as FfiResultTaskMetricsDataImpl).frbInternalSseEncode(move: null),
-        serializer);
-  }
-
-  @protected
-  void
-      sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultWorkspaceStatusData(
-          FfiResultWorkspaceStatusData self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_usize(
-        (self as FfiResultWorkspaceStatusDataImpl)
-            .frbInternalSseEncode(move: null),
-        serializer);
-  }
-
-  @protected
-  void
-      sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultbool(
-          FfiResultBool self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_usize(
-        (self as FfiResultBoolImpl).frbInternalSseEncode(move: null),
-        serializer);
-  }
-
-  @protected
-  void
-      sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResulti32(
-          FfiResultI32 self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_usize(
-        (self as FfiResultI32Impl).frbInternalSseEncode(move: null),
-        serializer);
-  }
-
-  @protected
-  void
-      sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf(
-          PathBuf self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_usize(
-        (self as PathBufImpl).frbInternalSseEncode(move: null), serializer);
+      (self as SearchResultEntryImpl).frbInternalSseEncode(move: null),
+      serializer,
+    );
   }
 
   @protected
@@ -3278,7 +2555,9 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
 
   @protected
   void sse_encode_advanced_features_config_data(
-      AdvancedFeaturesConfigData self, SseSerializer serializer) {
+    AdvancedFeaturesConfigData self,
+    SseSerializer serializer,
+  ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_bool(self.enableFilterEngine, serializer);
     sse_encode_bool(self.enableRegexEngine, serializer);
@@ -3296,33 +2575,6 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
   }
 
   @protected
-  void
-      sse_encode_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState(
-          AppState self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState(
-        self, serializer);
-  }
-
-  @protected
-  void
-      sse_encode_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          FfiContext self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-        self, serializer);
-  }
-
-  @protected
-  void
-      sse_encode_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf(
-          PathBuf self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf(
-        self, serializer);
-  }
-
-  @protected
   void sse_encode_box_autoadd_bool(bool self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_bool(self, serializer);
@@ -3330,23 +2582,62 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
 
   @protected
   void sse_encode_box_autoadd_bridge_context(
-      BridgeContext self, SseSerializer serializer) {
+    BridgeContext self,
+    SseSerializer serializer,
+  ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_bridge_context(self, serializer);
   }
 
   @protected
   void sse_encode_box_autoadd_config_data(
-      ConfigData self, SseSerializer serializer) {
+    ConfigData self,
+    SseSerializer serializer,
+  ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_config_data(self, serializer);
   }
 
   @protected
+  void sse_encode_box_autoadd_i_32(int self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_keyword_group_input(
-      KeywordGroupInput self, SseSerializer serializer) {
+    KeywordGroupInput self,
+    SseSerializer serializer,
+  ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_keyword_group_input(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_search_filters_data(
+    SearchFiltersData self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_search_filters_data(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_structured_search_query_data(
+    StructuredSearchQueryData self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_structured_search_query_data(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_time_range_data(
+    TimeRangeData self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_time_range_data(self, serializer);
   }
 
   @protected
@@ -3369,8 +2660,21 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
   }
 
   @protected
+  void sse_encode_file_content_response_data(
+    FileContentResponseData self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.content, serializer);
+    sse_encode_String(self.hash, serializer);
+    sse_encode_i_64(self.size, serializer);
+  }
+
+  @protected
   void sse_encode_file_filter_config_data(
-      FileFilterConfigData self, SseSerializer serializer) {
+    FileFilterConfigData self,
+    SseSerializer serializer,
+  ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_bool(self.enabled, serializer);
     sse_encode_bool(self.binaryDetectionEnabled, serializer);
@@ -3394,9 +2698,25 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
 
   @protected
   void sse_encode_keyword_group_data(
-      KeywordGroupData self, SseSerializer serializer) {
+    KeywordGroupData self,
+    SseSerializer serializer,
+  ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.id, serializer);
+    sse_encode_String(self.name, serializer);
+    sse_encode_String(self.color, serializer);
+    sse_encode_list_String(self.patterns, serializer);
+    sse_encode_bool(self.enabled, serializer);
+    sse_encode_Chrono_Utc(self.createdAt, serializer);
+    sse_encode_Chrono_Utc(self.updatedAt, serializer);
+  }
+
+  @protected
+  void sse_encode_keyword_group_input(
+    KeywordGroupInput self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.name, serializer);
     sse_encode_String(self.color, serializer);
     sse_encode_list_String(self.patterns, serializer);
@@ -3404,13 +2724,19 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
   }
 
   @protected
-  void sse_encode_keyword_group_input(
-      KeywordGroupInput self, SseSerializer serializer) {
+  void
+  sse_encode_list_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
+    List<SearchResultEntry> self,
+    SseSerializer serializer,
+  ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_String(self.name, serializer);
-    sse_encode_String(self.color, serializer);
-    sse_encode_list_String(self.patterns, serializer);
-    sse_encode_bool(self.enabled, serializer);
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
+        item,
+        serializer,
+      );
+    }
   }
 
   @protected
@@ -3424,7 +2750,9 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
 
   @protected
   void sse_encode_list_keyword_group_data(
-      List<KeywordGroupData> self, SseSerializer serializer) {
+    List<KeywordGroupData> self,
+    SseSerializer serializer,
+  ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
@@ -3434,7 +2762,9 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
 
   @protected
   void sse_encode_list_prim_f_64_strict(
-      Float64List self, SseSerializer serializer) {
+    Float64List self,
+    SseSerializer serializer,
+  ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.length, serializer);
     serializer.buffer.putFloat64List(self);
@@ -3442,15 +2772,55 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
 
   @protected
   void sse_encode_list_prim_u_8_strict(
-      Uint8List self, SseSerializer serializer) {
+    Uint8List self,
+    SseSerializer serializer,
+  ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.length, serializer);
     serializer.buffer.putUint8List(self);
   }
 
   @protected
+  void sse_encode_list_search_history_data(
+    List<SearchHistoryData> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_search_history_data(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_search_term_data(
+    List<SearchTermData> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_search_term_data(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_virtual_tree_node_data(
+    List<VirtualTreeNodeData> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_virtual_tree_node_data(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_workspace_data(
-      List<WorkspaceData> self, SseSerializer serializer) {
+    List<WorkspaceData> self,
+    SseSerializer serializer,
+  ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
@@ -3469,45 +2839,6 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
   }
 
   @protected
-  void
-      sse_encode_opt_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState(
-          AppState? self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-
-    sse_encode_bool(self != null, serializer);
-    if (self != null) {
-      sse_encode_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState(
-          self, serializer);
-    }
-  }
-
-  @protected
-  void
-      sse_encode_opt_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          FfiContext? self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-
-    sse_encode_bool(self != null, serializer);
-    if (self != null) {
-      sse_encode_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          self, serializer);
-    }
-  }
-
-  @protected
-  void
-      sse_encode_opt_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf(
-          PathBuf? self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-
-    sse_encode_bool(self != null, serializer);
-    if (self != null) {
-      sse_encode_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf(
-          self, serializer);
-    }
-  }
-
-  @protected
   void sse_encode_opt_box_autoadd_bool(bool? self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -3518,8 +2849,46 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
   }
 
   @protected
+  void sse_encode_opt_box_autoadd_i_32(int? self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_i_32(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_search_filters_data(
+    SearchFiltersData? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_search_filters_data(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_time_range_data(
+    TimeRangeData? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_time_range_data(self, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_performance_metrics_data(
-      PerformanceMetricsData self, SseSerializer serializer) {
+    PerformanceMetricsData self,
+    SseSerializer serializer,
+  ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_f_64(self.searchLatency, serializer);
     sse_encode_f_64(self.searchThroughput, serializer);
@@ -3532,14 +2901,100 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
   }
 
   @protected
+  void sse_encode_query_operator_data(
+    QueryOperatorData self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_regex_validation_result(
+    RegexValidationResult self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_bool(self.valid, serializer);
+    sse_encode_opt_String(self.errorMessage, serializer);
+  }
+
+  @protected
+  void sse_encode_search_filters_data(
+    SearchFiltersData self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_opt_box_autoadd_time_range_data(self.timeRange, serializer);
+    sse_encode_list_String(self.levels, serializer);
+    sse_encode_opt_String(self.filePattern, serializer);
+  }
+
+  @protected
+  void sse_encode_search_history_data(
+    SearchHistoryData self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.query, serializer);
+    sse_encode_String(self.workspaceId, serializer);
+    sse_encode_i_32(self.resultCount, serializer);
+    sse_encode_String(self.searchedAt, serializer);
+  }
+
+  @protected
+  void sse_encode_search_term_data(
+    SearchTermData self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.id, serializer);
+    sse_encode_String(self.value, serializer);
+    sse_encode_query_operator_data(self.operator_, serializer);
+    sse_encode_bool(self.isRegex, serializer);
+    sse_encode_u_32(self.priority, serializer);
+    sse_encode_bool(self.enabled, serializer);
+    sse_encode_bool(self.caseSensitive, serializer);
+  }
+
+  @protected
+  void sse_encode_structured_search_query_data(
+    StructuredSearchQueryData self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_list_search_term_data(self.terms, serializer);
+    sse_encode_query_operator_data(self.globalOperator, serializer);
+    sse_encode_opt_box_autoadd_search_filters_data(self.filters, serializer);
+  }
+
+  @protected
   void sse_encode_task_metrics_data(
-      TaskMetricsData self, SseSerializer serializer) {
+    TaskMetricsData self,
+    SseSerializer serializer,
+  ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.totalTasks, serializer);
     sse_encode_i_32(self.runningTasks, serializer);
     sse_encode_i_32(self.completedTasks, serializer);
     sse_encode_i_32(self.failedTasks, serializer);
     sse_encode_i_32(self.stoppedTasks, serializer);
+  }
+
+  @protected
+  void sse_encode_time_range_data(
+    TimeRangeData self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_opt_String(self.start, serializer);
+    sse_encode_opt_String(self.end, serializer);
+  }
+
+  @protected
+  void sse_encode_u_32(int self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    serializer.buffer.putUint32(self);
   }
 
   @protected
@@ -3560,6 +3015,42 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
   }
 
   @protected
+  void sse_encode_virtual_tree_node_data(
+    VirtualTreeNodeData self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    switch (self) {
+      case VirtualTreeNodeData_File(
+        name: final name,
+        path: final path,
+        hash: final hash,
+        size: final size,
+        mimeType: final mimeType,
+      ):
+        sse_encode_i_32(0, serializer);
+        sse_encode_String(name, serializer);
+        sse_encode_String(path, serializer);
+        sse_encode_String(hash, serializer);
+        sse_encode_i_64(size, serializer);
+        sse_encode_opt_String(mimeType, serializer);
+      case VirtualTreeNodeData_Archive(
+        name: final name,
+        path: final path,
+        hash: final hash,
+        archiveType: final archiveType,
+        children: final children,
+      ):
+        sse_encode_i_32(1, serializer);
+        sse_encode_String(name, serializer);
+        sse_encode_String(path, serializer);
+        sse_encode_String(hash, serializer);
+        sse_encode_String(archiveType, serializer);
+        sse_encode_list_virtual_tree_node_data(children, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_workspace_data(WorkspaceData self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.id, serializer);
@@ -3572,18 +3063,10 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
   }
 
   @protected
-  void sse_encode_workspace_load_response_data(
-      WorkspaceLoadResponseData self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_String(self.workspaceId, serializer);
-    sse_encode_String(self.status, serializer);
-    sse_encode_i_32(self.fileCount, serializer);
-    sse_encode_String(self.totalSize, serializer);
-  }
-
-  @protected
   void sse_encode_workspace_status_data(
-      WorkspaceStatusData self, SseSerializer serializer) {
+    WorkspaceStatusData self,
+    SseSerializer serializer,
+  ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.id, serializer);
     sse_encode_String(self.name, serializer);
@@ -3594,183 +3077,29 @@ class LogAnalyzerBridgeApiImpl extends LogAnalyzerBridgeApiImplPlatform
 }
 
 @sealed
-class AppStateImpl extends RustOpaque implements AppState {
+class SearchResultEntryImpl extends RustOpaque implements SearchResultEntry {
   // Not to be used by end users
-  AppStateImpl.frbInternalDcoDecode(List<dynamic> wire)
-      : super.frbInternalDcoDecode(wire, _kStaticData);
+  SearchResultEntryImpl.frbInternalDcoDecode(List<dynamic> wire)
+    : super.frbInternalDcoDecode(wire, _kStaticData);
 
   // Not to be used by end users
-  AppStateImpl.frbInternalSseDecode(BigInt ptr, int externalSizeOnNative)
-      : super.frbInternalSseDecode(ptr, externalSizeOnNative, _kStaticData);
-
-  static final _kStaticData = RustArcStaticData(
-    rustArcIncrementStrongCount:
-        LogAnalyzerBridge.instance.api.rust_arc_increment_strong_count_AppState,
-    rustArcDecrementStrongCount:
-        LogAnalyzerBridge.instance.api.rust_arc_decrement_strong_count_AppState,
-    rustArcDecrementStrongCountPtr: LogAnalyzerBridge
-        .instance.api.rust_arc_decrement_strong_count_AppStatePtr,
-  );
-}
-
-@sealed
-class FfiContextImpl extends RustOpaque implements FfiContext {
-  // Not to be used by end users
-  FfiContextImpl.frbInternalDcoDecode(List<dynamic> wire)
-      : super.frbInternalDcoDecode(wire, _kStaticData);
-
-  // Not to be used by end users
-  FfiContextImpl.frbInternalSseDecode(BigInt ptr, int externalSizeOnNative)
-      : super.frbInternalSseDecode(ptr, externalSizeOnNative, _kStaticData);
+  SearchResultEntryImpl.frbInternalSseDecode(
+    BigInt ptr,
+    int externalSizeOnNative,
+  ) : super.frbInternalSseDecode(ptr, externalSizeOnNative, _kStaticData);
 
   static final _kStaticData = RustArcStaticData(
     rustArcIncrementStrongCount: LogAnalyzerBridge
-        .instance.api.rust_arc_increment_strong_count_FfiContext,
+        .instance
+        .api
+        .rust_arc_increment_strong_count_SearchResultEntry,
     rustArcDecrementStrongCount: LogAnalyzerBridge
-        .instance.api.rust_arc_decrement_strong_count_FfiContext,
+        .instance
+        .api
+        .rust_arc_decrement_strong_count_SearchResultEntry,
     rustArcDecrementStrongCountPtr: LogAnalyzerBridge
-        .instance.api.rust_arc_decrement_strong_count_FfiContextPtr,
-  );
-
-  PathBuf get appDataDir => LogAnalyzerBridge.instance.api
-          .crateFfiGlobalStateFfiContextAutoAccessorGetAppDataDir(
-        that: this,
-      );
-
-  AppState get appState => LogAnalyzerBridge.instance.api
-          .crateFfiGlobalStateFfiContextAutoAccessorGetAppState(
-        that: this,
-      );
-
-  set appDataDir(PathBuf appDataDir) => LogAnalyzerBridge.instance.api
-      .crateFfiGlobalStateFfiContextAutoAccessorSetAppDataDir(
-          that: this, appDataDir: appDataDir);
-
-  set appState(AppState appState) => LogAnalyzerBridge.instance.api
-      .crateFfiGlobalStateFfiContextAutoAccessorSetAppState(
-          that: this, appState: appState);
-}
-
-@sealed
-class FfiResultBoolImpl extends RustOpaque implements FfiResultBool {
-  // Not to be used by end users
-  FfiResultBoolImpl.frbInternalDcoDecode(List<dynamic> wire)
-      : super.frbInternalDcoDecode(wire, _kStaticData);
-
-  // Not to be used by end users
-  FfiResultBoolImpl.frbInternalSseDecode(BigInt ptr, int externalSizeOnNative)
-      : super.frbInternalSseDecode(ptr, externalSizeOnNative, _kStaticData);
-
-  static final _kStaticData = RustArcStaticData(
-    rustArcIncrementStrongCount: LogAnalyzerBridge
-        .instance.api.rust_arc_increment_strong_count_FfiResultBool,
-    rustArcDecrementStrongCount: LogAnalyzerBridge
-        .instance.api.rust_arc_decrement_strong_count_FfiResultBool,
-    rustArcDecrementStrongCountPtr: LogAnalyzerBridge
-        .instance.api.rust_arc_decrement_strong_count_FfiResultBoolPtr,
-  );
-}
-
-@sealed
-class FfiResultI32Impl extends RustOpaque implements FfiResultI32 {
-  // Not to be used by end users
-  FfiResultI32Impl.frbInternalDcoDecode(List<dynamic> wire)
-      : super.frbInternalDcoDecode(wire, _kStaticData);
-
-  // Not to be used by end users
-  FfiResultI32Impl.frbInternalSseDecode(BigInt ptr, int externalSizeOnNative)
-      : super.frbInternalSseDecode(ptr, externalSizeOnNative, _kStaticData);
-
-  static final _kStaticData = RustArcStaticData(
-    rustArcIncrementStrongCount: LogAnalyzerBridge
-        .instance.api.rust_arc_increment_strong_count_FfiResultI32,
-    rustArcDecrementStrongCount: LogAnalyzerBridge
-        .instance.api.rust_arc_decrement_strong_count_FfiResultI32,
-    rustArcDecrementStrongCountPtr: LogAnalyzerBridge
-        .instance.api.rust_arc_decrement_strong_count_FfiResultI32Ptr,
-  );
-}
-
-@sealed
-class FfiResultStringImpl extends RustOpaque implements FfiResultString {
-  // Not to be used by end users
-  FfiResultStringImpl.frbInternalDcoDecode(List<dynamic> wire)
-      : super.frbInternalDcoDecode(wire, _kStaticData);
-
-  // Not to be used by end users
-  FfiResultStringImpl.frbInternalSseDecode(BigInt ptr, int externalSizeOnNative)
-      : super.frbInternalSseDecode(ptr, externalSizeOnNative, _kStaticData);
-
-  static final _kStaticData = RustArcStaticData(
-    rustArcIncrementStrongCount: LogAnalyzerBridge
-        .instance.api.rust_arc_increment_strong_count_FfiResultString,
-    rustArcDecrementStrongCount: LogAnalyzerBridge
-        .instance.api.rust_arc_decrement_strong_count_FfiResultString,
-    rustArcDecrementStrongCountPtr: LogAnalyzerBridge
-        .instance.api.rust_arc_decrement_strong_count_FfiResultStringPtr,
-  );
-}
-
-@sealed
-class FfiResultTaskMetricsDataImpl extends RustOpaque
-    implements FfiResultTaskMetricsData {
-  // Not to be used by end users
-  FfiResultTaskMetricsDataImpl.frbInternalDcoDecode(List<dynamic> wire)
-      : super.frbInternalDcoDecode(wire, _kStaticData);
-
-  // Not to be used by end users
-  FfiResultTaskMetricsDataImpl.frbInternalSseDecode(
-      BigInt ptr, int externalSizeOnNative)
-      : super.frbInternalSseDecode(ptr, externalSizeOnNative, _kStaticData);
-
-  static final _kStaticData = RustArcStaticData(
-    rustArcIncrementStrongCount: LogAnalyzerBridge
-        .instance.api.rust_arc_increment_strong_count_FfiResultTaskMetricsData,
-    rustArcDecrementStrongCount: LogAnalyzerBridge
-        .instance.api.rust_arc_decrement_strong_count_FfiResultTaskMetricsData,
-    rustArcDecrementStrongCountPtr: LogAnalyzerBridge.instance.api
-        .rust_arc_decrement_strong_count_FfiResultTaskMetricsDataPtr,
-  );
-}
-
-@sealed
-class FfiResultWorkspaceStatusDataImpl extends RustOpaque
-    implements FfiResultWorkspaceStatusData {
-  // Not to be used by end users
-  FfiResultWorkspaceStatusDataImpl.frbInternalDcoDecode(List<dynamic> wire)
-      : super.frbInternalDcoDecode(wire, _kStaticData);
-
-  // Not to be used by end users
-  FfiResultWorkspaceStatusDataImpl.frbInternalSseDecode(
-      BigInt ptr, int externalSizeOnNative)
-      : super.frbInternalSseDecode(ptr, externalSizeOnNative, _kStaticData);
-
-  static final _kStaticData = RustArcStaticData(
-    rustArcIncrementStrongCount: LogAnalyzerBridge.instance.api
-        .rust_arc_increment_strong_count_FfiResultWorkspaceStatusData,
-    rustArcDecrementStrongCount: LogAnalyzerBridge.instance.api
-        .rust_arc_decrement_strong_count_FfiResultWorkspaceStatusData,
-    rustArcDecrementStrongCountPtr: LogAnalyzerBridge.instance.api
-        .rust_arc_decrement_strong_count_FfiResultWorkspaceStatusDataPtr,
-  );
-}
-
-@sealed
-class PathBufImpl extends RustOpaque implements PathBuf {
-  // Not to be used by end users
-  PathBufImpl.frbInternalDcoDecode(List<dynamic> wire)
-      : super.frbInternalDcoDecode(wire, _kStaticData);
-
-  // Not to be used by end users
-  PathBufImpl.frbInternalSseDecode(BigInt ptr, int externalSizeOnNative)
-      : super.frbInternalSseDecode(ptr, externalSizeOnNative, _kStaticData);
-
-  static final _kStaticData = RustArcStaticData(
-    rustArcIncrementStrongCount:
-        LogAnalyzerBridge.instance.api.rust_arc_increment_strong_count_PathBuf,
-    rustArcDecrementStrongCount:
-        LogAnalyzerBridge.instance.api.rust_arc_decrement_strong_count_PathBuf,
-    rustArcDecrementStrongCountPtr: LogAnalyzerBridge
-        .instance.api.rust_arc_decrement_strong_count_PathBufPtr,
+        .instance
+        .api
+        .rust_arc_decrement_strong_count_SearchResultEntryPtr,
   );
 }
