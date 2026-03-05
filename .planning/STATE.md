@@ -2,6 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: 高级搜索与虚拟文件系统
+status: unknown
+last_updated: "2026-03-05T00:32:11.776Z"
+progress:
+  total_phases: 8
+  completed_phases: 8
+  total_plans: 21
+  completed_plans: 21
+---
+
+---
+gsd_state_version: 1.0
+milestone: v1.1
+milestone_name: 高级搜索与虚拟文件系统
 status: in_progress
 last_updated: "2026-03-05T00:23:00.000Z"
 progress:
@@ -51,6 +64,7 @@ Progress: [███░░░░░░░] 31%
 - v1.1 进度: 5/16 个计划
 
 *Updated after each plan completion*
+| Phase 08 P02 | 25 | 4 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -81,6 +95,7 @@ From Phase 08 Plan 01:
 - Create local SearchHistoryItem model instead of relying on FFI-generated type (FFI type not generated)
 - Add bridgeServiceProvider in same file as SearchHistoryProvider for simplicity
 - Use state.value for Riverpod 3.0 compatibility (valueOrNull removed)
+- [Phase 08]: Use Dart-side sealed class for VirtualTreeNode due to FFI type generation issues
 
 ### Pending Todos
 
