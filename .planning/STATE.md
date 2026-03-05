@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: 高级搜索与虚拟文件系统
 status: in_progress
-last_updated: "2026-03-05T00:55:00.000Z"
+last_updated: "2026-03-05T14:43:00.000Z"
 progress:
   total_phases: 11
   completed_phases: 1
   total_plans: 16
-  completed_plans: 7
+  completed_plans: 8
 ---
 
 # Project State
@@ -24,31 +24,31 @@ See: .planning/PROJECT.md (updated 2026-03-04)
 
 Phase: 8 of 11 (状态管理)
 Plan: 2 of 2 in current phase
-Status: Phase Complete
-Last activity: 2026-03-05 — Plans 08-01 & 08-02 completed (SearchHistoryProvider, VirtualFileTreeProvider)
+Status: Phase Complete (with gap closure 08-02.1)
+Last activity: 2026-03-05 — Plans 08-01, 08-02, 08-02.1 completed (SearchHistoryProvider, VirtualFileTreeProvider, FFI integration)
 
-Progress: [████░░░░░░] 44%
+Progress: [████░░░░░░] 50%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 7 (v1.1)
-- Average duration: 12 min
-- Total execution time: 1.4 hours
+- Total plans completed: 8 (v1.1)
+- Average duration: 13 min
+- Total execution time: 1.5 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 7. 后端 API 集成 | 4/4 | 36min | 9min |
-| 8. 状态管理 | 2/2 | 65min | 32min |
+| 8. 状态管理 | 3/2 | 73min | 24min |
 | 9. 高级搜索 UI | 0/4 | - | - |
 | 10. 虚拟文件系统 UI | 0/3 | - | - |
 | 11. 集成与优化 | 0/3 | - | - |
 
 **Recent Trend:**
 - v1.0 已完成: 16 个计划
-- v1.1 进度: 7/16 个计划
+- v1.1 进度: 8/16 个计划
 
 *Updated after each plan completion*
 
@@ -89,17 +89,21 @@ From Phase 08 Plan 02:
 - Define VirtualTreeNodeExtension for convenient property access
 - [Phase 08]: VirtualFileTreeProvider uses Dart-side Freezed sealed class due to FFI type generation issues
 
+From Phase 08 Plan 02.1 (Gap Closure):
+- Import types.dart directly with ffi_types prefix - bridge.dart imports but doesn't export types
+- Use Dart 3 pattern matching with switch expressions for sealed class conversion
+
 ### Pending Todos
 
 None yet.
 
 ### Blockers/Concerns
 
-- FFI type generation issues with complex sealed enums in flutter_rust_bridge 2.11.1 - workaround with Dart-side Freezed models
+- FFI type generation issues with complex sealed enums in flutter_rust_bridge 2.11.1 - workaround with Dart-side Freezed models (RESOLVED: recursive type conversion implemented)
 - TreeController integration deferred to Phase 10 (flutter_fancy_tree_view2 not in dependencies yet)
 
 ## Session Continuity
 
 Last session: 2026-03-05
-Stopped at: Phase 08 completed (SearchHistoryProvider + VirtualFileTreeProvider)
+Stopped at: Phase 08 completed with gap closure (SearchHistoryProvider + VirtualFileTreeProvider + FFI integration)
 Resume file: None
