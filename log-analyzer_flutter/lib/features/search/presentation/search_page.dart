@@ -22,7 +22,10 @@ import 'widgets/search_progress_bar.dart';
 import 'widgets/search_history_dropdown.dart';
 import 'widgets/search_mode_selector.dart';
 import 'widgets/regex_input_field.dart';
+import 'widgets/multi_keyword_input.dart';
+import 'widgets/search_condition_preview.dart';
 import '../models/search_mode.dart';
+import '../providers/search_query_provider.dart';
 import '../../../shared/providers/search_history_provider.dart';
 import '../../../shared/services/bridge_service.dart';
 
@@ -433,6 +436,14 @@ class _SearchPageState extends ConsumerState<SearchPage> {
               ),
             ],
           ),
+          // 第三行：组合搜索条件预览（仅组合模式显示）
+          if (_searchMode == SearchMode.combined) ...[
+            const SizedBox(height: 8),
+            SearchConditionPreview(
+              terms: ref.watch(searchQueryProvider).terms,
+              globalOperator: ref.watch(searchQueryProvider).globalOperator,
+            ),
+          ],
         ],
       ),
     );
@@ -454,22 +465,21 @@ class _SearchPageState extends ConsumerState<SearchPage> {
           },
         );
       case SearchMode.combined:
-        // 组合模式：占位（09-02 实现）
-        return TextField(
-          controller: _searchController,
-          focusNode: _focusNode,
-          decoration: const InputDecoration(
-            hintText: '组合搜索（09-02 计划实现）',
-            hintStyle: TextStyle(color: AppColors.textMuted),
-            prefixIcon: Icon(Icons.manage_search),
-            border: InputBorder.none,
-            contentPadding: EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 12,
-            ),
-          ),
-          style: const TextStyle(fontSize: 15),
-          enabled: false, // 暂时禁用
+        // 组合模式：使用 MultiKeywordInput 组件
+        return MultiKeywordInput(
+          terms: ref.watch(searchQueryProvider).terms,
+          globalOperator: ref.watch(searchQueryProvider).globalOperator,
+          onTermsChanged: (terms) {
+            // 直接设置整个 terms 列表
+            final notifier = ref.read(searchQueryProvider.notifier);
+            notifier.clearKeywords();
+            for (final term in terms) {
+              notifier.addKeyword(term.value);
+            }
+          },
+          onOperatorChanged: (op) {
+            ref.read(searchQueryProvider.notifier).setGlobalOperator(op);
+          },
         );
       case SearchMode.normal:
         // 普通模式：使用普通 TextField
@@ -741,14 +751,8 @@ class _SearchPageState extends ConsumerState<SearchPage> {
           await _performRegexSearch(query, activeWorkspaceId);
           break;
         case SearchMode.combined:
-          // 组合搜索（09-02 实现）
-          ref.read(appStateProvider.notifier).addToast(
-                ToastType.info,
-                '组合搜索将在 09-02 计划中实现',
-              );
-          setState(() {
-            _isSearching = false;
-          });
+          // 组合搜索
+          await _performCombinedSearch(activeWorkspaceId);
           return;
         case SearchMode.normal:
           // 普通搜索
@@ -842,6 +846,70 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       ref.read(appStateProvider.notifier).addToast(
             ToastType.error,
             '正则搜索失败: $e',
+          );
+    }
+  }
+
+  /// 执行组合搜索
+  ///
+  /// 使用 FFI searchStructured API 进行多关键词组合搜索
+  Future<void> _performCombinedSearch(String workspaceId) async {
+    try {
+      final queryProvider = ref.read(searchQueryProvider.notifier);
+
+      // 检查是否有关键词
+      if (!queryProvider.hasKeywords) {
+        ref.read(appStateProvider.notifier).addToast(
+              ToastType.warning,
+              '请先添加搜索关键词',
+            );
+        setState(() {
+          _isSearching = false;
+        });
+        return;
+      }
+
+      final bridge = BridgeService.instance;
+
+      // 构建结构化查询
+      final query = await queryProvider.buildQuery();
+
+      // 调用 FFI 结构化搜索
+      final results = await bridge.searchStructured(
+        query: query,
+        workspaceId: workspaceId,
+        maxResults: AppConstants.defaultMaxResults,
+      );
+
+      // 更新状态
+      setState(() {
+        _resultsFound = results.length;
+        _progress = 100;
+        _isSearching = false;
+      });
+
+      // 提示用户结果已获取
+      if (results.isNotEmpty) {
+        ref.read(appStateProvider.notifier).addToast(
+              ToastType.success,
+              '组合搜索完成，找到 ${results.length} 条结果',
+            );
+        // 保存到搜索历史
+        _saveSearchHistory(results.length);
+      } else {
+        ref.read(appStateProvider.notifier).addToast(
+              ToastType.info,
+              '未找到匹配的结果',
+            );
+      }
+    } catch (e) {
+      setState(() {
+        _isSearching = false;
+        _progress = 0;
+      });
+      ref.read(appStateProvider.notifier).addToast(
+            ToastType.error,
+            '组合搜索失败: $e',
           );
     }
   }
