@@ -30,6 +30,13 @@
 - [ ] **VFS-03**: 用户可以点击文件预览内容
 - [ ] **VFS-04**: 文件树显示文件/目录图标区分
 
+### 集成与优化
+
+- [ ] **INT-01**: 每个核心功能有端到端测试覆盖
+- [ ] **INT-02**: 搜索响应时间 <200ms，文件树加载 <500ms
+- [ ] **INT-03**: 加载状态显示、错误处理统一、无障碍支持
+- [ ] **INT-04**: 代码审查完成、技术文档更新
+
 ## v2 Requirements
 
 ### 高级搜索
@@ -75,13 +82,17 @@
 | VFS-02 | Phase 10 | Pending |
 | VFS-03 | Phase 10 | Pending |
 | VFS-04 | Phase 10 | Pending |
+| INT-01 | Phase 11 | Pending |
+| INT-02 | Phase 11 | Pending |
+| INT-03 | Phase 11 | Pending |
+| INT-04 | Phase 11 | Pending |
 
 **Coverage:**
-- v1 requirements: 15 total
-- Mapped to phases: 15
+- v1 requirements: 19 total
+- Mapped to phases: 19
 - Unmapped: 0 ✓
 
 ---
 
 *Requirements defined: 2026-03-04*
-*Last updated: 2026-03-04 after v1.1 roadmap created*
+*Last updated: 2026-03-05 after v1.2 milestone started*
