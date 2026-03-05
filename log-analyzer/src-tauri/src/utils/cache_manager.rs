@@ -211,7 +211,7 @@ pub struct AccessPatternStats {
 }
 
 /// 缓存压缩工具
-pub struct CacheCompressor;
+pub struct CacheCompressor {}
 
 impl CacheCompressor {
     /// 压缩数据

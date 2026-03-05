@@ -30,7 +30,7 @@ pub struct WatcherState {
 use tracing::{debug, warn};
 
 /// 时间戳解析器
-pub struct TimestampParser;
+pub struct TimestampParser {}
 
 impl TimestampParser {
     /// 支持的时间戳格式

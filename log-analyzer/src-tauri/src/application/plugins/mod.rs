@@ -172,7 +172,7 @@ impl PluginManager {
 }
 
 /// 示例插件：日志增强器
-pub struct LogEnhancerPlugin;
+pub struct LogEnhancerPlugin {}
 
 impl Plugin for LogEnhancerPlugin {
     fn name(&self) -> &'static str {
@@ -215,7 +215,7 @@ impl Plugin for LogEnhancerPlugin {
 }
 
 /// 示例插件：搜索过滤器
-pub struct SearchFilterPlugin;
+pub struct SearchFilterPlugin {}
 
 impl Plugin for SearchFilterPlugin {
     fn name(&self) -> &'static str {

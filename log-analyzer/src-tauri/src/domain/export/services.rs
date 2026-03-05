@@ -126,11 +126,11 @@ impl Default for ExportAggregator {
 // ==================== 基础导出策略实现 ====================
 
 /// JSON 导出策略
-pub struct JsonExportStrategy;
+pub struct JsonExportStrategy {}
 
 impl JsonExportStrategy {
     pub fn new() -> Self {
-        Self
+        Self {}
     }
 }
 
@@ -234,11 +234,11 @@ impl ExportStrategy for CsvExportStrategy {
 }
 
 /// 文本导出策略
-pub struct TextExportStrategy;
+pub struct TextExportStrategy {}
 
 impl TextExportStrategy {
     pub fn new() -> Self {
-        Self
+        Self {}
     }
 }
 

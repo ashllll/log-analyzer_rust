@@ -99,7 +99,7 @@ pub trait EventHandler: Send + Sync {
 }
 
 /// 日志事件处理器示例
-pub struct LogEventHandler;
+pub struct LogEventHandler {}
 
 #[async_trait::async_trait]
 impl EventHandler for LogEventHandler {

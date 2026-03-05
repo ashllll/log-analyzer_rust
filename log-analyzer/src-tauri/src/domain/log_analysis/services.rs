@@ -271,12 +271,12 @@ impl Default for LogParserService {
 /// 日志分析服务
 ///
 /// 提供日志分析相关的业务逻辑
-pub struct LogAnalysisService;
+pub struct LogAnalysisService {}
 
 impl LogAnalysisService {
     /// 创建新的日志分析服务
     pub fn new() -> Self {
-        Self
+        Self {}
     }
 
     /// 计算日志级别分布
@@ -392,7 +392,7 @@ impl Default for LogAnalysisService {
 /// 工作区分析服务
 ///
 /// 提供工作区级别的日志分析功能
-pub struct WorkspaceAnalysisService;
+pub struct WorkspaceAnalysisService {}
 
 impl WorkspaceAnalysisService {
     /// 计算工作区统计信息

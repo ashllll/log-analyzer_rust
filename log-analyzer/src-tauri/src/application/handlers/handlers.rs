@@ -118,11 +118,11 @@ pub struct ExportResult {
 // ==================== 基础命令处理器实现 ====================
 
 /// 创建工作区命令处理器
-pub struct CreateWorkspaceCommandHandler;
+pub struct CreateWorkspaceCommandHandler {}
 
 impl CreateWorkspaceCommandHandler {
     pub fn new() -> Self {
-        Self
+        Self {}
     }
 }
 
@@ -133,11 +133,11 @@ impl Default for CreateWorkspaceCommandHandler {
 }
 
 /// 删除工作区命令处理器
-pub struct DeleteWorkspaceCommandHandler;
+pub struct DeleteWorkspaceCommandHandler {}
 
 impl DeleteWorkspaceCommandHandler {
     pub fn new() -> Self {
-        Self
+        Self {}
     }
 }
 
@@ -148,11 +148,11 @@ impl Default for DeleteWorkspaceCommandHandler {
 }
 
 /// 保存关键词组命令处理器
-pub struct SaveKeywordsCommandHandler;
+pub struct SaveKeywordsCommandHandler {}
 
 impl SaveKeywordsCommandHandler {
     pub fn new() -> Self {
-        Self
+        Self {}
     }
 }
 
@@ -163,11 +163,11 @@ impl Default for SaveKeywordsCommandHandler {
 }
 
 /// 取消任务命令处理器
-pub struct CancelTaskCommandHandler;
+pub struct CancelTaskCommandHandler {}
 
 impl CancelTaskCommandHandler {
     pub fn new() -> Self {
-        Self
+        Self {}
     }
 }
 
