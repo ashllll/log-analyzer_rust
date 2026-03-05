@@ -4,6 +4,7 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../services/bridge_service.dart';
+import '../services/generated/ffi/types.dart' as ffi_types;
 
 part 'virtual_file_tree_provider.freezed.dart';
 part 'virtual_file_tree_provider.g.dart';
@@ -42,6 +43,35 @@ sealed class VirtualTreeNode with _$VirtualTreeNode {
 
   factory VirtualTreeNode.fromJson(Map<String, dynamic> json) =>
       _$VirtualTreeNodeFromJson(json);
+}
+
+/// 将 FFI VirtualTreeNodeData 转换为 Dart VirtualTreeNode
+///
+/// 递归处理嵌套的子节点
+VirtualTreeNode _convertFromFfiNode(ffi_types.VirtualTreeNodeData node) {
+  return switch (node) {
+    ffi_types.VirtualTreeNodeData_File(:final name, :final path, :final hash, :final size, :final mimeType) =>
+      VirtualTreeNode.file(
+        name: name,
+        path: path,
+        hash: hash,
+        size: size.toInt(),  // PlatformInt64 to int
+        mimeType: mimeType,
+      ),
+    ffi_types.VirtualTreeNodeData_Archive(:final name, :final path, :final hash, :final archiveType, :final children) =>
+      VirtualTreeNode.archive(
+        name: name,
+        path: path,
+        hash: hash,
+        archiveType: archiveType,
+        children: children.map(_convertFromFfiNode).toList(),  // 递归转换
+      ),
+  };
+}
+
+/// 批量转换 FFI 节点列表
+List<VirtualTreeNode> _convertFromFfiNodes(List<ffi_types.VirtualTreeNodeData> nodes) {
+  return nodes.map(_convertFromFfiNode).toList();
 }
 
 /// 文件内容响应数据
@@ -121,25 +151,19 @@ class VirtualFileTree extends _$VirtualFileTree {
 
   /// 通过 BridgeService 获取虚拟文件树
   ///
-  /// 处理 FFI 类型兼容性问题
+  /// 调用 FFI 获取文件树并转换为 Dart 模型
   Future<List<VirtualTreeNode>> _getVirtualFileTreeViaBridge(
     BridgeService bridge,
     String workspaceId,
   ) async {
     try {
-      // 尝试调用 FFI 方法
-      // 由于 VirtualTreeNodeData 类型在 Dart 端未生成，
-      // 这里需要等待 FFI 代码生成修复后才能直接调用
-      // bridge.getVirtualFileTree(workspaceId)
-
-      // 临时方案：返回空列表
-      // TODO: FFI 类型生成修复后启用实际调用
       debugPrint('VirtualFileTreeProvider: 调用 getVirtualFileTree($workspaceId)');
 
-      // 由于 bridge_service.dart 中的方法返回 ffi.VirtualTreeNodeData
-      // 而该类型在 Dart 端不存在，我们需要等待 FFI 代码生成修复
-      // 当前返回空列表作为回退
-      return [];
+      // 调用 FFI 获取文件树
+      final ffiNodes = await bridge.getVirtualFileTree(workspaceId);
+
+      // 转换为 Dart 模型
+      return _convertFromFfiNodes(ffiNodes);
     } catch (e) {
       debugPrint('_getVirtualFileTreeViaBridge error: $e');
       return [];
@@ -199,22 +223,26 @@ class VirtualFileTree extends _$VirtualFileTree {
   }
 
   /// 通过 BridgeService 获取子节点
+  ///
+  /// 调用 FFI 获取子节点并转换为 Dart 模型
   Future<List<VirtualTreeNode>> _getTreeChildrenViaBridge(
     BridgeService bridge,
     String workspaceId,
     String parentPath,
   ) async {
     try {
-      // 尝试调用 FFI 方法
-      // TODO: FFI 类型生成修复后启用实际调用
-      // bridge.getTreeChildren(workspaceId: workspaceId, parentPath: parentPath)
-
       debugPrint(
         'VirtualFileTreeProvider: 调用 getTreeChildren($workspaceId, $parentPath)',
       );
 
-      // 临时方案：返回空列表
-      return [];
+      // 调用 FFI 获取子节点
+      final ffiChildren = await bridge.getTreeChildren(
+        workspaceId: workspaceId,
+        parentPath: parentPath,
+      );
+
+      // 转换为 Dart 模型
+      return _convertFromFfiNodes(ffiChildren);
     } catch (e) {
       debugPrint('_getTreeChildrenViaBridge error: $e');
       return [];
@@ -297,14 +325,21 @@ class VirtualFileTree extends _$VirtualFileTree {
       debugPrint('VirtualFileTreeProvider: 读取文件 $hash');
 
       // 调用后端读取文件
-      // TODO: FFI 类型生成修复后启用实际调用
-      // final result = await bridge.readFileByHash(
-      //   workspaceId: workspaceId,
-      //   hash: hash,
-      // );
+      final ffiResult = await bridge.readFileByHash(
+        workspaceId: workspaceId,
+        hash: hash,
+      );
 
-      // 临时方案：返回 null
-      return null;
+      // 转换为 Dart 模型
+      if (ffiResult == null) {
+        return null;
+      }
+
+      return FileContentResponse(
+        content: ffiResult.content,
+        hash: ffiResult.hash,
+        size: ffiResult.size.toInt(),  // PlatformInt64 to int
+      );
     } catch (e) {
       debugPrint('readFileByHash error: $e');
       return null;
