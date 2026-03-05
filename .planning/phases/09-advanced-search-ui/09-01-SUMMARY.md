@@ -92,6 +92,15 @@ None - plan executed exactly as written.
 
 - **SearchResultEntry 是 RustOpaque 类型**: 由于 flutter_rust_bridge 生成的 `SearchResultEntry` 是不透明类型，无法在 Dart 端直接访问其属性。因此正则搜索结果目前仅显示数量，实际内容需要通过事件流接收。
 
+## Self-Check: PASSED
+
+- [x] search_mode.dart exists
+- [x] search_mode_selector.dart exists
+- [x] regex_input_field.dart exists
+- [x] search_page.dart modified
+- [x] 09-01-SUMMARY.md exists
+- [x] All commits found in git history
+
 ## Next Phase Readiness
 
 - SearchMode 枚举和组件已就绪，- 09-02 可实现组合搜索功能
