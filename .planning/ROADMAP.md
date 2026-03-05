@@ -128,7 +128,7 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 08-01-PLAN.md — SearchHistoryProvider 实现（Riverpod AsyncNotifier + 乐观更新）
+- [x] 08-01-PLAN.md — SearchHistoryProvider 实现（Riverpod AsyncNotifier + 乐观更新） ✓ 2026-03-05
 - [ ] 08-02-PLAN.md — VirtualFileTreeProvider 实现（懒加载 + TreeController）
 
 ### Phase 9: 高级搜索 UI
@@ -195,8 +195,8 @@ Phases execute in numeric order: 7 → 8 → 9 → 10 → 11
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 7. 后端 API 集成 | 2/4 | In Progress | 07-01, 07-02 |
-| 8. 状态管理 | 0/2 | Not started | - |
+| 7. 后端 API 集成 | 4/4 | Complete | 07-01, 07-02, 07-03, 07-04 |
+| 8. 状态管理 | 1/2 | In Progress | 08-01 |
 | 9. 高级搜索 UI | 0/4 | Not started | - |
 | 10. 虚拟文件系统 UI | 0/3 | Not started | - |
 | 11. 集成与优化 | 0/3 | Not started | - |
