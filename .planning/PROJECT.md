@@ -10,9 +10,10 @@
 
 ## Current Milestone: v2.0 (待规划)
 
-**上一个里程碑:** v1.1 高级搜索与虚拟文件系统 (2026-03-04, 部分完成)
+**上一个里程碑:** v1.1 高级搜索与虚拟文件系统 (2026-03-05, 部分完成)
 - ✅ Phase 7 完成: 后端 API 集成 (搜索历史、虚拟文件树、正则搜索、多关键词搜索 FFI)
-- ⏳ Phases 8-11 未开始: 状态管理、高级搜索 UI、虚拟文件系统 UI、集成优化
+- ✅ Phase 8 完成: 状态管理 (SearchHistoryProvider、VirtualFileTreeProvider with Riverpod 3.0)
+- ⏳ Phases 9-11 未开始: 高级搜索 UI、虚拟文件系统 UI、集成优化
 
 ## Requirements
 
@@ -42,16 +43,18 @@
 - ✓ 虚拟文件树 FFI 桥接 — v1.1 Phase 7 已完成
 - ✓ 正则表达式搜索 FFI 桥接 — v1.1 Phase 7 已完成
 - ✓ 多关键词组合搜索 FFI 桥接 — v1.1 Phase 7 已完成
+- ✓ SearchHistoryProvider with AsyncNotifier — v1.1 Phase 8 已完成
+- ✓ VirtualFileTreeProvider with FFI integration — v1.1 Phase 8 已完成
+- ✓ 乐观更新与错误回滚模式 — v1.1 Phase 8 已完成
+- ✓ Riverpod 3.0 family pattern for workspace scoping — v1.1 Phase 8 已完成
 
 ### Active
 
-从 v1.1 继承的未完成需求:
-- [ ] 正则表达式搜索 UI (ASEARCH-01, ASEARCH-02)
-- [ ] 多关键词组合搜索 UI (ASEARCH-03, ASEARCH-04, ASEARCH-05, ASEARCH-06)
-- [ ] 搜索历史记录 UI (HIST-01, HIST-02, HIST-03, HIST-04, HIST-05)
-- [ ] 虚拟文件树 UI (VFS-01, VFS-02, VFS-03, VFS-04)
-- [ ] SearchHistoryProvider 状态管理
-- [ ] VirtualFileTreeProvider 状态管理
+从 v1.1 继承的未完成需求 (移至 v1.2 或 v2.0):
+- [ ] 正则表达式搜索 UI (ASEARCH-01, ASEARCH-02) — Phase 9
+- [ ] 多关键词组合搜索 UI (ASEARCH-03, ASEARCH-04, ASEARCH-05, ASEARCH-06) — Phase 9
+- [ ] 搜索历史记录 UI (HIST-01, HIST-02, HIST-03, HIST-04, HIST-05) — Phase 9
+- [ ] 虚拟文件树 UI (VFS-01, VFS-02, VFS-03, VFS-04) — Phase 10
 
 ### Out of Scope
 
@@ -78,6 +81,12 @@
 - 同步 FFI: 使用 `#[frb(sync)]` 简化 Flutter 集成
 - 懒加载模式: 虚拟文件树支持按需加载子节点
 
+**v1.1 Phase 8 实现的状态管理模式**:
+- Riverpod 3.0 AsyncNotifier with family parameter for workspace scoping
+- 乐观更新模式: save previous state → update UI → rollback on failure
+- 本地 Dart model wrapper for FFI types (riverpod_generator 兼容性)
+- Dart 3 pattern matching for sealed class FFI type conversion
+
 ## Constraints
 
 - **性能**: 搜索响应时间 <200ms (继承现有后端能力)
@@ -94,6 +103,8 @@
 | 三层 FFI 架构 | 分离关注点，易于维护和测试 | ✓ Good (Phase 7 验证) |
 | 复用 SearchHistoryManager | 避免重复实现，保持代码一致性 | ✓ Good |
 | 复用 PatternMatcher (Aho-Corasick) | O(n+m) 复杂度，高性能多模式匹配 | ✓ Good |
+| 本地 Dart model wrapper for FFI types | riverpod_generator 无法处理外部类型 | ✓ Good |
+| Dart 3 sealed class + pattern matching | 类型安全的 FFI 转换，编译时检查 | ✓ Good |
 
 ---
-*Last updated: 2026-03-04 after v1.1 milestone archived*
+*Last updated: 2026-03-05 after v1.1 milestone completed (Phase 7-8)*

@@ -1,4 +1,13 @@
 # Milestones
+## v1.1 高级搜索与虚拟文件系统 (Shipped: 2026-03-05)
+
+**Phases completed:** 8 phases, 22 plans, 15 tasks
+
+**Key accomplishments:**
+- (none recorded)
+
+---
+
 ## v1.1 高级搜索与虚拟文件系统 (Shipped: 2026-03-04)
 
 **Phases completed:** 1/5 phases (Phase 7 only), 4/19 plans, 14 tasks
