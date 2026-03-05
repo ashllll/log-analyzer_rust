@@ -1,23 +1,20 @@
 # flutter_rust_bridge 代码生成配置
-# 使用新的语法
 
-# Rust 库路径
-rust_root: ../log-analyzer/src-tauri/src
+# Rust 库根目录
+rust_root: ../log-analyzer/src-tauri
 
 # Rust 输入路径（使用 crate 路径格式）
-rust_input: ffi::bridge
+rust_input: crate::ffi::bridge
 
 # Dart 输出路径
 dart_output: lib/shared/services/generated
 
-# Dart 包名
-dart_package_name: log_analyzer_flutter
+# 生成的 Dart 入口类名
+dart_entrypoint_class_name: LogAnalyzerBridge
 
-# 生成的 Dart 文件名前缀
-dart_file_name: bridge_generated
+# 启用 Dart 3 特性
+dart3: true
 
-# 生成 Dart 的类名
-class_name: LogAnalyzerBridge
-
-# 是否生成 null safety 代码
-null_safe_types: true
+# 启用 FFI feature
+rust_features:
+  - ffi
