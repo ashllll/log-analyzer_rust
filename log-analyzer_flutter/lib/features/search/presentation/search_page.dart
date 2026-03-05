@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -20,6 +19,8 @@ import 'widgets/filter_palette.dart';
 import 'widgets/heatmap_minimap.dart';
 import 'widgets/log_detail_panel.dart';
 import 'widgets/search_progress_bar.dart';
+import 'widgets/search_history_dropdown.dart';
+import '../../../shared/providers/search_history_provider.dart';
 
 /// 固定行高常量 - 用于 SliverFixedExtentList
 ///
@@ -122,6 +123,9 @@ class _SearchPageState extends ConsumerState<SearchPage> {
         });
         // 生成热力图密度数据
         _generateDensityMap();
+
+        // 保存到搜索历史
+        _saveSearchHistory(results.length);
       },
       onError: (error) {
         setState(() {
@@ -147,6 +151,23 @@ class _SearchPageState extends ConsumerState<SearchPage> {
         });
       },
     );
+  }
+
+  /// 保存搜索历史
+  ///
+  /// 搜索完成后自动保存到历史记录
+  void _saveSearchHistory(int resultCount) {
+    final query = _searchController.text.trim();
+    if (query.isEmpty) return;
+
+    final workspaceId = ref.read(appStateProvider).activeWorkspaceId;
+    if (workspaceId == null) return;
+
+    // 调用 SearchHistoryProvider 保存历史
+    ref.read(searchHistoryProvider(workspaceId).notifier).addSearchHistory(
+          query: query,
+          resultCount: resultCount,
+        );
   }
 
   /// 生成热力图密度数据
@@ -323,6 +344,8 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 
   /// 构建搜索栏
   Widget _buildSearchBar() {
+    final activeWorkspaceId = ref.watch(appStateProvider).activeWorkspaceId;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: const BoxDecoration(
@@ -353,6 +376,26 @@ class _SearchPageState extends ConsumerState<SearchPage> {
               onSubmitted: (_) => _performSearch(),
             ),
           ),
+          // 搜索历史下拉按钮
+          if (activeWorkspaceId != null)
+            Padding(
+              padding: const EdgeInsets.only(left: 8),
+              child: SearchHistoryDropdown(
+                workspaceId: activeWorkspaceId,
+                onSelect: (query) {
+                  _searchController.text = query;
+                  setState(() {});
+                  // 可选：自动触发搜索
+                  _performSearch();
+                },
+                onDelete: (query) {
+                  ref
+                      .read(searchHistoryProvider(activeWorkspaceId).notifier)
+                      .deleteSearchHistory(query);
+                },
+              ),
+            ),
+          const SizedBox(width: 8),
           // 搜索按钮
           ElevatedButton(
             onPressed: _isSearching ? null : _performSearch,
@@ -569,13 +612,6 @@ class _SearchPageState extends ConsumerState<SearchPage> {
         ],
       ),
     );
-  }
-
-  /// 搜索输入变化（点击搜索按钮执行，不使用防抖）
-  void _onSearchChanged(String value) {
-    // 只更新 UI 状态，不执行搜索
-    // 搜索由点击搜索按钮或 Enter 键触发
-    setState(() {});
   }
 
   /// 取消搜索
