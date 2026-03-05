@@ -4,12 +4,14 @@ import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../services/bridge_service.dart';
+import '../services/generated/ffi/bridge.dart' as ffi;
+import '../services/generated/ffi/types.dart' as ffi_types;
 
 part 'search_history_provider.g.dart';
 
 /// 搜索历史条目模型
 ///
-/// 由于 FFI SearchHistoryData 类型未生成，使用本地 Dart 模型
+/// 本地 Dart 模型，用于 Riverpod 状态管理
 /// 对应 Rust 后端的 SearchHistoryData 结构体
 class SearchHistoryItem {
   /// 查询内容
@@ -31,24 +33,24 @@ class SearchHistoryItem {
     required this.searchedAt,
   });
 
-  /// 从 Map 创建（用于 FFI 返回值转换）
-  factory SearchHistoryItem.fromMap(Map<String, dynamic> map) {
+  /// 从 FFI SearchHistoryData 创建
+  factory SearchHistoryItem.fromFfi(ffi_types.SearchHistoryData data) {
     return SearchHistoryItem(
-      query: map['query'] as String? ?? '',
-      workspaceId: map['workspace_id'] as String? ?? '',
-      resultCount: map['result_count'] as int? ?? 0,
-      searchedAt: map['searched_at'] as String? ?? '',
+      query: data.query,
+      workspaceId: data.workspaceId,
+      resultCount: data.resultCount,
+      searchedAt: data.searchedAt,
     );
   }
 
-  /// 转换为 Map
-  Map<String, dynamic> toMap() {
-    return {
-      'query': query,
-      'workspace_id': workspaceId,
-      'result_count': resultCount,
-      'searched_at': searchedAt,
-    };
+  /// 转换为 FFI SearchHistoryData
+  ffi_types.SearchHistoryData toFfi() {
+    return ffi_types.SearchHistoryData(
+      query: query,
+      workspaceId: workspaceId,
+      resultCount: resultCount,
+      searchedAt: searchedAt,
+    );
   }
 
   @override
@@ -92,7 +94,7 @@ class SearchHistory extends _$SearchHistory {
 
   /// 加载搜索历史
   ///
-  /// 从 BridgeService 获取指定工作区的搜索历史
+  /// 从 FFI 获取指定工作区的搜索历史
   Future<void> _loadHistory() async {
     try {
       final bridge = ref.read(bridgeServiceProvider);
@@ -104,29 +106,15 @@ class SearchHistory extends _$SearchHistory {
         return;
       }
 
-      // 获取搜索历史（已按时间降序排序）
-      // 注意：由于 FFI 类型未生成，这里需要手动转换
-      final rawHistory = await bridge.getSearchHistory(
+      // 直接使用 FFI 生成的函数
+      final ffiHistory = ffi.getSearchHistory(
         workspaceId: workspaceId,
       );
 
-      // 将 FFI 返回的数据转换为本地模型
-      // 由于类型系统限制，使用 dynamic 处理
-      // ignore: avoid_dynamic_calls
-      final history = rawHistory.map((dynamic item) {
-        // 尝试从 item 获取属性
-        // ignore: avoid_dynamic_calls
-        return SearchHistoryItem(
-          // ignore: avoid_dynamic_calls
-          query: (item.query as String?) ?? '',
-          // ignore: avoid_dynamic_calls
-          workspaceId: (item.workspaceId as String?) ?? '',
-          // ignore: avoid_dynamic_calls
-          resultCount: (item.resultCount as int?) ?? 0,
-          // ignore: avoid_dynamic_calls
-          searchedAt: (item.searchedAt as String?) ?? '',
-        );
-      }).toList();
+      // 转换为本地模型
+      final history = ffiHistory
+          .map((data) => SearchHistoryItem.fromFfi(data))
+          .toList();
 
       state = AsyncData(history);
       debugPrint('SearchHistoryProvider: 已加载 ${history.length} 条搜索历史');
@@ -151,7 +139,6 @@ class SearchHistory extends _$SearchHistory {
     required String query,
     required int resultCount,
   }) async {
-    final bridge = ref.read(bridgeServiceProvider);
     // 获取当前值（处理可能的 loading/error 状态）
     final previous = state.value ?? [];
 
@@ -170,7 +157,7 @@ class SearchHistory extends _$SearchHistory {
 
     try {
       // 后端同步
-      await bridge.addSearchHistory(
+      ffi.addSearchHistory(
         query: query,
         workspaceId: workspaceId,
         resultCount: resultCount,
@@ -188,7 +175,6 @@ class SearchHistory extends _$SearchHistory {
   ///
   /// 使用乐观更新模式，失败时回滚
   Future<void> deleteSearchHistory(String query) async {
-    final bridge = ref.read(bridgeServiceProvider);
     final previous = state.value ?? [];
 
     // 乐观更新 - 立即从列表中移除
@@ -198,7 +184,7 @@ class SearchHistory extends _$SearchHistory {
 
     try {
       // 后端同步
-      await bridge.deleteSearchHistory(
+      ffi.deleteSearchHistory(
         query: query,
         workspaceId: workspaceId,
       );
@@ -215,7 +201,6 @@ class SearchHistory extends _$SearchHistory {
   ///
   /// 使用乐观更新模式，失败时回滚
   Future<void> deleteSearchHistories(List<String> queries) async {
-    final bridge = ref.read(bridgeServiceProvider);
     final previous = state.value ?? [];
 
     // 乐观更新
@@ -226,7 +211,7 @@ class SearchHistory extends _$SearchHistory {
 
     try {
       // 后端同步
-      await bridge.deleteSearchHistories(
+      ffi.deleteSearchHistories(
         queries: queries,
         workspaceId: workspaceId,
       );
@@ -243,7 +228,6 @@ class SearchHistory extends _$SearchHistory {
   ///
   /// 使用乐观更新模式，清空当前工作区的所有历史记录
   Future<void> clearSearchHistory() async {
-    final bridge = ref.read(bridgeServiceProvider);
     final previous = state.value ?? [];
 
     // 乐观更新 - 立即清空
@@ -251,7 +235,7 @@ class SearchHistory extends _$SearchHistory {
 
     try {
       // 后端同步
-      await bridge.clearSearchHistory(workspaceId: workspaceId);
+      ffi.clearSearchHistory(workspaceId: workspaceId);
       debugPrint('SearchHistoryProvider: 已清空搜索历史');
     } catch (e) {
       debugPrint('SearchHistoryProvider: 清空搜索历史失败: $e');
