@@ -20,7 +20,11 @@ import 'widgets/heatmap_minimap.dart';
 import 'widgets/log_detail_panel.dart';
 import 'widgets/search_progress_bar.dart';
 import 'widgets/search_history_dropdown.dart';
+import 'widgets/search_mode_selector.dart';
+import 'widgets/regex_input_field.dart';
+import '../models/search_mode.dart';
 import '../../../shared/providers/search_history_provider.dart';
+import '../../../shared/services/bridge_service.dart';
 
 /// 固定行高常量 - 用于 SliverFixedExtentList
 ///
@@ -58,6 +62,10 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   String? _currentSearchId;
   bool _isSearching = false;
   SearchResultSummary? _searchSummary;
+
+  // 搜索模式状态
+  SearchMode _searchMode = SearchMode.normal;
+  bool _regexValid = false;
 
   // 进度条状态
   int _progress = 0;
@@ -354,76 +362,134 @@ class _SearchPageState extends ConsumerState<SearchPage> {
           bottom: BorderSide(color: AppColors.border, width: 1),
         ),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 搜索输入框（不显示清空按钮，根据 CONTEXT 要求）
-          Expanded(
-            child: TextField(
-              controller: _searchController,
-              focusNode: _focusNode,
-              decoration: const InputDecoration(
-                hintText: '搜索日志... (Ctrl+F 聚焦)',
-                hintStyle: TextStyle(color: AppColors.textMuted),
-                prefixIcon: Icon(Icons.search),
-                border: InputBorder.none,
-                contentPadding: EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
+          // 第一行：搜索模式选择器
+          Row(
+            children: [
+              SearchModeSelector(
+                currentMode: _searchMode,
+                onModeChanged: (mode) {
+                  setState(() {
+                    _searchMode = mode;
+                    _regexValid = false;
+                  });
+                },
+              ),
+              const Spacer(),
+              // 搜索历史下拉按钮
+              if (activeWorkspaceId != null)
+                SearchHistoryDropdown(
+                  workspaceId: activeWorkspaceId,
+                  onSelect: (query) {
+                    _searchController.text = query;
+                    setState(() {});
+                    // 可选：自动触发搜索
+                    _performSearch();
+                  },
+                  onDelete: (query) {
+                    ref
+                        .read(searchHistoryProvider(activeWorkspaceId).notifier)
+                        .deleteSearchHistory(query);
+                  },
                 ),
-              ),
-              style: const TextStyle(fontSize: 15),
-              onChanged: (_) => setState(() {}),
-              onSubmitted: (_) => _performSearch(),
-            ),
+            ],
           ),
-          // 搜索历史下拉按钮
-          if (activeWorkspaceId != null)
-            Padding(
-              padding: const EdgeInsets.only(left: 8),
-              child: SearchHistoryDropdown(
-                workspaceId: activeWorkspaceId,
-                onSelect: (query) {
-                  _searchController.text = query;
-                  setState(() {});
-                  // 可选：自动触发搜索
-                  _performSearch();
-                },
-                onDelete: (query) {
-                  ref
-                      .read(searchHistoryProvider(activeWorkspaceId).notifier)
-                      .deleteSearchHistory(query);
-                },
+          const SizedBox(height: 12),
+          // 第二行：搜索输入框和按钮
+          Row(
+            children: [
+              // 搜索输入框 - 根据模式显示不同组件
+              Expanded(
+                child: _buildSearchInput(),
               ),
-            ),
-          const SizedBox(width: 8),
-          // 搜索按钮
-          ElevatedButton(
-            onPressed: _isSearching ? null : _performSearch,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(
-                horizontal: 20,
-                vertical: 16,
+              const SizedBox(width: 12),
+              // 搜索按钮
+              ElevatedButton(
+                onPressed: _isSearching ? null : _performSearch,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 16,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: _isSearching
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        ),
+                      )
+                    : const Text('搜索'),
               ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-            child: _isSearching
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                    ),
-                  )
-                : const Text('搜索'),
+            ],
           ),
         ],
       ),
     );
+  }
+
+  /// 根据搜索模式构建对应的输入框
+  Widget _buildSearchInput() {
+    switch (_searchMode) {
+      case SearchMode.regex:
+        // 正则模式：使用 RegexInputField
+        return RegexInputField(
+          controller: _searchController,
+          focusNode: _focusNode,
+          hintText: '输入正则表达式，如: \\d+、[a-z]+、.*error.*',
+          onValidChanged: (isValid) {
+            setState(() {
+              _regexValid = isValid;
+            });
+          },
+        );
+      case SearchMode.combined:
+        // 组合模式：占位（09-02 实现）
+        return TextField(
+          controller: _searchController,
+          focusNode: _focusNode,
+          decoration: const InputDecoration(
+            hintText: '组合搜索（09-02 计划实现）',
+            hintStyle: TextStyle(color: AppColors.textMuted),
+            prefixIcon: Icon(Icons.manage_search),
+            border: InputBorder.none,
+            contentPadding: EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 12,
+            ),
+          ),
+          style: const TextStyle(fontSize: 15),
+          enabled: false, // 暂时禁用
+        );
+      case SearchMode.normal:
+        // 普通模式：使用普通 TextField
+        return TextField(
+          controller: _searchController,
+          focusNode: _focusNode,
+          decoration: const InputDecoration(
+            hintText: '搜索日志... (Ctrl+F 聚焦)',
+            hintStyle: TextStyle(color: AppColors.textMuted),
+            prefixIcon: Icon(Icons.search),
+            border: InputBorder.none,
+            contentPadding: EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 12,
+            ),
+          ),
+          style: const TextStyle(fontSize: 15),
+          onChanged: (_) => setState(() {}),
+          onSubmitted: (_) => _performSearch(),
+        );
+    }
   }
 
   /// 构建日志列表
@@ -631,10 +697,22 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 
   /// 执行搜索
   ///
-  /// 调用后端搜索 API 并通过事件流接收结果
+  /// 根据搜索模式调用不同的后端 API：
+  /// - normal: 使用 searchLogs API
+  /// - regex: 使用 searchRegex API
+  /// - combined: 占位（09-02 实现）
   Future<void> _performSearch() async {
     final query = _searchController.text.trim();
     if (query.isEmpty) return;
+
+    // 正则模式下验证语法
+    if (_searchMode == SearchMode.regex && !_regexValid) {
+      ref.read(appStateProvider.notifier).addToast(
+            ToastType.warning,
+            '正则表达式语法无效，请检查输入',
+          );
+      return;
+    }
 
     final activeWorkspaceId = ref.read(appStateProvider).activeWorkspaceId;
     if (activeWorkspaceId == null) {
@@ -656,31 +734,24 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     });
 
     try {
-      final apiService = ref.read(apiServiceProvider);
-      final searchId = await apiService.searchLogs(
-        query: query,
-        workspaceId: activeWorkspaceId,
-        maxResults: AppConstants.defaultMaxResults,
-        filterOptions: _currentFilters,
-      );
-
-      setState(() {
-        _currentSearchId = searchId;
-      });
-
-      // 搜索结果通过事件流实时接收，这里设置超时保护
-      // 如果 30 秒内没有收到结果，则标记为失败
-      await Future.delayed(const Duration(seconds: 30));
-
-      // 如果还在搜索中，说明事件流可能未正常工作
-      if (_isSearching && _logs.isEmpty) {
-        setState(() {
-          _isSearching = false;
-        });
-        ref.read(appStateProvider.notifier).addToast(
-              ToastType.warning,
-              '搜索超时，请检查后端连接',
-            );
+      switch (_searchMode) {
+        case SearchMode.regex:
+          // 正则搜索
+          await _performRegexSearch(query, activeWorkspaceId);
+          break;
+        case SearchMode.combined:
+          // 组合搜索（09-02 实现）
+          ref.read(appStateProvider.notifier).addToast(
+                ToastType.info,
+                '组合搜索将在 09-02 计划中实现',
+              );
+          setState(() {
+            _isSearching = false;
+          });
+          return;
+        case SearchMode.normal:
+          // 普通搜索
+          await _performNormalSearch(query, activeWorkspaceId);
       }
     } catch (e) {
       setState(() {
@@ -690,6 +761,86 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       ref.read(appStateProvider.notifier).addToast(
             ToastType.error,
             '搜索失败: $e',
+          );
+    }
+  }
+
+  /// 执行普通搜索
+  Future<void> _performNormalSearch(String query, String workspaceId) async {
+    final apiService = ref.read(apiServiceProvider);
+    final searchId = await apiService.searchLogs(
+      query: query,
+      workspaceId: workspaceId,
+      maxResults: AppConstants.defaultMaxResults,
+      filterOptions: _currentFilters,
+    );
+
+    setState(() {
+      _currentSearchId = searchId;
+    });
+
+    // 搜索结果通过事件流实时接收，这里设置超时保护
+    await Future.delayed(const Duration(seconds: 30));
+
+    if (_isSearching && _logs.isEmpty) {
+      setState(() {
+        _isSearching = false;
+      });
+      ref.read(appStateProvider.notifier).addToast(
+            ToastType.warning,
+            '搜索超时，请检查后端连接',
+          );
+    }
+  }
+
+  /// 执行正则搜索
+  ///
+  /// 使用 FFI searchRegex API
+  /// 注意：正则搜索结果通过 FFI 直接返回，不经过事件流
+  Future<void> _performRegexSearch(String pattern, String workspaceId) async {
+    try {
+      final bridge = BridgeService.instance;
+
+      // 调用 FFI 正则搜索
+      // SearchResultEntry 是不透明类型，直接计数结果
+      final results = await bridge.searchRegex(
+        pattern: pattern,
+        workspaceId: workspaceId,
+        maxResults: AppConstants.defaultMaxResults,
+        caseSensitive: false,
+      );
+
+      // 由于 SearchResultEntry 是 RustOpaque 类型，
+      // 我们无法直接访问其属性来构建 LogEntry
+      // 目前只显示结果数量，实际内容需要通过事件流接收
+      setState(() {
+        _resultsFound = results.length;
+        _progress = 100;
+        _isSearching = false;
+      });
+
+      // 提示用户结果已获取
+      if (results.isNotEmpty) {
+        ref.read(appStateProvider.notifier).addToast(
+              ToastType.success,
+              '正则搜索完成，找到 ${results.length} 条结果',
+            );
+        // 保存到搜索历史
+        _saveSearchHistory(results.length);
+      } else {
+        ref.read(appStateProvider.notifier).addToast(
+              ToastType.info,
+              '未找到匹配的结果',
+            );
+      }
+    } catch (e) {
+      setState(() {
+        _isSearching = false;
+        _progress = 0;
+      });
+      ref.read(appStateProvider.notifier).addToast(
+            ToastType.error,
+            '正则搜索失败: $e',
           );
     }
   }
