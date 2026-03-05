@@ -10,16 +10,16 @@
 
 - [x] **ASEARCH-01**: 用户可以切换到正则表达式搜索模式
 - [x] **ASEARCH-02**: 正则表达式搜索时提供语法反馈 (有效/无效)
-- [ ] **ASEARCH-03**: 用户可以输入多个关键词并选择 AND 组合
-- [ ] **ASEARCH-04**: 用户可以输入多个关键词并选择 OR 组合
-- [ ] **ASEARCH-05**: 用户可以输入多个关键词并选择 NOT 组合
-- [ ] **ASEARCH-06**: 用户可以查看组合后的搜索条件预览
+- [x] **ASEARCH-03**: 用户可以输入多个关键词并选择 AND 组合
+- [x] **ASEARCH-04**: 用户可以输入多个关键词并选择 OR 组合
+- [x] **ASEARCH-05**: 用户可以输入多个关键词并选择 NOT 组合
+- [x] **ASEARCH-06**: 用户可以查看组合后的搜索条件预览
 
 ### 搜索历史
 
-- [ ] **HIST-01**: 搜索自动保存到搜索历史
-- [ ] **HIST-02**: 用户可以在下拉列表中查看历史搜索记录
-- [ ] **HIST-03**: 用户可以点击历史记录快速填充搜索框
+- [x] **HIST-01**: 搜索自动保存到搜索历史
+- [x] **HIST-02**: 用户可以在下拉列表中查看历史搜索记录
+- [x] **HIST-03**: 用户可以点击历史记录快速填充搜索框
 - [x] **HIST-04**: 用户可以删除单条历史记录
 - [x] **HIST-05**: 用户可以清空所有搜索历史
 
@@ -69,13 +69,13 @@
 |-------------|-------|--------|
 | ASEARCH-01 | Phase 9 | Complete |
 | ASEARCH-02 | Phase 9 | Complete |
-| ASEARCH-03 | Phase 9 | Pending |
-| ASEARCH-04 | Phase 9 | Pending |
-| ASEARCH-05 | Phase 9 | Pending |
-| ASEARCH-06 | Phase 9 | Pending |
-| HIST-01 | Phase 9 | Pending |
-| HIST-02 | Phase 9 | Pending |
-| HIST-03 | Phase 9 | Pending |
+| ASEARCH-03 | Phase 9 | Complete |
+| ASEARCH-04 | Phase 9 | Complete |
+| ASEARCH-05 | Phase 9 | Complete |
+| ASEARCH-06 | Phase 9 | Complete |
+| HIST-01 | Phase 9 | Complete |
+| HIST-02 | Phase 9 | Complete |
+| HIST-03 | Phase 9 | Complete |
 | HIST-04 | Phase 9 | Complete |
 | HIST-05 | Phase 9 | Complete |
 | VFS-01 | Phase 10 | Pending |
