@@ -116,18 +116,20 @@ Plans:
 - [ ] 07-04-PLAN.md — 多关键词组合搜索 API 集成
 
 ### Phase 8: 状态管理
-**Goal**: 使用 Riverpod 管理搜索历史和虚拟文件树的状态
+**Goal**: 使用 Riverpod 3.0 AsyncNotifier 管理搜索历史和虚拟文件树的状态，支持参数化工作区、乐观更新、懒加载
 **Depends on**: Phase 7
 **Success Criteria** (what must be TRUE):
-  1. SearchHistoryProvider 可以增删改查搜索历史
-  2. VirtualFileTreeProvider 可以获取和刷新文件树
-  3. 历史记录支持 LRU 限制（最多100条）
-  4. 虚拟文件树支持懒加载
-**Plans**: TBD
+  1. SearchHistoryProvider 可以增删改查搜索历史（CRUD）
+  2. SearchHistoryProvider 支持乐观更新和错误回滚
+  3. VirtualFileTreeProvider 可以获取文件树根节点
+  4. VirtualFileTreeProvider 支持懒加载子节点
+  5. 切换工作区时状态自动刷新
+  6. LRU 限制由后端执行（前端无需关心）
+**Plans**: 2 plans
 
 Plans:
-- [ ] 08-01: SearchHistoryProvider 实现（CRUD + LRU 限制）
-- [ ] 08-02: VirtualFileTreeProvider 实现（懒加载支持）
+- [ ] 08-01-PLAN.md — SearchHistoryProvider 实现（Riverpod AsyncNotifier + 乐观更新）
+- [ ] 08-02-PLAN.md — VirtualFileTreeProvider 实现（懒加载 + TreeController）
 
 ### Phase 9: 高级搜索 UI
 **Goal**: 用户可以使用正则表达式搜索、多关键词组合、查看搜索历史
