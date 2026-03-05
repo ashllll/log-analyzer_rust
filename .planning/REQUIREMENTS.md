@@ -1,6 +1,7 @@
-# Requirements: Flutter 日志分析桌面应用 v1.1
+# Requirements: Flutter 日志分析桌面应用 v1.2
 
 **Defined:** 2026-03-04
+**Milestone:** v1.2 UI 完善 (继续 v1.1 未完成需求)
 **Core Value:** 让用户能够高效地搜索、分析和监控日志文件
 
 ## v1 Requirements
