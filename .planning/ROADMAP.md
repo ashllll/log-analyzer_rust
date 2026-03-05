@@ -187,7 +187,7 @@ Phases execute in numeric order: 9 → 10 → 11
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 9. 高级搜索 UI | 0/4 | Not started | - |
+| 9. 高级搜索 UI | 1/4 | In progress | 09-03 |
 | 10. 虚拟文件系统 UI | 0/3 | Not started | - |
 | 11. 集成与优化 | 0/4 | Not started | - |
 
@@ -205,9 +205,9 @@ Phases execute in numeric order: 9 → 10 → 11
 | ASEARCH-04 | Phase 9 | Pending |
 | ASEARCH-05 | Phase 9 | Pending |
 | ASEARCH-06 | Phase 9 | Pending |
-| HIST-01 | Phase 9 | Pending |
-| HIST-02 | Phase 9 | Pending |
-| HIST-03 | Phase 9 | Pending |
+| HIST-01 | Phase 9 | Complete |
+| HIST-02 | Phase 9 | Complete |
+| HIST-03 | Phase 9 | Complete |
 | HIST-04 | Phase 9 | Pending |
 | HIST-05 | Phase 9 | Pending |
 | VFS-01 | Phase 10 | Pending |
@@ -223,6 +223,7 @@ Phases execute in numeric order: 9 → 10 → 11
 - v1.2 requirements: 19 total
 - Mapped to phases: 19
 - Unmapped: 0 ✓
+- Completed: 3 (HIST-01, HIST-02, HIST-03)
 
 ---
 

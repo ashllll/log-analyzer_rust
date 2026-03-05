@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: UI 完善
-status: not_started
-last_updated: "2026-03-05T00:00:00.000Z"
+status: in_progress
+last_updated: "2026-03-05T16:28:38.000Z"
 progress:
   total_phases: 3
   completed_phases: 0
   total_plans: 11
-  completed_plans: 0
+  completed_plans: 1
 ---
 
 # Project State
@@ -23,26 +23,28 @@ See: .planning/PROJECT.md (updated 2026-03-05)
 ## Current Position
 
 Phase: 9 (高级搜索 UI)
-Plan: Not started
-Status: Ready for planning
-Last activity: 2026-03-05 — Roadmap created for v1.2
+Plan: 09-03 completed
+Status: In progress
+Last activity: 2026-03-05 — Completed 09-03: Search History Dropdown
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [█░░░░░░░░░] 9%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 0 (v1.2)
-- Average duration: -
-- Total execution time: -
+- Total plans completed: 1 (v1.2)
+- Average duration: 4 min
+- Total execution time: 4 min
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 9. 高级搜索 UI | 0/4 | - | - |
+| 9. 高级搜索 UI | 1/4 | 4 min | 4 min |
 | 10. 虚拟文件系统 UI | 0/3 | - | - |
 | 11. 集成与优化 | 0/4 | - | - |
+
+| Phase 09 P03 | 4 min | 2 tasks | 2 files |
 
 **Previous Milestones:**
 - v1.0 已完成: 16 个计划
@@ -66,6 +68,11 @@ From v1.1 (carried forward):
 - Dart 3 pattern matching for sealed class FFI type conversion
 - VirtualFileTreeProvider uses Dart-side Freezed sealed class due to FFI type generation issues
 
+From 09-03:
+- 使用 PopupMenuButton 实现下拉交互，而非自定义 Overlay
+- 选择历史记录后自动触发搜索，提升用户体验
+- 搜索结果到达时自动保存到历史，而非搜索发起时
+
 ### Pending Todos
 
 None yet.
@@ -77,9 +84,9 @@ None currently.
 ## Session Continuity
 
 Last session: 2026-03-05
-Stopped at: Roadmap created, ready for Phase 9 planning
+Stopped at: Completed 09-03: Search History Dropdown
 Resume file: None
 
 ## Next Steps
 
-1. Run `/gsd:plan-phase 9` to create first plan (09-01: SearchInputBar 增强)
+1. Continue with 09-04 or other remaining Phase 9 plans
