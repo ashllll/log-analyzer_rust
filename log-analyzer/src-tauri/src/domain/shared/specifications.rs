@@ -315,11 +315,11 @@ impl Specification<Workspace> for WorkspacePathFilterSpecification {
 // ==================== 验证规格 ====================
 
 /// 工作区名称验证规格
-pub struct WorkspaceNameSpecification;
+pub struct WorkspaceNameSpecification {}
 
 impl WorkspaceNameSpecification {
     pub fn new() -> Self {
-        Self
+        Self {}
     }
 
     /// 验证名称是否有效
@@ -357,11 +357,11 @@ impl Specification<Workspace> for WorkspaceNameSpecification {
 }
 
 /// 工作区路径验证规格
-pub struct WorkspacePathValidationSpecification;
+pub struct WorkspacePathValidationSpecification {}
 
 impl WorkspacePathValidationSpecification {
     pub fn new() -> Self {
-        Self
+        Self {}
     }
 
     /// 验证路径是否有效

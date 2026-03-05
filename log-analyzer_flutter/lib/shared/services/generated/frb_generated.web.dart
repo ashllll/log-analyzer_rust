@@ -9,13 +9,11 @@
 import 'dart:async';
 import 'dart:convert';
 import 'ffi/bridge.dart';
-import 'ffi/commands_bridge.dart';
-import 'ffi/global_state.dart';
 import 'ffi/types.dart';
 import 'frb_generated.dart';
-import 'lib.dart';
-import 'models/state.dart';
+import 'infrastructure/persistence.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_web.dart';
+import 'search_engine/manager.dart';
 
 abstract class LogAnalyzerBridgeApiImplPlatform
     extends BaseApiImpl<LogAnalyzerBridgeWire> {
@@ -26,149 +24,35 @@ abstract class LogAnalyzerBridgeApiImplPlatform
     required super.portManager,
   });
 
-  CrossPlatformFinalizerArg get rust_arc_decrement_strong_count_AppStatePtr => wire
-      .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState;
-
-  CrossPlatformFinalizerArg get rust_arc_decrement_strong_count_FfiContextPtr =>
-      wire.rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext;
-
   CrossPlatformFinalizerArg
-      get rust_arc_decrement_strong_count_FfiResultStringPtr => wire
-          .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultString;
-
-  CrossPlatformFinalizerArg
-      get rust_arc_decrement_strong_count_FfiResultTaskMetricsDataPtr => wire
-          .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultTaskMetricsData;
-
-  CrossPlatformFinalizerArg
-      get rust_arc_decrement_strong_count_FfiResultWorkspaceStatusDataPtr => wire
-          .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultWorkspaceStatusData;
-
-  CrossPlatformFinalizerArg
-      get rust_arc_decrement_strong_count_FfiResultBoolPtr => wire
-          .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultbool;
-
-  CrossPlatformFinalizerArg
-      get rust_arc_decrement_strong_count_FfiResultI32Ptr => wire
-          .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResulti32;
-
-  CrossPlatformFinalizerArg get rust_arc_decrement_strong_count_PathBufPtr => wire
-      .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf;
+  get rust_arc_decrement_strong_count_SearchResultEntryPtr => wire
+      .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry;
 
   @protected
-  AppState
-      dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState(
-          dynamic raw);
+  SearchResultEntry
+  dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
+    dynamic raw,
+  );
 
   @protected
-  FfiContext
-      dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          dynamic raw);
+  DateTime dco_decode_Chrono_Utc(dynamic raw);
 
   @protected
-  FfiResultString
-      dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultString(
-          dynamic raw);
-
-  @protected
-  FfiResultTaskMetricsData
-      dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultTaskMetricsData(
-          dynamic raw);
-
-  @protected
-  FfiResultWorkspaceStatusData
-      dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultWorkspaceStatusData(
-          dynamic raw);
-
-  @protected
-  FfiResultBool
-      dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultbool(
-          dynamic raw);
-
-  @protected
-  FfiResultI32
-      dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResulti32(
-          dynamic raw);
-
-  @protected
-  PathBuf
-      dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf(
-          dynamic raw);
-
-  @protected
-  FfiContext
-      dco_decode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          dynamic raw);
-
-  @protected
-  FfiContext
-      dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          dynamic raw);
-
-  @protected
-  AppState
-      dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState(
-          dynamic raw);
-
-  @protected
-  FfiContext
-      dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          dynamic raw);
-
-  @protected
-  FfiResultString
-      dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultString(
-          dynamic raw);
-
-  @protected
-  FfiResultTaskMetricsData
-      dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultTaskMetricsData(
-          dynamic raw);
-
-  @protected
-  FfiResultWorkspaceStatusData
-      dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultWorkspaceStatusData(
-          dynamic raw);
-
-  @protected
-  FfiResultBool
-      dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultbool(
-          dynamic raw);
-
-  @protected
-  FfiResultI32
-      dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResulti32(
-          dynamic raw);
-
-  @protected
-  PathBuf
-      dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf(
-          dynamic raw);
+  SearchResultEntry
+  dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
+    dynamic raw,
+  );
 
   @protected
   String dco_decode_String(dynamic raw);
 
   @protected
   AdvancedFeaturesConfigData dco_decode_advanced_features_config_data(
-      dynamic raw);
+    dynamic raw,
+  );
 
   @protected
   bool dco_decode_bool(dynamic raw);
-
-  @protected
-  AppState
-      dco_decode_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState(
-          dynamic raw);
-
-  @protected
-  FfiContext
-      dco_decode_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          dynamic raw);
-
-  @protected
-  PathBuf
-      dco_decode_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf(
-          dynamic raw);
 
   @protected
   bool dco_decode_box_autoadd_bool(dynamic raw);
@@ -180,7 +64,21 @@ abstract class LogAnalyzerBridgeApiImplPlatform
   ConfigData dco_decode_box_autoadd_config_data(dynamic raw);
 
   @protected
+  int dco_decode_box_autoadd_i_32(dynamic raw);
+
+  @protected
   KeywordGroupInput dco_decode_box_autoadd_keyword_group_input(dynamic raw);
+
+  @protected
+  SearchFiltersData dco_decode_box_autoadd_search_filters_data(dynamic raw);
+
+  @protected
+  StructuredSearchQueryData dco_decode_box_autoadd_structured_search_query_data(
+    dynamic raw,
+  );
+
+  @protected
+  TimeRangeData dco_decode_box_autoadd_time_range_data(dynamic raw);
 
   @protected
   BridgeContext dco_decode_bridge_context(dynamic raw);
@@ -190,6 +88,9 @@ abstract class LogAnalyzerBridgeApiImplPlatform
 
   @protected
   double dco_decode_f_64(dynamic raw);
+
+  @protected
+  FileContentResponseData dco_decode_file_content_response_data(dynamic raw);
 
   @protected
   FileFilterConfigData dco_decode_file_filter_config_data(dynamic raw);
@@ -207,6 +108,12 @@ abstract class LogAnalyzerBridgeApiImplPlatform
   KeywordGroupInput dco_decode_keyword_group_input(dynamic raw);
 
   @protected
+  List<SearchResultEntry>
+  dco_decode_list_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
+    dynamic raw,
+  );
+
+  @protected
   List<String> dco_decode_list_String(dynamic raw);
 
   @protected
@@ -219,34 +126,65 @@ abstract class LogAnalyzerBridgeApiImplPlatform
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
 
   @protected
+  List<SearchHistoryData> dco_decode_list_search_history_data(dynamic raw);
+
+  @protected
+  List<SearchTermData> dco_decode_list_search_term_data(dynamic raw);
+
+  @protected
+  List<VirtualTreeNodeData> dco_decode_list_virtual_tree_node_data(dynamic raw);
+
+  @protected
   List<WorkspaceData> dco_decode_list_workspace_data(dynamic raw);
 
   @protected
   String? dco_decode_opt_String(dynamic raw);
 
   @protected
-  AppState?
-      dco_decode_opt_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState(
-          dynamic raw);
-
-  @protected
-  FfiContext?
-      dco_decode_opt_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          dynamic raw);
-
-  @protected
-  PathBuf?
-      dco_decode_opt_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf(
-          dynamic raw);
-
-  @protected
   bool? dco_decode_opt_box_autoadd_bool(dynamic raw);
+
+  @protected
+  int? dco_decode_opt_box_autoadd_i_32(dynamic raw);
+
+  @protected
+  SearchFiltersData? dco_decode_opt_box_autoadd_search_filters_data(
+    dynamic raw,
+  );
+
+  @protected
+  TimeRangeData? dco_decode_opt_box_autoadd_time_range_data(dynamic raw);
 
   @protected
   PerformanceMetricsData dco_decode_performance_metrics_data(dynamic raw);
 
   @protected
+  QueryOperatorData dco_decode_query_operator_data(dynamic raw);
+
+  @protected
+  RegexValidationResult dco_decode_regex_validation_result(dynamic raw);
+
+  @protected
+  SearchFiltersData dco_decode_search_filters_data(dynamic raw);
+
+  @protected
+  SearchHistoryData dco_decode_search_history_data(dynamic raw);
+
+  @protected
+  SearchTermData dco_decode_search_term_data(dynamic raw);
+
+  @protected
+  StructuredSearchQueryData dco_decode_structured_search_query_data(
+    dynamic raw,
+  );
+
+  @protected
   TaskMetricsData dco_decode_task_metrics_data(dynamic raw);
+
+  @protected
+  TimeRangeData dco_decode_time_range_data(dynamic raw);
+
+  @protected
+  int dco_decode_u_32(dynamic raw);
 
   @protected
   int dco_decode_u_8(dynamic raw);
@@ -258,143 +196,73 @@ abstract class LogAnalyzerBridgeApiImplPlatform
   BigInt dco_decode_usize(dynamic raw);
 
   @protected
-  WorkspaceData dco_decode_workspace_data(dynamic raw);
+  VirtualTreeNodeData dco_decode_virtual_tree_node_data(dynamic raw);
 
   @protected
-  WorkspaceLoadResponseData dco_decode_workspace_load_response_data(
-      dynamic raw);
+  WorkspaceData dco_decode_workspace_data(dynamic raw);
 
   @protected
   WorkspaceStatusData dco_decode_workspace_status_data(dynamic raw);
 
   @protected
-  AppState
-      sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState(
-          SseDeserializer deserializer);
+  SearchResultEntry
+  sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
+    SseDeserializer deserializer,
+  );
 
   @protected
-  FfiContext
-      sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          SseDeserializer deserializer);
+  DateTime sse_decode_Chrono_Utc(SseDeserializer deserializer);
 
   @protected
-  FfiResultString
-      sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultString(
-          SseDeserializer deserializer);
-
-  @protected
-  FfiResultTaskMetricsData
-      sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultTaskMetricsData(
-          SseDeserializer deserializer);
-
-  @protected
-  FfiResultWorkspaceStatusData
-      sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultWorkspaceStatusData(
-          SseDeserializer deserializer);
-
-  @protected
-  FfiResultBool
-      sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultbool(
-          SseDeserializer deserializer);
-
-  @protected
-  FfiResultI32
-      sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResulti32(
-          SseDeserializer deserializer);
-
-  @protected
-  PathBuf
-      sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf(
-          SseDeserializer deserializer);
-
-  @protected
-  FfiContext
-      sse_decode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          SseDeserializer deserializer);
-
-  @protected
-  FfiContext
-      sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          SseDeserializer deserializer);
-
-  @protected
-  AppState
-      sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState(
-          SseDeserializer deserializer);
-
-  @protected
-  FfiContext
-      sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          SseDeserializer deserializer);
-
-  @protected
-  FfiResultString
-      sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultString(
-          SseDeserializer deserializer);
-
-  @protected
-  FfiResultTaskMetricsData
-      sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultTaskMetricsData(
-          SseDeserializer deserializer);
-
-  @protected
-  FfiResultWorkspaceStatusData
-      sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultWorkspaceStatusData(
-          SseDeserializer deserializer);
-
-  @protected
-  FfiResultBool
-      sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultbool(
-          SseDeserializer deserializer);
-
-  @protected
-  FfiResultI32
-      sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResulti32(
-          SseDeserializer deserializer);
-
-  @protected
-  PathBuf
-      sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf(
-          SseDeserializer deserializer);
+  SearchResultEntry
+  sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
+    SseDeserializer deserializer,
+  );
 
   @protected
   String sse_decode_String(SseDeserializer deserializer);
 
   @protected
   AdvancedFeaturesConfigData sse_decode_advanced_features_config_data(
-      SseDeserializer deserializer);
+    SseDeserializer deserializer,
+  );
 
   @protected
   bool sse_decode_bool(SseDeserializer deserializer);
-
-  @protected
-  AppState
-      sse_decode_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState(
-          SseDeserializer deserializer);
-
-  @protected
-  FfiContext
-      sse_decode_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          SseDeserializer deserializer);
-
-  @protected
-  PathBuf
-      sse_decode_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf(
-          SseDeserializer deserializer);
 
   @protected
   bool sse_decode_box_autoadd_bool(SseDeserializer deserializer);
 
   @protected
   BridgeContext sse_decode_box_autoadd_bridge_context(
-      SseDeserializer deserializer);
+    SseDeserializer deserializer,
+  );
 
   @protected
   ConfigData sse_decode_box_autoadd_config_data(SseDeserializer deserializer);
 
   @protected
+  int sse_decode_box_autoadd_i_32(SseDeserializer deserializer);
+
+  @protected
   KeywordGroupInput sse_decode_box_autoadd_keyword_group_input(
-      SseDeserializer deserializer);
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SearchFiltersData sse_decode_box_autoadd_search_filters_data(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  StructuredSearchQueryData sse_decode_box_autoadd_structured_search_query_data(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  TimeRangeData sse_decode_box_autoadd_time_range_data(
+    SseDeserializer deserializer,
+  );
 
   @protected
   BridgeContext sse_decode_bridge_context(SseDeserializer deserializer);
@@ -406,8 +274,14 @@ abstract class LogAnalyzerBridgeApiImplPlatform
   double sse_decode_f_64(SseDeserializer deserializer);
 
   @protected
+  FileContentResponseData sse_decode_file_content_response_data(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   FileFilterConfigData sse_decode_file_filter_config_data(
-      SseDeserializer deserializer);
+    SseDeserializer deserializer,
+  );
 
   @protected
   int sse_decode_i_32(SseDeserializer deserializer);
@@ -420,14 +294,22 @@ abstract class LogAnalyzerBridgeApiImplPlatform
 
   @protected
   KeywordGroupInput sse_decode_keyword_group_input(
-      SseDeserializer deserializer);
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<SearchResultEntry>
+  sse_decode_list_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
+    SseDeserializer deserializer,
+  );
 
   @protected
   List<String> sse_decode_list_String(SseDeserializer deserializer);
 
   @protected
   List<KeywordGroupData> sse_decode_list_keyword_group_data(
-      SseDeserializer deserializer);
+    SseDeserializer deserializer,
+  );
 
   @protected
   Float64List sse_decode_list_prim_f_64_strict(SseDeserializer deserializer);
@@ -436,36 +318,85 @@ abstract class LogAnalyzerBridgeApiImplPlatform
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
+  List<SearchHistoryData> sse_decode_list_search_history_data(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<SearchTermData> sse_decode_list_search_term_data(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<VirtualTreeNodeData> sse_decode_list_virtual_tree_node_data(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<WorkspaceData> sse_decode_list_workspace_data(
-      SseDeserializer deserializer);
+    SseDeserializer deserializer,
+  );
 
   @protected
   String? sse_decode_opt_String(SseDeserializer deserializer);
 
   @protected
-  AppState?
-      sse_decode_opt_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState(
-          SseDeserializer deserializer);
-
-  @protected
-  FfiContext?
-      sse_decode_opt_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          SseDeserializer deserializer);
-
-  @protected
-  PathBuf?
-      sse_decode_opt_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf(
-          SseDeserializer deserializer);
-
-  @protected
   bool? sse_decode_opt_box_autoadd_bool(SseDeserializer deserializer);
 
   @protected
+  int? sse_decode_opt_box_autoadd_i_32(SseDeserializer deserializer);
+
+  @protected
+  SearchFiltersData? sse_decode_opt_box_autoadd_search_filters_data(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  TimeRangeData? sse_decode_opt_box_autoadd_time_range_data(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   PerformanceMetricsData sse_decode_performance_metrics_data(
-      SseDeserializer deserializer);
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  QueryOperatorData sse_decode_query_operator_data(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  RegexValidationResult sse_decode_regex_validation_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SearchFiltersData sse_decode_search_filters_data(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SearchHistoryData sse_decode_search_history_data(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SearchTermData sse_decode_search_term_data(SseDeserializer deserializer);
+
+  @protected
+  StructuredSearchQueryData sse_decode_structured_search_query_data(
+    SseDeserializer deserializer,
+  );
 
   @protected
   TaskMetricsData sse_decode_task_metrics_data(SseDeserializer deserializer);
+
+  @protected
+  TimeRangeData sse_decode_time_range_data(SseDeserializer deserializer);
+
+  @protected
+  int sse_decode_u_32(SseDeserializer deserializer);
 
   @protected
   int sse_decode_u_8(SseDeserializer deserializer);
@@ -477,145 +408,88 @@ abstract class LogAnalyzerBridgeApiImplPlatform
   BigInt sse_decode_usize(SseDeserializer deserializer);
 
   @protected
+  VirtualTreeNodeData sse_decode_virtual_tree_node_data(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   WorkspaceData sse_decode_workspace_data(SseDeserializer deserializer);
 
   @protected
-  WorkspaceLoadResponseData sse_decode_workspace_load_response_data(
-      SseDeserializer deserializer);
-
-  @protected
   WorkspaceStatusData sse_decode_workspace_status_data(
-      SseDeserializer deserializer);
+    SseDeserializer deserializer,
+  );
 
   @protected
   void
-      sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState(
-          AppState self, SseSerializer serializer);
+  sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
+    SearchResultEntry self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_Chrono_Utc(DateTime self, SseSerializer serializer);
 
   @protected
   void
-      sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          FfiContext self, SseSerializer serializer);
-
-  @protected
-  void
-      sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultString(
-          FfiResultString self, SseSerializer serializer);
-
-  @protected
-  void
-      sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultTaskMetricsData(
-          FfiResultTaskMetricsData self, SseSerializer serializer);
-
-  @protected
-  void
-      sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultWorkspaceStatusData(
-          FfiResultWorkspaceStatusData self, SseSerializer serializer);
-
-  @protected
-  void
-      sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultbool(
-          FfiResultBool self, SseSerializer serializer);
-
-  @protected
-  void
-      sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResulti32(
-          FfiResultI32 self, SseSerializer serializer);
-
-  @protected
-  void
-      sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf(
-          PathBuf self, SseSerializer serializer);
-
-  @protected
-  void
-      sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          FfiContext self, SseSerializer serializer);
-
-  @protected
-  void
-      sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          FfiContext self, SseSerializer serializer);
-
-  @protected
-  void
-      sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState(
-          AppState self, SseSerializer serializer);
-
-  @protected
-  void
-      sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          FfiContext self, SseSerializer serializer);
-
-  @protected
-  void
-      sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultString(
-          FfiResultString self, SseSerializer serializer);
-
-  @protected
-  void
-      sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultTaskMetricsData(
-          FfiResultTaskMetricsData self, SseSerializer serializer);
-
-  @protected
-  void
-      sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultWorkspaceStatusData(
-          FfiResultWorkspaceStatusData self, SseSerializer serializer);
-
-  @protected
-  void
-      sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultbool(
-          FfiResultBool self, SseSerializer serializer);
-
-  @protected
-  void
-      sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResulti32(
-          FfiResultI32 self, SseSerializer serializer);
-
-  @protected
-  void
-      sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf(
-          PathBuf self, SseSerializer serializer);
+  sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
+    SearchResultEntry self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_String(String self, SseSerializer serializer);
 
   @protected
   void sse_encode_advanced_features_config_data(
-      AdvancedFeaturesConfigData self, SseSerializer serializer);
+    AdvancedFeaturesConfigData self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_bool(bool self, SseSerializer serializer);
-
-  @protected
-  void
-      sse_encode_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState(
-          AppState self, SseSerializer serializer);
-
-  @protected
-  void
-      sse_encode_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          FfiContext self, SseSerializer serializer);
-
-  @protected
-  void
-      sse_encode_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf(
-          PathBuf self, SseSerializer serializer);
 
   @protected
   void sse_encode_box_autoadd_bool(bool self, SseSerializer serializer);
 
   @protected
   void sse_encode_box_autoadd_bridge_context(
-      BridgeContext self, SseSerializer serializer);
+    BridgeContext self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_box_autoadd_config_data(
-      ConfigData self, SseSerializer serializer);
+    ConfigData self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_i_32(int self, SseSerializer serializer);
 
   @protected
   void sse_encode_box_autoadd_keyword_group_input(
-      KeywordGroupInput self, SseSerializer serializer);
+    KeywordGroupInput self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_search_filters_data(
+    SearchFiltersData self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_structured_search_query_data(
+    StructuredSearchQueryData self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_time_range_data(
+    TimeRangeData self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_bridge_context(BridgeContext self, SseSerializer serializer);
@@ -627,8 +501,16 @@ abstract class LogAnalyzerBridgeApiImplPlatform
   void sse_encode_f_64(double self, SseSerializer serializer);
 
   @protected
+  void sse_encode_file_content_response_data(
+    FileContentResponseData self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_file_filter_config_data(
-      FileFilterConfigData self, SseSerializer serializer);
+    FileFilterConfigData self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_i_32(int self, SseSerializer serializer);
@@ -638,59 +520,142 @@ abstract class LogAnalyzerBridgeApiImplPlatform
 
   @protected
   void sse_encode_keyword_group_data(
-      KeywordGroupData self, SseSerializer serializer);
+    KeywordGroupData self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_keyword_group_input(
-      KeywordGroupInput self, SseSerializer serializer);
+    KeywordGroupInput self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void
+  sse_encode_list_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
+    List<SearchResultEntry> self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_list_String(List<String> self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_keyword_group_data(
-      List<KeywordGroupData> self, SseSerializer serializer);
+    List<KeywordGroupData> self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_list_prim_f_64_strict(
-      Float64List self, SseSerializer serializer);
+    Float64List self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_list_prim_u_8_strict(
-      Uint8List self, SseSerializer serializer);
+    Uint8List self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_search_history_data(
+    List<SearchHistoryData> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_search_term_data(
+    List<SearchTermData> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_virtual_tree_node_data(
+    List<VirtualTreeNodeData> self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_list_workspace_data(
-      List<WorkspaceData> self, SseSerializer serializer);
+    List<WorkspaceData> self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_opt_String(String? self, SseSerializer serializer);
 
   @protected
-  void
-      sse_encode_opt_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState(
-          AppState? self, SseSerializer serializer);
-
-  @protected
-  void
-      sse_encode_opt_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          FfiContext? self, SseSerializer serializer);
-
-  @protected
-  void
-      sse_encode_opt_box_autoadd_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf(
-          PathBuf? self, SseSerializer serializer);
-
-  @protected
   void sse_encode_opt_box_autoadd_bool(bool? self, SseSerializer serializer);
 
   @protected
+  void sse_encode_opt_box_autoadd_i_32(int? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_search_filters_data(
+    SearchFiltersData? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_time_range_data(
+    TimeRangeData? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_performance_metrics_data(
-      PerformanceMetricsData self, SseSerializer serializer);
+    PerformanceMetricsData self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_query_operator_data(
+    QueryOperatorData self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_regex_validation_result(
+    RegexValidationResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_search_filters_data(
+    SearchFiltersData self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_search_history_data(
+    SearchHistoryData self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_search_term_data(
+    SearchTermData self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_structured_search_query_data(
+    StructuredSearchQueryData self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_task_metrics_data(
-      TaskMetricsData self, SseSerializer serializer);
+    TaskMetricsData self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_time_range_data(TimeRangeData self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_u_32(int self, SseSerializer serializer);
 
   @protected
   void sse_encode_u_8(int self, SseSerializer serializer);
@@ -702,15 +667,19 @@ abstract class LogAnalyzerBridgeApiImplPlatform
   void sse_encode_usize(BigInt self, SseSerializer serializer);
 
   @protected
+  void sse_encode_virtual_tree_node_data(
+    VirtualTreeNodeData self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_workspace_data(WorkspaceData self, SseSerializer serializer);
 
   @protected
-  void sse_encode_workspace_load_response_data(
-      WorkspaceLoadResponseData self, SseSerializer serializer);
-
-  @protected
   void sse_encode_workspace_status_data(
-      WorkspaceStatusData self, SseSerializer serializer);
+    WorkspaceStatusData self,
+    SseSerializer serializer,
+  );
 }
 
 // Section: wire_class
@@ -718,101 +687,21 @@ abstract class LogAnalyzerBridgeApiImplPlatform
 class LogAnalyzerBridgeWire implements BaseWire {
   LogAnalyzerBridgeWire.fromExternalLibrary(ExternalLibrary lib);
 
-  void rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState(
-          int ptr) =>
-      wasmModule
-          .rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState(
-              ptr);
+  void
+  rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
+    int ptr,
+  ) => wasmModule
+      .rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
+        ptr,
+      );
 
-  void rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState(
-          int ptr) =>
-      wasmModule
-          .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState(
-              ptr);
-
-  void rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          int ptr) =>
-      wasmModule
-          .rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-              ptr);
-
-  void rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          int ptr) =>
-      wasmModule
-          .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-              ptr);
-
-  void rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultString(
-          int ptr) =>
-      wasmModule
-          .rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultString(
-              ptr);
-
-  void rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultString(
-          int ptr) =>
-      wasmModule
-          .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultString(
-              ptr);
-
-  void rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultTaskMetricsData(
-          int ptr) =>
-      wasmModule
-          .rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultTaskMetricsData(
-              ptr);
-
-  void rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultTaskMetricsData(
-          int ptr) =>
-      wasmModule
-          .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultTaskMetricsData(
-              ptr);
-
-  void rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultWorkspaceStatusData(
-          int ptr) =>
-      wasmModule
-          .rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultWorkspaceStatusData(
-              ptr);
-
-  void rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultWorkspaceStatusData(
-          int ptr) =>
-      wasmModule
-          .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultWorkspaceStatusData(
-              ptr);
-
-  void rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultbool(
-          int ptr) =>
-      wasmModule
-          .rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultbool(
-              ptr);
-
-  void rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultbool(
-          int ptr) =>
-      wasmModule
-          .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultbool(
-              ptr);
-
-  void rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResulti32(
-          int ptr) =>
-      wasmModule
-          .rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResulti32(
-              ptr);
-
-  void rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResulti32(
-          int ptr) =>
-      wasmModule
-          .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResulti32(
-              ptr);
-
-  void rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf(
-          int ptr) =>
-      wasmModule
-          .rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf(
-              ptr);
-
-  void rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf(
-          int ptr) =>
-      wasmModule
-          .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf(
-              ptr);
+  void
+  rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
+    int ptr,
+  ) => wasmModule
+      .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
+        ptr,
+      );
 }
 
 @JS('wasm_bindgen')
@@ -822,66 +711,12 @@ external LogAnalyzerBridgeWasmModule get wasmModule;
 @anonymous
 extension type LogAnalyzerBridgeWasmModule._(JSObject _) implements JSObject {
   external void
-      rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState(
-          int ptr);
+  rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
+    int ptr,
+  );
 
   external void
-      rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerAppState(
-          int ptr);
-
-  external void
-      rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          int ptr);
-
-  external void
-      rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiContext(
-          int ptr);
-
-  external void
-      rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultString(
-          int ptr);
-
-  external void
-      rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultString(
-          int ptr);
-
-  external void
-      rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultTaskMetricsData(
-          int ptr);
-
-  external void
-      rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultTaskMetricsData(
-          int ptr);
-
-  external void
-      rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultWorkspaceStatusData(
-          int ptr);
-
-  external void
-      rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultWorkspaceStatusData(
-          int ptr);
-
-  external void
-      rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultbool(
-          int ptr);
-
-  external void
-      rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResultbool(
-          int ptr);
-
-  external void
-      rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResulti32(
-          int ptr);
-
-  external void
-      rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFfiResulti32(
-          int ptr);
-
-  external void
-      rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf(
-          int ptr);
-
-  external void
-      rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathBuf(
-          int ptr);
+  rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
+    int ptr,
+  );
 }

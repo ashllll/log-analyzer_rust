@@ -110,11 +110,11 @@ pub struct TaskItem {
 // ==================== 基础查询处理器实现 ====================
 
 /// 获取工作区查询处理器
-pub struct GetWorkspaceQueryHandler;
+pub struct GetWorkspaceQueryHandler {}
 
 impl GetWorkspaceQueryHandler {
     pub fn new() -> Self {
-        Self
+        Self {}
     }
 }
 
@@ -125,11 +125,11 @@ impl Default for GetWorkspaceQueryHandler {
 }
 
 /// 获取关键词组查询处理器
-pub struct GetKeywordsQueryHandler;
+pub struct GetKeywordsQueryHandler {}
 
 impl GetKeywordsQueryHandler {
     pub fn new() -> Self {
-        Self
+        Self {}
     }
 }
 
@@ -140,11 +140,11 @@ impl Default for GetKeywordsQueryHandler {
 }
 
 /// 获取任务状态查询处理器
-pub struct GetTaskStatusQueryHandler;
+pub struct GetTaskStatusQueryHandler {}
 
 impl GetTaskStatusQueryHandler {
     pub fn new() -> Self {
-        Self
+        Self {}
     }
 }
 

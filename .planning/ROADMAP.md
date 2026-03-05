@@ -73,7 +73,7 @@ Plans:
 ### v1.1 高级搜索与虚拟文件系统 (Phases 7-11) — SHIPPED 2026-03-04 (部分完成)
 
 > **归档**: `.planning/milestones/v1.1-ROADMAP.md` | `.planning/milestones/v1.1-REQUIREMENTS.md`
-> **完成度**: 1/5 phases (Phase 7), 4/19 plans
+> **完成度**: 2/5 phases (Phase 7, Phase 8), 6/19 plans
 
 <details>
 <summary>📦 已完成: Phase 7 - 后端 API 集成 (4/4 plans)</summary>
@@ -86,9 +86,16 @@ Plans:
 </details>
 
 <details>
-<summary>⏳ 未完成: Phases 8-11 (0/15 plans)</summary>
+<summary>📦 已完成: Phase 8 - 状态管理 (2/2 plans)</summary>
 
-- [ ] **Phase 8: 状态管理** — SearchHistoryProvider, VirtualFileTreeProvider
+- [x] 08-01 — SearchHistoryProvider 实现 (15min) ✓ 2026-03-05
+- [x] 08-02 — VirtualFileTreeProvider 实现 (25min) ✓ 2026-03-05
+
+</details>
+
+<details>
+<summary>⏳ 未完成: Phases 9-11 (0/13 plans)</summary>
+
 - [ ] **Phase 9: 高级搜索 UI** — 正则表达式、多关键词组合、搜索历史界面
 - [ ] **Phase 10: 虚拟文件系统 UI** — 文件树导航、目录展开折叠、文件预览
 - [ ] **Phase 11: 集成与优化** — 功能联动、键盘导航、性能优化
@@ -116,18 +123,20 @@ Plans:
 - [ ] 07-04-PLAN.md — 多关键词组合搜索 API 集成
 
 ### Phase 8: 状态管理
-**Goal**: 使用 Riverpod 管理搜索历史和虚拟文件树的状态
+**Goal**: 使用 Riverpod 3.0 AsyncNotifier 管理搜索历史和虚拟文件树的状态，支持参数化工作区、乐观更新、懒加载
 **Depends on**: Phase 7
 **Success Criteria** (what must be TRUE):
-  1. SearchHistoryProvider 可以增删改查搜索历史
-  2. VirtualFileTreeProvider 可以获取和刷新文件树
-  3. 历史记录支持 LRU 限制（最多100条）
-  4. 虚拟文件树支持懒加载
-**Plans**: TBD
+  1. SearchHistoryProvider 可以增删改查搜索历史（CRUD）
+  2. SearchHistoryProvider 支持乐观更新和错误回滚
+  3. VirtualFileTreeProvider 可以获取文件树根节点
+  4. VirtualFileTreeProvider 支持懒加载子节点
+  5. 切换工作区时状态自动刷新
+  6. LRU 限制由后端执行（前端无需关心）
+**Plans**: 2 plans
 
 Plans:
-- [ ] 08-01: SearchHistoryProvider 实现（CRUD + LRU 限制）
-- [ ] 08-02: VirtualFileTreeProvider 实现（懒加载支持）
+- [x] 08-01-PLAN.md — SearchHistoryProvider 实现（Riverpod AsyncNotifier + 乐观更新） ✓ 2026-03-05
+- [x] 08-02-PLAN.md — VirtualFileTreeProvider 实现（懒加载 + TreeController） ✓ 2026-03-05
 
 ### Phase 9: 高级搜索 UI
 **Goal**: 用户可以使用正则表达式搜索、多关键词组合、查看搜索历史
@@ -193,8 +202,8 @@ Phases execute in numeric order: 7 → 8 → 9 → 10 → 11
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 7. 后端 API 集成 | 2/4 | In Progress | 07-01, 07-02 |
-| 8. 状态管理 | 0/2 | Not started | - |
+| 7. 后端 API 集成 | 4/4 | Complete | 07-01, 07-02, 07-03, 07-04 |
+| 8. 状态管理 | 2/2 | Complete | 08-01, 08-02 |
 | 9. 高级搜索 UI | 0/4 | Not started | - |
 | 10. 虚拟文件系统 UI | 0/3 | Not started | - |
 | 11. 集成与优化 | 0/3 | Not started | - |

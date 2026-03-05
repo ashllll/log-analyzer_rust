@@ -412,7 +412,7 @@ impl FileTracker {
  *
  * 提供异步文件I/O操作，提升性能和响应性
  */
-pub struct AsyncFileReader;
+pub struct AsyncFileReader {}
 
 impl AsyncFileReader {
     /**

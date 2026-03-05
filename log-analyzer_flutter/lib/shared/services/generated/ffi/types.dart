@@ -5,9 +5,8 @@
 
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
-
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `SearchFiltersData`, `TaskInfoData`, `TimeRangeData`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`
+import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
+part 'types.freezed.dart';
 
 /// 高级功能配置（FFI 格式）
 class AdvancedFeaturesConfigData {
@@ -28,10 +27,6 @@ class AdvancedFeaturesConfigData {
     required this.autocompleteLimit,
     required this.timePartitionSizeSecs,
   });
-
-  static Future<AdvancedFeaturesConfigData> default_() =>
-      LogAnalyzerBridge.instance.api
-          .crateFfiTypesAdvancedFeaturesConfigDataDefault();
 
   @override
   int get hashCode =>
@@ -62,13 +57,7 @@ class ConfigData {
   final FileFilterConfigData fileFilter;
   final AdvancedFeaturesConfigData advancedFeatures;
 
-  const ConfigData({
-    required this.fileFilter,
-    required this.advancedFeatures,
-  });
-
-  static Future<ConfigData> default_() =>
-      LogAnalyzerBridge.instance.api.crateFfiTypesConfigDataDefault();
+  const ConfigData({required this.fileFilter, required this.advancedFeatures});
 
   @override
   int get hashCode => fileFilter.hashCode ^ advancedFeatures.hashCode;
@@ -80,6 +69,38 @@ class ConfigData {
           runtimeType == other.runtimeType &&
           fileFilter == other.fileFilter &&
           advancedFeatures == other.advancedFeatures;
+}
+
+/// 文件内容响应数据（FFI 格式）
+///
+/// 用于通过哈希读取文件内容
+class FileContentResponseData {
+  /// 文件内容（UTF-8 字符串）
+  final String content;
+
+  /// SHA-256 哈希
+  final String hash;
+
+  /// 文件大小（字节）
+  final PlatformInt64 size;
+
+  const FileContentResponseData({
+    required this.content,
+    required this.hash,
+    required this.size,
+  });
+
+  @override
+  int get hashCode => content.hashCode ^ hash.hashCode ^ size.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is FileContentResponseData &&
+          runtimeType == other.runtimeType &&
+          content == other.content &&
+          hash == other.hash &&
+          size == other.size;
 }
 
 /// 文件过滤器配置（FFI 格式）
@@ -99,9 +120,6 @@ class FileFilterConfigData {
     required this.allowedExtensions,
     required this.forbiddenExtensions,
   });
-
-  static Future<FileFilterConfigData> default_() =>
-      LogAnalyzerBridge.instance.api.crateFfiTypesFileFilterConfigDataDefault();
 
   @override
   int get hashCode =>
@@ -123,42 +141,6 @@ class FileFilterConfigData {
           filenamePatterns == other.filenamePatterns &&
           allowedExtensions == other.allowedExtensions &&
           forbiddenExtensions == other.forbiddenExtensions;
-}
-
-/// 关键词组数据（FFI 格式）
-class KeywordGroupData {
-  final String id;
-  final String name;
-  final String color;
-  final List<String> patterns;
-  final bool enabled;
-
-  const KeywordGroupData({
-    required this.id,
-    required this.name,
-    required this.color,
-    required this.patterns,
-    required this.enabled,
-  });
-
-  @override
-  int get hashCode =>
-      id.hashCode ^
-      name.hashCode ^
-      color.hashCode ^
-      patterns.hashCode ^
-      enabled.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is KeywordGroupData &&
-          runtimeType == other.runtimeType &&
-          id == other.id &&
-          name == other.name &&
-          color == other.color &&
-          patterns == other.patterns &&
-          enabled == other.enabled;
 }
 
 /// 关键词组输入（用于创建/更新）
@@ -212,10 +194,6 @@ class PerformanceMetricsData {
     required this.avgLatency,
   });
 
-  static Future<PerformanceMetricsData> default_() =>
-      LogAnalyzerBridge.instance.api
-          .crateFfiTypesPerformanceMetricsDataDefault();
-
   @override
   int get hashCode =>
       searchLatency.hashCode ^
@@ -240,6 +218,203 @@ class PerformanceMetricsData {
           cacheHits == other.cacheHits &&
           latencyHistory == other.latencyHistory &&
           avgLatency == other.avgLatency;
+}
+
+/// 查询操作符（FFI 格式）
+///
+/// 用于多关键词组合搜索的逻辑操作
+enum QueryOperatorData {
+  /// AND 操作 - 所有关键词都必须匹配
+  and,
+
+  /// OR 操作 - 任一关键词匹配即可
+  or,
+
+  /// NOT 操作 - 排除包含该关键词的行
+  not,
+}
+
+/// 正则表达式验证结果（FFI 格式）
+///
+/// 用于验证正则表达式语法是否正确
+class RegexValidationResult {
+  /// 是否有效
+  final bool valid;
+
+  /// 错误消息（如果无效）
+  final String? errorMessage;
+
+  const RegexValidationResult({required this.valid, this.errorMessage});
+
+  @override
+  int get hashCode => valid.hashCode ^ errorMessage.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RegexValidationResult &&
+          runtimeType == other.runtimeType &&
+          valid == other.valid &&
+          errorMessage == other.errorMessage;
+}
+
+/// 搜索过滤器（FFI 格式）
+class SearchFiltersData {
+  final TimeRangeData? timeRange;
+  final List<String> levels;
+  final String? filePattern;
+
+  const SearchFiltersData({
+    this.timeRange,
+    required this.levels,
+    this.filePattern,
+  });
+
+  @override
+  int get hashCode =>
+      timeRange.hashCode ^ levels.hashCode ^ filePattern.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SearchFiltersData &&
+          runtimeType == other.runtimeType &&
+          timeRange == other.timeRange &&
+          levels == other.levels &&
+          filePattern == other.filePattern;
+}
+
+/// 搜索历史条目数据（FFI 格式）
+///
+/// 用于 Flutter 端搜索历史展示
+class SearchHistoryData {
+  /// 查询内容
+  final String query;
+
+  /// 工作区ID
+  final String workspaceId;
+
+  /// 结果数量
+  final int resultCount;
+
+  /// 搜索时间（ISO 8601 格式）
+  final String searchedAt;
+
+  const SearchHistoryData({
+    required this.query,
+    required this.workspaceId,
+    required this.resultCount,
+    required this.searchedAt,
+  });
+
+  @override
+  int get hashCode =>
+      query.hashCode ^
+      workspaceId.hashCode ^
+      resultCount.hashCode ^
+      searchedAt.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SearchHistoryData &&
+          runtimeType == other.runtimeType &&
+          query == other.query &&
+          workspaceId == other.workspaceId &&
+          resultCount == other.resultCount &&
+          searchedAt == other.searchedAt;
+}
+
+/// 搜索条件数据（FFI 格式）
+///
+/// 用于结构化搜索的单个搜索条件
+class SearchTermData {
+  /// 条件唯一标识
+  final String id;
+
+  /// 搜索值/关键词
+  final String value;
+
+  /// 该条件的操作符（相对于前一个条件）
+  final QueryOperatorData operator_;
+
+  /// 是否为正则表达式
+  final bool isRegex;
+
+  /// 优先级（数字越小优先级越高）
+  final int priority;
+
+  /// 是否启用该条件
+  final bool enabled;
+
+  /// 是否大小写敏感
+  final bool caseSensitive;
+
+  const SearchTermData({
+    required this.id,
+    required this.value,
+    required this.operator_,
+    required this.isRegex,
+    required this.priority,
+    required this.enabled,
+    required this.caseSensitive,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      value.hashCode ^
+      operator_.hashCode ^
+      isRegex.hashCode ^
+      priority.hashCode ^
+      enabled.hashCode ^
+      caseSensitive.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SearchTermData &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          value == other.value &&
+          operator_ == other.operator_ &&
+          isRegex == other.isRegex &&
+          priority == other.priority &&
+          enabled == other.enabled &&
+          caseSensitive == other.caseSensitive;
+}
+
+/// 完整搜索查询数据（FFI 格式）
+///
+/// 用于多关键词组合搜索的完整查询结构
+class StructuredSearchQueryData {
+  /// 搜索条件列表
+  final List<SearchTermData> terms;
+
+  /// 全局操作符（用于组合多个条件）
+  final QueryOperatorData globalOperator;
+
+  /// 搜索过滤器
+  final SearchFiltersData? filters;
+
+  const StructuredSearchQueryData({
+    required this.terms,
+    required this.globalOperator,
+    this.filters,
+  });
+
+  @override
+  int get hashCode =>
+      terms.hashCode ^ globalOperator.hashCode ^ filters.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is StructuredSearchQueryData &&
+          runtimeType == other.runtimeType &&
+          terms == other.terms &&
+          globalOperator == other.globalOperator &&
+          filters == other.filters;
 }
 
 /// 任务指标数据（FFI 格式）
@@ -278,6 +453,66 @@ class TaskMetricsData {
           completedTasks == other.completedTasks &&
           failedTasks == other.failedTasks &&
           stoppedTasks == other.stoppedTasks;
+}
+
+/// 时间范围（FFI 格式）
+class TimeRangeData {
+  final String? start;
+  final String? end;
+
+  const TimeRangeData({this.start, this.end});
+
+  @override
+  int get hashCode => start.hashCode ^ end.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TimeRangeData &&
+          runtimeType == other.runtimeType &&
+          start == other.start &&
+          end == other.end;
+}
+
+@freezed
+sealed class VirtualTreeNodeData with _$VirtualTreeNodeData {
+  const VirtualTreeNodeData._();
+
+  /// 文件节点
+  const factory VirtualTreeNodeData.file({
+    /// 文件名
+    required String name,
+
+    /// 虚拟路径
+    required String path,
+
+    /// SHA-256 哈希
+    required String hash,
+
+    /// 文件大小（字节）
+    required PlatformInt64 size,
+
+    /// MIME 类型
+    String? mimeType,
+  }) = VirtualTreeNodeData_File;
+
+  /// 归档节点（压缩包）
+  const factory VirtualTreeNodeData.archive({
+    /// 归档名
+    required String name,
+
+    /// 虚拟路径
+    required String path,
+
+    /// SHA-256 哈希
+    required String hash,
+
+    /// 归档类型（zip, tar, gz 等）
+    required String archiveType,
+
+    /// 子节点（懒加载时为空）
+    required List<VirtualTreeNodeData> children,
+  }) = VirtualTreeNodeData_Archive;
 }
 
 /// 工作区数据（FFI 格式）
@@ -324,40 +559,6 @@ class WorkspaceData {
           size == other.size &&
           files == other.files &&
           watching == other.watching;
-}
-
-/// 工作区加载响应数据（FFI 格式）
-///
-/// 用于 ffi_load_workspace 返回
-class WorkspaceLoadResponseData {
-  final String workspaceId;
-  final String status;
-  final int fileCount;
-  final String totalSize;
-
-  const WorkspaceLoadResponseData({
-    required this.workspaceId,
-    required this.status,
-    required this.fileCount,
-    required this.totalSize,
-  });
-
-  @override
-  int get hashCode =>
-      workspaceId.hashCode ^
-      status.hashCode ^
-      fileCount.hashCode ^
-      totalSize.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is WorkspaceLoadResponseData &&
-          runtimeType == other.runtimeType &&
-          workspaceId == other.workspaceId &&
-          status == other.status &&
-          fileCount == other.fileCount &&
-          totalSize == other.totalSize;
 }
 
 /// 工作区状态数据（FFI 格式）

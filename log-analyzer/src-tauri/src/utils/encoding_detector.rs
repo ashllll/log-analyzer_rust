@@ -38,7 +38,7 @@ pub struct EncodingDetectionResult {
 /// 编码检测器
 ///
 /// 使用 chardetng 进行编码探测，支持多种常见编码格式。
-pub struct EncodingDetector;
+pub struct EncodingDetector {}
 
 impl EncodingDetector {
     /// 检测文件编码

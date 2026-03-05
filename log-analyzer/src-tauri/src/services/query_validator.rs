@@ -7,7 +7,7 @@ use regex::Regex;
  *
  * 负责验证搜索查询的有效性和正确性
  */
-pub struct QueryValidator;
+pub struct QueryValidator {}
 
 impl QueryValidator {
     /**

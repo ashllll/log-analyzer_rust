@@ -220,11 +220,11 @@ impl AggregatedResults {
 // ==================== 基础搜索策略实现 ====================
 
 /// 精确匹配策略
-pub struct ExactMatchStrategy;
+pub struct ExactMatchStrategy {}
 
 impl ExactMatchStrategy {
     pub fn new() -> Self {
-        Self
+        Self {}
     }
 }
 

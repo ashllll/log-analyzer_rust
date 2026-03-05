@@ -4,9 +4,12 @@
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
 import '../frb_generated.dart';
+import '../infrastructure/persistence.dart';
+import '../search_engine/manager.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'types.dart';
 
+// These functions are ignored because they are not marked as `pub`: `unwrap_result`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`
 
 /// 健康检查
@@ -24,50 +27,54 @@ List<WorkspaceData> getWorkspaces() =>
 /// 创建工作区
 ///
 /// 创建新的工作区并返回其 ID
-FfiResultString createWorkspace({required String name, required String path}) =>
-    LogAnalyzerBridge.instance.api
-        .crateFfiBridgeCreateWorkspace(name: name, path: path);
+String createWorkspace({required String name, required String path}) =>
+    LogAnalyzerBridge.instance.api.crateFfiBridgeCreateWorkspace(
+      name: name,
+      path: path,
+    );
 
 /// 删除工作区
-FfiResultBool deleteWorkspace({required String workspaceId}) =>
-    LogAnalyzerBridge.instance.api
-        .crateFfiBridgeDeleteWorkspace(workspaceId: workspaceId);
+bool deleteWorkspace({required String workspaceId}) => LogAnalyzerBridge
+    .instance
+    .api
+    .crateFfiBridgeDeleteWorkspace(workspaceId: workspaceId);
 
 /// 刷新工作区
 ///
 /// 返回任务 ID 用于跟踪进度
-FfiResultString refreshWorkspace(
-        {required String workspaceId, required String path}) =>
-    LogAnalyzerBridge.instance.api
-        .crateFfiBridgeRefreshWorkspace(workspaceId: workspaceId, path: path);
+String refreshWorkspace({required String workspaceId, required String path}) =>
+    LogAnalyzerBridge.instance.api.crateFfiBridgeRefreshWorkspace(
+      workspaceId: workspaceId,
+      path: path,
+    );
 
 /// 获取工作区状态
-FfiResultWorkspaceStatusData getWorkspaceStatus(
-        {required String workspaceId}) =>
-    LogAnalyzerBridge.instance.api
-        .crateFfiBridgeGetWorkspaceStatus(workspaceId: workspaceId);
+WorkspaceStatusData getWorkspaceStatus({required String workspaceId}) =>
+    LogAnalyzerBridge.instance.api.crateFfiBridgeGetWorkspaceStatus(
+      workspaceId: workspaceId,
+    );
 
 /// 执行日志搜索
 ///
 /// 返回搜索 ID 用于获取结果
-FfiResultString searchLogs(
-        {required String query,
-        String? workspaceId,
-        required int maxResults,
-        String? filters}) =>
-    LogAnalyzerBridge.instance.api.crateFfiBridgeSearchLogs(
-        query: query,
-        workspaceId: workspaceId,
-        maxResults: maxResults,
-        filters: filters);
+String searchLogs({
+  required String query,
+  String? workspaceId,
+  required int maxResults,
+  String? filters,
+}) => LogAnalyzerBridge.instance.api.crateFfiBridgeSearchLogs(
+  query: query,
+  workspaceId: workspaceId,
+  maxResults: maxResults,
+  filters: filters,
+);
 
 /// 取消搜索
-FfiResultBool cancelSearch({required String searchId}) =>
-    LogAnalyzerBridge.instance.api
-        .crateFfiBridgeCancelSearch(searchId: searchId);
+bool cancelSearch({required String searchId}) => LogAnalyzerBridge.instance.api
+    .crateFfiBridgeCancelSearch(searchId: searchId);
 
 /// 获取活跃搜索数量
-FfiResultI32 getActiveSearchesCount() =>
+int getActiveSearchesCount() =>
     LogAnalyzerBridge.instance.api.crateFfiBridgeGetActiveSearchesCount();
 
 /// 获取关键词列表
@@ -75,26 +82,30 @@ List<KeywordGroupData> getKeywords() =>
     LogAnalyzerBridge.instance.api.crateFfiBridgeGetKeywords();
 
 /// 添加关键词组
-FfiResultBool addKeywordGroup({required KeywordGroupInput group}) =>
+bool addKeywordGroup({required KeywordGroupInput group}) =>
     LogAnalyzerBridge.instance.api.crateFfiBridgeAddKeywordGroup(group: group);
 
 /// 更新关键词组
-FfiResultBool updateKeywordGroup(
-        {required String groupId, required KeywordGroupInput group}) =>
-    LogAnalyzerBridge.instance.api
-        .crateFfiBridgeUpdateKeywordGroup(groupId: groupId, group: group);
+bool updateKeywordGroup({
+  required String groupId,
+  required KeywordGroupInput group,
+}) => LogAnalyzerBridge.instance.api.crateFfiBridgeUpdateKeywordGroup(
+  groupId: groupId,
+  group: group,
+);
 
 /// 删除关键词组
-FfiResultBool deleteKeywordGroup({required String groupId}) =>
-    LogAnalyzerBridge.instance.api
-        .crateFfiBridgeDeleteKeywordGroup(groupId: groupId);
+bool deleteKeywordGroup({required String groupId}) => LogAnalyzerBridge
+    .instance
+    .api
+    .crateFfiBridgeDeleteKeywordGroup(groupId: groupId);
 
 /// 获取任务指标
-FfiResultTaskMetricsData getTaskMetrics() =>
+TaskMetricsData getTaskMetrics() =>
     LogAnalyzerBridge.instance.api.crateFfiBridgeGetTaskMetrics();
 
 /// 取消任务
-FfiResultBool cancelTask({required String taskId}) =>
+bool cancelTask({required String taskId}) =>
     LogAnalyzerBridge.instance.api.crateFfiBridgeCancelTask(taskId: taskId);
 
 /// 加载配置
@@ -102,76 +113,263 @@ ConfigData loadConfig() =>
     LogAnalyzerBridge.instance.api.crateFfiBridgeLoadConfig();
 
 /// 保存配置
-FfiResultBool saveConfig({required ConfigData config}) =>
+bool saveConfig({required ConfigData config}) =>
     LogAnalyzerBridge.instance.api.crateFfiBridgeSaveConfig(config: config);
 
 /// 获取性能指标
 PerformanceMetricsData getPerformanceMetrics({required String timeRange}) =>
-    LogAnalyzerBridge.instance.api
-        .crateFfiBridgeGetPerformanceMetrics(timeRange: timeRange);
+    LogAnalyzerBridge.instance.api.crateFfiBridgeGetPerformanceMetrics(
+      timeRange: timeRange,
+    );
 
 /// 启动文件监听
-FfiResultBool startWatch(
-        {required String workspaceId,
-        required List<String> paths,
-        required bool recursive}) =>
-    LogAnalyzerBridge.instance.api.crateFfiBridgeStartWatch(
-        workspaceId: workspaceId, paths: paths, recursive: recursive);
+bool startWatch({
+  required String workspaceId,
+  required List<String> paths,
+  required bool recursive,
+}) => LogAnalyzerBridge.instance.api.crateFfiBridgeStartWatch(
+  workspaceId: workspaceId,
+  paths: paths,
+  recursive: recursive,
+);
 
 /// 停止文件监听
-FfiResultBool stopWatch({required String workspaceId}) =>
-    LogAnalyzerBridge.instance.api
-        .crateFfiBridgeStopWatch(workspaceId: workspaceId);
+bool stopWatch({required String workspaceId}) => LogAnalyzerBridge.instance.api
+    .crateFfiBridgeStopWatch(workspaceId: workspaceId);
 
 /// 检查是否正在监听
-FfiResultBool isWatching({required String workspaceId}) =>
-    LogAnalyzerBridge.instance.api
-        .crateFfiBridgeIsWatching(workspaceId: workspaceId);
+bool isWatching({required String workspaceId}) => LogAnalyzerBridge.instance.api
+    .crateFfiBridgeIsWatching(workspaceId: workspaceId);
 
 /// 导入文件夹
 ///
 /// 返回任务 ID 用于跟踪进度
-FfiResultString importFolder(
-        {required String path, required String workspaceId}) =>
-    LogAnalyzerBridge.instance.api
-        .crateFfiBridgeImportFolder(path: path, workspaceId: workspaceId);
+String importFolder({required String path, required String workspaceId}) =>
+    LogAnalyzerBridge.instance.api.crateFfiBridgeImportFolder(
+      path: path,
+      workspaceId: workspaceId,
+    );
 
 /// 检查 RAR 支持
 bool checkRarSupport() =>
     LogAnalyzerBridge.instance.api.crateFfiBridgeCheckRarSupport();
 
 /// 导出搜索结果
-FfiResultString exportResults(
-        {required String searchId,
-        required String format,
-        required String outputPath}) =>
-    LogAnalyzerBridge.instance.api.crateFfiBridgeExportResults(
-        searchId: searchId, format: format, outputPath: outputPath);
+String exportResults({
+  required String searchId,
+  required String format,
+  required String outputPath,
+}) => LogAnalyzerBridge.instance.api.crateFfiBridgeExportResults(
+  searchId: searchId,
+  format: format,
+  outputPath: outputPath,
+);
 
-// Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<FfiResult < String >>>
-abstract class FfiResultString implements RustOpaqueInterface {}
+/// 添加搜索历史记录
+///
+/// 将搜索查询添加到历史记录
+bool addSearchHistory({
+  required String query,
+  required String workspaceId,
+  required int resultCount,
+}) => LogAnalyzerBridge.instance.api.crateFfiBridgeAddSearchHistory(
+  query: query,
+  workspaceId: workspaceId,
+  resultCount: resultCount,
+);
 
-// Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<FfiResult < TaskMetricsData >>>
-abstract class FfiResultTaskMetricsData implements RustOpaqueInterface {}
+/// 获取搜索历史记录
+///
+/// 获取指定工作区或所有工作区的搜索历史
+List<SearchHistoryData> getSearchHistory({String? workspaceId, int? limit}) =>
+    LogAnalyzerBridge.instance.api.crateFfiBridgeGetSearchHistory(
+      workspaceId: workspaceId,
+      limit: limit,
+    );
 
-// Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<FfiResult < WorkspaceStatusData >>>
-abstract class FfiResultWorkspaceStatusData implements RustOpaqueInterface {}
+/// 删除搜索历史记录（按查询词）
+///
+/// 删除指定工作区中特定查询的历史记录
+bool deleteSearchHistory({
+  required String query,
+  required String workspaceId,
+}) => LogAnalyzerBridge.instance.api.crateFfiBridgeDeleteSearchHistory(
+  query: query,
+  workspaceId: workspaceId,
+);
 
-// Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<FfiResult < bool >>>
-abstract class FfiResultBool implements RustOpaqueInterface {}
+/// 批量删除搜索历史记录（按查询词列表）
+///
+/// 批量删除指定工作区中多个查询的历史记录
+int deleteSearchHistories({
+  required List<String> queries,
+  required String workspaceId,
+}) => LogAnalyzerBridge.instance.api.crateFfiBridgeDeleteSearchHistories(
+  queries: queries,
+  workspaceId: workspaceId,
+);
 
-// Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<FfiResult < i32 >>>
-abstract class FfiResultI32 implements RustOpaqueInterface {}
+/// 清空搜索历史
+///
+/// 清空指定工作区或所有工作区的搜索历史
+int clearSearchHistory({String? workspaceId}) => LogAnalyzerBridge.instance.api
+    .crateFfiBridgeClearSearchHistory(workspaceId: workspaceId);
+
+/// 获取虚拟文件树（根节点）
+///
+/// 获取指定工作区的虚拟文件树结构
+///
+/// # 参数
+///
+/// * `workspace_id` - 工作区 ID
+///
+/// # 返回
+///
+/// 返回根节点列表
+List<VirtualTreeNodeData> getVirtualFileTree({required String workspaceId}) =>
+    LogAnalyzerBridge.instance.api.crateFfiBridgeGetVirtualFileTree(
+      workspaceId: workspaceId,
+    );
+
+/// 获取树子节点（懒加载）
+///
+/// 获取指定父节点下的子节点
+///
+/// # 参数
+///
+/// * `workspace_id` - 工作区 ID
+/// * `parent_path` - 父节点路径
+///
+/// # 返回
+///
+/// 返回子节点列表
+List<VirtualTreeNodeData> getTreeChildren({
+  required String workspaceId,
+  required String parentPath,
+}) => LogAnalyzerBridge.instance.api.crateFfiBridgeGetTreeChildren(
+  workspaceId: workspaceId,
+  parentPath: parentPath,
+);
+
+/// 通过哈希读取文件内容
+///
+/// 从 CAS 存储读取指定哈希的文件内容
+///
+/// # 参数
+///
+/// * `workspace_id` - 工作区 ID
+/// * `hash` - 文件 SHA-256 哈希
+///
+/// # 返回
+///
+/// 返回文件内容响应
+FileContentResponseData readFileByHash({
+  required String workspaceId,
+  required String hash,
+}) => LogAnalyzerBridge.instance.api.crateFfiBridgeReadFileByHash(
+  workspaceId: workspaceId,
+  hash: hash,
+);
+
+/// 执行结构化搜索（多关键词组合搜索）
+///
+/// 支持多个关键词的 AND/OR/NOT 组合搜索
+///
+/// # 参数
+///
+/// * `query` - 结构化搜索查询对象
+/// * `workspace_id` - 工作区 ID（可选，默认使用第一个可用工作区）
+/// * `max_results` - 最大返回结果数量
+///
+/// # 返回
+///
+/// 返回匹配的搜索结果列表
+List<SearchResultEntry> searchStructured({
+  required StructuredSearchQueryData query,
+  String? workspaceId,
+  required int maxResults,
+}) => LogAnalyzerBridge.instance.api.crateFfiBridgeSearchStructured(
+  query: query,
+  workspaceId: workspaceId,
+  maxResults: maxResults,
+);
+
+/// 构建搜索查询对象
+///
+/// 从关键词列表构建结构化搜索查询，便于 Flutter 端使用
+///
+/// # 参数
+///
+/// * `keywords` - 关键词列表
+/// * `global_operator` - 全局操作符 ("AND", "OR", "NOT")
+/// * `is_regex` - 是否使用正则表达式
+/// * `case_sensitive` - 是否大小写敏感
+///
+/// # 返回
+///
+/// 返回构建的结构化搜索查询对象
+StructuredSearchQueryData buildSearchQuery({
+  required List<String> keywords,
+  required String globalOperator,
+  required bool isRegex,
+  required bool caseSensitive,
+}) => LogAnalyzerBridge.instance.api.crateFfiBridgeBuildSearchQuery(
+  keywords: keywords,
+  globalOperator: globalOperator,
+  isRegex: isRegex,
+  caseSensitive: caseSensitive,
+);
+
+/// 验证正则表达式语法
+///
+/// 验证正则表达式是否有效，返回验证结果和错误信息
+///
+/// # 参数
+///
+/// * `pattern` - 正则表达式模式
+///
+/// # 返回
+///
+/// 返回验证结果，包含是否有效和可能的错误信息
+RegexValidationResult validateRegex({required String pattern}) =>
+    LogAnalyzerBridge.instance.api.crateFfiBridgeValidateRegex(
+      pattern: pattern,
+    );
+
+/// 执行正则表达式搜索
+///
+/// 在工作区中搜索匹配正则表达式的行
+///
+/// # 参数
+///
+/// * `pattern` - 正则表达式模式
+/// * `workspace_id` - 工作区 ID（可选，默认使用第一个可用工作区）
+/// * `max_results` - 最大结果数量
+/// * `case_sensitive` - 是否大小写敏感
+///
+/// # 返回
+///
+/// 返回匹配的搜索结果列表
+List<SearchResultEntry> searchRegex({
+  required String pattern,
+  String? workspaceId,
+  required int maxResults,
+  required bool caseSensitive,
+}) => LogAnalyzerBridge.instance.api.crateFfiBridgeSearchRegex(
+  pattern: pattern,
+  workspaceId: workspaceId,
+  maxResults: maxResults,
+  caseSensitive: caseSensitive,
+);
 
 /// FFI 桥接上下文
 ///
 /// 包含全局状态引用，用于 FFI 调用
 class BridgeContext {
+  /// 初始化时间戳（Unix 时间戳，秒）
   final PlatformInt64 initTime;
 
-  const BridgeContext({
-    required this.initTime,
-  });
+  const BridgeContext({required this.initTime});
 
   static Future<BridgeContext> default_() =>
       LogAnalyzerBridge.instance.api.crateFfiBridgeBridgeContextDefault();
@@ -182,10 +380,8 @@ class BridgeContext {
       LogAnalyzerBridge.instance.api.crateFfiBridgeBridgeContextNew();
 
   /// 获取运行时间（秒）
-  Future<PlatformInt64> uptimeSeconds() =>
-      LogAnalyzerBridge.instance.api.crateFfiBridgeBridgeContextUptimeSeconds(
-        that: this,
-      );
+  Future<PlatformInt64> uptimeSeconds() => LogAnalyzerBridge.instance.api
+      .crateFfiBridgeBridgeContextUptimeSeconds(that: this);
 
   @override
   int get hashCode => initTime.hashCode;

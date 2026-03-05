@@ -69,11 +69,11 @@ mod sealed {
 }
 
 /// 未映射状态标记
-pub struct Unmapped;
+pub struct Unmapped {}
 /// 内存映射状态标记
-pub struct Mapped;
+pub struct Mapped {}
 /// 索引完成状态标记
-pub struct Indexed;
+pub struct Indexed {}
 
 impl UnmappedState for Unmapped {}
 impl MappedState for Mapped {}

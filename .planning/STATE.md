@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: 高级搜索与虚拟文件系统
 status: unknown
-last_updated: "2026-03-04T15:17:45.591Z"
+last_updated: "2026-03-05T14:55:54.807Z"
 progress:
-  total_phases: 7
-  completed_phases: 7
-  total_plans: 19
-  completed_plans: 19
+  total_phases: 8
+  completed_phases: 8
+  total_plans: 22
+  completed_plans: 22
 ---
 
 ---
@@ -16,12 +16,12 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: 高级搜索与虚拟文件系统
 status: in_progress
-last_updated: "2026-03-04T15:30:00.000Z"
+last_updated: "2026-03-05T14:43:00.000Z"
 progress:
-  total_phases: 5
-  completed_phases: 0
+  total_phases: 11
+  completed_phases: 1
   total_plans: 16
-  completed_plans: 4
+  completed_plans: 8
 ---
 
 # Project State
@@ -31,37 +31,37 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-04)
 
 **Core value:** 让用户能够高效地搜索、分析和监控日志文件
-**Current focus:** Phase 7 - 后端 API 集成
+**Current focus:** Phase 8 - 状态管理
 
 ## Current Position
 
-Phase: 7 of 11 (后端 API 集成)
-Plan: 3 of 4 in current phase
-Status: In Progress
-Last activity: 2026-03-04 — Plan 07-03 completed (Regex Search FFI Bridge)
+Phase: 8 of 11 (状态管理)
+Plan: 2 of 2 in current phase
+Status: Phase Complete (with gap closure 08-02.1)
+Last activity: 2026-03-05 — Plans 08-01, 08-02, 08-02.1 completed (SearchHistoryProvider, VirtualFileTreeProvider, FFI integration)
 
-Progress: [██░░░░░░░░] 25%
+Progress: [████░░░░░░] 50%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 4 (v1.1)
-- Average duration: 9 min
-- Total execution time: 0.4 hours
+- Total plans completed: 8 (v1.1)
+- Average duration: 13 min
+- Total execution time: 1.5 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 7. 后端 API 集成 | 4/4 | 36min | 9min |
-| 8. 状态管理 | 0/2 | - | - |
+| 8. 状态管理 | 3/2 | 73min | 24min |
 | 9. 高级搜索 UI | 0/4 | - | - |
 | 10. 虚拟文件系统 UI | 0/3 | - | - |
 | 11. 集成与优化 | 0/3 | - | - |
 
 **Recent Trend:**
 - v1.0 已完成: 16 个计划
-- v1.1 进度: 4/16 个计划
+- v1.1 进度: 8/16 个计划
 
 *Updated after each plan completion*
 
@@ -90,16 +90,33 @@ From Phase 07 Plan 04:
 - Reuse Aho-Corasick algorithm for multi-pattern matching (O(n+m) complexity)
 - Three-layer FFI architecture: bridge.rs (export) -> commands_bridge.rs (adapter) -> business logic
 
+From Phase 08 Plan 01 (Updated):
+- Create local SearchHistoryItem model to wrap ffi.SearchHistoryData - riverpod_generator cannot handle external types
+- Add ffi feature to frb_codegen.yaml for proper FFI code generation
+- Convert Rust unit structs to empty structs for FRB compatibility
+- Use state.value instead of state.valueOrNull in Riverpod 3.0
+
+From Phase 08 Plan 02:
+- Use Dart-side sealed class for VirtualTreeNode due to FFI type generation issues
+- Stub FFI calls with TODO comments pending flutter_rust_bridge recursive type fix
+- Define VirtualTreeNodeExtension for convenient property access
+- [Phase 08]: VirtualFileTreeProvider uses Dart-side Freezed sealed class due to FFI type generation issues
+
+From Phase 08 Plan 02.1 (Gap Closure):
+- Import types.dart directly with ffi_types prefix - bridge.dart imports but doesn't export types
+- Use Dart 3 pattern matching with switch expressions for sealed class conversion
+
 ### Pending Todos
 
 None yet.
 
 ### Blockers/Concerns
 
-None yet.
+- FFI type generation issues with complex sealed enums in flutter_rust_bridge 2.11.1 - workaround with Dart-side Freezed models (RESOLVED: recursive type conversion implemented)
+- TreeController integration deferred to Phase 10 (flutter_fancy_tree_view2 not in dependencies yet)
 
 ## Session Continuity
 
-Last session: 2026-03-04
-Stopped at: Plan 07-03 completed (Regex Search FFI Bridge)
+Last session: 2026-03-05
+Stopped at: Phase 08 completed with gap closure (SearchHistoryProvider + VirtualFileTreeProvider + FFI integration)
 Resume file: None

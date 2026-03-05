@@ -26,10 +26,13 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 /// let app_data_dir = app.path().app_data_dir().unwrap();
 /// init_global_state(app_state.clone(), app_data_dir);
 /// ```
-Future<void> initGlobalState(
-        {required AppState state, required PathBuf appDataDir}) =>
-    LogAnalyzerBridge.instance.api.crateFfiGlobalStateInitGlobalState(
-        state: state, appDataDir: appDataDir);
+Future<void> initGlobalState({
+  required AppState state,
+  required PathBuf appDataDir,
+}) => LogAnalyzerBridge.instance.api.crateFfiGlobalStateInitGlobalState(
+  state: state,
+  appDataDir: appDataDir,
+);
 
 /// 获取全局 FFI 上下文
 ///
@@ -69,8 +72,9 @@ Future<bool> isInitialized() =>
 ///
 /// 用于状态变更后同步更新
 Future<void> updateGlobalState({required FfiContext context}) =>
-    LogAnalyzerBridge.instance.api
-        .crateFfiGlobalStateUpdateGlobalState(context: context);
+    LogAnalyzerBridge.instance.api.crateFfiGlobalStateUpdateGlobalState(
+      context: context,
+    );
 
 /// 清除全局状态
 ///
