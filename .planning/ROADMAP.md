@@ -3,7 +3,8 @@
 ## Milestones
 
 - [x] **v1.0 MVP** - Phases 1-6 (已交付 2026-03-01)
-- [x] **v1.1 高级搜索与虚拟文件系统** - Phases 7-11 (已交付 2026-03-04，部分完成)
+- [x] **v1.1 高级搜索与虚拟文件系统** - Phases 7-8 (已交付 2026-03-05)
+- [ ] **v1.2 UI 完善** - Phases 9-11 (进行中)
 - [ ] **v2.0 [待定]** - Phases 12+ (计划中)
 
 ## Phases
@@ -70,45 +71,13 @@ Plans:
 
 </details>
 
-### v1.1 高级搜索与虚拟文件系统 (Phases 7-11) — SHIPPED 2026-03-04 (部分完成)
-
-> **归档**: `.planning/milestones/v1.1-ROADMAP.md` | `.planning/milestones/v1.1-REQUIREMENTS.md`
-> **完成度**: 2/5 phases (Phase 7, Phase 8), 6/19 plans
-
 <details>
-<summary>📦 已完成: Phase 7 - 后端 API 集成 (4/4 plans)</summary>
-
-- [x] 07-01 — 搜索历史 API 集成 (6min) ✓ 2026-03-04
-- [x] 07-02 — 虚拟文件树 API 集成 (15min) ✓ 2026-03-04
-- [x] 07-03 — 正则表达式搜索 API 集成 (8min) ✓ 2026-03-04
-- [x] 07-04 — 多关键词组合搜索 API 集成 (5min) ✓ 2026-03-04
-
-</details>
-
-<details>
-<summary>📦 已完成: Phase 8 - 状态管理 (2/2 plans)</summary>
-
-- [x] 08-01 — SearchHistoryProvider 实现 (15min) ✓ 2026-03-05
-- [x] 08-02 — VirtualFileTreeProvider 实现 (25min) ✓ 2026-03-05
-
-</details>
-
-<details>
-<summary>⏳ 未完成: Phases 9-11 (0/13 plans)</summary>
-
-- [ ] **Phase 9: 高级搜索 UI** — 正则表达式、多关键词组合、搜索历史界面
-- [ ] **Phase 10: 虚拟文件系统 UI** — 文件树导航、目录展开折叠、文件预览
-- [ ] **Phase 11: 集成与优化** — 功能联动、键盘导航、性能优化
-
-</details>
-
----
-
-## Phase Details
+<summary>v1.1 高级搜索与虚拟文件系统 (Phases 7-8) - SHIPPED 2026-03-05</summary>
 
 ### Phase 7: 后端 API 集成
 **Goal**: Flutter 应用能够通过 FFI 调用 Rust 后端的搜索历史和虚拟文件树 API
-**Depends on**: Nothing (first phase of v1.1)
+**Depends on**: Phase 6
+**Requirements**: (v1.1 FFI 桥接需求)
 **Success Criteria** (what must be TRUE):
   1. ApiService 扩展了搜索历史相关方法 (add, get, delete, clear)
   2. ApiService 扩展了虚拟文件树获取方法
@@ -117,102 +86,116 @@ Plans:
 **Plans**: 4 plans
 
 Plans:
-- [x] 07-01-PLAN.md — 搜索历史 API 集成（添加、获取、删除、清空） ✓ 2026-03-04
-- [x] 07-02-PLAN.md — 虚拟文件树 API 集成（获取树结构） ✓ 2026-03-04
-- [ ] 07-03-PLAN.md — 正则表达式搜索 API 集成
-- [ ] 07-04-PLAN.md — 多关键词组合搜索 API 集成
+- [x] 07-01 — 搜索历史 API 集成
+- [x] 07-02 — 虚拟文件树 API 集成
+- [x] 07-03 — 正则表达式搜索 API 集成
+- [x] 07-04 — 多关键词组合搜索 API 集成
 
 ### Phase 8: 状态管理
 **Goal**: 使用 Riverpod 3.0 AsyncNotifier 管理搜索历史和虚拟文件树的状态，支持参数化工作区、乐观更新、懒加载
 **Depends on**: Phase 7
+**Requirements**: (v1.1 状态管理需求)
 **Success Criteria** (what must be TRUE):
   1. SearchHistoryProvider 可以增删改查搜索历史（CRUD）
   2. SearchHistoryProvider 支持乐观更新和错误回滚
   3. VirtualFileTreeProvider 可以获取文件树根节点
   4. VirtualFileTreeProvider 支持懒加载子节点
   5. 切换工作区时状态自动刷新
-  6. LRU 限制由后端执行（前端无需关心）
 **Plans**: 2 plans
 
 Plans:
-- [x] 08-01-PLAN.md — SearchHistoryProvider 实现（Riverpod AsyncNotifier + 乐观更新） ✓ 2026-03-05
-- [x] 08-02-PLAN.md — VirtualFileTreeProvider 实现（懒加载 + TreeController） ✓ 2026-03-05
+- [x] 08-01 — SearchHistoryProvider 实现
+- [x] 08-02 — VirtualFileTreeProvider 实现
+
+</details>
+
+---
+
+## v1.2 UI 完善 (Phases 9-11)
+
+- [ ] **Phase 9: 高级搜索 UI** - 正则表达式、多关键词组合、搜索历史界面
+- [ ] **Phase 10: 虚拟文件系统 UI** - 文件树导航、目录展开折叠、文件预览
+- [ ] **Phase 11: 集成与优化** - 端到端测试、性能优化、用户体验改进
+
+---
+
+## Phase Details
 
 ### Phase 9: 高级搜索 UI
-**Goal**: 用户可以使用正则表达式搜索、多关键词组合、查看搜索历史
-**Depends on**: Phase 8
+**Goal**: 用户可以使用正则表达式搜索、多关键词组合搜索、并通过搜索历史快速访问过往查询
+**Depends on**: Phase 8 (状态管理已就绪)
 **Requirements**: ASEARCH-01, ASEARCH-02, ASEARCH-03, ASEARCH-04, ASEARCH-05, ASEARCH-06, HIST-01, HIST-02, HIST-03, HIST-04, HIST-05
 **Success Criteria** (what must be TRUE):
-  1. 用户可以切换到正则表达式搜索模式
-  2. 正则表达式搜索时显示语法有效/无效反馈
-  3. 用户可以输入多个关键词并选择 AND 组合
-  4. 用户可以输入多个关键词并选择 OR 组合
-  5. 用户可以输入多个关键词并选择 NOT 组合
-  6. 用户可以查看组合后的搜索条件预览
-  7. 搜索自动保存到历史记录
-  8. 用户可以在下拉列表中查看历史搜索记录
-  9. 用户可以点击历史记录快速填充搜索框
+  1. 用户可以在搜索栏切换到正则表达式搜索模式
+  2. 正则表达式搜索时，输入框下方实时显示语法有效/无效反馈
+  3. 用户可以输入多个关键词并选择 AND 逻辑组合
+  4. 用户可以输入多个关键词并选择 OR 逻辑组合
+  5. 用户可以输入多个关键词并选择 NOT 逻辑组合
+  6. 用户可以在执行搜索前查看组合后的完整搜索条件预览
+  7. 每次搜索执行后自动保存到搜索历史记录
+  8. 用户可以在搜索栏下拉列表中查看历史搜索记录
+  9. 用户可以点击历史记录条目快速填充搜索框
   10. 用户可以删除单条历史记录
-  11. 用户可以清空所有搜索历史
+  11. 用户可以一键清空所有搜索历史
 **Plans**: TBD
 
 Plans:
-- [ ] 09-01: SearchInputBar 组件（正则模式切换、语法反馈）
-- [ ] 09-02: 关键词组合 UI（AND/OR/NOT 选择器、条件预览）
-- [ ] 09-03: SearchHistoryPanel 组件（历史列表、点击填充）
-- [ ] 09-04: 历史管理（删除单条、清空全部）
+- [ ] 09-01: SearchInputBar 增强 - 正则模式切换、语法验证反馈
+- [ ] 09-02: 关键词组合 UI - AND/OR/NOT 选择器、条件预览显示
+- [ ] 09-03: SearchHistoryPanel - 历史列表展示、点击快速填充
+- [ ] 09-04: 历史管理功能 - 删除单条、清空全部确认
 
 ### Phase 10: 虚拟文件系统 UI
-**Goal**: 用户可以浏览虚拟文件树、展开目录、预览文件内容
-**Depends on**: Phase 8
+**Goal**: 用户可以浏览工作区的虚拟文件树、展开/折叠目录、预览文件内容
+**Depends on**: Phase 8 (VirtualFileTreeProvider 已就绪)
 **Requirements**: VFS-01, VFS-02, VFS-03, VFS-04
 **Success Criteria** (what must be TRUE):
-  1. 用户可以查看工作区的虚拟文件树结构
-  2. 目录节点可以展开/折叠
-  3. 用户可以点击文件预览内容
-  4. 文件树显示文件/目录图标区分
+  1. 用户可以在侧边栏查看工作区的虚拟文件树结构
+  2. 目录节点显示展开/折叠箭头，点击可切换状态
+  3. 用户可以点击文件节点在预览面板中查看文件内容
+  4. 文件树使用不同图标区分文件和目录类型
 **Plans**: TBD
 
 Plans:
-- [ ] 10-01: VirtualFileTreeView 组件（文件树展示、图标区分）
-- [ ] 10-02: 目录展开/折叠功能
-- [ ] 10-03: 文件预览面板
+- [ ] 10-01: VirtualFileTreeView - 树形组件、文件/目录图标区分
+- [ ] 10-02: 目录展开折叠 - TreeController 集成、懒加载子节点
+- [ ] 10-03: 文件预览面板 - 内容展示、语法高亮
 
 ### Phase 11: 集成与优化
-**Goal**: 高级搜索与虚拟文件系统联动，提供流畅的用户体验
+**Goal**: 确保所有功能端到端可用，性能达标，用户体验流畅
 **Depends on**: Phase 9, Phase 10
+**Requirements**: INT-01, INT-02, INT-03, INT-04
 **Success Criteria** (what must be TRUE):
-  1. 搜索结果可以关联到虚拟文件树中的文件
-  2. 支持键盘导航（上下箭头 + 回车）
-  3. 文件树支持手动刷新
-  4. 整体性能优化（懒加载、虚拟滚动）
+  1. 每个核心功能（高级搜索、搜索历史、文件树）有端到端测试覆盖
+  2. 搜索响应时间 <200ms，文件树首次加载 <500ms
+  3. 所有加载状态统一显示（Shimmer/Skeleton），错误处理一致（ErrorView）
+  4. 代码审查完成，技术文档更新到最新状态
 **Plans**: TBD
 
 Plans:
-- [ ] 11-01: 搜索结果与文件树关联
-- [ ] 11-02: 键盘导航支持
-- [ ] 11-03: 性能优化（懒加载、虚拟滚动）
+- [ ] 11-01: 端到端测试 - Widget Test 覆盖核心功能
+- [ ] 11-02: 性能优化 - 搜索响应、文件树懒加载、虚拟滚动
+- [ ] 11-03: UX 完善 - 加载状态、错误处理、无障碍支持
+- [ ] 11-04: 文档更新 - 代码审查、技术文档
 
 ---
 
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 7 → 8 → 9 → 10 → 11
+Phases execute in numeric order: 9 → 10 → 11
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 7. 后端 API 集成 | 4/4 | Complete | 07-01, 07-02, 07-03, 07-04 |
-| 8. 状态管理 | 2/2 | Complete | 08-01, 08-02 |
 | 9. 高级搜索 UI | 0/4 | Not started | - |
 | 10. 虚拟文件系统 UI | 0/3 | Not started | - |
-| 11. 集成与优化 | 0/3 | Not started | - |
+| 11. 集成与优化 | 0/4 | Not started | - |
 
 ---
 
 ## Coverage
 
-### v1.1 Requirement Mapping
+### v1.2 Requirement Mapping
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
@@ -231,13 +214,17 @@ Phases execute in numeric order: 7 → 8 → 9 → 10 → 11
 | VFS-02 | Phase 10 | Pending |
 | VFS-03 | Phase 10 | Pending |
 | VFS-04 | Phase 10 | Pending |
+| INT-01 | Phase 11 | Pending |
+| INT-02 | Phase 11 | Pending |
+| INT-03 | Phase 11 | Pending |
+| INT-04 | Phase 11 | Pending |
 
 **Coverage:**
-- v1.1 requirements: 15 total
-- Mapped to phases: 15
+- v1.2 requirements: 19 total
+- Mapped to phases: 19
 - Unmapped: 0 ✓
 
 ---
 
-*Roadmap created: 2026-03-04*
+*Roadmap created: 2026-03-05*
 *Ready for planning: yes*
