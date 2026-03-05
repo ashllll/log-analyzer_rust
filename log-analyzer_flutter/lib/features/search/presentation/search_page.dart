@@ -393,6 +393,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                         .read(searchHistoryProvider(activeWorkspaceId).notifier)
                         .deleteSearchHistory(query);
                   },
+                  onClearAll: () => _showClearHistoryConfirmation(activeWorkspaceId),
                 ),
             ],
           ),
@@ -1091,5 +1092,41 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       filePattern: filePattern,
     );
     applyFilters(filters);
+  }
+
+  /// 显示清空历史确认对话框
+  ///
+  /// 危险操作需要用户二次确认
+  Future<void> _showClearHistoryConfirmation(String workspaceId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('确认清空'),
+        content: const Text('确定要清空所有搜索历史吗？此操作不可恢复。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+            ),
+            child: const Text('确认清空'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await ref
+          .read(searchHistoryProvider(workspaceId).notifier)
+          .clearSearchHistory();
+      ref.read(appStateProvider.notifier).addToast(
+            ToastType.success,
+            '搜索历史已清空',
+          );
+    }
   }
 }

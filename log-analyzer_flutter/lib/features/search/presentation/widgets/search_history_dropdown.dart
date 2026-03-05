@@ -6,7 +6,7 @@ import '../../../../core/theme/app_theme.dart';
 
 /// 搜索历史下拉组件
 ///
-/// 显示历史搜索记录列表，支持点击快速填充和删除单条记录
+/// 显示历史搜索记录列表，支持点击快速填充、删除单条记录和清空全部历史
 /// 使用 PopupMenuButton 实现下拉交互
 class SearchHistoryDropdown extends ConsumerWidget {
   /// 当前工作区 ID
@@ -18,11 +18,15 @@ class SearchHistoryDropdown extends ConsumerWidget {
   /// 删除单条历史记录回调（可选）
   final void Function(String query)? onDelete;
 
+  /// 清空所有历史记录回调（可选）
+  final VoidCallback? onClearAll;
+
   const SearchHistoryDropdown({
     super.key,
     required this.workspaceId,
     required this.onSelect,
     this.onDelete,
+    this.onClearAll,
   });
 
   @override
@@ -44,7 +48,7 @@ class SearchHistoryDropdown extends ConsumerWidget {
       return _buildDisabledButton();
     }
 
-    return PopupMenuButton<String>(
+    return PopupMenuButton<_HistoryMenuValue>(
       icon: const Icon(
         Icons.history,
         size: 20,
@@ -62,87 +66,129 @@ class SearchHistoryDropdown extends ConsumerWidget {
         maxWidth: 400,
         maxHeight: 400,
       ),
-      itemBuilder: (context) => history
-          .map((item) => _buildHistoryItem(item, context))
-          .toList(),
-      onSelected: (query) => onSelect(query),
+      itemBuilder: (context) => [
+        // 历史记录列表
+        ...history.map((item) => _buildHistoryItem(item, context)),
+        // 分隔线
+        if (history.isNotEmpty) const PopupMenuDivider(),
+        // 清空全部按钮
+        if (history.isNotEmpty && onClearAll != null)
+          PopupMenuItem<_HistoryMenuValue>(
+            value: _HistoryMenuValueClearAll(),
+            height: 40,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(
+                  Icons.delete_sweep,
+                  size: 18,
+                  color: AppColors.error,
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  '清空全部历史',
+                  style: TextStyle(
+                    color: AppColors.error,
+                    fontSize: 14,
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+      onSelected: (value) {
+        if (value is _HistoryMenuValueSelect) {
+          onSelect(value.query);
+        } else if (value is _HistoryMenuValueClearAll) {
+          onClearAll?.call();
+        }
+      },
     );
   }
 
   /// 构建单条历史记录项
-  PopupMenuItem<String> _buildHistoryItem(
+  PopupMenuItem<_HistoryMenuValue> _buildHistoryItem(
     SearchHistoryItem item,
     BuildContext context,
   ) {
-    return PopupMenuItem<String>(
-      value: item.query,
+    return PopupMenuItem<_HistoryMenuValue>(
+      value: _HistoryMenuValueSelect(item.query),
       height: 48,
       padding: EdgeInsets.zero,
       child: StatefulBuilder(
         builder: (context, setState) {
-          return MouseRegion(
-            cursor: SystemMouseCursors.click,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              child: Row(
-                children: [
-                  // 历史图标
-                  const Icon(
-                    Icons.history,
-                    size: 16,
-                    color: AppColors.textMuted,
-                  ),
-                  const SizedBox(width: 12),
-                  // 查询文本
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          item.query,
-                          style: const TextStyle(
-                            color: AppColors.textPrimary,
-                            fontSize: 14,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          _formatHistoryMeta(item),
-                          style: const TextStyle(
-                            color: AppColors.textMuted,
-                            fontSize: 11,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                  ),
-                  // 删除按钮
-                  if (onDelete != null)
-                    InkWell(
-                      onTap: () {
-                        // 关闭下拉菜单
-                        Navigator.of(context).pop();
-                        // 调用删除回调
-                        onDelete?.call(item.query);
-                      },
-                      borderRadius: BorderRadius.circular(4),
-                      child: const Padding(
-                        padding: EdgeInsets.all(4),
-                        child: Icon(
-                          Icons.close,
-                          size: 16,
-                          color: AppColors.textMuted,
+          bool isHovering = false;
+          return StatefulBuilder(
+            builder: (context, setInnerState) {
+              return MouseRegion(
+                cursor: SystemMouseCursors.click,
+                onEnter: (_) => setInnerState(() => isHovering = true),
+                onExit: (_) => setInnerState(() => isHovering = false),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: Row(
+                    children: [
+                      // 历史图标
+                      const Icon(
+                        Icons.history,
+                        size: 16,
+                        color: AppColors.textMuted,
+                      ),
+                      const SizedBox(width: 12),
+                      // 查询文本
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              item.query,
+                              style: const TextStyle(
+                                color: AppColors.textPrimary,
+                                fontSize: 14,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _formatHistoryMeta(item),
+                              style: const TextStyle(
+                                color: AppColors.textMuted,
+                                fontSize: 11,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
                         ),
                       ),
-                    ),
-                ],
-              ),
-            ),
+                      // 删除按钮
+                      if (onDelete != null)
+                        MouseRegion(
+                          cursor: SystemMouseCursors.click,
+                          child: GestureDetector(
+                            onTap: () {
+                              // 关闭下拉菜单
+                              Navigator.of(context).pop();
+                              // 调用删除回调
+                              onDelete?.call(item.query);
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.all(8),
+                              child: Icon(
+                                Icons.close,
+                                size: 16,
+                                color: isHovering ? AppColors.error : AppColors.textMuted,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              );
+            },
           );
         },
       ),
@@ -203,4 +249,22 @@ class SearchHistoryDropdown extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// 历史菜单值的基类
+///
+/// 使用 sealed class 实现类型安全的菜单值
+sealed class _HistoryMenuValue {
+  const _HistoryMenuValue();
+}
+
+/// 选择历史记录
+class _HistoryMenuValueSelect extends _HistoryMenuValue {
+  final String query;
+  const _HistoryMenuValueSelect(this.query);
+}
+
+/// 清空全部历史
+class _HistoryMenuValueClearAll extends _HistoryMenuValue {
+  const _HistoryMenuValueClearAll();
 }
