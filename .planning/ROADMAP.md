@@ -113,7 +113,7 @@ Plans:
 
 ## v1.2 UI 完善 (Phases 9-11)
 
-- [ ] **Phase 9: 高级搜索 UI** - 正则表达式、多关键词组合、搜索历史界面
+- [x] **Phase 9: 高级搜索 UI** - 正则表达式、多关键词组合、搜索历史界面 ✅ 2026-03-06
 - [ ] **Phase 10: 虚拟文件系统 UI** - 文件树导航、目录展开折叠、文件预览
 - [ ] **Phase 11: 集成与优化** - 端到端测试、性能优化、用户体验改进
 
@@ -140,10 +140,11 @@ Plans:
 **Plans**: 4 plans
 
 Plans:
-- [ ] 09-01: SearchInputBar 增强 - 正则模式切换、语法验证反馈 (ASEARCH-01, ASEARCH-02)
-- [ ] 09-02: 关键词组合 UI - AND/OR/NOT 选择器、条件预览显示 (ASEARCH-03~06)
-- [ ] 09-03: SearchHistoryDropdown - 历史列表展示、点击快速填充 (HIST-01~03)
-- [ ] 09-04: 历史管理功能 - 删除单条、清空全部确认 (HIST-04~05)
+- [x] 09-01: SearchInputBar 增强 - 正则模式切换、语法验证反馈 (ASEARCH-01, ASEARCH-02)
+- [x] 09-02: 关键词组合 UI - AND/OR/NOT 选择器、条件预览显示 (ASEARCH-03~06)
+- [x] 09-03: SearchHistoryDropdown - 历史列表展示、点击快速填充 (HIST-01~03)
+- [x] 09-04: 历史管理功能 - 删除单条、清空全部确认 (HIST-04~05)
+- [x] 09-05: Gap Closure - 组合搜索组件集成修复
 
 ### Phase 10: 虚拟文件系统 UI
 **Goal**: 用户可以浏览工作区的虚拟文件树、展开/折叠目录、预览文件内容
@@ -187,7 +188,7 @@ Phases execute in numeric order: 9 → 10 → 11
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 9. 高级搜索 UI | 1/4 | In progress | 09-03 |
+| 9. 高级搜索 UI | 5/5 | ✅ Complete | 09-05 |
 | 10. 虚拟文件系统 UI | 0/3 | Not started | - |
 | 11. 集成与优化 | 0/4 | Not started | - |
 
@@ -199,17 +200,17 @@ Phases execute in numeric order: 9 → 10 → 11
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ASEARCH-01 | Phase 9 | Pending |
-| ASEARCH-02 | Phase 9 | Pending |
-| ASEARCH-03 | Phase 9 | Pending |
-| ASEARCH-04 | Phase 9 | Pending |
-| ASEARCH-05 | Phase 9 | Pending |
-| ASEARCH-06 | Phase 9 | Pending |
+| ASEARCH-01 | Phase 9 | Complete |
+| ASEARCH-02 | Phase 9 | Complete |
+| ASEARCH-03 | Phase 9 | Complete |
+| ASEARCH-04 | Phase 9 | Complete |
+| ASEARCH-05 | Phase 9 | Complete |
+| ASEARCH-06 | Phase 9 | Complete |
 | HIST-01 | Phase 9 | Complete |
 | HIST-02 | Phase 9 | Complete |
 | HIST-03 | Phase 9 | Complete |
-| HIST-04 | Phase 9 | Pending |
-| HIST-05 | Phase 9 | Pending |
+| HIST-04 | Phase 9 | Complete |
+| HIST-05 | Phase 9 | Complete |
 | VFS-01 | Phase 10 | Pending |
 | VFS-02 | Phase 10 | Pending |
 | VFS-03 | Phase 10 | Pending |
@@ -223,9 +224,10 @@ Phases execute in numeric order: 9 → 10 → 11
 - v1.2 requirements: 19 total
 - Mapped to phases: 19
 - Unmapped: 0 ✓
-- Completed: 3 (HIST-01, HIST-02, HIST-03)
+- Completed: 11 (Phase 9 complete)
 
 ---
 
 *Roadmap created: 2026-03-05*
-*Ready for planning: yes*
+*Last updated: 2026-03-06 (Phase 9 complete)*
+*Ready for planning: Phase 10*
