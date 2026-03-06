@@ -155,12 +155,12 @@ Plans:
   2. 目录节点显示展开/折叠箭头，点击可切换状态
   3. 用户可以点击文件节点在预览面板中查看文件内容
   4. 文件树使用不同图标区分文件和目录类型
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 10-01: VirtualFileTreeView - 树形组件、文件/目录图标区分
-- [ ] 10-02: 目录展开折叠 - TreeController 集成、懒加载子节点
-- [ ] 10-03: 文件预览面板 - 内容展示、语法高亮
+- [x] 10-01: VirtualFileTreeView - 树形组件、文件/目录图标区分 (VFS-01, VFS-04)
+- [ ] 10-02: 目录展开折叠 - TreeController 集成、懒加载子节点 (VFS-02)
+- [ ] 10-03: 文件预览面板 - 内容展示、状态处理 (VFS-03)
 
 ### Phase 11: 集成与优化
 **Goal**: 确保所有功能端到端可用，性能达标，用户体验流畅
@@ -211,10 +211,10 @@ Phases execute in numeric order: 9 → 10 → 11
 | HIST-03 | Phase 9 | Complete |
 | HIST-04 | Phase 9 | Complete |
 | HIST-05 | Phase 9 | Complete |
-| VFS-01 | Phase 10 | Pending |
+| VFS-01 | Phase 10 | Completed | 10-01 |
 | VFS-02 | Phase 10 | Pending |
 | VFS-03 | Phase 10 | Pending |
-| VFS-04 | Phase 10 | Pending |
+| VFS-04 | Phase 10 | Completed | 10-01 |
 | INT-01 | Phase 11 | Pending |
 | INT-02 | Phase 11 | Pending |
 | INT-03 | Phase 11 | Pending |
