@@ -9,7 +9,20 @@
       "Bash(cargo:*)",
       "Bash(test:*)",
       "Bash(npx tsc:*)",
-      "mcp__serena__list_dir"
+      "mcp__serena__list_dir",
+      "Skill(gsd:new-milestone)",
+      "WebSearch",
+      "WebFetch(domain:pub.dev)",
+      "Skill(gsd:plan-phase)",
+      "mcp__open-websearch__search",
+      "Skill(gsd:discuss-phase)",
+      "mcp__open-websearch__fetchGithubReadme",
+      "mcp__fetch__fetch",
+      "Skill(gsd:execute-phase)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(flutter analyze:*)",
+      "Skill(gsd:progress)"
     ],
     "defaultMode": "bypassPermissions"
   },

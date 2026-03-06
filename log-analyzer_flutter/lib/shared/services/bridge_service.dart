@@ -569,7 +569,8 @@ class BridgeService {
   /// 获取搜索历史记录
   ///
   /// 获取指定工作区或所有工作区的搜索历史
-  Future<List<ffi.SearchHistoryData>> getSearchHistory({
+  /// 返回 Map 列表以便转换为本地模型
+  Future<List<Map<String, dynamic>>> getSearchHistory({
     String? workspaceId,
     int? limit,
   }) async {
@@ -578,10 +579,18 @@ class BridgeService {
     }
 
     try {
-      return ffi.getSearchHistory(
+      // FFI 返回 SearchHistoryData 列表，转换为 Map
+      final result = ffi.getSearchHistory(
         workspaceId: workspaceId,
         limit: limit,
       );
+      // 将 FFI 类型转换为 Map
+      return result.map((item) => {
+        'query': item.query,
+        'workspace_id': item.workspaceId,
+        'result_count': item.resultCount,
+        'searched_at': item.searchedAt,
+      }).toList();
     } catch (e) {
       debugPrint('getSearchHistory error: $e');
       return [];

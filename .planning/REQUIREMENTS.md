@@ -26,7 +26,7 @@
 ### 虚拟文件树
 
 - [ ] **VFS-01**: 用户可以查看工作区的虚拟文件树结构
-- [ ] **VFS-02**: 目录节点可以展开/折叠
+- [x] **VFS-02**: 目录节点可以展开/折叠
 - [ ] **VFS-03**: 用户可以点击文件预览内容
 - [ ] **VFS-04**: 文件树显示文件/目录图标区分
 
@@ -79,7 +79,7 @@
 | HIST-04 | Phase 9 | Complete |
 | HIST-05 | Phase 9 | Complete |
 | VFS-01 | Phase 10 | Pending |
-| VFS-02 | Phase 10 | Pending |
+| VFS-02 | Phase 10 | Complete |
 | VFS-03 | Phase 10 | Pending |
 | VFS-04 | Phase 10 | Pending |
 | INT-01 | Phase 11 | Pending |

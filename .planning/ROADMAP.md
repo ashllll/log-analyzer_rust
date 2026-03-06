@@ -114,7 +114,7 @@ Plans:
 ## v1.2 UI 完善 (Phases 9-11)
 
 - [x] **Phase 9: 高级搜索 UI** - 正则表达式、多关键词组合、搜索历史界面 ✅ 2026-03-06
-- [ ] **Phase 10: 虚拟文件系统 UI** - 文件树导航、目录展开折叠、文件预览
+- [x] **Phase 10: 虚拟文件系统 UI** - 文件树导航、目录展开折叠、文件预览 (completed 2026-03-06)
 - [ ] **Phase 11: 集成与优化** - 端到端测试、性能优化、用户体验改进
 
 ---
@@ -189,7 +189,7 @@ Phases execute in numeric order: 9 → 10 → 11
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 9. 高级搜索 UI | 5/5 | ✅ Complete | 09-05 |
-| 10. 虚拟文件系统 UI | 0/3 | Not started | - |
+| 10. 虚拟文件系统 UI | 2/3 | Complete    | 2026-03-06 |
 | 11. 集成与优化 | 0/4 | Not started | - |
 
 ---
