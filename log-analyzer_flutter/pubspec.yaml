@@ -63,6 +63,9 @@ dependencies:
   # 本地存储 - 工作区最近打开时间持久化
   shared_preferences: ^2.3.0
 
+  # 骨架屏加载动画
+  shimmer: ^3.0.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
