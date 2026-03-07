@@ -13,6 +13,8 @@ import '../../../shared/services/api_service.dart';
 import '../../../shared/widgets/drop_zone.dart';
 import '../../../shared/widgets/archive_import_dialog.dart';
 import '../../../shared/widgets/import_progress_dialog.dart';
+import '../../../shared/widgets/skeleton_loading.dart';
+import '../../../shared/widgets/empty_state_widget.dart';
 import '../../../core/theme/app_theme.dart';
 
 /// 工作区管理页面
@@ -476,35 +478,12 @@ class _WorkspacesPageState extends ConsumerState<WorkspacesPage> {
 
   /// 构建空状态
   Widget _buildEmptyState(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(
-            Icons.folder_outlined,
-            size: 64,
-            color: AppColors.textMuted,
-          ),
-          const SizedBox(height: 16),
-          const Text(
-            '暂无工作区',
-            style: TextStyle(
-              fontSize: 16,
-              color: AppColors.textSecondary,
-            ),
-          ),
-          const SizedBox(height: 8),
-          ElevatedButton.icon(
-            onPressed: () => _showAddWorkspaceDialog(context),
-            icon: const Icon(Icons.add),
-            label: const Text('添加工作区'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-            ),
-          ),
-        ],
-      ),
+    return EmptyStateWidget(
+      icon: Icons.folder_outlined,
+      title: '暂无工作区',
+      description: '创建工作区来管理您的日志文件，支持导入文件夹或压缩包',
+      actionLabel: '添加工作区',
+      onAction: () => _showAddWorkspaceDialog(context),
     );
   }
 

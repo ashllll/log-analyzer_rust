@@ -5,6 +5,7 @@ import '../../core/theme/app_theme.dart';
 ///
 /// 对应 React 版本的 Button.tsx
 /// 支持多种样式变体和加载状态
+/// 支持无障碍访问
 class CustomButton extends StatelessWidget {
   final String text;
   final VoidCallback? onPressed;
@@ -13,6 +14,8 @@ class CustomButton extends StatelessWidget {
   final bool isFullWidth;
   final Widget? icon;
   final ButtonSize size;
+  /// 无障碍标签
+  final String? semanticLabel;
 
   const CustomButton({
     super.key,
@@ -23,6 +26,7 @@ class CustomButton extends StatelessWidget {
     this.isFullWidth = false,
     this.icon,
     this.size = ButtonSize.medium,
+    this.semanticLabel,
   });
 
   @override
@@ -51,78 +55,99 @@ class CustomButton extends StatelessWidget {
       ],
     );
 
+    // 构建无障碍标签
+    final String label = semanticLabel ?? (isLoading ? '$text 加载中' : text);
+
+    Widget buildButton(Widget child) {
+      return Semantics(
+        button: true,
+        label: label,
+        enabled: isEnabled,
+        child: child,
+      );
+    }
+
     switch (variant) {
       case ButtonVariant.primary:
-        return SizedBox(
-          width: isFullWidth ? double.infinity : null,
-          child: ElevatedButton(
-            onPressed: isEnabled ? onPressed : null,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: isEnabled ? AppColors.primary : AppColors.bgHover,
-              foregroundColor: Colors.white,
-              disabledBackgroundColor: AppColors.bgHover,
-              padding: _getPadding(),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+        return buildButton(
+          SizedBox(
+            width: isFullWidth ? double.infinity : null,
+            child: ElevatedButton(
+              onPressed: isEnabled ? onPressed : null,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: isEnabled ? AppColors.primary : AppColors.bgHover,
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: AppColors.bgHover,
+                padding: _getPadding(),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
+              child: buttonChild,
             ),
-            child: buttonChild,
           ),
         );
 
       case ButtonVariant.secondary:
-        return SizedBox(
-          width: isFullWidth ? double.infinity : null,
-          child: OutlinedButton(
-            onPressed: isEnabled ? onPressed : null,
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.textPrimary,
-              side: const BorderSide(color: AppColors.border),
-              padding: _getPadding(),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+        return buildButton(
+          SizedBox(
+            width: isFullWidth ? double.infinity : null,
+            child: OutlinedButton(
+              onPressed: isEnabled ? onPressed : null,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.textPrimary,
+                side: const BorderSide(color: AppColors.border),
+                padding: _getPadding(),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
+              child: buttonChild,
             ),
-            child: buttonChild,
           ),
         );
 
       case ButtonVariant.ghost:
-        return SizedBox(
-          width: isFullWidth ? double.infinity : null,
-          child: TextButton(
-            onPressed: isEnabled ? onPressed : null,
-            style: TextButton.styleFrom(
-              foregroundColor: AppColors.textSecondary,
-              padding: _getPadding(),
+        return buildButton(
+          SizedBox(
+            width: isFullWidth ? double.infinity : null,
+            child: TextButton(
+              onPressed: isEnabled ? onPressed : null,
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.textSecondary,
+                padding: _getPadding(),
+              ),
+              child: buttonChild,
             ),
-            child: buttonChild,
           ),
         );
 
       case ButtonVariant.danger:
-        return SizedBox(
-          width: isFullWidth ? double.infinity : null,
-          child: ElevatedButton(
-            onPressed: isEnabled ? onPressed : null,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: isEnabled ? AppColors.error : AppColors.bgHover,
-              foregroundColor: Colors.white,
-              disabledBackgroundColor: AppColors.bgHover,
-              padding: _getPadding(),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+        return buildButton(
+          SizedBox(
+            width: isFullWidth ? double.infinity : null,
+            child: ElevatedButton(
+              onPressed: isEnabled ? onPressed : null,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: isEnabled ? AppColors.error : AppColors.bgHover,
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: AppColors.bgHover,
+                padding: _getPadding(),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
+              child: buttonChild,
             ),
-            child: buttonChild,
           ),
         );
 
       case ButtonVariant.active:
-        return SizedBox(
-          width: isFullWidth ? double.infinity : null,
-          child: ElevatedButton(
-            onPressed: isEnabled ? onPressed : null,
+        return buildButton(
+          SizedBox(
+            width: isFullWidth ? double.infinity : null,
+            child: ElevatedButton(
+              onPressed: isEnabled ? onPressed : null,
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.bgHover,
               foregroundColor: AppColors.textPrimary,

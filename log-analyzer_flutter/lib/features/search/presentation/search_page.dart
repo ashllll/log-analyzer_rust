@@ -11,6 +11,8 @@ import '../../../shared/providers/app_provider.dart';
 import '../../../shared/providers/workspace_provider.dart';
 import '../../../shared/services/api_service.dart';
 import '../../../shared/services/event_stream_service.dart';
+import '../../../shared/widgets/skeleton_loading.dart';
+import '../../../shared/widgets/empty_state_widget.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/constants/app_constants.dart';
 import 'widgets/log_row_widget.dart';
@@ -511,6 +513,11 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   /// - 左侧: 日志列表 (SliverFixedExtentList)
   /// - 右侧: 热力图缩略图 (HeatmapMinimap)
   Widget _buildLogsListWithHeatmap() {
+    // 搜索进行中，显示骨架屏
+    if (_isSearching) {
+      return const SearchResultSkeleton(itemCount: 10);
+    }
+
     if (_logs.isEmpty) {
       return _buildEmptyState();
     }
@@ -656,38 +663,20 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   Widget _buildEmptyState() {
     final hasQuery = _searchController.text.isNotEmpty;
 
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            hasQuery ? Icons.search_off : Icons.search_outlined,
-            size: 64,
-            color: AppColors.textMuted,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            hasQuery ? '未找到匹配结果' : '输入关键词开始搜索日志',
-            style: const TextStyle(
-              fontSize: 16,
-              color: AppColors.textSecondary,
-            ),
-          ),
-          if (hasQuery) ...[
-            const SizedBox(height: 8),
-            TextButton(
-              onPressed: () {
-                _searchController.clear();
-                setState(() {
-                  _logs = [];
-                  _searchSummary = null;
-                });
-              },
-              child: const Text('清除搜索'),
-            ),
-          ],
-        ],
-      ),
+    return EmptyStateWidget(
+      icon: hasQuery ? Icons.search_off : Icons.search_outlined,
+      title: hasQuery ? '未找到匹配结果' : '输入关键词开始搜索日志',
+      description: hasQuery ? '尝试修改搜索条件或使用不同的关键词' : '支持普通搜索、正则搜索和组合搜索',
+      actionLabel: hasQuery ? '清除搜索' : null,
+      onAction: hasQuery
+          ? () {
+              _searchController.clear();
+              setState(() {
+                _logs = [];
+                _searchSummary = null;
+              });
+            }
+          : null,
     );
   }
 
