@@ -13,3 +13,7 @@ export 'archive_import_dialog.dart';
 export 'drop_zone.dart';
 export 'empty_state_widget.dart';
 export 'skeleton_loading.dart';
+
+// 标签相关组件
+export 'workspace_tab_bar.dart';
+export 'workspace_picker_dialog.dart';

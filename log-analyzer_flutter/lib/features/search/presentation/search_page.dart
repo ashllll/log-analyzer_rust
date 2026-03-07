@@ -9,9 +9,11 @@ import '../../../shared/models/common.dart';
 import '../../../shared/models/search.dart';
 import '../../../shared/providers/app_provider.dart';
 import '../../../shared/providers/workspace_provider.dart';
+import '../../../shared/providers/workspace_tab_provider.dart';
 import '../../../shared/services/api_service.dart';
 import '../../../shared/services/event_stream_service.dart';
 import '../../../shared/widgets/skeleton_loading.dart';
+import '../../../shared/widgets/workspace_tab_bar.dart';
 import '../../../shared/widgets/empty_state_widget.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/constants/app_constants.dart';
@@ -145,25 +147,24 @@ class _SearchPageState extends ConsumerState<SearchPage> {
           _isSearching = false;
           _progress = 0;
         });
-        ref.read(appStateProvider.notifier).addToast(
-              ToastType.error,
-              '搜索结果接收失败: $error',
-            );
+        ref
+            .read(appStateProvider.notifier)
+            .addToast(ToastType.error, '搜索结果接收失败: $error');
       },
     );
 
     // 监听搜索摘要流
-    _searchSummarySubscription = eventStreamService.searchSummary.listen(
-      (summary) {
-        setState(() {
-          _searchSummary = summary;
-          // 从摘要中获取结果数量
-          _resultsFound = summary.matchCount;
-          // 根据持续时间计算进度（假设最大 30 秒为 100%）
-          _progress = ((summary.durationMs / 30000) * 100).clamp(0, 100).toInt();
-        });
-      },
-    );
+    _searchSummarySubscription = eventStreamService.searchSummary.listen((
+      summary,
+    ) {
+      setState(() {
+        _searchSummary = summary;
+        // 从摘要中获取结果数量
+        _resultsFound = summary.matchCount;
+        // 根据持续时间计算进度（假设最大 30 秒为 100%）
+        _progress = ((summary.durationMs / 30000) * 100).clamp(0, 100).toInt();
+      });
+    });
   }
 
   /// 保存搜索历史
@@ -177,10 +178,9 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     if (workspaceId == null) return;
 
     // 调用 SearchHistoryProvider 保存历史
-    ref.read(searchHistoryProvider(workspaceId).notifier).addSearchHistory(
-          query: query,
-          resultCount: resultCount,
-        );
+    ref
+        .read(searchHistoryProvider(workspaceId).notifier)
+        .addSearchHistory(query: query, resultCount: resultCount);
   }
 
   /// 生成热力图密度数据
@@ -243,20 +243,39 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   Widget build(BuildContext context) {
     final activeWorkspaceId = ref.watch(appStateProvider).activeWorkspaceId;
     final activeWorkspace = activeWorkspaceId != null
-        ? ref.read(workspaceStateProvider.notifier).getWorkspaceById(activeWorkspaceId)
+        ? ref
+              .read(workspaceStateProvider.notifier)
+              .getWorkspaceById(activeWorkspaceId)
         : null;
 
-    // 键盘快捷键处理：Ctrl+F / Cmd+F 聚焦搜索框
+    // 键盘快捷键处理：Ctrl+F / Cmd+F 聚焦搜索框，Ctrl+Tab 切换标签
     return KeyboardListener(
       focusNode: FocusNode(),
       autofocus: true,
       onKeyEvent: (event) {
         if (event is KeyDownEvent) {
-          // Ctrl+F (Windows/Linux) 或 Cmd+F (macOS)
+          final isCtrlPressed = HardwareKeyboard.instance.isControlPressed;
+          final isShiftPressed = HardwareKeyboard.instance.isShiftPressed;
+          final isMetaPressed = HardwareKeyboard.instance.isMetaPressed;
+
+          // Ctrl+F (Windows/Linux) 或 Cmd+F (macOS) - 聚焦搜索框
           if (event.logicalKey == LogicalKeyboardKey.keyF &&
-              (HardwareKeyboard.instance.isControlPressed ||
-                  HardwareKeyboard.instance.isMetaPressed)) {
+              (isCtrlPressed || isMetaPressed)) {
             _focusNode.requestFocus();
+          }
+
+          // Ctrl+Tab: 下一个标签页
+          if (isCtrlPressed && event.logicalKey == LogicalKeyboardKey.tab) {
+            if (isShiftPressed) {
+              _switchToPreviousTab();
+            } else {
+              _switchToNextTab();
+            }
+          }
+
+          // Ctrl+W: 关闭当前标签页
+          if (isCtrlPressed && event.logicalKey == LogicalKeyboardKey.keyW) {
+            _closeCurrentTab();
           }
         }
       },
@@ -264,6 +283,8 @@ class _SearchPageState extends ConsumerState<SearchPage> {
         appBar: _buildAppBar(activeWorkspace),
         body: Column(
           children: [
+            // 标签栏
+            const WorkspaceTabBar(),
             // 搜索栏
             _buildSearchBar(),
             // 进度条（搜索进行中显示）
@@ -282,9 +303,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                 currentFilters: _currentFilters,
               ),
             // 日志列表（带热力图）
-            Expanded(
-              child: _buildLogsListWithHeatmap(),
-            ),
+            Expanded(child: _buildLogsListWithHeatmap()),
             // 统计面板
             if (_searchSummary != null || _isSearching)
               SearchStatsPanel(
@@ -305,10 +324,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       elevation: 0,
       title: Text(
         activeWorkspace?.name ?? '请先选择工作区',
-        style: const TextStyle(
-          fontSize: 18,
-          fontWeight: FontWeight.w600,
-        ),
+        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
       ),
       actions: [
         // 过滤器切换按钮
@@ -363,9 +379,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: const BoxDecoration(
         color: AppColors.bgCard,
-        border: Border(
-          bottom: BorderSide(color: AppColors.border, width: 1),
-        ),
+        border: Border(bottom: BorderSide(color: AppColors.border, width: 1)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -398,7 +412,8 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                         .read(searchHistoryProvider(activeWorkspaceId).notifier)
                         .deleteSearchHistory(query);
                   },
-                  onClearAll: () => _showClearHistoryConfirmation(activeWorkspaceId),
+                  onClearAll: () =>
+                      _showClearHistoryConfirmation(activeWorkspaceId),
                 ),
             ],
           ),
@@ -407,9 +422,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
           Row(
             children: [
               // 搜索输入框 - 根据模式显示不同组件
-              Expanded(
-                child: _buildSearchInput(),
-              ),
+              Expanded(child: _buildSearchInput()),
               const SizedBox(width: 12),
               // 搜索按钮
               ElevatedButton(
@@ -431,7 +444,9 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                         height: 20,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Colors.white,
+                          ),
                         ),
                       )
                     : const Text('搜索'),
@@ -493,10 +508,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
             hintStyle: TextStyle(color: AppColors.textMuted),
             prefixIcon: Icon(Icons.search),
             border: InputBorder.none,
-            contentPadding: EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 12,
-            ),
+            contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           ),
           style: const TextStyle(fontSize: 15),
           onChanged: (_) => setState(() {}),
@@ -525,9 +537,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     return Row(
       children: [
         // 日志列表
-        Expanded(
-          child: _buildLogsList(),
-        ),
+        Expanded(child: _buildLogsList()),
         // 热力图缩略图
         if (_densityMap != null && _densityMap!.isNotEmpty)
           _buildHeatmapSidebar(),
@@ -541,9 +551,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       width: 24,
       decoration: const BoxDecoration(
         color: AppColors.bgCard,
-        border: Border(
-          left: BorderSide(color: AppColors.border, width: 1),
-        ),
+        border: Border(left: BorderSide(color: AppColors.border, width: 1)),
       ),
       child: Column(
         children: [
@@ -652,7 +660,9 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       final scrollOffset = notification.metrics.pixels;
 
       _firstVisibleIndex = (scrollOffset / _kLogItemExtent).floor();
-      _lastVisibleIndex = ((scrollOffset + viewportHeight) / _kLogItemExtent).ceil().clamp(0, _logs.length - 1);
+      _lastVisibleIndex = ((scrollOffset + viewportHeight) / _kLogItemExtent)
+          .ceil()
+          .clamp(0, _logs.length - 1);
 
       // 可选：在此处添加性能监控或日志预加载逻辑
     }
@@ -689,10 +699,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       _scannedFiles = 0;
       _resultsFound = 0;
     });
-    ref.read(appStateProvider.notifier).addToast(
-          ToastType.info,
-          '搜索已取消',
-        );
+    ref.read(appStateProvider.notifier).addToast(ToastType.info, '搜索已取消');
   }
 
   /// 执行搜索
@@ -707,19 +714,15 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 
     // 正则模式下验证语法
     if (_searchMode == SearchMode.regex && !_regexValid) {
-      ref.read(appStateProvider.notifier).addToast(
-            ToastType.warning,
-            '正则表达式语法无效，请检查输入',
-          );
+      ref
+          .read(appStateProvider.notifier)
+          .addToast(ToastType.warning, '正则表达式语法无效，请检查输入');
       return;
     }
 
     final activeWorkspaceId = ref.read(appStateProvider).activeWorkspaceId;
     if (activeWorkspaceId == null) {
-      ref.read(appStateProvider.notifier).addToast(
-            ToastType.error,
-            '请先选择工作区',
-          );
+      ref.read(appStateProvider.notifier).addToast(ToastType.error, '请先选择工作区');
       return;
     }
 
@@ -752,10 +755,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
         _isSearching = false;
         _progress = 0;
       });
-      ref.read(appStateProvider.notifier).addToast(
-            ToastType.error,
-            '搜索失败: $e',
-          );
+      ref.read(appStateProvider.notifier).addToast(ToastType.error, '搜索失败: $e');
     }
   }
 
@@ -780,10 +780,9 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       setState(() {
         _isSearching = false;
       });
-      ref.read(appStateProvider.notifier).addToast(
-            ToastType.warning,
-            '搜索超时，请检查后端连接',
-          );
+      ref
+          .read(appStateProvider.notifier)
+          .addToast(ToastType.warning, '搜索超时，请检查后端连接');
     }
   }
 
@@ -815,27 +814,24 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 
       // 提示用户结果已获取
       if (results.isNotEmpty) {
-        ref.read(appStateProvider.notifier).addToast(
-              ToastType.success,
-              '正则搜索完成，找到 ${results.length} 条结果',
-            );
+        ref
+            .read(appStateProvider.notifier)
+            .addToast(ToastType.success, '正则搜索完成，找到 ${results.length} 条结果');
         // 保存到搜索历史
         _saveSearchHistory(results.length);
       } else {
-        ref.read(appStateProvider.notifier).addToast(
-              ToastType.info,
-              '未找到匹配的结果',
-            );
+        ref
+            .read(appStateProvider.notifier)
+            .addToast(ToastType.info, '未找到匹配的结果');
       }
     } catch (e) {
       setState(() {
         _isSearching = false;
         _progress = 0;
       });
-      ref.read(appStateProvider.notifier).addToast(
-            ToastType.error,
-            '正则搜索失败: $e',
-          );
+      ref
+          .read(appStateProvider.notifier)
+          .addToast(ToastType.error, '正则搜索失败: $e');
     }
   }
 
@@ -848,10 +844,9 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 
       // 检查是否有关键词
       if (!queryProvider.hasKeywords) {
-        ref.read(appStateProvider.notifier).addToast(
-              ToastType.warning,
-              '请先添加搜索关键词',
-            );
+        ref
+            .read(appStateProvider.notifier)
+            .addToast(ToastType.warning, '请先添加搜索关键词');
         setState(() {
           _isSearching = false;
         });
@@ -879,27 +874,24 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 
       // 提示用户结果已获取
       if (results.isNotEmpty) {
-        ref.read(appStateProvider.notifier).addToast(
-              ToastType.success,
-              '组合搜索完成，找到 ${results.length} 条结果',
-            );
+        ref
+            .read(appStateProvider.notifier)
+            .addToast(ToastType.success, '组合搜索完成，找到 ${results.length} 条结果');
         // 保存到搜索历史
         _saveSearchHistory(results.length);
       } else {
-        ref.read(appStateProvider.notifier).addToast(
-              ToastType.info,
-              '未找到匹配的结果',
-            );
+        ref
+            .read(appStateProvider.notifier)
+            .addToast(ToastType.info, '未找到匹配的结果');
       }
     } catch (e) {
       setState(() {
         _isSearching = false;
         _progress = 0;
       });
-      ref.read(appStateProvider.notifier).addToast(
-            ToastType.error,
-            '组合搜索失败: $e',
-          );
+      ref
+          .read(appStateProvider.notifier)
+          .addToast(ToastType.error, '组合搜索失败: $e');
     }
   }
 
@@ -946,10 +938,9 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   /// 显示导出对话框，让用户选择导出格式和路径
   Future<void> _exportResults() async {
     if (_logs.isEmpty) {
-      ref.read(appStateProvider.notifier).addToast(
-            ToastType.warning,
-            '没有可导出的结果',
-          );
+      ref
+          .read(appStateProvider.notifier)
+          .addToast(ToastType.warning, '没有可导出的结果');
       return;
     }
 
@@ -965,15 +956,11 @@ class _SearchPageState extends ConsumerState<SearchPage> {
         outputPath: exportConfig['path'] ?? '',
       );
 
-      ref.read(appStateProvider.notifier).addToast(
-            ToastType.success,
-            '导出成功: $outputPath',
-          );
+      ref
+          .read(appStateProvider.notifier)
+          .addToast(ToastType.success, '导出成功: $outputPath');
     } catch (e) {
-      ref.read(appStateProvider.notifier).addToast(
-            ToastType.error,
-            '导出失败: $e',
-          );
+      ref.read(appStateProvider.notifier).addToast(ToastType.error, '导出失败: $e');
     }
   }
 
@@ -1004,10 +991,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
               // 格式选择
               const Text(
                 '导出格式',
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 14,
-                ),
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
               ),
               const SizedBox(height: 8),
               Row(
@@ -1067,7 +1051,9 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
-          color: isSelected ? AppColors.primary.withValues(alpha: 0.2) : AppColors.bgInput,
+          color: isSelected
+              ? AppColors.primary.withValues(alpha: 0.2)
+              : AppColors.bgInput,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
             color: isSelected ? AppColors.primary : AppColors.border,
@@ -1101,7 +1087,11 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   /// 使用 file_picker 让用户选择保存位置
   Future<String?> _selectExportPath(String format) async {
     final extension = format == 'json' ? 'json' : 'csv';
-    final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-').split('.').first;
+    final timestamp = DateTime.now()
+        .toIso8601String()
+        .replaceAll(':', '-')
+        .split('.')
+        .first;
 
     try {
       final result = await FilePicker.platform.saveFile(
@@ -1113,10 +1103,9 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 
       return result;
     } catch (e) {
-      ref.read(appStateProvider.notifier).addToast(
-            ToastType.error,
-            '选择路径失败: $e',
-          );
+      ref
+          .read(appStateProvider.notifier)
+          .addToast(ToastType.error, '选择路径失败: $e');
       return null;
     }
   }
@@ -1167,9 +1156,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.error,
-            ),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
             child: const Text('确认清空'),
           ),
         ],
@@ -1180,10 +1167,49 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       await ref
           .read(searchHistoryProvider(workspaceId).notifier)
           .clearSearchHistory();
-      ref.read(appStateProvider.notifier).addToast(
-            ToastType.success,
-            '搜索历史已清空',
-          );
+      ref
+          .read(appStateProvider.notifier)
+          .addToast(ToastType.success, '搜索历史已清空');
+    }
+  }
+
+  /// 切换到下一个标签页
+  void _switchToNextTab() {
+    final tabs = ref.read(tabManagerProvider);
+    final activeTabId = ref.read(activeTabIdProvider);
+    if (tabs.isEmpty || activeTabId == null) return;
+
+    final currentIndex = tabs.indexWhere((t) => t.id == activeTabId);
+    if (currentIndex == -1) return;
+
+    final nextIndex = (currentIndex + 1) % tabs.length;
+    final nextTab = tabs[nextIndex];
+
+    ref.read(activeTabIdProvider.notifier).setActive(nextTab.id);
+    ref.read(appStateProvider.notifier).setActiveWorkspace(nextTab.workspaceId);
+  }
+
+  /// 切换到上一个标签页
+  void _switchToPreviousTab() {
+    final tabs = ref.read(tabManagerProvider);
+    final activeTabId = ref.read(activeTabIdProvider);
+    if (tabs.isEmpty || activeTabId == null) return;
+
+    final currentIndex = tabs.indexWhere((t) => t.id == activeTabId);
+    if (currentIndex == -1) return;
+
+    final prevIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+    final prevTab = tabs[prevIndex];
+
+    ref.read(activeTabIdProvider.notifier).setActive(prevTab.id);
+    ref.read(appStateProvider.notifier).setActiveWorkspace(prevTab.workspaceId);
+  }
+
+  /// 关闭当前标签页
+  void _closeCurrentTab() {
+    final activeTabId = ref.read(activeTabIdProvider);
+    if (activeTabId != null) {
+      ref.read(tabManagerProvider.notifier).closeTab(activeTabId);
     }
   }
 }
