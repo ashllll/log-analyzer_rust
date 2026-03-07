@@ -5,7 +5,8 @@
 - [x] **v1.0 MVP** - Phases 1-6 (已交付 2026-03-01)
 - [x] **v1.1 高级搜索与虚拟文件系统** - Phases 7-8 (已交付 2026-03-05)
 - [x] **v1.2 UI 完善** - Phases 9-11 (已交付 2026-03-07)
-- [ ] **v2.0 [待定]** - Phases 12+ (计划中)
+- [ ] **v1.3 功能扩展** - Phases 12-17 (计划中)
+- [ ] **v2.0 [待定]** - Phases 18+ (计划中)
 
 ## Phases
 
@@ -177,57 +178,137 @@ Plans:
 - [x] 11-01: 端到端测试 - Widget Test 覆盖核心功能
 - [x] 11-02: 性能优化 - 搜索响应、文件树懒加载、虚拟滚动
 - [x] 11-03: UX 完善 - 加载状态、错误处理、无障碍支持
-- [ ] 11-04: 文档更新 - 代码审查、技术文档
+- [x] 11-04: 文档更新 - 代码审查、技术文档
+
+---
+
+## v1.3 功能扩展 (Phases 12-17)
+
+- [x] **Phase 12:** 多工作区标签页基础设施 (Tabs) (completed 2026-03-07)
+- [ ] **Phase 13:** 自定义过滤器后端 FFI 接口 (Filters)
+- [ ] **Phase 14:** 自定义过滤器 UI (Filters)
+- [ ] **Phase 15:** 日志级别统计后端 FFI 接口 (Stats)
+- [ ] **Phase 16:** 日志级别统计 UI 面板 (Stats)
+- [ ] **Phase 17:** 集成与优化 (Integration)
+
+---
+
+## Phase Details
+
+### Phase 12: 多工作区标签页基础设施
+**Goal**: 用户可以打开、切换、关闭多个工作区标签页，状态隔离且持久化
+**Depends on**: Phase 11
+**Requirements**: TAB-01, TAB-02, TAB-03, TAB-04, TAB-05, TAB-06
+**Success Criteria** (what must be TRUE):
+  1. 用户可以打开新标签页并选择工作区
+  2. 用户可以通过点击标签或快捷键切换标签页
+  3. 用户可以关闭不需要的标签页
+  4. 用户可以拖拽调整标签页顺序
+  5. 每个标签页维护独立状态，切换时自动保存/恢复
+  6. 标签页列表在会话间持久化
+**Plans**: TBD
+
+### Phase 13: 自定义过滤器后端 FFI 接口
+**Goal**: Flutter 应用能够通过 FFI 调用 Rust 后端的过滤器 CRUD 接口
+**Depends on**: Phase 12
+**Requirements**: FILTER-01, FILTER-02, FILTER-03, FILTER-05
+**Success Criteria** (what must be TRUE):
+  1. 可以创建新过滤器（名称 + 条件组合）
+  2. 可以编辑现有过滤器
+  3. 可以删除过滤器
+  4. 过滤器在工作区级别持久化存储
+**Plans**: TBD
+
+### Phase 14: 自定义过滤器 UI
+**Goal**: 用户可以通过侧边栏和对话框管理过滤器，并在搜索时快速应用
+**Depends on**: Phase 13
+**Requirements**: FILTER-04
+**Success Criteria** (what must be TRUE):
+  1. 侧边栏显示过滤器列表
+  2. 过滤器创建/编辑对话框
+  3. 搜索栏显示过滤器快捷按钮
+  4. 点击过滤器自动填充搜索条件
+**Plans**: TBD
+
+### Phase 15: 日志级别统计后端 FFI 接口
+**Goal**: Flutter 应用能够通过 FFI 调用 Rust 后端获取日志级别统计
+**Depends on**: Phase 12
+**Requirements**: STATS-01, STATS-03
+**Success Criteria** (what must be TRUE):
+  1. 可以获取每个日志级别的记录数量
+  2. 索引更新时统计数据自动刷新
+**Plans**: TBD
+
+### Phase 16: 日志级别统计 UI 面板
+**Goal**: 用户可以查看日志级别的数量、分布图表，并按级别快速过滤
+**Depends on**: Phase 15
+**Requirements**: STATS-02, STATS-04, STATS-05
+**Success Criteria** (what must be TRUE):
+  1. 统计面板显示每个级别的计数
+  2. 显示级别分布饼图/条形图
+  3. 点击级别可快速筛选对应日志
+  4. 数据显示实时更新
+**Plans**: TBD
+
+### Phase 17: 集成与优化
+**Goal**: 确保所有新功能端到端可用，性能达标
+**Depends on**: Phase 14, Phase 16
+**Requirements**: T-04, NF-01, NF-02, NF-03
+**Success Criteria** (what must be TRUE):
+  1. 所有功能端到端测试覆盖
+  2. 标签页切换 <100ms，统计加载 <500ms
+  3. 内存占用符合预期 (<50MB/标签页)
+  4. 与现有功能无冲突
+**Plans**: TBD
 
 ---
 
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 9 → 10 → 11
+Phases execute in numeric order: 12 → 13 → 14 → 15 → 16 → 17
 
-| Phase | Plans Complete | Status | Completed |
-|-------|----------------|--------|-----------|
-| 9. 高级搜索 UI | 5/5 | ✅ Complete | 09-05 |
-| 10. 虚拟文件系统 UI | 2/3 | Complete    | 2026-03-06 |
-| 11. 集成与优化 | 0/4 | Complete    | 2026-03-07 |
+| Phase | Plans Complete | Status | Target |
+|-------|----------------|--------|--------|
+| 12. 多工作区标签页 | 0/ | Complete    | 2026-03-07 |
+| 13. 过滤器 FFI | 0/ | Planned | TBD |
+| 14. 过滤器 UI | 0/ | Planned | TBD |
+| 15. 统计 FFI | 0/ | Planned | TBD |
+| 16. 统计 UI | 0/ | Planned | TBD |
+| 17. 集成优化 | 0/ | Planned | TBD |
 
 ---
 
 ## Coverage
 
-### v1.2 Requirement Mapping
+### v1.3 Requirement Mapping
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ASEARCH-01 | Phase 9 | Complete |
-| ASEARCH-02 | Phase 9 | Complete |
-| ASEARCH-03 | Phase 9 | Complete |
-| ASEARCH-04 | Phase 9 | Complete |
-| ASEARCH-05 | Phase 9 | Complete |
-| ASEARCH-06 | Phase 9 | Complete |
-| HIST-01 | Phase 9 | Complete |
-| HIST-02 | Phase 9 | Complete |
-| HIST-03 | Phase 9 | Complete |
-| HIST-04 | Phase 9 | Complete |
-| HIST-05 | Phase 9 | Complete |
-| VFS-01 | Phase 10 | Completed | 10-01 |
-| VFS-02 | Phase 10 | Pending |
-| VFS-03 | Phase 10 | Pending |
-| VFS-04 | Phase 10 | Completed | 10-01 |
-| INT-01 | Phase 11 | Pending |
-| INT-02 | Phase 11 | Pending |
-| INT-03 | Phase 11 | Pending |
-| INT-04 | Phase 11 | Pending |
+| TAB-01 | Phase 12 | Pending |
+| TAB-02 | Phase 12 | Pending |
+| TAB-03 | Phase 12 | Pending |
+| TAB-04 | Phase 12 | Pending |
+| TAB-05 | Phase 12 | Pending |
+| TAB-06 | Phase 12 | Pending |
+| FILTER-01 | Phase 13 | Pending |
+| FILTER-02 | Phase 13 | Pending |
+| FILTER-03 | Phase 13 | Pending |
+| FILTER-04 | Phase 14 | Pending |
+| FILTER-05 | Phase 13 | Pending |
+| STATS-01 | Phase 15 | Pending |
+| STATS-02 | Phase 16 | Pending |
+| STATS-03 | Phase 15 | Pending |
+| STATS-04 | Phase 16 | Pending |
+| STATS-05 | Phase 16 | Pending |
 
 **Coverage:**
-- v1.2 requirements: 19 total
-- Mapped to phases: 19
+- v1.3 requirements: 16 total
+- Mapped to phases: 16
 - Unmapped: 0 ✓
-- Completed: 11 (Phase 9 complete)
 
 ---
 
 *Roadmap created: 2026-03-05*
-*Last updated: 2026-03-06 (Phase 9 complete)*
-*Ready for planning: Phase 10*
+*Last updated: 2026-03-07 (v1.3 research complete)*
+*Ready for planning: Phase 12*
