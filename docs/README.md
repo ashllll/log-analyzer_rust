@@ -10,6 +10,7 @@
 - **CAS_ARCHITECTURE.md** - 内容寻址存储(CAS)架构详解
 - **API.md** - API 接口文档
 - **ADVANCED_SEARCH_FEATURES_EXPLANATION.md** - 高级搜索功能说明
+- **FFI_INTEGRATION.md** - Flutter FFI 集成文档
 
 ### 📚 用户指南 (`guides/`)
 用户使用指南和快速参考

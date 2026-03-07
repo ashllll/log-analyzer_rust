@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
-import '../providers/settings_provider.dart';
+import '../../providers/settings_provider.dart';
 
 /// 设置页面侧边栏
 ///
@@ -25,9 +25,12 @@ class SettingsSidebar extends ConsumerWidget {
       leading: Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: IconButton(
-          icon: Icon(isExpanded ? LucideIcons.panelLeftClose : LucideIcons.panelLeft),
+          icon: Icon(
+            isExpanded ? LucideIcons.panelLeftClose : LucideIcons.panelLeft,
+          ),
           onPressed: () {
-            ref.read(settingsSidebarExpandedProvider.notifier).state = !isExpanded;
+            ref.read(settingsSidebarExpandedProvider.notifier).state =
+                !isExpanded;
           },
           tooltip: isExpanded ? '收起侧边栏' : '展开侧边栏',
         ),

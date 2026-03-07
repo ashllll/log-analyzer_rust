@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/constants/app_constants.dart';
 import '../../../../shared/providers/app_provider.dart';
 import '../../providers/settings_provider.dart';
 
@@ -21,10 +22,7 @@ class SearchSettingsTab extends ConsumerWidget {
         children: [
           const Text(
             '搜索设置',
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-            ),
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 32),
 
@@ -54,9 +52,7 @@ class SearchSettingsTab extends ConsumerWidget {
                   const SizedBox(height: 16),
                   const Text(
                     '设置搜索历史记录的最大保存数量',
-                    style: TextStyle(
-                      color: Colors.grey,
-                    ),
+                    style: TextStyle(color: Colors.grey),
                   ),
                   const SizedBox(height: 24),
 
@@ -72,14 +68,17 @@ class SearchSettingsTab extends ConsumerWidget {
                           divisions: 19,
                           label: '${settingsState.searchHistoryLimit}',
                           onChanged: (value) {
-                            ref.read(settingsProvider.notifier)
+                            ref
+                                .read(settingsProvider.notifier)
                                 .setSearchHistoryLimit(value.round());
                           },
                           onChangeEnd: (value) {
-                            ref.read(appStateProvider.notifier).addToast(
-                              ToastType.success,
-                              '搜索历史限制已设置为 ${value.round()} 条',
-                            );
+                            ref
+                                .read(appStateProvider.notifier)
+                                .addToast(
+                                  ToastType.success,
+                                  '搜索历史限制已设置为 ${value.round()} 条',
+                                );
                           },
                         ),
                       ),
@@ -103,7 +102,9 @@ class SearchSettingsTab extends ConsumerWidget {
                       child: Text(
                         '当前: ${settingsState.searchHistoryLimit} 条',
                         style: TextStyle(
-                          color: Theme.of(context).colorScheme.onPrimaryContainer,
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onPrimaryContainer,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -140,11 +141,7 @@ class SearchSettingsTab extends ConsumerWidget {
                     ],
                   ),
                   const SizedBox(height: 16),
-                  _buildInfoItem(
-                    Icons.search,
-                    '搜索历史',
-                    '在搜索框中点击可显示历史搜索记录',
-                  ),
+                  _buildInfoItem(Icons.search, '搜索历史', '在搜索框中点击可显示历史搜索记录'),
                   const SizedBox(height: 12),
                   _buildInfoItem(
                     Icons.storage,
@@ -152,11 +149,7 @@ class SearchSettingsTab extends ConsumerWidget {
                     '数值越大占用的存储空间越多，建议 50-100 条',
                   ),
                   const SizedBox(height: 12),
-                  _buildInfoItem(
-                    Icons.delete_sweep,
-                    '自动清理',
-                    '超出限制时会自动删除最早的记录',
-                  ),
+                  _buildInfoItem(Icons.delete_sweep, '自动清理', '超出限制时会自动删除最早的记录'),
                 ],
               ),
             ),
@@ -176,19 +169,11 @@ class SearchSettingsTab extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
+              Text(title, style: const TextStyle(fontWeight: FontWeight.w500)),
               const SizedBox(height: 2),
               Text(
                 description,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Colors.grey[600],
-                ),
+                style: TextStyle(fontSize: 13, color: Colors.grey[600]),
               ),
             ],
           ),

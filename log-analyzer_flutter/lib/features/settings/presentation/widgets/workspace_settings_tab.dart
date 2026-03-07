@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/constants/app_constants.dart';
 import '../../../../shared/providers/app_provider.dart';
 import '../../../../shared/providers/workspace_provider.dart';
 import '../../providers/settings_provider.dart';
@@ -23,10 +24,7 @@ class WorkspaceSettingsTab extends ConsumerWidget {
         children: [
           const Text(
             '工作区设置',
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-            ),
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 32),
 
@@ -54,7 +52,8 @@ class WorkspaceSettingsTab extends ConsumerWidget {
                       const Spacer(),
                       if (settingsState.recentWorkspaces.isNotEmpty)
                         TextButton.icon(
-                          onPressed: () => _showClearHistoryDialog(context, ref),
+                          onPressed: () =>
+                              _showClearHistoryDialog(context, ref),
                           icon: const Icon(Icons.delete_outline, size: 18),
                           label: const Text('清空历史'),
                         ),
@@ -63,9 +62,7 @@ class WorkspaceSettingsTab extends ConsumerWidget {
                   const SizedBox(height: 16),
                   const Text(
                     '显示最近打开的 5 个工作区',
-                    style: TextStyle(
-                      color: Colors.grey,
-                    ),
+                    style: TextStyle(color: Colors.grey),
                   ),
                   const SizedBox(height: 20),
 
@@ -111,9 +108,7 @@ class WorkspaceSettingsTab extends ConsumerWidget {
                   const SizedBox(height: 16),
                   const Text(
                     '应用启动时自动加载上次的工作区',
-                    style: TextStyle(
-                      color: Colors.grey,
-                    ),
+                    style: TextStyle(color: Colors.grey),
                   ),
                   const SizedBox(height: 16),
 
@@ -135,7 +130,9 @@ class WorkspaceSettingsTab extends ConsumerWidget {
                             child: Text(
                               '已启用自动恢复',
                               style: TextStyle(
-                                color: Theme.of(context).colorScheme.onPrimaryContainer,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onPrimaryContainer,
                               ),
                             ),
                           ),
@@ -178,26 +175,13 @@ class WorkspaceSettingsTab extends ConsumerWidget {
       child: const Center(
         child: Column(
           children: [
-            Icon(
-              Icons.folder_off_outlined,
-              size: 48,
-              color: Colors.grey,
-            ),
+            Icon(Icons.folder_off_outlined, size: 48, color: Colors.grey),
             SizedBox(height: 16),
-            Text(
-              '暂无最近工作区',
-              style: TextStyle(
-                color: Colors.grey,
-                fontSize: 16,
-              ),
-            ),
+            Text('暂无最近工作区', style: TextStyle(color: Colors.grey, fontSize: 16)),
             SizedBox(height: 8),
             Text(
               '打开工作区后会显示在这里',
-              style: TextStyle(
-                color: Colors.grey,
-                fontSize: 14,
-              ),
+              style: TextStyle(color: Colors.grey, fontSize: 14),
             ),
           ],
         ),
@@ -233,11 +217,12 @@ class WorkspaceSettingsTab extends ConsumerWidget {
           trailing: IconButton(
             icon: const Icon(Icons.close, size: 18),
             onPressed: () {
-              ref.read(settingsProvider.notifier).removeRecentWorkspace(workspaceId);
-              ref.read(appStateProvider.notifier).addToast(
-                ToastType.info,
-                '已从最近列表中移除',
-              );
+              ref
+                  .read(settingsProvider.notifier)
+                  .removeRecentWorkspace(workspaceId);
+              ref
+                  .read(appStateProvider.notifier)
+                  .addToast(ToastType.info, '已从最近列表中移除');
             },
             tooltip: '移除',
           ),
@@ -260,10 +245,9 @@ class WorkspaceSettingsTab extends ConsumerWidget {
           TextButton(
             onPressed: () {
               ref.read(settingsProvider.notifier).clearRecentWorkspaces();
-              ref.read(appStateProvider.notifier).addToast(
-                ToastType.success,
-                '已清空历史记录',
-              );
+              ref
+                  .read(appStateProvider.notifier)
+                  .addToast(ToastType.success, '已清空历史记录');
               Navigator.of(context).pop();
             },
             child: const Text('确定'),

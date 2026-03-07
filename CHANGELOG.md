@@ -5,6 +5,64 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-03-07
+
+### ✨ Features
+
+#### Flutter 前端重构 (Phase 9-11)
+
+- **Flutter FFI 集成**
+  - 使用 `flutter_rust_bridge` 2.x 实现 Dart-Rust 跨语言调用
+  - FFI + HTTP API 双通道架构 (FFI 优先)
+  - 类型安全的代码生成 (Freezed sealed class)
+
+- **高级搜索 UI (Phase 9)**
+  - 多关键词组合搜索 (AND/OR/NOT 逻辑操作符)
+  - 正则表达式搜索 (使用 Rust DFA 引擎)
+  - 搜索历史记录 (乐观更新模式)
+  - 搜索结果实时高亮
+  - 搜索条件预览面板
+
+- **虚拟文件系统 UI (Phase 10)**
+  - 虚拟文件树组件 (TreeNodeCache LRU 缓存)
+  - 归档文件浏览 (ZIP/TAR/GZ/RAR/7Z)
+  - 文件预览面板 (CAS 存储读取)
+  - 懒加载优化 (展开目录时按需加载)
+
+- **性能优化 (Phase 11)**
+  - 内存缓存优化 (LRU 淘汰 + TTL 过期策略)
+  - 默认 cacheExtent = itemHeight * 10 保证流畅滚动
+
+- **UX 完善 (Phase 11)**
+  - 骨架屏加载动画 (shimmer 包)
+  - 无障碍支持 (Flutter Semantics Widget)
+  - 空状态统一组件 (EmptyStateWidget)
+
+#### 技术栈更新
+
+- **Flutter**: 3.27+
+- **Riverpod**: 3.0 (状态管理)
+- **Freezed**: sealed class (FFI 类型处理)
+- **flutter_rust_bridge**: 2.11.1
+
+### 🔧 代码审查
+
+已审查核心组件代码:
+- `SearchQueryProvider` - 多关键词搜索状态管理
+- `SearchHistoryProvider` - 搜索历史 + 乐观更新
+- `VirtualFileTreeProvider` - 虚拟文件树 + LRU 缓存
+- `FilePreviewPanel` - 文件预览 + 状态处理
+
+代码质量: 良好
+
+### 📚 Documentation
+
+- **docs/README.md**: 更新 v1.2 功能列表
+- **log-analyzer_flutter/README.md**: 更新项目状态和功能完成情况
+- **新增 FFI_INTEGRATION.md**: Flutter FFI 集成文档
+
+---
+
 ## [0.0.140] - 2026-02-11
 
 ### ✨ Features

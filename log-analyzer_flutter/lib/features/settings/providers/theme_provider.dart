@@ -68,14 +68,14 @@ class ThemeModeNotifier extends StateNotifier<ThemeMode> {
 }
 
 /// 主题模式 Provider
-final themeModeProvider =
-    StateNotifierProvider<ThemeModeNotifier, ThemeMode>((ref) {
+final themeModeProvider = StateNotifierProvider<ThemeModeNotifier, ThemeMode>((
+  ref,
+) {
   throw UnimplementedError('themeModeProvider must be overridden');
 });
 
 /// 创建主题 Provider 的辅助函数
-Provider<ThemeModeNotifier> createThemeModeProvider(
-    SharedPreferences prefs) {
+Provider<ThemeModeNotifier> createThemeModeProvider(SharedPreferences prefs) {
   return Provider<ThemeModeNotifier>((ref) {
     return ThemeModeNotifier(prefs);
   });

@@ -28,7 +28,8 @@ class SettingsPageWrapper extends ConsumerStatefulWidget {
   const SettingsPageWrapper({super.key});
 
   @override
-  ConsumerState<SettingsPageWrapper> createState() => _SettingsPageWrapperState();
+  ConsumerState<SettingsPageWrapper> createState() =>
+      _SettingsPageWrapperState();
 }
 
 class _SettingsPageWrapperState extends ConsumerState<SettingsPageWrapper> {
@@ -47,17 +48,13 @@ class _SettingsPageWrapperState extends ConsumerState<SettingsPageWrapper> {
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
-            body: Center(
-              child: CircularProgressIndicator(),
-            ),
+            body: Center(child: CircularProgressIndicator()),
           );
         }
 
         if (snapshot.hasError) {
           return Scaffold(
-            body: Center(
-              child: Text('初始化失败: ${snapshot.error}'),
-            ),
+            body: Center(child: Text('初始化失败: ${snapshot.error}')),
           );
         }
 
@@ -66,7 +63,9 @@ class _SettingsPageWrapperState extends ConsumerState<SettingsPageWrapper> {
         return ProviderScope(
           overrides: [
             sharedPreferencesProvider.overrideWithValue(prefs),
-            settingsProvider.overrideWith((ref) => SettingsNotifier(SettingsService(prefs))),
+            settingsProvider.overrideWith(
+              (ref) => SettingsNotifier(SettingsService(prefs)),
+            ),
             themeModeProvider.overrideWith((ref) => ThemeModeNotifier(prefs)),
           ],
           child: const SettingsPage(),
@@ -97,9 +96,7 @@ class SettingsPage extends ConsumerWidget {
           const SettingsSidebar(),
           const VerticalDivider(thickness: 1, width: 1),
           // 右侧内容
-          Expanded(
-            child: _buildContent(selectedIndex),
-          ),
+          Expanded(child: _buildContent(selectedIndex)),
         ],
       ),
     );

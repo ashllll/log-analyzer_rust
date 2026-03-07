@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../services/settings_service.dart';
+import '../../../shared/services/settings_service.dart';
 
 /// 设置服务 Provider
 final settingsServiceProvider = FutureProvider<SettingsService>((ref) async {
@@ -92,18 +92,13 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
   /// 移除最近工作区
   Future<void> removeRecentWorkspace(String id) async {
     await _service.removeRecentWorkspace(id);
-    state = state.copyWith(
-      recentWorkspaces: _service.getRecentWorkspaces(),
-    );
+    state = state.copyWith(recentWorkspaces: _service.getRecentWorkspaces());
   }
 
   /// 清空最近工作区
   Future<void> clearRecentWorkspaces() async {
     await _service.clearRecentWorkspaces();
-    state = state.copyWith(
-      recentWorkspaces: [],
-      lastWorkspaceId: null,
-    );
+    state = state.copyWith(recentWorkspaces: [], lastWorkspaceId: null);
   }
 
   /// 设置最后工作区 ID
@@ -128,10 +123,11 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
 }
 
 /// 设置状态 Provider
-final settingsProvider =
-    StateNotifierProvider<SettingsNotifier, SettingsState>((ref) {
-  throw UnimplementedError('settingsProvider must be overridden');
-});
+final settingsProvider = StateNotifierProvider<SettingsNotifier, SettingsState>(
+  (ref) {
+    throw UnimplementedError('settingsProvider must be overridden');
+  },
+);
 
 /// 初始化设置 Provider 的辅助函数
 Provider<SettingsNotifier> createSettingsProvider(SettingsService service) {

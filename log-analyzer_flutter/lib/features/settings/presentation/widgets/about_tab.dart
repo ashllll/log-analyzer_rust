@@ -15,10 +15,7 @@ class AboutTab extends StatelessWidget {
         children: [
           const Text(
             '关于',
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-            ),
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 32),
 
@@ -47,10 +44,7 @@ class AboutTab extends StatelessWidget {
                   // 应用名称
                   const Text(
                     'Log Analyzer',
-                    style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 8),
 
@@ -67,7 +61,9 @@ class AboutTab extends StatelessWidget {
                     child: Text(
                       'v1.0.0',
                       style: TextStyle(
-                        color: Theme.of(context).colorScheme.onSecondaryContainer,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSecondaryContainer,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -77,19 +73,13 @@ class AboutTab extends StatelessWidget {
                   // 描述
                   const Text(
                     '高性能桌面日志分析工具',
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: Colors.grey,
-                    ),
+                    style: TextStyle(fontSize: 16, color: Colors.grey),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 8),
                   const Text(
                     '让用户能够高效地搜索、分析和监控日志文件',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey,
-                    ),
+                    style: TextStyle(fontSize: 14, color: Colors.grey),
                     textAlign: TextAlign.center,
                   ),
                 ],
@@ -171,10 +161,7 @@ class AboutTab extends StatelessWidget {
                   const SizedBox(height: 8),
                   const Text(
                     '本软件基于 MIT 许可证开源',
-                    style: TextStyle(
-                      color: Colors.grey,
-                      fontSize: 13,
-                    ),
+                    style: TextStyle(color: Colors.grey, fontSize: 13),
                   ),
                 ],
               ),
@@ -197,20 +184,12 @@ class AboutTab extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 12),
-        Text(
-          name,
-          style: const TextStyle(
-            fontWeight: FontWeight.w600,
-          ),
-        ),
+        Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
         const SizedBox(width: 8),
         Expanded(
           child: Text(
             '- $description',
-            style: const TextStyle(
-              color: Colors.grey,
-              fontSize: 14,
-            ),
+            style: const TextStyle(color: Colors.grey, fontSize: 14),
           ),
         ),
       ],

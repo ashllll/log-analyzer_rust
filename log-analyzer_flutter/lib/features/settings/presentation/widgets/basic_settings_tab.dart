@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/constants/app_constants.dart';
 import '../../../../shared/providers/app_provider.dart';
 import '../../../settings/providers/theme_provider.dart';
 
@@ -21,10 +22,7 @@ class BasicSettingsTab extends ConsumerWidget {
         children: [
           const Text(
             '基础设置',
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-            ),
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 32),
 
@@ -52,12 +50,7 @@ class BasicSettingsTab extends ConsumerWidget {
                     ],
                   ),
                   const SizedBox(height: 16),
-                  const Text(
-                    '选择应用的主题模式',
-                    style: TextStyle(
-                      color: Colors.grey,
-                    ),
-                  ),
+                  const Text('选择应用的主题模式', style: TextStyle(color: Colors.grey)),
                   const SizedBox(height: 20),
 
                   // 主题选择 SegmentedButton
@@ -83,12 +76,13 @@ class BasicSettingsTab extends ConsumerWidget {
                       ],
                       selected: {themeMode},
                       onSelectionChanged: (Set<ThemeMode> selection) {
-                        ref.read(themeModeProvider.notifier).setTheme(selection.first);
+                        ref
+                            .read(themeModeProvider.notifier)
+                            .setTheme(selection.first);
                         // 显示提示
-                        ref.read(appStateProvider.notifier).addToast(
-                          ToastType.success,
-                          '主题已更改',
-                        );
+                        ref
+                            .read(appStateProvider.notifier)
+                            .addToast(ToastType.success, '主题已更改');
                       },
                     ),
                   ),
@@ -166,18 +160,10 @@ class BasicSettingsTab extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
+              Text(title, style: const TextStyle(fontWeight: FontWeight.w500)),
               Text(
                 description,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey[600],
-                ),
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
               ),
             ],
           ),
