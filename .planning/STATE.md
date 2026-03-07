@@ -2,6 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: UI 完善
+status: unknown
+last_updated: "2026-03-07T04:09:40.448Z"
+progress:
+  total_phases: 11
+  completed_phases: 10
+  total_plans: 30
+  completed_plans: 34
+---
+
+---
+gsd_state_version: 1.0
+milestone: v1.2
+milestone_name: UI 完善
 status: in_progress
 last_updated: "2026-03-07T12:00:00.000Z"
 progress:

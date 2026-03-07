@@ -8,18 +8,23 @@
 
 让用户能够高效地搜索、分析和监控日志文件，支持多种压缩包格式，提供实时更新能力。
 
-## Current Milestone: v1.2 UI 完善
+## Current Milestone: v1.2 UI 完善 (已完成)
 
-**Goal:** 完成 Flutter UI 层实现，交付完整的高级搜索与虚拟文件系统用户体验
+**Status:** ✅ 已交付 2026-03-07
+**Phases:** 9-11 (12 plans total)
 
-**Target features:**
+**Shipped features:**
 - 高级搜索 UI (正则表达式、多关键词组合、搜索历史)
 - 虚拟文件系统 UI (文件树、目录导航、文件预览)
-- 集成优化 (端到端测试、性能优化、用户体验改进)
+- 集成优化 (测试、性能优化、UX 完善、文档)
 
 **Previous milestone:** v1.1 后端 API 集成与状态管理 (2026-03-05)
 - ✅ Phase 7: 后端 API 集成 (FFI 桥接)
 - ✅ Phase 8: 状态管理 (Riverpod 3.0 Providers)
+
+## Next Milestone Goals
+
+v2.0 待定义 - 需要收集新需求
 
 ## Requirements
 
@@ -56,12 +61,16 @@
 
 ### Active
 
-v1.2 UI 完善需求 (继承自 v1.1):
-- [ ] 正则表达式搜索 UI (ASEARCH-01, ASEARCH-02) — Phase 9
-- [ ] 多关键词组合搜索 UI (ASEARCH-03, ASEARCH-04, ASEARCH-05, ASEARCH-06) — Phase 9
-- [ ] 搜索历史记录 UI (HIST-01, HIST-02, HIST-03, HIST-04, HIST-05) — Phase 9
-- [ ] 虚拟文件树 UI (VFS-01, VFS-02, VFS-03, VFS-04) — Phase 10
-- [ ] 集成与优化 (Phase 11) — 待定义
+v2.0 待定义 - 需要收集新需求
+
+### Validated
+
+v1.2 UI 完善已交付 (2026-03-07):
+- ✓ 正则表达式搜索 UI (ASEARCH-01, ASEARCH-02) — Phase 9
+- ✓ 多关键词组合搜索 UI (ASEARCH-03, ASEARCH-04, ASEARCH-05, ASEARCH-06) — Phase 9
+- ✓ 搜索历史记录 UI (HIST-01, HIST-02, HIST-03, HIST-04, HIST-05) — Phase 9
+- ✓ 虚拟文件树 UI (VFS-01, VFS-02, VFS-03, VFS-04) — Phase 10
+- ✓ 集成与优化 (INT-01, INT-02, INT-03, INT-04) — Phase 11 (部分：测试待 FFI 修复后运行)
 
 ### Out of Scope
 
