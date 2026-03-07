@@ -124,6 +124,31 @@ BridgeService bridgeServiceForQuery(Ref ref) {
   return BridgeService.instance;
 }
 
+/// 搜索关键词数量 Provider
+///
+/// 使用 select() 只在关键词数量变化时重建
+/// 避免整个状态变化时的不必要重建
+@riverpod
+int searchTermCount(Ref ref) {
+  return ref.watch(searchQueryProvider).terms.length;
+}
+
+/// 是否有搜索关键词
+///
+/// 使用 select() 只在关键词存在性变化时重建
+@riverpod
+bool hasSearchKeywords(Ref ref) {
+  return ref.watch(searchQueryProvider).terms.any((t) => t.enabled);
+}
+
+/// 搜索关键词列表 Provider (只读)
+///
+/// 使用 select() 获取关键词列表，避免重建
+@riverpod
+List<SearchTerm> searchTerms(Ref ref) {
+  return ref.watch(searchQueryProvider).terms;
+}
+
 /// 搜索查询状态 Provider
 ///
 /// 使用 Riverpod 3.0 Notifier 管理多关键词组合搜索状态

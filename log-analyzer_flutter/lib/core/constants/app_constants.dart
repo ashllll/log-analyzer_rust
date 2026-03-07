@@ -28,6 +28,19 @@ class AppConstants {
   static const int maxCacheSize = 1000;
   static const Duration cacheTtl = Duration(hours: 1);
 
+  // 文件树缓存
+  static const int fileTreeCacheMaxSize = 100;
+  static const Duration fileTreeCacheTtl = Duration(minutes: 10);
+
+  // 搜索结果缓存
+  static const int searchResultCacheMaxSize = 50;
+  static const Duration searchResultCacheTtl = Duration(minutes: 5);
+
+  // 性能目标
+  static const int searchLatencyTargetMs = 200;
+  static const int fileTreeLoadTargetMs = 500;
+  static const int virtualScrollFpsTarget = 30;
+
   // UI
   static const double borderRadius = 8.0;
   static const double borderRadiusLarge = 12.0;

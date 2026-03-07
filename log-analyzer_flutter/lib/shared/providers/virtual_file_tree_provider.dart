@@ -89,6 +89,73 @@ sealed class FileContentResponse with _$FileContentResponse {
       _$FileContentResponseFromJson(json);
 }
 
+// ==================== 节点缓存 ====================
+
+/// 文件树节点缓存
+///
+/// 缓存已展开的目录节点，避免重复从后端加载
+class TreeNodeCache {
+  /// 最大缓存条目数
+  static const int maxCacheSize = 100;
+
+  /// 缓存容器
+  final Map<String, List<VirtualTreeNode>> _cache = {};
+
+  /// 访问顺序记录（用于 LRU 淘汰）
+  final List<String> _accessOrder = [];
+
+  /// 获取缓存的节点
+  List<VirtualTreeNode>? get(String path) {
+    final nodes = _cache[path];
+    if (nodes != null) {
+      // 更新访问顺序
+      _accessOrder.remove(path);
+      _accessOrder.add(path);
+    }
+    return nodes;
+  }
+
+  /// 设置缓存
+  void set(String path, List<VirtualTreeNode> nodes) {
+    // 如果缓存已满，删除最旧的条目
+    if (_cache.length >= maxCacheSize && !_cache.containsKey(path)) {
+      _removeOldest();
+    }
+
+    _cache[path] = nodes;
+    _accessOrder.remove(path);
+    _accessOrder.add(path);
+  }
+
+  /// 删除缓存
+  void remove(String path) {
+    _cache.remove(path);
+    _accessOrder.remove(path);
+  }
+
+  /// 清空缓存
+  void clear() {
+    _cache.clear();
+    _accessOrder.clear();
+  }
+
+  /// 检查路径是否已缓存
+  bool has(String path) => _cache.containsKey(path);
+
+  /// 获取缓存大小
+  int get size => _cache.length;
+
+  /// 删除最旧的缓存条目
+  void _removeOldest() {
+    if (_accessOrder.isEmpty) return;
+    final oldestPath = _accessOrder.removeAt(0);
+    _cache.remove(oldestPath);
+  }
+}
+
+/// 全局节点缓存实例
+final treeNodeCache = TreeNodeCache();
+
 // ==================== Provider 定义 ====================
 
 /// BridgeService Provider
@@ -173,6 +240,7 @@ class VirtualFileTree extends _$VirtualFileTree {
   /// 懒加载子节点
   ///
   /// 展开目录时从后端加载子节点
+  /// 使用缓存机制避免重复加载已展开的目录
   ///
   /// # 参数
   ///
@@ -189,6 +257,16 @@ class VirtualFileTree extends _$VirtualFileTree {
     final currentTree = currentValue;
     if (currentTree.isEmpty) {
       return [];
+    }
+
+    // 性能优化：检查缓存
+    final cachedChildren = treeNodeCache.get(parentPath);
+    if (cachedChildren != null) {
+      debugPrint('VirtualFileTreeProvider: 使用缓存加载子节点 $parentPath');
+      // 更新树中对应节点的子节点（使用缓存数据）
+      final updatedTree = _updateNodeChildren(currentTree, parentPath, cachedChildren);
+      state = AsyncData(updatedTree);
+      return cachedChildren;
     }
 
     final bridge = ref.read(bridgeServiceProvider);
@@ -210,6 +288,9 @@ class VirtualFileTree extends _$VirtualFileTree {
       if (children.isEmpty) {
         return [];
       }
+
+      // 性能优化：缓存加载的子节点
+      treeNodeCache.set(parentPath, children);
 
       // 更新树中对应节点的子节点
       final updatedTree = _updateNodeChildren(currentTree, parentPath, children);
@@ -284,8 +365,11 @@ class VirtualFileTree extends _$VirtualFileTree {
 
   /// 刷新文件树
   ///
-  /// 重新从后端加载文件树
+  /// 重新从后端加载文件树，同时清空缓存
   Future<void> refresh() async {
+    // 清空节点缓存
+    treeNodeCache.clear();
+
     state = const AsyncLoading();
 
     final bridge = ref.read(bridgeServiceProvider);
@@ -302,6 +386,11 @@ class VirtualFileTree extends _$VirtualFileTree {
       state = AsyncError(e, StackTrace.current);
     }
   }
+
+  /// 获取文件树缓存状态
+  ///
+  /// 返回缓存大小，用于性能监控
+  int get cacheSize => treeNodeCache.size;
 
   /// 读取文件内容
   ///

@@ -30,6 +30,15 @@ class VirtualLogList extends StatefulWidget {
   /// 是否显示分割线
   final bool showDividers;
 
+  /// 缓存区域大小（渲染区域之外的预渲染区域）
+  ///
+  /// 值越大，滚动时加载越平滑，但内存占用越高
+  /// 默认值为 itemHeight * 10，兼顾性能和内存
+  final double cacheExtent;
+
+  /// 是否启用粘性头部
+  final bool shrinkWrap;
+
   const VirtualLogList({
     super.key,
     required this.itemCount,
@@ -40,6 +49,8 @@ class VirtualLogList extends StatefulWidget {
     this.padding,
     this.onIndexChanged,
     this.showDividers = true,
+    this.cacheExtent = 0, // 默认使用 itemHeight * 10
+    this.shrinkWrap = false,
   });
 
   @override
@@ -94,11 +105,22 @@ class _VirtualLogListState extends State<VirtualLogList> {
 
   @override
   Widget build(BuildContext context) {
+    // 计算缓存区域大小：如果未指定，则使用 itemHeight * 10 作为默认值
+    final effectiveCacheExtent = widget.cacheExtent > 0
+        ? widget.cacheExtent
+        : widget.itemHeight * 10;
+
     return ListView.builder(
       controller: _scrollController,
       padding: widget.padding,
       itemCount: widget.itemCount,
+      // 虚拟滚动优化：设置缓存区域大小
+      cacheExtent: effectiveCacheExtent,
+      // 虚拟滚动优化：对于小列表可启用 shrinkWrap
+      shrinkWrap: widget.shrinkWrap,
+      // 使用 itemExtent 固定高度可大幅提升性能
       itemExtent: widget.dynamicHeight ? null : widget.itemHeight,
+      // 如果是动态高度，可以使用 prototypeItem 优化
       prototypeItem: widget.dynamicHeight
           ? null
           : widget.itemBuilder(context, 0),

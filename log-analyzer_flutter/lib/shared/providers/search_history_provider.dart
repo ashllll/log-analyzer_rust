@@ -9,6 +9,93 @@ import '../services/generated/ffi/types.dart' as ffi_types;
 
 part 'search_history_provider.g.dart';
 
+// ==================== 搜索结果缓存 ====================
+
+/// 搜索结果缓存
+///
+/// 缓存搜索结果以提升重复搜索的性能
+class SearchResultCache {
+  /// 最大缓存条目数
+  static const int maxCacheSize = 50;
+
+  /// 缓存容器 (query -> List of results)
+  final Map<String, List<Map<String, dynamic>>> _cache = {};
+
+  /// 缓存时间戳
+  final Map<String, DateTime> _cacheTime = {};
+
+  /// TTL (毫秒)
+  final int ttlMs;
+
+  SearchResultCache({this.ttlMs = 5 * 60 * 1000}); // 默认 5 分钟
+
+  /// 获取缓存的搜索结果
+  List<Map<String, dynamic>>? get(String query) {
+    final cached = _cache[query];
+    if (cached == null) return null;
+
+    // 检查是否过期
+    final cacheTime = _cacheTime[query];
+    if (cacheTime != null) {
+      final age = DateTime.now().difference(cacheTime).inMilliseconds;
+      if (age > ttlMs) {
+        // 过期，删除缓存
+        _cache.remove(query);
+        _cacheTime.remove(query);
+        return null;
+      }
+    }
+
+    return cached;
+  }
+
+  /// 设置缓存
+  void set(String query, List<Map<String, dynamic>> results) {
+    // 如果缓存已满，删除最旧的条目
+    if (_cache.length >= maxCacheSize) {
+      _removeOldest();
+    }
+
+    _cache[query] = results;
+    _cacheTime[query] = DateTime.now();
+  }
+
+  /// 清空缓存
+  void clear() {
+    _cache.clear();
+    _cacheTime.clear();
+  }
+
+  /// 删除最旧的缓存条目
+  void _removeOldest() {
+    if (_cache.isEmpty) return;
+
+    String? oldestKey;
+    DateTime? oldestTime;
+
+    for (final entry in _cacheTime.entries) {
+      if (oldestTime == null || entry.value.isBefore(oldestTime)) {
+        oldestTime = entry.value;
+        oldestKey = entry.key;
+      }
+    }
+
+    if (oldestKey != null) {
+      _cache.remove(oldestKey);
+      _cacheTime.remove(oldestKey);
+    }
+  }
+
+  /// 获取缓存大小
+  int get size => _cache.length;
+
+  /// 检查是否包含某个查询
+  bool contains(String query) => _cache.containsKey(query);
+}
+
+/// 全局搜索结果缓存实例
+final searchResultCache = SearchResultCache();
+
 /// 搜索历史条目模型
 ///
 /// 本地 Dart 模型，用于 Riverpod 状态管理
