@@ -148,16 +148,17 @@ class CustomButton extends StatelessWidget {
             width: isFullWidth ? double.infinity : null,
             child: ElevatedButton(
               onPressed: isEnabled ? onPressed : null,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.bgHover,
-              foregroundColor: AppColors.textPrimary,
-              padding: _getPadding(),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-                side: const BorderSide(color: AppColors.borderLight),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.bgHover,
+                foregroundColor: AppColors.textPrimary,
+                padding: _getPadding(),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  side: const BorderSide(color: AppColors.borderLight),
+                ),
               ),
+              child: buttonChild,
             ),
-            child: buttonChild,
           ),
         );
     }
