@@ -63,6 +63,11 @@ Progress: [█████░░░░] 64% (7/11 plans)
 | Phase 11-01 P01 | 3min | 1 task | 1 file |
 | Phase 11-02 P02 | 8min | 4 tasks | 6 files |
 
+From 12-01:
+- 使用 freezed 生成不可变数据模型
+- 使用 Riverpod Provider 管理标签页状态
+- 使用 shared_preferences 持久化标签页列表
+
 **Previous Milestones:**
 - v1.0 已完成: 16 个计划
 - v1.1 已完成: 6 个计划 (Phase 7-8)
