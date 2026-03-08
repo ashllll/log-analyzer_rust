@@ -188,8 +188,10 @@ Plans:
 
 - [x] **Phase 12:** 多工作区标签页基础设施 (Tabs)
  (completed 2026-03-07)
-- [x] **Phase 13:** 自定义过滤器后端 FFI 接口 (Filters) (completed 2026-03-08)
-- [ ] **Phase 14:** 自定义过滤器 UI (Filters)
+- [x] **Phase 13:** 自定义过滤器后端 FFI 接口 (Filters)
+ (completed 2026-03-08)
+- [x] **Phase 14:** 自定义过滤器 UI (Filters)
+ (planned 2026-03-08)
 - [ ] **Phase 15:** 日志级别统计后端 FFI 接口 (Stats)
 - [ ] **Phase 16:** 日志级别统计 UI 面板 (Stats)
 - [ ] **Phase 17:** 集成与优化 (Integration)
@@ -223,7 +225,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 13-01 — 过滤器 FFI 接口实现 (FILTER-01, FILTER-02, FILTER-03, FILTER-05)
+- [x] 13-01 — 过滤器 FFI 接口实现 (FILTER-01, FILTER-02, FILTER-03, FILTER-05)
 
 ### Phase 14: 自定义过滤器 UI
 **Goal**: 用户可以通过侧边栏和对话框管理过滤器，并在搜索时快速应用
@@ -234,7 +236,10 @@ Plans:
   2. 过滤器创建/编辑对话框
   3. 搜索栏显示过滤器快捷按钮
   4. 点击过滤器自动填充搜索条件
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+- [x] 14-01 — 过滤器 UI 组件实现 (FILTER-04)
 
 ### Phase 15: 日志级别统计后端 FFI 接口
 **Goal**: Flutter 应用能够通过 FFI 调用 Rust 后端获取日志级别统计
@@ -278,7 +283,7 @@ Phases execute in numeric order: 12 → 13 → 14 → 15 → 16 → 17
 |-------|----------------|--------|--------|
 | 12. 多工作区标签页 | 0/ | Complete    | 2026-03-07 |
 | 13. 过滤器 FFI | 1/1 | Complete    | 2026-03-08 |
-| 14. 过滤器 UI | 0/ | Planned | TBD |
+| 14. 过滤器 UI | 1/1 | Planned | 2026-03-08 |
 | 15. 统计 FFI | 0/ | Planned | TBD |
 | 16. 统计 UI | 0/ | Planned | TBD |
 | 17. 集成优化 | 0/ | Planned | TBD |
@@ -316,5 +321,5 @@ Phases execute in numeric order: 12 → 13 → 14 → 15 → 16 → 17
 ---
 
 *Roadmap created: 2026-03-05*
-*Last updated: 2026-03-08 (Phase 13 planned)*
-*Ready for planning: Phase 13*
+*Last updated: 2026-03-08 (Phase 14 planned)*
+*Ready for execution: Phase 14*
