@@ -495,3 +495,71 @@ pub struct SearchResultEntry {
     /// 匹配结束位置
     pub match_end: i64,
 }
+
+// ==================== 自定义过滤器类型 ====================
+
+/// 过滤器输入数据（用于创建/更新过滤器）
+///
+/// 对应 Flutter 端 SavedFilter 模型的 FFI 传输格式
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SavedFilterInput {
+    /// 过滤器名称
+    pub name: String,
+    /// 过滤器描述（可选）
+    pub description: Option<String>,
+    /// 工作区ID
+    pub workspace_id: String,
+    /// 搜索条件列表（JSON 序列化）
+    pub terms_json: String,
+    /// 全局操作符 ("AND", "OR", "NOT")
+    pub global_operator: String,
+    /// 时间范围起始（ISO 8601 格式，可选）
+    pub time_range_start: Option<String>,
+    /// 时间范围结束（ISO 8601 格式，可选）
+    pub time_range_end: Option<String>,
+    /// 日志级别列表（JSON 序列化数组，可选）
+    pub levels_json: Option<String>,
+    /// 文件模式（可选）
+    pub file_pattern: Option<String>,
+    /// 是否为默认过滤器
+    pub is_default: bool,
+    /// 排序权重
+    pub sort_order: i32,
+}
+
+/// 过滤器数据（FFI 格式）
+///
+/// 用于 Flutter 端过滤器展示
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SavedFilterData {
+    /// 过滤器唯一标识
+    pub id: String,
+    /// 过滤器名称
+    pub name: String,
+    /// 过滤器描述（可选）
+    pub description: Option<String>,
+    /// 工作区ID
+    pub workspace_id: String,
+    /// 搜索条件列表（JSON 序列化）
+    pub terms_json: String,
+    /// 全局操作符 ("AND", "OR", "NOT")
+    pub global_operator: String,
+    /// 时间范围起始（ISO 8601 格式，可选）
+    pub time_range_start: Option<String>,
+    /// 时间范围结束（ISO 8601 格式，可选）
+    pub time_range_end: Option<String>,
+    /// 日志级别列表（JSON 序列化数组，可选）
+    pub levels_json: Option<String>,
+    /// 文件模式（可选）
+    pub file_pattern: Option<String>,
+    /// 是否为默认过滤器
+    pub is_default: bool,
+    /// 排序权重
+    pub sort_order: i32,
+    /// 使用次数
+    pub usage_count: i32,
+    /// 创建时间（ISO 8601 格式）
+    pub created_at: String,
+    /// 最后使用时间（ISO 8601 格式，可选）
+    pub last_used_at: Option<String>,
+}
