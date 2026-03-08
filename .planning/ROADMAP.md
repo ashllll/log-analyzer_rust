@@ -240,7 +240,7 @@ Plans:
 
 Plans:
 - [x] 14-01 — 过滤器 UI 组件实现 (FILTER-04)
-- [ ] 14-02 — Gap 修复：侧边栏创建功能 + FilterPalette 复用 (FILTER-04)
+- [x] 14-02 — Gap 修复：侧边栏创建功能 + FilterPalette 复用 (FILTER-04)
 
 ### Phase 15: 日志级别统计后端 FFI 接口
 **Goal**: Flutter 应用能够通过 FFI 调用 Rust 后端获取日志级别统计
@@ -284,7 +284,7 @@ Phases execute in numeric order: 12 → 13 → 14 → 15 → 16 → 17
 |-------|----------------|--------|--------|
 | 12. 多工作区标签页 | 0/ | Complete    | 2026-03-07 |
 | 13. 过滤器 FFI | 1/1 | Complete    | 2026-03-08 |
-| 14. 过滤器 UI | 1/1 | Complete    | 2026-03-08 |
+| 14. 过滤器 UI | 2/2 | Complete    | 2026-03-08 |
 | 15. 统计 FFI | 0/ | Planned | TBD |
 | 16. 统计 UI | 0/ | Planned | TBD |
 | 17. 集成优化 | 0/ | Planned | TBD |
