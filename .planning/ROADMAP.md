@@ -193,7 +193,7 @@ Plans:
 - [x] **Phase 14:** 自定义过滤器 UI (Filters)
  (planned 2026-03-08)
 - [x] **Phase 15:** 日志级别统计后端 FFI 接口 (Stats) (completed 2026-03-08)
-- [ ] **Phase 16:** 日志级别统计 UI 面板 (Stats)
+- [x] **Phase 16:** 日志级别统计 UI 面板 (Stats) (completed 2026-03-08)
 - [ ] **Phase 17:** 集成与优化 (Integration)
 
 ---
