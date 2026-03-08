@@ -535,3 +535,84 @@ pub fn search_regex(
         "正则搜索失败",
     )
 }
+
+// ==================== 过滤器操作 ====================
+
+/// 保存或更新过滤器
+///
+/// 根据 workspace_id + name 唯一键保存或更新过滤器
+///
+/// # 参数
+///
+/// * `filter` - 过滤器输入数据
+///
+/// # 返回
+///
+/// 成功返回 true
+#[frb(sync)]
+pub fn save_filter(filter: SavedFilterInput) -> bool {
+    unwrap_result(
+        commands_bridge::ffi_save_filter(filter),
+        "保存过滤器失败",
+    )
+}
+
+/// 获取工作区的所有过滤器
+///
+/// 获取指定工作区的所有已保存过滤器
+///
+/// # 参数
+///
+/// * `workspaceId` - 工作区 ID
+/// * `limit` - 最大返回数量（可选）
+///
+/// # 返回
+///
+/// 返回过滤器列表
+#[frb(sync)]
+pub fn get_saved_filters(workspace_id: String, limit: Option<i32>) -> Vec<SavedFilterData> {
+    unwrap_result(
+        commands_bridge::ffi_get_saved_filters(workspace_id, limit.map(|l| l as usize)),
+        "获取过滤器列表失败",
+    )
+}
+
+/// 删除指定过滤器
+///
+/// 删除指定工作区中的过滤器
+///
+/// # 参数
+///
+/// * `filterId` - 过滤器 ID
+/// * `workspaceId` - 工作区 ID
+///
+/// # 返回
+///
+/// 成功返回 true
+#[frb(sync)]
+pub fn delete_filter(filter_id: String, workspace_id: String) -> bool {
+    unwrap_result(
+        commands_bridge::ffi_delete_filter(filter_id, workspace_id),
+        "删除过滤器失败",
+    )
+}
+
+/// 更新过滤器使用统计
+///
+/// 更新过滤器的使用次数和最后使用时间
+///
+/// # 参数
+///
+/// * `filterId` - 过滤器 ID
+/// * `workspaceId` - 工作区 ID
+///
+/// # 返回
+///
+/// 成功返回 true
+#[frb(sync)]
+pub fn update_filter_usage(filter_id: String, workspace_id: String) -> bool {
+    unwrap_result(
+        commands_bridge::ffi_update_filter_usage(filter_id, workspace_id),
+        "更新过滤器使用统计失败",
+    )
+}
