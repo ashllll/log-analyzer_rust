@@ -192,7 +192,7 @@ Plans:
  (completed 2026-03-08)
 - [x] **Phase 14:** 自定义过滤器 UI (Filters)
  (planned 2026-03-08)
-- [ ] **Phase 15:** 日志级别统计后端 FFI 接口 (Stats)
+- [x] **Phase 15:** 日志级别统计后端 FFI 接口 (Stats) (completed 2026-03-08)
 - [ ] **Phase 16:** 日志级别统计 UI 面板 (Stats)
 - [ ] **Phase 17:** 集成与优化 (Integration)
 
@@ -288,7 +288,7 @@ Phases execute in numeric order: 12 → 13 → 14 → 15 → 16 → 17
 | 12. 多工作区标签页 | 0/ | Complete    | 2026-03-07 |
 | 13. 过滤器 FFI | 1/1 | Complete    | 2026-03-08 |
 | 14. 过滤器 UI | 2/2 | Complete    | 2026-03-08 |
-| 15. 统计 FFI | 0/1 | Planned | TBD |
+| 15. 统计 FFI | 0/1 | Complete    | 2026-03-08 |
 | 16. 统计 UI | 0/ | Planned | TBD |
 | 17. 集成优化 | 0/ | Planned | TBD |
 
