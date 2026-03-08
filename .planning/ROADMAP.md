@@ -283,7 +283,7 @@ Phases execute in numeric order: 12 → 13 → 14 → 15 → 16 → 17
 |-------|----------------|--------|--------|
 | 12. 多工作区标签页 | 0/ | Complete    | 2026-03-07 |
 | 13. 过滤器 FFI | 1/1 | Complete    | 2026-03-08 |
-| 14. 过滤器 UI | 1/1 | Planned | 2026-03-08 |
+| 14. 过滤器 UI | 1/1 | Complete    | 2026-03-08 |
 | 15. 统计 FFI | 0/ | Planned | TBD |
 | 16. 统计 UI | 0/ | Planned | TBD |
 | 17. 集成优化 | 0/ | Planned | TBD |
@@ -302,11 +302,11 @@ Phases execute in numeric order: 12 → 13 → 14 → 15 → 16 → 17
 | TAB-04 | Phase 12 | Pending |
 | TAB-05 | Phase 12 | Pending |
 | TAB-06 | Phase 12 | Pending |
-| FILTER-01 | Phase 13 | Pending |
-| FILTER-02 | Phase 13 | Pending |
-| FILTER-03 | Phase 13 | Pending |
-| FILTER-04 | Phase 14 | Pending |
-| FILTER-05 | Phase 13 | Pending |
+| FILTER-01 | Phase 13 | Complete |
+| FILTER-02 | Phase 13 | Complete |
+| FILTER-03 | Phase 13 | Complete |
+| FILTER-04 | Phase 14 | Complete |
+| FILTER-05 | Phase 13 | Complete |
 | STATS-01 | Phase 15 | Pending |
 | STATS-02 | Phase 16 | Pending |
 | STATS-03 | Phase 15 | Pending |
