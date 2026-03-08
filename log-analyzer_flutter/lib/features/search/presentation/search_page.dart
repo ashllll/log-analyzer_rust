@@ -5,7 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
 
-import '../../../shared/models/common.dart';
+import '../../../shared/models/common.dart' as common;
 import '../../../shared/models/search.dart';
 import '../../../shared/models/saved_filter.dart' as saved;
 import '../../../shared/providers/app_provider.dart';
@@ -32,6 +32,7 @@ import 'widgets/search_condition_preview.dart';
 import 'widgets/saved_filters_sidebar.dart';
 import 'widgets/filter_editor_dialog.dart';
 import 'widgets/filter_quick_select.dart';
+import 'widgets/log_level_stats_panel.dart';
 import '../models/search_mode.dart';
 import '../providers/search_query_provider.dart';
 import '../../../shared/providers/search_history_provider.dart';
@@ -70,7 +71,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   final _focusNode = FocusNode();
 
   // 搜索状态
-  List<LogEntry> _logs = [];
+  List<common.LogEntry> _logs = [];
   String? _currentSearchId;
   bool _isSearching = false;
   SearchResultSummary? _searchSummary;
@@ -95,7 +96,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   Timer? _debounceTimer;
 
   // 事件流订阅
-  StreamSubscription<List<LogEntry>>? _searchResultsSubscription;
+  StreamSubscription<List<common.LogEntry>>? _searchResultsSubscription;
   StreamSubscription<SearchResultSummary>? _searchSummarySubscription;
 
   // 视口状态 - 用于追踪当前可见范围（调试用）
@@ -316,6 +317,15 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                 currentFilters: _currentFilters,
               ),
             ],
+            // 日志级别统计面板
+            if (activeWorkspaceId != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: LogLevelStatsPanel(
+                  workspaceId: activeWorkspaceId,
+                  onLevelFilter: _onLevelFilter,
+                ),
+              ),
             // 日志列表（带热力图）
             Expanded(child: _buildLogsListWithHeatmap()),
             // 统计面板
@@ -332,7 +342,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   }
 
   /// 构建 AppBar
-  PreferredSizeWidget _buildAppBar(Workspace? activeWorkspace) {
+  PreferredSizeWidget _buildAppBar(common.Workspace? activeWorkspace) {
     return AppBar(
       backgroundColor: AppColors.bgMain,
       elevation: 0,
@@ -928,7 +938,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   }
 
   /// 显示日志详情面板
-  void _showLogDetail(LogEntry entry) {
+  void _showLogDetail(common.LogEntry entry) {
     showDialog(
       context: context,
       builder: (dialogContext) => LogDetailPanel(
@@ -1132,6 +1142,22 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     }
   }
 
+  /// 处理日志级别筛选回调
+  ///
+  /// 从 LogLevelStatsPanel 点击级别时触发
+  void _onLevelFilter(List<String> levels) {
+    // 获取当前时间范围和文件模式（如果有）
+    final currentTimeRange = _currentFilters?.timeRange ?? const common.TimeRange();
+    final currentFilePattern = _currentFilters?.filePattern;
+
+    // 应用新的过滤器（只更新级别）
+    applyFilters(common.FilterOptions(
+      timeRange: currentTimeRange,
+      levels: levels,
+      filePattern: currentFilePattern,
+    ));
+  }
+
   /// 应用过滤器
   ///
   /// 从 FilterPalette 接收过滤器配置并触发重新搜索
@@ -1150,11 +1176,11 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   ///
   /// 接收原始过滤器数据并构建 FilterOptions
   void _applyFiltersFromPalette({
-    required TimeRange timeRange,
+    required common.TimeRange timeRange,
     required List<String> levels,
     String? filePattern,
   }) {
-    final filters = FilterOptions(
+    final filters = common.FilterOptions(
       timeRange: timeRange,
       levels: levels,
       filePattern: filePattern,
@@ -1167,19 +1193,19 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   /// 从 SavedFiltersSidebar 或 FilterQuickSelect 选择过滤器时调用
   void _applyFilterFromSaved(saved.SavedFilter filter) {
     // 构建时间范围 - 使用 common.dart 的 TimeRange (freezed)
-    final TimeRange timeRange;
+    final common.TimeRange timeRange;
     if (filter.timeRange != null) {
       // 从 saved_filter.dart 的 TimeRange 转换到 common.dart 的 TimeRange
-      timeRange = TimeRange(
+      timeRange = common.TimeRange(
         start: filter.timeRange!.start,
         end: filter.timeRange!.end,
       );
     } else {
-      timeRange = const TimeRange();
+      timeRange = const common.TimeRange();
     }
 
     // 应用过滤器
-    final filters = FilterOptions(
+    final filters = common.FilterOptions(
       timeRange: timeRange,
       levels: filter.levels,
       filePattern: filter.filePattern,
