@@ -1052,13 +1052,24 @@ class BridgeService {
   /// # 返回
   ///
   /// 返回日志级别统计结果，包含每个级别的数量
-  Future<ffi.LogLevelStatsOutput?> getLogLevelStats(String workspaceId) async {
+  Future<Map<String, dynamic>?> getLogLevelStats(String workspaceId) async {
     if (!isFfiEnabled) {
       return null;
     }
 
     try {
-      return ffi.getLogLevelStats(workspaceId: workspaceId);
+      final result = ffi.getLogLevelStats(workspaceId: workspaceId);
+      // 转换为 Map 以避免直接依赖 FFI 生成类型
+      return {
+        'fatalCount': result.fatalCount,
+        'errorCount': result.errorCount,
+        'warnCount': result.warnCount,
+        'infoCount': result.infoCount,
+        'debugCount': result.debugCount,
+        'traceCount': result.traceCount,
+        'unknownCount': result.unknownCount,
+        'total': result.total,
+      };
     } catch (e) {
       debugPrint('getLogLevelStats error: $e');
       return null;
