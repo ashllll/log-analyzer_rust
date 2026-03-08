@@ -2,16 +2,21 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/models/saved_filter.dart';
+import '../../../../shared/models/common.dart' as common;
 import '../../../../shared/providers/saved_filters_provider.dart';
 import '../../../../core/theme/app_theme.dart';
+import 'filter_editor_dialog.dart';
 
 /// 过滤器应用回调类型
 typedef FilterApplyCallback = void Function(SavedFilter filter);
 
+/// 获取当前过滤器配置的回调类型
+typedef GetCurrentFiltersCallback = common.FilterOptions? Function();
+
 /// 侧边栏过滤器列表组件
 ///
 /// 显示已保存的过滤器列表，支持点击应用、编辑和删除操作
-class SavedFiltersSidebar extends ConsumerWidget {
+class SavedFiltersSidebar extends ConsumerStatefulWidget {
   /// 工作区ID
   final String workspaceId;
 
@@ -24,17 +29,26 @@ class SavedFiltersSidebar extends ConsumerWidget {
   /// 过滤器删除回调
   final void Function(String filterId)? onDelete;
 
+  /// 获取当前过滤器配置的回调（用于预填充新建过滤器的条件）
+  final GetCurrentFiltersCallback? getCurrentFilters;
+
   const SavedFiltersSidebar({
     super.key,
     required this.workspaceId,
     this.onApply,
     this.onEdit,
     this.onDelete,
+    this.getCurrentFilters,
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final filtersAsync = ref.watch(savedFiltersProvider(workspaceId));
+  ConsumerState<SavedFiltersSidebar> createState() => _SavedFiltersSidebarState();
+}
+
+class _SavedFiltersSidebarState extends ConsumerState<SavedFiltersSidebar> {
+  @override
+  Widget build(BuildContext context) {
+    final filtersAsync = ref.watch(savedFiltersProvider(widget.workspaceId));
 
     return Container(
       decoration: BoxDecoration(
@@ -117,9 +131,9 @@ class SavedFiltersSidebar extends ConsumerWidget {
           final filter = filters[index];
           return _FilterListItem(
             filter: filter,
-            onTap: () => onApply?.call(filter),
-            onEdit: () => onEdit?.call(filter),
-            onDelete: () => onDelete?.call(filter.id),
+            onTap: () => widget.onApply?.call(filter),
+            onEdit: () => widget.onEdit?.call(filter),
+            onDelete: () => widget.onDelete?.call(filter.id),
           );
         },
       ),
@@ -207,9 +221,23 @@ class SavedFiltersSidebar extends ConsumerWidget {
   }
 
   /// 显示创建对话框
-  void _showCreateDialog(BuildContext context) {
-    // TODO: 调用 FilterEditorDialog 创建新过滤器
-    // onEdit?.call(SavedFilter(...)); // 空过滤器用于新建
+  Future<void> _showCreateDialog(BuildContext context) async {
+    // 获取当前过滤器配置用于预填充
+    final currentFilters = widget.getCurrentFilters?.call();
+
+    // 调用 FilterEditorDialog 创建新过滤器
+    final result = await FilterEditorDialog.show(
+      context,
+      workspaceId: widget.workspaceId,
+      filter: null, // null 表示创建新过滤器
+      currentFilters: currentFilters,
+    );
+
+    // 如果保存成功，通过 onApply 回调通知父组件
+    if (result != null && widget.onApply != null) {
+      // FilterEditorDialog 已经保存到 provider，这里只需要通知父组件
+      // 可以选择刷新搜索或显示提示信息
+    }
   }
 }
 

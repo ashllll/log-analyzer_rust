@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../shared/models/common.dart' hide TimeRange;
-import '../../../../shared/models/saved_filter.dart';
+import '../../../../shared/models/common.dart' as common;
+import '../../../../shared/models/saved_filter.dart' as saved;
 import '../../../../shared/providers/saved_filters_provider.dart';
 import '../../../../core/theme/app_theme.dart';
+import 'filter_palette.dart';
+
+/// 使用 common.dart 的类型别名
+typedef TimeRange = common.TimeRange;
+typedef FilterOptions = common.FilterOptions;
 
 /// 过滤器编辑器结果
 class FilterEditorResult {
@@ -33,7 +38,7 @@ class FilterEditorDialog extends ConsumerStatefulWidget {
   final String workspaceId;
 
   /// 要编辑的过滤器（null 表示创建新过滤器）
-  final SavedFilter? filter;
+  final saved.SavedFilter? filter;
 
   /// 当前的过滤器配置（用于初始化）
   final FilterOptions? currentFilters;
@@ -51,7 +56,7 @@ class FilterEditorDialog extends ConsumerStatefulWidget {
   static Future<FilterEditorResult?> show(
     BuildContext context, {
     required String workspaceId,
-    SavedFilter? filter,
+    saved.SavedFilter? filter,
     FilterOptions? currentFilters,
   }) {
     return showDialog<FilterEditorResult>(
@@ -266,10 +271,10 @@ class _FilterEditorDialogState extends ConsumerState<FilterEditorDialog> {
     });
 
     try {
-      // 构建时间范围
-      TimeRange? timeRange;
+      // 构建时间范围 (使用 saved_filter.dart 的 TimeRange)
+      saved.TimeRange? timeRange;
       if (_startDate != null || _endDate != null) {
-        timeRange = TimeRange(
+        timeRange = saved.TimeRange(
           start: _startDate != null
               ? '${_formatDate(_startDate!)} 00:00:00'
               : null,
@@ -283,8 +288,8 @@ class _FilterEditorDialogState extends ConsumerState<FilterEditorDialog> {
       final filePattern = _filePatternController.text.trim();
       final filePatternValue = filePattern.isNotEmpty ? filePattern : null;
 
-      // 构建过滤器
-      final filter = SavedFilter(
+      // 构建过滤器 (使用 saved_filter.dart 的 SavedFilter)
+      final filter = saved.SavedFilter(
         id: widget.filter?.id ?? '',
         name: _nameController.text.trim(),
         description: _descriptionController.text.trim().isNotEmpty
@@ -309,11 +314,16 @@ class _FilterEditorDialogState extends ConsumerState<FilterEditorDialog> {
           .saveFilter(filter);
 
       if (success && mounted) {
+        // 转换 saved.TimeRange 到 common.TimeRange
+        final commonTimeRange = timeRange != null
+            ? TimeRange(start: timeRange.start, end: timeRange.end)
+            : const TimeRange();
+
         // 返回结果
         Navigator.of(context).pop(FilterEditorResult(
           name: filter.name,
           description: filter.description,
-          timeRange: timeRange ?? const TimeRange(),
+          timeRange: commonTimeRange,
           levels: _selectedLevels.toList(),
           filePattern: filePatternValue,
           isDefault: _isDefault,
@@ -447,6 +457,22 @@ class _FilterEditorDialogState extends ConsumerState<FilterEditorDialog> {
 
   /// 构建过滤条件部分
   Widget _buildFilterSection() {
+    // 构建当前过滤器配置用于初始化 FilterPalette
+    final currentFilters = FilterOptions(
+      timeRange: TimeRange(
+        start: _startDate != null
+            ? '${_formatDate(_startDate!)} 00:00:00'
+            : null,
+        end: _endDate != null
+            ? '${_formatDate(_endDate!)} 23:59:59'
+            : null,
+      ),
+      levels: _selectedLevels.toList(),
+      filePattern: _filePatternController.text.trim().isNotEmpty
+          ? _filePatternController.text.trim()
+          : null,
+    );
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -467,16 +493,46 @@ class _FilterEditorDialogState extends ConsumerState<FilterEditorDialog> {
           ),
           const SizedBox(height: 16),
 
-          // 时间范围
-          _buildTimeRangeSelector(),
-          const SizedBox(height: 16),
+          // 使用 FilterPalette 组件
+          FilterPalette(
+            currentFilters: currentFilters,
+            onApply: ({
+              required TimeRange timeRange,
+              required List<String> levels,
+              String? filePattern,
+            }) {
+              // 同步 FilterPalette 的状态回对话框
+              setState(() {
+                // 解析时间范围
+                if (timeRange.start != null) {
+                  try {
+                    _startDate = DateTime.parse(timeRange.start!);
+                  } catch (_) {
+                    _startDate = null;
+                  }
+                } else {
+                  _startDate = null;
+                }
 
-          // 日志级别
-          _buildLevelSelector(),
-          const SizedBox(height: 16),
+                if (timeRange.end != null) {
+                  try {
+                    _endDate = DateTime.parse(timeRange.end!);
+                  } catch (_) {
+                    _endDate = null;
+                  }
+                } else {
+                  _endDate = null;
+                }
 
-          // 文件模式
-          _buildFilePatternField(),
+                // 更新级别
+                _selectedLevels.clear();
+                _selectedLevels.addAll(levels);
+
+                // 更新文件模式
+                _filePatternController.text = filePattern ?? '';
+              });
+            },
+          ),
         ],
       ),
     );
