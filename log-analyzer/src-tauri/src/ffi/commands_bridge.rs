@@ -2037,6 +2037,264 @@ pub fn ffi_read_file_by_hash(
     })
 }
 
+// ==================== 过滤器命令适配 ====================
+
+use crate::ffi::types::{SavedFilterData, SavedFilterInput};
+
+/// 读取过滤器配置文件
+fn read_saved_filters_from_config(workspace_id: &str) -> Result<Vec<SavedFilterData>, String> {
+    let app_data_dir = get_app_data_dir().ok_or_else(|| "FFI 全局状态未初始化".to_string())?;
+
+    let config_path = app_data_dir.join("filters.json");
+    if !config_path.exists() {
+        return Ok(vec![]);
+    }
+
+    let config_content =
+        std::fs::read_to_string(&config_path).map_err(|e| format!("读取过滤器配置文件失败: {}", e))?;
+
+    let config: serde_json::Value =
+        serde_json::from_str(&config_content).map_err(|e| format!("解析过滤器配置文件失败: {}", e))?;
+
+    // 按工作区过滤
+    let filters = config
+        .get("filters")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| {
+                    let ws_id = v.get("workspace_id")?.as_str()?;
+                    if ws_id == workspace_id {
+                        serde_json::from_value(v.clone()).ok()
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    Ok(filters)
+}
+
+/// 保存过滤器列表到配置文件
+fn save_filters_to_config(filters: &[SavedFilterData]) -> Result<(), String> {
+    let app_data_dir = get_app_data_dir().ok_or_else(|| "FFI 全局状态未初始化".to_string())?;
+
+    let config_path = app_data_dir.join("filters.json");
+
+    // 读取现有配置
+    let mut config: serde_json::Value = if config_path.exists() {
+        let content = std::fs::read_to_string(&config_path)
+            .map_err(|e| format!("读取过滤器配置文件失败: {}", e))?;
+        serde_json::from_str(&content).unwrap_or(serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
+    // 更新过滤器列表
+    config["filters"] =
+        serde_json::to_value(filters).map_err(|e| format!("序列化过滤器失败: {}", e))?;
+
+    // 保存配置
+    let content =
+        serde_json::to_string_pretty(&config).map_err(|e| format!("序列化配置失败: {}", e))?;
+
+    std::fs::write(&config_path, content).map_err(|e| format!("写入过滤器配置文件失败: {}", e))?;
+
+    Ok(())
+}
+
+/// FFI 适配：保存或更新过滤器
+///
+/// 根据 workspace_id + name 唯一键保存或更新过滤器
+///
+/// # 参数
+///
+/// * `filter` - 过滤器输入数据
+///
+/// # 返回
+///
+/// 成功返回 true
+pub fn ffi_save_filter(filter: SavedFilterInput) -> Result<bool, String> {
+    tracing::info!(
+        name = %filter.name,
+        workspace_id = %filter.workspace_id,
+        "FFI: save_filter 调用"
+    );
+
+    // 验证输入
+    if filter.name.is_empty() {
+        return Err("过滤器名称不能为空".to_string());
+    }
+
+    let mut filters = read_saved_filters_from_config(&filter.workspace_id)?;
+
+    // 生成唯一 ID 或查找现有过滤器
+    let now = chrono::Utc::now().to_rfc3339();
+    let filter_id = format!("filter-{}", uuid::Uuid::new_v4());
+
+    // 检查是否已存在同名过滤器（按工作区）
+    let existing_index = filters
+        .iter()
+        .position(|f| f.name == filter.name && f.workspace_id == filter.workspace_id);
+
+    let new_filter = if let Some(idx) = existing_index {
+        // 更新现有过滤器
+        let existing = &mut filters[idx];
+        existing.description = filter.description;
+        existing.terms_json = filter.terms_json;
+        existing.global_operator = filter.global_operator;
+        existing.time_range_start = filter.time_range_start;
+        existing.time_range_end = filter.time_range_end;
+        existing.levels_json = filter.levels_json;
+        existing.file_pattern = filter.file_pattern;
+        existing.is_default = filter.is_default;
+        existing.sort_order = filter.sort_order;
+        existing.id.clone()
+    } else {
+        // 创建新过滤器
+        let new_filter = SavedFilterData {
+            id: filter_id,
+            name: filter.name,
+            description: filter.description,
+            workspace_id: filter.workspace_id,
+            terms_json: filter.terms_json,
+            global_operator: filter.global_operator,
+            time_range_start: filter.time_range_start,
+            time_range_end: filter.time_range_end,
+            levels_json: filter.levels_json,
+            file_pattern: filter.file_pattern,
+            is_default: filter.is_default,
+            sort_order: filter.sort_order,
+            usage_count: 0,
+            created_at: now.clone(),
+            last_used_at: None,
+        };
+        filters.push(new_filter);
+        new_filter.id.clone()
+    };
+
+    save_filters_to_config(&filters)?;
+
+    tracing::info!(
+        filter_id = %new_filter,
+        workspace_id = %filter.workspace_id,
+        "过滤器已保存"
+    );
+    Ok(true)
+}
+
+/// FFI 适配：获取工作区的所有过滤器
+///
+/// 获取指定工作区的所有已保存过滤器
+///
+/// # 参数
+///
+/// * `workspace_id` - 工作区 ID
+/// * `limit` - 最大返回数量（可选）
+///
+/// # 返回
+///
+/// 返回过滤器列表
+pub fn ffi_get_saved_filters(
+    workspace_id: String,
+    limit: Option<usize>,
+) -> Result<Vec<SavedFilterData>, String> {
+    tracing::debug!(
+        workspace_id = %workspace_id,
+        limit = ?limit,
+        "FFI: get_saved_filters 调用"
+    );
+
+    let mut filters = read_saved_filters_from_config(&workspace_id)?;
+
+    // 按使用次数排序（使用最多的在前）
+    filters.sort_by(|a, b| b.usage_count.cmp(&a.usage_count));
+
+    // 限制返回数量
+    if let Some(l) = limit {
+        filters.truncate(l);
+    }
+
+    Ok(filters)
+}
+
+/// FFI 适配：删除指定过滤器
+///
+/// 删除指定工作区中的过滤器
+///
+/// # 参数
+///
+/// * `filter_id` - 过滤器 ID
+/// * `workspace_id` - 工作区 ID
+///
+/// # 返回
+///
+/// 成功返回 true
+pub fn ffi_delete_filter(filter_id: String, workspace_id: String) -> Result<bool, String> {
+    tracing::info!(
+        filter_id = %filter_id,
+        workspace_id = %workspace_id,
+        "FFI: delete_filter 调用"
+    );
+
+    let mut filters = read_saved_filters_from_config(&workspace_id)?;
+
+    let initial_len = filters.len();
+    filters.retain(|f| f.id != filter_id || f.workspace_id != workspace_id);
+
+    if filters.len() < initial_len {
+        save_filters_to_config(&filters)?;
+        tracing::info!(filter_id = %filter_id, "过滤器已删除");
+        Ok(true)
+    } else {
+        Err(format!("未找到过滤器: {}", filter_id))
+    }
+}
+
+/// FFI 适配：更新过滤器使用统计
+///
+/// 更新过滤器的使用次数和最后使用时间
+///
+/// # 参数
+///
+/// * `filter_id` - 过滤器 ID
+/// * `workspace_id` - 工作区 ID
+///
+/// # 返回
+///
+/// 成功返回 true
+pub fn ffi_update_filter_usage(filter_id: String, workspace_id: String) -> Result<bool, String> {
+    tracing::debug!(
+        filter_id = %filter_id,
+        workspace_id = %workspace_id,
+        "FFI: update_filter_usage 调用"
+    );
+
+    let mut filters = read_saved_filters_from_config(&workspace_id)?;
+
+    // 查找并更新过滤器
+    let found = filters
+        .iter_mut()
+        .find(|f| f.id == filter_id && f.workspace_id == workspace_id);
+
+    if let Some(filter) = found {
+        filter.usage_count += 1;
+        filter.last_used_at = Some(chrono::Utc::now().to_rfc3339());
+
+        save_filters_to_config(&filters)?;
+        tracing::info!(
+            filter_id = %filter_id,
+            usage_count = filter.usage_count,
+            "过滤器使用统计已更新"
+        );
+        Ok(true)
+    } else {
+        Err(format!("未找到过滤器: {}", filter_id))
+    }
+}
+
 // ==================== 正则搜索命令适配 ====================
 
 /// FFI 适配：验证正则表达式语法
