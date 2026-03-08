@@ -263,7 +263,11 @@ Plans:
   2. 显示级别分布饼图/条形图
   3. 点击级别可快速筛选对应日志
   4. 数据显示实时更新
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 16-01 — LogLevelStatsPanel 组件实现 (STATS-02, STATS-04)
+- [ ] 16-02 — 搜索页面集成 (STATS-04)
 
 ### Phase 17: 集成与优化
 **Goal**: 确保所有新功能端到端可用，性能达标
@@ -288,8 +292,8 @@ Phases execute in numeric order: 12 → 13 → 14 → 15 → 16 → 17
 | 12. 多工作区标签页 | 0/ | Complete    | 2026-03-07 |
 | 13. 过滤器 FFI | 1/1 | Complete    | 2026-03-08 |
 | 14. 过滤器 UI | 2/2 | Complete    | 2026-03-08 |
-| 15. 统计 FFI | 0/1 | Complete    | 2026-03-08 |
-| 16. 统计 UI | 0/ | Planned | TBD |
+| 15. 统计 FFI | 1/1 | Complete    | 2026-03-08 |
+| 16. 统计 UI | 0/2 | Planned | TBD |
 | 17. 集成优化 | 0/ | Planned | TBD |
 
 ---
