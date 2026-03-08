@@ -267,7 +267,7 @@ Plans:
 
 Plans:
 - [x] 16-01 — LogLevelStatsPanel 组件实现 (STATS-02, STATS-04)
-- [ ] 16-02 — 搜索页面集成 (STATS-04)
+- [x] 16-02 — 搜索页面集成 (STATS-04)
 
 ### Phase 17: 集成与优化
 **Goal**: 确保所有新功能端到端可用，性能达标
@@ -293,7 +293,7 @@ Phases execute in numeric order: 12 → 13 → 14 → 15 → 16 → 17
 | 13. 过滤器 FFI | 1/1 | Complete    | 2026-03-08 |
 | 14. 过滤器 UI | 2/2 | Complete    | 2026-03-08 |
 | 15. 统计 FFI | 1/1 | Complete    | 2026-03-08 |
-| 16. 统计 UI | 1/2 | In Progress | 2026-03-08 |
+| 16. 统计 UI | 2/2 | Complete    | 2026-03-08 |
 | 17. 集成优化 | 0/ | Planned | TBD |
 
 ---
@@ -318,7 +318,7 @@ Phases execute in numeric order: 12 → 13 → 14 → 15 → 16 → 17
 | STATS-01 | Phase 15 | Pending |
 | STATS-02 | Phase 16 | Pending |
 | STATS-03 | Phase 15 | Pending |
-| STATS-04 | Phase 16 | Pending |
+| STATS-04 | Phase 16 | Complete |
 | STATS-05 | Phase 16 | Pending |
 
 **Coverage:**

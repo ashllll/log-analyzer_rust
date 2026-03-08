@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: 功能扩展
 status: in_progress
-last_updated: "2026-03-08T10:30:00Z"
+last_updated: "2026-03-08T10:40:00Z"
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 6
-  completed_plans: 4
+  completed_plans: 5
 ---
 
 # Project State
@@ -23,11 +23,11 @@ See: .planning/PROJECT.md (updated 2026-03-05)
 ## Current Position
 
 Phase: 16 (日志级别统计 UI 面板)
-Plan: 16-01 completed
+Plan: 16-02 completed
 Status: In progress
-Last activity: 2026-03-08 - Completed 16-01: 日志级别统计 UI 面板
+Last activity: 2026-03-08 - Completed 16-02: 将日志级别统计面板集成到搜索页面
 
-Progress: [████░░░] 33% (2/6 plans)
+Progress: [█████░] 50% (3/6 plans)
 
 ## Performance Metrics
 
@@ -108,6 +108,11 @@ From 16-01:
 - 使用 fl_chart PieChart 实现级别分布可视化
 - 通过可点击图例实现快速筛选功能
 
+From 16-02:
+- 使用 common.dart 前缀解决类型冲突
+- LogLevelStatsPanel 集成到搜索页面，搜索栏和日志列表之间
+- 通过 _onLevelFilter 回调实现点击级别快速筛选
+
 ### Pending Todos
 
 None yet.
@@ -119,14 +124,15 @@ None currently.
 ## Session Continuity
 
 Last session: 2026-03-08
-Stopped at: Completed 16-01: 日志级别统计 UI 面板
+Stopped at: Completed 16-02: 将日志级别统计面板集成到搜索页面
 Resume file: None
 
 ## Next Steps
 
 1. Continue with Phase 16: 继续实现日志级别统计 UI 相关功能
+2. Phase 16 完成后进入 Phase 17: 集成与优化
 
 ---
 *Phase: 16-stats-ui-panel*
 *In Progress: 2026-03-08*
-*Plan 16-01 completed*
+*Plan 16-02 completed*
