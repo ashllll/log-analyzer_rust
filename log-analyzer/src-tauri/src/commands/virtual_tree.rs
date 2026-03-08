@@ -225,7 +225,7 @@ pub async fn get_virtual_file_tree(
 }
 
 /// Build hierarchical tree structure from flat data
-async fn build_tree_structure(
+pub(crate) async fn build_tree_structure(
     archives: &[crate::storage::ArchiveMetadata],
     files: &[crate::storage::FileMetadata],
     metadata_store: &MetadataStore,

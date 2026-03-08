@@ -286,14 +286,14 @@ impl KeywordGroupRepositoryImpl {
 
 /// 关键词组数据
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct KeywordGroupData {
-    id: String,
-    name: String,
-    color: String,
-    patterns: Vec<String>,
-    enabled: bool,
-    created_at: chrono::DateTime<chrono::Utc>,
-    updated_at: chrono::DateTime<chrono::Utc>,
+pub struct KeywordGroupData {
+    pub id: String,
+    pub name: String,
+    pub color: String,
+    pub patterns: Vec<String>,
+    pub enabled: bool,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
 #[async_trait]

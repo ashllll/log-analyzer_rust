@@ -4,7 +4,10 @@ import 'package:flutter/services.dart';
 
 import '../models/saved_filter.dart';
 import 'generated/ffi/bridge.dart' as ffi;
+import 'generated/ffi/types.dart' as ffi_types;
 import 'generated/frb_generated.dart';
+import 'generated/infrastructure/persistence.dart';
+import 'generated/search_engine/manager.dart';
 
 /// FFI 初始化异常
 class FfiInitializationException implements Exception {
@@ -86,28 +89,23 @@ class BridgeService {
   /// 执行日志搜索
   ///
   /// 返回搜索 ID 用于获取结果
-  Future<String> searchLogs({
+  String searchLogs({
     required String query,
     String? workspaceId,
     int maxResults = 10000,
     String? filters,
-  }) async {
+  }) {
     if (!isFfiEnabled) {
       throw FfiInitializationException('FFI not initialized');
     }
 
     try {
-      final result = ffi.searchLogs(
+      return ffi.searchLogs(
         query: query,
         workspaceId: workspaceId,
         maxResults: maxResults,
         filters: filters,
       );
-
-      if (result.ok) {
-        return result.data;
-      }
-      throw Exception(result.error);
     } catch (e) {
       debugPrint('searchLogs error: $e');
       rethrow;
@@ -115,14 +113,13 @@ class BridgeService {
   }
 
   /// 取消搜索
-  Future<bool> cancelSearch(String searchId) async {
+  bool cancelSearch(String searchId) {
     if (!isFfiEnabled) {
       return false;
     }
 
     try {
-      final result = ffi.cancelSearch(searchId: searchId);
-      return result.ok;
+      return ffi.cancelSearch(searchId: searchId);
     } catch (e) {
       debugPrint('cancelSearch error: $e');
       return false;
@@ -130,14 +127,13 @@ class BridgeService {
   }
 
   /// 获取活跃搜索数量
-  Future<int> getActiveSearchesCount() async {
+  int getActiveSearchesCount() {
     if (!isFfiEnabled) {
       return 0;
     }
 
     try {
-      final result = ffi.getActiveSearchesCount();
-      return result.data;
+      return ffi.getActiveSearchesCount();
     } catch (e) {
       debugPrint('getActiveSearchesCount error: $e');
       return 0;
@@ -147,7 +143,7 @@ class BridgeService {
   // ==================== 工作区操作 ====================
 
   /// 获取工作区列表
-  Future<List<ffi.WorkspaceData>> getWorkspaces() async {
+  List<ffi_types.WorkspaceData> getWorkspaces() {
     if (!isFfiEnabled) {
       return [];
     }
@@ -161,21 +157,16 @@ class BridgeService {
   }
 
   /// 创建工作区
-  Future<String> createWorkspace({
+  String createWorkspace({
     required String name,
     required String path,
-  }) async {
+  }) {
     if (!isFfiEnabled) {
       throw FfiInitializationException('FFI not initialized');
     }
 
     try {
-      final result = ffi.createWorkspace(name: name, path: path);
-
-      if (result.ok) {
-        return result.data;
-      }
-      throw Exception(result.error);
+      return ffi.createWorkspace(name: name, path: path);
     } catch (e) {
       debugPrint('createWorkspace error: $e');
       rethrow;
@@ -183,14 +174,13 @@ class BridgeService {
   }
 
   /// 删除工作区
-  Future<bool> deleteWorkspace(String workspaceId) async {
+  bool deleteWorkspace(String workspaceId) {
     if (!isFfiEnabled) {
       return false;
     }
 
     try {
-      final result = ffi.deleteWorkspace(workspaceId: workspaceId);
-      return result.ok;
+      return ffi.deleteWorkspace(workspaceId: workspaceId);
     } catch (e) {
       debugPrint('deleteWorkspace error: $e');
       return false;
@@ -198,18 +188,13 @@ class BridgeService {
   }
 
   /// 刷新工作区
-  Future<String> refreshWorkspace(String workspaceId, String path) async {
+  String refreshWorkspace(String workspaceId, String path) {
     if (!isFfiEnabled) {
       throw FfiInitializationException('FFI not initialized');
     }
 
     try {
-      final result = ffi.refreshWorkspace(workspaceId: workspaceId, path: path);
-
-      if (result.ok) {
-        return result.data;
-      }
-      throw Exception(result.error);
+      return ffi.refreshWorkspace(workspaceId: workspaceId, path: path);
     } catch (e) {
       debugPrint('refreshWorkspace error: $e');
       rethrow;
@@ -217,19 +202,15 @@ class BridgeService {
   }
 
   /// 获取工作区状态
-  Future<ffi.WorkspaceStatusData?> getWorkspaceStatus(
+  ffi_types.WorkspaceStatusData? getWorkspaceStatus(
     String workspaceId,
-  ) async {
+  ) {
     if (!isFfiEnabled) {
       return null;
     }
 
     try {
-      final result = ffi.getWorkspaceStatus(workspaceId: workspaceId);
-      if (result.ok) {
-        return result.data;
-      }
-      return null;
+      return ffi.getWorkspaceStatus(workspaceId: workspaceId);
     } catch (e) {
       debugPrint('getWorkspaceStatus error: $e');
       return null;
@@ -239,7 +220,7 @@ class BridgeService {
   // ==================== 关键词操作 ====================
 
   /// 获取关键词列表
-  Future<List<ffi.KeywordGroupData>> getKeywords() async {
+  List<KeywordGroupData> getKeywords() {
     if (!isFfiEnabled) {
       return [];
     }
@@ -253,14 +234,13 @@ class BridgeService {
   }
 
   /// 添加关键词组
-  Future<bool> addKeywordGroup(ffi.KeywordGroupInput group) async {
+  bool addKeywordGroup(ffi_types.KeywordGroupInput group) {
     if (!isFfiEnabled) {
       return false;
     }
 
     try {
-      final result = ffi.addKeywordGroup(group: group);
-      return result.ok;
+      return ffi.addKeywordGroup(group: group);
     } catch (e) {
       debugPrint('addKeywordGroup error: $e');
       return false;
@@ -268,17 +248,16 @@ class BridgeService {
   }
 
   /// 更新关键词组
-  Future<bool> updateKeywordGroup(
+  bool updateKeywordGroup(
     String groupId,
-    ffi.KeywordGroupInput group,
-  ) async {
+    ffi_types.KeywordGroupInput group,
+  ) {
     if (!isFfiEnabled) {
       return false;
     }
 
     try {
-      final result = ffi.updateKeywordGroup(groupId: groupId, group: group);
-      return result.ok;
+      return ffi.updateKeywordGroup(groupId: groupId, group: group);
     } catch (e) {
       debugPrint('updateKeywordGroup error: $e');
       return false;
@@ -286,14 +265,13 @@ class BridgeService {
   }
 
   /// 删除关键词组
-  Future<bool> deleteKeywordGroup(String groupId) async {
+  bool deleteKeywordGroup(String groupId) {
     if (!isFfiEnabled) {
       return false;
     }
 
     try {
-      final result = ffi.deleteKeywordGroup(groupId: groupId);
-      return result.ok;
+      return ffi.deleteKeywordGroup(groupId: groupId);
     } catch (e) {
       debugPrint('deleteKeywordGroup error: $e');
       return false;
@@ -303,17 +281,13 @@ class BridgeService {
   // ==================== 任务操作 ====================
 
   /// 获取任务指标
-  Future<ffi.TaskMetricsData?> getTaskMetrics() async {
+  ffi_types.TaskMetricsData? getTaskMetrics() {
     if (!isFfiEnabled) {
       return null;
     }
 
     try {
-      final result = ffi.getTaskMetrics();
-      if (result.ok) {
-        return result.data;
-      }
-      return null;
+      return ffi.getTaskMetrics();
     } catch (e) {
       debugPrint('getTaskMetrics error: $e');
       return null;
@@ -321,14 +295,13 @@ class BridgeService {
   }
 
   /// 取消任务
-  Future<bool> cancelTask(String taskId) async {
+  bool cancelTask(String taskId) {
     if (!isFfiEnabled) {
       return false;
     }
 
     try {
-      final result = ffi.cancelTask(taskId: taskId);
-      return result.ok;
+      return ffi.cancelTask(taskId: taskId);
     } catch (e) {
       debugPrint('cancelTask error: $e');
       return false;
@@ -338,7 +311,7 @@ class BridgeService {
   // ==================== 配置操作 ====================
 
   /// 加载配置
-  Future<ConfigData?> loadConfig() async {
+  ffi_types.ConfigData? loadConfig() {
     if (!isFfiEnabled) {
       return null;
     }
@@ -352,14 +325,13 @@ class BridgeService {
   }
 
   /// 保存配置
-  Future<bool> saveConfig(ConfigData config) async {
+  bool saveConfig(ffi_types.ConfigData config) {
     if (!isFfiEnabled) {
       return false;
     }
 
     try {
-      final result = ffi.saveConfig(config: config);
-      return result.ok;
+      return ffi.saveConfig(config: config);
     } catch (e) {
       debugPrint('saveConfig error: $e');
       return false;
@@ -369,9 +341,9 @@ class BridgeService {
   // ==================== 性能监控 ====================
 
   /// 获取性能指标
-  Future<ffi.PerformanceMetricsData?> getPerformanceMetrics(
+  ffi_types.PerformanceMetricsData? getPerformanceMetrics(
     String timeRange,
-  ) async {
+  ) {
     if (!isFfiEnabled) {
       return null;
     }
@@ -387,22 +359,21 @@ class BridgeService {
   // ==================== 文件监听 ====================
 
   /// 启动文件监听
-  Future<bool> startWatch({
+  bool startWatch({
     required String workspaceId,
     required List<String> paths,
     required bool recursive,
-  }) async {
+  }) {
     if (!isFfiEnabled) {
       return false;
     }
 
     try {
-      final result = ffi.startWatch(
+      return ffi.startWatch(
         workspaceId: workspaceId,
         paths: paths,
         recursive: recursive,
       );
-      return result.ok;
     } catch (e) {
       debugPrint('startWatch error: $e');
       return false;
@@ -410,14 +381,13 @@ class BridgeService {
   }
 
   /// 停止文件监听
-  Future<bool> stopWatch(String workspaceId) async {
+  bool stopWatch(String workspaceId) {
     if (!isFfiEnabled) {
       return false;
     }
 
     try {
-      final result = ffi.stopWatch(workspaceId: workspaceId);
-      return result.ok;
+      return ffi.stopWatch(workspaceId: workspaceId);
     } catch (e) {
       debugPrint('stopWatch error: $e');
       return false;
@@ -425,14 +395,13 @@ class BridgeService {
   }
 
   /// 检查是否正在监听
-  Future<bool> isWatching(String workspaceId) async {
+  bool isWatching(String workspaceId) {
     if (!isFfiEnabled) {
       return false;
     }
 
     try {
-      final result = ffi.isWatching(workspaceId: workspaceId);
-      return result.ok;
+      return ffi.isWatching(workspaceId: workspaceId);
     } catch (e) {
       debugPrint('isWatching error: $e');
       return false;
@@ -442,18 +411,13 @@ class BridgeService {
   // ==================== 导入操作 ====================
 
   /// 导入文件夹
-  Future<String> importFolder(String path, String workspaceId) async {
+  String importFolder(String path, String workspaceId) {
     if (!isFfiEnabled) {
       throw FfiInitializationException('FFI not initialized');
     }
 
     try {
-      final result = ffi.importFolder(path: path, workspaceId: workspaceId);
-
-      if (result.ok) {
-        return result.data;
-      }
-      throw Exception(result.error);
+      return ffi.importFolder(path: path, workspaceId: workspaceId);
     } catch (e) {
       debugPrint('importFolder error: $e');
       rethrow;
@@ -461,7 +425,7 @@ class BridgeService {
   }
 
   /// 检查 RAR 支持
-  Future<bool> checkRarSupport() async {
+  bool checkRarSupport() {
     if (!isFfiEnabled) {
       return false;
     }
@@ -515,26 +479,21 @@ class BridgeService {
   // ==================== 导出操作 ====================
 
   /// 导出搜索结果
-  Future<String> exportResults({
+  String exportResults({
     required String searchId,
     required String format,
     required String outputPath,
-  }) async {
+  }) {
     if (!isFfiEnabled) {
       throw FfiInitializationException('FFI not initialized');
     }
 
     try {
-      final result = ffi.exportResults(
+      return ffi.exportResults(
         searchId: searchId,
         format: format,
         outputPath: outputPath,
       );
-
-      if (result.ok) {
-        return result.data;
-      }
-      throw Exception(result.error);
     } catch (e) {
       debugPrint('exportResults error: $e');
       rethrow;
@@ -546,22 +505,21 @@ class BridgeService {
   /// 添加搜索历史记录
   ///
   /// 将搜索查询添加到历史记录
-  Future<bool> addSearchHistory({
+  bool addSearchHistory({
     required String query,
     required String workspaceId,
     required int resultCount,
-  }) async {
+  }) {
     if (!isFfiEnabled) {
       throw FfiInitializationException('FFI not initialized');
     }
 
     try {
-      final result = ffi.addSearchHistory(
+      return ffi.addSearchHistory(
         query: query,
         workspaceId: workspaceId,
         resultCount: resultCount,
       );
-      return result;
     } catch (e) {
       debugPrint('addSearchHistory error: $e');
       rethrow;
@@ -572,10 +530,10 @@ class BridgeService {
   ///
   /// 获取指定工作区或所有工作区的搜索历史
   /// 返回 Map 列表以便转换为本地模型
-  Future<List<Map<String, dynamic>>> getSearchHistory({
+  List<Map<String, dynamic>> getSearchHistory({
     String? workspaceId,
     int? limit,
-  }) async {
+  }) {
     if (!isFfiEnabled) {
       return [];
     }
@@ -606,20 +564,19 @@ class BridgeService {
   /// 删除搜索历史记录
   ///
   /// 删除指定工作区中特定查询的历史记录
-  Future<bool> deleteSearchHistory({
+  bool deleteSearchHistory({
     required String query,
     required String workspaceId,
-  }) async {
+  }) {
     if (!isFfiEnabled) {
       return false;
     }
 
     try {
-      final result = ffi.deleteSearchHistory(
+      return ffi.deleteSearchHistory(
         query: query,
         workspaceId: workspaceId,
       );
-      return result;
     } catch (e) {
       debugPrint('deleteSearchHistory error: $e');
       return false;
@@ -629,20 +586,19 @@ class BridgeService {
   /// 批量删除搜索历史记录
   ///
   /// 批量删除指定工作区中多个查询的历史记录
-  Future<int> deleteSearchHistories({
+  int deleteSearchHistories({
     required List<String> queries,
     required String workspaceId,
-  }) async {
+  }) {
     if (!isFfiEnabled) {
       return 0;
     }
 
     try {
-      final result = ffi.deleteSearchHistories(
+      return ffi.deleteSearchHistories(
         queries: queries,
         workspaceId: workspaceId,
       );
-      return result;
     } catch (e) {
       debugPrint('deleteSearchHistories error: $e');
       return 0;
@@ -652,14 +608,13 @@ class BridgeService {
   /// 清空搜索历史
   ///
   /// 清空指定工作区或所有工作区的搜索历史
-  Future<int> clearSearchHistory({String? workspaceId}) async {
+  int clearSearchHistory({String? workspaceId}) {
     if (!isFfiEnabled) {
       return 0;
     }
 
     try {
-      final result = ffi.clearSearchHistory(workspaceId: workspaceId);
-      return result;
+      return ffi.clearSearchHistory(workspaceId: workspaceId);
     } catch (e) {
       debugPrint('clearSearchHistory error: $e');
       return 0;
@@ -679,9 +634,9 @@ class BridgeService {
   /// # 返回
   ///
   /// 返回根节点列表
-  Future<List<ffi.VirtualTreeNodeData>> getVirtualFileTree(
+  List<ffi_types.VirtualTreeNodeData> getVirtualFileTree(
     String workspaceId,
-  ) async {
+  ) {
     if (!isFfiEnabled) {
       return [];
     }
@@ -706,10 +661,10 @@ class BridgeService {
   /// # 返回
   ///
   /// 返回子节点列表
-  Future<List<ffi.VirtualTreeNodeData>> getTreeChildren({
+  List<ffi_types.VirtualTreeNodeData> getTreeChildren({
     required String workspaceId,
     required String parentPath,
-  }) async {
+  }) {
     if (!isFfiEnabled) {
       return [];
     }
@@ -737,10 +692,10 @@ class BridgeService {
   /// # 返回
   ///
   /// 返回文件内容响应
-  Future<ffi.FileContentResponseData?> readFileByHash({
+  ffi_types.FileContentResponseData? readFileByHash({
     required String workspaceId,
     required String hash,
-  }) async {
+  }) {
     if (!isFfiEnabled) {
       return null;
     }
@@ -768,11 +723,11 @@ class BridgeService {
   /// # 返回
   ///
   /// 返回匹配的搜索结果列表
-  Future<List<ffi.SearchResultEntry>> searchStructured({
-    required ffi.StructuredSearchQueryData query,
+  List<SearchResultEntry> searchStructured({
+    required ffi_types.StructuredSearchQueryData query,
     String? workspaceId,
     int maxResults = 10000,
-  }) async {
+  }) {
     if (!isFfiEnabled) {
       return [];
     }
@@ -803,16 +758,16 @@ class BridgeService {
   /// # 返回
   ///
   /// 返回构建的结构化搜索查询对象
-  Future<ffi.StructuredSearchQueryData> buildSearchQuery({
+  ffi_types.StructuredSearchQueryData buildSearchQuery({
     required List<String> keywords,
     String globalOperator = 'AND',
     bool isRegex = false,
     bool caseSensitive = false,
-  }) async {
+  }) {
     if (!isFfiEnabled) {
-      return ffi.StructuredSearchQueryData(
+      return ffi_types.StructuredSearchQueryData(
         terms: [],
-        globalOperator: ffi.QueryOperatorData.and,
+        globalOperator: ffi_types.QueryOperatorData.and,
       );
     }
 
@@ -825,9 +780,9 @@ class BridgeService {
       );
     } catch (e) {
       debugPrint('buildSearchQuery error: $e');
-      return ffi.StructuredSearchQueryData(
+      return ffi_types.StructuredSearchQueryData(
         terms: [],
-        globalOperator: ffi.QueryOperatorData.and,
+        globalOperator: ffi_types.QueryOperatorData.and,
       );
     }
   }
@@ -845,9 +800,9 @@ class BridgeService {
   /// # 返回
   ///
   /// 返回验证结果，包含是否有效和可能的错误信息
-  Future<ffi.RegexValidationResult> validateRegex(String pattern) async {
+  ffi_types.RegexValidationResult validateRegex(String pattern) {
     if (!isFfiEnabled) {
-      return ffi.RegexValidationResult(
+      return ffi_types.RegexValidationResult(
         valid: false,
         errorMessage: 'FFI not initialized',
       );
@@ -857,7 +812,7 @@ class BridgeService {
       return ffi.validateRegex(pattern: pattern);
     } catch (e) {
       debugPrint('validateRegex error: $e');
-      return ffi.RegexValidationResult(
+      return ffi_types.RegexValidationResult(
         valid: false,
         errorMessage: e.toString(),
       );
@@ -878,12 +833,12 @@ class BridgeService {
   /// # 返回
   ///
   /// 返回匹配的搜索结果列表
-  Future<List<ffi.SearchResultEntry>> searchRegex({
+  List<SearchResultEntry> searchRegex({
     required String pattern,
     String? workspaceId,
     int maxResults = 10000,
     bool caseSensitive = false,
-  }) async {
+  }) {
     if (!isFfiEnabled) {
       return [];
     }
@@ -914,18 +869,11 @@ class BridgeService {
   /// # 返回
   ///
   /// 成功返回 true
-  Future<bool> saveFilter(SavedFilter filter) async {
-    if (!isFfiEnabled) {
-      return false;
-    }
-
-    try {
-      final result = ffi.saveFilter(filter: filter.toFfiMap());
-      return result;
-    } catch (e) {
-      debugPrint('saveFilter error: $e');
-      return false;
-    }
+  /// 注意: 此方法需要 FFI 代码重新生成后才能使用
+  bool saveFilter(SavedFilter filter) {
+    // TODO: 重新生成 FFI 代码以启用此功能
+    // ffi.saveFilter 方法尚未在生成的代码中实现
+    throw BridgeNotImplementedException('saveFilter requires FFI code regeneration');
   }
 
   /// 获取工作区的所有过滤器
@@ -940,45 +888,14 @@ class BridgeService {
   /// # 返回
   ///
   /// 返回过滤器列表
-  Future<List<SavedFilter>> getSavedFilters(
+  /// 注意: 此方法需要 FFI 代码重新生成后才能使用
+  List<SavedFilter> getSavedFilters(
     String workspaceId, {
     int? limit,
-  }) async {
-    if (!isFfiEnabled) {
-      return [];
-    }
-
-    try {
-      final result = ffi.getSavedFilters(
-        workspaceId: workspaceId,
-        limit: limit,
-      );
-
-      // 转换为本地模型
-      return result.map((data) {
-        final map = {
-          'id': data.id,
-          'name': data.name,
-          'description': data.description,
-          'workspace_id': data.workspaceId,
-          'terms_json': data.termsJson,
-          'global_operator': data.globalOperator,
-          'time_range_start': data.timeRangeStart,
-          'time_range_end': data.timeRangeEnd,
-          'levels_json': data.levelsJson,
-          'file_pattern': data.filePattern,
-          'is_default': data.isDefault,
-          'sort_order': data.sortOrder,
-          'usage_count': data.usageCount,
-          'created_at': data.createdAt,
-          'last_used_at': data.lastUsedAt,
-        };
-        return SavedFilter.fromFfiMap(map);
-      }).toList();
-    } catch (e) {
-      debugPrint('getSavedFilters error: $e');
-      return [];
-    }
+  }) {
+    // TODO: 重新生成 FFI 代码以启用此功能
+    // ffi.getSavedFilters 方法尚未在生成的代码中实现
+    throw BridgeNotImplementedException('getSavedFilters requires FFI code regeneration');
   }
 
   /// 删除指定过滤器
@@ -993,21 +910,11 @@ class BridgeService {
   /// # 返回
   ///
   /// 成功返回 true
-  Future<bool> deleteFilter(String filterId, String workspaceId) async {
-    if (!isFfiEnabled) {
-      return false;
-    }
-
-    try {
-      final result = ffi.deleteFilter(
-        filterId: filterId,
-        workspaceId: workspaceId,
-      );
-      return result;
-    } catch (e) {
-      debugPrint('deleteFilter error: $e');
-      return false;
-    }
+  /// 注意: 此方法需要 FFI 代码重新生成后才能使用
+  bool deleteFilter(String filterId, String workspaceId) {
+    // TODO: 重新生成 FFI 代码以启用此功能
+    // ffi.deleteFilter 方法尚未在生成的代码中实现
+    throw BridgeNotImplementedException('deleteFilter requires FFI code regeneration');
   }
 
   /// 更新过滤器使用统计
@@ -1022,21 +929,11 @@ class BridgeService {
   /// # 返回
   ///
   /// 成功返回 true
-  Future<bool> updateFilterUsage(String filterId, String workspaceId) async {
-    if (!isFfiEnabled) {
-      return false;
-    }
-
-    try {
-      final result = ffi.updateFilterUsage(
-        filterId: filterId,
-        workspaceId: workspaceId,
-      );
-      return result;
-    } catch (e) {
-      debugPrint('updateFilterUsage error: $e');
-      return false;
-    }
+  /// 注意: 此方法需要 FFI 代码重新生成后才能使用
+  bool updateFilterUsage(String filterId, String workspaceId) {
+    // TODO: 重新生成 FFI 代码以启用此功能
+    // ffi.updateFilterUsage 方法尚未在生成的代码中实现
+    throw BridgeNotImplementedException('updateFilterUsage requires FFI code regeneration');
   }
 
   // ==================== 日志级别统计操作 ====================
@@ -1052,28 +949,11 @@ class BridgeService {
   /// # 返回
   ///
   /// 返回日志级别统计结果，包含每个级别的数量
-  Future<Map<String, dynamic>?> getLogLevelStats(String workspaceId) async {
-    if (!isFfiEnabled) {
-      return null;
-    }
-
-    try {
-      final result = ffi.getLogLevelStats(workspaceId: workspaceId);
-      // 转换为 Map 以避免直接依赖 FFI 生成类型
-      return {
-        'fatalCount': result.fatalCount,
-        'errorCount': result.errorCount,
-        'warnCount': result.warnCount,
-        'infoCount': result.infoCount,
-        'debugCount': result.debugCount,
-        'traceCount': result.traceCount,
-        'unknownCount': result.unknownCount,
-        'total': result.total,
-      };
-    } catch (e) {
-      debugPrint('getLogLevelStats error: $e');
-      return null;
-    }
+  /// 注意: 此方法需要 FFI 代码重新生成后才能使用
+  Map<String, dynamic>? getLogLevelStats(String workspaceId) {
+    // TODO: 重新生成 FFI 代码以启用此功能
+    // ffi.getLogLevelStats 方法尚未在生成的代码中实现
+    throw BridgeNotImplementedException('getLogLevelStats requires FFI code regeneration');
   }
 
   /// 释放资源
