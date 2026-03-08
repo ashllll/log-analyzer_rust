@@ -236,10 +236,11 @@ Plans:
   2. 过滤器创建/编辑对话框
   3. 搜索栏显示过滤器快捷按钮
   4. 点击过滤器自动填充搜索条件
-**Plans**: 1 plan
+**Plans**: 2 plans
 
 Plans:
 - [x] 14-01 — 过滤器 UI 组件实现 (FILTER-04)
+- [ ] 14-02 — Gap 修复：侧边栏创建功能 + FilterPalette 复用 (FILTER-04)
 
 ### Phase 15: 日志级别统计后端 FFI 接口
 **Goal**: Flutter 应用能够通过 FFI 调用 Rust 后端获取日志级别统计
