@@ -563,3 +563,28 @@ pub struct SavedFilterData {
     /// 最后使用时间（ISO 8601 格式，可选）
     pub last_used_at: Option<String>,
 }
+
+// ==================== 日志级别统计类型 ====================
+
+/// 日志级别统计输出数据（FFI 格式）
+///
+/// 用于返回每个日志级别的记录数量统计
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct LogLevelStatsOutput {
+    /// FATAL 级别日志数量
+    pub fatal_count: u64,
+    /// ERROR 级别日志数量
+    pub error_count: u64,
+    /// WARN 级别日志数量
+    pub warn_count: u64,
+    /// INFO 级别日志数量
+    pub info_count: u64,
+    /// DEBUG 级别日志数量
+    pub debug_count: u64,
+    /// TRACE 级别日志数量
+    pub trace_count: u64,
+    /// 未知级别日志数量
+    pub unknown_count: u64,
+    /// 总日志数量
+    pub total: u64,
+}

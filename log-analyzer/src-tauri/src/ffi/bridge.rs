@@ -616,3 +616,24 @@ pub fn update_filter_usage(filter_id: String, workspace_id: String) -> bool {
         "更新过滤器使用统计失败",
     )
 }
+
+// ==================== 日志级别统计操作 ====================
+
+/// 获取日志级别统计
+///
+/// 返回工作区中每个日志级别的记录数量
+///
+/// # 参数
+///
+/// * `workspaceId` - 工作区 ID
+///
+/// # 返回
+///
+/// 返回每个日志级别的数量统计
+#[frb(sync)]
+pub fn get_log_level_stats(workspace_id: String) -> LogLevelStatsOutput {
+    unwrap_result(
+        commands_bridge::ffi_get_log_level_stats(workspace_id),
+        "获取日志级别统计失败",
+    )
+}

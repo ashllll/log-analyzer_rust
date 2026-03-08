@@ -2295,6 +2295,130 @@ pub fn ffi_update_filter_usage(filter_id: String, workspace_id: String) -> Resul
     }
 }
 
+// ==================== 日志级别统计命令适配 ====================
+
+use crate::ffi::types::LogLevelStatsOutput;
+
+/// FFI 适配：获取日志级别统计
+///
+/// 获取工作区中每个日志级别的记录数量
+///
+/// # 参数
+///
+/// * `workspace_id` - 工作区 ID
+///
+/// # 返回
+///
+/// 返回每个日志级别的数量统计
+pub fn ffi_get_log_level_stats(workspace_id: String) -> Result<LogLevelStatsOutput, String> {
+    tracing::info!(workspace_id = %workspace_id, "FFI: get_log_level_stats 调用");
+
+    // 验证工作区 ID
+    validate_workspace_id(&workspace_id)?;
+
+    // 获取全局状态
+    let app_state = get_app_state().ok_or_else(|| "FFI 全局状态未初始化".to_string())?;
+    let app_data_dir = get_app_data_dir().ok_or_else(|| "FFI 全局状态未初始化".to_string())?;
+
+    // 构建工作区目录路径
+    let workspace_dir = app_data_dir.join("workspaces").join(&workspace_id);
+
+    if !workspace_dir.exists() {
+        return Err(format!("工作区不存在: {}", workspace_id));
+    }
+
+    // 使用 tokio 运行时执行异步操作
+    let rt = tokio::runtime::Runtime::new().map_err(|e| format!("创建运行时失败: {}", e))?;
+
+    rt.block_on(async {
+        // 打开元数据存储
+        let metadata_store = crate::storage::MetadataStore::new(&workspace_dir)
+            .await
+            .map_err(|e| format!("打开元数据存储失败: {}", e))?;
+
+        // 获取所有文件
+        let files = metadata_store
+            .get_all_files()
+            .await
+            .map_err(|e| format!("获取文件失败: {}", e))?;
+
+        // 统计每个级别的数量
+        let mut fatal_count = 0u64;
+        let mut error_count = 0u64;
+        let mut warn_count = 0u64;
+        let mut info_count = 0u64;
+        let mut debug_count = 0u64;
+        let mut trace_count = 0u64;
+        let mut unknown_count = 0u64;
+
+        // 获取日志级别统计（从文件内容中解析）
+        for file in files {
+            // 跳过二进制文件
+            if let Some(mime) = &file.mime_type {
+                if mime.starts_with("application/") || mime.starts_with("image/") {
+                    continue;
+                }
+            }
+
+            // 读取文件内容进行统计
+            let cas = crate::storage::ContentAddressableStorage::new(&workspace_dir);
+            if !cas.exists(&file.sha256_hash) {
+                continue;
+            }
+
+            let content_bytes = match cas.read_content(&file.sha256_hash).await {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            let content = match String::from_utf8(content_bytes) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            // 统计每行的日志级别
+            for line in content.lines() {
+                let level = crate::domain::log_analysis::value_objects::LogLevel::parse_from_line(line);
+                match level {
+                    crate::domain::log_analysis::value_objects::LogLevel::Fatal => fatal_count += 1,
+                    crate::domain::log_analysis::value_objects::LogLevel::Error => error_count += 1,
+                    crate::domain::log_analysis::value_objects::LogLevel::Warn => warn_count += 1,
+                    crate::domain::log_analysis::value_objects::LogLevel::Info => info_count += 1,
+                    crate::domain::log_analysis::value_objects::LogLevel::Debug => debug_count += 1,
+                    crate::domain::log_analysis::value_objects::LogLevel::Trace => trace_count += 1,
+                    crate::domain::log_analysis::value_objects::LogLevel::Unknown(_) => unknown_count += 1,
+                }
+            }
+        }
+
+        let total = fatal_count + error_count + warn_count + info_count + debug_count + trace_count + unknown_count;
+
+        tracing::info!(
+            workspace_id = %workspace_id,
+            fatal = fatal_count,
+            error = error_count,
+            warn = warn_count,
+            info = info_count,
+            debug = debug_count,
+            trace = trace_count,
+            unknown = unknown_count,
+            total = total,
+            "日志级别统计完成"
+        );
+
+        Ok(LogLevelStatsOutput {
+            fatal_count,
+            error_count,
+            warn_count,
+            info_count,
+            debug_count,
+            trace_count,
+            unknown_count,
+            total,
+        })
+    })
+}
+
 // ==================== 正则搜索命令适配 ====================
 
 /// FFI 适配：验证正则表达式语法
