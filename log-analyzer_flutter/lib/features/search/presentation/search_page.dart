@@ -7,6 +7,7 @@ import 'package:file_picker/file_picker.dart';
 
 import '../../../shared/models/common.dart';
 import '../../../shared/models/search.dart';
+import '../../../shared/models/saved_filter.dart' as saved;
 import '../../../shared/providers/app_provider.dart';
 import '../../../shared/providers/workspace_provider.dart';
 import '../../../shared/providers/workspace_tab_provider.dart';
@@ -28,9 +29,13 @@ import 'widgets/search_mode_selector.dart';
 import 'widgets/regex_input_field.dart';
 import 'widgets/multi_keyword_input.dart';
 import 'widgets/search_condition_preview.dart';
+import 'widgets/saved_filters_sidebar.dart';
+import 'widgets/filter_editor_dialog.dart';
+import 'widgets/filter_quick_select.dart';
 import '../models/search_mode.dart';
 import '../providers/search_query_provider.dart';
 import '../../../shared/providers/search_history_provider.dart';
+import '../../../shared/providers/saved_filters_provider.dart';
 import '../../../shared/services/bridge_service.dart';
 
 /// 固定行高常量 - 用于 SliverFixedExtentList
@@ -297,11 +302,20 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                 onCancel: _isSearching ? _cancelSearch : null,
               ),
             // 过滤器面板
-            if (_showFilters)
+            if (_showFilters && activeWorkspaceId != null) ...[
+              // 侧边栏过滤器列表
+              SavedFiltersSidebar(
+                workspaceId: activeWorkspaceId,
+                onApply: _applyFilterFromSaved,
+                onEdit: (filter) => _showFilterEditor(activeWorkspaceId, filter: filter),
+                onDelete: (filterId) => _deleteFilter(activeWorkspaceId, filterId),
+              ),
+              // 过滤器编辑面板
               FilterPalette(
                 onApply: _applyFiltersFromPalette,
                 currentFilters: _currentFilters,
               ),
+            ],
             // 日志列表（带热力图）
             Expanded(child: _buildLogsListWithHeatmap()),
             // 统计面板
@@ -414,6 +428,14 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                   },
                   onClearAll: () =>
                       _showClearHistoryConfirmation(activeWorkspaceId),
+                ),
+              const SizedBox(width: 8),
+              // 过滤器快捷选择
+              if (activeWorkspaceId != null)
+                FilterQuickSelect(
+                  workspaceId: activeWorkspaceId,
+                  onSelect: _applyFilterFromSaved,
+                  onOpenEditor: () => _showFilterEditor(activeWorkspaceId),
                 ),
             ],
           ),
@@ -1138,6 +1160,106 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       filePattern: filePattern,
     );
     applyFilters(filters);
+  }
+
+  /// 应用已保存的过滤器
+  ///
+  /// 从 SavedFiltersSidebar 或 FilterQuickSelect 选择过滤器时调用
+  void _applyFilterFromSaved(saved.SavedFilter filter) {
+    // 构建时间范围 - 使用 common.dart 的 TimeRange (freezed)
+    final TimeRange timeRange;
+    if (filter.timeRange != null) {
+      // 从 saved_filter.dart 的 TimeRange 转换到 common.dart 的 TimeRange
+      timeRange = TimeRange(
+        start: filter.timeRange!.start,
+        end: filter.timeRange!.end,
+      );
+    } else {
+      timeRange = const TimeRange();
+    }
+
+    // 应用过滤器
+    final filters = FilterOptions(
+      timeRange: timeRange,
+      levels: filter.levels,
+      filePattern: filter.filePattern,
+    );
+    applyFilters(filters);
+
+    // 更新使用统计
+    if (filter.id.isNotEmpty) {
+      ref
+          .read(savedFiltersProvider(filter.workspaceId).notifier)
+          .updateFilterUsage(filter.id);
+    }
+
+    // 显示提示
+    ref
+        .read(appStateProvider.notifier)
+        .addToast(ToastType.info, '已应用过滤器: ${filter.name}');
+  }
+
+  /// 显示过滤器编辑器对话框
+  ///
+  /// 用于创建新过滤器或编辑现有过滤器
+  Future<void> _showFilterEditor(
+    String workspaceId, {
+    saved.SavedFilter? filter,
+  }) async {
+    final result = await FilterEditorDialog.show(
+      context,
+      workspaceId: workspaceId,
+      filter: filter,
+      currentFilters: _currentFilters,
+    );
+
+    if (result != null) {
+      ref
+          .read(appStateProvider.notifier)
+          .addToast(ToastType.success, '过滤器已保存');
+    }
+  }
+
+  /// 删除过滤器
+  ///
+  /// 显示确认对话框后删除过滤器
+  Future<void> _deleteFilter(String workspaceId, String filterId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('确认删除'),
+        content: const Text('确定要删除这个过滤器吗？此操作不可恢复。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+            ),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      final success = await ref
+          .read(savedFiltersProvider(workspaceId).notifier)
+          .deleteFilter(filterId);
+
+      if (success) {
+        ref
+            .read(appStateProvider.notifier)
+            .addToast(ToastType.success, '过滤器已删除');
+      } else {
+        ref
+            .read(appStateProvider.notifier)
+            .addToast(ToastType.error, '删除过滤器失败');
+      }
+    }
   }
 
   /// 显示清空历史确认对话框
