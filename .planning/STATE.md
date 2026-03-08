@@ -16,12 +16,12 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: 功能扩展
 status: in_progress
-last_updated: "2026-03-08T08:56:00Z"
+last_updated: "2026-03-08T10:15:00Z"
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 6
-  completed_plans: 2
+  completed_plans: 3
 ---
 
 # Project State
@@ -31,16 +31,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-05)
 
 **核心价值:** 让用户能够高效地搜索、分析和监控日志文件
-**当前焦点:** Phase 14 - 自定义过滤器 UI
+**当前焦点:** Phase 15 - 日志级别统计后端 FFI 接口
 
 ## Current Position
 
-Phase: 14 (自定义过滤器 UI)
-Plan: 14-02 completed
+Phase: 15 (日志级别统计后端 FFI 接口)
+Plan: 15-01 completed
 Status: In progress
-Last activity: 2026-03-08 - Completed 14-02: Gap 修复
+Last activity: 2026-03-08 - Completed 15-01: 日志级别统计后端 FFI
 
-Progress: [███░░░░░] 33% (2/6 plans)
+Progress: [███░░░░] 17% (1/6 plans)
 
 ## Performance Metrics
 
@@ -111,6 +111,11 @@ From 14-01:
 - 使用 common.dart TimeRange (freezed) 而非 saved_filter.dart TimeRange
 - 处理 TimeRange 类型冲突：导入 common.dart + saved_filter.dart 时使用别名区分
 
+From 15-01:
+- 使用 Map<String, dynamic> 返回类型避免直接依赖 FFI 生成类型
+- 实现 5 秒自动刷新满足 STATS-03 实时更新需求
+- 创建本地 LogLevelStats 模型与 FFI 生成类型解耦
+
 ### Pending Todos
 
 None yet.
@@ -122,13 +127,14 @@ None currently.
 ## Session Continuity
 
 Last session: 2026-03-08
-Stopped at: Completed 14-02: Gap 修复
+Stopped at: Completed 15-01: 日志级别统计后端 FFI
 Resume file: None
 
 ## Next Steps
 
-1. Continue with Phase 15: 日志级别统计后端 FFI 接口
+1. Continue with Phase 15: 继续实现日志级别统计 UI
 
 ---
-*Phase: 14-custom-filters-ui*
-*Completed: 2026-03-08*
+*Phase: 15-stats-backend-ffi*
+*In Progress: 2026-03-08*
+*Plan 15-01 completed*
