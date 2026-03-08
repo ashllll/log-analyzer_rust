@@ -249,7 +249,10 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. 可以获取每个日志级别的记录数量
   2. 索引更新时统计数据自动刷新
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+- [ ] 15-01 — 日志级别统计 FFI 接口 (STATS-01, STATS-03)
 
 ### Phase 16: 日志级别统计 UI 面板
 **Goal**: 用户可以查看日志级别的数量、分布图表，并按级别快速过滤
@@ -285,7 +288,7 @@ Phases execute in numeric order: 12 → 13 → 14 → 15 → 16 → 17
 | 12. 多工作区标签页 | 0/ | Complete    | 2026-03-07 |
 | 13. 过滤器 FFI | 1/1 | Complete    | 2026-03-08 |
 | 14. 过滤器 UI | 2/2 | Complete    | 2026-03-08 |
-| 15. 统计 FFI | 0/ | Planned | TBD |
+| 15. 统计 FFI | 0/1 | Planned | TBD |
 | 16. 统计 UI | 0/ | Planned | TBD |
 | 17. 集成优化 | 0/ | Planned | TBD |
 
