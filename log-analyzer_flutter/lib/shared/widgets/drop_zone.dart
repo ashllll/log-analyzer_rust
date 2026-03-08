@@ -116,14 +116,18 @@ class _DropZoneWidgetState extends State<DropZoneWidget> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         decoration: BoxDecoration(
-          border: widget.border ?? (_isDragging
-              ? Border.all(
-                  color: widget.highlightColor ?? AppColors.primary,
-                  width: 2,
-                )
-              : null),
+          border:
+              widget.border ??
+              (_isDragging
+                  ? Border.all(
+                      color: widget.highlightColor ?? AppColors.primary,
+                      width: 2,
+                    )
+                  : null),
           color: _isDragging
-              ? (widget.backgroundColor ?? AppColors.primary).withValues(alpha: 0.1)
+              ? (widget.backgroundColor ?? AppColors.primary).withValues(
+                  alpha: 0.1,
+                )
               : widget.backgroundColor,
           borderRadius: BorderRadius.circular(8),
         ),
@@ -221,11 +225,7 @@ class _DropZoneWidgetState extends State<DropZoneWidget> {
       regularFiles.add(path);
     }
 
-    return {
-      'archives': archives,
-      'files': regularFiles,
-      'folders': folders,
-    };
+    return {'archives': archives, 'files': regularFiles, 'folders': folders};
   }
 
   /// 获取文件扩展名
@@ -258,7 +258,8 @@ class _DropZoneWidgetState extends State<DropZoneWidget> {
       parts.add('ZIP/TAR/GZ/RAR/7Z');
     }
 
-    if (widget.allowedExtensions != null && widget.allowedExtensions!.isNotEmpty) {
+    if (widget.allowedExtensions != null &&
+        widget.allowedExtensions!.isNotEmpty) {
       parts.add(widget.allowedExtensions!.join(', '));
     }
 
@@ -278,23 +279,14 @@ class DropZoneHint extends StatelessWidget {
   final String? subtitle;
   final IconData? icon;
 
-  const DropZoneHint({
-    super.key,
-    this.title,
-    this.subtitle,
-    this.icon,
-  });
+  const DropZoneHint({super.key, this.title, this.subtitle, this.icon});
 
   @override
   Widget build(BuildContext context) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(
-          icon ?? Icons.upload_file,
-          size: 32,
-          color: AppColors.textMuted,
-        ),
+        Icon(icon ?? Icons.upload_file, size: 32, color: AppColors.textMuted),
         if (title != null) ...[
           const SizedBox(height: 8),
           Text(
@@ -310,10 +302,7 @@ class DropZoneHint extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             subtitle!,
-            style: const TextStyle(
-              color: AppColors.textMuted,
-              fontSize: 12,
-            ),
+            style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
           ),
         ],
       ],

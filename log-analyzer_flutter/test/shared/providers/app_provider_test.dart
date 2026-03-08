@@ -48,7 +48,10 @@ void main() {
 
       notifier.setActiveWorkspace('test-workspace-id');
 
-      expect(container.read(appStateProvider).activeWorkspaceId, 'test-workspace-id');
+      expect(
+        container.read(appStateProvider).activeWorkspaceId,
+        'test-workspace-id',
+      );
 
       container.dispose();
     });

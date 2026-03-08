@@ -11,8 +11,8 @@ import '../models/monitoring_state.dart';
 /// 监控状态 Provider
 final monitoringProvider =
     StateNotifierProvider<MonitoringNotifier, MonitoringState>((ref) {
-  return MonitoringNotifier();
-});
+      return MonitoringNotifier();
+    });
 
 /// 监控状态管理器
 ///
@@ -75,10 +75,9 @@ class MonitoringNotifier extends StateNotifier<MonitoringState> {
   Future<void> startMonitoring(String workspaceId, List<String> paths) async {
     try {
       // 调用后端启动监控
-      await _retryCall(() => _apiService.startWatch(
-            workspaceId: workspaceId,
-            paths: paths,
-          ));
+      await _retryCall(
+        () => _apiService.startWatch(workspaceId: workspaceId, paths: paths),
+      );
 
       // 更新状态
       state = state.copyWith(
@@ -161,8 +160,7 @@ class MonitoringNotifier extends StateNotifier<MonitoringState> {
   /// 处理队列中的事件
   void _processQueue() {
     // 检查限流
-    while (_pendingQueue.isNotEmpty &&
-        _rateLimitCounter < maxEventsPerSecond) {
+    while (_pendingQueue.isNotEmpty && _rateLimitCounter < maxEventsPerSecond) {
       final event = _pendingQueue.removeFirst();
       _handleEvent(event);
       _rateLimitCounter++;

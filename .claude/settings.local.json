@@ -22,7 +22,11 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(flutter analyze:*)",
-      "Skill(gsd:progress)"
+      "Skill(gsd:progress)",
+      "Skill(gsd:complete-milestone)",
+      "WebFetch(domain:fl_chart.dev)",
+      "WebFetch(domain:riverpod.dev)",
+      "WebFetch(domain:github.com)"
     ],
     "defaultMode": "bypassPermissions"
   },

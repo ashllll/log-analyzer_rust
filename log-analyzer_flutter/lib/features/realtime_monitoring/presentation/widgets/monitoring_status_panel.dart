@@ -41,10 +41,7 @@ class MonitoringStatusPanel extends ConsumerWidget {
               children: [
                 const Text(
                   '文件监控状态',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
                 IconButton(
                   icon: const Icon(Icons.close),
@@ -135,7 +132,11 @@ class MonitoringStatusPanel extends ConsumerWidget {
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.error_outline, color: Colors.red, size: 16),
+                    const Icon(
+                      Icons.error_outline,
+                      color: Colors.red,
+                      size: 16,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
@@ -189,10 +190,7 @@ class MonitoringStatusPanel extends ConsumerWidget {
             ),
             child: Text(
               value,
-              style: TextStyle(
-                color: valueColor,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(color: valueColor, fontWeight: FontWeight.bold),
             ),
           ),
         ],
@@ -215,10 +213,7 @@ class MonitoringStatusPanel extends ConsumerWidget {
           const SizedBox(width: 8),
           Text(label),
           const Spacer(),
-          Text(
-            value,
-            style: const TextStyle(fontWeight: FontWeight.w500),
-          ),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.w500)),
         ],
       ),
     );

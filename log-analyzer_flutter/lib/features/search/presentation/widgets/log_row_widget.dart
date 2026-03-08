@@ -90,14 +90,9 @@ class LogRowWidget extends StatelessWidget {
         height: itemExtent,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         decoration: BoxDecoration(
-          color: isActive
-              ? AppColors.bgHover
-              : Colors.transparent,
+          color: isActive ? AppColors.bgHover : Colors.transparent,
           border: Border(
-            bottom: BorderSide(
-              color: theme.dividerColor,
-              width: 0.5,
-            ),
+            bottom: BorderSide(color: theme.dividerColor, width: 0.5),
           ),
         ),
         // 使用强制 StrutStyle 的文本组件
@@ -149,9 +144,7 @@ class LogRowWidget extends StatelessWidget {
         ),
         const SizedBox(width: 12),
         // 日志内容（带高亮）
-        Expanded(
-          child: _buildHighlightedContent(log.content, matchedWords),
-        ),
+        Expanded(child: _buildHighlightedContent(log.content, matchedWords)),
       ],
     );
   }
@@ -188,10 +181,7 @@ class LogRowWidget extends StatelessWidget {
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(
-          color: color.withValues(alpha: 0.3),
-          width: 1,
-        ),
+        border: Border.all(color: color.withValues(alpha: 0.3), width: 1),
       ),
       child: Text(
         level.toUpperCase(),
@@ -214,7 +204,10 @@ class LogRowWidget extends StatelessWidget {
   /// 构建带高亮的日志内容
   ///
   /// 使用 Text.rich 配合强制 StrutStyle 确保行高一致
-  Widget _buildHighlightedContent(String content, List<String> matchedKeywords) {
+  Widget _buildHighlightedContent(
+    String content,
+    List<String> matchedKeywords,
+  ) {
     if (matchedKeywords.isEmpty) {
       return Text(
         content,
@@ -257,11 +250,13 @@ class LogRowWidget extends StatelessWidget {
     for (final keyword in keywords) {
       var index = content.indexOf(keyword);
       while (index != -1) {
-        matches.add(_MatchPosition(
-          keyword: keyword,
-          index: index,
-          length: keyword.length,
-        ));
+        matches.add(
+          _MatchPosition(
+            keyword: keyword,
+            index: index,
+            length: keyword.length,
+          ),
+        );
         index = content.indexOf(keyword, index + keyword.length);
       }
     }
@@ -273,48 +268,51 @@ class LogRowWidget extends StatelessWidget {
     for (final match in matches) {
       // 添加普通文本
       if (match.index > currentIndex) {
-        spans.add(TextSpan(
-          text: content.substring(currentIndex, match.index),
-          style: const TextStyle(
-            fontFamily: LogRowStyle.monoFontFamily,
-            fontSize: LogRowStyle.fontSize,
-            color: AppColors.textSecondary,
-            fontFeatures: [ui.FontFeature.tabularFigures()],
+        spans.add(
+          TextSpan(
+            text: content.substring(currentIndex, match.index),
+            style: const TextStyle(
+              fontFamily: LogRowStyle.monoFontFamily,
+              fontSize: LogRowStyle.fontSize,
+              color: AppColors.textSecondary,
+              fontFeatures: [ui.FontFeature.tabularFigures()],
+            ),
           ),
-        ));
+        );
       }
 
       // 添加高亮文本
       final color = _getHighlightColor(match.keyword);
-      spans.add(TextSpan(
-        text: content.substring(
-          match.index,
-          match.index + match.length,
+      spans.add(
+        TextSpan(
+          text: content.substring(match.index, match.index + match.length),
+          style: TextStyle(
+            fontFamily: LogRowStyle.monoFontFamily,
+            fontSize: LogRowStyle.fontSize,
+            backgroundColor: color.withValues(alpha: 0.3),
+            color: color,
+            fontWeight: FontWeight.bold,
+            fontFeatures: const [ui.FontFeature.tabularFigures()],
+          ),
         ),
-        style: TextStyle(
-          fontFamily: LogRowStyle.monoFontFamily,
-          fontSize: LogRowStyle.fontSize,
-          backgroundColor: color.withValues(alpha: 0.3),
-          color: color,
-          fontWeight: FontWeight.bold,
-          fontFeatures: const [ui.FontFeature.tabularFigures()],
-        ),
-      ));
+      );
 
       currentIndex = match.index + match.length;
     }
 
     // 添加剩余文本
     if (currentIndex < content.length) {
-      spans.add(TextSpan(
-        text: content.substring(currentIndex),
-        style: const TextStyle(
-          fontFamily: LogRowStyle.monoFontFamily,
-          fontSize: LogRowStyle.fontSize,
-          color: AppColors.textSecondary,
-          fontFeatures: [ui.FontFeature.tabularFigures()],
+      spans.add(
+        TextSpan(
+          text: content.substring(currentIndex),
+          style: const TextStyle(
+            fontFamily: LogRowStyle.monoFontFamily,
+            fontSize: LogRowStyle.fontSize,
+            color: AppColors.textSecondary,
+            fontFeatures: [ui.FontFeature.tabularFigures()],
+          ),
         ),
-      ));
+      );
     }
 
     return spans;

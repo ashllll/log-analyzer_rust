@@ -160,10 +160,7 @@ class SearchQuery extends _$SearchQuery {
 
   @override
   SearchQueryState build() {
-    return SearchQueryState(
-      terms: const [],
-      globalOperator: _globalOperator,
-    );
+    return SearchQueryState(terms: const [], globalOperator: _globalOperator);
   }
 
   /// 获取当前关键词列表
@@ -195,11 +192,11 @@ class SearchQuery extends _$SearchQuery {
       caseSensitive: false,
     );
 
-    state = state.copyWith(
-      terms: [...terms, newTerm],
-    );
+    state = state.copyWith(terms: [...terms, newTerm]);
 
-    debugPrint('SearchQueryProvider: 已添加关键词 "${newTerm.value}"，共 ${terms.length} 个');
+    debugPrint(
+      'SearchQueryProvider: 已添加关键词 "${newTerm.value}"，共 ${terms.length} 个',
+    );
   }
 
   /// 删除关键词
@@ -207,12 +204,11 @@ class SearchQuery extends _$SearchQuery {
   /// 根据 ID 删除指定关键词
   void removeKeyword(String id) {
     final previousCount = terms.length;
-    state = state.copyWith(
-      terms: terms.where((t) => t.id != id).toList(),
-    );
+    state = state.copyWith(terms: terms.where((t) => t.id != id).toList());
 
     debugPrint(
-        'SearchQueryProvider: 已删除关键词 ID "$id"，剩余 ${terms.length} 个（之前 $previousCount 个）');
+      'SearchQueryProvider: 已删除关键词 ID "$id"，剩余 ${terms.length} 个（之前 $previousCount 个）',
+    );
   }
 
   /// 更新关键词
@@ -329,10 +325,7 @@ class SearchQueryState {
   /// 全局操作符
   final ffi_types.QueryOperatorData globalOperator;
 
-  const SearchQueryState({
-    required this.terms,
-    required this.globalOperator,
-  });
+  const SearchQueryState({required this.terms, required this.globalOperator});
 
   /// 复制并修改部分字段
   SearchQueryState copyWith({

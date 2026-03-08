@@ -5,11 +5,12 @@ import '../../../../shared/models/common.dart';
 import '../../../../core/theme/app_theme.dart';
 
 /// 过滤器应用回调类型
-typedef FilterApplyCallback = void Function({
-  required TimeRange timeRange,
-  required List<String> levels,
-  String? filePattern,
-});
+typedef FilterApplyCallback =
+    void Function({
+      required TimeRange timeRange,
+      required List<String> levels,
+      String? filePattern,
+    });
 
 /// 过滤器面板组件
 ///
@@ -25,11 +26,7 @@ class FilterPalette extends ConsumerStatefulWidget {
   /// 当前过滤器配置
   final FilterOptions? currentFilters;
 
-  const FilterPalette({
-    super.key,
-    this.onApply,
-    this.currentFilters,
-  });
+  const FilterPalette({super.key, this.onApply, this.currentFilters});
 
   @override
   ConsumerState<FilterPalette> createState() => _FilterPaletteState();
@@ -128,8 +125,7 @@ class _FilterPaletteState extends ConsumerState<FilterPalette> {
         // 格式化为 YYYY-MM-DD HH:MM:SS
         _timeStartController.text =
             '${_formatDate(selectedRange.start)} 00:00:00';
-        _timeEndController.text =
-            '${_formatDate(selectedRange.end)} 23:59:59';
+        _timeEndController.text = '${_formatDate(selectedRange.end)} 23:59:59';
       });
     }
   }
@@ -180,18 +176,13 @@ class _FilterPaletteState extends ConsumerState<FilterPalette> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: const BoxDecoration(
               border: Border(
-                bottom: BorderSide(
-                  color: AppColors.border,
-                  width: 1,
-                ),
+                bottom: BorderSide(color: AppColors.border, width: 1),
               ),
             ),
             child: Row(
               children: [
                 Icon(
-                  _isExpanded
-                      ? Icons.expand_less
-                      : Icons.expand_more,
+                  _isExpanded ? Icons.expand_less : Icons.expand_more,
                   size: 20,
                   color: AppColors.textMuted,
                 ),
@@ -206,7 +197,10 @@ class _FilterPaletteState extends ConsumerState<FilterPalette> {
                 const Spacer(),
                 if (_hasActiveFilters())
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.primary.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(10),
@@ -306,10 +300,7 @@ class _FilterPaletteState extends ConsumerState<FilterPalette> {
             const SizedBox(width: 12),
             const Text(
               '至',
-              style: TextStyle(
-                color: AppColors.textMuted,
-                fontSize: 13,
-              ),
+              style: TextStyle(color: AppColors.textMuted, fontSize: 13),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -386,14 +377,9 @@ class _FilterPaletteState extends ConsumerState<FilterPalette> {
               backgroundColor: isSelected
                   ? color.withValues(alpha: 0.9)
                   : color.withValues(alpha: 0.1),
-              side: BorderSide(
-                color: color.withValues(alpha: 0.3),
-              ),
+              side: BorderSide(color: color.withValues(alpha: 0.3)),
               shape: const StadiumBorder(),
-              padding: const EdgeInsets.symmetric(
-                horizontal: 10,
-                vertical: 6,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             );
           }).toList(),
         ),
@@ -410,10 +396,7 @@ class _FilterPaletteState extends ConsumerState<FilterPalette> {
         hintText: '*.log, **/*.txt',
         prefixIcon: Icon(Icons.insert_drive_file_outlined),
         border: OutlineInputBorder(),
-        contentPadding: EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 8,
-        ),
+        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       ),
       style: const TextStyle(fontSize: 13),
     );
@@ -428,10 +411,7 @@ class _FilterPaletteState extends ConsumerState<FilterPalette> {
             onPressed: _clearFilters,
             style: OutlinedButton.styleFrom(
               foregroundColor: AppColors.textSecondary,
-              padding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 12,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             ),
             child: const Text('清除'),
           ),
@@ -442,10 +422,7 @@ class _FilterPaletteState extends ConsumerState<FilterPalette> {
           style: ElevatedButton.styleFrom(
             backgroundColor: AppColors.primary,
             foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 12,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           ),
           child: const Text('应用'),
         ),

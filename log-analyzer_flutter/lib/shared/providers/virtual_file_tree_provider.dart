@@ -12,10 +12,7 @@ part 'virtual_file_tree_provider.g.dart';
 // ==================== 虚拟文件树数据模型 ====================
 
 /// 虚拟文件树节点类型
-enum VirtualTreeNodeType {
-  file,
-  archive,
-}
+enum VirtualTreeNodeType { file, archive }
 
 /// 虚拟文件树节点数据
 ///
@@ -50,27 +47,41 @@ sealed class VirtualTreeNode with _$VirtualTreeNode {
 /// 递归处理嵌套的子节点
 VirtualTreeNode _convertFromFfiNode(ffi_types.VirtualTreeNodeData node) {
   return switch (node) {
-    ffi_types.VirtualTreeNodeData_File(:final name, :final path, :final hash, :final size, :final mimeType) =>
+    ffi_types.VirtualTreeNodeData_File(
+      :final name,
+      :final path,
+      :final hash,
+      :final size,
+      :final mimeType,
+    ) =>
       VirtualTreeNode.file(
         name: name,
         path: path,
         hash: hash,
-        size: size.toInt(),  // PlatformInt64 to int
+        size: size.toInt(), // PlatformInt64 to int
         mimeType: mimeType,
       ),
-    ffi_types.VirtualTreeNodeData_Archive(:final name, :final path, :final hash, :final archiveType, :final children) =>
+    ffi_types.VirtualTreeNodeData_Archive(
+      :final name,
+      :final path,
+      :final hash,
+      :final archiveType,
+      :final children,
+    ) =>
       VirtualTreeNode.archive(
         name: name,
         path: path,
         hash: hash,
         archiveType: archiveType,
-        children: children.map(_convertFromFfiNode).toList(),  // 递归转换
+        children: children.map(_convertFromFfiNode).toList(), // 递归转换
       ),
   };
 }
 
 /// 批量转换 FFI 节点列表
-List<VirtualTreeNode> _convertFromFfiNodes(List<ffi_types.VirtualTreeNodeData> nodes) {
+List<VirtualTreeNode> _convertFromFfiNodes(
+  List<ffi_types.VirtualTreeNodeData> nodes,
+) {
   return nodes.map(_convertFromFfiNode).toList();
 }
 
@@ -224,7 +235,9 @@ class VirtualFileTree extends _$VirtualFileTree {
     String workspaceId,
   ) async {
     try {
-      debugPrint('VirtualFileTreeProvider: 调用 getVirtualFileTree($workspaceId)');
+      debugPrint(
+        'VirtualFileTreeProvider: 调用 getVirtualFileTree($workspaceId)',
+      );
 
       // 调用 FFI 获取文件树
       final ffiNodes = await bridge.getVirtualFileTree(workspaceId);
@@ -264,7 +277,11 @@ class VirtualFileTree extends _$VirtualFileTree {
     if (cachedChildren != null) {
       debugPrint('VirtualFileTreeProvider: 使用缓存加载子节点 $parentPath');
       // 更新树中对应节点的子节点（使用缓存数据）
-      final updatedTree = _updateNodeChildren(currentTree, parentPath, cachedChildren);
+      final updatedTree = _updateNodeChildren(
+        currentTree,
+        parentPath,
+        cachedChildren,
+      );
       state = AsyncData(updatedTree);
       return cachedChildren;
     }
@@ -293,7 +310,11 @@ class VirtualFileTree extends _$VirtualFileTree {
       treeNodeCache.set(parentPath, children);
 
       // 更新树中对应节点的子节点
-      final updatedTree = _updateNodeChildren(currentTree, parentPath, children);
+      final updatedTree = _updateNodeChildren(
+        currentTree,
+        parentPath,
+        children,
+      );
       state = AsyncData(updatedTree);
 
       return children;
@@ -341,7 +362,13 @@ class VirtualFileTree extends _$VirtualFileTree {
     return nodes.map((node) {
       return switch (node) {
         VirtualTreeNodeFile() => node,
-        VirtualTreeNodeArchive(:final name, :final path, :final hash, :final archiveType, :final children) =>
+        VirtualTreeNodeArchive(
+          :final name,
+          :final path,
+          :final hash,
+          :final archiveType,
+          :final children,
+        ) =>
           // 如果路径匹配，更新子节点
           targetPath == path
               ? VirtualTreeNode.archive(
@@ -352,12 +379,16 @@ class VirtualFileTree extends _$VirtualFileTree {
                   children: newChildren,
                 )
               : // 否则递归处理子节点
-              VirtualTreeNode.archive(
+                VirtualTreeNode.archive(
                   name: name,
                   path: path,
                   hash: hash,
                   archiveType: archiveType,
-                  children: _updateNodeChildren(children, targetPath, newChildren),
+                  children: _updateNodeChildren(
+                    children,
+                    targetPath,
+                    newChildren,
+                  ),
                 ),
       };
     }).toList();
@@ -427,7 +458,7 @@ class VirtualFileTree extends _$VirtualFileTree {
       return FileContentResponse(
         content: ffiResult.content,
         hash: ffiResult.hash,
-        size: ffiResult.size.toInt(),  // PlatformInt64 to int
+        size: ffiResult.size.toInt(), // PlatformInt64 to int
       );
     } catch (e) {
       debugPrint('readFileByHash error: $e');

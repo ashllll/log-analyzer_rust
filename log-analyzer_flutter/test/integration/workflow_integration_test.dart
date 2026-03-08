@@ -35,13 +35,14 @@ void main() {
         expect(query.terms.length, equals(1));
 
         // ========== 步骤 3: 保存搜索历史 ==========
-        final historyNotifier = container.read(searchHistoryProvider(testWorkspaceId).notifier);
-        await historyNotifier.addSearchHistory(
-          query: 'error',
-          resultCount: 2,
+        final historyNotifier = container.read(
+          searchHistoryProvider(testWorkspaceId).notifier,
         );
+        await historyNotifier.addSearchHistory(query: 'error', resultCount: 2);
 
-        final historyState = container.read(searchHistoryProvider(testWorkspaceId));
+        final historyState = container.read(
+          searchHistoryProvider(testWorkspaceId),
+        );
         final history = historyState.valueOrNull ?? [];
 
         expect(history.length, equals(1));
@@ -51,21 +52,22 @@ void main() {
 
       test('应能从历史记录恢复搜索', () async {
         final searchNotifier = container.read(searchQueryProvider.notifier);
-        final historyNotifier = container.read(searchHistoryProvider(testWorkspaceId).notifier);
+        final historyNotifier = container.read(
+          searchHistoryProvider(testWorkspaceId).notifier,
+        );
 
         // 初始搜索
         searchNotifier.addKeyword('error');
-        await historyNotifier.addSearchHistory(
-          query: 'error',
-          resultCount: 2,
-        );
+        await historyNotifier.addSearchHistory(query: 'error', resultCount: 2);
         searchNotifier.clearKeywords();
 
         // 验证初始搜索已完成
         expect(container.read(searchQueryProvider).terms, isEmpty);
 
         // ========== 从历史恢复搜索 ==========
-        final historyState = container.read(searchHistoryProvider(testWorkspaceId));
+        final historyState = container.read(
+          searchHistoryProvider(testWorkspaceId),
+        );
         final history = historyState.valueOrNull ?? [];
 
         // 选择历史记录
@@ -84,15 +86,22 @@ void main() {
 
     group('历史管理工作流', () {
       test('应能管理多条历史记录', () async {
-        final historyNotifier = container.read(searchHistoryProvider(testWorkspaceId).notifier);
+        final historyNotifier = container.read(
+          searchHistoryProvider(testWorkspaceId).notifier,
+        );
 
         // 添加多条历史
         await historyNotifier.addSearchHistory(query: 'error', resultCount: 10);
-        await historyNotifier.addSearchHistory(query: 'warning', resultCount: 5);
+        await historyNotifier.addSearchHistory(
+          query: 'warning',
+          resultCount: 5,
+        );
         await historyNotifier.addSearchHistory(query: 'info', resultCount: 3);
 
         // 验证历史记录顺序
-        var historyState = container.read(searchHistoryProvider(testWorkspaceId));
+        var historyState = container.read(
+          searchHistoryProvider(testWorkspaceId),
+        );
         var history = historyState.valueOrNull ?? [];
 
         expect(history.length, equals(3));
@@ -122,22 +131,31 @@ void main() {
       });
 
       test('批量删除应正确工作', () async {
-        final historyNotifier = container.read(searchHistoryProvider(testWorkspaceId).notifier);
+        final historyNotifier = container.read(
+          searchHistoryProvider(testWorkspaceId).notifier,
+        );
 
         await historyNotifier.addSearchHistory(query: 'error', resultCount: 10);
-        await historyNotifier.addSearchHistory(query: 'warning', resultCount: 5);
+        await historyNotifier.addSearchHistory(
+          query: 'warning',
+          resultCount: 5,
+        );
         await historyNotifier.addSearchHistory(query: 'info', resultCount: 3);
         await historyNotifier.addSearchHistory(query: 'debug', resultCount: 1);
 
         // 批量删除 error 和 info
         await historyNotifier.deleteSearchHistories(['error', 'info']);
 
-        final historyState = container.read(searchHistoryProvider(testWorkspaceId));
+        final historyState = container.read(
+          searchHistoryProvider(testWorkspaceId),
+        );
         final history = historyState.valueOrNull ?? [];
 
         expect(history.length, equals(2));
-        expect(history.map((h) => h.query).toList(),
-            containsAll(['warning', 'debug']));
+        expect(
+          history.map((h) => h.query).toList(),
+          containsAll(['warning', 'debug']),
+        );
       });
     });
 
@@ -146,7 +164,9 @@ void main() {
         // 验证 Provider 正常工作
         await Future.delayed(const Duration(milliseconds: 100));
 
-        final treeState = container.read(virtualFileTreeProvider(testWorkspaceId));
+        final treeState = container.read(
+          virtualFileTreeProvider(testWorkspaceId),
+        );
         expect(treeState.valueOrNull, isNotNull);
       });
 
@@ -176,7 +196,9 @@ void main() {
         expect(archiveNode.hasChildren, isTrue);
         expect(archiveNode.children.length, equals(2));
 
-        final appLog = archiveNode.children.firstWhere((n) => n.name == 'app.log');
+        final appLog = archiveNode.children.firstWhere(
+          (n) => n.name == 'app.log',
+        );
         expect(appLog.isFile, isTrue);
         expect(appLog.size, equals(1024));
       });

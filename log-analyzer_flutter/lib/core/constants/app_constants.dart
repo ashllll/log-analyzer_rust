@@ -9,7 +9,9 @@ class AppConstants {
   // 搜索默认值
   static const int defaultMaxResults = 10000;
   static const int searchDebounceMs = 300;
-  static const Duration searchDebounce = Duration(milliseconds: searchDebounceMs);
+  static const Duration searchDebounce = Duration(
+    milliseconds: searchDebounceMs,
+  );
 
   // 虚拟滚动
   static const double logItemHeight = 32.0;
@@ -171,24 +173,12 @@ enum FilterMode {
 /// Toast 类型枚举
 ///
 /// 对应 React 版本的 ToastType
-enum ToastType {
-  success,
-  error,
-  info,
-  warning,
-}
+enum ToastType { success, error, info, warning }
 
 /// 应用页面枚举
 ///
 /// 对应 React 版本的导航页面
-enum AppPage {
-  search,
-  workspaces,
-  keywords,
-  tasks,
-  settings,
-  performance,
-}
+enum AppPage { search, workspaces, keywords, tasks, settings, performance }
 
 /// 页面扩展方法
 extension AppPageExtension on AppPage {

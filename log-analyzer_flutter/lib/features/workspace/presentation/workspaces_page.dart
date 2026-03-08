@@ -67,10 +67,12 @@ class _WorkspacesPageState extends ConsumerState<WorkspacesPage> {
     if (workspaces.isEmpty) return;
 
     // 检查是否有正在处理的工作区
-    final hasProcessing = workspaces.any((w) =>
-        w.status.value == 'SCANNING' ||
-        w.status.value == 'PROCESSING' ||
-        w.status.value == 'INDEXING');
+    final hasProcessing = workspaces.any(
+      (w) =>
+          w.status.value == 'SCANNING' ||
+          w.status.value == 'PROCESSING' ||
+          w.status.value == 'INDEXING',
+    );
 
     if (!hasProcessing) return;
 
@@ -92,7 +94,8 @@ class _WorkspacesPageState extends ConsumerState<WorkspacesPage> {
       appBar: _buildAppBar(context),
       body: DropZoneWidget(
         onFilesDropped: (paths) => _handleFilesDropped(context, paths),
-        onArchiveDropped: (archivePath) => _handleArchiveDropped(context, archivePath),
+        onArchiveDropped: (archivePath) =>
+            _handleArchiveDropped(context, archivePath),
         foldersOnly: true,
         archiveEnabled: true,
         child: workspaces.isEmpty
@@ -108,7 +111,10 @@ class _WorkspacesPageState extends ConsumerState<WorkspacesPage> {
   }
 
   /// 处理拖放的压缩包
-  Future<void> _handleArchiveDropped(BuildContext context, String archivePath) async {
+  Future<void> _handleArchiveDropped(
+    BuildContext context,
+    String archivePath,
+  ) async {
     if (!context.mounted) return;
 
     // 获取工作区列表
@@ -124,12 +130,20 @@ class _WorkspacesPageState extends ConsumerState<WorkspacesPage> {
       );
     } else {
       // 有工作区，让用户选择
-      _showArchiveImportDestinationDialog(context, archivePath, workspaces.map((w) => w.id).toList());
+      _showArchiveImportDestinationDialog(
+        context,
+        archivePath,
+        workspaces.map((w) => w.id).toList(),
+      );
     }
   }
 
   /// 显示压缩包导入目标选择对话框
-  void _showArchiveImportDestinationDialog(BuildContext context, String archivePath, List<String> workspaceIds) {
+  void _showArchiveImportDestinationDialog(
+    BuildContext context,
+    String archivePath,
+    List<String> workspaceIds,
+  ) {
     final workspaces = ref.read(workspaceStateProvider);
 
     showDialog(
@@ -145,7 +159,10 @@ class _WorkspacesPageState extends ConsumerState<WorkspacesPage> {
             children: [
               Text('文件: ${archivePath.split(RegExp(r'[/\\]')).last}'),
               const SizedBox(height: 16),
-              const Text('选择目标工作区:', style: TextStyle(fontWeight: FontWeight.w500)),
+              const Text(
+                '选择目标工作区:',
+                style: TextStyle(fontWeight: FontWeight.w500),
+              ),
               const SizedBox(height: 8),
               ...workspaces.map(
                 (workspace) => ListTile(
@@ -171,7 +188,11 @@ class _WorkspacesPageState extends ConsumerState<WorkspacesPage> {
   }
 
   /// 开始压缩包导入
-  Future<void> _startArchiveImport(BuildContext context, String workspaceId, String archivePath) async {
+  Future<void> _startArchiveImport(
+    BuildContext context,
+    String workspaceId,
+    String archivePath,
+  ) async {
     try {
       // 显示压缩包预览对话框
       if (!context.mounted) return;
@@ -193,17 +214,17 @@ class _WorkspacesPageState extends ConsumerState<WorkspacesPage> {
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('导入失败: $e'),
-            backgroundColor: AppColors.error,
-          ),
+          SnackBar(content: Text('导入失败: $e'), backgroundColor: AppColors.error),
         );
       }
     }
   }
 
   /// 处理拖放的文件
-  Future<void> _handleFilesDropped(BuildContext context, List<String> paths) async {
+  Future<void> _handleFilesDropped(
+    BuildContext context,
+    List<String> paths,
+  ) async {
     if (paths.isEmpty) return;
 
     // 提示用户选择工作区或创建新工作区
@@ -238,7 +259,10 @@ class _WorkspacesPageState extends ConsumerState<WorkspacesPage> {
             children: [
               Text('已选择 ${paths.length} 个文件夹'),
               const SizedBox(height: 16),
-              const Text('选择目标工作区:', style: TextStyle(fontWeight: FontWeight.w500)),
+              const Text(
+                '选择目标工作区:',
+                style: TextStyle(fontWeight: FontWeight.w500),
+              ),
               const SizedBox(height: 8),
               ...workspaces.map(
                 (workspace) => ListTile(
@@ -276,7 +300,11 @@ class _WorkspacesPageState extends ConsumerState<WorkspacesPage> {
   }
 
   /// 开始导入
-  Future<void> _startImport(BuildContext context, String workspaceId, List<String> paths) async {
+  Future<void> _startImport(
+    BuildContext context,
+    String workspaceId,
+    List<String> paths,
+  ) async {
     try {
       final apiService = ref.read(apiServiceProvider);
 
@@ -298,18 +326,19 @@ class _WorkspacesPageState extends ConsumerState<WorkspacesPage> {
         );
 
         // 更新进度
-        ref.read(importProgressProvider.notifier).startImport(
-          taskId: taskId,
-          totalFiles: 1,
-        );
+        ref
+            .read(importProgressProvider.notifier)
+            .startImport(taskId: taskId, totalFiles: 1);
 
         // 模拟进度更新 (实际应该监听任务进度)
         await Future.delayed(const Duration(milliseconds: 500));
-        ref.read(importProgressProvider.notifier).updateProgress(
-          totalFiles: 1,
-          processedFiles: 1,
-          currentFile: path,
-        );
+        ref
+            .read(importProgressProvider.notifier)
+            .updateProgress(
+              totalFiles: 1,
+              processedFiles: 1,
+              currentFile: path,
+            );
       }
 
       // 完成导入
@@ -331,10 +360,7 @@ class _WorkspacesPageState extends ConsumerState<WorkspacesPage> {
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('导入失败: $e'),
-            backgroundColor: AppColors.error,
-          ),
+          SnackBar(content: Text('导入失败: $e'), backgroundColor: AppColors.error),
         );
       }
     }
@@ -347,10 +373,7 @@ class _WorkspacesPageState extends ConsumerState<WorkspacesPage> {
       elevation: 0,
       title: const Text(
         '工作区',
-        style: TextStyle(
-          fontSize: 18,
-          fontWeight: FontWeight.w600,
-        ),
+        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
       ),
       actions: [
         // 导入按钮 (支持文件夹和压缩包)
@@ -404,8 +427,8 @@ class _WorkspacesPageState extends ConsumerState<WorkspacesPage> {
         initialDirectory: Platform.isWindows
             ? 'C:\\'
             : Platform.isMacOS
-                ? '/Users'
-                : '/home',
+            ? '/Users'
+            : '/home',
       );
 
       if (result != null) {
@@ -461,7 +484,11 @@ class _WorkspacesPageState extends ConsumerState<WorkspacesPage> {
           }
         } else {
           // 有工作区，让用户选择
-          _showArchiveImportDestinationDialog(context, filePath, workspaces.map((w) => w.id).toList());
+          _showArchiveImportDestinationDialog(
+            context,
+            filePath,
+            workspaces.map((w) => w.id).toList(),
+          );
         }
       }
     } catch (e) {
@@ -488,7 +515,10 @@ class _WorkspacesPageState extends ConsumerState<WorkspacesPage> {
   }
 
   /// 构建工作区列表
-  Widget _buildWorkspaceList(List<Workspace> workspaces, String? activeWorkspaceId) {
+  Widget _buildWorkspaceList(
+    List<Workspace> workspaces,
+    String? activeWorkspaceId,
+  ) {
     return Focus(
       focusNode: _listFocusNode,
       autofocus: true,
@@ -587,10 +617,7 @@ class _WorkspacesPageState extends ConsumerState<WorkspacesPage> {
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('刷新失败: $e'),
-            backgroundColor: AppColors.error,
-          ),
+          SnackBar(content: Text('刷新失败: $e'), backgroundColor: AppColors.error),
         );
       }
     }
@@ -625,9 +652,7 @@ class _WorkspacesPageState extends ConsumerState<WorkspacesPage> {
               Navigator.pop(dialogContext);
               _deleteWorkspace(context, workspace.id);
             },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.error,
-            ),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
             child: const Text('删除'),
           ),
         ],
@@ -636,7 +661,10 @@ class _WorkspacesPageState extends ConsumerState<WorkspacesPage> {
   }
 
   /// 删除工作区
-  Future<void> _deleteWorkspace(BuildContext context, String workspaceId) async {
+  Future<void> _deleteWorkspace(
+    BuildContext context,
+    String workspaceId,
+  ) async {
     try {
       final apiService = ref.read(apiServiceProvider);
       await apiService.deleteWorkspace(workspaceId);
@@ -654,17 +682,17 @@ class _WorkspacesPageState extends ConsumerState<WorkspacesPage> {
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('删除失败: $e'),
-            backgroundColor: AppColors.error,
-          ),
+          SnackBar(content: Text('删除失败: $e'), backgroundColor: AppColors.error),
         );
       }
     }
   }
 
   /// 刷新工作区
-  Future<void> _refreshWorkspace(BuildContext context, Workspace workspace) async {
+  Future<void> _refreshWorkspace(
+    BuildContext context,
+    Workspace workspace,
+  ) async {
     try {
       final apiService = ref.read(apiServiceProvider);
       await apiService.refreshWorkspace(workspace.id, workspace.path);
@@ -680,10 +708,7 @@ class _WorkspacesPageState extends ConsumerState<WorkspacesPage> {
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('刷新失败: $e'),
-            backgroundColor: AppColors.error,
-          ),
+          SnackBar(content: Text('刷新失败: $e'), backgroundColor: AppColors.error),
         );
       }
     }
@@ -706,18 +731,17 @@ class _WorkspacesPageState extends ConsumerState<WorkspacesPage> {
       }
 
       if (context.mounted) {
-        ref.read(workspaceStateProvider.notifier).updateWorkspace(
-          workspace.id,
-          workspace.copyWith(watching: newValue),
-        );
+        ref
+            .read(workspaceStateProvider.notifier)
+            .updateWorkspace(
+              workspace.id,
+              workspace.copyWith(watching: newValue),
+            );
       }
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('操作失败: $e'),
-            backgroundColor: AppColors.error,
-          ),
+          SnackBar(content: Text('操作失败: $e'), backgroundColor: AppColors.error),
         );
       }
     }
@@ -762,8 +786,8 @@ class _WorkspaceCard extends StatelessWidget {
               color: isActive
                   ? AppColors.primary
                   : isSelected
-                      ? AppColors.primary.withValues(alpha: 0.5)
-                      : Colors.transparent,
+                  ? AppColors.primary.withValues(alpha: 0.5)
+                  : Colors.transparent,
               width: isActive || isSelected ? 2 : 1,
             ),
             borderRadius: BorderRadius.circular(8),
@@ -780,7 +804,9 @@ class _WorkspaceCard extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
-                        color: isActive ? AppColors.primary : AppColors.textPrimary,
+                        color: isActive
+                            ? AppColors.primary
+                            : AppColors.textPrimary,
                       ),
                     ),
                   ),
@@ -1027,7 +1053,8 @@ class _AddWorkspaceDialog extends ConsumerStatefulWidget {
   const _AddWorkspaceDialog({super.key, this.initialPath});
 
   @override
-  ConsumerState<_AddWorkspaceDialog> createState() => _AddWorkspaceDialogState();
+  ConsumerState<_AddWorkspaceDialog> createState() =>
+      _AddWorkspaceDialogState();
 }
 
 class _AddWorkspaceDialogState extends ConsumerState<_AddWorkspaceDialog> {
@@ -1105,10 +1132,10 @@ class _AddWorkspaceDialogState extends ConsumerState<_AddWorkspaceDialog> {
           onPressed: _isLoading ? null : _createWorkspace,
           child: _isLoading
               ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
               : const Text('创建'),
         ),
       ],
@@ -1124,8 +1151,8 @@ class _AddWorkspaceDialogState extends ConsumerState<_AddWorkspaceDialog> {
         initialDirectory: Platform.isWindows
             ? 'C:\\'
             : Platform.isMacOS
-                ? '/Users'
-                : '/home',
+            ? '/Users'
+            : '/home',
       );
 
       if (result != null) {
@@ -1201,10 +1228,7 @@ class _AddWorkspaceDialogState extends ConsumerState<_AddWorkspaceDialog> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('创建失败: $e'),
-            backgroundColor: AppColors.error,
-          ),
+          SnackBar(content: Text('创建失败: $e'), backgroundColor: AppColors.error),
         );
       }
     }

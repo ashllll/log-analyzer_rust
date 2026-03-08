@@ -11,11 +11,11 @@ import '../../../core/constants/app_constants.dart';
 
 /// 任务过滤类型枚举
 enum TaskFilterType {
-  all,       // 全部任务
-  running,   // 运行中
+  all, // 全部任务
+  running, // 运行中
   completed, // 已完成
-  failed,    // 失败
-  stopped,   // 已停止
+  failed, // 失败
+  stopped, // 已停止
 }
 
 /// 任务管理页面
@@ -89,7 +89,9 @@ class _TasksPageState extends ConsumerState<TasksPage> {
   ///
   /// [tasks] 全部任务列表（用于统计）
   PreferredSizeWidget _buildAppBar(BuildContext context, List<TaskInfo> tasks) {
-    final runningCount = tasks.where((t) => t.status == TaskStatus.running).length;
+    final runningCount = tasks
+        .where((t) => t.status == TaskStatus.running)
+        .length;
 
     return AppBar(
       backgroundColor: AppColors.bgMain,
@@ -98,10 +100,7 @@ class _TasksPageState extends ConsumerState<TasksPage> {
         children: [
           const Text(
             '任务',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-            ),
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
           ),
           if (runningCount > 0)
             Container(
@@ -159,7 +158,9 @@ class _TasksPageState extends ConsumerState<TasksPage> {
               value: TaskFilterType.completed,
               icon: Icons.check_circle,
               label: '已完成',
-              count: tasks.where((t) => t.status == TaskStatus.completed).length,
+              count: tasks
+                  .where((t) => t.status == TaskStatus.completed)
+                  .length,
             ),
             // 失败
             _buildFilterMenuItem(
@@ -218,7 +219,9 @@ class _TasksPageState extends ConsumerState<TasksPage> {
               '$count',
               style: TextStyle(
                 fontSize: 12,
-                color: count > 0 ? AppColors.textSecondary : AppColors.textMuted,
+                color: count > 0
+                    ? AppColors.textSecondary
+                    : AppColors.textMuted,
               ),
             ),
           ),
@@ -262,11 +265,7 @@ class _TasksPageState extends ConsumerState<TasksPage> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            icon,
-            size: 64,
-            color: AppColors.textMuted,
-          ),
+          Icon(icon, size: 64, color: AppColors.textMuted),
           const SizedBox(height: 16),
           Text(
             message,
@@ -291,10 +290,18 @@ class _TasksPageState extends ConsumerState<TasksPage> {
   /// 构建任务列表
   Widget _buildTaskList(List<TaskInfo> tasks) {
     // 按状态分组
-    final runningTasks = tasks.where((t) => t.status == TaskStatus.running).toList();
-    final completedTasks = tasks.where((t) => t.status == TaskStatus.completed).toList();
-    final failedTasks = tasks.where((t) => t.status == TaskStatus.failed).toList();
-    final stoppedTasks = tasks.where((t) => t.status == TaskStatus.stopped).toList();
+    final runningTasks = tasks
+        .where((t) => t.status == TaskStatus.running)
+        .toList();
+    final completedTasks = tasks
+        .where((t) => t.status == TaskStatus.completed)
+        .toList();
+    final failedTasks = tasks
+        .where((t) => t.status == TaskStatus.failed)
+        .toList();
+    final stoppedTasks = tasks
+        .where((t) => t.status == TaskStatus.stopped)
+        .toList();
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -375,10 +382,7 @@ class _TasksPageState extends ConsumerState<TasksPage> {
     } catch (e) {
       if (context?.mounted ?? false) {
         ScaffoldMessenger.of(context!).showSnackBar(
-          SnackBar(
-            content: Text('刷新失败: $e'),
-            backgroundColor: AppColors.error,
-          ),
+          SnackBar(content: Text('刷新失败: $e'), backgroundColor: AppColors.error),
         );
       }
     }
@@ -428,13 +432,10 @@ class _TasksPageState extends ConsumerState<TasksPage> {
   /// 启动自动刷新
   void _startAutoRefresh() {
     _autoRefreshTimer?.cancel();
-    _autoRefreshTimer = Timer.periodic(
-      const Duration(seconds: 5),
-      (_) {
-        // 自动刷新时不显示提示
-        _refreshTasks();
-      },
-    );
+    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      // 自动刷新时不显示提示
+      _refreshTasks();
+    });
   }
 }
 
@@ -445,10 +446,7 @@ class _TaskCard extends StatelessWidget {
   final TaskInfo task;
   final WidgetRef ref;
 
-  const _TaskCard({
-    required this.task,
-    required this.ref,
-  });
+  const _TaskCard({required this.task, required this.ref});
 
   @override
   Widget build(BuildContext context) {
@@ -499,7 +497,10 @@ class _TaskCard extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: statusColor.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(4),
@@ -511,11 +512,7 @@ class _TaskCard extends StatelessWidget {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(
-                            statusIcon,
-                            size: 12,
-                            color: statusColor,
-                          ),
+                          Icon(statusIcon, size: 12, color: statusColor),
                           const SizedBox(width: 4),
                           Text(
                             statusText,
@@ -546,7 +543,10 @@ class _TaskCard extends StatelessWidget {
                         tooltip: '取消任务',
                         onPressed: () => _cancelTask(context, task.taskId),
                         padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                        constraints: const BoxConstraints(
+                          minWidth: 32,
+                          minHeight: 32,
+                        ),
                       ),
                   ],
                 ),
@@ -632,10 +632,7 @@ class _TaskCard extends StatelessWidget {
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('取消失败: $e'),
-            backgroundColor: AppColors.error,
-          ),
+          SnackBar(content: Text('取消失败: $e'), backgroundColor: AppColors.error),
         );
       }
     }

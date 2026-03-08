@@ -33,12 +33,11 @@ void main() {
 
     group('添加搜索历史', () {
       test('应成功添加搜索历史记录', () async {
-        final notifier = container.read(searchHistoryProvider(testWorkspaceId).notifier);
-
-        await notifier.addSearchHistory(
-          query: 'error',
-          resultCount: 10,
+        final notifier = container.read(
+          searchHistoryProvider(testWorkspaceId).notifier,
         );
+
+        await notifier.addSearchHistory(query: 'error', resultCount: 10);
 
         final state = container.read(searchHistoryProvider(testWorkspaceId));
         final history = state.valueOrNull ?? [];
@@ -49,19 +48,15 @@ void main() {
       });
 
       test('应将新记录插入到列表开头', () async {
-        final notifier = container.read(searchHistoryProvider(testWorkspaceId).notifier);
+        final notifier = container.read(
+          searchHistoryProvider(testWorkspaceId).notifier,
+        );
 
         // 添加第一条记录
-        await notifier.addSearchHistory(
-          query: 'error',
-          resultCount: 10,
-        );
+        await notifier.addSearchHistory(query: 'error', resultCount: 10);
 
         // 添加第二条记录
-        await notifier.addSearchHistory(
-          query: 'warning',
-          resultCount: 5,
-        );
+        await notifier.addSearchHistory(query: 'warning', resultCount: 5);
 
         final state = container.read(searchHistoryProvider(testWorkspaceId));
         final history = state.valueOrNull ?? [];
@@ -71,12 +66,11 @@ void main() {
       });
 
       test('应设置正确的 workspaceId', () async {
-        final notifier = container.read(searchHistoryProvider(testWorkspaceId).notifier);
-
-        await notifier.addSearchHistory(
-          query: 'error',
-          resultCount: 10,
+        final notifier = container.read(
+          searchHistoryProvider(testWorkspaceId).notifier,
         );
+
+        await notifier.addSearchHistory(query: 'error', resultCount: 10);
 
         final state = container.read(searchHistoryProvider(testWorkspaceId));
         final history = state.valueOrNull ?? [];
@@ -87,7 +81,9 @@ void main() {
 
     group('删除搜索历史', () {
       test('应成功删除单条历史记录', () async {
-        final notifier = container.read(searchHistoryProvider(testWorkspaceId).notifier);
+        final notifier = container.read(
+          searchHistoryProvider(testWorkspaceId).notifier,
+        );
 
         // 先添加记录
         await notifier.addSearchHistory(query: 'error', resultCount: 10);
@@ -104,7 +100,9 @@ void main() {
       });
 
       test('删除不存在的记录应无效果', () async {
-        final notifier = container.read(searchHistoryProvider(testWorkspaceId).notifier);
+        final notifier = container.read(
+          searchHistoryProvider(testWorkspaceId).notifier,
+        );
 
         // 添加记录
         await notifier.addSearchHistory(query: 'error', resultCount: 10);
@@ -121,7 +119,9 @@ void main() {
 
     group('批量删除搜索历史', () {
       test('应成功批量删除多条记录', () async {
-        final notifier = container.read(searchHistoryProvider(testWorkspaceId).notifier);
+        final notifier = container.read(
+          searchHistoryProvider(testWorkspaceId).notifier,
+        );
 
         // 添加多条记录
         await notifier.addSearchHistory(query: 'error', resultCount: 10);
@@ -141,7 +141,9 @@ void main() {
 
     group('清空搜索历史', () {
       test('应成功清空所有历史记录', () async {
-        final notifier = container.read(searchHistoryProvider(testWorkspaceId).notifier);
+        final notifier = container.read(
+          searchHistoryProvider(testWorkspaceId).notifier,
+        );
 
         // 添加多条记录
         await notifier.addSearchHistory(query: 'error', resultCount: 10);

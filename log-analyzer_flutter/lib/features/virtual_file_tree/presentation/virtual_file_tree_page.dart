@@ -15,7 +15,8 @@ class VirtualFileTreePage extends ConsumerStatefulWidget {
   const VirtualFileTreePage({super.key});
 
   @override
-  ConsumerState<VirtualFileTreePage> createState() => _VirtualFileTreePageState();
+  ConsumerState<VirtualFileTreePage> createState() =>
+      _VirtualFileTreePageState();
 }
 
 class _VirtualFileTreePageState extends ConsumerState<VirtualFileTreePage>
@@ -144,11 +145,7 @@ class _VirtualFileTreePageState extends ConsumerState<VirtualFileTreePage>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            LucideIcons.folderX,
-            size: 64,
-            color: theme.colorScheme.outline,
-          ),
+          Icon(LucideIcons.folderX, size: 64, color: theme.colorScheme.outline),
           const SizedBox(height: 16),
           Text(
             '请先选择工作区',
@@ -175,11 +172,7 @@ class _VirtualFileTreePageState extends ConsumerState<VirtualFileTreePage>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              LucideIcons.file,
-              size: 48,
-              color: theme.colorScheme.outline,
-            ),
+            Icon(LucideIcons.file, size: 48, color: theme.colorScheme.outline),
             const SizedBox(height: 16),
             Text(
               '选择文件预览内容',
@@ -193,9 +186,7 @@ class _VirtualFileTreePageState extends ConsumerState<VirtualFileTreePage>
     }
 
     if (_isLoadingContent) {
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
+      return const Center(child: CircularProgressIndicator());
     }
 
     if (_fileContent == null) {
@@ -203,11 +194,7 @@ class _VirtualFileTreePageState extends ConsumerState<VirtualFileTreePage>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              LucideIcons.fileX,
-              size: 48,
-              color: theme.colorScheme.error,
-            ),
+            Icon(LucideIcons.fileX, size: 48, color: theme.colorScheme.error),
             const SizedBox(height: 16),
             Text(
               '无法加载文件内容',
@@ -224,9 +211,7 @@ class _VirtualFileTreePageState extends ConsumerState<VirtualFileTreePage>
       padding: const EdgeInsets.all(16),
       child: SelectableText(
         _fileContent!,
-        style: theme.textTheme.bodySmall?.copyWith(
-          fontFamily: 'monospace',
-        ),
+        style: theme.textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
       ),
     );
   }

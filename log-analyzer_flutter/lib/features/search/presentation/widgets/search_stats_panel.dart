@@ -34,15 +34,13 @@ class SearchStatsPanel extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: const BoxDecoration(
         color: AppColors.bgCard,
-        border: Border(
-          top: BorderSide(color: AppColors.border, width: 1),
-        ),
+        border: Border(top: BorderSide(color: AppColors.border, width: 1)),
       ),
       child: isLoading
           ? _buildLoading()
           : stats != null
-              ? _buildStats(stats)
-              : const SizedBox.shrink(),
+          ? _buildStats(stats)
+          : const SizedBox.shrink(),
     );
   }
 
@@ -58,10 +56,7 @@ class SearchStatsPanel extends StatelessWidget {
         SizedBox(width: 12),
         Text(
           '搜索中...',
-          style: TextStyle(
-            color: AppColors.textSecondary,
-            fontSize: 14,
-          ),
+          style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
         ),
       ],
     );
@@ -72,9 +67,7 @@ class SearchStatsPanel extends StatelessWidget {
     return Row(
       children: [
         // 总体统计
-        Expanded(
-          child: _buildSummaryText(summary),
-        ),
+        Expanded(child: _buildSummaryText(summary)),
         // 导出按钮
         if (onExport != null)
           TextButton.icon(
@@ -100,19 +93,10 @@ class SearchStatsPanel extends StatelessWidget {
       spacing: 16,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        _buildStatItem(
-          '总计',
-          '${summary.totalCount} 条',
-          AppColors.primary,
-        ),
-        _buildStatItem(
-          '耗时',
-          duration,
-          AppColors.textSecondary,
-        ),
+        _buildStatItem('总计', '${summary.totalCount} 条', AppColors.primary),
+        _buildStatItem('耗时', duration, AppColors.textSecondary),
         // 关键词统计
-        ...summary.keywordStats.take(3).map((stat) =>
-            _buildKeywordStat(stat)),
+        ...summary.keywordStats.take(3).map((stat) => _buildKeywordStat(stat)),
         if (summary.keywordStats.length > 3)
           _buildMoreIndicator(summary.keywordStats.length - 3),
       ],
@@ -126,10 +110,7 @@ class SearchStatsPanel extends StatelessWidget {
       children: [
         Text(
           '$label: ',
-          style: const TextStyle(
-            color: AppColors.textMuted,
-            fontSize: 13,
-          ),
+          style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
         ),
         Text(
           value,
@@ -152,10 +133,7 @@ class SearchStatsPanel extends StatelessWidget {
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(
-          color: color.withValues(alpha: 0.3),
-          width: 1,
-        ),
+        border: Border.all(color: color.withValues(alpha: 0.3), width: 1),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

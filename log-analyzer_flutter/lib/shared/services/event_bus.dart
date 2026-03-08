@@ -11,7 +11,6 @@ typedef EventHandler<T> = Future<void> Function(T data);
 /// 对应 React 版本的 EventBus.ts
 /// 提供事件验证、幂等性保证、事件分发功能
 class EventBus {
-
   /// 已处理的事件记录（幂等性检查）
   final Map<String, ProcessedEvent> _processedEvents = {};
 

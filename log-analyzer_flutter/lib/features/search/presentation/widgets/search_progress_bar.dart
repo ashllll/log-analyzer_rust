@@ -52,9 +52,10 @@ class _SearchProgressBarState extends State<SearchProgressBar>
       duration: const Duration(milliseconds: 300),
       vsync: this,
     );
-    _fadeAnimation = Tween<double>(begin: 1.0, end: 0.0).animate(
-      CurvedAnimation(parent: _fadeController, curve: Curves.easeOut),
-    );
+    _fadeAnimation = Tween<double>(
+      begin: 1.0,
+      end: 0.0,
+    ).animate(CurvedAnimation(parent: _fadeController, curve: Curves.easeOut));
   }
 
   @override
@@ -97,9 +98,7 @@ class _SearchProgressBarState extends State<SearchProgressBar>
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: const BoxDecoration(
           color: AppColors.bgCard,
-          border: Border(
-            bottom: BorderSide(color: AppColors.border, width: 1),
-          ),
+          border: Border(bottom: BorderSide(color: AppColors.border, width: 1)),
         ),
         child: Row(
           children: [
@@ -135,8 +134,8 @@ class _SearchProgressBarState extends State<SearchProgressBar>
                         _showCompleted
                             ? AppColors.success
                             : (widget.isCompleted
-                                ? AppColors.success
-                                : AppColors.primary),
+                                  ? AppColors.success
+                                  : AppColors.primary),
                       ),
                       minHeight: 4,
                     ),
@@ -156,7 +155,9 @@ class _SearchProgressBarState extends State<SearchProgressBar>
               ),
             ),
             // 取消按钮
-            if (widget.onCancel != null && !widget.isCompleted && !_showCompleted)
+            if (widget.onCancel != null &&
+                !widget.isCompleted &&
+                !_showCompleted)
               Padding(
                 padding: const EdgeInsets.only(left: 12),
                 child: IconButton(

@@ -14,14 +14,14 @@ import 'package:flutter/material.dart';
 /// - border: Color(0xFFE4E4E7) -> dividerColor
 ThemeData lightTheme() {
   const colorScheme = ColorScheme.light(
-    primary: Color(0xFF2563EB),      // primary (blue-600)
-    secondary: Color(0xFF10B981),    // green-500
-    error: Color(0xFFEF4444),        // red-500
-    surface: Color(0xFFFFFFFF),      // bg-card (white)
+    primary: Color(0xFF2563EB), // primary (blue-600)
+    secondary: Color(0xFF10B981), // green-500
+    error: Color(0xFFEF4444), // red-500
+    surface: Color(0xFFFFFFFF), // bg-card (white)
     onPrimary: Colors.white,
     onSecondary: Colors.white,
     onError: Colors.white,
-    onSurface: Color(0xFF18181B),    // text-primary (zinc-900)
+    onSurface: Color(0xFF18181B), // text-primary (zinc-900)
   );
 
   return ThemeData.light().copyWith(
@@ -39,7 +39,7 @@ ThemeData lightTheme() {
       elevation: 0,
       centerTitle: false,
       titleTextStyle: TextStyle(
-        color: Color(0xFF18181B),    // text-primary
+        color: Color(0xFF18181B), // text-primary
         fontSize: 18,
         fontWeight: FontWeight.w600,
       ),
@@ -58,7 +58,7 @@ ThemeData lightTheme() {
     // 输入框主题
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: const Color(0xFFF4F4F5),  // bg-input
+      fillColor: const Color(0xFFF4F4F5), // bg-input
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
         borderSide: const BorderSide(color: Color(0xFFE4E4E7)),
@@ -80,9 +80,7 @@ ThemeData lightTheme() {
         backgroundColor: const Color(0xFF2563EB),
         foregroundColor: Colors.white,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
     ),
 
@@ -91,9 +89,7 @@ ThemeData lightTheme() {
         foregroundColor: const Color(0xFF18181B),
         side: const BorderSide(color: Color(0xFFE4E4E7)),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
     ),
 
@@ -119,14 +115,8 @@ ThemeData lightTheme() {
         fontSize: 24,
         fontWeight: FontWeight.w600,
       ),
-      bodyLarge: TextStyle(
-        color: Color(0xFF52525B),
-        fontSize: 16,
-      ),
-      bodyMedium: TextStyle(
-        color: Color(0xFF52525B),
-        fontSize: 14,
-      ),
+      bodyLarge: TextStyle(color: Color(0xFF52525B), fontSize: 16),
+      bodyMedium: TextStyle(color: Color(0xFF52525B), fontSize: 14),
       labelLarge: TextStyle(
         color: Color(0xFF18181B),
         fontSize: 14,
@@ -135,10 +125,7 @@ ThemeData lightTheme() {
     ),
 
     // Icon 主题
-    iconTheme: const IconThemeData(
-      color: Color(0xFF52525B),
-      size: 20,
-    ),
+    iconTheme: const IconThemeData(color: Color(0xFF52525B), size: 20),
 
     // 对话框主题
     dialogTheme: const DialogThemeData(
@@ -153,9 +140,7 @@ ThemeData lightTheme() {
     snackBarTheme: SnackBarThemeData(
       backgroundColor: const Color(0xFF27272A),
       contentTextStyle: const TextStyle(color: Color(0xFFFAFAFA)),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       behavior: SnackBarBehavior.floating,
     ),
 
@@ -189,14 +174,14 @@ ThemeData lightTheme() {
 /// - border: Color(0xFF3F3F46) -> dividerColor
 ThemeData darkTheme() {
   const colorScheme = ColorScheme.dark(
-    primary: Color(0xFF2563EB),      // primary (blue-600)
-    secondary: Color(0xFF10B981),    // green-500
-    error: Color(0xFFEF4444),        // red-500
-    surface: Color(0xFF27272A),      // bg-card (zinc-800)
+    primary: Color(0xFF2563EB), // primary (blue-600)
+    secondary: Color(0xFF10B981), // green-500
+    error: Color(0xFFEF4444), // red-500
+    surface: Color(0xFF27272A), // bg-card (zinc-800)
     onPrimary: Colors.white,
     onSecondary: Colors.white,
     onError: Colors.white,
-    onSurface: Color(0xFFA1A1AA),    // text-muted (zinc-400)
+    onSurface: Color(0xFFA1A1AA), // text-muted (zinc-400)
   );
 
   return ThemeData.dark().copyWith(
@@ -214,7 +199,7 @@ ThemeData darkTheme() {
       elevation: 0,
       centerTitle: false,
       titleTextStyle: TextStyle(
-        color: Color(0xFFFAFAFA),    // text-primary
+        color: Color(0xFFFAFAFA), // text-primary
         fontSize: 18,
         fontWeight: FontWeight.w600,
       ),
@@ -232,7 +217,7 @@ ThemeData darkTheme() {
     // 输入框主题
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: const Color(0xFF18181B),  // bg-input
+      fillColor: const Color(0xFF18181B), // bg-input
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
         borderSide: const BorderSide(color: Color(0xFF3F3F46)),
@@ -254,9 +239,7 @@ ThemeData darkTheme() {
         backgroundColor: const Color(0xFF2563EB),
         foregroundColor: Colors.white,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
     ),
 
@@ -265,9 +248,7 @@ ThemeData darkTheme() {
         foregroundColor: const Color(0xFFFAFAFA),
         side: const BorderSide(color: Color(0xFF3F3F46)),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
     ),
 
@@ -293,14 +274,8 @@ ThemeData darkTheme() {
         fontSize: 24,
         fontWeight: FontWeight.w600,
       ),
-      bodyLarge: TextStyle(
-        color: Color(0xFFA1A1AA),
-        fontSize: 16,
-      ),
-      bodyMedium: TextStyle(
-        color: Color(0xFFA1A1AA),
-        fontSize: 14,
-      ),
+      bodyLarge: TextStyle(color: Color(0xFFA1A1AA), fontSize: 16),
+      bodyMedium: TextStyle(color: Color(0xFFA1A1AA), fontSize: 14),
       labelLarge: TextStyle(
         color: Color(0xFFFAFAFA),
         fontSize: 14,
@@ -309,10 +284,7 @@ ThemeData darkTheme() {
     ),
 
     // Icon 主题
-    iconTheme: const IconThemeData(
-      color: Color(0xFFA1A1AA),
-      size: 20,
-    ),
+    iconTheme: const IconThemeData(color: Color(0xFFA1A1AA), size: 20),
 
     // 对话框主题
     dialogTheme: const DialogThemeData(
@@ -326,9 +298,7 @@ ThemeData darkTheme() {
     snackBarTheme: SnackBarThemeData(
       backgroundColor: const Color(0xFF27272A),
       contentTextStyle: const TextStyle(color: Color(0xFFFAFAFA)),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       behavior: SnackBarBehavior.floating,
     ),
 

@@ -243,7 +243,8 @@ class MockBridgeService {
 
   /// 模拟获取虚拟文件树
   Future<List<MockVirtualTreeNode>> getVirtualFileTree(
-      String workspaceId) async {
+    String workspaceId,
+  ) async {
     if (_treeError != null) {
       throw _treeError!;
     }
@@ -283,16 +284,12 @@ class MockBridgeService {
   }
 
   /// 模拟获取搜索历史
-  List<MockSearchHistoryItem> getSearchHistory({
-    required String workspaceId,
-  }) {
+  List<MockSearchHistoryItem> getSearchHistory({required String workspaceId}) {
     if (_historyError != null) {
       throw _historyError!;
     }
 
-    return _searchHistory
-        .where((h) => h.workspaceId == workspaceId)
-        .toList();
+    return _searchHistory.where((h) => h.workspaceId == workspaceId).toList();
   }
 
   /// 模拟添加搜索历史
@@ -305,12 +302,14 @@ class MockBridgeService {
       throw _historyError!;
     }
 
-    _searchHistory.add(MockSearchHistoryItem(
-      query: query,
-      workspaceId: workspaceId,
-      resultCount: resultCount,
-      searchedAt: DateTime.now().toIso8601String(),
-    ));
+    _searchHistory.add(
+      MockSearchHistoryItem(
+        query: query,
+        workspaceId: workspaceId,
+        resultCount: resultCount,
+        searchedAt: DateTime.now().toIso8601String(),
+      ),
+    );
   }
 
   /// 模拟删除搜索历史
@@ -323,7 +322,8 @@ class MockBridgeService {
     }
 
     _searchHistory.removeWhere(
-        (h) => h.query == query && h.workspaceId == workspaceId);
+      (h) => h.query == query && h.workspaceId == workspaceId,
+    );
   }
 
   /// 模拟批量删除搜索历史
@@ -336,7 +336,8 @@ class MockBridgeService {
     }
 
     _searchHistory.removeWhere(
-        (h) => queries.contains(h.query) && h.workspaceId == workspaceId);
+      (h) => queries.contains(h.query) && h.workspaceId == workspaceId,
+    );
   }
 
   /// 模拟清空搜索历史

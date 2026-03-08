@@ -15,7 +15,12 @@ class ErrorBoundary extends ConsumerStatefulWidget {
   final void Function(Object error, StackTrace stackTrace)? onError;
 
   /// 自定义错误界面构建器
-  final Widget Function(BuildContext context, Object error, VoidCallback? retry)? errorBuilder;
+  final Widget Function(
+    BuildContext context,
+    Object error,
+    VoidCallback? retry,
+  )?
+  errorBuilder;
 
   const ErrorBoundary({
     super.key,
@@ -65,11 +70,7 @@ class _ErrorBoundaryState extends ConsumerState<ErrorBoundary> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             // 错误图标
-            Icon(
-              Icons.error_outline,
-              size: 64,
-              color: theme.colorScheme.error,
-            ),
+            Icon(Icons.error_outline, size: 64, color: theme.colorScheme.error),
             const SizedBox(height: 16),
 
             // 错误标题
@@ -146,7 +147,9 @@ class _ErrorBoundaryState extends ConsumerState<ErrorBoundary> {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
@@ -170,9 +173,9 @@ class _ErrorBoundaryState extends ConsumerState<ErrorBoundary> {
             onPressed: () {
               Navigator.pop(context);
               // TODO: 实现错误上报
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('感谢您的反馈')),
-              );
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('感谢您的反馈')));
             },
             child: const Text('上报'),
           ),
@@ -204,7 +207,8 @@ class AsyncErrorBoundary extends ConsumerWidget {
   final Widget Function(BuildContext context) builder;
 
   /// 错误界面构建器
-  final Widget Function(BuildContext context, Object error, VoidCallback retry)? errorBuilder;
+  final Widget Function(BuildContext context, Object error, VoidCallback retry)?
+  errorBuilder;
 
   /// 加载中界面构建器
   final Widget Function(BuildContext context)? loadingBuilder;
@@ -221,17 +225,18 @@ class AsyncErrorBoundary extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return asyncValue.when(
       data: (_) => builder(context),
-      loading: () => loadingBuilder?.call(context) ?? _buildDefaultLoading(context),
-      error: (error, stack) => errorBuilder?.call(context, error, () {
-        // 触发重试 - 通过 key 强制重建
-      }) ?? _buildDefaultError(context, error),
+      loading: () =>
+          loadingBuilder?.call(context) ?? _buildDefaultLoading(context),
+      error: (error, stack) =>
+          errorBuilder?.call(context, error, () {
+            // 触发重试 - 通过 key 强制重建
+          }) ??
+          _buildDefaultError(context, error),
     );
   }
 
   Widget _buildDefaultLoading(BuildContext context) {
-    return const Center(
-      child: CircularProgressIndicator(),
-    );
+    return const Center(child: CircularProgressIndicator());
   }
 
   Widget _buildDefaultError(BuildContext context, Object error) {
@@ -243,11 +248,7 @@ class AsyncErrorBoundary extends ConsumerWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.error_outline,
-              size: 64,
-              color: theme.colorScheme.error,
-            ),
+            Icon(Icons.error_outline, size: 64, color: theme.colorScheme.error),
             const SizedBox(height: 16),
             Text(
               error.toString(),

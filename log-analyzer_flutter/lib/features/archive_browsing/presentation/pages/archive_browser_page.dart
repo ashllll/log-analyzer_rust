@@ -12,10 +12,7 @@ import '../widgets/archive_search_bar.dart';
 class ArchiveBrowserPage extends ConsumerStatefulWidget {
   final String archivePath;
 
-  const ArchiveBrowserPage({
-    super.key,
-    required this.archivePath,
-  });
+  const ArchiveBrowserPage({super.key, required this.archivePath});
 
   @override
   ConsumerState<ArchiveBrowserPage> createState() => _ArchiveBrowserPageState();
@@ -168,15 +165,17 @@ class _ArchiveBrowserPageState extends ConsumerState<ArchiveBrowserPage> {
         // 递归过滤子目录
         final filteredChildren = _filterNodes(node.children, keyword);
         if (filteredChildren.isNotEmpty) {
-          result.add(ArchiveNode(
-            name: node.name,
-            path: node.path,
-            isDirectory: node.isDirectory,
-            size: node.size,
-            compressedSize: node.compressedSize,
-            children: filteredChildren,
-            isExpanded: true,
-          ));
+          result.add(
+            ArchiveNode(
+              name: node.name,
+              path: node.path,
+              isDirectory: node.isDirectory,
+              size: node.size,
+              compressedSize: node.compressedSize,
+              children: filteredChildren,
+              isExpanded: true,
+            ),
+          );
         }
       }
     }

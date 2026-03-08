@@ -50,9 +50,8 @@ abstract class Workspace with _$Workspace {
 /// 工作区状态数据
 @freezed
 abstract class WorkspaceStatusData with _$WorkspaceStatusData {
-  const factory WorkspaceStatusData({
-    required String value,
-  }) = _WorkspaceStatusData;
+  const factory WorkspaceStatusData({required String value}) =
+      _WorkspaceStatusData;
 
   factory WorkspaceStatusData.fromJson(Map<String, dynamic> json) =>
       _$WorkspaceStatusDataFromJson(json);
@@ -102,9 +101,7 @@ abstract class TaskInfo with _$TaskInfo {
 /// 任务状态数据
 @freezed
 abstract class TaskStatusData with _$TaskStatusData {
-  const factory TaskStatusData({
-    required String value,
-  }) = _TaskStatusData;
+  const factory TaskStatusData({required String value}) = _TaskStatusData;
 
   factory TaskStatusData.fromJson(Map<String, dynamic> json) =>
       _$TaskStatusDataFromJson(json);
@@ -144,10 +141,7 @@ abstract class FilterOptions with _$FilterOptions {
 /// 时间范围
 @freezed
 abstract class TimeRange with _$TimeRange {
-  const factory TimeRange({
-    String? start,
-    String? end,
-  }) = _TimeRange;
+  const factory TimeRange({String? start, String? end}) = _TimeRange;
 
   factory TimeRange.fromJson(Map<String, dynamic> json) =>
       _$TimeRangeFromJson(json);
@@ -160,11 +154,14 @@ abstract class TimeRange with _$TimeRange {
 abstract class FileFilterConfig with _$FileFilterConfig {
   const factory FileFilterConfig({
     required bool enabled,
-    @JsonKey(name: 'binary_detection_enabled') required bool binaryDetectionEnabled,
+    @JsonKey(name: 'binary_detection_enabled')
+    required bool binaryDetectionEnabled,
     required FilterModeData mode,
     @JsonKey(name: 'filename_patterns') required List<String> filenamePatterns,
-    @JsonKey(name: 'allowed_extensions') required List<String> allowedExtensions,
-    @JsonKey(name: 'forbidden_extensions') required List<String> forbiddenExtensions,
+    @JsonKey(name: 'allowed_extensions')
+    required List<String> allowedExtensions,
+    @JsonKey(name: 'forbidden_extensions')
+    required List<String> forbiddenExtensions,
   }) = _FileFilterConfig;
 
   factory FileFilterConfig.fromJson(Map<String, dynamic> json) =>
@@ -174,9 +171,7 @@ abstract class FileFilterConfig with _$FileFilterConfig {
 /// 过滤器模式数据
 @freezed
 abstract class FilterModeData with _$FilterModeData {
-  const factory FilterModeData({
-    required String value,
-  }) = _FilterModeData;
+  const factory FilterModeData({required String value}) = _FilterModeData;
 
   factory FilterModeData.fromJson(Map<String, dynamic> json) =>
       _$FilterModeDataFromJson(json);

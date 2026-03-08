@@ -164,8 +164,7 @@ class _RegexInputFieldState extends State<RegexInputField> {
           onSubmitted: (_) => _validateRegex(widget.controller.text),
         ),
         // 验证状态提示
-        if (_validationResult != null || _isValidating)
-          _buildValidationHint(),
+        if (_validationResult != null || _isValidating) _buildValidationHint(),
       ],
     );
   }
@@ -180,21 +179,14 @@ class _RegexInputFieldState extends State<RegexInputField> {
       hintText: widget.hintText ?? '输入正则表达式，如: \\d+、[a-z]+、.*error.*',
       hintStyle: const TextStyle(color: AppColors.textMuted),
       // 前缀图标
-      prefixIcon: const Icon(
-        Icons.code,
-        size: 20,
-        color: AppColors.textMuted,
-      ),
+      prefixIcon: const Icon(Icons.code, size: 20, color: AppColors.textMuted),
       // 后缀图标 - 验证状态
       suffixIcon: _buildSuffixIcon(hasText, isValid, hasError),
       // 错误边框
       errorText: hasError ? _validationResult!.errorMessage : null,
       // 帮助文本
       helperText: hasText && isValid ? '语法有效' : null,
-      helperStyle: const TextStyle(
-        color: AppColors.success,
-        fontSize: 12,
-      ),
+      helperStyle: const TextStyle(color: AppColors.success, fontSize: 12),
       // 边框样式
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
@@ -214,10 +206,7 @@ class _RegexInputFieldState extends State<RegexInputField> {
         ),
       ),
       // 内容内边距
-      contentPadding: const EdgeInsets.symmetric(
-        horizontal: 12,
-        vertical: 12,
-      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       // 填充色
       filled: true,
       fillColor: AppColors.bgInput,
@@ -247,21 +236,13 @@ class _RegexInputFieldState extends State<RegexInputField> {
 
     if (isValid) {
       // 有效的正则
-      return const Icon(
-        Icons.check_circle,
-        color: AppColors.success,
-        size: 20,
-      );
+      return const Icon(Icons.check_circle, color: AppColors.success, size: 20);
     }
 
     if (hasError) {
       // 无效的正则
       return IconButton(
-        icon: const Icon(
-          Icons.error,
-          color: AppColors.error,
-          size: 20,
-        ),
+        icon: const Icon(Icons.error, color: AppColors.error, size: 20),
         tooltip: _validationResult!.errorMessage,
         onPressed: () {
           // 显示完整错误信息
@@ -297,10 +278,7 @@ class _RegexInputFieldState extends State<RegexInputField> {
             SizedBox(width: 8),
             Text(
               '正在验证语法...',
-              style: TextStyle(
-                color: AppColors.textMuted,
-                fontSize: 12,
-              ),
+              style: TextStyle(color: AppColors.textMuted, fontSize: 12),
             ),
           ],
         ),
@@ -337,19 +315,12 @@ class _RegexInputFieldState extends State<RegexInputField> {
       padding: const EdgeInsets.only(top: 8),
       child: Row(
         children: [
-          const Icon(
-            Icons.error_outline,
-            color: AppColors.error,
-            size: 14,
-          ),
+          const Icon(Icons.error_outline, color: AppColors.error, size: 14),
           const SizedBox(width: 6),
           Expanded(
             child: Text(
               _validationResult?.errorMessage ?? '语法错误',
-              style: const TextStyle(
-                color: AppColors.error,
-                fontSize: 12,
-              ),
+              style: const TextStyle(color: AppColors.error, fontSize: 12),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),

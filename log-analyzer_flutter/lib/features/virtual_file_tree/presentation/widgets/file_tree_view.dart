@@ -18,11 +18,7 @@ class FileTreeView extends ConsumerStatefulWidget {
   final void Function(VirtualTreeNode)? onNodeTap;
 
   /// 构造函数
-  const FileTreeView({
-    super.key,
-    required this.nodes,
-    this.onNodeTap,
-  });
+  const FileTreeView({super.key, required this.nodes, this.onNodeTap});
 
   @override
   ConsumerState<FileTreeView> createState() => _FileTreeViewState();
@@ -116,7 +112,8 @@ class _FileTreeViewState extends ConsumerState<FileTreeView> {
 
       // 左箭头：折叠当前目录
       case LogicalKeyboardKey.arrowLeft:
-        if (_focusedNodePath != null && expandedPaths.contains(_focusedNodePath)) {
+        if (_focusedNodePath != null &&
+            expandedPaths.contains(_focusedNodePath)) {
           ref.read(fileTreeUIProvider.notifier).toggleExpand(_focusedNodePath!);
           _flattenNodes();
         }
@@ -128,8 +125,12 @@ class _FileTreeViewState extends ConsumerState<FileTreeView> {
           final node = _flattenedNodes
               .where((n) => n.node.nodePath == _focusedNodePath)
               .firstOrNull;
-          if (node != null && node.node.isArchive && !expandedPaths.contains(_focusedNodePath)) {
-            ref.read(fileTreeUIProvider.notifier).toggleExpand(_focusedNodePath!);
+          if (node != null &&
+              node.node.isArchive &&
+              !expandedPaths.contains(_focusedNodePath)) {
+            ref
+                .read(fileTreeUIProvider.notifier)
+                .toggleExpand(_focusedNodePath!);
             _flattenNodes();
           }
         }
@@ -156,7 +157,10 @@ class _FileTreeViewState extends ConsumerState<FileTreeView> {
   void _moveFocus(int direction) {
     if (_flattenedNodes.isEmpty) return;
 
-    final newIndex = (_focusedIndex + direction).clamp(0, _flattenedNodes.length - 1);
+    final newIndex = (_focusedIndex + direction).clamp(
+      0,
+      _flattenedNodes.length - 1,
+    );
     if (newIndex != _focusedIndex) {
       setState(() {
         _focusedIndex = newIndex;
@@ -229,7 +233,8 @@ class _FileTreeViewState extends ConsumerState<FileTreeView> {
       child: ListView.builder(
         controller: _scrollController,
         itemCount: _flattenedNodes.length,
-        itemBuilder: (context, index) => _buildNode(context, _flattenedNodes[index], index),
+        itemBuilder: (context, index) =>
+            _buildNode(context, _flattenedNodes[index], index),
       ),
     );
   }

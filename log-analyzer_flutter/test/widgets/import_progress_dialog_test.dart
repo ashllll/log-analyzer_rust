@@ -19,13 +19,9 @@ void main() {
 
       await tester.pumpWidget(
         ProviderScope(
-          overrides: [
-            importProgressProvider.overrideWithValue(testState),
-          ],
+          overrides: [importProgressProvider.overrideWithValue(testState)],
           child: const MaterialApp(
-            home: Scaffold(
-              body: ImportProgressDialog(),
-            ),
+            home: Scaffold(body: ImportProgressDialog()),
           ),
         ),
       );
@@ -47,13 +43,9 @@ void main() {
 
       await tester.pumpWidget(
         ProviderScope(
-          overrides: [
-            importProgressProvider.overrideWithValue(testState),
-          ],
+          overrides: [importProgressProvider.overrideWithValue(testState)],
           child: const MaterialApp(
-            home: Scaffold(
-              body: ImportProgressDialog(),
-            ),
+            home: Scaffold(body: ImportProgressDialog()),
           ),
         ),
       );
@@ -73,13 +65,9 @@ void main() {
 
       await tester.pumpWidget(
         ProviderScope(
-          overrides: [
-            importProgressProvider.overrideWithValue(testState),
-          ],
+          overrides: [importProgressProvider.overrideWithValue(testState)],
           child: const MaterialApp(
-            home: Scaffold(
-              body: ImportProgressDialog(),
-            ),
+            home: Scaffold(body: ImportProgressDialog()),
           ),
         ),
       );

@@ -47,7 +47,8 @@ class ArchiveImportDialog extends ConsumerStatefulWidget {
   }
 
   @override
-  ConsumerState<ArchiveImportDialog> createState() => _ArchiveImportDialogState();
+  ConsumerState<ArchiveImportDialog> createState() =>
+      _ArchiveImportDialogState();
 }
 
 class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
@@ -82,7 +83,9 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
   Future<void> _loadArchiveContents() async {
     try {
       // 尝试获取压缩包内容（当前为模拟实现）
-      final contents = await ApiService().listArchiveContents(widget.archivePath);
+      final contents = await ApiService().listArchiveContents(
+        widget.archivePath,
+      );
       setState(() {
         _contents = contents;
         _isLoading = false;
@@ -223,10 +226,7 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
       backgroundColor: AppColors.bgCard,
       title: Row(
         children: [
-          Icon(
-            _getArchiveTypeIcon(_contents?.type),
-            color: AppColors.primary,
-          ),
+          Icon(_getArchiveTypeIcon(_contents?.type), color: AppColors.primary),
           const SizedBox(width: 8),
           Expanded(
             child: Column(
@@ -251,11 +251,7 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
           ),
         ],
       ),
-      content: SizedBox(
-        width: 500,
-        height: 400,
-        child: _buildContent(),
-      ),
+      content: SizedBox(width: 500, height: 400, child: _buildContent()),
       actions: _buildActions(),
     );
   }
@@ -283,11 +279,7 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(
-              Icons.error_outline,
-              color: AppColors.error,
-              size: 48,
-            ),
+            const Icon(Icons.error_outline, color: AppColors.error, size: 48),
             const SizedBox(height: 16),
             Text(
               '读取失败: $_error',
@@ -309,9 +301,7 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
         _buildToolbar(),
         const SizedBox(height: 8),
         // 文件列表
-        Expanded(
-          child: _buildFileList(),
-        ),
+        Expanded(child: _buildFileList()),
         const SizedBox(height: 8),
         // 底部信息
         _buildBottomInfo(),
@@ -335,9 +325,7 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
             size: 18,
           ),
           label: Text(
-            _selectedFiles.length == _contents?.entries.length
-                ? '取消全选'
-                : '全选',
+            _selectedFiles.length == _contents?.entries.length ? '取消全选' : '全选',
           ),
         ),
         const Spacer(),
@@ -371,10 +359,7 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
                     ? AppColors.primary.withValues(alpha: 0.1)
                     : null,
                 border: Border(
-                  bottom: BorderSide(
-                    color: AppColors.bgCard,
-                    width: 1,
-                  ),
+                  bottom: BorderSide(color: AppColors.bgCard, width: 1),
                 ),
               ),
               child: Row(
@@ -391,9 +376,7 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
                   const SizedBox(width: 8),
                   // 文件/文件夹图标
                   Icon(
-                    entry.isDirectory
-                        ? Icons.folder
-                        : Icons.insert_drive_file,
+                    entry.isDirectory ? Icons.folder : Icons.insert_drive_file,
                     size: 20,
                     color: entry.isDirectory
                         ? AppColors.warning
@@ -443,18 +426,12 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
       children: [
         Text(
           '已选择 ${_selectedFiles.length} / ${_contents!.entries.length} 个文件',
-          style: const TextStyle(
-            fontSize: 12,
-            color: AppColors.textSecondary,
-          ),
+          style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
         ),
         const Spacer(),
         Text(
           '预估大小: ${_formatSize(totalSize)}',
-          style: const TextStyle(
-            fontSize: 12,
-            color: AppColors.textMuted,
-          ),
+          style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
         ),
       ],
     );
@@ -466,26 +443,16 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(
-            Icons.folder_open,
-            size: 64,
-            color: AppColors.textMuted,
-          ),
+          const Icon(Icons.folder_open, size: 64, color: AppColors.textMuted),
           const SizedBox(height: 16),
           const Text(
             '压缩包为空',
-            style: TextStyle(
-              fontSize: 16,
-              color: AppColors.textSecondary,
-            ),
+            style: TextStyle(fontSize: 16, color: AppColors.textSecondary),
           ),
           const SizedBox(height: 8),
           const Text(
             '该压缩包不包含任何文件',
-            style: TextStyle(
-              fontSize: 12,
-              color: AppColors.textMuted,
-            ),
+            style: TextStyle(fontSize: 12, color: AppColors.textMuted),
           ),
         ],
       ),

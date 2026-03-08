@@ -87,9 +87,7 @@ class _MultiKeywordInputState extends ConsumerState<MultiKeywordInput> {
 
   /// 删除关键词
   void _removeKeyword(String id) {
-    widget.onTermsChanged(
-      widget.terms.where((t) => t.id != id).toList(),
-    );
+    widget.onTermsChanged(widget.terms.where((t) => t.id != id).toList());
   }
 
   /// 切换关键词启用状态
@@ -209,7 +207,9 @@ class _MultiKeywordInputState extends ConsumerState<MultiKeywordInput> {
         ),
         backgroundColor: backgroundColor,
         side: BorderSide(
-          color: term.enabled ? AppColors.primary.withOpacity(0.3) : AppColors.border,
+          color: term.enabled
+              ? AppColors.primary.withOpacity(0.3)
+              : AppColors.border,
         ),
         deleteIcon: const Icon(Icons.close, size: 16),
         deleteIconColor: AppColors.textMuted,
@@ -247,7 +247,10 @@ class _MultiKeywordInputState extends ConsumerState<MultiKeywordInput> {
           borderRadius: BorderRadius.circular(8),
           borderSide: BorderSide(color: AppColors.primary, width: 1.5),
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 10,
+        ),
         isDense: true,
       ),
       style: const TextStyle(fontSize: 14),

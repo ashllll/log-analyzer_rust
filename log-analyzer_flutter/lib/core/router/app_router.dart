@@ -23,9 +23,7 @@ final routerProvider = Provider<GoRouter>((ref) {
     debugLogDiagnostics: true,
     routes: $routes,
     // 添加 Sentry 导航观察器 - 自动记录页面导航
-    observers: [
-      SentryNavigatorObserver(),
-    ],
+    observers: [SentryNavigatorObserver()],
   );
 });
 
@@ -40,71 +38,50 @@ final routerProvider = Provider<GoRouter>((ref) {
 /// - /settings -> 设置
 /// - /performance -> 性能监控
 final $routes = [
-  GoRoute(
-    path: '/',
-    redirect: (_, __) => '/splash',
-  ),
+  GoRoute(path: '/', redirect: (_, __) => '/splash'),
   // Splash 页面 - 应用启动时显示
   GoRoute(
     path: '/splash',
     name: 'splash',
-    pageBuilder: (context, state) => MaterialPage(
-      key: state.pageKey,
-      child: const SplashPage(),
-    ),
+    pageBuilder: (context, state) =>
+        MaterialPage(key: state.pageKey, child: const SplashPage()),
   ),
-  GoRoute(
-    path: '/home',
-    name: 'home',
-    redirect: (_, __) => '/search',
-  ),
+  GoRoute(path: '/home', name: 'home', redirect: (_, __) => '/search'),
   GoRoute(
     path: '/search',
     name: 'search',
-    pageBuilder: (context, state) => MaterialPage(
-      key: state.pageKey,
-      child: const SearchPage(),
-    ),
+    pageBuilder: (context, state) =>
+        MaterialPage(key: state.pageKey, child: const SearchPage()),
   ),
   GoRoute(
     path: '/workspaces',
     name: 'workspaces',
-    pageBuilder: (context, state) => MaterialPage(
-      key: state.pageKey,
-      child: const WorkspacesPage(),
-    ),
+    pageBuilder: (context, state) =>
+        MaterialPage(key: state.pageKey, child: const WorkspacesPage()),
   ),
   GoRoute(
     path: '/keywords',
     name: 'keywords',
-    pageBuilder: (context, state) => MaterialPage(
-      key: state.pageKey,
-      child: const KeywordsPage(),
-    ),
+    pageBuilder: (context, state) =>
+        MaterialPage(key: state.pageKey, child: const KeywordsPage()),
   ),
   GoRoute(
     path: '/tasks',
     name: 'tasks',
-    pageBuilder: (context, state) => MaterialPage(
-      key: state.pageKey,
-      child: const TasksPage(),
-    ),
+    pageBuilder: (context, state) =>
+        MaterialPage(key: state.pageKey, child: const TasksPage()),
   ),
   GoRoute(
     path: '/settings',
     name: 'settings',
-    pageBuilder: (context, state) => MaterialPage(
-      key: state.pageKey,
-      child: const SettingsPage(),
-    ),
+    pageBuilder: (context, state) =>
+        MaterialPage(key: state.pageKey, child: const SettingsPage()),
   ),
   GoRoute(
     path: '/performance',
     name: 'performance',
-    pageBuilder: (context, state) => MaterialPage(
-      key: state.pageKey,
-      child: const PerformancePage(),
-    ),
+    pageBuilder: (context, state) =>
+        MaterialPage(key: state.pageKey, child: const PerformancePage()),
   ),
   // 压缩包浏览页面
   GoRoute(

@@ -194,9 +194,7 @@ class SearchHistory extends _$SearchHistory {
       }
 
       // 直接使用 FFI 生成的函数
-      final ffiHistory = ffi.getSearchHistory(
-        workspaceId: workspaceId,
-      );
+      final ffiHistory = ffi.getSearchHistory(workspaceId: workspaceId);
 
       // 转换为本地模型
       final history = ffiHistory
@@ -265,16 +263,11 @@ class SearchHistory extends _$SearchHistory {
     final previous = state.value ?? [];
 
     // 乐观更新 - 立即从列表中移除
-    state = AsyncData(
-      previous.where((h) => h.query != query).toList(),
-    );
+    state = AsyncData(previous.where((h) => h.query != query).toList());
 
     try {
       // 后端同步
-      ffi.deleteSearchHistory(
-        query: query,
-        workspaceId: workspaceId,
-      );
+      ffi.deleteSearchHistory(query: query, workspaceId: workspaceId);
       debugPrint('SearchHistoryProvider: 已删除搜索历史 "$query"');
     } catch (e) {
       debugPrint('SearchHistoryProvider: 删除搜索历史失败: $e');
@@ -298,10 +291,7 @@ class SearchHistory extends _$SearchHistory {
 
     try {
       // 后端同步
-      ffi.deleteSearchHistories(
-        queries: queries,
-        workspaceId: workspaceId,
-      );
+      ffi.deleteSearchHistories(queries: queries, workspaceId: workspaceId);
       debugPrint('SearchHistoryProvider: 已批量删除 ${queries.length} 条搜索历史');
     } catch (e) {
       debugPrint('SearchHistoryProvider: 批量删除搜索历史失败: $e');

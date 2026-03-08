@@ -43,7 +43,8 @@ class SkeletonLoading extends StatelessWidget {
     return Shimmer.fromColors(
       enabled: enabled,
       baseColor: baseColor ?? (isDark ? Colors.grey[800]! : Colors.grey[300]!),
-      highlightColor: highlightColor ?? (isDark ? Colors.grey[700]! : Colors.grey[100]!),
+      highlightColor:
+          highlightColor ?? (isDark ? Colors.grey[700]! : Colors.grey[100]!),
       child: Container(
         width: width,
         height: height ?? 16,
@@ -84,11 +85,7 @@ class SkeletonListItem extends StatelessWidget {
       child: Row(
         children: [
           // 左侧图标占位
-          const SkeletonLoading(
-            width: 40,
-            height: 40,
-            borderRadius: 8,
-          ),
+          const SkeletonLoading(width: 40, height: 40, borderRadius: 8),
           const SizedBox(width: 12),
           // 右侧内容
           Expanded(
@@ -96,17 +93,10 @@ class SkeletonListItem extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                SkeletonLoading(
-                  height: 14,
-                  borderRadius: 2,
-                ),
+                SkeletonLoading(height: 14, borderRadius: 2),
                 if (hasSubtitle) ...[
                   const SizedBox(height: 8),
-                  SkeletonLoading(
-                    width: 120,
-                    height: 12,
-                    borderRadius: 2,
-                  ),
+                  SkeletonLoading(width: 120, height: 12, borderRadius: 2),
                 ],
               ],
             ),
@@ -148,51 +138,27 @@ class SkeletonCard extends StatelessWidget {
           // 标题行
           Row(
             children: [
-              const SkeletonLoading(
-                width: 16,
-                height: 16,
-                borderRadius: 4,
-              ),
+              const SkeletonLoading(width: 16, height: 16, borderRadius: 4),
               const SizedBox(width: 8),
-              Expanded(
-                child: SkeletonLoading(
-                  height: 18,
-                  borderRadius: 4,
-                ),
-              ),
+              Expanded(child: SkeletonLoading(height: 18, borderRadius: 4)),
             ],
           ),
           const SizedBox(height: 12),
           // 副标题
           if (hasSubtitle)
-            const SkeletonLoading(
-              width: 200,
-              height: 14,
-              borderRadius: 4,
-            ),
+            const SkeletonLoading(width: 200, height: 14, borderRadius: 4),
           if (hasSubtitle) const SizedBox(height: 8),
           // 描述行
-          const SkeletonLoading(
-            height: 12,
-            borderRadius: 4,
-          ),
+          const SkeletonLoading(height: 12, borderRadius: 4),
           const Spacer(),
           // 底部操作栏
           if (hasActions)
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                const SkeletonLoading(
-                  width: 60,
-                  height: 32,
-                  borderRadius: 4,
-                ),
+                const SkeletonLoading(width: 60, height: 32, borderRadius: 4),
                 const SizedBox(width: 8),
-                const SkeletonLoading(
-                  width: 60,
-                  height: 32,
-                  borderRadius: 4,
-                ),
+                const SkeletonLoading(width: 60, height: 32, borderRadius: 4),
               ],
             ),
         ],
@@ -225,10 +191,8 @@ class SkeletonList extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListView.builder(
       itemCount: itemCount,
-      itemBuilder: (context, index) => SkeletonListItem(
-        height: itemHeight,
-        hasSubtitle: hasSubtitle,
-      ),
+      itemBuilder: (context, index) =>
+          SkeletonListItem(height: itemHeight, hasSubtitle: hasSubtitle),
     );
   }
 }
@@ -273,9 +237,7 @@ class SkeletonGrid extends StatelessWidget {
         mainAxisExtent: itemHeight,
       ),
       itemCount: itemCount,
-      itemBuilder: (context, index) => SkeletonCard(
-        height: itemHeight,
-      ),
+      itemBuilder: (context, index) => SkeletonCard(height: itemHeight),
     );
   }
 }
@@ -287,10 +249,7 @@ class SearchResultSkeleton extends StatelessWidget {
   /// 显示的项目数量
   final int itemCount;
 
-  const SearchResultSkeleton({
-    super.key,
-    this.itemCount = 10,
-  });
+  const SearchResultSkeleton({super.key, this.itemCount = 10});
 
   @override
   Widget build(BuildContext context) {
@@ -303,23 +262,13 @@ class SearchResultSkeleton extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // 行号占位
-            const SkeletonLoading(
-              width: 50,
-              height: 16,
-            ),
+            const SkeletonLoading(width: 50, height: 16),
             const SizedBox(width: 12),
             // 时间戳占位
-            const SkeletonLoading(
-              width: 80,
-              height: 16,
-            ),
+            const SkeletonLoading(width: 80, height: 16),
             const SizedBox(width: 12),
             // 日志内容占位
-            Expanded(
-              child: SkeletonLoading(
-                height: 16,
-              ),
-            ),
+            Expanded(child: SkeletonLoading(height: 16)),
           ],
         ),
       ),
@@ -334,10 +283,7 @@ class WorkspaceListSkeleton extends StatelessWidget {
   /// 显示的项目数量
   final int itemCount;
 
-  const WorkspaceListSkeleton({
-    super.key,
-    this.itemCount = 3,
-  });
+  const WorkspaceListSkeleton({super.key, this.itemCount = 3});
 
   @override
   Widget build(BuildContext context) {
@@ -346,11 +292,7 @@ class WorkspaceListSkeleton extends StatelessWidget {
       itemCount: itemCount,
       itemBuilder: (context, index) => const Padding(
         padding: EdgeInsets.only(bottom: 12),
-        child: SkeletonCard(
-          height: 140,
-          hasSubtitle: true,
-          hasActions: true,
-        ),
+        child: SkeletonCard(height: 140, hasSubtitle: true, hasActions: true),
       ),
     );
   }

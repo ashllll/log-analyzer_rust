@@ -17,11 +17,7 @@ class FileTreeSidebar extends ConsumerStatefulWidget {
   final void Function(VirtualTreeNode)? onNodeTap;
 
   /// 构造函数
-  const FileTreeSidebar({
-    super.key,
-    required this.nodes,
-    this.onNodeTap,
-  });
+  const FileTreeSidebar({super.key, required this.nodes, this.onNodeTap});
 
   @override
   ConsumerState<FileTreeSidebar> createState() => _FileTreeSidebarState();
@@ -90,10 +86,7 @@ class _FileTreeSidebarState extends ConsumerState<FileTreeSidebar> {
               // 标题栏
               _buildHeader(theme),
               // 分割线
-              Divider(
-                height: 1,
-                color: theme.colorScheme.outlineVariant,
-              ),
+              Divider(height: 1, color: theme.colorScheme.outlineVariant),
               // 文件树视图
               Expanded(
                 child: FileTreeView(
@@ -188,10 +181,7 @@ class _FileTreeSidebarState extends ConsumerState<FileTreeSidebar> {
             icon: const Icon(LucideIcons.panelLeftClose, size: 16),
             tooltip: '折叠侧边栏',
             padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(
-              minWidth: 28,
-              minHeight: 28,
-            ),
+            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
             onPressed: () {
               ref.read(fileTreeUIProvider.notifier).collapseSidebar();
             },

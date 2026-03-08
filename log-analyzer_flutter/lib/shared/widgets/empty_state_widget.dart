@@ -38,7 +38,9 @@ class EmptyStateWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Semantics(
-      label: semanticLabel ?? '空状态: $title${description != null ? ', $description' : ''}',
+      label:
+          semanticLabel ??
+          '空状态: $title${description != null ? ', $description' : ''}',
       child: Center(
         child: Padding(
           padding: const EdgeInsets.all(32.0),
@@ -46,21 +48,17 @@ class EmptyStateWidget extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               // 图标
-              Icon(
-                icon,
-                size: 64,
-                color: Colors.grey[500],
-              ),
+              Icon(icon, size: 64, color: Colors.grey[500]),
               const SizedBox(height: 16),
 
               // 标题
               Text(
                 title,
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.grey[300],
-                    ),
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey[300],
+                ),
                 textAlign: TextAlign.center,
               ),
 
@@ -70,9 +68,9 @@ class EmptyStateWidget extends StatelessWidget {
                 Text(
                   description!,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontSize: 14,
-                        color: Colors.grey[500],
-                      ),
+                    fontSize: 14,
+                    color: Colors.grey[500],
+                  ),
                   textAlign: TextAlign.center,
                 ),
               ],

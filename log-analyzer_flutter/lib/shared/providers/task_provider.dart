@@ -52,7 +52,9 @@ class TaskState extends _$TaskState {
       }
 
       final metrics = await apiService.getTaskMetrics();
-      debugPrint('TaskState: 任务指标 - 总计: ${metrics.total}, 运行中: ${metrics.running}');
+      debugPrint(
+        'TaskState: 任务指标 - 总计: ${metrics.total}, 运行中: ${metrics.running}',
+      );
     } catch (e) {
       debugPrint('TaskState: 加载任务指标失败: $e');
     }
@@ -143,7 +145,9 @@ class TaskState extends _$TaskState {
 
       // 版本号检查：跳过旧版本事件
       if (existing.version >= updated.version) {
-        debugPrint('TaskState: 跳过旧版本任务更新 ${updated.taskId}, 现有版本: ${existing.version}, 新版本: ${updated.version}');
+        debugPrint(
+          'TaskState: 跳过旧版本任务更新 ${updated.taskId}, 现有版本: ${existing.version}, 新版本: ${updated.version}',
+        );
         return;
       }
 
@@ -153,18 +157,23 @@ class TaskState extends _$TaskState {
       state = newList;
 
       // 如果任务变为完成状态，记录完成时间
-      if (existing.status.value == 'RUNNING' && updated.status.value != 'RUNNING') {
-        _completedAtCache[updated.taskId] = DateTime.now().millisecondsSinceEpoch;
+      if (existing.status.value == 'RUNNING' &&
+          updated.status.value != 'RUNNING') {
+        _completedAtCache[updated.taskId] =
+            DateTime.now().millisecondsSinceEpoch;
       }
 
-      debugPrint('TaskState: 更新任务 ${updated.taskId}, 状态: ${updated.status.value}, 进度: ${updated.progress}%');
+      debugPrint(
+        'TaskState: 更新任务 ${updated.taskId}, 状态: ${updated.status.value}, 进度: ${updated.progress}%',
+      );
     } else {
       // 任务不存在，添加新任务
       state = [...state, updated];
 
       // 如果任务已完成，记录完成时间
       if (updated.status.value != 'RUNNING') {
-        _completedAtCache[updated.taskId] = DateTime.now().millisecondsSinceEpoch;
+        _completedAtCache[updated.taskId] =
+            DateTime.now().millisecondsSinceEpoch;
       }
 
       debugPrint('TaskState: 添加新任务 ${updated.taskId}');
@@ -191,25 +200,19 @@ class TaskState extends _$TaskState {
       // 更新本地状态
       state = state.map((t) {
         if (t.taskId == taskId) {
-          return t.copyWith(
-            status: const TaskStatusData(value: 'STOPPED'),
-          );
+          return t.copyWith(status: const TaskStatusData(value: 'STOPPED'));
         }
         return t;
       }).toList();
 
-      ref.read(appStateProvider.notifier).addToast(
-            ToastType.success,
-            '任务已取消',
-          );
+      ref.read(appStateProvider.notifier).addToast(ToastType.success, '任务已取消');
 
       return true;
     } catch (e) {
       debugPrint('TaskState: 取消任务失败: $e');
-      ref.read(appStateProvider.notifier).addToast(
-            ToastType.error,
-            '取消任务失败: $e',
-          );
+      ref
+          .read(appStateProvider.notifier)
+          .addToast(ToastType.error, '取消任务失败: $e');
       return false;
     }
   }
@@ -232,10 +235,12 @@ class TaskState extends _$TaskState {
   }
 
   /// 获取运行中的任务数量
-  int get runningCount => state.where((t) => t.status.value == 'RUNNING').length;
+  int get runningCount =>
+      state.where((t) => t.status.value == 'RUNNING').length;
 
   /// 获取已完成任务数量
-  int get completedCount => state.where((t) => t.status.value == 'COMPLETED').length;
+  int get completedCount =>
+      state.where((t) => t.status.value == 'COMPLETED').length;
 
   /// 获取失败任务数量
   int get failedCount => state.where((t) => t.status.value == 'FAILED').length;
@@ -264,9 +269,4 @@ class TaskState extends _$TaskState {
 }
 
 /// 任务过滤类型
-enum TaskFilterType {
-  all,
-  running,
-  completed,
-  failed,
-}
+enum TaskFilterType { all, running, completed, failed }

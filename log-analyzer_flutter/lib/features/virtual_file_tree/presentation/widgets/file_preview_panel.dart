@@ -131,11 +131,7 @@ class _FilePreviewPanelState extends ConsumerState<FilePreviewPanel> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              LucideIcons.fileX,
-              size: 48,
-              color: theme.colorScheme.error,
-            ),
+            Icon(LucideIcons.fileX, size: 48, color: theme.colorScheme.error),
             const SizedBox(height: 16),
             Text(
               '无法加载文件内容',
@@ -169,11 +165,7 @@ class _FilePreviewPanelState extends ConsumerState<FilePreviewPanel> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            LucideIcons.fileX,
-            size: 48,
-            color: theme.colorScheme.outline,
-          ),
+          Icon(LucideIcons.fileX, size: 48, color: theme.colorScheme.outline),
           const SizedBox(height: 16),
           Text(
             '文件内容为空',

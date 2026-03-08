@@ -34,7 +34,9 @@ class ArchiveTreeView extends StatelessWidget {
           onTap: () => onSelect(node),
           child: Container(
             padding: EdgeInsets.only(left: depth * 16.0 + 8, top: 8, bottom: 8),
-            color: isSelected ? Theme.of(context).colorScheme.primaryContainer : null,
+            color: isSelected
+                ? Theme.of(context).colorScheme.primaryContainer
+                : null,
             child: Row(
               children: [
                 // 展开/折叠图标
@@ -60,7 +62,9 @@ class ArchiveTreeView extends StatelessWidget {
                   child: Text(
                     node.name,
                     style: TextStyle(
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                      fontWeight: isSelected
+                          ? FontWeight.bold
+                          : FontWeight.normal,
                     ),
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -80,7 +84,9 @@ class ArchiveTreeView extends StatelessWidget {
         ),
         // 递归渲染子节点
         if (node.isDirectory && node.isExpanded)
-          ...node.children.map((child) => _buildNode(context, child, depth + 1)),
+          ...node.children.map(
+            (child) => _buildNode(context, child, depth + 1),
+          ),
       ],
     );
   }

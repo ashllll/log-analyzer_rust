@@ -39,8 +39,8 @@ class _KeywordsPageState extends ConsumerState<KeywordsPage> {
       body: isLoading
           ? _buildLoadingState()
           : keywordGroups.isEmpty
-              ? _buildEmptyState(context)
-              : _buildKeywordList(keywordGroups),
+          ? _buildEmptyState(context)
+          : _buildKeywordList(keywordGroups),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showKeywordGroupDialog(context),
         backgroundColor: AppColors.primary,
@@ -56,10 +56,7 @@ class _KeywordsPageState extends ConsumerState<KeywordsPage> {
       elevation: 0,
       title: const Text(
         '关键词',
-        style: TextStyle(
-          fontSize: 18,
-          fontWeight: FontWeight.w600,
-        ),
+        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
       ),
       actions: [
         // 导入按钮
@@ -80,9 +77,7 @@ class _KeywordsPageState extends ConsumerState<KeywordsPage> {
 
   /// 构建加载状态
   Widget _buildLoadingState() {
-    return const Center(
-      child: CircularProgressIndicator(),
-    );
+    return const Center(child: CircularProgressIndicator());
   }
 
   /// 构建空状态
@@ -99,10 +94,7 @@ class _KeywordsPageState extends ConsumerState<KeywordsPage> {
           const SizedBox(height: 16),
           const Text(
             '暂无关键词组',
-            style: TextStyle(
-              fontSize: 16,
-              color: AppColors.textSecondary,
-            ),
+            style: TextStyle(fontSize: 16, color: AppColors.textSecondary),
           ),
           const SizedBox(height: 8),
           ElevatedButton.icon(
@@ -125,7 +117,9 @@ class _KeywordsPageState extends ConsumerState<KeywordsPage> {
       padding: const EdgeInsets.all(16),
       onReorder: (oldIndex, newIndex) {
         // 实现拖拽排序
-        ref.read(keywordStateProvider.notifier).reorderKeywordGroups(oldIndex, newIndex);
+        ref
+            .read(keywordStateProvider.notifier)
+            .reorderKeywordGroups(oldIndex, newIndex);
       },
       itemCount: groups.length,
       itemBuilder: (context, index) {
@@ -166,7 +160,9 @@ class _KeywordsPageState extends ConsumerState<KeywordsPage> {
           if (group == null) {
             ref.read(keywordStateProvider.notifier).addKeywordGroup(newGroup);
           } else {
-            ref.read(keywordStateProvider.notifier).updateKeywordGroup(newGroup);
+            ref
+                .read(keywordStateProvider.notifier)
+                .updateKeywordGroup(newGroup);
           }
         },
       ),
@@ -191,9 +187,7 @@ class _KeywordsPageState extends ConsumerState<KeywordsPage> {
               Navigator.pop(dialogContext);
               _deleteKeywordGroup(group);
             },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.error,
-            ),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
             child: const Text('删除'),
           ),
         ],
@@ -205,19 +199,15 @@ class _KeywordsPageState extends ConsumerState<KeywordsPage> {
   void _deleteKeywordGroup(KeywordGroup group) {
     // 使用本地操作方法（removeKeywordGroup）
     ref.read(keywordStateProvider.notifier).removeKeywordGroup(group.id);
-    ref.read(appStateProvider.notifier).addToast(
-          ToastType.success,
-          '关键词组已删除',
-        );
+    ref.read(appStateProvider.notifier).addToast(ToastType.success, '关键词组已删除');
   }
 
   /// 复制关键词组
   void _duplicateKeywordGroup(KeywordGroup group) {
     ref.read(keywordStateProvider.notifier).duplicateKeywordGroup(group.id);
-    ref.read(appStateProvider.notifier).addToast(
-          ToastType.success,
-          '关键词组 "${group.name}" 已复制',
-        );
+    ref
+        .read(appStateProvider.notifier)
+        .addToast(ToastType.success, '关键词组 "${group.name}" 已复制');
   }
 
   /// 导入关键词配置
@@ -237,10 +227,9 @@ class _KeywordsPageState extends ConsumerState<KeywordsPage> {
 
       final file = result.files.first;
       if (file.path == null) {
-        ref.read(appStateProvider.notifier).addToast(
-              ToastType.error,
-              '无法获取文件路径',
-            );
+        ref
+            .read(appStateProvider.notifier)
+            .addToast(ToastType.error, '无法获取文件路径');
         return;
       }
 
@@ -248,22 +237,19 @@ class _KeywordsPageState extends ConsumerState<KeywordsPage> {
       final fileContent = await _readFileContent(file.path!);
 
       // 导入关键词组
-      final count = ref.read(keywordStateProvider.notifier).importFromJson(fileContent);
+      final count = ref
+          .read(keywordStateProvider.notifier)
+          .importFromJson(fileContent);
 
-      ref.read(appStateProvider.notifier).addToast(
-            ToastType.success,
-            '成功导入 $count 个关键词组',
-          );
+      ref
+          .read(appStateProvider.notifier)
+          .addToast(ToastType.success, '成功导入 $count 个关键词组');
     } on FormatException catch (e) {
-      ref.read(appStateProvider.notifier).addToast(
-            ToastType.error,
-            '导入失败: ${e.message}',
-          );
+      ref
+          .read(appStateProvider.notifier)
+          .addToast(ToastType.error, '导入失败: ${e.message}');
     } catch (e) {
-      ref.read(appStateProvider.notifier).addToast(
-            ToastType.error,
-            '导入失败: $e',
-          );
+      ref.read(appStateProvider.notifier).addToast(ToastType.error, '导入失败: $e');
     }
   }
 
@@ -278,16 +264,17 @@ class _KeywordsPageState extends ConsumerState<KeywordsPage> {
     final groups = ref.read(keywordStateProvider);
 
     if (groups.isEmpty) {
-      ref.read(appStateProvider.notifier).addToast(
-            ToastType.warning,
-            '没有可导出的关键词组',
-          );
+      ref
+          .read(appStateProvider.notifier)
+          .addToast(ToastType.warning, '没有可导出的关键词组');
       return;
     }
 
     try {
       // 生成 JSON 内容
-      final jsonContent = ref.read(keywordStateProvider.notifier).exportToJson();
+      final jsonContent = ref
+          .read(keywordStateProvider.notifier)
+          .exportToJson();
 
       // 选择保存位置
       final outputPath = await FilePicker.platform.saveFile(
@@ -310,15 +297,11 @@ class _KeywordsPageState extends ConsumerState<KeywordsPage> {
         await file.writeAsString(jsonContent);
       }
 
-      ref.read(appStateProvider.notifier).addToast(
-            ToastType.success,
-            '成功导出 ${groups.length} 个关键词组',
-          );
+      ref
+          .read(appStateProvider.notifier)
+          .addToast(ToastType.success, '成功导出 ${groups.length} 个关键词组');
     } catch (e) {
-      ref.read(appStateProvider.notifier).addToast(
-            ToastType.error,
-            '导出失败: $e',
-          );
+      ref.read(appStateProvider.notifier).addToast(ToastType.error, '导出失败: $e');
     }
   }
 }
@@ -442,10 +425,7 @@ class _KeywordGroupCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(
-          color: color.withValues(alpha: 0.2),
-          width: 1,
-        ),
+        border: Border.all(color: color.withValues(alpha: 0.2), width: 1),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -458,8 +438,7 @@ class _KeywordGroupCard extends StatelessWidget {
                 fontSize: 11,
               ),
             ),
-          if (pattern.comment.isNotEmpty)
-            const SizedBox(width: 4),
+          if (pattern.comment.isNotEmpty) const SizedBox(width: 4),
           Text(
             pattern.regex,
             style: TextStyle(
@@ -500,9 +479,7 @@ class _KeywordGroupCard extends StatelessWidget {
       builder: (context) => Container(
         decoration: const BoxDecoration(
           color: AppColors.bgCard,
-          borderRadius: BorderRadius.vertical(
-            top: Radius.circular(16),
-          ),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
         ),
         child: SafeArea(
           child: Column(
@@ -546,15 +523,19 @@ class _KeywordGroupCard extends StatelessWidget {
 /// 关键词组对话框
 class _KeywordGroupDialog extends ConsumerStatefulWidget {
   final KeywordGroup? group;
-  final Function(String name, String color, List<KeywordPattern> patterns, bool enabled) onSave;
+  final Function(
+    String name,
+    String color,
+    List<KeywordPattern> patterns,
+    bool enabled,
+  )
+  onSave;
 
-  const _KeywordGroupDialog({
-    this.group,
-    required this.onSave,
-  });
+  const _KeywordGroupDialog({this.group, required this.onSave});
 
   @override
-  ConsumerState<_KeywordGroupDialog> createState() => _KeywordGroupDialogState();
+  ConsumerState<_KeywordGroupDialog> createState() =>
+      _KeywordGroupDialogState();
 }
 
 class _KeywordGroupDialogState extends ConsumerState<_KeywordGroupDialog> {
@@ -574,10 +555,11 @@ class _KeywordGroupDialogState extends ConsumerState<_KeywordGroupDialog> {
       _nameController.text = widget.group!.name;
       _selectedColor = widget.group!.color.value;
       _enabled = widget.group!.enabled;
-      _patterns.addAll(widget.group!.patterns.map((p) => _PatternItem(
-        regex: p.regex,
-        comment: p.comment,
-      )));
+      _patterns.addAll(
+        widget.group!.patterns.map(
+          (p) => _PatternItem(regex: p.regex, comment: p.comment),
+        ),
+      );
     }
   }
 
@@ -621,10 +603,7 @@ class _KeywordGroupDialogState extends ConsumerState<_KeywordGroupDialog> {
               // 颜色选择
               const Text(
                 '颜色',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
               ),
               const SizedBox(height: 8),
               Wrap(
@@ -654,10 +633,7 @@ class _KeywordGroupDialogState extends ConsumerState<_KeywordGroupDialog> {
               // 启用开关
               Row(
                 children: [
-                  const Text(
-                    '启用此关键词组',
-                    style: TextStyle(fontSize: 14),
-                  ),
+                  const Text('启用此关键词组', style: TextStyle(fontSize: 14)),
                   const Spacer(),
                   Switch(
                     value: _enabled,
@@ -675,10 +651,7 @@ class _KeywordGroupDialogState extends ConsumerState<_KeywordGroupDialog> {
               // 模式列表
               const Text(
                 '匹配模式',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
               ),
               const SizedBox(height: 8),
               Row(
@@ -705,10 +678,7 @@ class _KeywordGroupDialogState extends ConsumerState<_KeywordGroupDialog> {
               // 已添加的模式列表
               const Text(
                 '已添加的模式',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                ),
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
               ),
               const SizedBox(height: 8),
               Container(
@@ -751,10 +721,7 @@ class _KeywordGroupDialogState extends ConsumerState<_KeywordGroupDialog> {
           onPressed: () => Navigator.pop(context),
           child: const Text('取消'),
         ),
-        ElevatedButton(
-          onPressed: _save,
-          child: const Text('保存'),
-        ),
+        ElevatedButton(onPressed: _save, child: const Text('保存')),
       ],
     );
   }
@@ -764,10 +731,7 @@ class _KeywordGroupDialogState extends ConsumerState<_KeywordGroupDialog> {
     if (regex.isEmpty) return;
 
     setState(() {
-      _patterns.add(_PatternItem(
-        regex: regex,
-        comment: '',
-      ));
+      _patterns.add(_PatternItem(regex: regex, comment: ''));
       _patternController.clear();
     });
   }
@@ -788,10 +752,9 @@ class _KeywordGroupDialogState extends ConsumerState<_KeywordGroupDialog> {
       widget.onSave(
         name,
         _selectedColor,
-        _patterns.map((p) => KeywordPattern(
-          regex: p.regex,
-          comment: p.comment,
-        )).toList(),
+        _patterns
+            .map((p) => KeywordPattern(regex: p.regex, comment: p.comment))
+            .toList(),
         _enabled,
       );
 
@@ -805,10 +768,7 @@ class _PatternItem {
   final String regex;
   final String comment;
 
-  _PatternItem({
-    required this.regex,
-    this.comment = '',
-  });
+  _PatternItem({required this.regex, this.comment = ''});
 }
 
 /// 模式列表项
@@ -816,10 +776,7 @@ class _PatternListItem extends StatelessWidget {
   final _PatternItem pattern;
   final VoidCallback onRemove;
 
-  const _PatternListItem({
-    required this.pattern,
-    required this.onRemove,
-  });
+  const _PatternListItem({required this.pattern, required this.onRemove});
 
   @override
   Widget build(BuildContext context) {
@@ -830,10 +787,7 @@ class _PatternListItem extends StatelessWidget {
           Expanded(
             child: Text(
               pattern.regex,
-              style: const TextStyle(
-                fontSize: 13,
-                fontFamily: 'monospace',
-              ),
+              style: const TextStyle(fontSize: 13, fontFamily: 'monospace'),
             ),
           ),
           IconButton(

@@ -115,8 +115,10 @@ Plans:
 ## v1.2 UI 完善 (Phases 9-11)
 
 - [x] **Phase 9: 高级搜索 UI** - 正则表达式、多关键词组合、搜索历史界面 ✅ 2026-03-06
-- [x] **Phase 10: 虚拟文件系统 UI** - 文件树导航、目录展开折叠、文件预览 (completed 2026-03-06)
-- [x] **Phase 11: 集成与优化** - 端到端测试、性能优化、用户体验改进 (completed 2026-03-07)
+- [x] **Phase 10: 虚拟文件系统 UI** - 文件树导航、目录展开折叠、文件预览
+ (completed 2026-03-06)
+- [x] **Phase 11: 集成与优化** - 端到端测试、性能优化、用户体验改进
+ (completed 2026-03-07)
 
 ---
 
@@ -184,8 +186,9 @@ Plans:
 
 ## v1.3 功能扩展 (Phases 12-17)
 
-- [x] **Phase 12:** 多工作区标签页基础设施 (Tabs) (completed 2026-03-07)
-- [ ] **Phase 13:** 自定义过滤器后端 FFI 接口 (Filters)
+- [x] **Phase 12:** 多工作区标签页基础设施 (Tabs)
+ (completed 2026-03-07)
+- [x] **Phase 13:** 自定义过滤器后端 FFI 接口 (Filters) (completed 2026-03-08)
 - [ ] **Phase 14:** 自定义过滤器 UI (Filters)
 - [ ] **Phase 15:** 日志级别统计后端 FFI 接口 (Stats)
 - [ ] **Phase 16:** 日志级别统计 UI 面板 (Stats)
@@ -217,7 +220,10 @@ Plans:
   2. 可以编辑现有过滤器
   3. 可以删除过滤器
   4. 过滤器在工作区级别持久化存储
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+- [ ] 13-01 — 过滤器 FFI 接口实现 (FILTER-01, FILTER-02, FILTER-03, FILTER-05)
 
 ### Phase 14: 自定义过滤器 UI
 **Goal**: 用户可以通过侧边栏和对话框管理过滤器，并在搜索时快速应用
@@ -256,8 +262,8 @@ Plans:
 **Requirements**: T-04, NF-01, NF-02, NF-03
 **Success Criteria** (what must be TRUE):
   1. 所有功能端到端测试覆盖
-  2. 标签页切换 <100ms，统计加载 <500ms
-  3. 内存占用符合预期 (<50MB/标签页)
+  2. 标签页切换 <100ms，统计加载 <5003. 内存占用符合预期 (<50MB/标签ms
+  页)
   4. 与现有功能无冲突
 **Plans**: TBD
 
@@ -271,7 +277,7 @@ Phases execute in numeric order: 12 → 13 → 14 → 15 → 16 → 17
 | Phase | Plans Complete | Status | Target |
 |-------|----------------|--------|--------|
 | 12. 多工作区标签页 | 0/ | Complete    | 2026-03-07 |
-| 13. 过滤器 FFI | 0/ | Planned | TBD |
+| 13. 过滤器 FFI | 1/1 | Complete    | 2026-03-08 |
 | 14. 过滤器 UI | 0/ | Planned | TBD |
 | 15. 统计 FFI | 0/ | Planned | TBD |
 | 16. 统计 UI | 0/ | Planned | TBD |
@@ -310,5 +316,5 @@ Phases execute in numeric order: 12 → 13 → 14 → 15 → 16 → 17
 ---
 
 *Roadmap created: 2026-03-05*
-*Last updated: 2026-03-07 (v1.3 research complete)*
-*Ready for planning: Phase 12*
+*Last updated: 2026-03-08 (Phase 13 planned)*
+*Ready for planning: Phase 13*

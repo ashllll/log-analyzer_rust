@@ -7,14 +7,19 @@ part 'import_progress_provider.g.dart';
 enum ImportStatus {
   /// 空闲状态
   idle,
+
   /// 导入中
   importing,
+
   /// 已暂停
   paused,
+
   /// 已完成
   completed,
+
   /// 已取消
   cancelled,
+
   /// 失败
   failed,
 }
@@ -86,7 +91,8 @@ class ImportProgressState {
       status: status ?? this.status,
       taskId: taskId ?? this.taskId,
       startTime: startTime ?? this.startTime,
-      estimatedRemainingSeconds: estimatedRemainingSeconds ?? this.estimatedRemainingSeconds,
+      estimatedRemainingSeconds:
+          estimatedRemainingSeconds ?? this.estimatedRemainingSeconds,
       filesPerSecond: filesPerSecond ?? this.filesPerSecond,
     );
   }
@@ -126,7 +132,8 @@ class ImportProgress extends _$ImportProgress {
       if (elapsed > 0) {
         filesPerSecond = processedFiles / elapsed;
         if (filesPerSecond! > 0) {
-          estimatedRemainingSeconds = ((totalFiles - processedFiles) / filesPerSecond!).round();
+          estimatedRemainingSeconds =
+              ((totalFiles - processedFiles) / filesPerSecond!).round();
         }
       }
     }
@@ -143,10 +150,7 @@ class ImportProgress extends _$ImportProgress {
   }
 
   /// 开始导入
-  void startImport({
-    required String taskId,
-    required int totalFiles,
-  }) {
+  void startImport({required String taskId, required int totalFiles}) {
     state = ImportProgressState(
       totalFiles: totalFiles,
       processedFiles: 0,
@@ -194,9 +198,7 @@ class ImportProgress extends _$ImportProgress {
 
   /// 添加错误
   void addError(String error) {
-    state = state.copyWith(
-      errors: [...state.errors, error],
-    );
+    state = state.copyWith(errors: [...state.errors, error]);
   }
 
   /// 重置状态

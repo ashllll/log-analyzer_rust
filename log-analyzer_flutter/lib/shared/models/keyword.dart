@@ -37,9 +37,7 @@ abstract class KeywordGroup with _$KeywordGroup {
 /// 颜色键数据
 @freezed
 abstract class ColorKeyData with _$ColorKeyData {
-  const factory ColorKeyData({
-    required String value,
-  }) = _ColorKeyData;
+  const factory ColorKeyData({required String value}) = _ColorKeyData;
 
   factory ColorKeyData.fromJson(Map<String, dynamic> json) =>
       _$ColorKeyDataFromJson(json);

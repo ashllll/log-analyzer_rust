@@ -123,10 +123,7 @@ class _CustomInputState extends State<CustomInput> {
           vertical: 12,
         ),
       ),
-      style: const TextStyle(
-        color: AppColors.textPrimary,
-        fontSize: 14,
-      ),
+      style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
     );
   }
 
@@ -218,7 +215,8 @@ class _CustomSearchInputState extends State<CustomSearchInput> {
       prefixIcon: Icons.search,
       onChanged: _onChanged,
       onSubmitted: widget.onSubmitted,
-      onClear: widget.onClear ??
+      onClear:
+          widget.onClear ??
           () {
             _controller.clear();
             widget.onChanged?.call('');

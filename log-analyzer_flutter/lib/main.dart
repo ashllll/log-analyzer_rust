@@ -28,11 +28,7 @@ void main() async {
   // 使用 Sentry 初始化器包装应用启动
   // 如果 Sentry 未启用（调试模式或 DSN 未配置），则直接启动应用
   SentryInitializer.initialize(
-    runApp: () => runApp(
-      const ProviderScope(
-        child: LogAnalyzerApp(),
-      ),
-    ),
+    runApp: () => runApp(const ProviderScope(child: LogAnalyzerApp())),
   );
 }
 

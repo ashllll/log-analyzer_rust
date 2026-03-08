@@ -202,9 +202,7 @@ class _LogDetailPanelState extends State<LogDetailPanel> {
               _buildKeyboardHints(),
               const Divider(height: 1, color: AppColors.border),
               // 日志内容
-              Expanded(
-                child: _buildLogContent(),
-              ),
+              Expanded(child: _buildLogContent()),
             ],
           ),
         ),
@@ -318,10 +316,7 @@ class _LogDetailPanelState extends State<LogDetailPanel> {
         const SizedBox(width: 4),
         Text(
           action,
-          style: const TextStyle(
-            fontSize: 12,
-            color: AppColors.textMuted,
-          ),
+          style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
         ),
       ],
     );
@@ -357,10 +352,7 @@ class _LogDetailPanelState extends State<LogDetailPanel> {
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(
-          color: color.withValues(alpha: 0.3),
-          width: 1,
-        ),
+        border: Border.all(color: color.withValues(alpha: 0.3), width: 1),
       ),
       child: Text(
         level.toUpperCase(),
@@ -383,7 +375,8 @@ class _LogDetailPanelState extends State<LogDetailPanel> {
       itemExtent: 28.0, // 固定行高以提高性能
       itemBuilder: (context, index) {
         final line = _displayLines[index];
-        final isMatch = line.id == widget.entry.id ||
+        final isMatch =
+            line.id == widget.entry.id ||
             (line.matchedKeywords != null && line.matchedKeywords!.isNotEmpty);
 
         return _buildLogLine(line, isMatch, index);
@@ -405,7 +398,10 @@ class _LogDetailPanelState extends State<LogDetailPanel> {
       decoration: BoxDecoration(
         color: isMatch ? AppColors.bgHover : Colors.transparent,
         border: isMatch
-            ? Border.all(color: AppColors.primary.withValues(alpha: 0.3), width: 1)
+            ? Border.all(
+                color: AppColors.primary.withValues(alpha: 0.3),
+                width: 1,
+              )
             : null,
         borderRadius: BorderRadius.circular(4),
       ),
@@ -426,9 +422,7 @@ class _LogDetailPanelState extends State<LogDetailPanel> {
           ),
           const SizedBox(width: 12),
           // 日志内容（带关键词高亮）
-          Expanded(
-            child: _buildHighlightedContent(line),
-          ),
+          Expanded(child: _buildHighlightedContent(line)),
         ],
       ),
     );
@@ -457,10 +451,7 @@ class _LogDetailPanelState extends State<LogDetailPanel> {
     return Text.rich(
       TextSpan(
         children: spans,
-        style: const TextStyle(
-          fontFamily: 'FiraCode',
-          fontSize: 13,
-        ),
+        style: const TextStyle(fontFamily: 'FiraCode', fontSize: 13),
       ),
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
@@ -477,11 +468,13 @@ class _LogDetailPanelState extends State<LogDetailPanel> {
     for (final keyword in keywords) {
       var index = content.indexOf(keyword, 0);
       while (index != -1) {
-        matches.add(_MatchPosition(
-          keyword: keyword,
-          index: index,
-          length: keyword.length,
-        ));
+        matches.add(
+          _MatchPosition(
+            keyword: keyword,
+            index: index,
+            length: keyword.length,
+          ),
+        );
         index = content.indexOf(keyword, index + keyword.length);
       }
     }
@@ -493,45 +486,48 @@ class _LogDetailPanelState extends State<LogDetailPanel> {
     for (final match in matches) {
       // 添加普通文本
       if (match.index > currentIndex) {
-        spans.add(TextSpan(
-          text: content.substring(currentIndex, match.index),
-          style: const TextStyle(
-            fontFamily: 'FiraCode',
-            fontSize: 13,
-            color: AppColors.textSecondary,
+        spans.add(
+          TextSpan(
+            text: content.substring(currentIndex, match.index),
+            style: const TextStyle(
+              fontFamily: 'FiraCode',
+              fontSize: 13,
+              color: AppColors.textSecondary,
+            ),
           ),
-        ));
+        );
       }
 
       // 添加高亮文本
       final color = _getHighlightColor(match.keyword);
-      spans.add(TextSpan(
-        text: content.substring(
-          match.index,
-          match.index + match.length,
+      spans.add(
+        TextSpan(
+          text: content.substring(match.index, match.index + match.length),
+          style: TextStyle(
+            fontFamily: 'FiraCode',
+            fontSize: 13,
+            backgroundColor: color.withValues(alpha: 0.3),
+            color: color,
+            fontWeight: FontWeight.bold,
+          ),
         ),
-        style: TextStyle(
-          fontFamily: 'FiraCode',
-          fontSize: 13,
-          backgroundColor: color.withValues(alpha: 0.3),
-          color: color,
-          fontWeight: FontWeight.bold,
-        ),
-      ));
+      );
 
       currentIndex = match.index + match.length;
     }
 
     // 添加剩余文本
     if (currentIndex < content.length) {
-      spans.add(TextSpan(
-        text: content.substring(currentIndex),
-        style: const TextStyle(
-          fontFamily: 'FiraCode',
-          fontSize: 13,
-          color: AppColors.textSecondary,
+      spans.add(
+        TextSpan(
+          text: content.substring(currentIndex),
+          style: const TextStyle(
+            fontFamily: 'FiraCode',
+            fontSize: 13,
+            color: AppColors.textSecondary,
+          ),
         ),
-      ));
+      );
     }
 
     return spans;

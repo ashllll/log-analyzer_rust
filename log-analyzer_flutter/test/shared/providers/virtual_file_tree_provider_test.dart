@@ -316,11 +316,7 @@ void main() {
     });
 
     test('应支持从 JSON 反序列化', () {
-      final json = {
-        'content': 'test content',
-        'hash': 'abc123',
-        'size': 1024,
-      };
+      final json = {'content': 'test content', 'hash': 'abc123', 'size': 1024};
 
       final response = FileContentResponse.fromJson(json);
 

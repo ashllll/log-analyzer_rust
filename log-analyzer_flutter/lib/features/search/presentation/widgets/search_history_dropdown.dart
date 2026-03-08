@@ -49,16 +49,10 @@ class SearchHistoryDropdown extends ConsumerWidget {
     }
 
     return PopupMenuButton<_HistoryMenuValue>(
-      icon: const Icon(
-        Icons.history,
-        size: 20,
-        color: AppColors.textMuted,
-      ),
+      icon: const Icon(Icons.history, size: 20, color: AppColors.textMuted),
       tooltip: '搜索历史',
       offset: const Offset(0, 40),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       color: AppColors.bgCard,
       elevation: 8,
       constraints: const BoxConstraints(
@@ -87,10 +81,7 @@ class SearchHistoryDropdown extends ConsumerWidget {
                 const SizedBox(width: 8),
                 const Text(
                   '清空全部历史',
-                  style: TextStyle(
-                    color: AppColors.error,
-                    fontSize: 14,
-                  ),
+                  style: TextStyle(color: AppColors.error, fontSize: 14),
                 ),
               ],
             ),
@@ -125,7 +116,10 @@ class SearchHistoryDropdown extends ConsumerWidget {
                 onEnter: (_) => setInnerState(() => isHovering = true),
                 onExit: (_) => setInnerState(() => isHovering = false),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   child: Row(
                     children: [
                       // 历史图标
@@ -179,7 +173,9 @@ class SearchHistoryDropdown extends ConsumerWidget {
                               child: Icon(
                                 Icons.close,
                                 size: 16,
-                                color: isHovering ? AppColors.error : AppColors.textMuted,
+                                color: isHovering
+                                    ? AppColors.error
+                                    : AppColors.textMuted,
                               ),
                             ),
                           ),

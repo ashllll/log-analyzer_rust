@@ -58,7 +58,9 @@ class FileTreeUIState {
   }) {
     return FileTreeUIState(
       expandedPaths: expandedPaths ?? this.expandedPaths,
-      selectedPath: clearSelectedPath ? null : (selectedPath ?? this.selectedPath),
+      selectedPath: clearSelectedPath
+          ? null
+          : (selectedPath ?? this.selectedPath),
       selectedPaths: selectedPaths ?? this.selectedPaths,
       anchorPath: clearAnchorPath ? null : (anchorPath ?? this.anchorPath),
       sidebarWidth: sidebarWidth ?? this.sidebarWidth,
@@ -249,6 +251,7 @@ class FileTreeUIStateNotifier extends Notifier<FileTreeUIState> {
 }
 
 /// 文件树 UI 状态 Provider
-final fileTreeUIProvider = NotifierProvider<FileTreeUIStateNotifier, FileTreeUIState>(
-  FileTreeUIStateNotifier.new,
-);
+final fileTreeUIProvider =
+    NotifierProvider<FileTreeUIStateNotifier, FileTreeUIState>(
+      FileTreeUIStateNotifier.new,
+    );

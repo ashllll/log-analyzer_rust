@@ -14,11 +14,7 @@ class ImportProgressDialog extends ConsumerWidget {
   /// 对话框关闭回调
   final VoidCallback? onClose;
 
-  const ImportProgressDialog({
-    super.key,
-    this.isModal = true,
-    this.onClose,
-  });
+  const ImportProgressDialog({super.key, this.isModal = true, this.onClose});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -32,7 +28,11 @@ class ImportProgressDialog extends ConsumerWidget {
   }
 
   /// 构建模态对话框
-  Widget _buildModalDialog(BuildContext context, WidgetRef ref, ImportProgressState state) {
+  Widget _buildModalDialog(
+    BuildContext context,
+    WidgetRef ref,
+    ImportProgressState state,
+  ) {
     return AlertDialog(
       backgroundColor: AppColors.bgCard,
       title: Row(
@@ -42,10 +42,7 @@ class ImportProgressDialog extends ConsumerWidget {
           Text(_getTitle(state.status)),
         ],
       ),
-      content: SizedBox(
-        width: 400,
-        child: _buildContent(ref, state),
-      ),
+      content: SizedBox(width: 400, child: _buildContent(ref, state)),
       actions: _buildActions(context, ref, state),
     );
   }
@@ -113,7 +110,8 @@ class ImportProgressDialog extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // 圆形进度指示器 (仅在导入中显示)
-        if (state.status == ImportStatus.importing || state.status == ImportStatus.paused)
+        if (state.status == ImportStatus.importing ||
+            state.status == ImportStatus.paused)
           Center(
             child: Stack(
               alignment: Alignment.center,
@@ -229,17 +227,11 @@ class ImportProgressDialog extends ConsumerWidget {
         const SizedBox(height: 4),
         Text(
           value,
-          style: const TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w500,
-          ),
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
         ),
         Text(
           label,
-          style: const TextStyle(
-            fontSize: 10,
-            color: AppColors.textMuted,
-          ),
+          style: const TextStyle(fontSize: 10, color: AppColors.textMuted),
         ),
       ],
     );
@@ -252,20 +244,14 @@ class ImportProgressDialog extends ConsumerWidget {
       decoration: BoxDecoration(
         color: AppColors.error.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(
-          color: AppColors.error.withValues(alpha: 0.3),
-        ),
+        border: Border.all(color: AppColors.error.withValues(alpha: 0.3)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(
-                Icons.error_outline,
-                size: 16,
-                color: AppColors.error,
-              ),
+              Icon(Icons.error_outline, size: 16, color: AppColors.error),
               const SizedBox(width: 4),
               Text(
                 '错误 (${state.errors.length})',
@@ -278,29 +264,28 @@ class ImportProgressDialog extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: 4),
-          ...state.errors.take(5).map(
-            (error) => Padding(
-              padding: const EdgeInsets.only(left: 20, top: 2),
-              child: Text(
-                error,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: AppColors.textSecondary,
+          ...state.errors
+              .take(5)
+              .map(
+                (error) => Padding(
+                  padding: const EdgeInsets.only(left: 20, top: 2),
+                  child: Text(
+                    error,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: AppColors.textSecondary,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
               ),
-            ),
-          ),
           if (state.errors.length > 5)
             Padding(
               padding: const EdgeInsets.only(left: 20, top: 2),
               child: Text(
                 '... 还有 ${state.errors.length - 5} 个错误',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: AppColors.textMuted,
-                ),
+                style: TextStyle(fontSize: 11, color: AppColors.textMuted),
               ),
             ),
         ],
@@ -309,7 +294,11 @@ class ImportProgressDialog extends ConsumerWidget {
   }
 
   /// 构建操作按钮
-  List<Widget> _buildActions(BuildContext context, WidgetRef ref, ImportProgressState state) {
+  List<Widget> _buildActions(
+    BuildContext context,
+    WidgetRef ref,
+    ImportProgressState state,
+  ) {
     final actions = <Widget>[];
 
     switch (state.status) {
@@ -523,12 +512,7 @@ class ImportSummaryDialog extends StatelessWidget {
           ],
         ),
       ),
-      actions: [
-        ElevatedButton(
-          onPressed: onClose,
-          child: const Text('确定'),
-        ),
-      ],
+      actions: [ElevatedButton(onPressed: onClose, child: const Text('确定'))],
     );
   }
 
@@ -572,10 +556,7 @@ class ImportSummaryDialog extends StatelessWidget {
         ),
         Text(
           label,
-          style: const TextStyle(
-            fontSize: 12,
-            color: AppColors.textMuted,
-          ),
+          style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
         ),
       ],
     );
@@ -591,11 +572,7 @@ class ImportSummaryDialog extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(
-            Icons.timer,
-            size: 16,
-            color: AppColors.textMuted,
-          ),
+          const Icon(Icons.timer, size: 16, color: AppColors.textMuted),
           const SizedBox(width: 4),
           Text(
             '耗时: ${_formatDuration(durationSeconds)}',

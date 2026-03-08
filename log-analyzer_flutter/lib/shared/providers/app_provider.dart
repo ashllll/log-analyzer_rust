@@ -128,10 +128,7 @@ class AppState extends _$AppState {
   ///
   /// 用于刷新所有数据
   Future<void> reinitialize() async {
-    state = state.copyWith(
-      isInitialized: false,
-      initializationError: null,
-    );
+    state = state.copyWith(isInitialized: false, initializationError: null);
     await _initializeApp();
   }
 }

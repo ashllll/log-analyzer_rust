@@ -83,16 +83,11 @@ class SearchModeSelector extends StatelessWidget {
       // 边框
       side: const BorderSide(color: AppColors.border, width: 1),
       // 形状
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       // 内边距
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       // 文字样式
-      textStyle: const TextStyle(
-        fontSize: 13,
-        fontWeight: FontWeight.w500,
-      ),
+      textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
     );
   }
 }

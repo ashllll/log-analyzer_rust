@@ -54,10 +54,9 @@ class KeywordState extends _$KeywordState {
       debugPrint('KeywordState: 已加载 ${groups.length} 个关键词组');
     } catch (e) {
       debugPrint('KeywordState: 加载关键词组失败: $e');
-      ref.read(appStateProvider.notifier).addToast(
-            ToastType.error,
-            '加载关键词组失败: $e',
-          );
+      ref
+          .read(appStateProvider.notifier)
+          .addToast(ToastType.error, '加载关键词组失败: $e');
     }
   }
 
@@ -91,19 +90,17 @@ class KeywordState extends _$KeywordState {
         // 重新加载关键词组列表
         await loadKeywordGroups();
 
-        ref.read(appStateProvider.notifier).addToast(
-              ToastType.success,
-              '关键词组 "$name" 创建成功',
-            );
+        ref
+            .read(appStateProvider.notifier)
+            .addToast(ToastType.success, '关键词组 "$name" 创建成功');
       }
 
       return success ? name : null;
     } catch (e) {
       debugPrint('KeywordState: 创建关键词组失败: $e');
-      ref.read(appStateProvider.notifier).addToast(
-            ToastType.error,
-            '创建关键词组失败: $e',
-          );
+      ref
+          .read(appStateProvider.notifier)
+          .addToast(ToastType.error, '创建关键词组失败: $e');
       return null;
     }
   }
@@ -136,7 +133,8 @@ class KeywordState extends _$KeywordState {
       final groupData = {
         'name': name ?? currentGroup.name,
         'color': color ?? currentGroup.color.value,
-        'patterns': patterns ?? currentGroup.patterns.map((p) => p.regex).toList(),
+        'patterns':
+            patterns ?? currentGroup.patterns.map((p) => p.regex).toList(),
         'enabled': enabled ?? currentGroup.enabled,
       };
 
@@ -159,19 +157,17 @@ class KeywordState extends _$KeywordState {
           return g;
         }).toList();
 
-        ref.read(appStateProvider.notifier).addToast(
-              ToastType.success,
-              '关键词组已更新',
-            );
+        ref
+            .read(appStateProvider.notifier)
+            .addToast(ToastType.success, '关键词组已更新');
       }
 
       return success;
     } catch (e) {
       debugPrint('KeywordState: 更新关键词组失败: $e');
-      ref.read(appStateProvider.notifier).addToast(
-            ToastType.error,
-            '更新关键词组失败: $e',
-          );
+      ref
+          .read(appStateProvider.notifier)
+          .addToast(ToastType.error, '更新关键词组失败: $e');
       return false;
     }
   }
@@ -192,10 +188,9 @@ class KeywordState extends _$KeywordState {
       final success = await bridge.deleteKeywordGroup(groupId);
 
       if (success) {
-        ref.read(appStateProvider.notifier).addToast(
-              ToastType.success,
-              '关键词组已删除',
-            );
+        ref
+            .read(appStateProvider.notifier)
+            .addToast(ToastType.success, '关键词组已删除');
       } else {
         // 恢复状态
         state = previousState;
@@ -204,10 +199,9 @@ class KeywordState extends _$KeywordState {
       return success;
     } catch (e) {
       debugPrint('KeywordState: 删除关键词组失败: $e');
-      ref.read(appStateProvider.notifier).addToast(
-            ToastType.error,
-            '删除关键词组失败: $e',
-          );
+      ref
+          .read(appStateProvider.notifier)
+          .addToast(ToastType.error, '删除关键词组失败: $e');
       return false;
     }
   }
@@ -221,10 +215,7 @@ class KeywordState extends _$KeywordState {
       orElse: () => throw Exception('关键词组不存在'),
     );
 
-    await updateKeywordGroupById(
-      groupId: groupId,
-      enabled: !group.enabled,
-    );
+    await updateKeywordGroupById(groupId: groupId, enabled: !group.enabled);
   }
 
   /// 添加关键词组（本地操作，不调用后端）
@@ -302,9 +293,13 @@ class KeywordState extends _$KeywordState {
           .toList();
 
       // 为导入的组分配新 ID，避免冲突
-      final newGroups = groups.map((g) => g.copyWith(
-        id: '${g.id}_${DateTime.now().millisecondsSinceEpoch}',
-      )).toList();
+      final newGroups = groups
+          .map(
+            (g) => g.copyWith(
+              id: '${g.id}_${DateTime.now().millisecondsSinceEpoch}',
+            ),
+          )
+          .toList();
 
       state = [...state, ...newGroups];
       return newGroups.length;
@@ -317,9 +312,9 @@ class KeywordState extends _$KeywordState {
   ///
   /// 将当前关键词组列表导出为 JSON 字符串
   String exportToJson() {
-    return const JsonEncoder.withIndent('  ').convert(
-      state.map((g) => g.toJson()).toList(),
-    );
+    return const JsonEncoder.withIndent(
+      '  ',
+    ).convert(state.map((g) => g.toJson()).toList());
   }
 
   /// 获取启用的关键词组
@@ -328,9 +323,7 @@ class KeywordState extends _$KeywordState {
 
   /// 获取所有启用的关键词模式（用于搜索高亮）
   List<KeywordPattern> get enabledPatterns {
-    return enabledGroups
-        .expand((g) => g.patterns)
-        .toList();
+    return enabledGroups.expand((g) => g.patterns).toList();
   }
 
   /// 根据颜色获取关键词组
@@ -351,17 +344,19 @@ class KeywordState extends _$KeywordState {
 
   /// 从 Map 解析 KeywordGroup
   KeywordGroup _parseKeywordGroup(Map<String, dynamic> data) {
-    final patterns = (data['patterns'] as List?)?.map((p) {
-      if (p is String) {
-        return KeywordPattern(regex: p, comment: '');
-      } else if (p is Map<String, dynamic>) {
-        return KeywordPattern(
-          regex: p['regex'] as String? ?? '',
-          comment: p['comment'] as String? ?? '',
-        );
-      }
-      return const KeywordPattern(regex: '', comment: '');
-    }).toList() ?? <KeywordPattern>[];
+    final patterns =
+        (data['patterns'] as List?)?.map((p) {
+          if (p is String) {
+            return KeywordPattern(regex: p, comment: '');
+          } else if (p is Map<String, dynamic>) {
+            return KeywordPattern(
+              regex: p['regex'] as String? ?? '',
+              comment: p['comment'] as String? ?? '',
+            );
+          }
+          return const KeywordPattern(regex: '', comment: '');
+        }).toList() ??
+        <KeywordPattern>[];
 
     return KeywordGroup(
       id: data['id'] as String? ?? '',
@@ -381,9 +376,11 @@ class KeywordState extends _$KeywordState {
       final id = mapData['id'] as String? ?? '';
       final name = mapData['name'] as String? ?? '';
       final color = mapData['color'] as String? ?? 'blue';
-      final patterns = (mapData['patterns'] as List?)?.map((p) {
-        return KeywordPattern(regex: p as String, comment: '');
-      }).toList() ?? <KeywordPattern>[];
+      final patterns =
+          (mapData['patterns'] as List?)?.map((p) {
+            return KeywordPattern(regex: p as String, comment: '');
+          }).toList() ??
+          <KeywordPattern>[];
       final enabled = mapData['enabled'] as bool? ?? true;
 
       return KeywordGroup(

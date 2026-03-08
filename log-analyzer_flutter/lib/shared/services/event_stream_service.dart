@@ -50,7 +50,8 @@ class EventStreamService {
   final _searchResultsController = StreamController<List<LogEntry>>.broadcast();
 
   /// 内部流控制器 - 搜索摘要
-  final _searchSummaryController = StreamController<SearchResultSummary>.broadcast();
+  final _searchSummaryController =
+      StreamController<SearchResultSummary>.broadcast();
 
   /// 内部流控制器 - 任务更新
   final _taskUpdateController = StreamController<TaskProgress>.broadcast();
@@ -59,10 +60,12 @@ class EventStreamService {
   final _fileChangedController = StreamController<FileChangeEvent>.broadcast();
 
   /// 内部流控制器 - 工作区状态
-  final _workspaceStatusController = StreamController<WorkspaceStatusEvent>.broadcast();
+  final _workspaceStatusController =
+      StreamController<WorkspaceStatusEvent>.broadcast();
 
   /// 内部流控制器 - 连接状态
-  final _connectionStatusController = StreamController<ConnectionStatus>.broadcast();
+  final _connectionStatusController =
+      StreamController<ConnectionStatus>.broadcast();
 
   /// 内部流控制器 - 错误
   final _errorController = StreamController<EventError>.broadcast();
@@ -82,7 +85,8 @@ class EventStreamService {
   ///
   /// 对应 Rust 事件: SearchSummary
   /// 当搜索进度更新时触发
-  Stream<SearchResultSummary> get searchSummary => _searchSummaryController.stream;
+  Stream<SearchResultSummary> get searchSummary =>
+      _searchSummaryController.stream;
 
   /// 任务更新流
   ///
@@ -100,12 +104,14 @@ class EventStreamService {
   ///
   /// 对应 Rust 事件: WorkspaceStatus
   /// 当工作区状态变化时触发
-  Stream<WorkspaceStatusEvent> get workspaceStatus => _workspaceStatusController.stream;
+  Stream<WorkspaceStatusEvent> get workspaceStatus =>
+      _workspaceStatusController.stream;
 
   /// 连接状态流
   ///
   /// 当与后端的连接状态变化时触发
-  Stream<ConnectionStatus> get connectionStatus => _connectionStatusController.stream;
+  Stream<ConnectionStatus> get connectionStatus =>
+      _connectionStatusController.stream;
 
   /// 错误流
   ///
@@ -204,11 +210,13 @@ class EventStreamService {
       _handleEvent(json);
     } catch (e) {
       debugPrint('EventStreamService: 解析事件失败: $e');
-      _emitError(EventError(
-        code: 'PARSE_ERROR',
-        message: '解析事件失败: $e',
-        rawEvent: rawEvent,
-      ));
+      _emitError(
+        EventError(
+          code: 'PARSE_ERROR',
+          message: '解析事件失败: $e',
+          rawEvent: rawEvent,
+        ),
+      );
     }
   }
 
@@ -297,15 +305,19 @@ class EventStreamService {
 
   void _handleSearchStart(dynamic data) {
     final message = data is Map ? data['message'] as String? : data?.toString();
-    _emitSystemEvent(SystemEvent(
-      type: SystemEventType.info,
-      message: message ?? '搜索已开始',
-      context: 'SearchStart',
-    ));
+    _emitSystemEvent(
+      SystemEvent(
+        type: SystemEventType.info,
+        message: message ?? '搜索已开始',
+        context: 'SearchStart',
+      ),
+    );
   }
 
   void _handleSearchProgress(dynamic data) {
-    final progress = data is Map ? data['progress'] as int? : int.tryParse(data.toString());
+    final progress = data is Map
+        ? data['progress'] as int?
+        : int.tryParse(data.toString());
     if (progress != null) {
       debugPrint('EventStreamService: 搜索进度 $progress%');
     }
@@ -342,20 +354,21 @@ class EventStreamService {
   }
 
   void _handleSearchComplete(dynamic data) {
-    final count = data is Map ? data['count'] as int? : int.tryParse(data.toString());
-    _emitSystemEvent(SystemEvent(
-      type: SystemEventType.info,
-      message: '搜索完成，共 $count 条结果',
-      context: 'SearchComplete',
-    ));
+    final count = data is Map
+        ? data['count'] as int?
+        : int.tryParse(data.toString());
+    _emitSystemEvent(
+      SystemEvent(
+        type: SystemEventType.info,
+        message: '搜索完成，共 $count 条结果',
+        context: 'SearchComplete',
+      ),
+    );
   }
 
   void _handleSearchError(dynamic data) {
     final error = data is Map ? data['error'] as String? : data?.toString();
-    _emitError(EventError(
-      code: 'SEARCH_ERROR',
-      message: error ?? '搜索出错',
-    ));
+    _emitError(EventError(code: 'SEARCH_ERROR', message: error ?? '搜索出错'));
   }
 
   // ==================== 异步搜索事件处理器 ====================
@@ -388,11 +401,13 @@ class EventStreamService {
     if (data is! Map<String, dynamic>) return;
     final searchId = data['search_id'] as String?;
     final error = data['error'] as String?;
-    _emitError(EventError(
-      code: 'ASYNC_SEARCH_ERROR',
-      message: error ?? '异步搜索出错',
-      context: searchId,
-    ));
+    _emitError(
+      EventError(
+        code: 'ASYNC_SEARCH_ERROR',
+        message: error ?? '异步搜索出错',
+        context: searchId,
+      ),
+    );
   }
 
   // ==================== 任务事件处理器 ====================
@@ -413,11 +428,9 @@ class EventStreamService {
 
   void _handleImportComplete(dynamic data) {
     final taskId = data is Map ? data['task_id'] as String? : data?.toString();
-    _emitSystemEvent(SystemEvent(
-      type: SystemEventType.info,
-      message: '导入完成',
-      context: taskId,
-    ));
+    _emitSystemEvent(
+      SystemEvent(type: SystemEventType.info, message: '导入完成', context: taskId),
+    );
   }
 
   // ==================== 文件监听事件处理器 ====================
@@ -460,11 +473,13 @@ class EventStreamService {
     final error = data['error'] as String?;
     final context = data['context'] as String?;
 
-    _emitError(EventError(
-      code: 'SYSTEM_ERROR',
-      message: error ?? '系统错误',
-      context: context,
-    ));
+    _emitError(
+      EventError(
+        code: 'SYSTEM_ERROR',
+        message: error ?? '系统错误',
+        context: context,
+      ),
+    );
   }
 
   void _handleSystemWarning(dynamic data) {
@@ -473,11 +488,13 @@ class EventStreamService {
     final warning = data['warning'] as String?;
     final context = data['context'] as String?;
 
-    _emitSystemEvent(SystemEvent(
-      type: SystemEventType.warning,
-      message: warning ?? '系统警告',
-      context: context,
-    ));
+    _emitSystemEvent(
+      SystemEvent(
+        type: SystemEventType.warning,
+        message: warning ?? '系统警告',
+        context: context,
+      ),
+    );
   }
 
   void _handleSystemInfo(dynamic data) {
@@ -486,11 +503,13 @@ class EventStreamService {
     final info = data['info'] as String?;
     final context = data['context'] as String?;
 
-    _emitSystemEvent(SystemEvent(
-      type: SystemEventType.info,
-      message: info ?? '系统信息',
-      context: context,
-    ));
+    _emitSystemEvent(
+      SystemEvent(
+        type: SystemEventType.info,
+        message: info ?? '系统信息',
+        context: context,
+      ),
+    );
   }
 
   // ==================== 公开事件发射方法 ====================
@@ -555,10 +574,13 @@ class EventStreamService {
 
     try {
       // 获取任务指标
-      final metrics = await _bridgeApi!.crateFfiCommandsBridgeFfiGetTaskMetrics();
+      final metrics = await _bridgeApi!
+          .crateFfiCommandsBridgeFfiGetTaskMetrics();
       // 将指标转换为任务更新事件
       // 这里可以根据需要进一步处理
-      debugPrint('EventStreamService: 任务指标 - 总数: ${metrics.totalTasks}, 运行中: ${metrics.runningTasks}');
+      debugPrint(
+        'EventStreamService: 任务指标 - 总数: ${metrics.totalTasks}, 运行中: ${metrics.runningTasks}',
+      );
     } catch (e) {
       debugPrint('EventStreamService: 轮询任务更新失败: $e');
     }
@@ -652,7 +674,8 @@ class WorkspaceStatusEvent {
   });
 
   @override
-  String toString() => 'WorkspaceStatusEvent(workspaceId: $workspaceId, status: $status)';
+  String toString() =>
+      'WorkspaceStatusEvent(workspaceId: $workspaceId, status: $status)';
 }
 
 /// 事件错误
@@ -691,11 +714,7 @@ class SystemEvent {
   /// 上下文信息
   final String? context;
 
-  const SystemEvent({
-    required this.type,
-    required this.message,
-    this.context,
-  });
+  const SystemEvent({required this.type, required this.message, this.context});
 
   @override
   String toString() => 'SystemEvent(type: $type, message: $message)';

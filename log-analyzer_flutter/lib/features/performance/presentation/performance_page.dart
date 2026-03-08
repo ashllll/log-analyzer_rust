@@ -55,8 +55,8 @@ class _PerformancePageState extends ConsumerState<PerformancePage> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _metrics == null
-              ? _buildEmptyState()
-              : _buildMetricsContent(),
+          ? _buildEmptyState()
+          : _buildMetricsContent(),
     );
   }
 
@@ -67,10 +67,7 @@ class _PerformancePageState extends ConsumerState<PerformancePage> {
       elevation: 0,
       title: const Text(
         '性能',
-        style: TextStyle(
-          fontSize: 18,
-          fontWeight: FontWeight.w600,
-        ),
+        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
       ),
       actions: [
         // 时间范围选择器
@@ -118,18 +115,11 @@ class _PerformancePageState extends ConsumerState<PerformancePage> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.speed_outlined,
-            size: 64,
-            color: AppColors.textMuted,
-          ),
+          Icon(Icons.speed_outlined, size: 64, color: AppColors.textMuted),
           SizedBox(height: 16),
           Text(
             '暂无性能数据',
-            style: TextStyle(
-              fontSize: 16,
-              color: AppColors.textSecondary,
-            ),
+            style: TextStyle(fontSize: 16, color: AppColors.textSecondary),
           ),
         ],
       ),
@@ -241,12 +231,7 @@ class _PerformancePageState extends ConsumerState<PerformancePage> {
               ],
             ),
             const SizedBox(height: 16),
-            SizedBox(
-              height: 200,
-              child: LineChart(
-                _buildLatencyChartData(),
-              ),
-            ),
+            SizedBox(height: 200, child: LineChart(_buildLatencyChartData())),
           ],
         ),
       ),
@@ -258,17 +243,16 @@ class _PerformancePageState extends ConsumerState<PerformancePage> {
     final spots = _metrics!.latencyHistory
         .asMap()
         .entries
-        .map((entry) => FlSpot(
-              entry.key.toDouble(),
-              entry.value.toDouble(),
-            ))
+        .map((entry) => FlSpot(entry.key.toDouble(), entry.value.toDouble()))
         .toList();
 
     return LineChartData(
       gridData: FlGridData(
         show: true,
         drawVerticalLine: false,
-        horizontalInterval: spots.isEmpty ? 1 : _calculateInterval(spots.map((e) => e.y).toList()),
+        horizontalInterval: spots.isEmpty
+            ? 1
+            : _calculateInterval(spots.map((e) => e.y).toList()),
         getDrawingHorizontalLine: (value) => FlLine(
           color: AppColors.border.withValues(alpha: 0.3),
           strokeWidth: 1,
@@ -279,9 +263,7 @@ class _PerformancePageState extends ConsumerState<PerformancePage> {
         rightTitles: const AxisTitles(
           sideTitles: SideTitles(showTitles: false),
         ),
-        topTitles: const AxisTitles(
-          sideTitles: SideTitles(showTitles: false),
-        ),
+        topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
         bottomTitles: AxisTitles(
           sideTitles: SideTitles(
             showTitles: true,
@@ -318,14 +300,14 @@ class _PerformancePageState extends ConsumerState<PerformancePage> {
       ),
       borderData: FlBorderData(
         show: true,
-        border: Border.all(
-          color: AppColors.border.withValues(alpha: 0.3),
-        ),
+        border: Border.all(color: AppColors.border.withValues(alpha: 0.3)),
       ),
       minX: 0,
       maxX: (spots.length - 1).toDouble(),
       minY: spots.isEmpty ? 0 : _calculateMinY(spots.map((e) => e.y).toList()),
-      maxY: spots.isEmpty ? 100 : _calculateMaxY(spots.map((e) => e.y).toList()),
+      maxY: spots.isEmpty
+          ? 100
+          : _calculateMaxY(spots.map((e) => e.y).toList()),
       lineBarsData: [
         LineChartBarData(
           spots: spots,
@@ -336,10 +318,10 @@ class _PerformancePageState extends ConsumerState<PerformancePage> {
             show: true,
             getDotPainter: (spot, percent, barData, index) =>
                 FlDotCirclePainter(
-              radius: 3,
-              color: AppColors.primary,
-              strokeWidth: 0,
-            ),
+                  radius: 3,
+                  color: AppColors.primary,
+                  strokeWidth: 0,
+                ),
           ),
           belowBarData: BarAreaData(
             show: true,
@@ -355,10 +337,7 @@ class _PerformancePageState extends ConsumerState<PerformancePage> {
             return touchedSpots.map((spot) {
               return LineTooltipItem(
                 '${spot.y.toStringAsFixed(2)} ms',
-                const TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 12,
-                ),
+                const TextStyle(color: AppColors.textPrimary, fontSize: 12),
               );
             }).toList();
           },
@@ -391,7 +370,9 @@ class _PerformancePageState extends ConsumerState<PerformancePage> {
   /// 格式化时间显示
   String _formatTime(int index) {
     final now = DateTime.now();
-    final time = now.subtract(Duration(seconds: index * _timeRange.intervalSeconds));
+    final time = now.subtract(
+      Duration(seconds: index * _timeRange.intervalSeconds),
+    );
     final minutes = time.minute.toString().padLeft(2, '0');
     final seconds = time.second.toString().padLeft(2, '0');
     return '$minutes:$seconds';
@@ -408,11 +389,7 @@ class _PerformancePageState extends ConsumerState<PerformancePage> {
           children: [
             const Row(
               children: [
-                Icon(
-                  Icons.storage,
-                  color: AppColors.success,
-                  size: 20,
-                ),
+                Icon(Icons.storage, color: AppColors.success, size: 20),
                 SizedBox(width: 12),
                 Text(
                   '缓存指标',
@@ -504,11 +481,7 @@ class _PerformancePageState extends ConsumerState<PerformancePage> {
           children: [
             const Row(
               children: [
-                Icon(
-                  Icons.pie_chart,
-                  color: AppColors.warning,
-                  size: 20,
-                ),
+                Icon(Icons.pie_chart, color: AppColors.warning, size: 20),
                 SizedBox(width: 12),
                 Text(
                   '任务分布',
@@ -564,9 +537,10 @@ class _PerformancePageState extends ConsumerState<PerformancePage> {
                   ],
                   pieTouchData: PieTouchData(
                     enabled: true,
-                    touchCallback: (FlTouchEvent event, PieTouchResponse? response) {
-                      // 可以在这里处理点击事件
-                    },
+                    touchCallback:
+                        (FlTouchEvent event, PieTouchResponse? response) {
+                          // 可以在这里处理点击事件
+                        },
                   ),
                 ),
               ),
@@ -604,10 +578,7 @@ class _PerformancePageState extends ConsumerState<PerformancePage> {
         const SizedBox(width: 8),
         Text(
           '$label: $count',
-          style: const TextStyle(
-            fontSize: 13,
-            color: AppColors.textSecondary,
-          ),
+          style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
         ),
       ],
     );
@@ -626,11 +597,7 @@ class _PerformancePageState extends ConsumerState<PerformancePage> {
           children: [
             const Row(
               children: [
-                Icon(
-                  Icons.dataset,
-                  color: AppColors.warning,
-                  size: 20,
-                ),
+                Icon(Icons.dataset, color: AppColors.warning, size: 20),
                 SizedBox(width: 12),
                 Text(
                   '索引指标',
@@ -888,11 +855,7 @@ class _MetricCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(
-                  icon,
-                  color: color,
-                  size: 18,
-                ),
+                Icon(icon, color: color, size: 18),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -908,14 +871,14 @@ class _MetricCard extends StatelessWidget {
                     trend == TrendType.up
                         ? Icons.arrow_upward
                         : trend == TrendType.down
-                            ? Icons.arrow_downward
-                            : Icons.remove,
+                        ? Icons.arrow_downward
+                        : Icons.remove,
                     size: 14,
                     color: trend == TrendType.up
                         ? AppColors.error
                         : trend == TrendType.down
-                            ? AppColors.success
-                            : AppColors.textMuted,
+                        ? AppColors.success
+                        : AppColors.textMuted,
                   ),
                 ],
               ],
@@ -970,10 +933,7 @@ class _CacheMetricItem extends StatelessWidget {
       children: [
         Text(
           label,
-          style: const TextStyle(
-            fontSize: 12,
-            color: AppColors.textSecondary,
-          ),
+          style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
         ),
         const SizedBox(height: 4),
         Text(
@@ -1005,18 +965,11 @@ class _IndexMetricItem extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Icon(
-          icon,
-          size: 20,
-          color: AppColors.textMuted,
-        ),
+        Icon(icon, size: 20, color: AppColors.textMuted),
         const SizedBox(height: 4),
         Text(
           label,
-          style: const TextStyle(
-            fontSize: 11,
-            color: AppColors.textMuted,
-          ),
+          style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 2),

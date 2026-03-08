@@ -114,7 +114,8 @@ class FileTreeController extends ChangeNotifier {
   /// 递归展开所有父节点
   void expandToPath(String targetPath, List<String> parentPaths) {
     for (final parentPath in parentPaths) {
-      if (targetPath.startsWith(parentPath) && !_expandedPaths.contains(parentPath)) {
+      if (targetPath.startsWith(parentPath) &&
+          !_expandedPaths.contains(parentPath)) {
         expandWithoutLoading(parentPath);
       }
     }

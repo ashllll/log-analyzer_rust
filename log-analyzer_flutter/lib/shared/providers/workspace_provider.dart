@@ -40,7 +40,9 @@ class WorkspaceState extends _$WorkspaceState {
 
     for (final workspace in workspaces) {
       // 尝试从本地存储获取最近打开时间
-      final lastOpenedStr = prefs.then((p) => p.getString('$_lastOpenedKeyPrefix${workspace.id}'));
+      final lastOpenedStr = prefs.then(
+        (p) => p.getString('$_lastOpenedKeyPrefix${workspace.id}'),
+      );
       // 注意：这里使用同步方式获取会有问题，所以我们先简单处理
       // 实际存储时我们会更新 lastOpenedAt 字段
       if (workspace.lastOpenedAt != null) {
@@ -66,10 +68,7 @@ class WorkspaceState extends _$WorkspaceState {
 
     // 最近打开的放最前面，最多 3 个
     final recentLimit = withRecent.length > 3 ? 3 : withRecent.length;
-    return [
-      ...withRecent.take(recentLimit),
-      ...withoutRecent,
-    ];
+    return [...withRecent.take(recentLimit), ...withoutRecent];
   }
 
   /// 加载工作区列表
@@ -111,10 +110,9 @@ class WorkspaceState extends _$WorkspaceState {
       debugPrint('WorkspaceState: 已加载 ${sortedWorkspaces.length} 个工作区');
     } catch (e) {
       debugPrint('WorkspaceState: 加载工作区失败: $e');
-      ref.read(appStateProvider.notifier).addToast(
-            ToastType.error,
-            '加载工作区失败: $e',
-          );
+      ref
+          .read(appStateProvider.notifier)
+          .addToast(ToastType.error, '加载工作区失败: $e');
     }
   }
 
@@ -140,23 +138,24 @@ class WorkspaceState extends _$WorkspaceState {
       // 设置创建时间和最近打开时间
       final now = DateTime.now();
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('$_lastOpenedKeyPrefix$workspaceId', now.toIso8601String());
+      await prefs.setString(
+        '$_lastOpenedKeyPrefix$workspaceId',
+        now.toIso8601String(),
+      );
 
       // 重新加载工作区列表
       await loadWorkspaces();
 
-      ref.read(appStateProvider.notifier).addToast(
-            ToastType.success,
-            '工作区 "$name" 创建成功',
-          );
+      ref
+          .read(appStateProvider.notifier)
+          .addToast(ToastType.success, '工作区 "$name" 创建成功');
 
       return workspaceId;
     } catch (e) {
       debugPrint('WorkspaceState: 创建工作区失败: $e');
-      ref.read(appStateProvider.notifier).addToast(
-            ToastType.error,
-            '创建工作区失败: $e',
-          );
+      ref
+          .read(appStateProvider.notifier)
+          .addToast(ToastType.error, '创建工作区失败: $e');
       return null;
     }
   }
@@ -175,18 +174,14 @@ class WorkspaceState extends _$WorkspaceState {
       // 调用后端 API 删除工作区
       await apiService.deleteWorkspace(id);
 
-      ref.read(appStateProvider.notifier).addToast(
-            ToastType.success,
-            '工作区已删除',
-          );
+      ref.read(appStateProvider.notifier).addToast(ToastType.success, '工作区已删除');
 
       return true;
     } catch (e) {
       debugPrint('WorkspaceState: 删除工作区失败: $e');
-      ref.read(appStateProvider.notifier).addToast(
-            ToastType.error,
-            '删除工作区失败: $e',
-          );
+      ref
+          .read(appStateProvider.notifier)
+          .addToast(ToastType.error, '删除工作区失败: $e');
       return false;
     }
   }
@@ -203,18 +198,16 @@ class WorkspaceState extends _$WorkspaceState {
       // 调用后端 API 刷新工作区
       final taskId = await apiService.refreshWorkspace(id, path);
 
-      ref.read(appStateProvider.notifier).addToast(
-            ToastType.info,
-            '正在刷新工作区...',
-          );
+      ref
+          .read(appStateProvider.notifier)
+          .addToast(ToastType.info, '正在刷新工作区...');
 
       return taskId;
     } catch (e) {
       debugPrint('WorkspaceState: 刷新工作区失败: $e');
-      ref.read(appStateProvider.notifier).addToast(
-            ToastType.error,
-            '刷新工作区失败: $e',
-          );
+      ref
+          .read(appStateProvider.notifier)
+          .addToast(ToastType.error, '刷新工作区失败: $e');
       return null;
     }
   }
@@ -236,7 +229,10 @@ class WorkspaceState extends _$WorkspaceState {
       // 更新最近打开时间
       final now = DateTime.now();
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('$_lastOpenedKeyPrefix$workspaceId', now.toIso8601String());
+      await prefs.setString(
+        '$_lastOpenedKeyPrefix$workspaceId',
+        now.toIso8601String(),
+      );
 
       // 更新本地状态中对应工作区的信息
       state = state.map((w) {
@@ -254,14 +250,15 @@ class WorkspaceState extends _$WorkspaceState {
       // 重新排序（最近打开的移到最后面）
       state = _sortByRecentFirst(state);
 
-      debugPrint('WorkspaceState: 工作区 $workspaceId 加载成功，状态: ${response.status}');
+      debugPrint(
+        'WorkspaceState: 工作区 $workspaceId 加载成功，状态: ${response.status}',
+      );
       return true;
     } catch (e) {
       debugPrint('WorkspaceState: 加载工作区失败: $e');
-      ref.read(appStateProvider.notifier).addToast(
-            ToastType.error,
-            '加载工作区失败: $e',
-          );
+      ref
+          .read(appStateProvider.notifier)
+          .addToast(ToastType.error, '加载工作区失败: $e');
       return false;
     }
   }

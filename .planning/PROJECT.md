@@ -8,25 +8,33 @@
 
 让用户能够高效地搜索、分析和监控日志文件，支持多种压缩包格式，提供实时更新能力。
 
-## Current Milestone: v1.2 UI 完善 (已完成)
+## Current Milestone: v1.3 功能扩展 (计划中)
 
-**Status:** ✅ 已交付 2026-03-07
-**Phases:** 9-11 (12 plans total)
+**Status:** 🔄 研究完成，准备规划
+**Phases:** 12-17 (计划中)
 
-**Shipped features:**
-- 高级搜索 UI (正则表达式、多关键词组合、搜索历史)
-- 虚拟文件系统 UI (文件树、目录导航、文件预览)
-- 集成优化 (测试、性能优化、UX 完善、文档)
+**Target features:**
+- 自定义过滤器 (用户可创建命名过滤器如"仅错误"、"最近24小时")
+- 多工作区标签页 (多工作区标签页切换)
+- 日志级别统计 (日志级别统计面板：错误/警告/信息数量)
 
-**Previous milestone:** v1.1 后端 API 集成与状态管理 (2026-03-05)
-- ✅ Phase 7: 后端 API 集成 (FFI 桥接)
-- ✅ Phase 8: 状态管理 (Riverpod 3.0 Providers)
+**Previous milestone:** v1.2 UI 完善 (2026-03-07)
+- ✅ Phase 9: 高级搜索 UI
+- ✅ Phase 10: 虚拟文件系统 UI
+- ✅ Phase 11: 集成与优化
 
 ## Next Milestone Goals
 
-v2.0 待定义 - 需要收集新需求
+v1.3 功能扩展完成后定义后续里程碑
 
 ## Requirements
+
+### Active
+
+v1.3 功能扩展 (2026-03-07 研究完成):
+- 🔄 自定义过滤器 - 侧边栏快捷访问 + 模态对话框创建/编辑
+- 🔄 多工作区标签页 - Tab bar + PageView/IndexedStack + Riverpod family
+- 🔄 日志级别统计 - fl_chart 图表 + 5秒自动刷新
 
 ### Validated
 
@@ -58,10 +66,6 @@ v2.0 待定义 - 需要收集新需求
 - ✓ VirtualFileTreeProvider with FFI integration — v1.1 Phase 8 已完成
 - ✓ 乐观更新与错误回滚模式 — v1.1 Phase 8 已完成
 - ✓ Riverpod 3.0 family pattern for workspace scoping — v1.1 Phase 8 已完成
-
-### Active
-
-v2.0 待定义 - 需要收集新需求
 
 ### Validated
 
@@ -121,6 +125,25 @@ v1.2 UI 完善已交付 (2026-03-07):
 | 复用 PatternMatcher (Aho-Corasick) | O(n+m) 复杂度，高性能多模式匹配 | ✓ Good |
 | 本地 Dart model wrapper for FFI types | riverpod_generator 无法处理外部类型 | ✓ Good |
 | Dart 3 sealed class + pattern matching | 类型安全的 FFI 转换，编译时检查 | ✓ Good |
+| 侧边栏 + 对话框模式 (过滤器) | 复用现有组件，熟悉的 UX | ✓ Good (v1.3 研究) |
+| Tab bar + PageView/IndexedStack | 成熟桌面模式，Flutter 内置支持 | ✓ Good (v1.3 研究) |
+| fl_chart + 5秒刷新 | 现有依赖，匹配监控模式 | ✓ Good (v1.3 研究) |
 
 ---
-*Last updated: 2026-03-05 after v1.2 milestone started*
+
+## v1.3 研究摘要
+
+**研究完成日期:** 2026-03-07
+
+**研究文件:**
+- `.planning/research/v1.3-custom-filters.md` - 自定义过滤器 UI 模式
+- `.planning/research/v1.3-multi-workspace-tabs.md` - 多工作区标签页模式
+- `.planning/research/v1.3-log-level-stats.md` - 日志级别统计模式
+- `.planning/research/v1.3-integration.md` - 集成模式
+
+**关键决策:**
+- 过滤器: 侧边栏快捷访问 + 模态对话框创建/编辑
+- 标签页: Tab bar + PageView/IndexedStack + Riverpod family providers
+- 统计: fl_chart 条形图/饼图 + 5秒自动刷新 + 30秒缓存 TTL
+
+*Last updated: 2026-03-07 after v1.3 research complete*

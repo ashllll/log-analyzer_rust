@@ -31,7 +31,9 @@ void main() {
       });
 
       test('应该解析多个关键词（OR 模式）', () {
-        final builder = SearchQueryBuilder.fromString('error | warning | fatal');
+        final builder = SearchQueryBuilder.fromString(
+          'error | warning | fatal',
+        );
         final query = builder.toQuery();
 
         expect(query.terms, hasLength(3));
@@ -48,7 +50,9 @@ void main() {
       });
 
       test('应该去除多余空格', () {
-        final builder = SearchQueryBuilder.fromString('  error   |   warning  ');
+        final builder = SearchQueryBuilder.fromString(
+          '  error   |   warning  ',
+        );
         final query = builder.toQuery();
 
         expect(query.terms, hasLength(2));

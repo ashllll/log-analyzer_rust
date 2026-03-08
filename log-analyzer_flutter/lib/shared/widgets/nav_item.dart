@@ -46,7 +46,9 @@ class NavItem extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: active ? FontWeight.w500 : FontWeight.normal,
-                  color: active ? AppColors.textPrimary : AppColors.textSecondary,
+                  color: active
+                      ? AppColors.textPrimary
+                      : AppColors.textSecondary,
                 ),
               ),
             ),
@@ -81,10 +83,7 @@ class NavDivider extends StatelessWidget {
   Widget build(BuildContext context) {
     return const Padding(
       padding: EdgeInsets.symmetric(vertical: 8),
-      child: Divider(
-        color: AppColors.border,
-        thickness: 1,
-      ),
+      child: Divider(color: AppColors.border, thickness: 1),
     );
   }
 }
@@ -93,10 +92,7 @@ class NavDivider extends StatelessWidget {
 class NavHeader extends StatelessWidget {
   final String title;
 
-  const NavHeader({
-    super.key,
-    required this.title,
-  });
+  const NavHeader({super.key, required this.title});
 
   @override
   Widget build(BuildContext context) {

@@ -48,10 +48,7 @@ class ArchivePreviewPanel extends StatelessWidget {
           children: [
             Icon(Icons.info_outline, size: 48, color: Colors.grey.shade400),
             const SizedBox(height: 16),
-            Text(
-              '选择一个文件预览',
-              style: TextStyle(color: Colors.grey.shade600),
-            ),
+            Text('选择一个文件预览', style: TextStyle(color: Colors.grey.shade600)),
           ],
         ),
       );
@@ -68,7 +65,11 @@ class ArchivePreviewPanel extends StatelessWidget {
             color: Colors.orange.shade100,
             child: Row(
               children: [
-                Icon(Icons.warning_amber, color: Colors.orange.shade700, size: 20),
+                Icon(
+                  Icons.warning_amber,
+                  color: Colors.orange.shade700,
+                  size: 20,
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -93,7 +94,11 @@ class ArchivePreviewPanel extends StatelessWidget {
   }
 
   /// 构建带关键词高亮的文本
-  TextSpan _buildHighlightedText(BuildContext context, String text, String keyword) {
+  TextSpan _buildHighlightedText(
+    BuildContext context,
+    String text,
+    String keyword,
+  ) {
     if (keyword.isEmpty) {
       return TextSpan(text: text);
     }
@@ -106,13 +111,15 @@ class ArchivePreviewPanel extends StatelessWidget {
       if (match.start > lastEnd) {
         spans.add(TextSpan(text: text.substring(lastEnd, match.start)));
       }
-      spans.add(TextSpan(
-        text: text.substring(match.start, match.end),
-        style: const TextStyle(
-          backgroundColor: Colors.yellow,
-          fontWeight: FontWeight.bold,
+      spans.add(
+        TextSpan(
+          text: text.substring(match.start, match.end),
+          style: const TextStyle(
+            backgroundColor: Colors.yellow,
+            fontWeight: FontWeight.bold,
+          ),
         ),
-      ));
+      );
       lastEnd = match.end;
     }
 

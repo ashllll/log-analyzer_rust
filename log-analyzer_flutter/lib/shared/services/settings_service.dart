@@ -186,14 +186,19 @@ class SettingsService {
 
   /// 清空所有设置
   Future<bool> clearAll() {
-    return _prefs.remove(keyTheme).then((_) {
-      return _prefs.remove(keyRecentWorkspaces);
-    }).then((_) {
-      return _prefs.remove(keySearchHistoryLimit);
-    }).then((_) {
-      return _prefs.remove(keyLastWorkspaceId);
-    }).then((_) {
-      return _prefs.remove(keySettingsVersion);
-    });
+    return _prefs
+        .remove(keyTheme)
+        .then((_) {
+          return _prefs.remove(keyRecentWorkspaces);
+        })
+        .then((_) {
+          return _prefs.remove(keySearchHistoryLimit);
+        })
+        .then((_) {
+          return _prefs.remove(keyLastWorkspaceId);
+        })
+        .then((_) {
+          return _prefs.remove(keySettingsVersion);
+        });
   }
 }

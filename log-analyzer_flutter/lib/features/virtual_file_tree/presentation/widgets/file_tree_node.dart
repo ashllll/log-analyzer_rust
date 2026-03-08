@@ -54,13 +54,12 @@ class FileTreeNode extends StatelessWidget {
       color: backgroundColor ?? Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        hoverColor: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        hoverColor: theme.colorScheme.surfaceContainerHighest.withValues(
+          alpha: 0.5,
+        ),
         child: Container(
           height: 28, // 紧凑模式行高
-          padding: EdgeInsets.only(
-            left: depth * 16.0 + 4,
-            right: 8,
-          ),
+          padding: EdgeInsets.only(left: depth * 16.0 + 4, right: 8),
           child: Row(
             children: [
               // 展开/折叠箭头（仅目录显示）
@@ -101,8 +100,9 @@ class FileTreeNode extends StatelessWidget {
                     node.nodeName,
                     style: TextStyle(
                       fontSize: 13,
-                      fontWeight:
-                          isSelected ? FontWeight.w600 : FontWeight.normal,
+                      fontWeight: isSelected
+                          ? FontWeight.w600
+                          : FontWeight.normal,
                       color: isSelected
                           ? theme.colorScheme.onPrimaryContainer
                           : theme.colorScheme.onSurface,

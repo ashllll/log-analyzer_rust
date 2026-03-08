@@ -51,8 +51,8 @@ class PerformanceScope {
   final bool _silent;
 
   PerformanceScope(this.name, {bool silent = false})
-      : _startTime = DateTime.now(),
-        _silent = silent;
+    : _startTime = DateTime.now(),
+      _silent = silent;
 
   /// 停止计时并打印耗时
   int stop() {
@@ -98,10 +98,7 @@ class SimpleCache<K, V> {
   int _hits = 0;
   int _misses = 0;
 
-  SimpleCache({
-    this.maxSize = 100,
-    this.ttl = const Duration(minutes: 5),
-  });
+  SimpleCache({this.maxSize = 100, this.ttl = const Duration(minutes: 5)});
 
   /// 获取缓存值
   V? get(K key) {
@@ -173,7 +170,8 @@ class SimpleCache<K, V> {
   }
 
   @override
-  String toString() => 'SimpleCache(size: $size, hits: $_hits, misses: $_misses, hitRate: ${(hitRate * 100).toStringAsFixed(1)}%)';
+  String toString() =>
+      'SimpleCache(size: $size, hits: $_hits, misses: $_misses, hitRate: ${(hitRate * 100).toStringAsFixed(1)}%)';
 }
 
 class _CacheEntry<T> {

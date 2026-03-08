@@ -130,7 +130,8 @@ class ArchiveNode {
         final parentNode = nodeMap[parentPath];
         if (parentNode != null && parentNode.isDirectory) {
           // 添加到父节点的 children
-          final updatedChildren = List<ArchiveNode>.from(parentNode.children)..add(node);
+          final updatedChildren = List<ArchiveNode>.from(parentNode.children)
+            ..add(node);
           nodeMap[parentPath] = parentNode.copyWith(children: updatedChildren);
         } else {
           // 父目录不存在或不是目录，作为根节点

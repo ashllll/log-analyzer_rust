@@ -47,9 +47,7 @@ abstract class SearchTerm with _$SearchTerm {
 /// 查询操作符数据
 @freezed
 abstract class QueryOperatorData with _$QueryOperatorData {
-  const factory QueryOperatorData({
-    required String value,
-  }) = _QueryOperatorData;
+  const factory QueryOperatorData({required String value}) = _QueryOperatorData;
 
   factory QueryOperatorData.fromJson(Map<String, dynamic> json) =>
       _$QueryOperatorDataFromJson(json);
@@ -58,9 +56,7 @@ abstract class QueryOperatorData with _$QueryOperatorData {
 /// 术语来源数据
 @freezed
 abstract class TermSourceData with _$TermSourceData {
-  const factory TermSourceData({
-    required String value,
-  }) = _TermSourceData;
+  const factory TermSourceData({required String value}) = _TermSourceData;
 
   factory TermSourceData.fromJson(Map<String, dynamic> json) =>
       _$TermSourceDataFromJson(json);
@@ -105,7 +101,8 @@ abstract class SearchResultSummary with _$SearchResultSummary {
     @JsonKey(name: 'match_count') required int matchCount,
     @JsonKey(name: 'duration_ms') required int durationMs,
     @JsonKey(name: 'search_id') required String searchId,
-    @JsonKey(name: 'keyword_stats') required List<KeywordStatistic> keywordStats,
+    @JsonKey(name: 'keyword_stats')
+    required List<KeywordStatistic> keywordStats,
   }) = _SearchResultSummary;
 
   factory SearchResultSummary.fromJson(Map<String, dynamic> json) =>

@@ -23,7 +23,9 @@ void main() {
     group('搜索流程', () {
       test('添加关键词后应触发搜索', () async {
         final searchNotifier = container.read(searchQueryProvider.notifier);
-        final historyNotifier = container.read(searchHistoryProvider(testWorkspaceId).notifier);
+        final historyNotifier = container.read(
+          searchHistoryProvider(testWorkspaceId).notifier,
+        );
 
         // 添加搜索关键词
         searchNotifier.addKeyword('error');
@@ -37,13 +39,12 @@ void main() {
         expect(query.terms.first.value, equals('error'));
 
         // 模拟搜索完成，添加历史记录
-        await historyNotifier.addSearchHistory(
-          query: 'error',
-          resultCount: 2,
-        );
+        await historyNotifier.addSearchHistory(query: 'error', resultCount: 2);
 
         // 验证历史记录已添加
-        final historyState = container.read(searchHistoryProvider(testWorkspaceId));
+        final historyState = container.read(
+          searchHistoryProvider(testWorkspaceId),
+        );
         final history = historyState.valueOrNull ?? [];
         expect(history.length, equals(1));
         expect(history.first.query, equals('error'));
@@ -100,7 +101,9 @@ void main() {
 
     group('搜索历史流程', () {
       test('搜索完成后应自动保存历史', () async {
-        final historyNotifier = container.read(searchHistoryProvider(testWorkspaceId).notifier);
+        final historyNotifier = container.read(
+          searchHistoryProvider(testWorkspaceId).notifier,
+        );
 
         // 模拟搜索完成
         await historyNotifier.addSearchHistory(
@@ -109,7 +112,9 @@ void main() {
         );
 
         // 验证历史记录
-        final historyState = container.read(searchHistoryProvider(testWorkspaceId));
+        final historyState = container.read(
+          searchHistoryProvider(testWorkspaceId),
+        );
         final history = historyState.valueOrNull ?? [];
 
         expect(history.length, equals(1));
@@ -118,7 +123,9 @@ void main() {
       });
 
       test('从历史记录恢复搜索应正确加载', () async {
-        final historyNotifier = container.read(searchHistoryProvider(testWorkspaceId).notifier);
+        final historyNotifier = container.read(
+          searchHistoryProvider(testWorkspaceId).notifier,
+        );
         final searchNotifier = container.read(searchQueryProvider.notifier);
 
         // 添加历史记录
@@ -128,7 +135,11 @@ void main() {
         );
 
         // 模拟从历史记录选择
-        final history = container.read(searchHistoryProvider(testWorkspaceId)).valueOrNull ?? [];
+        final history =
+            container
+                .read(searchHistoryProvider(testWorkspaceId))
+                .valueOrNull ??
+            [];
         final selectedQuery = history.first.query;
 
         // 解析并添加到搜索
@@ -144,17 +155,24 @@ void main() {
       });
 
       test('删除历史记录后应更新搜索', () async {
-        final historyNotifier = container.read(searchHistoryProvider(testWorkspaceId).notifier);
+        final historyNotifier = container.read(
+          searchHistoryProvider(testWorkspaceId).notifier,
+        );
 
         // 添加历史记录
         await historyNotifier.addSearchHistory(query: 'error', resultCount: 1);
-        await historyNotifier.addSearchHistory(query: 'warning', resultCount: 2);
+        await historyNotifier.addSearchHistory(
+          query: 'warning',
+          resultCount: 2,
+        );
 
         // 删除一条
         await historyNotifier.deleteSearchHistory('error');
 
         // 验证
-        final historyState = container.read(searchHistoryProvider(testWorkspaceId));
+        final historyState = container.read(
+          searchHistoryProvider(testWorkspaceId),
+        );
         final history = historyState.valueOrNull ?? [];
 
         expect(history.length, equals(1));
@@ -162,17 +180,24 @@ void main() {
       });
 
       test('清空历史记录后应重置', () async {
-        final historyNotifier = container.read(searchHistoryProvider(testWorkspaceId).notifier);
+        final historyNotifier = container.read(
+          searchHistoryProvider(testWorkspaceId).notifier,
+        );
 
         // 添加历史记录
         await historyNotifier.addSearchHistory(query: 'error', resultCount: 1);
-        await historyNotifier.addSearchHistory(query: 'warning', resultCount: 2);
+        await historyNotifier.addSearchHistory(
+          query: 'warning',
+          resultCount: 2,
+        );
 
         // 清空
         await historyNotifier.clearSearchHistory();
 
         // 验证
-        final historyState = container.read(searchHistoryProvider(testWorkspaceId));
+        final historyState = container.read(
+          searchHistoryProvider(testWorkspaceId),
+        );
         final history = historyState.valueOrNull ?? [];
 
         expect(history, isEmpty);
@@ -182,7 +207,9 @@ void main() {
     group('端到端搜索流程', () {
       test('完整搜索流程: 添加关键词 -> 搜索 -> 保存历史', () async {
         final searchNotifier = container.read(searchQueryProvider.notifier);
-        final historyNotifier = container.read(searchHistoryProvider(testWorkspaceId).notifier);
+        final historyNotifier = container.read(
+          searchHistoryProvider(testWorkspaceId).notifier,
+        );
 
         // 1. 添加搜索关键词
         searchNotifier.addKeyword('error');
@@ -204,7 +231,9 @@ void main() {
         );
 
         // 5. 验证结果
-        final historyState = container.read(searchHistoryProvider(testWorkspaceId));
+        final historyState = container.read(
+          searchHistoryProvider(testWorkspaceId),
+        );
         final history = historyState.valueOrNull ?? [];
 
         expect(history.length, equals(1));
@@ -214,14 +243,13 @@ void main() {
 
       test('多轮搜索应正确累积历史', () async {
         final searchNotifier = container.read(searchQueryProvider.notifier);
-        final historyNotifier = container.read(searchHistoryProvider(testWorkspaceId).notifier);
+        final historyNotifier = container.read(
+          searchHistoryProvider(testWorkspaceId).notifier,
+        );
 
         // 第一轮搜索
         searchNotifier.addKeyword('error');
-        await historyNotifier.addSearchHistory(
-          query: 'error',
-          resultCount: 10,
-        );
+        await historyNotifier.addSearchHistory(query: 'error', resultCount: 10);
         searchNotifier.clearKeywords();
 
         // 第二轮搜索
@@ -234,13 +262,12 @@ void main() {
 
         // 第三轮搜索
         searchNotifier.addKeyword('info');
-        await historyNotifier.addSearchHistory(
-          query: 'info',
-          resultCount: 3,
-        );
+        await historyNotifier.addSearchHistory(query: 'info', resultCount: 3);
 
         // 验证历史记录累积
-        final historyState = container.read(searchHistoryProvider(testWorkspaceId));
+        final historyState = container.read(
+          searchHistoryProvider(testWorkspaceId),
+        );
         final history = historyState.valueOrNull ?? [];
 
         expect(history.length, equals(3));
@@ -254,14 +281,24 @@ void main() {
         const workspace1 = 'workspace-1';
         const workspace2 = 'workspace-2';
 
-        final historyNotifier1 = container.read(searchHistoryProvider(workspace1).notifier);
-        final historyNotifier2 = container.read(searchHistoryProvider(workspace2).notifier);
+        final historyNotifier1 = container.read(
+          searchHistoryProvider(workspace1).notifier,
+        );
+        final historyNotifier2 = container.read(
+          searchHistoryProvider(workspace2).notifier,
+        );
 
         // 工作区 1 添加历史
-        await historyNotifier1.addSearchHistory(query: 'error-ws1', resultCount: 1);
+        await historyNotifier1.addSearchHistory(
+          query: 'error-ws1',
+          resultCount: 1,
+        );
 
         // 工作区 2 添加历史
-        await historyNotifier2.addSearchHistory(query: 'error-ws2', resultCount: 2);
+        await historyNotifier2.addSearchHistory(
+          query: 'error-ws2',
+          resultCount: 2,
+        );
 
         // 验证各工作区历史独立
         final state1 = container.read(searchHistoryProvider(workspace1));

@@ -30,9 +30,7 @@ class CustomCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: backgroundColor ?? AppColors.bgCard,
         borderRadius: BorderRadius.circular(8),
-        border: bordered
-            ? Border.all(color: AppColors.border)
-            : null,
+        border: bordered ? Border.all(color: AppColors.border) : null,
       ),
       child: Padding(
         padding: padding ?? const EdgeInsets.all(16),
@@ -108,10 +106,7 @@ class CardHeader extends StatelessWidget {
 class CardContent extends StatelessWidget {
   final Widget child;
 
-  const CardContent({
-    super.key,
-    required this.child,
-  });
+  const CardContent({super.key, required this.child});
 
   @override
   Widget build(BuildContext context) {
@@ -126,16 +121,10 @@ class CardContent extends StatelessWidget {
 class CardFooter extends StatelessWidget {
   final Widget child;
 
-  const CardFooter({
-    super.key,
-    required this.child,
-  });
+  const CardFooter({super.key, required this.child});
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 12),
-      child: child,
-    );
+    return Padding(padding: const EdgeInsets.only(top: 12), child: child);
   }
 }

@@ -26,9 +26,7 @@ class _ArchiveSearchBarState extends ConsumerState<ArchiveSearchBar> {
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surfaceContainerHighest,
         border: Border(
-          bottom: BorderSide(
-            color: Theme.of(context).dividerColor,
-          ),
+          bottom: BorderSide(color: Theme.of(context).dividerColor),
         ),
       ),
       child: Row(

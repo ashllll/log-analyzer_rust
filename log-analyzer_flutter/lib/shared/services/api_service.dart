@@ -24,23 +24,19 @@ class AppConfig {
   final FileFilterConfig? fileFilter;
   final Map<String, dynamic>? otherSettings;
 
-  const AppConfig({
-    this.fileFilter,
-    this.otherSettings,
-  });
+  const AppConfig({this.fileFilter, this.otherSettings});
 
   factory AppConfig.fromJson(Map<String, dynamic> json) => AppConfig(
-        fileFilter: json['file_filter'] != null
-            ? FileFilterConfig.fromJson(
-                json['file_filter'] as Map<String, dynamic>)
-            : null,
-        otherSettings: json['other_settings'] as Map<String, dynamic>?,
-      );
+    fileFilter: json['file_filter'] != null
+        ? FileFilterConfig.fromJson(json['file_filter'] as Map<String, dynamic>)
+        : null,
+    otherSettings: json['other_settings'] as Map<String, dynamic>?,
+  );
 
   Map<String, dynamic> toJson() => {
-        'file_filter': fileFilter?.toJson(),
-        'other_settings': otherSettings,
-      };
+    'file_filter': fileFilter?.toJson(),
+    'other_settings': otherSettings,
+  };
 }
 
 /// API 服务类
@@ -281,10 +277,13 @@ class ApiService {
   static ArchiveType? detectArchiveType(String path) {
     final lowerPath = path.toLowerCase();
     if (lowerPath.endsWith('.zip')) return ArchiveType.zip;
-    if (lowerPath.endsWith('.tar') || lowerPath.endsWith('.tar.gz') || lowerPath.endsWith('.tgz')) {
+    if (lowerPath.endsWith('.tar') ||
+        lowerPath.endsWith('.tar.gz') ||
+        lowerPath.endsWith('.tgz')) {
       return ArchiveType.tar;
     }
-    if (lowerPath.endsWith('.gz') && !lowerPath.endsWith('.tar.gz')) return ArchiveType.gzip;
+    if (lowerPath.endsWith('.gz') && !lowerPath.endsWith('.tar.gz'))
+      return ArchiveType.gzip;
     if (lowerPath.endsWith('.rar')) return ArchiveType.rar;
     if (lowerPath.endsWith('.7z')) return ArchiveType.sevenZ;
     return null;
@@ -354,10 +353,7 @@ class ApiService {
   }) async {
     // 当前实现：导入全部文件
     // TODO: 后端实现选择性解压后使用 selectedFiles 参数
-    return importArchive(
-      archivePath: archivePath,
-      workspaceId: workspaceId,
-    );
+    return importArchive(archivePath: archivePath, workspaceId: workspaceId);
   }
 
   // ==================== 文件监听 ====================
@@ -468,20 +464,10 @@ class ApiService {
       if (data != null) {
         return TaskMetrics.fromJson(data as Map<String, dynamic>);
       }
-      return const TaskMetrics(
-        total: 0,
-        running: 0,
-        completed: 0,
-        failed: 0,
-      );
+      return const TaskMetrics(total: 0, running: 0, completed: 0, failed: 0);
     } catch (e) {
       debugPrint('获取任务指标失败: $e');
-      return const TaskMetrics(
-        total: 0,
-        running: 0,
-        completed: 0,
-        failed: 0,
-      );
+      return const TaskMetrics(total: 0, running: 0, completed: 0, failed: 0);
     }
   }
 
@@ -584,7 +570,12 @@ class ApiService {
       size: 0,
     );
     const emptyMemory = MemoryMetrics(used: 0, total: 0);
-    const emptyTask = TaskMetrics(total: 0, running: 0, completed: 0, failed: 0);
+    const emptyTask = TaskMetrics(
+      total: 0,
+      running: 0,
+      completed: 0,
+      failed: 0,
+    );
     const emptyIndex = IndexMetrics(totalFiles: 0, indexedFiles: 0);
 
     return const PerformanceMetrics(
@@ -601,11 +592,9 @@ class ApiService {
   Map<String, dynamic> _filterOptionsToJson(FilterOptions options) {
     return {
       'levels': options.levels,
-      'time_range': options.timeRange.start != null || options.timeRange.end != null
-          ? {
-              'start': options.timeRange.start,
-              'end': options.timeRange.end,
-            }
+      'time_range':
+          options.timeRange.start != null || options.timeRange.end != null
+          ? {'start': options.timeRange.start, 'end': options.timeRange.end}
           : null,
       'file_pattern': options.filePattern,
     };
@@ -618,9 +607,7 @@ class ApiService {
         id: data['id'] as String? ?? '',
         name: data['name'] as String? ?? '',
         path: data['path'] as String? ?? '',
-        status: WorkspaceStatusData(
-          value: _parseStatusString(data['status']),
-        ),
+        status: WorkspaceStatusData(value: _parseStatusString(data['status'])),
         size: _formatSize(data['total_size'] as int? ?? 0),
         files: data['file_count'] as int? ?? 0,
         watching: data['is_watching'] as bool?,
@@ -691,15 +678,12 @@ class ChartDataPoint {
   final DateTime timestamp;
   final double value;
 
-  const ChartDataPoint({
-    required this.timestamp,
-    required this.value,
-  });
+  const ChartDataPoint({required this.timestamp, required this.value});
 
   factory ChartDataPoint.fromJson(Map<String, dynamic> json) => ChartDataPoint(
-        timestamp: DateTime.parse(json['timestamp'] as String),
-        value: (json['value'] as num).toDouble(),
-      );
+    timestamp: DateTime.parse(json['timestamp'] as String),
+    value: (json['value'] as num).toDouble(),
+  );
 }
 
 /// API 服务异常
@@ -708,11 +692,7 @@ class ApiServiceException implements Exception {
   final int? code;
   final String? help;
 
-  const ApiServiceException(
-    this.message, {
-    this.code,
-    this.help,
-  });
+  const ApiServiceException(this.message, {this.code, this.help});
 
   @override
   String toString() => message;
@@ -721,14 +701,7 @@ class ApiServiceException implements Exception {
 // ==================== 压缩包相关类型 ====================
 
 /// 压缩包类型枚举
-enum ArchiveType {
-  zip,
-  tar,
-  gzip,
-  rar,
-  sevenZ,
-  unknown,
-}
+enum ArchiveType { zip, tar, gzip, rar, sevenZ, unknown }
 
 /// 压缩包条目
 class ArchiveEntry {
@@ -747,22 +720,22 @@ class ArchiveEntry {
   });
 
   factory ArchiveEntry.fromJson(Map<String, dynamic> json) => ArchiveEntry(
-        name: json['name'] as String? ?? '',
-        path: json['path'] as String? ?? '',
-        size: json['size'] as int? ?? 0,
-        isDirectory: json['is_directory'] as bool? ?? false,
-        modifiedTime: json['modified_time'] != null
-            ? DateTime.tryParse(json['modified_time'] as String)
-            : null,
-      );
+    name: json['name'] as String? ?? '',
+    path: json['path'] as String? ?? '',
+    size: json['size'] as int? ?? 0,
+    isDirectory: json['is_directory'] as bool? ?? false,
+    modifiedTime: json['modified_time'] != null
+        ? DateTime.tryParse(json['modified_time'] as String)
+        : null,
+  );
 
   Map<String, dynamic> toJson() => {
-        'name': name,
-        'path': path,
-        'size': size,
-        'is_directory': isDirectory,
-        'modified_time': modifiedTime?.toIso8601String(),
-      };
+    'name': name,
+    'path': path,
+    'size': size,
+    'is_directory': isDirectory,
+    'modified_time': modifiedTime?.toIso8601String(),
+  };
 }
 
 /// 压缩包内容
@@ -779,12 +752,14 @@ class ArchiveContents {
     required this.fileCount,
   });
 
-  factory ArchiveContents.fromJson(Map<String, dynamic> json) => ArchiveContents(
+  factory ArchiveContents.fromJson(Map<String, dynamic> json) =>
+      ArchiveContents(
         type: ArchiveType.values.firstWhere(
           (e) => e.name == json['type'],
           orElse: () => ArchiveType.unknown,
         ),
-        entries: (json['entries'] as List<dynamic>?)
+        entries:
+            (json['entries'] as List<dynamic>?)
                 ?.map((e) => ArchiveEntry.fromJson(e as Map<String, dynamic>))
                 .toList() ??
             [],
@@ -793,11 +768,11 @@ class ArchiveContents {
       );
 
   Map<String, dynamic> toJson() => {
-        'type': type.name,
-        'entries': entries.map((e) => e.toJson()).toList(),
-        'total_size': totalSize,
-        'file_count': fileCount,
-      };
+    'type': type.name,
+    'entries': entries.map((e) => e.toJson()).toList(),
+    'total_size': totalSize,
+    'file_count': fileCount,
+  };
 }
 
 /// 压缩包文件读取结果
@@ -820,8 +795,8 @@ class ArchiveFileResult {
       );
 
   Map<String, dynamic> toJson() => {
-        'content': content,
-        'size': size,
-        'truncated': truncated,
-      };
+    'content': content,
+    'size': size,
+    'truncated': truncated,
+  };
 }

@@ -10,10 +10,7 @@ class VirtualFileTreeEmptyState extends StatelessWidget {
   final VoidCallback? onImport;
 
   /// 构造函数
-  const VirtualFileTreeEmptyState({
-    super.key,
-    this.onImport,
-  });
+  const VirtualFileTreeEmptyState({super.key, this.onImport});
 
   @override
   Widget build(BuildContext context) {
@@ -86,11 +83,7 @@ class FilePreviewEmptyState extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              LucideIcons.file,
-              size: 48,
-              color: theme.colorScheme.outline,
-            ),
+            Icon(LucideIcons.file, size: 48, color: theme.colorScheme.outline),
             const SizedBox(height: 16),
             Text(
               '选择文件预览内容',

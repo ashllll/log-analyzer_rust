@@ -1,6 +1,8 @@
 import 'dart:math' show max, pow;
 import 'dart:typed_data';
-import 'dart:ui' as ui show Image, FragmentProgram, ImmutableBuffer, ImageDescriptor, PixelFormat;
+import 'dart:ui'
+    as ui
+    show Image, FragmentProgram, ImmutableBuffer, ImageDescriptor, PixelFormat;
 
 import 'package:flutter/material.dart';
 
@@ -82,7 +84,9 @@ class _HeatmapMinimapState extends State<HeatmapMinimap> {
     try {
       // 尝试加载 GPU 着色器
       // 注意: FragmentProgram 需要 Flutter 3.0+ 和 Skia/Impeller 后端支持
-      final program = await ui.FragmentProgram.fromAsset('shaders/heatmap.frag');
+      final program = await ui.FragmentProgram.fromAsset(
+        'shaders/heatmap.frag',
+      );
       setState(() {
         _fragmentProgram = program;
         _shaderLoaded = true;
@@ -121,10 +125,10 @@ class _HeatmapMinimapState extends State<HeatmapMinimap> {
       final density = densityMap[i];
       final offset = i * 4;
       // RGBA: 密度值放入 R 通道
-      pixels[offset] = density;     // R
+      pixels[offset] = density; // R
       pixels[offset + 1] = density; // G (备用)
       pixels[offset + 2] = density; // B (备用)
-      pixels[offset + 3] = 255;     // A (完全不透明)
+      pixels[offset + 3] = 255; // A (完全不透明)
     }
 
     // 创建图像描述符
@@ -171,17 +175,10 @@ class _HeatmapMinimapState extends State<HeatmapMinimap> {
       decoration: BoxDecoration(
         color: Colors.grey.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(
-          color: Colors.grey.withValues(alpha: 0.3),
-          width: 1,
-        ),
+        border: Border.all(color: Colors.grey.withValues(alpha: 0.3), width: 1),
       ),
       child: const Center(
-        child: Icon(
-          Icons.minimize,
-          size: 16,
-          color: Colors.grey,
-        ),
+        child: Icon(Icons.minimize, size: 16, color: Colors.grey),
       ),
     );
   }
@@ -252,10 +249,10 @@ class _GpuHeatmapPainter extends CustomPainter {
 
     // 设置 uniform 变量
     // 注意: 索引顺序对应 GLSL 中的布局
-    shader.setImageSampler(0, densityTexture);  // u_density_texture
-    shader.setFloat(0, size.width);              // u_resolution.x
-    shader.setFloat(1, size.height);             // u_resolution.y
-    shader.setFloat(2, maxDensity);              // u_max_density
+    shader.setImageSampler(0, densityTexture); // u_density_texture
+    shader.setFloat(0, size.width); // u_resolution.x
+    shader.setFloat(1, size.height); // u_resolution.y
+    shader.setFloat(2, maxDensity); // u_max_density
 
     // 创建 Paint
     final paint = Paint()..shader = shader;
@@ -267,7 +264,7 @@ class _GpuHeatmapPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _GpuHeatmapPainter oldDelegate) {
     return oldDelegate.densityTexture != densityTexture ||
-           oldDelegate.maxDensity != maxDensity;
+        oldDelegate.maxDensity != maxDensity;
   }
 }
 
@@ -278,10 +275,7 @@ class _CpuHeatmapPainter extends CustomPainter {
   final Uint8List densityMap;
   final int maxDensity;
 
-  _CpuHeatmapPainter({
-    required this.densityMap,
-    required this.maxDensity,
-  });
+  _CpuHeatmapPainter({required this.densityMap, required this.maxDensity});
 
   /// 热力图颜色映射
   ///
@@ -339,6 +333,6 @@ class _CpuHeatmapPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _CpuHeatmapPainter oldDelegate) {
     return oldDelegate.densityMap != densityMap ||
-           oldDelegate.maxDensity != maxDensity;
+        oldDelegate.maxDensity != maxDensity;
   }
 }

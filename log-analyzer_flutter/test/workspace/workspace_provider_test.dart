@@ -14,10 +14,13 @@ void main() {
       container.dispose();
     });
 
-    test('workspaceStateProvider should initialize with empty workspace list', () {
-      final state = container.read(workspaceStateProvider);
-      expect(state.workspaces, isEmpty);
-    });
+    test(
+      'workspaceStateProvider should initialize with empty workspace list',
+      () {
+        final state = container.read(workspaceStateProvider);
+        expect(state.workspaces, isEmpty);
+      },
+    );
 
     test('workspaceStateProvider should have initial status', () {
       final state = container.read(workspaceStateProvider);

@@ -41,10 +41,7 @@ class SentryConfig {
   static String get dsn {
     // 从编译时环境变量读取
     // 使用方式: flutter build --dart-define=SENTRY_DSN=your_dsn
-    return const String.fromEnvironment(
-      'SENTRY_DSN',
-      defaultValue: '',
-    );
+    return const String.fromEnvironment('SENTRY_DSN', defaultValue: '');
   }
 
   /// 获取当前环境名称
@@ -63,9 +60,7 @@ class SentryInitializer {
   ///
   /// 应在 main() 中调用，在 runApp() 之前
   /// 如果不应启用，则直接执行 runApp
-  static Future<void> initialize({
-    required void Function() runApp,
-  }) async {
+  static Future<void> initialize({required void Function() runApp}) async {
     // 检查是否应启用 Sentry
     if (!SentryConfig.shouldEnable) {
       debugPrint('[Sentry] 未启用: ${kDebugMode ? "调试模式" : "DSN 未配置"}');
@@ -75,33 +70,30 @@ class SentryInitializer {
 
     debugPrint('[Sentry] 正在初始化...');
 
-    await SentryFlutter.init(
-      (options) {
-        // 基础配置
-        options.dsn = SentryConfig.dsn;
-        options.environment = SentryConfig.environment;
+    await SentryFlutter.init((options) {
+      // 基础配置
+      options.dsn = SentryConfig.dsn;
+      options.environment = SentryConfig.environment;
 
-        // 采样率配置
-        options.tracesSampleRate = SentryConfig.defaultTracesSampleRate;
-        options.profilesSampleRate = SentryConfig.defaultProfilesSampleRate;
+      // 采样率配置
+      options.tracesSampleRate = SentryConfig.defaultTracesSampleRate;
+      options.profilesSampleRate = SentryConfig.defaultProfilesSampleRate;
 
-        // 附加调试信息（仅在调试模式）
-        options.debug = kDebugMode;
+      // 附加调试信息（仅在调试模式）
+      options.debug = kDebugMode;
 
-        // 设置发布版本
-        options.release = 'log-analyzer@1.0.0';
+      // 设置发布版本
+      options.release = 'log-analyzer@1.0.0';
 
-        // 设置会话追踪间隔
-        options.autoSessionTrackingInterval = const Duration(minutes: 5);
+      // 设置会话追踪间隔
+      options.autoSessionTrackingInterval = const Duration(minutes: 5);
 
-        // 过滤敏感信息
-        options.beforeSend = _beforeSendCallback;
+      // 过滤敏感信息
+      options.beforeSend = _beforeSendCallback;
 
-        // 过滤面包屑中的敏感信息
-        options.beforeBreadcrumb = _beforeBreadcrumbCallback;
-      },
-      appRunner: runApp,
-    );
+      // 过滤面包屑中的敏感信息
+      options.beforeBreadcrumb = _beforeBreadcrumbCallback;
+    }, appRunner: runApp);
   }
 
   /// 发送前回调 - 过滤敏感信息
@@ -126,7 +118,10 @@ class SentryInitializer {
   /// 面包屑过滤回调
   ///
   /// 注意: Sentry 8.x 的签名是 (Breadcrumb?, Hint) -> Breadcrumb?
-  static Breadcrumb? _beforeBreadcrumbCallback(Breadcrumb? breadcrumb, Hint hint) {
+  static Breadcrumb? _beforeBreadcrumbCallback(
+    Breadcrumb? breadcrumb,
+    Hint hint,
+  ) {
     // 如果没有面包屑，直接返回
     if (breadcrumb == null) {
       return null;
@@ -134,7 +129,13 @@ class SentryInitializer {
 
     // 过滤包含敏感关键词的面包屑
     final message = breadcrumb.message?.toLowerCase() ?? '';
-    const sensitiveKeywords = ['password', 'token', 'secret', 'key', 'credential'];
+    const sensitiveKeywords = [
+      'password',
+      'token',
+      'secret',
+      'key',
+      'credential',
+    ];
 
     for (final keyword in sensitiveKeywords) {
       if (message.contains(keyword)) {
@@ -196,13 +197,15 @@ class SentryUtils {
     }
 
     Sentry.configureScope((scope) {
-      scope.setUser(SentryUser(
-        id: id,
-        email: email,
-        username: username,
-        ipAddress: ipAddress,
-        data: data,
-      ));
+      scope.setUser(
+        SentryUser(
+          id: id,
+          email: email,
+          username: username,
+          ipAddress: ipAddress,
+          data: data,
+        ),
+      );
     });
   }
 
@@ -216,13 +219,15 @@ class SentryUtils {
     Map<String, dynamic>? data,
     SentryLevel? level,
   }) {
-    Sentry.addBreadcrumb(Breadcrumb(
-      message: message,
-      category: category,
-      type: type,
-      data: data,
-      level: level,
-    ));
+    Sentry.addBreadcrumb(
+      Breadcrumb(
+        message: message,
+        category: category,
+        type: type,
+        data: data,
+        level: level,
+      ),
+    );
   }
 
   /// 设置上下文标签
@@ -237,10 +242,7 @@ class SentryUtils {
   /// 设置上下文数据
   ///
   /// 用于添加结构化的额外信息
-  static Future<void> setContext(
-    String key,
-    Map<String, dynamic> value,
-  ) async {
+  static Future<void> setContext(String key, Map<String, dynamic> value) async {
     Sentry.configureScope((scope) {
       scope.setContexts(key, value);
     });
@@ -307,10 +309,7 @@ class ErrorCapture {
           message: '操作失败: $operationName',
           category: 'operation',
           level: SentryLevel.error,
-          data: {
-            ...?context,
-            'error': exception.toString(),
-          },
+          data: {...?context, 'error': exception.toString()},
         );
       }
 

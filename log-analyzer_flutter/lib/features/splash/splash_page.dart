@@ -166,9 +166,9 @@ class _SplashPageState extends ConsumerState<SplashPage> {
                   // 状态文字
                   Text(
                     _status,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Colors.grey[400],
-                        ),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodyMedium?.copyWith(color: Colors.grey[400]),
                   ),
                 ],
               ),

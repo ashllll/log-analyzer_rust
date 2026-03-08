@@ -30,19 +30,15 @@ class ErrorView extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               // 错误图标
-              Icon(
-                _getIcon(),
-                size: 64,
-                color: _getColor(),
-              ),
+              Icon(_getIcon(), size: 64, color: _getColor()),
               const SizedBox(height: 16),
 
               // 错误码和消息
               Text(
                 exception.displayMessage,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: _getColor(),
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(color: _getColor()),
                 textAlign: TextAlign.center,
               ),
 
@@ -51,9 +47,9 @@ class ErrorView extends StatelessWidget {
                 const SizedBox(height: 8),
                 Text(
                   exception.solution!,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Colors.grey[400],
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(color: Colors.grey[400]),
                   textAlign: TextAlign.center,
                 ),
               ],
@@ -126,9 +122,7 @@ class ErrorPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: title != null
-          ? AppBar(title: Text(title!))
-          : null,
+      appBar: title != null ? AppBar(title: Text(title!)) : null,
       body: ErrorView(
         exception: exception,
         onRetry: onRetry,

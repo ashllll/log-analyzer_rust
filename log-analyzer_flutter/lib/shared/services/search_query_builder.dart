@@ -20,18 +20,19 @@ class SearchQueryBuilder {
     SearchFilters? filters,
     QueryMetadata? metadata,
   }) : _query = SearchQuery(
-          id: id,
-          terms: terms,
-          globalOperator: globalOperator,
-          filters: filters,
-          metadata: metadata ??
-              QueryMetadata(
-                createdAt: DateTime.now().toIso8601String(),
-                updatedAt: null,
-                lastUsedAt: null,
-                version: null,
-              ),
-        );
+         id: id,
+         terms: terms,
+         globalOperator: globalOperator,
+         filters: filters,
+         metadata:
+             metadata ??
+             QueryMetadata(
+               createdAt: DateTime.now().toIso8601String(),
+               updatedAt: null,
+               lastUsedAt: null,
+               version: null,
+             ),
+       );
 
   /// 创建新的查询构建器
   static SearchQueryBuilder create() {
@@ -238,8 +239,7 @@ class SearchQueryBuilder {
       queryString: toQueryString(),
       prioritizedTerms: prioritizedTerms,
       excludedTerms: excludedTerms,
-      isCaseSensitive:
-          enabledTerms.any((t) => t.caseSensitive) ? true : null,
+      isCaseSensitive: enabledTerms.any((t) => t.caseSensitive) ? true : null,
     );
   }
 
@@ -270,8 +270,7 @@ class SearchQueryBuilder {
   int get termCount => _query.terms.length;
 
   /// 获取启用的术语数量
-  int get enabledTermCount =>
-      _query.terms.where((t) => t.enabled).length;
+  int get enabledTermCount => _query.terms.where((t) => t.enabled).length;
 }
 
 /// 关键词组模型（用于查询构建）
@@ -296,8 +295,5 @@ class KeywordPattern {
   final String regex;
   final String comment;
 
-  const KeywordPattern({
-    required this.regex,
-    this.comment = '',
-  });
+  const KeywordPattern({required this.regex, this.comment = ''});
 }

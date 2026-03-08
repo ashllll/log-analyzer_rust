@@ -8,10 +8,7 @@ class FileTreeLoadingSkeleton extends StatelessWidget {
   /// 行数
   final int itemCount;
 
-  const FileTreeLoadingSkeleton({
-    super.key,
-    this.itemCount = 10,
-  });
+  const FileTreeLoadingSkeleton({super.key, this.itemCount = 10});
 
   @override
   Widget build(BuildContext context) {
@@ -62,10 +59,7 @@ class FilePreviewLoadingSkeleton extends StatelessWidget {
   /// 行数
   final int lineCount;
 
-  const FilePreviewLoadingSkeleton({
-    super.key,
-    this.lineCount = 15,
-  });
+  const FilePreviewLoadingSkeleton({super.key, this.lineCount = 15});
 
   @override
   Widget build(BuildContext context) {
@@ -82,9 +76,7 @@ class FilePreviewLoadingSkeleton extends StatelessWidget {
           children: List.generate(lineCount, (index) {
             // 最后一行较短，其他行随机长度
             final isLast = index == lineCount - 1;
-            final width = isLast
-                ? 80.0
-                : 200.0 + (index % 4) * 50.0;
+            final width = isLast ? 80.0 : 200.0 + (index % 4) * 50.0;
 
             return Padding(
               padding: const EdgeInsets.only(bottom: 8),

@@ -5,7 +5,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:log_analyzer_flutter/features/search/providers/search_query_provider.dart';
-import 'package:log_analyzer_flutter/shared/services/generated/ffi/types.dart' as ffi_types;
+import 'package:log_analyzer_flutter/shared/services/generated/ffi/types.dart'
+    as ffi_types;
 
 void main() {
   group('SearchQueryProvider Tests', () {

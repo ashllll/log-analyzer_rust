@@ -96,7 +96,9 @@ class _VirtualLogListState extends State<VirtualLogList> {
   void _onScrollChanged() {
     if (!widget.dynamicHeight && widget.itemHeight > 0) {
       final index = (_scrollController!.offset / widget.itemHeight).floor();
-      if (index != _lastVisibleIndex && index >= 0 && index < widget.itemCount) {
+      if (index != _lastVisibleIndex &&
+          index >= 0 &&
+          index < widget.itemCount) {
         _lastVisibleIndex = index;
         widget.onIndexChanged?.call(index);
       }
@@ -129,12 +131,7 @@ class _VirtualLogListState extends State<VirtualLogList> {
         if (!widget.showDividers || index == widget.itemCount - 1) {
           return item;
         }
-        return Column(
-          children: [
-            item,
-            const Divider(height: 1),
-          ],
-        );
+        return Column(children: [item, const Divider(height: 1)]);
       },
     );
   }
