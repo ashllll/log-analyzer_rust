@@ -1039,6 +1039,32 @@ class BridgeService {
     }
   }
 
+  // ==================== 日志级别统计操作 ====================
+
+  /// 获取日志级别统计
+  ///
+  /// 返回工作区中每个日志级别的记录数量
+  ///
+  /// # 参数
+  ///
+  /// * `workspaceId` - 工作区 ID
+  ///
+  /// # 返回
+  ///
+  /// 返回日志级别统计结果，包含每个级别的数量
+  Future<ffi.LogLevelStatsOutput?> getLogLevelStats(String workspaceId) async {
+    if (!isFfiEnabled) {
+      return null;
+    }
+
+    try {
+      return ffi.getLogLevelStats(workspaceId: workspaceId);
+    } catch (e) {
+      debugPrint('getLogLevelStats error: $e');
+      return null;
+    }
+  }
+
   /// 释放资源
   void dispose() {
     LogAnalyzerBridge.dispose();
