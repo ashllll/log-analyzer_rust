@@ -275,10 +275,15 @@ Plans:
 **Requirements**: T-04, NF-01, NF-02, NF-03
 **Success Criteria** (what must be TRUE):
   1. 所有功能端到端测试覆盖
-  2. 标签页切换 <100ms，统计加载 <5003. 内存占用符合预期 (<50MB/标签ms
-  页)
+  2. 标签页切换 <100ms，统计加载 <500ms
+  3. 内存占用符合预期 (<50MB/标签页)
   4. 与现有功能无冲突
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [x] 17-01 — 端到端测试覆盖 (NF-03)
+- [x] 17-02 — 性能与内存测试 (T-04, NF-01, NF-02)
+- [x] 17-03 — 兼容性检查与集成验证 (NF-03)
 
 ---
 
@@ -294,7 +299,7 @@ Phases execute in numeric order: 12 → 13 → 14 → 15 → 16 → 17
 | 14. 过滤器 UI | 2/2 | Complete    | 2026-03-08 |
 | 15. 统计 FFI | 1/1 | Complete    | 2026-03-08 |
 | 16. 统计 UI | 2/2 | Complete    | 2026-03-08 |
-| 17. 集成优化 | 0/ | Planned | TBD |
+| 17. 集成优化 | 3/3 | Planned | 2026-03-08 |
 
 ---
 
