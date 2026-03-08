@@ -2,6 +2,7 @@ use crate::error::{AppError, Result};
 use crate::models::search::*;
 use crate::services::regex_engine::RegexEngine;
 use moka::sync::Cache;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 /**
@@ -87,10 +88,12 @@ impl QueryPlanner {
             QueryOperator::Not => SearchStrategy::Not,
         };
 
-        let mut engines = Vec::new();
-        let mut terms_list = Vec::new();
+        // Pre-allocate with capacity for better performance
+        let mut engines = Vec::with_capacity(enabled_terms.len());
+        let mut terms_list = Vec::with_capacity(enabled_terms.len());
+        let mut term_engine_map = HashMap::with_capacity(enabled_terms.len());
 
-        for term in &enabled_terms {
+        for (idx, term) in enabled_terms.iter().enumerate() {
             let engine = self.get_or_compile_engine(term)?;
 
             engines.push(CompiledEngine {
@@ -98,6 +101,9 @@ impl QueryPlanner {
                 term_id: term.id.clone(),
                 priority: term.priority,
             });
+
+            // Build HashMap for O(1) lookup
+            term_engine_map.insert(term.id.clone(), idx);
 
             terms_list.push(PlanTerm {
                 id: term.id.clone(),
@@ -111,6 +117,7 @@ impl QueryPlanner {
             engines,
             term_count: enabled_terms.len(),
             terms: terms_list,
+            term_engine_map,
         })
     }
 
@@ -172,6 +179,9 @@ pub struct ExecutionPlan {
     #[allow(dead_code)]
     pub term_count: usize,
     pub terms: Vec<PlanTerm>,
+    /// HashMap for O(1) term_id -> engine lookup (performance optimization)
+    #[allow(dead_code)]
+    pub term_engine_map: HashMap<String, usize>, // term_id -> index in engines Vec
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -203,6 +213,11 @@ impl ExecutionPlan {
      */
     pub fn sort_by_priority(&mut self) {
         self.engines.sort_by_key(|e| std::cmp::Reverse(e.priority));
+        // Rebuild HashMap after sorting to maintain O(1) lookup
+        self.term_engine_map.clear();
+        for (idx, engine) in self.engines.iter().enumerate() {
+            self.term_engine_map.insert(engine.term_id.clone(), idx);
+        }
     }
 }
 
@@ -346,6 +361,10 @@ mod tests {
 
     #[test]
     fn test_execution_plan_engines_field() {
+        let mut term_engine_map = HashMap::new();
+        term_engine_map.insert("1".to_string(), 0);
+        term_engine_map.insert("2".to_string(), 1);
+
         let plan = ExecutionPlan {
             strategy: SearchStrategy::And,
             engines: vec![
@@ -373,6 +392,7 @@ mod tests {
                     case_sensitive: false,
                 },
             ],
+            term_engine_map,
         };
 
         assert_eq!(plan.engines.len(), 2);
@@ -382,6 +402,11 @@ mod tests {
 
     #[test]
     fn test_plan_sort_by_priority_engines() {
+        let mut term_engine_map = HashMap::new();
+        term_engine_map.insert("1".to_string(), 0);
+        term_engine_map.insert("2".to_string(), 1);
+        term_engine_map.insert("3".to_string(), 2);
+
         let mut plan = ExecutionPlan {
             strategy: SearchStrategy::And,
             engines: vec![
@@ -403,6 +428,7 @@ mod tests {
             ],
             term_count: 3,
             terms: vec![],
+            term_engine_map,
         };
 
         plan.sort_by_priority();

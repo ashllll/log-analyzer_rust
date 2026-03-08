@@ -532,6 +532,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
         );
       case SearchMode.normal:
         // 普通模式：使用普通 TextField
+        // 添加 300ms 防抖，避免每次输入都触发搜索
         return TextField(
           controller: _searchController,
           focusNode: _focusNode,
@@ -543,7 +544,14 @@ class _SearchPageState extends ConsumerState<SearchPage> {
             contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           ),
           style: const TextStyle(fontSize: 15),
-          onChanged: (_) => setState(() {}),
+          onChanged: (value) {
+            setState(() {});
+            // 防抖：300ms 后执行搜索
+            _debounceTimer?.cancel();
+            _debounceTimer = Timer(const Duration(milliseconds: 300), () {
+              _performSearch();
+            });
+          },
           onSubmitted: (_) => _performSearch(),
         );
     }

@@ -105,10 +105,9 @@ impl QueryExecutor {
         match plan.strategy {
             crate::services::query_planner::SearchStrategy::And => {
                 for term in &plan.terms {
-                    let term_matches = if let Some(compiled) =
-                        plan.engines.iter().find(|e| e.term_id == term.id)
-                    {
-                        Self::engine_is_match(&compiled.engine, line)
+                    // O(1) lookup using HashMap instead of O(n) find
+                    let term_matches = if let Some(&idx) = plan.term_engine_map.get(&term.id) {
+                        Self::engine_is_match(&plan.engines[idx].engine, line)
                     } else {
                         false
                     };
@@ -121,10 +120,9 @@ impl QueryExecutor {
             }
             crate::services::query_planner::SearchStrategy::Or => {
                 for term in &plan.terms {
-                    let term_matches = if let Some(compiled) =
-                        plan.engines.iter().find(|e| e.term_id == term.id)
-                    {
-                        Self::engine_is_match(&compiled.engine, line)
+                    // O(1) lookup using HashMap instead of O(n) find
+                    let term_matches = if let Some(&idx) = plan.term_engine_map.get(&term.id) {
+                        Self::engine_is_match(&plan.engines[idx].engine, line)
                     } else {
                         false
                     };
@@ -137,10 +135,9 @@ impl QueryExecutor {
             }
             crate::services::query_planner::SearchStrategy::Not => {
                 for term in &plan.terms {
-                    let term_matches = if let Some(compiled) =
-                        plan.engines.iter().find(|e| e.term_id == term.id)
-                    {
-                        Self::engine_is_match(&compiled.engine, line)
+                    // O(1) lookup using HashMap instead of O(n) find
+                    let term_matches = if let Some(&idx) = plan.term_engine_map.get(&term.id) {
+                        Self::engine_is_match(&plan.engines[idx].engine, line)
                     } else {
                         false
                     };
@@ -196,10 +193,12 @@ impl QueryExecutor {
             return None;
         }
 
-        let mut details = Vec::new();
+        // Pre-allocate with capacity for better performance
+        let mut details = Vec::with_capacity(plan.engines.len());
 
         for compiled in &plan.engines {
             for mat in Self::engine_find_all(&compiled.engine, line) {
+                // O(1) lookup using HashMap instead of O(n) find
                 let term_value = plan
                     .terms
                     .iter()

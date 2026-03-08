@@ -1,453 +1,188 @@
-# CLAUDE.md
+# Claude Code Configuration - RuFlo V3
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## Behavioral Rules (Always Enforced)
 
-## 语言设置
+- Do what has been asked; nothing more, nothing less
+- NEVER create files unless they're absolutely necessary for achieving your goal
+- ALWAYS prefer editing an existing file to creating a new one
+- NEVER proactively create documentation files (*.md) or README files unless explicitly requested
+- NEVER save working files, text/mds, or tests to the root folder
+- Never continuously check status after spawning a swarm — wait for results
+- ALWAYS read a file before editing it
+- NEVER commit secrets, credentials, or .env files
 
-**重要**: 本项目使用中文作为主要交流语言。请：
-- 所有回答默认使用中文
-- 代码注释使用中文
-- 文档内容使用中文
-- 仅在引用英文原文或技术术语时使用英文
+## File Organization
 
----
+- NEVER save to root folder — use the directories below
+- Use `/src` for source code files
+- Use `/tests` for test files
+- Use `/docs` for documentation and markdown files
+- Use `/config` for configuration files
+- Use `/scripts` for utility scripts
+- Use `/examples` for example code
 
-> **项目**: log-analyzer_rust - 高性能桌面日志分析工具
-> **版本**: 0.0.143
-> **技术栈**: Tauri 2.0 + Rust 1.70+ + Flutter FFI (重构中)
-> **最后更新**: 2026-02-20
+## Project Architecture
 
----
+- Follow Domain-Driven Design with bounded contexts
+- Keep files under 500 lines
+- Use typed interfaces for all public APIs
+- Prefer TDD London School (mock-first) for new code
+- Use event sourcing for state changes
+- Ensure input validation at system boundaries
 
-## 快速链接
+### Project Config
 
-- **[项目文档中心](docs/README.md)** - 架构文档、用户指南、开发指南
-- **[Rust后端文档](log-analyzer/src-tauri/CLAUDE.md)** - 后端模块详细实现
+- **Topology**: hierarchical-mesh
+- **Max Agents**: 15
+- **Memory**: hybrid
+- **HNSW**: Enabled
+- **Neural**: Enabled
 
----
+## Build & Test
 
-## 核心架构
-
-### 技术栈
-- **框架**: Tauri 2.0 (桌面应用) + Flutter FFI (跨语言绑定)
-- **后端**: Rust 1.70+ + tokio 1.x (异步运行时) + SQLite (sqlx 0.7)
-- **搜索**: Aho-Corasick 算法 + Tantivy 0.22 全文搜索引擎 + DFA 正则引擎
-- **存储**: 内容寻址存储(CAS) + SQLite + FTS5 全文搜索
-- **缓存**: Moka (企业级) + LRU (搜索结果)
-- **压缩**: ZIP/TAR/GZ/RAR/7Z + async_zip 异步处理
-- **插件系统**: libloading 动态库加载 + ABI 版本验证 + 目录白名单
-- **观测性**: Tracing + OpenTelemetry + Prometheus Metrics
-
-### 应用数据目录 (离线存储)
-- **Windows**: `%APPDATA%/com.joeash.log-analyzer/workspaces/`
-- **macOS**: `~/Library/Application Support/com.joeash.log-analyzer/workspaces/`
-- **Linux**: `~/.local/share/com.joeash.log-analyzer/workspaces/`
-
-### 目录结构
-```
-log-analyzer_rust/
-├── log-analyzer/
-│   ├── src/                   # (重构中 - Flutter前端)
-│   └── src-tauri/            # Rust后端
-│       ├── src/
-│       │   ├── application/   # 应用接入层 (handlers/, queries/)
-│       │   ├── commands/      # Tauri命令(search, import, workspace等)
-│       │   ├── domain/       # 领域模型 (log_analysis/, search/, export/)
-│       │   ├── search_engine/ # 搜索引擎(Tantivy, DFA, Roaring索引)
-│       │   ├── services/     # 业务逻辑(FileWatcher, Typestate)
-│       │   ├── storage/      # CAS存储系统 + SQLite元数据
-│       │   ├── archive/      # 压缩包处理(ZIP/RAR/GZ/TAR/7Z)
-│       │   ├── task_manager/ # 异步任务Actor模型
-│       │   ├── monitoring/   # 观测性 (metrics, tracing)
-│       │   ├── models/       # 数据模型 (state, search_history)
-│       │   ├── security/     # 安全模块
-│       │   ├── ffi/          # Flutter FFI 桥接
-│       │   └── utils/        # 工具函数
-│       ├── crates/           # 内部crate
-│       │   ├── log-lexer/   # 日志词法分析器
-│       │   └── log-lexer-derive/ # 过程宏
-│       └── benches/          # 性能基准测试
-├── docs/                     # 项目文档
-│   ├── architecture/         # 架构文档 (CAS, API, 搜索功能)
-│   ├── guides/              # 用户指南 (快速参考, 多关键词搜索)
-│   ├── development/         # 开发指南 (Agents, CI/CD)
-│   └── reports/             # 项目报告
-├── scripts/                  # 工具脚本
-│   ├── validate-ci.sh       # CI验证脚本
-│   └── validate-release.sh  # 发布验证脚本
-└── CHANGELOG.md              # 更新日志
-```
-
----
-
-## 常用命令
-
-### 环境要求
-- **Node.js**: 22.12.0+ (通过 `engines` 字段强制)
-- **npm**: 10.0+
-- **Rust**: 1.70+ (MSVC 工具链 on Windows)
-- **系统依赖**: [Tauri前置依赖](https://tauri.app/v1/guides/getting-started/prerequisites)
-  - Linux: GTK3/GTK4 开发库 (根据系统已安装版本选择)
-  - macOS: Xcode Command Line Tools
-  - Windows: Microsoft C++ Build Tools + Windows SDK
-
-### 开发
 ```bash
-# 安装依赖
-npm install
+# Build
+npm run build
 
-# 启动开发服务器
-npm run tauri dev
+# Test
+npm test
 
-# TypeScript类型检查
-npm run type-check
-
-# ESLint检查
+# Lint
 npm run lint
-npm run lint:fix
-
-# 构建生产版本
-npm run tauri build
 ```
 
-### Rust测试
-```bash
-cd log-analyzer/src-tauri
+- ALWAYS run tests after making code changes
+- ALWAYS verify build succeeds before committing
 
-# 运行所有测试
-cargo test --all-features
+## Security Rules
 
-# 显示测试输出
-cargo test -- --nocapture
+- NEVER hardcode API keys, secrets, or credentials in source files
+- NEVER commit .env files or any file containing secrets
+- Always validate user input at system boundaries
+- Always sanitize file paths to prevent directory traversal
+- Run `npx @claude-flow/cli@latest security scan` after security-related changes
 
-# 运行特定模块测试
-cargo test pattern_matcher
+## Concurrency: 1 MESSAGE = ALL RELATED OPERATIONS
 
-# 运行集成测试
-cargo test --test '*'
+- All operations MUST be concurrent/parallel in a single message
+- Use Claude Code's Task tool for spawning agents, not just MCP
+- ALWAYS batch ALL todos in ONE TodoWrite call (5-10+ minimum)
+- ALWAYS spawn ALL agents in ONE message with full instructions via Task tool
+- ALWAYS batch ALL file reads/writes/edits in ONE message
+- ALWAYS batch ALL Bash commands in ONE message
 
-# 性能基准测试 (使用 criterion)
-cargo bench
+## Swarm Orchestration
 
-# 代码格式化
-cargo fmt
+- MUST initialize the swarm using CLI tools when starting complex tasks
+- MUST spawn concurrent agents using Claude Code's Task tool
+- Never use CLI tools alone for execution — Task tool agents do the actual work
+- MUST call CLI tools AND Task tool in ONE message for complex work
 
-# 代码格式检查 (CI使用)
-cargo fmt -- --check
+### 3-Tier Model Routing (ADR-026)
 
-# 静态分析
-cargo clippy -- -D warnings
+| Tier | Handler | Latency | Cost | Use Cases |
+|------|---------|---------|------|-----------|
+| **1** | Agent Booster (WASM) | <1ms | $0 | Simple transforms (var→const, add types) — Skip LLM |
+| **2** | Haiku | ~500ms | $0.0002 | Simple tasks, low complexity (<30%) |
+| **3** | Sonnet/Opus | 2-5s | $0.003-0.015 | Complex reasoning, architecture, security (>30%) |
 
-# CI完整检查 (所有目标)
-cargo clippy --all-features --all-targets -- -D warnings
-```
+- Always check for `[AGENT_BOOSTER_AVAILABLE]` or `[TASK_MODEL_RECOMMENDATION]` before spawning agents
+- Use Edit tool directly when `[AGENT_BOOSTER_AVAILABLE]`
 
-### Flutter开发 (重构中)
-```bash
-# Flutter 项目位于 log-analyzer_flutter/
-cd log-analyzer_flutter
+## Swarm Configuration & Anti-Drift
 
-# 运行 Flutter
-flutter run
-
-# 构建桌面应用
-flutter build tauri
-```
-
----
-
-## 核心开发任务
-
-### 添加新的Tauri命令
-
-**步骤**:
-1. 在 `log-analyzer/src-tauri/src/commands/` 创建新文件(如 `my_feature.rs`)
-2. 使用 `#[tauri::command]` 宏装饰函数
-3. 在 `log-analyzer/src-tauri/src/commands/mod.rs` 中导出
-4. 在 `log-analyzer/src-tauri/src/lib.rs` 的 `invoke_handler()` 中注册
-5. 前端添加类型定义，使用 `invoke()` 调用
-
-**注意事项**:
-- 遵循「前后端集成规范」: 字段名必须一致 (task_id 不是 taskId)
-- 使用 `AppError` 进行错误处理
-- 添加单元测试到命令文件中
-
-### 调试Tauri IPC通信
-
-1. **后端日志**: 使用 `tracing::{info, debug, error}` 添加日志
-2. **前端日志**: 使用 `console.log/error` 检查调用结果
-3. **DevTools**: 按 F12 打开开发者工具，查看 Console 和 Network
-4. **序列化调试**: `println!("{}", serde_json::to_string_pretty(&my_data)?);`
-
-**常见错误**:
-- 字段名不一致: Rust `task_id` vs 前端 `taskId`
-- Option/null 处理: Rust `None` → JSON `null`，但 Zod 不接受 `null`
-
-### 添加新的前端页面
-
-1. 创建页面组件
-2. 添加 i18n 翻译 (zh.json / en.json)
-3. 在导航中添加链接
-
-**最佳实践**: 函数式组件 + Hooks，所有文案走 i18n，Tailwind Utility 类
-
----
-
-## 前后端集成规范
-
-> **关键**: Rust字段名 = JSON字段名 = TypeScript字段名
-
-```rust
-// Rust后端
-#[derive(Serialize, Deserialize)]
-pub struct TaskInfo {
-    pub task_id: String;        // 直接用 snake_case
-    pub task_type: String;
-}
-```
-
-```typescript
-// TypeScript前端
-interface TaskInfo {
-  task_id: string;              // 与Rust完全一致
-  task_type: string;
-}
-```
-
-### CAS存储 UNIQUE约束处理
-```rust
-// INSERT OR IGNORE + SELECT 模式
-pub async fn insert_file(&self, metadata: &FileMetadata) -> Result<i64> {
-    sqlx::query("INSERT OR IGNORE INTO files (...) VALUES (...)")
-        .execute(&self.pool).await?;
-
-    let id = sqlx::query_as::<_, (i64,)>("SELECT id FROM files WHERE sha256_hash = ?")
-        .bind(&metadata.sha256_hash)
-        .fetch_one(&self.pool).await?.0;
-
-    Ok(id)
-}
-```
-
----
-
-## 测试要求
-
-### Rust后端
-- **测试覆盖率**: 80%+
-- **测试框架**: rstest (增强单元测试) + proptest (属性测试) + criterion (基准测试)
-- **核心测试模块**:
-  - `storage/`: CAS存储、完整性验证
-  - `archive/`: 压缩包处理 (ZIP/RAR/GZ/TAR/7Z)
-  - `search_engine/`: Tantivy搜索引擎、DFA引擎、Roaring索引
-  - `services/`: PatternMatcher、QueryExecutor、FileWatcher
-  - `task_manager/`: Actor模型任务管理
-  - `domain/`: 领域模型、业务规则验证
-
----
-
-## 代码质量检查
-
-### 推送前强制验证 (Git Pre-Push Hook)
-
-本项目已配置 **Git pre-push hook**，使用 Husky 管理 (`.husky/pre-push`)。
+- ALWAYS use hierarchical topology for coding swarms
+- Keep maxAgents at 6-8 for tight coordination
+- Use specialized strategy for clear role boundaries
+- Use `raft` consensus for hive-mind (leader maintains authoritative state)
+- Run frequent checkpoints via `post-task` hooks
+- Keep shared memory namespace for all agents
 
 ```bash
-# 推送前自动执行
-npm run validate:ci
-
-# 或手动运行验证脚本
-bash ../scripts/validate-ci.sh
+npx @claude-flow/cli@latest swarm init --topology hierarchical --max-agents 8 --strategy specialized
 ```
 
-### 验证内容
+## Swarm Execution Rules
 
-| 检查项 | 命令 |
-|--------|------|
-| Rust 格式 | `cargo fmt -- --check` |
-| Rust Clippy | `cargo clippy --all-features --all-targets -- -D warnings` |
-| Rust 测试 | `cargo test --all-features --lib --bins` |
+- ALWAYS use `run_in_background: true` for all agent Task calls
+- ALWAYS put ALL agent Task calls in ONE message for parallel execution
+- After spawning, STOP — do NOT add more tool calls or check status
+- Never poll TaskOutput or check swarm status — trust agents to return
+- When agent results arrive, review ALL results before proceeding
 
-**完整CI验证**: `npm run validate:ci` (运行 `scripts/validate-ci.sh`)
+## V3 CLI Commands
 
-### 跳过 Hook (不推荐)
+### Core Commands
+
+| Command | Subcommands | Description |
+|---------|-------------|-------------|
+| `init` | 4 | Project initialization |
+| `agent` | 8 | Agent lifecycle management |
+| `swarm` | 6 | Multi-agent swarm coordination |
+| `memory` | 11 | AgentDB memory with HNSW search |
+| `task` | 6 | Task creation and lifecycle |
+| `session` | 7 | Session state management |
+| `hooks` | 17 | Self-learning hooks + 12 workers |
+| `hive-mind` | 6 | Byzantine fault-tolerant consensus |
+
+### Quick CLI Examples
+
 ```bash
-git push --no-verify
+npx @claude-flow/cli@latest init --wizard
+npx @claude-flow/cli@latest agent spawn -t coder --name my-coder
+npx @claude-flow/cli@latest swarm init --v3-mode
+npx @claude-flow/cli@latest memory search --query "authentication patterns"
+npx @claude-flow/cli@latest doctor --fix
 ```
 
----
+## Available Agents (60+ Types)
 
-## 编码规范
+### Core Development
+`coder`, `reviewer`, `tester`, `planner`, `researcher`
 
-### 必须使用业内成熟方案（铁律）
+### Specialized
+`security-architect`, `security-auditor`, `memory-specialist`, `performance-engineer`
 
-| 需求 | 推荐方案 | 禁止方案 |
-|------|---------|----------|
-| 超时控制 | AbortController | 手写setTimeout + flag |
-| 状态管理 | Zustand / React Query | 自造useState管理 |
-| 多模式匹配 | Aho-Corasick算法库 | 逐行正则表达式 |
-| 异步重试 | tokio-retry | 手写loop + sleep |
-| 表单验证 | Zod / Validator derive | 手写正则校验 |
-| 日期处理 | date-fns / chrono | moment.js |
-| HTTP客户端 | fetch / reqwest | XMLHttpRequest原生 |
-| 全文搜索 | Tantivy | 手写倒排索引 |
-| 压缩处理 | zip/tar/flate2/async_zip | 手写字节流解析 |
-| 错误处理 | thiserror / eyre / miette | String / Box<dyn Error> |
+### Swarm Coordination
+`hierarchical-coordinator`, `mesh-coordinator`, `adaptive-coordinator`
 
-**例外**: 只有当不存在任何成熟方案时，经过用户明确批准才可实施自定义方案。
+### GitHub & Repository
+`pr-manager`, `code-review-swarm`, `issue-tracker`, `release-manager`
 
-### Rust编码规范
-- **命名**: `snake_case` (模块/函数), `CamelCase` (类型/Trait)
-- **风格**: `cargo fmt`, `cargo clippy -- -D warnings`
-- **错误处理**: 使用 `thiserror` 定义错误类型，使用 `eyre/miette` 进行错误报告
-- **错误传播**: 使用 `?` 代替 `unwrap/expect` (生产代码100%消除panic)
-- **文档注释**: 公开API添加 `///` 文档注释
-- **并发安全**: 使用 `parking_lot` 高性能锁，`DashMap` 并发哈希映射
-- **异步编程**: 使用 `tokio` 运行时，`async-trait` 异步trait
+### SPARC Methodology
+`sparc-coord`, `sparc-coder`, `specification`, `pseudocode`, `architecture`
 
-### Flutter/跨语言编码规范
-- **Flutter FFI**: 使用 `flutter_rust_bridge` 2.x 绑定 Rust 后端
-- **状态管理**: Provider / Riverpod (Flutter)
-- **命名**: `PascalCase` (组件/类型), `camelCase` (变量/函数)
-- **类型安全**: 严格模式 Dart，避免 `dynamic`
-- **UI构建**: Widget组合优于继承，使用 `const` 构造函数优化
+## Memory Commands Reference
 
----
-
-## 故障排查
-
-### 搜索无结果
-1. 检查工作区状态是否为 `READY`
-2. 查看后端日志确认索引已加载
-3. 检查数据库: `SELECT COUNT(*) FROM files;`
-
-### 任务一直显示"处理中"
-- EventBus 版本号重复，幂等性跳过更新
-- UNIQUE 约束冲突，任务未正常完成
-- 确保任务事件版本号单调递增
-
-### Windows路径过长错误
-应用已使用 `dunce` crate 处理 UNC 路径。
-
-### Linux GTK 依赖不匹配
 ```bash
-# 检测已安装的 GTK 版本
-pkg-config --modversion gtk+-3.0
-pkg-config --modversion gtk4
+# Store (REQUIRED: --key, --value; OPTIONAL: --namespace, --ttl, --tags)
+npx @claude-flow/cli@latest memory store --key "pattern-auth" --value "JWT with refresh" --namespace patterns
 
-# 根据返回版本号离线补齐对应包
+# Search (REQUIRED: --query; OPTIONAL: --namespace, --limit, --threshold)
+npx @claude-flow/cli@latest memory search --query "authentication patterns"
+
+# List (OPTIONAL: --namespace, --limit)
+npx @claude-flow/cli@latest memory list --namespace patterns --limit 10
+
+# Retrieve (REQUIRED: --key; OPTIONAL: --namespace)
+npx @claude-flow/cli@latest memory retrieve --key "pattern-auth" --namespace patterns
 ```
 
----
+## Quick Setup
 
-## 核心架构决策
+```bash
+claude mcp add claude-flow -- npx -y @claude-flow/cli@latest
+npx @claude-flow/cli@latest daemon start
+npx @claude-flow/cli@latest doctor --fix
+```
 
-### 为什么选择 Aho-Corasick?
-- 正则表达式逐行匹配复杂度 O(n×m)
-- Aho-Corasick 多模式匹配复杂度 O(n+m)
-- 性能提升 80%+，10,000+ 次搜索/秒
+## Claude Code vs CLI Tools
 
-### 为什么采用 CAS 架构?
-- 解决 Windows 260 字符路径限制
-- SHA-256 内容寻址，自动去重
-- 文件路径与内容解耦，节省磁盘空间 30%+
+- Claude Code's Task tool handles ALL execution: agents, file ops, code generation, git
+- CLI tools handle coordination via Bash: swarm init, memory, hooks, routing
+- NEVER use CLI tools as a substitute for Task tool agents
 
-### QueryExecutor 职责拆分
-- 拆分为 Validator、Planner、Executor 三个独立组件
-- 符合单一职责原则(SRP)，代码复杂度降低 60%
+## Support
 
-### 插件系统安全架构
-- **目录白名单**: 限制动态库加载路径
-- **ABI版本验证**: 防止不兼容插件加载
-- **深度路径防御**: 递归扫描防止路径遍历攻击
-- **熔断自愈**: Circuit Breaker + Poisoned Lock Recovery
-
----
-
-## 关键依赖说明
-
-### Rust后端核心依赖 (Cargo.toml)
-
-| 依赖 | 版本 | 用途 |
-|------|------|------|
-| **框架** | | |
-| `tauri` | 2.0.0 | 跨平台桌面应用框架 |
-| `flutter_rust_bridge` | 2.11.1 | Flutter FFI 桥接 |
-| **异步/并发** | | |
-| `tokio` | 1.x | 异步运行时 |
-| `parking_lot` | 0.12 | 高性能锁 |
-| `crossbeam` | 0.8 | 无锁数据结构 |
-| `dashmap` | 5.5 | 并发哈希映射 |
-| **搜索/索引** | | |
-| `tantivy` | 0.22 | 全文搜索引擎 (Rust版Lucene) |
-| `aho-corasick` | 1.1 | 多模式字符串匹配算法 |
-| `regex-automata` | 0.4 | DFA正则引擎 (流式匹配) |
-| `roaring` | 0.10 | 高效位图索引 |
-| **存储/缓存** | | |
-| `sqlx` | 0.7 | 异步SQL工具包 (SQLite + FTS5) |
-| `moka` | 0.12 | 企业级缓存系统 |
-| `lru` | 0.12 | LRU缓存 |
-| **压缩/存档** | | |
-| `zip` | 0.6 | ZIP格式支持 |
-| `tar` / `tokio-tar` | 0.4 / 0.3 | TAR格式支持 |
-| `flate2` | 1.0 | GZIP压缩/解压 |
-| `unrar` | 0.5 | RAR格式支持 (libunrar绑定) |
-| `sevenz-rust` | 0.5 | 7Z格式支持 (纯Rust) |
-| `async_zip` | 0.0.17 | 异步ZIP处理 |
-| **错误处理/日志** | | |
-| `thiserror` | 1.0 | 错误处理derive宏 |
-| `eyre` / `miette` | 0.6 / 5.0 | 结构化错误报告 |
-| `tracing` | 0.1 | 结构化日志追踪 |
-| `sentry` | 0.32 | 错误监控 |
-| **观测性** | | |
-| `prometheus` | 0.13 | 指标收集 |
-| `metrics` | 0.22 | 应用指标 |
-| **其他** | | |
-| `libloading` | 0.8 | 动态库加载 (插件系统) |
-| `notify` | 6.1 | 文件系统监听 |
-| `governor` | 0.6 | 速率限制器 |
-| `sysinfo` | 0.31 | 系统信息 |
-
-### 内部 crate
-
-| crate | 用途 |
-|-------|------|
-| `log-lexer` | 日志词法分析器 |
-| `log-lexer-derive` | 过程宏 (自定义派生) |
-
-### 开发工具依赖
-
-| 工具 | 用途 |
-|------|------|
-| `rstest` | 增强单元测试 |
-| `proptest` | 属性测试 (模糊测试) |
-| `criterion` | 性能基准测试 |
-
----
-
-## 性能基准
-
-### 搜索性能
-- 单关键词搜索: <10ms
-- 多关键词搜索(10个): <50ms
-- Tantivy全文搜索: <200ms
-- 吞吐量: 10,000+ 次搜索/秒
-
-### 文件处理
-- ZIP 解压: 100MB < 5秒 (500MB 硬限制防内存炸弹)
-- GZ 流式解压: 1MB 阈值触发流式处理
-- 索引构建: 10,000 行 < 1秒
-- 增量更新: 1,000 行 < 100ms
-
-### 内存优化
-- 空闲状态: <100MB
-- 加载 1GB 日志: <500MB
-- 并发搜索内存: O(max_concurrent) (非O(n))
-- GZ解压峰值: 10MB (优化前99MB)
-
-### 存储优化
-- CAS自动去重: 节省磁盘空间 30%+
-- SQLite FTS5: 查询性能提升10倍
-- 索引压缩: Gzip压缩节省空间50%+
-
----
+- Documentation: https://github.com/ruvnet/claude-flow
+- Issues: https://github.com/ruvnet/claude-flow/issues

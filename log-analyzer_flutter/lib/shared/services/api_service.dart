@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:flutter/foundation.dart';
@@ -9,6 +10,19 @@ import 'bridge_service.dart';
 import 'generated/ffi/types.dart';
 
 part 'api_service.g.dart';
+
+/// 重试配置
+class RetryConfig {
+  final int maxRetries;
+  final Duration delay;
+  final Duration maxDelay;
+
+  const RetryConfig({
+    this.maxRetries = 3,
+    this.delay = const Duration(milliseconds: 500),
+    this.maxDelay = const Duration(seconds: 5),
+  });
+}
 
 /// API 服务 Provider
 ///
@@ -46,6 +60,9 @@ class AppConfig {
 class ApiService {
   final BridgeService _bridge = BridgeService.instance;
 
+  /// 重试配置
+  static const RetryConfig defaultRetryConfig = RetryConfig();
+
   /// FFI 桥接是否已初始化
   static bool _isInitialized = false;
 
@@ -68,12 +85,49 @@ class ApiService {
   /// 用于直接访问底层桥接服务
   BridgeService get bridge => _bridge;
 
+  // ==================== 重试机制 ====================
+
+  /// 执行带重试的操作
+  ///
+  /// 使用指数退避算法进行重试
+  Future<T> _executeWithRetry<T>({
+    required Future<T> Function() operation,
+    RetryConfig config = defaultRetryConfig,
+    String? operationName,
+  }) async {
+    int attempt = 0;
+    Duration currentDelay = config.delay;
+
+    while (true) {
+      try {
+        return await operation();
+      } catch (e) {
+        attempt++;
+        if (attempt >= config.maxRetries) {
+          rethrow;
+        }
+
+        debugPrint(
+          '${operationName ?? "操作"}失败 (尝试 $attempt/${config.maxRetries}): $e',
+        );
+
+        // 指数退避
+        await Future.delayed(currentDelay);
+        currentDelay = currentDelay * 2;
+        if (currentDelay > config.maxDelay) {
+          currentDelay = config.maxDelay;
+        }
+      }
+    }
+  }
+
   // ==================== 搜索操作 ====================
 
   /// 执行日志搜索
   ///
   /// 对应 Tauri 命令: search_logs
   /// 返回: search_id (String)
+  /// 使用重试机制处理临时网络错误
   Future<String> searchLogs({
     required String query,
     String? workspaceId,
@@ -81,24 +135,25 @@ class ApiService {
     SearchFilters? filters,
     FilterOptions? filterOptions,
   }) async {
-    try {
-      String? filtersJson;
-      if (filters != null) {
-        filtersJson = jsonEncode(filters.toJson());
-      } else if (filterOptions != null) {
-        // 将 FilterOptions 转换为 JSON
-        filtersJson = jsonEncode(_filterOptionsToJson(filterOptions));
-      }
+    return _executeWithRetry(
+      operationName: 'searchLogs',
+      operation: () async {
+        String? filtersJson;
+        if (filters != null) {
+          filtersJson = jsonEncode(filters.toJson());
+        } else if (filterOptions != null) {
+          // 将 FilterOptions 转换为 JSON
+          filtersJson = jsonEncode(_filterOptionsToJson(filterOptions));
+        }
 
-      return await _bridge.searchLogs(
-        query: query,
-        workspaceId: workspaceId,
-        maxResults: maxResults,
-        filters: filtersJson,
-      );
-    } catch (e) {
-      throw ApiServiceException('搜索失败: $e');
-    }
+        return await _bridge.searchLogs(
+          query: query,
+          workspaceId: workspaceId,
+          maxResults: maxResults,
+          filters: filtersJson,
+        );
+      },
+    );
   }
 
   /// 取消搜索

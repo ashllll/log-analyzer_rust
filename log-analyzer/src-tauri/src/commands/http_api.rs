@@ -12,7 +12,7 @@
 
 use axum::{
     extract::State,
-    http::StatusCode,
+    http::{HeaderValue, StatusCode},
     response::Json,
     routing::{delete, get, post, put},
     Router,
@@ -22,10 +22,11 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::{Any, CorsLayer, AllowOrigin};
 use tracing::{info, warn};
 
 use crate::models::AppState;
+use crate::utils::validation::validate_workspace_id;
 
 // ============ 全局状态管理（独立于 FFI） ============
 
@@ -276,6 +277,11 @@ async fn get_workspace_status(
     State(state): State<Arc<RwLock<HttpApiState>>>,
     axum::extract::Path(workspace_id): axum::extract::Path<String>,
 ) -> Json<ApiResponse<WorkspaceInfo>> {
+    // 安全验证: 验证 workspace_id 格式
+    if let Err(e) = validate_workspace_id(&workspace_id) {
+        return Json(ApiResponse::error(&format!("Invalid workspace_id: {}", e)));
+    }
+
     let state = state.read().await;
     let workspace_dir = state.app_data_dir.join("extracted").join(&workspace_id);
 
@@ -322,7 +328,7 @@ async fn get_workspace_status(
     }))
 }
 
-/// 搜索日志
+/// 搜索日志 - 调用实际的 Tauri 命令
 async fn search_logs(
     State(_state): State<Arc<RwLock<HttpApiState>>>,
     Json(req): Json<SearchRequest>,
@@ -333,44 +339,56 @@ async fn search_logs(
 
     info!("HTTP API: search_logs called with query: {}", req.query);
 
-    // 尝试获取全局状态
+    // 获取全局状态
     let ctx = match get_http_api_context() {
         Some(ctx) => ctx,
         None => {
-            warn!("HTTP API context not initialized, returning mock response");
-            let search_id = uuid::Uuid::new_v4().to_string();
-            return Json(ApiResponse::success(SearchResponse {
-                search_id,
-                total_results: 0,
-                message: Some("HTTP API context not initialized. Search functionality requires app to be running.".to_string()),
-            }));
+            return Json(ApiResponse::error(
+                "HTTP API context not initialized. Search requires app to be running.",
+            ));
         }
     };
+
+    // 调用实际的 search_logs Tauri 命令
+    // 注意：Tauri 命令需要 AppHandle，我们在 HTTP API 模式下使用模拟的方式
+    // 这里直接调用搜索逻辑，类似于 Tauri 命令的实现
+    match http_search_logs(&ctx, &req).await {
+        Ok(response) => Json(ApiResponse::success(response)),
+        Err(e) => Json(ApiResponse::error(&e)),
+    }
+}
+
+/// HTTP API 版本的搜索逻辑（调用实际的业务代码）
+async fn http_search_logs(
+    ctx: &HttpApiContext,
+    req: &SearchRequest,
+) -> Result<SearchResponse, String> {
+    use crate::models::search::{QueryMetadata, QueryOperator, SearchTerm, TermSource};
+    use crate::services::QueryExecutor;
 
     // 生成搜索ID
     let search_id = uuid::Uuid::new_v4().to_string();
 
     // 获取工作区 ID
-    let workspace_id = match req.workspace_id {
-        Some(ref id) => id.clone(),
+    let workspace_id = match &req.workspace_id {
+        Some(id) => id.clone(),
         None => {
-            // 尝试获取第一个可用的工作区
             let dirs = ctx.app_state.workspace_dirs.lock();
-            if let Some(first_workspace_id) = dirs.keys().next() {
-                first_workspace_id.clone()
-            } else {
-                return Json(ApiResponse::error("No workspaces available"));
-            }
+            dirs.keys().next().cloned()
+                .ok_or("No workspaces available")?
         }
     };
+
+    // 安全验证: 验证 workspace_id 格式
+    if let Err(e) = validate_workspace_id(&workspace_id) {
+        return Err(format!("Invalid workspace_id: {}", e));
+    }
 
     // 获取工作区目录
     let workspace_dir = {
         let dirs = ctx.app_state.workspace_dirs.lock();
-        match dirs.get(&workspace_id) {
-            Some(dir) => dir.clone(),
-            None => return Json(ApiResponse::error(&format!("Workspace not found: {}", workspace_id))),
-        }
+        dirs.get(&workspace_id).cloned()
+            .ok_or_else(|| format!("Workspace not found: {}", workspace_id))?
     };
 
     // 获取或创建 CAS 实例
@@ -389,31 +407,21 @@ async fn search_logs(
 
     // 获取或创建 MetadataStore
     let metadata_store = {
-        // 先检查是否已存在
         let existing_store = {
             let stores = ctx.app_state.metadata_stores.lock();
             stores.get(&workspace_id).cloned()
         };
-        
+
         match existing_store {
             Some(store) => store,
             None => {
-                // 创建新的 MetadataStore
-                match crate::storage::metadata_store::MetadataStore::new(&workspace_dir).await {
-                    Ok(store) => {
-                        let store_arc = Arc::new(store);
-                        // 插入到存储
-                        let mut stores = ctx.app_state.metadata_stores.lock();
-                        stores.insert(workspace_id.clone(), Arc::clone(&store_arc));
-                        store_arc
-                    }
-                    Err(e) => {
-                        return Json(ApiResponse::error(&format!(
-                            "Failed to create metadata store: {}",
-                            e
-                        )));
-                    }
-                }
+                let store = crate::storage::metadata_store::MetadataStore::new(&workspace_dir)
+                    .await
+                    .map_err(|e| format!("Failed to create metadata store: {}", e))?;
+                let store_arc = Arc::new(store);
+                let mut stores = ctx.app_state.metadata_stores.lock();
+                stores.insert(workspace_id.clone(), Arc::clone(&store_arc));
+                store_arc
             }
         }
     };
@@ -422,20 +430,10 @@ async fn search_logs(
     let max_results = req.max_results.unwrap_or(50000).min(100_000);
 
     // 获取所有文件
-    let files = match metadata_store.get_all_files().await {
-        Ok(files) => files,
-        Err(e) => {
-            return Json(ApiResponse::error(&format!(
-                "Failed to get files: {}",
-                e
-            )));
-        }
-    };
+    let files = metadata_store.get_all_files().await
+        .map_err(|e| format!("Failed to get files: {}", e))?;
 
     // 构建查询
-    use crate::models::search::{QueryMetadata, QueryOperator, SearchTerm, TermSource};
-    use crate::services::QueryExecutor;
-
     let raw_terms: Vec<String> = req
         .query
         .split('|')
@@ -445,7 +443,7 @@ async fn search_logs(
         .collect();
 
     if raw_terms.is_empty() {
-        return Json(ApiResponse::error("Search query is empty after processing"));
+        return Err("Search query is empty after processing".to_string());
     }
 
     let search_terms: Vec<SearchTerm> = raw_terms
@@ -478,23 +476,18 @@ async fn search_logs(
     };
 
     let mut executor = QueryExecutor::new(100);
-    let plan = match executor.execute(&structured_query) {
-        Ok(p) => p,
-        Err(e) => {
-            return Json(ApiResponse::error(&format!("Query execution error: {}", e)));
-        }
-    };
+    let plan = executor.execute(&structured_query)
+        .map_err(|e| format!("Query execution error: {}", e))?;
 
     // 执行搜索
     let mut total_results = 0;
-    let max_results = max_results.min(1000); // HTTP API 限制最大结果数
+    let max_results = max_results.min(1000);
 
     for file_metadata in files.iter().take(100) {
         if total_results >= max_results {
             break;
         }
 
-        // 使用 CAS 读取内容
         if !cas.exists(&file_metadata.sha256_hash) {
             continue;
         }
@@ -504,10 +497,8 @@ async fn search_logs(
             Err(_) => continue,
         };
 
-        // 转换为字符串
         let content_str = String::from_utf8_lossy(&content);
 
-        // 搜索每一行
         for line in content_str.lines() {
             if total_results >= max_results {
                 break;
@@ -519,21 +510,18 @@ async fn search_logs(
         }
     }
 
-    info!(
-        "HTTP API: search completed with {} results",
-        total_results
-    );
+    info!("HTTP API: search completed with {} results", total_results);
 
-    Json(ApiResponse::success(SearchResponse {
+    Ok(SearchResponse {
         search_id,
         total_results,
         message: None,
-    }))
+    })
 }
 
-/// 创建工作区
+/// 创建工作区 - 调用实际的 Tauri 命令
 async fn create_workspace(
-    State(state): State<Arc<RwLock<HttpApiState>>>,
+    State(_state): State<Arc<RwLock<HttpApiState>>>,
     Json(req): Json<CreateWorkspaceRequest>,
 ) -> Json<ApiResponse<String>> {
     if req.name.is_empty() {
@@ -545,13 +533,37 @@ async fn create_workspace(
 
     info!("HTTP API: create_workspace called with name: {}", req.name);
 
+    // 获取全局状态
+    let ctx = match get_http_api_context() {
+        Some(ctx) => ctx,
+        None => {
+            return Json(ApiResponse::error(
+                "HTTP API context not initialized. Create workspace requires app to be running.",
+            ));
+        }
+    };
+
+    // 调用实际的 create_workspace 业务逻辑
+    match http_create_workspace(&ctx, &req).await {
+        Ok(workspace_id) => {
+            info!("Workspace created successfully: {}", workspace_id);
+            Json(ApiResponse::success(workspace_id))
+        }
+        Err(e) => Json(ApiResponse::error(&e)),
+    }
+}
+
+/// HTTP API 版本的工作区创建逻辑（调用实际的业务代码）
+async fn http_create_workspace(
+    ctx: &HttpApiContext,
+    req: &CreateWorkspaceRequest,
+) -> Result<String, String> {
+    use crate::commands::workspace::WorkspaceMetadata;
+
     // 验证路径存在
     let source_path = std::path::Path::new(&req.path);
     if !source_path.exists() {
-        return Json(ApiResponse::error(&format!(
-            "Path does not exist: {}",
-            req.path
-        )));
+        return Err(format!("Path does not exist: {}", req.path));
     }
 
     // 生成 workspace ID
@@ -561,68 +573,44 @@ async fn create_workspace(
     );
 
     // 获取应用数据目录
-    let state = state.read().await;
-    let workspace_dir = state.app_data_dir.join("extracted").join(&workspace_id);
+    let workspace_dir = ctx.app_data_dir.join("extracted").join(&workspace_id);
 
     // 创建工作区目录
-    if let Err(e) = tokio::fs::create_dir_all(&workspace_dir).await {
-        return Json(ApiResponse::error(&format!(
-            "Failed to create workspace dir: {}",
-            e
-        )));
-    }
+    tokio::fs::create_dir_all(&workspace_dir).await
+        .map_err(|e| format!("Failed to create workspace dir: {}", e))?;
 
     // 保存工作区元数据
-    let metadata = crate::commands::workspace::WorkspaceMetadata::new(
-        req.name.clone(),
-        Some(req.path.clone()),
-    );
-    if let Err(e) = metadata.save(&workspace_dir).await {
-        return Json(ApiResponse::error(&format!(
-            "Failed to save workspace metadata: {}",
-            e
-        )));
+    let metadata = WorkspaceMetadata::new(req.name.clone(), Some(req.path.clone()));
+    metadata.save(&workspace_dir).await
+        .map_err(|e| format!("Failed to save workspace metadata: {}", e))?;
+
+    // 初始化工作区资源
+    // 存储工作区目录映射
+    {
+        let mut workspace_dirs = ctx.app_state.workspace_dirs.lock();
+        workspace_dirs.insert(workspace_id.clone(), workspace_dir.clone());
     }
 
-    // 尝试使用全局状态初始化工作区
-    if let Some(ctx) = get_http_api_context() {
-        // 存储工作区目录映射
-        {
-            let mut workspace_dirs = ctx.app_state.workspace_dirs.lock();
-            workspace_dirs.insert(workspace_id.clone(), workspace_dir.clone());
-        }
-
-        // 初始化 CAS 和 MetadataStore
-        let cas = Arc::new(crate::storage::ContentAddressableStorage::new(
-            workspace_dir.clone(),
-        ));
-        {
-            let mut cas_instances = ctx.app_state.cas_instances.lock();
-            cas_instances.insert(workspace_id.clone(), cas);
-        }
-
-        let metadata_store = match crate::storage::metadata_store::MetadataStore::new(&workspace_dir).await {
-            Ok(store) => Arc::new(store),
-            Err(e) => {
-                return Json(ApiResponse::error(&format!(
-                    "Failed to create metadata store: {}",
-                    e
-                )));
-            }
-        };
-        {
-            let mut stores = ctx.app_state.metadata_stores.lock();
-            stores.insert(workspace_id.clone(), metadata_store);
-        }
-
-        info!(
-            workspace_id = %workspace_id,
-            name = %req.name,
-            "Workspace created successfully"
-        );
+    // 初始化 CAS
+    let cas = Arc::new(crate::storage::ContentAddressableStorage::new(
+        workspace_dir.clone(),
+    ));
+    {
+        let mut cas_instances = ctx.app_state.cas_instances.lock();
+        cas_instances.insert(workspace_id.clone(), cas);
     }
 
-    Json(ApiResponse::success(workspace_id))
+    // 初始化 MetadataStore
+    let metadata_store = crate::storage::metadata_store::MetadataStore::new(&workspace_dir)
+        .await
+        .map_err(|e| format!("Failed to create metadata store: {}", e))?;
+    let metadata_store = Arc::new(metadata_store);
+    {
+        let mut stores = ctx.app_state.metadata_stores.lock();
+        stores.insert(workspace_id.clone(), metadata_store);
+    }
+
+    Ok(workspace_id)
 }
 
 /// 删除工作区
@@ -686,6 +674,112 @@ async fn delete_workspace(
 
     info!("Workspace {} deleted successfully", workspace_id);
     Json(ApiResponse::success(true))
+}
+
+/// 刷新工作区 - 调用实际的 Tauri 命令
+async fn refresh_workspace(
+    State(_state): State<Arc<RwLock<HttpApiState>>>,
+    axum::extract::Path(workspace_id): axum::extract::Path<String>,
+) -> Json<ApiResponse<String>> {
+    info!("HTTP API: refresh_workspace called for: {}", workspace_id);
+
+    // 获取全局状态
+    let ctx = match get_http_api_context() {
+        Some(ctx) => ctx,
+        None => {
+            return Json(ApiResponse::error(
+                "HTTP API context not initialized. Refresh workspace requires app to be running.",
+            ));
+        }
+    };
+
+    // 获取工作区目录
+    let workspace_dir = {
+        let dirs = ctx.app_state.workspace_dirs.lock();
+        match dirs.get(&workspace_id) {
+            Some(dir) => dir.clone(),
+            None => {
+                return Json(ApiResponse::error(&format!(
+                    "Workspace not found: {}",
+                    workspace_id
+                )));
+            }
+        }
+    };
+
+    // 获取原始路径（从元数据中读取）
+    let source_path = match crate::commands::workspace::WorkspaceMetadata::load(&workspace_dir).await {
+        Some(metadata) => metadata.source_path.unwrap_or_default(),
+        None => String::new(),
+    };
+
+    if source_path.is_empty() || !std::path::Path::new(&source_path).exists() {
+        return Json(ApiResponse::error("Source path not found for refresh"));
+    }
+
+    // 调用实际的 refresh 业务逻辑（重新导入）
+    match http_refresh_workspace(&ctx, &workspace_id, &source_path).await {
+        Ok(task_id) => {
+            info!("Workspace {} refreshed successfully", workspace_id);
+            Json(ApiResponse::success(task_id))
+        }
+        Err(e) => Json(ApiResponse::error(&e)),
+    }
+}
+
+/// HTTP API 版本的工作区刷新逻辑（调用实际的业务代码）
+async fn http_refresh_workspace(
+    ctx: &HttpApiContext,
+    workspace_id: &str,
+    source_path: &str,
+) -> Result<String, String> {
+    // 生成任务 ID
+    let task_id = uuid::Uuid::new_v4().to_string();
+
+    // 获取工作区目录
+    let workspace_dir = ctx.app_data_dir.join("extracted").join(workspace_id);
+
+    // 清理现有的 CAS 和 MetadataStore
+    {
+        let mut cas_instances = ctx.app_state.cas_instances.lock();
+        cas_instances.remove(workspace_id);
+    }
+    {
+        let mut stores = ctx.app_state.metadata_stores.lock();
+        stores.remove(workspace_id);
+    }
+
+    // 重新初始化 CAS
+    let cas = Arc::new(crate::storage::ContentAddressableStorage::new(
+        workspace_dir.clone(),
+    ));
+    {
+        let mut cas_instances = ctx.app_state.cas_instances.lock();
+        cas_instances.insert(workspace_id.to_string(), Arc::clone(&cas));
+    }
+
+    // 重新初始化 MetadataStore
+    let metadata_store = crate::storage::metadata_store::MetadataStore::new(&workspace_dir)
+        .await
+        .map_err(|e| format!("Failed to create metadata store: {}", e))?;
+    let metadata_store = Arc::new(metadata_store);
+    {
+        let mut stores = ctx.app_state.metadata_stores.lock();
+        stores.insert(workspace_id.to_string(), Arc::clone(&metadata_store));
+    }
+
+    // 执行重新导入
+    let path = std::path::Path::new(source_path);
+    let file_count = simplified_import(
+        path,
+        "",
+        &workspace_dir,
+        &cas,
+        metadata_store,
+    ).await?;
+
+    info!("Workspace {} refreshed with {} files", workspace_id, file_count);
+    Ok(task_id)
 }
 
 /// 导入文件夹 - 简化版本，不依赖 AppHandle
@@ -1407,10 +1501,29 @@ async fn not_found() -> (StatusCode, Json<ApiResponse<()>>) {
 
 /// 创建路由器
 pub fn create_router(state: Arc<RwLock<HttpApiState>>) -> Router {
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
+    // 安全修复: 从环境变量读取允许的域名，而不是允许所有来源
+    let allowed_origins: Vec<HeaderValue> = std::env::var("ALLOWED_ORIGINS")
+        .unwrap_or_default()
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .filter_map(|s| s.parse::<HeaderValue>().ok())
+        .collect();
+
+    let cors = if allowed_origins.is_empty() {
+        // 如果没有配置允许的域名，默认拒绝所有跨域请求
+        warn!("ALLOWED_ORIGINS not configured, CORS requests will be denied");
+        CorsLayer::new()
+            .allow_origin(AllowOrigin::predicate(|_, _| false))
+            .allow_methods(Any)
+            .allow_headers(Any)
+    } else {
+        info!("CORS enabled for origins: {:?}", allowed_origins);
+        CorsLayer::new()
+            .allow_origin(AllowOrigin::list(allowed_origins))
+            .allow_methods(Any)
+            .allow_headers(Any)
+    };
 
     Router::new()
         // 健康检查
@@ -1420,6 +1533,7 @@ pub fn create_router(state: Arc<RwLock<HttpApiState>>) -> Router {
         .route("/api/workspace", post(create_workspace))
         .route("/api/workspace/:id/status", get(get_workspace_status))
         .route("/api/workspace/:id", delete(delete_workspace))
+        .route("/api/workspace/:id/refresh", post(refresh_workspace))
         // 搜索 API
         .route("/api/search", post(search_logs))
         // 任务 API

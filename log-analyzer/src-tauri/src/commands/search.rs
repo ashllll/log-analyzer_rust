@@ -82,15 +82,17 @@ pub async fn search_logs(
     let workspace_id = if let Some(ref id) = workspaceId {
         id.clone()
     } else {
-        // 当没有提供工作区ID时，获取第一个可用的工作区
+        // 当没有提供工作区ID时，获取第一个可用的工作区（按字母排序确保确定性）
         let dirs = workspace_dirs.lock();
-        if let Some(first_workspace_id) = dirs.keys().next() {
+        let mut sorted_keys: Vec<&String> = dirs.keys().collect();
+        sorted_keys.sort();
+        if let Some(first_workspace_id) = sorted_keys.first() {
             debug!(
                 workspace_id = %first_workspace_id,
-                available_workspaces = ?dirs.keys().collect::<Vec<_>>(),
+                available_workspaces = ?sorted_keys,
                 "Using first available workspace as default"
             );
-            first_workspace_id.clone()
+            (*first_workspace_id).clone()
         } else {
             // 如果没有可用的工作区，返回明确的错误
             let _ = app.emit(
@@ -439,17 +441,20 @@ pub async fn search_logs(
         let mut total_processed = 0;
         let mut results_count = 0;
         // 流式统计：使用HashMap增量统计关键词，避免累积所有结果
+        // Pre-allocate with capacity for better performance
         let mut keyword_counts: std::collections::HashMap<String, usize> =
-            std::collections::HashMap::new();
+            std::collections::HashMap::with_capacity(256);
         let mut was_truncated = false;
         let mut pending_batch: Vec<LogEntry> = Vec::new(); // 当前待发送批次
-        let mut all_results: Vec<LogEntry> = Vec::new(); // 用于缓存的完整结果集
+        // Pre-allocate for expected results (will grow as needed)
+        let mut all_results: Vec<LogEntry> = Vec::with_capacity(max_results.min(10000));
         const MAX_CACHE_SIZE: usize = 100_000; // 限制缓存中的结果数量
 
         // 先发送开始事件
         let _ = app_handle.emit("search-start", "Starting search...");
 
-        'outer: for file_batch in files.chunks(10) {
+        // Optimized batch size (50 files per batch for better throughput)
+        'outer: for file_batch in files.chunks(50) {
             // 检查取消状态
             if cancellation_token.is_cancelled() {
                 let _ = app_handle.emit("search-cancelled", search_id_clone.clone());
@@ -467,8 +472,9 @@ pub async fn search_logs(
                 break 'outer;
             }
 
-            // 每批处理10个文件
-            let mut batch_results: Vec<LogEntry> = Vec::new();
+            // 每批处理50个文件
+            // Pre-allocate with expected capacity for better performance
+            let mut batch_results: Vec<LogEntry> = Vec::with_capacity(batch_size);
 
             // 并行处理当前批次 (Requirements 2.3: 使用 CAS 读取内容)
             let batch: Vec<_> = file_batch
@@ -707,17 +713,28 @@ fn search_single_file_with_details(
             return results;
         }
 
-        // Read content from CAS using hash
-        let content = match tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(cas.read_content(sha256_hash))
-        }) {
-            Ok(bytes) => bytes,
+        // Read content from CAS using hash (安全修复: 使用 try_current 避免 panic)
+        let content = match tokio::runtime::Handle::try_current() {
+            Ok(handle) => {
+                match handle.block_on(cas.read_content(sha256_hash)) {
+                    Ok(bytes) => bytes,
+                    Err(e) => {
+                        warn!(
+                            hash = %sha256_hash,
+                            virtual_path = %virtual_path,
+                            error = %e,
+                            "Failed to read content from CAS, skipping file"
+                        );
+                        return results;
+                    }
+                }
+            }
             Err(e) => {
                 warn!(
                     hash = %sha256_hash,
                     virtual_path = %virtual_path,
                     error = %e,
-                    "Failed to read content from CAS, skipping file"
+                    "No Tokio runtime available, skipping file"
                 );
                 return results;
             }
@@ -738,22 +755,20 @@ fn search_single_file_with_details(
             );
         }
 
-        // Process lines
+        // Process lines - 避免重复匹配：直接使用 match_with_details 结果来判断是否匹配
         for (i, line) in content_str.lines().enumerate() {
-            if executor.matches_line(plan, line) {
+            if let Some(match_details) = executor.match_with_details(plan, line) {
                 let (ts, lvl) = parse_metadata(line);
-                let match_details = executor.match_with_details(plan, line);
-                let matched_keywords = match_details.as_ref().map(|details| {
-                    details
-                        .iter()
-                        .map(|detail| detail.term_value.clone())
-                        .collect::<HashSet<_>>()
-                        .into_iter()
-                        .collect::<Vec<_>>()
-                });
+                // 从 match_details 提取匹配的关键词
+                let matched_keywords: Vec<String> = match_details
+                    .iter()
+                    .map(|detail| detail.term_value.clone())
+                    .collect();
+                let matched_keywords_set: HashSet<_> = matched_keywords.iter().cloned().collect();
+                let matched_keywords: Vec<String> = matched_keywords_set.into_iter().collect();
 
                 results.push(LogEntry {
-                    id: global_offset + i,
+                    id: global_offset.saturating_add(i),
                     timestamp: ts.into(),
                     level: lvl.into(),
                     file: virtual_path.into(),
@@ -761,8 +776,8 @@ fn search_single_file_with_details(
                     line: i + 1,
                     content: line.into(),
                     tags: vec![],
-                    match_details,
-                    matched_keywords: matched_keywords.filter(|v| !v.is_empty()),
+                    match_details: Some(match_details),
+                    matched_keywords: if matched_keywords.is_empty() { None } else { Some(matched_keywords) },
                 });
             }
         }
