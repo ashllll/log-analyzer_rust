@@ -68,6 +68,16 @@ impl SearchHistoryManager {
         }
     }
 
+    /// 获取所有条目（用于 FFI）
+    pub fn get_entries(&self) -> &Vec<SearchHistoryEntry> {
+        &self.entries
+    }
+
+    /// 获取所有条目的可变引用（用于 FFI）
+    pub fn get_entries_mut(&mut self) -> &mut Vec<SearchHistoryEntry> {
+        &mut self.entries
+    }
+
     /// 添加搜索历史条目
     ///
     /// 如果超过限制，会自动删除最旧的条目

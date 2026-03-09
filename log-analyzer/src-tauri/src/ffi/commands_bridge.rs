@@ -1519,7 +1519,7 @@ pub fn ffi_delete_search_history(query: String, workspace_id: String) -> Result<
     // 手动删除匹配的条目
     let initial_count = history.total_count();
     history
-        .entries
+        .get_entries_mut()
         .retain(|e| !(e.query == query && e.workspace_id == workspace_id));
     let deleted = initial_count > history.total_count();
 
@@ -1564,7 +1564,7 @@ pub fn ffi_delete_search_histories(
     // 批量删除匹配的条目
     let initial_count = history.total_count();
     history
-        .entries
+        .get_entries_mut()
         .retain(|e| !(queries.contains(&e.query) && e.workspace_id == workspace_id));
     let deleted_count = initial_count - history.total_count();
 
@@ -1696,7 +1696,7 @@ pub fn ffi_search_structured(
         let use_not = matches!(query.global_operator, QueryOperatorData::Not);
 
         // 构建 Aho-Corasick 自动机
-        let ac = aho_corasick::AhoCorasick::new_auto_configured(&keywords)
+        let ac = aho_corasick::AhoCorasick::new(&keywords)
             .map_err(|e| format!("构建匹配器失败: {}", e))?;
 
         let mut results = Vec::new();
@@ -1716,7 +1716,7 @@ pub fn ffi_search_structured(
             }
 
             // 读取文件内容
-            let cas = crate::storage::ContentAddressableStorage::new(&workspace_dir);
+            let cas = crate::storage::ContentAddressableStorage::new(workspace_dir.clone());
             if !cas.exists(&file.sha256_hash) {
                 continue;
             }
@@ -1738,7 +1738,7 @@ pub fn ffi_search_structured(
                 }
 
                 // 使用 Aho-Corasick 查找所有匹配
-                let matches: Vec<&str> = ac.find_iter(line).map(|m| m.as_str()).collect();
+                let matches: Vec<&str> = ac.find_iter(line).map(|m| &line[m.start()..m.end()]).collect();
 
                 let should_include = if keywords.len() == 1 {
                     !matches.is_empty()
@@ -2154,11 +2154,11 @@ pub fn ffi_save_filter(filter: SavedFilterInput) -> Result<bool, String> {
         existing.id.clone()
     } else {
         // 创建新过滤器
-        let new_filter = SavedFilterData {
-            id: filter_id,
+        let new_filter_data = SavedFilterData {
+            id: filter_id.clone(),
             name: filter.name,
             description: filter.description,
-            workspace_id: filter.workspace_id,
+            workspace_id: filter.workspace_id.clone(),
             terms_json: filter.terms_json,
             global_operator: filter.global_operator,
             time_range_start: filter.time_range_start,
@@ -2171,8 +2171,8 @@ pub fn ffi_save_filter(filter: SavedFilterInput) -> Result<bool, String> {
             created_at: now.clone(),
             last_used_at: None,
         };
-        filters.push(new_filter);
-        new_filter.id.clone()
+        filters.push(new_filter_data);
+        filter_id.clone()
     };
 
     save_filters_to_config(&filters)?;
@@ -2275,18 +2275,25 @@ pub fn ffi_update_filter_usage(filter_id: String, workspace_id: String) -> Resul
     let mut filters = read_saved_filters_from_config(&workspace_id)?;
 
     // 查找并更新过滤器
-    let found = filters
-        .iter_mut()
-        .find(|f| f.id == filter_id && f.workspace_id == workspace_id);
+    let filter_updated = {
+        let found = filters
+            .iter_mut()
+            .find(|f| f.id == filter_id && f.workspace_id == workspace_id);
 
-    if let Some(filter) = found {
-        filter.usage_count += 1;
-        filter.last_used_at = Some(chrono::Utc::now().to_rfc3339());
+        if let Some(filter) = found {
+            filter.usage_count += 1;
+            filter.last_used_at = Some(chrono::Utc::now().to_rfc3339());
+            true
+        } else {
+            false
+        }
+    };
 
+    if filter_updated {
         save_filters_to_config(&filters)?;
         tracing::info!(
             filter_id = %filter_id,
-            usage_count = filter.usage_count,
+            usage_count = filters.iter().find(|f| f.id == filter_id).map(|f| f.usage_count).unwrap_or(0),
             "过滤器使用统计已更新"
         );
         Ok(true)
@@ -2361,7 +2368,7 @@ pub fn ffi_get_log_level_stats(workspace_id: String) -> Result<LogLevelStatsOutp
             }
 
             // 读取文件内容进行统计
-            let cas = crate::storage::ContentAddressableStorage::new(&workspace_dir);
+            let cas = crate::storage::ContentAddressableStorage::new(workspace_dir.clone());
             if !cas.exists(&file.sha256_hash) {
                 continue;
             }
@@ -2378,15 +2385,16 @@ pub fn ffi_get_log_level_stats(workspace_id: String) -> Result<LogLevelStatsOutp
 
             // 统计每行的日志级别
             for line in content.lines() {
-                let level = crate::domain::log_analysis::value_objects::LogLevel::parse_from_line(line);
-                match level {
-                    crate::domain::log_analysis::value_objects::LogLevel::Fatal => fatal_count += 1,
-                    crate::domain::log_analysis::value_objects::LogLevel::Error => error_count += 1,
-                    crate::domain::log_analysis::value_objects::LogLevel::Warn => warn_count += 1,
-                    crate::domain::log_analysis::value_objects::LogLevel::Info => info_count += 1,
-                    crate::domain::log_analysis::value_objects::LogLevel::Debug => debug_count += 1,
-                    crate::domain::log_analysis::value_objects::LogLevel::Trace => trace_count += 1,
-                    crate::domain::log_analysis::value_objects::LogLevel::Unknown(_) => unknown_count += 1,
+                if let Some(level) = crate::domain::log_analysis::value_objects::LogLevel::parse_from_line(line) {
+                    match level {
+                        crate::domain::log_analysis::value_objects::LogLevel::Fatal => fatal_count += 1,
+                        crate::domain::log_analysis::value_objects::LogLevel::Error => error_count += 1,
+                        crate::domain::log_analysis::value_objects::LogLevel::Warn => warn_count += 1,
+                        crate::domain::log_analysis::value_objects::LogLevel::Info => info_count += 1,
+                        crate::domain::log_analysis::value_objects::LogLevel::Debug => debug_count += 1,
+                        crate::domain::log_analysis::value_objects::LogLevel::Trace => trace_count += 1,
+                        crate::domain::log_analysis::value_objects::LogLevel::Unknown(_) => unknown_count += 1,
+                    }
                 }
             }
         }
@@ -2543,7 +2551,7 @@ pub fn ffi_search_regex(
             }
 
             // 读取文件内容
-            let cas = crate::storage::ContentAddressableStorage::new(&workspace_dir);
+            let cas = crate::storage::ContentAddressableStorage::new(workspace_dir.clone());
             if !cas.exists(&file.sha256_hash) {
                 continue;
             }
