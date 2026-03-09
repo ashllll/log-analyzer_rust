@@ -1,4 +1,12 @@
-# Claude Code Configuration - RuFlo V3
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+- **log-analyzer_rust**: 高性能桌面日志分析工具
+- **技术栈**: Rust + Tauri + Flutter (已移除 React)
+- **版本**: 0.0.143
 
 ## Behavioral Rules (Always Enforced)
 
@@ -23,12 +31,23 @@
 
 ## Project Architecture
 
+### Project Structure
+```
+log-analyzer_rust/
+├── log-analyzer/              # Rust/Tauri 后端 (src-tauri/)
+├── log-analyzer_flutter/     # Flutter 前端 (唯一前端)
+└── docs/                     # 文档
+```
+
 - Follow Domain-Driven Design with bounded contexts
 - Keep files under 500 lines
 - Use typed interfaces for all public APIs
 - Prefer TDD London School (mock-first) for new code
 - Use event sourcing for state changes
 - Ensure input validation at system boundaries
+
+### FFI Integration
+Flutter 前端通过 `flutter_rust_bridge` 与 Rust 后端通信
 
 ### Project Config
 
@@ -40,15 +59,20 @@
 
 ## Build & Test
 
+### Flutter Frontend
 ```bash
-# Build
-npm run build
+cd log-analyzer_flutter
+flutter pub get
+flutter build linux  # or macos/windows
+flutter test
+```
 
-# Test
-npm test
-
-# Lint
-npm run lint
+### Rust Backend
+```bash
+cd log-analyzer/src-tauri
+cargo test --all-features
+cargo clippy --all-features -- -D warnings
+cargo build --features ffi
 ```
 
 - ALWAYS run tests after making code changes
