@@ -122,7 +122,10 @@ pub fn refresh_workspace(workspace_id: String, _path: String) -> String {
 pub fn get_workspace_status_json(workspace_id: String) -> String {
     tracing::debug!(workspace_id = %workspace_id, "FFI: get_workspace_status_json 调用");
     // 返回简化状态
-    format!(r#"{{"id":"{}","name":"Workspace","status":"READY","size":"0MB","files":0}}"#, workspace_id)
+    format!(
+        r#"{{"id":"{}","name":"Workspace","status":"READY","size":"0MB","files":0}}"#,
+        workspace_id
+    )
 }
 
 /// 执行日志搜索
@@ -195,7 +198,8 @@ pub fn delete_keyword_group(_group_id: String) -> bool {
 #[frb(sync)]
 pub fn get_task_metrics_json() -> String {
     tracing::debug!("FFI: get_task_metrics_json 调用");
-    r#"{"total_tasks":0,"running_tasks":0,"completed_tasks":0,"failed_tasks":0,"stopped_tasks":0}"#.to_string()
+    r#"{"total_tasks":0,"running_tasks":0,"completed_tasks":0,"failed_tasks":0,"stopped_tasks":0}"#
+        .to_string()
 }
 
 /// 取消任务

@@ -16,8 +16,9 @@ final sharedPreferencesProvider = Provider<SharedPreferences>((ref) {
   throw UnimplementedError('SharedPreferences provider must be initialized');
 });
 
-/// 设置服务 Provider
-final settingsServiceProvider2 = Provider<SettingsService>((ref) {
+/// SettingsPage 页面专用的设置服务 Provider
+/// 用于页面初始化时基于 SharedPreferences 实例创建服务
+final settingsPageServiceProvider = Provider<SettingsService>((ref) {
   final prefs = ref.watch(sharedPreferencesProvider);
   return SettingsService(prefs);
 });

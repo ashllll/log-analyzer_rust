@@ -69,7 +69,7 @@ impl LogLevel {
 
     pub fn parse_from_line(line: &str) -> Option<Self> {
         let line_upper = line.to_uppercase();
-        
+
         let patterns = [
             ("[FATAL]", LogLevel::Fatal),
             ("[ERROR]", LogLevel::Error),
@@ -93,9 +93,16 @@ impl LogLevel {
             }
         }
 
-        for level_str in ["FATAL", "ERROR", "WARN", "WARNING", "INFO", "DEBUG", "TRACE"] {
+        for level_str in [
+            "FATAL", "ERROR", "WARN", "WARNING", "INFO", "DEBUG", "TRACE",
+        ] {
             if let Some(idx) = line_upper.find(level_str) {
-                if idx == 0 || line.chars().nth(idx - 1).map_or(false, |c| c.is_whitespace()) {
+                if idx == 0
+                    || line
+                        .chars()
+                        .nth(idx - 1)
+                        .map_or(false, |c| c.is_whitespace())
+                {
                     return Self::from_str(level_str).ok();
                 }
             }

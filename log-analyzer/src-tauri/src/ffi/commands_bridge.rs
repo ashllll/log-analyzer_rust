@@ -1738,7 +1738,10 @@ pub fn ffi_search_structured(
                 }
 
                 // 使用 Aho-Corasick 查找所有匹配
-                let matches: Vec<&str> = ac.find_iter(line).map(|m| &line[m.start()..m.end()]).collect();
+                let matches: Vec<&str> = ac
+                    .find_iter(line)
+                    .map(|m| &line[m.start()..m.end()])
+                    .collect();
 
                 let should_include = if keywords.len() == 1 {
                     !matches.is_empty()
@@ -1877,7 +1880,12 @@ pub fn ffi_get_virtual_file_tree(workspace_id: String) -> Result<Vec<VirtualTree
             .map_err(|e| format!("获取文件失败: {}", e))?;
 
         // 构建树结构
-        let tree = crate::commands::virtual_tree::build_tree_structure(&archives, &all_files, &metadata_store).await?;
+        let tree = crate::commands::virtual_tree::build_tree_structure(
+            &archives,
+            &all_files,
+            &metadata_store,
+        )
+        .await?;
 
         // 转换为 FFI 类型
         Ok(tree.into_iter().map(VirtualTreeNodeData::from).collect())
@@ -2050,11 +2058,11 @@ fn read_saved_filters_from_config(workspace_id: &str) -> Result<Vec<SavedFilterD
         return Ok(vec![]);
     }
 
-    let config_content =
-        std::fs::read_to_string(&config_path).map_err(|e| format!("读取过滤器配置文件失败: {}", e))?;
+    let config_content = std::fs::read_to_string(&config_path)
+        .map_err(|e| format!("读取过滤器配置文件失败: {}", e))?;
 
-    let config: serde_json::Value =
-        serde_json::from_str(&config_content).map_err(|e| format!("解析过滤器配置文件失败: {}", e))?;
+    let config: serde_json::Value = serde_json::from_str(&config_content)
+        .map_err(|e| format!("解析过滤器配置文件失败: {}", e))?;
 
     // 按工作区过滤
     let filters = config
@@ -2323,8 +2331,8 @@ pub fn ffi_get_log_level_stats(workspace_id: String) -> Result<LogLevelStatsOutp
     // 验证工作区 ID
     validate_workspace_id(&workspace_id)?;
 
-    // 获取全局状态
-    let app_state = get_app_state().ok_or_else(|| "FFI 全局状态未初始化".to_string())?;
+    // 获取全局状态（验证已初始化）
+    let _app_state = get_app_state().ok_or_else(|| "FFI 全局状态未初始化".to_string())?;
     let app_data_dir = get_app_data_dir().ok_or_else(|| "FFI 全局状态未初始化".to_string())?;
 
     // 构建工作区目录路径
@@ -2385,21 +2393,43 @@ pub fn ffi_get_log_level_stats(workspace_id: String) -> Result<LogLevelStatsOutp
 
             // 统计每行的日志级别
             for line in content.lines() {
-                if let Some(level) = crate::domain::log_analysis::value_objects::LogLevel::parse_from_line(line) {
+                if let Some(level) =
+                    crate::domain::log_analysis::value_objects::LogLevel::parse_from_line(line)
+                {
                     match level {
-                        crate::domain::log_analysis::value_objects::LogLevel::Fatal => fatal_count += 1,
-                        crate::domain::log_analysis::value_objects::LogLevel::Error => error_count += 1,
-                        crate::domain::log_analysis::value_objects::LogLevel::Warn => warn_count += 1,
-                        crate::domain::log_analysis::value_objects::LogLevel::Info => info_count += 1,
-                        crate::domain::log_analysis::value_objects::LogLevel::Debug => debug_count += 1,
-                        crate::domain::log_analysis::value_objects::LogLevel::Trace => trace_count += 1,
-                        crate::domain::log_analysis::value_objects::LogLevel::Unknown(_) => unknown_count += 1,
+                        crate::domain::log_analysis::value_objects::LogLevel::Fatal => {
+                            fatal_count += 1
+                        }
+                        crate::domain::log_analysis::value_objects::LogLevel::Error => {
+                            error_count += 1
+                        }
+                        crate::domain::log_analysis::value_objects::LogLevel::Warn => {
+                            warn_count += 1
+                        }
+                        crate::domain::log_analysis::value_objects::LogLevel::Info => {
+                            info_count += 1
+                        }
+                        crate::domain::log_analysis::value_objects::LogLevel::Debug => {
+                            debug_count += 1
+                        }
+                        crate::domain::log_analysis::value_objects::LogLevel::Trace => {
+                            trace_count += 1
+                        }
+                        crate::domain::log_analysis::value_objects::LogLevel::Unknown(_) => {
+                            unknown_count += 1
+                        }
                     }
                 }
             }
         }
 
-        let total = fatal_count + error_count + warn_count + info_count + debug_count + trace_count + unknown_count;
+        let total = fatal_count
+            + error_count
+            + warn_count
+            + info_count
+            + debug_count
+            + trace_count
+            + unknown_count;
 
         tracing::info!(
             workspace_id = %workspace_id,

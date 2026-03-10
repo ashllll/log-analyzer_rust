@@ -322,7 +322,8 @@ impl ArchiveHandler for GzHandler {
             let size = decompressed.len() as u64;
 
             if size > MAX_SIZE {
-                let truncated: String = String::from_utf8_lossy(&decompressed[..MAX_SIZE as usize]).to_string();
+                let truncated: String =
+                    String::from_utf8_lossy(&decompressed[..MAX_SIZE as usize]).to_string();
                 Ok(format!(
                     "{}\n\n[文件过大，已截断显示. 完整大小: {} bytes]",
                     truncated, size

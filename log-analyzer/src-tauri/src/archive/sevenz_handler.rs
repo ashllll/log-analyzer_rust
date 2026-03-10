@@ -169,7 +169,12 @@ impl ArchiveHandler for SevenZHandler {
                 reader
                     .for_each_entries(|entry, _reader| {
                         let name = entry.name().to_string();
-                        if name == file_name_owned || Path::new(&name).file_name().map(|s| s.to_string_lossy().to_string()) == Some(file_name_owned.clone()) {
+                        if name == file_name_owned
+                            || Path::new(&name)
+                                .file_name()
+                                .map(|s| s.to_string_lossy().to_string())
+                                == Some(file_name_owned.clone())
+                        {
                             target_size = Some(entry.size());
                             target_name = Some(name);
                         }
@@ -189,7 +194,10 @@ impl ArchiveHandler for SevenZHandler {
 
             // 如果是目录，返回错误
             if size == 0 && target_name.ends_with('/') {
-                return Err(AppError::archive_error("Cannot read directory".to_string(), None));
+                return Err(AppError::archive_error(
+                    "Cannot read directory".to_string(),
+                    None,
+                ));
             }
 
             // 创建临时文件
@@ -221,8 +229,12 @@ impl ArchiveHandler for SevenZHandler {
                 let content = if size > MAX_SIZE {
                     // 大文件截断读取
                     let bytes = std::fs::read(&temp_path)?;
-                    let truncated = String::from_utf8_lossy(&bytes[..MAX_SIZE as usize]).to_string();
-                    format!("{}\n\n[文件过大，已截断显示. 完整大小: {} bytes]", truncated, size)
+                    let truncated =
+                        String::from_utf8_lossy(&bytes[..MAX_SIZE as usize]).to_string();
+                    format!(
+                        "{}\n\n[文件过大，已截断显示. 完整大小: {} bytes]",
+                        truncated, size
+                    )
                 } else {
                     std::fs::read_to_string(&temp_path)?
                 };

@@ -328,7 +328,10 @@ pub fn add_search_history(query: String, workspace_id: String, result_count: i32
 ///
 /// 获取指定工作区或所有工作区的搜索历史
 #[frb(sync)]
-pub fn get_search_history(workspace_id: Option<String>, limit: Option<i32>) -> Vec<SearchHistoryData> {
+pub fn get_search_history(
+    workspace_id: Option<String>,
+    limit: Option<i32>,
+) -> Vec<SearchHistoryData> {
     unwrap_result(
         commands_bridge::ffi_get_search_history(workspace_id, limit.map(|l| l as usize)),
         "获取搜索历史失败",
@@ -402,10 +405,7 @@ pub fn get_virtual_file_tree(workspace_id: String) -> Vec<VirtualTreeNodeData> {
 ///
 /// 返回子节点列表
 #[frb(sync)]
-pub fn get_tree_children(
-    workspace_id: String,
-    parent_path: String,
-) -> Vec<VirtualTreeNodeData> {
+pub fn get_tree_children(workspace_id: String, parent_path: String) -> Vec<VirtualTreeNodeData> {
     unwrap_result(
         commands_bridge::ffi_get_tree_children(workspace_id, parent_path),
         "获取子节点失败",
@@ -425,10 +425,7 @@ pub fn get_tree_children(
 ///
 /// 返回文件内容响应
 #[frb(sync)]
-pub fn read_file_by_hash(
-    workspace_id: String,
-    hash: String,
-) -> FileContentResponseData {
+pub fn read_file_by_hash(workspace_id: String, hash: String) -> FileContentResponseData {
     unwrap_result(
         commands_bridge::ffi_read_file_by_hash(workspace_id, hash),
         "读取文件失败",
@@ -551,10 +548,7 @@ pub fn search_regex(
 /// 成功返回 true
 #[frb(sync)]
 pub fn save_filter(filter: SavedFilterInput) -> bool {
-    unwrap_result(
-        commands_bridge::ffi_save_filter(filter),
-        "保存过滤器失败",
-    )
+    unwrap_result(commands_bridge::ffi_save_filter(filter), "保存过滤器失败")
 }
 
 /// 获取工作区的所有过滤器

@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:cross_file/cross_file.dart';
 import 'package:flutter/material.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import '../../core/theme/app_theme.dart';
@@ -235,15 +238,68 @@ class _DropZoneWidgetState extends State<DropZoneWidget> {
     return path.substring(lastDot);
   }
 
-  /// 简单判断是否为文件夹 (通过检查路径特征)
-  /// 注意: desktop_drop 在某些平台上可能无法准确判断
+  /// 判断是否为文件夹
+  ///
+  /// 使用多种策略综合判断：
+  /// 1. 优先使用 FileSystemEntity 实际检查文件系统类型（桌面平台）
+  /// 2. 通过路径特征进行启发式判断
+  /// 3. 正确处理隐藏文件（.gitignore 等）
+  /// 4. 正确处理无扩展名文件（Makefile 等）
   bool _isFolder(String path) {
-    // Windows: 检查路径是否以反斜杠结尾或没有扩展名
-    if (path.endsWith('\\') || path.endsWith('/')) {
+    // 策略1: 使用 FileSystemEntity 实际检查（最可靠）
+    // 适用于桌面平台（Windows/macOS/Linux）
+    try {
+      final entity = FileSystemEntity.typeSync(path);
+      if (entity == FileSystemEntityType.directory) {
+        return true;
+      }
+      if (entity == FileSystemEntityType.file) {
+        return false;
+      }
+      // 如果无法确定（notFound 等），继续使用启发式判断
+    } catch (_) {
+      // 文件系统检查失败，使用启发式判断
+    }
+
+    // 策略2: 路径结尾检查
+    // 以路径分隔符结尾的通常是文件夹
+    if (path.endsWith('/') || path.endsWith('\\')) {
       return true;
     }
-    // 没有文件扩展名的可能是文件夹
-    return !path.contains('.') || path.endsWith('/') || path.endsWith('\\');
+
+    // 策略3: 路径解析和扩展名分析
+    // 获取文件名（不含路径）
+    final fileName = path.split(RegExp(r'[/\\]')).lastOrNull ?? path;
+
+    // 空文件名无法判断，保守返回 false
+    if (fileName.isEmpty) {
+      return false;
+    }
+
+    // 策略4: 隐藏文件处理
+    // 隐藏文件以 . 开头，需要特殊处理
+    if (fileName.startsWith('.')) {
+      // 检查是否只有开头的点（如 .gitignore）
+      // 还是包含其他扩展名（如 .config.json）
+      final remaining = fileName.substring(1);
+      // 如 .gitignore 没有扩展名，可能是文件或文件夹，保守判断为文件
+      // 因为没有扩展名的文件比文件夹更常见
+      if (!remaining.contains('.')) {
+        return false;
+      }
+    }
+
+    // 策略5: 扩展名检查
+    // 获取最后一个点之后的部分作为扩展名
+    final lastDotIndex = fileName.lastIndexOf('.');
+    if (lastDotIndex <= 0) {
+      // 没有扩展名（如 Makefile, LICENSE）
+      // 无法准确判断，保守返回 false（当作文件处理）
+      return false;
+    }
+
+    // 有扩展名，判断为文件
+    return false;
   }
 
   /// 获取拖放提示文本

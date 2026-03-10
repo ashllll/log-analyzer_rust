@@ -22,7 +22,7 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tower_http::cors::{Any, CorsLayer, AllowOrigin};
+use tower_http::cors::{AllowOrigin, Any, CorsLayer};
 use tracing::{info, warn};
 
 use crate::models::AppState;
@@ -231,12 +231,13 @@ async fn list_workspaces(
                     .unwrap_or_default();
 
                 // 读取工作区元数据
-                let name =
-                    if let Some(metadata) = crate::commands::workspace::WorkspaceMetadata::load(&path).await {
-                        metadata.name
-                    } else {
-                        id.clone()
-                    };
+                let name = if let Some(metadata) =
+                    crate::commands::workspace::WorkspaceMetadata::load(&path).await
+                {
+                    metadata.name
+                } else {
+                    id.clone()
+                };
 
                 // 检查是否为 CAS 格式
                 let metadata_db = path.join("metadata.db");
@@ -250,7 +251,9 @@ async fn list_workspaces(
                 // 获取文件数量
                 let file_count = if status == "ready" {
                     // 尝试从数据库获取文件数量
-                    if let Ok(store) = crate::storage::metadata_store::MetadataStore::new(&path).await {
+                    if let Ok(store) =
+                        crate::storage::metadata_store::MetadataStore::new(&path).await
+                    {
                         store.count_files().await.unwrap_or(0) as usize
                     } else {
                         0
@@ -293,12 +296,13 @@ async fn get_workspace_status(
     }
 
     // 读取工作区元数据
-    let name =
-        if let Some(metadata) = crate::commands::workspace::WorkspaceMetadata::load(&workspace_dir).await {
-            metadata.name
-        } else {
-            workspace_id.clone()
-        };
+    let name = if let Some(metadata) =
+        crate::commands::workspace::WorkspaceMetadata::load(&workspace_dir).await
+    {
+        metadata.name
+    } else {
+        workspace_id.clone()
+    };
 
     // 检查是否为 CAS 格式
     let metadata_db = workspace_dir.join("metadata.db");
@@ -311,7 +315,8 @@ async fn get_workspace_status(
 
     // 获取文件数量
     let file_count = if status == "ready" {
-        if let Ok(store) = crate::storage::metadata_store::MetadataStore::new(&workspace_dir).await {
+        if let Ok(store) = crate::storage::metadata_store::MetadataStore::new(&workspace_dir).await
+        {
             store.count_files().await.unwrap_or(0) as usize
         } else {
             0
@@ -374,7 +379,9 @@ async fn http_search_logs(
         Some(id) => id.clone(),
         None => {
             let dirs = ctx.app_state.workspace_dirs.lock();
-            dirs.keys().next().cloned()
+            dirs.keys()
+                .next()
+                .cloned()
                 .ok_or("No workspaces available")?
         }
     };
@@ -387,7 +394,8 @@ async fn http_search_logs(
     // 获取工作区目录
     let workspace_dir = {
         let dirs = ctx.app_state.workspace_dirs.lock();
-        dirs.get(&workspace_id).cloned()
+        dirs.get(&workspace_id)
+            .cloned()
             .ok_or_else(|| format!("Workspace not found: {}", workspace_id))?
     };
 
@@ -430,7 +438,9 @@ async fn http_search_logs(
     let max_results = req.max_results.unwrap_or(50000).min(100_000);
 
     // 获取所有文件
-    let files = metadata_store.get_all_files().await
+    let files = metadata_store
+        .get_all_files()
+        .await
         .map_err(|e| format!("Failed to get files: {}", e))?;
 
     // 构建查询
@@ -476,7 +486,8 @@ async fn http_search_logs(
     };
 
     let mut executor = QueryExecutor::new(100);
-    let plan = executor.execute(&structured_query)
+    let plan = executor
+        .execute(&structured_query)
         .map_err(|e| format!("Query execution error: {}", e))?;
 
     // 执行搜索
@@ -576,12 +587,15 @@ async fn http_create_workspace(
     let workspace_dir = ctx.app_data_dir.join("extracted").join(&workspace_id);
 
     // 创建工作区目录
-    tokio::fs::create_dir_all(&workspace_dir).await
+    tokio::fs::create_dir_all(&workspace_dir)
+        .await
         .map_err(|e| format!("Failed to create workspace dir: {}", e))?;
 
     // 保存工作区元数据
     let metadata = WorkspaceMetadata::new(req.name.clone(), Some(req.path.clone()));
-    metadata.save(&workspace_dir).await
+    metadata
+        .save(&workspace_dir)
+        .await
         .map_err(|e| format!("Failed to save workspace metadata: {}", e))?;
 
     // 初始化工作区资源
@@ -708,10 +722,11 @@ async fn refresh_workspace(
     };
 
     // 获取原始路径（从元数据中读取）
-    let source_path = match crate::commands::workspace::WorkspaceMetadata::load(&workspace_dir).await {
-        Some(metadata) => metadata.source_path.unwrap_or_default(),
-        None => String::new(),
-    };
+    let source_path =
+        match crate::commands::workspace::WorkspaceMetadata::load(&workspace_dir).await {
+            Some(metadata) => metadata.source_path.unwrap_or_default(),
+            None => String::new(),
+        };
 
     if source_path.is_empty() || !std::path::Path::new(&source_path).exists() {
         return Json(ApiResponse::error("Source path not found for refresh"));
@@ -770,15 +785,12 @@ async fn http_refresh_workspace(
 
     // 执行重新导入
     let path = std::path::Path::new(source_path);
-    let file_count = simplified_import(
-        path,
-        "",
-        &workspace_dir,
-        &cas,
-        metadata_store,
-    ).await?;
+    let file_count = simplified_import(path, "", &workspace_dir, &cas, metadata_store).await?;
 
-    info!("Workspace {} refreshed with {} files", workspace_id, file_count);
+    info!(
+        "Workspace {} refreshed with {} files",
+        workspace_id, file_count
+    );
     Ok(task_id)
 }
 
@@ -849,7 +861,7 @@ async fn import_folder(
             let stores = ctx.app_state.metadata_stores.lock();
             stores.get(&req.workspace_id).cloned()
         };
-        
+
         match existing_store {
             Some(store) => store,
             None => {
@@ -887,11 +899,15 @@ async fn import_folder(
         &workspace_dir,
         &cas,
         metadata_store,
-    ).await;
+    )
+    .await;
 
     match result {
         Ok(file_count) => {
-            info!("Import completed successfully for task {}, {} files imported", task_id, file_count);
+            info!(
+                "Import completed successfully for task {}, {} files imported",
+                task_id, file_count
+            );
             Json(ApiResponse::success(TaskInfo {
                 task_id,
                 status: "completed".to_string(),
@@ -933,7 +949,7 @@ async fn simplified_import(
         .filter(|e| e.file_type().is_file())
     {
         let path = entry.path();
-        
+
         // 读取文件内容
         let content = match tokio::fs::read(path).await {
             Ok(c) => c,
@@ -955,7 +971,8 @@ async fn simplified_import(
         }
 
         // 创建元数据
-        let relative_path = path.strip_prefix(source_path)
+        let relative_path = path
+            .strip_prefix(source_path)
             .unwrap_or(path)
             .to_string_lossy()
             .to_string();
@@ -973,7 +990,11 @@ async fn simplified_import(
             original_name,
             size: content.len() as i64,
             modified_time: chrono::Utc::now().timestamp(),
-            mime_type: Some(mime_guess::from_path(path).first_or_text_plain().to_string()),
+            mime_type: Some(
+                mime_guess::from_path(path)
+                    .first_or_text_plain()
+                    .to_string(),
+            ),
             parent_archive_id: None,
             depth_level: 0,
         };
@@ -1020,7 +1041,10 @@ async fn start_watch(
     // 验证路径存在
     let watch_path = std::path::Path::new(&path);
     if !watch_path.exists() {
-        return Json(ApiResponse::error(&format!("Path does not exist: {}", path)));
+        return Json(ApiResponse::error(&format!(
+            "Path does not exist: {}",
+            path
+        )));
     }
 
     // 获取全局状态
@@ -1090,7 +1114,7 @@ async fn start_watch(
                 Ok(event) => {
                     // 处理文件变更事件
                     info!("File event: {:?}", event.kind);
-                    
+
                     let is_active = {
                         let watchers = watchers_arc.lock();
                         watchers
@@ -1140,21 +1164,21 @@ async fn stop_watch(
 
     let mut watchers = ctx.app_state.watchers.lock();
 
-    let (thread_handle, watcher) =
-        if let Some(watcher_state) = watchers.get_mut(&req.workspace_id) {
-            watcher_state.is_active = false;
-            let h = watcher_state
-                .thread_handle
-                .lock()
-                .ok()
-                .and_then(|mut h| h.take());
-            let w = watcher_state.watcher.lock().ok().and_then(|mut w| w.take());
-            (h, w)
-        } else {
-            return Json(ApiResponse::error(
-                "No active watcher found for this workspace",
-            ));
-        };
+    let (thread_handle, watcher) = if let Some(watcher_state) = watchers.get_mut(&req.workspace_id)
+    {
+        watcher_state.is_active = false;
+        let h = watcher_state
+            .thread_handle
+            .lock()
+            .ok()
+            .and_then(|mut h| h.take());
+        let w = watcher_state.watcher.lock().ok().and_then(|mut w| w.take());
+        (h, w)
+    } else {
+        return Json(ApiResponse::error(
+            "No active watcher found for this workspace",
+        ));
+    };
 
     watchers.remove(&req.workspace_id);
     drop(watchers);
@@ -1219,7 +1243,9 @@ async fn load_config(
 
     // 返回默认配置
     let default_config = crate::models::config::AppConfig::default();
-    Json(ApiResponse::success(serde_json::to_value(default_config).unwrap_or_default()))
+    Json(ApiResponse::success(
+        serde_json::to_value(default_config).unwrap_or_default(),
+    ))
 }
 
 /// 保存配置
@@ -1341,7 +1367,8 @@ async fn list_keyword_groups(
     if config_path.exists() {
         if let Ok(content) = tokio::fs::read_to_string(&config_path).await {
             if let Ok(config) = serde_json::from_str::<serde_json::Value>(&content) {
-                if let Some(keyword_groups) = config.get("keyword_groups").and_then(|v| v.as_array())
+                if let Some(keyword_groups) =
+                    config.get("keyword_groups").and_then(|v| v.as_array())
                 {
                     return Json(ApiResponse::success(keyword_groups.clone()));
                 }
@@ -1469,9 +1496,7 @@ async fn delete_keyword_group(
                     .and_then(|v| v.as_array_mut())
                 {
                     let initial_len = keyword_groups.len();
-                    keyword_groups.retain(|g| {
-                        g.get("id").and_then(|v| v.as_str()) != Some(&id)
-                    });
+                    keyword_groups.retain(|g| g.get("id").and_then(|v| v.as_str()) != Some(&id));
 
                     if keyword_groups.len() < initial_len {
                         // 保存配置
@@ -1541,7 +1566,10 @@ pub fn create_router(state: Arc<RwLock<HttpApiState>>) -> Router {
         // 配置 API
         .route("/api/config", get(load_config).post(save_config))
         // 关键词 API
-        .route("/api/keywords", get(list_keyword_groups).post(add_keyword_group))
+        .route(
+            "/api/keywords",
+            get(list_keyword_groups).post(add_keyword_group),
+        )
         .route(
             "/api/keywords/:id",
             put(update_keyword_group).delete(delete_keyword_group),

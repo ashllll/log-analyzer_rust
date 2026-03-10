@@ -1,5 +1,5 @@
+use crate::archive::{find_handler, ArchiveEntry};
 use serde::{Deserialize, Serialize};
-use crate::archive::{ArchiveEntry, find_handler};
 
 /**
  * 列出压缩包内容的结果
@@ -44,11 +44,13 @@ pub async fn list_archive_contents(archive_path: String) -> Result<ArchiveConten
         return Err(format!("File not found: {}", archive_path));
     }
 
-    let handler = find_handler(path).ok_or_else(|| {
-        format!("Unsupported archive format: {:?}", path.extension())
-    })?;
+    let handler = find_handler(path)
+        .ok_or_else(|| format!("Unsupported archive format: {:?}", path.extension()))?;
 
-    let entries = handler.list_contents(path).await.map_err(|e| e.to_string())?;
+    let entries = handler
+        .list_contents(path)
+        .await
+        .map_err(|e| e.to_string())?;
 
     Ok(ArchiveContentResult {
         total_count: entries.len(),
@@ -68,7 +70,10 @@ pub async fn list_archive_contents(archive_path: String) -> Result<ArchiveConten
  * * `Err(String)` - 错误信息
  */
 #[tauri::command]
-pub async fn read_archive_file(archive_path: String, file_name: String) -> Result<ArchiveFileResult, String> {
+pub async fn read_archive_file(
+    archive_path: String,
+    file_name: String,
+) -> Result<ArchiveFileResult, String> {
     let path = std::path::Path::new(&archive_path);
 
     // 检查文件是否存在
@@ -76,11 +81,13 @@ pub async fn read_archive_file(archive_path: String, file_name: String) -> Resul
         return Err(format!("File not found: {}", archive_path));
     }
 
-    let handler = find_handler(path).ok_or_else(|| {
-        format!("Unsupported archive format: {:?}", path.extension())
-    })?;
+    let handler = find_handler(path)
+        .ok_or_else(|| format!("Unsupported archive format: {:?}", path.extension()))?;
 
-    let content = handler.read_file(path, &file_name).await.map_err(|e| e.to_string())?;
+    let content = handler
+        .read_file(path, &file_name)
+        .await
+        .map_err(|e| e.to_string())?;
     let truncated = content.contains("已截断显示");
     let size = content.len();
 

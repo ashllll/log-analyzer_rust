@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
-import 'dart:async';
 import 'dart:io';
 
 import '../../../shared/models/common.dart';
@@ -13,7 +12,6 @@ import '../../../shared/services/api_service.dart';
 import '../../../shared/widgets/drop_zone.dart';
 import '../../../shared/widgets/archive_import_dialog.dart';
 import '../../../shared/widgets/import_progress_dialog.dart';
-import '../../../shared/widgets/skeleton_loading.dart';
 import '../../../shared/widgets/empty_state_widget.dart';
 import '../../../core/theme/app_theme.dart';
 
@@ -36,59 +34,20 @@ class WorkspacesPage extends ConsumerStatefulWidget {
 class _WorkspacesPageState extends ConsumerState<WorkspacesPage> {
   final FocusNode _listFocusNode = FocusNode();
   int _selectedIndex = -1;
-  Timer? _statusPollingTimer;
-
-  @override
-  void initState() {
-    super.initState();
-    // 启动状态轮询
-    _startStatusPolling();
-  }
 
   @override
   void dispose() {
     _listFocusNode.dispose();
-    _statusPollingTimer?.cancel();
     super.dispose();
-  }
-
-  /// 启动状态轮询
-  void _startStatusPolling() {
-    _statusPollingTimer?.cancel();
-    _statusPollingTimer = Timer.periodic(
-      const Duration(seconds: 5),
-      (_) => _pollWorkspaceStatus(),
-    );
-  }
-
-  /// 轮询工作区状态
-  Future<void> _pollWorkspaceStatus() async {
-    final workspaces = ref.read(workspaceStateProvider);
-    if (workspaces.isEmpty) return;
-
-    // 检查是否有正在处理的工作区
-    final hasProcessing = workspaces.any(
-      (w) =>
-          w.status.value == 'SCANNING' ||
-          w.status.value == 'PROCESSING' ||
-          w.status.value == 'INDEXING',
-    );
-
-    if (!hasProcessing) return;
-
-    // 刷新工作区列表以获取最新状态
-    try {
-      await ref.read(workspaceStateProvider.notifier).loadWorkspaces();
-    } catch (e) {
-      debugPrint('Status polling error: $e');
-    }
   }
 
   @override
   Widget build(BuildContext context) {
+    // 使用 Riverpod StreamProvider 替代 Timer.periodic
+    // 监听工作区轮询，自动在有工作区处理时刷新列表
+    ref.watch(workspacePollingProvider);
     final workspaces = ref.watch(workspaceStateProvider);
     final activeWorkspaceId = ref.watch(appStateProvider).activeWorkspaceId;
-    final importState = ref.watch(importProgressProvider);
 
     return Scaffold(
       appBar: _buildAppBar(context),

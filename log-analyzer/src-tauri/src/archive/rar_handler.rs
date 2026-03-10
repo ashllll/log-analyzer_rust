@@ -128,7 +128,10 @@ impl ArchiveHandler for RarHandler {
 
             let mut entries = Vec::new();
 
-            while let Some(header) = archive.read_header().map_err(|e| AppError::archive_error(e.to_string(), None))? {
+            while let Some(header) = archive
+                .read_header()
+                .map_err(|e| AppError::archive_error(e.to_string(), None))?
+            {
                 let entry = header.entry();
                 let name = entry.filename.to_string_lossy().to_string();
 
@@ -146,7 +149,9 @@ impl ArchiveHandler for RarHandler {
                     compressed_size: entry.unpacked_size, // RAR 不直接提供压缩大小
                 });
 
-                archive = header.skip().map_err(|e| AppError::archive_error(e.to_string(), None))?;
+                archive = header
+                    .skip()
+                    .map_err(|e| AppError::archive_error(e.to_string(), None))?;
             }
 
             Ok::<Vec<ArchiveEntry>, AppError>(entries)
@@ -169,14 +174,25 @@ impl ArchiveHandler for RarHandler {
                 .open_for_processing()
                 .map_err(|e| AppError::archive_error(e.to_string(), None))?;
 
-            while let Some(header) = archive.read_header().map_err(|e| AppError::archive_error(e.to_string(), None))? {
+            while let Some(header) = archive
+                .read_header()
+                .map_err(|e| AppError::archive_error(e.to_string(), None))?
+            {
                 let entry = header.entry();
                 let name = entry.filename.to_string_lossy().to_string();
 
                 // 匹配文件名
-                if name == file_name_owned || Path::new(&name).file_name().map(|s| s.to_string_lossy().to_string()) == Some(file_name_owned.clone()) {
+                if name == file_name_owned
+                    || Path::new(&name)
+                        .file_name()
+                        .map(|s| s.to_string_lossy().to_string())
+                        == Some(file_name_owned.clone())
+                {
                     if entry.is_directory() {
-                        return Err(AppError::archive_error("Cannot read directory".to_string(), None));
+                        return Err(AppError::archive_error(
+                            "Cannot read directory".to_string(),
+                            None,
+                        ));
                     }
 
                     let size = entry.unpacked_size;
@@ -186,7 +202,8 @@ impl ArchiveHandler for RarHandler {
                     let temp_path = temp_dir.join(format!("rar_extract_{}", std::process::id()));
 
                     // 提取到临时目录
-                    let _archive = header.extract_to(&temp_path)
+                    let _archive = header
+                        .extract_to(&temp_path)
                         .map_err(|e| AppError::archive_error(e.to_string(), None))?;
 
                     // 读取提取的文件
@@ -195,8 +212,12 @@ impl ArchiveHandler for RarHandler {
                         let content = if size > MAX_SIZE {
                             // 大文件截断读取
                             let bytes = std::fs::read(&extract_path)?;
-                            let truncated = String::from_utf8_lossy(&bytes[..MAX_SIZE as usize]).to_string();
-                            format!("{}\n\n[文件过大，已截断显示. 完整大小: {} bytes]", truncated, size)
+                            let truncated =
+                                String::from_utf8_lossy(&bytes[..MAX_SIZE as usize]).to_string();
+                            format!(
+                                "{}\n\n[文件过大，已截断显示. 完整大小: {} bytes]",
+                                truncated, size
+                            )
                         } else {
                             std::fs::read_to_string(&extract_path)?
                         };
@@ -216,7 +237,9 @@ impl ArchiveHandler for RarHandler {
                     ));
                 }
 
-                archive = header.skip().map_err(|e| AppError::archive_error(e.to_string(), None))?;
+                archive = header
+                    .skip()
+                    .map_err(|e| AppError::archive_error(e.to_string(), None))?;
             }
 
             Err(AppError::archive_error(

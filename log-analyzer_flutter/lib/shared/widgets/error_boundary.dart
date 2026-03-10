@@ -1,5 +1,6 @@
 // lib/shared/widgets/error_boundary.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// 错误边界组件
@@ -35,6 +36,33 @@ class ErrorBoundary extends ConsumerStatefulWidget {
 class _ErrorBoundaryState extends ConsumerState<ErrorBoundary> {
   Object? _error;
   StackTrace? _stackTrace;
+
+  /// 保存原始的FlutterError.onError处理器，用于恢复
+  void Function(FlutterErrorDetails)? _originalOnError;
+
+  @override
+  void initState() {
+    super.initState();
+    // 注册FlutterError.onError以捕获Flutter框架层面的错误
+    _originalOnError = FlutterError.onError;
+    FlutterError.onError = _handleFlutterError;
+  }
+
+  @override
+  void dispose() {
+    // 恢复原始的FlutterError.onError处理器
+    FlutterError.onError = _originalOnError;
+    super.dispose();
+  }
+
+  /// 处理Flutter框架层面的错误
+  void _handleFlutterError(FlutterErrorDetails details) {
+    // 调用catchError方法捕获错误
+    catchError(details.exception, details.stack ?? StackTrace.current);
+
+    // 调用原始错误处理器（如果有）
+    _originalOnError?.call(details);
+  }
 
   @override
   Widget build(BuildContext context) {

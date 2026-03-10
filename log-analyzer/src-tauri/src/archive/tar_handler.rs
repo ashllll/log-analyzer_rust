@@ -165,7 +165,7 @@ impl TarHandler {
             .map_err(|e| AppError::archive_error(e.to_string(), None))?;
 
         for entry_result in tar_entries {
-            let mut entry = match entry_result {
+            let entry = match entry_result {
                 Ok(e) => e,
                 Err(e) => {
                     warn!("Failed to read tar entry: {}", e);
@@ -212,7 +212,7 @@ impl TarHandler {
             .map_err(|e| AppError::archive_error(e.to_string(), None))?;
 
         for entry_result in tar_entries {
-            let mut entry = match entry_result {
+            let entry = match entry_result {
                 Ok(e) => e,
                 Err(e) => {
                     warn!("Failed to read tar entry: {}", e);
@@ -231,7 +231,12 @@ impl TarHandler {
             let path_str = path_buf.to_string_lossy().to_string();
 
             // 匹配文件名（支持完整路径或文件名）
-            if path_str == file_name || path_buf.file_name().map(|s| s.to_string_lossy().to_string()) == Some(file_name.to_string()) {
+            if path_str == file_name
+                || path_buf
+                    .file_name()
+                    .map(|s| s.to_string_lossy().to_string())
+                    == Some(file_name.to_string())
+            {
                 let size = entry.header().size().unwrap_or(0);
 
                 if size > max_size {

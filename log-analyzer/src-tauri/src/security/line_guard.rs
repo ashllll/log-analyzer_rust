@@ -407,7 +407,10 @@ mod tests {
         let long_line = "x".repeat(200);
         let truncated = guard.guard_line(&long_line);
         // 验证确实发生了截断（内容比原始内容短）
-        assert!(truncated.truncation_ratio() > 0.0, "Expected positive truncation ratio");
+        assert!(
+            truncated.truncation_ratio() > 0.0,
+            "Expected positive truncation ratio"
+        );
     }
 
     #[test]
@@ -450,10 +453,19 @@ mod tests {
         let lines: Vec<_> = guard.process_stream(reader).collect();
 
         assert_eq!(lines.len(), 3, "Expected 3 lines, got {}", lines.len());
-        assert!(!lines[0].was_truncated, "First line should not be truncated");
+        assert!(
+            !lines[0].was_truncated,
+            "First line should not be truncated"
+        );
         assert!(lines[1].was_truncated, "Second line should be truncated");
-        assert!(lines[1].content.contains("[TRUNCATED"), "Second line should contain TRUNCATED marker");
-        assert!(!lines[2].was_truncated, "Third line should not be truncated");
+        assert!(
+            lines[1].content.contains("[TRUNCATED"),
+            "Second line should contain TRUNCATED marker"
+        );
+        assert!(
+            !lines[2].was_truncated,
+            "Third line should not be truncated"
+        );
     }
 
     #[test]

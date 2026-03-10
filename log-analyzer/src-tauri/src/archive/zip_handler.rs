@@ -183,7 +183,8 @@ impl ArchiveHandler for ZipHandler {
                 .map_err(|e| AppError::archive_error(e.to_string(), Some(path_owned.clone())))?;
             let mut archive = ZipArchive::new(file)
                 .map_err(|e| AppError::archive_error(e.to_string(), Some(path_owned.clone())))?;
-            let mut zip_file = archive.by_name(&file_name_owned)
+            let mut zip_file = archive
+                .by_name(&file_name_owned)
                 .map_err(|e| AppError::archive_error(e.to_string(), None))?;
 
             // 大小限制：10MB

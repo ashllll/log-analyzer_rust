@@ -8,8 +8,8 @@
 
 // 导入 log_analyzer 库的模块
 use log_analyzer::commands::{
-    archive::*, async_search::*, cache::*, config::*, error_reporting::*, export::*, http_api, import::*,
-    legacy::*, performance::*, query::*, search::*, search_history::*, state_sync::*,
+    archive::*, async_search::*, cache::*, config::*, error_reporting::*, export::*, http_api,
+    import::*, legacy::*, performance::*, query::*, search::*, search_history::*, state_sync::*,
     validation::*, virtual_tree::*, watch::*, workspace::*,
 };
 use log_analyzer::models::AppState;
@@ -17,7 +17,7 @@ use log_analyzer::task_manager::TaskManager;
 use tracing::info;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> eyre::Result<()> {
     // 初始化日志
     tracing_subscriber::fmt::init();
 
@@ -70,23 +70,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             info!("✅ TaskManager 初始化成功");
 
             // 启动 HTTP API 服务器（供 Flutter 调用）
-            let app_data_dir = app.path().app_data_dir().expect("Failed to get app data dir");
+            let app_data_dir = app
+                .path()
+                .app_data_dir()
+                .map_err(|e| eyre::eyre!("Failed to get app data dir: {}", e))?;
             let http_addr = "127.0.0.1:8080".to_string();
             let http_addr_for_log = http_addr.clone();
             let http_app_data_dir = app_data_dir.clone();
-            
+
             // 初始化 HTTP API 上下文（必须在启动服务器之前）
             let app_state_clone = app_state.inner().clone();
             http_api::init_http_api_context(app_state_clone, app_data_dir.clone());
             info!("✅ HTTP API 上下文初始化成功");
 
-            std::thread::spawn(move || {
-                let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
-                rt.block_on(async {
-                    if let Err(e) = http_api::start_http_server(http_app_data_dir, http_addr.clone()).await {
-                        tracing::error!("HTTP API 服务器启动失败: {}", e);
-                    }
-                });
+            std::thread::spawn(move || match tokio::runtime::Runtime::new() {
+                Ok(rt) => {
+                    rt.block_on(async {
+                        if let Err(e) =
+                            http_api::start_http_server(http_app_data_dir, http_addr.clone()).await
+                        {
+                            tracing::error!("HTTP API 服务器启动失败: {}", e);
+                        }
+                    });
+                }
+                Err(e) => {
+                    tracing::error!("Failed to create Tokio runtime: {}", e);
+                }
             });
 
             info!("✅ HTTP API 服务器启动于 http://{}", http_addr_for_log);
@@ -99,7 +108,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let app_data_dir = app
                     .path()
                     .app_data_dir()
-                    .expect("Failed to get app data dir");
+                    .map_err(|e| eyre::eyre!("Failed to get app data dir: {}", e))?;
                 init_global_state(app_state_clone, app_data_dir);
                 info!("✅ FFI 全局状态初始化成功");
             }
@@ -184,7 +193,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             clear_search_history,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .map_err(|e| eyre::eyre!("Tauri application error: {}", e))?;
 
     Ok(())
 }

@@ -3,21 +3,12 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../models/saved_filter.dart';
+import 'error_handler.dart';
 import 'generated/ffi/bridge.dart' as ffi;
 import 'generated/ffi/types.dart' as ffi_types;
 import 'generated/frb_generated.dart';
 import 'generated/infrastructure/persistence.dart';
 import 'generated/search_engine/manager.dart';
-
-/// FFI 初始化异常
-class FfiInitializationException implements Exception {
-  final String message;
-
-  FfiInitializationException(this.message);
-
-  @override
-  String toString() => 'FFI InitializationException: $message';
-}
 
 /// 桥接服务
 ///

@@ -446,7 +446,7 @@ pub async fn search_logs(
             std::collections::HashMap::with_capacity(256);
         let mut was_truncated = false;
         let mut pending_batch: Vec<LogEntry> = Vec::new(); // 当前待发送批次
-        // Pre-allocate for expected results (will grow as needed)
+                                                           // Pre-allocate for expected results (will grow as needed)
         let mut all_results: Vec<LogEntry> = Vec::with_capacity(max_results.min(10000));
         const MAX_CACHE_SIZE: usize = 100_000; // 限制缓存中的结果数量
 
@@ -715,20 +715,18 @@ fn search_single_file_with_details(
 
         // Read content from CAS using hash (安全修复: 使用 try_current 避免 panic)
         let content = match tokio::runtime::Handle::try_current() {
-            Ok(handle) => {
-                match handle.block_on(cas.read_content(sha256_hash)) {
-                    Ok(bytes) => bytes,
-                    Err(e) => {
-                        warn!(
-                            hash = %sha256_hash,
-                            virtual_path = %virtual_path,
-                            error = %e,
-                            "Failed to read content from CAS, skipping file"
-                        );
-                        return results;
-                    }
+            Ok(handle) => match handle.block_on(cas.read_content(sha256_hash)) {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    warn!(
+                        hash = %sha256_hash,
+                        virtual_path = %virtual_path,
+                        error = %e,
+                        "Failed to read content from CAS, skipping file"
+                    );
+                    return results;
                 }
-            }
+            },
             Err(e) => {
                 warn!(
                     hash = %sha256_hash,
@@ -777,7 +775,11 @@ fn search_single_file_with_details(
                     content: line.into(),
                     tags: vec![],
                     match_details: Some(match_details),
-                    matched_keywords: if matched_keywords.is_empty() { None } else { Some(matched_keywords) },
+                    matched_keywords: if matched_keywords.is_empty() {
+                        None
+                    } else {
+                        Some(matched_keywords)
+                    },
                 });
             }
         }

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -329,3 +330,34 @@ class WorkspaceState extends _$WorkspaceState {
     return getWorkspaceById(activeId);
   }
 }
+
+/// 工作区轮询 Stream Provider
+///
+/// 使用 Riverpod StreamProvider 替代 Timer.periodic
+/// 每5秒检查一次工作区状态，如果发现有工作区正在处理则刷新列表
+final workspacePollingProvider = StreamProvider<void>((ref) {
+  return Stream.periodic(
+    const Duration(seconds: 5),
+    (count) => count, // 发出事件计数，用于触发轮询
+  ).asyncMap((_) async {
+    final workspaces = ref.read(workspaceStateProvider);
+    if (workspaces.isEmpty) return;
+
+    // 检查是否有正在处理的工作区
+    final hasProcessing = workspaces.any(
+      (w) =>
+          w.status.value == 'SCANNING' ||
+          w.status.value == 'PROCESSING' ||
+          w.status.value == 'INDEXING',
+    );
+
+    if (!hasProcessing) return;
+
+    // 刷新工作区列表以获取最新状态
+    try {
+      await ref.read(workspaceStateProvider.notifier).loadWorkspaces();
+    } catch (e) {
+      debugPrint('Workspace polling error: $e');
+    }
+  });
+});

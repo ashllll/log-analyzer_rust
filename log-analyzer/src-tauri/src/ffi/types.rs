@@ -371,7 +371,10 @@ impl From<crate::commands::virtual_tree::VirtualTreeNode> for VirtualTreeNodeDat
                 path,
                 hash,
                 archive_type,
-                children: children.into_iter().map(VirtualTreeNodeData::from).collect(),
+                children: children
+                    .into_iter()
+                    .map(VirtualTreeNodeData::from)
+                    .collect(),
             },
         }
     }
