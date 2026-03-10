@@ -484,10 +484,11 @@ mod tests {
 
         let result = engine.search(lines.iter().copied()).unwrap();
 
-        assert_eq!(result.index.len(), 3); // 3 行包含 "error"
-        assert!(result.index.contains(2)); // "error"
-        assert!(!result.index.contains(3)); // "ERROR" 大小写不匹配
-        assert!(result.index.contains(5)); // "error"
+        // 大小写敏感搜索，只有 2 行包含小写 "error" (行号 2 和 5，1-indexed)
+        assert_eq!(result.index.len(), 2);
+        assert!(result.index.contains(2)); // "An error occurred here" (行号 2)
+        assert!(!result.index.contains(4)); // "ERROR" 大小写不匹配 (行号 4)
+        assert!(result.index.contains(5)); // "Final error line" (行号 5)
 
         // 检查进度
         assert_eq!(result.progress.percentage, 100);

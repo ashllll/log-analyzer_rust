@@ -131,9 +131,9 @@ class ImportProgress extends _$ImportProgress {
       final elapsed = DateTime.now().difference(state.startTime!).inSeconds;
       if (elapsed > 0) {
         filesPerSecond = processedFiles / elapsed;
-        if (filesPerSecond! > 0) {
+        if (filesPerSecond > 0) {
           estimatedRemainingSeconds =
-              ((totalFiles - processedFiles) / filesPerSecond!).round();
+              ((totalFiles - processedFiles) / filesPerSecond).round();
         }
       }
     }

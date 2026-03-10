@@ -59,7 +59,7 @@ void main() {
   group('统计面板端到端测试', () {
     test('LogLevelStats 模型创建', () {
       // 创建测试用统计数据
-      final stats = LogLevelStats(
+      const stats = LogLevelStats(
         fatalCount: 5,
         errorCount: 150,
         warnCount: 300,
@@ -119,7 +119,7 @@ void main() {
 
     test('LogLevelStats.empty 静态常量', () {
       // 验证空统计数据
-      final empty = LogLevelStats.empty;
+      const empty = LogLevelStats.empty;
 
       expect(empty.fatalCount, 0);
       expect(empty.errorCount, 0);
@@ -162,7 +162,7 @@ void main() {
 
     test('统计面板百分比计算', () {
       // 创建统计数据
-      final stats = LogLevelStats(
+      const stats = LogLevelStats(
         fatalCount: 10,
         errorCount: 90,
         warnCount: 200,
@@ -228,7 +228,7 @@ void main() {
       expect(currentStats.total, 0);
 
       // 模拟首次数据加载
-      currentStats = LogLevelStats(
+      currentStats = const LogLevelStats(
         fatalCount: 5,
         errorCount: 100,
         warnCount: 200,
@@ -241,7 +241,7 @@ void main() {
       expect(currentStats.total, 2000);
 
       // 模拟刷新后数据更新
-      final updatedStats = LogLevelStats(
+      const updatedStats = LogLevelStats(
         fatalCount: 8,
         errorCount: 150,
         warnCount: 300,
@@ -297,7 +297,7 @@ void main() {
 
     test('级别排序（按数量降序）', () {
       // 创建统计数据
-      final stats = LogLevelStats(
+      const stats = LogLevelStats(
         fatalCount: 5,
         errorCount: 150,
         warnCount: 300,

@@ -358,7 +358,7 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
                 color: isSelected
                     ? AppColors.primary.withValues(alpha: 0.1)
                     : null,
-                border: Border(
+                border: const Border(
                   bottom: BorderSide(color: AppColors.bgCard, width: 1),
                 ),
               ),
@@ -439,18 +439,18 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
 
   /// 构建空状态
   Widget _buildEmptyState() {
-    return Center(
+    return const Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.folder_open, size: 64, color: AppColors.textMuted),
-          const SizedBox(height: 16),
-          const Text(
+          Icon(Icons.folder_open, size: 64, color: AppColors.textMuted),
+          SizedBox(height: 16),
+          Text(
             '压缩包为空',
             style: TextStyle(fontSize: 16, color: AppColors.textSecondary),
           ),
-          const SizedBox(height: 8),
-          const Text(
+          SizedBox(height: 8),
+          Text(
             '该压缩包不包含任何文件',
             style: TextStyle(fontSize: 12, color: AppColors.textMuted),
           ),

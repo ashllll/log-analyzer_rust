@@ -16,7 +16,7 @@ void main() {
         description: '过滤所有 Error 级别日志',
         workspaceId: 'workspace-1',
         terms: [
-          SearchTerm(
+          const SearchTerm(
             id: 'term-1',
             value: 'ERROR',
             operator: 'AND',
@@ -53,7 +53,7 @@ void main() {
         description: '原始描述',
         workspaceId: 'workspace-1',
         terms: [
-          SearchTerm(
+          const SearchTerm(
             id: 'term-1',
             value: 'WARN',
             operator: 'AND',
@@ -79,7 +79,7 @@ void main() {
         name: '修改后的过滤器',
         description: '修改后的描述',
         terms: [
-          SearchTerm(
+          const SearchTerm(
             id: 'term-1',
             value: 'ERROR',
             operator: 'AND',
@@ -88,7 +88,7 @@ void main() {
             enabled: true,
             caseSensitive: false,
           ),
-          SearchTerm(
+          const SearchTerm(
             id: 'term-2',
             value: 'FATAL',
             operator: 'OR',
@@ -150,7 +150,7 @@ void main() {
       ];
 
       // 模拟删除 filter-2
-      final filterIdToDelete = 'filter-2';
+      const filterIdToDelete = 'filter-2';
       final remainingFilters =
           filters.where((f) => f.id != filterIdToDelete).toList();
 
@@ -164,7 +164,7 @@ void main() {
     test('应用过滤器触发搜索', () {
       // 模拟搜索条件
       final searchTerms = [
-        SearchTerm(
+        const SearchTerm(
           id: 'term-1',
           value: 'Exception',
           operator: 'AND',
@@ -173,7 +173,7 @@ void main() {
           enabled: true,
           caseSensitive: false,
         ),
-        SearchTerm(
+        const SearchTerm(
           id: 'term-2',
           value: '500',
           operator: 'OR',
@@ -214,7 +214,7 @@ void main() {
         name: '最近24小时错误',
         workspaceId: 'workspace-1',
         terms: [
-          SearchTerm(
+          const SearchTerm(
             id: 'term-1',
             value: 'ERROR',
             operator: 'AND',
@@ -244,7 +244,7 @@ void main() {
 
     test('JSON 序列化与反序列化', () {
       // 创建过滤器
-      final original = SavedFilter(
+      const original = SavedFilter(
         id: 'test-filter-serialization',
         name: '序列化测试',
         description: '测试 JSON 序列化',

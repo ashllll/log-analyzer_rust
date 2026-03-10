@@ -704,8 +704,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_check_file_readable() {
-        // 创建临时文件
-        let temp_file = NamedTempFile::new().unwrap();
+        // 创建临时文件并写入内容
+        let mut temp_file = NamedTempFile::new().unwrap();
+        writeln!(temp_file, "test content").unwrap();
         let path = temp_file.path();
 
         // 检查文件可读

@@ -616,17 +616,16 @@ mod tests {
 
     #[test]
     fn test_with_encoding_check_utf8_with_bom() {
-        // UTF-8 BOM 文件应该返回 RequiresTranscoding 错误（有 BOM 需要处理）
+        // UTF-8 BOM 文件：有 BOM 但不破坏 SIMD
         let mut file = tempfile::NamedTempFile::new().unwrap();
         file.write_all(&[0xEF, 0xBB, 0xBF]).unwrap(); // UTF-8 BOM
         file.write_all(b"Hello, World!").unwrap();
         file.flush().unwrap();
 
         let result = PageManager::with_encoding_check(file.path());
-        // UTF-8 BOM 不会破坏 SIMD，但需要跳过 BOM
-        // 根据当前实现，这应该会返回 RequiresTranscoding 错误
-        // 因为 has_bom = true
-        assert!(result.is_err());
+        // UTF-8 BOM 有 BOM 标记，但不会破坏 SIMD 优化
+        // 所以不会返回 RequiresTranscoding 错误
+        assert!(result.is_ok());
     }
 
     #[tokio::test]

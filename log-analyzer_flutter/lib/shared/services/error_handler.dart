@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 
 /// 错误码分类
 class ErrorCodes {

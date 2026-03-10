@@ -151,13 +151,13 @@ class _DropZoneWidgetState extends State<DropZoneWidget> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(
+                        const Icon(
                           Icons.file_download,
                           size: 48,
                           color: AppColors.primary,
                         ),
                         const SizedBox(height: 8),
-                        Text(
+                        const Text(
                           '释放以导入文件',
                           style: TextStyle(
                             color: AppColors.primary,
@@ -168,7 +168,7 @@ class _DropZoneWidgetState extends State<DropZoneWidget> {
                         const SizedBox(height: 4),
                         Text(
                           _getDropHintText(),
-                          style: TextStyle(
+                          style: const TextStyle(
                             color: AppColors.textSecondary,
                             fontSize: 12,
                           ),

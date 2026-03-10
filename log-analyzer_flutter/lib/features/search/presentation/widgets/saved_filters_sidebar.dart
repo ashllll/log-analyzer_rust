@@ -51,7 +51,7 @@ class _SavedFiltersSidebarState extends ConsumerState<SavedFiltersSidebar> {
     final filtersAsync = ref.watch(savedFiltersProvider(widget.workspaceId));
 
     return Container(
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         color: AppColors.bgCard,
         border: Border(
           bottom: BorderSide(color: AppColors.border, width: 1),

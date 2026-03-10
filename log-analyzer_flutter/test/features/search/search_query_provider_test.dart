@@ -308,7 +308,7 @@ void main() {
 
   group('SearchTerm Tests', () {
     test('应正确复制并修改字段', () {
-      final term = SearchTerm(
+      const term = SearchTerm(
         id: 'test-id',
         value: 'error',
         operator_: ffi_types.QueryOperatorData.and,
@@ -326,13 +326,13 @@ void main() {
     });
 
     test('应正确实现相等性', () {
-      final term1 = SearchTerm(
+      const term1 = SearchTerm(
         id: 'test-id',
         value: 'error',
         operator_: ffi_types.QueryOperatorData.and,
       );
 
-      final term2 = SearchTerm(
+      const term2 = SearchTerm(
         id: 'test-id',
         value: 'error',
         operator_: ffi_types.QueryOperatorData.and,
@@ -344,7 +344,7 @@ void main() {
 
   group('SearchQueryState Tests', () {
     test('应正确复制并修改字段', () {
-      final state = SearchQueryState(
+      const state = SearchQueryState(
         terms: const [],
         globalOperator: ffi_types.QueryOperatorData.and,
       );

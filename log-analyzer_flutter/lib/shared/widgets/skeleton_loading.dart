@@ -93,10 +93,10 @@ class SkeletonListItem extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                SkeletonLoading(height: 14, borderRadius: 2),
+                const SkeletonLoading(height: 14, borderRadius: 2),
                 if (hasSubtitle) ...[
                   const SizedBox(height: 8),
-                  SkeletonLoading(width: 120, height: 12, borderRadius: 2),
+                  const SkeletonLoading(width: 120, height: 12, borderRadius: 2),
                 ],
               ],
             ),
@@ -136,10 +136,10 @@ class SkeletonCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // 标题行
-          Row(
+          const Row(
             children: [
-              const SkeletonLoading(width: 16, height: 16, borderRadius: 4),
-              const SizedBox(width: 8),
+              SkeletonLoading(width: 16, height: 16, borderRadius: 4),
+              SizedBox(width: 8),
               Expanded(child: SkeletonLoading(height: 18, borderRadius: 4)),
             ],
           ),
@@ -153,12 +153,12 @@ class SkeletonCard extends StatelessWidget {
           const Spacer(),
           // 底部操作栏
           if (hasActions)
-            Row(
+            const Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                const SkeletonLoading(width: 60, height: 32, borderRadius: 4),
-                const SizedBox(width: 8),
-                const SkeletonLoading(width: 60, height: 32, borderRadius: 4),
+                SkeletonLoading(width: 60, height: 32, borderRadius: 4),
+                SizedBox(width: 8),
+                SkeletonLoading(width: 60, height: 32, borderRadius: 4),
               ],
             ),
         ],
@@ -258,15 +258,15 @@ class SearchResultSkeleton extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       itemBuilder: (context, index) => Container(
         padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Row(
+        child: const Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // 行号占位
-            const SkeletonLoading(width: 50, height: 16),
-            const SizedBox(width: 12),
+            SkeletonLoading(width: 50, height: 16),
+            SizedBox(width: 12),
             // 时间戳占位
-            const SkeletonLoading(width: 80, height: 16),
-            const SizedBox(width: 12),
+            SkeletonLoading(width: 80, height: 16),
+            SizedBox(width: 12),
             // 日志内容占位
             Expanded(child: SkeletonLoading(height: 16)),
           ],

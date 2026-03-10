@@ -38,7 +38,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.11.1";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1200571378;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1899255983;
 
 // Section: executor
 
@@ -405,6 +405,40 @@ fn wire__crate__ffi__bridge__create_workspace_impl(
         },
     )
 }
+fn wire__crate__ffi__bridge__delete_filter_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "delete_filter",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_filter_id = <String>::sse_decode(&mut deserializer);
+            let api_workspace_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Result::<_, ()>::Ok(crate::ffi::bridge::delete_filter(
+                    api_filter_id,
+                    api_workspace_id,
+                ))?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
 fn wire__crate__ffi__bridge__delete_keyword_group_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -630,6 +664,37 @@ fn wire__crate__ffi__bridge__get_keywords_impl(
         },
     )
 }
+fn wire__crate__ffi__bridge__get_log_level_stats_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "get_log_level_stats",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_workspace_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok =
+                    Result::<_, ()>::Ok(crate::ffi::bridge::get_log_level_stats(api_workspace_id))?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
 fn wire__crate__ffi__bridge__get_performance_metrics_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -656,6 +721,40 @@ fn wire__crate__ffi__bridge__get_performance_metrics_impl(
             transform_result_sse::<_, ()>((move || {
                 let output_ok = Result::<_, ()>::Ok(crate::ffi::bridge::get_performance_metrics(
                     api_time_range,
+                ))?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__ffi__bridge__get_saved_filters_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "get_saved_filters",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_workspace_id = <String>::sse_decode(&mut deserializer);
+            let api_limit = <Option<i32>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Result::<_, ()>::Ok(crate::ffi::bridge::get_saved_filters(
+                    api_workspace_id,
+                    api_limit,
                 ))?;
                 Ok(output_ok)
             })())
@@ -1105,6 +1204,36 @@ fn wire__crate__ffi__bridge__save_config_impl(
         },
     )
 }
+fn wire__crate__ffi__bridge__save_filter_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "save_filter",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_filter = <crate::ffi::types::SavedFilterInput>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Result::<_, ()>::Ok(crate::ffi::bridge::save_filter(api_filter))?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
 fn wire__crate__ffi__bridge__search_logs_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -1280,6 +1409,40 @@ fn wire__crate__ffi__bridge__stop_watch_impl(
             transform_result_sse::<_, ()>((move || {
                 let output_ok =
                     Result::<_, ()>::Ok(crate::ffi::bridge::stop_watch(api_workspace_id))?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__ffi__bridge__update_filter_usage_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "update_filter_usage",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_filter_id = <String>::sse_decode(&mut deserializer);
+            let api_workspace_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Result::<_, ()>::Ok(crate::ffi::bridge::update_filter_usage(
+                    api_filter_id,
+                    api_workspace_id,
+                ))?;
                 Ok(output_ok)
             })())
         },
@@ -1608,6 +1771,20 @@ impl SseDecode for Vec<u8> {
     }
 }
 
+impl SseDecode for Vec<crate::ffi::types::SavedFilterData> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = vec![];
+        for idx_ in 0..len_ {
+            ans_.push(<crate::ffi::types::SavedFilterData>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<crate::ffi::types::SearchHistoryData> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1659,6 +1836,30 @@ impl SseDecode for Vec<crate::ffi::types::WorkspaceData> {
             ans_.push(<crate::ffi::types::WorkspaceData>::sse_decode(deserializer));
         }
         return ans_;
+    }
+}
+
+impl SseDecode for crate::ffi::types::LogLevelStatsOutput {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_fatalCount = <u64>::sse_decode(deserializer);
+        let mut var_errorCount = <u64>::sse_decode(deserializer);
+        let mut var_warnCount = <u64>::sse_decode(deserializer);
+        let mut var_infoCount = <u64>::sse_decode(deserializer);
+        let mut var_debugCount = <u64>::sse_decode(deserializer);
+        let mut var_traceCount = <u64>::sse_decode(deserializer);
+        let mut var_unknownCount = <u64>::sse_decode(deserializer);
+        let mut var_total = <u64>::sse_decode(deserializer);
+        return crate::ffi::types::LogLevelStatsOutput {
+            fatal_count: var_fatalCount,
+            error_count: var_errorCount,
+            warn_count: var_warnCount,
+            info_count: var_infoCount,
+            debug_count: var_debugCount,
+            trace_count: var_traceCount,
+            unknown_count: var_unknownCount,
+            total: var_total,
+        };
     }
 }
 
@@ -1768,6 +1969,74 @@ impl SseDecode for crate::ffi::types::RegexValidationResult {
     }
 }
 
+impl SseDecode for crate::ffi::types::SavedFilterData {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_id = <String>::sse_decode(deserializer);
+        let mut var_name = <String>::sse_decode(deserializer);
+        let mut var_description = <Option<String>>::sse_decode(deserializer);
+        let mut var_workspaceId = <String>::sse_decode(deserializer);
+        let mut var_termsJson = <String>::sse_decode(deserializer);
+        let mut var_globalOperator = <String>::sse_decode(deserializer);
+        let mut var_timeRangeStart = <Option<String>>::sse_decode(deserializer);
+        let mut var_timeRangeEnd = <Option<String>>::sse_decode(deserializer);
+        let mut var_levelsJson = <Option<String>>::sse_decode(deserializer);
+        let mut var_filePattern = <Option<String>>::sse_decode(deserializer);
+        let mut var_isDefault = <bool>::sse_decode(deserializer);
+        let mut var_sortOrder = <i32>::sse_decode(deserializer);
+        let mut var_usageCount = <i32>::sse_decode(deserializer);
+        let mut var_createdAt = <String>::sse_decode(deserializer);
+        let mut var_lastUsedAt = <Option<String>>::sse_decode(deserializer);
+        return crate::ffi::types::SavedFilterData {
+            id: var_id,
+            name: var_name,
+            description: var_description,
+            workspace_id: var_workspaceId,
+            terms_json: var_termsJson,
+            global_operator: var_globalOperator,
+            time_range_start: var_timeRangeStart,
+            time_range_end: var_timeRangeEnd,
+            levels_json: var_levelsJson,
+            file_pattern: var_filePattern,
+            is_default: var_isDefault,
+            sort_order: var_sortOrder,
+            usage_count: var_usageCount,
+            created_at: var_createdAt,
+            last_used_at: var_lastUsedAt,
+        };
+    }
+}
+
+impl SseDecode for crate::ffi::types::SavedFilterInput {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_name = <String>::sse_decode(deserializer);
+        let mut var_description = <Option<String>>::sse_decode(deserializer);
+        let mut var_workspaceId = <String>::sse_decode(deserializer);
+        let mut var_termsJson = <String>::sse_decode(deserializer);
+        let mut var_globalOperator = <String>::sse_decode(deserializer);
+        let mut var_timeRangeStart = <Option<String>>::sse_decode(deserializer);
+        let mut var_timeRangeEnd = <Option<String>>::sse_decode(deserializer);
+        let mut var_levelsJson = <Option<String>>::sse_decode(deserializer);
+        let mut var_filePattern = <Option<String>>::sse_decode(deserializer);
+        let mut var_isDefault = <bool>::sse_decode(deserializer);
+        let mut var_sortOrder = <i32>::sse_decode(deserializer);
+        return crate::ffi::types::SavedFilterInput {
+            name: var_name,
+            description: var_description,
+            workspace_id: var_workspaceId,
+            terms_json: var_termsJson,
+            global_operator: var_globalOperator,
+            time_range_start: var_timeRangeStart,
+            time_range_end: var_timeRangeEnd,
+            levels_json: var_levelsJson,
+            file_pattern: var_filePattern,
+            is_default: var_isDefault,
+            sort_order: var_sortOrder,
+        };
+    }
+}
+
 impl SseDecode for crate::ffi::types::SearchFiltersData {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1871,6 +2140,13 @@ impl SseDecode for u32 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         deserializer.cursor.read_u32::<NativeEndian>().unwrap()
+    }
+}
+
+impl SseDecode for u64 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        deserializer.cursor.read_u64::<NativeEndian>().unwrap()
     }
 }
 
@@ -1993,7 +2269,7 @@ fn pde_ffi_dispatcher_primary_impl(
             rust_vec_len,
             data_len,
         ),
-        28 => wire__crate__ffi__bridge__init_bridge_impl(port, ptr, rust_vec_len, data_len),
+        31 => wire__crate__ffi__bridge__init_bridge_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -2014,34 +2290,39 @@ fn pde_ffi_dispatcher_sync_impl(
         9 => wire__crate__ffi__bridge__check_rar_support_impl(ptr, rust_vec_len, data_len),
         10 => wire__crate__ffi__bridge__clear_search_history_impl(ptr, rust_vec_len, data_len),
         11 => wire__crate__ffi__bridge__create_workspace_impl(ptr, rust_vec_len, data_len),
-        12 => wire__crate__ffi__bridge__delete_keyword_group_impl(ptr, rust_vec_len, data_len),
-        13 => wire__crate__ffi__bridge__delete_search_histories_impl(ptr, rust_vec_len, data_len),
-        14 => wire__crate__ffi__bridge__delete_search_history_impl(ptr, rust_vec_len, data_len),
-        15 => wire__crate__ffi__bridge__delete_workspace_impl(ptr, rust_vec_len, data_len),
-        16 => wire__crate__ffi__bridge__export_results_impl(ptr, rust_vec_len, data_len),
-        17 => wire__crate__ffi__bridge__get_active_searches_count_impl(ptr, rust_vec_len, data_len),
-        18 => wire__crate__ffi__bridge__get_keywords_impl(ptr, rust_vec_len, data_len),
-        19 => wire__crate__ffi__bridge__get_performance_metrics_impl(ptr, rust_vec_len, data_len),
-        20 => wire__crate__ffi__bridge__get_search_history_impl(ptr, rust_vec_len, data_len),
-        21 => wire__crate__ffi__bridge__get_task_metrics_impl(ptr, rust_vec_len, data_len),
-        22 => wire__crate__ffi__bridge__get_tree_children_impl(ptr, rust_vec_len, data_len),
-        23 => wire__crate__ffi__bridge__get_virtual_file_tree_impl(ptr, rust_vec_len, data_len),
-        24 => wire__crate__ffi__bridge__get_workspace_status_impl(ptr, rust_vec_len, data_len),
-        25 => wire__crate__ffi__bridge__get_workspaces_impl(ptr, rust_vec_len, data_len),
-        26 => wire__crate__ffi__bridge__health_check_impl(ptr, rust_vec_len, data_len),
-        27 => wire__crate__ffi__bridge__import_folder_impl(ptr, rust_vec_len, data_len),
-        29 => wire__crate__ffi__bridge__is_watching_impl(ptr, rust_vec_len, data_len),
-        30 => wire__crate__ffi__bridge__load_config_impl(ptr, rust_vec_len, data_len),
-        31 => wire__crate__ffi__bridge__read_file_by_hash_impl(ptr, rust_vec_len, data_len),
-        32 => wire__crate__ffi__bridge__refresh_workspace_impl(ptr, rust_vec_len, data_len),
-        33 => wire__crate__ffi__bridge__save_config_impl(ptr, rust_vec_len, data_len),
-        34 => wire__crate__ffi__bridge__search_logs_impl(ptr, rust_vec_len, data_len),
-        35 => wire__crate__ffi__bridge__search_regex_impl(ptr, rust_vec_len, data_len),
-        36 => wire__crate__ffi__bridge__search_structured_impl(ptr, rust_vec_len, data_len),
-        37 => wire__crate__ffi__bridge__start_watch_impl(ptr, rust_vec_len, data_len),
-        38 => wire__crate__ffi__bridge__stop_watch_impl(ptr, rust_vec_len, data_len),
-        39 => wire__crate__ffi__bridge__update_keyword_group_impl(ptr, rust_vec_len, data_len),
-        40 => wire__crate__ffi__bridge__validate_regex_impl(ptr, rust_vec_len, data_len),
+        12 => wire__crate__ffi__bridge__delete_filter_impl(ptr, rust_vec_len, data_len),
+        13 => wire__crate__ffi__bridge__delete_keyword_group_impl(ptr, rust_vec_len, data_len),
+        14 => wire__crate__ffi__bridge__delete_search_histories_impl(ptr, rust_vec_len, data_len),
+        15 => wire__crate__ffi__bridge__delete_search_history_impl(ptr, rust_vec_len, data_len),
+        16 => wire__crate__ffi__bridge__delete_workspace_impl(ptr, rust_vec_len, data_len),
+        17 => wire__crate__ffi__bridge__export_results_impl(ptr, rust_vec_len, data_len),
+        18 => wire__crate__ffi__bridge__get_active_searches_count_impl(ptr, rust_vec_len, data_len),
+        19 => wire__crate__ffi__bridge__get_keywords_impl(ptr, rust_vec_len, data_len),
+        20 => wire__crate__ffi__bridge__get_log_level_stats_impl(ptr, rust_vec_len, data_len),
+        21 => wire__crate__ffi__bridge__get_performance_metrics_impl(ptr, rust_vec_len, data_len),
+        22 => wire__crate__ffi__bridge__get_saved_filters_impl(ptr, rust_vec_len, data_len),
+        23 => wire__crate__ffi__bridge__get_search_history_impl(ptr, rust_vec_len, data_len),
+        24 => wire__crate__ffi__bridge__get_task_metrics_impl(ptr, rust_vec_len, data_len),
+        25 => wire__crate__ffi__bridge__get_tree_children_impl(ptr, rust_vec_len, data_len),
+        26 => wire__crate__ffi__bridge__get_virtual_file_tree_impl(ptr, rust_vec_len, data_len),
+        27 => wire__crate__ffi__bridge__get_workspace_status_impl(ptr, rust_vec_len, data_len),
+        28 => wire__crate__ffi__bridge__get_workspaces_impl(ptr, rust_vec_len, data_len),
+        29 => wire__crate__ffi__bridge__health_check_impl(ptr, rust_vec_len, data_len),
+        30 => wire__crate__ffi__bridge__import_folder_impl(ptr, rust_vec_len, data_len),
+        32 => wire__crate__ffi__bridge__is_watching_impl(ptr, rust_vec_len, data_len),
+        33 => wire__crate__ffi__bridge__load_config_impl(ptr, rust_vec_len, data_len),
+        34 => wire__crate__ffi__bridge__read_file_by_hash_impl(ptr, rust_vec_len, data_len),
+        35 => wire__crate__ffi__bridge__refresh_workspace_impl(ptr, rust_vec_len, data_len),
+        36 => wire__crate__ffi__bridge__save_config_impl(ptr, rust_vec_len, data_len),
+        37 => wire__crate__ffi__bridge__save_filter_impl(ptr, rust_vec_len, data_len),
+        38 => wire__crate__ffi__bridge__search_logs_impl(ptr, rust_vec_len, data_len),
+        39 => wire__crate__ffi__bridge__search_regex_impl(ptr, rust_vec_len, data_len),
+        40 => wire__crate__ffi__bridge__search_structured_impl(ptr, rust_vec_len, data_len),
+        41 => wire__crate__ffi__bridge__start_watch_impl(ptr, rust_vec_len, data_len),
+        42 => wire__crate__ffi__bridge__stop_watch_impl(ptr, rust_vec_len, data_len),
+        43 => wire__crate__ffi__bridge__update_filter_usage_impl(ptr, rust_vec_len, data_len),
+        44 => wire__crate__ffi__bridge__update_keyword_group_impl(ptr, rust_vec_len, data_len),
+        45 => wire__crate__ffi__bridge__validate_regex_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -2221,6 +2502,33 @@ impl flutter_rust_bridge::IntoIntoDart<crate::ffi::types::KeywordGroupInput>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::ffi::types::LogLevelStatsOutput {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.fatal_count.into_into_dart().into_dart(),
+            self.error_count.into_into_dart().into_dart(),
+            self.warn_count.into_into_dart().into_dart(),
+            self.info_count.into_into_dart().into_dart(),
+            self.debug_count.into_into_dart().into_dart(),
+            self.trace_count.into_into_dart().into_dart(),
+            self.unknown_count.into_into_dart().into_dart(),
+            self.total.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::ffi::types::LogLevelStatsOutput
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::ffi::types::LogLevelStatsOutput>
+    for crate::ffi::types::LogLevelStatsOutput
+{
+    fn into_into_dart(self) -> crate::ffi::types::LogLevelStatsOutput {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::ffi::types::PerformanceMetricsData {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -2287,6 +2595,70 @@ impl flutter_rust_bridge::IntoIntoDart<crate::ffi::types::RegexValidationResult>
     for crate::ffi::types::RegexValidationResult
 {
     fn into_into_dart(self) -> crate::ffi::types::RegexValidationResult {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::ffi::types::SavedFilterData {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.id.into_into_dart().into_dart(),
+            self.name.into_into_dart().into_dart(),
+            self.description.into_into_dart().into_dart(),
+            self.workspace_id.into_into_dart().into_dart(),
+            self.terms_json.into_into_dart().into_dart(),
+            self.global_operator.into_into_dart().into_dart(),
+            self.time_range_start.into_into_dart().into_dart(),
+            self.time_range_end.into_into_dart().into_dart(),
+            self.levels_json.into_into_dart().into_dart(),
+            self.file_pattern.into_into_dart().into_dart(),
+            self.is_default.into_into_dart().into_dart(),
+            self.sort_order.into_into_dart().into_dart(),
+            self.usage_count.into_into_dart().into_dart(),
+            self.created_at.into_into_dart().into_dart(),
+            self.last_used_at.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::ffi::types::SavedFilterData
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::ffi::types::SavedFilterData>
+    for crate::ffi::types::SavedFilterData
+{
+    fn into_into_dart(self) -> crate::ffi::types::SavedFilterData {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::ffi::types::SavedFilterInput {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.name.into_into_dart().into_dart(),
+            self.description.into_into_dart().into_dart(),
+            self.workspace_id.into_into_dart().into_dart(),
+            self.terms_json.into_into_dart().into_dart(),
+            self.global_operator.into_into_dart().into_dart(),
+            self.time_range_start.into_into_dart().into_dart(),
+            self.time_range_end.into_into_dart().into_dart(),
+            self.levels_json.into_into_dart().into_dart(),
+            self.file_pattern.into_into_dart().into_dart(),
+            self.is_default.into_into_dart().into_dart(),
+            self.sort_order.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::ffi::types::SavedFilterInput
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::ffi::types::SavedFilterInput>
+    for crate::ffi::types::SavedFilterInput
+{
+    fn into_into_dart(self) -> crate::ffi::types::SavedFilterInput {
         self
     }
 }
@@ -2715,6 +3087,16 @@ impl SseEncode for Vec<u8> {
     }
 }
 
+impl SseEncode for Vec<crate::ffi::types::SavedFilterData> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::ffi::types::SavedFilterData>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<crate::ffi::types::SearchHistoryData> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -2752,6 +3134,20 @@ impl SseEncode for Vec<crate::ffi::types::WorkspaceData> {
         for item in self {
             <crate::ffi::types::WorkspaceData>::sse_encode(item, serializer);
         }
+    }
+}
+
+impl SseEncode for crate::ffi::types::LogLevelStatsOutput {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u64>::sse_encode(self.fatal_count, serializer);
+        <u64>::sse_encode(self.error_count, serializer);
+        <u64>::sse_encode(self.warn_count, serializer);
+        <u64>::sse_encode(self.info_count, serializer);
+        <u64>::sse_encode(self.debug_count, serializer);
+        <u64>::sse_encode(self.trace_count, serializer);
+        <u64>::sse_encode(self.unknown_count, serializer);
+        <u64>::sse_encode(self.total, serializer);
     }
 }
 
@@ -2844,6 +3240,44 @@ impl SseEncode for crate::ffi::types::RegexValidationResult {
     }
 }
 
+impl SseEncode for crate::ffi::types::SavedFilterData {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.id, serializer);
+        <String>::sse_encode(self.name, serializer);
+        <Option<String>>::sse_encode(self.description, serializer);
+        <String>::sse_encode(self.workspace_id, serializer);
+        <String>::sse_encode(self.terms_json, serializer);
+        <String>::sse_encode(self.global_operator, serializer);
+        <Option<String>>::sse_encode(self.time_range_start, serializer);
+        <Option<String>>::sse_encode(self.time_range_end, serializer);
+        <Option<String>>::sse_encode(self.levels_json, serializer);
+        <Option<String>>::sse_encode(self.file_pattern, serializer);
+        <bool>::sse_encode(self.is_default, serializer);
+        <i32>::sse_encode(self.sort_order, serializer);
+        <i32>::sse_encode(self.usage_count, serializer);
+        <String>::sse_encode(self.created_at, serializer);
+        <Option<String>>::sse_encode(self.last_used_at, serializer);
+    }
+}
+
+impl SseEncode for crate::ffi::types::SavedFilterInput {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.name, serializer);
+        <Option<String>>::sse_encode(self.description, serializer);
+        <String>::sse_encode(self.workspace_id, serializer);
+        <String>::sse_encode(self.terms_json, serializer);
+        <String>::sse_encode(self.global_operator, serializer);
+        <Option<String>>::sse_encode(self.time_range_start, serializer);
+        <Option<String>>::sse_encode(self.time_range_end, serializer);
+        <Option<String>>::sse_encode(self.levels_json, serializer);
+        <Option<String>>::sse_encode(self.file_pattern, serializer);
+        <bool>::sse_encode(self.is_default, serializer);
+        <i32>::sse_encode(self.sort_order, serializer);
+    }
+}
+
 impl SseEncode for crate::ffi::types::SearchFiltersData {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -2908,6 +3342,13 @@ impl SseEncode for u32 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         serializer.cursor.write_u32::<NativeEndian>(self).unwrap();
+    }
+}
+
+impl SseEncode for u64 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        serializer.cursor.write_u64::<NativeEndian>(self).unwrap();
     }
 }
 

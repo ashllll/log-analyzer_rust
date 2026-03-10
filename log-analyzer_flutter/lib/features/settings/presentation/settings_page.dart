@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../../shared/providers/app_provider.dart';
 import '../../../shared/services/settings_service.dart';
 import '../providers/settings_provider.dart';
 import '../providers/theme_provider.dart';

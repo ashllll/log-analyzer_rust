@@ -444,7 +444,7 @@ void main() {
       const statsPanelHeight = 200;
 
       // 计算可用空间
-      final mainContentWidth = totalWidth - sidebarWidth;
+      const mainContentWidth = totalWidth - sidebarWidth;
 
       // 验证空间分配
       expect(mainContentWidth, 950);

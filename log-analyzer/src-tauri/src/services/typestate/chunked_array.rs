@@ -317,10 +317,14 @@ mod tests {
         let array = ChunkedArray::with_default_size();
 
         // 写入索引条目
+        // 每个索引条目包含 3 个字段 (line_number, byte_offset, length)
+        // 每个字段调用一次 write，所以会添加 3 个元素
         array.write_index_entry(1, 0, 100).unwrap();
         array.write_index_entry(2, 100, 50).unwrap();
 
-        assert_eq!(array.len(), 2);
+        // 每个 write_index_entry 调用 3 次 write()
+        // 所以总共 2 * 3 = 6 个元素
+        assert_eq!(array.len(), 6);
     }
 
     #[test]

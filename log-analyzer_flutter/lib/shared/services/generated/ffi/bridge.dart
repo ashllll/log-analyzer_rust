@@ -362,6 +362,94 @@ List<SearchResultEntry> searchRegex({
   caseSensitive: caseSensitive,
 );
 
+/// 保存或更新过滤器
+///
+/// 根据 workspace_id + name 唯一键保存或更新过滤器
+///
+/// # 参数
+///
+/// * `filter` - 过滤器输入数据
+///
+/// # 返回
+///
+/// 成功返回 true
+bool saveFilter({required SavedFilterInput filter}) =>
+    LogAnalyzerBridge.instance.api.crateFfiBridgeSaveFilter(filter: filter);
+
+/// 获取工作区的所有过滤器
+///
+/// 获取指定工作区的所有已保存过滤器
+///
+/// # 参数
+///
+/// * `workspaceId` - 工作区 ID
+/// * `limit` - 最大返回数量（可选）
+///
+/// # 返回
+///
+/// 返回过滤器列表
+List<SavedFilterData> getSavedFilters({
+  required String workspaceId,
+  int? limit,
+}) => LogAnalyzerBridge.instance.api.crateFfiBridgeGetSavedFilters(
+  workspaceId: workspaceId,
+  limit: limit,
+);
+
+/// 删除指定过滤器
+///
+/// 删除指定工作区中的过滤器
+///
+/// # 参数
+///
+/// * `filterId` - 过滤器 ID
+/// * `workspaceId` - 工作区 ID
+///
+/// # 返回
+///
+/// 成功返回 true
+bool deleteFilter({required String filterId, required String workspaceId}) =>
+    LogAnalyzerBridge.instance.api.crateFfiBridgeDeleteFilter(
+      filterId: filterId,
+      workspaceId: workspaceId,
+    );
+
+/// 更新过滤器使用统计
+///
+/// 更新过滤器的使用次数和最后使用时间
+///
+/// # 参数
+///
+/// * `filterId` - 过滤器 ID
+/// * `workspaceId` - 工作区 ID
+///
+/// # 返回
+///
+/// 成功返回 true
+bool updateFilterUsage({
+  required String filterId,
+  required String workspaceId,
+}) => LogAnalyzerBridge.instance.api.crateFfiBridgeUpdateFilterUsage(
+  filterId: filterId,
+  workspaceId: workspaceId,
+);
+
+/// 获取日志级别统计
+///
+/// 返回工作区中每个日志级别的记录数量
+///
+/// # 参数
+///
+/// * `workspaceId` - 工作区 ID
+///
+/// # 返回
+///
+/// 返回每个日志级别的数量统计
+LogLevelStatsOutput getLogLevelStats({required String workspaceId}) =>
+    LogAnalyzerBridge.instance.api.crateFfiBridgeGetLogLevelStats(
+      workspaceId: workspaceId,
+    );
+
 /// FFI 桥接上下文
 ///
 /// 包含全局状态引用，用于 FFI 调用

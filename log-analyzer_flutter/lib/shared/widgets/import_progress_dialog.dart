@@ -251,11 +251,11 @@ class ImportProgressDialog extends ConsumerWidget {
         children: [
           Row(
             children: [
-              Icon(Icons.error_outline, size: 16, color: AppColors.error),
+              const Icon(Icons.error_outline, size: 16, color: AppColors.error),
               const SizedBox(width: 4),
               Text(
                 '错误 (${state.errors.length})',
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w500,
                   color: AppColors.error,
@@ -271,7 +271,7 @@ class ImportProgressDialog extends ConsumerWidget {
                   padding: const EdgeInsets.only(left: 20, top: 2),
                   child: Text(
                     error,
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 11,
                       color: AppColors.textSecondary,
                     ),
@@ -285,7 +285,7 @@ class ImportProgressDialog extends ConsumerWidget {
               padding: const EdgeInsets.only(left: 20, top: 2),
               child: Text(
                 '... 还有 ${state.errors.length - 5} 个错误',
-                style: TextStyle(fontSize: 11, color: AppColors.textMuted),
+                style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
               ),
             ),
         ],

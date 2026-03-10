@@ -67,19 +67,19 @@ class SearchHistoryDropdown extends ConsumerWidget {
         if (history.isNotEmpty) const PopupMenuDivider(),
         // 清空全部按钮
         if (history.isNotEmpty && onClearAll != null)
-          PopupMenuItem<_HistoryMenuValue>(
+          const PopupMenuItem<_HistoryMenuValue>(
             value: _HistoryMenuValueClearAll(),
             height: 40,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(
+                Icon(
                   Icons.delete_sweep,
                   size: 18,
                   color: AppColors.error,
                 ),
-                const SizedBox(width: 8),
-                const Text(
+                SizedBox(width: 8),
+                Text(
                   '清空全部历史',
                   style: TextStyle(color: AppColors.error, fontSize: 14),
                 ),

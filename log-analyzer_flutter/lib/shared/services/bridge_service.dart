@@ -765,7 +765,7 @@ class BridgeService {
     bool caseSensitive = false,
   }) {
     if (!isFfiEnabled) {
-      return ffi_types.StructuredSearchQueryData(
+      return const ffi_types.StructuredSearchQueryData(
         terms: [],
         globalOperator: ffi_types.QueryOperatorData.and,
       );
@@ -780,7 +780,7 @@ class BridgeService {
       );
     } catch (e) {
       debugPrint('buildSearchQuery error: $e');
-      return ffi_types.StructuredSearchQueryData(
+      return const ffi_types.StructuredSearchQueryData(
         terms: [],
         globalOperator: ffi_types.QueryOperatorData.and,
       );
@@ -802,7 +802,7 @@ class BridgeService {
   /// 返回验证结果，包含是否有效和可能的错误信息
   ffi_types.RegexValidationResult validateRegex(String pattern) {
     if (!isFfiEnabled) {
-      return ffi_types.RegexValidationResult(
+      return const ffi_types.RegexValidationResult(
         valid: false,
         errorMessage: 'FFI not initialized',
       );

@@ -228,24 +228,24 @@ class _MultiKeywordInputState extends ConsumerState<MultiKeywordInput> {
       focusNode: _focusNode,
       decoration: InputDecoration(
         hintText: '输入关键词后按 Enter 或点击添加',
-        hintStyle: TextStyle(color: AppColors.textMuted, fontSize: 14),
-        prefixIcon: Icon(Icons.add, size: 20, color: AppColors.textMuted),
+        hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 14),
+        prefixIcon: const Icon(Icons.add, size: 20, color: AppColors.textMuted),
         suffixIcon: IconButton(
-          icon: Icon(Icons.add_circle, color: AppColors.primary),
+          icon: const Icon(Icons.add_circle, color: AppColors.primary),
           tooltip: '添加关键词',
           onPressed: _addKeyword,
         ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: AppColors.border),
+          borderSide: const BorderSide(color: AppColors.border),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: AppColors.border),
+          borderSide: const BorderSide(color: AppColors.border),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: AppColors.primary, width: 1.5),
+          borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
         ),
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 12,

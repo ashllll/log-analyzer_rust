@@ -172,6 +172,71 @@ class KeywordGroupInput {
           enabled == other.enabled;
 }
 
+/// 日志级别统计输出数据（FFI 格式）
+///
+/// 用于返回每个日志级别的记录数量统计
+class LogLevelStatsOutput {
+  /// FATAL 级别日志数量
+  final BigInt fatalCount;
+
+  /// ERROR 级别日志数量
+  final BigInt errorCount;
+
+  /// WARN 级别日志数量
+  final BigInt warnCount;
+
+  /// INFO 级别日志数量
+  final BigInt infoCount;
+
+  /// DEBUG 级别日志数量
+  final BigInt debugCount;
+
+  /// TRACE 级别日志数量
+  final BigInt traceCount;
+
+  /// 未知级别日志数量
+  final BigInt unknownCount;
+
+  /// 总日志数量
+  final BigInt total;
+
+  const LogLevelStatsOutput({
+    required this.fatalCount,
+    required this.errorCount,
+    required this.warnCount,
+    required this.infoCount,
+    required this.debugCount,
+    required this.traceCount,
+    required this.unknownCount,
+    required this.total,
+  });
+
+  @override
+  int get hashCode =>
+      fatalCount.hashCode ^
+      errorCount.hashCode ^
+      warnCount.hashCode ^
+      infoCount.hashCode ^
+      debugCount.hashCode ^
+      traceCount.hashCode ^
+      unknownCount.hashCode ^
+      total.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LogLevelStatsOutput &&
+          runtimeType == other.runtimeType &&
+          fatalCount == other.fatalCount &&
+          errorCount == other.errorCount &&
+          warnCount == other.warnCount &&
+          infoCount == other.infoCount &&
+          debugCount == other.debugCount &&
+          traceCount == other.traceCount &&
+          unknownCount == other.unknownCount &&
+          total == other.total;
+}
+
 /// 性能指标数据（FFI 格式）
 class PerformanceMetricsData {
   final double searchLatency;
@@ -256,6 +321,196 @@ class RegexValidationResult {
           runtimeType == other.runtimeType &&
           valid == other.valid &&
           errorMessage == other.errorMessage;
+}
+
+/// 过滤器数据（FFI 格式）
+///
+/// 用于 Flutter 端过滤器展示
+class SavedFilterData {
+  /// 过滤器唯一标识
+  final String id;
+
+  /// 过滤器名称
+  final String name;
+
+  /// 过滤器描述（可选）
+  final String? description;
+
+  /// 工作区ID
+  final String workspaceId;
+
+  /// 搜索条件列表（JSON 序列化）
+  final String termsJson;
+
+  /// 全局操作符 ("AND", "OR", "NOT")
+  final String globalOperator;
+
+  /// 时间范围起始（ISO 8601 格式，可选）
+  final String? timeRangeStart;
+
+  /// 时间范围结束（ISO 8601 格式，可选）
+  final String? timeRangeEnd;
+
+  /// 日志级别列表（JSON 序列化数组，可选）
+  final String? levelsJson;
+
+  /// 文件模式（可选）
+  final String? filePattern;
+
+  /// 是否为默认过滤器
+  final bool isDefault;
+
+  /// 排序权重
+  final int sortOrder;
+
+  /// 使用次数
+  final int usageCount;
+
+  /// 创建时间（ISO 8601 格式）
+  final String createdAt;
+
+  /// 最后使用时间（ISO 8601 格式，可选）
+  final String? lastUsedAt;
+
+  const SavedFilterData({
+    required this.id,
+    required this.name,
+    this.description,
+    required this.workspaceId,
+    required this.termsJson,
+    required this.globalOperator,
+    this.timeRangeStart,
+    this.timeRangeEnd,
+    this.levelsJson,
+    this.filePattern,
+    required this.isDefault,
+    required this.sortOrder,
+    required this.usageCount,
+    required this.createdAt,
+    this.lastUsedAt,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      name.hashCode ^
+      description.hashCode ^
+      workspaceId.hashCode ^
+      termsJson.hashCode ^
+      globalOperator.hashCode ^
+      timeRangeStart.hashCode ^
+      timeRangeEnd.hashCode ^
+      levelsJson.hashCode ^
+      filePattern.hashCode ^
+      isDefault.hashCode ^
+      sortOrder.hashCode ^
+      usageCount.hashCode ^
+      createdAt.hashCode ^
+      lastUsedAt.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SavedFilterData &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          name == other.name &&
+          description == other.description &&
+          workspaceId == other.workspaceId &&
+          termsJson == other.termsJson &&
+          globalOperator == other.globalOperator &&
+          timeRangeStart == other.timeRangeStart &&
+          timeRangeEnd == other.timeRangeEnd &&
+          levelsJson == other.levelsJson &&
+          filePattern == other.filePattern &&
+          isDefault == other.isDefault &&
+          sortOrder == other.sortOrder &&
+          usageCount == other.usageCount &&
+          createdAt == other.createdAt &&
+          lastUsedAt == other.lastUsedAt;
+}
+
+/// 过滤器输入数据（用于创建/更新过滤器）
+///
+/// 对应 Flutter 端 SavedFilter 模型的 FFI 传输格式
+class SavedFilterInput {
+  /// 过滤器名称
+  final String name;
+
+  /// 过滤器描述（可选）
+  final String? description;
+
+  /// 工作区ID
+  final String workspaceId;
+
+  /// 搜索条件列表（JSON 序列化）
+  final String termsJson;
+
+  /// 全局操作符 ("AND", "OR", "NOT")
+  final String globalOperator;
+
+  /// 时间范围起始（ISO 8601 格式，可选）
+  final String? timeRangeStart;
+
+  /// 时间范围结束（ISO 8601 格式，可选）
+  final String? timeRangeEnd;
+
+  /// 日志级别列表（JSON 序列化数组，可选）
+  final String? levelsJson;
+
+  /// 文件模式（可选）
+  final String? filePattern;
+
+  /// 是否为默认过滤器
+  final bool isDefault;
+
+  /// 排序权重
+  final int sortOrder;
+
+  const SavedFilterInput({
+    required this.name,
+    this.description,
+    required this.workspaceId,
+    required this.termsJson,
+    required this.globalOperator,
+    this.timeRangeStart,
+    this.timeRangeEnd,
+    this.levelsJson,
+    this.filePattern,
+    required this.isDefault,
+    required this.sortOrder,
+  });
+
+  @override
+  int get hashCode =>
+      name.hashCode ^
+      description.hashCode ^
+      workspaceId.hashCode ^
+      termsJson.hashCode ^
+      globalOperator.hashCode ^
+      timeRangeStart.hashCode ^
+      timeRangeEnd.hashCode ^
+      levelsJson.hashCode ^
+      filePattern.hashCode ^
+      isDefault.hashCode ^
+      sortOrder.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SavedFilterInput &&
+          runtimeType == other.runtimeType &&
+          name == other.name &&
+          description == other.description &&
+          workspaceId == other.workspaceId &&
+          termsJson == other.termsJson &&
+          globalOperator == other.globalOperator &&
+          timeRangeStart == other.timeRangeStart &&
+          timeRangeEnd == other.timeRangeEnd &&
+          levelsJson == other.levelsJson &&
+          filePattern == other.filePattern &&
+          isDefault == other.isDefault &&
+          sortOrder == other.sortOrder;
 }
 
 /// 搜索过滤器（FFI 格式）

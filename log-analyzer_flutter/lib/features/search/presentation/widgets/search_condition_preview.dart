@@ -52,7 +52,7 @@ class SearchConditionPreview extends StatelessWidget {
           Expanded(
             child: hasKeywords
                 ? _buildRichPreview(previewText)
-                : Text(
+                : const Text(
                     '无搜索条件',
                     style: TextStyle(
                       color: AppColors.textMuted,
@@ -71,7 +71,7 @@ class SearchConditionPreview extends StatelessWidget {
               ),
               child: Text(
                 '${terms.where((t) => t.enabled).length}',
-                style: TextStyle(
+                style: const TextStyle(
                   color: AppColors.primary,
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
@@ -132,7 +132,7 @@ class SearchConditionPreview extends StatelessWidget {
       spans.add(
         TextSpan(
           text: enabledTerms[i].value,
-          style: TextStyle(
+          style: const TextStyle(
             color: AppColors.primary,
             fontSize: 13,
             fontWeight: FontWeight.w500,

@@ -1050,7 +1050,7 @@ class _WorkspaceCard extends StatelessWidget {
 class _AddWorkspaceDialog extends ConsumerStatefulWidget {
   final String? initialPath;
 
-  const _AddWorkspaceDialog({super.key, this.initialPath});
+  const _AddWorkspaceDialog({this.initialPath});
 
   @override
   ConsumerState<_AddWorkspaceDialog> createState() =>

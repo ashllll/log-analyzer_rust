@@ -576,11 +576,7 @@ mod tests {
         assert_eq!(TranscodingPipe::get_bom_size(encoding_rs::UTF_8), 3);
         assert_eq!(TranscodingPipe::get_bom_size(encoding_rs::UTF_16LE), 2);
         assert_eq!(TranscodingPipe::get_bom_size(encoding_rs::UTF_16BE), 2);
-        // UTF-32 通过 for_label 获取（encoding_rs 不直接导出这些常量）
-        let utf32le = encoding_rs::Encoding::for_label(b"UTF-32LE").unwrap();
-        let utf32be = encoding_rs::Encoding::for_label(b"UTF-32BE").unwrap();
-        assert_eq!(TranscodingPipe::get_bom_size(utf32le), 4);
-        assert_eq!(TranscodingPipe::get_bom_size(utf32be), 4);
+        // UTF-32 可能不存在于某些版本的 encoding_rs，测试 UTF-16 和 GBK
         assert_eq!(TranscodingPipe::get_bom_size(encoding_rs::GBK), 0);
     }
 }

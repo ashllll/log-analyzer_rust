@@ -1,7 +1,6 @@
 // lib/shared/widgets/error_boundary.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../services/error_handler.dart';
 
 /// 错误边界组件
 ///

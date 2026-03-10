@@ -68,6 +68,9 @@ abstract class LogAnalyzerBridgeApiImplPlatform
   KeywordGroupInput dco_decode_box_autoadd_keyword_group_input(dynamic raw);
 
   @protected
+  SavedFilterInput dco_decode_box_autoadd_saved_filter_input(dynamic raw);
+
+  @protected
   SearchFiltersData dco_decode_box_autoadd_search_filters_data(dynamic raw);
 
   @protected
@@ -124,6 +127,9 @@ abstract class LogAnalyzerBridgeApiImplPlatform
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
 
   @protected
+  List<SavedFilterData> dco_decode_list_saved_filter_data(dynamic raw);
+
+  @protected
   List<SearchHistoryData> dco_decode_list_search_history_data(dynamic raw);
 
   @protected
@@ -134,6 +140,9 @@ abstract class LogAnalyzerBridgeApiImplPlatform
 
   @protected
   List<WorkspaceData> dco_decode_list_workspace_data(dynamic raw);
+
+  @protected
+  LogLevelStatsOutput dco_decode_log_level_stats_output(dynamic raw);
 
   @protected
   String? dco_decode_opt_String(dynamic raw);
@@ -162,6 +171,12 @@ abstract class LogAnalyzerBridgeApiImplPlatform
   RegexValidationResult dco_decode_regex_validation_result(dynamic raw);
 
   @protected
+  SavedFilterData dco_decode_saved_filter_data(dynamic raw);
+
+  @protected
+  SavedFilterInput dco_decode_saved_filter_input(dynamic raw);
+
+  @protected
   SearchFiltersData dco_decode_search_filters_data(dynamic raw);
 
   @protected
@@ -183,6 +198,9 @@ abstract class LogAnalyzerBridgeApiImplPlatform
 
   @protected
   int dco_decode_u_32(dynamic raw);
+
+  @protected
+  BigInt dco_decode_u_64(dynamic raw);
 
   @protected
   int dco_decode_u_8(dynamic raw);
@@ -244,6 +262,11 @@ abstract class LogAnalyzerBridgeApiImplPlatform
 
   @protected
   KeywordGroupInput sse_decode_box_autoadd_keyword_group_input(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SavedFilterInput sse_decode_box_autoadd_saved_filter_input(
     SseDeserializer deserializer,
   );
 
@@ -316,6 +339,11 @@ abstract class LogAnalyzerBridgeApiImplPlatform
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
+  List<SavedFilterData> sse_decode_list_saved_filter_data(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<SearchHistoryData> sse_decode_list_search_history_data(
     SseDeserializer deserializer,
   );
@@ -332,6 +360,11 @@ abstract class LogAnalyzerBridgeApiImplPlatform
 
   @protected
   List<WorkspaceData> sse_decode_list_workspace_data(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  LogLevelStatsOutput sse_decode_log_level_stats_output(
     SseDeserializer deserializer,
   );
 
@@ -370,6 +403,12 @@ abstract class LogAnalyzerBridgeApiImplPlatform
   );
 
   @protected
+  SavedFilterData sse_decode_saved_filter_data(SseDeserializer deserializer);
+
+  @protected
+  SavedFilterInput sse_decode_saved_filter_input(SseDeserializer deserializer);
+
+  @protected
   SearchFiltersData sse_decode_search_filters_data(
     SseDeserializer deserializer,
   );
@@ -395,6 +434,9 @@ abstract class LogAnalyzerBridgeApiImplPlatform
 
   @protected
   int sse_decode_u_32(SseDeserializer deserializer);
+
+  @protected
+  BigInt sse_decode_u_64(SseDeserializer deserializer);
 
   @protected
   int sse_decode_u_8(SseDeserializer deserializer);
@@ -468,6 +510,12 @@ abstract class LogAnalyzerBridgeApiImplPlatform
   @protected
   void sse_encode_box_autoadd_keyword_group_input(
     KeywordGroupInput self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_saved_filter_input(
+    SavedFilterInput self,
     SseSerializer serializer,
   );
 
@@ -557,6 +605,12 @@ abstract class LogAnalyzerBridgeApiImplPlatform
   );
 
   @protected
+  void sse_encode_list_saved_filter_data(
+    List<SavedFilterData> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_search_history_data(
     List<SearchHistoryData> self,
     SseSerializer serializer,
@@ -577,6 +631,12 @@ abstract class LogAnalyzerBridgeApiImplPlatform
   @protected
   void sse_encode_list_workspace_data(
     List<WorkspaceData> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_log_level_stats_output(
+    LogLevelStatsOutput self,
     SseSerializer serializer,
   );
 
@@ -620,6 +680,18 @@ abstract class LogAnalyzerBridgeApiImplPlatform
   );
 
   @protected
+  void sse_encode_saved_filter_data(
+    SavedFilterData self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_saved_filter_input(
+    SavedFilterInput self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_search_filters_data(
     SearchFiltersData self,
     SseSerializer serializer,
@@ -654,6 +726,9 @@ abstract class LogAnalyzerBridgeApiImplPlatform
 
   @protected
   void sse_encode_u_32(int self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_u_64(BigInt self, SseSerializer serializer);
 
   @protected
   void sse_encode_u_8(int self, SseSerializer serializer);
