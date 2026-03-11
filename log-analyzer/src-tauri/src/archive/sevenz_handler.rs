@@ -1,57 +1,69 @@
 use crate::archive::archive_handler::{ArchiveEntry, ArchiveHandler, ExtractionSummary};
+use crate::archive::archive_handler_base::{ArchiveHandlerBase, ExtractionContext};
+use crate::archive::extraction_error::{ExtractionError, ExtractionResult};
 use crate::error::{AppError, Result};
-use crate::utils::path_security::{
-    validate_and_sanitize_archive_path, PathValidationResult, SecurityConfig,
-};
 use async_trait::async_trait;
 use std::path::Path;
-use tracing::warn;
+use tracing::{debug, trace, warn};
 
 use tokio::fs;
 
 use sevenz_rust::SevenZReader;
 
 /**
- * 7z文件处理器 (稳定版本)
+ * 7z文件处理器 (重构版本 - 使用 ArchiveHandlerBase)
  */
 pub struct SevenZHandler {}
 
 #[async_trait]
-impl ArchiveHandler for SevenZHandler {
-    fn can_handle(&self, path: &Path) -> bool {
-        path.extension()
-            .and_then(|s| s.to_str())
-            .map(|ext| ext.eq_ignore_ascii_case("7z"))
-            .unwrap_or(false)
+impl ArchiveHandlerBase for SevenZHandler {
+    fn handler_name(&self) -> &'static str {
+        "SevenZHandler"
     }
 
-    async fn extract_with_limits(
+    fn supported_formats(&self) -> &[&'static str] {
+        &["7z"]
+    }
+
+    async fn extract_with_context(
         &self,
         source: &Path,
         target_dir: &Path,
-        max_file_size: u64,
-        max_total_size: u64,
-        max_file_count: usize,
-    ) -> Result<ExtractionSummary> {
-        fs::create_dir_all(target_dir).await?;
+        context: &mut ExtractionContext,
+    ) -> ExtractionResult<ExtractionSummary> {
+        debug!("开始提取 7Z 文件: {:?}", source);
+
+        // 创建目标目录
+        fs::create_dir_all(target_dir).await.map_err(|e| {
+            ExtractionError::DirectoryCreationFailed {
+                path: target_dir.to_path_buf(),
+                reason: e.to_string(),
+            }
+        })?;
 
         let source_path = source.to_path_buf();
         let target_path = target_dir.to_path_buf();
 
+        // 提取限制值到局部变量，以便在 spawn_blocking 中使用
+        let max_file_size = context.config.limits.max_file_size;
+        let max_total_size = context.config.limits.max_total_size;
+        let max_file_count = context.config.limits.max_file_count;
+
         let summary = tokio::task::spawn_blocking(move || {
             let mut summary = ExtractionSummary::new();
             let mut reader = SevenZReader::open(&source_path, sevenz_rust::Password::empty())
-                .map_err(|e| {
-                    AppError::archive_error(
-                        format!("Failed to open 7z: {}", e),
-                        Some(source_path.clone()),
-                    )
+                .map_err(|e| ExtractionError::ArchiveCorrupted {
+                    path: source_path.clone(),
+                    reason: format!("Failed to open 7z: {}", e),
                 })?;
 
+            use crate::utils::path_security::{
+                validate_and_sanitize_archive_path, PathValidationResult, SecurityConfig,
+            };
             let security_config = SecurityConfig::default();
 
             reader
-                .for_each_entries(|entry, reader| {
+                .for_each_entries(|entry, file_reader| {
                     let name = entry.name();
                     let validation = validate_and_sanitize_archive_path(name, &security_config);
 
@@ -69,10 +81,36 @@ impl ArchiveHandler for SevenZHandler {
                     if entry.is_directory() {
                         let _ = std::fs::create_dir_all(&out_path);
                     } else {
-                        if size > max_file_size
+                        // 限制检查
+                        let would_exceed_limits = size > max_file_size
                             || summary.total_size + size > max_total_size
-                            || summary.files_extracted + 1 > max_file_count
-                        {
+                            || summary.files_extracted + 1 > max_file_count;
+
+                        if would_exceed_limits {
+                            if size > max_file_size {
+                                warn!(
+                                    file = %name,
+                                    file_size = size,
+                                    max_allowed = max_file_size,
+                                    "Skipping file exceeding max_file_size limit"
+                                );
+                            } else if summary.total_size + size > max_total_size {
+                                warn!(
+                                    file = %name,
+                                    file_size = size,
+                                    current_total = summary.total_size,
+                                    max_total = max_total_size,
+                                    "Skipping file - would exceed max_total_size limit"
+                                );
+                            } else {
+                                warn!(
+                                    file = %name,
+                                    current_count = summary.files_extracted,
+                                    max_count = max_file_count,
+                                    "Skipping file - would exceed max_file_count limit"
+                                );
+                            }
+                            summary.add_error(format!("File skipped (limits exceeded): {}", name));
                             return Ok(true);
                         }
 
@@ -82,31 +120,77 @@ impl ArchiveHandler for SevenZHandler {
 
                         match std::fs::File::create(&out_path) {
                             Ok(mut out_file) => {
-                                if let Err(e) = std::io::copy(reader, &mut out_file) {
+                                if let Err(e) = std::io::copy(file_reader, &mut out_file) {
                                     warn!("Failed to extract 7z entry {:?}: {}", out_path, e);
+                                    summary.add_error(format!(
+                                        "Extraction failed for {}: {}",
+                                        name, e
+                                    ));
                                 } else {
                                     summary.add_file(safe_path, size);
+                                    trace!("已提取 7Z 文件: {:?}, 大小: {}", out_path, size);
                                 }
                                 // 显式释放文件句柄
                                 drop(out_file);
                             }
                             Err(e) => {
                                 warn!("Failed to create file {:?}: {}", out_path, e);
+                                summary
+                                    .add_error(format!("File creation failed for {}: {}", name, e));
                             }
                         }
                     }
                     Ok(true)
                 })
-                .map_err(|e| AppError::archive_error(e.to_string(), None))?;
+                .map_err(|e| ExtractionError::IoError {
+                    operation: "提取7Z条目".to_string(),
+                    reason: e.to_string(),
+                })?;
 
             // 显式释放归档读取器句柄
             drop(reader);
-            Ok::<ExtractionSummary, AppError>(summary)
+            Ok::<ExtractionSummary, ExtractionError>(summary)
         })
         .await
-        .map_err(|e| AppError::archive_error(e.to_string(), None))??;
+        .map_err(|e| ExtractionError::IoError {
+            operation: "spawn_blocking".to_string(),
+            reason: format!("Task join error: {}", e),
+        })?;
 
-        Ok(summary)
+        // 更新上下文统计信息
+        if let Ok(ref summary) = summary {
+            for file_path in &summary.extracted_files {
+                let full_path = target_dir.join(file_path);
+                if let Ok(metadata) = std::fs::metadata(&full_path) {
+                    context.record_extraction(&full_path, metadata.len());
+                }
+            }
+        }
+
+        summary
+    }
+}
+
+#[async_trait]
+impl ArchiveHandler for SevenZHandler {
+    fn can_handle(&self, path: &Path) -> bool {
+        path.extension()
+            .and_then(|s| s.to_str())
+            .map(|ext| ext.eq_ignore_ascii_case("7z"))
+            .unwrap_or(false)
+    }
+
+    #[allow(deprecated)]
+    async fn extract_with_limits(
+        &self,
+        source: &Path,
+        target_dir: &Path,
+        max_file_size: u64,
+        max_total_size: u64,
+        max_file_count: usize,
+    ) -> Result<ExtractionSummary> {
+        self.extract_with_limits_default(source, target_dir, max_file_size, max_total_size, max_file_count)
+            .await
     }
 
     fn file_extensions(&self) -> Vec<&str> {
@@ -190,7 +274,12 @@ impl ArchiveHandler for SevenZHandler {
                 ));
             };
 
-            let target_name = target_name.unwrap();
+            let target_name = target_name.ok_or_else(|| {
+                AppError::archive_error(
+                    format!("Failed to find file '{}' in archive", file_name_owned),
+                    None,
+                )
+            })?;
 
             // 如果是目录，返回错误
             if size == 0 && target_name.ends_with('/') {
@@ -255,5 +344,35 @@ impl ArchiveHandler for SevenZHandler {
         })
         .await
         .map_err(|e| AppError::archive_error(e.to_string(), None))?
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[allow(unused_imports)]
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_sevenz_handler_base_impl() {
+        let handler = SevenZHandler {};
+        assert_eq!(handler.handler_name(), "SevenZHandler");
+        assert_eq!(handler.supported_formats(), &["7z"]);
+    }
+
+    #[test]
+    fn test_sevenz_handler_can_handle() {
+        let handler = SevenZHandler {};
+        assert!(handler.can_handle(Path::new("test.7z")));
+        assert!(handler.can_handle(Path::new("test.7Z")));
+        assert!(!handler.can_handle(Path::new("test.zip")));
+        assert!(!handler.can_handle(Path::new("test.txt")));
+    }
+
+    #[test]
+    fn test_sevenz_handler_file_extensions() {
+        let handler = SevenZHandler {};
+        let extensions = handler.file_extensions();
+        assert_eq!(extensions, vec!["7z"]);
     }
 }

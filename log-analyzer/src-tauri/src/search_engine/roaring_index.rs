@@ -142,17 +142,21 @@ impl SearchIndex {
     /// # 注意
     /// 如果索引已冻结，会自动解冻。
     ///
-    /// # Panics
-    /// 如果 line_number 超过 u32::MAX，会 panic
+    /// # 行为
+    /// 如果 line_number 超过 u32::MAX（约42亿），会被静默跳过并记录警告日志。
+    /// 这是为了兼容 RoaringBitmap 的 u32 限制，同时避免中断搜索流程。
     pub fn add_hit(&mut self, line_number: u64) {
         if self.frozen {
             self.unfreeze();
         }
-        self.hits.insert(
-            line_number
-                .try_into()
-                .expect("line_number exceeds u32::MAX"),
-        );
+        if let Ok(n) = line_number.try_into() {
+            self.hits.insert(n);
+        } else {
+            tracing::warn!(
+                "Line number {} exceeds u32::MAX, skipping from search index",
+                line_number
+            );
+        }
     }
 
     /// 批量添加命中行号
@@ -166,15 +170,22 @@ impl SearchIndex {
     /// # 注意
     /// 如果索引已冻结，会自动解冻。
     ///
-    /// # Panics
-    /// 如果任何 line_number 超过 u32::MAX，会 panic
+    /// # 行为
+    /// 如果任何 line_number 超过 u32::MAX（约42亿），会被静默跳过并记录警告日志。
+    /// 这是为了兼容 RoaringBitmap 的 u32 限制，同时避免中断搜索流程。
     pub fn add_hits<I: IntoIterator<Item = u64>>(&mut self, line_numbers: I) {
         if self.frozen {
             self.unfreeze();
         }
         for line in line_numbers {
-            self.hits
-                .insert(line.try_into().expect("line_number exceeds u32::MAX"));
+            if let Ok(n) = line.try_into() {
+                self.hits.insert(n);
+            } else {
+                tracing::warn!(
+                    "Line number {} exceeds u32::MAX, skipping from search index",
+                    line
+                );
+            }
         }
     }
 

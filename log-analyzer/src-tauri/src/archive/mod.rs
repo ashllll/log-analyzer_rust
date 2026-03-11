@@ -8,6 +8,7 @@ pub mod fault_tolerance;
 pub mod streaming;
 
 pub mod archive_handler;
+pub mod archive_handler_base;
 pub mod resource_manager;
 pub mod security_detector;
 
@@ -15,8 +16,10 @@ pub mod audit_logger;
 pub mod checkpoint_manager;
 pub mod compression_analyzer;
 pub mod edge_case_handlers;
+pub mod extraction_config;
 pub mod extraction_context;
 pub mod extraction_engine;
+pub mod extraction_error;
 pub mod extraction_orchestrator;
 pub mod gz_handler;
 pub mod nested_archive_config;
@@ -33,9 +36,18 @@ pub mod traversal; // 新增：统一遍历模块
 pub mod zip_handler;
 
 pub use archive_handler::{ArchiveEntry, ArchiveHandler, ExtractionSummary};
+pub use archive_handler_base::{
+    ArchiveHandlerBase, ExtractionContext as HandlerExtractionContext, ExtractionProgress,
+    ExtractionStats,
+};
+
+/// 从 archive_handler_base 重导出 ExtractionContext，避免命名冲突
+pub type HandlerContext = HandlerExtractionContext;
 pub use compression_analyzer::{CompressionAnalyzer, FileDistribution};
+pub use extraction_config::{ExtractionConfig, ExtractionLimits, SecurityConfig};
 pub use extraction_context::{ExtractionContext, ExtractionItem, ExtractionStack};
 pub use extraction_engine::{ExtractionEngine, ExtractionPolicy};
+pub use extraction_error::{ErrorCategory, ExtractionError, ExtractionResult};
 pub use extraction_orchestrator::ExtractionOrchestrator;
 pub use gz_handler::GzHandler;
 pub use nested_archive_config::NestedArchiveConfig;
@@ -46,7 +58,7 @@ pub use path_validator::{PathValidator, PathValidatorConfig}; // 导出验证器
 #[allow(deprecated)]
 pub use processor::process_path_recursive_with_metadata;
 pub use processor::{process_path_with_cas, CasProcessingContext}; // Export CAS-based processing function and context
-pub use public_api::{extract_archive_async, extract_archive_sync, ExtractionResult};
+pub use public_api::{extract_archive_async, extract_archive_sync};
 pub use rar_handler::RarHandler;
 pub use security_detector::{SecurityDetector, SecurityPolicy};
 pub use sevenz_handler::SevenZHandler;
@@ -134,6 +146,7 @@ impl ArchiveManager {
      * 提取压缩文件
      *
      * 自动检测文件类型并使用合适的处理器
+     * 使用新的 extract_with_config API 提供更好的配置管理
      */
     pub async fn extract_archive(
         &self,
@@ -148,15 +161,15 @@ impl ArchiveManager {
             )
         })?;
 
-        // 使用处理器提取文件，传递安全限制参数
+        // 使用新的配置对象 API 提取文件
+        let config = ExtractionConfig::with_limits(
+            self.max_file_size,
+            self.max_total_size,
+            self.max_file_count,
+        );
+
         handler
-            .extract_with_limits(
-                source,
-                target_dir,
-                self.max_file_size,
-                self.max_total_size,
-                self.max_file_count,
-            )
+            .extract_with_config(source, target_dir, &config)
             .await
     }
 

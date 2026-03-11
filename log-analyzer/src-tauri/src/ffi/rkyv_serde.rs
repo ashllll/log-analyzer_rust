@@ -164,10 +164,14 @@ pub fn create_ffi_pointer(data: &[u8]) -> FfiPointer {
 /// 从 FFI 指针创建安全的数据视图
 ///
 /// 仅在确认指针有效时使用
+///
+/// # Errors
+/// - `SerializeError::InvalidPointer`: 如果指针为空或长度为零
+/// - `SerializeError::AlignmentError`: 如果指针对齐不满足类型要求
 pub unsafe fn from_ffi_pointer<T: Archive>(
     ptr: u64,
     length: u64,
-) -> Result<NonNull<u8>> {
+) -> std::result::Result<NonNull<u8>, SerializeError> {
     if ptr == 0 {
         return Err(SerializeError::InvalidPointer("pointer is null".to_string()));
     }
@@ -185,7 +189,8 @@ pub unsafe fn from_ffi_pointer<T: Archive>(
         )));
     }
 
-    Ok(NonNull::new(ptr as *mut u8).expect("pointer should be non-null"))
+    NonNull::new(ptr as *mut u8)
+        .ok_or_else(|| SerializeError::InvalidPointer("pointer is null after validation".to_string()))
 }
 
 // ================================================================================================

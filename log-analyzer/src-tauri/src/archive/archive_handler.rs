@@ -3,6 +3,8 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+use super::extraction_config::ExtractionConfig;
+
 /**
  * 压缩包条目（用于浏览和预览）
  */
@@ -52,7 +54,16 @@ pub trait ArchiveHandler: Send + Sync {
      * # 返回
      * * `Ok(ExtractionSummary)` - 提取摘要
      * * `Err(AppError)` - 提取失败
+     *
+     * # 废弃说明
+     * 此方法已废弃，请使用 [`extract_with_config`](ArchiveHandler::extract_with_config) 替代。
+     * 使用 [`ExtractionConfig`] 可以提供更好的配置管理和扩展性。
      */
+    #[deprecated(
+        since = "1.1.0",
+        note = "Use extract_with_config instead. \
+                ExtractionConfig provides better configuration management and extensibility."
+    )]
     async fn extract_with_limits(
         &self,
         source: &Path,
@@ -61,6 +72,36 @@ pub trait ArchiveHandler: Send + Sync {
         max_total_size: u64,
         max_file_count: usize,
     ) -> Result<ExtractionSummary>;
+
+    /**
+     * 提取压缩文件内容（使用配置对象 - 新的推荐API）
+     *
+     * # 参数
+     * * `source` - 源文件路径
+     * * `target_dir` - 目标目录
+     * * `config` - 提取配置对象
+     *
+     * # 返回
+     * * `Ok(ExtractionSummary)` - 提取摘要
+     * * `Err(AppError)` - 提取失败
+     */
+    #[allow(deprecated)]
+    async fn extract_with_config(
+        &self,
+        source: &Path,
+        target_dir: &Path,
+        config: &ExtractionConfig,
+    ) -> Result<ExtractionSummary> {
+        // 默认实现：将配置转换为旧参数调用旧方法
+        self.extract_with_limits(
+            source,
+            target_dir,
+            config.limits.max_file_size,
+            config.limits.max_total_size,
+            config.limits.max_file_count,
+        )
+        .await
+    }
 
     /**
      * 提取压缩文件内容（兼容旧版本，默认调用带限制的方法）
@@ -74,6 +115,7 @@ pub trait ArchiveHandler: Send + Sync {
      * * `Err(AppError)` - 提取失败
      */
     #[allow(dead_code)]
+    #[allow(deprecated)]
     async fn extract(&self, source: &Path, target_dir: &Path) -> Result<ExtractionSummary> {
         // 默认使用安全限制：单个文件100MB，总大小1GB，文件数1000
         self.extract_with_limits(
@@ -191,49 +233,6 @@ impl ExtractionSummary {
     }
 }
 
-/**
- * 提取错误
- */
-#[allow(dead_code)]
-#[derive(Debug)]
-pub struct ExtractionError {
-    pub message: String,
-    pub source: Option<std::io::Error>,
-    pub path: Option<PathBuf>,
-}
-
-impl ExtractionError {
-    /**
-     * 创建新的提取错误
-     */
-    #[allow(dead_code)]
-    pub fn new(message: String) -> Self {
-        Self {
-            message,
-            source: None,
-            path: None,
-        }
-    }
-
-    /**
-     * 添加源错误
-     */
-    #[allow(dead_code)]
-    pub fn with_source(mut self, source: std::io::Error) -> Self {
-        self.source = Some(source);
-        self
-    }
-
-    /**
-     * 添加路径信息
-     */
-    #[allow(dead_code)]
-    pub fn with_path(mut self, path: PathBuf) -> Self {
-        self.path = Some(path);
-        self
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -260,16 +259,5 @@ mod tests {
         assert!(summary.has_errors());
         let rate = summary.success_rate();
         assert!((rate - 66.67).abs() < 0.01); // 使用浮点数精度比较
-    }
-
-    #[test]
-    fn test_extraction_error() {
-        let error = ExtractionError::new("Extract failed".to_string())
-            .with_source(std::io::Error::other("IO error"))
-            .with_path(PathBuf::from("test.zip"));
-
-        assert_eq!(error.message, "Extract failed");
-        assert!(error.source.is_some());
-        assert!(error.path.is_some());
     }
 }

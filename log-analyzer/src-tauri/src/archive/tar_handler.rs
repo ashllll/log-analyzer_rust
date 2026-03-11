@@ -1,21 +1,114 @@
 use crate::archive::archive_handler::{ArchiveEntry, ArchiveHandler, ExtractionSummary};
+use crate::archive::archive_handler_base::{ArchiveHandlerBase, ExtractionContext};
+use crate::archive::extraction_error::{ExtractionError, ExtractionResult};
 use crate::error::{AppError, Result};
-use crate::utils::path_security::{
-    validate_and_sanitize_archive_path, PathValidationResult, SecurityConfig,
-};
 use async_trait::async_trait;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use tokio::fs;
-use tracing::warn;
+use tracing::{debug, trace, warn};
 
 use flate2::read::GzDecoder;
 use tar::Archive;
 
 /**
- * TAR文件处理器 (稳定版本)
+ * TAR文件处理器 (重构版本 - 使用 ArchiveHandlerBase)
  */
 pub struct TarHandler {}
+
+#[async_trait]
+impl ArchiveHandlerBase for TarHandler {
+    fn handler_name(&self) -> &'static str {
+        "TarHandler"
+    }
+
+    fn supported_formats(&self) -> &[&'static str] {
+        &["tar", "tar.gz", "tgz"]
+    }
+
+    async fn extract_with_context(
+        &self,
+        source: &Path,
+        target_dir: &Path,
+        context: &mut ExtractionContext,
+    ) -> ExtractionResult<ExtractionSummary> {
+        debug!("开始提取 TAR 文件: {:?}", source);
+
+        // 创建目标目录
+        fs::create_dir_all(target_dir).await.map_err(|e| {
+            ExtractionError::DirectoryCreationFailed {
+                path: target_dir.to_path_buf(),
+                reason: e.to_string(),
+            }
+        })?;
+
+        let source_path = source.to_path_buf();
+        let target_path = target_dir.to_path_buf();
+
+        // 检查是否是 gzip 压缩的 tar
+        let is_gzipped = source_path
+            .extension()
+            .and_then(|s| s.to_str())
+            .map(|ext| ext.eq_ignore_ascii_case("gz") || ext.eq_ignore_ascii_case("tgz"))
+            .unwrap_or(false);
+
+        // 提取限制值到局部变量，以便在 spawn_blocking 中使用
+        let max_file_size = context.config.limits.max_file_size;
+        let max_total_size = context.config.limits.max_total_size;
+        let max_file_count = context.config.limits.max_file_count;
+
+        let summary = tokio::task::spawn_blocking(move || {
+            let file = std::fs::File::open(&source_path).map_err(|e| ExtractionError::IoError {
+                operation: "打开TAR文件".to_string(),
+                reason: e.to_string(),
+            })?;
+
+            let mut summary = ExtractionSummary::new();
+
+            if is_gzipped {
+                let decoder = GzDecoder::new(file);
+                let mut archive = Archive::new(decoder);
+                Self::extract_sync(
+                    &mut archive,
+                    &target_path,
+                    &mut summary,
+                    max_file_size,
+                    max_total_size,
+                    max_file_count,
+                )?;
+            } else {
+                let mut archive = Archive::new(file);
+                Self::extract_sync(
+                    &mut archive,
+                    &target_path,
+                    &mut summary,
+                    max_file_size,
+                    max_total_size,
+                    max_file_count,
+                )?;
+            }
+
+            Ok::<ExtractionSummary, ExtractionError>(summary)
+        })
+        .await
+        .map_err(|e| ExtractionError::IoError {
+            operation: "spawn_blocking".to_string(),
+            reason: format!("Task join error: {}", e),
+        })?;
+
+        // 更新上下文统计信息
+        if let Ok(ref summary) = summary {
+            for file_path in &summary.extracted_files {
+                let full_path = target_dir.join(file_path);
+                if let Ok(metadata) = std::fs::metadata(&full_path) {
+                    context.record_extraction(&full_path, metadata.len());
+                }
+            }
+        }
+
+        summary
+    }
+}
 
 #[async_trait]
 impl ArchiveHandler for TarHandler {
@@ -36,6 +129,7 @@ impl ArchiveHandler for TarHandler {
         false
     }
 
+    #[allow(deprecated)]
     async fn extract_with_limits(
         &self,
         source: &Path,
@@ -44,53 +138,8 @@ impl ArchiveHandler for TarHandler {
         max_total_size: u64,
         max_file_count: usize,
     ) -> Result<ExtractionSummary> {
-        fs::create_dir_all(target_dir).await?;
-
-        let source_path = source.to_path_buf();
-        let target_path = target_dir.to_path_buf();
-
-        let summary = tokio::task::spawn_blocking(move || {
-            let file = std::fs::File::open(&source_path)?;
-            let mut summary = ExtractionSummary::new();
-            let security_config = SecurityConfig::default();
-
-            let is_gzipped = source_path
-                .extension()
-                .and_then(|s| s.to_str())
-                .map(|ext| ext.eq_ignore_ascii_case("gz") || ext.eq_ignore_ascii_case("tgz"))
-                .unwrap_or(false);
-
-            if is_gzipped {
-                let decoder = GzDecoder::new(file);
-                let mut archive = Archive::new(decoder);
-                Self::extract_sync(
-                    &mut archive,
-                    &target_path,
-                    &mut summary,
-                    max_file_size,
-                    max_total_size,
-                    max_file_count,
-                    &security_config,
-                )?;
-            } else {
-                let mut archive = Archive::new(file);
-                Self::extract_sync(
-                    &mut archive,
-                    &target_path,
-                    &mut summary,
-                    max_file_size,
-                    max_total_size,
-                    max_file_count,
-                    &security_config,
-                )?;
-            }
-
-            Ok::<ExtractionSummary, AppError>(summary)
-        })
-        .await
-        .map_err(|e| AppError::archive_error(e.to_string(), None))??;
-
-        Ok(summary)
+        self.extract_with_limits_default(source, target_dir, max_file_size, max_total_size, max_file_count)
+            .await
     }
 
     fn file_extensions(&self) -> Vec<&str> {
@@ -272,11 +321,17 @@ impl TarHandler {
         max_file_size: u64,
         max_total_size: u64,
         max_file_count: usize,
-        security_config: &SecurityConfig,
-    ) -> Result<()> {
-        let entries = archive
-            .entries()
-            .map_err(|e| AppError::archive_error(e.to_string(), None))?;
+    ) -> ExtractionResult<()> {
+        use crate::utils::path_security::{
+            validate_and_sanitize_archive_path, PathValidationResult, SecurityConfig,
+        };
+
+        let entries = archive.entries().map_err(|e| ExtractionError::IoError {
+            operation: "读取TAR条目".to_string(),
+            reason: e.to_string(),
+        })?;
+
+        let security_config = SecurityConfig::default();
 
         for entry_result in entries {
             let mut entry = match entry_result {
@@ -295,7 +350,7 @@ impl TarHandler {
             };
             let path_str = path.to_string_lossy().to_string();
 
-            let validation = validate_and_sanitize_archive_path(&path_str, security_config);
+            let validation = validate_and_sanitize_archive_path(&path_str, &security_config);
             let safe_path = match validation {
                 PathValidationResult::Unsafe(_) => continue,
                 PathValidationResult::Valid(p) => PathBuf::from(p),
@@ -306,14 +361,12 @@ impl TarHandler {
             let size = entry.header().size().unwrap_or(0);
 
             if entry.header().entry_type().is_file() {
-                // Check limits before extraction
+                // 限制检查
                 let would_exceed_limits = size > max_file_size
                     || summary.total_size + size > max_total_size
                     || summary.files_extracted + 1 > max_file_count;
 
                 if would_exceed_limits {
-                    // Log skipped file details instead of silently skipping
-                    let path_str = safe_path.to_string_lossy();
                     if size > max_file_size {
                         warn!(
                             file = %path_str,
@@ -337,6 +390,7 @@ impl TarHandler {
                             "Skipping file - would exceed max_file_count limit"
                         );
                     }
+                    summary.add_error(format!("File skipped (limits exceeded): {}", path_str));
                     continue;
                 }
 
@@ -346,13 +400,81 @@ impl TarHandler {
 
                 if let Err(e) = entry.unpack(&out_path) {
                     warn!("Failed to unpack entry {:?}: {}", out_path, e);
+                    summary.add_error(format!("Unpack failed for {}: {}", path_str, e));
                 } else {
                     summary.add_file(safe_path, size);
+                    trace!("已提取 TAR 文件: {:?}, 大小: {}", out_path, size);
                 }
             } else if entry.header().entry_type().is_dir() {
                 let _ = std::fs::create_dir_all(&out_path);
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_tar_handler_base_impl() {
+        let handler = TarHandler {};
+        assert_eq!(handler.handler_name(), "TarHandler");
+        assert_eq!(handler.supported_formats(), &["tar", "tar.gz", "tgz"]);
+    }
+
+    #[test]
+    fn test_tar_handler_can_handle() {
+        let handler = TarHandler {};
+        assert!(handler.can_handle(Path::new("test.tar")));
+        assert!(handler.can_handle(Path::new("test.tar.gz")));
+        assert!(handler.can_handle(Path::new("test.tgz")));
+        assert!(!handler.can_handle(Path::new("test.zip")));
+        assert!(!handler.can_handle(Path::new("test.txt")));
+    }
+
+    #[test]
+    fn test_tar_handler_file_extensions() {
+        let handler = TarHandler {};
+        let extensions = handler.file_extensions();
+        assert_eq!(extensions, vec!["tar", "tar.gz", "tgz"]);
+    }
+
+    #[tokio::test]
+    async fn test_tar_handler_extract_with_context_basic() {
+        use crate::archive::extraction_config::ExtractionConfig;
+        #[allow(unused_imports)]
+        use std::io::Write;
+
+        let temp_dir = TempDir::new().unwrap();
+        let tar_path = temp_dir.path().join("test.tar");
+        let output_dir = temp_dir.path().join("output");
+
+        // 创建测试 TAR 文件
+        {
+            let file = std::fs::File::create(&tar_path).unwrap();
+            let mut tar = tar::Builder::new(file);
+            let mut header = tar::Header::new_gnu();
+            header.set_path("test.txt").unwrap();
+            header.set_size(13);
+            header.set_cksum();
+            tar.append(&header, b"Hello, World!" as &[u8]).unwrap();
+            tar.finish().unwrap();
+        }
+
+        let config = ExtractionConfig::default();
+        let mut context = ExtractionContext::new(config);
+        let handler = TarHandler {};
+
+        let result = handler
+            .extract_with_context(&tar_path, &output_dir, &mut context)
+            .await;
+
+        assert!(result.is_ok());
+        let summary = result.unwrap();
+        assert_eq!(summary.files_extracted, 1);
+        assert!(output_dir.join("test.txt").exists());
     }
 }
