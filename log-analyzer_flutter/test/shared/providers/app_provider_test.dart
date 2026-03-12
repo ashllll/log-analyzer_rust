@@ -56,12 +56,13 @@ void main() {
       container.dispose();
     });
 
-    test('removeToast 应该移除指定的 Toast', () {
+    test('removeToast 应该移除指定的 Toast', () async {
       final container = ProviderContainer();
       final notifier = container.read(appStateProvider.notifier);
 
-      notifier.addToast(ToastType.success, '消息1');
-      notifier.addToast(ToastType.error, '消息2');
+      // 使用较长持续时间避免自动移除干扰测试
+      notifier.addToast(ToastType.success, '消息1', duration: 30000);
+      notifier.addToast(ToastType.error, '消息2', duration: 30000);
 
       var toasts = container.read(appStateProvider).toasts;
       expect(toasts, hasLength(2));

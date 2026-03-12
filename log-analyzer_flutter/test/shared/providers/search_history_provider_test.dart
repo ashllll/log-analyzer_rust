@@ -6,6 +6,23 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:log_analyzer_flutter/shared/providers/search_history_provider.dart';
 
+/// Helper function to wait for provider initialization
+Future<void> _waitForInitialization(
+  ProviderContainer container,
+  String workspaceId,
+) async {
+  final provider = searchHistoryProvider(workspaceId);
+
+  // Listen to trigger initialization
+  container.listen<AsyncValue<List<SearchHistoryItem>>>(
+    provider,
+    (_, __) {},
+  );
+
+  // Wait for async initialization to complete
+  await Future.delayed(const Duration(milliseconds: 50));
+}
+
 void main() {
   group('SearchHistoryProvider Tests', () {
     late ProviderContainer container;
@@ -21,18 +38,32 @@ void main() {
 
     group('初始状态', () {
       test('应返回空列表', () async {
-        // 等待异步初始化
-        await Future.delayed(const Duration(milliseconds: 100));
+        // 监听 provider 以触发初始化
+        final provider = searchHistoryProvider(testWorkspaceId);
 
-        final state = container.read(searchHistoryProvider(testWorkspaceId));
+        // 使用 listen 触发 provider 初始化
+        container.listen<AsyncValue<List<SearchHistoryItem>>>(
+          provider,
+          (_, __) {},
+        );
 
-        // 初始状态应该是 loading 或 data
+        // 等待异步初始化完成（FFI 未初始化时返回空列表）
+        // 使用 pumpEventQueue 确保所有微任务完成
+        await Future.delayed(const Duration(milliseconds: 50));
+
+        final state = container.read(provider);
+
+        // FFI 未初始化时，应返回空列表（AsyncData）
         expect(state.value, isNotNull);
+        expect(state.value, isEmpty);
       });
     });
 
     group('添加搜索历史', () {
       test('应成功添加搜索历史记录', () async {
+        // Wait for provider initialization first
+        await _waitForInitialization(container, testWorkspaceId);
+
         final notifier = container.read(
           searchHistoryProvider(testWorkspaceId).notifier,
         );
@@ -48,6 +79,9 @@ void main() {
       });
 
       test('应将新记录插入到列表开头', () async {
+        // Wait for provider initialization first
+        await _waitForInitialization(container, testWorkspaceId);
+
         final notifier = container.read(
           searchHistoryProvider(testWorkspaceId).notifier,
         );
@@ -66,6 +100,9 @@ void main() {
       });
 
       test('应设置正确的 workspaceId', () async {
+        // Wait for provider initialization first
+        await _waitForInitialization(container, testWorkspaceId);
+
         final notifier = container.read(
           searchHistoryProvider(testWorkspaceId).notifier,
         );
@@ -81,6 +118,9 @@ void main() {
 
     group('删除搜索历史', () {
       test('应成功删除单条历史记录', () async {
+        // Wait for provider initialization first
+        await _waitForInitialization(container, testWorkspaceId);
+
         final notifier = container.read(
           searchHistoryProvider(testWorkspaceId).notifier,
         );
@@ -100,6 +140,9 @@ void main() {
       });
 
       test('删除不存在的记录应无效果', () async {
+        // Wait for provider initialization first
+        await _waitForInitialization(container, testWorkspaceId);
+
         final notifier = container.read(
           searchHistoryProvider(testWorkspaceId).notifier,
         );
@@ -119,6 +162,9 @@ void main() {
 
     group('批量删除搜索历史', () {
       test('应成功批量删除多条记录', () async {
+        // Wait for provider initialization first
+        await _waitForInitialization(container, testWorkspaceId);
+
         final notifier = container.read(
           searchHistoryProvider(testWorkspaceId).notifier,
         );
@@ -141,6 +187,9 @@ void main() {
 
     group('清空搜索历史', () {
       test('应成功清空所有历史记录', () async {
+        // Wait for provider initialization first
+        await _waitForInitialization(container, testWorkspaceId);
+
         final notifier = container.read(
           searchHistoryProvider(testWorkspaceId).notifier,
         );

@@ -240,6 +240,14 @@ class SearchHistory extends _$SearchHistory {
     final updatedList = [newItem, ...previous];
     state = AsyncData(updatedList);
 
+    final bridge = ref.read(bridgeServiceProvider);
+
+    // FFI 未初始化时，只更新本地状态，不调用后端
+    if (!bridge.isFfiEnabled) {
+      debugPrint('SearchHistoryProvider: FFI 未初始化，仅本地更新搜索历史 "$query"');
+      return;
+    }
+
     try {
       // 后端同步
       ffi.addSearchHistory(
@@ -265,6 +273,14 @@ class SearchHistory extends _$SearchHistory {
     // 乐观更新 - 立即从列表中移除
     state = AsyncData(previous.where((h) => h.query != query).toList());
 
+    final bridge = ref.read(bridgeServiceProvider);
+
+    // FFI 未初始化时，只更新本地状态
+    if (!bridge.isFfiEnabled) {
+      debugPrint('SearchHistoryProvider: FFI 未初始化，仅本地删除搜索历史 "$query"');
+      return;
+    }
+
     try {
       // 后端同步
       ffi.deleteSearchHistory(query: query, workspaceId: workspaceId);
@@ -289,6 +305,14 @@ class SearchHistory extends _$SearchHistory {
       previous.where((h) => !querySet.contains(h.query)).toList(),
     );
 
+    final bridge = ref.read(bridgeServiceProvider);
+
+    // FFI 未初始化时，只更新本地状态
+    if (!bridge.isFfiEnabled) {
+      debugPrint('SearchHistoryProvider: FFI 未初始化，仅本地批量删除 ${queries.length} 条搜索历史');
+      return;
+    }
+
     try {
       // 后端同步
       ffi.deleteSearchHistories(queries: queries, workspaceId: workspaceId);
@@ -309,6 +333,14 @@ class SearchHistory extends _$SearchHistory {
 
     // 乐观更新 - 立即清空
     state = const AsyncData([]);
+
+    final bridge = ref.read(bridgeServiceProvider);
+
+    // FFI 未初始化时，只更新本地状态
+    if (!bridge.isFfiEnabled) {
+      debugPrint('SearchHistoryProvider: FFI 未初始化，仅本地清空搜索历史');
+      return;
+    }
 
     try {
       // 后端同步

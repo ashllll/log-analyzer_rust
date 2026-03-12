@@ -18,6 +18,9 @@ part 'app_provider.g.dart';
 /// 此 Provider 负责配置加载
 @riverpod
 class AppState extends _$AppState {
+  /// Toast ID 计数器，确保唯一性
+  int _toastIdCounter = 0;
+
   @override
   AppModel build() {
     // 初始化应用（延迟执行避免在 build 中直接调用异步方法）
@@ -40,11 +43,22 @@ class AppState extends _$AppState {
       // 加载配置
       await _loadConfig();
 
+      // 检查 provider 是否仍然存活，避免在 dispose 后调用
+      if (!ref.mounted) {
+        debugPrint('AppState: Provider 已 dispose，跳过状态更新');
+        return;
+      }
+
       // 标记初始化完成
       state = state.copyWith(isInitialized: true);
       debugPrint('AppState: 应用初始化完成');
     } catch (e) {
       debugPrint('AppState: 应用初始化失败: $e');
+      // 检查 provider 是否仍然存活
+      if (!ref.mounted) {
+        debugPrint('AppState: Provider 已 dispose，跳过状态更新');
+        return;
+      }
       state = state.copyWith(
         isInitialized: false,
         initializationError: e.toString(),
@@ -62,6 +76,12 @@ class AppState extends _$AppState {
   /// 加载配置（内部方法）
   Future<void> _loadConfig() async {
     try {
+      // 检查 provider 是否仍然存活
+      if (!ref.mounted) {
+        debugPrint('AppState: Provider 已 dispose，跳过加载配置');
+        return;
+      }
+
       final apiService = ref.read(apiServiceProvider);
 
       if (!apiService.isFfiAvailable) {
@@ -90,7 +110,7 @@ class AppState extends _$AppState {
   /// 对应 React 版本的 addToast()
   void addToast(ToastType type, String message, {int? duration}) {
     final toast = Toast(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      id: 'toast_${_toastIdCounter++}',
       type: type,
       message: message,
       duration: duration ?? 3000,
@@ -100,7 +120,10 @@ class AppState extends _$AppState {
     // 自动移除 Toast
     if (toast.duration != null) {
       Future.delayed(Duration(milliseconds: toast.duration!), () {
-        removeToast(toast.id);
+        // 检查 provider 是否仍然存活，避免在 dispose 后调用
+        if (ref.mounted) {
+          removeToast(toast.id);
+        }
       });
     }
   }

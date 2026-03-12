@@ -52,14 +52,14 @@ class SearchQueryBuilder {
     String queryString, [
     List<KeywordGroup>? keywordGroups,
   ]) {
-    final builder = SearchQueryBuilder.create();
+    var builder = SearchQueryBuilder.create();
 
     // 解析查询字符串
     final parts = queryString.split('|');
     for (final part in parts) {
       final term = part.trim();
       if (term.isNotEmpty) {
-        builder.addTerm(term, operator_: QueryOperator.or);
+        builder = builder.addTerm(term, operator_: QueryOperator.or);
       }
     }
 

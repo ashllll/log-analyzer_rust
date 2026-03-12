@@ -21,12 +21,13 @@ void main() {
 
     group('初始状态', () {
       test('应返回空列表', () async {
-        // 等待异步初始化
-        await Future.delayed(const Duration(milliseconds: 100));
+        // 触发并等待 provider 初始化完成
+        final provider = virtualFileTreeProvider(testWorkspaceId);
+        await container.read(provider.future);
 
-        final state = container.read(virtualFileTreeProvider(testWorkspaceId));
+        final state = container.read(provider);
 
-        // 应该返回空列表或加载中
+        // 应该返回空列表（FFI 未初始化时）
         expect(state.value, isNotNull);
       });
     });
@@ -248,6 +249,7 @@ void main() {
 
       test('应支持从 JSON 反序列化', () {
         final archiveJson = {
+          'runtimeType': 'archive',
           'name': 'test.zip',
           'path': '/test.zip',
           'hash': 'abc123',

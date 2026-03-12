@@ -7,6 +7,23 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:log_analyzer_flutter/features/search/providers/search_query_provider.dart';
 import 'package:log_analyzer_flutter/shared/providers/search_history_provider.dart';
 
+/// Helper function to wait for provider initialization
+Future<void> _waitForHistoryInitialization(
+  ProviderContainer container,
+  String workspaceId,
+) async {
+  final provider = searchHistoryProvider(workspaceId);
+
+  // Listen to trigger initialization
+  container.listen<AsyncValue<List<SearchHistoryItem>>>(
+    provider,
+    (_, __) {},
+  );
+
+  // Wait for async initialization to complete
+  await Future.delayed(const Duration(milliseconds: 50));
+}
+
 void main() {
   group('Search Integration Tests', () {
     late ProviderContainer container;
@@ -22,6 +39,9 @@ void main() {
 
     group('搜索流程', () {
       test('添加关键词后应触发搜索', () async {
+        // Wait for history provider initialization
+        await _waitForHistoryInitialization(container, testWorkspaceId);
+
         final searchNotifier = container.read(searchQueryProvider.notifier);
         final historyNotifier = container.read(
           searchHistoryProvider(testWorkspaceId).notifier,
@@ -101,6 +121,9 @@ void main() {
 
     group('搜索历史流程', () {
       test('搜索完成后应自动保存历史', () async {
+        // Wait for history provider initialization
+        await _waitForHistoryInitialization(container, testWorkspaceId);
+
         final historyNotifier = container.read(
           searchHistoryProvider(testWorkspaceId).notifier,
         );
@@ -123,6 +146,9 @@ void main() {
       });
 
       test('从历史记录恢复搜索应正确加载', () async {
+        // Wait for history provider initialization
+        await _waitForHistoryInitialization(container, testWorkspaceId);
+
         final historyNotifier = container.read(
           searchHistoryProvider(testWorkspaceId).notifier,
         );
@@ -155,6 +181,9 @@ void main() {
       });
 
       test('删除历史记录后应更新搜索', () async {
+        // Wait for history provider initialization
+        await _waitForHistoryInitialization(container, testWorkspaceId);
+
         final historyNotifier = container.read(
           searchHistoryProvider(testWorkspaceId).notifier,
         );
@@ -180,6 +209,9 @@ void main() {
       });
 
       test('清空历史记录后应重置', () async {
+        // Wait for history provider initialization
+        await _waitForHistoryInitialization(container, testWorkspaceId);
+
         final historyNotifier = container.read(
           searchHistoryProvider(testWorkspaceId).notifier,
         );
@@ -206,6 +238,9 @@ void main() {
 
     group('端到端搜索流程', () {
       test('完整搜索流程: 添加关键词 -> 搜索 -> 保存历史', () async {
+        // Wait for history provider initialization
+        await _waitForHistoryInitialization(container, testWorkspaceId);
+
         final searchNotifier = container.read(searchQueryProvider.notifier);
         final historyNotifier = container.read(
           searchHistoryProvider(testWorkspaceId).notifier,
@@ -242,6 +277,9 @@ void main() {
       });
 
       test('多轮搜索应正确累积历史', () async {
+        // Wait for history provider initialization
+        await _waitForHistoryInitialization(container, testWorkspaceId);
+
         final searchNotifier = container.read(searchQueryProvider.notifier);
         final historyNotifier = container.read(
           searchHistoryProvider(testWorkspaceId).notifier,
@@ -280,6 +318,10 @@ void main() {
       test('切换工作区应隔离历史记录', () async {
         const workspace1 = 'workspace-1';
         const workspace2 = 'workspace-2';
+
+        // Wait for both workspace providers to initialize
+        await _waitForHistoryInitialization(container, workspace1);
+        await _waitForHistoryInitialization(container, workspace2);
 
         final historyNotifier1 = container.read(
           searchHistoryProvider(workspace1).notifier,
