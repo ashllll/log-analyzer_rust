@@ -30,13 +30,13 @@ class SearchConditionPreview extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         color: hasKeywords
-            ? AppColors.primary.withValues(alpha: 0.05)
-            : AppColors.bgInput.withValues(alpha: 0.3),
+            ? AppColors.primary.withOpacity(0.05)
+            : AppColors.bgInput.withOpacity(0.3),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
           color: hasKeywords
-              ? AppColors.primary.withValues(alpha: 0.2)
-              : AppColors.border.withValues(alpha: 0.5),
+              ? AppColors.primary.withOpacity(0.2)
+              : AppColors.border.withOpacity(0.5),
         ),
       ),
       child: Row(
@@ -66,7 +66,7 @@ class SearchConditionPreview extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.15),
+                color: AppColors.primary.withOpacity(0.15),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(

@@ -173,9 +173,9 @@ class _HeatmapMinimapState extends State<HeatmapMinimap> {
       width: widget.width,
       height: widget.height,
       decoration: BoxDecoration(
-        color: Colors.grey.withValues(alpha: 0.1),
+        color: Colors.grey.withOpacity(0.1),
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: Colors.grey.withValues(alpha: 0.3), width: 1),
+        border: Border.all(color: Colors.grey.withOpacity(0.3), width: 1),
       ),
       child: const Center(
         child: Icon(Icons.minimize, size: 16, color: Colors.grey),
@@ -325,7 +325,7 @@ class _CpuHeatmapPainter extends CustomPainter {
       // 绘制
       canvas.drawRect(
         rect,
-        Paint()..color = color.withValues(alpha: 0.3 + normalizedDensity * 0.7),
+        Paint()..color = color.withOpacity(0.3 + normalizedDensity * 0.7),
       );
     }
   }

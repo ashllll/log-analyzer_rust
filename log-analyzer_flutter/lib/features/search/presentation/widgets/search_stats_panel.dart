@@ -131,9 +131,9 @@ class SearchStatsPanel extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
+        color: color.withOpacity(0.1),
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: color.withValues(alpha: 0.3), width: 1),
+        border: Border.all(color: color.withOpacity(0.3), width: 1),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -150,7 +150,7 @@ class SearchStatsPanel extends StatelessWidget {
           Text(
             '${stat.matchCount} (${stat.matchPercentage.toStringAsFixed(1)}%)',
             style: TextStyle(
-              color: color.withValues(alpha: 0.8),
+              color: color.withOpacity(0.8),
               fontSize: 12,
               fontWeight: FontWeight.w600,
             ),

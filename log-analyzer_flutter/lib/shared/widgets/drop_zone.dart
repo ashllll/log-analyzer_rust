@@ -128,8 +128,8 @@ class _DropZoneWidgetState extends State<DropZoneWidget> {
                     )
                   : null),
           color: _isDragging
-              ? (widget.backgroundColor ?? AppColors.primary).withValues(
-                  alpha: 0.1,
+              ? (widget.backgroundColor ?? AppColors.primary).withOpacity(
+                  0.1,
                 )
               : widget.backgroundColor,
           borderRadius: BorderRadius.circular(8),
@@ -142,7 +142,7 @@ class _DropZoneWidgetState extends State<DropZoneWidget> {
               Positioned.fill(
                 child: Container(
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.1),
+                    color: AppColors.primary.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
                       color: AppColors.primary,

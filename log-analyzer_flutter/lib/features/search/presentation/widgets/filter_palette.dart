@@ -191,7 +191,7 @@ class _FilterPaletteState extends ConsumerState<FilterPalette> {
                       vertical: 2,
                     ),
                     decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.2),
+                      color: AppColors.primary.withOpacity(0.2),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
@@ -364,9 +364,9 @@ class _FilterPaletteState extends ConsumerState<FilterPalette> {
                 });
               },
               backgroundColor: isSelected
-                  ? color.withValues(alpha: 0.9)
-                  : color.withValues(alpha: 0.1),
-              side: BorderSide(color: color.withValues(alpha: 0.3)),
+                  ? color.withOpacity(0.9)
+                  : color.withOpacity(0.1),
+              side: BorderSide(color: color.withOpacity(0.3)),
               shape: const StadiumBorder(),
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             );

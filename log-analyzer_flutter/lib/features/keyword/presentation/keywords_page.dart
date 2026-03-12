@@ -339,7 +339,7 @@ class _KeywordGroupCard extends StatelessWidget {
           decoration: BoxDecoration(
             border: Border.all(
               color: group.enabled
-                  ? color.withValues(alpha: 0.3)
+                  ? color.withOpacity(0.3)
                   : Colors.transparent,
               width: 2,
             ),
@@ -423,9 +423,9 @@ class _KeywordGroupCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
+        color: color.withOpacity(0.1),
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: color.withValues(alpha: 0.2), width: 1),
+        border: Border.all(color: color.withOpacity(0.2), width: 1),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -434,7 +434,7 @@ class _KeywordGroupCard extends StatelessWidget {
             Text(
               pattern.comment,
               style: TextStyle(
-                color: color.withValues(alpha: 0.8),
+                color: color.withOpacity(0.8),
                 fontSize: 11,
               ),
             ),

@@ -301,7 +301,7 @@ class _RegexInputFieldState extends State<RegexInputField> {
             Text(
               '正则表达式语法有效',
               style: TextStyle(
-                color: AppColors.success.withValues(alpha: 0.9),
+                color: AppColors.success.withOpacity(0.9),
                 fontSize: 12,
               ),
             ),

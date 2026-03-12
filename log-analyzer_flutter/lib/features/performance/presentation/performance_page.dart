@@ -254,7 +254,7 @@ class _PerformancePageState extends ConsumerState<PerformancePage> {
             ? 1
             : _calculateInterval(spots.map((e) => e.y).toList()),
         getDrawingHorizontalLine: (value) => FlLine(
-          color: AppColors.border.withValues(alpha: 0.3),
+          color: AppColors.border.withOpacity(0.3),
           strokeWidth: 1,
         ),
       ),
@@ -300,7 +300,7 @@ class _PerformancePageState extends ConsumerState<PerformancePage> {
       ),
       borderData: FlBorderData(
         show: true,
-        border: Border.all(color: AppColors.border.withValues(alpha: 0.3)),
+        border: Border.all(color: AppColors.border.withOpacity(0.3)),
       ),
       minX: 0,
       maxX: (spots.length - 1).toDouble(),
@@ -325,7 +325,7 @@ class _PerformancePageState extends ConsumerState<PerformancePage> {
           ),
           belowBarData: BarAreaData(
             show: true,
-            color: AppColors.primary.withValues(alpha: 0.1),
+            color: AppColors.primary.withOpacity(0.1),
           ),
         ),
       ],

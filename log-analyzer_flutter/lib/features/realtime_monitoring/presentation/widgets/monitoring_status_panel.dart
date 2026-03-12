@@ -72,7 +72,7 @@ class MonitoringStatusPanel extends ConsumerWidget {
                         color: Colors.green,
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.green.withValues(alpha: 0.5),
+                            color: Colors.green.withOpacity(0.5),
                             blurRadius: 8,
                             spreadRadius: 2,
                           ),
@@ -126,9 +126,9 @@ class MonitoringStatusPanel extends ConsumerWidget {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: Colors.red.withValues(alpha: 0.1),
+                  color: Colors.red.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+                  border: Border.all(color: Colors.red.withOpacity(0.3)),
                 ),
                 child: Row(
                   children: [
@@ -185,7 +185,7 @@ class MonitoringStatusPanel extends ConsumerWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: valueColor.withValues(alpha: 0.1),
+              color: valueColor.withOpacity(0.1),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(

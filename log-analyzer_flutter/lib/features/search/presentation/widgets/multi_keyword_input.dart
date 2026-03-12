@@ -157,7 +157,7 @@ class _MultiKeywordInputState extends ConsumerState<MultiKeywordInput> {
       style: ButtonStyle(
         backgroundColor: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) {
-            return AppColors.primary.withValues(alpha: 0.2);
+            return AppColors.primary.withOpacity(0.2);
           }
           return AppColors.bgInput;
         }),
@@ -189,8 +189,8 @@ class _MultiKeywordInputState extends ConsumerState<MultiKeywordInput> {
   /// 构建单个关键词 Chip
   Widget _buildKeywordChip(SearchTerm term) {
     final backgroundColor = term.enabled
-        ? AppColors.primary.withValues(alpha: 0.1)
-        : AppColors.bgInput.withValues(alpha: 0.5);
+        ? AppColors.primary.withOpacity(0.1)
+        : AppColors.bgInput.withOpacity(0.5);
 
     final textColor = term.enabled ? AppColors.primary : AppColors.textMuted;
 
@@ -208,7 +208,7 @@ class _MultiKeywordInputState extends ConsumerState<MultiKeywordInput> {
         backgroundColor: backgroundColor,
         side: BorderSide(
           color: term.enabled
-              ? AppColors.primary.withValues(alpha: 0.3)
+              ? AppColors.primary.withOpacity(0.3)
               : AppColors.border,
         ),
         deleteIcon: const Icon(Icons.close, size: 16),
