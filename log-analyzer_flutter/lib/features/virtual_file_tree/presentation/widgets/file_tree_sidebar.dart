@@ -107,7 +107,7 @@ class _FileTreeSidebarState extends ConsumerState<FileTreeSidebar> {
             child: Container(
               width: dragAreaWidth,
               color: _isDragging
-                  ? theme.colorScheme.primary.withOpacity(0.3)
+                  ? theme.colorScheme.primary.withValues(alpha: 0.3)
                   : Colors.transparent,
               child: Center(
                 child: Container(

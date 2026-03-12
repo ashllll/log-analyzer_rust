@@ -54,8 +54,8 @@ class FileTreeNode extends StatelessWidget {
       color: backgroundColor ?? Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        hoverColor: theme.colorScheme.surfaceContainerHighest.withOpacity(
-          0.5,
+        hoverColor: theme.colorScheme.surfaceContainerHighest.withValues(
+          alpha: 0.5,
         ),
         child: Container(
           height: 28, // 紧凑模式行高

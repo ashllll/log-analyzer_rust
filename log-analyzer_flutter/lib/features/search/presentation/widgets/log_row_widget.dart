@@ -179,9 +179,9 @@ class LogRowWidget extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.15),
+        color: color.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: color.withOpacity(0.3), width: 1),
+        border: Border.all(color: color.withValues(alpha: 0.3), width: 1),
       ),
       child: Text(
         level.toUpperCase(),
@@ -289,7 +289,7 @@ class LogRowWidget extends StatelessWidget {
           style: TextStyle(
             fontFamily: LogRowStyle.monoFontFamily,
             fontSize: LogRowStyle.fontSize,
-            backgroundColor: color.withOpacity(0.3),
+            backgroundColor: color.withValues(alpha: 0.3),
             color: color,
             fontWeight: FontWeight.bold,
             fontFeatures: const [ui.FontFeature.tabularFigures()],

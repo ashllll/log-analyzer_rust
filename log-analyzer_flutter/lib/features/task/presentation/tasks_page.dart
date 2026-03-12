@@ -107,7 +107,7 @@ class _TasksPageState extends ConsumerState<TasksPage> {
               margin: const EdgeInsets.only(left: 12),
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.2),
+                color: AppColors.primary.withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
@@ -502,10 +502,10 @@ class _TaskCard extends StatelessWidget {
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        color: statusColor.withOpacity(0.15),
+                        color: statusColor.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(4),
                         border: Border.all(
-                          color: statusColor.withOpacity(0.3),
+                          color: statusColor.withValues(alpha: 0.3),
                           width: 1,
                         ),
                       ),

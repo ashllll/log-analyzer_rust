@@ -241,7 +241,7 @@ class SearchHistoryDropdown extends ConsumerWidget {
       child: Icon(
         Icons.history,
         size: 20,
-        color: AppColors.textMuted.withOpacity(0.5),
+        color: AppColors.textMuted.withValues(alpha: 0.5),
       ),
     );
   }

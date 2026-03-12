@@ -28,7 +28,7 @@ class VirtualFileTreeEmptyState extends StatelessWidget {
               Icon(
                 LucideIcons.folderOpen,
                 size: 80,
-                color: theme.colorScheme.outline.withOpacity(0.5),
+                color: theme.colorScheme.outline.withValues(alpha: 0.5),
               ),
               const SizedBox(height: 24),
               // 标题

@@ -734,7 +734,7 @@ class _WorkspaceCard extends StatelessWidget {
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      color: isSelected ? AppColors.primary.withOpacity(0.1) : null,
+      color: isSelected ? AppColors.primary.withValues(alpha: 0.1) : null,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(8),
@@ -745,7 +745,7 @@ class _WorkspaceCard extends StatelessWidget {
               color: isActive
                   ? AppColors.primary
                   : isSelected
-                  ? AppColors.primary.withOpacity(0.5)
+                  ? AppColors.primary.withValues(alpha: 0.5)
                   : Colors.transparent,
               width: isActive || isSelected ? 2 : 1,
             ),
@@ -776,10 +776,10 @@ class _WorkspaceCard extends StatelessWidget {
                       vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      color: statusColor.withOpacity(0.15),
+                      color: statusColor.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(4),
                       border: Border.all(
-                        color: statusColor.withOpacity(0.3),
+                        color: statusColor.withValues(alpha: 0.3),
                         width: 1,
                       ),
                     ),

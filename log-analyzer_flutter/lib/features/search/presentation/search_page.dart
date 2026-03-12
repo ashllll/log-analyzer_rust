@@ -1092,7 +1092,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
           color: isSelected
-              ? AppColors.primary.withOpacity(0.2)
+              ? AppColors.primary.withValues(alpha: 0.2)
               : AppColors.bgInput,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(

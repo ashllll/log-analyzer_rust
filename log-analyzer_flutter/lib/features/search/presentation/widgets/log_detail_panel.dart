@@ -350,9 +350,9 @@ class _LogDetailPanelState extends State<LogDetailPanel> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.15),
+        color: color.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: color.withOpacity(0.3), width: 1),
+        border: Border.all(color: color.withValues(alpha: 0.3), width: 1),
       ),
       child: Text(
         level.toUpperCase(),
@@ -399,7 +399,7 @@ class _LogDetailPanelState extends State<LogDetailPanel> {
         color: isMatch ? AppColors.bgHover : Colors.transparent,
         border: isMatch
             ? Border.all(
-                color: AppColors.primary.withOpacity(0.3),
+                color: AppColors.primary.withValues(alpha: 0.3),
                 width: 1,
               )
             : null,
@@ -506,7 +506,7 @@ class _LogDetailPanelState extends State<LogDetailPanel> {
           style: TextStyle(
             fontFamily: 'FiraCode',
             fontSize: 13,
-            backgroundColor: color.withOpacity(0.3),
+            backgroundColor: color.withValues(alpha: 0.3),
             color: color,
             fontWeight: FontWeight.bold,
           ),
