@@ -13,6 +13,8 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::sync::Arc;
+
+#[cfg(feature = "standalone")]
 use tauri::{AppHandle, Emitter};
 
 /// 文件监听器状态
@@ -282,7 +284,6 @@ pub fn parse_log_lines(
 pub fn append_to_workspace_index(
     workspace_id: &str,
     new_entries: &[LogEntry],
-    app: &AppHandle,
     state: &crate::models::state::AppState,
 ) -> Result<()> {
     if new_entries.is_empty() {
@@ -296,7 +297,10 @@ pub fn append_to_workspace_index(
     );
 
     // Send new logs to frontend (real-time update)
-    let _ = app.emit("new-logs", new_entries);
+    // Note: In FFI mode, events are sent through the internal event bus
+    let _ = crate::events::emit_event(crate::events::AppEvent::NewLogs {
+        entries: new_entries.to_vec(),
+    });
 
     // 持久化到 Tantivy 索引
     // 获取工作区的 SearchEngineManager

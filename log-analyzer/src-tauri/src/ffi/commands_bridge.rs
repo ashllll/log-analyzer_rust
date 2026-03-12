@@ -1880,12 +1880,7 @@ pub fn ffi_get_virtual_file_tree(workspace_id: String) -> Result<Vec<VirtualTree
             .map_err(|e| format!("获取文件失败: {}", e))?;
 
         // 构建树结构
-        let tree = crate::commands::virtual_tree::build_tree_structure(
-            &archives,
-            &all_files,
-            &metadata_store,
-        )
-        .await?;
+        let tree = build_tree_structure(&archives, &all_files).await?;
 
         // 转换为 FFI 类型
         Ok(tree.into_iter().map(VirtualTreeNodeData::from).collect())
@@ -1960,28 +1955,24 @@ pub fn ffi_get_tree_children(
 
             // 添加子归档
             for archive in child_archives {
-                children.push(VirtualTreeNodeData::from(
-                    crate::commands::virtual_tree::VirtualTreeNode::Archive {
-                        name: archive.original_name.clone(),
-                        path: archive.virtual_path.clone(),
-                        hash: archive.sha256_hash.clone(),
-                        archive_type: archive.archive_type.clone(),
-                        children: vec![], // 懒加载，不展开子节点
-                    },
-                ));
+                children.push(VirtualTreeNodeData::Archive {
+                    name: archive.original_name.clone(),
+                    path: archive.virtual_path.clone(),
+                    hash: archive.sha256_hash.clone(),
+                    archive_type: archive.archive_type.clone(),
+                    children: vec![], // 懒加载，不展开子节点
+                });
             }
 
             // 添加子文件
             for file in child_files {
-                children.push(VirtualTreeNodeData::from(
-                    crate::commands::virtual_tree::VirtualTreeNode::File {
-                        name: file.original_name.clone(),
-                        path: file.virtual_path.clone(),
-                        hash: file.sha256_hash.clone(),
-                        size: file.size,
-                        mime_type: file.mime_type.clone(),
-                    },
-                ));
+                children.push(VirtualTreeNodeData::File {
+                    name: file.original_name.clone(),
+                    path: file.virtual_path.clone(),
+                    hash: file.sha256_hash.clone(),
+                    size: file.size,
+                    mime_type: file.mime_type.clone(),
+                });
             }
 
             Ok(children)
@@ -2615,6 +2606,100 @@ pub fn ffi_search_regex(
 
         tracing::info!(results_count = results.len(), "正则搜索完成");
         Ok(results)
+    })
+}
+
+// ==================== 虚拟文件树辅助函数 ====================
+
+use crate::ffi::types::VirtualTreeNode;
+use crate::storage::{ArchiveMetadata, FileMetadata, MetadataStore};
+
+/// 构建层次化树结构
+async fn build_tree_structure(
+    archives: &[ArchiveMetadata],
+    files: &[FileMetadata],
+) -> Result<Vec<VirtualTreeNode>, String> {
+    let mut tree = Vec::new();
+
+    // 查找根级归档（无父归档）
+    let root_archives: Vec<_> = archives
+        .iter()
+        .filter(|a| a.parent_archive_id.is_none())
+        .collect();
+
+    // 查找根级文件（无父归档）
+    let root_files: Vec<_> = files
+        .iter()
+        .filter(|f| f.parent_archive_id.is_none())
+        .collect();
+
+    // 添加根归档及其子节点
+    for archive in root_archives {
+        let node = build_archive_node(archive, archives, files).await?;
+        tree.push(node);
+    }
+
+    // 添加根文件
+    for file in root_files {
+        tree.push(VirtualTreeNode::File {
+            name: file.original_name.clone(),
+            path: file.virtual_path.clone(),
+            hash: file.sha256_hash.clone(),
+            size: file.size,
+            mime_type: file.mime_type.clone(),
+        });
+    }
+
+    Ok(tree)
+}
+
+/// 递归构建归档节点及其子节点
+#[allow(clippy::only_used_in_recursion)]
+fn build_archive_node<'a>(
+    archive: &'a ArchiveMetadata,
+    all_archives: &'a [ArchiveMetadata],
+    all_files: &'a [FileMetadata],
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<VirtualTreeNode, String>> + Send + 'a>>
+{
+    Box::pin(async move {
+        let mut children = Vec::new();
+
+        // 查找子归档
+        let child_archives: Vec<_> = all_archives
+            .iter()
+            .filter(|a| a.parent_archive_id == Some(archive.id))
+            .collect();
+
+        // 查找子文件
+        let child_files: Vec<_> = all_files
+            .iter()
+            .filter(|f| f.parent_archive_id == Some(archive.id))
+            .collect();
+
+        // 递归构建子归档节点
+        for child_archive in child_archives {
+            let child_node = build_archive_node(child_archive, all_archives, all_files).await?;
+            children.push(child_node);
+        }
+
+        // 添加子文件
+        for file in child_files {
+            children.push(VirtualTreeNode::File {
+                name: file.original_name.clone(),
+                path: file.virtual_path.clone(),
+                hash: file.sha256_hash.clone(),
+                size: file.size,
+                mime_type: file.mime_type.clone(),
+            });
+        }
+
+        Ok(VirtualTreeNode::Archive {
+            name: archive.original_name.clone(),
+            path: archive.virtual_path.clone(),
+            hash: archive.sha256_hash.clone(),
+            archive_type: archive.archive_type.clone(),
+            children,
+        })
     })
 }
 

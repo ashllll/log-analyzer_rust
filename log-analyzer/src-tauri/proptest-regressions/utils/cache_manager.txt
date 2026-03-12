@@ -6,3 +6,4 @@
 # everyone who runs the test benefits from these saved cases.
 cc 798d5db435f12a2b90172f7bf497e8a5c1b6a780aad2c89e94a0d4a1854642aa # shrinks to queries = ["_"], workspace_ids = ["_"], hit_miss_pattern = [false, false, false, false, false, false, false, false, false, false]
 cc b141a3a4a73f98c84d4e1f86e84b5b885e55e9741a9e354355f8d5c1c47901b0 # shrinks to queries = ["0"], workspace_ids = ["_"], hit_miss_pattern = [false, false, false, false, false, false, true, false, false, false]
+cc 37c5df6eae8b42b9e7f6808b8cb34c9339e9b2d22b56b3105dc9530d9c07b61e # shrinks to workspace_ids = ["ZA", "UOpZU"], queries = ["F76_", "ptea4L6", "AA", "M5V", "pd_BWw", "_Tr_", "_s15z0q_M6", "Sx__HCF5"]

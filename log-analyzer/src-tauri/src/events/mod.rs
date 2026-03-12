@@ -1,6 +1,6 @@
 //! Event system using tokio::sync::broadcast for type-safe event handling
-
-pub mod bridge;
+//!
+//! 注意：此版本移除了 Tauri 桥接，仅保留 FFI 模式的事件系统
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

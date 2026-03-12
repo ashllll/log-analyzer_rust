@@ -1,14 +1,18 @@
 use super::messages::ProgressUpdate;
-use tauri::{AppHandle, Emitter};
 use tokio::sync::watch;
 use tracing::{error, info};
 
+#[cfg(feature = "standalone")]
+use tauri::{AppHandle, Emitter};
+
 /// The Progress Actor aggregates progress from multiple tasks and emits Tauri events
+#[cfg(feature = "standalone")]
 pub struct ProgressActor {
     app_handle: AppHandle,
     refresh_interval_ms: u64,
 }
 
+#[cfg(feature = "standalone")]
 impl ProgressActor {
     pub fn new(app_handle: AppHandle) -> Self {
         Self {
@@ -46,5 +50,20 @@ impl ProgressActor {
             }
             info!("Progress monitoring finished for task");
         });
+    }
+}
+
+/// FFI 模式的空实现
+#[cfg(not(feature = "standalone"))]
+pub struct ProgressActor;
+
+#[cfg(not(feature = "standalone"))]
+impl ProgressActor {
+    pub fn new() -> Self {
+        Self
+    }
+
+    pub fn monitor_task(&self, _rx: watch::Receiver<ProgressUpdate>) {
+        // FFI 模式下不发送 Tauri 事件
     }
 }

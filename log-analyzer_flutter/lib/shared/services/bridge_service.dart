@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -96,7 +97,7 @@ class BridgeService {
     final paths = <String>[];
 
     if (Platform.isMacOS) {
-      final libraryName = 'liblog_analyzer.dylib';
+      const libraryName = 'liblog_analyzer.dylib';
       paths.addAll([
         // Relative from Flutter build directory
         '../log-analyzer/src-tauri/target/release/$libraryName',
@@ -110,7 +111,7 @@ class BridgeService {
         '/Users/joeash/code/github/log-analyzer_rust/log-analyzer/src-tauri/target/release/$libraryName',
       ]);
     } else if (Platform.isLinux) {
-      final libraryName = 'liblog_analyzer.so';
+      const libraryName = 'liblog_analyzer.so';
       paths.addAll([
         '../log-analyzer/src-tauri/target/release/$libraryName',
         '../log-analyzer/src-tauri/target/debug/$libraryName',
@@ -120,7 +121,7 @@ class BridgeService {
         ],
       ]);
     } else if (Platform.isWindows) {
-      final libraryName = 'log_analyzer.dll';
+      const libraryName = 'log_analyzer.dll';
       paths.addAll([
         '../log-analyzer/src-tauri/target/release/$libraryName',
         '../log-analyzer/src-tauri/target/debug/$libraryName',
@@ -245,10 +246,7 @@ class BridgeService {
   }
 
   /// 创建工作区
-  String createWorkspace({
-    required String name,
-    required String path,
-  }) {
+  String createWorkspace({required String name, required String path}) {
     if (!isFfiEnabled) {
       throw FfiInitializationException('FFI not initialized');
     }
@@ -290,9 +288,7 @@ class BridgeService {
   }
 
   /// 获取工作区状态
-  ffi_types.WorkspaceStatusData? getWorkspaceStatus(
-    String workspaceId,
-  ) {
+  ffi_types.WorkspaceStatusData? getWorkspaceStatus(String workspaceId) {
     if (!isFfiEnabled) {
       return null;
     }
@@ -336,10 +332,7 @@ class BridgeService {
   }
 
   /// 更新关键词组
-  bool updateKeywordGroup(
-    String groupId,
-    ffi_types.KeywordGroupInput group,
-  ) {
+  bool updateKeywordGroup(String groupId, ffi_types.KeywordGroupInput group) {
     if (!isFfiEnabled) {
       return false;
     }
@@ -429,9 +422,7 @@ class BridgeService {
   // ==================== 性能监控 ====================
 
   /// 获取性能指标
-  ffi_types.PerformanceMetricsData? getPerformanceMetrics(
-    String timeRange,
-  ) {
+  ffi_types.PerformanceMetricsData? getPerformanceMetrics(String timeRange) {
     if (!isFfiEnabled) {
       return null;
     }
@@ -661,10 +652,7 @@ class BridgeService {
     }
 
     try {
-      return ffi.deleteSearchHistory(
-        query: query,
-        workspaceId: workspaceId,
-      );
+      return ffi.deleteSearchHistory(query: query, workspaceId: workspaceId);
     } catch (e) {
       debugPrint('deleteSearchHistory error: $e');
       return false;
@@ -722,9 +710,7 @@ class BridgeService {
   /// # 返回
   ///
   /// 返回根节点列表
-  List<ffi_types.VirtualTreeNodeData> getVirtualFileTree(
-    String workspaceId,
-  ) {
+  List<ffi_types.VirtualTreeNodeData> getVirtualFileTree(String workspaceId) {
     if (!isFfiEnabled) {
       return [];
     }
@@ -957,11 +943,31 @@ class BridgeService {
   /// # 返回
   ///
   /// 成功返回 true
-  /// 注意: 此方法需要 FFI 代码重新生成后才能使用
   bool saveFilter(SavedFilter filter) {
-    // TODO: 重新生成 FFI 代码以启用此功能
-    // ffi.saveFilter 方法尚未在生成的代码中实现
-    throw BridgeNotImplementedException('saveFilter requires FFI code regeneration');
+    if (!isFfiEnabled) {
+      return false;
+    }
+
+    try {
+      // 将 SavedFilter 转换为 FFI SavedFilterInput
+      final filterInput = ffi_types.SavedFilterInput(
+        name: filter.name,
+        description: filter.description,
+        workspaceId: filter.workspaceId,
+        termsJson: jsonEncode(filter.terms.map((t) => t.toJson()).toList()),
+        globalOperator: filter.globalOperator,
+        timeRangeStart: filter.timeRange?.start,
+        timeRangeEnd: filter.timeRange?.end,
+        levelsJson: filter.levels.isNotEmpty ? jsonEncode(filter.levels) : null,
+        filePattern: filter.filePattern,
+        isDefault: filter.isDefault,
+        sortOrder: filter.sortOrder,
+      );
+      return ffi.saveFilter(filter: filterInput);
+    } catch (e) {
+      debugPrint('saveFilter error: $e');
+      return false;
+    }
   }
 
   /// 获取工作区的所有过滤器
@@ -976,14 +982,42 @@ class BridgeService {
   /// # 返回
   ///
   /// 返回过滤器列表
-  /// 注意: 此方法需要 FFI 代码重新生成后才能使用
-  List<SavedFilter> getSavedFilters(
-    String workspaceId, {
-    int? limit,
-  }) {
-    // TODO: 重新生成 FFI 代码以启用此功能
-    // ffi.getSavedFilters 方法尚未在生成的代码中实现
-    throw BridgeNotImplementedException('getSavedFilters requires FFI code regeneration');
+  List<SavedFilter> getSavedFilters(String workspaceId, {int? limit}) {
+    if (!isFfiEnabled) {
+      return [];
+    }
+
+    try {
+      final ffiFilters = ffi.getSavedFilters(
+        workspaceId: workspaceId,
+        limit: limit,
+      );
+      // 将 FFI SavedFilterData 转换为 SavedFilter
+      return ffiFilters
+          .map(
+            (f) => SavedFilter.fromFfiMap({
+              'id': f.id,
+              'name': f.name,
+              'description': f.description,
+              'workspace_id': f.workspaceId,
+              'terms_json': f.termsJson,
+              'global_operator': f.globalOperator,
+              'time_range_start': f.timeRangeStart,
+              'time_range_end': f.timeRangeEnd,
+              'levels_json': f.levelsJson,
+              'file_pattern': f.filePattern,
+              'is_default': f.isDefault,
+              'sort_order': f.sortOrder,
+              'usage_count': f.usageCount,
+              'created_at': f.createdAt,
+              'last_used_at': f.lastUsedAt,
+            }),
+          )
+          .toList();
+    } catch (e) {
+      debugPrint('getSavedFilters error: $e');
+      return [];
+    }
   }
 
   /// 删除指定过滤器
@@ -998,11 +1032,17 @@ class BridgeService {
   /// # 返回
   ///
   /// 成功返回 true
-  /// 注意: 此方法需要 FFI 代码重新生成后才能使用
   bool deleteFilter(String filterId, String workspaceId) {
-    // TODO: 重新生成 FFI 代码以启用此功能
-    // ffi.deleteFilter 方法尚未在生成的代码中实现
-    throw BridgeNotImplementedException('deleteFilter requires FFI code regeneration');
+    if (!isFfiEnabled) {
+      return false;
+    }
+
+    try {
+      return ffi.deleteFilter(filterId: filterId, workspaceId: workspaceId);
+    } catch (e) {
+      debugPrint('deleteFilter error: $e');
+      return false;
+    }
   }
 
   /// 更新过滤器使用统计
@@ -1017,11 +1057,20 @@ class BridgeService {
   /// # 返回
   ///
   /// 成功返回 true
-  /// 注意: 此方法需要 FFI 代码重新生成后才能使用
   bool updateFilterUsage(String filterId, String workspaceId) {
-    // TODO: 重新生成 FFI 代码以启用此功能
-    // ffi.updateFilterUsage 方法尚未在生成的代码中实现
-    throw BridgeNotImplementedException('updateFilterUsage requires FFI code regeneration');
+    if (!isFfiEnabled) {
+      return false;
+    }
+
+    try {
+      return ffi.updateFilterUsage(
+        filterId: filterId,
+        workspaceId: workspaceId,
+      );
+    } catch (e) {
+      debugPrint('updateFilterUsage error: $e');
+      return false;
+    }
   }
 
   // ==================== 日志级别统计操作 ====================
@@ -1037,11 +1086,27 @@ class BridgeService {
   /// # 返回
   ///
   /// 返回日志级别统计结果，包含每个级别的数量
-  /// 注意: 此方法需要 FFI 代码重新生成后才能使用
   Map<String, dynamic>? getLogLevelStats(String workspaceId) {
-    // TODO: 重新生成 FFI 代码以启用此功能
-    // ffi.getLogLevelStats 方法尚未在生成的代码中实现
-    throw BridgeNotImplementedException('getLogLevelStats requires FFI code regeneration');
+    if (!isFfiEnabled) {
+      return null;
+    }
+
+    try {
+      final stats = ffi.getLogLevelStats(workspaceId: workspaceId);
+      return {
+        'fatal_count': stats.fatalCount,
+        'error_count': stats.errorCount,
+        'warn_count': stats.warnCount,
+        'info_count': stats.infoCount,
+        'debug_count': stats.debugCount,
+        'trace_count': stats.traceCount,
+        'unknown_count': stats.unknownCount,
+        'total': stats.total,
+      };
+    } catch (e) {
+      debugPrint('getLogLevelStats error: $e');
+      return null;
+    }
   }
 
   /// 释放资源

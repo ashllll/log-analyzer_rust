@@ -101,6 +101,21 @@ use crate::utils::cache_manager::{
     CachePerformanceReport, CacheStatistics, CompressionStats, L2CacheConfig,
 };
 
+/// 在 tokio runtime 中执行阻塞操作（FFI 模式替代 tauri::async_runtime::block_on）
+fn block_on<F>(fut: F) -> F::Output
+where
+    F: std::future::Future,
+{
+    // 尝试获取当前 runtime，如果没有则创建一个新的
+    match tokio::runtime::Handle::try_current() {
+        Ok(handle) => handle.block_on(fut),
+        Err(_) => {
+            let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+            rt.block_on(fut)
+        }
+    }
+}
+
 impl AppState {
     /// 获取缓存统计信息
     pub fn get_cache_statistics(&self) -> CacheStatistics {
@@ -116,7 +131,7 @@ impl AppState {
     pub async fn get_async_cache_statistics(&self) -> CacheStatistics {
         let cache = self.cache_manager.lock();
         // 方法是 async 但执行的是同步操作，直接调用
-        tauri::async_runtime::block_on(cache.get_async_cache_statistics())
+        block_on(cache.get_async_cache_statistics())
     }
 
     /// 清理工作区缓存
@@ -137,7 +152,7 @@ impl AppState {
     #[allow(clippy::await_holding_lock)]
     pub async fn cleanup_expired_entries_async(&self) -> Result<(), String> {
         let cache = self.cache_manager.lock();
-        let result = tauri::async_runtime::block_on(cache.cleanup_expired_entries_async());
+        let result = block_on(cache.cleanup_expired_entries_async());
         result.map_err(|e| e.to_string())
     }
 
@@ -157,7 +172,7 @@ impl AppState {
     #[allow(clippy::await_holding_lock)]
     pub async fn cache_health_check(&self) -> CacheHealthCheck {
         let cache = self.cache_manager.lock();
-        tauri::async_runtime::block_on(cache.health_check())
+        block_on(cache.health_check())
     }
 
     /// 获取访问模式统计
@@ -185,8 +200,7 @@ impl AppState {
         target_reduction_percent: f64,
     ) -> Result<usize, String> {
         let cache = self.cache_manager.lock();
-        let result =
-            tauri::async_runtime::block_on(cache.intelligent_eviction(target_reduction_percent));
+        let result = block_on(cache.intelligent_eviction(target_reduction_percent));
         result.map_err(|e| e.to_string())
     }
 

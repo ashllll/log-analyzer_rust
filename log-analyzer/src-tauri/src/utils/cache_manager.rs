@@ -25,6 +25,20 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+/// 在 tokio runtime 中执行异步操作（跨平台兼容，替代 tauri::async_runtime::block_on）
+fn block_on<F>(fut: F) -> F::Output
+where
+    F: Future,
+{
+    match tokio::runtime::Handle::try_current() {
+        Ok(handle) => handle.block_on(fut),
+        Err(_) => {
+            let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+            rt.block_on(fut)
+        }
+    }
+}
+
 /// 缓存性能指标追踪器
 #[derive(Debug)]
 pub struct CacheMetrics {
@@ -585,7 +599,7 @@ impl CacheManager {
         // 同时失效异步缓存
         let async_cache = self.async_search_cache.clone();
         let workspace_id_owned = workspace_id.to_string();
-        tauri::async_runtime::block_on(async {
+        block_on(async {
             let keys_to_invalidate_async: Vec<SearchCacheKey> = async_cache
                 .iter()
                 .filter_map(|(key, _)| {
@@ -950,7 +964,7 @@ impl CacheManager {
     pub fn generate_performance_report(&self) -> CachePerformanceReport {
         // 使用 block_on 在同步上下文中获取异步缓存统计
         let async_cache_stats =
-            tauri::async_runtime::block_on(async { self.get_async_cache_statistics().await });
+            block_on(async { self.get_async_cache_statistics().await });
 
         self.generate_performance_report_with_stats(async_cache_stats)
     }
@@ -1137,7 +1151,7 @@ impl CacheManager {
 
         // 使用 block_on 在同步上下文中获取异步缓存的条目数
         let async_entry_count =
-            tauri::async_runtime::block_on(async { self.async_search_cache.entry_count() });
+            block_on(async { self.async_search_cache.entry_count() });
 
         // 采样一些缓存键用于调试（从同步缓存获取）
         let sample_keys: Vec<String> = self

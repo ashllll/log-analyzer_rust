@@ -1,18 +1,18 @@
-//! 日志分析器 - 重构完成版本
+//! 日志分析器 - FFI 版本
 //!
-//! 核心功能已修复和优化：
+//! 核心功能：
 //! - 内存泄漏修复 ✅
 //! - 竞态条件修复 ✅
 //! - 时间戳解析增强 ✅
 //! - 错误处理统一 ✅
 //! - 监控体系建立 ✅
+//! - FFI 支持 Flutter ✅
 
 // FFI 桥接代码生成（仅在启用 ffi feature 时编译）
 #[cfg(feature = "ffi")]
 mod frb_generated; /* AUTO INJECTED BY flutter_rust_bridge. This line may not be accurate, and you can change it according to your needs. */
 
 // 核心模块
-pub mod commands;
 pub mod error;
 pub mod models;
 pub mod utils;

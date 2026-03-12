@@ -19,8 +19,17 @@ use crate::storage::{FileMetadata, MetadataStore};
 use rayon::prelude::*;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tauri::AppHandle;
 use tracing::{debug, info, warn};
+
+// 条件编译：AppHandle 类型定义
+#[cfg(feature = "standalone")]
+use tauri::AppHandle;
+#[cfg(not(feature = "standalone"))]
+#[derive(Clone)]
+pub struct AppHandle;  // 空结构体占位
+
+
+
 
 /// Configuration for parallel processing
 #[derive(Debug, Clone)]
@@ -71,7 +80,7 @@ impl ParallelProcessor {
     ///
     /// * `archive_paths` - List of archive paths to process
     /// * `context` - Processing context with CAS and metadata store
-    /// * `app` - Tauri app handle
+    ///
     /// * `task_id` - Task ID for progress reporting
     /// * `workspace_id` - Workspace ID
     ///
@@ -118,7 +127,7 @@ impl ParallelProcessor {
                 .process_batch(
                     batch.clone(),
                     context.clone(),
-                    app.clone(),
+                    AppHandle,  // 占位 AppHandle
                     task_id.clone(),
                     workspace_id.clone(),
                 )
@@ -165,7 +174,7 @@ impl ParallelProcessor {
         &self,
         batch: Vec<PathBuf>,
         context: Arc<CasProcessingContext>,
-        app: AppHandle,
+        _app: AppHandle,
         task_id: String,
         workspace_id: String,
     ) -> Vec<Result<()>> {
@@ -174,7 +183,7 @@ impl ParallelProcessor {
 
         for archive_path in batch {
             let context = context.clone();
-            let app = app.clone();
+            
             let task_id = task_id.clone();
             let workspace_id = workspace_id.clone();
 
@@ -185,11 +194,12 @@ impl ParallelProcessor {
                     .unwrap_or("unknown")
                     .to_string();
 
+                use crate::archive::processor::AppHandle as ProcessorAppHandle;
                 process_path_with_cas_and_checkpoints(
                     &archive_path,
                     &virtual_path,
                     &context,
-                    &app,
+                    ProcessorAppHandle,  // 使用 processor 模块的 AppHandle
                     &task_id,
                     &workspace_id,
                     None, // parent_archive_id

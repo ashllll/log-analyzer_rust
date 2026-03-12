@@ -306,6 +306,30 @@ impl From<crate::models::SearchHistoryEntry> for SearchHistoryData {
 
 // ==================== 虚拟文件树类型 ====================
 
+/// 虚拟文件树节点（FFI 原始类型）
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(tag = "type")]
+pub enum VirtualTreeNode {
+    #[serde(rename = "file")]
+    File {
+        name: String,
+        path: String,
+        hash: String,
+        size: i64,
+        #[serde(rename = "mimeType")]
+        mime_type: Option<String>,
+    },
+    #[serde(rename = "archive")]
+    Archive {
+        name: String,
+        path: String,
+        hash: String,
+        #[serde(rename = "archiveType")]
+        archive_type: String,
+        children: Vec<VirtualTreeNode>,
+    },
+}
+
 /// 虚拟文件树节点数据（FFI 格式）
 ///
 /// 用于 Flutter 端虚拟文件树展示
@@ -344,10 +368,10 @@ pub enum VirtualTreeNodeData {
     },
 }
 
-impl From<crate::commands::virtual_tree::VirtualTreeNode> for VirtualTreeNodeData {
-    fn from(node: crate::commands::virtual_tree::VirtualTreeNode) -> Self {
+impl From<VirtualTreeNode> for VirtualTreeNodeData {
+    fn from(node: VirtualTreeNode) -> Self {
         match node {
-            crate::commands::virtual_tree::VirtualTreeNode::File {
+            VirtualTreeNode::File {
                 name,
                 path,
                 hash,
@@ -360,7 +384,7 @@ impl From<crate::commands::virtual_tree::VirtualTreeNode> for VirtualTreeNodeDat
                 size,
                 mime_type,
             },
-            crate::commands::virtual_tree::VirtualTreeNode::Archive {
+            VirtualTreeNode::Archive {
                 name,
                 path,
                 hash,
@@ -380,6 +404,14 @@ impl From<crate::commands::virtual_tree::VirtualTreeNode> for VirtualTreeNodeDat
     }
 }
 
+/// 文件内容响应（FFI 原始类型）
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FileContentResponse {
+    pub content: String,
+    pub hash: String,
+    pub size: usize,
+}
+
 /// 文件内容响应数据（FFI 格式）
 ///
 /// 用于通过哈希读取文件内容
@@ -393,8 +425,8 @@ pub struct FileContentResponseData {
     pub size: i64,
 }
 
-impl From<crate::commands::virtual_tree::FileContentResponse> for FileContentResponseData {
-    fn from(response: crate::commands::virtual_tree::FileContentResponse) -> Self {
+impl From<FileContentResponse> for FileContentResponseData {
+    fn from(response: FileContentResponse) -> Self {
         Self {
             content: response.content,
             hash: response.hash,

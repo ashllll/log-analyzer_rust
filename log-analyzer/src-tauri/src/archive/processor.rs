@@ -20,11 +20,20 @@ use crate::utils::path::normalize_path_separator;
 use std::collections::HashMap;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
-use tauri::AppHandle;
 use tokio::fs;
 use tokio::sync::Mutex;
 use tracing::{debug, error, info, warn};
 use walkdir::WalkDir;
+
+// 条件编译：AppHandle 类型定义
+#[cfg(feature = "standalone")]
+use tauri::AppHandle;
+#[cfg(not(feature = "standalone"))]
+#[derive(Clone)]
+pub struct AppHandle;  // 空结构体占位
+
+
+
 
 /// 检查是否启用增强提取系统
 ///
@@ -222,7 +231,7 @@ pub async fn process_path_recursive(
     virtual_path: &str,
     target_root: &Path,
     map: &mut HashMap<String, String>,
-    app: &AppHandle,
+    
     task_id: &str,
     workspace_id: &str,
 ) {
@@ -232,7 +241,6 @@ pub async fn process_path_recursive(
         virtual_path,
         target_root,
         map,
-        app,
         task_id,
         workspace_id,
     )
@@ -267,7 +275,7 @@ pub async fn process_path_recursive_with_metadata(
     target_root: &Path,
     map: &mut HashMap<String, String>,
     metadata_map: &mut HashMap<String, crate::storage::FileMetadata>,
-    app: &AppHandle,
+    
     task_id: &str,
     workspace_id: &str,
 ) {
@@ -277,7 +285,6 @@ pub async fn process_path_recursive_with_metadata(
         target_root,
         map,
         metadata_map,
-        app,
         task_id,
         workspace_id,
     )
@@ -311,7 +318,7 @@ async fn process_path_recursive_inner(
     virtual_path: &str,
     target_root: &Path,
     map: &mut HashMap<String, String>,
-    app: &AppHandle,
+    
     task_id: &str,
     workspace_id: &str,
 ) -> Result<()> {
@@ -381,7 +388,6 @@ async fn process_path_recursive_inner(
                         &new_virtual,
                         target_root,
                         map,
-                        app,
                         task_id,
                         workspace_id,
                     ))
@@ -429,7 +435,6 @@ async fn process_path_recursive_inner(
             virtual_path,
             target_root,
             map,
-            app,
             task_id,
             workspace_id,
         )
@@ -489,7 +494,7 @@ async fn process_path_recursive_inner_with_metadata(
     target_root: &Path,
     map: &mut HashMap<String, String>,
     metadata_map: &mut HashMap<String, crate::storage::FileMetadata>,
-    app: &AppHandle,
+    
     task_id: &str,
     workspace_id: &str,
 ) -> Result<()> {
@@ -560,7 +565,6 @@ async fn process_path_recursive_inner_with_metadata(
                         target_root,
                         map,
                         metadata_map,
-                        app,
                         task_id,
                         workspace_id,
                     ))
@@ -603,7 +607,6 @@ async fn process_path_recursive_inner_with_metadata(
             virtual_path,
             target_root,
             map,
-            app,
             task_id,
             workspace_id,
         ))
@@ -739,7 +742,7 @@ pub async fn process_path_with_cas_and_checkpoints(
     path: &Path,
     virtual_path: &str,
     context: &CasProcessingContext,
-    app: &AppHandle,
+    _app: AppHandle,
     task_id: &str,
     workspace_id: &str,
     parent_archive_id: Option<i64>,
@@ -830,7 +833,7 @@ pub async fn process_path_with_cas_and_checkpoints(
                         path_to_process,
                         &new_virtual,
                         context,
-                        app,
+                        AppHandle,  // 占位 AppHandle
                         task_id,
                         workspace_id,
                         parent_archive_id,
@@ -876,7 +879,7 @@ pub async fn process_path_with_cas_and_checkpoints(
     // 3. 详细日志记录决策过程
     if !path.is_dir() && !is_archive_file(path) {
         // 可选的文件过滤检查（防御性：失败时允许文件通过）
-        let import_allowed = should_import_file_defensive(path, app).await;
+        let import_allowed = should_import_file_defensive(path).await;
 
         if !import_allowed {
             tracing::info!(
@@ -908,7 +911,6 @@ pub async fn process_path_with_cas_and_checkpoints(
             path,
             virtual_path,
             context,
-            app,
             task_id,
             workspace_id,
             parent_archive_id,
@@ -1012,7 +1014,7 @@ pub async fn process_path_with_cas(
     workspace_dir: &Path,
     cas: &ContentAddressableStorage,
     metadata_store: Arc<MetadataStore>,
-    app: &AppHandle,
+    
     task_id: &str,
     workspace_id: &str,
     parent_archive_id: Option<i64>,
@@ -1028,7 +1030,7 @@ pub async fn process_path_with_cas(
         path,
         virtual_path,
         &context,
-        app,
+        AppHandle,  // 占位 AppHandle
         task_id,
         workspace_id,
         parent_archive_id,
@@ -1060,7 +1062,7 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
     archive_path: &Path,
     virtual_path: &str,
     context: &CasProcessingContext,
-    app: &AppHandle,
+    
     task_id: &str,
     workspace_id: &str,
     parent_archive_id: Option<i64>,
@@ -1281,7 +1283,7 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
             &full_path, // Use full path for file operations
             &new_virtual,
             context,
-            app,
+            AppHandle,  // 占位 AppHandle
             task_id,
             workspace_id,
             Some(archive_id),
@@ -1353,7 +1355,7 @@ async fn extract_and_process_archive_with_cas(
     workspace_dir: &Path,
     cas: &ContentAddressableStorage,
     metadata_store: Arc<MetadataStore>,
-    app: &AppHandle,
+    
     task_id: &str,
     workspace_id: &str,
     parent_archive_id: Option<i64>,
@@ -1369,7 +1371,6 @@ async fn extract_and_process_archive_with_cas(
         archive_path,
         virtual_path,
         &context,
-        app,
         task_id,
         workspace_id,
         parent_archive_id,
@@ -1442,7 +1443,7 @@ async fn extract_and_process_archive(
     virtual_path: &str,
     target_root: &Path,
     map: &mut HashMap<String, String>,
-    app: &AppHandle,
+    
     task_id: &str,
     workspace_id: &str,
 ) -> Result<()> {
@@ -1640,7 +1641,6 @@ async fn extract_and_process_archive(
             &new_virtual,
             target_root,
             map,
-            app,
             task_id,
             workspace_id,
         ))
@@ -1658,9 +1658,9 @@ async fn extract_and_process_archive(
 /// 1. 配置加载失败 → 返回 true（允许所有文件）
 /// 2. 过滤逻辑异常 → 返回 true（允许当前文件）
 /// 3. 记录详细日志 → 便于问题排查
-async fn should_import_file_defensive(path: &Path, app: &AppHandle) -> bool {
+async fn should_import_file_defensive(path: &Path) -> bool {
     // Step 1: 安全加载配置（失败时返回 true）
-    let filter_config = match load_file_filter_config_safe(app).await {
+    let filter_config = match load_file_filter_config_safe().await {
         Ok(config) => config,
         Err(e) => {
             tracing::warn!(
@@ -1690,18 +1690,10 @@ async fn should_import_file_defensive(path: &Path, app: &AppHandle) -> bool {
     }
 }
 
-/// 安全加载配置（失败时返回默认配置）
-async fn load_file_filter_config_safe(app: &AppHandle) -> Result<FileFilterConfig> {
-    match crate::commands::config::load_config(app.clone()).await {
-        Ok(config) => Ok(config.file_filter),
-        Err(e) => {
-            tracing::warn!(
-                error = %e,
-                "Failed to load config, using default file filter config"
-            );
-            Ok(FileFilterConfig::default())
-        }
-    }
+/// 安全加载配置（FFI 模式：返回默认配置）
+async fn load_file_filter_config_safe() -> Result<FileFilterConfig> {
+    // FFI 模式下使用默认配置
+    Ok(FileFilterConfig::default())
 }
 
 // ========== 防御性集成结束 ==========
