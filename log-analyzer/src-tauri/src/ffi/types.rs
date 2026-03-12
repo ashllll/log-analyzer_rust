@@ -45,7 +45,7 @@ pub struct WorkspaceLoadResponseData {
 
 /// 关键词组数据（FFI 格式）
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct KeywordGroupData {
+pub struct FfiKeywordGroupData {
     pub id: String,
     pub name: String,
     pub color: String,
@@ -488,7 +488,7 @@ impl Default for StructuredSearchQueryData {
 ///
 /// 单行搜索结果
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SearchResultEntry {
+pub struct FfiSearchResultEntry {
     /// 行号（从 1 开始）
     pub line_number: i64,
     /// 行内容

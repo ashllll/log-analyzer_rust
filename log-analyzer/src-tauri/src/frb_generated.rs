@@ -25,7 +25,6 @@
 
 // Section: imports
 
-use crate::search_engine::manager::*;
 use flutter_rust_bridge::for_generated::byteorder::{NativeEndian, ReadBytesExt, WriteBytesExt};
 use flutter_rust_bridge::for_generated::{transform_result_dco, Lifetimeable, Lockable};
 use flutter_rust_bridge::{Handler, IntoIntoDart};
@@ -1514,46 +1513,7 @@ fn wire__crate__ffi__bridge__validate_regex_impl(
     )
 }
 
-// Section: related_funcs
-
-flutter_rust_bridge::frb_generated_moi_arc_impl_value!(
-    flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SearchResultEntry>
-);
-
 // Section: dart2rust
-
-impl SseDecode for SearchResultEntry {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut inner = <RustOpaqueMoi<
-            flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SearchResultEntry>,
-        >>::sse_decode(deserializer);
-        return flutter_rust_bridge::for_generated::rust_auto_opaque_decode_owned(inner);
-    }
-}
-
-impl SseDecode for chrono::DateTime<chrono::Utc> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut inner = <i64>::sse_decode(deserializer);
-        return chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(
-            chrono::DateTime::from_timestamp_micros(inner)
-                .expect("invalid or out-of-range datetime")
-                .naive_utc(),
-            chrono::Utc,
-        );
-    }
-}
-
-impl SseDecode
-    for RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SearchResultEntry>>
-{
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut inner = <usize>::sse_decode(deserializer);
-        return decode_rust_opaque_moi(inner);
-    }
-}
 
 impl SseDecode for String {
     // Codec=Sse (Serialization based), see doc to use other codecs
@@ -1623,6 +1583,40 @@ impl SseDecode for f64 {
     }
 }
 
+impl SseDecode for crate::ffi::types::FfiKeywordGroupData {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_id = <String>::sse_decode(deserializer);
+        let mut var_name = <String>::sse_decode(deserializer);
+        let mut var_color = <String>::sse_decode(deserializer);
+        let mut var_patterns = <Vec<String>>::sse_decode(deserializer);
+        let mut var_enabled = <bool>::sse_decode(deserializer);
+        return crate::ffi::types::FfiKeywordGroupData {
+            id: var_id,
+            name: var_name,
+            color: var_color,
+            patterns: var_patterns,
+            enabled: var_enabled,
+        };
+    }
+}
+
+impl SseDecode for crate::ffi::types::FfiSearchResultEntry {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_lineNumber = <i64>::sse_decode(deserializer);
+        let mut var_content = <String>::sse_decode(deserializer);
+        let mut var_matchStart = <i64>::sse_decode(deserializer);
+        let mut var_matchEnd = <i64>::sse_decode(deserializer);
+        return crate::ffi::types::FfiSearchResultEntry {
+            line_number: var_lineNumber,
+            content: var_content,
+            match_start: var_matchStart,
+            match_end: var_matchEnd,
+        };
+    }
+}
+
 impl SseDecode for crate::ffi::types::FileContentResponseData {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1671,28 +1665,6 @@ impl SseDecode for i64 {
     }
 }
 
-impl SseDecode for crate::infrastructure::persistence::KeywordGroupData {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_id = <String>::sse_decode(deserializer);
-        let mut var_name = <String>::sse_decode(deserializer);
-        let mut var_color = <String>::sse_decode(deserializer);
-        let mut var_patterns = <Vec<String>>::sse_decode(deserializer);
-        let mut var_enabled = <bool>::sse_decode(deserializer);
-        let mut var_createdAt = <chrono::DateTime<chrono::Utc>>::sse_decode(deserializer);
-        let mut var_updatedAt = <chrono::DateTime<chrono::Utc>>::sse_decode(deserializer);
-        return crate::infrastructure::persistence::KeywordGroupData {
-            id: var_id,
-            name: var_name,
-            color: var_color,
-            patterns: var_patterns,
-            enabled: var_enabled,
-            created_at: var_createdAt,
-            updated_at: var_updatedAt,
-        };
-    }
-}
-
 impl SseDecode for crate::ffi::types::KeywordGroupInput {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1709,18 +1681,6 @@ impl SseDecode for crate::ffi::types::KeywordGroupInput {
     }
 }
 
-impl SseDecode for Vec<SearchResultEntry> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut len_ = <i32>::sse_decode(deserializer);
-        let mut ans_ = vec![];
-        for idx_ in 0..len_ {
-            ans_.push(<SearchResultEntry>::sse_decode(deserializer));
-        }
-        return ans_;
-    }
-}
-
 impl SseDecode for Vec<String> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1733,15 +1693,29 @@ impl SseDecode for Vec<String> {
     }
 }
 
-impl SseDecode for Vec<crate::infrastructure::persistence::KeywordGroupData> {
+impl SseDecode for Vec<crate::ffi::types::FfiKeywordGroupData> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut len_ = <i32>::sse_decode(deserializer);
         let mut ans_ = vec![];
         for idx_ in 0..len_ {
-            ans_.push(
-                <crate::infrastructure::persistence::KeywordGroupData>::sse_decode(deserializer),
-            );
+            ans_.push(<crate::ffi::types::FfiKeywordGroupData>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::ffi::types::FfiSearchResultEntry> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = vec![];
+        for idx_ in 0..len_ {
+            ans_.push(<crate::ffi::types::FfiSearchResultEntry>::sse_decode(
+                deserializer,
+            ));
         }
         return ans_;
     }
@@ -2162,13 +2136,6 @@ impl SseDecode for () {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {}
 }
 
-impl SseDecode for usize {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        deserializer.cursor.read_u64::<NativeEndian>().unwrap() as _
-    }
-}
-
 impl SseDecode for crate::ffi::types::VirtualTreeNodeData {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2330,21 +2297,6 @@ fn pde_ffi_dispatcher_sync_impl(
 // Section: rust2dart
 
 // Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for FrbWrapper<SearchResultEntry> {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        flutter_rust_bridge::for_generated::rust_auto_opaque_encode::<_, MoiArc<_>>(self.0)
-            .into_dart()
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for FrbWrapper<SearchResultEntry> {}
-
-impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<SearchResultEntry>> for SearchResultEntry {
-    fn into_into_dart(self) -> FrbWrapper<SearchResultEntry> {
-        self.into()
-    }
-}
-
-// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::ffi::types::AdvancedFeaturesConfigData {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -2406,6 +2358,53 @@ impl flutter_rust_bridge::IntoIntoDart<crate::ffi::types::ConfigData>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::ffi::types::FfiKeywordGroupData {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.id.into_into_dart().into_dart(),
+            self.name.into_into_dart().into_dart(),
+            self.color.into_into_dart().into_dart(),
+            self.patterns.into_into_dart().into_dart(),
+            self.enabled.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::ffi::types::FfiKeywordGroupData
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::ffi::types::FfiKeywordGroupData>
+    for crate::ffi::types::FfiKeywordGroupData
+{
+    fn into_into_dart(self) -> crate::ffi::types::FfiKeywordGroupData {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::ffi::types::FfiSearchResultEntry {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.line_number.into_into_dart().into_dart(),
+            self.content.into_into_dart().into_dart(),
+            self.match_start.into_into_dart().into_dart(),
+            self.match_end.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::ffi::types::FfiSearchResultEntry
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::ffi::types::FfiSearchResultEntry>
+    for crate::ffi::types::FfiSearchResultEntry
+{
+    fn into_into_dart(self) -> crate::ffi::types::FfiSearchResultEntry {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::ffi::types::FileContentResponseData {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -2452,10 +2451,6 @@ impl flutter_rust_bridge::IntoIntoDart<crate::ffi::types::FileFilterConfigData>
         self
     }
 }
-// Codec=Dco (DartCObject based), see doc to use other codecs
-// Note: infrastructure::persistence::KeywordGroupData is marked as opaque via #[frb(opaque)]
-// This implementation is for internal use only and not exposed to Dart
-// infrastructure::persistence::KeywordGroupData is marked as opaque, removed from Dart bindings
 // Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::ffi::types::KeywordGroupInput {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
@@ -2880,31 +2875,6 @@ impl flutter_rust_bridge::IntoIntoDart<crate::ffi::types::WorkspaceStatusData>
     }
 }
 
-impl SseEncode for SearchResultEntry {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SearchResultEntry>>>::sse_encode(flutter_rust_bridge::for_generated::rust_auto_opaque_encode::<_, MoiArc<_>>(self), serializer);
-    }
-}
-
-impl SseEncode for chrono::DateTime<chrono::Utc> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <i64>::sse_encode(self.timestamp_micros(), serializer);
-    }
-}
-
-impl SseEncode
-    for RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SearchResultEntry>>
-{
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        let (ptr, size) = self.sse_encode_raw();
-        <usize>::sse_encode(ptr, serializer);
-        <i32>::sse_encode(size, serializer);
-    }
-}
-
 impl SseEncode for String {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -2957,6 +2927,27 @@ impl SseEncode for f64 {
     }
 }
 
+impl SseEncode for crate::ffi::types::FfiKeywordGroupData {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.id, serializer);
+        <String>::sse_encode(self.name, serializer);
+        <String>::sse_encode(self.color, serializer);
+        <Vec<String>>::sse_encode(self.patterns, serializer);
+        <bool>::sse_encode(self.enabled, serializer);
+    }
+}
+
+impl SseEncode for crate::ffi::types::FfiSearchResultEntry {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i64>::sse_encode(self.line_number, serializer);
+        <String>::sse_encode(self.content, serializer);
+        <i64>::sse_encode(self.match_start, serializer);
+        <i64>::sse_encode(self.match_end, serializer);
+    }
+}
+
 impl SseEncode for crate::ffi::types::FileContentResponseData {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -2992,19 +2983,6 @@ impl SseEncode for i64 {
     }
 }
 
-impl SseEncode for crate::infrastructure::persistence::KeywordGroupData {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <String>::sse_encode(self.id, serializer);
-        <String>::sse_encode(self.name, serializer);
-        <String>::sse_encode(self.color, serializer);
-        <Vec<String>>::sse_encode(self.patterns, serializer);
-        <bool>::sse_encode(self.enabled, serializer);
-        <chrono::DateTime<chrono::Utc>>::sse_encode(self.created_at, serializer);
-        <chrono::DateTime<chrono::Utc>>::sse_encode(self.updated_at, serializer);
-    }
-}
-
 impl SseEncode for crate::ffi::types::KeywordGroupInput {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -3012,16 +2990,6 @@ impl SseEncode for crate::ffi::types::KeywordGroupInput {
         <String>::sse_encode(self.color, serializer);
         <Vec<String>>::sse_encode(self.patterns, serializer);
         <bool>::sse_encode(self.enabled, serializer);
-    }
-}
-
-impl SseEncode for Vec<SearchResultEntry> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <i32>::sse_encode(self.len() as _, serializer);
-        for item in self {
-            <SearchResultEntry>::sse_encode(item, serializer);
-        }
     }
 }
 
@@ -3035,12 +3003,22 @@ impl SseEncode for Vec<String> {
     }
 }
 
-impl SseEncode for Vec<crate::infrastructure::persistence::KeywordGroupData> {
+impl SseEncode for Vec<crate::ffi::types::FfiKeywordGroupData> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
-            <crate::infrastructure::persistence::KeywordGroupData>::sse_encode(item, serializer);
+            <crate::ffi::types::FfiKeywordGroupData>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::ffi::types::FfiSearchResultEntry> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::ffi::types::FfiSearchResultEntry>::sse_encode(item, serializer);
         }
     }
 }
@@ -3342,16 +3320,6 @@ impl SseEncode for () {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {}
 }
 
-impl SseEncode for usize {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        serializer
-            .cursor
-            .write_u64::<NativeEndian>(self as _)
-            .unwrap();
-    }
-}
-
 impl SseEncode for crate::ffi::types::VirtualTreeNodeData {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -3423,7 +3391,6 @@ mod io {
     // Section: imports
 
     use super::*;
-    use crate::search_engine::manager::*;
     use flutter_rust_bridge::for_generated::byteorder::{
         NativeEndian, ReadBytesExt, WriteBytesExt,
     };
@@ -3433,20 +3400,6 @@ mod io {
     // Section: boilerplate
 
     flutter_rust_bridge::frb_generated_boilerplate_io!();
-
-    #[unsafe(no_mangle)]
-    pub extern "C" fn frbgen_log_analyzer_flutter_rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
-        ptr: *const std::ffi::c_void,
-    ) {
-        MoiArc::<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SearchResultEntry>>::increment_strong_count(ptr as _);
-    }
-
-    #[unsafe(no_mangle)]
-    pub extern "C" fn frbgen_log_analyzer_flutter_rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
-        ptr: *const std::ffi::c_void,
-    ) {
-        MoiArc::<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SearchResultEntry>>::decrement_strong_count(ptr as _);
-    }
 }
 #[cfg(not(target_family = "wasm"))]
 pub use io::*;
@@ -3460,7 +3413,6 @@ mod web {
     // Section: imports
 
     use super::*;
-    use crate::search_engine::manager::*;
     use flutter_rust_bridge::for_generated::byteorder::{
         NativeEndian, ReadBytesExt, WriteBytesExt,
     };
@@ -3472,20 +3424,6 @@ mod web {
     // Section: boilerplate
 
     flutter_rust_bridge::frb_generated_boilerplate_web!();
-
-    #[wasm_bindgen]
-    pub fn rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
-        ptr: *const std::ffi::c_void,
-    ) {
-        MoiArc::<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SearchResultEntry>>::increment_strong_count(ptr as _);
-    }
-
-    #[wasm_bindgen]
-    pub fn rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
-        ptr: *const std::ffi::c_void,
-    ) {
-        MoiArc::<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SearchResultEntry>>::decrement_strong_count(ptr as _);
-    }
 }
 #[cfg(target_family = "wasm")]
 pub use web::*;

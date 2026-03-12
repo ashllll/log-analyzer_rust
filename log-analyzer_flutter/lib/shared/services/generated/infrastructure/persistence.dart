@@ -6,46 +6,5 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-/// 关键词组数据
-class KeywordGroupData {
-  final String id;
-  final String name;
-  final String color;
-  final List<String> patterns;
-  final bool enabled;
-  final DateTime createdAt;
-  final DateTime updatedAt;
-
-  const KeywordGroupData({
-    required this.id,
-    required this.name,
-    required this.color,
-    required this.patterns,
-    required this.enabled,
-    required this.createdAt,
-    required this.updatedAt,
-  });
-
-  @override
-  int get hashCode =>
-      id.hashCode ^
-      name.hashCode ^
-      color.hashCode ^
-      patterns.hashCode ^
-      enabled.hashCode ^
-      createdAt.hashCode ^
-      updatedAt.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is KeywordGroupData &&
-          runtimeType == other.runtimeType &&
-          id == other.id &&
-          name == other.name &&
-          color == other.color &&
-          patterns == other.patterns &&
-          enabled == other.enabled &&
-          createdAt == other.createdAt &&
-          updatedAt == other.updatedAt;
-}
+// Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<KeywordGroupData>>
+abstract class KeywordGroupData implements RustOpaqueInterface {}

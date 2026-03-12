@@ -4,8 +4,6 @@
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
 import '../frb_generated.dart';
-import '../infrastructure/persistence.dart';
-import '../search_engine/manager.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'types.dart';
 
@@ -78,7 +76,7 @@ int getActiveSearchesCount() =>
     LogAnalyzerBridge.instance.api.crateFfiBridgeGetActiveSearchesCount();
 
 /// 获取关键词列表
-List<KeywordGroupData> getKeywords() =>
+List<FfiKeywordGroupData> getKeywords() =>
     LogAnalyzerBridge.instance.api.crateFfiBridgeGetKeywords();
 
 /// 添加关键词组
@@ -284,7 +282,7 @@ FileContentResponseData readFileByHash({
 /// # 返回
 ///
 /// 返回匹配的搜索结果列表
-List<SearchResultEntry> searchStructured({
+List<FfiSearchResultEntry> searchStructured({
   required StructuredSearchQueryData query,
   String? workspaceId,
   required int maxResults,
@@ -350,7 +348,7 @@ RegexValidationResult validateRegex({required String pattern}) =>
 /// # 返回
 ///
 /// 返回匹配的搜索结果列表
-List<SearchResultEntry> searchRegex({
+List<FfiSearchResultEntry> searchRegex({
   required String pattern,
   String? workspaceId,
   required int maxResults,

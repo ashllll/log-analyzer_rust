@@ -911,7 +911,7 @@ pub fn ffi_is_watching(workspace_id: String) -> Result<bool, String> {
 // ==================== 关键词命令适配 ====================
 
 /// 读取配置文件中的关键词组
-fn read_keyword_groups_from_config() -> Result<Vec<KeywordGroupData>, String> {
+fn read_keyword_groups_from_config() -> Result<Vec<FfiKeywordGroupData>, String> {
     let app_data_dir = get_app_data_dir().ok_or_else(|| "FFI 全局状态未初始化".to_string())?;
 
     let config_path = app_data_dir.join("config.json");
@@ -939,7 +939,7 @@ fn read_keyword_groups_from_config() -> Result<Vec<KeywordGroupData>, String> {
 }
 
 /// 保存关键词组到配置文件
-fn save_keyword_groups_to_config(groups: &[KeywordGroupData]) -> Result<(), String> {
+fn save_keyword_groups_to_config(groups: &[FfiKeywordGroupData]) -> Result<(), String> {
     let app_data_dir = get_app_data_dir().ok_or_else(|| "FFI 全局状态未初始化".to_string())?;
 
     let config_path = app_data_dir.join("config.json");
@@ -969,7 +969,7 @@ fn save_keyword_groups_to_config(groups: &[KeywordGroupData]) -> Result<(), Stri
 /// FFI 适配：获取关键词列表
 ///
 /// 从配置文件读取所有关键词组
-pub fn ffi_get_keywords() -> Result<Vec<KeywordGroupData>, String> {
+pub fn ffi_get_keywords() -> Result<Vec<FfiKeywordGroupData>, String> {
     tracing::debug!("FFI: get_keywords 调用");
     read_keyword_groups_from_config()
 }
@@ -983,7 +983,7 @@ pub fn ffi_add_keyword_group(group: KeywordGroupInput) -> Result<bool, String> {
     let mut groups = read_keyword_groups_from_config()?;
 
     // 创建新的关键词组
-    let new_group = KeywordGroupData {
+    let new_group = FfiKeywordGroupData {
         id: format!("kw-{}", uuid::Uuid::new_v4()),
         name: group.name,
         color: group.color,
@@ -1613,7 +1613,7 @@ use crate::ffi::types::{FileContentResponseData, VirtualTreeNodeData};
 // ==================== 多关键词组合搜索命令适配 ====================
 
 use crate::ffi::types::{
-    QueryOperatorData, SearchResultEntry, SearchTermData, StructuredSearchQueryData,
+    QueryOperatorData, FfiSearchResultEntry, SearchTermData, StructuredSearchQueryData,
 };
 
 /// FFI 适配：执行结构化搜索（多关键词组合搜索）
@@ -1633,7 +1633,7 @@ pub fn ffi_search_structured(
     query: StructuredSearchQueryData,
     workspace_id: Option<String>,
     max_results: i32,
-) -> Result<Vec<SearchResultEntry>, String> {
+) -> Result<Vec<FfiSearchResultEntry>, String> {
     tracing::info!(
         terms_count = query.terms.len(),
         global_operator = ?query.global_operator,
@@ -1771,7 +1771,7 @@ pub fn ffi_search_structured(
                         (0, line.len() as i64)
                     };
 
-                    results.push(SearchResultEntry {
+                    results.push(FfiSearchResultEntry {
                         line_number: (line_idx + 1) as i64,
                         content: line.to_string(),
                         match_start,
@@ -2505,7 +2505,7 @@ pub fn ffi_search_regex(
     workspace_id: Option<String>,
     max_results: i32,
     case_sensitive: bool,
-) -> Result<Vec<SearchResultEntry>, String> {
+) -> Result<Vec<FfiSearchResultEntry>, String> {
     tracing::info!(
         pattern = %pattern,
         workspace_id = ?workspace_id,
@@ -2603,7 +2603,7 @@ pub fn ffi_search_regex(
                 }
 
                 if let Some(m) = regex_pattern.find(line) {
-                    results.push(SearchResultEntry {
+                    results.push(FfiSearchResultEntry {
                         line_number: (line_idx + 1) as i64,
                         content: line.to_string(),
                         match_start: m.start() as i64,

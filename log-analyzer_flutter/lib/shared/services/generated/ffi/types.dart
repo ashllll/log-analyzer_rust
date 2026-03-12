@@ -71,6 +71,83 @@ class ConfigData {
           advancedFeatures == other.advancedFeatures;
 }
 
+/// 关键词组数据（FFI 格式）
+class FfiKeywordGroupData {
+  final String id;
+  final String name;
+  final String color;
+  final List<String> patterns;
+  final bool enabled;
+
+  const FfiKeywordGroupData({
+    required this.id,
+    required this.name,
+    required this.color,
+    required this.patterns,
+    required this.enabled,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      name.hashCode ^
+      color.hashCode ^
+      patterns.hashCode ^
+      enabled.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is FfiKeywordGroupData &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          name == other.name &&
+          color == other.color &&
+          patterns == other.patterns &&
+          enabled == other.enabled;
+}
+
+/// 搜索结果条目（FFI 格式）
+///
+/// 单行搜索结果
+class FfiSearchResultEntry {
+  /// 行号（从 1 开始）
+  final PlatformInt64 lineNumber;
+
+  /// 行内容
+  final String content;
+
+  /// 匹配起始位置
+  final PlatformInt64 matchStart;
+
+  /// 匹配结束位置
+  final PlatformInt64 matchEnd;
+
+  const FfiSearchResultEntry({
+    required this.lineNumber,
+    required this.content,
+    required this.matchStart,
+    required this.matchEnd,
+  });
+
+  @override
+  int get hashCode =>
+      lineNumber.hashCode ^
+      content.hashCode ^
+      matchStart.hashCode ^
+      matchEnd.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is FfiSearchResultEntry &&
+          runtimeType == other.runtimeType &&
+          lineNumber == other.lineNumber &&
+          content == other.content &&
+          matchStart == other.matchStart &&
+          matchEnd == other.matchEnd;
+}
+
 /// 文件内容响应数据（FFI 格式）
 ///
 /// 用于通过哈希读取文件内容

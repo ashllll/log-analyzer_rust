@@ -347,7 +347,7 @@ class KeywordState extends _$KeywordState {
   // ==================== 私有辅助方法 ====================
 
   /// 从 FFI 数据类型解析 KeywordGroup
-  KeywordGroup _parseKeywordGroupFromFfi(KeywordGroupData data) {
+  KeywordGroup _parseKeywordGroupFromFfi(ffi.FfiKeywordGroupData data) {
     return KeywordGroup(
       id: data.id,
       name: data.name,

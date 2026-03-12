@@ -22,6 +22,7 @@
 
 use crate::ffi::commands_bridge;
 use crate::ffi::types::*;
+use crate::models::AppState;
 use flutter_rust_bridge::frb;
 
 /// FFI 专用结果类型
@@ -79,9 +80,30 @@ impl BridgeContext {
 /// 初始化桥接
 ///
 /// 这是 FFI 的入口点，返回全局上下文
+/// 同时初始化 FFI 全局状态（用于 commands_bridge 函数）
 #[frb(init)]
 pub fn init_bridge() -> BridgeContext {
     tracing::info!("Flutter FFI Bridge 初始化");
+
+    // 创建 AppState
+    let app_state = AppState::default();
+
+    // 初始化 TaskManager（必须在 init_global_state 之前）
+    let task_manager_config = crate::task_manager::TaskManagerConfig::default();
+    // FFI 模式下使用单线程 runtime，因为 flutter_rust_bridge 要求同步调用
+    let task_manager = crate::task_manager::TaskManager::new_single_threaded(task_manager_config);
+
+    // 设置 TaskManager 到 AppState
+    {
+        let mut state_guard = app_state.task_manager.lock();
+        *state_guard = Some(task_manager);
+    }
+
+    // 初始化 FFI 全局状态（用于 commands_bridge 函数）
+    let app_data_dir = std::env::temp_dir();
+    crate::ffi::global_state::init_global_state(app_state, app_data_dir);
+    tracing::info!("FFI 全局状态已初始化");
+
     BridgeContext::new()
 }
 
@@ -187,7 +209,7 @@ pub fn get_active_searches_count() -> i32 {
 
 /// 获取关键词列表
 #[frb(sync)]
-pub fn get_keywords() -> Vec<KeywordGroupData> {
+pub fn get_keywords() -> Vec<FfiKeywordGroupData> {
     commands_bridge::ffi_get_keywords().unwrap_or_default()
 }
 
@@ -452,7 +474,7 @@ pub fn search_structured(
     query: StructuredSearchQueryData,
     workspace_id: Option<String>,
     max_results: i32,
-) -> Vec<SearchResultEntry> {
+) -> Vec<FfiSearchResultEntry> {
     unwrap_result(
         commands_bridge::ffi_search_structured(query, workspace_id, max_results),
         "结构化搜索失败",
@@ -526,7 +548,7 @@ pub fn search_regex(
     workspace_id: Option<String>,
     max_results: i32,
     case_sensitive: bool,
-) -> Vec<SearchResultEntry> {
+) -> Vec<FfiSearchResultEntry> {
     unwrap_result(
         commands_bridge::ffi_search_regex(pattern, workspace_id, max_results, case_sensitive),
         "正则搜索失败",

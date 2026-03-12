@@ -8,7 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../shared/providers/app_provider.dart';
 import '../../shared/providers/workspace_provider.dart';
-import '../../shared/services/bridge_service.dart';
+import '../../shared/services/api_service.dart';
 import '../../shared/services/error_handler.dart';
 import '../../shared/widgets/error_view.dart';
 
@@ -36,8 +36,8 @@ class _SplashPageState extends ConsumerState<SplashPage> {
 
   Future<void> _initialize() async {
     try {
-      // 1. 初始化 FFI 桥接，带超时
-      await BridgeService.instance.initialize().timeout(_timeout);
+      // 1. 初始化 FFI 桥接（通过 ApiService 初始化，设置 _isInitialized 标志）
+      await ApiService.initialize().timeout(_timeout);
 
       if (!mounted) return;
 

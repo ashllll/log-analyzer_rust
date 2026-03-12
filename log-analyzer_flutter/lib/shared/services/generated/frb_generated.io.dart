@@ -9,9 +9,7 @@ import 'dart:ffi' as ffi;
 import 'ffi/bridge.dart';
 import 'ffi/types.dart';
 import 'frb_generated.dart';
-import 'infrastructure/persistence.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
-import 'search_engine/manager.dart';
 
 abstract class LogAnalyzerBridgeApiImplPlatform
     extends BaseApiImpl<LogAnalyzerBridgeWire> {
@@ -21,25 +19,6 @@ abstract class LogAnalyzerBridgeApiImplPlatform
     required super.generalizedFrbRustBinding,
     required super.portManager,
   });
-
-  CrossPlatformFinalizerArg
-  get rust_arc_decrement_strong_count_SearchResultEntryPtr => wire
-      ._rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntryPtr;
-
-  @protected
-  SearchResultEntry
-  dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
-    dynamic raw,
-  );
-
-  @protected
-  DateTime dco_decode_Chrono_Utc(dynamic raw);
-
-  @protected
-  SearchResultEntry
-  dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
-    dynamic raw,
-  );
 
   @protected
   String dco_decode_String(dynamic raw);
@@ -91,6 +70,12 @@ abstract class LogAnalyzerBridgeApiImplPlatform
   double dco_decode_f_64(dynamic raw);
 
   @protected
+  FfiKeywordGroupData dco_decode_ffi_keyword_group_data(dynamic raw);
+
+  @protected
+  FfiSearchResultEntry dco_decode_ffi_search_result_entry(dynamic raw);
+
+  @protected
   FileContentResponseData dco_decode_file_content_response_data(dynamic raw);
 
   @protected
@@ -103,22 +88,18 @@ abstract class LogAnalyzerBridgeApiImplPlatform
   PlatformInt64 dco_decode_i_64(dynamic raw);
 
   @protected
-  KeywordGroupData dco_decode_keyword_group_data(dynamic raw);
-
-  @protected
   KeywordGroupInput dco_decode_keyword_group_input(dynamic raw);
-
-  @protected
-  List<SearchResultEntry>
-  dco_decode_list_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
-    dynamic raw,
-  );
 
   @protected
   List<String> dco_decode_list_String(dynamic raw);
 
   @protected
-  List<KeywordGroupData> dco_decode_list_keyword_group_data(dynamic raw);
+  List<FfiKeywordGroupData> dco_decode_list_ffi_keyword_group_data(dynamic raw);
+
+  @protected
+  List<FfiSearchResultEntry> dco_decode_list_ffi_search_result_entry(
+    dynamic raw,
+  );
 
   @protected
   Float64List dco_decode_list_prim_f_64_strict(dynamic raw);
@@ -209,9 +190,6 @@ abstract class LogAnalyzerBridgeApiImplPlatform
   void dco_decode_unit(dynamic raw);
 
   @protected
-  BigInt dco_decode_usize(dynamic raw);
-
-  @protected
   VirtualTreeNodeData dco_decode_virtual_tree_node_data(dynamic raw);
 
   @protected
@@ -219,21 +197,6 @@ abstract class LogAnalyzerBridgeApiImplPlatform
 
   @protected
   WorkspaceStatusData dco_decode_workspace_status_data(dynamic raw);
-
-  @protected
-  SearchResultEntry
-  sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  DateTime sse_decode_Chrono_Utc(SseDeserializer deserializer);
-
-  @protected
-  SearchResultEntry
-  sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
-    SseDeserializer deserializer,
-  );
 
   @protected
   String sse_decode_String(SseDeserializer deserializer);
@@ -295,6 +258,16 @@ abstract class LogAnalyzerBridgeApiImplPlatform
   double sse_decode_f_64(SseDeserializer deserializer);
 
   @protected
+  FfiKeywordGroupData sse_decode_ffi_keyword_group_data(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  FfiSearchResultEntry sse_decode_ffi_search_result_entry(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   FileContentResponseData sse_decode_file_content_response_data(
     SseDeserializer deserializer,
   );
@@ -311,16 +284,7 @@ abstract class LogAnalyzerBridgeApiImplPlatform
   PlatformInt64 sse_decode_i_64(SseDeserializer deserializer);
 
   @protected
-  KeywordGroupData sse_decode_keyword_group_data(SseDeserializer deserializer);
-
-  @protected
   KeywordGroupInput sse_decode_keyword_group_input(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  List<SearchResultEntry>
-  sse_decode_list_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
     SseDeserializer deserializer,
   );
 
@@ -328,7 +292,12 @@ abstract class LogAnalyzerBridgeApiImplPlatform
   List<String> sse_decode_list_String(SseDeserializer deserializer);
 
   @protected
-  List<KeywordGroupData> sse_decode_list_keyword_group_data(
+  List<FfiKeywordGroupData> sse_decode_list_ffi_keyword_group_data(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<FfiSearchResultEntry> sse_decode_list_ffi_search_result_entry(
     SseDeserializer deserializer,
   );
 
@@ -445,9 +414,6 @@ abstract class LogAnalyzerBridgeApiImplPlatform
   void sse_decode_unit(SseDeserializer deserializer);
 
   @protected
-  BigInt sse_decode_usize(SseDeserializer deserializer);
-
-  @protected
   VirtualTreeNodeData sse_decode_virtual_tree_node_data(
     SseDeserializer deserializer,
   );
@@ -458,23 +424,6 @@ abstract class LogAnalyzerBridgeApiImplPlatform
   @protected
   WorkspaceStatusData sse_decode_workspace_status_data(
     SseDeserializer deserializer,
-  );
-
-  @protected
-  void
-  sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
-    SearchResultEntry self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_Chrono_Utc(DateTime self, SseSerializer serializer);
-
-  @protected
-  void
-  sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
-    SearchResultEntry self,
-    SseSerializer serializer,
   );
 
   @protected
@@ -547,6 +496,18 @@ abstract class LogAnalyzerBridgeApiImplPlatform
   void sse_encode_f_64(double self, SseSerializer serializer);
 
   @protected
+  void sse_encode_ffi_keyword_group_data(
+    FfiKeywordGroupData self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_ffi_search_result_entry(
+    FfiSearchResultEntry self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_file_content_response_data(
     FileContentResponseData self,
     SseSerializer serializer,
@@ -565,21 +526,8 @@ abstract class LogAnalyzerBridgeApiImplPlatform
   void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer);
 
   @protected
-  void sse_encode_keyword_group_data(
-    KeywordGroupData self,
-    SseSerializer serializer,
-  );
-
-  @protected
   void sse_encode_keyword_group_input(
     KeywordGroupInput self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void
-  sse_encode_list_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
-    List<SearchResultEntry> self,
     SseSerializer serializer,
   );
 
@@ -587,8 +535,14 @@ abstract class LogAnalyzerBridgeApiImplPlatform
   void sse_encode_list_String(List<String> self, SseSerializer serializer);
 
   @protected
-  void sse_encode_list_keyword_group_data(
-    List<KeywordGroupData> self,
+  void sse_encode_list_ffi_keyword_group_data(
+    List<FfiKeywordGroupData> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_ffi_search_result_entry(
+    List<FfiSearchResultEntry> self,
     SseSerializer serializer,
   );
 
@@ -737,9 +691,6 @@ abstract class LogAnalyzerBridgeApiImplPlatform
   void sse_encode_unit(void self, SseSerializer serializer);
 
   @protected
-  void sse_encode_usize(BigInt self, SseSerializer serializer);
-
-  @protected
   void sse_encode_virtual_tree_node_data(
     VirtualTreeNodeData self,
     SseSerializer serializer,
@@ -768,38 +719,4 @@ class LogAnalyzerBridgeWire implements BaseWire {
   /// The symbols are looked up in [dynamicLibrary].
   LogAnalyzerBridgeWire(ffi.DynamicLibrary dynamicLibrary)
     : _lookup = dynamicLibrary.lookup;
-
-  void
-  rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
-    ffi.Pointer<ffi.Void> ptr,
-  ) {
-    return _rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
-      ptr,
-    );
-  }
-
-  late final _rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntryPtr =
-      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
-        'frbgen_log_analyzer_flutter_rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry',
-      );
-  late final _rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry =
-      _rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntryPtr
-          .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
-
-  void
-  rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
-    ffi.Pointer<ffi.Void> ptr,
-  ) {
-    return _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry(
-      ptr,
-    );
-  }
-
-  late final _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntryPtr =
-      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
-        'frbgen_log_analyzer_flutter_rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry',
-      );
-  late final _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntry =
-      _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSearchResultEntryPtr
-          .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
 }

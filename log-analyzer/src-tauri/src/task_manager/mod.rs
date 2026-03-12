@@ -160,7 +160,9 @@ enum ActorMessage {
 struct TaskManagerActor {
     tasks: HashMap<String, TaskInfo>,
     config: TaskManagerConfig,
-    app: AppHandle,
+    /// Tauri AppHandle，用于发送事件到前端
+    /// FFI 模式下为 None，此时跳过事件发送
+    app: Option<AppHandle>,
 }
 
 impl TaskManagerActor {
@@ -168,7 +170,16 @@ impl TaskManagerActor {
         Self {
             tasks: HashMap::new(),
             config,
-            app,
+            app: Some(app),
+        }
+    }
+
+    /// 创建无事件发送的 Actor（用于 FFI 模式）
+    fn new_no_events(config: TaskManagerConfig) -> Self {
+        Self {
+            tasks: HashMap::new(),
+            config,
+            app: None,
         }
     }
 
@@ -204,29 +215,32 @@ impl TaskManagerActor {
                 self.tasks.insert(id.clone(), task.clone());
 
                 // 老王备注：发送task-update事件给前端（业内成熟的事件驱动架构）
-                if let Err(e) = self.app.emit(
-                    "task-update",
-                    serde_json::json!({
-                        "task_id": id,
-                        "task_type": task.task_type,
-                        "target": task.target,
-                        "progress": task.progress,
-                        "message": task.message,
-                        "status": task.status,
-                        "version": task.version,
-                        "workspace_id": task.workspace_id,
-                    }),
-                ) {
-                    error!(
-                        task_id = %id,
-                        error = %e,
-                        "Failed to emit task-update event"
-                    );
-                } else {
-                    info!(
-                        task_id = %id,
-                        "Emitted task-update event for new task"
-                    );
+                // FFI 模式下 self.app 为 None，跳过事件发送
+                if let Some(app) = &self.app {
+                    if let Err(e) = app.emit(
+                        "task-update",
+                        serde_json::json!({
+                            "task_id": id,
+                            "task_type": task.task_type,
+                            "target": task.target,
+                            "progress": task.progress,
+                            "message": task.message,
+                            "status": task.status,
+                            "version": task.version,
+                            "workspace_id": task.workspace_id,
+                        }),
+                    ) {
+                        error!(
+                            task_id = %id,
+                            error = %e,
+                            "Failed to emit task-update event"
+                        );
+                    } else {
+                        info!(
+                            task_id = %id,
+                            "Emitted task-update event for new task"
+                        );
+                    }
                 }
 
                 let _ = respond_to.send(task);
@@ -265,31 +279,34 @@ impl TaskManagerActor {
                     }
 
                     // 老王备注：发送task-update事件给前端（业内成熟的事件驱动架构）
-                    if let Err(e) = self.app.emit(
-                        "task-update",
-                        serde_json::json!({
-                                "task_id": id,
-                                "task_type": task.task_type,
-                            "target": task.target,
-                            "progress": task.progress,
-                            "message": task.message,
-                            "status": status,
-                            "version": task.version,
-                            "workspace_id": task.workspace_id,
-                        }),
-                    ) {
-                        error!(
-                            task_id = %id,
-                            error = %e,
-                            "Failed to emit task-update event"
-                        );
-                    } else {
-                        info!(
-                            task_id = %id,
-                            progress = task.progress,
-                            status = ?status,
-                            "Emitted task-update event"
-                        );
+                    // FFI 模式下 self.app 为 None，跳过事件发送
+                    if let Some(app) = &self.app {
+                        if let Err(e) = app.emit(
+                            "task-update",
+                            serde_json::json!({
+                                    "task_id": id,
+                                    "task_type": task.task_type,
+                                "target": task.target,
+                                "progress": task.progress,
+                                "message": task.message,
+                                "status": status,
+                                "version": task.version,
+                                "workspace_id": task.workspace_id,
+                            }),
+                        ) {
+                            error!(
+                                task_id = %id,
+                                error = %e,
+                                "Failed to emit task-update event"
+                            );
+                        } else {
+                            info!(
+                                task_id = %id,
+                                progress = task.progress,
+                                status = ?status,
+                                "Emitted task-update event"
+                            );
+                        }
                     }
 
                     Some(task.clone())
@@ -401,17 +418,20 @@ impl TaskManagerActor {
                 );
 
                 // 发送任务移除事件
-                if let Err(e) = self.app.emit(
-                    "task-removed",
-                    serde_json::json!({
-                        "task_id": id,
-                    }),
-                ) {
-                    error!(
-                        task_id = %id,
-                        error = %e,
-                        "Failed to emit task-removed event"
-                    );
+                // FFI 模式下 self.app 为 None，跳过事件发送
+                if let Some(app) = &self.app {
+                    if let Err(e) = app.emit(
+                        "task-removed",
+                        serde_json::json!({
+                            "task_id": id,
+                        }),
+                    ) {
+                        error!(
+                            task_id = %id,
+                            error = %e,
+                            "Failed to emit task-removed event"
+                        );
+                    }
                 }
             }
         }
@@ -486,9 +506,11 @@ pub struct TaskManager {
 }
 
 impl TaskManager {
-    /// 创建新的任务管理器
+    /// 创建新的任务管理器（Tauri 模式）
+    ///
+    /// 使用 Tauri 的 async_runtime 启动 Actor，支持事件发送
     pub fn new(app: AppHandle, config: TaskManagerConfig) -> Result<Self> {
-        info!("Initializing TaskManager");
+        info!("Initializing TaskManager (Tauri mode)");
 
         let (sender, receiver) = mpsc::unbounded_channel();
         let actor = TaskManagerActor::new(app, config.clone());
@@ -500,6 +522,41 @@ impl TaskManager {
 
         info!("TaskManager initialized successfully");
         Ok(Self { sender, config })
+    }
+
+    /// 创建单线程任务管理器（FFI 模式）
+    ///
+    /// 用于 flutter_rust_bridge FFI 调用场景：
+    /// - 不需要 AppHandle（无 Tauri 事件系统）
+    /// - 使用单线程 tokio runtime（FRB 要求同步调用）
+    /// - Flutter 端通过轮询获取任务状态
+    ///
+    /// # 注意
+    ///
+    /// 此方法创建的 TaskManager 不会发送 task-update 等事件，
+    /// Flutter 端需要通过 `get_metrics_async()` 或 `get_task()` 轮询状态。
+    #[cfg(feature = "ffi")]
+    pub fn new_single_threaded(config: TaskManagerConfig) -> Self {
+        info!("Initializing TaskManager (FFI single-threaded mode)");
+
+        let (sender, receiver) = mpsc::unbounded_channel();
+        let actor = TaskManagerActor::new_no_events(config.clone());
+
+        // 创建单线程 tokio runtime 并启动 Actor
+        // 注意：这里使用 std::thread 启动独立的 runtime，避免与 FRB 冲突
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("Failed to create tokio runtime for TaskManager");
+
+            rt.block_on(async {
+                actor.run(receiver).await;
+            });
+        });
+
+        info!("TaskManager initialized successfully (FFI mode)");
+        Self { sender, config }
     }
 
     /// 创建新任务（异步版本）

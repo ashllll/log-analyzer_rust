@@ -1,14 +1,14 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 
 import '../models/saved_filter.dart';
 import 'error_handler.dart';
 import 'generated/ffi/bridge.dart' as ffi;
 import 'generated/ffi/types.dart' as ffi_types;
 import 'generated/frb_generated.dart';
-import 'generated/infrastructure/persistence.dart';
-import 'generated/search_engine/manager.dart';
 
 /// 桥接服务
 ///
@@ -41,7 +41,10 @@ class BridgeService {
     }
 
     try {
-      await LogAnalyzerBridge.init();
+      // Calculate the absolute path to the Rust library
+      final externalLibrary = await _resolveExternalLibrary();
+
+      await LogAnalyzerBridge.init(externalLibrary: externalLibrary);
       _isInitialized = true;
       debugPrint('FFI Bridge initialized successfully');
     } catch (e) {
@@ -50,6 +53,100 @@ class BridgeService {
       debugPrint('FFI Bridge initialization failed: $e');
       rethrow;
     }
+  }
+
+  /// Resolve the external library path
+  ///
+  /// On macOS, load the dylib directly from the Rust target directory
+  Future<ExternalLibrary> _resolveExternalLibrary() async {
+    if (!Platform.isMacOS && !Platform.isLinux && !Platform.isWindows) {
+      // For other platforms (mobile, web), use default loader
+      throw UnsupportedError(
+        'Platform not supported for custom library loading',
+      );
+    }
+
+    // Try common locations for the Rust library
+    final possiblePaths = _getLibrarySearchPaths();
+
+    for (final path in possiblePaths) {
+      final file = File(path);
+      if (await file.exists()) {
+        debugPrint('Loading Rust library from: $path');
+        return ExternalLibrary.open(path);
+      }
+    }
+
+    // If not found in any location, throw an error with helpful message
+    throw FileSystemException(
+      'Could not find Rust library. Searched paths:\n${possiblePaths.join('\n')}',
+    );
+  }
+
+  /// Get possible library paths based on platform
+  List<String> _getLibrarySearchPaths() {
+    // Get the project root directory (assuming we're running from the Flutter project)
+    final scriptDir = Platform.script.toFilePath();
+    final projectRoot = _findProjectRoot(scriptDir);
+
+    if (projectRoot == null) {
+      debugPrint('Could not determine project root from: $scriptDir');
+    }
+
+    final paths = <String>[];
+
+    if (Platform.isMacOS) {
+      final libraryName = 'liblog_analyzer.dylib';
+      paths.addAll([
+        // Relative from Flutter build directory
+        '../log-analyzer/src-tauri/target/release/$libraryName',
+        '../log-analyzer/src-tauri/target/debug/$libraryName',
+        // From project root
+        if (projectRoot != null) ...[
+          '$projectRoot/../log-analyzer/src-tauri/target/release/$libraryName',
+          '$projectRoot/../log-analyzer/src-tauri/target/debug/$libraryName',
+        ],
+        // Absolute path (fallback for development)
+        '/Users/joeash/code/github/log-analyzer_rust/log-analyzer/src-tauri/target/release/$libraryName',
+      ]);
+    } else if (Platform.isLinux) {
+      final libraryName = 'liblog_analyzer.so';
+      paths.addAll([
+        '../log-analyzer/src-tauri/target/release/$libraryName',
+        '../log-analyzer/src-tauri/target/debug/$libraryName',
+        if (projectRoot != null) ...[
+          '$projectRoot/../log-analyzer/src-tauri/target/release/$libraryName',
+          '$projectRoot/../log-analyzer/src-tauri/target/debug/$libraryName',
+        ],
+      ]);
+    } else if (Platform.isWindows) {
+      final libraryName = 'log_analyzer.dll';
+      paths.addAll([
+        '../log-analyzer/src-tauri/target/release/$libraryName',
+        '../log-analyzer/src-tauri/target/debug/$libraryName',
+        if (projectRoot != null) ...[
+          '$projectRoot/../log-analyzer/src-tauri/target/release/$libraryName',
+          '$projectRoot/../log-analyzer/src-tauri/target/debug/$libraryName',
+        ],
+      ]);
+    }
+
+    return paths;
+  }
+
+  /// Find project root by looking for pubspec.yaml
+  String? _findProjectRoot(String startPath) {
+    var dir = File(startPath).parent;
+    for (var i = 0; i < 10; i++) {
+      final pubspec = File('${dir.path}/pubspec.yaml');
+      if (pubspec.existsSync()) {
+        return dir.path;
+      }
+      final parent = dir.parent;
+      if (parent.path == dir.path) break; // Reached root
+      dir = parent;
+    }
+    return null;
   }
 
   /// 是否 FFI 已启用
@@ -211,7 +308,7 @@ class BridgeService {
   // ==================== 关键词操作 ====================
 
   /// 获取关键词列表
-  List<KeywordGroupData> getKeywords() {
+  List<ffi_types.FfiKeywordGroupData> getKeywords() {
     if (!isFfiEnabled) {
       return [];
     }
@@ -714,7 +811,7 @@ class BridgeService {
   /// # 返回
   ///
   /// 返回匹配的搜索结果列表
-  List<SearchResultEntry> searchStructured({
+  List<ffi_types.FfiSearchResultEntry> searchStructured({
     required ffi_types.StructuredSearchQueryData query,
     String? workspaceId,
     int maxResults = 10000,
@@ -824,7 +921,7 @@ class BridgeService {
   /// # 返回
   ///
   /// 返回匹配的搜索结果列表
-  List<SearchResultEntry> searchRegex({
+  List<ffi_types.FfiSearchResultEntry> searchRegex({
     required String pattern,
     String? workspaceId,
     int maxResults = 10000,
