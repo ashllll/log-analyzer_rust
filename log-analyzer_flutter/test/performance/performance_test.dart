@@ -2,6 +2,8 @@
 // 验证标签页切换 <100ms、统计加载 <500ms、搜索响应 <200ms
 import 'package:flutter_test/flutter_test.dart';
 
+// ignore_for_file: avoid_print
+
 /// 性能指标常量
 class PerformanceMetrics {
   static const int tabSwitchThresholdMs = 100;

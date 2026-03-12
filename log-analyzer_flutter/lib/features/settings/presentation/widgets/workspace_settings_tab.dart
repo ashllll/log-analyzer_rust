@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/constants/app_constants.dart';
+import '../../../../shared/models/common.dart';
 import '../../../../shared/providers/app_provider.dart';
 import '../../../../shared/providers/workspace_provider.dart';
 import '../../providers/settings_provider.dart';
@@ -203,12 +204,10 @@ class WorkspaceSettingsTab extends ConsumerWidget {
       itemBuilder: (context, index) {
         final workspaceId = recentWorkspaceIds[index];
         // 查找对应的工作区
-        dynamic workspace;
-        try {
-          workspace = workspaces.firstWhere((w) => w.id == workspaceId);
-        } catch (e) {
-          workspace = null;
-        }
+        final workspace = workspaces.cast<Workspace?>().firstWhere(
+              (w) => w?.id == workspaceId,
+              orElse: () => null,
+            );
 
         return ListTile(
           leading: const Icon(Icons.folder),

@@ -2,6 +2,8 @@
 // 验证单标签页内存 <50MB、5个并发标签页 <200MB
 import 'package:flutter_test/flutter_test.dart';
 
+// ignore_for_file: avoid_print
+
 /// 内存指标常量
 class MemoryMetrics {
   static const int singleTabThresholdMB = 50;

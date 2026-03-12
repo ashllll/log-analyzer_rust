@@ -466,7 +466,7 @@ class ApiService {
           allowedExtensions: fileFilter?.allowedExtensions ?? [],
           forbiddenExtensions: fileFilter?.forbiddenExtensions ?? [],
         ),
-        advancedFeatures: ffi.AdvancedFeaturesConfigData(
+        advancedFeatures: const ffi.AdvancedFeaturesConfigData(
           enableFilterEngine: true,
           enableRegexEngine: true,
           enableTimePartition: true,
