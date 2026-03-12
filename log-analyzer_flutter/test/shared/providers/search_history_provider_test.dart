@@ -27,7 +27,7 @@ void main() {
         final state = container.read(searchHistoryProvider(testWorkspaceId));
 
         // 初始状态应该是 loading 或 data
-        expect(state.valueOrNull, isNotNull);
+        expect(state.value, isNotNull);
       });
     });
 
@@ -40,7 +40,7 @@ void main() {
         await notifier.addSearchHistory(query: 'error', resultCount: 10);
 
         final state = container.read(searchHistoryProvider(testWorkspaceId));
-        final history = state.valueOrNull ?? [];
+        final history = state.value ?? [];
 
         expect(history.length, equals(1));
         expect(history.first.query, equals('error'));
@@ -59,7 +59,7 @@ void main() {
         await notifier.addSearchHistory(query: 'warning', resultCount: 5);
 
         final state = container.read(searchHistoryProvider(testWorkspaceId));
-        final history = state.valueOrNull ?? [];
+        final history = state.value ?? [];
 
         expect(history.first.query, equals('warning'));
         expect(history.last.query, equals('error'));
@@ -73,7 +73,7 @@ void main() {
         await notifier.addSearchHistory(query: 'error', resultCount: 10);
 
         final state = container.read(searchHistoryProvider(testWorkspaceId));
-        final history = state.valueOrNull ?? [];
+        final history = state.value ?? [];
 
         expect(history.first.workspaceId, equals(testWorkspaceId));
       });
@@ -93,7 +93,7 @@ void main() {
         await notifier.deleteSearchHistory('error');
 
         final state = container.read(searchHistoryProvider(testWorkspaceId));
-        final history = state.valueOrNull ?? [];
+        final history = state.value ?? [];
 
         expect(history.length, equals(1));
         expect(history.first.query, equals('warning'));
@@ -111,7 +111,7 @@ void main() {
         await notifier.deleteSearchHistory('non-existent');
 
         final state = container.read(searchHistoryProvider(testWorkspaceId));
-        final history = state.valueOrNull ?? [];
+        final history = state.value ?? [];
 
         expect(history.length, equals(1));
       });
@@ -132,7 +132,7 @@ void main() {
         await notifier.deleteSearchHistories(['error', 'info']);
 
         final state = container.read(searchHistoryProvider(testWorkspaceId));
-        final history = state.valueOrNull ?? [];
+        final history = state.value ?? [];
 
         expect(history.length, equals(1));
         expect(history.first.query, equals('warning'));
@@ -153,7 +153,7 @@ void main() {
         await notifier.clearSearchHistory();
 
         final state = container.read(searchHistoryProvider(testWorkspaceId));
-        final history = state.valueOrNull ?? [];
+        final history = state.value ?? [];
 
         expect(history, isEmpty);
       });

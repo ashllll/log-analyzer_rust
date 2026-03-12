@@ -61,6 +61,7 @@ impl ExtractorActor {
         }
     }
 
+    #[allow(deprecated)]
     async fn handle_extraction(
         &self,
         task_id: TaskId,

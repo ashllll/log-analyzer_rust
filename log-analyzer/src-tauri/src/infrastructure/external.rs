@@ -12,7 +12,7 @@ use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use tracing::{debug, error};
+use tracing::debug;
 
 /// 外部服务错误
 #[derive(Debug, Error)]

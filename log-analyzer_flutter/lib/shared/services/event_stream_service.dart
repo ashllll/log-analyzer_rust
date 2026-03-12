@@ -574,8 +574,7 @@ class EventStreamService {
 
     try {
       // 获取任务指标
-      final metrics = await _bridgeApi!
-          .crateFfiCommandsBridgeFfiGetTaskMetrics();
+      final metrics = _bridgeApi!.crateFfiBridgeGetTaskMetrics();
       // 将指标转换为任务更新事件
       // 这里可以根据需要进一步处理
       debugPrint(

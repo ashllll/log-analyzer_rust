@@ -11,11 +11,6 @@ import 'widgets/workspace_settings_tab.dart';
 import 'widgets/search_settings_tab.dart';
 import 'widgets/about_tab.dart';
 
-/// SharedPreferences 实例 Provider
-final sharedPreferencesProvider = Provider<SharedPreferences>((ref) {
-  throw UnimplementedError('SharedPreferences provider must be initialized');
-});
-
 /// SettingsPage 页面专用的设置服务 Provider
 /// 用于页面初始化时基于 SharedPreferences 实例创建服务
 final settingsPageServiceProvider = Provider<SettingsService>((ref) {
@@ -59,14 +54,23 @@ class _SettingsPageWrapperState extends ConsumerState<SettingsPageWrapper> {
         }
 
         final prefs = snapshot.data!;
+        final settingsService = SettingsService(prefs);
 
         return ProviderScope(
           overrides: [
             sharedPreferencesProvider.overrideWithValue(prefs),
+            settingsServiceProvider.overrideWithValue(settingsService),
             settingsProvider.overrideWith(
-              (ref) => SettingsNotifier(SettingsService(prefs)),
+              (ref) => SettingsState(
+                theme: settingsService.getTheme(),
+                recentWorkspaces: settingsService.getRecentWorkspaces(),
+                searchHistoryLimit: settingsService.getSearchHistoryLimit(),
+                lastWorkspaceId: settingsService.getLastWorkspaceId(),
+              ),
             ),
-            themeModeProvider.overrideWith((ref) => ThemeModeNotifier(prefs)),
+            themeModeProvider.overrideWith(
+              (ref) => themeModeFromString(settingsService.getTheme()),
+            ),
           ],
           child: const SettingsPage(),
         );

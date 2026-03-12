@@ -7,7 +7,7 @@ import 'package:flutter/foundation.dart';
 import '../models/common.dart';
 import '../models/search.dart';
 import 'bridge_service.dart';
-import 'generated/ffi/types.dart';
+import 'generated/ffi/types.dart' as ffi;
 
 part 'api_service.g.dart';
 
@@ -455,9 +455,28 @@ class ApiService {
   /// 对应 Tauri 命令: save_config
   Future<void> saveConfig(AppConfig config) async {
     try {
-      // 使用默认配置保存（简化实现）
-      final defaultConfig = await ConfigData.default_();
-      await _bridge.saveConfig(defaultConfig);
+      final fileFilter = config.fileFilter;
+      // 转换 AppConfig 为 FFI ConfigData
+      final ffiConfig = ffi.ConfigData(
+        fileFilter: ffi.FileFilterConfigData(
+          enabled: fileFilter?.enabled ?? false,
+          binaryDetectionEnabled: fileFilter?.binaryDetectionEnabled ?? true,
+          mode: fileFilter?.mode.value ?? 'allow_all',
+          filenamePatterns: fileFilter?.filenamePatterns ?? [],
+          allowedExtensions: fileFilter?.allowedExtensions ?? [],
+          forbiddenExtensions: fileFilter?.forbiddenExtensions ?? [],
+        ),
+        advancedFeatures: ffi.AdvancedFeaturesConfigData(
+          enableFilterEngine: true,
+          enableRegexEngine: true,
+          enableTimePartition: true,
+          enableAutocomplete: true,
+          regexCacheSize: 100,
+          autocompleteLimit: 50,
+          timePartitionSizeSecs: 3600,
+        ),
+      );
+      _bridge.saveConfig(ffiConfig);
     } catch (e) {
       throw ApiServiceException('保存配置失败: $e');
     }
@@ -475,7 +494,7 @@ class ApiService {
           fileFilter: FileFilterConfig(
             enabled: data.fileFilter.enabled,
             binaryDetectionEnabled: data.fileFilter.binaryDetectionEnabled,
-            mode: data.fileFilter.mode,
+            mode: FilterModeData(value: data.fileFilter.mode),
             filenamePatterns: data.fileFilter.filenamePatterns,
             allowedExtensions: data.fileFilter.allowedExtensions,
             forbiddenExtensions: data.fileFilter.forbiddenExtensions,

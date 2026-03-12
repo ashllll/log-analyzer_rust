@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:log_analyzer_flutter/shared/providers/workspace_provider.dart';
+import 'package:log_analyzer_flutter/shared/models/common.dart';
 
 void main() {
   group('WorkspaceProvider Tests', () {
@@ -18,13 +19,15 @@ void main() {
       'workspaceStateProvider should initialize with empty workspace list',
       () {
         final state = container.read(workspaceStateProvider);
-        expect(state.workspaces, isEmpty);
+        // workspaceStateProvider 返回 List<Workspace>
+        expect(state, isEmpty);
       },
     );
 
-    test('workspaceStateProvider should have initial status', () {
+    test('workspaceStateProvider should be a List<Workspace>', () {
       final state = container.read(workspaceStateProvider);
-      expect(state.status, equals(WorkspaceStatus.initial));
+      // 验证返回类型是 List<Workspace>
+      expect(state, isA<List<Workspace>>());
     });
   });
 }

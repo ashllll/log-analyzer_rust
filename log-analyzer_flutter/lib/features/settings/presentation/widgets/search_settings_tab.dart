@@ -68,9 +68,7 @@ class SearchSettingsTab extends ConsumerWidget {
                           divisions: 19,
                           label: '${settingsState.searchHistoryLimit}',
                           onChanged: (value) {
-                            ref
-                                .read(settingsProvider.notifier)
-                                .setSearchHistoryLimit(value.round());
+                            setSearchHistoryLimit(ref, value.round());
                           },
                           onChangeEnd: (value) {
                             ref

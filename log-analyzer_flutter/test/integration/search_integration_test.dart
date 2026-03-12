@@ -45,7 +45,7 @@ void main() {
         final historyState = container.read(
           searchHistoryProvider(testWorkspaceId),
         );
-        final history = historyState.valueOrNull ?? [];
+        final history = historyState.value ?? [];
         expect(history.length, equals(1));
         expect(history.first.query, equals('error'));
         expect(history.first.resultCount, equals(2));
@@ -115,7 +115,7 @@ void main() {
         final historyState = container.read(
           searchHistoryProvider(testWorkspaceId),
         );
-        final history = historyState.valueOrNull ?? [];
+        final history = historyState.value ?? [];
 
         expect(history.length, equals(1));
         expect(history.first.query, equals('error AND fatal'));
@@ -138,7 +138,7 @@ void main() {
         final history =
             container
                 .read(searchHistoryProvider(testWorkspaceId))
-                .valueOrNull ??
+                .value ??
             [];
         final selectedQuery = history.first.query;
 
@@ -173,7 +173,7 @@ void main() {
         final historyState = container.read(
           searchHistoryProvider(testWorkspaceId),
         );
-        final history = historyState.valueOrNull ?? [];
+        final history = historyState.value ?? [];
 
         expect(history.length, equals(1));
         expect(history.first.query, equals('warning'));
@@ -198,7 +198,7 @@ void main() {
         final historyState = container.read(
           searchHistoryProvider(testWorkspaceId),
         );
-        final history = historyState.valueOrNull ?? [];
+        final history = historyState.value ?? [];
 
         expect(history, isEmpty);
       });
@@ -234,7 +234,7 @@ void main() {
         final historyState = container.read(
           searchHistoryProvider(testWorkspaceId),
         );
-        final history = historyState.valueOrNull ?? [];
+        final history = historyState.value ?? [];
 
         expect(history.length, equals(1));
         expect(history.first.query, equals('error AND fatal'));
@@ -268,7 +268,7 @@ void main() {
         final historyState = container.read(
           searchHistoryProvider(testWorkspaceId),
         );
-        final history = historyState.valueOrNull ?? [];
+        final history = historyState.value ?? [];
 
         expect(history.length, equals(3));
         // 最近的在最前面
@@ -304,11 +304,11 @@ void main() {
         final state1 = container.read(searchHistoryProvider(workspace1));
         final state2 = container.read(searchHistoryProvider(workspace2));
 
-        expect(state1.valueOrNull?.length, equals(1));
-        expect(state1.valueOrNull?.first.query, equals('error-ws1'));
+        expect(state1.value?.length, equals(1));
+        expect(state1.value?.first.query, equals('error-ws1'));
 
-        expect(state2.valueOrNull?.length, equals(1));
-        expect(state2.valueOrNull?.first.query, equals('error-ws2'));
+        expect(state2.value?.length, equals(1));
+        expect(state2.value?.first.query, equals('error-ws2'));
       });
     });
   });

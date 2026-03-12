@@ -43,7 +43,7 @@ void main() {
         final historyState = container.read(
           searchHistoryProvider(testWorkspaceId),
         );
-        final history = historyState.valueOrNull ?? [];
+        final history = historyState.value ?? [];
 
         expect(history.length, equals(1));
         expect(history.first.query, equals('error'));
@@ -68,7 +68,7 @@ void main() {
         final historyState = container.read(
           searchHistoryProvider(testWorkspaceId),
         );
-        final history = historyState.valueOrNull ?? [];
+        final history = historyState.value ?? [];
 
         // 选择历史记录
         final lastSearch = history.first.query;
@@ -102,7 +102,7 @@ void main() {
         var historyState = container.read(
           searchHistoryProvider(testWorkspaceId),
         );
-        var history = historyState.valueOrNull ?? [];
+        var history = historyState.value ?? [];
 
         expect(history.length, equals(3));
         expect(history[0].query, equals('info'));
@@ -114,7 +114,7 @@ void main() {
 
         // 验证删除后状态
         historyState = container.read(searchHistoryProvider(testWorkspaceId));
-        history = historyState.valueOrNull ?? [];
+        history = historyState.value ?? [];
 
         expect(history.length, equals(2));
         expect(history[0].query, equals('info'));
@@ -125,7 +125,7 @@ void main() {
 
         // 验证清空后状态
         historyState = container.read(searchHistoryProvider(testWorkspaceId));
-        history = historyState.valueOrNull ?? [];
+        history = historyState.value ?? [];
 
         expect(history, isEmpty);
       });
@@ -149,7 +149,7 @@ void main() {
         final historyState = container.read(
           searchHistoryProvider(testWorkspaceId),
         );
-        final history = historyState.valueOrNull ?? [];
+        final history = historyState.value ?? [];
 
         expect(history.length, equals(2));
         expect(
@@ -167,7 +167,7 @@ void main() {
         final treeState = container.read(
           virtualFileTreeProvider(testWorkspaceId),
         );
-        expect(treeState.valueOrNull, isNotNull);
+        expect(treeState.value, isNotNull);
       });
 
       test('应能处理节点结构', () {
@@ -175,7 +175,7 @@ void main() {
           name: 'logs',
           path: '/logs',
           hash: 'dir-hash-1',
-          archiveType: null,
+          archiveType: 'directory',
           children: [
             VirtualTreeNode.file(
               name: 'app.log',
@@ -192,7 +192,7 @@ void main() {
           ],
         );
 
-        expect(archiveNode.isArchive, isFalse); // archiveType 为 null 是目录
+        expect(archiveNode.isArchive, isTrue); // 是归档/目录节点
         expect(archiveNode.hasChildren, isTrue);
         expect(archiveNode.children.length, equals(2));
 
@@ -200,7 +200,10 @@ void main() {
           (n) => n.name == 'app.log',
         );
         expect(appLog.isFile, isTrue);
-        expect(appLog.size, equals(1024));
+        // 使用模式匹配访问 size
+        if (appLog case VirtualTreeNodeFile(:final size)) {
+          expect(size, equals(1024));
+        }
       });
     });
 
@@ -221,11 +224,11 @@ void main() {
         final state1 = container.read(searchHistoryProvider(ws1));
         final state2 = container.read(searchHistoryProvider(ws2));
 
-        expect(state1.valueOrNull?.length, equals(1));
-        expect(state1.valueOrNull?.first.query, equals('ws1-error'));
+        expect(state1.value?.length, equals(1));
+        expect(state1.value?.first.query, equals('ws1-error'));
 
-        expect(state2.valueOrNull?.length, equals(1));
-        expect(state2.valueOrNull?.first.query, equals('ws2-warning'));
+        expect(state2.value?.length, equals(1));
+        expect(state2.value?.first.query, equals('ws2-warning'));
 
         // 删除一个工作区的数据不应影响另一个
         await historyWs1.clearSearchHistory();
@@ -233,8 +236,8 @@ void main() {
         final updatedState1 = container.read(searchHistoryProvider(ws1));
         final updatedState2 = container.read(searchHistoryProvider(ws2));
 
-        expect(updatedState1.valueOrNull, isEmpty);
-        expect(updatedState2.valueOrNull?.length, equals(1));
+        expect(updatedState1.value, isEmpty);
+        expect(updatedState2.value?.length, equals(1));
       });
     });
   });

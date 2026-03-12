@@ -9,6 +9,8 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+#[cfg(feature = "ffi")]
+use flutter_rust_bridge::frb;
 use async_trait::async_trait;
 use parking_lot::RwLock;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -284,8 +286,13 @@ impl KeywordGroupRepositoryImpl {
     }
 }
 
-/// 关键词组数据
+/// 关键词组数据（持久化格式）
+///
+/// 注意：此类型用于持久化层，包含时间戳字段。
+/// FFI 层使用单独的 KeywordGroupData（定义在 ffi/types.rs），
+/// 不包含时间戳字段以简化 Dart 绑定。
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ffi", frb(opaque))]
 pub struct KeywordGroupData {
     pub id: String,
     pub name: String,

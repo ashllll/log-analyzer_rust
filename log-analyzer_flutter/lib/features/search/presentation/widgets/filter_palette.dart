@@ -52,10 +52,6 @@ class _FilterPaletteState extends ConsumerState<FilterPalette> {
     'FATAL',
   ];
 
-  // 日期范围变量
-  DateTime? _startDate;
-  DateTime? _endDate;
-
   @override
   void initState() {
     super.initState();
@@ -65,11 +61,6 @@ class _FilterPaletteState extends ConsumerState<FilterPalette> {
   // 格式化日期为字符串
   String _formatDate(DateTime date) {
     return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-  }
-
-  // 格式化时间
-  String _formatTime(DateTime date) {
-    return '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
   }
 
   /// 显示日期范围选择器
@@ -120,8 +111,6 @@ class _FilterPaletteState extends ConsumerState<FilterPalette> {
 
     if (selectedRange != null) {
       setState(() {
-        _startDate = selectedRange.start;
-        _endDate = selectedRange.end;
         // 格式化为 YYYY-MM-DD HH:MM:SS
         _timeStartController.text =
             '${_formatDate(selectedRange.start)} 00:00:00';

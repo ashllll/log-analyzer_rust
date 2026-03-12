@@ -76,9 +76,7 @@ class BasicSettingsTab extends ConsumerWidget {
                       ],
                       selected: {themeMode},
                       onSelectionChanged: (Set<ThemeMode> selection) {
-                        ref
-                            .read(themeModeProvider.notifier)
-                            .setTheme(selection.first);
+                        setTheme(ref, selection.first);
                         // 显示提示
                         ref
                             .read(appStateProvider.notifier)

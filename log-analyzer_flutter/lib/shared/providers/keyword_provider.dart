@@ -6,6 +6,8 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../models/keyword.dart';
 import '../services/api_service.dart';
+import '../services/generated/ffi/types.dart' as ffi;
+import '../services/generated/infrastructure/persistence.dart';
 import '../../core/constants/app_constants.dart';
 import 'app_provider.dart';
 
@@ -39,14 +41,10 @@ class KeywordState extends _$KeywordState {
       }
 
       // 调用后端获取关键词组列表
-      final groupsData = await bridge.getKeywords();
+      final groupsData = bridge.getKeywords();
 
       // 转换为 KeywordGroup 模型
       final groups = groupsData.map<KeywordGroup>((data) {
-        if (data is Map<String, dynamic>) {
-          return _parseKeywordGroup(data);
-        }
-        // 尝试从 FFI 类型转换
         return _parseKeywordGroupFromFfi(data);
       }).toList();
 
@@ -75,16 +73,16 @@ class KeywordState extends _$KeywordState {
       final apiService = ref.read(apiServiceProvider);
       final bridge = apiService.bridge;
 
-      // 构建关键词组数据
-      final groupData = {
-        'name': name,
-        'color': color,
-        'patterns': patterns,
-        'enabled': enabled,
-      };
+      // 构建 FFI 关键词组输入
+      final groupInput = ffi.KeywordGroupInput(
+        name: name,
+        color: color,
+        patterns: patterns,
+        enabled: enabled,
+      );
 
       // 调用后端 API 创建关键词组
-      final success = await bridge.addKeywordGroup(groupData);
+      final success = bridge.addKeywordGroup(groupInput);
 
       if (success) {
         // 重新加载关键词组列表
@@ -129,29 +127,35 @@ class KeywordState extends _$KeywordState {
         orElse: () => throw Exception('关键词组不存在'),
       );
 
-      // 构建更新数据
-      final groupData = {
-        'name': name ?? currentGroup.name,
-        'color': color ?? currentGroup.color.value,
-        'patterns':
-            patterns ?? currentGroup.patterns.map((p) => p.regex).toList(),
-        'enabled': enabled ?? currentGroup.enabled,
-      };
+      // 准备更新值
+      final newName = name ?? currentGroup.name;
+      final newColor = color ?? currentGroup.color.value;
+      final newPatterns =
+          patterns ?? currentGroup.patterns.map((p) => p.regex).toList();
+      final newEnabled = enabled ?? currentGroup.enabled;
+
+      // 构建 FFI 关键词组输入
+      final groupInput = ffi.KeywordGroupInput(
+        name: newName,
+        color: newColor,
+        patterns: newPatterns,
+        enabled: newEnabled,
+      );
 
       // 调用后端 API 更新关键词组
-      final success = await bridge.updateKeywordGroup(groupId, groupData);
+      final success = bridge.updateKeywordGroup(groupId, groupInput);
 
       if (success) {
         // 更新本地状态
         state = state.map((g) {
           if (g.id == groupId) {
             return g.copyWith(
-              name: groupData['name'] as String,
-              color: ColorKeyData(value: groupData['color'] as String),
-              patterns: (groupData['patterns'] as List)
-                  .map((p) => KeywordPattern(regex: p as String, comment: ''))
+              name: newName,
+              color: ColorKeyData(value: newColor),
+              patterns: newPatterns
+                  .map((p) => KeywordPattern(regex: p, comment: ''))
                   .toList(),
-              enabled: groupData['enabled'] as bool,
+              enabled: newEnabled,
             );
           }
           return g;
@@ -342,65 +346,16 @@ class KeywordState extends _$KeywordState {
 
   // ==================== 私有辅助方法 ====================
 
-  /// 从 Map 解析 KeywordGroup
-  KeywordGroup _parseKeywordGroup(Map<String, dynamic> data) {
-    final patterns =
-        (data['patterns'] as List?)?.map((p) {
-          if (p is String) {
-            return KeywordPattern(regex: p, comment: '');
-          } else if (p is Map<String, dynamic>) {
-            return KeywordPattern(
-              regex: p['regex'] as String? ?? '',
-              comment: p['comment'] as String? ?? '',
-            );
-          }
-          return const KeywordPattern(regex: '', comment: '');
-        }).toList() ??
-        <KeywordPattern>[];
-
-    return KeywordGroup(
-      id: data['id'] as String? ?? '',
-      name: data['name'] as String? ?? '',
-      color: ColorKeyData(value: data['color'] as String? ?? 'blue'),
-      patterns: patterns,
-      enabled: data['enabled'] as bool? ?? true,
-    );
-  }
-
   /// 从 FFI 数据类型解析 KeywordGroup
-  KeywordGroup _parseKeywordGroupFromFfi(dynamic data) {
-    // 处理 flutter_rust_bridge 生成的 KeywordGroupData 类型
-    try {
-      // 转换为 Map 以避免动态调用
-      final mapData = data as Map<String, dynamic>;
-      final id = mapData['id'] as String? ?? '';
-      final name = mapData['name'] as String? ?? '';
-      final color = mapData['color'] as String? ?? 'blue';
-      final patterns =
-          (mapData['patterns'] as List?)?.map((p) {
-            return KeywordPattern(regex: p as String, comment: '');
-          }).toList() ??
-          <KeywordPattern>[];
-      final enabled = mapData['enabled'] as bool? ?? true;
-
-      return KeywordGroup(
-        id: id,
-        name: name,
-        color: ColorKeyData(value: color),
-        patterns: patterns,
-        enabled: enabled,
-      );
-    } catch (e) {
-      debugPrint('KeywordState: 解析 FFI 数据失败: $e');
-    }
-
-    // 返回默认空关键词组
-    return const KeywordGroup(
-      id: '',
-      name: '',
-      color: ColorKeyData(value: 'blue'),
-      patterns: [],
-      enabled: false,
+  KeywordGroup _parseKeywordGroupFromFfi(KeywordGroupData data) {
+    return KeywordGroup(
+      id: data.id,
+      name: data.name,
+      color: ColorKeyData(value: data.color),
+      patterns: data.patterns
+          .map((p) => KeywordPattern(regex: p, comment: ''))
+          .toList(),
+      enabled: data.enabled,
     );
   }
 }

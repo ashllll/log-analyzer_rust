@@ -25,7 +25,7 @@ void main() {
         await Future.delayed(const Duration(milliseconds: 100));
 
         final state = container.read(virtualFileTreeProvider(testWorkspaceId));
-        final nodes = state.valueOrNull ?? [];
+        final nodes = state.value ?? [];
 
         // 初始应为空或加载中
         expect(nodes, isNotNull);
@@ -38,7 +38,7 @@ void main() {
           name: 'logs',
           path: '/logs',
           hash: 'dir-hash-1',
-          archiveType: null, // 目录
+          archiveType: 'directory', // 目录
           children: [
             VirtualTreeNode.file(
               name: 'app.log',
@@ -60,7 +60,7 @@ void main() {
           name: 'logs',
           path: '/logs',
           hash: 'hash1',
-          archiveType: null,
+          archiveType: 'directory',
           children: [
             VirtualTreeNode.file(
               name: 'app.log',

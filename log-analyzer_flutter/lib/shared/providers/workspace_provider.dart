@@ -32,20 +32,11 @@ class WorkspaceState extends _$WorkspaceState {
   ///
   /// 最近打开的 3 个工作区显示在最前，其余按创建时间排序
   List<Workspace> _sortByRecentFirst(List<Workspace> workspaces) {
-    final prefs = SharedPreferences.getInstance();
-    final now = DateTime.now();
-
     // 分离有最近打开时间和无最近打开时间的工作区
     final withRecent = <Workspace>[];
     final withoutRecent = <Workspace>[];
 
     for (final workspace in workspaces) {
-      // 尝试从本地存储获取最近打开时间
-      final lastOpenedStr = prefs.then(
-        (p) => p.getString('$_lastOpenedKeyPrefix${workspace.id}'),
-      );
-      // 注意：这里使用同步方式获取会有问题，所以我们先简单处理
-      // 实际存储时我们会更新 lastOpenedAt 字段
       if (workspace.lastOpenedAt != null) {
         withRecent.add(workspace);
       } else {

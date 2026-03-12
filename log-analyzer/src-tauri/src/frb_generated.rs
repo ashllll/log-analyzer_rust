@@ -2453,31 +2453,9 @@ impl flutter_rust_bridge::IntoIntoDart<crate::ffi::types::FileFilterConfigData>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::infrastructure::persistence::KeywordGroupData {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        [
-            self.id.into_into_dart().into_dart(),
-            self.name.into_into_dart().into_dart(),
-            self.color.into_into_dart().into_dart(),
-            self.patterns.into_into_dart().into_dart(),
-            self.enabled.into_into_dart().into_dart(),
-            self.created_at.into_into_dart().into_dart(),
-            self.updated_at.into_into_dart().into_dart(),
-        ]
-        .into_dart()
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::infrastructure::persistence::KeywordGroupData
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<crate::infrastructure::persistence::KeywordGroupData>
-    for crate::infrastructure::persistence::KeywordGroupData
-{
-    fn into_into_dart(self) -> crate::infrastructure::persistence::KeywordGroupData {
-        self
-    }
-}
+// Note: infrastructure::persistence::KeywordGroupData is marked as opaque via #[frb(opaque)]
+// This implementation is for internal use only and not exposed to Dart
+// infrastructure::persistence::KeywordGroupData is marked as opaque, removed from Dart bindings
 // Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::ffi::types::KeywordGroupInput {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {

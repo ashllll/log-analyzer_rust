@@ -27,7 +27,7 @@ void main() {
         final state = container.read(virtualFileTreeProvider(testWorkspaceId));
 
         // 应该返回空列表或加载中
-        expect(state.valueOrNull, isNotNull);
+        expect(state.value, isNotNull);
       });
     });
 

@@ -211,7 +211,7 @@ class _LogDetailPanelState extends State<LogDetailPanel> {
   }
 
   /// 构建标题栏
-  Widget _buildHeader(MediaQueryData screenSize) {
+  Widget _buildHeader(Size screenSize) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       decoration: const BoxDecoration(

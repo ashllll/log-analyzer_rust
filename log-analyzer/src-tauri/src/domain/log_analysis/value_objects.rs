@@ -97,12 +97,7 @@ impl LogLevel {
             "FATAL", "ERROR", "WARN", "WARNING", "INFO", "DEBUG", "TRACE",
         ] {
             if let Some(idx) = line_upper.find(level_str) {
-                if idx == 0
-                    || line
-                        .chars()
-                        .nth(idx - 1)
-                        .map_or(false, |c| c.is_whitespace())
-                {
+                if idx == 0 || line.chars().nth(idx - 1).is_some_and(|c| c.is_whitespace()) {
                     return Self::from_str(level_str).ok();
                 }
             }

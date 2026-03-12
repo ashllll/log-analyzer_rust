@@ -1,11 +1,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_riverpod/legacy.dart';
 
 import '../../../shared/services/settings_service.dart';
 
 /// 设置服务 Provider
-final settingsServiceProvider = FutureProvider<SettingsService>((ref) async {
-  return SettingsService.create();
+final settingsServiceProvider = Provider<SettingsService>((ref) {
+  throw UnimplementedError('settingsServiceProvider must be overridden');
 });
 
 /// 当前选中的设置 Tab 索引 Provider
@@ -51,87 +51,70 @@ class SettingsState {
   }
 }
 
-/// 设置状态管理 Provider
-class SettingsNotifier extends StateNotifier<SettingsState> {
-  final SettingsService _service;
+/// 设置状态 Provider（使用 StateProvider）
+final settingsProvider = StateProvider<SettingsState>((ref) {
+  final service = ref.watch(settingsServiceProvider);
+  return SettingsState(
+    theme: service.getTheme(),
+    recentWorkspaces: service.getRecentWorkspaces(),
+    searchHistoryLimit: service.getSearchHistoryLimit(),
+    lastWorkspaceId: service.getLastWorkspaceId(),
+  );
+});
 
-  SettingsNotifier(this._service) : super(const SettingsState()) {
-    _loadSettings();
-  }
-
-  void _loadSettings() {
-    state = SettingsState(
-      theme: _service.getTheme(),
-      recentWorkspaces: _service.getRecentWorkspaces(),
-      searchHistoryLimit: _service.getSearchHistoryLimit(),
-      lastWorkspaceId: _service.getLastWorkspaceId(),
-    );
-  }
-
-  /// 更新主题
-  Future<void> setTheme(String theme) async {
-    await _service.setTheme(theme);
-    state = state.copyWith(theme: theme);
-  }
-
-  /// 更新搜索历史限制
-  Future<void> setSearchHistoryLimit(int limit) async {
-    await _service.setSearchHistoryLimit(limit);
-    state = state.copyWith(searchHistoryLimit: limit);
-  }
-
-  /// 添加最近工作区
-  Future<void> addRecentWorkspace(String id) async {
-    await _service.addRecentWorkspace(id);
-    state = state.copyWith(
-      recentWorkspaces: _service.getRecentWorkspaces(),
-      lastWorkspaceId: id,
-    );
-  }
-
-  /// 移除最近工作区
-  Future<void> removeRecentWorkspace(String id) async {
-    await _service.removeRecentWorkspace(id);
-    state = state.copyWith(recentWorkspaces: _service.getRecentWorkspaces());
-  }
-
-  /// 清空最近工作区
-  Future<void> clearRecentWorkspaces() async {
-    await _service.clearRecentWorkspaces();
-    state = state.copyWith(recentWorkspaces: [], lastWorkspaceId: null);
-  }
-
-  /// 设置最后工作区 ID
-  Future<void> setLastWorkspaceId(String? id) async {
-    await _service.setLastWorkspaceId(id);
-    state = state.copyWith(lastWorkspaceId: id);
-  }
-
-  /// 导出设置
-  Map<String, dynamic> exportSettings() {
-    return _service.exportSettings();
-  }
-
-  /// 导入设置
-  Future<bool> importSettings(Map<String, dynamic> data) async {
-    final success = await _service.importSettings(data);
-    if (success) {
-      _loadSettings();
-    }
-    return success;
-  }
+/// 更新主题
+Future<void> setTheme(WidgetRef ref, String theme) async {
+  final service = ref.read(settingsServiceProvider);
+  await service.setTheme(theme);
+  ref.read(settingsProvider.notifier).state =
+      ref.read(settingsProvider).copyWith(theme: theme);
 }
 
-/// 设置状态 Provider
-final settingsProvider = StateNotifierProvider<SettingsNotifier, SettingsState>(
-  (ref) {
-    throw UnimplementedError('settingsProvider must be overridden');
-  },
-);
+/// 更新搜索历史限制
+Future<void> setSearchHistoryLimit(WidgetRef ref, int limit) async {
+  final service = ref.read(settingsServiceProvider);
+  await service.setSearchHistoryLimit(limit);
+  ref.read(settingsProvider.notifier).state =
+      ref.read(settingsProvider).copyWith(searchHistoryLimit: limit);
+}
 
-/// 初始化设置 Provider 的辅助函数
-Provider<SettingsNotifier> createSettingsProvider(SettingsService service) {
-  return Provider<SettingsNotifier>((ref) {
-    return SettingsNotifier(service);
-  });
+/// 添加最近工作区
+Future<void> addRecentWorkspace(WidgetRef ref, String id) async {
+  final service = ref.read(settingsServiceProvider);
+  await service.addRecentWorkspace(id);
+  ref.read(settingsProvider.notifier).state = SettingsState(
+    theme: service.getTheme(),
+    recentWorkspaces: service.getRecentWorkspaces(),
+    searchHistoryLimit: service.getSearchHistoryLimit(),
+    lastWorkspaceId: id,
+  );
+}
+
+/// 移除最近工作区
+Future<void> removeRecentWorkspace(WidgetRef ref, String id) async {
+  final service = ref.read(settingsServiceProvider);
+  await service.removeRecentWorkspace(id);
+  ref.read(settingsProvider.notifier).state =
+      ref.read(settingsProvider).copyWith(
+        recentWorkspaces: service.getRecentWorkspaces(),
+      );
+}
+
+/// 清空最近工作区
+Future<void> clearRecentWorkspaces(WidgetRef ref) async {
+  final service = ref.read(settingsServiceProvider);
+  await service.clearRecentWorkspaces();
+  ref.read(settingsProvider.notifier).state =
+      ref.read(settingsProvider).copyWith(
+        recentWorkspaces: [],
+        lastWorkspaceId: null,
+      );
+}
+
+/// 设置最后工作区 ID
+Future<void> setLastWorkspaceId(WidgetRef ref, String? id) async {
+  final service = ref.read(settingsServiceProvider);
+  await service.setLastWorkspaceId(id);
+  ref.read(settingsProvider.notifier).state =
+      ref.read(settingsProvider).copyWith(lastWorkspaceId: id);
 }

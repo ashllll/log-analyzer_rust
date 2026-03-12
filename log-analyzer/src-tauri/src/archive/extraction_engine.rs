@@ -595,6 +595,9 @@ impl ExtractionEngine {
         );
 
         // Extract archive using handler
+        // Note: Using deprecated extract_with_limits for backward compatibility
+        // TODO: Migrate to extract_with_context API in future refactoring
+        #[allow(deprecated)]
         let summary = handler
             .extract_with_limits(
                 &item.archive_path,

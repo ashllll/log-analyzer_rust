@@ -217,9 +217,7 @@ class WorkspaceSettingsTab extends ConsumerWidget {
           trailing: IconButton(
             icon: const Icon(Icons.close, size: 18),
             onPressed: () {
-              ref
-                  .read(settingsProvider.notifier)
-                  .removeRecentWorkspace(workspaceId);
+              removeRecentWorkspace(ref, workspaceId);
               ref
                   .read(appStateProvider.notifier)
                   .addToast(ToastType.info, '已从最近列表中移除');
@@ -244,7 +242,7 @@ class WorkspaceSettingsTab extends ConsumerWidget {
           ),
           TextButton(
             onPressed: () {
-              ref.read(settingsProvider.notifier).clearRecentWorkspaces();
+              clearRecentWorkspaces(ref);
               ref
                   .read(appStateProvider.notifier)
                   .addToast(ToastType.success, '已清空历史记录');

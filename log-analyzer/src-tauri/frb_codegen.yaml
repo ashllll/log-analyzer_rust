@@ -1,8 +1,6 @@
 # flutter_rust_bridge configuration
 # 完全从头生成，忽略现有代码
-rust_input:
-  - path: src/ffi/bridge_minimal.rs
-    bridge_in_module: crate::ffi::bridge_minimal
+rust_input: crate::ffi::bridge_minimal
 rust_root: .
 dart_output: ../log-analyzer_flutter/lib/shared/services/generated
 dart_entrypoint_class_name: LogAnalyzerBridge
