@@ -2,7 +2,7 @@
 FLUTTER_ROOT=/opt/homebrew/share/flutter
 FLUTTER_APPLICATION_PATH=/Users/joeash/code/github/log-analyzer_rust/log-analyzer_flutter
 COCOAPODS_PARALLEL_CODE_SIGN=true
-FLUTTER_TARGET=/Users/joeash/code/github/log-analyzer_rust/log-analyzer_flutter/lib/main.dart
+FLUTTER_TARGET=lib/main.dart
 FLUTTER_BUILD_DIR=build
 FLUTTER_BUILD_NAME=1.0.0
 FLUTTER_BUILD_NUMBER=1

@@ -1,0 +1,113 @@
+# =============================================================================
+# Dependabot 配置 - 自动依赖更新
+# =============================================================================
+
+version: 2
+
+updates:
+  # ==========================================================================
+  # Cargo 依赖自动更新
+  # ==========================================================================
+  - package-ecosystem: "cargo"
+    directory: "/log-analyzer/src-tauri"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Shanghai"
+    
+    # 限制开放的 PR 数量
+    open-pull-requests-limit: 10
+    
+    # 指派审查者
+    reviewers:
+      - "your-team-lead"
+    
+    # 标签
+    labels:
+      - "dependencies"
+      - "rust"
+      - "automated"
+    
+    # 提交消息格式
+    commit-message:
+      prefix: "cargo"
+      include: "scope"
+    
+    # 分组更新
+    groups:
+      # 次要版本更新（自动合并）
+      minor-updates:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+      
+      # 安全更新（高优先级）
+      security-updates:
+        patterns:
+          - "*"
+        applies-to: "security-updates"
+    
+    # 忽略特定依赖的重大更新（需要手动处理）
+    ignore:
+      # zip 2.x 有破坏性变更
+      - dependency-name: "zip"
+        update-types: ["version-update:semver-major"]
+      
+      # sqlx 0.8 需要手动迁移
+      - dependency-name: "sqlx"
+        update-types: ["version-update:semver-major"]
+      
+      # tantivy 0.23 有 API 变更
+      - dependency-name: "tantivy"
+        update-types: ["version-update:semver-major"]
+      
+      # thiserror 2.0 需要代码调整
+      - dependency-name: "thiserror"
+        update-types: ["version-update:semver-major"]
+      
+      # validator 0.20 有验证规则变更
+      - dependency-name: "validator"
+        update-types: ["version-update:semver-major"]
+      
+      # dashmap 6.x 有 API 变更
+      - dependency-name: "dashmap"
+        update-types: ["version-update:semver-major"]
+      
+      # notify 8.x 需要代码调整
+      - dependency-name: "notify"
+        update-types: ["version-update:semver-major"]
+
+  # ==========================================================================
+  # GitHub Actions 自动更新
+  # ==========================================================================
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Shanghai"
+    
+    open-pull-requests-limit: 5
+    
+    labels:
+      - "dependencies"
+      - "github-actions"
+      - "automated"
+    
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    
+    groups:
+      actions-minor:
+        patterns:
+          - "actions/*"
+          - "dtolnay/*"
+          - "EmbarkStudios/*"
+        update-types:
+          - "minor"
+          - "patch"

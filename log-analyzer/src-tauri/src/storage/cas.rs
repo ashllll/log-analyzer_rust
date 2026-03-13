@@ -27,7 +27,8 @@ use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::fs;
-use tokio::io::{AsyncReadExt, BufReader};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::sync::Semaphore;
 use tracing::{debug, error, info, warn};
 use walkdir::WalkDir;
 
@@ -48,6 +49,8 @@ pub struct ContentAddressableStorage {
     /// In-memory LRU cache for object existence checks (performance optimization)
     /// Limits memory usage by evicting least recently used entries
     existence_cache: Arc<Cache<String, ()>>,
+    /// 写入并发控制信号量，防止过多并发写入导致资源竞争
+    write_semaphore: Arc<Semaphore>,
 }
 
 impl ContentAddressableStorage {
@@ -65,12 +68,16 @@ impl ContentAddressableStorage {
     ///
     /// let cas = ContentAddressableStorage::new(PathBuf::from("./workspace_123"));
     /// ```
+    /// 默认写入并发限制
+    const DEFAULT_WRITE_CONCURRENCY: usize = 10;
+
     pub fn new(workspace_dir: PathBuf) -> Self {
         // Create an LRU cache for object existence checks
         // Capacity: 10,000 entries to balance performance and memory usage
         Self {
             workspace_dir,
             existence_cache: Arc::new(Cache::new(10_000)),
+            write_semaphore: Arc::new(Semaphore::new(Self::DEFAULT_WRITE_CONCURRENCY)),
         }
     }
 
@@ -502,6 +509,241 @@ impl ContentAddressableStorage {
         );
 
         Ok(hash)
+    }
+
+    /// 原子存储内容（临时文件 + 原子重命名）
+    ///
+    /// 使用临时文件写入 + 原子重命名的方式，消除 TOCTOU 竞争条件。
+    /// POSIX 保证在同一文件系统内重命名是原子操作。
+    ///
+    /// # Arguments
+    ///
+    /// * `content` - 要存储的文件内容
+    ///
+    /// # Returns
+    ///
+    /// SHA-256 哈希值
+    pub async fn store_content_atomic(&self, content: &[u8]) -> Result<String> {
+        let hash = Self::compute_hash(content);
+        let object_path = self.get_object_path(&hash);
+
+        // 快速路径：缓存检查（非权威性）
+        if self.existence_cache.get(&hash).is_some() {
+            debug!(hash = %hash, "Content already in cache");
+            return Ok(hash);
+        }
+
+        // 获取写入许可（背压控制）
+        let _permit = self
+            .write_semaphore
+            .acquire()
+            .await
+            .map_err(|e| AppError::Concurrency(format!("Failed to acquire write permit: {}", e)))?;
+
+        // 再次检查文件是否存在（可能在等待信号量期间被其他线程创建）
+        if object_path.exists() {
+            self.existence_cache.insert(hash.clone(), ());
+            debug!(hash = %hash, "Content already exists (after semaphore)");
+            return Ok(hash);
+        }
+
+        // 创建临时文件路径
+        let temp_suffix = format!(".tmp.{}", std::process::id());
+        let temp_path = object_path.with_extension(&temp_suffix);
+
+        // 创建父目录
+        if let Some(parent) = object_path.parent() {
+            fs::create_dir_all(parent).await.map_err(|e| {
+                AppError::io_error(
+                    format!("Failed to create object directory: {}", e),
+                    Some(parent.to_path_buf()),
+                )
+            })?;
+        }
+
+        // 写入临时文件
+        self.write_to_temp_file(&temp_path, content).await?;
+
+        // 原子重命名（POSIX 保证原子性）
+        match fs::rename(&temp_path, &object_path).await {
+            Ok(()) => {
+                self.existence_cache.insert(hash.clone(), ());
+                info!(
+                    hash = %hash,
+                    size = content.len(),
+                    "Content stored atomically"
+                );
+                Ok(hash)
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                // 其他线程/进程已经创建了文件，删除临时文件
+                let _ = fs::remove_file(&temp_path).await;
+                self.existence_cache.insert(hash.clone(), ());
+                debug!(hash = %hash, "Content already exists (concurrent write)");
+                Ok(hash)
+            }
+            Err(e) => {
+                // 清理临时文件
+                let _ = fs::remove_file(&temp_path).await;
+                Err(AppError::io_error(
+                    format!("Failed to rename temp file: {}", e),
+                    Some(object_path),
+                ))
+            }
+        }
+    }
+
+    /// 写入临时文件
+    ///
+    /// 确保数据完全写入磁盘后才返回，防止断电导致数据损坏。
+    async fn write_to_temp_file(&self, temp_path: &PathBuf, content: &[u8]) -> Result<()> {
+        let mut file = tokio::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(temp_path)
+            .await
+            .map_err(|e| {
+                AppError::io_error(
+                    format!("Failed to create temp file: {}", e),
+                    Some(temp_path.clone()),
+                )
+            })?;
+
+        file.write_all(content).await.map_err(|e| {
+            AppError::io_error(
+                format!("Failed to write temp file: {}", e),
+                Some(temp_path.clone()),
+            )
+        })?;
+
+        file.flush().await.map_err(|e| {
+            AppError::io_error(
+                format!("Failed to flush temp file: {}", e),
+                Some(temp_path.clone()),
+            )
+        })?;
+
+        // 同步到磁盘（确保数据持久化）
+        file.sync_data().await.map_err(|e| {
+            AppError::io_error(
+                format!("Failed to sync temp file: {}", e),
+                Some(temp_path.clone()),
+            )
+        })?;
+
+        Ok(())
+    }
+
+    /// 流式存储文件（大文件优化）- 原子写入版本
+    ///
+    /// 使用流式读取和写入，避免大文件内存占用。
+    /// 通过临时文件 + 原子重命名确保数据完整性。
+    ///
+    /// # Arguments
+    ///
+    /// * `file_path` - 源文件路径
+    ///
+    /// # Returns
+    ///
+    /// SHA-256 哈希值
+    pub async fn store_file_streaming_atomic(&self, file_path: &Path) -> Result<String> {
+        let hash = Self::compute_hash_incremental(file_path).await?;
+        let object_path = self.get_object_path(&hash);
+
+        // 快速路径：缓存检查
+        if self.existence_cache.get(&hash).is_some() {
+            return Ok(hash);
+        }
+
+        let _permit = self
+            .write_semaphore
+            .acquire()
+            .await
+            .map_err(|e| AppError::Concurrency(format!("Failed to acquire write permit: {}", e)))?;
+
+        // 再次检查文件是否存在（可能在等待信号量期间被其他线程创建）
+        if object_path.exists() {
+            self.existence_cache.insert(hash.clone(), ());
+            return Ok(hash);
+        }
+
+        let temp_suffix = format!(".tmp.{}", std::process::id());
+        let temp_path = object_path.with_extension(&temp_suffix);
+
+        if let Some(parent) = object_path.parent() {
+            fs::create_dir_all(parent).await.map_err(|e| {
+                AppError::io_error(
+                    format!("Failed to create object directory: {}", e),
+                    Some(parent.to_path_buf()),
+                )
+            })?;
+        }
+
+        // 流式复制
+        self.copy_file_streaming(file_path, &temp_path).await?;
+
+        // 原子重命名
+        match fs::rename(&temp_path, &object_path).await {
+            Ok(()) => {
+                self.existence_cache.insert(hash.clone(), ());
+                Ok(hash)
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                let _ = fs::remove_file(&temp_path).await;
+                self.existence_cache.insert(hash.clone(), ());
+                Ok(hash)
+            }
+            Err(e) => {
+                let _ = fs::remove_file(&temp_path).await;
+                Err(AppError::io_error(
+                    format!("Failed to rename: {}", e),
+                    Some(object_path),
+                ))
+            }
+        }
+    }
+
+    /// 流式复制文件
+    ///
+    /// 使用固定大小的缓冲区进行流式复制，避免大文件内存占用。
+    async fn copy_file_streaming(&self, src: &Path, dst: &Path) -> Result<()> {
+        const BUFFER_SIZE: usize = 64 * 1024; // 64KB
+
+        let mut src_file = fs::File::open(src).await.map_err(|e| {
+            AppError::io_error(format!("Failed to open source: {}", e), Some(src.to_path_buf()))
+        })?;
+
+        let mut dst_file = tokio::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(dst)
+            .await
+            .map_err(|e| {
+                AppError::io_error(format!("Failed to create dest: {}", e), Some(dst.to_path_buf()))
+            })?;
+
+        let mut buffer = vec![0u8; BUFFER_SIZE];
+
+        loop {
+            let bytes_read = src_file.read(&mut buffer).await.map_err(|e| {
+                AppError::io_error(format!("Failed to read: {}", e), Some(src.to_path_buf()))
+            })?;
+
+            if bytes_read == 0 {
+                break;
+            }
+
+            dst_file.write_all(&buffer[..bytes_read]).await.map_err(|e| {
+                AppError::io_error(format!("Failed to write: {}", e), Some(dst.to_path_buf()))
+            })?;
+        }
+
+        dst_file.flush().await?;
+        dst_file.sync_data().await?;
+
+        Ok(())
     }
 
     /// Get the filesystem path for a given hash
@@ -1020,5 +1262,170 @@ mod tests {
             size >= content.len() as u64 && size < (content.len() * 2) as u64,
             "Deduplication should prevent storing content multiple times"
         );
+    }
+
+    // ============================================================================
+    // 原子写入测试
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_atomic_store() {
+        let temp_dir = TempDir::new().unwrap();
+        let cas = ContentAddressableStorage::new(temp_dir.path().to_path_buf());
+
+        let content = b"test content for atomic store";
+        let hash = cas.store_content_atomic(content).await.unwrap();
+
+        // 验证内容可读取
+        let read_content = cas.read_content(&hash).await.unwrap();
+        assert_eq!(read_content, content);
+
+        // 验证临时文件已被清理
+        let temp_files: Vec<_> = std::fs::read_dir(temp_dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .contains(".tmp")
+            })
+            .collect();
+        assert!(temp_files.is_empty(), "Temp files should be cleaned up");
+    }
+
+    #[tokio::test]
+    async fn test_atomic_store_deduplication() {
+        let temp_dir = TempDir::new().unwrap();
+        let cas = ContentAddressableStorage::new(temp_dir.path().to_path_buf());
+
+        let content = b"duplicate atomic content";
+
+        // 存储相同内容多次
+        let hash1 = cas.store_content_atomic(content).await.unwrap();
+        let hash2 = cas.store_content_atomic(content).await.unwrap();
+        let hash3 = cas.store_content_atomic(content).await.unwrap();
+
+        // 所有哈希应该相同
+        assert_eq!(hash1, hash2);
+        assert_eq!(hash2, hash3);
+
+        // 验证只存储了一个文件
+        let size = cas.get_storage_size().await.unwrap();
+        assert!(
+            size >= content.len() as u64 && size < (content.len() * 2) as u64,
+            "Atomic store should also deduplicate"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_store_same_content() {
+        let temp_dir = TempDir::new().unwrap();
+        let cas = ContentAddressableStorage::new(temp_dir.path().to_path_buf());
+
+        let content = b"concurrent test content";
+
+        // 并发存储相同内容
+        let handles: Vec<_> = (0..10)
+            .map(|_| {
+                let cas = cas.clone();
+                let content = content.clone();
+                tokio::spawn(async move { cas.store_content_atomic(&content).await })
+            })
+            .collect();
+
+        let results: Vec<_> = futures::future::join_all(handles).await;
+
+        // 所有都应该成功
+        for result in results {
+            assert!(result.is_ok(), "Task should complete without panic");
+            assert!(result.unwrap().is_ok(), "Store operation should succeed");
+        }
+
+        // 只有一个文件被创建
+        let hash = ContentAddressableStorage::compute_hash(content);
+        assert!(cas.exists(&hash), "Content should exist");
+
+        // 验证内容完整性
+        let stored_content = cas.read_content(&hash).await.unwrap();
+        assert_eq!(stored_content, content);
+    }
+
+    #[tokio::test]
+    async fn test_streaming_atomic_store() {
+        let temp_dir = TempDir::new().unwrap();
+        let cas = ContentAddressableStorage::new(temp_dir.path().join("workspace"));
+
+        // 创建测试文件
+        let test_file = temp_dir.path().join("test.log");
+        let content = vec![b'x'; 1024 * 1024]; // 1MB
+        fs::write(&test_file, &content).await.unwrap();
+
+        // 流式存储
+        let hash = cas.store_file_streaming_atomic(&test_file).await.unwrap();
+
+        // 验证
+        assert!(cas.exists(&hash));
+        let stored_content = cas.read_content(&hash).await.unwrap();
+        assert_eq!(stored_content, content);
+    }
+
+    #[tokio::test]
+    async fn test_streaming_atomic_deduplication() {
+        let temp_dir = TempDir::new().unwrap();
+        let cas = ContentAddressableStorage::new(temp_dir.path().join("workspace"));
+
+        // 创建测试文件
+        let test_file = temp_dir.path().join("test.log");
+        let content = b"streaming dedup test content";
+        fs::write(&test_file, content).await.unwrap();
+
+        // 存储两次
+        let hash1 = cas.store_file_streaming_atomic(&test_file).await.unwrap();
+        let hash2 = cas.store_file_streaming_atomic(&test_file).await.unwrap();
+
+        assert_eq!(hash1, hash2, "Same file should produce same hash");
+
+        // 验证只存储了一个文件
+        let size = cas.get_storage_size().await.unwrap();
+        assert!(
+            size >= content.len() as u64 && size < (content.len() * 2) as u64,
+            "Streaming atomic store should deduplicate"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_atomic_store_empty_content() {
+        let temp_dir = TempDir::new().unwrap();
+        let cas = ContentAddressableStorage::new(temp_dir.path().to_path_buf());
+
+        let content = b"";
+        let hash = cas.store_content_atomic(content).await.unwrap();
+
+        // 空内容的 SHA-256 哈希是已知值
+        assert_eq!(
+            hash, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "Empty content should produce known SHA-256 hash"
+        );
+
+        let read_content = cas.read_content(&hash).await.unwrap();
+        assert!(read_content.is_empty(), "Empty content should be stored correctly");
+    }
+
+    #[tokio::test]
+    async fn test_atomic_store_large_content() {
+        let temp_dir = TempDir::new().unwrap();
+        let cas = ContentAddressableStorage::new(temp_dir.path().to_path_buf());
+
+        // 创建 10MB 的内容
+        let content = vec![b'a'; 10 * 1024 * 1024];
+        let hash = cas.store_content_atomic(&content).await.unwrap();
+
+        let read_content = cas.read_content(&hash).await.unwrap();
+        assert_eq!(
+            read_content.len(),
+            content.len(),
+            "Large content size should match"
+        );
+        assert_eq!(read_content, content, "Large content should match");
     }
 }

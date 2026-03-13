@@ -16,6 +16,8 @@ use tantivy::{
     schema::Value,
     DocAddress, Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument, Term,
 };
+use tokio::sync::Semaphore;
+use tokio::task::JoinHandle;
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
@@ -109,6 +111,8 @@ pub struct SearchEngineManager {
     highlighting_engine: HighlightingEngine,
     /// **NEW**: Integrated IndexOptimizer for query pattern analysis
     optimizer: Option<Arc<crate::search_engine::index_optimizer::IndexOptimizer>>,
+    /// **NEW**: Search semaphore for backpressure control
+    search_semaphore: Arc<Semaphore>,
 }
 
 #[derive(Debug, Default)]
@@ -175,6 +179,9 @@ impl SearchEngineManager {
             crate::search_engine::index_optimizer::IndexOptimizer::new(100),
         ));
 
+        // **NEW**: Create search semaphore for backpressure control
+        let search_semaphore = Arc::new(Semaphore::new(10)); // 最多10个并发搜索
+
         info!(
             index_path = %config.index_path.display(),
             heap_size = config.writer_heap_size,
@@ -193,6 +200,7 @@ impl SearchEngineManager {
             boolean_processor,
             highlighting_engine,
             optimizer,
+            search_semaphore,
         })
     }
 
@@ -220,7 +228,10 @@ impl SearchEngineManager {
         Self::new(engine_config)
     }
 
-    /// Search with timeout support
+    /// Search with timeout support (真正异步实现)
+    ///
+    /// 使用 `spawn_blocking` 将 CPU 密集型搜索操作移至专用线程池，
+    /// 避免阻塞 Tokio 运行时。
     pub async fn search_with_timeout(
         &self,
         query: &str,
@@ -235,17 +246,32 @@ impl SearchEngineManager {
 
         debug!(query = %query, limit = limit, timeout_ms = timeout_duration.as_millis(), "Starting search");
 
+        // **NEW**: 获取搜索许可（背压控制）
+        let _permit = self
+            .search_semaphore
+            .acquire()
+            .await
+            .map_err(|e| SearchError::Concurrency(format!("Failed to acquire permit: {}", e)))?;
+
         // Parse query
         let parsed_query = self.parse_query(query)?;
 
-        // Execute search with timeout and cancellation
-        let search_future = self.execute_search(parsed_query, limit, Some(token.clone()));
+        // **NEW**: 克隆需要移动到闭包中的数据
+        let reader = self.reader.clone();
+        let schema = self.schema.clone();
+        let token_clone = token.clone();
 
-        match timeout(timeout_duration, search_future).await {
-            Ok(result) => {
+        // **NEW**: 使用 spawn_blocking 执行 CPU 密集型搜索
+        let search_handle: JoinHandle<SearchResult<SearchResults>> =
+            tokio::task::spawn_blocking(move || {
+                Self::execute_search_blocking(reader, schema, parsed_query, limit, token_clone)
+            });
+
+        // 等待结果或超时
+        match tokio::time::timeout(timeout_duration, search_handle).await {
+            Ok(Ok(result)) => {
                 let query_time = start_time.elapsed();
                 self.update_stats(query_time, false);
-                // ...
 
                 match result {
                     Ok(mut search_results) => {
@@ -277,6 +303,25 @@ impl SearchEngineManager {
                     }
                 }
             }
+            Ok(Err(join_err)) => {
+                // spawn_blocking 任务出错
+                let query_time = start_time.elapsed();
+                self.update_stats(query_time, false);
+
+                error!(error = %join_err, "Search task failed");
+
+                if join_err.is_panic() {
+                    Err(SearchError::Internal(format!(
+                        "Search task panicked: {}",
+                        join_err
+                    )))
+                } else {
+                    Err(SearchError::Internal(format!(
+                        "Search task cancelled: {}",
+                        join_err
+                    )))
+                }
+            }
             Err(_) => {
                 let query_time = start_time.elapsed();
                 self.update_stats(query_time, true);
@@ -297,6 +342,108 @@ impl SearchEngineManager {
                 )))
             }
         }
+    }
+
+    /// **NEW**: 在阻塞线程中执行搜索（CPU 密集型）
+    fn execute_search_blocking(
+        reader: IndexReader,
+        schema: LogSchema,
+        query: Box<dyn Query>,
+        limit: usize,
+        token: CancellationToken,
+    ) -> SearchResult<SearchResults> {
+        // 检查取消
+        if token.is_cancelled() {
+            return Err(SearchError::Cancelled);
+        }
+
+        let searcher = reader.searcher();
+
+        // 获取总数
+        let total_count = searcher.search(&*query, &Count)?;
+
+        // 检查取消
+        if token.is_cancelled() {
+            return Err(SearchError::Cancelled);
+        }
+
+        // 获取 Top Docs
+        let top_docs_collector = TopDocs::with_limit(limit);
+        let top_docs = searcher.search(&*query, &top_docs_collector)?;
+
+        // 转换为 LogEntry
+        let mut entries = Vec::with_capacity(top_docs.len());
+        let mut doc_addresses = Vec::with_capacity(top_docs.len());
+
+        for (_score, doc_address) in top_docs {
+            // 每10个文档检查一次取消
+            if entries.len() % 10 == 0 && token.is_cancelled() {
+                return Err(SearchError::Cancelled);
+            }
+
+            let retrieved_doc = searcher.doc(doc_address)?;
+            if let Some(log_entry) = Self::document_to_log_entry_static(&schema, &retrieved_doc) {
+                entries.push(log_entry);
+                doc_addresses.push(doc_address);
+            }
+        }
+
+        Ok(SearchResults {
+            entries,
+            doc_addresses,
+            total_count,
+            query_time_ms: 0,
+            was_timeout: false,
+        })
+    }
+
+    /// **NEW**: 静态版本的 document_to_log_entry
+    fn document_to_log_entry_static(
+        schema: &LogSchema,
+        doc: &TantivyDocument,
+    ) -> Option<LogEntry> {
+        let content = doc.get_first(schema.content)?.as_str()?.to_string();
+        let timestamp_i64 = doc.get_first(schema.timestamp)?.as_i64()?;
+        let level = doc.get_first(schema.level)?.as_str()?.to_string();
+        let file_path = doc.get_first(schema.file_path)?.as_str()?.to_string();
+        let real_path = doc.get_first(schema.real_path)?.as_str()?.to_string();
+        let line_number = doc.get_first(schema.line_number)?.as_u64()? as usize;
+
+        Some(LogEntry {
+            id: 0,
+            timestamp: timestamp_i64.to_string().into(),
+            level: level.into(),
+            file: file_path.into(),
+            real_path: real_path.into(),
+            line: line_number,
+            content: content.into(),
+            tags: vec![],
+            match_details: None,
+            matched_keywords: None,
+        })
+    }
+
+    /// **NEW**: 带内存预算的搜索
+    pub async fn search_with_budget(
+        &self,
+        query: &str,
+        limit: Option<usize>,
+        timeout_duration: Option<Duration>,
+        token: Option<CancellationToken>,
+        memory_budget_mb: Option<usize>,
+    ) -> SearchResult<SearchResults> {
+        // 计算最大结果数
+        let budget = memory_budget_mb.unwrap_or(100) * 1024 * 1024;
+        const AVG_ENTRY_SIZE: usize = 1024; // 平均 1KB 每条
+        let max_results = budget / AVG_ENTRY_SIZE;
+
+        let actual_limit = limit
+            .unwrap_or(self.config.max_results)
+            .min(max_results)
+            .min(50_000); // 绝对上限
+
+        self.search_with_timeout(query, Some(actual_limit), timeout_duration, token)
+            .await
     }
 
     /// Parse query string into Tantivy query
@@ -327,68 +474,6 @@ impl SearchEngineManager {
                 )))
             }
         }
-    }
-
-    /// Execute search query
-    async fn execute_search(
-        &self,
-        query: Box<dyn Query>,
-        limit: usize,
-        token: Option<CancellationToken>,
-    ) -> SearchResult<SearchResults> {
-        let searcher = self.reader.searcher();
-        let token = token.unwrap_or_default();
-
-        // Get total count with cancellation support
-        let count_collector =
-            super::boolean_query_processor::CancellableCollector::new(Count, token.clone());
-        let total_count = match searcher.search(&*query, &count_collector) {
-            Ok(count) => count,
-            Err(e) => {
-                if token.is_cancelled() {
-                    return Err(SearchError::QueryError("Search cancelled".to_string()));
-                }
-                return Err(SearchError::IndexError(e.to_string()));
-            }
-        };
-
-        // Get top documents with cancellation support
-        let top_docs_collector = TopDocs::with_limit(limit);
-        let cancellable_top_docs = super::boolean_query_processor::CancellableCollector::new(
-            top_docs_collector,
-            token.clone(),
-        );
-
-        let top_docs = match searcher.search(&*query, &cancellable_top_docs) {
-            Ok(docs) => docs,
-            Err(e) => {
-                if token.is_cancelled() {
-                    return Err(SearchError::QueryError("Search cancelled".to_string()));
-                }
-                return Err(SearchError::IndexError(e.to_string()));
-            }
-        };
-
-        // Convert documents to LogEntry, capturing DocAddress for each
-        let mut entries = Vec::with_capacity(top_docs.len());
-        let mut doc_addresses = Vec::with_capacity(top_docs.len());
-
-        for (_score, doc_address) in top_docs {
-            let retrieved_doc = searcher.doc(doc_address)?;
-
-            if let Some(log_entry) = self.document_to_log_entry(&retrieved_doc) {
-                entries.push(log_entry);
-                doc_addresses.push(doc_address); // Store DocAddress for highlighting
-            }
-        }
-
-        Ok(SearchResults {
-            entries,
-            doc_addresses, // Include DocAddresses in results
-            total_count,
-            query_time_ms: 0, // Will be set by caller
-            was_timeout: false,
-        })
     }
 
     /// Convert Tantivy document to LogEntry
@@ -966,5 +1051,140 @@ mod tests {
             deleted_count, 0,
             "Should delete 0 documents for non-existent file"
         );
+    }
+
+    /// **NEW**: Test async search with documents
+    #[tokio::test]
+    async fn test_async_search() {
+        let temp_dir = TempDir::new().unwrap();
+        let config = SearchConfig {
+            index_path: temp_dir.path().to_path_buf(),
+            ..Default::default()
+        };
+
+        let manager = SearchEngineManager::new(config).unwrap();
+
+        // Add test documents
+        for i in 0..100 {
+            let entry = LogEntry {
+                id: i,
+                timestamp: format!("2024-01-01T00:{:02}:00", i % 60).into(),
+                level: "INFO".into(),
+                file: "/test.log".into(),
+                real_path: "/real/test.log".into(),
+                line: i as usize,
+                content: format!("Test log entry {}", i).into(),
+                tags: vec![],
+                match_details: None,
+                matched_keywords: None,
+            };
+            manager.add_document(&entry).unwrap();
+        }
+        manager.commit().unwrap();
+
+        // Async search
+        let results = manager
+            .search_with_timeout("Test", Some(10), Some(Duration::from_secs(5)), None)
+            .await
+            .unwrap();
+
+        assert!(!results.entries.is_empty());
+    }
+
+    /// **NEW**: Test search cancellation
+    #[tokio::test]
+    async fn test_search_cancellation() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = SearchEngineManager::new(SearchConfig {
+            index_path: temp_dir.path().to_path_buf(),
+            ..Default::default()
+        })
+        .unwrap();
+
+        let token = CancellationToken::new();
+        let token_clone = token.clone();
+
+        // Cancel in another task
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            token_clone.cancel();
+        });
+
+        let result = manager
+            .search_with_timeout("test", None, Some(Duration::from_secs(10)), Some(token))
+            .await;
+
+        // Should be cancelled or complete (depending on timing on empty index)
+        assert!(
+            result.is_ok() || matches!(result, Err(SearchError::Cancelled)),
+            "Search should either complete quickly on empty index or be cancelled"
+        );
+    }
+
+    /// **NEW**: Test search timeout
+    #[tokio::test]
+    async fn test_search_timeout_short() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = SearchEngineManager::new(SearchConfig {
+            index_path: temp_dir.path().to_path_buf(),
+            ..Default::default()
+        })
+        .unwrap();
+
+        let result = manager
+            .search_with_timeout("test", None, Some(Duration::from_millis(1)), None)
+            .await;
+
+        // Empty index search should complete quickly, or timeout
+        assert!(result.is_ok() || matches!(result, Err(SearchError::Timeout(_))));
+    }
+
+    /// **NEW**: Test search with memory budget
+    #[tokio::test]
+    async fn test_search_with_budget() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = SearchEngineManager::new(SearchConfig {
+            index_path: temp_dir.path().to_path_buf(),
+            max_results: 100_000,
+            ..Default::default()
+        })
+        .unwrap();
+
+        // Use 1MB memory budget
+        let results = manager
+            .search_with_budget("test", None, None, None, Some(1))
+            .await
+            .unwrap();
+
+        // 1MB budget approx 1000 results
+        assert!(results.entries.len() <= 1000);
+    }
+
+    /// **NEW**: Test concurrent searches with backpressure
+    #[tokio::test]
+    async fn test_concurrent_searches() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = Arc::new(SearchEngineManager::new(SearchConfig {
+            index_path: temp_dir.path().to_path_buf(),
+            ..Default::default()
+        }).unwrap());
+
+        // Execute multiple searches concurrently
+        let searches: Vec<_> = (0..5)
+            .map(|i| {
+                let mgr = Arc::clone(&manager);
+                let query = format!("query{}", i);
+                tokio::spawn(async move {
+                    mgr.search_with_timeout(&query, None, None, None).await
+                })
+            })
+            .collect();
+
+        let results = futures::future::join_all(searches).await;
+
+        for result in results {
+            assert!(result.is_ok());
+            assert!(result.unwrap().is_ok());
+        }
     }
 }

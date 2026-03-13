@@ -14,9 +14,6 @@ use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::sync::Arc;
 
-#[cfg(feature = "standalone")]
-use tauri::{AppHandle, Emitter};
-
 /// 文件监听器状态
 #[derive(Debug, Clone)]
 pub struct WatcherState {

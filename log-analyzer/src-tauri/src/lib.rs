@@ -8,6 +8,18 @@
 //! - 监控体系建立 ✅
 //! - FFI 支持 Flutter ✅
 
+// =============================================================================
+// AppHandle 类型定义（统一管理）
+// =============================================================================
+// Standalone 模式使用 Tauri 的 AppHandle
+#[cfg(feature = "standalone")]
+pub use tauri::AppHandle;
+
+// FFI 模式使用 unit type () 作为占位符
+// 这样 AppHandle 可以作为值使用（即 AppHandle 等价于 ()）
+#[cfg(not(feature = "standalone"))]
+pub type AppHandle = ();
+
 // FFI 桥接代码生成（仅在启用 ffi feature 时编译）
 #[cfg(feature = "ffi")]
 mod frb_generated; /* AUTO INJECTED BY flutter_rust_bridge. This line may not be accurate, and you can change it according to your needs. */
@@ -19,6 +31,7 @@ pub mod utils;
 
 // 存储和搜索模块
 pub mod archive;
+pub mod concurrency_safety;
 pub mod search_engine;
 pub mod services;
 pub mod storage;

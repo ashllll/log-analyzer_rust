@@ -21,6 +21,8 @@
 //! ```
 
 pub mod cas;
+pub mod cas_atomic;
+pub mod cas_optimized;
 pub mod integrity;
 pub mod metadata_store;
 pub mod metrics_store;
@@ -29,6 +31,7 @@ pub mod metrics_store;
 mod integration_tests;
 
 pub use cas::ContentAddressableStorage;
+pub use cas_atomic::{AtomicCasConfig, AtomicContentAddressableStorage};
 pub use integrity::{
     verify_after_import, verify_file_integrity, verify_workspace_integrity, InvalidFileInfo,
     ValidationReport,

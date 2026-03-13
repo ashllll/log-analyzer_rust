@@ -20,6 +20,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::ffi::global_state::{get_app_data_dir, get_app_state};
+use crate::ffi::runtime::block_on;
 use crate::ffi::types::*;
 use crate::utils::validation::validate_workspace_id;
 
@@ -753,18 +754,17 @@ pub fn ffi_import_folder(path: String, workspace_id: String) -> Result<String, S
     let task_id_clone = task_id.clone();
     let workspace_id_clone = workspace_id.clone();
 
-    let result = tokio::runtime::Runtime::new()
-        .map_err(|e| format!("创建运行时失败: {}", e))?
-        .block_on(async {
-            task_manager
-                .create_task_async(
-                    task_id_clone.clone(),
-                    "Import".to_string(),
-                    target_name.clone(),
-                    Some(workspace_id_clone.clone()),
-                )
-                .await
-        });
+    let result = block_on(async {
+        task_manager
+            .create_task_async(
+                task_id_clone.clone(),
+                "Import".to_string(),
+                target_name.clone(),
+                Some(workspace_id_clone.clone()),
+            )
+            .await
+    })
+    .map_err(|e| format!("执行导入任务失败: {}", e))?;
 
     match result {
         Ok(_) => {
@@ -1064,9 +1064,8 @@ pub fn ffi_get_task_metrics() -> Result<TaskMetricsData, String> {
         .clone();
 
     // 获取 metrics（异步操作）
-    let metrics = tokio::runtime::Runtime::new()
-        .map_err(|e| format!("创建运行时失败: {}", e))?
-        .block_on(async { task_manager.get_metrics_async().await });
+    let metrics = block_on(async { task_manager.get_metrics_async().await })
+        .map_err(|e| format!("获取任务指标失败: {}", e))?;
 
     match metrics {
         Ok(m) => Ok(TaskMetricsData {
@@ -1110,18 +1109,17 @@ pub fn ffi_cancel_task(task_id: String) -> Result<bool, String> {
     };
 
     // 更新任务状态为 Stopped（异步操作）
-    let result = tokio::runtime::Runtime::new()
-        .map_err(|e| format!("创建运行时失败: {}", e))?
-        .block_on(async {
-            task_manager
-                .update_task_async(
-                    &task_id,
-                    0,
-                    "用户取消任务".to_string(),
-                    crate::task_manager::TaskStatus::Stopped,
-                )
-                .await
-        });
+    let result = block_on(async {
+        task_manager
+            .update_task_async(
+                &task_id,
+                0,
+                "用户取消任务".to_string(),
+                crate::task_manager::TaskStatus::Stopped,
+            )
+            .await
+    })
+    .map_err(|e| format!("更新任务状态失败: {}", e))?;
 
     match result {
         Ok(_) => {
@@ -1664,10 +1662,8 @@ pub fn ffi_search_structured(
         return Err(format!("工作区不存在: {}", workspace_id));
     }
 
-    // 使用 tokio 运行时执行异步搜索
-    let rt = tokio::runtime::Runtime::new().map_err(|e| format!("创建运行时失败: {}", e))?;
-
-    rt.block_on(async {
+    // 使用全局 tokio 运行时执行异步搜索
+    block_on(async {
         // 打开元数据存储
         let metadata_store = crate::storage::MetadataStore::new(&workspace_dir)
             .await
@@ -1782,8 +1778,9 @@ pub fn ffi_search_structured(
         }
 
         tracing::info!(results_count = results.len(), "结构化搜索完成");
-        Ok(results)
+        Ok::<_, crate::ffi::error::FfiError>(results)
     })
+    .map_err(|e| e.to_string())
 }
 
 /// FFI 适配：构建搜索查询对象
@@ -1859,10 +1856,8 @@ pub fn ffi_get_virtual_file_tree(workspace_id: String) -> Result<Vec<VirtualTree
         return Err(format!("工作区不存在: {}", workspace_id));
     }
 
-    // 使用 tokio 运行时执行异步操作
-    let rt = tokio::runtime::Runtime::new().map_err(|e| format!("创建运行时失败: {}", e))?;
-
-    rt.block_on(async {
+    // 使用全局 tokio 运行时执行异步操作
+    block_on(async {
         // 打开元数据存储
         let metadata_store = crate::storage::MetadataStore::new(&workspace_dir)
             .await
@@ -1883,8 +1878,9 @@ pub fn ffi_get_virtual_file_tree(workspace_id: String) -> Result<Vec<VirtualTree
         let tree = build_tree_structure(&archives, &all_files).await?;
 
         // 转换为 FFI 类型
-        Ok(tree.into_iter().map(VirtualTreeNodeData::from).collect())
+        Ok::<_, String>(tree.into_iter().map(VirtualTreeNodeData::from).collect())
     })
+    .map_err(|e| e.to_string())
 }
 
 /// FFI 适配：获取树子节点（懒加载）
@@ -1915,10 +1911,8 @@ pub fn ffi_get_tree_children(
         return Err(format!("工作区不存在: {}", workspace_id));
     }
 
-    // 使用 tokio 运行时执行异步操作
-    let rt = tokio::runtime::Runtime::new().map_err(|e| format!("创建运行时失败: {}", e))?;
-
-    rt.block_on(async {
+    // 使用全局 tokio 运行时执行异步操作
+    block_on(async {
         // 打开元数据存储
         let metadata_store = crate::storage::MetadataStore::new(&workspace_dir)
             .await
@@ -1975,11 +1969,12 @@ pub fn ffi_get_tree_children(
                 });
             }
 
-            Ok(children)
+            Ok::<_, String>(children)
         } else {
             Err(format!("未找到父路径: {}", parent_path))
         }
     })
+    .map_err(|e| e.to_string())
 }
 
 /// FFI 适配：通过哈希读取文件内容
@@ -2006,10 +2001,8 @@ pub fn ffi_read_file_by_hash(
     // 构建工作区目录路径
     let workspace_dir = app_data_dir.join("workspaces").join(&workspace_id);
 
-    // 使用 tokio 运行时执行异步操作
-    let rt = tokio::runtime::Runtime::new().map_err(|e| format!("创建运行时失败: {}", e))?;
-
-    rt.block_on(async {
+    // 使用全局 tokio 运行时执行异步操作
+    block_on(async {
         // 初始化 CAS
         let cas = crate::storage::ContentAddressableStorage::new(workspace_dir);
 
@@ -2028,12 +2021,13 @@ pub fn ffi_read_file_by_hash(
         let content = String::from_utf8(content_bytes.clone())
             .map_err(|e| format!("文件内容不是有效的 UTF-8: {}", e))?;
 
-        Ok(FileContentResponseData {
+        Ok::<_, String>(FileContentResponseData {
             content,
             hash,
             size: content_bytes.len() as i64,
         })
     })
+    .map_err(|e| e.to_string())
 }
 
 // ==================== 过滤器命令适配 ====================
@@ -2333,10 +2327,8 @@ pub fn ffi_get_log_level_stats(workspace_id: String) -> Result<LogLevelStatsOutp
         return Err(format!("工作区不存在: {}", workspace_id));
     }
 
-    // 使用 tokio 运行时执行异步操作
-    let rt = tokio::runtime::Runtime::new().map_err(|e| format!("创建运行时失败: {}", e))?;
-
-    rt.block_on(async {
+    // 使用全局 tokio 运行时执行异步操作
+    block_on(async {
         // 打开元数据存储
         let metadata_store = crate::storage::MetadataStore::new(&workspace_dir)
             .await
@@ -2435,7 +2427,7 @@ pub fn ffi_get_log_level_stats(workspace_id: String) -> Result<LogLevelStatsOutp
             "日志级别统计完成"
         );
 
-        Ok(LogLevelStatsOutput {
+        Ok::<_, String>(LogLevelStatsOutput {
             fatal_count,
             error_count,
             warn_count,
@@ -2446,6 +2438,7 @@ pub fn ffi_get_log_level_stats(workspace_id: String) -> Result<LogLevelStatsOutp
             total,
         })
     })
+    .map_err(|e| e.to_string())
 }
 
 // ==================== 正则搜索命令适配 ====================
@@ -2532,10 +2525,8 @@ pub fn ffi_search_regex(
         return Err(format!("工作区不存在: {}", workspace_id));
     }
 
-    // 使用 tokio 运行时执行异步搜索
-    let rt = tokio::runtime::Runtime::new().map_err(|e| format!("创建运行时失败: {}", e))?;
-
-    rt.block_on(async {
+    // 使用全局 tokio 运行时执行异步搜索
+    block_on(async {
         // 打开元数据存储
         let metadata_store = crate::storage::MetadataStore::new(&workspace_dir)
             .await
@@ -2605,8 +2596,9 @@ pub fn ffi_search_regex(
         }
 
         tracing::info!(results_count = results.len(), "正则搜索完成");
-        Ok(results)
+        Ok::<_, String>(results)
     })
+    .map_err(|e| e.to_string())
 }
 
 // ==================== 虚拟文件树辅助函数 ====================
@@ -2926,3 +2918,45 @@ mod tests {
         let _ = ffi_destroy_page_manager(pm_id);
     }
 }
+
+
+// ==================== 异步模块导出 ====================
+//
+// 提供异步版本的 FFI 函数，避免每次 FFI 调用创建新的 Tokio Runtime
+// 这些函数使用全局 Runtime，遵循 flutter_rust_bridge 最佳实践
+
+pub use crate::ffi::commands_bridge_async::{
+    ffi_add_keyword_group_async,
+    ffi_add_search_history_async,
+    ffi_cancel_search_async,
+    ffi_cancel_task_async,
+    ffi_clear_search_history_async,
+    ffi_delete_filter_async,
+    ffi_delete_keyword_group_async,
+    ffi_delete_search_histories_async,
+    ffi_delete_search_history_async,
+    ffi_delete_workspace_async,
+    ffi_export_results_async,
+    ffi_get_keywords_async,
+    ffi_get_log_level_stats_async,
+    ffi_get_performance_metrics_async,
+    ffi_get_saved_filters_async,
+    ffi_get_active_searches_count_async,
+    ffi_get_task_metrics_async,
+    ffi_get_tree_children_async,
+    ffi_get_virtual_file_tree_async,
+    ffi_get_workspace_status_async,
+    ffi_import_folder_async,
+    ffi_load_config_async,
+    ffi_read_file_by_hash_async,
+    ffi_refresh_workspace_async,
+    ffi_save_config_async,
+    ffi_save_filter_async,
+    ffi_search_logs_async,
+    ffi_search_regex_async,
+    ffi_search_structured_async,
+    ffi_start_watch_async,
+    ffi_stop_watch_async,
+    ffi_update_filter_usage_async,
+    ffi_update_keyword_group_async,
+};

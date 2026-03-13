@@ -17,6 +17,7 @@ use crate::services::file_type_filter::FileTypeFilter;
 use crate::services::file_watcher::get_file_metadata;
 use crate::storage::{ArchiveMetadata, ContentAddressableStorage, FileMetadata, MetadataStore};
 use crate::utils::path::normalize_path_separator;
+use crate::AppHandle;
 use std::collections::HashMap;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
@@ -24,13 +25,6 @@ use tokio::fs;
 use tokio::sync::Mutex;
 use tracing::{debug, error, info, warn};
 use walkdir::WalkDir;
-
-// 条件编译：AppHandle 类型定义
-#[cfg(feature = "standalone")]
-use tauri::AppHandle;
-#[cfg(not(feature = "standalone"))]
-#[derive(Clone)]
-pub struct AppHandle;  // 空结构体占位
 
 
 
@@ -833,7 +827,7 @@ pub async fn process_path_with_cas_and_checkpoints(
                         path_to_process,
                         &new_virtual,
                         context,
-                        AppHandle,  // 占位 AppHandle
+                        _app.clone(),  // Pass cloned AppHandle
                         task_id,
                         workspace_id,
                         parent_archive_id,
@@ -1014,7 +1008,7 @@ pub async fn process_path_with_cas(
     workspace_dir: &Path,
     cas: &ContentAddressableStorage,
     metadata_store: Arc<MetadataStore>,
-    
+    _app: AppHandle,
     task_id: &str,
     workspace_id: &str,
     parent_archive_id: Option<i64>,
@@ -1030,7 +1024,7 @@ pub async fn process_path_with_cas(
         path,
         virtual_path,
         &context,
-        AppHandle,  // 占位 AppHandle
+        _app,  // Pass AppHandle instance
         task_id,
         workspace_id,
         parent_archive_id,
@@ -1283,7 +1277,7 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
             &full_path, // Use full path for file operations
             &new_virtual,
             context,
-            AppHandle,  // 占位 AppHandle
+            _app.clone(),  // Pass cloned AppHandle
             task_id,
             workspace_id,
             Some(archive_id),
@@ -1355,7 +1349,7 @@ async fn extract_and_process_archive_with_cas(
     workspace_dir: &Path,
     cas: &ContentAddressableStorage,
     metadata_store: Arc<MetadataStore>,
-    
+    _app: AppHandle,
     task_id: &str,
     workspace_id: &str,
     parent_archive_id: Option<i64>,
@@ -1366,11 +1360,11 @@ async fn extract_and_process_archive_with_cas(
 
     // Create context without checkpoints for backward compatibility
     let context = CasProcessingContext::new(workspace_dir.to_path_buf(), cas_arc, metadata_store);
-
     extract_and_process_archive_with_cas_and_checkpoints(
         archive_path,
         virtual_path,
         &context,
+        _app,
         task_id,
         workspace_id,
         parent_archive_id,

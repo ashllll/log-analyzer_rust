@@ -16,17 +16,11 @@
 use crate::archive::processor::{process_path_with_cas_and_checkpoints, CasProcessingContext};
 use crate::error::{AppError, Result};
 use crate::storage::{FileMetadata, MetadataStore};
+use crate::AppHandle;
 use rayon::prelude::*;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tracing::{debug, info, warn};
-
-// 条件编译：AppHandle 类型定义
-#[cfg(feature = "standalone")]
-use tauri::AppHandle;
-#[cfg(not(feature = "standalone"))]
-#[derive(Clone)]
-pub struct AppHandle;  // 空结构体占位
 
 
 
@@ -127,7 +121,7 @@ impl ParallelProcessor {
                 .process_batch(
                     batch.clone(),
                     context.clone(),
-                    AppHandle,  // 占位 AppHandle
+                    app.clone(),  // Pass cloned AppHandle
                     task_id.clone(),
                     workspace_id.clone(),
                 )
@@ -194,12 +188,11 @@ impl ParallelProcessor {
                     .unwrap_or("unknown")
                     .to_string();
 
-                use crate::archive::processor::AppHandle as ProcessorAppHandle;
                 process_path_with_cas_and_checkpoints(
                     &archive_path,
                     &virtual_path,
                     &context,
-                    ProcessorAppHandle,  // 使用 processor 模块的 AppHandle
+                    _app.clone(),  // Pass cloned AppHandle
                     &task_id,
                     &workspace_id,
                     None, // parent_archive_id

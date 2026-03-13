@@ -1,0 +1,213 @@
+# =============================================================================
+# Rust 依赖管理与安全检查 CI 工作流
+# =============================================================================
+
+name: Rust Dependency & Security Checks
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - '**/Cargo.toml'
+      - '**/Cargo.lock'
+      - '.github/workflows/rust-dependency-check.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - '**/Cargo.toml'
+      - '**/Cargo.lock'
+  schedule:
+    # 每周一早上 9 点运行
+    - cron: '0 9 * * 1'
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ==========================================================================
+  # 任务 1: 依赖审计 (cargo-deny)
+  # ==========================================================================
+  audit:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./log-analyzer/src-tauri
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run cargo-deny
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+          arguments: --all-features
+          manifest-path: ./log-analyzer/src-tauri/Cargo.toml
+
+  # ==========================================================================
+  # 任务 2: 安全检查 (cargo-audit)
+  # ==========================================================================
+  security:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run cargo-audit
+        uses: rustsec/audit-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  # ==========================================================================
+  # 任务 3: 过期依赖检查 (cargo-outdated)
+  # ==========================================================================
+  outdated:
+    name: Check Outdated Dependencies
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./log-analyzer/src-tauri
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+
+      - name: Cache cargo registry
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ./log-analyzer/src-tauri
+
+      - name: Install cargo-outdated
+        run: cargo install cargo-outdated
+
+      - name: Check for outdated dependencies
+        run: cargo outdated --exit-code 1 --workspace
+        continue-on-error: true  # 不让过期依赖阻塞 CI
+
+  # ==========================================================================
+  # 任务 4: 未使用依赖检查 (cargo-machete)
+  # ==========================================================================
+  machete:
+    name: Check Unused Dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+
+      - name: Install cargo-machete
+        run: cargo install cargo-machete
+
+      - name: Check for unused dependencies
+        run: cargo machete
+        working-directory: ./log-analyzer/src-tauri
+
+  # ==========================================================================
+  # 任务 5: 依赖树分析
+  # ==========================================================================
+  tree:
+    name: Dependency Tree Analysis
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./log-analyzer/src-tauri
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+
+      - name: Check for duplicate dependencies
+        run: |
+          echo "=== Checking for duplicate dependencies ==="
+          cargo tree --duplicates || true
+
+      - name: Show feature differences
+        run: |
+          echo "=== Feature differences for common dependencies ==="
+          cargo tree -i hashbrown -e features || true
+          cargo tree -i itertools -e features || true
+
+  # ==========================================================================
+  # 任务 6: 完整编译检查
+  # ==========================================================================
+  build:
+    name: Build Check
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        feature-set: [default, standalone, all]
+        include:
+          - feature-set: default
+            features: ""
+          - feature-set: standalone
+            features: "--features standalone"
+          - feature-set: all
+            features: "--all-features"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+
+      - name: Cache cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ./log-analyzer/src-tauri
+          key: ${{ matrix.os }}-${{ matrix.feature-set }}
+
+      - name: Install dependencies (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Build
+        working-directory: ./log-analyzer/src-tauri
+        run: cargo build --release ${{ matrix.features }}
+
+  # ==========================================================================
+  # 任务 7: 测试
+  # ==========================================================================
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./log-analyzer/src-tauri
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+
+      - name: Cache cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ./log-analyzer/src-tauri
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev
+
+      - name: Run tests
+        run: cargo test --all-features -- --nocapture
+
+      - name: Run clippy
+        run: cargo clippy --all-features --all-targets -- -D warnings
+
+      - name: Check formatting
+        run: cargo fmt -- --check

@@ -445,6 +445,40 @@ pub struct TaskManager {
 }
 
 impl TaskManager {
+    /// 创建新的任务管理器（Standalone 模式）
+    ///
+    /// 用于 Tauri standalone 应用：
+    /// - 接受 AppHandle 用于 Tauri 事件系统
+    /// - 使用多线程 tokio runtime
+    /// - 支持 Tauri 事件推送
+    ///
+    /// # 参数
+    ///
+    /// * `app_handle` - Tauri 应用句柄，用于事件发送
+    /// * `config` - 任务管理器配置
+    #[cfg(feature = "standalone")]
+    pub fn new(_app_handle: crate::AppHandle, config: TaskManagerConfig) -> Result<Self> {
+        info!("Initializing TaskManager (Standalone mode with Tauri events)");
+
+        let (sender, receiver) = mpsc::unbounded_channel();
+        let actor = TaskManagerActor::new(config.clone());
+
+        // 创建多线程 tokio runtime 并启动 Actor
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .expect("Failed to create tokio runtime for TaskManager");
+
+            rt.block_on(async {
+                actor.run(receiver).await;
+            });
+        });
+
+        info!("TaskManager initialized successfully (Standalone mode)");
+        Ok(Self { sender, config })
+    }
+
     /// 创建新的任务管理器（FFI 模式）
     ///
     /// 用于 flutter_rust_bridge FFI 调用场景：

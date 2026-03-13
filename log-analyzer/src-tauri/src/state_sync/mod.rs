@@ -17,7 +17,9 @@ use std::time::SystemTime;
 use tokio::sync::RwLock;
 
 #[cfg(feature = "standalone")]
-use tauri::{AppHandle, Emitter};
+use tauri::Emitter;
+#[cfg(feature = "standalone")]
+use crate::AppHandle;
 
 pub mod models;
 
