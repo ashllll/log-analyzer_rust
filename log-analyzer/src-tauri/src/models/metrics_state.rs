@@ -2,8 +2,8 @@
 //!
 //! 使用原子类型和轻量级锁实现高性能指标收集
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use parking_lot::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 /// 指标状态 - 管理性能指标和统计数据

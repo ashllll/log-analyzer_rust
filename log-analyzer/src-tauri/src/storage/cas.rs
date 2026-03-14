@@ -34,32 +34,32 @@ use tracing::{debug, error, info, warn};
 use walkdir::WalkDir;
 
 /// 获取指定路径的磁盘可用空间
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `path` - 要检查的路径
-/// 
+///
 /// # Returns
-/// 
+///
 /// 可用空间字节数，如果无法获取则返回 0
 #[cfg(target_os = "linux")]
 async fn get_available_space(path: &Path) -> u64 {
-    use std::ffi::CString;
     use libc::statvfs;
-    
+    use std::ffi::CString;
+
     let path_str = match path.to_str() {
         Some(s) => s,
         None => return 0,
     };
-    
+
     let c_path = match CString::new(path_str) {
         Ok(c) => c,
         Err(_) => return 0,
     };
-    
+
     let mut stat: statvfs = unsafe { std::mem::zeroed() };
     let result = unsafe { statvfs(c_path.as_ptr(), &mut stat) };
-    
+
     if result == 0 {
         // f_bavail: 非超级用户可用的块数
         // f_frsize: 每个块的字节数
@@ -70,23 +70,24 @@ async fn get_available_space(path: &Path) -> u64 {
 }
 
 #[cfg(target_os = "macos")]
+#[allow(clippy::unnecessary_cast)]
 async fn get_available_space(path: &Path) -> u64 {
-    use std::ffi::CString;
     use libc::statvfs;
-    
+    use std::ffi::CString;
+
     let path_str = match path.to_str() {
         Some(s) => s,
         None => return 0,
     };
-    
+
     let c_path = match CString::new(path_str) {
         Ok(c) => c,
         Err(_) => return 0,
     };
-    
+
     let mut stat: statvfs = unsafe { std::mem::zeroed() };
     let result = unsafe { statvfs(c_path.as_ptr(), &mut stat) };
-    
+
     if result == 0 {
         (stat.f_bavail as u64) * (stat.f_frsize as u64)
     } else {
@@ -97,14 +98,15 @@ async fn get_available_space(path: &Path) -> u64 {
 #[cfg(target_os = "windows")]
 async fn get_available_space(path: &Path) -> u64 {
     use std::os::windows::ffi::OsStrExt;
-    use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
     use windows_sys::Win32::Foundation::PWSTR;
-    
-    let wide_path: Vec<u16> = path.as_os_str()
+    use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
+
+    let wide_path: Vec<u16> = path
+        .as_os_str()
         .encode_wide()
         .chain(std::iter::once(0))
         .collect();
-    
+
     let mut free_bytes_available: u64 = 0;
     let result = unsafe {
         GetDiskFreeSpaceExW(
@@ -114,7 +116,7 @@ async fn get_available_space(path: &Path) -> u64 {
             std::ptr::null_mut(),
         )
     };
-    
+
     if result != 0 {
         free_bytes_available
     } else {

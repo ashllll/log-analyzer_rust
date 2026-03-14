@@ -15,7 +15,9 @@ use tracing::{debug, error, info, warn};
 // 导入AppError类型
 use crate::error::AppError;
 
-use crate::models::search::{PagedSearchResult, QueryMetadata, QueryOperator, SearchTerm, TermSource};
+use crate::models::search::{
+    PagedSearchResult, QueryMetadata, QueryOperator, SearchTerm, TermSource,
+};
 use crate::models::search_statistics::SearchResultSummary;
 use crate::models::{AppState, LogEntry, SearchCacheKey, SearchFilters, SearchQuery};
 
@@ -881,6 +883,7 @@ use std::collections::VecDeque;
 
 /// 分页搜索结果缓存项
 #[derive(Clone)]
+#[allow(dead_code)]
 struct PagedSearchCacheEntry {
     search_id: String,
     query: String,
@@ -933,7 +936,8 @@ static PAGED_SEARCH_CACHE: std::sync::OnceLock<std::sync::Mutex<PagedSearchCache
     std::sync::OnceLock::new();
 
 fn get_paged_search_cache() -> &'static std::sync::Mutex<PagedSearchCache> {
-    PAGED_SEARCH_CACHE.get_or_init(|| std::sync::Mutex::new(PagedSearchCache::new(MAX_CACHED_SEARCHES)))
+    PAGED_SEARCH_CACHE
+        .get_or_init(|| std::sync::Mutex::new(PagedSearchCache::new(MAX_CACHED_SEARCHES)))
 }
 
 /// 分页搜索日志
@@ -1019,10 +1023,9 @@ pub async fn search_logs_paged(
         id.clone()
     } else {
         let dirs = workspace_dirs.lock();
-        dirs.keys()
-            .next()
-            .cloned()
-            .ok_or_else(|| "No workspaces available. Please create a workspace first.".to_string())?
+        dirs.keys().next().cloned().ok_or_else(|| {
+            "No workspaces available. Please create a workspace first.".to_string()
+        })?
     };
 
     // 生成搜索ID
@@ -1083,9 +1086,12 @@ pub async fn search_logs_paged(
         // 获取工作区目录
         let workspace_dir = {
             let dirs = workspace_dirs.lock();
-            dirs.get(&workspace_id_for_spawn)
-                .cloned()
-                .ok_or_else(|| format!("Workspace directory not found for: {}", workspace_id_for_spawn))?
+            dirs.get(&workspace_id_for_spawn).cloned().ok_or_else(|| {
+                format!(
+                    "Workspace directory not found for: {}",
+                    workspace_id_for_spawn
+                )
+            })?
         };
 
         // 获取或创建 MetadataStore
@@ -1095,17 +1101,13 @@ pub async fn search_logs_paged(
                 Arc::clone(store)
             } else {
                 let store_result = std::panic::catch_unwind(AssertUnwindSafe(|| {
-                    tokio::task::block_in_place(|| {
-                        match tokio::runtime::Handle::try_current() {
-                            Ok(handle) => {
-                                handle.block_on(crate::storage::metadata_store::MetadataStore::new(
-                                    &workspace_dir,
-                                ))
-                            }
-                            Err(_) => Err(AppError::DatabaseError(
-                                "Tokio runtime not available".to_string(),
-                            )),
-                        }
+                    tokio::task::block_in_place(|| match tokio::runtime::Handle::try_current() {
+                        Ok(handle) => handle.block_on(
+                            crate::storage::metadata_store::MetadataStore::new(&workspace_dir),
+                        ),
+                        Err(_) => Err(AppError::DatabaseError(
+                            "Tokio runtime not available".to_string(),
+                        )),
                     })
                 }));
 
@@ -1341,18 +1343,21 @@ pub async fn fetch_search_page(
     limit: usize,
 ) -> Result<Vec<LogEntry>, String> {
     let manager = &state.virtual_search_manager;
-    
+
     // 检查会话是否存在
     if !manager.has_session(&search_id) {
-        return Err(format!("Search session '{}' not found or expired", search_id));
+        return Err(format!(
+            "Search session '{}' not found or expired",
+            search_id
+        ));
     }
-    
+
     // 限制每页最大数量，防止内存问题
     let limit = limit.min(10000);
-    
+
     // 从 VirtualSearchManager 获取指定范围的结果
     let results = manager.get_range(&search_id, offset, limit);
-    
+
     debug!(
         search_id = %search_id,
         offset = offset,
@@ -1360,7 +1365,7 @@ pub async fn fetch_search_page(
         returned = results.len(),
         "Fetched search page"
     );
-    
+
     Ok(results)
 }
 
@@ -1385,14 +1390,14 @@ pub async fn register_search_session(
     entries: Vec<LogEntry>,
 ) -> Result<String, String> {
     let manager = &state.virtual_search_manager;
-    
+
     let registered_id = manager.register_session(search_id, query, entries);
-    
+
     info!(
         search_id = %registered_id,
         "Search session registered in VirtualSearchManager"
     );
-    
+
     Ok(registered_id)
 }
 
@@ -1410,7 +1415,7 @@ pub async fn get_search_session_info(
     search_id: String,
 ) -> Result<Option<serde_json::Value>, String> {
     let manager = &state.virtual_search_manager;
-    
+
     if let Some(session) = manager.get_session_info(&search_id) {
         Ok(Some(serde_json::json!({
             "search_id": session.search_id,
@@ -1473,17 +1478,14 @@ pub async fn cleanup_expired_search_sessions(
     _max_age_secs: Option<u64>,
 ) -> Result<usize, String> {
     let manager = &state.virtual_search_manager;
-    
+
     // 注意：VirtualSearchManager 内部有 TTL 机制
     // 这里调用 cleanup_expired_sessions 清理过期会话
     // _max_age_secs 保留用于 API 兼容性，实际使用 VirtualSearchManager 内部配置的 TTL
     let cleaned = manager.cleanup_expired_sessions();
-    
-    info!(
-        cleaned = cleaned,
-        "Expired search sessions cleaned up"
-    );
-    
+
+    info!(cleaned = cleaned, "Expired search sessions cleaned up");
+
     Ok(cleaned)
 }
 
@@ -1497,7 +1499,7 @@ pub async fn get_virtual_search_stats(
 ) -> Result<serde_json::Value, String> {
     let manager = &state.virtual_search_manager;
     let stats = manager.get_statistics();
-    
+
     Ok(serde_json::json!({
         "active_sessions": stats.active_sessions,
         "total_cached_entries": stats.total_cached_entries,

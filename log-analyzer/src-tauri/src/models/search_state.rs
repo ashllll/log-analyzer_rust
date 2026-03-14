@@ -2,11 +2,11 @@
 //!
 //! 使用 DashMap 替代 Arc<Mutex<HashMap<...>>> 实现无锁并发访问
 
+use crate::search_engine::virtual_search_manager::VirtualSearchManager;
+use crate::utils::async_resource_manager::AsyncResourceManager;
 use dashmap::DashMap;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
-use crate::search_engine::virtual_search_manager::VirtualSearchManager;
-use crate::utils::async_resource_manager::AsyncResourceManager;
 
 /// 搜索状态 - 管理搜索相关的所有资源
 pub struct SearchState {

@@ -987,7 +987,7 @@ impl Default for DatabaseConfig {
             max_cached_results: 100_000,
             read_buffer_size: 1024 * 1024, // 1MB (优化: 从 8KB 增大)
             streaming_builder_buffer_size: 1024 * 1024, // 1MB (优化: 从 64KB 增大)
-            buffer_size: 1024 * 1024, // 1MB (优化: 从 64KB 增大)
+            buffer_size: 1024 * 1024,      // 1MB (优化: 从 64KB 增大)
         }
     }
 }

@@ -1,15 +1,15 @@
 //! 事件系统 - 简化版本
-//! 
+//!
 //! 使用 tokio::sync::broadcast 提供类型安全的事件处理
-//! 
+//!
 //! # 架构改进
-//! 
+//!
 //! - 保留核心 EventBus 供内部组件使用
 //! - 简化的 bridge 直接转发到 Tauri
 //! - 统一的事件命名规范（snake_case 常量）
-//! 
+//!
 //! # 优先级事件系统 (P2-11)
-//! 
+//!
 //! - High (5000): task-update, import-complete
 //! - Normal (2000): search-results, search-complete
 //! - Low (500): system-info, system-warning
@@ -55,12 +55,12 @@ impl EventPriority {
 }
 
 /// 分层优先级 Channel 结构
-/// 
+///
 /// 防止高负载下事件丢失，通过不同容量实现背压控制
 pub struct PriorityEventChannels {
-    high: broadcast::Sender<AppEvent>,      // 容量: 5000
-    normal: broadcast::Sender<AppEvent>,    // 容量: 2000
-    low: broadcast::Sender<AppEvent>,       // 容量: 500
+    high: broadcast::Sender<AppEvent>,   // 容量: 5000
+    normal: broadcast::Sender<AppEvent>, // 容量: 2000
+    low: broadcast::Sender<AppEvent>,    // 容量: 500
 }
 
 impl PriorityEventChannels {
@@ -69,12 +69,17 @@ impl PriorityEventChannels {
         let (high, _) = broadcast::channel(EventPriority::High.channel_capacity());
         let (normal, _) = broadcast::channel(EventPriority::Normal.channel_capacity());
         let (low, _) = broadcast::channel(EventPriority::Low.channel_capacity());
-        
+
         Self { high, normal, low }
     }
 
     /// 发送事件到对应优先级的通道
-    pub fn send(&self, event: AppEvent, priority: EventPriority) -> Result<(), broadcast::error::SendError<AppEvent>> {
+    #[allow(clippy::result_large_err)]
+    pub fn send(
+        &self,
+        event: AppEvent,
+        priority: EventPriority,
+    ) -> Result<(), broadcast::error::SendError<AppEvent>> {
         match priority {
             EventPriority::High => self.high.send(event).map(|_| ()),
             EventPriority::Normal => self.normal.send(event).map(|_| ()),
@@ -83,6 +88,7 @@ impl PriorityEventChannels {
     }
 
     /// 根据事件类型自动判断优先级并发送
+    #[allow(clippy::result_large_err)]
     pub fn send_auto(&self, event: AppEvent) -> Result<(), broadcast::error::SendError<AppEvent>> {
         let priority = event_priority(&event);
         self.send(event, priority)
@@ -98,9 +104,15 @@ impl PriorityEventChannels {
     }
 
     /// 订阅所有优先级通道，返回按优先级排序的接收器元组
-    /// 
+    ///
     /// 返回: (High, Normal, Low)
-    pub fn subscribe_all(&self) -> (broadcast::Receiver<AppEvent>, broadcast::Receiver<AppEvent>, broadcast::Receiver<AppEvent>) {
+    pub fn subscribe_all(
+        &self,
+    ) -> (
+        broadcast::Receiver<AppEvent>,
+        broadcast::Receiver<AppEvent>,
+        broadcast::Receiver<AppEvent>,
+    ) {
         (
             self.high.subscribe(),
             self.normal.subscribe(),
@@ -140,7 +152,7 @@ impl Default for PriorityEventChannels {
 }
 
 /// 根据事件类型获取优先级
-/// 
+///
 /// - High: task-update, import-complete
 /// - Normal: search-results, search-complete, 搜索相关事件, 文件监控事件
 /// - Low: system-info, system-warning, system-error
@@ -173,42 +185,84 @@ pub fn event_priority(event: &AppEvent) -> EventPriority {
 }
 
 /// 应用事件枚举
-/// 
+///
 /// 所有内部组件通信的事件类型定义
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
 pub enum AppEvent {
     // 搜索事件
-    SearchStart { message: String },
-    SearchProgress { progress: i32 },
-    SearchResults { results: Vec<crate::models::LogEntry> },
-    SearchSummary { summary: crate::models::SearchResultSummary },
-    SearchComplete { count: usize },
-    SearchError { error: String },
+    SearchStart {
+        message: String,
+    },
+    SearchProgress {
+        progress: i32,
+    },
+    SearchResults {
+        results: Vec<crate::models::LogEntry>,
+    },
+    SearchSummary {
+        summary: crate::models::SearchResultSummary,
+    },
+    SearchComplete {
+        count: usize,
+    },
+    SearchError {
+        error: String,
+    },
 
     // 异步搜索事件
-    AsyncSearchStart { search_id: String },
-    AsyncSearchProgress { search_id: String, progress: u32 },
-    AsyncSearchResults { results: Vec<crate::models::LogEntry> },
-    AsyncSearchComplete { search_id: String, count: usize },
-    AsyncSearchError { search_id: String, error: String },
+    AsyncSearchStart {
+        search_id: String,
+    },
+    AsyncSearchProgress {
+        search_id: String,
+        progress: u32,
+    },
+    AsyncSearchResults {
+        results: Vec<crate::models::LogEntry>,
+    },
+    AsyncSearchComplete {
+        search_id: String,
+        count: usize,
+    },
+    AsyncSearchError {
+        search_id: String,
+        error: String,
+    },
 
     // 任务事件
-    TaskUpdate { progress: TaskProgress },
-    ImportComplete { task_id: String },
+    TaskUpdate {
+        progress: TaskProgress,
+    },
+    ImportComplete {
+        task_id: String,
+    },
 
     // 文件监控事件
-    FileChanged { event: FileChangeEvent },
-    NewLogs { entries: Vec<crate::models::LogEntry> },
+    FileChanged {
+        event: FileChangeEvent,
+    },
+    NewLogs {
+        entries: Vec<crate::models::LogEntry>,
+    },
 
     // 系统事件（通常不转发到前端）
-    SystemError { error: String, context: Option<String> },
-    SystemWarning { warning: String, context: Option<String> },
-    SystemInfo { info: String, context: Option<String> },
+    SystemError {
+        error: String,
+        context: Option<String>,
+    },
+    SystemWarning {
+        warning: String,
+        context: Option<String>,
+    },
+    SystemInfo {
+        info: String,
+        context: Option<String>,
+    },
 }
 
 /// 事件总线
-/// 
+///
 /// 使用 tokio broadcast channel 实现多播事件分发
 pub struct EventBus {
     sender: broadcast::Sender<AppEvent>,
@@ -516,24 +570,69 @@ mod tests {
     fn test_event_type_name_coverage() {
         // 测试所有事件类型都有对应的名称
         let events = vec![
-            AppEvent::SearchStart { message: "".to_string() },
+            AppEvent::SearchStart {
+                message: "".to_string(),
+            },
             AppEvent::SearchProgress { progress: 0 },
             AppEvent::SearchResults { results: vec![] },
-            AppEvent::SearchSummary { summary: crate::models::SearchResultSummary::new(0, vec![], 0, false) },
+            AppEvent::SearchSummary {
+                summary: crate::models::SearchResultSummary::new(0, vec![], 0, false),
+            },
             AppEvent::SearchComplete { count: 0 },
-            AppEvent::SearchError { error: "".to_string() },
-            AppEvent::AsyncSearchStart { search_id: "".to_string() },
-            AppEvent::AsyncSearchProgress { search_id: "".to_string(), progress: 0 },
+            AppEvent::SearchError {
+                error: "".to_string(),
+            },
+            AppEvent::AsyncSearchStart {
+                search_id: "".to_string(),
+            },
+            AppEvent::AsyncSearchProgress {
+                search_id: "".to_string(),
+                progress: 0,
+            },
             AppEvent::AsyncSearchResults { results: vec![] },
-            AppEvent::AsyncSearchComplete { search_id: "".to_string(), count: 0 },
-            AppEvent::AsyncSearchError { search_id: "".to_string(), error: "".to_string() },
-            AppEvent::TaskUpdate { progress: TaskProgress { task_id: "".to_string(), task_type: "".to_string(), target: "".to_string(), status: "".to_string(), message: "".to_string(), progress: 0, workspace_id: None } },
-            AppEvent::ImportComplete { task_id: "".to_string() },
-            AppEvent::FileChanged { event: FileChangeEvent { event_type: "".to_string(), file_path: "".to_string(), workspace_id: "".to_string(), timestamp: 0 } },
+            AppEvent::AsyncSearchComplete {
+                search_id: "".to_string(),
+                count: 0,
+            },
+            AppEvent::AsyncSearchError {
+                search_id: "".to_string(),
+                error: "".to_string(),
+            },
+            AppEvent::TaskUpdate {
+                progress: TaskProgress {
+                    task_id: "".to_string(),
+                    task_type: "".to_string(),
+                    target: "".to_string(),
+                    status: "".to_string(),
+                    message: "".to_string(),
+                    progress: 0,
+                    workspace_id: None,
+                },
+            },
+            AppEvent::ImportComplete {
+                task_id: "".to_string(),
+            },
+            AppEvent::FileChanged {
+                event: FileChangeEvent {
+                    event_type: "".to_string(),
+                    file_path: "".to_string(),
+                    workspace_id: "".to_string(),
+                    timestamp: 0,
+                },
+            },
             AppEvent::NewLogs { entries: vec![] },
-            AppEvent::SystemError { error: "".to_string(), context: None },
-            AppEvent::SystemWarning { warning: "".to_string(), context: None },
-            AppEvent::SystemInfo { info: "".to_string(), context: None },
+            AppEvent::SystemError {
+                error: "".to_string(),
+                context: None,
+            },
+            AppEvent::SystemWarning {
+                warning: "".to_string(),
+                context: None,
+            },
+            AppEvent::SystemInfo {
+                info: "".to_string(),
+                context: None,
+            },
         ];
 
         for event in events {
@@ -551,7 +650,7 @@ mod tests {
         assert_eq!(EventPriority::Low as i32, 0);
         assert_eq!(EventPriority::Normal as i32, 1);
         assert_eq!(EventPriority::High as i32, 2);
-        
+
         // 验证优先级排序
         assert!(EventPriority::Low < EventPriority::Normal);
         assert!(EventPriority::Normal < EventPriority::High);
@@ -569,58 +668,103 @@ mod tests {
     fn test_event_priority_mapping() {
         // 高优先级事件
         let high_events = vec![
-            AppEvent::TaskUpdate { progress: TaskProgress { task_id: "test".to_string(), task_type: "import".to_string(), target: "file".to_string(), status: "running".to_string(), message: "".to_string(), progress: 50, workspace_id: None } },
-            AppEvent::ImportComplete { task_id: "test".to_string() },
+            AppEvent::TaskUpdate {
+                progress: TaskProgress {
+                    task_id: "test".to_string(),
+                    task_type: "import".to_string(),
+                    target: "file".to_string(),
+                    status: "running".to_string(),
+                    message: "".to_string(),
+                    progress: 50,
+                    workspace_id: None,
+                },
+            },
+            AppEvent::ImportComplete {
+                task_id: "test".to_string(),
+            },
         ];
-        
+
         for event in high_events {
-            assert_eq!(event_priority(&event), EventPriority::High, "{:?} should be High priority", event);
+            assert_eq!(
+                event_priority(&event),
+                EventPriority::High,
+                "{:?} should be High priority",
+                event
+            );
         }
 
         // 普通优先级事件
         let normal_events = vec![
-            AppEvent::SearchStart { message: "test".to_string() },
+            AppEvent::SearchStart {
+                message: "test".to_string(),
+            },
             AppEvent::SearchResults { results: vec![] },
             AppEvent::SearchComplete { count: 0 },
-            AppEvent::FileChanged { event: FileChangeEvent { event_type: "modify".to_string(), file_path: "/test".to_string(), workspace_id: "ws".to_string(), timestamp: 0 } },
+            AppEvent::FileChanged {
+                event: FileChangeEvent {
+                    event_type: "modify".to_string(),
+                    file_path: "/test".to_string(),
+                    workspace_id: "ws".to_string(),
+                    timestamp: 0,
+                },
+            },
         ];
-        
+
         for event in normal_events {
-            assert_eq!(event_priority(&event), EventPriority::Normal, "{:?} should be Normal priority", event);
+            assert_eq!(
+                event_priority(&event),
+                EventPriority::Normal,
+                "{:?} should be Normal priority",
+                event
+            );
         }
 
         // 低优先级事件
         let low_events = vec![
-            AppEvent::SystemInfo { info: "test".to_string(), context: None },
-            AppEvent::SystemWarning { warning: "test".to_string(), context: None },
-            AppEvent::SystemError { error: "test".to_string(), context: None },
+            AppEvent::SystemInfo {
+                info: "test".to_string(),
+                context: None,
+            },
+            AppEvent::SystemWarning {
+                warning: "test".to_string(),
+                context: None,
+            },
+            AppEvent::SystemError {
+                error: "test".to_string(),
+                context: None,
+            },
         ];
-        
+
         for event in low_events {
-            assert_eq!(event_priority(&event), EventPriority::Low, "{:?} should be Low priority", event);
+            assert_eq!(
+                event_priority(&event),
+                EventPriority::Low,
+                "{:?} should be Low priority",
+                event
+            );
         }
     }
 
     #[test]
     fn test_priority_event_channels_creation() {
         let channels = PriorityEventChannels::new();
-        
+
         // 验证可以通过每个通道发送和接收
         let mut high_rx = channels.subscribe(EventPriority::High);
-        let event = AppEvent::TaskUpdate { 
-            progress: TaskProgress { 
-                task_id: "test".to_string(), 
-                task_type: "import".to_string(), 
-                target: "file".to_string(), 
-                status: "running".to_string(), 
-                message: "".to_string(), 
-                progress: 50, 
-                workspace_id: None 
-            } 
+        let event = AppEvent::TaskUpdate {
+            progress: TaskProgress {
+                task_id: "test".to_string(),
+                task_type: "import".to_string(),
+                target: "file".to_string(),
+                status: "running".to_string(),
+                message: "".to_string(),
+                progress: 50,
+                workspace_id: None,
+            },
         };
-        
+
         assert!(channels.send(event.clone(), EventPriority::High).is_ok());
-        
+
         // 使用 try_recv 验证事件被正确发送
         let received = high_rx.try_recv();
         assert!(received.is_ok());
@@ -634,23 +778,28 @@ mod tests {
     async fn test_priority_event_channels_send_auto() {
         let channels = PriorityEventChannels::new();
         let (mut high_rx, mut normal_rx, mut low_rx) = channels.subscribe_all();
-        
+
         // 发送不同优先级的事件
-        let high_event = AppEvent::ImportComplete { task_id: "test".to_string() };
+        let high_event = AppEvent::ImportComplete {
+            task_id: "test".to_string(),
+        };
         let normal_event = AppEvent::SearchComplete { count: 10 };
-        let low_event = AppEvent::SystemInfo { info: "test".to_string(), context: None };
-        
+        let low_event = AppEvent::SystemInfo {
+            info: "test".to_string(),
+            context: None,
+        };
+
         channels.send_auto(high_event).unwrap();
         channels.send_auto(normal_event).unwrap();
         channels.send_auto(low_event).unwrap();
-        
+
         // 验证事件被路由到正确的通道
         let received_high = timeout(Duration::from_millis(100), high_rx.recv()).await;
         assert!(received_high.is_ok());
-        
+
         let received_normal = timeout(Duration::from_millis(100), normal_rx.recv()).await;
         assert!(received_normal.is_ok());
-        
+
         let received_low = timeout(Duration::from_millis(100), low_rx.recv()).await;
         assert!(received_low.is_ok());
     }
@@ -659,12 +808,12 @@ mod tests {
     fn test_priority_channels_capacity() {
         // 验证各优先级通道的容量配置
         let channels = PriorityEventChannels::new();
-        
+
         // 验证发送器容量（high: 5000, normal: 2000, low: 500）
         assert_eq!(channels.high_sender().len(), 0);
         assert_eq!(channels.normal_sender().len(), 0);
         assert_eq!(channels.low_sender().len(), 0);
-        
+
         // 验证订阅可以正常工作
         let _ = channels.subscribe(EventPriority::High);
         let _ = channels.subscribe(EventPriority::Normal);

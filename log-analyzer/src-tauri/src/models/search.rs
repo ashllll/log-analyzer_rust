@@ -156,7 +156,11 @@ impl PagedSearchResult {
     }
 
     /// 获取指定范围的条目（用于分页）
-    pub fn slice_results(entries: &[crate::models::LogEntry], page: i32, size: usize) -> Vec<crate::models::LogEntry> {
+    pub fn slice_results(
+        entries: &[crate::models::LogEntry],
+        page: i32,
+        size: usize,
+    ) -> Vec<crate::models::LogEntry> {
         if page < 0 || size == 0 {
             return entries.to_vec();
         }

@@ -329,13 +329,13 @@ where
         let validation_result = self.validator.validate(query);
         if !validation_result.is_valid {
             return Err(crate::error::AppError::validation_error(
-                validation_result.errors.join(", ")
+                validation_result.errors.join(", "),
             ));
         }
 
         // 构建计划
         let plan_result = self.planner.plan(query)?;
-        
+
         // 转换为 ExecutionPlan（这里使用简化版本）
         let plan = ExecutionPlan {
             strategy: crate::services::query_planner::SearchStrategy::And,

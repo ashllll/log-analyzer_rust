@@ -8,7 +8,7 @@
 //! **Feature: bug-fixes**
 //! **Validates: Requirements 9.6, 9.7**
 
-use futures_util::future::join_all;
+use futures::future::join_all;
 use proptest::prelude::*;
 use std::panic;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -330,7 +330,7 @@ mod integration_tests {
             .map(|id| simulate_complete_workspace_deletion(id))
             .collect();
 
-        let results = join_all(futures).await;
+        let results: Vec<Result<(), String>> = join_all(futures).await;
 
         for (i, result) in results.iter().enumerate() {
             assert!(result.is_ok(), "Workspace {} deletion should succeed", i);
@@ -352,7 +352,7 @@ mod integration_tests {
             })
             .collect();
 
-        let results = join_all(futures).await;
+        let results: Vec<Result<String, String>> = join_all(futures).await;
 
         let duration = start.elapsed();
 

@@ -301,6 +301,9 @@ mod tests {
         // Same content should return the same file_id (CAS deduplication)
         // The database has UNIQUE constraint on sha256_hash, so same content
         // shares the same metadata entry
-        assert_eq!(id1, id2, "Same content should share the same file_id (CAS deduplication)");
+        assert_eq!(
+            id1, id2,
+            "Same content should share the same file_id (CAS deduplication)"
+        );
     }
 }

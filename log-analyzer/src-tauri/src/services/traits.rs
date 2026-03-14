@@ -11,10 +11,10 @@
 //! - Support dependency injection for better architecture
 //! - Allow different implementations to be swapped at runtime
 
-use async_trait::async_trait;
 use crate::error::Result;
 use crate::models::search::SearchQuery;
 use crate::storage::metadata_store::FileMetadata;
+use async_trait::async_trait;
 
 /// Query validation result
 #[derive(Debug, Clone)]

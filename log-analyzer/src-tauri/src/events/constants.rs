@@ -1,5 +1,5 @@
 //! 事件名称常量定义
-//! 
+//!
 //! 统一使用 snake_case 命名规范，确保前后端事件名称一致性
 
 // ============================================================================
@@ -127,11 +127,11 @@ mod tests {
         assert!(EVENT_SEARCH_START.starts_with("search-"));
         assert!(EVENT_SEARCH_PROGRESS.starts_with("search-"));
         assert!(EVENT_SEARCH_RESULTS.starts_with("search-"));
-        
+
         // 异步搜索事件前缀一致性
         assert!(EVENT_ASYNC_SEARCH_START.starts_with("async-search-"));
         assert!(EVENT_ASYNC_SEARCH_PROGRESS.starts_with("async-search-"));
-        
+
         // 系统事件前缀一致性
         assert!(EVENT_SYSTEM_ERROR.starts_with("system-"));
         assert!(EVENT_SYSTEM_WARNING.starts_with("system-"));

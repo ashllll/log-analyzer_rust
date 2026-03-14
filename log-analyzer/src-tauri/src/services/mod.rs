@@ -9,13 +9,13 @@ pub mod pattern_matcher;
 pub mod query_executor;
 pub mod query_planner;
 pub mod query_validator;
-pub mod traits;
 pub mod regex_engine;
 pub mod report_collector;
 pub mod search_statistics;
 pub mod service_config;
 pub mod service_container;
 pub mod service_lifecycle;
+pub mod traits;
 pub mod workspace_metrics;
 
 #[cfg(test)]
@@ -43,10 +43,6 @@ pub use intelligent_file_filter::IntelligentFileFilter;
 pub use metadata_db::MetadataDB;
 pub use query_executor::{MatchDetail, QueryExecutor};
 pub use query_planner::{ExecutionPlan, QueryPlannerAdapter};
-pub use traits::{
-    ContentStorage, MetadataStorage, PlanResult, QueryExecutor as QueryExecutorTrait,
-    QueryPlanning, QueryValidation, ValidationResult,
-};
 pub use regex_engine::{
     AhoCorasickEngine, AutomataEngine, EngineError, EngineInfo, EngineMatches, EngineType,
     MatchResult, RegexEngine, StandardEngine,
@@ -59,5 +55,9 @@ pub use service_config::ServiceConfiguration;
 pub use service_container::{AppServices, AppServicesBuilder};
 pub use service_lifecycle::{
     HealthStatus, OverallHealth, Service, ServiceHealth, ServiceLifecycleManager,
+};
+pub use traits::{
+    ContentStorage, MetadataStorage, PlanResult, QueryExecutor as QueryExecutorTrait,
+    QueryPlanning, QueryValidation, ValidationResult,
 };
 pub use workspace_metrics::{DepthDistribution, WorkspaceMetrics, WorkspaceMetricsCollector};

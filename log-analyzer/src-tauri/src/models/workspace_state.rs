@@ -2,12 +2,12 @@
 //!
 //! 使用 DashMap 替代 Arc<Mutex<HashMap<...>>> 实现无锁并发访问
 
+use crate::search_engine::manager::SearchEngineManager;
+use crate::services::file_watcher::WatcherState;
+use crate::storage::{ContentAddressableStorage, MetadataStore};
 use dashmap::DashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use crate::storage::{ContentAddressableStorage, MetadataStore};
-use crate::search_engine::manager::SearchEngineManager;
-use crate::services::file_watcher::WatcherState;
 
 /// 工作区状态 - 管理工作区相关的所有资源
 pub struct WorkspaceState {
@@ -38,7 +38,9 @@ impl Default for WorkspaceState {
 impl WorkspaceState {
     /// 获取工作区目录
     pub fn get_workspace_dir(&self, workspace_id: &str) -> Option<PathBuf> {
-        self.workspace_dirs.get(workspace_id).map(|entry| entry.clone())
+        self.workspace_dirs
+            .get(workspace_id)
+            .map(|entry| entry.clone())
     }
 
     /// 设置工作区目录

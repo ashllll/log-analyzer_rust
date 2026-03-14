@@ -873,11 +873,8 @@ impl CacheManager {
         }
 
         // 清空 L2 缓存 (moka sync cache)
-        let l2_keys: Vec<SearchCacheKey> = self
-            .l2_cache
-            .iter()
-            .map(|(k, _)| (*k).clone())
-            .collect();
+        let l2_keys: Vec<SearchCacheKey> =
+            self.l2_cache.iter().map(|(k, _)| (*k).clone()).collect();
         for key in &l2_keys {
             self.l2_cache.invalidate(key);
         }
@@ -1371,11 +1368,7 @@ impl CacheManager {
 
     /// 清空 L2 缓存
     pub fn clear_l2(&self) {
-        let keys: Vec<SearchCacheKey> = self
-            .l2_cache
-            .iter()
-            .map(|(k, _)| (*k).clone())
-            .collect();
+        let keys: Vec<SearchCacheKey> = self.l2_cache.iter().map(|(k, _)| (*k).clone()).collect();
         for key in keys {
             self.l2_cache.invalidate(&key);
         }
@@ -1655,7 +1648,10 @@ mod tests {
         // 注意：moka 缓存的 entry_count 可能有延迟，需要触发同步
         manager.l2_cache.run_pending_tasks();
         let stats = manager.get_l2_statistics();
-        assert_eq!(stats.entry_count, 1, "L2 cache should have 1 entry after insertion");
+        assert_eq!(
+            stats.entry_count, 1,
+            "L2 cache should have 1 entry after insertion"
+        );
 
         // 测试 L2 配置
         let config = manager.get_l2_config();

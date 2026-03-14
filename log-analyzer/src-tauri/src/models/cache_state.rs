@@ -2,10 +2,10 @@
 //!
 //! 提供缓存管理器和清理队列的共享访问
 
-use moka::sync::Cache;
-use std::sync::Arc;
 use crate::utils::cache_manager::CacheManager;
 use crate::utils::cleanup::CleanupQueue;
+use moka::sync::Cache;
+use std::sync::Arc;
 
 /// 缓存状态 - 管理缓存相关的所有资源
 pub struct CacheState {
@@ -20,7 +20,7 @@ impl Default for CacheState {
         // 创建同步缓存 (L1 cache)
         let sync_cache = Cache::builder().max_capacity(1000).build();
         let cache_manager = CacheManager::new(Arc::new(sync_cache));
-        
+
         Self {
             cache_manager: Arc::new(cache_manager),
             cleanup_queue: Arc::new(CleanupQueue::new()),

@@ -1,9 +1,9 @@
 //! 简化版 Tauri 事件桥接
-//! 
+//!
 //! 直接转发内部事件到 Tauri 前端，移除多余的中转层
-//! 
+//!
 //! # 优先级处理 (P2-11)
-//! 
+//!
 //! 桥接器优先处理高优先级事件，确保关键事件不被延迟：
 //! - 使用 PriorityEventChannels 接收事件
 //! - 优先检查 high 通道，然后是 normal 和 low
@@ -17,11 +17,11 @@ use super::constants::*;
 use super::{get_event_bus, AppEvent, PriorityEventChannels};
 
 /// Tauri 事件桥接器
-/// 
+///
 /// 从内部事件总线接收事件并直接转发到 Tauri 前端
-/// 
+///
 /// # 优先级支持
-/// 
+///
 /// 支持两种模式：
 /// 1. 传统模式：使用单一 EventBus（向后兼容）
 /// 2. 优先级模式：使用 PriorityEventChannels（推荐）
@@ -56,15 +56,11 @@ impl TauriBridge {
     /// 创建新的 Tauri 桥接器（优先级模式）
     pub fn with_priority_channels(app_handle: AppHandle, channels: &PriorityEventChannels) -> Self {
         let (high, normal, low) = channels.subscribe_all();
-        
+
         Self {
             app_handle,
             receiver: high.resubscribe(), // high 优先级作为默认
-            priority_receivers: Some(PriorityReceivers {
-                high,
-                normal,
-                low,
-            }),
+            priority_receivers: Some(PriorityReceivers { high, normal, low }),
             is_running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
@@ -228,9 +224,12 @@ impl TauriBridge {
     }
 
     /// 转发事件到 Tauri 前端
-    /// 
+    ///
     /// 使用常量定义的事件名称，确保命名一致性
-    async fn forward_event_static(app_handle: &AppHandle, event: AppEvent) -> Result<(), tauri::Error> {
+    async fn forward_event_static(
+        app_handle: &AppHandle,
+        event: AppEvent,
+    ) -> Result<(), tauri::Error> {
         match event {
             // 搜索事件
             AppEvent::SearchStart { message } => {
@@ -260,19 +259,16 @@ impl TauriBridge {
                 search_id,
                 progress,
             } => {
-                app_handle
-                    .emit(EVENT_ASYNC_SEARCH_PROGRESS, (search_id, progress))?;
+                app_handle.emit(EVENT_ASYNC_SEARCH_PROGRESS, (search_id, progress))?;
             }
             AppEvent::AsyncSearchResults { results } => {
                 app_handle.emit(EVENT_ASYNC_SEARCH_RESULTS, results)?;
             }
             AppEvent::AsyncSearchComplete { search_id, count } => {
-                app_handle
-                    .emit(EVENT_ASYNC_SEARCH_COMPLETE, (search_id, count))?;
+                app_handle.emit(EVENT_ASYNC_SEARCH_COMPLETE, (search_id, count))?;
             }
             AppEvent::AsyncSearchError { search_id, error } => {
-                app_handle
-                    .emit(EVENT_ASYNC_SEARCH_ERROR, (search_id, error))?;
+                app_handle.emit(EVENT_ASYNC_SEARCH_ERROR, (search_id, error))?;
             }
 
             // 任务事件
@@ -323,7 +319,7 @@ impl TauriBridge {
 }
 
 /// 初始化并启动 Tauri 事件桥接器
-/// 
+///
 /// 在应用启动时调用，在后台任务中运行桥接器
 pub fn init_tauri_bridge(app_handle: AppHandle) {
     let bridge = TauriBridge::new(app_handle);
@@ -337,7 +333,7 @@ pub fn init_tauri_bridge(app_handle: AppHandle) {
 }
 
 /// 初始化并启动 Tauri 事件桥接器（使用优先级通道）
-/// 
+///
 /// 推荐在高负载场景下使用，防止高优先级事件丢失
 pub fn init_tauri_bridge_with_priority(app_handle: AppHandle, channels: &PriorityEventChannels) {
     let bridge = TauriBridge::with_priority_channels(app_handle, channels);
@@ -351,7 +347,7 @@ pub fn init_tauri_bridge_with_priority(app_handle: AppHandle, channels: &Priorit
 }
 
 /// 便捷函数：直接通过 Tauri AppHandle 发送事件
-/// 
+///
 /// 用于需要直接访问 Tauri 发射器的场景
 pub fn emit_to_frontend<T: serde::Serialize + Clone>(
     app_handle: &AppHandle,
@@ -362,7 +358,7 @@ pub fn emit_to_frontend<T: serde::Serialize + Clone>(
 }
 
 /// 便捷发射函数模块
-/// 
+///
 /// 提供简化的函数来发射各类事件，保持向后兼容性
 pub mod emit {
     use super::super::{emit_event, AppEvent, BroadcastResult};
