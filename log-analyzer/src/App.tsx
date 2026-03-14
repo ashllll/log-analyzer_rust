@@ -7,6 +7,7 @@ import { ErrorBoundary } from 'react-error-boundary';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { Toaster } from 'react-hot-toast';
+import { MemoryRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 
 // 初始化i18n
 import './i18n';
@@ -46,9 +47,13 @@ const PageSkeleton: React.FC = () => (
 
 // --- Main App Component (Internal) ---
 function AppContent() {
-  const page = useAppStore((state) => state.page);
+  const navigate = useNavigate();
+  const location = useLocation();
+  
+  // 当前页面路径
+  const currentPage = location.pathname.slice(1) || 'workspaces';
+  
   const activeWorkspaceId = useAppStore((state) => state.activeWorkspaceId);
-  const setPage = useAppStore((state) => state.setPage);
   const addToast = useAppStore((state) => state.addToast);
   const isInitialized = useAppStore((state) => state.isInitialized);
   const initializationError = useAppStore((state) => state.initializationError);
@@ -60,6 +65,11 @@ function AppContent() {
   const [importStatus] = useState("");  // 保留以兼容旧代码，但实际不再使用
 
   const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId) || null;
+
+  // 导航函数
+  const setPage = (page: string) => {
+    navigate(`/${page}`);
+  };
 
   // 初始化状态同步并监听工作区事件
   useEffect(() => {
@@ -135,25 +145,25 @@ function AppContent() {
       <div className="w-[240px] bg-bg-sidebar border-r border-border-base flex flex-col shrink-0 z-50">
         <div className="h-14 flex items-center px-5 border-b border-border-base mb-2 select-none"><div className="h-8 w-8 bg-primary rounded-lg flex items-center justify-center text-white mr-3 shadow-lg shadow-primary/20"><Zap size={18} fill="currentColor" /></div><span className="font-bold text-lg tracking-tight">LogAnalyzer</span></div>
         <div className="flex-1 px-3 py-4 space-y-1">
-            <NavItem icon={LayoutGrid} label="Workspaces" active={page === 'workspaces'} onClick={() => setPage('workspaces')} data-testid="nav-workspaces" />
-            <NavItem icon={Search} label="Search Logs" active={page === 'search'} onClick={() => setPage('search')} data-testid="nav-search" />
-            <NavItem icon={ListTodo} label="Keywords" active={page === 'keywords'} onClick={() => setPage('keywords')} data-testid="nav-keywords" />
-            <NavItem icon={Layers} label="Tasks" active={page === 'tasks'} onClick={() => setPage('tasks')} data-testid="nav-tasks" />
-            <NavItem icon={Activity} label="Performance" active={page === 'performance'} onClick={() => setPage('performance')} data-testid="nav-performance" />
+            <NavItem icon={LayoutGrid} label="Workspaces" active={currentPage === 'workspaces'} onClick={() => setPage('workspaces')} data-testid="nav-workspaces" />
+            <NavItem icon={Search} label="Search Logs" active={currentPage === 'search'} onClick={() => setPage('search')} data-testid="nav-search" />
+            <NavItem icon={ListTodo} label="Keywords" active={currentPage === 'keywords'} onClick={() => setPage('keywords')} data-testid="nav-keywords" />
+            <NavItem icon={Layers} label="Tasks" active={currentPage === 'tasks'} onClick={() => setPage('tasks')} data-testid="nav-tasks" />
+            <NavItem icon={Activity} label="Performance" active={currentPage === 'performance'} onClick={() => setPage('performance')} data-testid="nav-performance" />
         </div>
         {importStatus && <div className="p-3 m-3 bg-bg-card border border-primary/20 rounded text-xs text-primary animate-pulse"><div className="font-bold mb-1 flex items-center gap-2"><Loader2 size={12} className="animate-spin"/> Processing</div><div className="truncate opacity-80">{importStatus}</div></div>}
         <div className="p-3 border-t border-border-base">
-          <NavItem icon={Cog} label="Settings" active={page === 'settings'} onClick={() => setPage('settings')} data-testid="nav-settings" />
+          <NavItem icon={Cog} label="Settings" active={currentPage === 'settings'} onClick={() => setPage('settings')} data-testid="nav-settings" />
         </div>
       </div>
       <div className="flex-1 flex flex-col min-w-0 bg-bg-main">
         <div className="h-14 border-b border-border-base bg-bg-main flex items-center justify-between px-6 shrink-0 z-40">
           <div className="flex items-center text-sm text-text-muted select-none">
-            {page === 'settings' ? (
+            {currentPage === 'settings' ? (
               <span className="font-medium text-text-main flex items-center gap-2">
                 <Cog size={14} className="text-primary"/> Settings
               </span>
-            ) : page === 'performance' ? (
+            ) : currentPage === 'performance' ? (
               <span className="font-medium text-text-main flex items-center gap-2">
                 <Activity size={14} className="text-primary"/> Performance
               </span>
@@ -173,17 +183,20 @@ function AppContent() {
             FallbackComponent={CompactErrorFallback} 
             onReset={() => {
               // 清除错误状态并保持在当前页面
-              console.log('Error boundary reset, staying on page:', page);
+              console.log('Error boundary reset, staying on page:', currentPage);
             }}
-            resetKeys={[page]}
+            resetKeys={[currentPage]}
           >
             <Suspense fallback={<PageSkeleton />}>
-              {page === 'search' && <SearchPage keywordGroups={keywordGroups} addToast={addToast} searchInputRef={searchInputRef} activeWorkspace={activeWorkspace} />}
-              {page === 'keywords' && <KeywordsPage />}
-              {page === 'workspaces' && <WorkspacesPage />}
-              {page === 'tasks' && <TasksPage />}
-              {page === 'performance' && <PerformancePage />}
-              {page === 'settings' && <SettingsPage />}
+              <Routes>
+                <Route path="/" element={<Navigate to="/workspaces" replace />} />
+                <Route path="/workspaces" element={<WorkspacesPage />} />
+                <Route path="/search" element={<SearchPage keywordGroups={keywordGroups} addToast={addToast} searchInputRef={searchInputRef} activeWorkspace={activeWorkspace} />} />
+                <Route path="/keywords" element={<KeywordsPage />} />
+                <Route path="/tasks" element={<TasksPage />} />
+                <Route path="/performance" element={<PerformancePage />} />
+                <Route path="/settings" element={<SettingsPage />} />
+              </Routes>
             </Suspense>
           </ErrorBoundary>
         </div>
@@ -244,9 +257,11 @@ export default function App() {
   return (
     <ErrorBoundary FallbackComponent={PageErrorFallback}>
       <QueryClientProvider client={queryClient}>
-        <AppStoreProvider>
-          <AppContent />
-        </AppStoreProvider>
+        <MemoryRouter>
+          <AppStoreProvider>
+            <AppContent />
+          </AppStoreProvider>
+        </MemoryRouter>
       </QueryClientProvider>
     </ErrorBoundary>
   );

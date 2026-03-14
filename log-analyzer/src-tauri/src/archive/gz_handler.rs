@@ -14,6 +14,73 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
  * 支持两种模式:
  * - 内存模式: 适用于小文件 (< 10MB)
  * - 流式模式: 适用于大文件，避免内存溢出
+ * 
+ * ============================================================================
+ * Phase 4: 并行解压技术评估报告
+ * ============================================================================
+ * 
+ * ## 评估方案对比
+ * 
+ * ### 方案 1: 使用 rayon 并行处理多个 gzip 块
+ * **可行性**: ⭐⭐⭐ (中等)
+ * **复杂度**: 高
+ * **适用场景**: 超大文件 (1GB+) 且需要极致解压速度
+ * 
+ * **技术限制**:
+ * - gzip 格式本身不是并行友好的，压缩数据是流式依赖的
+ * - 需要将文件分割成独立块，每个块需要独立的压缩字典
+ * - 实现复杂度极高，需要修改压缩库底层
+ * 
+ * **性能预期**:
+ * - 理论上可达到 2-4x 加速（取决于 CPU 核心数）
+ * - 实际收益可能受 I/O 瓶颈限制
+ * 
+ * ### 方案 2: 使用 `parallel-gzip` (pigz 的 Rust 移植)
+ * **可行性**: ⭐⭐⭐⭐ (较高)
+ * **复杂度**: 中
+ * **适用场景**: 批量处理多个 gzip 文件
+ * 
+ * **技术实现**:
+ * ```rust
+ * use rayon::prelude::*;
+ * 
+ * // 并行处理多个 gzip 文件
+ * pub fn parallel_extract_files(files: &[PathBuf], output_dir: &Path) -> Vec<Result<()>> {
+ *     files.par_iter()
+ *         .map(|file| extract_single_file(file, output_dir))
+ *         .collect()
+ * }
+ * ```
+ * 
+ * **优点**:
+ * - 实现简单，直接利用 rayon 的并行迭代器
+ * - 适合日志分析场景（通常需要处理多个日志文件）
+ * 
+ * ### 方案 3: 使用 `async-compression` + `tokio::task::spawn_blocking`
+ * **可行性**: ⭐⭐⭐⭐⭐ (推荐)
+ * **复杂度**: 低
+ * **适用场景**: 当前架构的最佳选择
+ * 
+ * **当前实现**: 已在使用 `async-compression` 进行流式解压
+ * **优化建议**: 对多个文件使用并行流处理
+ * 
+ * ## 适用场景总结
+ * 
+ * | 场景 | 推荐方案 | 原因 |
+ * |------|---------|------|
+ * | 单个大文件 (>1GB) | 流式处理 (当前) | gzip 格式限制，并行收益有限 |
+ * | 多个文件批量处理 | rayon 并行 | 文件间无依赖，并行收益高 |
+ * | 实时解压需求 | async + 流式 | 内存友好，响应及时 |
+ * 
+ * ## 建议实现
+ * 
+ * 对于日志分析器的实际使用场景，建议在更高层（工作区导入）使用并行处理：
+ * - 多个 gzip 文件并行解压
+ * - 与索引构建并行化
+ * - 使用 tokio 的 `spawn_blocking` 避免阻塞异步运行时
+ * 
+ * 参见: `src/services/concurrent_import.rs` (如需要可实现)
+ * ============================================================================
  */
 pub struct GzHandler;
 
@@ -42,7 +109,7 @@ impl GzHandler {
         target_dir: &Path,
         max_file_size: u64,
     ) -> Result<ExtractionSummary> {
-        const BUFFER_SIZE: usize = 64 * 1024; // 64KB buffer for streaming
+        const BUFFER_SIZE: usize = 1024 * 1024; // 1MB buffer for streaming (优化: 从 64KB 增大，减少 16x syscall 次数)
 
         // Ensure target directory exists
         fs::create_dir_all(target_dir).await.map_err(|e| {
@@ -301,6 +368,170 @@ fn decompress_gzip(data: &[u8]) -> Result<Vec<u8>> {
         .map_err(|e| AppError::archive_error(format!("Failed to decompress gzip: {}", e), None))?;
 
     Ok(decompressed)
+}
+
+/// 并行解压多个 GZ 文件（示例实现）
+/// 
+/// 适用于批量处理多个 gzip 文件的场景，利用 rayon 实现文件级并行。
+/// 注意：这是独立文件间的并行，不是单个文件内的并行（gzip 格式限制）。
+///
+/// # Arguments
+///
+/// * `files` - 要解压的 gzip 文件路径列表
+/// * `output_dir` - 输出目录
+/// * `max_workers` - 最大并行工作线程数（默认：CPU 核心数）
+///
+/// # Returns
+///
+/// 解压结果的向量，每个元素对应输入文件的处理结果
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use std::path::PathBuf;
+/// 
+/// let files = vec![
+///     PathBuf::from("logs/app.2024-01-01.log.gz"),
+///     PathBuf::from("logs/app.2024-01-02.log.gz"),
+///     PathBuf::from("logs/app.2024-01-03.log.gz"),
+/// ];
+/// 
+/// let results = parallel_extract_gz_files(&files, Path::new("output"), Some(4));
+/// for (path, result) in files.iter().zip(results.iter()) {
+///     match result {
+///         Ok(summary) => println!("✅ {:?}: {:?}", path, summary),
+///         Err(e) => println!("❌ {:?}: {}", path, e),
+///     }
+/// }
+/// ```
+#[allow(dead_code)]
+pub fn parallel_extract_gz_files(
+    files: &[std::path::PathBuf],
+    output_dir: &std::path::Path,
+    max_workers: Option<usize>,
+) -> Vec<Result<ExtractionSummary>> {
+    use rayon::prelude::*;
+    
+    // 配置线程池大小
+    let num_threads = max_workers.unwrap_or_else(num_cpus::get);
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(num_threads)
+        .build()
+        .map_err(|e| AppError::archive_error(
+            format!("Failed to create thread pool: {}", e),
+            None
+        ))
+        .ok();
+    
+    let handler = GzHandler;
+    let output_dir = output_dir.to_path_buf();
+    
+    // 使用 rayon 并行迭代器处理文件
+    let process_file = |file: &std::path::PathBuf| -> Result<ExtractionSummary> {
+        // 创建每个文件的独立输出子目录，避免文件名冲突
+        let file_stem = file.file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("output");
+        let file_output_dir = output_dir.join(file_stem);
+        
+        // 使用 tokio 运行时执行异步解压
+        let rt = tokio::runtime::Handle::try_current()
+            .map_err(|e| AppError::archive_error(
+                format!("No tokio runtime: {}", e),
+                Some(file.clone())
+            ))?;
+        
+        rt.block_on(async {
+            handler.extract_with_limits(
+                file,
+                &file_output_dir,
+                100 * 1024 * 1024,   // 100MB 单文件限制
+                1024 * 1024 * 1024,  // 1GB 总限制
+                1000,                // 最多 1000 个文件
+            ).await
+        })
+    };
+    
+    match pool {
+        Some(pool) => pool.install(|| {
+            files.par_iter().map(process_file).collect()
+        }),
+        None => files.iter().map(process_file).collect(),
+    }
+}
+
+/// 异步并行解压多个 GZ 文件（Tokio 版本）
+/// 
+/// 更适合集成到现有的异步架构中，使用 `tokio::task::spawn_blocking` 
+/// 将 CPU 密集型解压任务移至独立线程。
+///
+/// # Arguments
+///
+/// * `files` - 要解压的 gzip 文件路径列表
+/// * `output_dir` - 输出目录
+/// * `concurrency_limit` - 并发限制（默认：CPU 核心数）
+///
+/// # Returns
+///
+/// 解压结果的向量
+///
+/// # 性能对比
+///
+/// | 方式 | 适用场景 | 内存占用 | 复杂度 |
+/// |------|---------|---------|--------|
+/// | 顺序处理 | 文件少，内存敏感 | 低 | 低 |
+/// | Rayon 并行 | CPU 密集型批量处理 | 中 | 中 |
+/// | Tokio 并行 | 异步架构集成 | 中 | 中 |
+#[allow(dead_code)]
+pub async fn async_parallel_extract_gz_files(
+    files: Vec<std::path::PathBuf>,
+    output_dir: std::path::PathBuf,
+    concurrency_limit: Option<usize>,
+) -> Vec<Result<ExtractionSummary>> {
+    use futures::stream::{self, StreamExt};
+    
+    let limit = concurrency_limit.unwrap_or_else(num_cpus::get);
+    
+    stream::iter(files.into_iter().enumerate())
+        .map(|(idx, file)| {
+            let output_dir = output_dir.clone();
+            
+            async move {
+                // 使用 spawn_blocking 避免阻塞 tokio 运行时
+                let file_clone = file.clone();
+                tokio::task::spawn_blocking(move || {
+                    let file_stem = file_clone.file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("output");
+                    let file_output_dir = output_dir.join(format!("{}_{}", idx, file_stem));
+                    
+                    // 创建新的 tokio 运行时用于执行异步解压
+                    let rt = match tokio::runtime::Runtime::new() {
+                        Ok(rt) => rt,
+                        Err(e) => return Err(AppError::archive_error(
+                            format!("Failed to create runtime: {}", e),
+                            Some(file_clone)
+                        )),
+                    };
+                    
+                    rt.block_on(async {
+                        GzHandler.extract_with_limits(
+                            &file_clone,
+                            &file_output_dir,
+                            100 * 1024 * 1024,
+                            1024 * 1024 * 1024,
+                            1000,
+                        ).await
+                    })
+                }).await.map_err(|e| AppError::archive_error(
+                    format!("Task join error: {}", e),
+                    Some(file)
+                ))?
+            }
+        })
+        .buffer_unordered(limit)  // 限制并发数
+        .collect()
+        .await
 }
 
 #[cfg(test)]

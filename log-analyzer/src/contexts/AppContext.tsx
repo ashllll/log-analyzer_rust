@@ -8,7 +8,6 @@ import { getFullErrorMessage } from '../services/errors';
 // Types
 // ============================================================================
 
-export type Page = 'search' | 'keywords' | 'workspaces' | 'tasks' | 'performance' | 'settings';
 export type ColorKey = 'blue' | 'green' | 'red' | 'orange' | 'purple';
 export type ToastType = 'success' | 'error' | 'info';
 
@@ -56,22 +55,17 @@ export interface Toast {
 // ============================================================================
 
 export interface AppState {
-  page: Page;
   toasts: Toast[];
   activeWorkspaceId: string | null;
 }
 
 export type AppAction =
-  | { type: 'SET_PAGE'; payload: Page }
   | { type: 'ADD_TOAST'; payload: { type: ToastType; message: string } }
   | { type: 'REMOVE_TOAST'; payload: number }
   | { type: 'SET_ACTIVE_WORKSPACE'; payload: string | null };
 
 const appReducer = (state: AppState, action: AppAction): AppState => {
   switch (action.type) {
-    case 'SET_PAGE':
-      return { ...state, page: action.payload };
-    
     case 'ADD_TOAST': {
       const id = Date.now();
       return { ...state, toasts: [...state.toasts, { id, ...action.payload }] };
@@ -256,7 +250,6 @@ const taskReducer = (state: TaskState, action: TaskAction): TaskState => {
 
 interface AppContextType {
   state: AppState;
-  setPage: (page: Page) => void;
   addToast: (type: ToastType, message: string) => void;
   removeToast: (id: number) => void;
   setActiveWorkspace: (id: string | null) => void;
@@ -289,7 +282,6 @@ const TaskContext = createContext<TaskContextType | undefined>(undefined);
 export const AppProvider = ({ children }: { children: ReactNode }) => {
   // App State
   const [appState, appDispatch] = useReducer(appReducer, {
-    page: 'workspaces' as Page,
     toasts: [],
     activeWorkspaceId: null
   });
@@ -325,10 +317,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const toastTimeoutsRef = useRef<Set<NodeJS.Timeout>>(new Set());
 
   // App Actions
-  const setPage = useCallback((page: Page) => {
-    appDispatch({ type: 'SET_PAGE', payload: page });
-  }, []);
-
   const addToast = useCallback((type: ToastType, message: string) => {
     const action = { type: 'ADD_TOAST' as const, payload: { type, message } };
     appDispatch(action);
@@ -549,7 +537,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   }, [addToast, taskDispatch, workspaceDispatch, taskState.tasks]);
 
   return (
-    <AppContext.Provider value={{ state: appState, setPage, addToast, removeToast, setActiveWorkspace }}>
+    <AppContext.Provider value={{ state: appState, addToast, removeToast, setActiveWorkspace }}>
       <WorkspaceContext.Provider value={{ state: workspaceState, dispatch: workspaceDispatch }}>
         <KeywordContext.Provider value={{ state: keywordState, dispatch: keywordDispatch }}>
           <TaskContext.Provider value={{ state: taskState, dispatch: taskDispatch }}>

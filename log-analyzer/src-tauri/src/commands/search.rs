@@ -15,12 +15,40 @@ use tracing::{debug, error, info, warn};
 // 导入AppError类型
 use crate::error::AppError;
 
-use crate::models::search::{QueryMetadata, QueryOperator, SearchTerm, TermSource};
+use crate::models::search::{PagedSearchResult, QueryMetadata, QueryOperator, SearchTerm, TermSource};
 use crate::models::search_statistics::SearchResultSummary;
 use crate::models::{AppState, LogEntry, SearchCacheKey, SearchFilters, SearchQuery};
+
+// MessagePack 序列化支持
+use serde::{Deserialize, Serialize};
+
+/// 二进制搜索结果结构（用于 MessagePack 传输）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BinarySearchResult {
+    pub search_id: String,
+    pub entries: Vec<LogEntry>,
+    pub total_count: usize,
+    pub duration_ms: u64,
+    pub was_truncated: bool,
+}
+
+/// 二进制搜索请求参数
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BinarySearchRequest {
+    pub query: String,
+    pub workspace_id: Option<String>,
+    pub max_results: Option<usize>,
+    pub filters: Option<SearchFilters>,
+}
+
 // 导入移除: SearchEngineManager 相关类型未使用
 use crate::services::{calculate_keyword_statistics, parse_metadata, ExecutionPlan, QueryExecutor};
 use crate::utils::encoding::decode_log_content;
+
+// 分页搜索缓存配置
+const MAX_CACHED_SEARCHES: usize = 100;
+const MAX_RESULTS_PER_SEARCH: usize = 1_000_000;
+const DEFAULT_PAGE_SIZE: usize = 1000;
 
 /// 计算并打印缓存统计信息
 fn log_cache_statistics(total_searches: &Arc<Mutex<u64>>, cache_hits: &Arc<Mutex<u64>>) {
@@ -153,8 +181,8 @@ pub async fn search_logs(
             // 记录缓存统计
             log_cache_statistics(&total_searches, &cache_hits);
 
-            // 发送缓存结果（批量发送，不使用 sleep 阻塞）
-            for chunk in cached_results.chunks(500) {
+            // 发送缓存结果（批量发送，优化：chunk 大小从 500 增加到 2000，减少 IPC 调用次数 75%）
+            for chunk in cached_results.chunks(2000) {
                 let _ = app_handle.emit("search-results", chunk);
                 // 移除 thread::sleep，使用 tokio::task::yield_now 避免阻塞
                 // 但由于在同步上下文中，直接发送即可
@@ -435,7 +463,8 @@ pub async fn search_logs(
         );
 
         // 流式处理：分批发送结果，避免内存峰值
-        let batch_size = 500;
+        // 优化：batch_size 从 500 增加到 2000，减少 IPC 调用次数 75%，提高吞吐量
+        let batch_size = 2000;
         let mut total_processed = 0;
         let mut results_count = 0;
         // 流式统计：使用HashMap增量统计关键词，避免累积所有结果
@@ -842,4 +871,638 @@ fn search_single_file_with_details(
     }
 
     results
+}
+
+// ============================================================================
+// 分页搜索功能
+// ============================================================================
+
+use std::collections::VecDeque;
+
+/// 分页搜索结果缓存项
+#[derive(Clone)]
+struct PagedSearchCacheEntry {
+    search_id: String,
+    query: String,
+    workspace_id: String,
+    results: Vec<LogEntry>,
+    summary: SearchResultSummary,
+    cached_at: std::time::Instant,
+}
+
+/// 分页搜索缓存
+pub struct PagedSearchCache {
+    entries: VecDeque<PagedSearchCacheEntry>,
+    max_size: usize,
+}
+
+impl PagedSearchCache {
+    fn new(max_size: usize) -> Self {
+        Self {
+            entries: VecDeque::with_capacity(max_size),
+            max_size,
+        }
+    }
+
+    fn get(&self, search_id: &str) -> Option<&PagedSearchCacheEntry> {
+        self.entries.iter().find(|e| e.search_id == search_id)
+    }
+
+    fn insert(&mut self, entry: PagedSearchCacheEntry) {
+        // 移除相同 search_id 的旧缓存
+        self.entries.retain(|e| e.search_id != entry.search_id);
+
+        // 如果超出容量，移除最旧的
+        if self.entries.len() >= self.max_size {
+            self.entries.pop_front();
+        }
+
+        self.entries.push_back(entry);
+    }
+
+    #[allow(dead_code)]
+    fn cleanup_expired(&mut self, max_age_secs: u64) {
+        let now = std::time::Instant::now();
+        self.entries
+            .retain(|e| now.duration_since(e.cached_at).as_secs() < max_age_secs);
+    }
+}
+
+// 全局分页搜索缓存
+static PAGED_SEARCH_CACHE: std::sync::OnceLock<std::sync::Mutex<PagedSearchCache>> =
+    std::sync::OnceLock::new();
+
+fn get_paged_search_cache() -> &'static std::sync::Mutex<PagedSearchCache> {
+    PAGED_SEARCH_CACHE.get_or_init(|| std::sync::Mutex::new(PagedSearchCache::new(MAX_CACHED_SEARCHES)))
+}
+
+/// 分页搜索日志
+///
+/// # 参数
+/// - `query`: 搜索查询字符串
+/// - `page_size`: 每页大小
+/// - `page_index`: 页索引，-1 表示执行新搜索并缓存
+/// - `state`: 应用状态
+///
+/// # 返回
+/// 分页搜索结果，包含当前页数据和元数据
+#[command]
+pub async fn search_logs_paged(
+    query: String,
+    page_size: Option<usize>,
+    page_index: i32,
+    #[allow(non_snake_case)] searchId: Option<String>,
+    #[allow(non_snake_case)] workspaceId: Option<String>,
+    filters: Option<SearchFilters>,
+    state: State<'_, AppState>,
+) -> Result<PagedSearchResult, String> {
+    // 参数验证
+    if query.is_empty() {
+        return Err("Search query cannot be empty".to_string());
+    }
+    if query.len() > 1000 {
+        return Err("Search query too long (max 1000 characters)".to_string());
+    }
+
+    let page_size = page_size.unwrap_or(DEFAULT_PAGE_SIZE).min(10000);
+
+    // 处理已有缓存的搜索（page_index >= 0 且有 searchId）
+    if page_index >= 0 {
+        if let Some(ref sid) = searchId {
+            let cache = get_paged_search_cache().lock().map_err(|e| e.to_string())?;
+            if let Some(entry) = cache.get(sid) {
+                let page = page_index as usize;
+                let start = page * page_size;
+
+                if start >= entry.results.len() {
+                    // 返回空页
+                    return Ok(PagedSearchResult::new(
+                        vec![],
+                        entry.results.len(),
+                        page_index,
+                        page_size,
+                        entry.summary.clone(),
+                        query,
+                        sid.clone(),
+                    ));
+                }
+
+                let end = (start + page_size).min(entry.results.len());
+                let page_results = entry.results[start..end].to_vec();
+
+                return Ok(PagedSearchResult::new(
+                    page_results,
+                    entry.results.len(),
+                    page_index,
+                    page_size,
+                    entry.summary.clone(),
+                    query,
+                    sid.clone(),
+                ));
+            }
+        }
+        // 缓存未找到，需要重新搜索
+        return Err(
+            "Search not found in cache. Please start a new search with page_index = -1".to_string(),
+        );
+    }
+
+    // 执行新搜索（page_index == -1）
+    let workspace_dirs = Arc::clone(&state.workspace_dirs);
+    let cas_instances = Arc::clone(&state.cas_instances);
+    let metadata_stores = Arc::clone(&state.metadata_stores);
+
+    let filters = filters.unwrap_or_default();
+
+    // 确定工作区ID
+    let workspace_id = if let Some(ref id) = workspaceId {
+        id.clone()
+    } else {
+        let dirs = workspace_dirs.lock();
+        dirs.keys()
+            .next()
+            .cloned()
+            .ok_or_else(|| "No workspaces available. Please create a workspace first.".to_string())?
+    };
+
+    // 生成搜索ID
+    let search_id = uuid::Uuid::new_v4().to_string();
+    let search_id_for_spawn = search_id.clone();
+
+    // 克隆需要在闭包中使用的变量
+    let query_for_spawn = query.clone();
+    let workspace_id_for_spawn = workspace_id.clone();
+
+    // 在阻塞任务中执行搜索
+    let results = tokio::task::spawn_blocking(move || -> Result<Vec<LogEntry>, String> {
+        let raw_terms: Vec<String> = query_for_spawn
+            .split('|')
+            .map(|t| t.trim())
+            .filter(|t| !t.is_empty())
+            .map(|t| t.to_string())
+            .collect();
+
+        if raw_terms.is_empty() {
+            return Err("Search query is empty after processing".to_string());
+        }
+
+        let search_terms: Vec<SearchTerm> = raw_terms
+            .iter()
+            .enumerate()
+            .map(|(i, term)| SearchTerm {
+                id: format!("term_{}", i),
+                value: term.clone(),
+                operator: QueryOperator::Or,
+                source: TermSource::User,
+                preset_group_id: None,
+                is_regex: false,
+                priority: 1,
+                enabled: true,
+                case_sensitive: false,
+            })
+            .collect();
+
+        let structured_query = SearchQuery {
+            id: "paged_search_query".to_string(),
+            terms: search_terms,
+            global_operator: QueryOperator::Or,
+            filters: None,
+            metadata: QueryMetadata {
+                created_at: 0,
+                last_modified: 0,
+                execution_count: 0,
+                label: None,
+            },
+        };
+
+        let mut executor = QueryExecutor::new(100);
+        let plan = executor
+            .execute(&structured_query)
+            .map_err(|e| format!("Query execution error: {}", e))?;
+
+        // 获取工作区目录
+        let workspace_dir = {
+            let dirs = workspace_dirs.lock();
+            dirs.get(&workspace_id_for_spawn)
+                .cloned()
+                .ok_or_else(|| format!("Workspace directory not found for: {}", workspace_id_for_spawn))?
+        };
+
+        // 获取或创建 MetadataStore
+        let metadata_store = {
+            let mut stores = metadata_stores.lock();
+            if let Some(store) = stores.get(&workspace_id_for_spawn) {
+                Arc::clone(store)
+            } else {
+                let store_result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+                    tokio::task::block_in_place(|| {
+                        match tokio::runtime::Handle::try_current() {
+                            Ok(handle) => {
+                                handle.block_on(crate::storage::metadata_store::MetadataStore::new(
+                                    &workspace_dir,
+                                ))
+                            }
+                            Err(_) => Err(AppError::DatabaseError(
+                                "Tokio runtime not available".to_string(),
+                            )),
+                        }
+                    })
+                }));
+
+                let store_result = match store_result {
+                    Ok(result) => result,
+                    Err(_) => {
+                        return Err("Panic while creating MetadataStore".to_string());
+                    }
+                };
+
+                match store_result {
+                    Ok(store) => {
+                        let store_arc = Arc::new(store);
+                        stores.insert(workspace_id_for_spawn.clone(), Arc::clone(&store_arc));
+                        store_arc
+                    }
+                    Err(e) => return Err(format!("Failed to open metadata store: {}", e)),
+                }
+            }
+        };
+
+        // 获取或创建 CAS
+        let cas = {
+            let mut instances = cas_instances.lock();
+            if let Some(cas) = instances.get(&workspace_id_for_spawn) {
+                Arc::clone(cas)
+            } else {
+                let cas_arc = Arc::new(crate::storage::ContentAddressableStorage::new(
+                    workspace_dir.clone(),
+                ));
+                instances.insert(workspace_id_for_spawn.clone(), Arc::clone(&cas_arc));
+                cas_arc
+            }
+        };
+
+        // 获取所有文件
+        let files = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::try_current()
+                    .map(|h| h.block_on(metadata_store.get_all_files()))
+                    .unwrap_or_else(|_| Ok(Vec::new()))
+            })
+        }))
+        .map_err(|_| "Panic while getting files".to_string())?
+        .map_err(|e| format!("Failed to get files: {}", e))?;
+
+        // 执行搜索
+        let mut all_results: Vec<LogEntry> = Vec::new();
+        let mut keyword_counts: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
+
+        for file_batch in files.chunks(10) {
+            let batch: Vec<_> = file_batch
+                .iter()
+                .enumerate()
+                .map(|(idx, file_metadata)| {
+                    let file_identifier = format!("cas://{}", file_metadata.sha256_hash);
+                    search_single_file_with_details(
+                        &file_identifier,
+                        &file_metadata.virtual_path,
+                        Some(&*cas),
+                        &executor,
+                        &plan,
+                        idx * 10000,
+                    )
+                })
+                .collect();
+
+            for file_results in batch {
+                for entry in file_results {
+                    // 应用过滤器
+                    let mut include = true;
+
+                    if !filters.levels.is_empty()
+                        && !filters.levels.contains(&entry.level.to_string())
+                    {
+                        include = false;
+                    }
+                    if include && filters.time_start.is_some() {
+                        if let Some(ref start) = filters.time_start {
+                            if entry.timestamp.as_ref() < start.as_str() {
+                                include = false;
+                            }
+                        }
+                    }
+                    if include && filters.time_end.is_some() {
+                        if let Some(ref end) = filters.time_end {
+                            if entry.timestamp.as_ref() > end.as_str() {
+                                include = false;
+                            }
+                        }
+                    }
+                    if include && filters.file_pattern.is_some() {
+                        if let Some(ref pattern) = filters.file_pattern {
+                            if !entry.file.contains(pattern) && !entry.real_path.contains(pattern) {
+                                include = false;
+                            }
+                        }
+                    }
+
+                    if include {
+                        // 流式统计
+                        if let Some(ref keywords) = entry.matched_keywords {
+                            for kw in keywords {
+                                *keyword_counts.entry(kw.clone()).or_insert(0) += 1;
+                            }
+                        }
+
+                        all_results.push(entry);
+
+                        // 限制最大结果数
+                        if all_results.len() >= MAX_RESULTS_PER_SEARCH {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(all_results)
+    })
+    .await
+    .map_err(|e| format!("Search task failed: {}", e))?;
+
+    let results = results?;
+
+    // 计算关键词统计
+    let raw_terms: Vec<String> = query
+        .split('|')
+        .map(|t| t.trim())
+        .filter(|t| !t.is_empty())
+        .map(|t| t.to_string())
+        .collect();
+
+    let keyword_stats: Vec<crate::models::search_statistics::KeywordStatistics> = raw_terms
+        .iter()
+        .map(|term| {
+            let count = results.iter().filter(|e| e.content.contains(term)).count();
+            crate::models::search_statistics::KeywordStatistics::new(
+                term.clone(),
+                count,
+                results.len(),
+            )
+        })
+        .collect();
+
+    let summary = SearchResultSummary::new(
+        results.len(),
+        keyword_stats,
+        0, // 简化处理，不计算实际耗时
+        results.len() >= MAX_RESULTS_PER_SEARCH,
+    );
+
+    // 缓存结果
+    {
+        let mut cache = get_paged_search_cache().lock().map_err(|e| e.to_string())?;
+        cache.insert(PagedSearchCacheEntry {
+            search_id: search_id_for_spawn.clone(),
+            query: query.clone(),
+            workspace_id: workspace_id.clone(),
+            results: results.clone(),
+            summary: summary.clone(),
+            cached_at: std::time::Instant::now(),
+        });
+    }
+
+    // 返回第一页
+    let page_results = if results.len() > page_size {
+        results[..page_size].to_vec()
+    } else {
+        results.clone()
+    };
+
+    Ok(PagedSearchResult::new(
+        page_results,
+        results.len(),
+        0,
+        page_size,
+        summary,
+        query,
+        search_id_for_spawn,
+    ))
+}
+
+/// 清理过期的分页搜索缓存
+#[command]
+pub async fn cleanup_paged_search_cache(max_age_secs: Option<u64>) -> Result<usize, String> {
+    let max_age = max_age_secs.unwrap_or(3600); // 默认1小时
+    let mut cache = get_paged_search_cache().lock().map_err(|e| e.to_string())?;
+    let before_count = cache.entries.len();
+    cache.cleanup_expired(max_age);
+    let after_count = cache.entries.len();
+    Ok(before_count - after_count)
+}
+
+/// 获取分页搜索缓存统计
+#[command]
+pub async fn get_paged_search_cache_stats() -> Result<serde_json::Value, String> {
+    let cache = get_paged_search_cache().lock().map_err(|e| e.to_string())?;
+    let total_entries = cache.entries.len();
+    let total_results: usize = cache.entries.iter().map(|e| e.results.len()).sum();
+
+    Ok(serde_json::json!({
+        "cached_searches": total_entries,
+        "total_cached_results": total_results,
+        "max_cache_size": MAX_CACHED_SEARCHES,
+        "max_results_per_search": MAX_RESULTS_PER_SEARCH,
+    }))
+}
+
+// ============================================================================
+// 流式搜索分页功能 (VirtualSearchManager 集成)
+// ============================================================================
+
+/// 获取搜索结果的指定分页
+///
+/// 通过 VirtualSearchManager 获取已缓存的搜索结果分页，
+/// 支持前端使用 useInfiniteQuery 实现流式加载。
+///
+/// # 参数
+/// - `state`: 应用状态，包含 VirtualSearchManager
+/// - `search_id`: 搜索会话 ID
+/// - `offset`: 起始偏移量
+/// - `limit`: 返回条目数限制
+///
+/// # 返回
+/// 指定范围的日志条目列表
+#[command]
+pub async fn fetch_search_page(
+    state: State<'_, AppState>,
+    search_id: String,
+    offset: usize,
+    limit: usize,
+) -> Result<Vec<LogEntry>, String> {
+    let manager = &state.virtual_search_manager;
+    
+    // 检查会话是否存在
+    if !manager.has_session(&search_id) {
+        return Err(format!("Search session '{}' not found or expired", search_id));
+    }
+    
+    // 限制每页最大数量，防止内存问题
+    let limit = limit.min(10000);
+    
+    // 从 VirtualSearchManager 获取指定范围的结果
+    let results = manager.get_range(&search_id, offset, limit);
+    
+    debug!(
+        search_id = %search_id,
+        offset = offset,
+        limit = limit,
+        returned = results.len(),
+        "Fetched search page"
+    );
+    
+    Ok(results)
+}
+
+/// 注册搜索会话到 VirtualSearchManager
+///
+/// 用于将搜索结果缓存到 VirtualSearchManager，供后续分页查询使用。
+/// 通常在完成搜索后调用，将完整结果存入管理器。
+///
+/// # 参数
+/// - `state`: 应用状态
+/// - `search_id`: 搜索会话 ID
+/// - `query`: 搜索查询字符串
+/// - `entries`: 搜索结果条目列表
+///
+/// # 返回
+/// 注册的 search_id
+#[command]
+pub async fn register_search_session(
+    state: State<'_, AppState>,
+    search_id: String,
+    query: String,
+    entries: Vec<LogEntry>,
+) -> Result<String, String> {
+    let manager = &state.virtual_search_manager;
+    
+    let registered_id = manager.register_session(search_id, query, entries);
+    
+    info!(
+        search_id = %registered_id,
+        "Search session registered in VirtualSearchManager"
+    );
+    
+    Ok(registered_id)
+}
+
+/// 获取搜索会话信息
+///
+/// # 参数
+/// - `state`: 应用状态
+/// - `search_id`: 搜索会话 ID
+///
+/// # 返回
+/// 会话信息，包括总条目数、创建时间等
+#[command]
+pub async fn get_search_session_info(
+    state: State<'_, AppState>,
+    search_id: String,
+) -> Result<Option<serde_json::Value>, String> {
+    let manager = &state.virtual_search_manager;
+    
+    if let Some(session) = manager.get_session_info(&search_id) {
+        Ok(Some(serde_json::json!({
+            "search_id": session.search_id,
+            "query": session.query,
+            "total_count": session.total_count,
+            "created_at": session.created_at.elapsed().as_secs(),
+        })))
+    } else {
+        Ok(None)
+    }
+}
+
+/// 获取搜索会话总条目数
+///
+/// # 参数
+/// - `state`: 应用状态
+/// - `search_id`: 搜索会话 ID
+///
+/// # 返回
+/// 总条目数，如果会话不存在返回 0
+#[command]
+pub async fn get_search_total_count(
+    state: State<'_, AppState>,
+    search_id: String,
+) -> Result<usize, String> {
+    let manager = &state.virtual_search_manager;
+    Ok(manager.get_total_count(&search_id))
+}
+
+/// 移除搜索会话
+///
+/// 清理不再需要的搜索会话，释放内存。
+///
+/// # 参数
+/// - `state`: 应用状态
+/// - `search_id`: 搜索会话 ID
+///
+/// # 返回
+/// 是否成功移除
+#[command]
+pub async fn remove_search_session(
+    state: State<'_, AppState>,
+    search_id: String,
+) -> Result<bool, String> {
+    let manager = &state.virtual_search_manager;
+    Ok(manager.remove_session(&search_id))
+}
+
+/// 清理过期的搜索会话
+///
+/// # 参数
+/// - `state`: 应用状态
+/// - `max_age_secs`: 最大存活时间（秒），默认 3600
+///
+/// # 返回
+/// 清理的会话数量
+#[command]
+pub async fn cleanup_expired_search_sessions(
+    state: State<'_, AppState>,
+    _max_age_secs: Option<u64>,
+) -> Result<usize, String> {
+    let manager = &state.virtual_search_manager;
+    
+    // 注意：VirtualSearchManager 内部有 TTL 机制
+    // 这里调用 cleanup_expired_sessions 清理过期会话
+    // _max_age_secs 保留用于 API 兼容性，实际使用 VirtualSearchManager 内部配置的 TTL
+    let cleaned = manager.cleanup_expired_sessions();
+    
+    info!(
+        cleaned = cleaned,
+        "Expired search sessions cleaned up"
+    );
+    
+    Ok(cleaned)
+}
+
+/// 获取 VirtualSearchManager 统计信息
+///
+/// # 返回
+/// 活跃会话数、总缓存条目数等统计信息
+#[command]
+pub async fn get_virtual_search_stats(
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let manager = &state.virtual_search_manager;
+    let stats = manager.get_statistics();
+    
+    Ok(serde_json::json!({
+        "active_sessions": stats.active_sessions,
+        "total_cached_entries": stats.total_cached_entries,
+        "max_sessions": stats.max_sessions,
+        "max_entries_per_session": stats.max_entries_per_session,
+        "session_ttl_seconds": stats.session_ttl_seconds,
+    }))
 }

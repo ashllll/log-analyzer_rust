@@ -2,7 +2,6 @@ import { ReactNode } from 'react';
 import { QueryProvider } from './QueryProvider';
 import { useConfigQuery } from '../hooks/useServerQueries';
 import { useConfigManager } from '../hooks/useConfigManager';
-import { EventManager } from '../components/EventManager';
 
 interface AppProviderProps {
   children: ReactNode;
@@ -40,12 +39,7 @@ const AppInitializer = ({ children }: { children: ReactNode }) => {
     );
   }
 
-  return (
-    <>
-      <EventManager />
-      {children}
-    </>
-  );
+  return <>{children}</>;
 };
 
 export const AppProvider = ({ children }: AppProviderProps) => {

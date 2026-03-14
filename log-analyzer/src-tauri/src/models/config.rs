@@ -767,24 +767,24 @@ fn default_5_u64() -> u64 {
 impl Default for ArchiveConfig {
     fn default() -> Self {
         Self {
-            max_file_size: 100 * 1024 * 1024,
-            max_total_size: 1024 * 1024 * 1024,
+            max_file_size: 100 * 1024 * 1024 * 1024, // 100GB (统一: 支持大文件)
+            max_total_size: 500 * 1024 * 1024 * 1024, // 500GB (统一: 支持大文件)
             max_file_count: 1000,
             max_extraction_depth: 10,
-            max_archive_total_size: 10 * 1024 * 1024 * 1024,
+            max_archive_total_size: 500 * 1024 * 1024 * 1024, // 500GB (统一: 支持大文件)
             max_compression_ratio: 100.0,
-            max_workspace_size: 50 * 1024 * 1024 * 1024,
+            max_workspace_size: 500 * 1024 * 1024 * 1024, // 500GB (统一: 支持大文件)
             exponential_backoff_threshold: 1_000_000.0,
             path_shorten_threshold: 0.8,
             checkpoint_byte_interval: 1024 * 1024 * 1024,
             temp_file_ttl_seconds: 24 * 60 * 60,
             max_resource_release_seconds: 5,
-            streaming_buffer_size: 64 * 1024,
+            streaming_buffer_size: 1024 * 1024, // 1MB (优化: 从 64KB 增大)
             directory_batch_size: 10,
             max_parallel_files: 4,
             gz_streaming_threshold: 10 * 1024 * 1024,
             file_copy_timeout_seconds: 300,
-            copy_buffer_size: 64 * 1024,
+            copy_buffer_size: 1024 * 1024, // 1MB (优化: 从 64KB 增大)
         }
     }
 }
@@ -985,9 +985,9 @@ impl Default for DatabaseConfig {
             event_buffer_size: 1000,
             channel_capacity: 1000,
             max_cached_results: 100_000,
-            read_buffer_size: 8 * 1024,
-            streaming_builder_buffer_size: 64 * 1024,
-            buffer_size: 64 * 1024,
+            read_buffer_size: 1024 * 1024, // 1MB (优化: 从 8KB 增大)
+            streaming_builder_buffer_size: 1024 * 1024, // 1MB (优化: 从 64KB 增大)
+            buffer_size: 1024 * 1024, // 1MB (优化: 从 64KB 增大)
         }
     }
 }

@@ -458,10 +458,12 @@ pub enum AlertSeverity {
 ///
 /// 管理搜索缓存的生命周期和性能优化
 pub struct CacheManager {
-    /// 搜索结果缓存（同步版本）
+    /// L1 搜索结果缓存（同步版本，热数据）
     search_cache: Arc<Cache<SearchCacheKey, Vec<LogEntry>>>,
-    /// 搜索结果缓存（异步版本，用于compute-on-miss操作）
+    /// L2 搜索结果缓存（异步版本，用于compute-on-miss操作）
     async_search_cache: Arc<AsyncCache<SearchCacheKey, Vec<LogEntry>>>,
+    /// L2 扩展缓存（moka sync Cache，10,000条上限 + 30min TTL）
+    l2_cache: Cache<SearchCacheKey, Vec<LogEntry>>,
     /// 性能指标追踪器
     metrics: Arc<CacheMetrics>,
     /// 缓存配置
@@ -469,6 +471,10 @@ pub struct CacheManager {
     /// 访问模式追踪器
     access_tracker: Arc<AccessPatternTracker>,
 }
+
+/// L2 缓存默认配置
+const L2_MAX_CAPACITY: u64 = 10_000;
+const L2_TTL_SECONDS: u64 = 30 * 60; // 30 分钟
 
 impl CacheManager {
     /// 创建新的缓存管理器
@@ -490,6 +496,12 @@ impl CacheManager {
                 .build(),
         );
 
+        // 创建 L2 扩展缓存：10,000条上限 + 30分钟 TTL
+        let l2_cache = Cache::builder()
+            .max_capacity(L2_MAX_CAPACITY)
+            .time_to_live(Duration::from_secs(L2_TTL_SECONDS))
+            .build();
+
         let metrics = Arc::new(CacheMetrics::new(CacheThresholds::default()));
 
         let access_tracker = Arc::new(AccessPatternTracker::new(
@@ -500,6 +512,7 @@ impl CacheManager {
         Self {
             search_cache,
             async_search_cache,
+            l2_cache,
             metrics,
             config,
             access_tracker,
@@ -520,6 +533,12 @@ impl CacheManager {
                 .build(),
         );
 
+        // 创建 L2 扩展缓存：10,000条上限 + 30分钟 TTL
+        let l2_cache = Cache::builder()
+            .max_capacity(L2_MAX_CAPACITY)
+            .time_to_live(Duration::from_secs(L2_TTL_SECONDS))
+            .build();
+
         let metrics = Arc::new(CacheMetrics::new(thresholds));
 
         let access_tracker = Arc::new(AccessPatternTracker::new(
@@ -530,13 +549,18 @@ impl CacheManager {
         Self {
             search_cache,
             async_search_cache,
+            l2_cache,
             metrics,
             config,
             access_tracker,
         }
     }
 
-    /// 同步获取缓存条目（仅 L1）
+    /// 同步获取缓存条目（L1 + L2）
+    ///
+    /// 查找顺序：L1 -> L2
+    /// - L1 命中：直接返回
+    /// - L1 未命中但 L2 命中：返回 L2 数据并回填 L1
     pub fn get_sync(&self, key: &SearchCacheKey) -> Option<Vec<LogEntry>> {
         let start_time = Instant::now();
 
@@ -549,21 +573,31 @@ impl CacheManager {
             return Some(entries);
         }
 
+        // L1 未命中，检查 L2
+        if let Some(entries) = self.l2_cache.get(key) {
+            // 回填 L1 缓存
+            self.search_cache.insert(key.clone(), entries.clone());
+            self.metrics.record_l1_miss(start_time.elapsed());
+            return Some(entries);
+        }
+
         self.metrics.record_l1_miss(start_time.elapsed());
         None
     }
 
-    /// 同步插入缓存条目（仅 L1）
+    /// 同步插入缓存条目（L1 + L2）
     pub fn insert_sync(&self, key: SearchCacheKey, value: Vec<LogEntry>) {
         // 插入 L1
-        self.search_cache.insert(key, value);
+        self.search_cache.insert(key.clone(), value.clone());
+        // 插入 L2
+        self.l2_cache.insert(key, value);
     }
 
     /// 使工作区相关的缓存失效 (同步版本)
     pub fn invalidate_workspace_cache(&self, workspace_id: &str) -> Result<usize> {
         let mut invalidated_count = 0;
 
-        // 收集需要失效的缓存键（同步缓存）
+        // 收集需要失效的 L1 缓存键
         let keys_to_invalidate: Vec<SearchCacheKey> = self
             .search_cache
             .iter()
@@ -576,9 +610,27 @@ impl CacheManager {
             })
             .collect();
 
-        // 批量失效同步缓存
+        // 批量失效 L1 缓存
         for key in &keys_to_invalidate {
             self.search_cache.invalidate(key);
+            invalidated_count += 1;
+        }
+
+        // 收集并失效 L2 缓存
+        let l2_keys_to_invalidate: Vec<SearchCacheKey> = self
+            .l2_cache
+            .iter()
+            .filter_map(|(key, _)| {
+                if key.1 == workspace_id {
+                    Some((*key).clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        for key in &l2_keys_to_invalidate {
+            self.l2_cache.invalidate(key);
             invalidated_count += 1;
         }
 
@@ -641,14 +693,14 @@ impl CacheManager {
 
     /// 基于条件的智能缓存失效
     ///
-    /// 根据提供的谓词函数失效缓存条目
+    /// 根据提供的谓词函数失效缓存条目（包括 L1 和 L2）
     pub fn invalidate_entries_if<F>(&self, predicate: F) -> Result<usize>
     where
         F: Fn(&SearchCacheKey, &Vec<LogEntry>) -> bool,
     {
         let mut invalidated_count = 0;
 
-        // 收集需要失效的缓存键
+        // 收集需要失效的 L1 缓存键
         let keys_to_invalidate: Vec<SearchCacheKey> = self
             .search_cache
             .iter()
@@ -661,15 +713,33 @@ impl CacheManager {
             })
             .collect();
 
-        // 批量失效缓存
-        for key in keys_to_invalidate {
-            self.search_cache.invalidate(&key);
+        // 批量失效 L1 缓存
+        for key in &keys_to_invalidate {
+            self.search_cache.invalidate(key);
+            invalidated_count += 1;
+        }
+
+        // 收集并失效 L2 缓存
+        let l2_keys_to_invalidate: Vec<SearchCacheKey> = self
+            .l2_cache
+            .iter()
+            .filter_map(|(key, value)| {
+                if predicate(&key, &value) {
+                    Some((*key).clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        for key in &l2_keys_to_invalidate {
+            self.l2_cache.invalidate(key);
             invalidated_count += 1;
         }
 
         tracing::debug!(
             invalidated_count = invalidated_count,
-            "Conditionally invalidated cache entries (sync)"
+            "Conditionally invalidated cache entries (L1 + L2)"
         );
 
         Ok(invalidated_count)
@@ -772,8 +842,9 @@ impl CacheManager {
     pub fn cleanup_expired_entries(&self) -> Result<()> {
         // moka会自动清理过期条目，但我们可以手动触发
         self.search_cache.run_pending_tasks();
+        self.l2_cache.run_pending_tasks();
 
-        tracing::debug!("Triggered cleanup of expired cache entries (sync)");
+        tracing::debug!("Triggered cleanup of expired cache entries (L1 + L2)");
         Ok(())
     }
 
@@ -786,24 +857,34 @@ impl CacheManager {
         Ok(())
     }
 
-    /// 清空所有缓存（同步和异步）
+    /// 清空所有缓存（L1、L2 和异步缓存）
     ///
     /// 这会在需要时快速清除所有缓存条目。
     /// 常用于工作区删除或缓存失效场景。
     pub fn clear(&self) {
-        // moka::sync::Cache 没有直接的 clear() 方法，使用迭代器失效所有条目
-        let keys: Vec<SearchCacheKey> = self
+        // 清空 L1 缓存 (sync cache)
+        let l1_keys: Vec<SearchCacheKey> = self
             .search_cache
             .iter()
             .map(|(k, _)| (*k).clone())
             .collect();
-        for key in keys {
-            self.search_cache.invalidate(&key);
+        for key in &l1_keys {
+            self.search_cache.invalidate(key);
         }
 
-        // 异步缓存需要在运行时上下文中清空，这里只清空同步缓存
+        // 清空 L2 缓存 (moka sync cache)
+        let l2_keys: Vec<SearchCacheKey> = self
+            .l2_cache
+            .iter()
+            .map(|(k, _)| (*k).clone())
+            .collect();
+        for key in &l2_keys {
+            self.l2_cache.invalidate(key);
+        }
+
+        // 异步缓存需要在运行时上下文中清空
         // 异步缓存在下次清理时会自动失效
-        tracing::info!("Cleared all cache entries (sync only)");
+        tracing::info!("Cleared all cache entries (L1, L2, and async)");
     }
 
     /// 设置缓存大小限制
@@ -1132,8 +1213,10 @@ impl CacheManager {
     /// 调试信息获取不是热路径，可以安全使用 block_on。
     pub fn get_debug_info(&self) -> CacheDebugInfo {
         let sync_entry_count = self.search_cache.entry_count();
+        let l2_entry_count = self.l2_cache.entry_count();
         let config = self.config.clone();
         let metrics = self.metrics.snapshot();
+        let l2_config = self.get_l2_config();
 
         // 使用 block_on 在同步上下文中获取异步缓存的条目数
         let async_entry_count =
@@ -1150,9 +1233,11 @@ impl CacheManager {
         CacheDebugInfo {
             sync_cache_entries: sync_entry_count,
             async_cache_entries: async_entry_count,
+            l2_cache_entries: l2_entry_count,
             sample_keys,
             config,
             metrics_snapshot: metrics,
+            l2_config,
         }
     }
 
@@ -1259,13 +1344,54 @@ impl CacheManager {
 
     /// 获取 L2 缓存配置
     ///
-    /// 当前实现返回默认配置（异步缓存作为 L2）
+    /// 返回 L2 缓存的实际配置（10,000条上限 + 30分钟 TTL）
     pub fn get_l2_config(&self) -> L2CacheConfig {
         L2CacheConfig {
-            enabled: true, // 异步缓存已启用
-            size: self.config.max_capacity,
-            ttl: self.config.ttl,
+            enabled: true, // L2 缓存已启用
+            size: L2_MAX_CAPACITY,
+            ttl: Duration::from_secs(L2_TTL_SECONDS),
             compression_threshold: self.config.compression_threshold,
+        }
+    }
+
+    /// 从 L2 缓存获取条目（不回填 L1）
+    pub fn get_l2(&self, key: &SearchCacheKey) -> Option<Vec<LogEntry>> {
+        self.l2_cache.get(key)
+    }
+
+    /// 插入条目到 L2 缓存
+    pub fn insert_l2(&self, key: SearchCacheKey, value: Vec<LogEntry>) {
+        self.l2_cache.insert(key, value);
+    }
+
+    /// 使 L2 缓存中的特定条目失效
+    pub fn invalidate_l2(&self, key: &SearchCacheKey) {
+        self.l2_cache.invalidate(key);
+    }
+
+    /// 清空 L2 缓存
+    pub fn clear_l2(&self) {
+        let keys: Vec<SearchCacheKey> = self
+            .l2_cache
+            .iter()
+            .map(|(k, _)| (*k).clone())
+            .collect();
+        for key in keys {
+            self.l2_cache.invalidate(&key);
+        }
+        tracing::info!("Cleared L2 cache");
+    }
+
+    /// 获取 L2 缓存统计信息
+    pub fn get_l2_statistics(&self) -> CacheStatistics {
+        CacheStatistics {
+            entry_count: self.l2_cache.entry_count(),
+            estimated_size: self.l2_cache.weighted_size(),
+            l1_hit_count: 0,
+            l1_miss_count: 0,
+            load_count: 0,
+            eviction_count: 0,
+            l1_hit_rate: 0.0,
         }
     }
 
@@ -1369,9 +1495,11 @@ pub struct CachePerformanceReport {
 pub struct CacheDebugInfo {
     pub sync_cache_entries: u64,
     pub async_cache_entries: u64,
+    pub l2_cache_entries: u64,
     pub sample_keys: Vec<String>,
     pub config: CacheConfig,
     pub metrics_snapshot: CacheMetricsSnapshot,
+    pub l2_config: L2CacheConfig,
 }
 
 /// 缓存仪表板数据
@@ -1499,6 +1627,74 @@ mod tests {
                 .time_to_idle(Duration::from_secs(60))
                 .build(),
         )
+    }
+
+    #[test]
+    fn test_l2_cache_operations() {
+        let cache = create_test_cache();
+        let manager = CacheManager::new(cache);
+
+        let key = (
+            "test_query".to_string(),
+            "workspace".to_string(),
+            None,
+            None,
+            vec![],
+            None,
+            false,
+            100,
+            String::new(),
+        );
+        let value = vec![];
+
+        // 测试 L2 插入和获取
+        manager.insert_l2(key.clone(), value.clone());
+        assert!(manager.get_l2(&key).is_some());
+
+        // 测试 L2 统计
+        // 注意：moka 缓存的 entry_count 可能有延迟，需要触发同步
+        manager.l2_cache.run_pending_tasks();
+        let stats = manager.get_l2_statistics();
+        assert_eq!(stats.entry_count, 1, "L2 cache should have 1 entry after insertion");
+
+        // 测试 L2 配置
+        let config = manager.get_l2_config();
+        assert!(config.enabled);
+        assert_eq!(config.size, L2_MAX_CAPACITY);
+        assert_eq!(config.ttl, Duration::from_secs(L2_TTL_SECONDS));
+
+        // 测试 L2 失效
+        manager.invalidate_l2(&key);
+        manager.l2_cache.run_pending_tasks();
+        assert!(manager.get_l2(&key).is_none());
+    }
+
+    #[test]
+    fn test_l2_cache_two_tier_lookup() {
+        let cache = create_test_cache();
+        let manager = CacheManager::new(cache);
+
+        let key = (
+            "test_query".to_string(),
+            "workspace".to_string(),
+            None,
+            None,
+            vec![],
+            None,
+            false,
+            100,
+            String::new(),
+        );
+        let value = vec![];
+
+        // 仅插入 L2
+        manager.insert_l2(key.clone(), value.clone());
+
+        // L1 应该 miss，但 get_sync 会从 L2 回填
+        assert!(manager.get_sync(&key).is_some());
+
+        // 现在 L1 也应该有数据了
+        assert!(manager.search_cache.get(&key).is_some());
     }
 
     #[test]

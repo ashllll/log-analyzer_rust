@@ -1,6 +1,7 @@
 //! 应用状态管理 - 简化版本
 
 use crate::search_engine::manager::SearchEngineManager;
+use crate::search_engine::virtual_search_manager::VirtualSearchManager;
 use crate::services::file_watcher::WatcherState;
 use crate::state_sync::StateSync;
 use crate::storage::ContentAddressableStorage;
@@ -36,6 +37,8 @@ pub struct AppState {
     /// 搜索引擎管理器映射 (每个工作区独立)
     /// 用于增量索引时持久化新日志条目到 Tantivy 索引
     pub search_engine_managers: Arc<Mutex<HashMap<String, Arc<SearchEngineManager>>>>,
+    /// 虚拟搜索管理器 - 支持服务端虚拟化和分页加载
+    pub virtual_search_manager: Arc<VirtualSearchManager>,
 }
 
 impl Default for AppState {
@@ -61,6 +64,7 @@ impl Default for AppState {
             state_sync: Arc::new(Mutex::new(None)),
             async_resource_manager: Arc::new(AsyncResourceManager::new()),
             search_engine_managers: Arc::new(Mutex::new(HashMap::new())),
+            virtual_search_manager: Arc::new(VirtualSearchManager::new(100)),
         }
     }
 }

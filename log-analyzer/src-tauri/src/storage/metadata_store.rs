@@ -17,6 +17,8 @@
 //! - Hierarchical archive tracking
 
 use crate::error::{AppError, Result};
+use crate::services::traits::MetadataStorage;
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::{Row, SqlitePool};
@@ -1156,6 +1158,25 @@ impl MetadataStore {
         );
 
         Ok(())
+    }
+}
+
+/// MetadataStorage trait implementation for MetadataStore
+///
+/// This implementation allows MetadataStore to be used
+/// polymorphically through the MetadataStorage trait.
+#[async_trait]
+impl MetadataStorage for MetadataStore {
+    async fn insert_file(&self, metadata: &FileMetadata) -> Result<i64> {
+        self.insert_file(metadata).await
+    }
+
+    async fn get_all_files(&self) -> Result<Vec<FileMetadata>> {
+        self.get_all_files().await
+    }
+
+    async fn get_file_by_hash(&self, hash: &str) -> Result<Option<FileMetadata>> {
+        self.get_file_by_hash(hash).await
     }
 }
 

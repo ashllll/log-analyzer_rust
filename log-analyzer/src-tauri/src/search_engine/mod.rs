@@ -15,6 +15,7 @@ pub mod manager;
 pub mod query_optimizer;
 pub mod schema;
 pub mod streaming_builder;
+pub mod virtual_search_manager;
 
 #[cfg(test)]
 pub mod property_tests;
@@ -36,6 +37,7 @@ pub use query_optimizer::QueryOptimizer;
 pub use schema::LogSchema;
 #[allow(unused_imports)]
 pub use streaming_builder::StreamingIndexBuilder;
+pub use virtual_search_manager::{VirtualSearchManager, VirtualSearchStats};
 
 use thiserror::Error;
 

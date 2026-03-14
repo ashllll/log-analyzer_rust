@@ -1,5 +1,6 @@
 use crate::error::{AppError, Result};
 use crate::models::search::*;
+use crate::services::traits::{QueryValidation, ValidationResult};
 use regex::Regex;
 
 /**
@@ -8,6 +9,21 @@ use regex::Regex;
  * 负责验证搜索查询的有效性和正确性
  */
 pub struct QueryValidator;
+
+impl Default for QueryValidator {
+    fn default() -> Self {
+        Self
+    }
+}
+
+impl QueryValidation for QueryValidator {
+    fn validate(&self, query: &SearchQuery) -> ValidationResult {
+        match Self::validate(query) {
+            Ok(()) => ValidationResult::valid(),
+            Err(e) => ValidationResult::error(format!("{}", e)),
+        }
+    }
+}
 
 impl QueryValidator {
     /**

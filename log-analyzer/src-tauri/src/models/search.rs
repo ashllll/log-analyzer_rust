@@ -105,6 +105,72 @@ pub struct SearchQuery {
     pub metadata: QueryMetadata,
 }
 
+/// 分页搜索结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PagedSearchResult {
+    /// 当前页的数据
+    pub results: Vec<crate::models::LogEntry>,
+    /// 总结果数
+    pub total_count: usize,
+    /// 当前页索引
+    pub page_index: i32,
+    /// 每页大小
+    pub page_size: usize,
+    /// 总页数
+    pub total_pages: usize,
+    /// 是否还有更多页
+    pub has_more: bool,
+    /// 搜索摘要
+    pub summary: crate::models::SearchResultSummary,
+    /// 搜索查询字符串（用于缓存匹配）
+    pub query: String,
+    /// 缓存的搜索ID
+    pub search_id: String,
+}
+
+impl PagedSearchResult {
+    /// 创建新的分页结果
+    pub fn new(
+        results: Vec<crate::models::LogEntry>,
+        total_count: usize,
+        page_index: i32,
+        page_size: usize,
+        summary: crate::models::SearchResultSummary,
+        query: String,
+        search_id: String,
+    ) -> Self {
+        let total_pages = (total_count as f64 / page_size as f64).ceil() as usize;
+        let has_more = (page_index as usize + 1) < total_pages;
+
+        Self {
+            results,
+            total_count,
+            page_index,
+            page_size,
+            total_pages,
+            has_more,
+            summary,
+            query,
+            search_id,
+        }
+    }
+
+    /// 获取指定范围的条目（用于分页）
+    pub fn slice_results(entries: &[crate::models::LogEntry], page: i32, size: usize) -> Vec<crate::models::LogEntry> {
+        if page < 0 || size == 0 {
+            return entries.to_vec();
+        }
+
+        let start = (page as usize) * size;
+        if start >= entries.len() {
+            return vec![];
+        }
+
+        let end = (start + size).min(entries.len());
+        entries[start..end].to_vec()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

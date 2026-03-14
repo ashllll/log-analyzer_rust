@@ -4,5 +4,4 @@ export { Input } from './Input';
 export { Card } from './Card';
 export { NavItem } from './NavItem';
 export { FormField, FormGroup, FormErrorSummary } from './FormField';
-export { ConnectionStatusIndicator } from './ConnectionStatus';
-export type { ConnectionStatusProps, ConnectionDotProps, ConnectionToastProps } from './ConnectionStatus';
+// ConnectionStatus 已删除 - WebSocket 功能由 Tauri IPC 替代

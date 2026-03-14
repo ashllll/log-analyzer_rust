@@ -13,7 +13,6 @@ import toast from 'react-hot-toast';
 // Types
 // ============================================================================
 
-export type Page = 'search' | 'keywords' | 'workspaces' | 'tasks' | 'performance' | 'settings';
 export type ToastType = 'success' | 'error' | 'info';
 
 export interface Toast {
@@ -24,14 +23,12 @@ export interface Toast {
 
 export interface AppState {
   // State
-  page: Page;
   toasts: Toast[];
   activeWorkspaceId: string | null;
   isInitialized: boolean;
   initializationError: string | null;
   
   // Actions
-  setPage: (page: Page) => void;
   addToast: (type: ToastType, message: string) => void;
   removeToast: (id: number) => void;
   setActiveWorkspace: (id: string | null) => void;
@@ -47,17 +44,12 @@ export const useAppStore = create<AppState>()(
     subscribeWithSelector(
       immer((set) => ({
         // Initial State
-        page: 'workspaces',
         toasts: [],
         activeWorkspaceId: null,
         isInitialized: false,
         initializationError: null,
         
         // Actions
-        setPage: (page) => set((state) => {
-          state.page = page;
-        }),
-        
         addToast: (type, message) => {
           // 使用 react-hot-toast 替代自定义 Toast
           const duration = type === 'error' ? 4000 : 3000;
@@ -92,4 +84,3 @@ export const useAppStore = create<AppState>()(
     { name: 'app-store' }
   )
 );
-

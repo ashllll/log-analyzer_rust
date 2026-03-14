@@ -27,12 +27,10 @@ describe('Type Safety Tests', () => {
       const store = useAppStore.getState();
       
       // 验证状态属性存在且类型正确
-      expect(typeof store.page).toBe('string');
       expect(Array.isArray(store.toasts)).toBe(true);
       expect(store.activeWorkspaceId === null || typeof store.activeWorkspaceId === 'string').toBe(true);
       
       // 验证 action 方法存在且类型正确
-      expect(typeof store.setPage).toBe('function');
       expect(typeof store.addToast).toBe('function');
       expect(typeof store.removeToast).toBe('function');
       expect(typeof store.setActiveWorkspace).toBe('function');
@@ -98,12 +96,10 @@ describe('Type Safety Tests', () => {
       const store = useAppStore.getState();
       
       // 验证状态类型
-      const page: string = store.page;
       const toasts: any[] = store.toasts;
       const activeWorkspaceId: string | null = store.activeWorkspaceId;
       
       // 验证类型推断正确
-      expect(typeof page).toBe('string');
       expect(Array.isArray(toasts)).toBe(true);
       expect(activeWorkspaceId === null || typeof activeWorkspaceId === 'string').toBe(true);
     });
@@ -146,7 +142,6 @@ describe('Type Safety Tests', () => {
     beforeEach(() => {
       // 在每个测试前重置所有 store 状态
       useAppStore.setState({
-        page: 'workspaces',
         toasts: [],
         activeWorkspaceId: null
       });
@@ -172,10 +167,6 @@ describe('Type Safety Tests', () => {
 
     it('appStore 的所有 action 方法应该可访问', () => {
       const store = useAppStore.getState();
-      
-      // 测试 setPage
-      store.setPage('workspaces');
-      expect(useAppStore.getState().page).toBe('workspaces');
       
       // 测试 setActiveWorkspace
       store.setActiveWorkspace('test-workspace');

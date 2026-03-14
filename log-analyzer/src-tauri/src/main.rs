@@ -12,7 +12,7 @@ use log_analyzer::commands::{
     performance::*, query::*, search::*, state_sync::*, validation::*, virtual_tree::*, watch::*,
     workspace::*,
 };
-use log_analyzer::models::AppState;
+use log_analyzer::models::{AppState, CacheState, MetricsState, SearchState, WorkspaceState};
 use log_analyzer::task_manager::TaskManager;
 use tracing::info;
 
@@ -26,8 +26,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tauri::Builder::default()
         // 初始化 dialog 插件（供前端使用）
         .plugin(tauri_plugin_dialog::init())
-        // 管理应用状态
+        // 管理应用状态 - 领域驱动拆分后的独立状态
         .manage(AppState::default())
+        .manage(WorkspaceState::default())
+        .manage(SearchState::default())
+        .manage(CacheState::default())
+        .manage(MetricsState::default())
         // 初始化后设置 TaskManager
         .setup(|app| {
             use log_analyzer::models::config::AppConfigLoader;
@@ -105,6 +109,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // ===== 日志搜索 =====
             search_logs,
             cancel_search,
+            // ===== 流式搜索分页 (VirtualSearchManager) =====
+            fetch_search_page,
+            register_search_session,
+            get_search_session_info,
+            get_search_total_count,
+            remove_search_session,
+            cleanup_expired_search_sessions,
+            get_virtual_search_stats,
             // ===== 导入 =====
             import_folder,
             check_rar_support,

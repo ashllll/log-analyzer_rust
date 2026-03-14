@@ -135,7 +135,8 @@ async fn perform_async_search(
 
     let mut results_count = 0;
     let mut batch_results: Vec<LogEntry> = Vec::new();
-    let batch_size = 500;
+    // 优化：batch_size 从 500 增加到 2000，减少 IPC 调用次数 75%，提高吞吐量
+    let batch_size = 2000;
 
     for (i, file) in files.iter().enumerate() {
         // 检查取消令牌

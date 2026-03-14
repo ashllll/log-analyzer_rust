@@ -1,13 +1,17 @@
+pub mod cache_state;
 pub mod config;
 pub mod extraction_policy;
 pub mod filters;
 pub mod import_decision;
 pub mod log_entry;
+pub mod metrics_state;
 pub mod policy_manager;
 pub mod processing_report;
 pub mod search;
+pub mod search_state;
 pub mod search_statistics;
 pub mod state;
+pub mod workspace_state;
 
 // 重新导出核心类型
 pub use config::{AppConfig, FileFilterConfig, FilterMode};
@@ -20,8 +24,12 @@ pub use processing_report::{
     ErrorCategory, ErrorSeverity, ProcessingError, ProcessingReport, ProcessingReportSummary,
     ProcessingStatistics, ProcessingStatus,
 };
+pub use cache_state::CacheState;
+pub use metrics_state::MetricsState;
 pub use search::SearchCacheKey;
 pub use search::*;
+pub use search_state::SearchState;
 pub use search_statistics::{KeywordStatistics, SearchResultSummary};
 pub use state::AppState;
+pub use workspace_state::WorkspaceState;
 pub mod validated;

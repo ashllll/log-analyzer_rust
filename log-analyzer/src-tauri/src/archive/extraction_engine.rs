@@ -37,12 +37,12 @@ pub struct ExtractionPolicy {
 impl Default for ExtractionPolicy {
     fn default() -> Self {
         Self {
-            max_depth: 10,
-            max_file_size: 100 * 1024 * 1024,        // 100MB
-            max_total_size: 10 * 1024 * 1024 * 1024, // 10GB
-            buffer_size: 64 * 1024,                  // 64KB
-            dir_batch_size: 10,                      // Batch 10 directories
-            max_parallel_files: 4,                   // Extract up to 4 files in parallel
+            max_depth: 10,                             // 统一: 与 nested_archive_config 保持一致
+            max_file_size: 100 * 1024 * 1024 * 1024,   // 100GB (优化: 从 100MB 增大，支持 5GB+ 压缩包)
+            max_total_size: 500 * 1024 * 1024 * 1024,  // 500GB (优化: 从 10GB 增大，支持大文件解压)
+            buffer_size: 1024 * 1024,                  // 1MB (优化: 从 64KB 增大，提升大文件处理性能)
+            dir_batch_size: 10,                        // Batch 10 directories
+            max_parallel_files: 4,                     // Extract up to 4 files in parallel
         }
     }
 }
@@ -969,9 +969,9 @@ mod tests {
     fn test_extraction_policy_default() {
         let policy = ExtractionPolicy::default();
         assert_eq!(policy.max_depth, 10);
-        assert_eq!(policy.max_file_size, 100 * 1024 * 1024);
-        assert_eq!(policy.max_total_size, 10 * 1024 * 1024 * 1024);
-        assert_eq!(policy.buffer_size, 64 * 1024);
+        assert_eq!(policy.max_file_size, 100 * 1024 * 1024 * 1024); // 100GB
+        assert_eq!(policy.max_total_size, 500 * 1024 * 1024 * 1024); // 500GB
+        assert_eq!(policy.buffer_size, 1024 * 1024);
         assert_eq!(policy.dir_batch_size, 10);
         assert_eq!(policy.max_parallel_files, 4);
     }

@@ -3,6 +3,7 @@ use crate::models::search::*;
 use crate::services::query_planner::{ExecutionPlan, QueryPlanner};
 use crate::services::query_validator::QueryValidator;
 use crate::services::regex_engine::RegexEngine;
+use crate::services::traits::{QueryPlanning, QueryValidation};
 use moka::sync::Cache;
 use std::sync::Arc;
 
@@ -247,6 +248,114 @@ pub struct MatchDetail {
     /// 匹配位置（可选）
     pub match_position: Option<(usize, usize)>,
 }
+
+/// 泛型查询执行器
+///
+/// 这个版本允许注入不同的验证器和规划器实现，实现依赖倒置原则。
+/// 通过使用泛型参数，可以在编译时确定具体实现，获得零成本抽象。
+///
+/// # 类型参数
+/// * `V` - 验证器类型，必须实现 `QueryValidation` trait
+/// * `P` - 规划器类型，必须实现 `QueryPlanning` trait
+///
+/// # 示例
+/// ```rust,ignore
+/// use log_analyzer::services::{GenericQueryExecutor, QueryValidator, QueryPlannerAdapter};
+///
+/// let executor = GenericQueryExecutor::new(
+///     QueryValidator,
+///     QueryPlannerAdapter::new()
+/// );
+/// ```
+pub struct GenericQueryExecutor<V, P> {
+    validator: V,
+    planner: P,
+    /// ExecutionPlan 缓存 (LRU策略)
+    plan_cache: Cache<String, Arc<ExecutionPlan>>,
+}
+
+impl<V, P> GenericQueryExecutor<V, P>
+where
+    V: QueryValidation,
+    P: QueryPlanning,
+{
+    /// 创建新的泛型执行器
+    ///
+    /// # 参数
+    /// * `validator` - 查询验证器
+    /// * `planner` - 查询规划器
+    pub fn new(validator: V, planner: P) -> Self {
+        Self {
+            validator,
+            planner,
+            plan_cache: Cache::new(1000),
+        }
+    }
+
+    /// 生成查询缓存键
+    fn cache_key(query: &SearchQuery) -> String {
+        use serde_json::json;
+        json!({
+            "terms": query.terms.iter().map(|t| {
+                json!({
+                    "value": t.value,
+                    "is_regex": t.is_regex,
+                    "case_sensitive": t.case_sensitive,
+                    "enabled": t.enabled,
+                })
+            }).collect::<Vec<_>>(),
+            "global_operator": query.global_operator,
+        })
+        .to_string()
+    }
+
+    /// 执行查询（使用泛型验证器和规划器）
+    ///
+    /// # 参数
+    /// * `query` - 搜索查询
+    ///
+    /// # 返回
+    /// * `Ok(ExecutionPlan)` - 执行计划
+    /// * `Err(AppError)` - 执行失败
+    pub fn execute(&self, query: &SearchQuery) -> Result<ExecutionPlan> {
+        let cache_key = Self::cache_key(query);
+
+        // 检查缓存
+        if let Some(cached_plan) = self.plan_cache.get(&cache_key) {
+            return Ok((*cached_plan).clone());
+        }
+
+        // 验证查询
+        let validation_result = self.validator.validate(query);
+        if !validation_result.is_valid {
+            return Err(crate::error::AppError::validation_error(
+                validation_result.errors.join(", ")
+            ));
+        }
+
+        // 构建计划
+        let plan_result = self.planner.plan(query)?;
+        
+        // 转换为 ExecutionPlan（这里使用简化版本）
+        let plan = ExecutionPlan {
+            strategy: crate::services::query_planner::SearchStrategy::And,
+            engines: Vec::new(),
+            term_count: plan_result.steps.len(),
+            terms: Vec::new(),
+        };
+
+        // 缓存计划
+        self.plan_cache.insert(cache_key, Arc::new(plan.clone()));
+
+        Ok(plan)
+    }
+}
+
+/// 标准查询执行器类型别名
+///
+/// 为了向后兼容，提供默认的具体类型。
+/// 使用 QueryPlannerAdapter 作为规划器实现，它提供了 QueryPlanning trait 的实现。
+pub type StandardQueryExecutor = GenericQueryExecutor<QueryValidator, super::QueryPlannerAdapter>;
 
 #[cfg(test)]
 mod tests {

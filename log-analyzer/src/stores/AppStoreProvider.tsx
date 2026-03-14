@@ -1,4 +1,5 @@
 import { useEffect, ReactNode } from 'react';
+import toast from 'react-hot-toast';
 import { useAppStore } from './appStore';
 import { useWorkspaceStore } from './workspaceStore';
 import { useKeywordStore } from './keywordStore';
@@ -27,6 +28,8 @@ interface AppStoreProviderProps {
  * 采用业内成熟的事件驱动架构：
  * - task-update: 任务状态更新（创建、进度、完成）
  * - task-removed: 任务自动清理（后端 Actor 触发）
+ * - import-complete: 导入完成事件
+ * - import-error: 导入错误事件
  */
 export const AppStoreProvider = ({ children }: AppStoreProviderProps) => {
   const addToast = useAppStore((state) => state.addToast);
@@ -75,10 +78,10 @@ export const AppStoreProvider = ({ children }: AppStoreProviderProps) => {
     const unsubscribeTaskUpdate = eventBus.on<TaskUpdateEvent>(
       'task-update',
       (event) => {
-        // 老王备注：EventBus已经验证过Schema，这里直接用
+        // EventBus已经验证过Schema，这里直接用
         const task = {
           id: event.task_id,
-          type: event.task_type,  // 老王备注：后端已修复，直接使用task_type
+          type: event.task_type,
           target: event.target,
           progress: event.progress,
           message: event.message,
@@ -92,10 +95,11 @@ export const AppStoreProvider = ({ children }: AppStoreProviderProps) => {
         addTaskIfNotExists(task);
         updateTask(task.id, task);
 
-        // 更新工作区状态
+        // 更新工作区状态并发送 toast 通知
         if (task.workspaceId) {
           if (task.status === 'COMPLETED') {
             updateWorkspace(task.workspaceId, { status: 'READY' });
+            toast.success('导入完成');
           } else if (task.status === 'RUNNING') {
             updateWorkspace(task.workspaceId, { status: 'PROCESSING' });
           } else if (task.status === 'FAILED') {
@@ -144,9 +148,45 @@ export const AppStoreProvider = ({ children }: AppStoreProviderProps) => {
         });
       });
 
+      // 监听导入完成事件（从Tauri后端）
+      const importCompleteUnlisten = await listen<any>('import-complete', (event) => {
+        logger.debug({ payload: event.payload }, '[AppStoreProvider] Received import-complete from Tauri');
+        
+        // 支持两种 payload 格式：字符串（旧格式）或对象（新格式）
+        const payload = event.payload;
+        const taskId = typeof payload === 'string' ? payload : payload?.task_id;
+        const workspaceId = typeof payload === 'object' ? payload?.workspace_id : null;
+        
+        if (taskId) {
+          updateTask(taskId, { status: 'COMPLETED', progress: 100 });
+        }
+        
+        // 如果有 workspace_id，更新 workspace 状态
+        if (workspaceId) {
+          logger.debug('[AppStoreProvider] import-complete with workspace_id, updating status to READY:', workspaceId);
+          updateWorkspace(workspaceId, { status: 'READY' });
+        } else if (taskId) {
+          // 回退方案：从任务中查找 workspace_id
+          const taskStore = useTaskStore.getState();
+          const task = taskStore.tasks.find((t) => t.id === taskId);
+          if (task?.workspaceId) {
+            logger.debug('[AppStoreProvider] import-complete fallback, updating workspace status to READY:', task.workspaceId);
+            updateWorkspace(task.workspaceId, { status: 'READY' });
+          }
+        }
+      });
+
+      // 监听导入错误事件（从Tauri后端）
+      const importErrorUnlisten = await listen<string>('import-error', (event) => {
+        logger.error({ payload: event.payload }, '[AppStoreProvider] Received import-error from Tauri');
+        toast.error(`导入失败: ${event.payload}`);
+      });
+
       return () => {
         taskUpdateUnlisten();
         taskRemovedUnlisten();
+        importCompleteUnlisten();
+        importErrorUnlisten();
       };
     };
 

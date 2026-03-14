@@ -22,6 +22,8 @@
 //! to avoid having too many files in a single directory.
 
 use crate::error::{AppError, Result};
+use crate::services::traits::ContentStorage;
+use async_trait::async_trait;
 use moka::sync::Cache; // ✅ 使用 moka LRU 缓存替代 DashSet
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
@@ -30,6 +32,101 @@ use tokio::fs;
 use tokio::io::{AsyncReadExt, BufReader};
 use tracing::{debug, error, info, warn};
 use walkdir::WalkDir;
+
+/// 获取指定路径的磁盘可用空间
+/// 
+/// # Arguments
+/// 
+/// * `path` - 要检查的路径
+/// 
+/// # Returns
+/// 
+/// 可用空间字节数，如果无法获取则返回 0
+#[cfg(target_os = "linux")]
+async fn get_available_space(path: &Path) -> u64 {
+    use std::ffi::CString;
+    use libc::statvfs;
+    
+    let path_str = match path.to_str() {
+        Some(s) => s,
+        None => return 0,
+    };
+    
+    let c_path = match CString::new(path_str) {
+        Ok(c) => c,
+        Err(_) => return 0,
+    };
+    
+    let mut stat: statvfs = unsafe { std::mem::zeroed() };
+    let result = unsafe { statvfs(c_path.as_ptr(), &mut stat) };
+    
+    if result == 0 {
+        // f_bavail: 非超级用户可用的块数
+        // f_frsize: 每个块的字节数
+        (stat.f_bavail as u64) * (stat.f_frsize as u64)
+    } else {
+        0
+    }
+}
+
+#[cfg(target_os = "macos")]
+async fn get_available_space(path: &Path) -> u64 {
+    use std::ffi::CString;
+    use libc::statvfs;
+    
+    let path_str = match path.to_str() {
+        Some(s) => s,
+        None => return 0,
+    };
+    
+    let c_path = match CString::new(path_str) {
+        Ok(c) => c,
+        Err(_) => return 0,
+    };
+    
+    let mut stat: statvfs = unsafe { std::mem::zeroed() };
+    let result = unsafe { statvfs(c_path.as_ptr(), &mut stat) };
+    
+    if result == 0 {
+        (stat.f_bavail as u64) * (stat.f_frsize as u64)
+    } else {
+        0
+    }
+}
+
+#[cfg(target_os = "windows")]
+async fn get_available_space(path: &Path) -> u64 {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
+    use windows_sys::Win32::Foundation::PWSTR;
+    
+    let wide_path: Vec<u16> = path.as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    
+    let mut free_bytes_available: u64 = 0;
+    let result = unsafe {
+        GetDiskFreeSpaceExW(
+            wide_path.as_ptr() as PWSTR,
+            &mut free_bytes_available,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        )
+    };
+    
+    if result != 0 {
+        free_bytes_available
+    } else {
+        0
+    }
+}
+
+// Fallback for other platforms
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+async fn get_available_space(_path: &Path) -> u64 {
+    0 // Unknown, skip check
+}
 
 /// Content-Addressable Storage manager
 ///
@@ -133,7 +230,7 @@ impl ContentAddressableStorage {
     /// # })
     /// ```
     pub async fn compute_hash_incremental(file_path: &Path) -> Result<String> {
-        const BUFFER_SIZE: usize = 8 * 1024; // 8KB buffer
+        const BUFFER_SIZE: usize = 1024 * 1024; // 1MB buffer (优化: 从 8KB 增大，减少大文件处理时的 syscall 次数)
 
         let file = fs::File::open(file_path).await.map_err(|e| {
             AppError::io_error(
@@ -230,7 +327,7 @@ impl ContentAddressableStorage {
         use tokio::time::{timeout, Duration};
 
         const FILE_COPY_TIMEOUT: u64 = 300; // 5 minutes timeout for large files
-        const COPY_BUFFER_SIZE: usize = 64 * 1024; // 64KB buffer for efficient copying
+        const COPY_BUFFER_SIZE: usize = 1024 * 1024; // 1MB buffer for efficient copying (优化: 从 64KB 增大)
 
         let copy_result = timeout(Duration::from_secs(FILE_COPY_TIMEOUT), async {
             // Open source file
@@ -677,6 +774,327 @@ impl ContentAddressableStorage {
         let content = self.read_content(hash).await?;
         let computed_hash = Self::compute_hash(&content);
         Ok(computed_hash == hash)
+    }
+
+    /// Store file with disk space pre-check (safe storage)
+    ///
+    /// This method performs disk space validation before attempting to store a file.
+    /// It requires 3x the file size: original file + CAS storage + temporary file overhead.
+    ///
+    /// # Arguments
+    ///
+    /// * `file_path` - Path to the file to store
+    ///
+    /// # Returns
+    ///
+    /// SHA-256 hash of the stored content
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - File cannot be read
+    /// - Insufficient disk space (requires 3x file size)
+    /// - Failed to create object directory
+    /// - Failed to write file
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use log_analyzer::storage::ContentAddressableStorage;
+    /// # use std::path::{Path, PathBuf};
+    /// # tokio_test::block_on(async {
+    /// let cas = ContentAddressableStorage::new(PathBuf::from("./workspace"));
+    /// match cas.store_file_safe(Path::new("large.log")).await {
+    ///     Ok(hash) => println!("Stored with hash: {}", hash),
+    ///     Err(e) => println!("Storage failed: {}", e),
+    /// }
+    /// # })
+    /// ```
+    pub async fn store_file_safe(&self, file_path: &Path) -> Result<String> {
+        // 1. 获取文件大小
+        let metadata = fs::metadata(file_path).await.map_err(|e| {
+            AppError::io_error(
+                format!("Failed to get file metadata: {}", e),
+                Some(file_path.to_path_buf()),
+            )
+        })?;
+        let file_size = metadata.len();
+
+        // 2. 检查目标磁盘空间 (需要 3x 空间: 原文件 + CAS存储 + 临时文件)
+        let required_space = file_size * 3;
+        let available_space = get_available_space(&self.workspace_dir).await;
+
+        // 如果无法获取可用空间（返回0），跳过检查但记录警告
+        if available_space == 0 {
+            warn!(
+                file = %file_path.display(),
+                "Unable to determine available disk space, proceeding without check"
+            );
+        } else if available_space < required_space {
+            return Err(AppError::io_error(
+                format!(
+                    "Insufficient disk space: required {} bytes (3x file size), available {} bytes",
+                    required_space, available_space
+                ),
+                Some(self.workspace_dir.clone()),
+            ));
+        }
+
+        // 3. 空间充足，继续原有存储逻辑
+        self.store_file_streaming(file_path).await
+    }
+
+    /// Store file using zero-copy streaming (single-pass optimization)
+    ///
+    /// This method reads the file once, computing the hash while simultaneously
+    /// writing to a temporary file. After completion, it atomically renames the
+    /// temporary file to the final location. This avoids reading the file twice
+    /// (once for hashing, once for copying), providing significant performance
+    /// improvements for large files.
+    ///
+    /// # Arguments
+    ///
+    /// * `file_path` - Path to the file to store
+    ///
+    /// # Returns
+    ///
+    /// SHA-256 hash of the stored content
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - File cannot be read
+    /// - Failed to create temporary file
+    /// - Failed to write file
+    /// - Atomic rename failed
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use log_analyzer::storage::ContentAddressableStorage;
+    /// # use std::path::{Path, PathBuf};
+    /// # tokio_test::block_on(async {
+    /// let cas = ContentAddressableStorage::new(PathBuf::from("./workspace"));
+    /// let hash = cas.store_file_zero_copy(Path::new("large.log")).await.unwrap();
+    /// # })
+    /// ```
+    pub async fn store_file_zero_copy(&self, file_path: &Path) -> Result<String> {
+        use tokio::io::AsyncWriteExt;
+        use tokio::time::{timeout, Duration};
+
+        const BUFFER_SIZE: usize = 1024 * 1024; // 1MB buffer
+        const FILE_COPY_TIMEOUT: u64 = 300; // 5 minutes timeout
+
+        // Open source file
+        let mut src_file = fs::File::open(file_path).await.map_err(|e| {
+            AppError::io_error(
+                format!("Failed to open source file: {}", e),
+                Some(file_path.to_path_buf()),
+            )
+        })?;
+
+        // 1. 边读取边计算哈希，同时写入临时文件
+        let temp_dir = self.workspace_dir.join("tmp");
+        fs::create_dir_all(&temp_dir).await.map_err(|e| {
+            AppError::io_error(
+                format!("Failed to create temp directory: {}", e),
+                Some(temp_dir.clone()),
+            )
+        })?;
+
+        // Generate unique temp file name
+        let temp_filename = format!(".tmp.{}.{}.tmp", uuid::Uuid::new_v4(), std::process::id());
+        let temp_path = temp_dir.join(&temp_filename);
+
+        // Create temp file
+        let mut temp_file = fs::File::create(&temp_path).await.map_err(|e| {
+            AppError::io_error(
+                format!("Failed to create temp file: {}", e),
+                Some(temp_path.clone()),
+            )
+        })?;
+
+        // Single-pass: read, hash, and write simultaneously
+        let mut hasher = Sha256::new();
+        let mut buffer = vec![0u8; BUFFER_SIZE];
+        let mut total_bytes = 0u64;
+
+        let copy_result = timeout(Duration::from_secs(FILE_COPY_TIMEOUT), async {
+            loop {
+                let bytes_read = src_file.read(&mut buffer).await.map_err(|e| {
+                    AppError::io_error(
+                        format!("Failed to read from source file: {}", e),
+                        Some(file_path.to_path_buf()),
+                    )
+                })?;
+
+                if bytes_read == 0 {
+                    break; // EOF
+                }
+
+                // Update hash
+                hasher.update(&buffer[..bytes_read]);
+
+                // Write to temp file
+                temp_file
+                    .write_all(&buffer[..bytes_read])
+                    .await
+                    .map_err(|e| {
+                        AppError::io_error(
+                            format!("Failed to write to temp file: {}", e),
+                            Some(temp_path.clone()),
+                        )
+                    })?;
+
+                total_bytes += bytes_read as u64;
+            }
+
+            // Flush temp file
+            temp_file.flush().await.map_err(|e| {
+                AppError::io_error(
+                    format!("Failed to flush temp file: {}", e),
+                    Some(temp_path.clone()),
+                )
+            })?;
+
+            // Sync to ensure data is written to disk
+            temp_file.sync_all().await.map_err(|e| {
+                AppError::io_error(
+                    format!("Failed to sync temp file: {}", e),
+                    Some(temp_path.clone()),
+                )
+            })?;
+
+            Ok::<(), AppError>(())
+        })
+        .await;
+
+        // Handle timeout or error
+        match copy_result {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                // Clean up temp file on error
+                let _ = fs::remove_file(&temp_path).await;
+                return Err(e);
+            }
+            Err(_) => {
+                // Timeout occurred, clean up
+                let _ = fs::remove_file(&temp_path).await;
+                return Err(AppError::io_error(
+                    format!("File copy timeout after {} seconds", FILE_COPY_TIMEOUT),
+                    Some(file_path.to_path_buf()),
+                ));
+            }
+        }
+
+        // 2. 计算最终哈希
+        let hash = format!("{:x}", hasher.finalize());
+        let object_path = self.get_object_path(&hash);
+
+        // Check cache first - might already exist
+        if self.existence_cache.get(&hash).is_some() {
+            // Clean up temp file since content already exists
+            let _ = fs::remove_file(&temp_path).await;
+            debug!(
+                hash = %hash,
+                file = %file_path.display(),
+                "Content already exists (cached), skipping"
+            );
+            return Ok(hash);
+        }
+
+        // Create parent directory for final destination
+        if let Some(parent) = object_path.parent() {
+            fs::create_dir_all(parent).await.map_err(|e| {
+                AppError::io_error(
+                    format!("Failed to create object directory: {}", e),
+                    Some(parent.to_path_buf()),
+                )
+            })?;
+        }
+
+        // 3. 原子重命名到目标位置 (O_EXCL 确保不会覆盖现有文件)
+        // Use tokio::fs::OpenOptions for atomic creation
+        use tokio::fs::OpenOptions;
+
+        // Check if target already exists
+        match OpenOptions::new()
+            .write(true)
+            .create_new(true) // O_EXCL: fail if exists
+            .open(&object_path)
+            .await
+        {
+            Ok(_target_file) => {
+                // Target doesn't exist, we can proceed with rename
+                drop(_target_file);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                // File already exists - deduplication win
+                self.existence_cache.insert(hash.clone(), ());
+                let _ = fs::remove_file(&temp_path).await;
+                debug!(
+                    hash = %hash,
+                    file = %file_path.display(),
+                    "Content already exists, deduplication"
+                );
+                return Ok(hash);
+            }
+            Err(e) => {
+                let _ = fs::remove_file(&temp_path).await;
+                return Err(AppError::io_error(
+                    format!("Failed to check target file: {}", e),
+                    Some(object_path.clone()),
+                ));
+            }
+        }
+
+        // Perform atomic rename
+        match fs::rename(&temp_path, &object_path).await {
+            Ok(()) => {
+                // Success!
+            }
+            Err(e) => {
+                // Rename failed, clean up
+                let _ = fs::remove_file(&temp_path).await;
+                return Err(AppError::io_error(
+                    format!("Failed to rename temp file to target: {}", e),
+                    Some(object_path.clone()),
+                ));
+            }
+        }
+
+        // Cache the newly created object
+        self.existence_cache.insert(hash.clone(), ());
+
+        info!(
+            hash = %hash,
+            size = total_bytes,
+            path = %object_path.display(),
+            source = %file_path.display(),
+            "Stored file in CAS using zero-copy streaming"
+        );
+
+        Ok(hash)
+    }
+}
+
+/// ContentStorage trait implementation for ContentAddressableStorage
+///
+/// This implementation allows ContentAddressableStorage to be used
+/// polymorphically through the ContentStorage trait.
+#[async_trait]
+impl ContentStorage for ContentAddressableStorage {
+    async fn store(&self, content: &[u8]) -> Result<String> {
+        self.store_content(content).await
+    }
+
+    async fn retrieve(&self, hash: &str) -> Result<Vec<u8>> {
+        self.read_content(hash).await
+    }
+
+    async fn exists(&self, hash: &str) -> bool {
+        // Use the async version internally
+        self.exists_async(hash).await
     }
 }
 

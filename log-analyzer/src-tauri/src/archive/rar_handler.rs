@@ -1,21 +1,31 @@
+#[cfg(feature = "rar-support")]
 use crate::archive::archive_handler::{ArchiveHandler, ExtractionSummary};
+#[cfg(feature = "rar-support")]
 use crate::error::{AppError, Result};
+#[cfg(feature = "rar-support")]
 use crate::utils::path_security::{
     validate_and_sanitize_archive_path, PathValidationResult, SecurityConfig,
 };
+#[cfg(feature = "rar-support")]
 use async_trait::async_trait;
+#[cfg(feature = "rar-support")]
 use std::path::Path;
+#[cfg(feature = "rar-support")]
 use tracing::warn;
 
+#[cfg(feature = "rar-support")]
 use tokio::fs;
 
+#[cfg(feature = "rar-support")]
 use unrar::Archive;
 
+#[cfg(feature = "rar-support")]
 /**
  * RAR文件处理器 (纯Rust/C绑定版本)
  */
 pub struct RarHandler;
 
+#[cfg(feature = "rar-support")]
 #[async_trait]
 impl ArchiveHandler for RarHandler {
     fn can_handle(&self, path: &Path) -> bool {
@@ -113,6 +123,48 @@ impl ArchiveHandler for RarHandler {
         .map_err(|e| AppError::archive_error(e.to_string(), None))??;
 
         Ok(summary)
+    }
+
+    fn file_extensions(&self) -> Vec<&str> {
+        vec!["rar"]
+    }
+}
+
+// 无 RAR 支持时的空实现
+#[cfg(not(feature = "rar-support"))]
+use crate::archive::archive_handler::{ArchiveHandler, ExtractionSummary};
+#[cfg(not(feature = "rar-support"))]
+use crate::error::{AppError, Result};
+#[cfg(not(feature = "rar-support"))]
+use async_trait::async_trait;
+#[cfg(not(feature = "rar-support"))]
+use std::path::Path;
+
+#[cfg(not(feature = "rar-support"))]
+pub struct RarHandler;
+
+#[cfg(not(feature = "rar-support"))]
+#[async_trait]
+impl ArchiveHandler for RarHandler {
+    fn can_handle(&self, path: &Path) -> bool {
+        path.extension()
+            .and_then(|s| s.to_str())
+            .map(|ext| ext.eq_ignore_ascii_case("rar"))
+            .unwrap_or(false)
+    }
+
+    async fn extract_with_limits(
+        &self,
+        _source: &Path,
+        _target_dir: &Path,
+        _max_file_size: u64,
+        _max_total_size: u64,
+        _max_file_count: usize,
+    ) -> Result<ExtractionSummary> {
+        Err(AppError::archive_error(
+            "RAR support is not enabled. Enable the 'rar-support' feature to extract RAR files.",
+            None,
+        ))
     }
 
     fn file_extensions(&self) -> Vec<&str> {

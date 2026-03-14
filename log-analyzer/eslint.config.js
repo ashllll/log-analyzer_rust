@@ -30,7 +30,7 @@ export default [
     },
     rules: {
       // TypeScript specific
-      '@typescript-eslint/no-explicit-any': 'off', // Allow any for rapid development
+      '@typescript-eslint/no-explicit-any': 'warn', // Warn on any usage for type safety
       '@typescript-eslint/no-unused-vars': ['warn', { 
         argsIgnorePattern: '^_',
         varsIgnorePattern: '^_',

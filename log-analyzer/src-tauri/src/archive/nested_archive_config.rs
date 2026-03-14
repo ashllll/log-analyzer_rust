@@ -44,7 +44,7 @@ pub struct NestedArchiveConfig {
 }
 
 fn default_max_depth() -> usize {
-    15
+    10 // 统一: 与 extraction_engine.rs 保持一致
 }
 
 fn default_file_count_threshold() -> usize {

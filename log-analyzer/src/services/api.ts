@@ -7,7 +7,22 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import { z } from 'zod';
 import { createApiError } from './errors';
+import {
+  RarSupportInfoSchema,
+  FileFilterConfigSchema,
+  PerformanceMetricsSchema,
+  VirtualFileNodeSchema,
+  WorkspaceStateSchema,
+  EventRecordSchema,
+  type RarSupportInfo,
+  type FileFilterConfig,
+  type PerformanceMetrics,
+  type VirtualFileNode,
+  type WorkspaceState,
+  type EventRecord,
+} from '../types/api-responses';
 
 // ============================================================================
 // 类型定义
@@ -264,9 +279,10 @@ class LogAnalyzerApi {
    *
    * @returns RAR 支持信息
    */
-  async checkRarSupport(): Promise<Record<string, unknown>> {
+  async checkRarSupport(): Promise<RarSupportInfo> {
     try {
-      return await invoke('check_rar_support');
+      const result = await invoke('check_rar_support');
+      return RarSupportInfoSchema.parse(result);
     } catch (error) {
       throw createApiError('check_rar_support', error);
     }
@@ -354,9 +370,10 @@ class LogAnalyzerApi {
    *
    * @returns 文件过滤器配置
    */
-  async getFileFilterConfig(): Promise<any> {
+  async getFileFilterConfig(): Promise<FileFilterConfig> {
     try {
-      return await invoke('get_file_filter_config');
+      const result = await invoke('get_file_filter_config');
+      return FileFilterConfigSchema.parse(result);
     } catch (error) {
       throw createApiError('get_file_filter_config', error);
     }
@@ -367,9 +384,12 @@ class LogAnalyzerApi {
    *
    * @param filterConfig - 过滤器配置
    */
-  async saveFileFilterConfig(filterConfig: any): Promise<void> {
+  async saveFileFilterConfig(filterConfig: FileFilterConfig): Promise<FileFilterConfig> {
     try {
-      await invoke('save_file_filter_config', { filterConfig });
+      // 验证输入参数
+      const validatedConfig = FileFilterConfigSchema.parse(filterConfig);
+      const result = await invoke('save_file_filter_config', { filterConfig: validatedConfig });
+      return FileFilterConfigSchema.parse(result);
     } catch (error) {
       throw createApiError('save_file_filter_config', error);
     }
@@ -384,9 +404,10 @@ class LogAnalyzerApi {
    *
    * @returns 性能指标数据
    */
-  async getPerformanceMetrics(): Promise<any> {
+  async getPerformanceMetrics(): Promise<PerformanceMetrics> {
     try {
-      return await invoke('get_performance_metrics');
+      const result = await invoke('get_performance_metrics');
+      return PerformanceMetricsSchema.parse(result);
     } catch (error) {
       throw createApiError('get_performance_metrics', error);
     }
@@ -418,13 +439,13 @@ class LogAnalyzerApi {
    * 通过哈希读取文件
    *
    * @param params - 文件参数
-   * @returns 文件内容响应
+   * @returns 文件内容
    */
   async readFileByHash(params: {
     workspaceId: string;
     hash: string;
     maxLength?: number;
-  }): Promise<any> {
+  }): Promise<string> {
     try {
       return await invoke('read_file_by_hash', params);
     } catch (error) {
@@ -438,9 +459,10 @@ class LogAnalyzerApi {
    * @param workspaceId - 工作区 ID
    * @returns 文件树节点数组
    */
-  async getVirtualFileTree(workspaceId: string): Promise<any[]> {
+  async getVirtualFileTree(workspaceId: string): Promise<VirtualFileNode[]> {
     try {
-      return await invoke('get_virtual_file_tree', { workspaceId });
+      const result = await invoke('get_virtual_file_tree', { workspaceId });
+      return z.array(VirtualFileNodeSchema).parse(result);
     } catch (error) {
       throw createApiError('get_virtual_file_tree', error);
     }
@@ -467,9 +489,10 @@ class LogAnalyzerApi {
    * @param workspaceId - 工作区 ID
    * @returns 工作区状态
    */
-  async getWorkspaceState(workspaceId: string): Promise<any> {
+  async getWorkspaceState(workspaceId: string): Promise<WorkspaceState> {
     try {
-      return await invoke('get_workspace_state', { workspaceId });
+      const result = await invoke('get_workspace_state', { workspaceId });
+      return WorkspaceStateSchema.parse(result);
     } catch (error) {
       throw createApiError('get_workspace_state', error);
     }
@@ -484,9 +507,10 @@ class LogAnalyzerApi {
   async getEventHistory(params: {
     workspaceId: string;
     limit?: number;
-  }): Promise<any[]> {
+  }): Promise<EventRecord[]> {
     try {
-      return await invoke('get_event_history', params);
+      const result = await invoke('get_event_history', params);
+      return z.array(EventRecordSchema).parse(result);
     } catch (error) {
       throw createApiError('get_event_history', error);
     }

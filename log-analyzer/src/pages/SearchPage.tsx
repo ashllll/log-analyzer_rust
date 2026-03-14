@@ -20,11 +20,13 @@ import { FilterPalette } from '../components/modals';
 import { KeywordStatsPanel } from '../components/search/KeywordStatsPanel';
 import { logger } from '../utils/logger';
 import { cn } from '../utils/classNames';
+import { CircularBuffer } from '../utils/CircularBuffer';
 import { SearchQueryBuilder } from '../services/SearchQueryBuilder';
 import { SearchQuery, SearchResultSummary, KeywordStat } from '../types/search';
 import { saveQuery, loadQuery } from '../services/queryStorage';
 import { api } from '../services/api';
 import { getFullErrorMessage } from '../services/errors';
+import { useInfiniteSearch, registerSearchSession } from '../hooks/useInfiniteSearch';
 import type {
   LogEntry,
   FilterOptions,
@@ -136,16 +138,73 @@ const SearchPage: React.FC<SearchPageProps> = ({
     [keywordGroups]
   );
   
+  // 环形缓冲区容量上限，防止内存泄漏
+  const MAX_LOG_ENTRIES = 50_000;
+
   // 搜索状态
   const [query, setQuery] = useState("");
-  const [logs, setLogs] = useState<LogEntry[]>([]);
-  const deferredLogs = useDeferredValue(logs); // 使用延迟值优化渲染
+  const bufferRef = useRef(new CircularBuffer<LogEntry>(MAX_LOG_ENTRIES));
+  const [logVersion, setLogVersion] = useState(0);
+  const displayLogs = useMemo(() => bufferRef.current.toArray(), [logVersion]);
+  const deferredLogs = useDeferredValue(displayLogs); // 使用延迟值优化渲染
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [isFilterPaletteOpen, setIsFilterPaletteOpen] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   
+  // 流式搜索分页状态
+  const [currentSearchId, setCurrentSearchId] = useState<string>('');
+  const [isStreamSearchEnabled, setIsStreamSearchEnabled] = useState(false);
+  
   // 防抖搜索触发器
   const [searchTrigger, setSearchTrigger] = useState(0);
+
+  // ========== 流式无限搜索 (VirtualSearchManager 集成) ==========
+  const {
+    data: infiniteSearchData,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    error: infiniteSearchError,
+  } = useInfiniteSearch({
+    searchId: currentSearchId,
+    query,
+    workspaceId: activeWorkspace?.id ?? null,
+    enabled: isStreamSearchEnabled && !!currentSearchId,
+    pageSize: 1000,
+  });
+
+  // 流式搜索结果添加到 CircularBuffer
+  useEffect(() => {
+    if (infiniteSearchData?.pages && isStreamSearchEnabled) {
+      // 获取所有页面的结果
+      const allResults = infiniteSearchData.pages.flatMap(page => page.results);
+      
+      // 如果结果数量变化，更新缓冲区
+      if (allResults.length > 0 && allResults.length !== bufferRef.current.length) {
+        // 清空并重新填充缓冲区
+        bufferRef.current.clear();
+        bufferRef.current.pushMany(allResults);
+        setLogVersion(v => v + 1);
+      }
+    }
+  }, [infiniteSearchData, isStreamSearchEnabled]);
+
+  // 处理无限搜索错误
+  useEffect(() => {
+    if (infiniteSearchError) {
+      console.error('Infinite search error:', infiniteSearchError);
+      addToast('error', `分页加载失败: ${infiniteSearchError.message}`);
+    }
+  }, [infiniteSearchError, addToast]);
+
+  // 滚动到底部触发加载下一页
+  const checkAndFetchNextPage = useCallback(() => {
+    if (hasNextPage && !isFetchingNextPage && isStreamSearchEnabled) {
+      fetchNextPage().catch(err => {
+        console.error('Failed to fetch next page:', err);
+      });
+    }
+  }, [hasNextPage, isFetchingNextPage, isStreamSearchEnabled, fetchNextPage]);
 
   // 刷新状态管理
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -181,6 +240,35 @@ const SearchPage: React.FC<SearchPageProps> = ({
   
   // 使用 ref 存储虚拟滚动器实例，避免声明顺序问题
   const rowVirtualizerRef = useRef<ReturnType<typeof useVirtualizer<HTMLDivElement, Element>>>(null);
+  
+  // ============ 性能优化：批量处理搜索结果的 refs ============
+  // 累积批次，避免 O(n²) 的展开操作和频繁的 state update
+  const pendingLogsRef = useRef<LogEntry[]>([]);
+  const batchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 优化：增加批量间隔到 100ms，配合后端 2000 的 batch_size，减少 90% 的 state update 次数
+  const BATCH_INTERVAL = 100; // 100ms 批量刷新
+  // 优化：与后端 batch_size (2000) 对齐，减少不必要的刷新
+  const MAX_BATCH_SIZE = 4000; // 达到 2 个后端批次时立即刷新
+  
+  // 刷新待处理的日志批次
+  const flushPendingLogs = useCallback(() => {
+    if (pendingLogsRef.current.length === 0) return;
+    
+    const batch = pendingLogsRef.current.splice(0); // 清空 ref，取出所有待处理日志
+    // 优化：使用环形缓冲区，限制内存中最大条目数
+    bufferRef.current.pushMany(batch);
+    setLogVersion(v => v + 1);
+  }, []);
+  
+  // 清理函数
+  useEffect(() => {
+    return () => {
+      if (batchTimeoutRef.current) {
+        clearTimeout(batchTimeoutRef.current);
+        batchTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   // ResizeObserver优化：监听容器尺寸变化，即时更新虚拟滚动
   useEffect(() => {
@@ -198,7 +286,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
     };
   }, []);
 
-  // 滚动事件监听（用于底部刷新）
+  // 滚动事件监听（用于底部刷新和流式分页加载）
   useEffect(() => {
     const element = parentRef.current;
     if (!element) return;
@@ -208,6 +296,15 @@ const SearchPage: React.FC<SearchPageProps> = ({
       const { scrollTop, clientHeight, scrollHeight } = target;
       
       lastScrollTopRef.current = scrollTop;
+      
+      // 检查是否接近底部（用于流式分页加载）
+      const isNearBottom = scrollHeight - scrollTop - clientHeight <= REFRESH_THRESHOLD;
+      
+      // 流式分页加载优先
+      if (isNearBottom && isStreamSearchEnabled) {
+        checkAndFetchNextPage();
+        return;
+      }
       
       if (isRefreshingRef.current) return;
       
@@ -230,7 +327,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
     return () => {
       element.removeEventListener('scroll', handleScrollEvent);
     };
-  }, []);
+  }, [isStreamSearchEnabled, checkAndFetchNextPage]);
 
   // 监听搜索事件
   useEffect(() => {
@@ -251,7 +348,24 @@ const SearchPage: React.FC<SearchPageProps> = ({
               console.warn('Invalid search results payload:', e.payload);
               return;
             }
-            setLogs(prev => [...prev, ...e.payload]);
+            
+            // 性能优化：累积批次，避免 O(n²) 的展开操作
+            pendingLogsRef.current.push(...e.payload);
+            
+            // 超过阈值立即刷新
+            if (pendingLogsRef.current.length >= MAX_BATCH_SIZE) {
+              if (batchTimeoutRef.current) {
+                clearTimeout(batchTimeoutRef.current);
+                batchTimeoutRef.current = null;
+              }
+              flushPendingLogs();
+            } else if (!batchTimeoutRef.current) {
+              // 定时刷新，减少 setState 调用次数
+              batchTimeoutRef.current = setTimeout(() => {
+                batchTimeoutRef.current = null;
+                flushPendingLogs();
+              }, BATCH_INTERVAL);
+            }
           }),
           listen<SearchResultSummary>('search-summary', (e) => {
             const summary = e.payload;
@@ -267,7 +381,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
             }));
             setKeywordStats(stats);
           }),
-          listen('search-complete', (e) => {
+          listen('search-complete', async (e) => {
             setIsSearching(false);
             const count = typeof e.payload === 'number' ? e.payload : 0;
 
@@ -281,6 +395,24 @@ const SearchPage: React.FC<SearchPageProps> = ({
               }).catch(err => {
                 logger.error('Failed to save search history:', getFullErrorMessage(err));
               });
+            }
+
+            // 如果结果数量超过阈值，启用流式分页搜索
+            const STREAM_SEARCH_THRESHOLD = 5000;
+            if (count > STREAM_SEARCH_THRESHOLD && bufferRef.current.length > 0) {
+              const searchId = `search_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+              const allResults = bufferRef.current.toArray();
+              
+              try {
+                // 注册搜索会话到 VirtualSearchManager
+                await registerSearchSession(searchId, query, allResults);
+                setCurrentSearchId(searchId);
+                setIsStreamSearchEnabled(true);
+                
+                logger.debug(`Registered search session ${searchId} with ${allResults.length} entries`);
+              } catch (err) {
+                logger.error('Failed to register search session:', err);
+              }
             }
 
             // 滚动到顶部显示最新结果
@@ -307,9 +439,15 @@ const SearchPage: React.FC<SearchPageProps> = ({
           }),
           listen('search-start', () => {
             // 清空并重置滚动
-            setLogs([]);
+            bufferRef.current.clear();
+            setLogVersion(v => v + 1);
             setSearchSummary(null);
             setKeywordStats([]);
+            
+            // 重置流式搜索状态
+            setCurrentSearchId('');
+            setIsStreamSearchEnabled(false);
+            
             if (parentRef.current) {
               parentRef.current.scrollTop = 0;
             }
@@ -344,7 +482,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
         }
       });
     };
-  }, [addToast, keywordColors, rowVirtualizerRef, deferredLogs.length, parentRef, query, activeWorkspace]);
+  }, [addToast, keywordColors, rowVirtualizerRef, parentRef, query, activeWorkspace]);
 
   // 加载保存的查询
   useEffect(() => {
@@ -366,10 +504,11 @@ const SearchPage: React.FC<SearchPageProps> = ({
   // 监听查询变化，自动触发搜索（防抖500ms）
   useEffect(() => {
     if (!query.trim()) {
-      setLogs([]);
+      bufferRef.current.clear();
+      setLogVersion(v => v + 1);
       return;
     }
-    
+
     const timer = setTimeout(() => {
       setSearchTrigger(prev => prev + 1);
     }, 500);
@@ -423,7 +562,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
       return;
     }
 
-    const currentCount = logs.length;
+    const currentCount = bufferRef.current.length;
     const refreshLimit = 100;
 
     try {
@@ -456,7 +595,8 @@ const SearchPage: React.FC<SearchPageProps> = ({
           matched_keywords: undefined,
         }));
 
-        setLogs(prev => [...prev, ...newLogs]);
+        bufferRef.current.pushMany(newLogs);
+        setLogVersion(v => v + 1);
       }
     } catch (err) {
       console.error('Refresh failed:', err);
@@ -465,7 +605,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
       isRefreshingRef.current = false;
       setIsRefreshing(false);
     }
-  }, [query, activeWorkspace, filterOptions, logs.length, addToast]);
+  }, [query, activeWorkspace, filterOptions, addToast]);
 
   // 存储 refreshLogs 到 ref 供滚动事件使用
   useEffect(() => {
@@ -483,16 +623,22 @@ const SearchPage: React.FC<SearchPageProps> = ({
 
     const trimmedQuery = query.trim();
     if (!trimmedQuery) {
-      setLogs([]);
+      bufferRef.current.clear();
+      setLogVersion(v => v + 1);
       return;
     }
 
     // 重置状态
-    setLogs([]);
+    bufferRef.current.clear();
+    setLogVersion(v => v + 1);
     setSearchSummary(null);
     setKeywordStats([]);
     setIsSearching(true);
     setSelectedId(null);
+    
+    // 重置流式搜索状态
+    setCurrentSearchId('');
+    setIsStreamSearchEnabled(false);
 
     // 重置滚动位置到顶部
     if (parentRef.current) {
@@ -632,7 +778,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
    * 导出搜索结果
    */
   const handleExport = async (format: 'csv' | 'json') => {
-    if (logs.length === 0) {
+    if (bufferRef.current.length === 0) {
       addToast('error', '没有可导出的数据');
       return;
     }
@@ -654,12 +800,12 @@ const SearchPage: React.FC<SearchPageProps> = ({
 
       logger.debug('Exporting to:', savePath);
       await api.exportResults({
-        results: logs,
+        results: bufferRef.current.toArray(),
         format,
         savePath
       });
 
-      addToast('success', `已导出 ${logs.length} 条日志到 ${format.toUpperCase()}`);
+      addToast('success', `已导出 ${bufferRef.current.length} 条日志到 ${format.toUpperCase()}`);
     } catch (e) {
       logger.error('Export error:', e);
       addToast('error', `导出失败: ${getFullErrorMessage(e)}`);
@@ -744,7 +890,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
           <Button 
             icon={Download} 
             onClick={() => handleExport('csv')} 
-            disabled={logs.length === 0} 
+            disabled={bufferRef.current.length === 0} 
             variant="secondary" 
             title="Export to CSV"
           >
@@ -753,7 +899,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
           <Button 
             icon={Download} 
             onClick={() => handleExport('json')} 
-            disabled={logs.length === 0} 
+            disabled={bufferRef.current.length === 0} 
             variant="secondary" 
             title="Export to JSON"
           >
@@ -939,8 +1085,25 @@ const SearchPage: React.FC<SearchPageProps> = ({
             </div>
           )}
           
+          {/* 流式分页加载指示器 */}
+          {isFetchingNextPage && (
+            <div className="flex items-center justify-center py-4 bg-bg-sidebar/50 border-t border-border-base">
+              <Loader2 className="animate-spin text-primary mr-2" size={16} />
+              <span className="text-sm text-text-muted">
+                正在加载更多结果... ({bufferRef.current.length.toLocaleString()} 条已加载)
+              </span>
+            </div>
+          )}
+          
+          {/* 流式分页加载完成提示 */}
+          {isStreamSearchEnabled && !hasNextPage && !isFetchingNextPage && bufferRef.current.length > 0 && (
+            <div className="flex items-center justify-center py-3 text-text-muted text-xs">
+              已加载全部 {bufferRef.current.length.toLocaleString()} 条结果
+            </div>
+          )}
+          
           {/* 空状态 */}
-          {logs.length === 0 && !isSearching && (
+          {bufferRef.current.length === 0 && !isSearching && (
             <div className="flex items-center justify-center h-full text-text-dim">
               No logs found. Select workspace & search.
             </div>

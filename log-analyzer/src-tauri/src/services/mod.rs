@@ -9,6 +9,7 @@ pub mod pattern_matcher;
 pub mod query_executor;
 pub mod query_planner;
 pub mod query_validator;
+pub mod traits;
 pub mod regex_engine;
 pub mod report_collector;
 pub mod search_statistics;
@@ -41,7 +42,11 @@ pub use index_validator::{IndexValidator, InvalidFileInfo, ValidationReport};
 pub use intelligent_file_filter::IntelligentFileFilter;
 pub use metadata_db::MetadataDB;
 pub use query_executor::{MatchDetail, QueryExecutor};
-pub use query_planner::ExecutionPlan;
+pub use query_planner::{ExecutionPlan, QueryPlannerAdapter};
+pub use traits::{
+    ContentStorage, MetadataStorage, PlanResult, QueryExecutor as QueryExecutorTrait,
+    QueryPlanning, QueryValidation, ValidationResult,
+};
 pub use regex_engine::{
     AhoCorasickEngine, AutomataEngine, EngineError, EngineInfo, EngineMatches, EngineType,
     MatchResult, RegexEngine, StandardEngine,
