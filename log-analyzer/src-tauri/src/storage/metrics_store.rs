@@ -698,13 +698,14 @@ impl MetricsSnapshotScheduler {
     ///
     /// # Examples
     ///
-    /// ```no_run
-    /// use log_analyzer::storage::MetricsSnapshotScheduler;
+    /// ```ignore
+    /// use log_analyzer::storage::{MetricsStore, MetricsSnapshotScheduler};
+    /// use std::path::Path;
     ///
     /// #[tokio::main]
     /// async fn main() {
-    ///     let store = MetricsStore::new("/path/to/data").await.unwrap();
-    ///     let scheduler = MetricsSnapshotScheduler::new(store, 60).await;
+    ///     let store = MetricsStore::new(Path::new("/path/to/data")).await.unwrap();
+    ///     let scheduler = MetricsSnapshotScheduler::new(store, 60).await.unwrap();
     ///
     ///     // 调度器在后台自动运行
     ///

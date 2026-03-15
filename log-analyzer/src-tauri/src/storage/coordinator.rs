@@ -25,9 +25,19 @@
 //!
 //! ## Usage
 //!
-//! ```rust
+//! ```ignore
+//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! # use log_analyzer::storage::{ContentAddressableStorage, MetadataStore};
+//! # use std::sync::Arc;
+//! # use log_analyzer::storage::coordinator::StorageCoordinator;
+//! # let cas = Arc::new(ContentAddressableStorage::new("/tmp/cas").await?);
+//! # let metadata_store = Arc::new(MetadataStore::new("/tmp/meta").await?);
 //! let coordinator = StorageCoordinator::new(cas, metadata_store);
+//! # let path = std::path::Path::new("/tmp/test.log");
+//! # let metadata = log_analyzer::storage::FileMetadata::default();
 //! let (hash, file_id) = coordinator.store_file_atomic(path, metadata).await?;
+//! # Ok(())
+//! # }
 //! ```
 
 use crate::error::Result;

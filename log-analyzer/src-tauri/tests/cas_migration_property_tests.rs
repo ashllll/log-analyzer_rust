@@ -91,6 +91,8 @@ fn test_no_index_store_references() {
     //
     // For any source file in the codebase (excluding tests and comments),
     // it must not contain references to "index_store", "load_index", or "save_index"
+    // Note: "load_index_state", "save_index_state", "load_indexed_file" are legitimate
+    // MetadataStore methods and not legacy patterns.
 
     let src_dir = Path::new("src");
     assert!(src_dir.exists(), "Source directory should exist");
@@ -105,14 +107,27 @@ fn test_no_index_store_references() {
     all_matches.extend(load_index_matches);
     all_matches.extend(save_index_matches);
 
-    if !all_matches.is_empty() {
+    // Filter out false positives - these are legitimate method names in MetadataStore
+    let filtered_matches: Vec<_> = all_matches
+        .into_iter()
+        .filter(|(_, _, line)| {
+            // Allow legitimate MetadataStore method names
+            !line.contains("load_index_state")
+                && !line.contains("save_index_state")
+                && !line.contains("load_indexed_file")
+                && !line.contains("save_indexed_file")
+                && !line.contains("load_indexed_files")
+        })
+        .collect();
+
+    if !filtered_matches.is_empty() {
         eprintln!("\n❌ Found legacy index_store references in source code:");
-        for (file, line_num, line) in &all_matches {
+        for (file, line_num, line) in &filtered_matches {
             eprintln!("  {}:{}: {}", file, line_num, line);
         }
         panic!(
             "Found {} legacy index_store references in non-comment code",
-            all_matches.len()
+            filtered_matches.len()
         );
     }
 
@@ -359,8 +374,19 @@ fn test_comprehensive_legacy_code_scan() {
 
     for pattern in &legacy_patterns {
         let matches = search_legacy_references(src_dir, pattern);
-        if !matches.is_empty() {
-            all_violations.push((pattern.to_string(), matches));
+        // Filter out false positives - legitimate MetadataStore method names
+        let filtered_matches: Vec<_> = matches
+            .into_iter()
+            .filter(|(_, _, line)| {
+                !line.contains("load_index_state")
+                    && !line.contains("save_index_state")
+                    && !line.contains("load_indexed_file")
+                    && !line.contains("save_indexed_file")
+                    && !line.contains("load_indexed_files")
+            })
+            .collect();
+        if !filtered_matches.is_empty() {
+            all_violations.push((pattern.to_string(), filtered_matches));
         }
     }
 

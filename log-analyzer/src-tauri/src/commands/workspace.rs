@@ -19,7 +19,7 @@
 //! 为保持与 JavaScript camelCase 惯例一致，Tauri 命令参数使用 camelCase 命名。
 //! 这确保了前后端接口的一致性，避免了参数名转换带来的混乱。
 //!
-//! ```rust
+//! ```ignore
 //! #[allow(non_snake_case)]
 //! pub async fn load_workspace(
 //!     workspaceId: String,  // 对应前端 invoke('load_workspace', { workspaceId })

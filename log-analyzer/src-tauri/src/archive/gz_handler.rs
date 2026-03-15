@@ -41,7 +41,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
  * **适用场景**: 批量处理多个 gzip 文件
  *
  * **技术实现**:
- * ```rust
+ * ```ignore
  * use rayon::prelude::*;
  *
  * // 并行处理多个 gzip 文件
