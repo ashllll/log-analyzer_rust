@@ -16,10 +16,6 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 use validator::Validate;
 
-// pub mod application; // TODO: 模块文件缺失，暂时注释
-// pub mod domain; // TODO: 模块文件缺失，暂时注释
-// pub mod infrastructure; // TODO: 模块文件缺失，暂时注释
-
 /// 配置错误类型
 #[derive(Error, Debug)]
 pub enum ConfigError {
@@ -248,22 +244,18 @@ impl AppConfig {
     /// - Validates using validator crate
     /// - Returns validated config or detailed error
     pub fn load_and_validate(path: &Path) -> ConfigResult<Self> {
-        // 检查文件是否存在
         if !path.exists() {
             return Err(ConfigError::FileNotFound(path.to_path_buf()));
         }
 
-        // TODO: 实际实现文件加载 (暂时返回默认配置)
-        // let content = std::fs::read_to_string(path)?;
-        // let config: Self = match path.extension().and_then(|e| e.to_str()) {
-        //     Some("toml") => toml::from_str(&content).map_err(|e| ConfigError::FormatError(e.to_string()))?,
-        //     Some("json") => serde_json::from_str(&content).map_err(|e| ConfigError::FormatError(e.to_string()))?,
-        //     _ => return Err(ConfigError::FormatError("Unsupported file format".to_string())),
-        // };
+        let content = std::fs::read_to_string(path)?;
+        
+        let mut config: Self = match path.extension().and_then(|e| e.to_str()) {
+            Some("toml") => toml::from_str(&content).map_err(|e| ConfigError::FormatError(e.to_string()))?,
+            Some("json") => serde_json::from_str(&content).map_err(|e| ConfigError::FormatError(e.to_string()))?,
+            _ => return Err(ConfigError::FormatError("Unsupported file format".to_string())),
+        };
 
-        let mut config = Self::default();
-
-        // 应用环境变量覆盖
         config.apply_env_overrides()?;
 
         // 验证配置

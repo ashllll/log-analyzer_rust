@@ -8,8 +8,6 @@
 //! - 仓储接口(Repository Interface)
 
 pub mod log_analysis;
-// pub mod search; // TODO: 模块文件缺失，暂时注释
-// pub mod export; // TODO: 模块文件缺失，暂时注释
 pub mod shared;
 
 /// 领域事件总线

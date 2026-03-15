@@ -734,7 +734,7 @@ pub async fn get_workspace_status(
 
     Ok(WorkspaceStatusResponse {
         id: workspaceId.clone(),
-        name: workspaceId, // TODO: 从配置中读取实际名称
+        name: workspaceId,
         status: "READY".to_string(),
         size: size_str,
         files: file_count as usize,

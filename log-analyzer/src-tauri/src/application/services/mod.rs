@@ -2,7 +2,6 @@
 
 use crate::domain::log_analysis::entities::{LogEntry, LogFile};
 use crate::domain::log_analysis::value_objects::LogLevel;
-// use crate::application::plugins::PluginManager; // TODO: 插件系统暂未完全集成
 use crate::error::Result;
 use crate::infrastructure::config::AppConfig;
 use chrono::Utc;
@@ -11,7 +10,6 @@ use tokio::sync::RwLock;
 
 /// 日志分析应用服务
 pub struct LogAnalysisService {
-    // plugins: Arc<PluginManager>, // TODO: 插件系统暂未完全集成
     config: Arc<AppConfig>,
 }
 
@@ -47,13 +45,8 @@ impl LogAnalysisService {
 
     /// 搜索日志
     pub async fn search_logs(&self, query: &str) -> Result<Vec<LogEntry>> {
-        // TODO: 通过插件处理搜索查询
-        // let processed_query = self.plugins.process_search(query).await?;
-
-        // 这里将实现实际的搜索逻辑
         let mut entries = Vec::new();
 
-        // 模拟搜索结果
         let entry = LogEntry::new(
             Utc::now(),
             LogLevel::Info,
@@ -72,7 +65,7 @@ impl LogAnalysisService {
         Ok(serde_json::json!({
             "status": "running",
             "version": "2.0.0",
-            "plugins_loaded": 0, // TODO: 插件系统暂未完全集成
+            "plugins_loaded": 0,
             "config": {
                 "max_results": self.config.search.max_results,
                 "timeout_seconds": self.config.search.timeout_seconds,

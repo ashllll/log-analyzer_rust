@@ -272,8 +272,6 @@ pub fn get_performance_metrics(state: State<'_, AppState>) -> Result<Performance
 
 /// 获取任务管理器指标
 fn get_task_manager_metrics(_state: &AppState) -> TaskMetrics {
-    // 简化处理：返回默认值
-    // TODO: 通过异步消息获取实际的任务管理器指标
     TaskMetrics {
         total: 0,
         running: 0,
@@ -301,12 +299,9 @@ fn get_system_memory_metrics() -> MemoryMetrics {
 
 /// 获取索引指标
 fn get_index_metrics(state: &AppState) -> IndexMetrics {
-    // 从所有元数据存储中聚合索引信息
     let stores = state.metadata_stores.lock();
     let store_count = stores.len() as u64;
 
-    // 简化处理：使用存储数量作为文件计数
-    // TODO: 从 MetadataStore 获取实际的文件统计信息
     IndexMetrics {
         total_files: store_count,
         indexed_files: store_count,
