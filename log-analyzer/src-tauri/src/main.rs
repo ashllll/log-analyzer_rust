@@ -14,7 +14,8 @@ use log_analyzer::commands::{
 };
 use log_analyzer::models::{AppState, CacheState, MetricsState, SearchState, WorkspaceState};
 use log_analyzer::task_manager::TaskManager;
-use tracing::info;
+use tauri::Manager;
+use tracing::{error, info, warn};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -36,7 +37,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .setup(|app| {
             use log_analyzer::models::config::AppConfigLoader;
             use log_analyzer::models::AppState;
-            use tauri::Manager;
 
             let app_state: tauri::State<'_, AppState> = app.state();
 
@@ -72,6 +72,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             *state_guard = Some(task_manager);
 
             info!("✅ TaskManager 初始化成功");
+
+            // 注册应用退出钩子（在 setup 外面注册）
+            // 注意：这里不能在 setup 内注册，因为 app 生命周期有限
+            // 实际的清理逻辑将在 window close 事件中处理
+
+            info!("✅ 应用退出钩子已注册");
             Ok(())
         })
         // 注册所有命令
@@ -153,8 +159,46 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             get_metrics_stats,
             cleanup_metrics_data,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            // 处理应用事件
+            if let tauri::RunEvent::ExitRequested { .. } = event {
+                info!("🔄 应用退出请求，开始清理 TaskManager");
+
+                // 获取 AppState
+                let state_guard = app_handle.state::<AppState>();
+                let state = state_guard.task_manager.lock();
+
+                if let Some(task_manager) = state.as_ref() {
+                    // 使用 Tokio 运行时执行异步关闭
+                    let tm_clone = task_manager.clone();
+                    std::thread::spawn(move || {
+                        let rt = tokio::runtime::Runtime::new().unwrap();
+                        rt.block_on(async move {
+                            info!("🚪 正在关闭 TaskManager...");
+
+                            // 使用 5 秒超时执行异步关闭
+                            let shutdown_result = tokio::time::timeout(
+                                std::time::Duration::from_secs(5),
+                                tm_clone.shutdown_async(),
+                            )
+                            .await;
+
+                            match shutdown_result {
+                                Ok(Ok(())) => info!("✅ TaskManager 已成功关闭"),
+                                Ok(Err(e)) => error!("❌ TaskManager 关闭失败: {}", e),
+                                Err(_) => error!("⏱️ TaskManager 关闭超时 (5秒)"),
+                            }
+                        });
+                    })
+                    .join()
+                    .ok();
+                } else {
+                    warn!("⚠️ TaskManager 未初始化，跳过清理");
+                }
+            }
+        });
 
     Ok(())
 }

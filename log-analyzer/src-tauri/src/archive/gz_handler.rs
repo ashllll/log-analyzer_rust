@@ -502,28 +502,49 @@ pub async fn async_parallel_extract_gz_files(
                         .unwrap_or("output");
                     let file_output_dir = output_dir.join(format!("{}_{}", idx, file_stem));
 
-                    // 创建新的 tokio 运行时用于执行异步解压
-                    let rt = match tokio::runtime::Runtime::new() {
-                        Ok(rt) => rt,
-                        Err(e) => {
-                            return Err(AppError::archive_error(
-                                format!("Failed to create runtime: {}", e),
-                                Some(file_clone),
-                            ))
+                    // 尝试复用现有 tokio 运行时，如果无法获取则创建新的
+                    let result = match tokio::runtime::Handle::try_current() {
+                        Ok(handle) => {
+                            // 复用现有运行时，避免创建独立运行时的资源浪费
+                            handle.block_on(async {
+                                GzHandler
+                                    .extract_with_limits(
+                                        &file_clone,
+                                        &file_output_dir,
+                                        100 * 1024 * 1024,
+                                        1024 * 1024 * 1024,
+                                        1000,
+                                    )
+                                    .await
+                            })
+                        }
+                        Err(_) => {
+                            // 未检测到 tokio 运行时（如测试环境），创建新运行时以保持向后兼容
+                            let rt = match tokio::runtime::Runtime::new() {
+                                Ok(rt) => rt,
+                                Err(e) => {
+                                    return Err(AppError::archive_error(
+                                        format!("Failed to create runtime: {}", e),
+                                        Some(file_clone),
+                                    ))
+                                }
+                            };
+
+                            rt.block_on(async {
+                                GzHandler
+                                    .extract_with_limits(
+                                        &file_clone,
+                                        &file_output_dir,
+                                        100 * 1024 * 1024,
+                                        1024 * 1024 * 1024,
+                                        1000,
+                                    )
+                                    .await
+                            })
                         }
                     };
 
-                    rt.block_on(async {
-                        GzHandler
-                            .extract_with_limits(
-                                &file_clone,
-                                &file_output_dir,
-                                100 * 1024 * 1024,
-                                1024 * 1024 * 1024,
-                                1000,
-                            )
-                            .await
-                    })
+                    result
                 })
                 .await
                 .map_err(|e| {

@@ -1,12 +1,12 @@
 /**
  * End-to-End tests for Virtual File Tree functionality
- * 
+ *
  * Tests the complete user workflow for:
  * - File tree rendering
  * - Nested archive navigation
  * - File content display
  * - Search with virtual paths
- * 
+ *
  * Validates: Requirements 4.2, 1.4
  */
 
@@ -30,6 +30,14 @@ jest.mock('../../utils/logger', () => ({
 }));
 
 const { invoke: mockInvoke } = require('@tauri-apps/api/core');
+
+// 包装器组件，提供固定高度用于虚拟滚动
+// 虚拟滚动需要容器有实际的可滚动空间
+const TestWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <div style={{ height: '500px', width: '100%', overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+    {children}
+  </div>
+);
 
 describe('E2E: Virtual File Tree', () => {
   let user: ReturnType<typeof userEvent.setup>;
@@ -73,10 +81,12 @@ describe('E2E: Virtual File Tree', () => {
       mockInvoke.mockResolvedValue(mockTreeData);
 
       render(
-        <VirtualFileTree
-          workspaceId="test-workspace"
-          onFileSelect={jest.fn()}
-        />
+        <TestWrapper>
+          <VirtualFileTree
+            workspaceId="test-workspace"
+            onFileSelect={jest.fn()}
+          />
+        </TestWrapper>
       );
 
       // Wait for tree to load and verify invoke was called
@@ -103,10 +113,12 @@ describe('E2E: Virtual File Tree', () => {
       mockInvoke.mockImplementation(() => new Promise(() => {})); // Never resolves
 
       render(
-        <VirtualFileTree
-          workspaceId="test-workspace"
-          onFileSelect={jest.fn()}
-        />
+        <TestWrapper>
+          <VirtualFileTree
+            workspaceId="test-workspace"
+            onFileSelect={jest.fn()}
+          />
+        </TestWrapper>
       );
 
       expect(screen.getByText(/loading file tree/i)).toBeInTheDocument();
@@ -116,10 +128,12 @@ describe('E2E: Virtual File Tree', () => {
       mockInvoke.mockRejectedValue(new Error('Failed to load tree'));
 
       render(
-        <VirtualFileTree
-          workspaceId="test-workspace"
-          onFileSelect={jest.fn()}
-        />
+        <TestWrapper>
+          <VirtualFileTree
+            workspaceId="test-workspace"
+            onFileSelect={jest.fn()}
+          />
+        </TestWrapper>
       );
 
       await waitFor(() => {
@@ -131,10 +145,12 @@ describe('E2E: Virtual File Tree', () => {
       mockInvoke.mockResolvedValue([]);
 
       render(
-        <VirtualFileTree
-          workspaceId="test-workspace"
-          onFileSelect={jest.fn()}
-        />
+        <TestWrapper>
+          <VirtualFileTree
+            workspaceId="test-workspace"
+            onFileSelect={jest.fn()}
+          />
+        </TestWrapper>
       );
 
       await waitFor(() => {
@@ -168,10 +184,12 @@ describe('E2E: Virtual File Tree', () => {
       mockInvoke.mockResolvedValue(mockTreeData);
 
       render(
-        <VirtualFileTree
-          workspaceId="test-workspace"
-          onFileSelect={jest.fn()}
-        />
+        <TestWrapper>
+          <VirtualFileTree
+            workspaceId="test-workspace"
+            onFileSelect={jest.fn()}
+          />
+        </TestWrapper>
       );
 
       await waitFor(() => {
@@ -232,10 +250,12 @@ describe('E2E: Virtual File Tree', () => {
       mockInvoke.mockResolvedValue(mockTreeData);
 
       render(
-        <VirtualFileTree
-          workspaceId="test-workspace"
-          onFileSelect={jest.fn()}
-        />
+        <TestWrapper>
+          <VirtualFileTree
+            workspaceId="test-workspace"
+            onFileSelect={jest.fn()}
+          />
+        </TestWrapper>
       );
 
       await waitFor(() => {
@@ -276,10 +296,12 @@ describe('E2E: Virtual File Tree', () => {
       const onFileSelect = jest.fn();
 
       render(
-        <VirtualFileTree
-          workspaceId="test-workspace"
-          onFileSelect={onFileSelect}
-        />
+        <TestWrapper>
+          <VirtualFileTree
+            workspaceId="test-workspace"
+            onFileSelect={onFileSelect}
+          />
+        </TestWrapper>
       );
 
       await waitFor(() => {
@@ -319,10 +341,12 @@ describe('E2E: Virtual File Tree', () => {
       const onFileSelect = jest.fn();
 
       render(
-        <VirtualFileTree
-          workspaceId="test-workspace"
-          onFileSelect={onFileSelect}
-        />
+        <TestWrapper>
+          <VirtualFileTree
+            workspaceId="test-workspace"
+            onFileSelect={onFileSelect}
+          />
+        </TestWrapper>
       );
 
       await waitFor(() => {
@@ -378,10 +402,12 @@ describe('E2E: Virtual File Tree', () => {
       mockInvoke.mockResolvedValue(mockTreeData);
 
       render(
-        <VirtualFileTree
-          workspaceId="test-workspace"
-          onFileSelect={jest.fn()}
-        />
+        <TestWrapper>
+          <VirtualFileTree
+            workspaceId="test-workspace"
+            onFileSelect={jest.fn()}
+          />
+        </TestWrapper>
       );
 
       await waitFor(() => {
@@ -390,7 +416,7 @@ describe('E2E: Virtual File Tree', () => {
 
       // Expand all levels
       await user.click(screen.getByText('app.zip'));
-      
+
       await waitFor(() => {
         expect(screen.getByText('logs.tar.gz')).toBeInTheDocument();
       });
@@ -425,10 +451,12 @@ describe('E2E: Virtual File Tree', () => {
       const onFileSelect = jest.fn();
 
       render(
-        <VirtualFileTree
-          workspaceId="test-workspace"
-          onFileSelect={onFileSelect}
-        />
+        <TestWrapper>
+          <VirtualFileTree
+            workspaceId="test-workspace"
+            onFileSelect={onFileSelect}
+          />
+        </TestWrapper>
       );
 
       await waitFor(() => {

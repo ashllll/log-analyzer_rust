@@ -4,19 +4,9 @@ import type { Workspace } from '../stores/workspaceStore';
 import type { Task } from '../stores/taskStore';
 import type { KeywordGroup } from '../stores/keywordStore';
 
-// 日志条目类型
-export interface LogEntry {
-  id: number;
-  timestamp: string;
-  level: string;
-  file: string;
-  line: number;
-  content: string;
-  tags: any[];
-  real_path?: string;
-  /** 该行匹配的关键词列表 */
-  matched_keywords?: string[];
-}
+// 从 api-responses 重新导出 LogEntry 和 MatchDetail 类型
+// 这些类型使用 Zod Schema 定义，提供运行时类型安全
+export type { LogEntry, MatchDetail } from './api-responses';
 
 // 高级过滤器类型
 export interface FilterOptions {

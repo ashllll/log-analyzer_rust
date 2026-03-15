@@ -9,7 +9,7 @@ use crate::archive::{
     ExtractionContext, ExtractionItem, ExtractionStack, PathManager, SecurityDetector,
 };
 use crate::error::{AppError, Result};
-use dashmap::DashMap;
+use moka::sync::Cache;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -261,8 +261,8 @@ pub struct ExtractionEngine {
     security_detector: Arc<SecurityDetector>,
     /// Extraction policy
     policy: ExtractionPolicy,
-    /// Path mapping cache for fast lookups
-    path_cache: Arc<DashMap<String, PathBuf>>,
+    /// Path mapping cache for fast lookups (LRU with 10,000 entries)
+    path_cache: Arc<Cache<String, PathBuf>>,
     /// Semaphore for parallel file extraction
     parallel_semaphore: Arc<Semaphore>,
 }
@@ -297,11 +297,14 @@ impl ExtractionEngine {
 
         let parallel_semaphore = Arc::new(Semaphore::new(policy.max_parallel_files));
 
+        // 创建 LRU 缓存，最多存储 10,000 条路径映射
+        let path_cache = Arc::new(Cache::new(10_000));
+
         Ok(Self {
             path_manager,
             security_detector,
             policy,
-            path_cache: Arc::new(DashMap::new()),
+            path_cache,
             parallel_semaphore,
         })
     }
@@ -742,8 +745,9 @@ impl ExtractionEngine {
 
     /// Resolve extraction path with caching for performance
     ///
-    /// Uses DashMap for fast concurrent lookups, reducing database queries
-    /// for frequently accessed paths.
+    /// Uses moka LRU cache for fast concurrent lookups, reducing database queries
+    /// for frequently accessed paths. Cache has a maximum capacity of 10,000 entries
+    /// with automatic LRU eviction.
     ///
     /// # Arguments
     ///
@@ -764,14 +768,14 @@ impl ExtractionEngine {
     ) -> Result<PathBuf> {
         let cache_key = format!("{}:{}", workspace_id, full_path.display());
 
-        // Check cache first
+        // Check cache first - moka returns Option<V>
         if let Some(cached) = self.path_cache.get(&cache_key) {
-            debug!("Path cache hit: {}", cache_key);
-            return Ok(cached.clone());
+            debug!("Path cache HIT: {} (size: {})", cache_key, self.path_cache.entry_count());
+            return Ok(cached);
         }
 
         // Cache miss - resolve and store
-        debug!("Path cache miss: {}", cache_key);
+        debug!("Path cache MISS: {} (size: {})", cache_key, self.path_cache.entry_count());
         let resolved = self
             .path_manager
             .resolve_extraction_path(workspace_id, full_path)
@@ -938,7 +942,7 @@ impl ExtractionEngine {
     ///
     /// Useful for testing or when memory needs to be reclaimed
     pub fn clear_cache(&self) {
-        self.path_cache.clear();
+        self.path_cache.invalidate_all();
         debug!("Path cache cleared");
     }
 
@@ -946,7 +950,7 @@ impl ExtractionEngine {
     ///
     /// Returns the number of entries in the path cache
     pub fn cache_size(&self) -> usize {
-        self.path_cache.len()
+        self.path_cache.entry_count() as usize
     }
 }
 

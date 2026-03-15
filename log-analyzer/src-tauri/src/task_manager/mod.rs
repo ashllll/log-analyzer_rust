@@ -566,9 +566,13 @@ impl TaskManager {
         !self.sender.is_closed()
     }
 
-    /// 停止任务管理器
+    /// 停止任务管理器（同步版本）
+    ///
+    /// # 注意
+    /// 此方法使用 `std::thread::sleep`，会阻塞当前线程。
+    /// 在异步上下文中，请优先使用 `shutdown_async()`。
     pub fn shutdown(&self) -> Result<()> {
-        info!("Shutting down TaskManager");
+        info!("Shutting down TaskManager (synchronous)");
 
         // 尝试优雅关闭，带重试机制
         let max_retries = 50; // 5秒 (50次 * 100ms)
@@ -602,14 +606,66 @@ impl TaskManager {
                     }
 
                     // 短暂等待后重试
-                    // 注意：在异步上下文中使用 std::thread::sleep 可能阻塞运行时
-                    // 但由于 shutdown() 是同步函数且只在应用退出时调用，
-                    // 这里保留为同步 sleep 以避免大规模重构
-                    // 理想情况下应该使用 tokio::time::sleep，但需要将整个函数改为异步
                     std::thread::sleep(std::time::Duration::from_millis(100));
                 }
             }
         }
+
+        Ok(())
+    }
+
+    /// 停止任务管理器（异步版本）
+    ///
+    /// # 特性
+    /// - 使用 `tokio::time::sleep` 实现异步等待
+    /// - 不会阻塞异步运行时
+    /// - 带有 5 秒超时保护
+    ///
+    /// # 示例
+    /// ```rust,no_run
+    /// task_manager.shutdown_async().await?;
+    /// ```
+    pub async fn shutdown_async(&self) -> Result<()> {
+        info!("Shutting down TaskManager (asynchronous)");
+
+        let max_retries = 50; // 5秒 (50次 * 100ms)
+        let mut retries = 0;
+
+        loop {
+            match self.sender.send(ActorMessage::Shutdown) {
+                Ok(()) => {
+                    info!("Shutdown message sent successfully");
+                    break;
+                }
+                Err(e) => {
+                    retries += 1;
+                    if retries >= max_retries {
+                        error!(
+                            error = %e,
+                            retries = retries,
+                            "Failed to send shutdown message after {} retries, forcing shutdown",
+                            max_retries
+                        );
+                        return Err(e).wrap_err("Failed to send shutdown message after timeout");
+                    }
+
+                    if retries % 10 == 0 {
+                        warn!(
+                            error = %e,
+                            retries = retries,
+                            "Actor channel closed, retrying shutdown..."
+                        );
+                    }
+
+                    // 使用 tokio::time::sleep 异步等待
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                }
+            }
+        }
+
+        // 等待 Actor 处理完剩余消息
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        info!("TaskManager shutdown completed");
 
         Ok(())
     }

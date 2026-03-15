@@ -258,3 +258,50 @@ export const ReadFileResponseSchema = z.object({
  * 文件读取响应类型
  */
 export type ReadFileResponse = z.infer<typeof ReadFileResponseSchema>;
+
+// ============================================================================
+// LogEntry - 日志条目
+// ============================================================================
+
+/**
+ * 匹配详情 Schema（与后端 services::MatchDetail 一致）
+ */
+export const MatchDetailSchema = z.object({
+  term_id: z.string(),
+  term_value: z.string(),
+  priority: z.number(),
+  match_position: z.tuple([z.number(), z.number()]).optional(),
+});
+
+/**
+ * 匹配详情类型
+ */
+export type MatchDetail = z.infer<typeof MatchDetailSchema>;
+
+/**
+ * LogEntry Schema（与后端 models::LogEntry 一致）
+ *
+ * 注意：
+ * - id: string（后端为 usize，序列化为 number，但为统一类型使用 string）
+ * - timestamp: string（后端为 Arc<str>）
+ * - tags: string[]（后端为 Vec<String>）
+ * - match_details: 可选数组
+ * - matched_keywords: 可选数组
+ */
+export const LogEntrySchema = z.object({
+  id: z.string(),
+  timestamp: z.string(),
+  level: z.string(),
+  file: z.string(),
+  real_path: z.string(),
+  line: z.number(),
+  content: z.string(),
+  tags: z.array(z.string()),
+  match_details: z.array(MatchDetailSchema).optional(),
+  matched_keywords: z.array(z.string()).optional(),
+});
+
+/**
+ * LogEntry 类型
+ */
+export type LogEntry = z.infer<typeof LogEntrySchema>;

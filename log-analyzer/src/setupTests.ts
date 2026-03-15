@@ -3,6 +3,16 @@
 
 import '@testing-library/jest-dom';
 import React from 'react';
+import { TextEncoder, TextDecoder } from 'util';
+
+// Polyfill TextEncoder/TextDecoder for react-router-dom
+// This is needed because Node.js test environment doesn't have these globals
+if (typeof global.TextEncoder === 'undefined') {
+  global.TextEncoder = TextEncoder as any;
+}
+if (typeof global.TextDecoder === 'undefined') {
+  global.TextDecoder = TextDecoder as any;
+}
 
 // Initialize i18n for tests - must be before any components that use translation
 import './i18n';

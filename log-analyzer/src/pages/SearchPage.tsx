@@ -148,7 +148,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
   const [logVersion, setLogVersion] = useState(0);
   const displayLogs = useMemo(() => bufferRef.current.toArray(), [logVersion]);
   const deferredLogs = useDeferredValue(displayLogs); // 使用延迟值优化渲染
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isFilterPaletteOpen, setIsFilterPaletteOpen] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   
@@ -630,7 +630,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
 
       if (result.results && result.results.length > 0) {
         const newLogs: LogEntry[] = result.results.map((r, i) => ({
-          id: currentCount + i + 1,
+          id: String(currentCount + i + 1),
           timestamp: r.timestamp,
           level: r.level,
           content: r.message,
@@ -638,7 +638,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
           line: r.line_number,
           real_path: r.source_file,
           tags: [],
-          match_details: null,
+          match_details: undefined,
           matched_keywords: undefined,
         }));
 
