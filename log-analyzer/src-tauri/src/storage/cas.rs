@@ -98,7 +98,6 @@ async fn get_available_space(path: &Path) -> u64 {
 #[cfg(target_os = "windows")]
 async fn get_available_space(path: &Path) -> u64 {
     use std::os::windows::ffi::OsStrExt;
-    use windows_sys::Win32::Foundation::PWSTR;
     use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
 
     let wide_path: Vec<u16> = path
@@ -110,7 +109,7 @@ async fn get_available_space(path: &Path) -> u64 {
     let mut free_bytes_available: u64 = 0;
     let result = unsafe {
         GetDiskFreeSpaceExW(
-            wide_path.as_ptr() as PWSTR,
+            wide_path.as_ptr(),
             &mut free_bytes_available,
             std::ptr::null_mut(),
             std::ptr::null_mut(),
