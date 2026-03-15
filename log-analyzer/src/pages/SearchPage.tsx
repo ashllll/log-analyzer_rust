@@ -524,6 +524,52 @@ const SearchPage: React.FC<SearchPageProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchTrigger, activeWorkspace]);
 
+  // 工作区切换时获取时间范围
+  useEffect(() => {
+    if (!activeWorkspace) {
+      // 清空时间范围
+      setFilterOptions(prev => ({
+        ...prev,
+        timeRange: { start: null, end: null }
+      }));
+      return;
+    }
+
+    // 获取工作区的时间范围
+    const fetchTimeRange = async () => {
+      try {
+        const timeRange = await api.getWorkspaceTimeRange(activeWorkspace.id);
+        if (timeRange.minTimestamp && timeRange.maxTimestamp) {
+          // 将 ISO 8601 格式转换为 datetime-local 格式 (YYYY-MM-DDTHH:mm)
+          const minDate = new Date(timeRange.minTimestamp);
+          const maxDate = new Date(timeRange.maxTimestamp);
+          
+          const formatDateTimeLocal = (date: Date) => {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            return `${year}-${month}-${day}T${hours}:${minutes}`;
+          };
+
+          setFilterOptions(prev => ({
+            ...prev,
+            timeRange: {
+              start: formatDateTimeLocal(minDate),
+              end: formatDateTimeLocal(maxDate)
+            }
+          }));
+        }
+      } catch (error) {
+        console.warn('Failed to fetch workspace time range:', error);
+        // 失败时不清空已有的时间范围，保持用户手动设置
+      }
+    };
+
+    fetchTimeRange();
+  }, [activeWorkspace?.id]);
+
   /**
    * 检查是否接近滚动底部
    * @param scrollTop - 当前滚动位置

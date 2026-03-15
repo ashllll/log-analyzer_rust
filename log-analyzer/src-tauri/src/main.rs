@@ -94,6 +94,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             cancel_task,
             get_workspace_status,
             create_workspace,
+            get_workspace_time_range,
             // ===== 文件监听 =====
             start_watch,
             stop_watch,

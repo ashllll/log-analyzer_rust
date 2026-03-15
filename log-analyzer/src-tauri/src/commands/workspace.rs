@@ -741,6 +741,75 @@ pub async fn get_workspace_status(
     })
 }
 
+/// 获取工作区日志时间范围
+///
+/// 从 Tantivy 索引中查询最早和最晚的日志时间戳
+///
+/// # 参数
+///
+/// - `workspaceId` - 工作区ID
+/// - `state` - 全局状态
+///
+/// # 返回值
+///
+/// - `Ok(WorkspaceTimeRange)` - 时间范围信息
+/// - `Err(String)` - 获取失败
+#[command]
+pub async fn get_workspace_time_range(
+    #[allow(non_snake_case)] workspaceId: String,
+    state: State<'_, AppState>,
+) -> Result<crate::models::search::WorkspaceTimeRange, String> {
+    use crate::models::search::WorkspaceTimeRange;
+    use chrono::DateTime;
+
+    // Get search engine manager for this workspace
+    let search_engine_opt = {
+        let managers = state.search_engine_managers.lock();
+        managers.get(&workspaceId).cloned()
+    };
+
+    let (min_ts, max_ts, total_logs) = match search_engine_opt {
+        Some(manager) => {
+            manager
+                .get_time_range()
+                .map_err(|e| format!("Failed to get time range from index: {}", e))?
+        }
+        None => {
+            // No search engine manager found for this workspace
+            return Ok(WorkspaceTimeRange {
+                min_timestamp: None,
+                max_timestamp: None,
+                total_logs: 0,
+            });
+        }
+    };
+
+    // Convert timestamps to ISO 8601 format
+    let min_timestamp = if min_ts > 0 {
+        Some(DateTime::from_timestamp(min_ts, 0).map_or_else(
+            || min_ts.to_string(),
+            |dt| dt.to_rfc3339(),
+        ))
+    } else {
+        None
+    };
+
+    let max_timestamp = if max_ts > 0 {
+        Some(DateTime::from_timestamp(max_ts, 0).map_or_else(
+            || max_ts.to_string(),
+            |dt| dt.to_rfc3339(),
+        ))
+    } else {
+        None
+    };
+
+    Ok(WorkspaceTimeRange {
+        min_timestamp,
+        max_timestamp,
+        total_logs,
+    })
+}
+
 /// 创建工作区命令（import_folder 的语义化别名）
 ///
 /// 提供更符合用户预期的命令名来创建工作区

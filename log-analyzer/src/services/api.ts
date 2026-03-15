@@ -197,6 +197,24 @@ class LogAnalyzerApi {
     }
   }
 
+  /**
+   * 获取工作区日志时间范围
+   *
+   * @param workspaceId - 工作区 ID
+   * @returns 时间范围信息 { minTimestamp, maxTimestamp, totalLogs }
+   */
+  async getWorkspaceTimeRange(workspaceId: string): Promise<{
+    minTimestamp: string | null;
+    maxTimestamp: string | null;
+    totalLogs: number;
+  }> {
+    try {
+      return await invoke('get_workspace_time_range', { workspaceId });
+    } catch (error) {
+      throw createApiError('get_workspace_time_range', error);
+    }
+  }
+
   // ========================================================================
   // 搜索操作
   // ========================================================================

@@ -757,6 +757,61 @@ impl SearchEngineManager {
         Ok(())
     }
 
+    /// Get the time range of all logs in the index
+    ///
+    /// Returns the minimum and maximum timestamps from the index.
+    /// Uses fast fields for efficient aggregation without loading all documents.
+    ///
+    /// # Returns
+    ///
+    /// - `Ok((min_timestamp, max_timestamp, total_count))` - Time range and total count
+    /// - `Err(SearchError)` - If search fails
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let (min_ts, max_ts, count) = manager.get_time_range()?;
+    /// info!("Time range: {} to {}, total: {} logs", min_ts, max_ts, count);
+    /// ```
+    pub fn get_time_range(&self) -> SearchResult<(i64, i64, usize)> {
+        use tantivy::collector::TopDocs;
+        use tantivy::query::AllQuery;
+        use tantivy::schema::Value;
+
+        let searcher = self.reader.searcher();
+        let total_count = searcher.num_docs() as usize;
+
+        if total_count == 0 {
+            return Ok((0, 0, 0));
+        }
+
+        // Get all documents to find min/max timestamp
+        // Since we use fast fields, this is relatively efficient
+        let top_docs = searcher.search(&AllQuery, &TopDocs::with_limit(total_count))?;
+
+        let mut min_timestamp = i64::MAX;
+        let mut max_timestamp = i64::MIN;
+
+        for (_score, doc_address) in top_docs {
+            let retrieved_doc: TantivyDocument = searcher.doc(doc_address)?;
+            if let Some(value) = retrieved_doc.get_first(self.schema.timestamp) {
+                if let Some(ts) = value.as_i64() {
+                    min_timestamp = min_timestamp.min(ts);
+                    max_timestamp = max_timestamp.max(ts);
+                }
+            }
+        }
+
+        if min_timestamp == i64::MAX {
+            min_timestamp = 0;
+        }
+        if max_timestamp == i64::MIN {
+            max_timestamp = 0;
+        }
+
+        Ok((min_timestamp, max_timestamp, total_count))
+    }
+
     /// Delete all documents for a specific file
     ///
     /// This is used when a file is deleted or removed from the workspace.

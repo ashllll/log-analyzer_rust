@@ -81,6 +81,19 @@ pub struct TimeRange {
 }
 
 /**
+ * 工作区日志时间范围响应
+ */
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkspaceTimeRange {
+    /// 最早日志时间戳 (ISO 8601 格式)
+    pub min_timestamp: Option<String>,
+    /// 最晚日志时间戳 (ISO 8601 格式)
+    pub max_timestamp: Option<String>,
+    /// 日志总条数
+    pub total_logs: usize,
+}
+
+/**
  * 搜索过滤器
  */
 #[derive(Debug, Clone, Serialize, Deserialize)]
