@@ -769,11 +769,9 @@ pub async fn get_workspace_time_range(
     };
 
     let (min_ts, max_ts, total_logs) = match search_engine_opt {
-        Some(manager) => {
-            manager
-                .get_time_range()
-                .map_err(|e| format!("Failed to get time range from index: {}", e))?
-        }
+        Some(manager) => manager
+            .get_time_range()
+            .map_err(|e| format!("Failed to get time range from index: {}", e))?,
         None => {
             // No search engine manager found for this workspace
             return Ok(WorkspaceTimeRange {
@@ -786,19 +784,19 @@ pub async fn get_workspace_time_range(
 
     // Convert timestamps to ISO 8601 format
     let min_timestamp = if min_ts > 0 {
-        Some(DateTime::from_timestamp(min_ts, 0).map_or_else(
-            || min_ts.to_string(),
-            |dt| dt.to_rfc3339(),
-        ))
+        Some(
+            DateTime::from_timestamp(min_ts, 0)
+                .map_or_else(|| min_ts.to_string(), |dt| dt.to_rfc3339()),
+        )
     } else {
         None
     };
 
     let max_timestamp = if max_ts > 0 {
-        Some(DateTime::from_timestamp(max_ts, 0).map_or_else(
-            || max_ts.to_string(),
-            |dt| dt.to_rfc3339(),
-        ))
+        Some(
+            DateTime::from_timestamp(max_ts, 0)
+                .map_or_else(|| max_ts.to_string(), |dt| dt.to_rfc3339()),
+        )
     } else {
         None
     };

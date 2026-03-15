@@ -249,11 +249,18 @@ impl AppConfig {
         }
 
         let content = std::fs::read_to_string(path)?;
-        
+
         let mut config: Self = match path.extension().and_then(|e| e.to_str()) {
-            Some("toml") => toml::from_str(&content).map_err(|e| ConfigError::FormatError(e.to_string()))?,
-            Some("json") => serde_json::from_str(&content).map_err(|e| ConfigError::FormatError(e.to_string()))?,
-            _ => return Err(ConfigError::FormatError("Unsupported file format".to_string())),
+            Some("toml") => {
+                toml::from_str(&content).map_err(|e| ConfigError::FormatError(e.to_string()))?
+            }
+            Some("json") => serde_json::from_str(&content)
+                .map_err(|e| ConfigError::FormatError(e.to_string()))?,
+            _ => {
+                return Err(ConfigError::FormatError(
+                    "Unsupported file format".to_string(),
+                ))
+            }
         };
 
         config.apply_env_overrides()?;

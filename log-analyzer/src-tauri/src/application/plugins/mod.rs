@@ -69,7 +69,9 @@ impl LibraryHandle {
 
     /// 增加引用计数
     fn increment(&self) {
-        let count = self.ref_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let count = self
+            .ref_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         debug!(
             path = ?self.path,
             count = count + 1,
@@ -79,7 +81,9 @@ impl LibraryHandle {
 
     /// 减少引用计数并返回当前值
     fn decrement(&self) -> usize {
-        let count = self.ref_count.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+        let count = self
+            .ref_count
+            .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
         debug!(
             path = ?self.path,
             count = count - 1,
@@ -180,12 +184,13 @@ impl PluginManager {
             let lib_ref = &*Arc::as_ptr(&library_handle.library);
 
             // 获取 symbol
-            let create_plugin: Symbol<PluginCreate> = lib_ref.get(b"create_plugin").map_err(|e| {
-                crate::error::AppError::Internal(format!(
-                    "Plugin missing create_plugin symbol: {}",
-                    e
-                ))
-            })?;
+            let create_plugin: Symbol<PluginCreate> =
+                lib_ref.get(b"create_plugin").map_err(|e| {
+                    crate::error::AppError::Internal(format!(
+                        "Plugin missing create_plugin symbol: {}",
+                        e
+                    ))
+                })?;
 
             // 调用创建函数
             let plugin_raw = create_plugin();

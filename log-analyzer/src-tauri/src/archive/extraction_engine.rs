@@ -770,12 +770,20 @@ impl ExtractionEngine {
 
         // Check cache first - moka returns Option<V>
         if let Some(cached) = self.path_cache.get(&cache_key) {
-            debug!("Path cache HIT: {} (size: {})", cache_key, self.path_cache.entry_count());
+            debug!(
+                "Path cache HIT: {} (size: {})",
+                cache_key,
+                self.path_cache.entry_count()
+            );
             return Ok(cached);
         }
 
         // Cache miss - resolve and store
-        debug!("Path cache MISS: {} (size: {})", cache_key, self.path_cache.entry_count());
+        debug!(
+            "Path cache MISS: {} (size: {})",
+            cache_key,
+            self.path_cache.entry_count()
+        );
         let resolved = self
             .path_manager
             .resolve_extraction_path(workspace_id, full_path)
