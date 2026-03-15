@@ -88,15 +88,16 @@ const LogRow = memo<LogRowProps>(({
       onClick={onClick} 
       style={{ transform: `translateY(${virtualStart}px)` }} 
       className={cn(
-        "absolute top-0 left-0 w-full grid grid-cols-[50px_160px_200px_1fr] px-3 py-0.5 border-b border-border-base/40 cursor-pointer text-[11px] font-mono hover:bg-bg-hover transition-colors items-start", 
-        isActive && "bg-blue-500/10 border-l-2 border-l-primary"
+        "absolute top-0 left-0 w-full grid grid-cols-[50px_160px_200px_1fr] px-3 py-0.5 border-b border-border-subtle cursor-pointer text-[11px] font-mono hover:bg-bg-hover/50 transition-colors duration-150 items-start",
+        isActive && "bg-primary/10 border-l-2 border-l-primary"
       )}
     >
       <div className={cn(
-        "font-bold", 
-        log.level === 'ERROR' ? 'text-red-400' : 
-        log.level === 'WARN' ? 'text-yellow-400' : 
-        'text-blue-400'
+        "font-bold",
+        log.level === 'ERROR' ? 'text-log-error' :
+        log.level === 'WARN' ? 'text-log-warn' :
+        log.level === 'INFO' ? 'text-log-info' :
+        'text-log-debug'
       )}>
         {log.level.substring(0,1)}
       </div>
@@ -220,9 +221,9 @@ const SearchPage: React.FC<SearchPageProps> = ({
   const [searchSummary, setSearchSummary] = useState<SearchResultSummary | null>(null);
   const [keywordStats, setKeywordStats] = useState<KeywordStat[]>([]);
   
-  // 给每个关键词分配颜色
+  // 给每个关键词分配颜色 - 使用新的设计系统
   const keywordColors = useMemo(
-    () => ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#06b6d4'],
+    () => ['#3B82F6', '#8B5CF6', '#22C55E', '#F59E0B', '#EC4899', '#06B6D4'],
     []
   );
   
@@ -890,7 +891,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
   return (
     <div className="flex flex-col h-full relative">
       {/* 搜索控制区 */}
-      <div className="p-4 border-b border-border-base bg-bg-sidebar space-y-3 shrink-0 relative z-40">
+      <div className="p-4 border-b border-border-subtle bg-bg-sidebar space-y-3 shrink-0 relative z-40">
         {/* 搜索输入和操作按钮 */}
         <div className="flex gap-2">
           <div className="relative flex-1">
@@ -1002,10 +1003,10 @@ const SearchPage: React.FC<SearchPageProps> = ({
                     }));
                   }}
                   className={cn(
-                    "text-[10px] px-2 py-1 rounded border transition-all",
+                    "text-[10px] px-2 py-1 rounded border transition-all duration-200 cursor-pointer font-medium",
                     filterOptions.levels.includes(level)
-                      ? "bg-primary text-white border-primary"
-                      : "bg-bg-main text-text-dim border-border-base hover:border-primary/50"
+                      ? "bg-primary text-white border-primary shadow-sm"
+                      : "bg-bg-card text-text-muted border-border-base hover:border-primary/50 hover:text-text-main"
                   )}
                   title={level}
                 >
@@ -1094,11 +1095,11 @@ const SearchPage: React.FC<SearchPageProps> = ({
       <div className="flex-1 flex overflow-hidden">
         {/* 日志列表 */}
         <div ref={parentRef} className="flex-1 overflow-auto bg-bg-main scrollbar-thin">
-          {/* 表头 */}
-          <div className="sticky top-0 z-10 grid grid-cols-[50px_160px_200px_1fr] px-3 py-1.5 bg-bg-main border-b border-border-base text-[10px] font-bold text-text-dim uppercase tracking-wider">
-            <div>Lvl</div> 
-            <div>Time</div> 
-            <div>File</div> 
+          {/* 表头 - 优化视觉层次 */}
+          <div className="sticky top-0 z-10 grid grid-cols-[50px_160px_200px_1fr] px-3 py-1.5 bg-bg-elevated border-b border-border-base text-[10px] font-bold text-text-muted uppercase tracking-wider">
+            <div>Lvl</div>
+            <div>Time</div>
+            <div>File</div>
             <div>Content</div>
           </div>
           
@@ -1156,11 +1157,11 @@ const SearchPage: React.FC<SearchPageProps> = ({
           )}
         </div>
         
-        {/* 日志详情面板 */}
+        {/* 日志详情面板 - 优化视觉层次 */}
         {activeLog && (
-          <div className="w-[450px] bg-bg-sidebar border-l border-border-base flex flex-col shrink-0 shadow-xl z-20 animate-in slide-in-from-right duration-200">
-            <div className="h-10 border-b border-border-base flex items-center justify-between px-4 bg-bg-card/50">
-              <span className="text-xs font-semibold text-text-muted uppercase">Log Inspector</span>
+          <div className="w-[450px] bg-bg-sidebar border-l border-border-subtle flex flex-col shrink-0 shadow-elevated z-20 animate-slide-in">
+            <div className="h-10 border-b border-border-subtle flex items-center justify-between px-4 bg-bg-elevated">
+              <span className="text-xs font-bold text-text-muted uppercase tracking-wide">Log Inspector</span>
               <div className="flex gap-1">
                 <Button 
                   variant="ghost" 

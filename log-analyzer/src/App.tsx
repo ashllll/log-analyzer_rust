@@ -142,8 +142,15 @@ function AppContent() {
 
   return (
     <div className="flex h-screen bg-bg-main text-text-main font-sans selection:bg-primary/30">
-      <div className="w-[240px] bg-bg-sidebar border-r border-border-base flex flex-col shrink-0 z-50">
-        <div className="h-14 flex items-center px-5 border-b border-border-base mb-2 select-none"><div className="h-8 w-8 bg-primary rounded-lg flex items-center justify-center text-white mr-3 shadow-lg shadow-primary/20"><Zap size={18} fill="currentColor" /></div><span className="font-bold text-lg tracking-tight">LogAnalyzer</span></div>
+      {/* 侧边栏 - 使用更柔和的背景和更好的视觉层次 */}
+      <div className="w-[240px] bg-bg-sidebar border-r border-border-subtle flex flex-col shrink-0 z-50">
+        {/* Logo 区域 */}
+        <div className="h-14 flex items-center px-5 border-b border-border-subtle mb-2 select-none">
+          <div className="h-8 w-8 bg-gradient-to-br from-primary to-cta rounded-lg flex items-center justify-center text-white mr-3 shadow-lg shadow-primary/30">
+            <Zap size={18} fill="currentColor" />
+          </div>
+          <span className="font-bold text-lg tracking-tight">LogAnalyzer</span>
+        </div>
         <div className="flex-1 px-3 py-4 space-y-1">
             <NavItem icon={LayoutGrid} label="Workspaces" active={currentPage === 'workspaces'} onClick={() => setPage('workspaces')} data-testid="nav-workspaces" />
             <NavItem icon={Search} label="Search Logs" active={currentPage === 'search'} onClick={() => setPage('search')} data-testid="nav-search" />
@@ -152,12 +159,14 @@ function AppContent() {
             <NavItem icon={Activity} label="Performance" active={currentPage === 'performance'} onClick={() => setPage('performance')} data-testid="nav-performance" />
         </div>
         {importStatus && <div className="p-3 m-3 bg-bg-card border border-primary/20 rounded text-xs text-primary animate-pulse"><div className="font-bold mb-1 flex items-center gap-2"><Loader2 size={12} className="animate-spin"/> Processing</div><div className="truncate opacity-80">{importStatus}</div></div>}
-        <div className="p-3 border-t border-border-base">
+        <div className="p-3 border-t border-border-subtle">
           <NavItem icon={Cog} label="Settings" active={currentPage === 'settings'} onClick={() => setPage('settings')} data-testid="nav-settings" />
         </div>
       </div>
+      {/* 主内容区 */}
       <div className="flex-1 flex flex-col min-w-0 bg-bg-main">
-        <div className="h-14 border-b border-border-base bg-bg-main flex items-center justify-between px-6 shrink-0 z-40">
+        {/* 顶部导航栏 */}
+        <div className="h-14 border-b border-border-subtle bg-bg-main flex items-center justify-between px-6 shrink-0 z-40">
           <div className="flex items-center text-sm text-text-muted select-none">
             {currentPage === 'settings' ? (
               <span className="font-medium text-text-main flex items-center gap-2">
@@ -206,32 +215,33 @@ function AppContent() {
         toastOptions={{
           duration: 3000,
           style: {
-            background: 'rgb(30, 41, 59)',
-            color: 'rgb(226, 232, 240)',
-            border: '1px solid rgba(148, 163, 184, 0.2)',
+            background: '#1E293B', // Slate-800
+            color: '#F1F5F9', // Slate-100
+            border: '1px solid #334155', // Slate-700
             borderRadius: '0.5rem',
             padding: '0.75rem 1rem',
             fontSize: '0.875rem',
             maxWidth: '400px',
+            boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.3)',
           },
           success: {
             duration: 2500,
             iconTheme: {
-              primary: '#10b981',
-              secondary: '#1e293b',
+              primary: '#22C55E', // Green-500
+              secondary: '#1E293B',
             },
             style: {
-              border: '1px solid rgba(16, 185, 129, 0.3)',
+              border: '1px solid rgba(34, 197, 94, 0.4)',
             },
           },
           error: {
             duration: 4000,
             iconTheme: {
-              primary: '#ef4444',
-              secondary: '#1e293b',
+              primary: '#EF4444', // Red-500
+              secondary: '#1E293B',
             },
             style: {
-              border: '1px solid rgba(239, 68, 68, 0.3)',
+              border: '1px solid rgba(239, 68, 68, 0.4)',
             },
           },
         }}

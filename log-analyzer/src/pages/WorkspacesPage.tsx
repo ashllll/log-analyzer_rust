@@ -43,32 +43,87 @@ const WorkspacesPage: React.FC = () => {
 
   return (
     <div className="p-8 max-w-6xl mx-auto h-full overflow-auto">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-text-main">Workspaces</h1>
+      {/* 页面标题 */}
+      <div className="flex justify-between items-center mb-8">
+        <div>
+          <h1 className="text-2xl font-bold text-text-main tracking-tight">Workspaces</h1>
+          <p className="text-sm text-text-muted mt-1">管理日志工作区和导入源</p>
+        </div>
         <div className="flex gap-2">
           <Button icon={Settings} onClick={() => setIsFilterSettingsOpen(true)} variant="secondary" data-testid="file-filter-settings-button">
             文件过滤设置
           </Button>
-          <Button icon={FileText} onClick={handleImportFile} data-testid="import-file-button">Import File</Button>
-          <Button icon={Plus} onClick={handleImportFolder} data-testid="import-folder-button">Import Folder</Button>
+          <Button icon={FileText} onClick={handleImportFile} variant="secondary" data-testid="import-file-button">Import File</Button>
+          <Button icon={Plus} onClick={handleImportFolder} variant="cta" data-testid="import-folder-button">Import Folder</Button>
         </div>
       </div>
+
+      {/* 工作区网格 */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
          {workspaces.map((ws: Workspace) => (
-           <Card key={ws.id} data-testid={`workspace-card-${ws.id}`} className={cn("h-full flex flex-col hover:border-primary/50 transition-colors group cursor-pointer", activeWorkspaceId === ws.id ? "border-primary ring-1 ring-primary" : "border-border-base")} onClick={() => switchWorkspace(ws.id)}>
-              <div className="px-4 py-3 border-b border-border-base bg-bg-sidebar/50 font-bold text-sm flex justify-between items-center">
-                  {ws.name}
-                  <div className="flex gap-1">
-                    <Button variant="ghost" icon={ws.watching ? EyeOff : Eye} className="h-6 w-6 p-0 text-text-dim hover:text-emerald-400" onClick={(e) => { e.stopPropagation(); handleToggleWatch(ws); }} title={ws.watching ? "Stop watching" : "Start watching"} data-testid={`workspace-watch-${ws.id}`} />
-                    <Button variant="ghost" icon={RefreshCw} className="h-6 w-6 p-0 text-text-dim hover:text-blue-400" onClick={(e) => { e.stopPropagation(); handleRefresh(ws); }} title="Refresh workspace" data-testid={`workspace-refresh-${ws.id}`}/>
-                    <Button variant="ghost" icon={Trash2} className="h-6 w-6 p-0 text-text-dim hover:text-red-400" onClick={(e) => { e.stopPropagation(); handleDelete(ws.id); }} data-testid={`workspace-delete-${ws.id}`}/>
+           <Card
+             key={ws.id}
+             variant="interactive"
+             data-testid={`workspace-card-${ws.id}`}
+             className={cn(
+               "h-full flex flex-col",
+               activeWorkspaceId === ws.id && "ring-2 ring-primary shadow-glow-primary"
+             )}
+             onClick={() => switchWorkspace(ws.id)}
+           >
+              {/* 卡片头部 */}
+              <div className="px-4 py-3 border-b border-border-subtle bg-bg-elevated/50 font-bold text-sm flex justify-between items-center">
+                  <span className="truncate">{ws.name}</span>
+                  <div className="flex gap-1 shrink-0">
+                    <Button
+                      variant="ghost"
+                      icon={ws.watching ? EyeOff : Eye}
+                      className="h-7 w-7 p-0 text-text-dim hover:text-cta"
+                      onClick={(e) => { e.stopPropagation(); handleToggleWatch(ws); }}
+                      title={ws.watching ? "Stop watching" : "Start watching"}
+                      data-testid={`workspace-watch-${ws.id}`}
+                    />
+                    <Button
+                      variant="ghost"
+                      icon={RefreshCw}
+                      className="h-7 w-7 p-0 text-text-dim hover:text-primary"
+                      onClick={(e) => { e.stopPropagation(); handleRefresh(ws); }}
+                      title="Refresh workspace"
+                      data-testid={`workspace-refresh-${ws.id}`}
+                    />
+                    <Button
+                      variant="ghost"
+                      icon={Trash2}
+                      className="h-7 w-7 p-0 text-text-dim hover:text-status-error"
+                      onClick={(e) => { e.stopPropagation(); handleDelete(ws.id); }}
+                      data-testid={`workspace-delete-${ws.id}`}
+                    />
                   </div>
               </div>
+
+              {/* 卡片内容 */}
               <div className="p-4 space-y-4">
-                 <code className="text-xs bg-bg-main px-2 py-1.5 rounded border border-border-base block truncate font-mono text-text-muted">{ws.path}</code>
-                 <div className="flex items-center gap-2 text-xs font-bold">
-                   {ws.status === 'READY' ? <><CheckCircle2 size={14} className="text-emerald-500"/> <span className="text-emerald-500">READY</span></> : <><RefreshCw size={14} className="text-blue-500 animate-spin"/> <span className="text-blue-500">PROCESSING</span></>}
-                   {ws.watching && <><Eye size={14} className="text-amber-500 ml-2"/> <span className="text-amber-500">WATCHING</span></>}
+                 <code className="text-xs bg-bg-main px-3 py-2 rounded border border-border-subtle block truncate font-mono text-text-muted">
+                   {ws.path}
+                 </code>
+                 <div className="flex items-center gap-2 text-xs font-bold flex-wrap">
+                   {ws.status === 'READY' ? (
+                     <>
+                       <CheckCircle2 size={14} className="text-cta"/>
+                       <span className="text-cta">READY</span>
+                     </>
+                   ) : (
+                     <>
+                       <RefreshCw size={14} className="text-primary animate-spin"/>
+                       <span className="text-primary">PROCESSING</span>
+                     </>
+                   )}
+                   {ws.watching && (
+                     <>
+                       <Eye size={14} className="text-status-warn ml-2"/>
+                       <span className="text-status-warn">WATCHING</span>
+                     </>
+                   )}
                  </div>
               </div>
            </Card>

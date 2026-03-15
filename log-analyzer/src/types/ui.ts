@@ -3,7 +3,7 @@ import React from 'react';
 import { KeywordGroup } from './common';
 
 // 按钮变体类型
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'active' | 'icon';
+export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'active' | 'cta' | 'icon';
 
 // Lucide 图标类型
 export type LucideIcon = React.ComponentType<{ size?: number; className?: string }>;
