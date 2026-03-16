@@ -15,7 +15,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > **项目**: log-analyzer_rust - 高性能桌面日志分析工具
 > **版本**: 0.0.138
 > **技术栈**: Tauri 2.0 + Rust 1.70+ + React 19.1.0 + TypeScript 5.8.3
-> **最后更新**: 2026-02-09
+> **最后更新**: 2026-03-16
 
 ---
 
@@ -441,5 +441,145 @@ pkg-config --modversion gtk4
 - CAS自动去重: 节省磁盘空间 30%+
 - SQLite FTS5: 查询性能提升10倍
 - 索引压缩: Gzip压缩节省空间50%+
+
+---
+
+## 代码缺陷分析
+
+> **分析日期**: 2026-03-16
+> **分析范围**: 前端 React/TypeScript、后端 Rust、前后端通信、UI设计
+> **缺陷总数**: 50 项（高危 12 / 中危 18 / 低危 20）
+
+---
+
+### 一、前端缺陷（React / TypeScript）
+
+#### 高严重度
+
+| # | 缺陷描述 | 文件 | 行号 |
+|---|---------|------|------|
+| F-H1 | `any` 类型滥用，失去 TypeScript 类型保护 | `components/renderers/HybridLogRenderer.tsx` | 108-119 |
+| F-H2 | `console.log/error` 生产环境日志泄露系统信息 | `App.tsx` | 107-109 |
+| F-H3 | `fetchNextPage()` 失败无 Toast 通知用户 | `pages/SearchPage.tsx` | 204-206 |
+| F-H4 | API 响应强制类型转换，无 Zod Schema 验证 | `pages/SearchPage.tsx` | 623 |
+
+#### 中严重度
+
+| # | 缺陷描述 | 文件 | 行号 |
+|---|---------|------|------|
+| F-M1 | 双 Toast 系统混用（自定义 Toast + react-hot-toast） | `pages/SearchPage.tsx` & `stores/appStore.ts` | 多处 |
+| F-M2 | 硬编码文本未国际化（中英混用） | `WorkspacesPage.tsx:49-50`、`SearchPage.tsx:667`、`ErrorBoundary.tsx:137` | 多处 |
+| F-M3 | `useEffect` 依赖数组不完整导致闭包陷阱 | `pages/SearchPage.tsx` | 486 |
+| F-M4 | 搜索输入框和删除按钮缺少 `aria-label` 标签 | `pages/SearchPage.tsx` | 1062-1078 |
+| F-M5 | 大对象 `currentQuery` 作 `useCallback` 依赖，频繁重渲染 | `pages/SearchPage.tsx` | 723 |
+| F-M6 | 异步注册会话后组件可能已卸载（竞态条件） | `pages/SearchPage.tsx` | 419-427 |
+
+#### 低严重度
+
+| # | 缺陷描述 | 文件 | 行号 |
+|---|---------|------|------|
+| F-L1 | 启用关键词组过滤逻辑重复（应提取共享） | `SearchPage.tsx:137` & `HybridLogRenderer.tsx:108` | - |
+| F-L2 | `JSON.stringify(errorLogs)` 可能触发循环引用异常 | `components/ErrorBoundary.tsx` | 109-112 |
+| F-L3 | 大量 `logger.debug()` 在生产环境执行影响性能 | `hooks/useWorkspaceOperations.ts` | 多处 |
+| F-L4 | 列表渲染使用 index 作 `key`，重排时状态错乱 | `pages/SearchPage.tsx` | 1062-1080 |
+| F-L5 | 未使用状态变量 `importStatus` 残留 | `App.tsx` | 65 |
+| F-L6 | `localStorage.getItem()` 无 try-catch（隐私模式崩溃） | `components/ErrorBoundary.tsx` | 64-77 |
+| F-L7 | `SearchParams extends Record<string, unknown>` 破坏类型安全 | `services/api.ts` | 58-62 |
+| F-L8 | 事件 `payload` 强制类型转换，无运行时验证 | `pages/SearchPage.tsx` | 437-438 |
+| F-L9 | 工作区 ID 用 `Date.now()` 生成，高并发可能重复 | `hooks/useWorkspaceOperations.ts` | 39 |
+| F-L10 | 主内容区域缺少 `ErrorBoundary` 包裹 | `App.tsx` | 143-244 |
+
+---
+
+### 二、后端缺陷（Rust）
+
+#### 高严重度
+
+| # | 缺陷描述 | 文件 | 行号 |
+|---|---------|------|------|
+| B-H1 | `serde_json::to_string().unwrap()` 在测试关键路径 panic | `commands/virtual_tree.rs` | 333, 348 |
+| B-H2 | `strip_prefix().unwrap_or("")` 隐藏逻辑假设 | `services/metadata_db.rs` | 76 |
+| B-H3 | `blocking_lock()` 在 tokio 异步上下文中阻塞 worker 线程 | `commands/performance.rs` | 52 |
+| B-H4 | 路径遍历防护不完整：符号链接可绕过 `canonicalize()` 检查 | `archive/extraction_service.rs` | 323-335 |
+
+#### 中严重度
+
+| # | 缺陷描述 | 文件 | 行号 |
+|---|---------|------|------|
+| B-M1 | 后台 `spawn` 任务中 `unwrap()` panic，前端无感知 | `commands/search.rs` | 289 |
+| B-M2 | watcher 回调线程长期持有锁，存在死锁风险 | `commands/watch.rs` | 104-114, 149-156 |
+| B-M3 | 使用 `std::sync::Mutex` 而非 `parking_lot::Mutex`（poison 问题） | `commands/search.rs` | 935-940 |
+| B-M4 | `Lazy::new(|| Regex::new(...).unwrap())` 首次访问可能 panic | `commands/validation.rs` | 104 |
+| B-M5 | 行号计算逻辑错误：`offset / 100` 不反映真实行数 | `commands/watch.rs` | 119-123 |
+| B-M6 | `MetadataDB` 线性 O(n) 遍历，大工作区性能瓶颈 | `services/metadata_db.rs` | 71-81, 115-126 |
+
+#### 低严重度
+
+| # | 缺陷描述 | 文件 | 行号 |
+|---|---------|------|------|
+| B-L1 | `unwrap_or()` 无 `warn!()` 日志，调试时无法定位默认值触发时机 | `commands/search.rs` | 108, 629, 971, 1019, 1298 |
+| B-L2 | 测试文件大量 `unwrap()`/`expect()`，失败信息不友好 | `archive/` 测试文件 | 多处 |
+| B-L3 | `partial_cmp().unwrap_or()` 存在 NaN 场景风险 | `search_engine/index_optimizer.rs` | 437, 195 |
+| B-L4 | 应用关闭时 SQLite 连接无显式 flush/close | `commands/import.rs` | 107-117 |
+| B-L5 | `to_string_lossy()` 静默丢失非 UTF-8 文件名字节 | `commands/watch.rs` | 102-146 |
+
+---
+
+### 三、前后端通信与 UI 设计缺陷
+
+#### 高严重度
+
+| # | 缺陷描述 | 文件 | 行号 |
+|---|---------|------|------|
+| C-H1 | `workspaceId == "default"` 静默降级到随机工作区，搜索结果来源错误 | `commands/search.rs` | 298 |
+| C-H2 | `invoke('search_logs')` 无 Zod Schema 验证响应，运行时崩溃风险 | `services/api.ts` | 228-234 |
+| C-H3 | 后端发送 `null`，前端 `null \|\| undefined` 转换不完整，工作区状态同步失败 | `stores/AppStoreProvider.tsx` | 131 |
+| C-H4 | 未选择工作区时搜索按钮未禁用、无提示，用户操作无反馈 | `pages/SearchPage.tsx` | 389-394 |
+
+#### 中严重度
+
+| # | 缺陷描述 | 文件 | 行号 |
+|---|---------|------|------|
+| C-M1 | 空 task ID 用 `task-${index}` 作 key，违反 React key 唯一性 | `pages/TasksPage.tsx` | 35-36 |
+| C-M2 | 配置加载失败后无默认工作区兜底，应用整体不可用 | `stores/AppStoreProvider.tsx` | 46-66 |
+| C-M3 | `SearchPage` 无"无工作区"、"无结果"空状态 UI | `pages/SearchPage.tsx` | 整体 |
+| C-M4 | `FileFilterSettings` 快速打开/关闭无 AbortController，响应乱序 | `components/modals/FileFilterSettings.tsx` | 39-57 |
+| C-M5 | 导出功能无 try-catch、无进度提示、无成功/失败反馈 | `pages/SearchPage.tsx` | 940-950 |
+| C-M6 | `task-update` 事件幂等性不完整，重复处理导致多次 Toast | `stores/AppStoreProvider.tsx` | 78-110 |
+
+#### 低严重度
+
+| # | 缺陷描述 | 文件 | 行号 |
+|---|---------|------|------|
+| C-L1 | `SearchParams` 用 camelCase 定义，与 Rust snake_case 约定不一致 | `services/api.ts` | 58-72 |
+| C-L2 | `Suspense` 未被 `ErrorBoundary` 包裹，lazy load 失败无处理 | `App.tsx` | 31-36 |
+| C-L3 | `PerformancePage` 多个独立 `isLoading` 状态，界面闪烁 | `pages/PerformancePage.tsx` | 整体 |
+| C-L4 | `KeywordModal` 正则表达式无实时验证提示，可保存无效配置 | `components/modals/KeywordModal.tsx` | 整体 |
+| C-L5 | 工作区删除无确认对话框，用户可能误删 | `pages/WorkspacesPage.tsx` | 98 |
+
+---
+
+### 修复优先级
+
+#### 第一阶段 — 高危（立即修复）
+1. **C-H1** 修复搜索工作区 ID 降级逻辑 (`search.rs:298`)
+2. **B-H3** 修复 `blocking_lock()` 阻塞 tokio worker (`performance.rs:52`)
+3. **B-H4** 路径遍历：禁用符号链接跟踪 (`extraction_service.rs:323-335`)
+4. **C-H4** 无工作区时禁用搜索按钮并显示提示 (`SearchPage.tsx:389-394`)
+5. **F-H4** 添加 Zod Schema 验证 API 响应 (`SearchPage.tsx:623`)
+
+#### 第二阶段 — 中危（本周内）
+6. **B-M5** 修复行号计算逻辑 (`watch.rs:119-123`)
+7. **B-M6** MetadataDB 添加反向索引 (`metadata_db.rs:71-81`)
+8. **C-M2** 配置加载失败时设置默认工作区 (`AppStoreProvider.tsx:46-66`)
+9. **C-M3** SearchPage 实现完整空状态 UI
+10. **C-M4** FileFilterSettings 添加 AbortController (`FileFilterSettings.tsx:39-57`)
+
+#### 第三阶段 — 低危（计划中）
+11. **F-L4** 修复列表 key 使用 index 问题
+12. **C-L5** 工作区删除添加确认对话框
+13. **F-M2** 补全国际化翻译
+14. **B-L1** 为 `unwrap_or()` 添加 `warn!()` 日志
+15. **F-L6** localStorage 访问添加 try-catch
 
 ---
