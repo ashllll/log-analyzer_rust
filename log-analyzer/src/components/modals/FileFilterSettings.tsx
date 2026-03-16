@@ -35,26 +35,34 @@ const FileFilterSettings: React.FC<FileFilterSettingsProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // 当模态框打开时，加载当前配置
+  // 当模态框打开时，加载当前配置（使用 AbortController 防止竞态条件）
   useEffect(() => {
-    if (isOpen) {
-      loadConfig();
-    }
-  }, [isOpen]);
+    if (!isOpen) return;
+    const controller = new AbortController();
 
-  const loadConfig = async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      const loadedConfig = await api.getFileFilterConfig();
-      setConfig(loadedConfig);
-    } catch (err) {
-      console.error('Failed to load file filter config:', err);
-      setError(`无法加载配置: ${getFullErrorMessage(err)}`);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    const loadConfig = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+        const loadedConfig = await api.getFileFilterConfig();
+        if (!controller.signal.aborted) {
+          setConfig(loadedConfig);
+        }
+      } catch (err) {
+        if (!controller.signal.aborted) {
+          console.error('Failed to load file filter config:', err);
+          setError(`无法加载配置: ${getFullErrorMessage(err)}`);
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    loadConfig();
+    return () => controller.abort();
+  }, [isOpen]);
 
   const handleSave = async () => {
     try {

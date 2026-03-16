@@ -8,6 +8,7 @@ import { COLOR_STYLES } from '../../constants/colors';
 import {
   validateKeywordGroup,
   formatValidationErrors,
+  validateRegexPattern,
   type KeywordGroupFormData,
 } from '../../schemas';
 
@@ -24,6 +25,8 @@ const KeywordModal: React.FC<KeywordModalProps> = ({ isOpen, onClose, onSave, in
   // 验证状态
   const [errors, setErrors] = useState<{ name?: string; patterns?: string[] }>({});
   const [touched, setTouched] = useState<{ name?: boolean; patterns?: boolean }>({});
+  // 每个 pattern 的实时正则语法错误
+  const [regexErrors, setRegexErrors] = useState<(string | undefined)[]>([]);
 
   // 当模态框打开或初始数据变化时，重置表单
   useEffect(() => {
@@ -87,6 +90,16 @@ const KeywordModal: React.FC<KeywordModalProps> = ({ isOpen, onClose, onSave, in
     const newPatterns = [...patterns];
     newPatterns[index][field] = value;
     setPatterns(newPatterns);
+
+    // regex 字段：实时验证正则语法
+    if (field === 'regex') {
+      const result = validateRegexPattern(value);
+      setRegexErrors(prev => {
+        const next = [...prev];
+        next[index] = result.valid ? undefined : result.error;
+        return next;
+      });
+    }
 
     // 仅在已触摸状态下验证
     if (touched.patterns) {
@@ -225,9 +238,12 @@ const KeywordModal: React.FC<KeywordModalProps> = ({ isOpen, onClose, onSave, in
                       placeholder="RegEx"
                       className={cn(
                         "font-mono text-xs",
-                        errors.patterns?.[i] ? "border-red-500 focus:ring-red-500/50" : ""
+                        (errors.patterns?.[i] || regexErrors[i]) ? "border-red-500 focus:ring-red-500/50" : ""
                       )}
                     />
+                    {regexErrors[i] && (
+                      <p className="mt-1 text-xs text-red-500">{regexErrors[i]}</p>
+                    )}
                   </div>
                   <div className="flex-1">
                     <Input

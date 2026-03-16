@@ -330,7 +330,8 @@ mod tests {
             mime_type: Some("text/plain".to_string()),
         };
 
-        let json = serde_json::to_string(&file_node).unwrap();
+        let json = serde_json::to_string(&file_node)
+            .expect("VirtualTreeNode::File should always be serializable");
         assert!(json.contains("\"type\":\"file\""));
         assert!(json.contains("\"name\":\"test.log\""));
     }
@@ -345,7 +346,8 @@ mod tests {
             children: vec![],
         };
 
-        let json = serde_json::to_string(&archive_node).unwrap();
+        let json = serde_json::to_string(&archive_node)
+            .expect("VirtualTreeNode::Archive should always be serializable");
         assert!(json.contains("\"type\":\"archive\""));
         assert!(json.contains("\"archiveType\":\"zip\""));
     }

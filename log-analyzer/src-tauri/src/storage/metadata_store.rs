@@ -150,6 +150,20 @@ impl MetadataStore {
         Ok(Self { pool })
     }
 
+    /// 显式关闭数据库并执行 WAL checkpoint
+    ///
+    /// 应用退出前调用，确保 WAL 文件内容完整写回主数据库。
+    pub async fn close(&self) {
+        // 执行 WAL checkpoint，将所有 WAL 内容写回主数据库
+        if let Err(e) = sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
+            .execute(&self.pool)
+            .await
+        {
+            tracing::warn!(error = %e, "WAL checkpoint failed on close");
+        }
+        self.pool.close().await;
+    }
+
     /// Initialize database schema
     async fn init_schema(pool: &SqlitePool) -> Result<()> {
         // Create files table

@@ -140,6 +140,9 @@ export function PerformancePage() {
     refetchInterval: autoRefresh ? 60000 : false,
   });
 
+  // 合并所有加载状态，用于全局禁用刷新按钮
+  const isAnyLoading = isLoading || isLoadingHistorical;
+
   // 切换自动刷新
   const handleToggleRefresh = useCallback(() => {
     setAutoRefresh((prev) => !prev);
@@ -194,14 +197,14 @@ export function PerformancePage() {
             <TimeRangeSelector
               value={timeRange}
               onChange={handleTimeRangeChange}
-              disabled={isLoadingHistorical}
+              disabled={isAnyLoading}
               size="sm"
             />
             <Button
               variant="ghost"
               icon={autoRefresh ? Pause : Play}
               onClick={handleToggleRefresh}
-              disabled={isLoading}
+              disabled={isAnyLoading}
             >
               {autoRefresh ? 'Pause' : 'Resume'}
             </Button>
@@ -209,7 +212,7 @@ export function PerformancePage() {
               variant="secondary"
               icon={Zap}
               onClick={handleRefresh}
-              disabled={isLoading}
+              disabled={isAnyLoading}
             >
               Refresh
             </Button>

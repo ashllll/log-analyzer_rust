@@ -403,13 +403,15 @@ const SearchPage: React.FC<SearchPageProps> = ({
             if (count > STREAM_SEARCH_THRESHOLD && bufferRef.current.length > 0) {
               const searchId = `search_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
               const allResults = bufferRef.current.toArray();
-              
+
               try {
                 // 注册搜索会话到 VirtualSearchManager
                 await registerSearchSession(searchId, query, allResults);
-                setCurrentSearchId(searchId);
-                setIsStreamSearchEnabled(true);
-                
+                // 检查信号是否已中止（组件已卸载），避免在卸载后更新状态
+                if (!abortController.signal.aborted) {
+                  setCurrentSearchId(searchId);
+                  setIsStreamSearchEnabled(true);
+                }
                 logger.debug(`Registered search session ${searchId} with ${allResults.length} entries`);
               } catch (err) {
                 logger.error('Failed to register search session:', err);
@@ -664,7 +666,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
    */
   const handleSearch = useCallback(async () => {
     if (!activeWorkspace) {
-      addToast('error', 'Select a workspace first.');
+      addToast('error', '请先选择工作区');
       return;
     }
 
@@ -952,11 +954,12 @@ const SearchPage: React.FC<SearchPageProps> = ({
           >
             JSON
           </Button>
-          <Button 
-            icon={isSearching ? Loader2 : Search} 
-            onClick={handleSearch} 
-            disabled={isSearching} 
+          <Button
+            icon={isSearching ? Loader2 : Search}
+            onClick={handleSearch}
+            disabled={isSearching || !activeWorkspace}
             className={isSearching ? "animate-pulse" : ""}
+            title={!activeWorkspace ? '请先选择工作区' : undefined}
           >
             {isSearching ? '...' : 'Search'}
           </Button>
@@ -1059,19 +1062,21 @@ const SearchPage: React.FC<SearchPageProps> = ({
         {/* 当前激活的搜索关键词 */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none h-6 min-h-[24px]">
           <span className="text-[10px] font-bold text-text-dim uppercase">Active:</span>
-          {query ? query.split('|').map((term:string, i:number) => {
+          {query ? query.split('|').map((term: string) => {
             const trimmedTerm = term.trim();
+            if (!trimmedTerm) return null;
             return (
-              <span 
-                key={i} 
+              <span
+                key={trimmedTerm}
                 className="flex items-center text-[10px] bg-bg-card border border-border-base px-1.5 py-0.5 rounded text-text-main whitespace-nowrap group gap-1"
               >
-                <Hash size={8} className="mr-0.5 opacity-50"/> 
+                <Hash size={8} className="mr-0.5 opacity-50"/>
                 {trimmedTerm}
-                <button 
-                  onClick={() => removeTermFromQuery(trimmedTerm)} 
+                <button
+                  onClick={() => removeTermFromQuery(trimmedTerm)}
                   className="opacity-0 group-hover:opacity-100 hover:text-red-400 transition-all ml-0.5"
-                  title="Remove keyword"
+                  title="删除关键词"
+                  aria-label={`删除关键词 ${trimmedTerm}`}
                 >
                   <X size={10} />
                 </button>

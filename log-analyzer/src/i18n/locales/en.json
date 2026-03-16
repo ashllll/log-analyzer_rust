@@ -10,7 +10,19 @@
       "expand": "Expand"
     },
     "expand_full_text": "Expand Full Text",
-    "collapse_text": "Collapse"
+    "collapse_text": "Collapse",
+    "no_workspace_selected": "Please select a workspace first",
+    "remove_keyword": "Remove keyword {{keyword}}",
+    "export_success": "Export successful",
+    "export_failed": "Export failed"
+  },
+  "workspaces": {
+    "delete_confirm": "Confirm delete this workspace? This action cannot be undone.",
+    "title": "Workspaces",
+    "subtitle": "Manage log workspaces and import sources"
+  },
+  "keywords": {
+    "invalid_regex": "Invalid regular expression"
   },
   "settings": {
     "title": "Extraction Policy Settings",

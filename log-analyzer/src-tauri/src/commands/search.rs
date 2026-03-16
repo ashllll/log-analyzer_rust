@@ -1148,7 +1148,10 @@ pub async fn search_logs_paged(
             tokio::task::block_in_place(|| {
                 tokio::runtime::Handle::try_current()
                     .map(|h| h.block_on(metadata_store.get_all_files()))
-                    .unwrap_or_else(|_| Ok(Vec::new()))
+                    .unwrap_or_else(|_| {
+                        tracing::warn!("无法获取 tokio 运行时句柄，文件列表将为空");
+                        Ok(Vec::new())
+                    })
             })
         }))
         .map_err(|_| "Panic while getting files".to_string())?

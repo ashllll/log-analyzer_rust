@@ -14,8 +14,10 @@ use std::sync::Arc;
 /// This is a stub implementation that uses in-memory storage only.
 /// It provides the interface needed by PathManager for path shortening.
 pub struct MetadataDB {
-    /// In-memory storage for path mappings (workspace_id:short_path -> original_path)
+    /// 正向映射：workspace_id:original_path -> short_path
     mappings: Arc<DashMap<String, String>>,
+    /// 反向映射：workspace_id:short_path -> original_path（O(1) 反查）
+    reverse_mappings: Arc<DashMap<String, String>>,
 }
 
 impl MetadataDB {
@@ -31,6 +33,7 @@ impl MetadataDB {
     pub async fn new(_db_path: &str) -> eyre::Result<Self> {
         Ok(Self {
             mappings: Arc::new(DashMap::new()),
+            reverse_mappings: Arc::new(DashMap::new()),
         })
     }
 
@@ -68,16 +71,9 @@ impl MetadataDB {
         workspace_id: &str,
         short_path: &str,
     ) -> eyre::Result<Option<String>> {
-        // Search through mappings to find the original path
-        let prefix = format!("{}:", workspace_id);
-        for entry in self.mappings.iter() {
-            if entry.key().starts_with(&prefix) && entry.value() == short_path {
-                // Extract original path from key (remove workspace_id prefix)
-                let original = entry.key().strip_prefix(&prefix).unwrap_or("");
-                return Ok(Some(original.to_string()));
-            }
-        }
-        Ok(None)
+        // 使用反向映射 O(1) 直接查找
+        let key = format!("{}:{}", workspace_id, short_path);
+        Ok(self.reverse_mappings.get(&key).map(|v| v.value().clone()))
     }
 
     /// Store a path mapping
@@ -93,8 +89,14 @@ impl MetadataDB {
         short_path: &str,
         original_path: &str,
     ) -> eyre::Result<()> {
-        let key = format!("{}:{}", workspace_id, original_path);
-        self.mappings.insert(key, short_path.to_string());
+        let forward_key = format!("{}:{}", workspace_id, original_path);
+        self.mappings.insert(forward_key, short_path.to_string());
+
+        // 同时维护反向映射
+        let reverse_key = format!("{}:{}", workspace_id, short_path);
+        self.reverse_mappings
+            .insert(reverse_key, original_path.to_string());
+
         Ok(())
     }
 
@@ -111,7 +113,7 @@ impl MetadataDB {
         let prefix = format!("{}:", workspace_id);
         let mut count = 0;
 
-        // Collect keys to remove
+        // 收集需要删除的正向映射键
         let keys_to_remove: Vec<String> = self
             .mappings
             .iter()
@@ -119,10 +121,21 @@ impl MetadataDB {
             .map(|entry| entry.key().clone())
             .collect();
 
-        // Remove them
         for key in keys_to_remove {
             self.mappings.remove(&key);
             count += 1;
+        }
+
+        // 同时清理反向映射
+        let reverse_keys_to_remove: Vec<String> = self
+            .reverse_mappings
+            .iter()
+            .filter(|entry| entry.key().starts_with(&prefix))
+            .map(|entry| entry.key().clone())
+            .collect();
+
+        for key in reverse_keys_to_remove {
+            self.reverse_mappings.remove(&key);
         }
 
         Ok(count)

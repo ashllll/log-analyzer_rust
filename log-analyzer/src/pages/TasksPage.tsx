@@ -30,19 +30,9 @@ const TasksPage: React.FC = () => {
       <h1 className="text-2xl font-bold mb-6 text-text-main">后台任务</h1>
       <div className="space-y-4">
         {tasks.length === 0 && <div className="text-text-dim text-center py-10">暂无活动任务</div>}
-        {tasks.map((t: Task, index: number) => {
-          // 诊断日志：检查任务ID和索引
-          if (!t.id || t.id === '') {
-            console.warn('[TasksPage] Task with empty ID found:', t, 'at index:', index);
-          }
-          // 检查是否有重复的ID
-          const duplicateCount = tasks.filter(task => task.id === t.id).length;
-          if (duplicateCount > 1) {
-            console.warn('[TasksPage] Duplicate task ID found:', t.id, 'count:', duplicateCount);
-          }
-
+        {tasks.filter((t: Task) => Boolean(t.id)).map((t: Task) => {
           return (
-          <div key={t.id || `task-${index}`} className="p-4 bg-bg-card border border-border-base rounded-lg flex items-center gap-4 animate-in fade-in slide-in-from-bottom-2">
+          <div key={t.id} className="p-4 bg-bg-card border border-border-base rounded-lg flex items-center gap-4 animate-in fade-in slide-in-from-bottom-2">
             <div className={cn("p-2 rounded-full bg-bg-hover", t.status === 'RUNNING' ? "text-blue-500" : t.status === 'FAILED' ? "text-red-500" : "text-emerald-500")}>
               {t.status === 'RUNNING' ? <RefreshCw size={20} className="animate-spin"/> : t.status === 'FAILED' ? <AlertCircle size={20}/> : <CheckCircle2 size={20}/>}
             </div>

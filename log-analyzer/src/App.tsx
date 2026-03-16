@@ -1,7 +1,7 @@
-import { useState, useRef, useEffect, lazy, Suspense } from "react";
+import { useRef, useEffect, lazy, Suspense } from "react";
 import {
   Search, LayoutGrid, ListTodo, Cog, Layers,
-  Zap, Loader2, FileText, Activity
+  Zap, FileText, Activity
 } from "lucide-react";
 import { ErrorBoundary } from 'react-error-boundary';
 import { listen } from '@tauri-apps/api/event';
@@ -62,7 +62,6 @@ function AppContent() {
   const { workspaces, refreshWorkspaces } = useWorkspaceOperations();
 
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const [importStatus] = useState("");  // 保留以兼容旧代码，但实际不再使用
 
   const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId) || null;
 
@@ -104,9 +103,13 @@ function AppContent() {
           }
         });
 
-        console.log('[StateSync] Event listener registered');
+        if (import.meta.env.DEV) {
+          console.log('[StateSync] Event listener registered');
+        }
       } catch (error) {
-        console.error('[StateSync] Failed to initialize:', error);
+        if (import.meta.env.DEV) {
+          console.error('[StateSync] Failed to initialize:', error);
+        }
         addToast('error', 'Failed to initialize state sync');
       }
     };
@@ -158,7 +161,6 @@ function AppContent() {
             <NavItem icon={Layers} label="Tasks" active={currentPage === 'tasks'} onClick={() => setPage('tasks')} data-testid="nav-tasks" />
             <NavItem icon={Activity} label="Performance" active={currentPage === 'performance'} onClick={() => setPage('performance')} data-testid="nav-performance" />
         </div>
-        {importStatus && <div className="p-3 m-3 bg-bg-card border border-primary/20 rounded text-xs text-primary animate-pulse"><div className="font-bold mb-1 flex items-center gap-2"><Loader2 size={12} className="animate-spin"/> Processing</div><div className="truncate opacity-80">{importStatus}</div></div>}
         <div className="p-3 border-t border-border-subtle">
           <NavItem icon={Cog} label="Settings" active={currentPage === 'settings'} onClick={() => setPage('settings')} data-testid="nav-settings" />
         </div>
@@ -192,7 +194,9 @@ function AppContent() {
             FallbackComponent={CompactErrorFallback} 
             onReset={() => {
               // 清除错误状态并保持在当前页面
-              console.log('Error boundary reset, staying on page:', currentPage);
+              if (import.meta.env.DEV) {
+                console.log('Error boundary reset, staying on page:', currentPage);
+              }
             }}
             resetKeys={[currentPage]}
           >
@@ -255,7 +259,9 @@ export default function App() {
   // 初始化全局错误处理器
   useEffect(() => {
     const cleanup = initGlobalErrorHandlers();
-    console.log('[App] Global error handlers initialized');
+    if (import.meta.env.DEV) {
+      console.log('[App] Global error handlers initialized');
+    }
 
     return () => {
       if (cleanup) {
