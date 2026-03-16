@@ -108,7 +108,19 @@ export function clearErrorLogs(): void {
  */
 export function exportErrorLogs(): string {
   const logs = getErrorLogs();
-  return JSON.stringify(logs, null, 2);
+  try {
+    return JSON.stringify(logs, null, 2);
+  } catch {
+    // 处理循环引用或不可序列化的对象
+    return JSON.stringify(
+      logs.map(l => ({
+        ...l,
+        stack: l.stack ? String(l.stack) : undefined,
+      })),
+      null,
+      2
+    );
+  }
 }
 
 // ============================================================================

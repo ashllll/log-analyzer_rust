@@ -61,6 +61,7 @@ pub async fn start_watch(
         workspace_id: workspaceId.clone(),
         watched_path: watch_path.clone(),
         file_offsets: HashMap::new(),
+        line_counts: HashMap::new(),
         is_active: true,
         thread_handle: Arc::new(std::sync::Mutex::new(None)),
         watcher: Arc::new(std::sync::Mutex::new(Some(watcher))),
@@ -89,7 +90,16 @@ pub async fn start_watch(
                     };
 
                     for path in event.paths {
-                        let file_path_str = path.to_string_lossy().to_string();
+                        let file_path_str = match path.to_str() {
+                            Some(s) => s.to_string(),
+                            None => {
+                                tracing::warn!(
+                                    path = ?path,
+                                    "跳过包含非 UTF-8 字符的路径"
+                                );
+                                continue;
+                            }
+                        };
 
                         let file_change = FileChangeEvent {
                             event_type: event_type.to_string(),
@@ -100,14 +110,25 @@ pub async fn start_watch(
                         let _ = app_handle.emit("file-changed", file_change);
 
                         if event_type == "modified" && path.is_file() {
-                            let (offset, watcher_workspace_id, watcher_watched_path) = {
+                            let (
+                                offset,
+                                watcher_workspace_id,
+                                watcher_watched_path,
+                                start_line_number,
+                            ) = {
                                 let mut watchers = watchers_arc.lock();
                                 if let Some(watcher) = watchers.get_mut(&workspace_id_clone) {
                                     let offset =
                                         *watcher.file_offsets.get(&file_path_str).unwrap_or(&0);
                                     let workspace_id = watcher.workspace_id.clone();
                                     let watched_path = watcher.watched_path.clone();
-                                    (offset, workspace_id, watched_path)
+                                    let start_line = watcher
+                                        .line_counts
+                                        .get(&file_path_str)
+                                        .copied()
+                                        .unwrap_or(0)
+                                        + 1;
+                                    (offset, workspace_id, watched_path, start_line)
                                 } else {
                                     continue;
                                 }
@@ -115,13 +136,8 @@ pub async fn start_watch(
 
                             match read_file_from_offset(&path, offset) {
                                 Ok((new_lines, new_offset)) => {
+                                    let new_line_count = new_lines.len();
                                     if !new_lines.is_empty() {
-                                        let start_line_number = if offset == 0 {
-                                            1
-                                        } else {
-                                            (offset / 100) as usize + 1
-                                        };
-
                                         let virtual_path = path
                                             .strip_prefix(&watcher_watched_path)
                                             .ok()
@@ -152,6 +168,12 @@ pub async fn start_watch(
                                             watcher
                                                 .file_offsets
                                                 .insert(file_path_str.clone(), new_offset);
+                                            if new_line_count > 0 {
+                                                watcher.line_counts.insert(
+                                                    file_path_str.clone(),
+                                                    start_line_number - 1 + new_line_count,
+                                                );
+                                            }
                                         }
                                     }
                                 }

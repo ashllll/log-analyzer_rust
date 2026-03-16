@@ -10,7 +10,19 @@
       "expand": "展开"
     },
     "expand_full_text": "展开全文",
-    "collapse_text": "收起"
+    "collapse_text": "收起",
+    "no_workspace_selected": "请先选择工作区",
+    "remove_keyword": "删除关键词 {{keyword}}",
+    "export_success": "导出成功",
+    "export_failed": "导出失败"
+  },
+  "workspaces": {
+    "delete_confirm": "确认删除此工作区？此操作不可撤销。",
+    "title": "工作区",
+    "subtitle": "管理日志工作区和导入源"
+  },
+  "keywords": {
+    "invalid_regex": "无效的正则表达式"
   },
   "settings": {
     "title": "提取策略设置",

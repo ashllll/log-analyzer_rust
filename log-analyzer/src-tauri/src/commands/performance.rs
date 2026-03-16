@@ -28,14 +28,15 @@ use sysinfo::System;
 use tauri::{command, State};
 use tokio::sync::Mutex;
 
-/// 全局指标存储实例
+/// 全局指标存储实例（异步场景使用 tokio::sync::Mutex）
 static METRICS_STORE: once_cell::sync::Lazy<Arc<Mutex<Option<MetricsStore>>>> =
     once_cell::sync::Lazy::new(|| Arc::new(Mutex::new(None)));
 
 /// 搜索延迟历史（用于计算 P95/P99）
 /// 保留最近 1000 次搜索的延迟数据
-static SEARCH_LATENCIES: once_cell::sync::Lazy<Arc<Mutex<VecDeque<u64>>>> =
-    once_cell::sync::Lazy::new(|| Arc::new(Mutex::new(VecDeque::with_capacity(1000))));
+/// 使用 parking_lot::Mutex 以支持在同步函数中调用，避免阻塞 tokio worker 线程
+static SEARCH_LATENCIES: once_cell::sync::Lazy<parking_lot::Mutex<VecDeque<u64>>> =
+    once_cell::sync::Lazy::new(|| parking_lot::Mutex::new(VecDeque::with_capacity(1000)));
 
 /// 初始化指标存储
 pub async fn init_metrics_store(data_dir: &Path) -> Result<(), String> {
@@ -49,7 +50,7 @@ pub async fn init_metrics_store(data_dir: &Path) -> Result<(), String> {
 
 /// 记录搜索延迟（用于百分位数计算）
 pub fn record_search_latency(latency_ms: u64) {
-    let mut latencies = SEARCH_LATENCIES.blocking_lock();
+    let mut latencies = SEARCH_LATENCIES.lock();
     if latencies.len() >= 1000 {
         latencies.pop_front();
     }
@@ -207,7 +208,7 @@ pub fn get_performance_metrics(state: State<'_, AppState>) -> Result<Performance
 
     // 计算真实的 P95/P99 延迟（使用业内成熟的排序算法）
     // 使用 try_lock() 避免阻塞，如果失败则返回默认值
-    let mut latencies: Vec<u64> = if let Ok(guard) = SEARCH_LATENCIES.try_lock() {
+    let mut latencies: Vec<u64> = if let Some(guard) = SEARCH_LATENCIES.try_lock() {
         guard.iter().copied().collect()
     } else {
         vec![]

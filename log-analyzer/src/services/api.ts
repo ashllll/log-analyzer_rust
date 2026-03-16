@@ -6,9 +6,11 @@
  * @module api
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke, type InvokeArgs } from '@tauri-apps/api/core';
 import { z } from 'zod';
 import { createApiError } from './errors';
+import type { KeywordGroup } from '../stores/keywordStore';
+import type { Workspace } from '../stores/workspaceStore';
 import {
   RarSupportInfoSchema,
   FileFilterConfigSchema,
@@ -55,7 +57,7 @@ export interface WorkspaceStatusResponse {
 /**
  * 搜索参数
  */
-export interface SearchParams extends Record<string, unknown> {
+export interface SearchParams {
   query: string;
   workspaceId?: string;
   maxResults?: number;
@@ -72,10 +74,23 @@ export interface SearchFilters {
 }
 
 /**
+ * 导出结果条目
+ */
+export interface ExportResultEntry {
+  id?: string;
+  timestamp?: string;
+  level?: string;
+  content?: string;
+  file?: string;
+  line?: number;
+  [key: string]: unknown;
+}
+
+/**
  * 导出参数
  */
-export interface ExportParams extends Record<string, unknown> {
-  results: any[];
+export interface ExportParams {
+  results: ExportResultEntry[];
   format: 'csv' | 'json';
   savePath: string;
 }
@@ -83,7 +98,7 @@ export interface ExportParams extends Record<string, unknown> {
 /**
  * 文件监听参数
  */
-export interface WatchParams extends Record<string, unknown> {
+export interface WatchParams {
   workspaceId: string;
   autoSearch?: boolean;
 }
@@ -92,8 +107,8 @@ export interface WatchParams extends Record<string, unknown> {
  * 应用配置
  */
 export interface AppConfig {
-  keyword_groups: any[];
-  workspaces: any[];
+  keyword_groups: KeywordGroup[];
+  workspaces: Workspace[];
   advanced_features: {
     enable_filter_engine: boolean;
     enable_regex_engine: boolean;
@@ -227,7 +242,7 @@ class LogAnalyzerApi {
    */
   async searchLogs(params: SearchParams): Promise<string> {
     try {
-      return await invoke('search_logs', params);
+      return await invoke('search_logs', params as unknown as InvokeArgs);
     } catch (error) {
       throw createApiError('search_logs', error);
     }
@@ -254,7 +269,7 @@ class LogAnalyzerApi {
    */
   async asyncSearchLogs(params: SearchParams): Promise<string> {
     try {
-      return await invoke('async_search_logs', params);
+      return await invoke('async_search_logs', params as unknown as InvokeArgs);
     } catch (error) {
       throw createApiError('async_search_logs', error);
     }
@@ -317,7 +332,7 @@ class LogAnalyzerApi {
    */
   async startWatch(params: WatchParams): Promise<void> {
     try {
-      await invoke('start_watch', params);
+      await invoke('start_watch', params as unknown as InvokeArgs);
     } catch (error) {
       throw createApiError('start_watch', error);
     }
@@ -443,7 +458,7 @@ class LogAnalyzerApi {
    */
   async exportResults(params: ExportParams): Promise<string> {
     try {
-      return await invoke('export_results', params);
+      return await invoke('export_results', params as unknown as InvokeArgs);
     } catch (error) {
       throw createApiError('export_results', error);
     }

@@ -22,6 +22,7 @@ const WorkspacesPage: React.FC = () => {
   const [isFilterSettingsOpen, setIsFilterSettingsOpen] = useState(false);
   
   const handleDelete = async (id: string) => {
+    if (!window.confirm('确认删除此工作区？此操作不可撤销。')) return;
     await deleteWorkspace(id);
   };
   
@@ -136,7 +137,6 @@ const WorkspacesPage: React.FC = () => {
         onClose={() => setIsFilterSettingsOpen(false)}
         onSaved={() => {
           // 配置保存后可以刷新工作区列表（可选）
-          console.log('File filter config saved');
         }}
       />
     </div>

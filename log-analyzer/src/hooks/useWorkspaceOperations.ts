@@ -29,14 +29,14 @@ export const useWorkspaceOperations = () => {
    * 导入路径（文件或文件夹）
    */
   const importPath = useCallback(async (pathStr: string) => {
-    logger.debug('importPath called with:', pathStr);
+    if (import.meta.env.DEV) logger.debug('importPath called with:', pathStr);
     setOperationLoading(true);
     const previousActive = activeWorkspaceId;
     let tempWorkspaceId: string | null = null;
 
     try {
       const fileName = pathStr.split(/[/\\]/).pop() || "New";
-      const workspaceId = Date.now().toString();
+      const workspaceId = crypto.randomUUID();
       const newWs: Workspace = {
         id: workspaceId,
         name: fileName,
@@ -47,13 +47,13 @@ export const useWorkspaceOperations = () => {
       };
       tempWorkspaceId = workspaceId;
 
-      logger.debug('Creating workspace:', newWs);
+      if (import.meta.env.DEV) logger.debug('Creating workspace:', newWs);
       addWorkspace(newWs);
 
-      logger.debug('Invoking import_folder with:', { path: pathStr, workspaceId: newWs.id });
+      if (import.meta.env.DEV) logger.debug('Invoking import_folder with:', { path: pathStr, workspaceId: newWs.id });
       const taskId = await api.importFolder(pathStr, newWs.id);
 
-      logger.debug('import_folder returned taskId:', taskId);
+      if (import.meta.env.DEV) logger.debug('import_folder returned taskId:', taskId);
 
       // 任务由后端事件自动创建，不需要手动添加
 
@@ -79,14 +79,14 @@ export const useWorkspaceOperations = () => {
    * 导入文件夹
    */
   const importFolder = useCallback(async () => {
-    logger.debug('importFolder called');
+    if (import.meta.env.DEV) logger.debug('importFolder called');
     try {
-      const selected = await open({ 
+      const selected = await open({
         directory: true,
         multiple: false
       });
-      
-      logger.debug('Selected folder:', selected);
+
+      if (import.meta.env.DEV) logger.debug('Selected folder:', selected);
       if (!selected) return;
       
       await importPath(selected as string);
@@ -100,9 +100,9 @@ export const useWorkspaceOperations = () => {
    * 导入单个文件
    */
   const importFile = useCallback(async () => {
-    logger.debug('importFile called');
+    if (import.meta.env.DEV) logger.debug('importFile called');
     try {
-      const selected = await open({ 
+      const selected = await open({
         directory: false,
         multiple: false,
         filters: [{
@@ -110,8 +110,8 @@ export const useWorkspaceOperations = () => {
           extensions: ['log', 'txt', 'gz', 'zip', 'tar', 'tgz', 'rar', '*']
         }]
       });
-      
-      logger.debug('Selected file:', selected);
+
+      if (import.meta.env.DEV) logger.debug('Selected file:', selected);
       if (!selected) return;
       
       await importPath(selected as string);
@@ -125,13 +125,13 @@ export const useWorkspaceOperations = () => {
    * 刷新工作区
    */
   const refreshWorkspace = useCallback(async (workspace: Workspace) => {
-    logger.debug('refreshWorkspace called for workspace:', workspace.id);
+    if (import.meta.env.DEV) logger.debug('refreshWorkspace called for workspace:', workspace.id);
     setOperationLoading(true);
 
     try {
       const taskId = await api.refreshWorkspace(workspace.id);
 
-      logger.debug('refresh_workspace returned taskId:', taskId);
+      if (import.meta.env.DEV) logger.debug('refresh_workspace returned taskId:', taskId);
 
       // 不再手动设置 PROCESSING 状态，让后端事件处理
       // 工作区状态由后端 task-update 事件自动更新
@@ -158,13 +158,13 @@ export const useWorkspaceOperations = () => {
    * 4. 超时控制
    */
   const deleteWorkspaceOp = useCallback(async (id: string) => {
-    logger.debug('deleteWorkspace called for id:', id);
+    if (import.meta.env.DEV) logger.debug('deleteWorkspace called for id:', id);
     setOperationLoading(true);
 
     try {
       await api.deleteWorkspace(id);
 
-      logger.debug('deleteWorkspace succeeded');
+      if (import.meta.env.DEV) logger.debug('deleteWorkspace succeeded');
 
       // 后端删除成功,更新前端状态
       deleteWorkspace(id);
@@ -197,11 +197,11 @@ export const useWorkspaceOperations = () => {
   const switchWorkspace = useCallback(async (id: string) => {
     // 如果已经是当前工作区，不重复加载
     if (activeWorkspaceId === id) {
-      logger.debug('Already active workspace, skipping reload:', id);
+      if (import.meta.env.DEV) logger.debug('Already active workspace, skipping reload:', id);
       return;
     }
 
-    logger.debug('switchWorkspace called for id:', id);
+    if (import.meta.env.DEV) logger.debug('switchWorkspace called for id:', id);
 
     const workspace = workspaces.find(w => w.id === id);
     if (!workspace) {
@@ -258,11 +258,11 @@ export const useWorkspaceOperations = () => {
    * 从后端重新加载所有工作区
    */
   const refreshWorkspaces = useCallback(async () => {
-    logger.debug('refreshWorkspaces called');
+    if (import.meta.env.DEV) logger.debug('refreshWorkspaces called');
     // 这里可以调用后端API获取工作区列表
     // 目前工作区列表由前端维护，通过事件自动更新
     // 如果需要从后端同步，可以添加相应的命令
-    logger.debug('Workspaces refreshed from store');
+    if (import.meta.env.DEV) logger.debug('Workspaces refreshed from store');
   }, []);
 
   return {

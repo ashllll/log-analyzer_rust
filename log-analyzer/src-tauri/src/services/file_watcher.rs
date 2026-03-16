@@ -21,6 +21,8 @@ pub struct WatcherState {
     pub workspace_id: String,
     pub watched_path: std::path::PathBuf,
     pub file_offsets: HashMap<String, u64>,
+    /// 每个文件已处理的行数（用于精确计算新内容的起始行号）
+    pub line_counts: HashMap<String, usize>,
     pub is_active: bool,
     /// 监听线程的 JoinHandle，用于确保正确退出并清理资源
     pub thread_handle: Arc<std::sync::Mutex<Option<std::thread::JoinHandle<()>>>>,

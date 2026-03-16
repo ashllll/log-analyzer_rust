@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { cn } from '../../utils/classNames';
 import { COLOR_STYLES } from '../../constants/colors';
 import type { HybridLogRendererProps } from '../../types/ui';
-import type { ColorKey } from '../../types/common';
+import type { ColorKey, KeywordPattern } from '../../types/common';
 
 // 智能截断相关接口
 interface KeywordPosition {
@@ -100,14 +100,14 @@ const HybridLogRendererInner: React.FC<HybridLogRendererProps> = ({ text, query,
   const { t } = useTranslation();
   const [isExpanded, setIsExpanded] = useState(false);
   const { patternMap, regexPattern } = useMemo(() => {
-    const map = new Map();
-    const patterns = new Set();
+    const map = new Map<string, { color: ColorKey | string; comment: string }>();
+    const patterns = new Set<string>();
 
     // 处理关键词组中的模式
     keywordGroups
-      .filter((g: any) => g.enabled)
-      .forEach((group: any) => {
-        group.patterns.forEach((p: any) => {
+      .filter((g) => g.enabled)
+      .forEach((group) => {
+        group.patterns.forEach((p: KeywordPattern) => {
           if (p.regex?.trim()) {
             map.set(p.regex.toLowerCase(), {
               color: group.color,
@@ -122,8 +122,8 @@ const HybridLogRendererInner: React.FC<HybridLogRendererProps> = ({ text, query,
     if (query) {
       query
         .split('|')
-        .map((t: string) => t.trim())
-        .filter((t: string) => t.length > 0)
+        .map((term: string) => term.trim())
+        .filter((term: string) => term.length > 0)
         .forEach((term: string, index: number) => {
           if (!map.has(term.toLowerCase())) {
             map.set(term.toLowerCase(), {
@@ -136,12 +136,12 @@ const HybridLogRendererInner: React.FC<HybridLogRendererProps> = ({ text, query,
     }
 
     // 按长度排序，确保长模式优先匹配
-    const sorted = Array.from(patterns).sort((a: any, b: any) => b.length - a.length);
+    const sorted = Array.from(patterns).sort((a: string, b: string) => b.length - a.length);
 
     return {
       regexPattern: sorted.length > 0
         ? new RegExp(
-            `(${sorted.map((p: any) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`,
+            `(${sorted.map((p: string) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`,
             'gi'
           )
         : null,

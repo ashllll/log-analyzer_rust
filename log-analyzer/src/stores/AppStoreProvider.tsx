@@ -58,8 +58,10 @@ export const AppStoreProvider = ({ children }: AppStoreProviderProps) => {
         // 标记应用已初始化
         setInitialized(true);
       } catch (error) {
-        console.error('Failed to load config:', error);
-        // 即使配置加载失败，也允许应用渲染
+        logger.error({ error }, 'Failed to load config');
+        // 确保空默认值，避免应用因无工作区/关键词组而不可用
+        setWorkspaces([]);
+        setKeywordGroups([]);
         addToast('error', '加载配置失败，使用默认配置');
         setInitialized(true); // 关键：即使失败也标记为已初始化
       }
@@ -125,10 +127,10 @@ export const AppStoreProvider = ({ children }: AppStoreProviderProps) => {
         logger.debug({ payload: event.payload }, '[AppStoreProvider] Received task-update from Tauri');
 
         // 老王备注：Rust后端现在直接发送正确的字段名（task_id, task_type）
-        // 老王备注：null值转undefined（Zod不允许null）
+        // null值转undefined（Zod不允许null，使用 ?? 而非 || 以保留空字符串语义）
         const cleanedPayload = {
           ...event.payload,
-          workspace_id: event.payload.workspace_id || undefined,
+          workspace_id: event.payload.workspace_id ?? undefined,
         };
 
         // 桥接到EventBus处理（Schema验证、幂等性检查）
@@ -149,7 +151,8 @@ export const AppStoreProvider = ({ children }: AppStoreProviderProps) => {
       });
 
       // 监听导入完成事件（从Tauri后端）
-      const importCompleteUnlisten = await listen<any>('import-complete', (event) => {
+      type ImportCompletePayload = string | { task_id?: string; workspace_id?: string };
+      const importCompleteUnlisten = await listen<ImportCompletePayload>('import-complete', (event) => {
         logger.debug({ payload: event.payload }, '[AppStoreProvider] Received import-complete from Tauri');
         
         // 支持两种 payload 格式：字符串（旧格式）或对象（新格式）
