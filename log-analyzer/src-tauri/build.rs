@@ -1,15 +1,12 @@
 fn main() {
-    // Windows：将应用程序清单嵌入可执行文件
-    // 声明 longPathAware=true，使系统注册表长路径设置对本应用生效
+    // Windows：通过 tauri-build 原生 API 嵌入长路径感知 manifest（longPathAware=true）
+    // 无需外部 winres 依赖，避免 CI 上 rc.exe 路径探测失败问题
+    let attrs = tauri_build::Attributes::new();
+
     #[cfg(target_os = "windows")]
-    embed_windows_manifest();
+    let attrs = attrs.windows_attributes(
+        tauri_build::WindowsAttributes::new().app_manifest(include_str!("windows-app.manifest")),
+    );
 
-    tauri_build::build()
-}
-
-#[cfg(target_os = "windows")]
-fn embed_windows_manifest() {
-    let mut res = winres::WindowsResource::new();
-    res.set_manifest(include_str!("windows-app.manifest"));
-    res.compile().expect("嵌入 Windows 应用程序清单失败");
+    tauri_build::try_build(attrs).expect("tauri-build 失败");
 }
