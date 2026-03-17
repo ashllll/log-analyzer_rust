@@ -250,10 +250,11 @@ const SearchPage: React.FC<SearchPageProps> = ({
   const checkAndFetchNextPage = useCallback(() => {
     if (hasNextPage && !isFetchingNextPage && isStreamSearchEnabled) {
       fetchNextPage().catch(err => {
-        console.error('Failed to fetch next page:', err);
+        logger.error('Failed to fetch next page:', err);
+        addToast('error', t('search.fetch_next_failed'));
       });
     }
-  }, [hasNextPage, isFetchingNextPage, isStreamSearchEnabled, fetchNextPage]);
+  }, [hasNextPage, isFetchingNextPage, isStreamSearchEnabled, fetchNextPage, addToast, t]);
 
   // 刷新状态管理
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -419,7 +420,8 @@ const SearchPage: React.FC<SearchPageProps> = ({
       }
 
       setTimeout(() => {
-        if (deferredLogs.length > 0 && rowVirtualizerRef.current) {
+        // 通过 ref 读取最新值，不作为 dep
+        if (bufferRef.current.length > 0 && rowVirtualizerRef.current) {
           try { rowVirtualizerRef.current.scrollToIndex(0); } catch { /* silent */ }
         }
       }, 50);
@@ -429,12 +431,12 @@ const SearchPage: React.FC<SearchPageProps> = ({
       } else {
         addToast('info', t('search.no_results'));
       }
-    }, [query, activeWorkspace, keywordColors, deferredLogs, rowVirtualizerRef, addToast]),
+    }, [query, activeWorkspace, keywordColors, addToast, t]),
 
     onError: useCallback((errorMsg: string) => {
       dispatchSearchExec({ type: 'ERROR' });
-      addToast('error', `搜索失败: ${errorMsg}`);
-    }, [addToast]),
+      addToast('error', t('search.error', { message: errorMsg }));
+    }, [addToast, t]),
 
     onStart: useCallback(() => {
       dispatchSearchExec({ type: 'START' });
@@ -442,9 +444,10 @@ const SearchPage: React.FC<SearchPageProps> = ({
       setLogVersion((v) => v + 1);
       setCurrentSearchId('');
       setIsStreamSearchEnabled(false);
+      // 通过 ref 读取最新 DOM，不将 Ref 对象放入 deps
       if (parentRef.current) parentRef.current.scrollTop = 0;
       if (rowVirtualizerRef.current) rowVirtualizerRef.current.scrollOffset = 0;
-    }, [parentRef, rowVirtualizerRef]),
+    }, []),
   });
 
   // 加载保存的查询
@@ -480,11 +483,11 @@ const SearchPage: React.FC<SearchPageProps> = ({
   }, [query]);
 
   // 搜索触发器变化时执行搜索
+  // 通过 handleSearchRef 读取最新版本，避免旧闭包，同时不将 handleSearch 加入 deps 导致额外触发
   useEffect(() => {
     if (searchTrigger > 0 && activeWorkspace) {
-      handleSearch();
+      handleSearchRef.current();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchTrigger, activeWorkspace]);
 
   // 工作区切换时获取时间范围
@@ -621,6 +624,9 @@ const SearchPage: React.FC<SearchPageProps> = ({
     refreshLogsRef.current = refreshLogs;
   }, [refreshLogs]);
 
+  // 用 ref 存储最新的 handleSearch，避免 useEffect 中使用 eslint-disable
+  const handleSearchRef = useRef<() => Promise<void>>(async () => {});
+
   /**
    * 执行搜索 - 使用 useCallback 确保稳定性
    */
@@ -680,8 +686,13 @@ const SearchPage: React.FC<SearchPageProps> = ({
       dispatchSearchExec({ type: 'ERROR' });
       addToast('error', `搜索失败: ${getFullErrorMessage(err)}`);
     }
-  }, [query, activeWorkspace, filterOptions, currentQuery, addToast, rowVirtualizerRef, parentRef]);
-  
+  }, [query, activeWorkspace, filterOptions, currentQuery, addToast]);
+
+  // 同步 handleSearch 到 ref，供 useEffect 读取最新版本（避免旧闭包）
+  useEffect(() => {
+    handleSearchRef.current = handleSearch;
+  });
+
   /**
    * 重置过滤器
    */
@@ -826,13 +837,15 @@ const SearchPage: React.FC<SearchPageProps> = ({
    * 优化：固定 estimateSize 避免依赖 logs，添加边界条件处理
    * 将结果存储到 ref 中以便在其他 useEffect 中访问
    */
-  const rowVirtualizer = useVirtualizer({ 
-    count: deferredLogs.length, 
+  const rowVirtualizer = useVirtualizer({
+    count: deferredLogs.length,
     getScrollElement: () => {
       if (!parentRef.current) return null;
       return parentRef.current;
-    }, 
+    },
     estimateSize: useCallback(() => 32, []),
+    // 使用 log.id 作为唯一 key，避免重排时状态错乱（F-L4）
+    getItemKey: useCallback((index: number) => deferredLogs[index]?.id ?? index, [deferredLogs]),
     overscan: 15,
     measureElement: (element) => {
       if (!element) return 32;

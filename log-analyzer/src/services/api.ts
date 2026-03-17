@@ -18,6 +18,8 @@ import {
   VirtualFileNodeSchema,
   WorkspaceStateSchema,
   EventRecordSchema,
+  WorkspaceLoadResponseSchema,
+  AppConfigSchema,
   type RarSupportInfo,
   type FileFilterConfig,
   type PerformanceMetrics,
@@ -150,7 +152,8 @@ class LogAnalyzerApi {
    */
   async loadWorkspace(workspaceId: string): Promise<WorkspaceLoadResponse> {
     try {
-      return await invoke('load_workspace', { workspaceId });
+      const raw = await invoke('load_workspace', { workspaceId });
+      return WorkspaceLoadResponseSchema.parse(raw) as WorkspaceLoadResponse;
     } catch (error) {
       throw createApiError('load_workspace', error);
     }
@@ -392,7 +395,8 @@ class LogAnalyzerApi {
    */
   async loadConfig(): Promise<AppConfig> {
     try {
-      return await invoke('load_config');
+      const raw = await invoke('load_config');
+      return AppConfigSchema.parse(raw) as AppConfig;
     } catch (error) {
       throw createApiError('load_config', error);
     }

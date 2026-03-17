@@ -63,8 +63,8 @@ pub async fn start_watch(
         file_offsets: HashMap::new(),
         line_counts: HashMap::new(),
         is_active: true,
-        thread_handle: Arc::new(std::sync::Mutex::new(None)),
-        watcher: Arc::new(std::sync::Mutex::new(Some(watcher))),
+        thread_handle: Arc::new(parking_lot::Mutex::new(None)),
+        watcher: Arc::new(parking_lot::Mutex::new(Some(watcher))),
     };
 
     let thread_handle_arc = Arc::clone(&watcher_state.thread_handle);
@@ -138,11 +138,18 @@ pub async fn start_watch(
                                 Ok((new_lines, new_offset)) => {
                                     let new_line_count = new_lines.len();
                                     if !new_lines.is_empty() {
-                                        let virtual_path = path
+                                        // 使用 to_string_lossy 避免静默丢失非 UTF-8 路径字节（B-L5）
+                                        let virtual_path_buf = path
                                             .strip_prefix(&watcher_watched_path)
-                                            .ok()
-                                            .and_then(|p| p.to_str())
-                                            .unwrap_or(path.to_str().unwrap_or("unknown"));
+                                            .unwrap_or(&path);
+                                        let virtual_path_cow = virtual_path_buf.to_string_lossy();
+                                        if virtual_path_cow.contains('\u{FFFD}') {
+                                            tracing::warn!(
+                                                path = ?path,
+                                                "virtual_path 包含非 UTF-8 字节，替换字符 U+FFFD 已插入"
+                                            );
+                                        }
+                                        let virtual_path = virtual_path_cow.as_ref();
 
                                         let new_entries = parse_log_lines(
                                             &new_lines,
@@ -207,10 +214,8 @@ pub async fn start_watch(
         }
     });
 
-    // 保存线程句柄以便后续 join
-    if let Ok(mut guard) = thread_handle_arc.lock() {
-        *guard = Some(handle);
-    }
+    // 保存线程句柄以便后续 join（parking_lot::Mutex 不会 poison，直接 lock）
+    *thread_handle_arc.lock() = Some(handle);
 
     Ok(())
 }
@@ -225,12 +230,8 @@ pub async fn stop_watch(
     let (thread_handle, watcher) = if let Some(watcher_state) = watchers.get_mut(&workspaceId) {
         watcher_state.is_active = false;
         // 获取句柄和监听器以便清理
-        let h = watcher_state
-            .thread_handle
-            .lock()
-            .ok()
-            .and_then(|mut h| h.take());
-        let w = watcher_state.watcher.lock().ok().and_then(|mut w| w.take());
+        let h = watcher_state.thread_handle.lock().take();
+        let w = watcher_state.watcher.lock().take();
         (h, w)
     } else {
         return Err("No active watcher found for this workspace".to_string());
