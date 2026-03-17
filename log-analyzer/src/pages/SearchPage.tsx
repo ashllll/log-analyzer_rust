@@ -135,24 +135,29 @@ const LogRow = memo<LogRowProps>(({
       onClick={onClick} 
       style={{ transform: `translateY(${virtualStart}px)` }} 
       className={cn(
-        "absolute top-0 left-0 w-full grid grid-cols-[50px_160px_200px_1fr] px-3 py-0.5 border-b border-border-subtle cursor-pointer text-[11px] font-mono hover:bg-bg-hover/50 transition-colors duration-150 items-start",
+        "absolute top-0 left-0 w-full grid grid-cols-[50px_160px_150px_1fr] px-3 py-1.5 border-b border-border-subtle cursor-pointer text-xs font-mono hover:bg-bg-hover/50 transition-colors duration-150 items-start",
         isActive && "bg-primary/10 border-l-2 border-l-primary"
       )}
     >
-      <div className={cn(
-        "font-bold",
-        log.level === 'ERROR' ? 'text-log-error' :
-        log.level === 'WARN' ? 'text-log-warn' :
-        log.level === 'INFO' ? 'text-log-info' :
-        'text-log-debug'
-      )}>
-        {log.level.substring(0,1)}
+      <div className="flex items-center">
+        <span className={cn(
+          "inline-block text-[10px] font-bold px-1 py-0.5 rounded leading-none",
+          log.level === 'ERROR' ? 'bg-red-500/20 text-red-400' :
+          log.level === 'WARN'  ? 'bg-amber-500/20 text-amber-400' :
+          log.level === 'INFO'  ? 'bg-blue-500/20 text-blue-400' :
+          'bg-zinc-500/20 text-zinc-400'
+        )}>
+          {log.level.substring(0,1)}
+        </span>
       </div>
-      <div className="text-text-muted whitespace-nowrap text-[10px]">
+      <div className="text-text-muted whitespace-nowrap text-[11px]">
         {log.timestamp}
       </div>
-      <div className="text-text-muted break-all pr-2 text-[10px] leading-tight">
-        {log.file}:{log.line}
+      <div
+        className="text-text-muted truncate pr-2 text-[11px] leading-tight"
+        title={`${log.file}:${log.line}`}
+      >
+        {(log.file.split('/').pop() ?? log.file).split('\\').pop() ?? log.file}:{log.line}
       </div>
       <div className="text-text-main whitespace-pre-wrap break-all leading-tight pr-2">
         <HybridLogRenderer 
@@ -230,9 +235,15 @@ const SearchPage: React.FC<SearchPageProps> = ({
       
       // 如果结果数量变化，更新缓冲区
       if (allResults.length > 0 && allResults.length !== bufferRef.current.length) {
-        // 清空并重新填充缓冲区
-        bufferRef.current.clear();
-        bufferRef.current.pushMany(allResults);
+        if (allResults.length > bufferRef.current.length) {
+          // 仅追加新增项，保留虚拟滚动器已缓存的行高度，避免全量重测引发卡顿
+          const newItems = allResults.slice(bufferRef.current.length);
+          bufferRef.current.pushMany(newItems);
+        } else {
+          // 数据缩减（如工作区切换/重置），完整重建
+          bufferRef.current.clear();
+          bufferRef.current.pushMany(allResults);
+        }
         setLogVersion(v => v + 1);
       }
     }
@@ -260,6 +271,8 @@ const SearchPage: React.FC<SearchPageProps> = ({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const isRefreshingRef = useRef(false);
   const lastRefreshTimeRef = useRef(0);
+  // 流式分页触发节流，防止 scroll 事件（~60fps）高频调用 fetchNextPage
+  const lastFetchNextPageTimeRef = useRef(0);
   const lastScrollTopRef = useRef(0);
   const refreshLogsRef = useRef<(() => void) | null>(null);
   const isNearBottomRef = useRef<((scrollTop: number, clientHeight: number, scrollHeight: number) => boolean) | null>(null);
@@ -344,9 +357,13 @@ const SearchPage: React.FC<SearchPageProps> = ({
       // 检查是否接近底部（用于流式分页加载）
       const isNearBottom = scrollHeight - scrollTop - clientHeight <= REFRESH_THRESHOLD;
       
-      // 流式分页加载优先
+      // 流式分页加载优先，500ms 节流避免 scroll 事件高频触发
       if (isNearBottom && isStreamSearchEnabled) {
-        checkAndFetchNextPage();
+        const now = Date.now();
+        if (now - lastFetchNextPageTimeRef.current >= 500) {
+          lastFetchNextPageTimeRef.current = now;
+          checkAndFetchNextPage();
+        }
         return;
       }
       
@@ -419,12 +436,15 @@ const SearchPage: React.FC<SearchPageProps> = ({
           .catch((err) => logger.error('Failed to register search session:', err));
       }
 
-      setTimeout(() => {
-        // 通过 ref 读取最新值，不作为 dep
-        if (bufferRef.current.length > 0 && rowVirtualizerRef.current) {
-          try { rowVirtualizerRef.current.scrollToIndex(0); } catch { /* silent */ }
-        }
-      }, 50);
+      // 仅非流式搜索（结果数量 <= 阈值）时才回到顶部
+      // 流式分页场景下用户可能已在翻页，强制跳回顶部会造成"循环滚动"假象
+      if (count <= SEARCH_CONFIG.STREAM_SEARCH_THRESHOLD) {
+        setTimeout(() => {
+          if (bufferRef.current.length > 0 && rowVirtualizerRef.current) {
+            try { rowVirtualizerRef.current.scrollToIndex(0); } catch { /* silent */ }
+          }
+        }, 50);
+      }
 
       if (count > 0) {
         addToast('success', `找到 ${count.toLocaleString()} 条日志`);
@@ -846,7 +866,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
     estimateSize: useCallback(() => 32, []),
     // 使用 log.id 作为唯一 key，避免重排时状态错乱（F-L4）
     getItemKey: useCallback((index: number) => deferredLogs[index]?.id ?? index, [deferredLogs]),
-    overscan: 15,
+    overscan: 5,
     measureElement: (element) => {
       if (!element) return 32;
       try {
@@ -1074,7 +1094,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
         {/* 日志列表 */}
         <div ref={parentRef} className="flex-1 overflow-auto bg-bg-main scrollbar-thin">
           {/* 表头 - 优化视觉层次 */}
-          <div className="sticky top-0 z-10 grid grid-cols-[50px_160px_200px_1fr] px-3 py-1.5 bg-bg-elevated border-b border-border-base text-[10px] font-bold text-text-muted uppercase tracking-wider">
+          <div className="sticky top-0 z-10 grid grid-cols-[50px_160px_150px_1fr] px-3 py-1.5 bg-bg-elevated border-b border-border-base text-[10px] font-bold text-text-muted uppercase tracking-wider">
             <div>Lvl</div>
             <div>Time</div>
             <div>File</div>
