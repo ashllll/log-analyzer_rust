@@ -379,9 +379,25 @@ impl PathManager {
     }
 
     /// Normalize path to NFC form for consistent handling
+    ///
+    /// 数据库中所有路径统一存储为 NFC（Unicode 标准合成形式）。
+    /// macOS HFS+ 文件系统返回的路径为 NFD（分解形式），例如 "é" 在 macOS
+    /// 文件系统层面被拆分为 "e" + 组合重音符（U+0301）。若不规范化，
+    /// 数据库查询时 NFC ≠ NFD 导致"文件已导入但搜索不到"的问题。
     fn normalize_path(&self, path: &Path) -> PathBuf {
         let path_str = path.to_string_lossy();
         let normalized: String = path_str.nfc().collect();
+
+        // macOS：记录 NFD → NFC 的转换，便于排查路径不匹配问题
+        #[cfg(target_os = "macos")]
+        if normalized != path_str.as_ref() {
+            debug!(
+                original = %path_str,
+                normalized = %normalized,
+                "检测到 macOS NFD 路径，已规范化为 NFC（数据库存储格式）"
+            );
+        }
+
         PathBuf::from(normalized)
     }
 }
