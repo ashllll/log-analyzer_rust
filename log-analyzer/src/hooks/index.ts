@@ -1,5 +1,7 @@
 // 导出所有自定义Hooks
 export { useWorkspaceOperations } from './useWorkspaceOperations';
+export { useSearchListeners } from './useSearchListeners';
+export type { SearchListenerHandlers } from './useSearchListeners';
 export { useTaskManager } from './useTaskManager';
 export { useKeywordManager } from './useKeywordManager';
 

@@ -1,5 +1,6 @@
 //! 性能指标收集模块
 
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
@@ -95,12 +96,14 @@ impl Histogram {
         self.sum.load(Ordering::Relaxed)
     }
 
-    pub fn min(&self) -> u64 {
-        let min = self.min.load(Ordering::Relaxed);
-        if min == u64::MAX {
-            0
+    /// 返回最小值，若尚未记录任何数据则返回 `None`。
+    /// 区别于历史实现：历史实现在未记录时返回 `0`，与"真实最小值=0"无法区分。
+    pub fn min(&self) -> Option<u64> {
+        let v = self.min.load(Ordering::Relaxed);
+        if v == u64::MAX {
+            None
         } else {
-            min
+            Some(v)
         }
     }
 
@@ -119,10 +122,12 @@ impl Histogram {
 }
 
 /// 全局指标注册表
+///
+/// 使用 `HashMap` 代替 `Vec`，使 `get_counter`/`get_histogram` 从 O(n) 降为 O(1)。
 #[derive(Debug, Default)]
 pub struct MetricsRegistry {
-    counters: Vec<Arc<Counter>>,
-    histograms: Vec<Arc<Histogram>>,
+    counters: HashMap<String, Arc<Counter>>,
+    histograms: HashMap<String, Arc<Histogram>>,
 }
 
 impl MetricsRegistry {
@@ -131,35 +136,39 @@ impl MetricsRegistry {
     }
 
     pub fn register_counter(&mut self, counter: Arc<Counter>) {
-        self.counters.push(counter);
+        self.counters.insert(counter.name.clone(), counter);
     }
 
     pub fn register_histogram(&mut self, histogram: Arc<Histogram>) {
-        self.histograms.push(histogram);
+        self.histograms.insert(histogram.name.clone(), histogram);
     }
 
     pub fn get_counter(&self, name: &str) -> Option<&Arc<Counter>> {
-        self.counters.iter().find(|c| c.name == name)
+        self.counters.get(name)
     }
 
     pub fn get_histogram(&self, name: &str) -> Option<&Arc<Histogram>> {
-        self.histograms.iter().find(|h| h.name == name)
+        self.histograms.get(name)
     }
 
     pub fn export(&self) -> String {
         let mut output = String::new();
 
-        for counter in &self.counters {
+        for counter in self.counters.values() {
             output.push_str(&format!("{}: {}\n", counter.name, counter.get()));
         }
 
-        for histogram in &self.histograms {
+        for histogram in self.histograms.values() {
+            let min_display = histogram
+                .min()
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "-".to_string());
             output.push_str(&format!(
                 "{}: count={}, sum={}, min={}, max={}, avg={:.2}\n",
                 histogram.name,
                 histogram.count(),
                 histogram.sum(),
-                histogram.min(),
+                min_display,
                 histogram.max(),
                 histogram.avg()
             ));
@@ -217,14 +226,31 @@ mod tests {
         let histogram = Histogram::new("test_histogram");
         assert_eq!(histogram.count(), 0);
         assert_eq!(histogram.avg(), 0.0);
+        // 未记录数据时 min() 返回 None
+        assert_eq!(histogram.min(), None);
 
         histogram.record(1.0);
         histogram.record(2.0);
         histogram.record(3.0);
 
         assert_eq!(histogram.count(), 3);
-        assert_eq!(histogram.min(), 1000); // 转换为毫秒
+        assert_eq!(histogram.min(), Some(1000)); // 转换为毫秒
         assert_eq!(histogram.max(), 3000);
         assert_eq!(histogram.avg(), 2000.0);
+    }
+
+    #[test]
+    fn test_metrics_registry_o1_lookup() {
+        let mut registry = MetricsRegistry::new();
+        let counter = Arc::new(Counter::new("searches_total"));
+        let histogram = Arc::new(Histogram::new("search_duration_seconds"));
+
+        registry.register_counter(counter.clone());
+        registry.register_histogram(histogram.clone());
+
+        // O(1) HashMap 查找
+        assert!(registry.get_counter("searches_total").is_some());
+        assert!(registry.get_histogram("search_duration_seconds").is_some());
+        assert!(registry.get_counter("nonexistent").is_none());
     }
 }

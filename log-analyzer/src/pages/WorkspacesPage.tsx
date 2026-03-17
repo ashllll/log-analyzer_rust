@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { FileText, Plus, RefreshCw, Trash2, Eye, EyeOff, CheckCircle2, Settings } from 'lucide-react';
 import { useAppStore } from '../stores/appStore';
 import { useWorkspaceOperations } from '../hooks/useWorkspaceOperations';
@@ -17,12 +18,13 @@ import type { Workspace } from '../types/common';
  * 5. 切换文件监听状态
  */
 const WorkspacesPage: React.FC = () => {
+  const { t } = useTranslation();
   const { workspaces, importFile, importFolder, refreshWorkspace, deleteWorkspace, toggleWatch, switchWorkspace } = useWorkspaceOperations();
   const activeWorkspaceId = useAppStore((state) => state.activeWorkspaceId);
   const [isFilterSettingsOpen, setIsFilterSettingsOpen] = useState(false);
-  
+
   const handleDelete = async (id: string) => {
-    if (!window.confirm('确认删除此工作区？此操作不可撤销。')) return;
+    if (!window.confirm(t('workspaces.delete_confirm'))) return;
     await deleteWorkspace(id);
   };
   
@@ -47,15 +49,15 @@ const WorkspacesPage: React.FC = () => {
       {/* 页面标题 */}
       <div className="flex justify-between items-center mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-text-main tracking-tight">Workspaces</h1>
-          <p className="text-sm text-text-muted mt-1">管理日志工作区和导入源</p>
+          <h1 className="text-2xl font-bold text-text-main tracking-tight">{t('workspaces.title')}</h1>
+          <p className="text-sm text-text-muted mt-1">{t('workspaces.subtitle')}</p>
         </div>
         <div className="flex gap-2">
           <Button icon={Settings} onClick={() => setIsFilterSettingsOpen(true)} variant="secondary" data-testid="file-filter-settings-button">
-            文件过滤设置
+            {t('workspaces.filter_settings')}
           </Button>
-          <Button icon={FileText} onClick={handleImportFile} variant="secondary" data-testid="import-file-button">Import File</Button>
-          <Button icon={Plus} onClick={handleImportFolder} variant="cta" data-testid="import-folder-button">Import Folder</Button>
+          <Button icon={FileText} onClick={handleImportFile} variant="secondary" data-testid="import-file-button">{t('workspaces.import_file')}</Button>
+          <Button icon={Plus} onClick={handleImportFolder} variant="cta" data-testid="import-folder-button">{t('workspaces.import_folder')}</Button>
         </div>
       </div>
 

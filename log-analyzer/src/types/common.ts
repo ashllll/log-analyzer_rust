@@ -3,6 +3,7 @@ import type { Toast } from '../stores/appStore';
 import type { Workspace } from '../stores/workspaceStore';
 import type { Task } from '../stores/taskStore';
 import type { KeywordGroup } from '../stores/keywordStore';
+import type { FileFilterConfig } from './api-responses';
 
 // 从 api-responses 重新导出 LogEntry 和 MatchDetail 类型
 // 这些类型使用 Zod Schema 定义，提供运行时类型安全
@@ -21,44 +22,10 @@ export type { ToastType } from '../stores/appStore';
 export type { KeywordPattern, ColorKey } from '../stores/keywordStore';
 
 // ========== 文件过滤配置类型 ==========
-
-/**
- * 文件过滤模式
- * - Whitelist: 白名单模式（仅允许指定文件）
- * - Blacklist: 黑名单模式（禁止指定文件）
- */
-export enum FilterMode {
-  Whitelist = 'whitelist',
-  Blacklist = 'blacklist'
-}
-
-/**
- * 文件类型过滤配置（三层检测策略）
- *
- * 防御性设计：
- * - 默认禁用第2层智能过滤（enabled = false）
- * - 默认启用第1层二进制检测（binary_detection_enabled = true）
- * - 任何配置错误都会降级到默认行为（允许所有文件）
- */
-export interface FileFilterConfig {
-  /** 是否启用第2层智能过滤（第1层二进制检测始终启用） */
-  enabled: boolean;
-
-  /** 第1层：二进制文件检测（默认启用） */
-  binary_detection_enabled: boolean;
-
-  /** 第2层：过滤模式（whitelist 或 blacklist） */
-  mode: FilterMode;
-
-  /** 文件名 Glob 模式列表（支持无后缀日志） */
-  filename_patterns: string[];
-
-  /** 扩展名白名单 */
-  allowed_extensions: string[];
-
-  /** 扩展名黑名单 */
-  forbidden_extensions: string[];
-}
+// FilterMode 和 FileFilterConfig 以 api-responses.ts 为权威来源（含 Zod Schema），
+// 此处 re-export 以保持向后兼容的 import 路径。
+export { FilterMode } from './api-responses';
+export type { FileFilterConfig } from './api-responses';
 
 /**
  * 高级特性配置
@@ -106,58 +73,8 @@ export interface AppConfig {
 // ========== 文件过滤配置类型结束 ==========
 
 // ========== 性能监控类型 ==========
-
-/**
- * 性能指标数据结构
- *
- * 用于展示系统性能、搜索性能、缓存命中率等信息
- */
-export interface PerformanceMetrics {
-  /** 搜索延迟指标 */
-  searchLatency: {
-    current: number;  // 当前延迟 (ms)
-    average: number;  // 平均延迟 (ms)
-    p95: number;      // 95分位延迟 (ms)
-    p99: number;      // 99分位延迟 (ms)
-  };
-  /** 搜索吞吐量指标 */
-  searchThroughput: {
-    current: number;  // 当前吞吐量 (次/秒)
-    average: number;  // 平均吞吐量 (次/秒)
-    peak: number;     // 峰值吞吐量 (次/秒)
-  };
-  /** 缓存性能指标 */
-  cacheMetrics: {
-    hitRate: number;     // 命中率 (0-100)
-    missCount: number;   // 未命中次数
-    hitCount: number;    // 命中次数
-    size: number;        // 当前缓存大小
-    capacity: number;    // 缓存容量
-    evictions: number;   // 驱逐次数
-  };
-  /** 内存使用指标 */
-  memoryMetrics: {
-    used: number;        // 已用内存 (MB)
-    total: number;       // 总内存 (MB)
-    heapUsed: number;    // 堆内存使用 (MB)
-    external: number;    // 外部内存 (MB)
-  };
-  /** 任务执行指标 */
-  taskMetrics: {
-    total: number;       // 总任务数
-    running: number;     // 运行中任务数
-    completed: number;   // 已完成任务数
-    failed: number;      // 失败任务数
-    averageDuration: number; // 平均执行时间 (ms)
-  };
-  /** 索引指标 */
-  indexMetrics: {
-    totalFiles: number;     // 总文件数
-    indexedFiles: number;   // 已索引文件数
-    totalSize: number;      // 总大小 (bytes)
-    indexSize: number;      // 索引大小 (bytes)
-  };
-}
+// PerformanceMetrics 以 api-responses.ts 为权威来源（含 Zod Schema），此处 re-export。
+export type { PerformanceMetrics } from './api-responses';
 
 // ========== 性能监控历史数据类型 ==========
 

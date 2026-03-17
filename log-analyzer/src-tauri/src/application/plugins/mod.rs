@@ -12,8 +12,14 @@ use tracing::{debug, info, warn};
 use crate::domain::log_analysis::entities::LogEntry;
 use crate::error::Result;
 
-/// 插件 ABI 版本，用于确保插件与主程序兼容
-pub const PLUGIN_ABI_VERSION: u32 = 1;
+/// 插件 ABI 主版本号 — 不兼容变更时递增（必须精确匹配）
+pub const PLUGIN_ABI_MAJOR: u32 = 1;
+/// 插件 ABI 次版本号 — 向后兼容变更时递增（插件 minor >= 宿主 minor 即可）
+pub const PLUGIN_ABI_MINOR: u32 = 0;
+
+/// 插件 ABI 版本，用于确保插件与主程序兼容（保留为主版本号以兼容旧代码）
+#[deprecated(since = "0.1.0", note = "使用 PLUGIN_ABI_MAJOR / PLUGIN_ABI_MINOR")]
+pub const PLUGIN_ABI_VERSION: u32 = PLUGIN_ABI_MAJOR;
 
 /// 插件接口定义
 pub trait Plugin: Send + Sync {
@@ -23,9 +29,19 @@ pub trait Plugin: Send + Sync {
     /// 插件版本
     fn version(&self) -> &'static str;
 
-    /// 插件 ABI 版本
+    /// 插件 ABI 主版本号
+    fn abi_major(&self) -> u32 {
+        PLUGIN_ABI_MAJOR
+    }
+
+    /// 插件 ABI 次版本号
+    fn abi_minor(&self) -> u32 {
+        PLUGIN_ABI_MINOR
+    }
+
+    /// 插件 ABI 版本（保留兼容，返回主版本号）
     fn abi_version(&self) -> u32 {
-        PLUGIN_ABI_VERSION
+        self.abi_major()
     }
 
     /// 插件描述
@@ -206,15 +222,26 @@ impl PluginManager {
             let plugin = Box::from_raw(plugin_raw);
 
             // 验证 ABI 版本（在移动前检查）
-            let abi_version = plugin.abi_version();
-            if abi_version != PLUGIN_ABI_VERSION {
-                // ABI 版本不匹配，减少引用计数并清理
+            // 主版本必须完全匹配；次版本允许插件 >= 宿主（向后兼容）
+            let plugin_major = plugin.abi_major();
+            let plugin_minor = plugin.abi_minor();
+            if plugin_major != PLUGIN_ABI_MAJOR {
+                // 主版本不匹配，拒绝加载
                 let _ = Box::into_raw(plugin); // 避免 double free
                 library_handle.decrement();
                 return Err(crate::error::AppError::Internal(format!(
-                    "Plugin ABI mismatch: expected {}, found {}",
-                    PLUGIN_ABI_VERSION, abi_version
+                    "Plugin ABI major version mismatch: host={}.{}, plugin={}.{}",
+                    PLUGIN_ABI_MAJOR, PLUGIN_ABI_MINOR, plugin_major, plugin_minor
                 )));
+            }
+            if plugin_minor < PLUGIN_ABI_MINOR {
+                // 插件次版本低于宿主，可能缺少必要的接口
+                warn!(
+                    host_minor = PLUGIN_ABI_MINOR,
+                    plugin_minor = plugin_minor,
+                    plugin_name = plugin.name(),
+                    "Plugin ABI minor version is older than host; some features may be unavailable"
+                );
             }
 
             plugin

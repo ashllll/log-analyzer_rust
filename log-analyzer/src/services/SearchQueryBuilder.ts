@@ -92,10 +92,16 @@ export class SearchQueryBuilder {
 
   /**
    * 从 JSON 导入
+   * 使用 try-catch 防止损坏的 JSON 导致崩溃
    */
-  static import(json: string): SearchQueryBuilder {
-    const query = JSON.parse(json) as SearchQuery;
-    return new SearchQueryBuilder(query);
+  static import(json: string): SearchQueryBuilder | null {
+    try {
+      const query = JSON.parse(json) as SearchQuery;
+      return new SearchQueryBuilder(query);
+    } catch (e) {
+      console.warn('SearchQueryBuilder.import: 无效的 JSON 配置，已忽略', e);
+      return null;
+    }
   }
 
   private static generateId(): string {

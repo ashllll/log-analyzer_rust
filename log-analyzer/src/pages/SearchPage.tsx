@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef, useCallback, useDeferredValue, memo, useMemo } from 'react';
+import React, { useState, useReducer, useEffect, useRef, useCallback, useDeferredValue, memo, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
 import { save } from '@tauri-apps/plugin-dialog';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
@@ -27,6 +27,8 @@ import { saveQuery, loadQuery } from '../services/queryStorage';
 import { api } from '../services/api';
 import { getFullErrorMessage } from '../services/errors';
 import { useInfiniteSearch, registerSearchSession } from '../hooks/useInfiniteSearch';
+import { useSearchListeners } from '../hooks/useSearchListeners';
+import { SEARCH_CONFIG } from '../constants/search';
 import type {
   LogEntry,
   FilterOptions,
@@ -34,6 +36,51 @@ import type {
   KeywordGroup,
   ToastType
 } from '../types/common';
+
+// ============================================================================
+// 搜索执行状态 Reducer — 合并原本分散的 isSearching / searchSummary / keywordStats
+// ============================================================================
+
+interface SearchExecState {
+  isSearching: boolean;
+  searchSummary: SearchResultSummary | null;
+  keywordStats: KeywordStat[];
+}
+
+type SearchExecAction =
+  | { type: 'START' }
+  | { type: 'SUMMARY'; summary: SearchResultSummary; keywordColors: string[] }
+  | { type: 'COMPLETE' }
+  | { type: 'ERROR' }
+  | { type: 'RESET' };
+
+const searchExecInitial: SearchExecState = {
+  isSearching: false,
+  searchSummary: null,
+  keywordStats: [],
+};
+
+function searchExecReducer(state: SearchExecState, action: SearchExecAction): SearchExecState {
+  switch (action.type) {
+    case 'START':
+      return { isSearching: true, searchSummary: null, keywordStats: [] };
+    case 'SUMMARY': {
+      const stats: KeywordStat[] = action.summary.keywordStats.map((stat, i) => ({
+        ...stat,
+        color: action.keywordColors[i % action.keywordColors.length],
+      }));
+      return { ...state, searchSummary: action.summary, keywordStats: stats };
+    }
+    case 'COMPLETE':
+      return { ...state, isSearching: false };
+    case 'ERROR':
+      return { ...state, isSearching: false };
+    case 'RESET':
+      return searchExecInitial;
+    default:
+      return state;
+  }
+}
 
 /**
  * 搜索页面组件
@@ -127,30 +174,31 @@ const LogRow = memo<LogRowProps>(({
   );
 });
 
-const SearchPage: React.FC<SearchPageProps> = ({ 
-  keywordGroups, 
-  addToast, 
-  searchInputRef, 
-  activeWorkspace 
+const SearchPage: React.FC<SearchPageProps> = ({
+  keywordGroups,
+  addToast,
+  searchInputRef,
+  activeWorkspace
 }) => {
+  const { t } = useTranslation();
   // 缓存启用的关键词组，避免每次渲染都重新计算
-  const enabledKeywordGroups = useMemo(() => 
+  const enabledKeywordGroups = useMemo(() =>
     keywordGroups.filter(g => g.enabled),
     [keywordGroups]
   );
   
-  // 环形缓冲区容量上限，防止内存泄漏
-  const MAX_LOG_ENTRIES = 50_000;
-
   // 搜索状态
   const [query, setQuery] = useState("");
-  const bufferRef = useRef(new CircularBuffer<LogEntry>(MAX_LOG_ENTRIES));
+  // 环形缓冲区容量上限，防止内存泄漏
+  const bufferRef = useRef(new CircularBuffer<LogEntry>(SEARCH_CONFIG.MAX_LOG_ENTRIES));
   const [logVersion, setLogVersion] = useState(0);
   const displayLogs = useMemo(() => bufferRef.current.toArray(), [logVersion]);
   const deferredLogs = useDeferredValue(displayLogs); // 使用延迟值优化渲染
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isFilterPaletteOpen, setIsFilterPaletteOpen] = useState(false);
-  const [isSearching, setIsSearching] = useState(false);
+  // 搜索执行状态（isSearching / searchSummary / keywordStats）统一通过 reducer 管理
+  const [searchExec, dispatchSearchExec] = useReducer(searchExecReducer, searchExecInitial);
+  const { isSearching, searchSummary, keywordStats } = searchExec;
   
   // 流式搜索分页状态
   const [currentSearchId, setCurrentSearchId] = useState<string>('');
@@ -214,13 +262,9 @@ const SearchPage: React.FC<SearchPageProps> = ({
   const lastScrollTopRef = useRef(0);
   const refreshLogsRef = useRef<(() => void) | null>(null);
   const isNearBottomRef = useRef<((scrollTop: number, clientHeight: number, scrollHeight: number) => boolean) | null>(null);
-  const REFRESH_THRESHOLD = 50;
-  const REFRESH_DEBOUNCE_MS = 1000;
+  const REFRESH_THRESHOLD = SEARCH_CONFIG.REFRESH_THRESHOLD;
+  const REFRESH_DEBOUNCE_MS = SEARCH_CONFIG.REFRESH_DEBOUNCE_MS;
 
-  // 搜索统计状态
-  const [searchSummary, setSearchSummary] = useState<SearchResultSummary | null>(null);
-  const [keywordStats, setKeywordStats] = useState<KeywordStat[]>([]);
-  
   // 给每个关键词分配颜色 - 使用新的设计系统
   const keywordColors = useMemo(
     () => ['#3B82F6', '#8B5CF6', '#22C55E', '#F59E0B', '#EC4899', '#06B6D4'],
@@ -246,10 +290,8 @@ const SearchPage: React.FC<SearchPageProps> = ({
   // 累积批次，避免 O(n²) 的展开操作和频繁的 state update
   const pendingLogsRef = useRef<LogEntry[]>([]);
   const batchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // 优化：增加批量间隔到 100ms，配合后端 2000 的 batch_size，减少 90% 的 state update 次数
-  const BATCH_INTERVAL = 100; // 100ms 批量刷新
-  // 优化：与后端 batch_size (2000) 对齐，减少不必要的刷新
-  const MAX_BATCH_SIZE = 4000; // 达到 2 个后端批次时立即刷新
+  const BATCH_INTERVAL = SEARCH_CONFIG.BATCH_INTERVAL_MS;
+  const MAX_BATCH_SIZE = SEARCH_CONFIG.MAX_BATCH_SIZE;
   
   // 刷新待处理的日志批次
   const flushPendingLogs = useCallback(() => {
@@ -330,162 +372,80 @@ const SearchPage: React.FC<SearchPageProps> = ({
     };
   }, [isStreamSearchEnabled, checkAndFetchNextPage]);
 
-  // 监听搜索事件
-  useEffect(() => {
-    const abortController = new AbortController();
-    const unlisteners: Array<() => void> = [];
-
-    const setupListeners = async () => {
-      try {
-        const [
-          resultsUnlisten,
-          summaryUnlisten,
-          completeUnlisten,
-          errorUnlisten,
-          startUnlisten
-        ] = await Promise.all([
-          listen<LogEntry[]>('search-results', (e) => {
-            if (!e.payload || !Array.isArray(e.payload)) {
-              console.warn('Invalid search results payload:', e.payload);
-              return;
-            }
-            
-            // 性能优化：累积批次，避免 O(n²) 的展开操作
-            pendingLogsRef.current.push(...e.payload);
-            
-            // 超过阈值立即刷新
-            if (pendingLogsRef.current.length >= MAX_BATCH_SIZE) {
-              if (batchTimeoutRef.current) {
-                clearTimeout(batchTimeoutRef.current);
-                batchTimeoutRef.current = null;
-              }
-              flushPendingLogs();
-            } else if (!batchTimeoutRef.current) {
-              // 定时刷新，减少 setState 调用次数
-              batchTimeoutRef.current = setTimeout(() => {
-                batchTimeoutRef.current = null;
-                flushPendingLogs();
-              }, BATCH_INTERVAL);
-            }
-          }),
-          listen<SearchResultSummary>('search-summary', (e) => {
-            const summary = e.payload;
-            if (!summary) {
-              console.warn('Invalid search summary payload:', e.payload);
-              return;
-            }
-            setSearchSummary(summary);
-
-            const stats: KeywordStat[] = summary.keywordStats.map((stat, index) => ({
-              ...stat,
-              color: keywordColors[index % keywordColors.length]
-            }));
-            setKeywordStats(stats);
-          }),
-          listen('search-complete', async (e) => {
-            setIsSearching(false);
-            const count = typeof e.payload === 'number' ? e.payload : 0;
-
-            if (query.trim() && activeWorkspace) {
-              // TODO: 添加到 API 层
-              // await api.addSearchHistory(...) when implemented
-              invoke('add_search_history', {
-                query: query.trim(),
-                workspaceId: activeWorkspace.id,
-                resultCount: count,
-              }).catch(err => {
-                logger.error('Failed to save search history:', getFullErrorMessage(err));
-              });
-            }
-
-            // 如果结果数量超过阈值，启用流式分页搜索
-            const STREAM_SEARCH_THRESHOLD = 5000;
-            if (count > STREAM_SEARCH_THRESHOLD && bufferRef.current.length > 0) {
-              const searchId = `search_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-              const allResults = bufferRef.current.toArray();
-
-              try {
-                // 注册搜索会话到 VirtualSearchManager
-                await registerSearchSession(searchId, query, allResults);
-                // 检查信号是否已中止（组件已卸载），避免在卸载后更新状态
-                if (!abortController.signal.aborted) {
-                  setCurrentSearchId(searchId);
-                  setIsStreamSearchEnabled(true);
-                }
-                logger.debug(`Registered search session ${searchId} with ${allResults.length} entries`);
-              } catch (err) {
-                logger.error('Failed to register search session:', err);
-              }
-            }
-
-            // 滚动到顶部显示最新结果
-            setTimeout(() => {
-              if (deferredLogs.length > 0 && rowVirtualizerRef.current) {
-                try {
-                  rowVirtualizerRef.current.scrollToIndex(0);
-                } catch {
-                  // 静默处理滚动错误
-                }
-              }
-            }, 50);
-
-            if (count > 0) {
-              addToast('success', `找到 ${count.toLocaleString()} 条日志`);
-            } else {
-              addToast('info', '未找到匹配的日志');
-            }
-          }),
-          listen('search-error', (e) => {
-            setIsSearching(false);
-            const errorMsg = String(e.payload);
-            addToast('error', `搜索失败: ${errorMsg}`);
-          }),
-          listen('search-start', () => {
-            // 清空并重置滚动
-            bufferRef.current.clear();
-            setLogVersion(v => v + 1);
-            setSearchSummary(null);
-            setKeywordStats([]);
-            
-            // 重置流式搜索状态
-            setCurrentSearchId('');
-            setIsStreamSearchEnabled(false);
-            
-            if (parentRef.current) {
-              parentRef.current.scrollTop = 0;
-            }
-            if (rowVirtualizerRef.current) {
-              rowVirtualizerRef.current.scrollOffset = 0;
-            }
-          })
-        ]);
-
-        if (abortController.signal.aborted) {
-          [resultsUnlisten, summaryUnlisten, completeUnlisten, errorUnlisten, startUnlisten].forEach(unlisten => unlisten());
-          return;
+  // 监听搜索事件 — 通过 useSearchListeners hook 注册 Tauri 事件
+  useSearchListeners({
+    onResults: useCallback((results: LogEntry[]) => {
+      pendingLogsRef.current.push(...results);
+      if (pendingLogsRef.current.length >= MAX_BATCH_SIZE) {
+        if (batchTimeoutRef.current) {
+          clearTimeout(batchTimeoutRef.current);
+          batchTimeoutRef.current = null;
         }
-
-        unlisteners.push(...[resultsUnlisten, summaryUnlisten, completeUnlisten, errorUnlisten, startUnlisten]);
-      } catch (error) {
-        if (!abortController.signal.aborted) {
-          console.error('Failed to setup event listeners:', error);
-        }
+        flushPendingLogs();
+      } else if (!batchTimeoutRef.current) {
+        batchTimeoutRef.current = setTimeout(() => {
+          batchTimeoutRef.current = null;
+          flushPendingLogs();
+        }, BATCH_INTERVAL);
       }
-    };
+    }, [flushPendingLogs, MAX_BATCH_SIZE, BATCH_INTERVAL]),
 
-    setupListeners();
+    onSummary: useCallback((summary: SearchResultSummary) => {
+      dispatchSearchExec({ type: 'SUMMARY', summary, keywordColors });
+    }, [keywordColors]),
 
-    return () => {
-      abortController.abort();
-      unlisteners.forEach(unlisten => {
-        try {
-          unlisten();
-        } catch (error) {
-          console.debug('Failed to unlisten:', error);
+    onComplete: useCallback((count: number) => {
+      dispatchSearchExec({ type: 'COMPLETE' });
+
+      if (query.trim() && activeWorkspace) {
+        invoke('add_search_history', {
+          query: query.trim(),
+          workspaceId: activeWorkspace.id,
+          resultCount: count,
+        }).catch((err) => {
+          logger.error('Failed to save search history:', getFullErrorMessage(err));
+        });
+      }
+
+      if (count > SEARCH_CONFIG.STREAM_SEARCH_THRESHOLD && bufferRef.current.length > 0) {
+        const searchId = `search_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const allResults = bufferRef.current.toArray();
+        registerSearchSession(searchId, query, allResults)
+          .then(() => {
+            setCurrentSearchId(searchId);
+            setIsStreamSearchEnabled(true);
+          })
+          .catch((err) => logger.error('Failed to register search session:', err));
+      }
+
+      setTimeout(() => {
+        if (deferredLogs.length > 0 && rowVirtualizerRef.current) {
+          try { rowVirtualizerRef.current.scrollToIndex(0); } catch { /* silent */ }
         }
-      });
-    };
-  }, [addToast, keywordColors, rowVirtualizerRef, parentRef, query, activeWorkspace]);
+      }, 50);
+
+      if (count > 0) {
+        addToast('success', `找到 ${count.toLocaleString()} 条日志`);
+      } else {
+        addToast('info', t('search.no_results'));
+      }
+    }, [query, activeWorkspace, keywordColors, deferredLogs, rowVirtualizerRef, addToast]),
+
+    onError: useCallback((errorMsg: string) => {
+      dispatchSearchExec({ type: 'ERROR' });
+      addToast('error', `搜索失败: ${errorMsg}`);
+    }, [addToast]),
+
+    onStart: useCallback(() => {
+      dispatchSearchExec({ type: 'START' });
+      bufferRef.current.clear();
+      setLogVersion((v) => v + 1);
+      setCurrentSearchId('');
+      setIsStreamSearchEnabled(false);
+      if (parentRef.current) parentRef.current.scrollTop = 0;
+      if (rowVirtualizerRef.current) rowVirtualizerRef.current.scrollOffset = 0;
+    }, [parentRef, rowVirtualizerRef]),
+  });
 
   // 加载保存的查询
   useEffect(() => {
@@ -493,7 +453,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
     if (saved) {
       setCurrentQuery(saved);
       const builder = SearchQueryBuilder.import(JSON.stringify(saved));
-      setQuery(builder.toQueryString());
+      if (builder) setQuery(builder.toQueryString());
     }
   }, []);
 
@@ -666,7 +626,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
    */
   const handleSearch = useCallback(async () => {
     if (!activeWorkspace) {
-      addToast('error', '请先选择工作区');
+      addToast('error', t('search.no_workspace_selected'));
       return;
     }
 
@@ -680,9 +640,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
     // 重置状态
     bufferRef.current.clear();
     setLogVersion(v => v + 1);
-    setSearchSummary(null);
-    setKeywordStats([]);
-    setIsSearching(true);
+    dispatchSearchExec({ type: 'START' });
     setSelectedId(null);
     
     // 重置流式搜索状态
@@ -719,7 +677,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
       }
     } catch (err) {
       logger.error('Search failed:', err);
-      setIsSearching(false);
+      dispatchSearchExec({ type: 'ERROR' });
       addToast('error', `搜索失败: ${getFullErrorMessage(err)}`);
     }
   }, [query, activeWorkspace, filterOptions, currentQuery, addToast, rowVirtualizerRef, parentRef]);
@@ -747,10 +705,12 @@ const SearchPage: React.FC<SearchPageProps> = ({
     // 同时更新结构化查询
     if (currentQuery) {
       const builder = SearchQueryBuilder.import(JSON.stringify(currentQuery));
-      const existing = builder.findTermByValue(termToRemove);
-      if (existing) {
-        builder.removeTerm(existing.id);
-        setCurrentQuery(builder.getQuery());
+      if (builder) {
+        const existing = builder.findTermByValue(termToRemove);
+        if (existing) {
+          builder.removeTerm(existing.id);
+          setCurrentQuery(builder.getQuery());
+        }
       }
     }
   }, [query, currentQuery]);
@@ -761,8 +721,8 @@ const SearchPage: React.FC<SearchPageProps> = ({
    */
   const toggleRuleInQuery = useCallback((ruleRegex: string) => {
     // 创建或更新查询构建器
-    const builder = currentQuery 
-      ? SearchQueryBuilder.import(JSON.stringify(currentQuery))
+    const builder = currentQuery
+      ? (SearchQueryBuilder.import(JSON.stringify(currentQuery)) ?? SearchQueryBuilder.fromString(query, keywordGroups))
       : SearchQueryBuilder.fromString(query, keywordGroups);
 
     // 检查是否已存在
@@ -959,7 +919,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
             onClick={handleSearch}
             disabled={isSearching || !activeWorkspace}
             className={isSearching ? "animate-pulse" : ""}
-            title={!activeWorkspace ? '请先选择工作区' : undefined}
+            title={!activeWorkspace ? t('search.no_workspace_selected') : undefined}
           >
             {isSearching ? '...' : 'Search'}
           </Button>
@@ -1091,7 +1051,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
             keywords={keywordStats}
             totalMatches={searchSummary.totalMatches}
             searchDurationMs={searchSummary.searchDurationMs}
-            onClose={() => setSearchSummary(null)}
+            onClose={() => dispatchSearchExec({ type: 'RESET' })}
           />
         )}
       </div>

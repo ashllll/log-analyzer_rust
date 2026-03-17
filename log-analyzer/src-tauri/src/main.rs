@@ -170,12 +170,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let state_guard = app_handle.state::<AppState>();
                 let state = state_guard.task_manager.lock();
 
+                // 收集所有 SearchEngineManager 实例以便关闭
+                let search_managers: Vec<_> = {
+                    let mgr_guard = app_handle.state::<AppState>();
+                    let managers = mgr_guard.search_engine_managers.lock();
+                    managers.values().cloned().collect()
+                };
+
                 if let Some(task_manager) = state.as_ref() {
                     // 使用 Tokio 运行时执行异步关闭
                     let tm_clone = task_manager.clone();
                     std::thread::spawn(move || {
                         let rt = tokio::runtime::Runtime::new().unwrap();
                         rt.block_on(async move {
+                            // 关闭所有 SearchEngineManager（提交 IndexWriter 缓冲区）
+                            for mgr in search_managers {
+                                let close_result = tokio::time::timeout(
+                                    std::time::Duration::from_secs(3),
+                                    mgr.close(),
+                                )
+                                .await;
+                                match close_result {
+                                    Ok(()) => info!("✅ SearchEngineManager 已成功关闭"),
+                                    Err(_) => error!("⏱️ SearchEngineManager 关闭超时 (3秒)"),
+                                }
+                            }
+
                             info!("🚪 正在关闭 TaskManager...");
 
                             // 使用 5 秒超时执行异步关闭
