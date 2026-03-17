@@ -425,8 +425,8 @@ class LogAnalyzerApi {
     try {
       // 验证输入参数
       const validatedConfig = FileFilterConfigSchema.parse(filterConfig);
-      const result = await invoke('save_file_filter_config', { filterConfig: validatedConfig });
-      return FileFilterConfigSchema.parse(result);
+      await invoke('save_file_filter_config', { filter_config: validatedConfig });
+      return validatedConfig;
     } catch (error) {
       throw createApiError('save_file_filter_config', error);
     }
