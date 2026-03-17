@@ -12,6 +12,7 @@
     "expand_full_text": "Expand Full Text",
     "collapse_text": "Collapse",
     "no_workspace_selected": "Please select a workspace first",
+    "no_results": "No matching log entries found",
     "remove_keyword": "Remove keyword {{keyword}}",
     "export_success": "Export successful",
     "export_failed": "Export failed"
@@ -19,7 +20,10 @@
   "workspaces": {
     "delete_confirm": "Confirm delete this workspace? This action cannot be undone.",
     "title": "Workspaces",
-    "subtitle": "Manage log workspaces and import sources"
+    "subtitle": "Manage log workspaces and import sources",
+    "filter_settings": "File Filter Settings",
+    "import_file": "Import File",
+    "import_folder": "Import Folder"
   },
   "keywords": {
     "invalid_regex": "Invalid regular expression"

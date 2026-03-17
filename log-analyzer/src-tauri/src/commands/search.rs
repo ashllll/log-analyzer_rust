@@ -931,13 +931,13 @@ impl PagedSearchCache {
     }
 }
 
-// 全局分页搜索缓存
-static PAGED_SEARCH_CACHE: std::sync::OnceLock<std::sync::Mutex<PagedSearchCache>> =
+// 全局分页搜索缓存（使用 parking_lot::Mutex 避免 poison 问题）
+static PAGED_SEARCH_CACHE: std::sync::OnceLock<parking_lot::Mutex<PagedSearchCache>> =
     std::sync::OnceLock::new();
 
-fn get_paged_search_cache() -> &'static std::sync::Mutex<PagedSearchCache> {
+fn get_paged_search_cache() -> &'static parking_lot::Mutex<PagedSearchCache> {
     PAGED_SEARCH_CACHE
-        .get_or_init(|| std::sync::Mutex::new(PagedSearchCache::new(MAX_CACHED_SEARCHES)))
+        .get_or_init(|| parking_lot::Mutex::new(PagedSearchCache::new(MAX_CACHED_SEARCHES)))
 }
 
 /// 分页搜索日志
@@ -973,7 +973,7 @@ pub async fn search_logs_paged(
     // 处理已有缓存的搜索（page_index >= 0 且有 searchId）
     if page_index >= 0 {
         if let Some(ref sid) = searchId {
-            let cache = get_paged_search_cache().lock().map_err(|e| e.to_string())?;
+            let cache = get_paged_search_cache().lock();
             if let Some(entry) = cache.get(sid) {
                 let page = page_index as usize;
                 let start = page * page_size;
@@ -1266,7 +1266,7 @@ pub async fn search_logs_paged(
 
     // 缓存结果
     {
-        let mut cache = get_paged_search_cache().lock().map_err(|e| e.to_string())?;
+        let mut cache = get_paged_search_cache().lock();
         cache.insert(PagedSearchCacheEntry {
             search_id: search_id_for_spawn.clone(),
             query: query.clone(),
@@ -1299,7 +1299,7 @@ pub async fn search_logs_paged(
 #[command]
 pub async fn cleanup_paged_search_cache(max_age_secs: Option<u64>) -> Result<usize, String> {
     let max_age = max_age_secs.unwrap_or(3600); // 默认1小时
-    let mut cache = get_paged_search_cache().lock().map_err(|e| e.to_string())?;
+    let mut cache = get_paged_search_cache().lock();
     let before_count = cache.entries.len();
     cache.cleanup_expired(max_age);
     let after_count = cache.entries.len();
@@ -1309,7 +1309,7 @@ pub async fn cleanup_paged_search_cache(max_age_secs: Option<u64>) -> Result<usi
 /// 获取分页搜索缓存统计
 #[command]
 pub async fn get_paged_search_cache_stats() -> Result<serde_json::Value, String> {
-    let cache = get_paged_search_cache().lock().map_err(|e| e.to_string())?;
+    let cache = get_paged_search_cache().lock();
     let total_entries = cache.entries.len();
     let total_results: usize = cache.entries.iter().map(|e| e.results.len()).sum();
 

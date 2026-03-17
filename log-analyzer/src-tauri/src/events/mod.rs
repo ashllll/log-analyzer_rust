@@ -327,9 +327,15 @@ impl EventBus {
                 Ok(subscriber_count)
             }
             Err(e) => {
-                error!(error = %e, "Failed to send event");
                 let mut stats = self.stats.lock();
                 stats.dropped_events += 1;
+                let dropped = stats.dropped_events;
+                drop(stats);
+                warn!(
+                    error = %e,
+                    total_dropped = dropped,
+                    "Event dropped: no active receivers"
+                );
                 Err(Box::new(e))
             }
         }

@@ -37,9 +37,12 @@ pub async fn save_config(app: AppHandle, config: AppConfig) -> Result<(), String
             fs::create_dir_all(&config_dir).map_err(|e| e.to_string())?;
         }
         let path = config_dir.join("config.json");
+        let tmp_path = config_dir.join("config.json.tmp");
         let json = serde_json::to_string_pretty(&config)
             .map_err(|e| format!("Failed to serialize config: {}", e))?;
-        fs::write(path, json).map_err(|e| e.to_string())?;
+        // 先写临时文件，再原子重命名，防止进程崩溃导致配置损坏
+        fs::write(&tmp_path, &json).map_err(|e| e.to_string())?;
+        fs::rename(&tmp_path, &path).map_err(|e| e.to_string())?;
         Ok(())
     })
     .await

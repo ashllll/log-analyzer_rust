@@ -329,172 +329,204 @@ impl SearchEngineManager {
         }
     }
 
-    /// Execute search query
+    /// Execute search query.
+    ///
+    /// 所有阻塞的 Tantivy 调用均在 `tokio::task::spawn_blocking` 线程池中执行，
+    /// 使得外层的 `tokio::time::timeout` 能够真正中断搜索（原来 async fn 内无
+    /// `.await` 点，tokio 超时无法在 poll 间隙取消）。
     async fn execute_search(
         &self,
         query: Box<dyn Query>,
         limit: usize,
         token: Option<CancellationToken>,
     ) -> SearchResult<SearchResults> {
-        let searcher = self.reader.searcher();
         let token = token.unwrap_or_default();
+        let reader = self.reader.clone();
+        let schema = self.schema.clone();
+        let token_clone = token.clone();
 
-        // Get total count with cancellation support
-        let count_collector =
-            super::boolean_query_processor::CancellableCollector::new(Count, token.clone());
-        let total_count = match searcher.search(&*query, &count_collector) {
-            Ok(count) => count,
-            Err(e) => {
-                if token.is_cancelled() {
-                    return Err(SearchError::QueryError("Search cancelled".to_string()));
+        let handle = tokio::task::spawn_blocking(move || -> SearchResult<SearchResults> {
+            let searcher = reader.searcher();
+
+            // Get total count with cancellation support
+            let count_collector = super::boolean_query_processor::CancellableCollector::new(
+                Count,
+                token_clone.clone(),
+            );
+            let total_count = match searcher.search(&*query, &count_collector) {
+                Ok(count) => count,
+                Err(e) => {
+                    if token_clone.is_cancelled() {
+                        return Err(SearchError::QueryError("Search cancelled".to_string()));
+                    }
+                    return Err(SearchError::IndexError(e.to_string()));
                 }
-                return Err(SearchError::IndexError(e.to_string()));
+            };
+
+            if token_clone.is_cancelled() {
+                return Err(SearchError::QueryError("Search cancelled".to_string()));
             }
-        };
 
-        // Get top documents with cancellation support
-        let top_docs_collector = TopDocs::with_limit(limit);
-        let cancellable_top_docs = super::boolean_query_processor::CancellableCollector::new(
-            top_docs_collector,
-            token.clone(),
-        );
+            // Get top documents with cancellation support
+            let top_docs_collector = TopDocs::with_limit(limit);
+            let cancellable_top_docs = super::boolean_query_processor::CancellableCollector::new(
+                top_docs_collector,
+                token_clone.clone(),
+            );
 
-        let top_docs = match searcher.search(&*query, &cancellable_top_docs) {
-            Ok(docs) => docs,
-            Err(e) => {
-                if token.is_cancelled() {
-                    return Err(SearchError::QueryError("Search cancelled".to_string()));
+            let top_docs = match searcher.search(&*query, &cancellable_top_docs) {
+                Ok(docs) => docs,
+                Err(e) => {
+                    if token_clone.is_cancelled() {
+                        return Err(SearchError::QueryError("Search cancelled".to_string()));
+                    }
+                    return Err(SearchError::IndexError(e.to_string()));
                 }
-                return Err(SearchError::IndexError(e.to_string()));
+            };
+
+            // Convert documents to LogEntry, capturing DocAddress for each
+            let mut entries = Vec::with_capacity(top_docs.len());
+            let mut doc_addresses = Vec::with_capacity(top_docs.len());
+
+            for (_score, doc_address) in top_docs {
+                let retrieved_doc = match searcher.doc(doc_address) {
+                    Ok(doc) => doc,
+                    Err(e) => return Err(SearchError::IndexError(e.to_string())),
+                };
+
+                if let Some(log_entry) = document_to_log_entry_inner(&schema, &retrieved_doc) {
+                    entries.push(log_entry);
+                    doc_addresses.push(doc_address);
+                }
             }
-        };
 
-        // Convert documents to LogEntry, capturing DocAddress for each
-        let mut entries = Vec::with_capacity(top_docs.len());
-        let mut doc_addresses = Vec::with_capacity(top_docs.len());
+            Ok(SearchResults {
+                entries,
+                doc_addresses,
+                total_count,
+                query_time_ms: 0, // Will be set by caller
+                was_timeout: false,
+            })
+        });
 
-        for (_score, doc_address) in top_docs {
-            let retrieved_doc = searcher.doc(doc_address)?;
-
-            if let Some(log_entry) = self.document_to_log_entry(&retrieved_doc) {
-                entries.push(log_entry);
-                doc_addresses.push(doc_address); // Store DocAddress for highlighting
-            }
-        }
-
-        Ok(SearchResults {
-            entries,
-            doc_addresses, // Include DocAddresses in results
-            total_count,
-            query_time_ms: 0, // Will be set by caller
-            was_timeout: false,
-        })
+        handle
+            .await
+            .map_err(|e| SearchError::QueryError(format!("Search task panicked: {}", e)))?
     }
 
-    /// Convert Tantivy document to LogEntry
-    ///
-    /// Returns None if any required field is missing, with detailed logging.
+    /// Convert Tantivy document to LogEntry（实例方法包装，供非 spawn_blocking 路径使用）
     fn document_to_log_entry(&self, doc: &TantivyDocument) -> Option<LogEntry> {
-        // Extract all fields with detailed error tracking
-        let content = match doc.get_first(self.schema.content) {
-            Some(v) => match v.as_str() {
-                Some(s) => s.to_string(),
-                None => {
-                    tracing::warn!("Document has non-string content field, skipping");
-                    return None;
-                }
-            },
-            None => {
-                tracing::warn!("Document missing required content field, skipping");
-                return None;
-            }
-        };
-
-        let timestamp_i64 = match doc.get_first(self.schema.timestamp) {
-            Some(v) => match v.as_i64() {
-                Some(n) => n,
-                None => {
-                    tracing::warn!("Document has non-i64 timestamp field, skipping");
-                    return None;
-                }
-            },
-            None => {
-                tracing::warn!("Document missing required timestamp field, skipping");
-                return None;
-            }
-        };
-        let timestamp = timestamp_i64.to_string();
-
-        let level = match doc.get_first(self.schema.level) {
-            Some(v) => match v.as_str() {
-                Some(s) => s.to_string(),
-                None => {
-                    tracing::warn!("Document has non-string level field, skipping");
-                    return None;
-                }
-            },
-            None => {
-                tracing::warn!("Document missing required level field, skipping");
-                return None;
-            }
-        };
-
-        let file_path = match doc.get_first(self.schema.file_path) {
-            Some(v) => match v.as_str() {
-                Some(s) => s.to_string(),
-                None => {
-                    tracing::warn!("Document has non-string file_path field, skipping");
-                    return None;
-                }
-            },
-            None => {
-                tracing::warn!("Document missing required file_path field, skipping");
-                return None;
-            }
-        };
-
-        let real_path = match doc.get_first(self.schema.real_path) {
-            Some(v) => match v.as_str() {
-                Some(s) => s.to_string(),
-                None => {
-                    tracing::warn!("Document has non-string real_path field, skipping");
-                    return None;
-                }
-            },
-            None => {
-                tracing::warn!("Document missing required real_path field, skipping");
-                return None;
-            }
-        };
-
-        let line_number = match doc.get_first(self.schema.line_number) {
-            Some(v) => match v.as_u64() {
-                Some(n) => n as usize,
-                None => {
-                    tracing::warn!("Document has non-u64 line_number field, skipping");
-                    return None;
-                }
-            },
-            None => {
-                tracing::warn!("Document missing required line_number field, skipping");
-                return None;
-            }
-        };
-
-        Some(LogEntry {
-            id: 0,
-            timestamp: timestamp.into(),
-            level: level.into(),
-            file: file_path.into(),
-            real_path: real_path.into(),
-            line: line_number,
-            content: content.into(),
-            tags: vec![],
-            match_details: None,
-            matched_keywords: None,
-        })
+        document_to_log_entry_inner(&self.schema, doc)
     }
+}
 
+/// 独立函数版的 document_to_log_entry，可在 spawn_blocking 闭包中使用（无 &self）。
+fn document_to_log_entry_inner(schema: &LogSchema, doc: &TantivyDocument) -> Option<LogEntry> {
+    document_to_log_entry_impl(schema, doc)
+}
+
+fn document_to_log_entry_impl(schema: &LogSchema, doc: &TantivyDocument) -> Option<LogEntry> {
+    // Extract all fields with detailed error tracking
+    let content = match doc.get_first(schema.content) {
+        Some(v) => match v.as_str() {
+            Some(s) => s.to_string(),
+            None => {
+                tracing::warn!("Document has non-string content field, skipping");
+                return None;
+            }
+        },
+        None => {
+            tracing::warn!("Document missing required content field, skipping");
+            return None;
+        }
+    };
+
+    let timestamp_i64 = match doc.get_first(schema.timestamp) {
+        Some(v) => match v.as_i64() {
+            Some(n) => n,
+            None => {
+                tracing::warn!("Document has non-i64 timestamp field, skipping");
+                return None;
+            }
+        },
+        None => {
+            tracing::warn!("Document missing required timestamp field, skipping");
+            return None;
+        }
+    };
+    let timestamp = timestamp_i64.to_string();
+
+    let level = match doc.get_first(schema.level) {
+        Some(v) => match v.as_str() {
+            Some(s) => s.to_string(),
+            None => {
+                tracing::warn!("Document has non-string level field, skipping");
+                return None;
+            }
+        },
+        None => {
+            tracing::warn!("Document missing required level field, skipping");
+            return None;
+        }
+    };
+
+    let file_path = match doc.get_first(schema.file_path) {
+        Some(v) => match v.as_str() {
+            Some(s) => s.to_string(),
+            None => {
+                tracing::warn!("Document has non-string file_path field, skipping");
+                return None;
+            }
+        },
+        None => {
+            tracing::warn!("Document missing required file_path field, skipping");
+            return None;
+        }
+    };
+
+    let real_path = match doc.get_first(schema.real_path) {
+        Some(v) => match v.as_str() {
+            Some(s) => s.to_string(),
+            None => {
+                tracing::warn!("Document has non-string real_path field, skipping");
+                return None;
+            }
+        },
+        None => {
+            tracing::warn!("Document missing required real_path field, skipping");
+            return None;
+        }
+    };
+
+    let line_number = match doc.get_first(schema.line_number) {
+        Some(v) => match v.as_u64() {
+            Some(n) => n as usize,
+            None => {
+                tracing::warn!("Document has non-u64 line_number field, skipping");
+                return None;
+            }
+        },
+        None => {
+            tracing::warn!("Document missing required line_number field, skipping");
+            return None;
+        }
+    };
+
+    Some(LogEntry {
+        id: 0,
+        timestamp: timestamp.into(),
+        level: level.into(),
+        file: file_path.into(),
+        real_path: real_path.into(),
+        line: line_number,
+        content: content.into(),
+        tags: vec![],
+        match_details: None,
+        matched_keywords: None,
+    })
+}
+
+impl SearchEngineManager {
     /// Add document to index
     pub fn add_document(&self, log_entry: &LogEntry) -> SearchResult<()> {
         let mut doc = TantivyDocument::default();
@@ -858,6 +890,33 @@ impl SearchEngineManager {
         );
 
         Ok(count)
+    }
+
+    /// 优雅关闭搜索引擎，确保 IndexWriter 在进程退出前完成 commit。
+    ///
+    /// `IndexWriter::commit()` 是同步阻塞调用，不能在 Drop 中直接执行，
+    /// 因此暴露此显式 close 方法，由 lib.rs shutdown hook 调用。
+    pub async fn close(&self) {
+        let writer = self.writer.clone();
+        let result = tokio::task::spawn_blocking(move || {
+            let mut w = writer.lock();
+            match w.commit() {
+                Ok(_) => {
+                    tracing::info!("SearchEngineManager: IndexWriter commit on close succeeded");
+                }
+                Err(e) => {
+                    tracing::error!(
+                        error = %e,
+                        "SearchEngineManager: IndexWriter commit on close failed"
+                    );
+                }
+            }
+        })
+        .await;
+
+        if let Err(e) = result {
+            tracing::error!(error = %e, "SearchEngineManager: close task panicked");
+        }
     }
 }
 
