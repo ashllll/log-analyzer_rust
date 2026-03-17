@@ -87,9 +87,33 @@ describe('Server Queries Integration Tests', () => {
     jest.clearAllMocks();
   });
 
+  // 完整配置模板（包含 AppConfigSchema 所需的所有必填字段）
+  const makeFullConfig = (overrides: Record<string, unknown> = {}) => ({
+    workspaces: [],
+    keyword_groups: [],
+    advanced_features: {
+      enable_filter_engine: true,
+      enable_regex_engine: true,
+      enable_time_partition: false,
+      enable_autocomplete: false,
+      regex_cache_size: 1000,
+      autocomplete_limit: 100,
+      time_partition_size_secs: 3600,
+    },
+    file_filter: {
+      enabled: false,
+      binary_detection_enabled: true,
+      mode: 'blacklist' as const,
+      filename_patterns: [],
+      allowed_extensions: [],
+      forbidden_extensions: [],
+    },
+    ...overrides,
+  });
+
   describe('useConfigQuery', () => {
     it('should load configuration and update zustand store', async () => {
-      const mockConfig = {
+      const mockConfig = makeFullConfig({
         workspaces: [
           {
             id: 'workspace-1',
@@ -108,8 +132,8 @@ describe('Server Queries Integration Tests', () => {
             patterns: [{ regex: 'test', comment: 'Test pattern' }],
             enabled: true
           }
-        ]
-      };
+        ],
+      });
 
       mockInvoke.mockResolvedValueOnce(mockConfig);
 
@@ -224,7 +248,7 @@ describe('Server Queries Integration Tests', () => {
 
   describe('React Query and Zustand Integration', () => {
     it('should maintain state consistency between React Query and Zustand', async () => {
-      const mockConfig = {
+      const mockConfig = makeFullConfig({
         workspaces: [
           {
             id: 'workspace-1',
@@ -235,8 +259,7 @@ describe('Server Queries Integration Tests', () => {
             files: 50
           }
         ],
-        keyword_groups: []
-      };
+      });
 
       mockInvoke.mockResolvedValueOnce(mockConfig);
 
@@ -262,15 +285,13 @@ describe('Server Queries Integration Tests', () => {
     });
 
     it('should handle refetching', async () => {
-      const mockConfig1 = {
+      const mockConfig1 = makeFullConfig({
         workspaces: [{ id: 'workspace-1', name: 'Test 1', path: '/test1', status: 'READY', size: '100MB', files: 50 }],
-        keyword_groups: []
-      };
+      });
 
-      const mockConfig2 = {
+      const mockConfig2 = makeFullConfig({
         workspaces: [{ id: 'workspace-2', name: 'Test 2', path: '/test2', status: 'READY', size: '200MB', files: 100 }],
-        keyword_groups: []
-      };
+      });
 
       mockInvoke
         .mockResolvedValueOnce(mockConfig1)
