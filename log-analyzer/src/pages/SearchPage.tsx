@@ -135,7 +135,7 @@ const LogRow = memo<LogRowProps>(({
       onClick={onClick} 
       style={{ transform: `translateY(${virtualStart}px)` }} 
       className={cn(
-        "absolute top-0 left-0 w-full grid grid-cols-[50px_160px_200px_1fr] px-3 py-1.5 border-b border-border-subtle cursor-pointer text-xs font-mono hover:bg-bg-hover/50 transition-colors duration-150 items-start",
+        "absolute top-0 left-0 w-full grid grid-cols-[50px_160px_150px_1fr] px-3 py-1.5 border-b border-border-subtle cursor-pointer text-xs font-mono hover:bg-bg-hover/50 transition-colors duration-150 items-start",
         isActive && "bg-primary/10 border-l-2 border-l-primary"
       )}
     >
@@ -153,8 +153,11 @@ const LogRow = memo<LogRowProps>(({
       <div className="text-text-muted whitespace-nowrap text-[11px]">
         {log.timestamp}
       </div>
-      <div className="text-text-muted break-all pr-2 text-[11px] leading-tight">
-        {log.file}:{log.line}
+      <div
+        className="text-text-muted truncate pr-2 text-[11px] leading-tight"
+        title={`${log.file}:${log.line}`}
+      >
+        {(log.file.split('/').pop() ?? log.file).split('\\').pop() ?? log.file}:{log.line}
       </div>
       <div className="text-text-main whitespace-pre-wrap break-all leading-tight pr-2">
         <HybridLogRenderer 
@@ -1091,7 +1094,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
         {/* 日志列表 */}
         <div ref={parentRef} className="flex-1 overflow-auto bg-bg-main scrollbar-thin">
           {/* 表头 - 优化视觉层次 */}
-          <div className="sticky top-0 z-10 grid grid-cols-[50px_160px_200px_1fr] px-3 py-1.5 bg-bg-elevated border-b border-border-base text-[10px] font-bold text-text-muted uppercase tracking-wider">
+          <div className="sticky top-0 z-10 grid grid-cols-[50px_160px_150px_1fr] px-3 py-1.5 bg-bg-elevated border-b border-border-base text-[10px] font-bold text-text-muted uppercase tracking-wider">
             <div>Lvl</div>
             <div>Time</div>
             <div>File</div>

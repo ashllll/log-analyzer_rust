@@ -1,8 +1,6 @@
 #!/bin/bash
-# Git Pre-Push Hook (Husky)
+# Git Pre-Push Hook (Husky v9)
 # 在推送前强制执行 CI 验证，确保远程 CI 不会失败
-
-. "$(dirname "$0")/_/husky.sh"
 
 set -e
 
