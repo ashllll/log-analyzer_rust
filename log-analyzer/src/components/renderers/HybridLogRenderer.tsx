@@ -1,6 +1,5 @@
 import React, { useMemo, memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { cn } from '../../utils/classNames';
 import { COLOR_STYLES } from '../../constants/colors';
 import type { HybridLogRendererProps } from '../../types/ui';
 import type { ColorKey, KeywordPattern } from '../../types/common';
@@ -178,17 +177,12 @@ const HybridLogRendererInner: React.FC<HybridLogRendererProps> = ({ text, query,
             const style = COLOR_STYLES[info.color as ColorKey]?.highlight || COLOR_STYLES['blue'].highlight;
             return (
               <span key={i} className="inline-flex items-baseline mx-[1px]">
-                <span className={cn("rounded-[2px] px-1 border font-bold break-all", style)}>
+                <span className={`rounded-[2px] px-1 border font-bold break-all ${style}`}>
                   {part}
                 </span>
                 {info.comment && (
                   <span
-                    className={cn(
-                      "ml-1 px-1.5 rounded-[2px] text-[10px] font-normal border select-none whitespace-nowrap transform -translate-y-[1px]",
-                      // 使用 COLOR_STYLES.badge（10%~15% 透明度）而非对 highlight 做字符串变换
-                      // 旧写法 style.replace("bg-","bg-opacity-10 bg-") 在 Tailwind 3 中会产生冲突类名
-                      COLOR_STYLES[info.color as ColorKey]?.badge ?? COLOR_STYLES['blue'].badge
-                    )}
+                    className={`ml-1 px-1.5 rounded-[2px] text-[10px] font-normal border select-none whitespace-nowrap transform -translate-y-[1px] ${COLOR_STYLES[info.color as ColorKey]?.badge ?? COLOR_STYLES['blue'].badge}`}
                   >
                     {info.comment}
                   </span>

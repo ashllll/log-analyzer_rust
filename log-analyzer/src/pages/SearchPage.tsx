@@ -366,7 +366,10 @@ const SearchPage: React.FC<SearchPageProps> = ({
         }
         return;
       }
-      
+
+      // 非流式搜索已全量加载结果，底部刷新会触发 invoke("search_logs") → onStart → scrollTop=0，造成循环滚动
+      if (!isStreamSearchEnabled) return;
+
       if (isRefreshingRef.current) return;
       
       if (isNearBottomRef.current && !isNearBottomRef.current(scrollTop, clientHeight, scrollHeight)) return;
