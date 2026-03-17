@@ -88,4 +88,12 @@ export default {
     },
   },
   plugins: [],
+  // 防止生产构建 PurgeCSS 清除动态颜色类（COLOR_STYLES 通过对象查找动态使用）
+  safelist: [
+    // highlight: bg-{color}-500/20 text-{color}-300 border-{color}-500/30
+    // badge:     bg-{color}-500/15 text-{color}-400 border-{color}-500/20
+    { pattern: /^bg-(blue|green|red|orange|purple)-\d+\/(10|15|20|30)$/ },
+    { pattern: /^text-(blue|green|red|orange|purple)-\d+$/ },
+    { pattern: /^border-(blue|green|red|orange|purple)-\d+\/(10|15|20|30)$/ },
+  ],
 }
