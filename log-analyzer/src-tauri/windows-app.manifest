@@ -1,18 +1,34 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <!--
   Windows 应用程序清单
-  声明此应用为长路径感知（longPathAware）程序。
 
-  作用：
-    当系统管理员在组策略或注册表中启用长路径支持后：
+  作用 1 — Common Controls v6（必须保留，否则应用崩溃）：
+    Tauri 使用 TaskDialogIndirect() 等函数，该函数仅存在于 comctl32.dll v6。
+    若缺少下方 <dependency> 声明，Windows 加载器启动时会选择 v5（旧版本），
+    导致"无法定位程序输入点 TaskDialogIndirect"运行时崩溃。
+
+  作用 2 — 长路径感知（longPathAware）：
+    当系统管理员通过组策略或注册表启用长路径支持后：
       HKLM\SYSTEM\CurrentControlSet\Control\FileSystem\LongPathsEnabled = 1
-    本清单中的 <longPathAware>true</longPathAware> 声明使该设置对本应用生效，
-    将路径上限从 MAX_PATH（260 字节）提升至 32,767 字符。
-
-  若未声明该标志，系统长路径设置对本应用无效，导入含长文件名的压缩包时
-  仍会触发 ERROR_PATH_NOT_FOUND（错误码 3）。
+    本清单中的 <longPathAware>true</longPathAware> 使该设置对本应用生效，
+    将路径上限从 MAX_PATH（260 字节）提升至 32,767 字符（与代码层 UNC 前缀形成双重保护）。
 -->
 <assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
+
+  <!-- ★ 必须保留：声明依赖 Common Controls v6，保证 comctl32.dll v6 被加载 -->
+  <dependency>
+    <dependentAssembly>
+      <assemblyIdentity
+        type="win32"
+        name="Microsoft.Windows.Common-Controls"
+        version="6.0.0.0"
+        processorArchitecture="*"
+        publicKeyToken="6595b64144ccf1df"
+        language="*"
+      />
+    </dependentAssembly>
+  </dependency>
+
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
     <security>
       <requestedPrivileges>
@@ -32,3 +48,4 @@
     </application>
   </compatibility>
 </assembly>
+
