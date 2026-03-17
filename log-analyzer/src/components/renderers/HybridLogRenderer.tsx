@@ -185,7 +185,9 @@ const HybridLogRendererInner: React.FC<HybridLogRendererProps> = ({ text, query,
                   <span
                     className={cn(
                       "ml-1 px-1.5 rounded-[2px] text-[10px] font-normal border select-none whitespace-nowrap transform -translate-y-[1px]",
-                      style.replace("bg-", "bg-opacity-10 bg-")
+                      // 使用 COLOR_STYLES.badge（10%~15% 透明度）而非对 highlight 做字符串变换
+                      // 旧写法 style.replace("bg-","bg-opacity-10 bg-") 在 Tailwind 3 中会产生冲突类名
+                      COLOR_STYLES[info.color as ColorKey]?.badge ?? COLOR_STYLES['blue'].badge
                     )}
                   >
                     {info.comment}
