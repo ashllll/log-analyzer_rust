@@ -13,6 +13,8 @@
     "collapse_text": "Collapse",
     "no_workspace_selected": "Please select a workspace first",
     "no_results": "No matching log entries found",
+    "fetch_next_failed": "Failed to load more data, please try again",
+    "error": "Search failed: {{message}}",
     "remove_keyword": "Remove keyword {{keyword}}",
     "export_success": "Export successful",
     "export_failed": "Export failed"

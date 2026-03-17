@@ -305,3 +305,68 @@ export const LogEntrySchema = z.object({
  * LogEntry 类型
  */
 export type LogEntry = z.infer<typeof LogEntrySchema>;
+
+// ============================================================================
+// 工作区加载响应
+// ============================================================================
+
+/**
+ * 工作区加载响应 Schema（对应 api.ts WorkspaceLoadResponse）
+ */
+export const WorkspaceLoadResponseSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  path: z.string(),
+  status: z.enum(['READY', 'PROCESSING', 'OFFLINE']),
+  fileCount: z.number().int().nonnegative().optional(),
+  totalSize: z.number().nonnegative().optional(),
+});
+
+/**
+ * 工作区加载响应类型
+ */
+export type WorkspaceLoadResponseValidated = z.infer<typeof WorkspaceLoadResponseSchema>;
+
+// ============================================================================
+// 应用配置
+// ============================================================================
+
+/**
+ * 高级特性配置 Schema
+ */
+const AdvancedFeaturesSchema = z.object({
+  enable_filter_engine: z.boolean(),
+  enable_regex_engine: z.boolean(),
+  enable_time_partition: z.boolean(),
+  enable_autocomplete: z.boolean(),
+  regex_cache_size: z.number().int().nonnegative(),
+  autocomplete_limit: z.number().int().nonnegative(),
+  time_partition_size_secs: z.number().nonnegative(),
+});
+
+/**
+ * 文件过滤器内嵌配置 Schema（AppConfig 内部）
+ */
+const AppConfigFileFilterSchema = z.object({
+  enabled: z.boolean(),
+  binary_detection_enabled: z.boolean(),
+  mode: z.enum(['whitelist', 'blacklist']),
+  filename_patterns: z.array(z.string()),
+  allowed_extensions: z.array(z.string()),
+  forbidden_extensions: z.array(z.string()),
+});
+
+/**
+ * 应用配置 Schema（对应 api.ts AppConfig）
+ */
+export const AppConfigSchema = z.object({
+  keyword_groups: z.array(z.any()),  // KeywordGroup — 由 keywordStore 类型管理
+  workspaces: z.array(z.any()),      // Workspace — 由 workspaceStore 类型管理
+  advanced_features: AdvancedFeaturesSchema,
+  file_filter: AppConfigFileFilterSchema,
+});
+
+/**
+ * 应用配置类型（Zod 验证后）
+ */
+export type AppConfigValidated = z.infer<typeof AppConfigSchema>;

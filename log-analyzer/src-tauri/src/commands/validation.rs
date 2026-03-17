@@ -100,8 +100,10 @@ pub async fn batch_validate_workspace_configs(
 pub async fn validate_workspace_id_format(workspace_id: String) -> Result<bool, String> {
     use once_cell::sync::Lazy;
 
-    static WORKSPACE_ID_REGEX: Lazy<regex::Regex> =
-        Lazy::new(|| regex::Regex::new(r"^[a-zA-Z0-9_-]+$").unwrap());
+    static WORKSPACE_ID_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
+        regex::Regex::new(r"^[a-zA-Z0-9_-]+$")
+            .expect("工作区 ID 正则表达式字面量无效：此错误表示代码存在 bug，请检查正则语法")
+    });
 
     if workspace_id.is_empty() || workspace_id.len() > 100 {
         return Ok(false);

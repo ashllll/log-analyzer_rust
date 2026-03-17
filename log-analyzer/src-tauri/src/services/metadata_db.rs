@@ -8,6 +8,7 @@
 
 use dashmap::DashMap;
 use std::sync::Arc;
+use tracing::warn;
 
 /// Metadata database for path shortening mappings
 ///
@@ -159,7 +160,14 @@ impl MetadataDB {
 
         for entry in self.mappings.iter() {
             if entry.key().starts_with(&prefix) {
-                let original = entry.key().strip_prefix(&prefix).unwrap_or("");
+                let original = entry.key().strip_prefix(&prefix).unwrap_or_else(|| {
+                    warn!(
+                        key = entry.key().as_str(),
+                        prefix = %prefix,
+                        "strip_prefix 失败：key 不以预期前缀开头，返回原始 key"
+                    );
+                    entry.key().as_str()
+                });
                 mappings.push((entry.value().clone(), original.to_string()));
             }
         }
