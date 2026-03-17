@@ -115,6 +115,54 @@ pub fn normalize_path_separator(path: &str) -> String {
     }
 }
 
+/// 为 Windows 长路径场景添加 UNC 前缀（`\\?\`）
+///
+/// Windows 默认路径上限为 260 字节（MAX_PATH）。超过该上限时，
+/// 系统调用返回 `ERROR_PATH_NOT_FOUND`（错误码 3），导致文件提取失败。
+/// 本函数在路径超过 260 字节时自动追加 `\\?\` 前缀，
+/// 将有效上限提升至 32,767 个字符。
+///
+/// 规则：
+/// - 非 Windows：原样返回，无任何修改
+/// - Windows，路径 ≤ 260 字节：原样返回
+/// - Windows，已有 `\\?\` 前缀：原样返回（防止双重前缀）
+/// - Windows，路径 > 260 字节：使用 `dunce::simplified` 规范化后追加 `\\?\`
+///
+/// # 参数
+///
+/// - `path` - 待处理的路径（通常是提取目标目录 `target_dir`）
+///
+/// # 返回值
+///
+/// - Windows 超长路径：`\\?\{simplified_path}`
+/// - 其他情况：原始路径
+///
+/// # 示例
+///
+/// ```ignore
+/// // Windows，路径 > 260 字节时
+/// let long = Path::new(r"C:\Users\...\deeply\nested\...\target");
+/// let result = apply_unc_prefix_if_needed(long);
+/// // result: r"\\?\C:\Users\...\deeply\nested\...\target"
+/// ```
+pub fn apply_unc_prefix_if_needed(path: &Path) -> PathBuf {
+    #[cfg(target_os = "windows")]
+    {
+        let path_str = path.to_string_lossy();
+        // 已含 UNC 前缀或路径不超限，直接返回
+        if path_str.starts_with(r"\\?\") || path_str.len() <= 260 {
+            return path.to_path_buf();
+        }
+        // 使用 dunce 规范化（消除多余的 . 和 ..）后追加前缀
+        let simplified = dunce::simplified(path);
+        PathBuf::from(format!(r"\\?\{}", simplified.display()))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        path.to_path_buf()
+    }
+}
+
 /// 安全的路径拼接
 ///
 /// 防止路径穿越攻击，移除 `..` 和驱动器符号。
@@ -152,4 +200,80 @@ pub fn safe_path_join(base: &Path, component: &str) -> PathBuf {
     }
 
     safe_path
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// apply_unc_prefix_if_needed：非 Windows 平台应原样返回
+    #[test]
+    #[cfg(not(target_os = "windows"))]
+    fn test_unc_prefix_noop_on_non_windows() {
+        let path =
+            Path::new("/home/user/some/very/long/path/that/exceeds/260/characters/definitely");
+        let result = apply_unc_prefix_if_needed(path);
+        assert_eq!(result, path.to_path_buf(), "非 Windows 不应修改路径");
+    }
+
+    /// apply_unc_prefix_if_needed：Windows 上短路径不应追加前缀
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn test_unc_prefix_short_path_unchanged() {
+        let path = Path::new(r"C:\Users\user\logs\target");
+        let result = apply_unc_prefix_if_needed(path);
+        // 路径 <= 260 字节，不应追加前缀
+        let result_str = result.to_string_lossy();
+        assert!(
+            !result_str.starts_with(r"\\?\"),
+            "短路径不应追加 UNC 前缀，实际：{}",
+            result_str
+        );
+    }
+
+    /// apply_unc_prefix_if_needed：Windows 上已有 UNC 前缀不应重复追加
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn test_unc_prefix_no_double_prefix() {
+        let path = Path::new(r"\\?\C:\Users\user\logs");
+        let result = apply_unc_prefix_if_needed(path);
+        let result_str = result.to_string_lossy();
+        assert_eq!(
+            result_str.matches(r"\\?\").count(),
+            1,
+            "不应出现双重 UNC 前缀，实际：{}",
+            result_str
+        );
+    }
+
+    /// apply_unc_prefix_if_needed：Windows 上 > 260 字节的路径应追加前缀
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn test_unc_prefix_long_path_gets_prefix() {
+        // 构造一个超过 260 字节的路径
+        let long_segment = "a".repeat(50);
+        let path_str = format!(
+            r"C:\Users\user\{}\{}\{}\{}\{}\{}",
+            long_segment, long_segment, long_segment, long_segment, long_segment, long_segment
+        );
+        assert!(path_str.len() > 260, "前置条件：路径应超过 260 字节");
+
+        let path = Path::new(&path_str);
+        let result = apply_unc_prefix_if_needed(path);
+        let result_str = result.to_string_lossy();
+
+        assert!(
+            result_str.starts_with(r"\\?\"),
+            "超过 260 字节的路径应追加 UNC 前缀，实际：{}",
+            result_str
+        );
+    }
+
+    /// safe_path_join 防路径穿越基础测试
+    #[test]
+    fn test_safe_path_join_prevents_traversal() {
+        let base = Path::new("/base");
+        let result = safe_path_join(base, "../evil");
+        assert_eq!(result, Path::new("/base/evil"), ".. 应被过滤");
+    }
 }

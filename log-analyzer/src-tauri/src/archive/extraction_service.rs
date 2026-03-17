@@ -147,6 +147,12 @@ impl ArchiveExtractionService {
         source: &Path,
         target_dir: &Path,
     ) -> AppResult<ExtractionSummary> {
+        // Windows 长路径保护：当 target_dir 总字节数超过 260 时自动追加 \\?\ UNC 前缀，
+        // 将路径上限提升至 32,767 字符，防止提取含长文件名的条目时出现
+        // ERROR_PATH_NOT_FOUND（错误码 3）。此处覆盖函数内所有后续路径使用点。
+        let target_dir_resolved = crate::utils::path::apply_unc_prefix_if_needed(target_dir);
+        let target_dir = target_dir_resolved.as_path();
+
         info!(
             "Starting secure archive extraction: {} -> {}",
             source.display(),

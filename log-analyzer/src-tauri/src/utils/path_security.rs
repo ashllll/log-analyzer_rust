@@ -4,6 +4,7 @@
 //! 支持Windows保留字符过滤、保留文件名检测、路径长度限制等安全措施。
 
 use std::path::Path;
+use tracing::warn;
 use unicode_normalization::UnicodeNormalization;
 
 /// 路径组件验证结果
@@ -313,7 +314,21 @@ fn truncate_long_component(component: &str, max_len: usize) -> String {
     }
 
     // 组合结果
-    format!("{}{}{}", truncated_name, hash_suffix, ext)
+    let result = format!("{}{}{}", truncated_name, hash_suffix, ext);
+
+    // 截断日志：通知运维/开发者文件名已被修改，方便追溯
+    // 中文场景：每个汉字占 3 字节，85 汉字 = 255 字节触发此分支
+    warn!(
+        original_name = %component,
+        truncated_name = %result,
+        original_bytes = component.len(),
+        truncated_bytes = result.len(),
+        max_bytes = max_len,
+        "文件名超过系统路径组件长度上限（{} 字节），已截断并追加哈希后缀以保证唯一性",
+        max_len
+    );
+
+    result
 }
 
 /// 检查路径深度
@@ -470,5 +485,85 @@ mod tests {
             result,
             PathValidationResult::Valid(_) | PathValidationResult::RequiresSanitization(_, _)
         ));
+    }
+
+    // --- 长路径系统性修复测试 ---
+
+    /// 中文文件名：86 个汉字 = 258 字节，超过 255 字节上限应被截断
+    #[test]
+    fn test_truncate_chinese_filename_86_chars() {
+        // 每个汉字占 3 字节 UTF-8，86 × 3 = 258 字节 > 255
+        let chinese_name = "中".repeat(86);
+        assert_eq!(chinese_name.len(), 258, "前置条件：86 汉字 = 258 字节");
+
+        let result = truncate_long_component(&chinese_name, 255);
+
+        assert!(result.len() <= 255, "截断后仍超限：{} 字节", result.len());
+        assert_ne!(result, chinese_name, "超限文件名应被截断");
+        // 截断结果应含哈希后缀（格式：_{8位十六进制}）
+        assert!(result.contains('_'), "截断后应含哈希后缀以保证唯一性");
+    }
+
+    /// 中文文件名带扩展名：截断后扩展名应保留
+    #[test]
+    fn test_truncate_chinese_filename_with_extension() {
+        let long_chinese = format!("{}.log", "日".repeat(86));
+        assert!(long_chinese.len() > 255);
+
+        let result = truncate_long_component(&long_chinese, 255);
+
+        assert!(result.len() <= 255, "截断后仍超限：{} 字节", result.len());
+        assert!(
+            result.ends_with(".log"),
+            "截断后扩展名应保留，实际为：{}",
+            result
+        );
+    }
+
+    /// 85 个汉字 = 255 字节，恰好在上限内，不应截断
+    #[test]
+    fn test_chinese_85_chars_not_truncated() {
+        let chinese_name = "中".repeat(85);
+        assert_eq!(chinese_name.len(), 255, "前置条件：85 汉字 = 255 字节");
+
+        // 不应触发截断（== max_len，无需截断）
+        let result = truncate_long_component(&chinese_name, 255);
+        assert_eq!(result, chinese_name, "255 字节不超限，不应截断");
+    }
+
+    /// 归档路径验证：含中文长文件名的完整路径应能成功处理
+    #[test]
+    fn test_archive_path_with_long_chinese_component() {
+        let config = SecurityConfig::default();
+        // 构造包含超长中文组件的归档内部路径
+        let long_component = "中".repeat(90); // 270 字节，超限
+        let archive_path = format!("subdir/{}.log", long_component);
+
+        let result = validate_and_sanitize_archive_path(&archive_path, &config);
+
+        // 应返回 RequiresSanitization（不是 Unsafe），截断后路径合法
+        match result {
+            PathValidationResult::RequiresSanitization(original, sanitized) => {
+                assert_eq!(original, archive_path);
+                // 验证各组件长度合规
+                for component in sanitized.split('/') {
+                    assert!(
+                        component.len() <= 255,
+                        "组件仍超限：{} ({} 字节)",
+                        component,
+                        component.len()
+                    );
+                }
+            }
+            PathValidationResult::Valid(sanitized) => {
+                // 也可能直接为 Valid（若截断后与原始路径规范化结果一致）
+                for component in sanitized.split('/') {
+                    assert!(component.len() <= 255);
+                }
+            }
+            PathValidationResult::Unsafe(reason) => {
+                panic!("含长中文文件名的路径不应被判为 Unsafe，原因：{}", reason);
+            }
+        }
     }
 }
