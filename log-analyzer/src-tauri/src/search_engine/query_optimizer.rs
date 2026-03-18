@@ -228,11 +228,8 @@ impl QueryOptimizer {
 
         // Apply suggestions in order of estimated improvement
         let mut sorted_suggestions = suggestions.to_vec();
-        sorted_suggestions.sort_by(|a, b| {
-            b.estimated_improvement
-                .partial_cmp(&a.estimated_improvement)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        sorted_suggestions
+            .sort_by(|a, b| b.estimated_improvement.total_cmp(&a.estimated_improvement));
 
         for suggestion in sorted_suggestions.iter().take(3) {
             // Apply top 3 suggestions
@@ -399,11 +396,9 @@ impl QueryOptimizer {
 
         // Sort by priority and estimated improvement
         recommendations.sort_by(|a, b| {
-            b.priority.cmp(&a.priority).then(
-                b.estimated_improvement
-                    .partial_cmp(&a.estimated_improvement)
-                    .unwrap_or(std::cmp::Ordering::Equal),
-            )
+            b.priority
+                .cmp(&a.priority)
+                .then(b.estimated_improvement.total_cmp(&a.estimated_improvement))
         });
 
         // Limit to top 10 recommendations

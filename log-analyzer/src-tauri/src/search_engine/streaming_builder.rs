@@ -120,8 +120,13 @@ impl StreamingIndexBuilder {
             progress.elapsed_time = Duration::ZERO;
         }
 
-        // Clear existing index
-        self.search_manager.clear_index()?;
+        // Clear existing index（spawn_blocking 隔离同步 Mutex，避免阻塞 tokio worker）
+        {
+            let m = Arc::clone(&self.search_manager);
+            tokio::task::spawn_blocking(move || m.clear_index())
+                .await
+                .map_err(|e| SearchError::IndexError(format!("spawn_blocking panicked: {e}")))??;
+        }
 
         let mut stats = IndexingStats::default();
         let lines_processed = Arc::new(AtomicU64::new(0));
@@ -148,15 +153,25 @@ impl StreamingIndexBuilder {
 
             stats.merge(batch_stats);
 
-            // Commit periodically
+            // Commit periodically（spawn_blocking 隔离同步 Mutex + 磁盘 IO，避免阻塞 tokio worker）
             if batch_idx % 10 == 0 {
-                self.search_manager.commit()?;
+                let m = Arc::clone(&self.search_manager);
+                tokio::task::spawn_blocking(move || m.commit())
+                    .await
+                    .map_err(|e| {
+                        SearchError::IndexError(format!("spawn_blocking panicked: {e}"))
+                    })??;
                 debug!(batch = batch_idx, "Committed batch to index");
             }
         }
 
-        // Final commit
-        self.search_manager.commit()?;
+        // Final commit（spawn_blocking 隔离同步 Mutex + 磁盘 IO，避免阻塞 tokio worker）
+        {
+            let m = Arc::clone(&self.search_manager);
+            tokio::task::spawn_blocking(move || m.commit())
+                .await
+                .map_err(|e| SearchError::IndexError(format!("spawn_blocking panicked: {e}")))??;
+        }
 
         stats.total_time = start_time.elapsed();
 
@@ -222,20 +237,32 @@ impl StreamingIndexBuilder {
                 break;
             }
 
-            // Add documents to index
-            for log_entry in &batch.entries {
-                if let Err(e) = search_manager.add_document(log_entry) {
-                    error!(error = %e, "Failed to add document to index");
-                    stats.error_count += 1;
-                }
-            }
+            // 将整批次 add_document 移入 spawn_blocking，避免在 async 循环中逐条持有 Mutex
+            let entries_len = batch.entries.len() as u64;
+            let batch_file_path = batch.file_path.clone();
+            let entries = batch.entries;
+            let manager_for_batch = Arc::clone(&search_manager);
 
-            stats.lines_processed += batch.entries.len() as u64;
-            lines_processed.fetch_add(batch.entries.len() as u64, Ordering::Relaxed);
+            let batch_errors = tokio::task::spawn_blocking(move || -> u64 {
+                let mut errors = 0u64;
+                for entry in &entries {
+                    if let Err(e) = manager_for_batch.add_document(entry) {
+                        error!(error = %e, "Failed to add document to index");
+                        errors += 1;
+                    }
+                }
+                errors
+            })
+            .await
+            .map_err(|e| SearchError::IndexError(format!("spawn_blocking panicked: {e}")))?;
+
+            stats.error_count += batch_errors;
+            stats.lines_processed += entries_len;
+            lines_processed.fetch_add(entries_len, Ordering::Relaxed);
 
             // Update progress
             if let Some(callback) = progress_callback {
-                self.update_progress(callback, &batch.file_path);
+                self.update_progress(callback, &batch_file_path);
             }
         }
 

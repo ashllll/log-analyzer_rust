@@ -132,7 +132,7 @@ export class SearchQueryBuilder {
       operator: options?.operator ?? 'AND',
       source: options?.source ?? 'user',
       presetGroupId: options?.presetGroupId,
-      isRegex: options?.isRegex ?? false,
+      isRegex: options?.isRegex ?? true,
       priority: options?.priority ?? 0,
       enabled: true,
       caseSensitive: options?.caseSensitive ?? false

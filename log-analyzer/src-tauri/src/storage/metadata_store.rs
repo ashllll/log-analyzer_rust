@@ -372,15 +372,17 @@ impl MetadataStore {
     ///
     /// The auto-generated file ID
     pub async fn insert_file(&self, metadata: &FileMetadata) -> Result<i64> {
-        // 老王备注：使用 INSERT OR IGNORE 处理 UNIQUE 约束冲突
-        // 如果 sha256_hash 已存在，跳过插入（CAS 去重设计）
-        // 然后查询已存在的记录 ID
-        sqlx::query(
+        // 使用单条原子 UPSERT + RETURNING，消除 INSERT OR IGNORE + SELECT 的 TOCTOU 竞态：
+        // ON CONFLICT DO UPDATE SET sha256_hash = sha256_hash 是空操作，
+        // 仅为触发 RETURNING 子句返回冲突行的 id（SQLite 3.35+）
+        let id = sqlx::query_as::<_, (i64,)>(
             r#"
-            INSERT OR IGNORE INTO files (
+            INSERT INTO files (
                 sha256_hash, virtual_path, original_name, size,
                 modified_time, mime_type, parent_archive_id, depth_level, created_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(sha256_hash) DO UPDATE SET sha256_hash = sha256_hash
+            RETURNING id
             "#,
         )
         .bind(&metadata.sha256_hash)
@@ -392,17 +394,10 @@ impl MetadataStore {
         .bind(metadata.parent_archive_id)
         .bind(metadata.depth_level)
         .bind(chrono::Utc::now().timestamp())
-        .execute(&self.pool)
+        .fetch_one(&self.pool)
         .await
-        .map_err(|e| AppError::database_error(format!("Failed to insert file: {}", e)))?;
-
-        // 老王备注：查询插入的记录或已存在的记录 ID
-        let id = sqlx::query_as::<_, (i64,)>("SELECT id FROM files WHERE sha256_hash = ? LIMIT 1")
-            .bind(&metadata.sha256_hash)
-            .fetch_one(&self.pool)
-            .await
-            .map_err(|e| AppError::database_error(format!("Failed to fetch file ID: {}", e)))?
-            .0;
+        .map_err(|e| AppError::database_error(format!("Failed to upsert file: {}", e)))?
+        .0;
 
         debug!(
             id = id,
@@ -416,13 +411,15 @@ impl MetadataStore {
 
     /// Insert archive metadata
     pub async fn insert_archive(&self, metadata: &ArchiveMetadata) -> Result<i64> {
-        // 老王备注：使用 INSERT OR IGNORE 处理 UNIQUE 约束冲突（CAS 去重设计）
-        sqlx::query(
+        // 使用单条原子 UPSERT + RETURNING，消除 TOCTOU 竞态（同 insert_file）
+        let id = sqlx::query_as::<_, (i64,)>(
             r#"
-            INSERT OR IGNORE INTO archives (
+            INSERT INTO archives (
                 sha256_hash, virtual_path, original_name, archive_type,
                 parent_archive_id, depth_level, extraction_status, created_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(sha256_hash) DO UPDATE SET sha256_hash = sha256_hash
+            RETURNING id
             "#,
         )
         .bind(&metadata.sha256_hash)
@@ -433,20 +430,10 @@ impl MetadataStore {
         .bind(metadata.depth_level)
         .bind(&metadata.extraction_status)
         .bind(chrono::Utc::now().timestamp())
-        .execute(&self.pool)
+        .fetch_one(&self.pool)
         .await
-        .map_err(|e| AppError::database_error(format!("Failed to insert archive: {}", e)))?;
-
-        // 老王备注：查询插入的记录或已存在的记录 ID
-        let id =
-            sqlx::query_as::<_, (i64,)>("SELECT id FROM archives WHERE sha256_hash = ? LIMIT 1")
-                .bind(&metadata.sha256_hash)
-                .fetch_one(&self.pool)
-                .await
-                .map_err(|e| {
-                    AppError::database_error(format!("Failed to fetch archive ID: {}", e))
-                })?
-                .0;
+        .map_err(|e| AppError::database_error(format!("Failed to upsert archive: {}", e)))?
+        .0;
 
         debug!(
             id = id,
@@ -660,13 +647,15 @@ impl MetadataStore {
         let mut ids = Vec::with_capacity(files.len());
 
         for metadata in files {
-            // 老王备注：使用 INSERT OR IGNORE 处理 UNIQUE 约束冲突（批量插入版本）
-            sqlx::query(
+            // 原子 UPSERT + RETURNING，消除批量插入中的 TOCTOU 竞态
+            let id = sqlx::query_as::<_, (i64,)>(
                 r#"
-                INSERT OR IGNORE INTO files (
+                INSERT INTO files (
                     sha256_hash, virtual_path, original_name, size,
                     modified_time, mime_type, parent_archive_id, depth_level, created_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(sha256_hash) DO UPDATE SET sha256_hash = sha256_hash
+                RETURNING id
                 "#,
             )
             .bind(&metadata.sha256_hash)
@@ -678,20 +667,10 @@ impl MetadataStore {
             .bind(metadata.parent_archive_id)
             .bind(metadata.depth_level)
             .bind(chrono::Utc::now().timestamp())
-            .execute(&mut *tx)
+            .fetch_one(&mut *tx)
             .await
-            .map_err(|e| AppError::database_error(format!("Failed to insert file: {}", e)))?;
-
-            // 老王备注：查询插入的记录或已存在的记录 ID
-            let id =
-                sqlx::query_as::<_, (i64,)>("SELECT id FROM files WHERE sha256_hash = ? LIMIT 1")
-                    .bind(&metadata.sha256_hash)
-                    .fetch_one(&mut *tx)
-                    .await
-                    .map_err(|e| {
-                        AppError::database_error(format!("Failed to fetch file ID: {}", e))
-                    })?
-                    .0;
+            .map_err(|e| AppError::database_error(format!("Failed to upsert file: {}", e)))?
+            .0;
 
             ids.push(id);
         }
@@ -776,13 +755,15 @@ impl MetadataStore {
         tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
         metadata: &FileMetadata,
     ) -> Result<i64> {
-        // 老王备注：使用 INSERT OR IGNORE 处理 UNIQUE 约束冲突（事务版本）
-        sqlx::query(
+        // 原子 UPSERT + RETURNING，消除事务内的 TOCTOU 竞态（同 insert_file）
+        let id = sqlx::query_as::<_, (i64,)>(
             r#"
-            INSERT OR IGNORE INTO files (
+            INSERT INTO files (
                 sha256_hash, virtual_path, original_name, size,
                 modified_time, mime_type, parent_archive_id, depth_level, created_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(sha256_hash) DO UPDATE SET sha256_hash = sha256_hash
+            RETURNING id
             "#,
         )
         .bind(&metadata.sha256_hash)
@@ -794,21 +775,12 @@ impl MetadataStore {
         .bind(metadata.parent_archive_id)
         .bind(metadata.depth_level)
         .bind(chrono::Utc::now().timestamp())
-        .execute(&mut **tx)
+        .fetch_one(&mut **tx)
         .await
         .map_err(|e| {
-            AppError::database_error(format!("Failed to insert file in transaction: {}", e))
-        })?;
-
-        // 老王备注：查询插入的记录或已存在的记录 ID
-        let id = sqlx::query_as::<_, (i64,)>("SELECT id FROM files WHERE sha256_hash = ? LIMIT 1")
-            .bind(&metadata.sha256_hash)
-            .fetch_one(&mut **tx)
-            .await
-            .map_err(|e| {
-                AppError::database_error(format!("Failed to fetch file ID in transaction: {}", e))
-            })?
-            .0;
+            AppError::database_error(format!("Failed to upsert file in transaction: {}", e))
+        })?
+        .0;
 
         debug!(
             id = id,
@@ -838,13 +810,15 @@ impl MetadataStore {
         tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
         metadata: &ArchiveMetadata,
     ) -> Result<i64> {
-        // 老王备注：使用 INSERT OR IGNORE 处理 UNIQUE 约束冲突（事务版本）
-        sqlx::query(
+        // 原子 UPSERT + RETURNING，消除事务内的 TOCTOU 竞态（同 insert_archive）
+        let id = sqlx::query_as::<_, (i64,)>(
             r#"
-            INSERT OR IGNORE INTO archives (
+            INSERT INTO archives (
                 sha256_hash, virtual_path, original_name, archive_type,
                 parent_archive_id, depth_level, extraction_status, created_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(sha256_hash) DO UPDATE SET sha256_hash = sha256_hash
+            RETURNING id
             "#,
         )
         .bind(&metadata.sha256_hash)
@@ -855,25 +829,12 @@ impl MetadataStore {
         .bind(metadata.depth_level)
         .bind(&metadata.extraction_status)
         .bind(chrono::Utc::now().timestamp())
-        .execute(&mut **tx)
+        .fetch_one(&mut **tx)
         .await
         .map_err(|e| {
-            AppError::database_error(format!("Failed to insert archive in transaction: {}", e))
-        })?;
-
-        // 老王备注：查询插入的记录或已存在的记录 ID
-        let id =
-            sqlx::query_as::<_, (i64,)>("SELECT id FROM archives WHERE sha256_hash = ? LIMIT 1")
-                .bind(&metadata.sha256_hash)
-                .fetch_one(&mut **tx)
-                .await
-                .map_err(|e| {
-                    AppError::database_error(format!(
-                        "Failed to fetch archive ID in transaction: {}",
-                        e
-                    ))
-                })?
-                .0;
+            AppError::database_error(format!("Failed to upsert archive in transaction: {}", e))
+        })?
+        .0;
 
         debug!(
             id = id,

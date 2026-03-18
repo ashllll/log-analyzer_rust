@@ -491,28 +491,34 @@ impl AutocompleteEngine {
         Ok(suggestions)
     }
 
-    /// Recursively collect suggestions from trie
+    /// 迭代式 BFS 收集 Trie 建议词，避免深层 Trie 导致的递归栈溢出
     fn collect_suggestions(
         &self,
-        node: &TrieNode,
-        current_word: &str,
+        root: &TrieNode,
+        prefix: &str,
         suggestions: &mut Vec<AutocompleteSuggestion>,
     ) {
-        if suggestions.len() >= self.max_suggestions * 2 {
-            return; // Stop collecting to maintain performance
-        }
+        // 使用显式队列代替函数调用栈，深度无论多大都不会栈溢出
+        let limit = self.max_suggestions * 2;
+        let mut queue: std::collections::VecDeque<(&TrieNode, String)> =
+            std::collections::VecDeque::new();
+        queue.push_back((root, prefix.to_string()));
 
-        if node.is_word_end {
-            suggestions.push(AutocompleteSuggestion {
-                text: current_word.to_string(),
-                frequency: node.frequency,
-            });
-        }
-
-        for (ch, child_node) in &node.children {
-            let mut new_word = current_word.to_string();
-            new_word.push(*ch);
-            self.collect_suggestions(child_node, &new_word, suggestions);
+        while let Some((node, word)) = queue.pop_front() {
+            if suggestions.len() >= limit {
+                break;
+            }
+            if node.is_word_end {
+                suggestions.push(AutocompleteSuggestion {
+                    text: word.clone(),
+                    frequency: node.frequency,
+                });
+            }
+            for (ch, child_node) in &node.children {
+                let mut child_word = word.clone();
+                child_word.push(*ch);
+                queue.push_back((child_node, child_word));
+            }
         }
     }
 

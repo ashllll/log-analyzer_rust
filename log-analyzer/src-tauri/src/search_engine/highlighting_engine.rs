@@ -428,25 +428,26 @@ impl HighlightingEngine {
             return content.chars().take(max_length).collect();
         }
 
-        // Find first occurrence of any query term
-        let mut best_start = 0;
+        // 遍历所有查询词，在字符空间（非字节空间）找到最早出现位置
+        // 修复：① context_size 在字符单位下减去，而非字节单位；② 遍历所有词取最小值
+        let content_lower = content.to_lowercase();
+        let mut best_char_start: Option<usize> = None;
         for term in &query_terms {
-            if let Some(pos) = content.to_lowercase().find(&term.to_lowercase()) {
-                // Start extraction some characters before the match
-                let start = pos.saturating_sub(self.config.context_size);
-                if start < best_start || best_start == 0 {
-                    best_start = start;
-                }
-                break;
+            if let Some(byte_pos) = content_lower.find(&term.to_lowercase()) {
+                // 先将字节偏移换算为字符偏移，再减去上下文大小（字符单位）
+                let char_pos = content[..byte_pos].chars().count();
+                let start = char_pos.saturating_sub(self.config.context_size);
+                best_char_start = Some(match best_char_start {
+                    None => start,
+                    Some(prev) => prev.min(start),
+                });
             }
         }
 
-        // Extract content around the match
-        let end = (best_start + max_length).min(content.len());
         content
             .chars()
-            .skip(best_start)
-            .take(end - best_start)
+            .skip(best_char_start.unwrap_or(0))
+            .take(max_length)
             .collect()
     }
 
