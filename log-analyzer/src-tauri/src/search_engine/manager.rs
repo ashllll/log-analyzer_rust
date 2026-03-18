@@ -555,8 +555,12 @@ impl SearchEngineManager {
 
     /// Commit pending changes to index
     pub fn commit(&self) -> SearchResult<()> {
-        let mut writer = self.writer.lock();
-        writer.commit()?;
+        // 先在独立作用域内提交并释放 writer 锁，
+        // 再 reload reader，减少锁持有时间，提升并发写入吞吐
+        {
+            let mut writer = self.writer.lock();
+            writer.commit()?;
+        }
         // Immediately reload the reader to make committed changes visible
         self.reader.reload()?;
         Ok(())

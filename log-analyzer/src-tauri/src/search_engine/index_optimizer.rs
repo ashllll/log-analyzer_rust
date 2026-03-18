@@ -460,7 +460,8 @@ impl IndexOptimizer {
 
         // Calculate p95 (simplified - using hot queries)
         let mut query_times: Vec<f64> = patterns.values().map(|s| s.avg_duration_ms()).collect();
-        query_times.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        // 使用 total_cmp 替代 partial_cmp，NaN 会被排到末尾而非引起不稳定排序
+        query_times.sort_by(|a, b| a.total_cmp(b));
 
         let p95_idx = (query_times.len() as f64 * 0.95) as usize;
         let p95_query_time = query_times

@@ -428,25 +428,32 @@ impl HighlightingEngine {
             return content.chars().take(max_length).collect();
         }
 
-        // Find first occurrence of any query term
-        let mut best_start = 0;
+        // 遍历所有查询词，找到最早出现的位置（字节偏移）
+        // 修复：移除 break，不再只检查第一个词；同时将字节偏移转换为字符偏移
+        let content_lower = content.to_lowercase();
+        let mut best_byte_start: Option<usize> = None;
         for term in &query_terms {
-            if let Some(pos) = content.to_lowercase().find(&term.to_lowercase()) {
-                // Start extraction some characters before the match
+            if let Some(pos) = content_lower.find(&term.to_lowercase()) {
                 let start = pos.saturating_sub(self.config.context_size);
-                if start < best_start || best_start == 0 {
-                    best_start = start;
-                }
-                break;
+                best_byte_start = Some(match best_byte_start {
+                    None => start,
+                    Some(prev) => prev.min(start),
+                });
             }
         }
 
-        // Extract content around the match
-        let end = (best_start + max_length).min(content.len());
+        // 将字节偏移转换为字符偏移，避免 CJK 等多字节字符截断错位
+        let best_char_start = best_byte_start.map_or(0, |byte_pos| {
+            content
+                .char_indices()
+                .take_while(|(i, _)| *i < byte_pos)
+                .count()
+        });
+
         content
             .chars()
-            .skip(best_start)
-            .take(end - best_start)
+            .skip(best_char_start)
+            .take(max_length)
             .collect()
     }
 
