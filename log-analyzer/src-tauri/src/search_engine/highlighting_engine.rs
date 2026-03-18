@@ -266,10 +266,8 @@ impl HighlightingEngine {
         let mut highlighted_snippets = Vec::new();
 
         for snippet in snippets {
-            // Use Tantivy's built-in HTML generation, then escape it properly
             let html_snippet = snippet.to_html();
-            let escaped_snippet = self.escape_html(&html_snippet);
-            highlighted_snippets.push(escaped_snippet);
+            highlighted_snippets.push(html_snippet);
         }
 
         // Update HTML escape statistics

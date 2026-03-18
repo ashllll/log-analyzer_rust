@@ -239,13 +239,12 @@ impl PluginManager {
                     PLUGIN_ABI_MAJOR, PLUGIN_ABI_MINOR, plugin_major, plugin_minor
                 )));
             }
-            if plugin_minor < PLUGIN_ABI_MINOR {
-                // 插件次版本低于宿主，可能缺少必要的接口
+            if plugin_minor > PLUGIN_ABI_MINOR {
                 warn!(
                     host_minor = PLUGIN_ABI_MINOR,
                     plugin_minor = plugin_minor,
                     plugin_name = plugin.name(),
-                    "Plugin ABI minor version is older than host; some features may be unavailable"
+                    "Plugin ABI minor version is newer than host; plugin may require unavailable features"
                 );
             }
 

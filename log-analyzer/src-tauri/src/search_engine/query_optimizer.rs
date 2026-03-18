@@ -7,9 +7,11 @@
 //! - Query complexity analysis and automatic simplification
 //! - Performance pattern detection
 
+use lru::LruCache;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{debug, info};
@@ -99,10 +101,12 @@ pub struct ComplexityFactor {
 
 /// Query optimization engine
 pub struct QueryOptimizer {
-    query_stats: Arc<RwLock<HashMap<String, QueryStats>>>,
+    query_stats: Arc<RwLock<LruCache<String, QueryStats>>>,
     index_stats: Arc<RwLock<IndexStatistics>>,
     optimization_rules: Vec<OptimizationRule>,
 }
+
+const QUERY_STATS_MAX_SIZE: usize = 1000;
 
 #[derive(Debug, Default)]
 struct IndexStatistics {
@@ -117,7 +121,9 @@ impl QueryOptimizer {
     /// Create a new query optimizer
     pub fn new() -> Self {
         let mut optimizer = Self {
-            query_stats: Arc::new(RwLock::new(HashMap::new())),
+            query_stats: Arc::new(RwLock::new(LruCache::new(
+                NonZeroUsize::new(QUERY_STATS_MAX_SIZE).unwrap(),
+            ))),
             index_stats: Arc::new(RwLock::new(IndexStatistics::default())),
             optimization_rules: Vec::new(),
         };
@@ -327,38 +333,41 @@ impl QueryOptimizer {
         result_count: usize,
     ) {
         let mut stats = self.query_stats.write();
+        let complexity = self.analyze_complexity(query).score;
 
-        let query_stats = stats
-            .entry(query.to_string())
-            .or_insert_with(|| QueryStats {
+        if let Some(query_stats) = stats.get_mut(query) {
+            query_stats.execution_count += 1;
+            query_stats.total_time_ms += execution_time.as_millis() as u64;
+            query_stats.average_time_ms =
+                query_stats.total_time_ms as f64 / query_stats.execution_count as f64;
+            query_stats.last_executed = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+
+            let alpha = 0.1;
+            query_stats.result_count_avg =
+                alpha * result_count as f64 + (1.0 - alpha) * query_stats.result_count_avg;
+        } else {
+            let entry = QueryStats {
                 query: query.to_string(),
-                execution_count: 0,
-                total_time_ms: 0,
-                average_time_ms: 0.0,
-                last_executed: 0,
-                result_count_avg: 0.0,
-                complexity_score: self.analyze_complexity(query).score,
-            });
-
-        query_stats.execution_count += 1;
-        query_stats.total_time_ms += execution_time.as_millis() as u64;
-        query_stats.average_time_ms =
-            query_stats.total_time_ms as f64 / query_stats.execution_count as f64;
-        query_stats.last_executed = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default() // 系统时钟早于 UNIX_EPOCH 时（时钟被调后）不 panic
-            .as_secs();
-
-        // Update rolling average for result count
-        let alpha = 0.1; // Smoothing factor
-        query_stats.result_count_avg =
-            alpha * result_count as f64 + (1.0 - alpha) * query_stats.result_count_avg;
+                execution_count: 1,
+                total_time_ms: execution_time.as_millis() as u64,
+                average_time_ms: execution_time.as_millis() as f64,
+                last_executed: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs(),
+                result_count_avg: result_count as f64,
+                complexity_score: complexity,
+            };
+            stats.put(query.to_string(), entry);
+        }
 
         debug!(
             query = %query,
             execution_time_ms = execution_time.as_millis(),
             result_count = result_count,
-            avg_time_ms = query_stats.average_time_ms,
             "Recorded query execution"
         );
     }
@@ -369,7 +378,7 @@ impl QueryOptimizer {
         let mut recommendations = Vec::new();
 
         // Analyze frequently executed slow queries
-        for query_stats in stats.values() {
+        for (_, query_stats) in stats.iter() {
             if query_stats.execution_count >= 10 && query_stats.average_time_ms > 100.0 {
                 // Recommend specialized index for frequently used terms
                 let terms: Vec<&str> = query_stats.query.split_whitespace().collect();
@@ -415,10 +424,11 @@ impl QueryOptimizer {
     pub fn should_create_specialized_index(&self, query_pattern: &str) -> bool {
         let stats = self.query_stats.read();
 
-        // Look for similar queries
         let similar_queries: Vec<_> = stats
-            .values()
-            .filter(|s| s.query.contains(query_pattern) || query_pattern.contains(&s.query))
+            .iter()
+            .filter(|(_, s)| s.query.contains(query_pattern) || query_pattern.contains(&s.query))
+            .map(|(_, s)| s)
+            .cloned()
             .collect();
 
         if similar_queries.is_empty() {
@@ -432,16 +442,12 @@ impl QueryOptimizer {
             .sum::<f64>()
             / similar_queries.len() as f64;
 
-        // Create specialized index if:
-        // 1. Pattern appears in many queries (>= 5)
-        // 2. Total executions are high (>= 50)
-        // 3. Average time is slow (>= 200ms)
         total_executions >= 50 && avg_time >= 200.0 && similar_queries.len() >= 5
     }
 
     /// Get query statistics
     pub fn get_query_stats(&self) -> HashMap<String, QueryStats> {
-        self.query_stats.read().clone()
+        self.query_stats.read().iter().map(|(k, v)| (k.clone(), v.clone())).collect()
     }
 
     /// Clear statistics (for testing or reset)

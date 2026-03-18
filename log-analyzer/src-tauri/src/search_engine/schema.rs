@@ -107,21 +107,23 @@ impl LogSchema {
     pub fn configure_tokenizers(&self, index: &tantivy::Index) -> tantivy::Result<()> {
         let tokenizer_manager = index.tokenizers();
 
-        // Register stemming tokenizer for content analysis
-        tokenizer_manager.register(
-            "en_stem",
-            TextAnalyzer::builder(tantivy::tokenizer::SimpleTokenizer::default())
-                .filter(tantivy::tokenizer::RemoveLongFilter::limit(40))
-                .filter(tantivy::tokenizer::LowerCaser)
-                .filter(tantivy::tokenizer::Stemmer::default())
-                .build(),
-        );
+        if tokenizer_manager.get("en_stem").is_none() {
+            tokenizer_manager.register(
+                "en_stem",
+                TextAnalyzer::builder(tantivy::tokenizer::SimpleTokenizer::default())
+                    .filter(tantivy::tokenizer::RemoveLongFilter::limit(40))
+                    .filter(tantivy::tokenizer::LowerCaser)
+                    .filter(tantivy::tokenizer::Stemmer::default())
+                    .build(),
+            );
+        }
 
-        // Register raw tokenizer for exact matching
-        tokenizer_manager.register(
-            "raw",
-            TextAnalyzer::builder(tantivy::tokenizer::RawTokenizer::default()).build(),
-        );
+        if tokenizer_manager.get("raw").is_none() {
+            tokenizer_manager.register(
+                "raw",
+                TextAnalyzer::builder(tantivy::tokenizer::RawTokenizer::default()).build(),
+            );
+        }
 
         Ok(())
     }

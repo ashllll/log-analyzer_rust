@@ -17,7 +17,7 @@ use tantivy::{
     DocId, Index, IndexReader, Score, SegmentOrdinal, SegmentReader, Term,
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use super::{SearchError, SearchResult};
 
@@ -121,6 +121,7 @@ pub struct QueryPlan {
 }
 
 /// Boolean query processor with optimization capabilities
+#[derive(Clone)]
 pub struct BooleanQueryProcessor {
     _index: Index,
     reader: IndexReader,
@@ -191,8 +192,10 @@ impl BooleanQueryProcessor {
         }
 
         // Sort by selectivity (most selective first for better performance)
-        term_selectivities
-            .sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal));
+        term_selectivities.sort_by(|a, b| {
+            a.2.partial_cmp(&b.2)
+                .unwrap_or_else(|| a.2.total_cmp(&b.2))
+        });
 
         // Calculate estimated cost and determine if early termination is beneficial
         let estimated_cost = self.estimate_query_cost(&term_selectivities);
@@ -216,11 +219,9 @@ impl BooleanQueryProcessor {
     fn calculate_term_selectivity(&self, term: &str) -> SearchResult<f64> {
         let searcher = self.reader.searcher();
 
-        // Check cache first
         {
-            let stats = self.term_stats.read();
+            let mut stats = self.term_stats.write();
             if let Some(cached_stats) = stats.get(term) {
-                // Use cached selectivity if recent (within 5 minutes)
                 if cached_stats
                     .last_used
                     .elapsed()
@@ -230,39 +231,34 @@ impl BooleanQueryProcessor {
                     return Ok(cached_stats.selectivity);
                 }
             }
-        }
 
-        // Calculate fresh selectivity
-        let term_obj = Term::from_field_text(self.content_field, term);
-        let term_query = TermQuery::new(term_obj, tantivy::schema::IndexRecordOption::Basic);
+            let term_obj = Term::from_field_text(self.content_field, term);
+            let term_query = TermQuery::new(term_obj, tantivy::schema::IndexRecordOption::Basic);
 
-        let count_collector = Count;
-        let doc_count = searcher.search(&term_query, &count_collector)?;
-        let total_docs = searcher.num_docs();
+            let count_collector = Count;
+            let doc_count = searcher.search(&term_query, &count_collector)?;
+            let total_docs = searcher.num_docs();
 
-        let selectivity = if total_docs > 0 {
-            doc_count as f64 / total_docs as f64
-        } else {
-            1.0 // Assume high selectivity for empty index
-        };
+            let selectivity = if total_docs > 0 {
+                doc_count as f64 / total_docs as f64
+            } else {
+                1.0
+            };
 
-        // Update cache
-        {
-            let mut stats = self.term_stats.write();
             stats.insert(
                 term.to_string(),
                 TermStats {
-                    frequency: 1, // Will be updated with actual usage
+                    frequency: 1,
                     document_count: doc_count as u64,
                     selectivity,
                     last_used: std::time::SystemTime::now(),
                 },
             );
+
+            debug!(term = %term, doc_count = doc_count, total_docs = total_docs, selectivity = selectivity, "Calculated term selectivity");
+
+            Ok(selectivity)
         }
-
-        debug!(term = %term, doc_count = doc_count, total_docs = total_docs, selectivity = selectivity, "Calculated term selectivity");
-
-        Ok(selectivity)
     }
 
     /// Estimate the computational cost of a query
@@ -382,6 +378,8 @@ impl BooleanQueryProcessor {
         if let Some(term_stats) = stats.get_mut(term) {
             term_stats.frequency += 1;
             term_stats.last_used = std::time::SystemTime::now();
+        } else {
+            warn!(term = %term, "Term stats not found for usage update");
         }
     }
 

@@ -189,7 +189,7 @@ pub struct FilterStats {
 
 /// Regex search engine with compilation caching
 pub struct RegexSearchEngine {
-    compiled_patterns: Arc<Mutex<LruCache<String, Regex>>>,
+    compiled_patterns: Arc<Mutex<LruCache<String, Arc<Regex>>>>,
     pattern_stats: Arc<RwLock<HashMap<String, PatternStats>>>,
     cache_size: usize,
 }
@@ -218,10 +218,8 @@ impl RegexSearchEngine {
     pub fn search_with_regex(&self, pattern: &str, content: &str) -> SearchResult<Vec<RegexMatch>> {
         let start_time = std::time::Instant::now();
 
-        // Get or compile regex
         let regex = self.get_or_compile_regex(pattern)?;
 
-        // Execute search
         let matches: Vec<RegexMatch> = regex
             .find_iter(content)
             .map(|m| RegexMatch {
@@ -231,7 +229,6 @@ impl RegexSearchEngine {
             })
             .collect();
 
-        // Update statistics
         self.update_pattern_stats(pattern, start_time.elapsed());
 
         debug!(
@@ -244,26 +241,61 @@ impl RegexSearchEngine {
         Ok(matches)
     }
 
-    /// Get or compile regex pattern with caching
-    fn get_or_compile_regex(&self, pattern: &str) -> SearchResult<Regex> {
-        // Check cache first
-        {
-            let mut cache = self.compiled_patterns.lock();
-            if let Some(regex) = cache.get(pattern) {
-                return Ok(regex.clone());
+    /// Validate regex pattern to prevent ReDoS attacks
+    fn validate_regex_pattern(pattern: &str) -> Result<(), String> {
+        const MAX_PATTERN_LENGTH: usize = 1000;
+        const DANGEROUS_PATTERNS: &[&str] = &[
+            "(a+)+",
+            "(a*a*)*",
+            "(.*.*)*",
+            "([a-zA-Z]+)*",
+            "(a{1,100})+",
+            "([^X]+)+",
+        ];
+
+        if pattern.len() > MAX_PATTERN_LENGTH {
+            return Err(format!(
+                "Regex pattern too long (max {} characters)",
+                MAX_PATTERN_LENGTH
+            ));
+        }
+
+        let lower_pattern = pattern.to_lowercase();
+        for dangerous in DANGEROUS_PATTERNS {
+            if lower_pattern.contains(dangerous) {
+                warn!(
+                    pattern = %pattern,
+                    dangerous_pattern = dangerous,
+                    "Potential ReDoS pattern detected"
+                );
+                return Err("Potentially dangerous regex pattern detected".to_string());
             }
         }
 
-        // Compile new regex
-        let regex = Regex::new(pattern).map_err(SearchError::RegexError)?;
+        Ok(())
+    }
 
-        // Add to cache
-        {
-            let mut cache = self.compiled_patterns.lock();
-            cache.put(pattern.to_string(), regex.clone());
+    /// Get or compile regex pattern with caching
+    fn get_or_compile_regex(&self, pattern: &str) -> SearchResult<Arc<Regex>> {
+        if let Err(e) = Self::validate_regex_pattern(pattern) {
+            return Err(SearchError::RegexError(regex::Error::Syntax(e)));
         }
 
-        // Update compilation stats
+        {
+            let mut cache = self.compiled_patterns.lock();
+            if let Some(regex) = cache.get(pattern) {
+                return Ok(Arc::clone(regex));
+            }
+        }
+
+        let regex = Regex::new(pattern).map_err(SearchError::RegexError)?;
+        let arc_regex = Arc::new(regex);
+
+        {
+            let mut cache = self.compiled_patterns.lock();
+            cache.put(pattern.to_string(), Arc::clone(&arc_regex));
+        }
+
         {
             let mut stats = self.pattern_stats.write();
             let pattern_stats = stats
@@ -277,7 +309,7 @@ impl RegexSearchEngine {
             pattern_stats.compilation_count += 1;
         }
 
-        Ok(regex)
+        Ok(arc_regex)
     }
 
     /// Update pattern execution statistics
@@ -335,7 +367,7 @@ struct TimePartition {
     start_time: i64,
     end_time: i64,
     document_ids: RoaringBitmap,
-    entry_count: u32,
+    entry_count: u64,
 }
 
 impl TimePartitionedIndex {
@@ -362,7 +394,7 @@ impl TimePartitionedIndex {
             });
 
         partition.document_ids.insert(doc_id);
-        partition.entry_count += 1;
+        partition.entry_count = partition.entry_count.saturating_add(1);
     }
 
     /// Query documents within time range
@@ -393,7 +425,7 @@ impl TimePartitionedIndex {
     pub fn get_stats(&self) -> TimeIndexStats {
         let partitions = self.partitions.read();
         let partition_count = partitions.len();
-        let total_documents: u32 = partitions.values().map(|p| p.entry_count).sum();
+        let total_documents: u64 = partitions.values().map(|p| p.entry_count).sum();
 
         TimeIndexStats {
             partition_count,
@@ -406,7 +438,7 @@ impl TimePartitionedIndex {
 #[derive(Debug, Clone)]
 pub struct TimeIndexStats {
     pub partition_count: usize,
-    pub total_documents: u32,
+    pub total_documents: u64,
     pub partition_size_seconds: u64,
 }
 

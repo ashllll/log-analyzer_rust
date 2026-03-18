@@ -415,6 +415,7 @@ impl SearchEngineManager {
     }
 
     /// Convert Tantivy document to LogEntry（实例方法包装，供非 spawn_blocking 路径使用）
+    #[allow(dead_code)]
     fn document_to_log_entry(&self, doc: &TantivyDocument) -> Option<LogEntry> {
         document_to_log_entry_inner(&self.schema, doc)
     }
@@ -573,12 +574,11 @@ impl SearchEngineManager {
         require_all: bool,
         limit: Option<usize>,
         timeout_duration: Option<Duration>,
-        token: Option<CancellationToken>,
+        _token: Option<CancellationToken>,
     ) -> SearchResult<SearchResults> {
         let start_time = Instant::now();
         let limit = limit.unwrap_or(self.config.max_results);
         let timeout_duration = timeout_duration.unwrap_or(self.config.default_timeout);
-        let token = token.unwrap_or_default();
 
         debug!(
             keywords = ?keywords,
@@ -588,75 +588,59 @@ impl SearchEngineManager {
             "Starting multi-keyword search"
         );
 
-        // Use boolean query processor for optimized multi-keyword search
-        let token_inner = token.clone();
-        let search_future =
-            async move {
-                let (doc_addresses, total_count) = self
-                    .boolean_processor
-                    .process_multi_keyword_query(keywords, require_all, limit, Some(token_inner))?;
-                // ...
+        let keywords_owned = keywords.to_vec();
+        let boolean_processor = self.boolean_processor.clone();
+        let reader = self.reader.clone();
+        let schema = self.schema.clone();
 
-                // Convert document addresses to LogEntry, preserving DocAddress for highlighting
-                let searcher = self.reader.searcher();
+        let search_result = timeout(
+            timeout_duration,
+            tokio::task::spawn_blocking(move || {
+                let (doc_addresses, total_count) = boolean_processor
+                    .process_multi_keyword_query(&keywords_owned, require_all, limit, None)?;
+
+                let searcher = reader.searcher();
                 let mut entries = Vec::with_capacity(doc_addresses.len());
                 let mut addresses = Vec::with_capacity(doc_addresses.len());
 
                 for doc_address in doc_addresses {
                     let retrieved_doc = searcher.doc(doc_address)?;
-                    if let Some(log_entry) = self.document_to_log_entry(&retrieved_doc) {
+                    if let Some(log_entry) = document_to_log_entry_inner(&schema, &retrieved_doc) {
                         entries.push(log_entry);
-                        addresses.push(doc_address); // Store DocAddress for highlighting
+                        addresses.push(doc_address);
                     }
                 }
 
                 Ok(SearchResults {
                     entries,
-                    doc_addresses: addresses, // Include DocAddresses in results
+                    doc_addresses: addresses,
                     total_count,
-                    query_time_ms: 0, // Will be set by caller
+                    query_time_ms: 0,
                     was_timeout: false,
                 })
-            };
+            }),
+        )
+        .await;
 
-        // Execute with timeout
-        match timeout(timeout_duration, search_future).await {
-            Ok(result) => {
-                let query_time = start_time.elapsed();
+        let query_time = start_time.elapsed();
+
+        let search_results = match search_result {
+            Ok(Ok(Ok(results))) => results,
+            Ok(Ok(Err(e))) => {
                 self.update_stats(query_time, false);
-
-                match result {
-                    Ok(mut search_results) => {
-                        search_results.query_time_ms = query_time.as_millis() as u64;
-                        search_results.was_timeout = false;
-
-                        // Update term usage statistics
-                        for keyword in keywords {
-                            self.boolean_processor.update_term_usage(keyword);
-                        }
-
-                        info!(
-                            keywords = ?keywords,
-                            results = search_results.entries.len(),
-                            total = search_results.total_count,
-                            time_ms = search_results.query_time_ms,
-                            "Multi-keyword search completed successfully"
-                        );
-
-                        Ok(search_results)
-                    }
-                    Err(e) => {
-                        error!(keywords = ?keywords, error = %e, "Multi-keyword search execution failed");
-                        Err(e)
-                    }
-                }
+                error!(keywords = ?keywords, error = %e, "Multi-keyword search execution failed");
+                return Err(e);
+            }
+            Ok(Err(join_err)) => {
+                self.update_stats(query_time, true);
+                error!(keywords = ?keywords, error = %join_err, "spawn_blocking task failed");
+                return Err(SearchError::IndexError(format!(
+                    "Search task failed: {}",
+                    join_err
+                )));
             }
             Err(_) => {
-                let query_time = start_time.elapsed();
                 self.update_stats(query_time, true);
-
-                // Cancel underlying search
-                token.cancel();
 
                 warn!(
                     keywords = ?keywords,
@@ -665,12 +649,32 @@ impl SearchEngineManager {
                     "Multi-keyword search timed out"
                 );
 
-                Err(SearchError::Timeout(format!(
+                return Err(SearchError::Timeout(format!(
                     "Multi-keyword search timed out after {}ms",
                     timeout_duration.as_millis()
-                )))
+                )));
             }
+        };
+
+        let mut search_results = search_results;
+
+        self.update_stats(query_time, false);
+        search_results.query_time_ms = query_time.as_millis() as u64;
+        search_results.was_timeout = false;
+
+        for keyword in keywords {
+            self.boolean_processor.update_term_usage(keyword);
         }
+
+        info!(
+            keywords = ?keywords,
+            results = search_results.entries.len(),
+            total = search_results.total_count,
+            time_ms = search_results.query_time_ms,
+            "Multi-keyword search completed successfully"
+        );
+
+        Ok(search_results)
     }
 
     /// Search with highlighting support
@@ -751,7 +755,7 @@ impl SearchEngineManager {
     fn update_stats(&self, query_time: Duration, was_timeout: bool) {
         let mut stats = self.stats.write();
         stats.total_searches += 1;
-        stats.total_query_time_ms += query_time.as_millis() as u64;
+        stats.total_query_time_ms = stats.total_query_time_ms.saturating_add(query_time.as_millis() as u64);
         if was_timeout {
             stats.timeout_count += 1;
         }

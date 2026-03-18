@@ -18,11 +18,11 @@
 //! - Better resource management
 //! - Industry-standard pattern for concurrent async operations
 
-use parking_lot::{Mutex, RwLock};
+use parking_lot::RwLock;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tantivy::{Index, IndexReader, ReloadPolicy};
-use tokio::sync::Semaphore;
+use tokio::sync::{Mutex as TokioMutex, Semaphore};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
@@ -115,7 +115,7 @@ pub struct ConcurrentSearchManager {
     reader_pool: ReaderPool,
     config: ConcurrentSearchConfig,
     stats: Arc<RwLock<ConcurrentSearchStats>>,
-    performance_monitor: Arc<Mutex<PerformanceMonitor>>,
+    performance_monitor: Arc<TokioMutex<PerformanceMonitor>>,
     search_semaphore: Arc<Semaphore>,
 }
 
@@ -155,13 +155,13 @@ impl PerformanceMonitor {
             return Duration::from_millis(0);
         }
 
-        let total_ms: u64 = self
+        let total_ms: u128 = self
             .recent_response_times
             .iter()
-            .map(|d| d.as_millis() as u64)
+            .map(|d| d.as_millis())
             .sum();
 
-        Duration::from_millis(total_ms / self.recent_response_times.len() as u64)
+        Duration::from_millis((total_ms / self.recent_response_times.len() as u128) as u64)
     }
 
     fn is_performance_degraded(&self, threshold: f64) -> bool {
@@ -204,7 +204,7 @@ impl ConcurrentSearchManager {
             reader_pool,
             config,
             stats: Arc::new(RwLock::new(ConcurrentSearchStats::default())),
-            performance_monitor: Arc::new(Mutex::new(PerformanceMonitor::new())),
+            performance_monitor: Arc::new(TokioMutex::new(PerformanceMonitor::new())),
             search_semaphore,
         })
     }
@@ -255,7 +255,7 @@ impl ConcurrentSearchManager {
         // Update stats
         {
             let mut stats = self.stats.write();
-            stats.active_searches -= 1;
+            stats.active_searches = stats.active_searches.saturating_sub(1);
 
             // Update average response time
             let total_time =
@@ -356,7 +356,7 @@ impl ConcurrentSearchManager {
 
     /// Record performance metrics and detect degradation
     async fn record_performance_metrics(&self, response_time: Duration) {
-        let mut monitor = self.performance_monitor.lock();
+        let mut monitor = self.performance_monitor.lock().await;
         monitor.record_response_time(response_time);
 
         // Check for performance degradation
@@ -396,14 +396,14 @@ impl ConcurrentSearchManager {
     }
 
     /// Get performance degradation status
-    pub fn is_performance_degraded(&self) -> bool {
-        let monitor = self.performance_monitor.lock();
+    pub async fn is_performance_degraded(&self) -> bool {
+        let monitor = self.performance_monitor.lock().await;
         monitor.is_performance_degraded(self.config.performance_degradation_threshold)
     }
 
     /// Reset performance monitoring baseline
-    pub fn reset_performance_baseline(&self) {
-        let mut monitor = self.performance_monitor.lock();
+    pub async fn reset_performance_baseline(&self) {
+        let mut monitor = self.performance_monitor.lock().await;
         monitor.baseline_response_time = None;
         monitor.recent_response_times.clear();
 
