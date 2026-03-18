@@ -144,7 +144,12 @@ impl PluginManager {
             .map_err(|e| crate::error::AppError::Internal(format!("Invalid plugin path: {}", e)))?;
 
         // ✅ 安全性检查：仅允许从指定目录加载插件，防止非法路径加载恶意库
-        if !canonical_path.starts_with(&self.plugin_directory) {
+        // 同时对 plugin_directory 执行 canonicalize，防止插件目录本身是符号链接时被绕过
+        let canonical_plugin_dir = self
+            .plugin_directory
+            .canonicalize()
+            .unwrap_or_else(|_| self.plugin_directory.clone());
+        if !canonical_path.starts_with(&canonical_plugin_dir) {
             return Err(crate::error::AppError::Security(format!(
                 "Plugin path not in whitelist: {:?}",
                 canonical_path

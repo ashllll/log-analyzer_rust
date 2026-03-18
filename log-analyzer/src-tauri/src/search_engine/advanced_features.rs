@@ -75,8 +75,15 @@ impl FilterEngine {
         }
 
         // Update time range bitmaps (partition by hour)
-        // Parse timestamp string to i64 for time partitioning
-        let timestamp_i64 = log_entry.timestamp.parse::<i64>().unwrap_or(0);
+        // 解析时间戳字符串到 i64；失败时输出警告并使用 0（1970-01-01），不影响搜索但会使位图时间分区不准确
+        let timestamp_i64 = log_entry.timestamp.parse::<i64>().unwrap_or_else(|_| {
+            tracing::warn!(
+                timestamp = %log_entry.timestamp,
+                file = %log_entry.file,
+                "时间戳解析失败（位图时间分区），使用默认值 0；时间范围过滤可能不准确"
+            );
+            0
+        });
         let hour_timestamp = (timestamp_i64 / 3600) * 3600;
         let time_range = TimeRange {
             start: hour_timestamp,

@@ -532,8 +532,15 @@ impl SearchEngineManager {
         let mut doc = TantivyDocument::default();
 
         doc.add_text(self.schema.content, &log_entry.content);
-        // Parse timestamp string to i64
-        let timestamp_i64 = log_entry.timestamp.parse::<i64>().unwrap_or(0);
+        // 解析时间戳字符串到 i64；解析失败时使用 0（1970-01-01），并输出警告便于定位数据问题
+        let timestamp_i64 = log_entry.timestamp.parse::<i64>().unwrap_or_else(|_| {
+            tracing::warn!(
+                timestamp = %log_entry.timestamp,
+                file = %log_entry.file,
+                "时间戳解析失败，使用默认值 0（1970-01-01）；可能影响日志时序排序"
+            );
+            0
+        });
         doc.add_i64(self.schema.timestamp, timestamp_i64);
         doc.add_text(self.schema.level, &log_entry.level);
         doc.add_text(self.schema.file_path, &log_entry.file);

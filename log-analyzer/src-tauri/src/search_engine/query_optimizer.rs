@@ -349,7 +349,7 @@ impl QueryOptimizer {
             query_stats.total_time_ms as f64 / query_stats.execution_count as f64;
         query_stats.last_executed = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default() // 系统时钟早于 UNIX_EPOCH 时（时钟被调后）不 panic
             .as_secs();
 
         // Update rolling average for result count
