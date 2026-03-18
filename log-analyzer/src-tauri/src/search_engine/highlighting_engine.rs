@@ -138,10 +138,10 @@ impl HighlightingEngine {
             "Starting document highlighting"
         );
 
-        // Create cache key
+        // Create cache key - 使用确定性格式避免Debug格式不稳定性
         let query_hash = self.calculate_query_hash(query);
         let cache_key = SnippetCacheKey {
-            doc_id: format!("{:?}", doc_address), // Simple doc ID representation
+            doc_id: format!("seg{}_doc{}", doc_address.segment_ord, doc_address.doc_id),
             query_hash,
             field_name: "content".to_string(),
         };
@@ -220,6 +220,7 @@ impl HighlightingEngine {
                 // Fallback: create simple term queries for each word
                 let terms: Vec<String> = query_str
                     .split_whitespace()
+                    .filter(|s| !s.is_empty())
                     .map(|s| s.to_string())
                     .collect();
 
@@ -229,12 +230,27 @@ impl HighlightingEngine {
                     ));
                 }
 
-                // For simplicity, use the first term
-                let term = Term::from_field_text(self.content_field, &terms[0]);
-                Ok(Box::new(tantivy::query::TermQuery::new(
-                    term,
-                    tantivy::schema::IndexRecordOption::Basic,
-                )))
+                // 使用所有有效的terms而非仅第一个
+                if terms.len() == 1 {
+                    let term = Term::from_field_text(self.content_field, &terms[0]);
+                    Ok(Box::new(tantivy::query::TermQuery::new(
+                        term,
+                        tantivy::schema::IndexRecordOption::Basic,
+                    )))
+                } else {
+                    // 使用BooleanQuery组合多个terms
+                    use tantivy::query::{BooleanQuery, Occur};
+                    let mut clauses = Vec::new();
+                    for term_str in &terms {
+                        let term = Term::from_field_text(self.content_field, term_str);
+                        let term_query = tantivy::query::TermQuery::new(
+                            term,
+                            tantivy::schema::IndexRecordOption::Basic,
+                        );
+                        clauses.push((Occur::Should, Box::new(term_query) as Box<dyn tantivy::query::Query>));
+                    }
+                    Ok(Box::new(BooleanQuery::new(clauses)))
+                }
             }
         }
     }

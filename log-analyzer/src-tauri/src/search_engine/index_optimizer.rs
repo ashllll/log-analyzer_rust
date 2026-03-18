@@ -563,8 +563,12 @@ impl IndexOptimizer {
 
     /// Mark an index as created (for tracking)
     pub fn mark_index_created(&self, query_pattern: &str) {
-        self.created_indexes.write().push(query_pattern.to_string());
-        info!(query_pattern = %query_pattern, "Marked specialized index as created");
+        let mut created = self.created_indexes.write();
+        // 去重：只有不存在时才添加
+        if !created.contains(&query_pattern.to_string()) {
+            created.push(query_pattern.to_string());
+            info!(query_pattern = %query_pattern, "Marked specialized index as created");
+        }
     }
 
     /// Get the last performance analysis
@@ -591,11 +595,17 @@ impl IndexOptimizer {
         let before_count = patterns.len();
         patterns.retain(|_, stats| {
             if let Some(last_seen) = stats.last_seen {
-                if let Ok(elapsed) = now.duration_since(last_seen) {
-                    return elapsed <= cleanup_window;
+                match now.duration_since(last_seen) {
+                    Ok(elapsed) => elapsed <= cleanup_window,
+                    Err(_) => {
+                        // 时钟回拨：保留条目，避免误删
+                        debug!("Clock went backwards, preserving pattern");
+                        true
+                    }
                 }
+            } else {
+                false
             }
-            false
         });
 
         let removed = before_count - patterns.len();

@@ -298,7 +298,16 @@ impl BooleanQueryProcessor {
         token: Option<CancellationToken>,
     ) -> SearchResult<(Vec<tantivy::DocAddress>, usize)> {
         let searcher = self.reader.searcher();
-        let token = token.unwrap_or_default();
+
+        // 只有在提供了token时才使用取消机制
+        // 注意：unwrap_or_default会创建一个永远不会被取消的token
+        let token = match token {
+            Some(t) => t,
+            None => {
+                debug!("No cancellation token provided; search will not be cancellable");
+                CancellationToken::new()
+            }
+        };
 
         // Check for cancellation before starting
         if token.is_cancelled() {
@@ -409,11 +418,8 @@ impl BooleanQueryProcessor {
         match self.query_parser.parse_query(query_str) {
             Ok(query) => Ok(query),
             Err(_) => {
-                // Fallback: split into keywords and create optimized boolean query
-                let keywords: Vec<String> = query_str
-                    .split_whitespace()
-                    .map(|s| s.to_string())
-                    .collect();
+                // Fallback: parse keywords with quote handling for phrases
+                let keywords = Self::parse_keywords_with_quotes(query_str);
 
                 if keywords.is_empty() {
                     return Err(SearchError::QueryError("Empty query".to_string()));
@@ -426,6 +432,41 @@ impl BooleanQueryProcessor {
                 Ok(Box::new(boolean_query))
             }
         }
+    }
+
+    /// 解析关键词，保留引号内的短语作为单个term
+    /// 例如: hello "world war" foo -> ["hello", "world war", "foo"]
+    fn parse_keywords_with_quotes(input: &str) -> Vec<String> {
+        let mut result = Vec::new();
+        let mut in_quote = false;
+        let mut current = String::new();
+
+        for ch in input.chars() {
+            match ch {
+                '"' => {
+                    in_quote = !in_quote;
+                    if !in_quote && !current.is_empty() {
+                        result.push(current.trim().to_string());
+                        current.clear();
+                    }
+                }
+                ' ' | '\t' | '\n' if !in_quote => {
+                    if !current.trim().is_empty() {
+                        result.push(current.trim().to_string());
+                        current.clear();
+                    }
+                }
+                _ => {
+                    current.push(ch);
+                }
+            }
+        }
+
+        if !current.trim().is_empty() {
+            result.push(current.trim().to_string());
+        }
+
+        result
     }
 }
 

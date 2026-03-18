@@ -121,11 +121,24 @@ impl StreamingIndexBuilder {
         }
 
         // Clear existing index（spawn_blocking 隔离同步 Mutex，避免阻塞 tokio worker）
+        // 检查取消令牌
+        if self.cancellation_token.load(Ordering::Relaxed) {
+            warn!("Index building cancelled before clearing index");
+            return Err(SearchError::IndexError("Indexing cancelled".to_string()));
+        }
+
+        let cancellation_token = Arc::clone(&self.cancellation_token);
         {
             let m = Arc::clone(&self.search_manager);
-            tokio::task::spawn_blocking(move || m.clear_index())
-                .await
-                .map_err(|e| SearchError::IndexError(format!("spawn_blocking panicked: {e}")))??;
+            tokio::task::spawn_blocking(move || {
+                // 定期检查取消令牌
+                if cancellation_token.load(Ordering::Relaxed) {
+                    return Err(SearchError::IndexError("Indexing cancelled".to_string()));
+                }
+                m.clear_index()
+            })
+            .await
+            .map_err(|e| SearchError::IndexError(format!("spawn_blocking panicked: {e}")))??;
         }
 
         let mut stats = IndexingStats::default();
@@ -155,22 +168,43 @@ impl StreamingIndexBuilder {
 
             // Commit periodically（spawn_blocking 隔离同步 Mutex + 磁盘 IO，避免阻塞 tokio worker）
             if batch_idx % 10 == 0 {
+                if self.cancellation_token.load(Ordering::Relaxed) {
+                    warn!("Index building cancelled before commit");
+                    return Err(SearchError::IndexError("Indexing cancelled".to_string()));
+                }
+                let cancellation_token = Arc::clone(&self.cancellation_token);
                 let m = Arc::clone(&self.search_manager);
-                tokio::task::spawn_blocking(move || m.commit())
-                    .await
-                    .map_err(|e| {
-                        SearchError::IndexError(format!("spawn_blocking panicked: {e}"))
-                    })??;
+                tokio::task::spawn_blocking(move || {
+                    if cancellation_token.load(Ordering::Relaxed) {
+                        return Err(SearchError::IndexError("Indexing cancelled".to_string()));
+                    }
+                    m.commit()
+                })
+                .await
+                .map_err(|e| {
+                    SearchError::IndexError(format!("spawn_blocking panicked: {e}"))
+                })??;
                 debug!(batch = batch_idx, "Committed batch to index");
             }
         }
 
         // Final commit（spawn_blocking 隔离同步 Mutex + 磁盘 IO，避免阻塞 tokio worker）
+        if self.cancellation_token.load(Ordering::Relaxed) {
+            warn!("Index building cancelled before final commit");
+            return Err(SearchError::IndexError("Indexing cancelled".to_string()));
+        }
+
+        let cancellation_token = Arc::clone(&self.cancellation_token);
         {
             let m = Arc::clone(&self.search_manager);
-            tokio::task::spawn_blocking(move || m.commit())
-                .await
-                .map_err(|e| SearchError::IndexError(format!("spawn_blocking panicked: {e}")))??;
+            tokio::task::spawn_blocking(move || {
+                if cancellation_token.load(Ordering::Relaxed) {
+                    return Err(SearchError::IndexError("Indexing cancelled".to_string()));
+                }
+                m.commit()
+            })
+            .await
+            .map_err(|e| SearchError::IndexError(format!("spawn_blocking panicked: {e}")))??;
         }
 
         stats.total_time = start_time.elapsed();

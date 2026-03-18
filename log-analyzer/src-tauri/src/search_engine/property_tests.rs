@@ -286,6 +286,15 @@ mod advanced_features_tests {
             let result = filter_engine.apply_filters(&filters);
             let elapsed = start.elapsed();
 
+            // Handle the new Result return type
+            let result = match result {
+                Ok(r) => r,
+                Err(e) => {
+                    prop_assert!(false, "Filter application failed: {}", e);
+                    unreachable!();
+                }
+            };
+
             // Property: Filter application should complete within reasonable time
             // Note: In CI environments, allow more time due to resource contention
             prop_assert!(elapsed <= Duration::from_millis(100),

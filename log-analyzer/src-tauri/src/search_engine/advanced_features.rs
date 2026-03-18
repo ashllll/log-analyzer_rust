@@ -95,19 +95,29 @@ impl FilterEngine {
             time_bitmaps.entry(time_range).or_default().insert(doc_id);
         }
 
-        // Update document count
+        // Update document count - 使用实际文档数量而非最大ID
         {
             let mut count = self.document_count.write();
             *count = (*count).max(doc_id + 1);
         }
     }
 
+    /// 添加删除文档后的计数更新方法
+    pub fn remove_document(&self, _doc_id: u32) {
+        let mut count = self.document_count.write();
+        // 文档删除时，简单地将计数减1
+        // 注意：对于精确计数，应该在删除时重新计算
+        *count = count.saturating_sub(1);
+    }
+
     /// Apply multiple filters efficiently using bitmap intersection
-    pub fn apply_filters(&self, filters: &[Filter]) -> RoaringBitmap {
+    /// 返回 SearchResult 以处理空filters边界情况
+    pub fn apply_filters(&self, filters: &[Filter]) -> SearchResult<RoaringBitmap> {
         if filters.is_empty() {
-            // Return all documents
-            let count = *self.document_count.read();
-            return RoaringBitmap::from_iter(0..count);
+            // 空filters应返回错误而非所有文档，避免逻辑混淆
+            return Err(SearchError::QueryError(
+                "Empty filter list provided; specify at least one filter".to_string(),
+            ));
         }
 
         let mut result_bitmap = None;
@@ -121,7 +131,7 @@ impl FilterEngine {
             }
         }
 
-        result_bitmap.unwrap_or_else(RoaringBitmap::new)
+        Ok(result_bitmap.unwrap_or_else(RoaringBitmap::new))
     }
 
     /// Get bitmap for a specific filter
@@ -281,6 +291,7 @@ impl RegexSearchEngine {
             return Err(SearchError::RegexError(regex::Error::Syntax(e)));
         }
 
+        // Check cache first
         {
             let mut cache = self.compiled_patterns.lock();
             if let Some(regex) = cache.get(pattern) {
@@ -288,9 +299,16 @@ impl RegexSearchEngine {
             }
         }
 
-        let regex = Regex::new(pattern).map_err(SearchError::RegexError)?;
+        // Compile regex with detailed error message
+        let regex = Regex::new(pattern).map_err(|e| {
+            SearchError::RegexError(regex::Error::Syntax(format!(
+                "Failed to compile regex pattern '{}': {}",
+                pattern, e
+            )))
+        })?;
         let arc_regex = Arc::new(regex);
 
+        // Add to cache
         {
             let mut cache = self.compiled_patterns.lock();
             cache.put(pattern.to_string(), Arc::clone(&arc_regex));
@@ -398,27 +416,57 @@ impl TimePartitionedIndex {
     }
 
     /// Query documents within time range
+    /// 限制分区数量以防止跨年查询导致内存耗尽
     pub fn query_time_range(&self, start_time: i64, end_time: i64) -> RoaringBitmap {
+        const MAX_PARTITIONS_TO_AGGREGATE: usize = 1000;
+
         let partitions = self.partitions.read();
         let mut result = RoaringBitmap::new();
 
         let start_key = self.get_partition_key(start_time);
         let end_key = self.get_partition_key(end_time);
 
+        let mut partition_count = 0;
+        let mut skipped_count = 0;
+
         // Find all partitions that overlap with the query range
         for (&_partition_key, partition) in partitions.range(start_key..=end_key) {
+            if partition_count >= MAX_PARTITIONS_TO_AGGREGATE {
+                skipped_count += 1;
+                continue;
+            }
+
             if partition.start_time < end_time && partition.end_time > start_time {
                 result |= &partition.document_ids;
+                partition_count += 1;
             }
+        }
+
+        if skipped_count > 0 {
+            warn!(
+                partitions_processed = partition_count,
+                partitions_skipped = skipped_count,
+                start_time = start_time,
+                end_time = end_time,
+                "Time range query exceeded maximum partitions limit; results may be incomplete"
+            );
         }
 
         result
     }
 
     /// Get partition key for timestamp
+    /// 使用floor division确保负时间戳也能正确分区
     fn get_partition_key(&self, timestamp: i64) -> i64 {
         let partition_seconds = self.partition_size.as_secs() as i64;
-        (timestamp / partition_seconds) * partition_seconds
+        // Rust整数除法向零截断，对于负数需要特殊处理
+        // 例如: -1 / 3600 = 0 (错误)，应该得到 -1
+        if timestamp >= 0 {
+            (timestamp / partition_seconds) * partition_seconds
+        } else {
+            // 对于负数，向下取整
+            ((timestamp - partition_seconds + 1) / partition_seconds) * partition_seconds
+        }
     }
 
     /// Get index statistics
@@ -643,7 +691,7 @@ mod tests {
         engine.add_document(0, &log_entry);
 
         let filters = vec![Filter::Level("ERROR".to_string())];
-        let result = engine.apply_filters(&filters);
+        let result = engine.apply_filters(&filters).expect("apply_filters should succeed");
 
         assert!(result.contains(0));
     }

@@ -107,6 +107,7 @@ pub struct QueryOptimizer {
 }
 
 const QUERY_STATS_MAX_SIZE: usize = 1000;
+const MAX_OPTIMIZATION_SUGGESTIONS: usize = 3;
 
 #[derive(Debug, Default)]
 struct IndexStatistics {
@@ -237,7 +238,7 @@ impl QueryOptimizer {
         sorted_suggestions
             .sort_by(|a, b| b.estimated_improvement.total_cmp(&a.estimated_improvement));
 
-        for suggestion in sorted_suggestions.iter().take(3) {
+        for suggestion in sorted_suggestions.iter().take(MAX_OPTIMIZATION_SUGGESTIONS) {
             // Apply top 3 suggestions
             match suggestion.suggestion_type {
                 SuggestionType::TermReordering => {

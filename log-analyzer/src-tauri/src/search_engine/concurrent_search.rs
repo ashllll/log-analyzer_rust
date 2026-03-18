@@ -88,17 +88,51 @@ impl ReaderPool {
     fn new(index: &Index, pool_size: usize) -> SearchResult<Self> {
         let mut readers = Vec::with_capacity(pool_size);
 
-        for _ in 0..pool_size {
-            let reader = index
+        // 尝试创建多个reader，如果失败则降级处理
+        let mut successful_readers = 0;
+        let mut last_error = None;
+
+        for i in 0..pool_size {
+            match index
                 .reader_builder()
                 .reload_policy(ReloadPolicy::OnCommitWithDelay)
-                .try_into()?;
-            readers.push(reader);
+                .try_into()
+            {
+                Ok(reader) => {
+                    readers.push(reader);
+                    successful_readers += 1;
+                }
+                Err(e) => {
+                    last_error = Some(e);
+                    warn!(
+                        reader_index = i,
+                        pool_size = pool_size,
+                        successful = successful_readers,
+                        error = %last_error.as_ref().unwrap(),
+                        "Failed to create reader for pool, continuing with available readers"
+                    );
+                    break;
+                }
+            }
         }
+
+        if readers.is_empty() {
+            return Err(SearchError::IndexError(format!(
+                "Failed to create any reader for pool: {:?}",
+                last_error
+            )));
+        }
+
+        let reader_count = readers.len();
+        info!(
+            requested_readers = pool_size,
+            created_readers = reader_count,
+            "ReaderPool created with degraded capacity"
+        );
 
         Ok(Self {
             _readers: readers,
-            _available: Arc::new(Semaphore::new(pool_size)),
+            _available: Arc::new(Semaphore::new(reader_count)),
             stats: Arc::new(RwLock::new(ReaderPoolStats::default())),
         })
     }
@@ -257,11 +291,16 @@ impl ConcurrentSearchManager {
             let mut stats = self.stats.write();
             stats.active_searches = stats.active_searches.saturating_sub(1);
 
-            // Update average response time
-            let total_time =
-                stats.average_response_time_ms * (stats.total_concurrent_searches - 1) as f64;
-            stats.average_response_time_ms = (total_time + response_time.as_millis() as f64)
-                / stats.total_concurrent_searches as f64;
+            // Update average response time using atomic-safe calculation
+            // Guard against division by zero
+            let total_searches = stats.total_concurrent_searches as f64;
+            if total_searches > 0.0 {
+                let total_time =
+                    stats.average_response_time_ms * (total_searches - 1.0) + response_time.as_millis() as f64;
+                stats.average_response_time_ms = total_time / total_searches;
+            } else {
+                stats.average_response_time_ms = response_time.as_millis() as f64;
+            }
         }
 
         match &result {

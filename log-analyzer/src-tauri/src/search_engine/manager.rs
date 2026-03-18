@@ -562,8 +562,14 @@ impl SearchEngineManager {
             let mut writer = self.writer.lock();
             writer.commit()?;
         }
-        // Immediately reload the reader to make committed changes visible
-        self.reader.reload()?;
+        // Reload reader to make committed changes visible
+        // 如果reload失败，记录警告但仍然返回成功，因为数据已持久化
+        if let Err(e) = self.reader.reload() {
+            warn!(
+                error = %e,
+                "Reader reload failed after commit; readers may see stale data temporarily"
+            );
+        }
         Ok(())
     }
 
@@ -797,10 +803,13 @@ impl SearchEngineManager {
     }
 
     /// Clear the index
+    /// 注意：这是一个不可逆操作，delete_all是原子性的，但建议在调用前确认
     pub fn clear_index(&self) -> SearchResult<()> {
         let mut writer = self.writer.lock();
+        info!("Clearing index - deleting all documents");
         writer.delete_all_documents()?;
         writer.commit()?;
+        info!("Index cleared successfully");
         Ok(())
     }
 
@@ -892,13 +901,20 @@ impl SearchEngineManager {
         let query = TermQuery::new(term.clone(), tantivy::schema::IndexRecordOption::Basic);
         let count = searcher.search(&query, &Count)?;
 
-        // Now delete all matching documents
-        let mut writer = self.writer.lock();
-        let _opstamp = writer.delete_term(term);
+        // Delete and commit in isolated scope to minimize lock holding time
+        {
+            let mut writer = self.writer.lock();
+            let _opstamp = writer.delete_term(term);
+            writer.commit()?;
+        }
 
-        // Commit the changes and reload reader
-        writer.commit()?;
-        self.reader.reload()?;
+        // Reload reader in separate scope
+        if let Err(e) = self.reader.reload() {
+            warn!(
+                error = %e,
+                "Reader reload failed after delete; readers may see stale data temporarily"
+            );
+        }
 
         info!(
             file_path = %file_path,

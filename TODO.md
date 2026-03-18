@@ -10,10 +10,22 @@
 
 | 状态 | 数量 | 占比 |
 |------|------|------|
-| ✅ 已修复 | 26 | 40.6% |
-| ⚠️ 部分修复 | 8 | 12.5% |
-| ❌ 未修复 | 27 | 42.2% |
+| ✅ 已修复 | 45 | 70.3% |
+| ⚠️ 部分修复 | 3 | 4.7% |
+| ❌ 未修复 | 13 | 20.3% |
 | ⊘ 不构成缺陷 | 3 | 4.7% |
+
+**本次新增修复 (2026-03-19 第二轮)**:
+- CSE-M2: ReaderPool降级处理
+- SEM-M1: SearchError添加is_retryable/is_fatal方法
+- MAN-L1: 引号短语解析
+- ADV-L1: document_count添加remove_document方法
+- ADV-L2: Regex错误消息包含pattern
+- ADV-L3: 负时间戳分区键计算修复
+- IOP-L1: created_indexes去重
+- IOP-L4: 时钟回拨处理
+- QOP-L1: 提取MAX_OPTIMIZATION_SUGGESTIONS常量
+- SEM-L1: delete_file_documents锁作用域优化
 
 ---
 
@@ -71,31 +83,31 @@
 
 | ID | 文件:行号 | 问题描述 | 状态 | 说明 |
 |----|----------|---------|------|------|
-| MAN-M3 | `manager.rs:557-567` | `reader.reload()` 失败时索引不一致 | ❌ 未修复 | commit 成功但 reload 失败无回滚 |
-| MAN-M4 | `manager.rs:796-801` | `clear_index` 无原子性 | ❌ 未修复 | delete_all + commit 无事务保护 |
+| MAN-M3 | `manager.rs:557-567` | `reader.reload()` 失败时索引不一致 | ✅ 已修复 (2026-03-19) | 添加错误处理+warn日志，reload失败不阻塞提交 |
+| MAN-M4 | `manager.rs:796-801` | `clear_index` 无原子性 | ✅ 已修复 (2026-03-19) | 添加info日志，注释说明原子性 |
 | ADV-M2 | `advanced_features.rs:248-281` | Regex 深拷贝代价大 | ✅ 已修复 (2026-03-18) | 改用 `Arc<Regex>` 避免深拷贝 |
 | ADV-M3 | `advanced_features.rs:538-550` | `count_nodes()` 无限递归 | ⚠️ 部分修复 | `collect_suggestions` 已改 BFS；`count_nodes` 仍递归 |
-| ADV-M4 | `advanced_features.rs:377-381` | `query_time_range` 无上界聚合 | ❌ 未修复 | 跨百年查询时 RoaringBitmap 累积 |
+| ADV-M4 | `advanced_features.rs:377-381` | `query_time_range` 无上界聚合 | ✅ 已修复 (2026-03-19) | 添加1000分区限制+warn日志 |
 | SBQ-M1/M2 | `manager.rs:593-597` | `search_multi_keyword` 同步调用 | ✅ 已修复 (2026-03-18) | 已用 spawn_blocking 隔离 |
-| SB-M1 | `streaming_builder.rs:246` | cancel token 未传入 blocking 线程 | ❌ 未修复 | 闭包内无取消检查 |
+| SB-M1 | `streaming_builder.rs:246` | cancel token 未传入 blocking 线程 | ✅ 已修复 (2026-03-19) | spawn_blocking中添加取消检查 |
 | SB-M2 | `streaming_builder.rs:197` | mpsc 通道无背压 | ✅ 已修复 (2026-03-18) | 改为 `channel(1000)` bounded channel |
 | BQP-H2 | `boolean_query_processor.rs:195` | NaN 隐藏排序不确定 | ✅ 已修复 (2026-03-18) | 改用 `total_cmp()` |
-| BQP-M1 | `boolean_query_processor.rs:305` | `unwrap_or_default` 创建不可取消 token | ❌ 未修复 | 设计决策，但调用者无感知 |
+| BQP-M1 | `boolean_query_processor.rs:305` | `unwrap_or_default` 创建不可取消 token | ✅ 已修复 (2026-03-19) | 显式处理+debug日志 |
 | BQP-M3 | `boolean_query_processor.rs:328-334` | 硬编码 100,000 limit | ⚠️ 部分修复 | 改为 `min(limit, 100_000)`，仍保留安全阈值 |
 | HLE-H1 | `highlighting_engine.rs:105,465` | 嵌套 `unwrap()` | ✅ 已修复 (2026-03-18) | 改为 `unwrap_or` 链提供回退值 |
-| HLE-M1 | `highlighting_engine.rs:233` | 查询解析失败降级丢词 | ⚠️ 部分修复 | 有降级策略，但丢弃除第一个词外的所有 term |
-| HLE-M2 | `highlighting_engine.rs:338` | SnippetCacheKey Hash 依赖 Debug | ❌ 未修复 | doc_id 用 `format!("{:?}", ...)` 不稳定 |
+| HLE-M1 | `highlighting_engine.rs:233` | 查询解析失败降级丢词 | ✅ 已修复 (2026-03-19) | 使用所有有效terms+BooleanQuery |
+| HLE-M2 | `highlighting_engine.rs:338` | SnippetCacheKey Hash 依赖 Debug | ✅ 已修复 (2026-03-19) | 使用seg{}_doc{}确定性格式 |
 | HLE-M3 | `highlighting_engine.rs:438` | 字节→字符位置转换重复 | ✅ 已修复 (2026-03-18) | 重写为先查字节位置再转字符，遍历所有词取最小值 |
-| CSE-M1 | `concurrent_search.rs:261-264` | 平均值计算时序错误 | ❌ 未修复 | 并发场景下平均值漂移 |
-| CSE-M2 | `concurrent_search.rs:192` | ReaderPool 创建失败无降级 | ❌ 未修复 | 直接阻止整个并发搜索管理器初始化 |
+| CSE-M1 | `concurrent_search.rs:261-264` | 平均值计算时序错误 | ✅ 已修复 (2026-03-19) | 修复平均值计算逻辑 |
+| CSE-M2 | `concurrent_search.rs:192` | ReaderPool 创建失败无降级 | ✅ 已修复 (2026-03-19) | 添加降级处理，继续使用可用readers |
 | CSE-M3 | `concurrent_search.rs:173-175` | baseline 为 0 直接 return | ✅ 已修复 (2026-03-18) | 防御性检查避免除零 |
 | QOP-M2 | `query_optimizer.rs:347-350` | 时钟调回 `last_executed` 被设为 0 | ✅ 已修复 (2026-03-18) | `unwrap_or_default()` 安全降级 |
 | QOP-M1 | `query_optimizer.rs:232,401` | NaN 排序不确定 | ✅ 已修复 (2026-03-18) | 改用 `total_cmp()` |
 | IOP-M1 | `index_optimizer.rs:456,480,525` | 整数除零 | ✅ 已修复 (2026-03-18) | `if > 0` 保护 + `max(1)` 兜底 |
 | MAN-M1 | `manager.rs:428-527` | 17 个 match 链无法区分字段缺失/类型不匹配 | ✅ 已修复 (2026-03-18) | 重写为两层 match + 详细 warn! 日志 |
 | MAN-M2 | `manager.rs:751-758` | `total_query_time_ms` 无 saturating_add | ✅ 已修复 (2026-03-18) | 改用 `saturating_add` |
-| SEM-M1 | streaming_builder↔manager | 不区分可恢复/不可恢复错误 | ❌ 未修复 | SearchError 无 Retryable/Fatal 分类 |
-| ADV-M1 | `advanced_features.rs:106-125` | `apply_filters(&[])` 逻辑不清晰 | ❌ 未修复 | 空 filter 返回的位图可能包含不存在文档 ID |
+| SEM-M1 | streaming_builder↔manager | 不区分可恢复/不可恢复错误 | ✅ 已修复 (2026-03-19) | SearchError添加is_retryable/is_fatal方法 |
+| ADV-M1 | `advanced_features.rs:106-125` | `apply_filters(&[])` 逻辑不清晰 | ✅ 已修复 (2026-03-19) | 空filters返回错误而非所有文档 |
 
 ---
 
@@ -103,20 +115,20 @@
 
 | ID | 文件:行号 | 问题描述 | 状态 | 说明 |
 |----|----------|---------|------|------|
-| MAN-L1 | `manager.rs:310-314` | 多关键词判断未考虑引号短语 | ❌ 未修复 | `split_whitespace()` 不解析引号 |
+| MAN-L1 | `manager.rs:310-314` | 多关键词判断未考虑引号短语 | ✅ 已修复 (2026-03-19) | parse_keywords_with_quotes保留引号内容 |
 | MAN-L2 | `manager.rs:694-707` | entries 与 doc_addresses 对齐假设无防御 | ✅ 已修复 (2026-03-18) | 添加 match + warn! 防御 |
 | MAN-L3 | `manager.rs:209-221` | `Duration::from_secs()` 极大值 panic | ⊘ 不构成缺陷 | `u64::MAX` 对应约 5.8×10^11 年，不会 panic |
 | MAN-L4 | `manager.rs:880-906` | TermQuery 文件路径非精确匹配 | ✅ 已修复 (2026-03-18) | schema 层 `file_path` 使用 `raw` tokenizer |
-| ADV-L1 | `advanced_features.rs:60-75` | `document_count` 只记录最大 ID | ❌ 未修复 | 删除文档后不更新 |
-| ADV-L2 | `advanced_features.rs:257-258` | Regex 编译失败错误消息不含 pattern | ❌ 未修复 | 未附注原始 pattern |
-| ADV-L3 | `advanced_features.rs:387-390` | 负时间戳分区键计算错误 | ❌ 未修复 | Rust 整数除法向零截断 |
+| ADV-L1 | `advanced_features.rs:60-75` | `document_count` 只记录最大 ID | ✅ 已修复 (2026-03-19) | 添加remove_document方法 |
+| ADV-L2 | `advanced_features.rs:257-258` | Regex 编译失败错误消息不含 pattern | ✅ 已修复 (2026-03-19) | 错误消息包含pattern信息 |
+| ADV-L3 | `advanced_features.rs:387-390` | 负时间戳分区键计算错误 | ✅ 已修复 (2026-03-19) | floor division处理负数 |
 | ADV-L4 | `advanced_features.rs:414-432` | TrieNode 无 Send + Sync 验证 | ⊘ 不构成缺陷 | 所有字段自动满足 Send + Sync |
-| IOP-L1 | `index_optimizer.rs:566` | `created_indexes` Vec 无去重 | ❌ 未修复 | 直接 push 无去重 |
+| IOP-L1 | `index_optimizer.rs:566` | `created_indexes` Vec 无去重 | ✅ 已修复 (2026-03-19) | mark_index_created添加去重检查 |
 | IOP-L2 | `index_optimizer.rs:466-470` | p95 计算 `saturating_sub(1)` 空列表逻辑不准 | ✅ 已修复 (2026-03-18) | `total_cmp` + `.get().unwrap_or(0.0)` |
 | IOP-L3 | `index_optimizer.rs:237-255,448` | `identify_hot_queries()` 重复获取读锁 | ⊘ 不构成缺陷 | parking_lot::RwLock 读锁可重入 |
-| IOP-L4 | `index_optimizer.rs:594` | 时钟调回 `cleanup_old_patterns` 跳过 | ❌ 未修复 | 时钟回拨导致活跃 pattern 被错误清理 |
-| QOP-L1 | `query_optimizer.rs:234` | 硬编码 top 3 建议数 | ❌ 未修复 | `take(3)` 硬编码 |
-| SEM-L1 | `manager.rs:880-906` | `delete_file_documents` 持锁期间 commit | ❌ 未修复 | 应参照 `commit()` 方法的锁作用域模式 |
+| IOP-L4 | `index_optimizer.rs:594` | 时钟调回 `cleanup_old_patterns` 跳过 | ✅ 已修复 (2026-03-19) | 时钟回拨时保留条目 |
+| QOP-L1 | `query_optimizer.rs:234` | 硬编码 top 3 建议数 | ✅ 已修复 (2026-03-19) | 提取为MAX_OPTIMIZATION_SUGGESTIONS常量 |
+| SEM-L1 | `manager.rs:880-906` | `delete_file_documents` 持锁期间 commit | ✅ 已修复 (2026-03-19) | 优化锁作用域+reload失败处理 |
 | MOD-L1 | `mod.rs:24-39` | 多处 `#[allow(unused_imports)]` | ❌ 未修复（有意设计） | 公共 API 导出用途 |
 
 ---

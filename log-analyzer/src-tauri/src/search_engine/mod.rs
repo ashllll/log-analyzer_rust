@@ -62,4 +62,34 @@ pub enum SearchError {
     RegexError(#[from] regex::Error),
 }
 
+impl SearchError {
+    /// 判断错误是否可重试
+    /// 可重试错误：临时性问题，如超时、IO错误
+    /// 不可重试错误：永久性问题，如查询语法错误
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            SearchError::Timeout(_) => true,
+            SearchError::IndexError(msg) => {
+                // 索引损坏等不可重试，权限问题等可重试
+                !msg.contains("permission denied")
+                    && !msg.contains("corrupt")
+                    && !msg.contains("damaged")
+            }
+            SearchError::IoError(_) => true,
+            SearchError::TantivyError(e) => {
+                // Tantivy内部错误，根据错误类型判断
+                e.to_string().contains("timeout")
+                    || e.to_string().contains("IO")
+            }
+            SearchError::QueryError(_) => false,
+            SearchError::RegexError(_) => false,
+        }
+    }
+
+    /// 判断是否为致命错误（不应继续执行）
+    pub fn is_fatal(&self) -> bool {
+        matches!(self, SearchError::QueryError(_) | SearchError::RegexError(_))
+    }
+}
+
 pub type SearchResult<T> = Result<T, SearchError>;
