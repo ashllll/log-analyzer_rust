@@ -180,6 +180,32 @@ impl IndexOptimizer {
     /// Record a query execution with result count
     pub fn record_query_with_results(&self, query: &str, duration: Duration, result_count: usize) {
         let mut patterns = self.query_patterns.write();
+
+        // 大小守卫：HashMap 无上限增长是内存泄漏的根因。
+        // cleanup_old_patterns() 存在但从未自动触发。
+        // 超过 5000 条时主动清理最旧的 20%，保持 HashMap 有界。
+        const MAX_QUERY_PATTERNS: usize = 5_000;
+        if patterns.len() >= MAX_QUERY_PATTERNS && !patterns.contains_key(query) {
+            let now = SystemTime::now();
+            let cleanup_window = self.config.analysis_window * 2;
+            let before = patterns.len();
+            patterns.retain(|_, stats| {
+                stats
+                    .last_seen
+                    .and_then(|t| now.duration_since(t).ok())
+                    .map(|elapsed| elapsed <= cleanup_window)
+                    .unwrap_or(false)
+            });
+            let removed = before - patterns.len();
+            if removed > 0 {
+                tracing::debug!(
+                    removed,
+                    remaining = patterns.len(),
+                    "query_patterns 达到上限，自动清理过期条目"
+                );
+            }
+        }
+
         let stats = patterns.entry(query.to_string()).or_default();
 
         let duration_ms = duration.as_millis() as u64;

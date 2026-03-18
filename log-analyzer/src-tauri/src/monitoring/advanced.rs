@@ -223,51 +223,35 @@ impl HealthMonitor {
     
     /// 获取系统指标
     pub async fn get_metrics(&self) -> HashMap<String, f64> {
+        // System::new_all() + refresh_all() 是同步阻塞操作，且原来会重复调用三次
+        // 改为：单次创建 System，用 spawn_blocking 隔离，避免阻塞 tokio worker 线程
+        let result = tokio::task::spawn_blocking(|| {
+            use sysinfo::{CpuExt, DiskExt, System, SystemExt};
+            let mut sys = System::new_all();
+            sys.refresh_all();
+
+            let memory_mb = sys.used_memory() as f64 / 1024.0 / 1024.0;
+            let cpu_pct = sys.global_cpu_info().cpu_usage() as f64;
+            let disk_gb: f64 = sys
+                .disks()
+                .iter()
+                .map(|d| (d.total_space() - d.available_space()) as f64)
+                .sum::<f64>()
+                / 1024.0
+                / 1024.0
+                / 1024.0;
+
+            (memory_mb, cpu_pct, disk_gb)
+        })
+        .await;
+
         let mut metrics = HashMap::new();
-        
-        // 内存使用
-        if let Ok(memory) = self.get_memory_usage() {
-            metrics.insert("memory_usage_mb".to_string(), memory as f64 / 1024.0 / 1024.0);
+        if let Ok((memory_mb, cpu_pct, disk_gb)) = result {
+            metrics.insert("memory_usage_mb".to_string(), memory_mb);
+            metrics.insert("cpu_usage_percent".to_string(), cpu_pct);
+            metrics.insert("disk_usage_gb".to_string(), disk_gb);
         }
-        
-        // CPU使用
-        if let Ok(cpu) = self.get_cpu_usage() {
-            metrics.insert("cpu_usage_percent".to_string(), cpu);
-        }
-        
-        // 磁盘使用
-        if let Ok(disk) = self.get_disk_usage() {
-            metrics.insert("disk_usage_gb".to_string(), disk as f64 / 1024.0 / 1024.0 / 1024.0);
-        }
-        
         metrics
-    }
-    
-    fn get_memory_usage(&self) -> Result<usize, Box<dyn std::error::Error>> {
-        use sysinfo::{System, SystemExt};
-        let mut sys = System::new_all();
-        sys.refresh_all();
-        Ok(sys.used_memory())
-    }
-    
-    fn get_cpu_usage(&self) -> Result<f32, Box<dyn std::error::Error>> {
-        use sysinfo::{System, SystemExt};
-        let mut sys = System::new_all();
-        sys.refresh_all();
-        Ok(sys.global_cpu_info().cpu_usage())
-    }
-    
-    fn get_disk_usage(&self) -> Result<u64, Box<dyn std::error::Error>> {
-        use sysinfo::{DiskExt, System, SystemExt};
-        let mut sys = System::new_all();
-        sys.refresh_all();
-        
-        let mut total_used = 0;
-        for disk in sys.disks() {
-            total_used += disk.total_space() - disk.available_space();
-        }
-        
-        Ok(total_used)
     }
 }
 
@@ -349,7 +333,15 @@ impl UnifiedMonitoringManager {
 
 impl Default for UnifiedMonitoringManager {
     fn default() -> Self {
-        Self::new().unwrap()
+        Self::new().unwrap_or_else(|e| {
+            // Prometheus 指标注册失败通常是由于同一进程中重复注册
+            // 输出明确错误日志以便快速定位，再 panic
+            tracing::error!(
+                error = %e,
+                "UnifiedMonitoringManager 初始化失败（可能原因：Prometheus 指标重复注册），请检查是否多次调用 Default::default()"
+            );
+            panic!("UnifiedMonitoringManager 初始化失败: {e}")
+        })
     }
 }
 

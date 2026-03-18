@@ -220,7 +220,14 @@ impl QueryExecutor {
         details.sort_by_key(|d| std::cmp::Reverse(d.priority));
 
         if details.is_empty() {
-            None
+            // Not 策略：行通过是因为"没有"任何排除关键词出现，
+            // details 为空是正确的语义（没有需要高亮的匹配），
+            // 返回 Some([]) 而非 None 以防止行被过滤掉。
+            // And/Or 策略下 details 为空意味着引擎实现与 matches_line 不一致，返回 None 是合理的防御。
+            match plan.strategy {
+                crate::services::query_planner::SearchStrategy::Not => Some(vec![]),
+                _ => None,
+            }
         } else {
             Some(details)
         }
