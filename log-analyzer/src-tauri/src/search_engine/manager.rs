@@ -817,10 +817,6 @@ impl SearchEngineManager {
     /// info!("Time range: {} to {}, total: {} logs", min_ts, max_ts, count);
     /// ```
     pub fn get_time_range(&self) -> SearchResult<(i64, i64, usize)> {
-        use tantivy::collector::TopDocs;
-        use tantivy::query::AllQuery;
-        use tantivy::schema::Value;
-
         let searcher = self.reader.searcher();
         let total_count = searcher.num_docs() as usize;
 
@@ -828,19 +824,25 @@ impl SearchEngineManager {
             return Ok((0, 0, 0));
         }
 
-        // Get all documents to find min/max timestamp
-        // Since we use fast fields, this is relatively efficient
-        let top_docs = searcher.search(&AllQuery, &TopDocs::with_limit(total_count))?;
-
+        // 利用 Fast Field 列统计：O(n_segments) 而非 O(n_docs)
+        // Column<i64>.min_value() / max_value() 直接读取段级压缩统计，无需遍历文档
+        // 注：已包含软删除但未合并文档的时间戳，偏宽属可接受估算误差
         let mut min_timestamp = i64::MAX;
         let mut max_timestamp = i64::MIN;
 
-        for (_score, doc_address) in top_docs {
-            let retrieved_doc: TantivyDocument = searcher.doc(doc_address)?;
-            if let Some(value) = retrieved_doc.get_first(self.schema.timestamp) {
-                if let Some(ts) = value.as_i64() {
-                    min_timestamp = min_timestamp.min(ts);
-                    max_timestamp = max_timestamp.max(ts);
+        for segment_reader in searcher.segment_readers() {
+            let fast_fields = segment_reader.fast_fields();
+            match fast_fields.i64("timestamp") {
+                Ok(col) => {
+                    min_timestamp = min_timestamp.min(col.min_value());
+                    max_timestamp = max_timestamp.max(col.max_value());
+                }
+                Err(e) => {
+                    // 段为空或字段未索引，跳过
+                    tracing::warn!(
+                        error = %e,
+                        "get_time_range: 无法读取 timestamp fast field，跳过此段"
+                    );
                 }
             }
         }
