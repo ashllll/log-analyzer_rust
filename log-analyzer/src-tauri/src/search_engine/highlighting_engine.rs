@@ -428,31 +428,25 @@ impl HighlightingEngine {
             return content.chars().take(max_length).collect();
         }
 
-        // 遍历所有查询词，找到最早出现的位置（字节偏移）
-        // 修复：移除 break，不再只检查第一个词；同时将字节偏移转换为字符偏移
+        // 遍历所有查询词，在字符空间（非字节空间）找到最早出现位置
+        // 修复：① context_size 在字符单位下减去，而非字节单位；② 遍历所有词取最小值
         let content_lower = content.to_lowercase();
-        let mut best_byte_start: Option<usize> = None;
+        let mut best_char_start: Option<usize> = None;
         for term in &query_terms {
-            if let Some(pos) = content_lower.find(&term.to_lowercase()) {
-                let start = pos.saturating_sub(self.config.context_size);
-                best_byte_start = Some(match best_byte_start {
+            if let Some(byte_pos) = content_lower.find(&term.to_lowercase()) {
+                // 先将字节偏移换算为字符偏移，再减去上下文大小（字符单位）
+                let char_pos = content[..byte_pos].chars().count();
+                let start = char_pos.saturating_sub(self.config.context_size);
+                best_char_start = Some(match best_char_start {
                     None => start,
                     Some(prev) => prev.min(start),
                 });
             }
         }
 
-        // 将字节偏移转换为字符偏移，避免 CJK 等多字节字符截断错位
-        let best_char_start = best_byte_start.map_or(0, |byte_pos| {
-            content
-                .char_indices()
-                .take_while(|(i, _)| *i < byte_pos)
-                .count()
-        });
-
         content
             .chars()
-            .skip(best_char_start)
+            .skip(best_char_start.unwrap_or(0))
             .take(max_length)
             .collect()
     }
