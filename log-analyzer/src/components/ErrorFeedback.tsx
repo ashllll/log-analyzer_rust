@@ -70,8 +70,8 @@ export const ErrorFeedbackForm: React.FC<ErrorFeedbackProps> = ({
 
       if (onSubmit) {
         await onSubmit(feedback);
-      } else {
-        // 默认行为：记录到控制台
+      } else if (import.meta.env.DEV) {
+        // 默认行为：仅在开发模式记录到控制台
         console.log('Error feedback:', feedback);
       }
 

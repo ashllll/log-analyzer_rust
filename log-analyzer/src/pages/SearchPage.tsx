@@ -490,15 +490,16 @@ const SearchPage: React.FC<SearchPageProps> = ({
     onComplete: useCallback((count: number) => {
       dispatchSearchExec({ type: 'COMPLETE' });
 
-      if (query.trim() && activeWorkspace) {
-        invoke('add_search_history', {
-          query: query.trim(),
-          workspaceId: activeWorkspace.id,
-          resultCount: count,
-        }).catch((err) => {
-          logger.error('Failed to save search history:', getFullErrorMessage(err));
-        });
-      }
+      // add_search_history 命令后端未实现，暂注释
+      // if (query.trim() && activeWorkspace) {
+      //   invoke('add_search_history', {
+      //     query: query.trim(),
+      //     workspaceId: activeWorkspace.id,
+      //     resultCount: count,
+      //   }).catch((err) => {
+      //     logger.error('Failed to save search history:', getFullErrorMessage(err));
+      //   });
+      // }
 
       if (count > SEARCH_CONFIG.STREAM_SEARCH_THRESHOLD && bufferRef.current.length > 0) {
         const searchId = `search_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;

@@ -623,7 +623,9 @@ export function initGlobalErrorHandlers(): (() => void) | undefined {
   window.addEventListener('unhandledrejection', handleUnhandledRejection);
   window.addEventListener('error', handleError);
 
-  console.log('[GlobalError] Global error handlers initialized');
+  if (import.meta.env.DEV) {
+    console.log('[GlobalError] Global error handlers initialized');
+  }
 
   // 清理函数
   return () => {
