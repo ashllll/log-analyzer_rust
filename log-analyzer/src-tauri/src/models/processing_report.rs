@@ -197,11 +197,12 @@ impl ProcessingStatistics {
     pub fn elapsed_seconds(&self) -> f64 {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs() as f64;
 
         let start = self.start_timestamp as f64;
-        now - start
+        // 保证非负（时钟回拨或时间戳无效时返回 0）
+        (now - start).max(0.0)
     }
 
     /// 预估剩余时间（秒）

@@ -26,6 +26,8 @@ impl AsyncFileReader {
         path: &Path,
         offset: u64,
     ) -> Result<(Vec<String>, u64), String> {
+        // 每次调用最多读取 10MB，防止超大文件导致 OOM
+        const MAX_READ_BYTES: usize = 10 * 1024 * 1024;
         // 打开文件
         let mut file = File::open(path)
             .await
@@ -56,11 +58,24 @@ impl AsyncFileReader {
         let reader = BufReader::new(file);
         let mut lines = Vec::new();
         let mut lines_stream = reader.lines();
-        
-        // 异步读取所有行
+        let mut bytes_read: usize = 0;
+
+        // 异步读取行，达到字节上限时停止，防止超大文件 OOM
         while let Some(line) = lines_stream.next_line().await {
             match line {
-                Ok(l) => lines.push(l),
+                Ok(l) => {
+                    bytes_read += l.len() + 1; // +1 for newline
+                    lines.push(l);
+                    if bytes_read >= MAX_READ_BYTES {
+                        warn!(
+                            path = %path.display(),
+                            bytes_read,
+                            max_bytes = MAX_READ_BYTES,
+                            "读取字节数达到上限，截断返回（防止 OOM）"
+                        );
+                        break;
+                    }
+                }
                 Err(e) => {
                     warn!(error = %e, "Error reading line");
                     break;

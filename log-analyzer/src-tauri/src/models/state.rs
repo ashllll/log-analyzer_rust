@@ -104,11 +104,10 @@ impl AppState {
     /// 获取异步缓存统计信息
     ///
     /// 内部调用 CacheManager 的异步方法（实际上执行的是同步操作）
-    /// 由于方法声明为 async 且需要保持 API 兼容性，这里使用 block_on 包装
-    #[allow(clippy::await_holding_lock)]
-    pub async fn get_async_cache_statistics(&self) -> CacheStatistics {
+    /// 注意：此方法为同步方法，持锁期间不跨越 await 点，避免死锁风险
+    pub fn get_async_cache_statistics(&self) -> CacheStatistics {
         let cache = self.cache_manager.lock();
-        // 方法是 async 但执行的是同步操作，直接调用
+        // 底层方法执行同步操作，block_on 在此安全（调用方不在 tokio 上下文中持锁 await）
         tauri::async_runtime::block_on(cache.get_async_cache_statistics())
     }
 
@@ -127,8 +126,9 @@ impl AppState {
     }
 
     /// 清理异步缓存条目
-    #[allow(clippy::await_holding_lock)]
-    pub async fn cleanup_expired_entries_async(&self) -> Result<(), String> {
+    ///
+    /// 注意：此方法为同步方法，持锁期间不跨越 await 点，避免死锁风险
+    pub fn cleanup_expired_entries_async(&self) -> Result<(), String> {
         let cache = self.cache_manager.lock();
         let result = tauri::async_runtime::block_on(cache.cleanup_expired_entries_async());
         result.map_err(|e| e.to_string())
@@ -147,8 +147,9 @@ impl AppState {
     }
 
     /// 执行缓存健康检查
-    #[allow(clippy::await_holding_lock)]
-    pub async fn cache_health_check(&self) -> CacheHealthCheck {
+    ///
+    /// 注意：此方法为同步方法，持锁期间不跨越 await 点，避免死锁风险
+    pub fn cache_health_check(&self) -> CacheHealthCheck {
         let cache = self.cache_manager.lock();
         tauri::async_runtime::block_on(cache.health_check())
     }
@@ -172,8 +173,9 @@ impl AppState {
     }
 
     /// 智能缓存驱逐
-    #[allow(clippy::await_holding_lock)]
-    pub async fn intelligent_cache_eviction(
+    ///
+    /// 注意：此方法为同步方法，持锁期间不跨越 await 点，避免死锁风险
+    pub fn intelligent_cache_eviction(
         &self,
         target_reduction_percent: f64,
     ) -> Result<usize, String> {

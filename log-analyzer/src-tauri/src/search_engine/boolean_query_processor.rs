@@ -192,10 +192,8 @@ impl BooleanQueryProcessor {
         }
 
         // Sort by selectivity (most selective first for better performance)
-        term_selectivities.sort_by(|a, b| {
-            a.2.partial_cmp(&b.2)
-                .unwrap_or_else(|| a.2.total_cmp(&b.2))
-        });
+        term_selectivities
+            .sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or_else(|| a.2.total_cmp(&b.2)));
 
         // Calculate estimated cost and determine if early termination is beneficial
         let estimated_cost = self.estimate_query_cost(&term_selectivities);
@@ -244,6 +242,20 @@ impl BooleanQueryProcessor {
             } else {
                 1.0
             };
+
+            // 大小守卫：防止 term_stats HashMap 无限增长导致内存泄漏
+            const MAX_TERM_CACHE: usize = 1_000;
+            if stats.len() >= MAX_TERM_CACHE {
+                // 清除超过 300 秒未使用的过期条目
+                let cutoff = std::time::Duration::from_secs(300);
+                stats.retain(|_, v| {
+                    v.last_used.elapsed().unwrap_or(std::time::Duration::MAX) < cutoff
+                });
+                warn!(
+                    remaining = stats.len(),
+                    "term_stats 缓存达到上限，已清理过期条目"
+                );
+            }
 
             stats.insert(
                 term.to_string(),

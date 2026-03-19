@@ -113,13 +113,27 @@ impl VirtualSearchManager {
             last_accessed: now,
         };
 
-        {
+        // 先写 metadata，再写 sessions（LRU put 可能驱逐旧条目）
+        // 通过 peek_lru 预先记录将被驱逐的 key，put 后同步清理 metadata
+        let evicted_id = {
             let mut sessions = self.sessions.lock();
+            // LruCache::put 返回 Option<V>（旧值），无法得知被驱逐的 key
+            // 使用 peek_lru 在 put 前预先记录即将被驱逐的 key
+            let lru_key = if sessions.len() >= sessions.cap().get() {
+                sessions.peek_lru().map(|(k, _)| k.clone())
+            } else {
+                None
+            };
             sessions.put(search_id.clone(), truncated_entries);
-        }
+            lru_key
+        };
 
         {
             let mut metadata = self.session_metadata.lock();
+            // 若 LRU 驱逐了旧条目，同步从 metadata 中删除，保持两者一致
+            if let Some(evicted_key) = evicted_id {
+                metadata.remove(&evicted_key);
+            }
             metadata.insert(search_id.clone(), session);
         }
 

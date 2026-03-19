@@ -109,9 +109,9 @@ impl ReaderPool {
                         pool_size = pool_size,
                         successful = successful_readers,
                         error = %last_error.as_ref().unwrap(),
-                        "Failed to create reader for pool, continuing with available readers"
+                        "Failed to create reader for pool, skipping and continuing"
                     );
-                    break;
+                    continue;
                 }
             }
         }
@@ -295,8 +295,8 @@ impl ConcurrentSearchManager {
             // Guard against division by zero
             let total_searches = stats.total_concurrent_searches as f64;
             if total_searches > 0.0 {
-                let total_time =
-                    stats.average_response_time_ms * (total_searches - 1.0) + response_time.as_millis() as f64;
+                let total_time = stats.average_response_time_ms * (total_searches - 1.0)
+                    + response_time.as_millis() as f64;
                 stats.average_response_time_ms = total_time / total_searches;
             } else {
                 stats.average_response_time_ms = response_time.as_millis() as f64;

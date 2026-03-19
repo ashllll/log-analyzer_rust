@@ -231,7 +231,10 @@ impl SearchEngineManager {
         let start_time = Instant::now();
         let limit = limit.unwrap_or(self.config.max_results);
         let timeout_duration = timeout_duration.unwrap_or(self.config.default_timeout);
-        let token = token.unwrap_or_default();
+        let token = token.unwrap_or_else(|| {
+            debug!("未传入 CancellationToken，创建本地 token（无外部取消能力，依赖超时机制兜底）");
+            CancellationToken::new()
+        });
 
         debug!(query = %query, limit = limit, timeout_ms = timeout_duration.as_millis(), "Starting search");
 
@@ -340,7 +343,10 @@ impl SearchEngineManager {
         limit: usize,
         token: Option<CancellationToken>,
     ) -> SearchResult<SearchResults> {
-        let token = token.unwrap_or_default();
+        let token = token.unwrap_or_else(|| {
+            debug!("execute_search 未收到 CancellationToken，创建本地 token（无外部取消能力）");
+            CancellationToken::new()
+        });
         let reader = self.reader.clone();
         let schema = self.schema.clone();
         let token_clone = token.clone();
@@ -533,14 +539,19 @@ impl SearchEngineManager {
         let mut doc = TantivyDocument::default();
 
         doc.add_text(self.schema.content, &log_entry.content);
-        // 解析时间戳字符串到 i64；解析失败时使用 0（1970-01-01），并输出警告便于定位数据问题
+        // 解析时间戳字符串到 i64；解析失败时使用当前时间作为占位，并输出警告便于定位数据问题
         let timestamp_i64 = log_entry.timestamp.parse::<i64>().unwrap_or_else(|_| {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64;
             tracing::warn!(
                 timestamp = %log_entry.timestamp,
                 file = %log_entry.file,
-                "时间戳解析失败，使用默认值 0（1970-01-01）；可能影响日志时序排序"
+                fallback_timestamp = now,
+                "时间戳解析失败，使用当前时间作为占位值；可能影响日志时序排序"
             );
-            0
+            now
         });
         doc.add_i64(self.schema.timestamp, timestamp_i64);
         doc.add_text(self.schema.level, &log_entry.level);
@@ -599,34 +610,37 @@ impl SearchEngineManager {
         let reader = self.reader.clone();
         let schema = self.schema.clone();
 
-        let search_result = timeout(
-            timeout_duration,
-            tokio::task::spawn_blocking(move || {
-                let (doc_addresses, total_count) = boolean_processor
-                    .process_multi_keyword_query(&keywords_owned, require_all, limit, None)?;
+        let search_result =
+            timeout(
+                timeout_duration,
+                tokio::task::spawn_blocking(move || {
+                    let (doc_addresses, total_count) = boolean_processor
+                        .process_multi_keyword_query(&keywords_owned, require_all, limit, None)?;
 
-                let searcher = reader.searcher();
-                let mut entries = Vec::with_capacity(doc_addresses.len());
-                let mut addresses = Vec::with_capacity(doc_addresses.len());
+                    let searcher = reader.searcher();
+                    let mut entries = Vec::with_capacity(doc_addresses.len());
+                    let mut addresses = Vec::with_capacity(doc_addresses.len());
 
-                for doc_address in doc_addresses {
-                    let retrieved_doc = searcher.doc(doc_address)?;
-                    if let Some(log_entry) = document_to_log_entry_inner(&schema, &retrieved_doc) {
-                        entries.push(log_entry);
-                        addresses.push(doc_address);
+                    for doc_address in doc_addresses {
+                        let retrieved_doc = searcher.doc(doc_address)?;
+                        if let Some(log_entry) =
+                            document_to_log_entry_inner(&schema, &retrieved_doc)
+                        {
+                            entries.push(log_entry);
+                            addresses.push(doc_address);
+                        }
                     }
-                }
 
-                Ok(SearchResults {
-                    entries,
-                    doc_addresses: addresses,
-                    total_count,
-                    query_time_ms: 0,
-                    was_timeout: false,
-                })
-            }),
-        )
-        .await;
+                    Ok(SearchResults {
+                        entries,
+                        doc_addresses: addresses,
+                        total_count,
+                        query_time_ms: 0,
+                        was_timeout: false,
+                    })
+                }),
+            )
+            .await;
 
         let query_time = start_time.elapsed();
 
@@ -761,7 +775,9 @@ impl SearchEngineManager {
     fn update_stats(&self, query_time: Duration, was_timeout: bool) {
         let mut stats = self.stats.write();
         stats.total_searches += 1;
-        stats.total_query_time_ms = stats.total_query_time_ms.saturating_add(query_time.as_millis() as u64);
+        stats.total_query_time_ms = stats
+            .total_query_time_ms
+            .saturating_add(query_time.as_millis() as u64);
         if was_timeout {
             stats.timeout_count += 1;
         }

@@ -138,6 +138,17 @@ impl TarHandler {
             let out_path = target_dir.join(&safe_path);
             let size = entry.header().size().unwrap_or(0);
 
+            // 拒绝符号链接和硬链接，防止 ZIP Slip 变种攻击
+            if entry.header().entry_type().is_symlink()
+                || entry.header().entry_type() == tar::EntryType::Link
+            {
+                warn!(
+                    file = %path_str,
+                    "TAR 条目包含符号链接或硬链接，已跳过（安全限制）"
+                );
+                continue;
+            }
+
             if entry.header().entry_type().is_file() {
                 // Check limits before extraction
                 let would_exceed_limits = size > max_file_size

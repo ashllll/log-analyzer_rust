@@ -109,8 +109,15 @@ impl ArchiveHandler for RarHandler {
                             summary.add_file(safe_path, size);
                         }
                         Err(e) => {
-                            warn!("Failed to extract RAR entry {:?}: {}", out_path, e);
-                            // unrar crate consumes the header on error, we might need to handle this
+                            warn!(
+                                path = ?out_path,
+                                error = %e,
+                                "RAR 条目提取失败，清理残留文件后中止"
+                            );
+                            // 清理可能的残留文件，防止不完整文件留在磁盘
+                            if out_path.exists() {
+                                let _ = std::fs::remove_file(&out_path);
+                            }
                             return Err(AppError::archive_error(e.to_string(), None));
                         }
                     }

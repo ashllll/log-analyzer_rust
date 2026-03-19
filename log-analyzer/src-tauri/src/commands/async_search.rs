@@ -35,8 +35,9 @@ pub async fn async_search_logs(
 
     let search_id = Uuid::new_v4().to_string();
     let workspace_id = workspaceId.unwrap_or_else(|| "default".to_string());
-    let max_results = max_results.unwrap_or(10000).min(50000);
-    let timeout = Duration::from_secs(timeout_seconds.unwrap_or(30));
+    let max_results = max_results.unwrap_or(10000).clamp(1, 50000);
+    // timeout_seconds 最小值为 1，防止 Duration::from_secs(0) 导致立即超时
+    let timeout = Duration::from_secs(timeout_seconds.unwrap_or(30).max(1));
 
     // 注册异步操作
     let cancellation_token = state

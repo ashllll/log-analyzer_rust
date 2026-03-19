@@ -16,7 +16,7 @@
 use std::fmt;
 use std::sync::Arc;
 
-use aho_corasick::AhoCorasick;
+use aho_corasick::{AhoCorasick, AhoCorasickBuilder};
 use regex::Regex;
 use thiserror::Error;
 
@@ -129,6 +129,25 @@ impl RegexEngine {
         StandardEngine::new(pattern).map(RegexEngine::Standard)
     }
 
+    /// 带大小写不敏感标志的构造方法，供 query_planner 使用
+    pub fn new_with_case(
+        pattern: &str,
+        is_regex: bool,
+        case_insensitive: bool,
+    ) -> Result<Self, EngineError> {
+        if needs_lookaround(pattern) {
+            return StandardEngine::new(pattern).map(RegexEngine::Standard);
+        }
+        if is_regex && !is_simple_keyword(pattern) {
+            return StandardEngine::new(pattern).map(RegexEngine::Standard);
+        }
+        if is_multi_keyword(pattern) {
+            return AhoCorasickEngine::new_with_ci(pattern, case_insensitive)
+                .map(RegexEngine::AhoCorasick);
+        }
+        StandardEngine::new(pattern).map(RegexEngine::Standard)
+    }
+
     pub fn find_iter<'a>(&'a self, text: &'a str) -> EngineMatches<'a> {
         match self {
             RegexEngine::AhoCorasick(e) => EngineMatches::AhoCorasick(e.find_iter(text)),
@@ -154,6 +173,10 @@ pub struct AhoCorasickEngine {
 
 impl AhoCorasickEngine {
     pub fn new(pattern: &str) -> Result<Self, EngineError> {
+        Self::new_with_ci(pattern, false)
+    }
+
+    pub fn new_with_ci(pattern: &str, case_insensitive: bool) -> Result<Self, EngineError> {
         let patterns: Vec<&str> = if pattern.contains('|') {
             pattern.split('|').collect()
         } else {
@@ -166,7 +189,9 @@ impl AhoCorasickEngine {
             ));
         }
 
-        let ac = AhoCorasick::new(&patterns)
+        let ac = AhoCorasickBuilder::new()
+            .ascii_case_insensitive(case_insensitive)
+            .build(&patterns)
             .map_err(|e| EngineError::CompilationError(e.to_string()))?;
 
         Ok(Self {

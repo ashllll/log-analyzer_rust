@@ -168,6 +168,8 @@ impl MetricsStore {
         let pool = SqlitePoolOptions::new()
             .min_connections(1)
             .max_connections(5)
+            // 与 metadata_store.rs 保持一致：高并发时连接获取超时 30s，防止永久阻塞
+            .acquire_timeout(std::time::Duration::from_secs(30))
             .connect(&db_url)
             .await
             .map_err(|e| {

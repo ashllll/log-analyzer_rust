@@ -126,36 +126,39 @@ impl QueryPlanner {
      * * `Err(AppError)` - 编译失败
      */
     fn get_or_compile_engine(&mut self, term: &SearchTerm) -> Result<Arc<RegexEngine>> {
-        let pattern = if term.is_regex {
-            term.value.clone()
+        let (pattern, use_ci) = if term.is_regex {
+            (term.value.clone(), false) // 正则已含 (?i:) 或用户自行控制
         } else {
             let raw_pattern = &term.value;
 
             if raw_pattern.contains('|') {
-                if term.case_sensitive {
-                    raw_pattern.clone()
-                } else {
-                    raw_pattern.to_lowercase()
-                }
+                // 多模式：保留原始模式，由 AhoCorasick ascii_case_insensitive 处理
+                (raw_pattern.clone(), !term.case_sensitive)
             } else {
                 let escaped = regex::escape(raw_pattern);
-
                 if term.case_sensitive {
-                    escaped
+                    (escaped, false)
                 } else {
-                    format!("(?i:{})", escaped)
+                    (format!("(?i:{})", escaped), false)
                 }
             }
         };
 
-        let cache_key = format!("{}|{}|{}", pattern, term.is_regex, term.case_sensitive);
+        let cache_key = format!(
+            "{}|{}|{}|{}",
+            pattern, term.is_regex, term.case_sensitive, use_ci
+        );
 
         if let Some(cached) = self.engine_cache.get(&cache_key) {
             return Ok(Arc::clone(&cached));
         }
 
-        let engine = RegexEngine::new(&pattern, term.is_regex)
-            .map_err(|e| AppError::validation_error(format!("Engine error: {}", e)))?;
+        let engine = if use_ci {
+            RegexEngine::new_with_case(&pattern, term.is_regex, true)
+        } else {
+            RegexEngine::new(&pattern, term.is_regex)
+        }
+        .map_err(|e| AppError::validation_error(format!("Engine error: {}", e)))?;
 
         let result = Arc::new(engine);
         self.engine_cache.insert(cache_key, Arc::clone(&result));

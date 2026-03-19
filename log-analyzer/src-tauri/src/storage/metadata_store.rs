@@ -154,8 +154,10 @@ impl MetadataStore {
     ///
     /// 应用退出前调用，确保 WAL 文件内容完整写回主数据库。
     pub async fn close(&self) {
-        // 执行 WAL checkpoint，将所有 WAL 内容写回主数据库
-        if let Err(e) = sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
+        // 执行 WAL checkpoint（RESTART 模式）：WAL 写入者完成后检查点，
+        // 不等待读取者，避免无限阻塞；TRUNCATE 模式会等待所有读取者完成，
+        // 在存在长时间读取者时可能永久阻塞（STO-M2）
+        if let Err(e) = sqlx::query("PRAGMA wal_checkpoint(RESTART)")
             .execute(&self.pool)
             .await
         {

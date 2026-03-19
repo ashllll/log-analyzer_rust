@@ -114,10 +114,9 @@ impl FilterEngine {
     /// 返回 SearchResult 以处理空filters边界情况
     pub fn apply_filters(&self, filters: &[Filter]) -> SearchResult<RoaringBitmap> {
         if filters.is_empty() {
-            // 空filters应返回错误而非所有文档，避免逻辑混淆
-            return Err(SearchError::QueryError(
-                "Empty filter list provided; specify at least one filter".to_string(),
-            ));
+            // 空过滤列表语义：无约束条件，返回全集（匹配所有文档）
+            let count = *self.document_count.read();
+            return Ok(RoaringBitmap::from_iter(0..count));
         }
 
         let mut result_bitmap = None;
@@ -456,17 +455,12 @@ impl TimePartitionedIndex {
     }
 
     /// Get partition key for timestamp
-    /// 使用floor division确保负时间戳也能正确分区
+    /// 使用 div_euclid 实现 floor division，确保负时间戳也能正确分区
     fn get_partition_key(&self, timestamp: i64) -> i64 {
         let partition_seconds = self.partition_size.as_secs() as i64;
-        // Rust整数除法向零截断，对于负数需要特殊处理
-        // 例如: -1 / 3600 = 0 (错误)，应该得到 -1
-        if timestamp >= 0 {
-            (timestamp / partition_seconds) * partition_seconds
-        } else {
-            // 对于负数，向下取整
-            ((timestamp - partition_seconds + 1) / partition_seconds) * partition_seconds
-        }
+        // div_euclid 对负数的行为等价于向负无穷取整（floor division）
+        // 例如: (-1).div_euclid(3600) = -1，而 -1 / 3600 = 0（错误）
+        timestamp.div_euclid(partition_seconds) * partition_seconds
     }
 
     /// Get index statistics
@@ -614,18 +608,21 @@ impl AutocompleteEngine {
         }
     }
 
-    /// Count nodes and words in trie
-    #[allow(clippy::only_used_in_recursion)]
-    fn count_nodes(&self, node: &TrieNode) -> (usize, usize) {
-        let mut node_count = 1;
-        let mut word_count = if node.is_word_end { 1 } else { 0 };
-
-        for child in node.children.values() {
-            let (child_nodes, child_words) = self.count_nodes(child);
-            node_count += child_nodes;
-            word_count += child_words;
+    /// Count nodes and words in trie（BFS 迭代，避免深层 Trie 递归栈溢出）
+    fn count_nodes(&self, root: &TrieNode) -> (usize, usize) {
+        let mut node_count = 0;
+        let mut word_count = 0;
+        let mut queue = std::collections::VecDeque::new();
+        queue.push_back(root);
+        while let Some(node) = queue.pop_front() {
+            node_count += 1;
+            if node.is_word_end {
+                word_count += 1;
+            }
+            for child in node.children.values() {
+                queue.push_back(child);
+            }
         }
-
         (node_count, word_count)
     }
 }
@@ -691,7 +688,9 @@ mod tests {
         engine.add_document(0, &log_entry);
 
         let filters = vec![Filter::Level("ERROR".to_string())];
-        let result = engine.apply_filters(&filters).expect("apply_filters should succeed");
+        let result = engine
+            .apply_filters(&filters)
+            .expect("apply_filters should succeed");
 
         assert!(result.contains(0));
     }

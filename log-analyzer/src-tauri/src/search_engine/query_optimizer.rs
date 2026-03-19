@@ -425,8 +425,10 @@ impl QueryOptimizer {
     pub fn should_create_specialized_index(&self, query_pattern: &str) -> bool {
         let stats = self.query_stats.read();
 
+        // 限制扫描范围，避免 O(n) 无界增长（LruCache 已上限 1000，此处防御性截断）
         let similar_queries: Vec<_> = stats
             .iter()
+            .take(1000)
             .filter(|(_, s)| s.query.contains(query_pattern) || query_pattern.contains(&s.query))
             .map(|(_, s)| s)
             .cloned()
@@ -448,7 +450,11 @@ impl QueryOptimizer {
 
     /// Get query statistics
     pub fn get_query_stats(&self) -> HashMap<String, QueryStats> {
-        self.query_stats.read().iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+        self.query_stats
+            .read()
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
     }
 
     /// Clear statistics (for testing or reset)
