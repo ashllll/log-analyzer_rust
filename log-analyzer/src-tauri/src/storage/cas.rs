@@ -62,8 +62,8 @@ async fn get_available_space(path: &Path) -> u64 {
 
     if result == 0 {
         // f_bavail: 非超级用户可用的块数
-        // f_frsize: 每个块的字节数
-        (stat.f_bavail as u64) * (stat.f_frsize as u64)
+        // f_frsize: 每个块的字节数（Linux 下已是 u64，无需转换）
+        stat.f_bavail * stat.f_frsize
     } else {
         0
     }
