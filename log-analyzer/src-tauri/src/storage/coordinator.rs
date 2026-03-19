@@ -168,12 +168,13 @@ impl StorageCoordinator {
                 Ok((hash, file_id))
             }
             Err(e) => {
-                // This is a critical error state - CAS has the file but metadata commit failed
-                error!(
-                    error = %e,
-                    hash = %hash,
+                // CAS 写入成功但元数据事务提交失败，文件内容已落盘但无元数据记录
+                // 记录 warn 级别日志并包含 cas_hash，供后续 GC 任务扫描孤儿文件
+                warn!(
+                    cas_hash = %hash,
                     file_id = file_id,
-                    "CRITICAL: Metadata commit failed after CAS write. File may be orphaned in CAS."
+                    error = %e,
+                    "CAS 写入成功但元数据提交失败，可能产生孤儿文件，hash 已记录供 GC 使用"
                 );
                 Err(crate::error::AppError::database_error(format!(
                     "Metadata commit failed after CAS write. Hash: {}, File ID: {}. Error: {}",

@@ -4,6 +4,8 @@ use opentelemetry::global;
 use opentelemetry::trace::{Span, Tracer};
 use opentelemetry::KeyValue;
 use prometheus::{CounterVec, GaugeVec, HistogramVec, Registry};
+use std::collections::HashMap;
+use std::fmt;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::RwLock;
@@ -344,5 +346,3 @@ impl Default for UnifiedMonitoringManager {
         })
     }
 }
-
-use std::fmt;

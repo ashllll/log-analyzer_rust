@@ -245,11 +245,23 @@ impl TaskManagerActor {
                     "Updating task"
                 );
 
+                /// 版本号接近 u64::MAX 时重置为 1，防止饱和后幂等性检查失效
+                const VERSION_RESET_THRESHOLD: u64 = u64::MAX - 10_000;
+
                 let result = if let Some(task) = self.tasks.get_mut(&id) {
                     task.progress = progress;
                     task.message = message.clone();
                     task.status = status;
-                    task.version = task.version.saturating_add(1);
+                    task.version = if task.version >= VERSION_RESET_THRESHOLD {
+                        warn!(
+                            task_id = %id,
+                            current_version = task.version,
+                            "任务版本号接近饱和，已重置为 1"
+                        );
+                        1
+                    } else {
+                        task.version.saturating_add(1)
+                    };
 
                     // 如果任务完成或失败，记录完成时间
                     if matches!(
