@@ -6,19 +6,13 @@ import { create } from 'zustand';
 import { devtools, subscribeWithSelector } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 
+import type { Workspace } from './types';
+
 // ============================================================================
 // Types
 // ============================================================================
 
-export interface Workspace {
-  id: string;
-  name: string;
-  path: string;
-  status: 'READY' | 'OFFLINE' | 'PROCESSING';
-  size: string;
-  files: number;
-  watching?: boolean;
-}
+export type { Workspace } from './types';
 
 interface WorkspaceState {
   // State

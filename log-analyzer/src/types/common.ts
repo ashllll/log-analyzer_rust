@@ -1,8 +1,5 @@
-// 从独立 stores 导入类型定义
-import type { Toast } from '../stores/appStore';
-import type { Workspace } from '../stores/workspaceStore';
-import type { Task } from '../stores/taskStore';
-import type { KeywordGroup } from '../stores/keywordStore';
+// 从 stores/types.ts 导入类型定义（单向依赖，打破循环）
+import type { Toast, Workspace, Task, KeywordGroup, ToastType, KeywordPattern, ColorKey } from '../stores/types';
 import type { FileFilterConfig } from './api-responses';
 
 // 从 api-responses 重新导出 LogEntry 和 MatchDetail 类型
@@ -17,9 +14,7 @@ export interface FilterOptions {
 }
 
 // 重新导出 Store 类型供外部使用
-export type { Toast, Workspace, Task, KeywordGroup };
-export type { ToastType } from '../stores/appStore';
-export type { KeywordPattern, ColorKey } from '../stores/keywordStore';
+export type { Toast, Workspace, Task, KeywordGroup, ToastType, KeywordPattern, ColorKey };
 
 // ========== 文件过滤配置类型 ==========
 // FilterMode 和 FileFilterConfig 以 api-responses.ts 为权威来源（含 Zod Schema），

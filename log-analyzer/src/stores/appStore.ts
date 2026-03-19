@@ -9,17 +9,13 @@ import { devtools, subscribeWithSelector } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 import toast from 'react-hot-toast';
 
+import type { Toast, ToastType } from './types';
+
 // ============================================================================
 // Types
 // ============================================================================
 
-export type ToastType = 'success' | 'error' | 'info';
-
-export interface Toast {
-  id: number;
-  type: ToastType;
-  message: string;
-}
+export type { Toast, ToastType } from './types';
 
 export interface AppState {
   // State

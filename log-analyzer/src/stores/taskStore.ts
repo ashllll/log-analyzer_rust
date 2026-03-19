@@ -12,20 +12,13 @@ import { devtools, subscribeWithSelector } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 import { logger } from '../utils/logger';
 
+import type { Task } from './types';
+
 // ============================================================================
 // Types
 // ============================================================================
 
-export interface Task {
-  id: string;
-  type: string;
-  target: string;
-  progress: number;
-  message: string;
-  status: 'RUNNING' | 'COMPLETED' | 'FAILED' | 'STOPPED';
-  workspaceId?: string;
-  completedAt?: number; // 完成时间戳，用于TTL清理
-}
+export type { Task } from './types';
 
 interface TaskState {
   // State

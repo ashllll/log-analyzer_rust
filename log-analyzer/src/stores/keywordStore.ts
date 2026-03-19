@@ -6,24 +6,13 @@ import { create } from 'zustand';
 import { devtools, subscribeWithSelector } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 
+import type { KeywordGroup } from './types';
+
 // ============================================================================
 // Types
 // ============================================================================
 
-export type ColorKey = 'blue' | 'green' | 'red' | 'orange' | 'purple';
-
-export interface KeywordPattern {
-  regex: string;
-  comment: string;
-}
-
-export interface KeywordGroup {
-  id: string;
-  name: string;
-  color: ColorKey;
-  patterns: KeywordPattern[];
-  enabled: boolean;
-}
+export type { ColorKey, KeywordGroup, KeywordPattern } from './types';
 
 interface KeywordState {
   // State

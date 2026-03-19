@@ -9,8 +9,7 @@
 import { invoke, type InvokeArgs } from '@tauri-apps/api/core';
 import { z } from 'zod';
 import { createApiError } from './errors';
-import type { KeywordGroup } from '../stores/keywordStore';
-import type { Workspace } from '../stores/workspaceStore';
+import type { KeywordGroup, Workspace } from '../types/common';
 import {
   RarSupportInfoSchema,
   FileFilterConfigSchema,

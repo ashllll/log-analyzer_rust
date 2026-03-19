@@ -4,6 +4,7 @@ import { useAppStore } from './appStore';
 import { useWorkspaceStore } from './workspaceStore';
 import { useKeywordStore } from './keywordStore';
 import { useTaskStore } from './taskStore';
+import { useConfigManager } from '../hooks/useConfigManager';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { eventBus } from '../events/EventBus';
@@ -40,6 +41,9 @@ export const AppStoreProvider = ({ children }: AppStoreProviderProps) => {
   const updateTask = useTaskStore((state) => state.updateTask);
   const deleteTask = useTaskStore((state) => state.deleteTask);
   const setInitialized = useAppStore((state) => state.setInitialized);
+
+  // 启用配置自动保存（防抖1000ms后保存到后端）
+  useConfigManager();
 
   useEffect(() => {
     let isMounted = true;
