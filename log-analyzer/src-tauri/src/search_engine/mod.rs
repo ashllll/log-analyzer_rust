@@ -78,7 +78,10 @@ impl SearchError {
             SearchError::IoError(_) => true,
             SearchError::TantivyError(e) => {
                 // Tantivy内部错误，根据错误类型判断
-                e.to_string().contains("timeout") || e.to_string().contains("IO")
+                // 使用更精确的字符串匹配，减少误判（"IO" 过于宽泛，可能匹配无关内容）
+                e.to_string().contains("timeout")
+                    || e.to_string().contains("IO error")
+                    || e.to_string().contains("Os {")
             }
             SearchError::QueryError(_) => false,
             SearchError::RegexError(_) => false,

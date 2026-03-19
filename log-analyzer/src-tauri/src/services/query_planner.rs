@@ -135,7 +135,9 @@ impl QueryPlanner {
                 if term.case_sensitive {
                     raw_pattern.clone()
                 } else {
-                    raw_pattern.to_lowercase()
+                    // 不转换原始模式（to_lowercase 会破坏大写字符匹配）
+                    // 改为添加大小写不敏感标志，与非 | 分支保持一致
+                    format!("(?i:{})", raw_pattern)
                 }
             } else {
                 let escaped = regex::escape(raw_pattern);
