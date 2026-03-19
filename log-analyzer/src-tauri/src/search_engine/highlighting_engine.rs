@@ -320,8 +320,9 @@ impl HighlightingEngine {
 
         if let Some(cached_snippet) = cache.get_mut(cache_key) {
             // Check if cache entry is still valid
-            if cached_snippet.created_at.elapsed().unwrap_or(Duration::MAX) < self.config.cache_ttl
-            {
+            // Handle clock skew: if elapsed() returns Err (clock went backward), treat as expired
+            let elapsed = cached_snippet.created_at.elapsed().unwrap_or(Duration::MAX);
+            if elapsed < self.config.cache_ttl {
                 cached_snippet.access_count += 1;
                 cached_snippet.last_accessed = SystemTime::now();
                 return Some(cached_snippet.content.clone());
@@ -442,19 +443,23 @@ impl HighlightingEngine {
             return content.chars().take(max_length).collect();
         }
 
-        // 遍历所有查询词，在字符空间（非字节空间）找到最早出现位置
-        // 修复：① context_size 在字符单位下减去，而非字节单位；② 遍历所有词取最小值
+        // 遍历所有查询词，在字符空间找到最早出现位置
+        // 使用 char_indices() 正确处理 UTF-8 字符边界，避免字节切片 panic
         let content_lower = content.to_lowercase();
         let mut best_char_start: Option<usize> = None;
+
         for term in &query_terms {
-            if let Some(byte_pos) = content_lower.find(&term.to_lowercase()) {
-                // 先将字节偏移换算为字符偏移，再减去上下文大小（字符单位）
-                let char_pos = content[..byte_pos].chars().count();
-                let start = char_pos.saturating_sub(self.config.context_size);
-                best_char_start = Some(match best_char_start {
-                    None => start,
-                    Some(prev) => prev.min(start),
-                });
+            let term_lower = term.to_lowercase();
+            // 使用 char_indices 遍历字符位置，避免字节边界问题
+            for (char_idx, _) in content_lower.char_indices() {
+                if content_lower[char_idx..].starts_with(&term_lower) {
+                    let start = char_idx.saturating_sub(self.config.context_size);
+                    best_char_start = Some(match best_char_start {
+                        None => start,
+                        Some(prev) => prev.min(start),
+                    });
+                    break; // 找到第一个匹配后继续下一个 term
+                }
             }
         }
 

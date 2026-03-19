@@ -85,6 +85,8 @@ impl VirtualSearchManager {
         entries: Vec<LogEntry>,
     ) -> String {
         let now = std::time::Instant::now();
+
+        // 保存原始数量，用于 total_count
         let total_count = entries.len();
 
         // 限制条目数量，避免内存溢出
