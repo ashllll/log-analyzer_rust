@@ -124,6 +124,17 @@ impl EdgeCaseHandler {
             return Ok(true);
         }
 
+        // 防止 visited_paths 无限增长（B-M1 修复）
+        const MAX_VISITED_PATHS: usize = 10_000;
+        if self.visited_paths.len() >= MAX_VISITED_PATHS {
+            tracing::warn!(
+                path = %path.display(),
+                limit = MAX_VISITED_PATHS,
+                "visited_paths 达到上限，拒绝继续遍历，视为循环引用"
+            );
+            return Ok(true); // 保守策略：达到上限时视为循环引用
+        }
+
         // Add to visited set
         self.visited_paths.insert(canonical);
         Ok(false)

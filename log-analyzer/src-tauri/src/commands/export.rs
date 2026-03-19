@@ -18,6 +18,21 @@ pub async fn export_results(
     format: String,
     #[allow(non_snake_case)] savePath: String,
 ) -> Result<String, String> {
+    // 验证导出路径不包含路径遍历（CMD-NEW-H3 修复）
+    let save_path = std::path::Path::new(&savePath);
+    if save_path
+        .components()
+        .any(|c| c == std::path::Component::ParentDir)
+    {
+        return Err("导出路径包含非法路径遍历 (..)".to_string());
+    }
+    // 验证父目录存在且可写
+    if let Some(parent) = save_path.parent() {
+        if !parent.as_os_str().is_empty() && !parent.exists() {
+            return Err(format!("导出目录不存在: {}", parent.display()));
+        }
+    }
+
     tokio::task::spawn_blocking(move || match format.as_str() {
         "csv" => export_to_csv(&results, &savePath),
         "json" => export_to_json(&results, &savePath),
