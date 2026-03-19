@@ -294,27 +294,9 @@ pub async fn search_logs(
                         "Workspace directory not found"
                     );
 
-                    // 如果是"default"工作区，尝试使用第一个可用的工作区
-                    if workspace_id == "default" {
-                        if let Some(first_workspace_id) = dirs.keys().next() {
-                            debug!(
-                                workspace_id = %first_workspace_id,
-                                "Falling back to first available workspace instead of 'default'"
-                            );
-                            let _ = app_handle.emit(
-                                "search-error",
-                                format!(
-                                    "Workspace 'default' not found, using '{}' instead",
-                                    first_workspace_id
-                                ),
-                            );
-                            return;
-                        }
-                    }
-
                     let _ = app_handle.emit(
                         "search-error",
-                        format!("Workspace directory not found for: {}", workspace_id),
+                        format!("Workspace not found: {}", workspace_id),
                     );
                     return;
                 }
@@ -541,22 +523,42 @@ pub async fn search_logs(
                     // 应用过滤器
                     let mut include = true;
 
+                    let entry_level_lower = entry.level.to_string().to_lowercase();
                     if !filters.levels.is_empty()
-                        && !filters.levels.contains(&entry.level.to_string())
+                        && !filters
+                            .levels
+                            .iter()
+                            .any(|l| l.to_lowercase() == entry_level_lower)
                     {
                         include = false;
                     }
                     if include && filters.time_start.is_some() {
                         if let Some(ref start) = filters.time_start {
-                            if entry.timestamp.as_ref() < start.as_str() {
-                                include = false;
+                            if let Ok(entry_dt) =
+                                chrono::DateTime::parse_from_rfc3339(entry.timestamp.as_ref())
+                            {
+                                if let Ok(start_dt) =
+                                    chrono::DateTime::parse_from_rfc3339(start.as_str())
+                                {
+                                    if entry_dt < start_dt {
+                                        include = false;
+                                    }
+                                }
                             }
                         }
                     }
                     if include && filters.time_end.is_some() {
                         if let Some(ref end) = filters.time_end {
-                            if entry.timestamp.as_ref() > end.as_str() {
-                                include = false;
+                            if let Ok(entry_dt) =
+                                chrono::DateTime::parse_from_rfc3339(entry.timestamp.as_ref())
+                            {
+                                if let Ok(end_dt) =
+                                    chrono::DateTime::parse_from_rfc3339(end.as_str())
+                                {
+                                    if entry_dt > end_dt {
+                                        include = false;
+                                    }
+                                }
                             }
                         }
                     }
@@ -1184,22 +1186,42 @@ pub async fn search_logs_paged(
                     // 应用过滤器
                     let mut include = true;
 
+                    let entry_level_lower = entry.level.to_string().to_lowercase();
                     if !filters.levels.is_empty()
-                        && !filters.levels.contains(&entry.level.to_string())
+                        && !filters
+                            .levels
+                            .iter()
+                            .any(|l| l.to_lowercase() == entry_level_lower)
                     {
                         include = false;
                     }
                     if include && filters.time_start.is_some() {
                         if let Some(ref start) = filters.time_start {
-                            if entry.timestamp.as_ref() < start.as_str() {
-                                include = false;
+                            if let Ok(entry_dt) =
+                                chrono::DateTime::parse_from_rfc3339(entry.timestamp.as_ref())
+                            {
+                                if let Ok(start_dt) =
+                                    chrono::DateTime::parse_from_rfc3339(start.as_str())
+                                {
+                                    if entry_dt < start_dt {
+                                        include = false;
+                                    }
+                                }
                             }
                         }
                     }
                     if include && filters.time_end.is_some() {
                         if let Some(ref end) = filters.time_end {
-                            if entry.timestamp.as_ref() > end.as_str() {
-                                include = false;
+                            if let Ok(entry_dt) =
+                                chrono::DateTime::parse_from_rfc3339(entry.timestamp.as_ref())
+                            {
+                                if let Ok(end_dt) =
+                                    chrono::DateTime::parse_from_rfc3339(end.as_str())
+                                {
+                                    if entry_dt > end_dt {
+                                        include = false;
+                                    }
+                                }
                             }
                         }
                     }

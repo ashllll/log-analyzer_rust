@@ -199,37 +199,66 @@ impl QueryExecutor {
 
         let mut details = Vec::new();
 
-        for compiled in &plan.engines {
-            for mat in Self::engine_find_all(&compiled.engine, line) {
-                let term_value = plan
-                    .terms
-                    .iter()
-                    .find(|t| t.id == compiled.term_id)
-                    .map(|t| t.value.clone())
-                    .unwrap_or_else(|| line[mat.start..mat.end].to_string());
+        match plan.strategy {
+            crate::services::query_planner::SearchStrategy::Or => {
+                // OR 策略：只要有一个 engine 找到匹配即可，与 matches_line 保持一致。
+                // 收集所有有匹配的 engine 的 details，而非要求所有 engine 都有结果。
+                for compiled in &plan.engines {
+                    let matches: Vec<_> = Self::engine_find_all(&compiled.engine, line);
+                    if !matches.is_empty() {
+                        for mat in matches {
+                            let term_value = plan
+                                .terms
+                                .iter()
+                                .find(|t| t.id == compiled.term_id)
+                                .map(|t| t.value.clone())
+                                .unwrap_or_else(|| line[mat.start..mat.end].to_string());
 
-                details.push(MatchDetail {
-                    term_id: compiled.term_id.clone(),
-                    term_value,
-                    priority: compiled.priority,
-                    match_position: Some((mat.start, mat.end)),
-                });
+                            details.push(MatchDetail {
+                                term_id: compiled.term_id.clone(),
+                                term_value,
+                                priority: compiled.priority,
+                                match_position: Some((mat.start, mat.end)),
+                            });
+                        }
+                    }
+                }
+                // OR 策略下行已通过 matches_line 验证，即使 details 为空也返回 Some([])
+                details.sort_by_key(|d| std::cmp::Reverse(d.priority));
+                Some(details)
             }
-        }
-
-        details.sort_by_key(|d| std::cmp::Reverse(d.priority));
-
-        if details.is_empty() {
-            // Not 策略：行通过是因为"没有"任何排除关键词出现，
-            // details 为空是正确的语义（没有需要高亮的匹配），
-            // 返回 Some([]) 而非 None 以防止行被过滤掉。
-            // And/Or 策略下 details 为空意味着引擎实现与 matches_line 不一致，返回 None 是合理的防御。
-            match plan.strategy {
-                crate::services::query_planner::SearchStrategy::Not => Some(vec![]),
-                _ => None,
+            crate::services::query_planner::SearchStrategy::Not => {
+                // Not 策略：行通过是因为"没有"任何排除关键词出现，
+                // details 为空是正确的语义（没有需要高亮的匹配），返回 Some([])。
+                Some(vec![])
             }
-        } else {
-            Some(details)
+            crate::services::query_planner::SearchStrategy::And => {
+                // And 策略：收集所有 engine 的 details。
+                for compiled in &plan.engines {
+                    for mat in Self::engine_find_all(&compiled.engine, line) {
+                        let term_value = plan
+                            .terms
+                            .iter()
+                            .find(|t| t.id == compiled.term_id)
+                            .map(|t| t.value.clone())
+                            .unwrap_or_else(|| line[mat.start..mat.end].to_string());
+
+                        details.push(MatchDetail {
+                            term_id: compiled.term_id.clone(),
+                            term_value,
+                            priority: compiled.priority,
+                            match_position: Some((mat.start, mat.end)),
+                        });
+                    }
+                }
+                details.sort_by_key(|d| std::cmp::Reverse(d.priority));
+                if details.is_empty() {
+                    // And 策略下 details 为空意味着引擎实现与 matches_line 不一致，返回 None 是合理的防御。
+                    None
+                } else {
+                    Some(details)
+                }
+            }
         }
     }
 
