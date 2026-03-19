@@ -253,19 +253,24 @@ impl PathValidator {
     }
 
     /// 验证路径是否在base_dir内（防止符号链接逃逸）
+    ///
+    /// 使用 Path::starts_with 进行组件级匹配，避免字符串前缀假阳性
+    /// （例如 /logs.bak/file 的字符串前缀包含 /logs，但实际不在 /logs/ 内）
     fn validate_path_within_base(&self, path: &Path, base_dir: &Path) -> Result<()> {
-        // 使用字符串比较进行初步验证
-        let path_str = path.to_string_lossy();
-        let base_str = base_dir.to_string_lossy();
+        // 优先使用 canonicalize 解析符号链接，仅在路径已存在时适用
+        let (check_path, check_base) = match (path.canonicalize(), base_dir.canonicalize()) {
+            (Ok(cp), Ok(cb)) => (cp, cb),
+            _ => {
+                // 路径不存在时，回退到 Path::starts_with 组件级比较
+                // Rust 的 Path::starts_with 是按路径组件匹配，不是字符串前缀
+                (path.to_path_buf(), base_dir.to_path_buf())
+            }
+        };
 
-        // 规范化路径分隔符
-        let normalized_path = path_str.replace('\\', "/");
-        let normalized_base = base_str.replace('\\', "/");
-
-        if !normalized_path.starts_with(&normalized_base) {
+        if !check_path.starts_with(&check_base) {
             warn!(
                 "Path escape detected: {} not within {}",
-                normalized_path, normalized_base
+                check_path.display(), check_base.display()
             );
             return Err(AppError::archive_error(
                 format!("Path escapes base directory: {}", path.display()),

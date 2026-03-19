@@ -62,6 +62,14 @@ impl ArchiveHandler for ZipHandler {
                 };
 
                 let out_path = target_path.join(&safe_path);
+                // 验证最终路径不逃逸提取目录（防御 ZIP Slip 末级绕过）
+                if !out_path.starts_with(&target_path) {
+                    warn!(
+                        path = %safe_path.display(),
+                        "ZIP Slip 尝试被拦截，跳过此条目"
+                    );
+                    continue;
+                }
                 let size = file.size();
 
                 if file.is_dir() {

@@ -81,7 +81,7 @@ pub async fn read_file_by_hash(
         .path()
         .app_data_dir()
         .map_err(|e| format!("Failed to get app data dir: {}", e))?
-        .join("workspaces")
+        .join("extracted")
         .join(&workspaceId);
 
     if !workspace_dir.exists() {
@@ -188,7 +188,7 @@ pub async fn get_virtual_file_tree(
         .path()
         .app_data_dir()
         .map_err(|e| format!("Failed to get app data dir: {}", e))?
-        .join("workspaces")
+        .join("extracted")
         .join(&workspaceId);
 
     if !workspace_dir.exists() {

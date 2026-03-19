@@ -160,14 +160,14 @@ impl MetadataDB {
 
         for entry in self.mappings.iter() {
             if entry.key().starts_with(&prefix) {
-                let original = entry.key().strip_prefix(&prefix).unwrap_or_else(|| {
+                let Some(original) = entry.key().strip_prefix(&prefix) else {
                     warn!(
-                        key = entry.key().as_str(),
+                        key = %entry.key(),
                         prefix = %prefix,
-                        "strip_prefix 失败：key 不以预期前缀开头，返回原始 key"
+                        "strip_prefix 失败，跳过此条目"
                     );
-                    entry.key().as_str()
-                });
+                    continue;
+                };
                 mappings.push((entry.value().clone(), original.to_string()));
             }
         }

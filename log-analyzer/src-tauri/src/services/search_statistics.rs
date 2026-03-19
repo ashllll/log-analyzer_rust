@@ -26,8 +26,8 @@ pub fn calculate_keyword_statistics(
     for entry in results {
         if let Some(ref matched_keywords) = entry.matched_keywords {
             for keyword in matched_keywords {
-                // 增加关键词计数
-                *keyword_counts.get_mut(keyword).unwrap_or(&mut 0) += 1;
+                // 增加关键词计数（使用 entry API，避免 get_mut + unwrap_or 修改临时值的问题）
+                *keyword_counts.entry(keyword.clone()).or_insert(0) += 1;
             }
         }
     }

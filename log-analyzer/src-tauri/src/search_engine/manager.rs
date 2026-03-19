@@ -231,7 +231,10 @@ impl SearchEngineManager {
         let start_time = Instant::now();
         let limit = limit.unwrap_or(self.config.max_results);
         let timeout_duration = timeout_duration.unwrap_or(self.config.default_timeout);
-        let token = token.unwrap_or_default();
+        let token = token.unwrap_or_else(|| {
+            debug!("未传入 CancellationToken，创建本地 token（无外部取消能力，依赖超时机制兜底）");
+            CancellationToken::new()
+        });
 
         debug!(query = %query, limit = limit, timeout_ms = timeout_duration.as_millis(), "Starting search");
 
@@ -340,7 +343,10 @@ impl SearchEngineManager {
         limit: usize,
         token: Option<CancellationToken>,
     ) -> SearchResult<SearchResults> {
-        let token = token.unwrap_or_default();
+        let token = token.unwrap_or_else(|| {
+            debug!("execute_search 未收到 CancellationToken，创建本地 token（无外部取消能力）");
+            CancellationToken::new()
+        });
         let reader = self.reader.clone();
         let schema = self.schema.clone();
         let token_clone = token.clone();

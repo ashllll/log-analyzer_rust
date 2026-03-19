@@ -325,7 +325,32 @@ impl ArchiveExtractionService {
         file_path: &Path,
         target_dir: &Path,
     ) -> AppResult<PathBuf> {
-        // 1. 检查文件是否在目标目录内（防止路径遍历）
+        // 1. 在 canonicalize 之前先检查符号链接（提前拦截，避免跟随链接目标）
+        // 使用 symlink_metadata 获取链接自身的元数据，不跟随符号链接
+        let symlink_metadata = fs::symlink_metadata(file_path)
+            .await
+            .with_context(|| "Failed to read file symlink metadata")?;
+
+        if symlink_metadata.file_type().is_symlink() {
+            warn!(
+                path = %file_path.display(),
+                "提取到的符号链接被拒绝，将删除"
+            );
+            // 删除已提取的符号链接，防止后续误用
+            if let Err(e) = fs::remove_file(file_path).await {
+                warn!(
+                    path = %file_path.display(),
+                    error = %e,
+                    "删除符号链接失败"
+                );
+            }
+            return Err(eyre!(
+                "Symbolic links are not allowed: {}",
+                file_path.display()
+            ));
+        }
+
+        // 2. 检查文件是否在目标目录内（防止路径遍历）
         let canonical_file = file_path
             .canonicalize()
             .with_context(|| "Failed to canonicalize extracted file path")?;
@@ -340,7 +365,7 @@ impl ArchiveExtractionService {
             ));
         }
 
-        // 2. 验证文件名
+        // 3. 验证文件名
         if self.limits.validate_filenames {
             if let Some(filename) = file_path.file_name() {
                 let filename_str = filename.to_string_lossy();
@@ -349,7 +374,7 @@ impl ArchiveExtractionService {
             }
         }
 
-        // 3. 检查文件大小
+        // 4. 检查文件大小
         let metadata = fs::metadata(file_path)
             .await
             .with_context(|| "Failed to read file metadata")?;
@@ -362,7 +387,7 @@ impl ArchiveExtractionService {
             ));
         }
 
-        // 4. 检查文件扩展名
+        // 5. 检查文件扩展名
         if let Some(extension) = file_path.extension() {
             let ext_str = extension.to_string_lossy().to_lowercase();
 
@@ -377,14 +402,6 @@ impl ArchiveExtractionService {
             {
                 return Err(eyre!("File extension not allowed: .{}", ext_str));
             }
-        }
-
-        // 5. 检查符号链接
-        if metadata.file_type().is_symlink() {
-            return Err(eyre!(
-                "Symbolic links are not allowed: {}",
-                file_path.display()
-            ));
         }
 
         Ok(canonical_file)
