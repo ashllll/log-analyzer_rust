@@ -5,6 +5,20 @@ import '@testing-library/jest-dom';
 import React from 'react';
 import { TextEncoder, TextDecoder } from 'util';
 
+// Mock import.meta for Vite environment variables
+Object.defineProperty(globalThis, 'import', {
+  value: {
+    meta: {
+      env: {
+        DEV: false,
+        PROD: true,
+        MODE: 'production',
+      },
+    },
+  },
+  writable: true,
+});
+
 // Polyfill TextEncoder/TextDecoder for react-router-dom
 // This is needed because Node.js test environment doesn't have these globals
 if (typeof global.TextEncoder === 'undefined') {

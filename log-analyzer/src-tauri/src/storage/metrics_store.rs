@@ -50,6 +50,7 @@
 
 use crate::error::{AppError, Result};
 use chrono::{Duration, Utc};
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::{Row, SqlitePool};
@@ -686,8 +687,8 @@ pub struct MetricsStoreStats {
 /// - **JoinHandle**: 任务句柄管理，支持优雅关闭
 pub struct MetricsSnapshotScheduler {
     store: Arc<MetricsStore>,
-    is_running: Arc<std::sync::Mutex<bool>>,
-    _handle: Arc<std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>,
+    is_running: Arc<Mutex<bool>>,
+    _handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
 }
 
 impl MetricsSnapshotScheduler {
@@ -717,7 +718,7 @@ impl MetricsSnapshotScheduler {
     /// ```
     pub async fn new(store: MetricsStore, interval_seconds: u64) -> Result<Self> {
         let store = Arc::new(store);
-        let is_running = Arc::new(std::sync::Mutex::new(true));
+        let is_running = Arc::new(Mutex::new(true));
         let store_clone = Arc::clone(&store);
         let is_running_clone = is_running.clone();
 
@@ -726,11 +727,11 @@ impl MetricsSnapshotScheduler {
                 tokio::time::interval(tokio::time::Duration::from_secs(interval_seconds));
             interval.tick().await; // 跳过第一次立即触发
 
-            while *is_running_clone.lock().unwrap() {
+            while *is_running_clone.lock() {
                 interval.tick().await;
 
                 // 检查是否仍在运行
-                if !*is_running_clone.lock().unwrap() {
+                if !*is_running_clone.lock() {
                     break;
                 }
 
@@ -770,16 +771,19 @@ impl MetricsSnapshotScheduler {
         Ok(Self {
             store,
             is_running,
-            _handle: Arc::new(std::sync::Mutex::new(Some(handle))),
+            _handle: Arc::new(Mutex::new(Some(handle))),
         })
     }
 
     /// 停止调度器
     pub async fn stop(self) {
-        *self.is_running.lock().unwrap() = false;
+        *self.is_running.lock() = false;
 
-        // 等待任务结束（先释放锁再await）
-        let handle = self._handle.lock().unwrap().take();
+        // 等待任务结束（parking_lot::MutexGuard 没有 take()，需要手动处理）
+        let handle = {
+            let mut guard = self._handle.lock();
+            guard.take()
+        };
         if let Some(handle) = handle {
             let _ = tokio::time::timeout(tokio::time::Duration::from_secs(5), handle).await;
         }

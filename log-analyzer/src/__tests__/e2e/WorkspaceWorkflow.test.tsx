@@ -4,6 +4,14 @@
  * Validates: Requirements 4.1, 4.2, 4.3, 4.4, 4.5
  */
 
+// Mock App before import to avoid import.meta.env.DEV parsing error
+jest.mock('../../App', () => {
+  return {
+    __esModule: true,
+    default: () => null,
+  };
+});
+
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';

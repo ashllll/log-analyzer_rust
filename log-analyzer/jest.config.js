@@ -3,6 +3,7 @@ export default {
   testEnvironment: 'jsdom',
   roots: ['<rootDir>/src'],
   testMatch: ['**/__tests__/**/*.ts', '**/__tests__/**/*.tsx', '**/?(*.)+(spec|test).ts', '**/?(*.)+(spec|test).tsx'],
+  testPathIgnorePatterns: ['/node_modules/', '/__mocks__/'],
   transform: {
     '^.+\\.tsx?$': ['ts-jest', {
       tsconfig: {

@@ -6,6 +6,7 @@
 //! **Note**: This is a temporary solution during the CAS migration.
 //! The path shortening functionality may be refactored in the future.
 
+use crate::error::Result;
 use dashmap::DashMap;
 use std::sync::Arc;
 use tracing::warn;
@@ -19,6 +20,8 @@ pub struct MetadataDB {
     mappings: Arc<DashMap<String, String>>,
     /// 反向映射：workspace_id:short_path -> original_path（O(1) 反查）
     reverse_mappings: Arc<DashMap<String, String>>,
+    /// 工作区键索引：workspace_id -> 所有 forward_key 列表（用于 O(1) cleanup）
+    workspace_keys: Arc<DashMap<String, Vec<String>>>,
 }
 
 impl MetadataDB {
@@ -31,10 +34,11 @@ impl MetadataDB {
     /// # Returns
     ///
     /// A new MetadataDB instance with in-memory storage
-    pub async fn new(_db_path: &str) -> eyre::Result<Self> {
+    pub async fn new(_db_path: &str) -> Result<Self> {
         Ok(Self {
             mappings: Arc::new(DashMap::new()),
             reverse_mappings: Arc::new(DashMap::new()),
+            workspace_keys: Arc::new(DashMap::new()),
         })
     }
 
@@ -52,7 +56,7 @@ impl MetadataDB {
         &self,
         workspace_id: &str,
         original_path: &str,
-    ) -> eyre::Result<Option<String>> {
+    ) -> Result<Option<String>> {
         let key = format!("{}:{}", workspace_id, original_path);
         Ok(self.mappings.get(&key).map(|v| v.value().clone()))
     }
@@ -71,7 +75,7 @@ impl MetadataDB {
         &self,
         workspace_id: &str,
         short_path: &str,
-    ) -> eyre::Result<Option<String>> {
+    ) -> Result<Option<String>> {
         // 使用反向映射 O(1) 直接查找
         let key = format!("{}:{}", workspace_id, short_path);
         Ok(self.reverse_mappings.get(&key).map(|v| v.value().clone()))
@@ -89,9 +93,15 @@ impl MetadataDB {
         workspace_id: &str,
         short_path: &str,
         original_path: &str,
-    ) -> eyre::Result<()> {
+    ) -> Result<()> {
         let forward_key = format!("{}:{}", workspace_id, original_path);
-        self.mappings.insert(forward_key, short_path.to_string());
+        self.mappings.insert(forward_key.clone(), short_path.to_string());
+
+        // 维护工作区键索引
+        self.workspace_keys
+            .entry(workspace_id.to_string())
+            .or_default()
+            .push(forward_key.clone());
 
         // 同时维护反向映射
         let reverse_key = format!("{}:{}", workspace_id, short_path);
@@ -110,33 +120,29 @@ impl MetadataDB {
     /// # Returns
     ///
     /// Number of mappings removed
-    pub async fn cleanup_workspace(&self, workspace_id: &str) -> eyre::Result<usize> {
-        let prefix = format!("{}:", workspace_id);
+    pub async fn cleanup_workspace(&self, workspace_id: &str) -> Result<usize> {
+        // 使用 workspace_keys 索引进行 O(1) 查找，O(k) 删除（k 为该工作区文件数）
         let mut count = 0;
 
-        // 收集需要删除的正向映射键
-        let keys_to_remove: Vec<String> = self
-            .mappings
-            .iter()
-            .filter(|entry| entry.key().starts_with(&prefix))
-            .map(|entry| entry.key().clone())
-            .collect();
+        if let Some((_, forward_keys)) = self.workspace_keys.remove(workspace_id) {
+            // 删除正向映射
+            for key in &forward_keys {
+                self.mappings.remove(key);
+                count += 1;
+            }
 
-        for key in keys_to_remove {
-            self.mappings.remove(&key);
-            count += 1;
-        }
+            // 同时清理反向映射
+            let prefix = format!("{}:", workspace_id);
+            let reverse_keys_to_remove: Vec<String> = self
+                .reverse_mappings
+                .iter()
+                .filter(|entry| entry.key().starts_with(&prefix))
+                .map(|entry| entry.key().clone())
+                .collect();
 
-        // 同时清理反向映射
-        let reverse_keys_to_remove: Vec<String> = self
-            .reverse_mappings
-            .iter()
-            .filter(|entry| entry.key().starts_with(&prefix))
-            .map(|entry| entry.key().clone())
-            .collect();
-
-        for key in reverse_keys_to_remove {
-            self.reverse_mappings.remove(&key);
+            for key in reverse_keys_to_remove {
+                self.reverse_mappings.remove(&key);
+            }
         }
 
         Ok(count)
@@ -154,7 +160,7 @@ impl MetadataDB {
     pub async fn get_workspace_mappings(
         &self,
         workspace_id: &str,
-    ) -> eyre::Result<Vec<(String, String)>> {
+    ) -> Result<Vec<(String, String)>> {
         let prefix = format!("{}:", workspace_id);
         let mut mappings = Vec::new();
 

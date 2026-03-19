@@ -632,11 +632,6 @@ impl TaskManager {
     /// - 使用 `tokio::time::sleep` 实现异步等待
     /// - 不会阻塞异步运行时
     /// - 带有 5 秒超时保护
-    ///
-    /// # 示例
-    /// ```rust,no_run
-    /// task_manager.shutdown_async().await?;
-    /// ```
     pub async fn shutdown_async(&self) -> Result<()> {
         info!("Shutting down TaskManager (asynchronous)");
 

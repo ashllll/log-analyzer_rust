@@ -194,7 +194,7 @@ pub struct IndexMetrics {
 /// console.log(metrics.searchLatency.current);
 /// ```
 #[command]
-pub fn get_performance_metrics(state: State<'_, AppState>) -> Result<PerformanceMetrics, String> {
+pub async fn get_performance_metrics(state: State<'_, AppState>) -> Result<PerformanceMetrics, String> {
     // 获取缓存统计信息
     let cache_stats = state.get_cache_statistics();
 
@@ -235,8 +235,8 @@ pub fn get_performance_metrics(state: State<'_, AppState>) -> Result<Performance
     // 获取任务管理器指标
     let task_manager_metrics = get_task_manager_metrics(&state);
 
-    // 获取系统内存信息
-    let memory_metrics = get_system_memory_metrics();
+    // 获取系统内存信息（使用 spawn_blocking 避免阻塞 tokio worker）
+    let memory_metrics = get_system_memory_metrics().await;
 
     // 获取索引指标
     let index_metrics = get_index_metrics(&state);
@@ -283,18 +283,21 @@ fn get_task_manager_metrics(_state: &AppState) -> TaskMetrics {
 }
 
 /// 获取系统内存指标
-fn get_system_memory_metrics() -> MemoryMetrics {
-    let mut sys = System::new_all();
-    sys.refresh_all();
-
-    let total_memory = sys.total_memory();
-    let used_memory = sys.used_memory();
+/// 使用 spawn_blocking 隔离阻塞操作，避免阻塞 tokio worker 线程
+async fn get_system_memory_metrics() -> MemoryMetrics {
+    let (total, used) = tokio::task::spawn_blocking(|| {
+        let mut sys = System::new_all();
+        sys.refresh_all();
+        (sys.total_memory(), sys.used_memory())
+    })
+    .await
+    .unwrap_or((0, 0));
 
     MemoryMetrics {
-        used: used_memory / 1024,      // 转换为 MB
-        total: total_memory / 1024,    // 转换为 MB
-        heap_used: used_memory / 1024, // 简化：与 used 相同
-        external: 0,                   // 外部内存（对于 Rust 应用通常是 0）
+        used: used / 1024,        // 转换为 MB
+        total: total / 1024,      // 转换为 MB
+        heap_used: used / 1024,   // 简化：与 used 相同
+        external: 0,              // 外部内存（对于 Rust 应用通常是 0）
     }
 }
 
@@ -369,15 +372,14 @@ pub async fn get_historical_metrics(range: TimeRangeDto) -> Result<HistoricalMet
     let store_guard = METRICS_STORE.lock().await;
     let store = store_guard
         .as_ref()
-        .ok_or("Metrics store not initialized")?;
+        .ok_or_else(|| "Metrics store not initialized".to_string())?;
 
     let time_range = TimeRange::from(range);
-    let snapshots = store
-        .get_snapshots(time_range)
-        .await
-        .map_err(|e| e.to_string())?;
+    let snapshots = store.get_snapshots(time_range).await
+        .map_err(|e| format!("Database error: {}", e))?;
 
-    let stats = store.get_stats().await.map_err(|e| e.to_string())?;
+    let stats = store.get_stats().await
+        .map_err(|e| format!("Database error: {}", e))?;
 
     Ok(HistoricalMetricsData { snapshots, stats })
 }
@@ -412,13 +414,13 @@ pub async fn get_aggregated_metrics(
     let store_guard = METRICS_STORE.lock().await;
     let store = store_guard
         .as_ref()
-        .ok_or("Metrics store not initialized")?;
+        .ok_or_else(|| "Metrics store not initialized".to_string())?;
 
     let time_range = TimeRange::from(range);
     let snapshots = store
         .get_aggregated_metrics(time_range, interval_seconds)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| format!("Database error: {}", e))?;
 
     Ok(snapshots)
 }
@@ -452,13 +454,13 @@ pub async fn get_search_events(
     let store_guard = METRICS_STORE.lock().await;
     let store = store_guard
         .as_ref()
-        .ok_or("Metrics store not initialized")?;
+        .ok_or_else(|| "Metrics store not initialized".to_string())?;
 
     let time_range = TimeRange::from(range);
     let events = store
         .get_search_events(time_range, workspaceId.as_deref())
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| format!("Database error: {}", e))?;
 
     Ok(events)
 }
@@ -482,9 +484,10 @@ pub async fn get_metrics_stats() -> Result<MetricsStoreStats, String> {
     let store_guard = METRICS_STORE.lock().await;
     let store = store_guard
         .as_ref()
-        .ok_or("Metrics store not initialized")?;
+        .ok_or_else(|| "Metrics store not initialized".to_string())?;
 
-    let stats = store.get_stats().await.map_err(|e| e.to_string())?;
+    let stats = store.get_stats().await
+        .map_err(|e| format!("Database error: {}", e))?;
 
     Ok(stats)
 }
@@ -508,11 +511,13 @@ pub async fn cleanup_metrics_data() -> Result<MetricsStoreStats, String> {
     let store_guard = METRICS_STORE.lock().await;
     let store = store_guard
         .as_ref()
-        .ok_or("Metrics store not initialized")?;
+        .ok_or_else(|| "Metrics store not initialized".to_string())?;
 
-    store.cleanup().await.map_err(|e| e.to_string())?;
+    store.cleanup().await
+        .map_err(|e| format!("Database error: {}", e))?;
 
-    let stats = store.get_stats().await.map_err(|e| e.to_string())?;
+    let stats = store.get_stats().await
+        .map_err(|e| format!("Database error: {}", e))?;
 
     Ok(stats)
 }

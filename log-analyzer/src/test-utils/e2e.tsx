@@ -3,6 +3,14 @@
  * Provides common helper functions for rendering and waiting
  */
 
+// Mock App before import to avoid import.meta.env.DEV parsing error
+jest.mock('../App', () => {
+  return {
+    __esModule: true,
+    default: () => null,
+  };
+});
+
 import React from 'react';
 import { render, waitFor, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';

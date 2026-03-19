@@ -7,13 +7,9 @@
 
 use parking_lot::Mutex;
 use sha2::{Digest, Sha256};
-use std::panic::AssertUnwindSafe;
 use std::{collections::HashSet, sync::Arc};
 use tauri::{command, AppHandle, Emitter, State};
 use tracing::{debug, error, info, warn};
-
-// 导入AppError类型
-use crate::error::AppError;
 
 use crate::models::search::{
     PagedSearchResult, QueryMetadata, QueryOperator, SearchTerm, TermSource,
@@ -309,50 +305,10 @@ pub async fn search_logs(
             if let Some(store) = stores.get(&workspace_id) {
                 Arc::clone(store)
             } else {
-                // Create new MetadataStore using block_in_place for async operation
-                // 添加错误处理防止panic
-                let store_result = match std::panic::catch_unwind(AssertUnwindSafe(|| {
-                    tokio::task::block_in_place(|| {
-                        match tokio::runtime::Handle::try_current() {
-                            Ok(handle) => {
-                                debug!(
-                                    workspace_id = %workspace_id,
-                                    directory = %workspace_dir.display(),
-                                    "Creating new MetadataStore with Tokio runtime"
-                                );
-                                handle.block_on(crate::storage::metadata_store::MetadataStore::new(
-                                    &workspace_dir,
-                                ))
-                            }
-                            Err(e) => {
-                                error!(
-                                    workspace_id = %workspace_id,
-                                    directory = %workspace_dir.display(),
-                                    error = %e,
-                                    "Failed to acquire Tokio runtime handle for MetadataStore creation"
-                                );
-                                // 返回错误而不是panic，需要转换为AppError类型
-                                Err(AppError::DatabaseError(format!(
-                                    "Tokio runtime error: {}",
-                                    e
-                                )))
-                            }
-                        }
-                    })
-                })) {
-                    Ok(result) => result,
-                    Err(panic_info) => {
-                        error!(
-                            workspace_id = %workspace_id,
-                            directory = %workspace_dir.display(),
-                            panic_info = ?panic_info,
-                            "Panic occurred while creating MetadataStore"
-                        );
-                        Err(AppError::DatabaseError(
-                            "Internal error occurred while creating metadata store".to_string(),
-                        ))
-                    }
-                };
+                // Create new MetadataStore - 使用 Handle::current().block_on 替代 block_in_place
+                let store_result = tokio::runtime::Handle::current().block_on(
+                    crate::storage::metadata_store::MetadataStore::new(&workspace_dir),
+                );
 
                 match store_result {
                     Ok(store) => {
@@ -386,37 +342,14 @@ pub async fn search_logs(
             }
         };
 
-        // Get all files from MetadataStore (Requirements 2.3) using block_in_place
-        // 添加错误处理防止panic
-        let files = match std::panic::catch_unwind(AssertUnwindSafe(|| {
-            tokio::task::block_in_place(|| {
-                // 检查Tokio运行时是否可用
-                match tokio::runtime::Handle::try_current() {
-                    Ok(handle) => {
-                        debug!(
-                            workspace_id = %workspace_id,
-                            "Successfully acquired Tokio runtime handle"
-                        );
-                        handle.block_on(metadata_store.get_all_files())
-                    }
-                    Err(e) => {
-                        error!(
-                            workspace_id = %workspace_id,
-                            error = %e,
-                            "Failed to acquire Tokio runtime handle"
-                        );
-                        // 返回空结果而不是panic
-                        Ok(Vec::new())
-                    }
-                }
-            })
-        })) {
+        // Get all files from MetadataStore (Requirements 2.3)
+        let files = match tokio::runtime::Handle::current().block_on(metadata_store.get_all_files()) {
             Ok(result) => result,
-            Err(panic_info) => {
+            Err(e) => {
                 error!(
                     workspace_id = %workspace_id,
-                    panic_info = ?panic_info,
-                    "Panic occurred while getting files from metadata store"
+                    error = %e,
+                    "Failed to get files from metadata store"
                 );
                 let _ = app_handle.emit(
                     "search-error",
@@ -424,17 +357,6 @@ pub async fn search_logs(
                         "Internal error occurred while accessing workspace: {}",
                         workspace_id
                     ),
-                );
-                return;
-            }
-        };
-
-        let files = match files {
-            Ok(files) => files,
-            Err(e) => {
-                let _ = app_handle.emit(
-                    "search-error",
-                    format!("Failed to get files from metadata store: {}", e),
                 );
                 return;
             }
@@ -741,9 +663,7 @@ fn search_single_file_with_details(
         }
 
         // Read content from CAS using hash
-        let content = match tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(cas.read_content(sha256_hash))
-        }) {
+        let content = match tokio::runtime::Handle::current().block_on(cas.read_content(sha256_hash)) {
             Ok(bytes) => bytes,
             Err(e) => {
                 warn!(
@@ -1102,23 +1022,9 @@ pub async fn search_logs_paged(
             if let Some(store) = stores.get(&workspace_id_for_spawn) {
                 Arc::clone(store)
             } else {
-                let store_result = std::panic::catch_unwind(AssertUnwindSafe(|| {
-                    tokio::task::block_in_place(|| match tokio::runtime::Handle::try_current() {
-                        Ok(handle) => handle.block_on(
-                            crate::storage::metadata_store::MetadataStore::new(&workspace_dir),
-                        ),
-                        Err(_) => Err(AppError::DatabaseError(
-                            "Tokio runtime not available".to_string(),
-                        )),
-                    })
-                }));
-
-                let store_result = match store_result {
-                    Ok(result) => result,
-                    Err(_) => {
-                        return Err("Panic while creating MetadataStore".to_string());
-                    }
-                };
+                let store_result = tokio::runtime::Handle::current().block_on(
+                    crate::storage::metadata_store::MetadataStore::new(&workspace_dir),
+                );
 
                 match store_result {
                     Ok(store) => {
@@ -1146,18 +1052,9 @@ pub async fn search_logs_paged(
         };
 
         // 获取所有文件
-        let files = std::panic::catch_unwind(AssertUnwindSafe(|| {
-            tokio::task::block_in_place(|| {
-                tokio::runtime::Handle::try_current()
-                    .map(|h| h.block_on(metadata_store.get_all_files()))
-                    .unwrap_or_else(|_| {
-                        tracing::warn!("无法获取 tokio 运行时句柄，文件列表将为空");
-                        Ok(Vec::new())
-                    })
-            })
-        }))
-        .map_err(|_| "Panic while getting files".to_string())?
-        .map_err(|e| format!("Failed to get files: {}", e))?;
+        let files = tokio::runtime::Handle::current()
+            .block_on(metadata_store.get_all_files())
+            .map_err(|e| format!("Failed to get files: {}", e))?;
 
         // 执行搜索
         let mut all_results: Vec<LogEntry> = Vec::new();

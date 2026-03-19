@@ -1,14 +1,20 @@
 //! 高级监控和可观测性系统
 
+use once_cell::sync::Lazy;
 use opentelemetry::global;
 use opentelemetry::trace::{Span, Tracer};
 use opentelemetry::KeyValue;
+use parking_lot::Mutex;
 use prometheus::{CounterVec, GaugeVec, HistogramVec, Registry};
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 use std::time::Instant;
+use sysinfo::System;
 use tokio::sync::RwLock;
+
+/// 缓存的 System 实例，避免每次调用 get_metrics() 都新建 System::new_all()
+static CACHED_SYSTEM: Lazy<Mutex<System>> = Lazy::new(|| Mutex::new(System::new_all()));
 
 /// 高级指标收集器
 #[derive(Debug)]
@@ -225,11 +231,10 @@ impl HealthMonitor {
     
     /// 获取系统指标
     pub async fn get_metrics(&self) -> HashMap<String, f64> {
-        // System::new_all() + refresh_all() 是同步阻塞操作，且原来会重复调用三次
-        // 改为：单次创建 System，用 spawn_blocking 隔离，避免阻塞 tokio worker 线程
+        // 使用缓存的 System 实例，只刷新不重建，提高性能
         let result = tokio::task::spawn_blocking(|| {
-            use sysinfo::{CpuExt, DiskExt, System, SystemExt};
-            let mut sys = System::new_all();
+            use sysinfo::{CpuExt, DiskExt, SystemExt};
+            let mut sys = CACHED_SYSTEM.lock();
             sys.refresh_all();
 
             let memory_mb = sys.used_memory() as f64 / 1024.0 / 1024.0;

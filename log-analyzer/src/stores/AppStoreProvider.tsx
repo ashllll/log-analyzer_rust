@@ -42,10 +42,14 @@ export const AppStoreProvider = ({ children }: AppStoreProviderProps) => {
   const setInitialized = useAppStore((state) => state.setInitialized);
 
   useEffect(() => {
+    let isMounted = true;
+
     // 加载配置 - 不阻塞UI渲染
     const loadConfig = async () => {
       try {
         const config = await invoke<Record<string, unknown>>('load_config');
+        if (!isMounted) return; // 组件已卸载，跳过状态更新
+
         if (config) {
           if (config.workspaces) {
             setWorkspaces(config.workspaces as Workspace[]);
@@ -58,6 +62,7 @@ export const AppStoreProvider = ({ children }: AppStoreProviderProps) => {
         // 标记应用已初始化
         setInitialized(true);
       } catch (error) {
+        if (!isMounted) return; // 组件已卸载，跳过状态更新
         logger.error({ error }, 'Failed to load config');
         // 确保空默认值，避免应用因无工作区/关键词组而不可用
         setWorkspaces([]);
@@ -197,6 +202,7 @@ export const AppStoreProvider = ({ children }: AppStoreProviderProps) => {
 
     // 清理函数：同时清理EventBus订阅、Tauri监听和定时器
     return () => {
+      isMounted = false;
       clearTimeout(timer);
       // 清理EventBus订阅
       unsubscribeTaskUpdate();

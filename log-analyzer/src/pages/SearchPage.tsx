@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { z } from 'zod';
 import {
   Search,
   Download,
@@ -36,6 +37,77 @@ import type {
   KeywordGroup,
   ToastType
 } from '../types/common';
+
+// ============================================================================
+// Zod Schema 验证 — 确保 API 响应类型安全
+// ============================================================================
+
+/**
+ * 匹配详情 Schema
+ * 对应 Rust 后端 MatchDetail 结构
+ */
+const MatchDetailSchema = z.object({
+  term_id: z.string(),
+  term_value: z.string(),
+  priority: z.number(),
+  match_position: z.tuple([z.number(), z.number()]).optional(),
+});
+
+/**
+ * 日志条目 Schema
+ * 对应 Rust 后端 LogEntry 结构
+ * 注意：后端使用 snake_case，序列化后保持 snake_case
+ */
+const LogEntrySchema = z.object({
+  id: z.number(),
+  timestamp: z.string(),
+  level: z.string(),
+  file: z.string(),
+  real_path: z.string(),
+  line: z.number(),
+  content: z.string(),
+  tags: z.array(z.string()),
+  match_details: z.array(MatchDetailSchema).optional(),
+  matched_keywords: z.array(z.string()).optional(),
+});
+
+/**
+ * 关键词统计 Schema
+ * 对应 Rust 后端 KeywordStatistics 结构（使用 serde rename）
+ */
+const KeywordStatisticsSchema = z.object({
+  keyword: z.string(),
+  matchCount: z.number(),
+  matchPercentage: z.number(),
+});
+
+/**
+ * 搜索结果摘要 Schema
+ * 对应 Rust 后端 SearchResultSummary 结构（使用 serde rename）
+ */
+const SearchResultSummarySchema = z.object({
+  totalMatches: z.number(),
+  keywordStats: z.array(KeywordStatisticsSchema),
+  searchDurationMs: z.number(),
+  truncated: z.boolean(),
+});
+
+/**
+ * 分页搜索结果 Schema
+ * 对应 Rust 后端 PagedSearchResult 结构
+ * 用于验证 search_logs_paged 命令的返回值
+ */
+const PagedSearchResultSchema = z.object({
+  results: z.array(LogEntrySchema),
+  total_count: z.number(),
+  page_index: z.number(),
+  page_size: z.number(),
+  total_pages: z.number(),
+  has_more: z.boolean(),
+  summary: SearchResultSummarySchema,
+  query: z.string(),
+  search_id: z.string(),
+});
 
 // ============================================================================
 // 搜索执行状态 Reducer — 合并原本分散的 isSearching / searchSummary / keywordStats
@@ -582,6 +654,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
   /**
    * 刷新日志数据
    * 追加获取新数据，不替换现有结果
+   * 使用 search_logs_paged 命令并通过 Zod Schema 验证响应
    */
   const refreshLogs = useCallback(async () => {
     if (!activeWorkspace) {
@@ -597,8 +670,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
       return;
     }
 
-    const currentCount = bufferRef.current.length;
-    const refreshLimit = 100;
+    const pageSize = 100;
 
     try {
       const filters = {
@@ -608,26 +680,38 @@ const SearchPage: React.FC<SearchPageProps> = ({
         file_pattern: filterOptions.filePattern || null
       };
 
-      const result = await invoke<{results: Array<{id: {to_string: () => string}, timestamp: string, level: string, message: string, source_file: string, line_number: number}>, total_count: number}>("search_logs", {
+      // 使用 search_logs_paged 命令，page_index=-1 表示执行新搜索
+      const rawResult = await invoke("search_logs_paged", {
         query: trimmedQuery,
-        searchPath: activeWorkspace.path,
+        workspaceId: activeWorkspace.id,
+        pageSize,
+        pageIndex: -1,
+        searchId: null,
         filters,
-        offset: currentCount,
-        limit: refreshLimit,
       });
 
+      // 使用 Zod Schema 验证 API 响应，防止后端返回缺字段时崩溃
+      const parseResult = PagedSearchResultSchema.safeParse(rawResult);
+      if (!parseResult.success) {
+        console.error('Search logs response validation failed:', parseResult.error);
+        addToast('error', '搜索结果格式错误');
+        return;
+      }
+
+      const result = parseResult.data;
+
       if (result.results && result.results.length > 0) {
-        const newLogs: LogEntry[] = result.results.map((r, i) => ({
-          id: String(currentCount + i + 1),
+        const newLogs: LogEntry[] = result.results.map((r) => ({
+          id: String(r.id),
           timestamp: r.timestamp,
           level: r.level,
-          content: r.message,
-          file: r.source_file,
-          line: r.line_number,
-          real_path: r.source_file,
-          tags: [],
-          match_details: undefined,
-          matched_keywords: undefined,
+          content: r.content,
+          file: r.file,
+          line: r.line,
+          real_path: r.real_path,
+          tags: r.tags,
+          match_details: r.match_details,
+          matched_keywords: r.matched_keywords,
         }));
 
         bufferRef.current.pushMany(newLogs);
