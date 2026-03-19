@@ -7,7 +7,7 @@
  * 生命周期：组件挂载时注册监听器，卸载时自动解除。
  */
 
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { logger } from '../utils/logger';
 import { listen } from '@tauri-apps/api/event';
 import type { LogEntry } from '../types/common';
@@ -35,7 +35,7 @@ export function useSearchListeners(
   enabled = true,
 ): void {
   // handlers 对象每次渲染都可能是新引用，用 ref 存储以避免 useEffect 重复执行
-  const handlersRef = { current: handlers };
+  const handlersRef = useMemo(() => ({ current: handlers }), [handlers]);
   handlersRef.current = handlers;
 
   useEffect(() => {
@@ -106,5 +106,5 @@ export function useSearchListeners(
         }
       });
     };
-  }, [enabled]); // handlers 通过 ref 传递，不加入依赖以避免重复注册
+  }, [enabled, handlersRef]); // handlersRef.current 在每次渲染时更新为最新的 handlers
 }

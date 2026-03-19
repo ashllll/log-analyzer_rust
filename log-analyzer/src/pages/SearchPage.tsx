@@ -149,6 +149,9 @@ const SearchPage: React.FC<SearchPageProps> = ({
   // 环形缓冲区容量上限，防止内存泄漏
   const bufferRef = useRef(new CircularBuffer<LogEntry>(SEARCH_CONFIG.MAX_LOG_ENTRIES));
   const [logVersion, setLogVersion] = useState(0);
+  // ESLint 误判：logVersion 作为依赖是必要的，因为 buffer 内容通过 flushPendingLogs 更新后，
+  // 会调用 setLogVersion 触发重新渲染，此时 displayLogs 需要重新计算
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const displayLogs = useMemo(() => bufferRef.current.toArray(), [logVersion]);
   const deferredLogs = useDeferredValue(displayLogs); // 使用延迟值优化渲染
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -343,7 +346,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
     return () => {
       element.removeEventListener('scroll', handleScrollEvent);
     };
-  }, [isStreamSearchEnabled, checkAndFetchNextPage]);
+  }, [isStreamSearchEnabled, checkAndFetchNextPage, REFRESH_DEBOUNCE_MS, REFRESH_THRESHOLD]);
 
   // 监听搜索事件 — 通过 useSearchListeners hook 注册 Tauri 事件
   useSearchListeners({
@@ -365,7 +368,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
 
     onSummary: useCallback((summary: SearchResultSummary) => {
       dispatchSearchExec({ type: 'SUMMARY', summary, keywordColors });
-    }, [keywordColors]),
+    }, [keywordColors, dispatchSearchExec]),
 
     onComplete: useCallback((count: number) => {
       dispatchSearchExec({ type: 'COMPLETE' });
@@ -407,12 +410,12 @@ const SearchPage: React.FC<SearchPageProps> = ({
       } else {
         addToast('info', t('search.no_results'));
       }
-    }, [query, activeWorkspace, keywordColors, addToast, t]),
+    }, [query, addToast, t, dispatchSearchExec]),
 
     onError: useCallback((errorMsg: string) => {
       dispatchSearchExec({ type: 'ERROR' });
       addToast('error', t('search.error', { message: errorMsg }));
-    }, [addToast, t]),
+    }, [addToast, t, dispatchSearchExec]),
 
     onStart: useCallback(() => {
       dispatchSearchExec({ type: 'START' });
@@ -423,7 +426,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
       // 通过 ref 读取最新 DOM，不将 Ref 对象放入 deps
       if (parentRef.current) parentRef.current.scrollTop = 0;
       if (rowVirtualizerRef.current) rowVirtualizerRef.current.scrollOffset = 0;
-    }, []),
+    }, [dispatchSearchExec]),
   });
 
   // 加载保存的查询
@@ -510,7 +513,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
     };
 
     fetchTimeRange();
-  }, [activeWorkspace?.id]);
+  }, [activeWorkspace?.id, activeWorkspace]);
 
   /**
    * 检查是否接近滚动底部
@@ -525,7 +528,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
     scrollHeight: number
   ): boolean => {
     return scrollHeight - scrollTop - clientHeight <= REFRESH_THRESHOLD;
-  }, []);
+  }, [REFRESH_THRESHOLD]);
 
   // 存储 isNearBottom 到 ref 供滚动事件使用
   useEffect(() => {
@@ -674,7 +677,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
       dispatchSearchExec({ type: 'ERROR' });
       addToast('error', `搜索失败: ${getFullErrorMessage(err)}`);
     }
-  }, [query, activeWorkspace, filterOptions, currentQuery, addToast]);
+  }, [query, activeWorkspace, filterOptions, currentQuery, addToast, dispatchSearchExec, t]);
 
   // 同步 handleSearch 到 ref，供 useEffect 读取最新版本（避免旧闭包）
   useEffect(() => {
