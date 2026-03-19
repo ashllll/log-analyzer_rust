@@ -1,29 +1,17 @@
-import React, { useState, useReducer, useEffect, useRef, useCallback, useDeferredValue, memo, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useDeferredValue, memo, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { z } from 'zod';
-import {
-  Search,
-  Download,
-  Filter,
-  X,
-  ChevronDown,
-  Hash,
-  Copy,
-  Loader2,
-  RotateCcw
-} from 'lucide-react';
-import { Button, Input } from '../components/ui';
+import { Copy, Loader2, X } from 'lucide-react';
+import { Button } from '../components/ui';
 import { HybridLogRenderer } from '../components/renderers';
-import { FilterPalette } from '../components/modals';
 import { KeywordStatsPanel } from '../components/search/KeywordStatsPanel';
 import { logger } from '../utils/logger';
 import { cn } from '../utils/classNames';
 import { CircularBuffer } from '../utils/CircularBuffer';
 import { SearchQueryBuilder } from '../services/SearchQueryBuilder';
-import { SearchQuery, SearchResultSummary, KeywordStat } from '../types/search';
+import { SearchQuery, SearchResultSummary } from '../types/search';
 import { saveQuery, loadQuery } from '../services/queryStorage';
 import { api } from '../services/api';
 import { getFullErrorMessage } from '../services/errors';
@@ -38,122 +26,14 @@ import type {
   ToastType
 } from '../types/common';
 
-// ============================================================================
-// Zod Schema 验证 — 确保 API 响应类型安全
-// ============================================================================
-
-/**
- * 匹配详情 Schema
- * 对应 Rust 后端 MatchDetail 结构
- */
-const MatchDetailSchema = z.object({
-  term_id: z.string(),
-  term_value: z.string(),
-  priority: z.number(),
-  match_position: z.tuple([z.number(), z.number()]).optional(),
-});
-
-/**
- * 日志条目 Schema
- * 对应 Rust 后端 LogEntry 结构
- * 注意：后端使用 snake_case，序列化后保持 snake_case
- */
-const LogEntrySchema = z.object({
-  id: z.number(),
-  timestamp: z.string(),
-  level: z.string(),
-  file: z.string(),
-  real_path: z.string(),
-  line: z.number(),
-  content: z.string(),
-  tags: z.array(z.string()),
-  match_details: z.array(MatchDetailSchema).optional(),
-  matched_keywords: z.array(z.string()).optional(),
-});
-
-/**
- * 关键词统计 Schema
- * 对应 Rust 后端 KeywordStatistics 结构（使用 serde rename）
- */
-const KeywordStatisticsSchema = z.object({
-  keyword: z.string(),
-  matchCount: z.number(),
-  matchPercentage: z.number(),
-});
-
-/**
- * 搜索结果摘要 Schema
- * 对应 Rust 后端 SearchResultSummary 结构（使用 serde rename）
- */
-const SearchResultSummarySchema = z.object({
-  totalMatches: z.number(),
-  keywordStats: z.array(KeywordStatisticsSchema),
-  searchDurationMs: z.number(),
-  truncated: z.boolean(),
-});
-
-/**
- * 分页搜索结果 Schema
- * 对应 Rust 后端 PagedSearchResult 结构
- * 用于验证 search_logs_paged 命令的返回值
- */
-const PagedSearchResultSchema = z.object({
-  results: z.array(LogEntrySchema),
-  total_count: z.number(),
-  page_index: z.number(),
-  page_size: z.number(),
-  total_pages: z.number(),
-  has_more: z.boolean(),
-  summary: SearchResultSummarySchema,
-  query: z.string(),
-  search_id: z.string(),
-});
+// 新组件导入
+import { SearchControls } from './SearchPage/components/SearchControls';
+import { SearchFilters } from './SearchPage/components/SearchFilters';
+import { ActiveKeywords } from './SearchPage/components/ActiveKeywords';
+import { useSearchState } from './SearchPage/hooks/useSearchState';
+import { PagedSearchResultSchema } from './SearchPage/types/search-schemas';
 
 // ============================================================================
-// 搜索执行状态 Reducer — 合并原本分散的 isSearching / searchSummary / keywordStats
-// ============================================================================
-
-interface SearchExecState {
-  isSearching: boolean;
-  searchSummary: SearchResultSummary | null;
-  keywordStats: KeywordStat[];
-}
-
-type SearchExecAction =
-  | { type: 'START' }
-  | { type: 'SUMMARY'; summary: SearchResultSummary; keywordColors: string[] }
-  | { type: 'COMPLETE' }
-  | { type: 'ERROR' }
-  | { type: 'RESET' };
-
-const searchExecInitial: SearchExecState = {
-  isSearching: false,
-  searchSummary: null,
-  keywordStats: [],
-};
-
-function searchExecReducer(state: SearchExecState, action: SearchExecAction): SearchExecState {
-  switch (action.type) {
-    case 'START':
-      return { isSearching: true, searchSummary: null, keywordStats: [] };
-    case 'SUMMARY': {
-      const stats: KeywordStat[] = action.summary.keywordStats.map((stat, i) => ({
-        ...stat,
-        color: action.keywordColors[i % action.keywordColors.length],
-      }));
-      return { ...state, searchSummary: action.summary, keywordStats: stats };
-    }
-    case 'COMPLETE':
-      return { ...state, isSearching: false };
-    case 'ERROR':
-      return { ...state, isSearching: false };
-    case 'RESET':
-      return searchExecInitial;
-    default:
-      return state;
-  }
-}
-
 /**
  * 搜索页面组件
  * 核心功能:
@@ -273,8 +153,8 @@ const SearchPage: React.FC<SearchPageProps> = ({
   const deferredLogs = useDeferredValue(displayLogs); // 使用延迟值优化渲染
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isFilterPaletteOpen, setIsFilterPaletteOpen] = useState(false);
-  // 搜索执行状态（isSearching / searchSummary / keywordStats）统一通过 reducer 管理
-  const [searchExec, dispatchSearchExec] = useReducer(searchExecReducer, searchExecInitial);
+  // 搜索执行状态（isSearching / searchSummary / keywordStats）统一通过 useSearchState hook 管理
+  const [searchExec, dispatchSearchExec] = useSearchState();
   const { isSearching, searchSummary, keywordStats } = searchExec;
   
   // 流式搜索分页状态
@@ -975,197 +855,33 @@ const SearchPage: React.FC<SearchPageProps> = ({
     <div className="flex flex-col h-full relative">
       {/* 搜索控制区 */}
       <div className="p-4 border-b border-border-subtle bg-bg-sidebar space-y-3 shrink-0 relative z-40">
-        {/* 搜索输入和操作按钮 */}
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-2.5 text-text-dim" size={16} />
-            <Input
-              ref={searchInputRef}
-              value={query}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                // 规范化输入：移除 | 前后的空格
-                const normalized = e.target.value.replace(/\s*\|\s*/g, '|');
-                setQuery(normalized);
-              }}
-              className="pl-9 pr-10 font-mono bg-bg-main"
-              placeholder="Search keywords separated by | ..."
-              onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => e.key === 'Enter' && handleSearch()}
-            />
-          </div>
+        <SearchControls
+          query={query}
+          onQueryChange={setQuery}
+          onSearch={handleSearch}
+          onExport={handleExport}
+          isFilterPaletteOpen={isFilterPaletteOpen}
+          onFilterPaletteToggle={() => setIsFilterPaletteOpen(!isFilterPaletteOpen)}
+          onFilterPaletteClose={() => setIsFilterPaletteOpen(false)}
+          isSearching={isSearching}
+          disabled={!activeWorkspace || bufferRef.current.length === 0}
+          searchInputRef={searchInputRef}
+          keywordGroups={keywordGroups}
+          currentQuery={query}
+          onToggleRule={toggleRuleInQuery}
+        />
 
-          <div className="relative">
-            <Button 
-              variant={isFilterPaletteOpen ? "active" : "secondary"} 
-              icon={Filter} 
-              onClick={() => setIsFilterPaletteOpen(!isFilterPaletteOpen)} 
-              className="w-[140px] justify-between"
-            >
-              Filters 
-              <ChevronDown 
-                size={14} 
-                className={cn(
-                  "transition-transform", 
-                  isFilterPaletteOpen ? "rotate-180" : ""
-                )}
-              />
-            </Button>
-            <FilterPalette 
-              isOpen={isFilterPaletteOpen} 
-              onClose={() => setIsFilterPaletteOpen(false)} 
-              groups={keywordGroups} 
-              currentQuery={query} 
-              onToggleRule={toggleRuleInQuery} 
-            />
-          </div>
-          <Button 
-            icon={Download} 
-            onClick={() => handleExport('csv')} 
-            disabled={bufferRef.current.length === 0} 
-            variant="secondary" 
-            title="Export to CSV"
-          >
-            CSV
-          </Button>
-          <Button 
-            icon={Download} 
-            onClick={() => handleExport('json')} 
-            disabled={bufferRef.current.length === 0} 
-            variant="secondary" 
-            title="Export to JSON"
-          >
-            JSON
-          </Button>
-          <Button
-            icon={isSearching ? Loader2 : Search}
-            onClick={handleSearch}
-            disabled={isSearching || !activeWorkspace}
-            className={isSearching ? "animate-pulse" : ""}
-            title={!activeWorkspace ? t('search.no_workspace_selected') : undefined}
-          >
-            {isSearching ? '...' : 'Search'}
-          </Button>
-        </div>
-        
-        {/* 高级过滤器 UI */}
-        <div className="flex items-center gap-2 mb-2">
-          <span className="text-[10px] font-bold text-text-dim uppercase">Advanced Filters</span>
-          {(filterOptions.levels.length > 0 || filterOptions.timeRange.start || filterOptions.timeRange.end || filterOptions.filePattern) && (
-            <>
-              <span className="text-[10px] bg-primary/20 text-primary px-1.5 py-0.5 rounded border border-primary/30">
-                {[
-                  filterOptions.levels.length > 0 && `${filterOptions.levels.length} levels`,
-                  filterOptions.timeRange.start && 'time range',
-                  filterOptions.filePattern && 'file pattern'
-                ].filter(Boolean).join(', ')}
-              </span>
-              <Button 
-                variant="ghost" 
-                onClick={handleResetFilters} 
-                className="h-5 text-[10px] px-2" 
-                icon={RotateCcw}
-              >
-                Reset
-              </Button>
-            </>
-          )}
-        </div>
-        
-        <div className="grid grid-cols-4 gap-2">
-          {/* 日志级别过滤 */}
-          <div className="col-span-1">
-            <label className="text-[10px] text-text-dim uppercase font-bold mb-1 block">Level</label>
-            <div className="flex gap-1">
-              {['ERROR', 'WARN', 'INFO', 'DEBUG'].map((level) => (
-                <button
-                  key={level}
-                  onClick={() => {
-                    setFilterOptions(prev => ({
-                      ...prev,
-                      levels: prev.levels.includes(level) 
-                        ? prev.levels.filter(l => l !== level)
-                        : [...prev.levels, level]
-                    }));
-                  }}
-                  className={cn(
-                    "text-[10px] px-2 py-1 rounded border transition-all duration-200 cursor-pointer font-medium",
-                    filterOptions.levels.includes(level)
-                      ? "bg-primary text-white border-primary shadow-sm"
-                      : "bg-bg-card text-text-muted border-border-base hover:border-primary/50 hover:text-text-main"
-                  )}
-                  title={level}
-                >
-                  {level.substring(0, 1)}
-                </button>
-              ))}
-            </div>
-          </div>
-          
-          {/* 时间范围过滤 */}
-          <div className="col-span-2">
-            <label className="text-[10px] text-text-dim uppercase font-bold mb-1 block">Time Range</label>
-            <div className="flex gap-1">
-              <input
-                type="datetime-local"
-                value={filterOptions.timeRange.start || ""}
-                onChange={(e) => setFilterOptions(prev => ({
-                  ...prev,
-                  timeRange: { ...prev.timeRange, start: e.target.value || null }
-                }))}
-                className="h-7 text-[11px] flex-1 bg-bg-main border border-border-base rounded px-2 text-text-main focus:outline-none focus:border-primary/50"
-                placeholder="Start"
-              />
-              <span className="text-text-dim self-center">~</span>
-              <input
-                type="datetime-local"
-                value={filterOptions.timeRange.end || ""}
-                onChange={(e) => setFilterOptions(prev => ({
-                  ...prev,
-                  timeRange: { ...prev.timeRange, end: e.target.value || null }
-                }))}
-                className="h-7 text-[11px] flex-1 bg-bg-main border border-border-base rounded px-2 text-text-main focus:outline-none focus:border-primary/50"
-                placeholder="End"
-              />
-            </div>
-          </div>
-          
-          {/* 文件来源过滤 */}
-          <div className="col-span-1">
-            <label className="text-[10px] text-text-dim uppercase font-bold mb-1 block">File Pattern</label>
-            <Input
-              value={filterOptions.filePattern}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFilterOptions(prev => ({ ...prev, filePattern: e.target.value }))}
-              className="h-7 text-[11px]"
-              placeholder="e.g. error.log"
-            />
-          </div>
-        </div>
-        
-        {/* 当前激活的搜索关键词 */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none h-6 min-h-[24px]">
-          <span className="text-[10px] font-bold text-text-dim uppercase">Active:</span>
-          {query ? query.split('|').map((term: string) => {
-            const trimmedTerm = term.trim();
-            if (!trimmedTerm) return null;
-            return (
-              <span
-                key={trimmedTerm}
-                className="flex items-center text-[10px] bg-bg-card border border-border-base px-1.5 py-0.5 rounded text-text-main whitespace-nowrap group gap-1"
-              >
-                <Hash size={8} className="mr-0.5 opacity-50"/>
-                {trimmedTerm}
-                <button
-                  onClick={() => removeTermFromQuery(trimmedTerm)}
-                  className="opacity-0 group-hover:opacity-100 hover:text-red-400 transition-all ml-0.5"
-                  title="删除关键词"
-                  aria-label={`删除关键词 ${trimmedTerm}`}
-                >
-                  <X size={10} />
-                </button>
-              </span>
-            );
-          }) : <span className="text-[10px] text-text-dim italic">None</span>}
-        </div>
-        
+        <SearchFilters
+          filterOptions={filterOptions}
+          onFilterOptionsChange={setFilterOptions}
+          onReset={handleResetFilters}
+        />
+
+        <ActiveKeywords
+          query={query}
+          onRemoveTerm={removeTermFromQuery}
+        />
+
         {/* 关键词统计面板 */}
         {searchSummary && keywordStats.length > 0 && (
           <KeywordStatsPanel
