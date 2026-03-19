@@ -100,51 +100,8 @@ impl Default for FileFilterConfig {
     }
 }
 
-/// 高级搜索特性配置
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct AdvancedFeaturesConfig {
-    #[serde(default = "default_true")]
-    pub enable_filter_engine: bool,
-
-    #[serde(default = "default_true")]
-    pub enable_regex_engine: bool,
-
-    #[serde(default = "default_true")]
-    pub enable_time_partition: bool,
-
-    #[serde(default = "default_true")]
-    pub enable_autocomplete: bool,
-
-    #[serde(default = "default_1000_usize")]
-    pub regex_cache_size: usize,
-
-    #[serde(default = "default_100_usize")]
-    pub autocomplete_limit: usize,
-
-    #[serde(default = "default_3600_u64")]
-    pub time_partition_size_secs: u64,
-}
-
 fn default_1000_usize() -> usize {
     1000
-}
-
-fn default_3600_u64() -> u64 {
-    3600
-}
-
-impl Default for AdvancedFeaturesConfig {
-    fn default() -> Self {
-        Self {
-            enable_filter_engine: true,
-            enable_regex_engine: true,
-            enable_time_partition: true,
-            enable_autocomplete: true,
-            regex_cache_size: 1000,
-            autocomplete_limit: 100,
-            time_partition_size_secs: 3600,
-        }
-    }
 }
 
 // ============ 服务器配置 ============
@@ -1214,9 +1171,6 @@ pub struct AppConfig {
     pub workspaces: serde_json::Value,
 
     #[serde(default)]
-    pub advanced_features: AdvancedFeaturesConfig,
-
-    #[serde(default)]
     pub file_filter: FileFilterConfig,
 
     // 系统配置
@@ -1262,7 +1216,6 @@ impl Default for AppConfig {
         Self {
             keyword_groups: serde_json::json!([]),
             workspaces: serde_json::json!([]),
-            advanced_features: AdvancedFeaturesConfig::default(),
             file_filter: FileFilterConfig::default(),
             server: ServerConfig::default(),
             storage: StorageConfig::default(),

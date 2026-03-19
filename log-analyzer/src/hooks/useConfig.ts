@@ -46,12 +46,6 @@ export interface SearchConfig {
 
   /** 搜索超时 (秒) */
   search_timeout: number;
-
-  /** 是否启用正则表达式引擎 */
-  enable_regex_engine: boolean;
-
-  /** 是否启用过滤器引擎 */
-  enable_filter_engine: boolean;
 }
 
 /**
@@ -312,8 +306,6 @@ export function useConfig() {
         cache_enabled: true,
         cache_size: 1000,
         search_timeout: 30,
-        enable_regex_engine: true,
-        enable_filter_engine: true,
       },
       task_manager: {
         max_concurrent_tasks: 10,

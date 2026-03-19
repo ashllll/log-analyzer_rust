@@ -111,15 +111,6 @@ export interface WatchParams {
 export interface AppConfig {
   keyword_groups: KeywordGroup[];
   workspaces: Workspace[];
-  advanced_features: {
-    enable_filter_engine: boolean;
-    enable_regex_engine: boolean;
-    enable_time_partition: boolean;
-    enable_autocomplete: boolean;
-    regex_cache_size: number;
-    autocomplete_limit: number;
-    time_partition_size_secs: number;
-  };
   file_filter: {
     enabled: boolean;
     binary_detection_enabled: boolean;

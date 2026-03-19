@@ -28,32 +28,6 @@ export { FilterMode } from './api-responses';
 export type { FileFilterConfig } from './api-responses';
 
 /**
- * 高级特性配置
- */
-export interface AdvancedFeaturesConfig {
-  /** 是否启用位图索引过滤器（RoaringBitmap） */
-  enable_filter_engine: boolean;
-
-  /** 是否启用正则表达式搜索引擎（LRU缓存） */
-  enable_regex_engine: boolean;
-
-  /** 是否启用时间分区索引（时序优化） */
-  enable_time_partition: boolean;
-
-  /** 是否启用自动补全引擎（Trie树） */
-  enable_autocomplete: boolean;
-
-  /** 正则表达式缓存大小（默认1000） */
-  regex_cache_size: number;
-
-  /** 自动补全建议数量（默认100） */
-  autocomplete_limit: number;
-
-  /** 时间分区大小（秒，默认3600 = 1小时） */
-  time_partition_size_secs: number;
-}
-
-/**
  * 应用配置
  */
 export interface AppConfig {
@@ -62,9 +36,6 @@ export interface AppConfig {
 
   /** 工作区配置 */
   workspaces: Workspace[];
-
-  /** 高级搜索特性配置 */
-  advanced_features: AdvancedFeaturesConfig;
 
   /** 文件类型过滤配置 */
   file_filter: FileFilterConfig;

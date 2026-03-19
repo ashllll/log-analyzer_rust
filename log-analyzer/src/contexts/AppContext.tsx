@@ -390,15 +390,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       api.saveConfig({
         keyword_groups: keywordState.keywordGroups,
         workspaces: workspaceState.workspaces,
-        advanced_features: {
-          enable_filter_engine: true,
-          enable_regex_engine: true,
-          enable_time_partition: false,
-          enable_autocomplete: false,
-          regex_cache_size: 1000,
-          autocomplete_limit: 100,
-          time_partition_size_secs: 3600
-        },
         file_filter: {
           enabled: false,
           binary_detection_enabled: true,

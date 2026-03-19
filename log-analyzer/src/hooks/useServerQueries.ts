@@ -64,15 +64,6 @@ export const useConfigMutation = () => {
       const fullConfig = {
         keyword_groups: config.keyword_groups,
         workspaces: config.workspaces,
-        advanced_features: {
-          enable_filter_engine: true,
-          enable_regex_engine: true,
-          enable_time_partition: false,
-          enable_autocomplete: false,
-          regex_cache_size: 1000,
-          autocomplete_limit: 100,
-          time_partition_size_secs: 3600
-        },
         file_filter: {
           enabled: false,
           binary_detection_enabled: true,

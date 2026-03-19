@@ -130,9 +130,9 @@ export function SettingsPage() {
     return cacheConfig.max_capacity > 0 && cacheConfig.ttl > 0 && cacheConfig.l2_capacity > 0;
   };
 
-  const validateSearchConfig = (): boolean => {
-    if (!searchConfig) return false;
-    return searchConfig.default_max_results > 0 && searchConfig.cache_size > 0 && searchConfig.search_timeout > 0;
+  const validateSearchConfig = (config: SearchConfig | null): boolean => {
+    if (!config) return false;
+    return config.default_max_results > 0 && config.cache_size > 0 && config.search_timeout > 0;
   };
 
   const validateTaskManagerConfig = (): boolean => {
@@ -161,7 +161,7 @@ export function SettingsPage() {
           }
           break;
         case 'search':
-          if (localSearchConfig && validateSearchConfig()) {
+          if (localSearchConfig && validateSearchConfig(localSearchConfig)) {
             await saveSearchConfig(localSearchConfig);
             showToast('success', '搜索配置已保存');
           } else {
@@ -492,34 +492,6 @@ export function SettingsPage() {
                 min={1}
               />
               <span className="text-xs text-text-dim mt-1">搜索操作的超时时间（秒）</span>
-            </FormField>
-
-            <FormField label="启用正则表达式引擎">
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={localSearchConfig.enable_regex_engine}
-                  onChange={(e) => setLocalSearchConfig({ ...localSearchConfig, enable_regex_engine: e.target.checked })}
-                  className="w-4 h-4 rounded border-border-base text-primary focus:ring-primary/50"
-                />
-                <span className="text-sm text-text-muted">
-                  启用高性能正则表达式引擎
-                </span>
-              </div>
-            </FormField>
-
-            <FormField label="启用过滤器引擎">
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={localSearchConfig.enable_filter_engine}
-                  onChange={(e) => setLocalSearchConfig({ ...localSearchConfig, enable_filter_engine: e.target.checked })}
-                  className="w-4 h-4 rounded border-border-base text-primary focus:ring-primary/50"
-                />
-                <span className="text-sm text-text-muted">
-                  启用高级过滤器引擎（时间范围、日志级别等）
-                </span>
-              </div>
             </FormField>
           </div>
         </Card>

@@ -332,19 +332,6 @@ export type WorkspaceLoadResponseValidated = z.infer<typeof WorkspaceLoadRespons
 // ============================================================================
 
 /**
- * 高级特性配置 Schema
- */
-const AdvancedFeaturesSchema = z.object({
-  enable_filter_engine: z.boolean(),
-  enable_regex_engine: z.boolean(),
-  enable_time_partition: z.boolean(),
-  enable_autocomplete: z.boolean(),
-  regex_cache_size: z.number().int().nonnegative(),
-  autocomplete_limit: z.number().int().nonnegative(),
-  time_partition_size_secs: z.number().nonnegative(),
-});
-
-/**
  * 文件过滤器内嵌配置 Schema（AppConfig 内部）
  */
 const AppConfigFileFilterSchema = z.object({
@@ -362,7 +349,6 @@ const AppConfigFileFilterSchema = z.object({
 export const AppConfigSchema = z.object({
   keyword_groups: z.array(z.any()),  // KeywordGroup — 由 keywordStore 类型管理
   workspaces: z.array(z.any()),      // Workspace — 由 workspaceStore 类型管理
-  advanced_features: AdvancedFeaturesSchema,
   file_filter: AppConfigFileFilterSchema,
 });
 
