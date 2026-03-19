@@ -376,10 +376,12 @@ pub fn get_file_metadata(path: &Path) -> Result<crate::storage::FileMetadata> {
 
     let modified = metadata.modified().map_err(AppError::Io)?;
 
-    let modified_time = modified
+    let modified_time: i64 = modified
         .duration_since(SystemTime::UNIX_EPOCH)
         .map_err(|e| AppError::validation_error(format!("Invalid timestamp: {}", e)))?
-        .as_secs() as i64;
+        .as_secs()
+        .try_into()
+        .map_err(|_| AppError::validation_error("Timestamp overflow (Y2K38)".to_string()))?;
 
     Ok(crate::storage::FileMetadata {
         id: 0,                       // Will be auto-generated

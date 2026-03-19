@@ -5,6 +5,7 @@ use async_trait::async_trait;
 use std::path::Path;
 use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
+use tracing::warn;
 
 /**
  * GZ文件处理器
@@ -110,6 +111,13 @@ impl GzHandler {
         max_file_size: u64,
     ) -> Result<ExtractionSummary> {
         const BUFFER_SIZE: usize = 1024 * 1024; // 1MB buffer for streaming (优化: 从 64KB 增大，减少 16x syscall 次数)
+                                                // 解压炸弹防御：压缩比超过 100:1 视为恶意文件
+        const MAX_DECOMPRESSION_RATIO: u64 = 100;
+        // 检测阈值：在前 200 个块之后开始检查压缩比（避免小文件误判）
+        const RATIO_CHECK_AFTER_CHUNKS: u64 = 200;
+
+        // 获取源文件压缩大小，用于计算解压比
+        let compressed_size = fs::metadata(source).await.map(|m| m.len()).unwrap_or(0);
 
         // Ensure target directory exists
         fs::create_dir_all(target_dir).await.map_err(|e| {
@@ -154,6 +162,7 @@ impl GzHandler {
         // Stream decompression with size tracking
         let mut buffer = vec![0u8; BUFFER_SIZE];
         let mut total_bytes = 0u64;
+        let mut chunk_count = 0u64;
 
         loop {
             let bytes_read = decoder.read(&mut buffer).await.map_err(|e| {
@@ -167,8 +176,9 @@ impl GzHandler {
                 break; // EOF
             }
 
-            // Safety check: enforce size limit
+            chunk_count += 1;
             total_bytes += bytes_read as u64;
+            // Safety check: enforce size limit
             if total_bytes > max_file_size {
                 // Clean up partial file
                 drop(writer);
@@ -180,6 +190,32 @@ impl GzHandler {
                         source.display(),
                         max_file_size,
                         total_bytes
+                    ),
+                    Some(source.to_path_buf()),
+                ));
+            }
+
+            // 解压炸弹检测：在处理足够多的块后检查压缩比
+            if chunk_count >= RATIO_CHECK_AFTER_CHUNKS
+                && compressed_size > 0
+                && total_bytes > compressed_size.saturating_mul(MAX_DECOMPRESSION_RATIO)
+            {
+                drop(writer);
+                let _ = fs::remove_file(&output_path).await;
+                warn!(
+                    source = %source.display(),
+                    compressed_size,
+                    decompressed_bytes = total_bytes,
+                    ratio = total_bytes / compressed_size,
+                    max_ratio = MAX_DECOMPRESSION_RATIO,
+                    "检测到疑似解压炸弹，已中止解压"
+                );
+                return Err(AppError::archive_error(
+                    format!(
+                        "Suspected decompression bomb: {} (ratio {}:1 exceeds limit {}:1)",
+                        source.display(),
+                        total_bytes / compressed_size,
+                        MAX_DECOMPRESSION_RATIO
                     ),
                     Some(source.to_path_buf()),
                 ));

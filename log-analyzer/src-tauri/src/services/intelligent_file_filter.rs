@@ -253,16 +253,22 @@ impl IntelligentFileFilter {
             Err(_) => return 0.2, // 不是有效UTF-8
         };
 
+        // 防止空文本除以零
+        let char_count = text.chars().count();
+        if char_count == 0 {
+            return 0.0;
+        }
+
         // 可打印字符比例
         let printable_count = text
             .chars()
             .filter(|c| c.is_ascii_graphic() || c.is_whitespace())
             .count();
-        let printable_ratio = printable_count as f64 / text.chars().count() as f64;
+        let printable_ratio = printable_count as f64 / char_count as f64;
 
         // 字母数字字符比例
         let alnum_count = text.chars().filter(|c| c.is_alphanumeric()).count();
-        let alnum_ratio = alnum_count as f64 / text.chars().count() as f64;
+        let alnum_ratio = alnum_count as f64 / char_count as f64;
 
         // 换行符比例（文本文件通常有换行）
         let newline_count = text.chars().filter(|&c| c == '\n').count();

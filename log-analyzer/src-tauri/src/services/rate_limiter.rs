@@ -66,7 +66,10 @@ impl RateLimitService {
     /// ```
     pub fn new(requests_per_minute: u32, max_burst: u32) -> Self {
         // 使用 governor 的 Quota 配置速率限制
-        let quota = Quota::per_minute(nonzero!(requests_per_minute));
+        // nonzero! 宏在参数为 0 时会 panic，此处增加防护，确保最小值为 1
+        let safe_rpm = std::num::NonZeroU32::new(requests_per_minute)
+            .unwrap_or(std::num::NonZeroU32::new(1).expect("1 is nonzero"));
+        let quota = Quota::per_minute(safe_rpm);
         let limiter = RateLimiter::direct(quota);
 
         Self {

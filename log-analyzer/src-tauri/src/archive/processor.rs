@@ -342,8 +342,11 @@ async fn process_path_recursive_inner(
                                         entry.path().parent().unwrap().join(&target)
                                     };
                                     // 验证符号链接目标不逃逸基础目录（B-H1 修复）
-                                    let canonical_base = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-                                    let check_path = resolved.canonicalize().unwrap_or_else(|_| resolved.clone());
+                                    let canonical_base =
+                                        path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+                                    let check_path = resolved
+                                        .canonicalize()
+                                        .unwrap_or_else(|_| resolved.clone());
                                     if !check_path.starts_with(&canonical_base) {
                                         warn!(
                                             symlink = %entry.path().display(),
@@ -532,8 +535,11 @@ async fn process_path_recursive_inner_with_metadata(
                                         entry.path().parent().unwrap().join(&target)
                                     };
                                     // 验证符号链接目标不逃逸基础目录（B-H1 修复）
-                                    let canonical_base = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-                                    let check_path = resolved.canonicalize().unwrap_or_else(|_| resolved.clone());
+                                    let canonical_base =
+                                        path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+                                    let check_path = resolved
+                                        .canonicalize()
+                                        .unwrap_or_else(|_| resolved.clone());
                                     if !check_path.starts_with(&canonical_base) {
                                         warn!(
                                             symlink = %entry.path().display(),
@@ -817,8 +823,11 @@ pub async fn process_path_with_cas_and_checkpoints(
                                         entry.path().parent().unwrap().join(&target)
                                     };
                                     // 验证符号链接目标不逃逸基础目录（B-H1 修复）
-                                    let canonical_base = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-                                    let check_path = resolved.canonicalize().unwrap_or_else(|_| resolved.clone());
+                                    let canonical_base =
+                                        path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+                                    let check_path = resolved
+                                        .canonicalize()
+                                        .unwrap_or_else(|_| resolved.clone());
                                     if !check_path.starts_with(&canonical_base) {
                                         warn!(
                                             symlink = %entry.path().display(),
@@ -1300,6 +1309,18 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
             file_name,
             relative_path.to_string_lossy()
         );
+
+        // 虚拟路径长度守卫：防止嵌套压缩包路径无限膨胀（DoS）
+        const MAX_VIRTUAL_PATH_LENGTH: usize = 1024;
+        if new_virtual.len() > MAX_VIRTUAL_PATH_LENGTH {
+            warn!(
+                path = %new_virtual,
+                length = new_virtual.len(),
+                max_allowed = MAX_VIRTUAL_PATH_LENGTH,
+                "虚拟路径超出最大长度限制，跳过该条目"
+            );
+            continue;
+        }
 
         // Recursively process (supports nested archives)
         // Skip recursion if at max depth to prevent infinite loops

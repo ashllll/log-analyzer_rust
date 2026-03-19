@@ -20,9 +20,18 @@ fn load_config_internal(app: &AppHandle) -> Result<AppConfig, String> {
     let config_path = config_dir.join("config.json");
 
     if config_path.exists() {
-        AppConfigLoader::load(Some(config_path))
-            .map(|loader| loader.get_config().clone())
-            .map_err(|e| e.to_string())
+        match AppConfigLoader::load(Some(config_path.clone())) {
+            Ok(loader) => Ok(loader.get_config().clone()),
+            Err(e) => {
+                // 配置解析失败时降级到默认配置，避免应用无法启动
+                tracing::warn!(
+                    path = %config_path.display(),
+                    error = %e,
+                    "配置文件解析失败，使用默认配置"
+                );
+                Ok(AppConfig::default())
+            }
+        }
     } else {
         // 返回默认配置
         Ok(AppConfig::default())

@@ -270,7 +270,8 @@ impl PathValidator {
         if !check_path.starts_with(&check_base) {
             warn!(
                 "Path escape detected: {} not within {}",
-                check_path.display(), check_base.display()
+                check_path.display(),
+                check_base.display()
             );
             return Err(AppError::archive_error(
                 format!("Path escapes base directory: {}", path.display()),

@@ -144,7 +144,10 @@ impl QueryPlanner {
             }
         };
 
-        let cache_key = format!("{}|{}|{}|{}", pattern, term.is_regex, term.case_sensitive, use_ci);
+        let cache_key = format!(
+            "{}|{}|{}|{}",
+            pattern, term.is_regex, term.case_sensitive, use_ci
+        );
 
         if let Some(cached) = self.engine_cache.get(&cache_key) {
             return Ok(Arc::clone(&cached));

@@ -350,6 +350,32 @@ impl ArchiveExtractionService {
             ));
         }
 
+        // 1b. 检查文件的所有父目录是否包含符号链接（防止目录符号链接绕过检查）
+        {
+            let mut current = file_path.parent();
+            while let Some(parent) = current {
+                if parent == target_dir {
+                    break;
+                }
+                // std::fs::symlink_metadata 不跟随符号链接
+                match std::fs::symlink_metadata(parent) {
+                    Ok(meta) if meta.file_type().is_symlink() => {
+                        warn!(
+                            path = %file_path.display(),
+                            symlink_dir = %parent.display(),
+                            "提取路径的父目录是符号链接，拒绝（防止路径遍历）"
+                        );
+                        return Err(eyre!(
+                            "Parent directory is a symlink, extraction rejected: {}",
+                            parent.display()
+                        ));
+                    }
+                    _ => {}
+                }
+                current = parent.parent();
+            }
+        }
+
         // 2. 检查文件是否在目标目录内（防止路径遍历）
         let canonical_file = file_path
             .canonicalize()
