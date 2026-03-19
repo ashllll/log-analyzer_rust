@@ -104,8 +104,8 @@ impl StreamingIndexBuilder {
             "Starting streaming index build"
         );
 
-        // Reset cancellation token
-        self.cancellation_token.store(false, Ordering::Relaxed);
+        // 不在此处重置取消令牌：若调用方在调用前已发出取消信号，重置会丢失该信号。
+        // 调用方应在调用前通过 new() 或手动重置令牌来确保令牌处于未取消状态。
 
         // Estimate total lines first (without holding lock)
         let total_lines_estimate = self.estimate_total_lines(&log_files).await?;
@@ -181,9 +181,7 @@ impl StreamingIndexBuilder {
                     m.commit()
                 })
                 .await
-                .map_err(|e| {
-                    SearchError::IndexError(format!("spawn_blocking panicked: {e}"))
-                })??;
+                .map_err(|e| SearchError::IndexError(format!("spawn_blocking panicked: {e}")))??;
                 debug!(batch = batch_idx, "Committed batch to index");
             }
         }
@@ -559,16 +557,14 @@ mod tests {
             "Should be cancelled after cancel() call"
         );
 
-        // 注意：build_index_streaming 会在开始时重置取消令牌
-        // 这是设计行为，允许重新开始索引构建
-        // 所以空文件列表的构建应该成功
+        // 修复后 build_index_streaming 不再重置取消令牌。
+        // 已处于取消状态时，函数应在 clear_index 阶段检测到取消信号并提前返回错误。
         let result = builder.build_index_streaming(vec![], None).await;
 
-        // 空文件列表应该成功完成（没有文件需要处理）
+        // 已取消状态下，即使文件列表为空，也应该返回取消错误
         assert!(
-            result.is_ok(),
-            "Empty file list should succeed: {:?}",
-            result.err()
+            result.is_err(),
+            "Should return error when cancelled before build"
         );
     }
 }

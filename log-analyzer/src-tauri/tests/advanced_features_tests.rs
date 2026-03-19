@@ -218,7 +218,9 @@ mod integration_tests {
             filter_engine.add_document(i as u32, &entry);
         }
         let filters = vec![Filter::Level("ERROR".to_string())];
-        let filtered = filter_engine.apply_filters(&filters).expect("apply_filters should succeed");
+        let filtered = filter_engine
+            .apply_filters(&filters)
+            .expect("apply_filters should succeed");
         let regex_result = regex_engine
             .search_with_regex(r"\d{3}-\d{3}-\d{4}", "Phone: 123-456-7890")
             .unwrap();
@@ -245,7 +247,9 @@ mod integration_tests {
         }
         let filters = vec![Filter::Level("ERROR".to_string())];
         let start = Instant::now();
-        let filtered = filter_engine.apply_filters(&filters).expect("apply_filters should succeed");
+        let filtered = filter_engine
+            .apply_filters(&filters)
+            .expect("apply_filters should succeed");
         let filter_time = start.elapsed();
         assert_eq!(filtered.len(), 10000);
         assert!(

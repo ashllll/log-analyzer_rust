@@ -463,11 +463,12 @@ impl IndexOptimizer {
         // 使用 total_cmp 替代 partial_cmp，NaN 会被排到末尾而非引起不稳定排序
         query_times.sort_by(|a, b| a.total_cmp(b));
 
-        let p95_idx = (query_times.len() as f64 * 0.95) as usize;
-        let p95_query_time = query_times
-            .get(p95_idx.saturating_sub(1))
-            .copied()
-            .unwrap_or(0.0);
+        let p95_idx = if query_times.is_empty() {
+            0
+        } else {
+            ((query_times.len() - 1) as f64 * 0.95).round() as usize
+        };
+        let p95_query_time = query_times.get(p95_idx).copied().unwrap_or(0.0);
 
         // Generate recommendations and maintenance tasks
         drop(patterns); // Release lock before calling methods that need it

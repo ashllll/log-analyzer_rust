@@ -247,7 +247,10 @@ impl HighlightingEngine {
                             term,
                             tantivy::schema::IndexRecordOption::Basic,
                         );
-                        clauses.push((Occur::Should, Box::new(term_query) as Box<dyn tantivy::query::Query>));
+                        clauses.push((
+                            Occur::Should,
+                            Box::new(term_query) as Box<dyn tantivy::query::Query>,
+                        ));
                     }
                     Ok(Box::new(BooleanQuery::new(clauses)))
                 }

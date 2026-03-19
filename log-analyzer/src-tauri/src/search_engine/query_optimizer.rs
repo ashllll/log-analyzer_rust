@@ -448,7 +448,11 @@ impl QueryOptimizer {
 
     /// Get query statistics
     pub fn get_query_stats(&self) -> HashMap<String, QueryStats> {
-        self.query_stats.read().iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+        self.query_stats
+            .read()
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
     }
 
     /// Clear statistics (for testing or reset)
