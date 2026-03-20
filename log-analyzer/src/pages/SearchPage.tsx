@@ -627,7 +627,12 @@ const SearchPage: React.FC<SearchPageProps> = ({
       return;
     }
 
-    // 重置状态
+    // 重置状态 - 必须先清理待处理的日志，避免旧搜索结果覆盖新搜索
+    if (batchTimeoutRef.current) {
+      clearTimeout(batchTimeoutRef.current);
+      batchTimeoutRef.current = null;
+    }
+    pendingLogsRef.current = []; // 关键：清理待处理日志，避免旧数据覆盖新数据
     bufferRef.current.clear();
     setLogVersion(v => v + 1);
     dispatchSearchExec({ type: 'START' });
