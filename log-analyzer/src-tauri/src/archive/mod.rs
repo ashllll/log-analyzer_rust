@@ -18,6 +18,7 @@ pub mod edge_case_handlers;
 pub mod extraction_context;
 pub mod extraction_engine;
 pub mod extraction_orchestrator;
+pub mod extraction_service;
 pub mod gz_handler;
 pub mod nested_archive_config;
 pub mod parallel_processor;
