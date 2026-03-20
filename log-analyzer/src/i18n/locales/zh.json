@@ -17,7 +17,25 @@
     "error": "搜索失败: {{message}}",
     "remove_keyword": "删除关键词 {{keyword}}",
     "export_success": "导出成功",
-    "export_failed": "导出失败"
+    "export_failed": "导出失败",
+    "filters": "过滤器",
+    "action": "搜索",
+    "searching": "搜索中",
+    "empty": "选择工作区并执行搜索",
+    "table": {
+      "level": "级别",
+      "time": "时间",
+      "file": "文件",
+      "content": "内容"
+    },
+    "inspector": {
+      "title": "日志详情",
+      "copy": "复制内容",
+      "close": "关闭面板",
+      "message": "消息内容",
+      "file": "文件",
+      "not_available": "无"
+    }
   },
   "workspaces": {
     "delete_confirm": "确认删除此工作区？此操作不可撤销。",

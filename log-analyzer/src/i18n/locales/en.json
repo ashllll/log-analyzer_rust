@@ -17,7 +17,25 @@
     "error": "Search failed: {{message}}",
     "remove_keyword": "Remove keyword {{keyword}}",
     "export_success": "Export successful",
-    "export_failed": "Export failed"
+    "export_failed": "Export failed",
+    "filters": "Filters",
+    "action": "Search",
+    "searching": "Searching",
+    "empty": "Select workspace and search",
+    "table": {
+      "level": "Level",
+      "time": "Time",
+      "file": "File",
+      "content": "Content"
+    },
+    "inspector": {
+      "title": "Log Inspector",
+      "copy": "Copy content",
+      "close": "Close panel",
+      "message": "Message Body",
+      "file": "File",
+      "not_available": "N/A"
+    }
   },
   "workspaces": {
     "delete_confirm": "Confirm delete this workspace? This action cannot be undone.",

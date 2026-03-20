@@ -34,7 +34,7 @@ export const Button: React.FC<ButtonProps & {
     danger: "bg-status-error/10 text-status-error hover:bg-status-error/20 border border-status-error/20 hover:border-status-error/40 active:scale-[0.98]",
     active: "bg-primary/20 text-primary border border-primary/50 hover:bg-primary/30",
     cta: "bg-cta hover:bg-cta-hover text-white shadow-sm hover:shadow-glow-cta active:scale-[0.98]",
-    icon: "h-8 w-8 p-0 bg-transparent hover:bg-bg-hover text-text-dim hover:text-text-main rounded-full"
+    icon: "h-11 w-11 p-0 bg-transparent hover:bg-bg-hover text-text-dim hover:text-text-main rounded-lg"
   };
 
   const isDisabled = disabled || loading;
@@ -43,7 +43,7 @@ export const Button: React.FC<ButtonProps & {
     <button
       type="button"
       className={cn(
-        "h-9 px-4 rounded-md text-sm font-medium transition-all duration-200",
+        "h-11 px-4 rounded-md text-sm font-medium transition-all duration-200 touch-target",
         "flex items-center justify-center gap-2",
         "disabled:opacity-50 disabled:cursor-not-allowed",
         "shrink-0 select-none cursor-pointer",

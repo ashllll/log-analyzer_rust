@@ -44,10 +44,12 @@ export const SearchControls: React.FC<SearchControlsProps> = ({
   const { t } = useTranslation();
 
   return (
-    <div className="flex gap-2">
+    <div className="flex gap-3">
       <div className="relative flex-1">
-        <Search className="absolute left-3 top-2.5 text-text-dim" size={16} />
+        <label htmlFor="search-input" className="sr-only">搜索关键词</label>
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-text-dim" size={16} aria-hidden="true" />
         <Input
+          id="search-input"
           ref={searchInputRef}
           value={query}
           onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
@@ -55,8 +57,8 @@ export const SearchControls: React.FC<SearchControlsProps> = ({
             const normalized = e.target.value.replace(/\s*\|\s*/g, '|');
             onQueryChange(normalized);
           }}
-          className="pl-9 pr-10 font-mono bg-bg-main"
-          placeholder="Search keywords separated by | ..."
+          className="pl-10 pr-10 font-mono bg-bg-main h-11"
+          placeholder="输入关键词，用 | 分隔..."
           onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => e.key === 'Enter' && onSearch()}
         />
       </div>
@@ -67,12 +69,13 @@ export const SearchControls: React.FC<SearchControlsProps> = ({
           icon={Filter}
           onClick={onFilterPaletteToggle}
           className="w-[140px] justify-between"
+          aria-label="打开过滤器面板"
         >
-          Filters
+          {t('search.filters', '过滤器')}
           <ChevronDown
             size={14}
             className={cn(
-              "transition-transform",
+              "transition-transform duration-200",
               isFilterPaletteOpen ? "rotate-180" : ""
             )}
           />
@@ -90,7 +93,7 @@ export const SearchControls: React.FC<SearchControlsProps> = ({
         onClick={() => onExport('csv')}
         disabled={disabled}
         variant="secondary"
-        title="Export to CSV"
+        aria-label="导出为 CSV 格式"
       >
         CSV
       </Button>
@@ -99,7 +102,7 @@ export const SearchControls: React.FC<SearchControlsProps> = ({
         onClick={() => onExport('json')}
         disabled={disabled}
         variant="secondary"
-        title="Export to JSON"
+        aria-label="导出为 JSON 格式"
       >
         JSON
       </Button>
@@ -108,9 +111,9 @@ export const SearchControls: React.FC<SearchControlsProps> = ({
         onClick={onSearch}
         disabled={isSearching || disabled}
         className={isSearching ? "animate-pulse" : ""}
-        title={disabled ? t('search.no_workspace_selected') : undefined}
+        aria-label={disabled ? t('search.no_workspace_selected') : undefined}
       >
-        {isSearching ? '...' : 'Search'}
+        {isSearching ? t('search.searching', '搜索中') : t('search.action', '搜索')}
       </Button>
     </div>
   );

@@ -176,8 +176,8 @@ const HybridLogRendererInner: React.FC<HybridLogRendererProps> = ({ text, query,
           if (info) {
             const style = COLOR_STYLES[info.color as ColorKey]?.highlight || COLOR_STYLES['blue'].highlight;
             return (
-              <span key={i} className="inline-flex items-baseline mx-[1px]">
-                <span className={`rounded-[2px] px-1 border font-bold break-all ${style}`}>
+              <span key={i} className="inline-block mx-[1px]">
+                <span className={`rounded-[2px] px-1 border font-bold break-words ${style}`}>
                   {part}
                 </span>
                 {info.comment && (

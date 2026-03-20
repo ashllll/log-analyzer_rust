@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { AlertCircle, X } from 'lucide-react';
 import { cn } from '../utils/classNames';
 
@@ -28,6 +28,20 @@ export const ConfirmDialog = ({
   onConfirm,
   onCancel
 }: ConfirmDialogProps) => {
+  // ESC 键关闭模态框
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onCancel();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onCancel]);
+
   if (!isOpen) return null;
 
   return (

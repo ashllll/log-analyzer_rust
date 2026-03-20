@@ -145,6 +145,14 @@ function AppContent() {
 
   return (
     <div className="flex h-screen bg-bg-main text-text-main font-sans selection:bg-primary/30">
+      {/* Skip Link - 键盘导航辅助 */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-[1000] focus:px-4 focus:py-2 focus:bg-primary focus:text-white focus:rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-bg-main"
+      >
+        跳转到主要内容
+      </a>
+
       {/* 侧边栏 - 使用更柔和的背景和更好的视觉层次 */}
       <div className="w-[240px] bg-bg-sidebar border-r border-border-subtle flex flex-col shrink-0 z-50">
         {/* Logo 区域 */}
@@ -166,7 +174,7 @@ function AppContent() {
         </div>
       </div>
       {/* 主内容区 */}
-      <div className="flex-1 flex flex-col min-w-0 bg-bg-main">
+      <div id="main-content" className="flex-1 flex flex-col min-w-0 bg-bg-main">
         {/* 顶部导航栏 */}
         <div className="h-14 border-b border-border-subtle bg-bg-main flex items-center justify-between px-6 shrink-0 z-40">
           <div className="flex items-center text-sm text-text-muted select-none">

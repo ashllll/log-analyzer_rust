@@ -61,31 +61,24 @@ interface LogRowProps {
   query: string;
   keywordGroups: KeywordGroup[];
   virtualStart: number;
-  virtualKey: React.Key;
-  measureRef: (node: Element | null) => void;
 }
 
 /**
  * 虚拟行组件 - 使用 React.memo 优化
  * 只有当 log、isActive、query 或 keywordGroups 变化时才重新渲染
  */
-const LogRow = memo<LogRowProps>(({ 
-  log, 
-  isActive, 
-  onClick, 
-  query, 
-  keywordGroups, 
-  virtualStart, 
-  virtualKey,
-  measureRef 
+const LogRow = memo<LogRowProps>(({
+  log,
+  isActive,
+  onClick,
+  query,
+  keywordGroups,
+  virtualStart
 }) => {
   return (
-    <div 
-      key={virtualKey}
-      data-index={virtualKey} 
-      ref={measureRef} 
-      onClick={onClick} 
-      style={{ transform: `translateY(${virtualStart}px)` }} 
+    <div
+      onClick={onClick}
+      style={{ transform: `translateY(${virtualStart}px)` }}
       className={cn(
         "absolute top-0 left-0 w-full grid grid-cols-[50px_160px_150px_1fr] px-3 py-1.5 border-b border-border-subtle cursor-pointer text-xs font-mono hover:bg-bg-hover/50 transition-colors duration-150 items-start",
         isActive && "bg-primary/10 border-l-2 border-l-primary"
@@ -93,7 +86,7 @@ const LogRow = memo<LogRowProps>(({
     >
       <div className="flex items-center">
         <span className={cn(
-          "inline-block text-[10px] font-bold px-1 py-0.5 rounded leading-none",
+          "inline-block text-xs font-bold px-1.5 py-0.5 rounded leading-none",
           log.level === 'ERROR' ? 'bg-red-500/20 text-red-400' :
           log.level === 'WARN'  ? 'bg-amber-500/20 text-amber-400' :
           log.level === 'INFO'  ? 'bg-blue-500/20 text-blue-400' :
@@ -102,20 +95,20 @@ const LogRow = memo<LogRowProps>(({
           {log.level.substring(0,1)}
         </span>
       </div>
-      <div className="text-text-muted whitespace-nowrap text-[11px]">
+      <div className="text-text-muted whitespace-nowrap text-xs">
         {log.timestamp}
       </div>
       <div
-        className="text-text-muted truncate pr-2 text-[11px] leading-tight"
+        className="text-text-muted truncate pr-2 text-xs leading-tight"
         title={`${log.file}:${log.line}`}
       >
         {(log.file.split('/').pop() ?? log.file).split('\\').pop() ?? log.file}:{log.line}
       </div>
-      <div className="text-text-main whitespace-pre-wrap break-all leading-tight pr-2">
-        <HybridLogRenderer 
-          text={log.content} 
-          query={query} 
-          keywordGroups={keywordGroups} 
+      <div className="text-text-main whitespace-pre-wrap break-words leading-tight pr-2">
+        <HybridLogRenderer
+          text={log.content}
+          query={query}
+          keywordGroups={keywordGroups}
         />
       </div>
     </div>
@@ -830,23 +823,9 @@ const SearchPage: React.FC<SearchPageProps> = ({
    */
   const rowVirtualizer = useVirtualizer({
     count: deferredLogs.length,
-    getScrollElement: () => {
-      if (!parentRef.current) return null;
-      return parentRef.current;
-    },
-    estimateSize: useCallback(() => 32, []),
-    // 使用 log.id 作为唯一 key，避免重排时状态错乱（F-L4）
-    getItemKey: useCallback((index: number) => deferredLogs[index]?.id ?? index, [deferredLogs]),
-    overscan: 5,
-    measureElement: (element) => {
-      if (!element) return 32;
-      try {
-        const rect = element.getBoundingClientRect();
-        return rect.height > 0 ? rect.height : 32;
-      } catch {
-        return 32;
-      }
-    },
+    getScrollElement: () => parentRef.current,
+    estimateSize: useCallback(() => 48, []), // 调整为 48px，更接近实际行高
+    overscan: 10,
   });
   
   // 将虚拟滚动器存储到 ref 中
@@ -867,7 +846,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
           onFilterPaletteToggle={() => setIsFilterPaletteOpen(!isFilterPaletteOpen)}
           onFilterPaletteClose={() => setIsFilterPaletteOpen(false)}
           isSearching={isSearching}
-          disabled={!activeWorkspace || bufferRef.current.length === 0}
+          disabled={!activeWorkspace || !query.trim()}
           searchInputRef={searchInputRef}
           keywordGroups={keywordGroups}
           currentQuery={query}
@@ -901,11 +880,11 @@ const SearchPage: React.FC<SearchPageProps> = ({
         {/* 日志列表 */}
         <div ref={parentRef} className="flex-1 overflow-auto bg-bg-main scrollbar-thin">
           {/* 表头 - 优化视觉层次 */}
-          <div className="sticky top-0 z-10 grid grid-cols-[50px_160px_150px_1fr] px-3 py-1.5 bg-bg-elevated border-b border-border-base text-[10px] font-bold text-text-muted uppercase tracking-wider">
-            <div>Lvl</div>
-            <div>Time</div>
-            <div>File</div>
-            <div>Content</div>
+          <div className="sticky top-0 z-10 grid grid-cols-[50px_160px_150px_1fr] px-3 py-2 bg-bg-elevated border-b border-border-base text-xs font-bold text-text-muted uppercase tracking-wider">
+            <div>{t('search.table.level', '级别')}</div>
+            <div>{t('search.table.time', '时间')}</div>
+            <div>{t('search.table.file', '文件')}</div>
+            <div>{t('search.table.content', '内容')}</div>
           </div>
           
           {/* 虚拟滚动列表 - 使用 LogRow 组件优化渲染 */}
@@ -922,8 +901,6 @@ const SearchPage: React.FC<SearchPageProps> = ({
                   query={query}
                   keywordGroups={enabledKeywordGroups}
                   virtualStart={virtualRow.start}
-                  virtualKey={virtualRow.key}
-                  measureRef={rowVirtualizer.measureElement}
                 />
               );
             })}
@@ -957,7 +934,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
           {/* 空状态 */}
           {bufferRef.current.length === 0 && !isSearching && (
             <div className="flex items-center justify-center h-full text-text-dim">
-              No logs found. Select workspace & search.
+              {t('search.empty', '选择工作区并执行搜索')}
             </div>
           )}
         </div>
@@ -966,19 +943,21 @@ const SearchPage: React.FC<SearchPageProps> = ({
         {activeLog && (
           <div className="w-[450px] bg-bg-sidebar border-l border-border-subtle flex flex-col shrink-0 shadow-elevated z-20 animate-slide-in">
             <div className="h-10 border-b border-border-subtle flex items-center justify-between px-4 bg-bg-elevated">
-              <span className="text-xs font-bold text-text-muted uppercase tracking-wide">Log Inspector</span>
+              <span className="text-xs font-bold text-text-muted uppercase tracking-wide">{t('search.inspector.title', '日志详情')}</span>
               <div className="flex gap-1">
-                <Button 
-                  variant="ghost" 
-                  className="h-6 w-6 p-0" 
+                <Button
+                  variant="ghost"
+                  className="h-11 w-11 p-0"
                   onClick={() => copyToClipboard(activeLog.content)}
+                  aria-label={t('search.inspector.copy', '复制内容')}
                 >
                   <Copy size={14}/>
                 </Button>
-                <Button 
-                  variant="ghost" 
-                  className="h-6 w-6 p-0" 
+                <Button
+                  variant="ghost"
+                  className="h-11 w-11 p-0"
                   onClick={() => setSelectedId(null)}
+                  aria-label={t('search.inspector.close', '关闭面板')}
                 >
                   <X size={14}/>
                 </Button>
@@ -986,7 +965,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
             </div>
             <div className="flex-1 overflow-auto p-4 font-mono text-xs">
               <div className="bg-bg-main p-3 rounded border border-border-base mb-4">
-                <div className="text-text-dim text-[10px] uppercase mb-1">Message Body</div>
+                <div className="text-text-dim text-xs uppercase mb-1">{t('search.inspector.message', '消息内容')}</div>
                 <div className="text-text-main whitespace-pre-wrap break-all leading-relaxed">
                   <HybridLogRenderer 
                     text={tryFormatJSON(activeLog.content)} 
@@ -996,8 +975,8 @@ const SearchPage: React.FC<SearchPageProps> = ({
                 </div>
               </div>
               <div className="p-2 bg-bg-card border border-border-base rounded mb-2">
-                <div className="text-[10px] text-text-dim uppercase">File</div>
-                <div className="break-all text-text-main">{activeLog?.real_path || 'N/A'}</div>
+                <div className="text-xs text-text-dim uppercase">{t('search.inspector.file', '文件')}</div>
+                <div className="break-all text-text-main">{activeLog?.real_path || t('search.inspector.not_available', '无')}</div>
               </div>
             </div>
           </div>
