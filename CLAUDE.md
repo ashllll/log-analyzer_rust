@@ -16,9 +16,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ***
 
 > **项目**: log-analyzer_rust - 高性能桌面日志分析工具
-> **版本**: 1.2.24
+> **版本**: 1.2.35
 > **技术栈**: Tauri 2.0 + Rust 1.70+ + React 19.1.0 + TypeScript 5.8.3
-> **最后更新**: 2026-03-19
+> **最后更新**: 2026-03-20
 
 ***
 
@@ -360,7 +360,7 @@ pkg-config --modversion gtk4
 
 1. **C-H1** 搜索工作区ID降级逻辑 (`search.rs:298`)
 2. **B-H3** `blocking_lock()` 阻塞tokio worker (`performance.rs:52`)
-3. **B-H4** 路径遍历：符号链接可绕过检查 (`extraction_service.rs:323-335`)
+3. **~~B-H4~~** ~~路径遍历：符号链接可绕过检查~~ ✅ 已修复 (O_NOFOLLOW)
 4. **C-H4** 无工作区时搜索按钮未禁用 (`SearchPage.tsx:389-394`)
 5. **F-H4** API响应无Zod Schema验证 (`SearchPage.tsx:623`)
 
