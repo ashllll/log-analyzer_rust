@@ -116,8 +116,10 @@ pub async fn start_watch(
                                 watcher_watched_path,
                                 start_line_number,
                             ) = {
-                                let mut watchers = watchers_arc.lock();
-                                if let Some(watcher) = watchers.get_mut(&workspace_id_clone) {
+                                // B-M5 优化: 使用 get() 而非 get_mut() 进行只读访问
+                                // parking_lot::Mutex 支持同时多个只读访问
+                                let watchers = watchers_arc.lock();
+                                if let Some(watcher) = watchers.get(&workspace_id_clone) {
                                     let offset =
                                         *watcher.file_offsets.get(&file_path_str).unwrap_or(&0);
                                     let workspace_id = watcher.workspace_id.clone();
@@ -169,12 +171,15 @@ pub async fn start_watch(
                                     }
 
                                     {
+                                        // B-M5 优化: 只有在有新内容时才需要获取写锁
                                         let mut watchers = watchers_arc.lock();
                                         if let Some(watcher) = watchers.get_mut(&workspace_id_clone)
                                         {
+                                            // 更新文件偏移量（总是需要更新）
                                             watcher
                                                 .file_offsets
                                                 .insert(file_path_str.clone(), new_offset);
+                                            // 只有在新行数大于0时才更新行数计数
                                             if new_line_count > 0 {
                                                 watcher.line_counts.insert(
                                                     file_path_str.clone(),

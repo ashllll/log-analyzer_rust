@@ -30,7 +30,15 @@ impl ExtractionProgress {
             errors_count: Arc::new(AtomicUsize::new(0)),
         }
     }
+}
 
+impl Default for ExtractionProgress {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ExtractionProgress {
     pub fn increment_processed(&self, size: u64) {
         self.files_processed.fetch_add(1, Ordering::Relaxed);
         self.bytes_processed.fetch_add(size, Ordering::Relaxed);
@@ -102,7 +110,8 @@ impl ArchiveExtractionService {
     }
 
     /// 使用默认配置创建服务
-    pub fn default() -> Self {
+    #[allow(clippy::should_implement_trait)]
+    pub fn with_defaults() -> Self {
         Self::new(ExtractionLimits::default())
     }
 
@@ -142,8 +151,8 @@ pub fn check_file_safety_with_nofollow(file_path: &Path) -> Result<()> {
             Ok(())
         }
         Err(e) => {
-            // rustix 的错误使用 Errno 类型，需要转换
-            let error_code = e.raw_os_error() as i32;
+            // rustix 的错误使用 Errno 类型
+            let error_code = e.raw_os_error();
             if error_code == libc::ELOOP || error_code == libc::EMLINK {
                 // ELOOP: 符号链接（在 POSIX 系统上）
                 // EMLINK: 指向符号链接（某些系统的行为）
@@ -212,7 +221,11 @@ mod tests {
 
         // 普通文件应该能通过 O_NOFOLLOW 检查
         let result = check_file_safety_with_nofollow(&test_file);
-        assert!(result.is_ok(), "Regular file should pass O_NOFOLLOW check: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "Regular file should pass O_NOFOLLOW check: {:?}",
+            result
+        );
     }
 
     /// TOCTOU 安全测试：O_NOFOLLOW 检查不存在的文件
@@ -223,7 +236,10 @@ mod tests {
 
         // 不存在的文件应该返回错误
         let result = check_file_safety_with_nofollow(&nonexistent);
-        assert!(result.is_err(), "Non-existent file should fail O_NOFOLLOW check");
+        assert!(
+            result.is_err(),
+            "Non-existent file should fail O_NOFOLLOW check"
+        );
     }
 
     /// TOCTOU 安全测试：O_NOFOLLOW 检查符号链接
@@ -241,7 +257,11 @@ mod tests {
 
         // 符号链接应该被 O_NOFOLLOW 检测到并拒绝
         let result = check_file_safety_with_nofollow(&symlink_file);
-        assert!(result.is_err(), "Symlink should fail O_NOFOLLOW check: {:?}", result);
+        assert!(
+            result.is_err(),
+            "Symlink should fail O_NOFOLLOW check: {:?}",
+            result
+        );
         let err_msg = result.unwrap_err().to_string();
         assert!(
             err_msg.contains("Symbolic link") || err_msg.contains("O_NOFOLLOW"),
