@@ -4,6 +4,10 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
+/// Prometheus histogram buckets (毫秒单位)
+/// 对应秒数: [0.005s, 0.01s, 0.025s, 0.05s, 0.1s, 0.25s, 0.5s, 1s, 2.5s, 5s, 10s]
+const BUCKETS_MS: &[u64] = &[5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000];
+
 /// 计数器指标
 #[derive(Debug)]
 pub struct Counter {
@@ -40,16 +44,25 @@ pub struct Histogram {
     sum: AtomicU64,
     min: AtomicU64,
     max: AtomicU64,
+    buckets: Vec<u64>,
+    bucket_counts: Vec<AtomicU64>,
 }
 
 impl Histogram {
     pub fn new(name: &str) -> Self {
+        // AtomicU64 没有实现 Clone，需要逐个创建
+        let mut bucket_counts = Vec::with_capacity(BUCKETS_MS.len());
+        for _ in BUCKETS_MS {
+            bucket_counts.push(AtomicU64::new(0));
+        }
         Self {
             name: name.to_string(),
             count: AtomicU64::new(0),
             sum: AtomicU64::new(0),
             min: AtomicU64::new(u64::MAX),
             max: AtomicU64::new(0),
+            buckets: BUCKETS_MS.to_vec(),
+            bucket_counts,
         }
     }
 
@@ -58,6 +71,13 @@ impl Histogram {
 
         self.count.fetch_add(1, Ordering::Relaxed);
         self.sum.fetch_add(value, Ordering::Relaxed);
+
+        // 更新 bucket 计数
+        for (i, &bucket) in self.buckets.iter().enumerate() {
+            if value <= bucket {
+                self.bucket_counts[i].fetch_add(1, Ordering::Relaxed);
+            }
+        }
 
         // 更新最小值
         let mut current_min = self.min.load(Ordering::Relaxed);
@@ -109,6 +129,19 @@ impl Histogram {
 
     pub fn max(&self) -> u64 {
         self.max.load(Ordering::Relaxed)
+    }
+
+    /// 返回 bucket 边界数组 (毫秒)
+    pub fn buckets(&self) -> &[u64] {
+        &self.buckets
+    }
+
+    /// 返回各 bucket 的计数数组
+    pub fn bucket_counts_vec(&self) -> Vec<u64> {
+        self.bucket_counts
+            .iter()
+            .map(|c| c.load(Ordering::Relaxed))
+            .collect()
     }
 
     pub fn avg(&self) -> f64 {
@@ -163,14 +196,25 @@ impl MetricsRegistry {
                 .min()
                 .map(|v| v.to_string())
                 .unwrap_or_else(|| "-".to_string());
+
+            // 导出 bucket 信息
+            let buckets = histogram.buckets();
+            let counts = histogram.bucket_counts_vec();
+            let bucket_info: Vec<String> = buckets
+                .iter()
+                .zip(counts.iter())
+                .map(|(&b, &c)| format!("<= {}ms:{}", b, c))
+                .collect();
+
             output.push_str(&format!(
-                "{}: count={}, sum={}, min={}, max={}, avg={:.2}\n",
+                "{}: count={}, sum={}, min={}, max={}, avg={:.2}, buckets=[{}]\n",
                 histogram.name,
                 histogram.count(),
                 histogram.sum(),
                 min_display,
                 histogram.max(),
-                histogram.avg()
+                histogram.avg(),
+                bucket_info.join(", ")
             ));
         }
 

@@ -28,6 +28,7 @@ use moka::sync::Cache; // ✅ 使用 moka LRU 缓存替代 DashSet
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::fs;
 use tokio::io::{AsyncReadExt, BufReader};
 use tracing::{debug, error, info, warn};
@@ -164,11 +165,19 @@ impl ContentAddressableStorage {
     /// let cas = ContentAddressableStorage::new(PathBuf::from("./workspace_123"));
     /// ```
     pub fn new(workspace_dir: PathBuf) -> Self {
-        // Create an LRU cache for object existence checks
+        // Create an LRU cache for object existence checks with TTL/TTI expiration
         // Capacity: 10,000 entries to balance performance and memory usage
+        // TTL: 1 hour - entries forced to expire after max lifetime
+        // TTI: 5 minutes - entries removed after idle time
         Self {
             workspace_dir,
-            existence_cache: Arc::new(Cache::new(10_000)),
+            existence_cache: Arc::new(
+                Cache::builder()
+                    .max_capacity(10_000)
+                    .time_to_live(Duration::from_secs(3600))
+                    .time_to_idle(Duration::from_secs(300))
+                    .build(),
+            ),
         }
     }
 

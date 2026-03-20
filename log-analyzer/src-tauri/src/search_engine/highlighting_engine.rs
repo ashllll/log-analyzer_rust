@@ -273,11 +273,20 @@ impl HighlightingEngine {
         // Configure snippet generator
         snippet_generator.set_max_num_chars(self.config.max_snippet_length);
 
-        // For now, create a simple snippet from the document content
-        // In a real implementation, we'd use the actual document from the index
-        let snippet = snippet_generator.snippet(document_content);
+        // 业务层限制片段数量：最多3个片段
+        const MAX_SNIPPETS: usize = 3;
+        let mut snippets = Vec::with_capacity(MAX_SNIPPETS);
 
-        Ok(vec![snippet])
+        // Tantivy SnippetGenerator 不支持一次性生成多个片段
+        // 当前实现通过多次调用来获取多个片段（如果有需要的话）
+        // 这里先添加一个片段，将来做多片段扩展
+        let snippet = snippet_generator.snippet(document_content);
+        snippets.push(snippet);
+
+        // 限制最多返回3个片段
+        snippets.truncate(MAX_SNIPPETS);
+
+        Ok(snippets)
     }
 
     /// Apply HTML-safe highlighting to snippets

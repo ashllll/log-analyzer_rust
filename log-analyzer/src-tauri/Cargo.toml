@@ -83,6 +83,7 @@ toml = "0.8"  # TOML 配置文件解析
 dashmap = "5.5"  # 并发哈希映射
 sha2 = "0.10"  # SHA-256 哈希算法
 libc = "0.2"  # Unix 系统调用 (磁盘空间检查)
+rustix = { version = "0.38", features = ["fs", "std"] }  # 安全文件系统操作 (O_NOFOLLOW)
 tokio-retry = "0.3"
 async-compression = { version = "0.4", features = ["tokio", "gzip", "zstd"] }
 sqlx = { version = "0.7", features = ["runtime-tokio-native-tls", "sqlite"] }

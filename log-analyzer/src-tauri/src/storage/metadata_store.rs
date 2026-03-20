@@ -121,26 +121,12 @@ impl MetadataStore {
                 AppError::database_error(format!("Failed to connect to database: {}", e))
             })?;
 
-        // Enable WAL mode for better concurrent read performance
+        // Optimize SQLite performance: WAL mode, synchronous, cache size
         // WAL (Write-Ahead Logging) allows concurrent reads while writing
-        sqlx::query("PRAGMA journal_mode = WAL")
+        sqlx::query("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA cache_size = -8000;")
             .execute(&pool)
             .await
-            .map_err(|e| AppError::database_error(format!("Failed to enable WAL mode: {}", e)))?;
-
-        // Optimize for performance
-        sqlx::query("PRAGMA synchronous = NORMAL")
-            .execute(&pool)
-            .await
-            .map_err(|e| {
-                AppError::database_error(format!("Failed to set synchronous mode: {}", e))
-            })?;
-
-        // Increase cache size for better performance (default is -2000, we use -8000 for ~8MB)
-        sqlx::query("PRAGMA cache_size = -8000")
-            .execute(&pool)
-            .await
-            .ok(); // Ignore errors for cache size (may not be supported on all platforms)
+            .map_err(|e| AppError::database_error(format!("Failed to configure SQLite PRAGMA: {}", e)))?;
 
         info!(path = %db_path.display(), "WAL mode enabled for better concurrency");
 
