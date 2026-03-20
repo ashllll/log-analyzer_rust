@@ -343,7 +343,8 @@ pub async fn search_logs(
         };
 
         // Get all files from MetadataStore (Requirements 2.3)
-        let files = match tokio::runtime::Handle::current().block_on(metadata_store.get_all_files()) {
+        let files = match tokio::runtime::Handle::current().block_on(metadata_store.get_all_files())
+        {
             Ok(result) => result,
             Err(e) => {
                 error!(
@@ -663,18 +664,19 @@ fn search_single_file_with_details(
         }
 
         // Read content from CAS using hash
-        let content = match tokio::runtime::Handle::current().block_on(cas.read_content(sha256_hash)) {
-            Ok(bytes) => bytes,
-            Err(e) => {
-                warn!(
-                    hash = %sha256_hash,
-                    virtual_path = %virtual_path,
-                    error = %e,
-                    "Failed to read content from CAS, skipping file"
-                );
-                return results;
-            }
-        };
+        let content =
+            match tokio::runtime::Handle::current().block_on(cas.read_content(sha256_hash)) {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    warn!(
+                        hash = %sha256_hash,
+                        virtual_path = %virtual_path,
+                        error = %e,
+                        "Failed to read content from CAS, skipping file"
+                    );
+                    return results;
+                }
+            };
 
         // Convert bytes to string with encoding fallback (三层容错策略)
         let (content_str, encoding_info) = decode_log_content(&content);

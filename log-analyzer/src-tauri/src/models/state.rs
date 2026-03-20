@@ -13,12 +13,14 @@ use crate::utils::cleanup::CleanupQueue;
 use crossbeam::queue::SegQueue;
 use moka::sync::Cache;
 use parking_lot::Mutex;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 /// 简化应用状态
 pub struct AppState {
-    pub workspace_dirs: Arc<Mutex<HashMap<String, std::path::PathBuf>>>,
+    // C-H1 优化: 使用 BTreeMap 替代 HashMap 保证工作区选择的确定性
+    // BTreeMap 按 key 的字母顺序排列，确保 dirs.keys().next() 返回确定的工作区
+    pub workspace_dirs: Arc<Mutex<BTreeMap<String, std::path::PathBuf>>>,
     pub cas_instances: Arc<Mutex<HashMap<String, Arc<ContentAddressableStorage>>>>,
     pub metadata_stores: Arc<Mutex<HashMap<String, Arc<MetadataStore>>>>,
     pub task_manager: Arc<Mutex<Option<TaskManager>>>,
@@ -50,7 +52,8 @@ impl Default for AppState {
         let cache_manager = CacheManager::new(Arc::new(sync_cache));
 
         Self {
-            workspace_dirs: Arc::new(Mutex::new(HashMap::new())),
+            // C-H1 优化: BTreeMap 保证迭代顺序确定性
+            workspace_dirs: Arc::new(Mutex::new(BTreeMap::new())),
             cas_instances: Arc::new(Mutex::new(HashMap::new())),
             metadata_stores: Arc::new(Mutex::new(HashMap::new())),
             task_manager: Arc::new(Mutex::new(None)),

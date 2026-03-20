@@ -95,7 +95,8 @@ impl MetadataDB {
         original_path: &str,
     ) -> Result<()> {
         let forward_key = format!("{}:{}", workspace_id, original_path);
-        self.mappings.insert(forward_key.clone(), short_path.to_string());
+        self.mappings
+            .insert(forward_key.clone(), short_path.to_string());
 
         // 维护工作区键索引
         self.workspace_keys

@@ -194,7 +194,9 @@ pub struct IndexMetrics {
 /// console.log(metrics.searchLatency.current);
 /// ```
 #[command]
-pub async fn get_performance_metrics(state: State<'_, AppState>) -> Result<PerformanceMetrics, String> {
+pub async fn get_performance_metrics(
+    state: State<'_, AppState>,
+) -> Result<PerformanceMetrics, String> {
     // 获取缓存统计信息
     let cache_stats = state.get_cache_statistics();
 
@@ -294,10 +296,10 @@ async fn get_system_memory_metrics() -> MemoryMetrics {
     .unwrap_or((0, 0));
 
     MemoryMetrics {
-        used: used / 1024,        // 转换为 MB
-        total: total / 1024,      // 转换为 MB
-        heap_used: used / 1024,   // 简化：与 used 相同
-        external: 0,              // 外部内存（对于 Rust 应用通常是 0）
+        used: used / 1024,      // 转换为 MB
+        total: total / 1024,    // 转换为 MB
+        heap_used: used / 1024, // 简化：与 used 相同
+        external: 0,            // 外部内存（对于 Rust 应用通常是 0）
     }
 }
 
@@ -375,10 +377,14 @@ pub async fn get_historical_metrics(range: TimeRangeDto) -> Result<HistoricalMet
         .ok_or_else(|| "Metrics store not initialized".to_string())?;
 
     let time_range = TimeRange::from(range);
-    let snapshots = store.get_snapshots(time_range).await
+    let snapshots = store
+        .get_snapshots(time_range)
+        .await
         .map_err(|e| format!("Database error: {}", e))?;
 
-    let stats = store.get_stats().await
+    let stats = store
+        .get_stats()
+        .await
         .map_err(|e| format!("Database error: {}", e))?;
 
     Ok(HistoricalMetricsData { snapshots, stats })
@@ -486,7 +492,9 @@ pub async fn get_metrics_stats() -> Result<MetricsStoreStats, String> {
         .as_ref()
         .ok_or_else(|| "Metrics store not initialized".to_string())?;
 
-    let stats = store.get_stats().await
+    let stats = store
+        .get_stats()
+        .await
         .map_err(|e| format!("Database error: {}", e))?;
 
     Ok(stats)
@@ -513,10 +521,14 @@ pub async fn cleanup_metrics_data() -> Result<MetricsStoreStats, String> {
         .as_ref()
         .ok_or_else(|| "Metrics store not initialized".to_string())?;
 
-    store.cleanup().await
+    store
+        .cleanup()
+        .await
         .map_err(|e| format!("Database error: {}", e))?;
 
-    let stats = store.get_stats().await
+    let stats = store
+        .get_stats()
+        .await
         .map_err(|e| format!("Database error: {}", e))?;
 
     Ok(stats)
