@@ -1,6 +1,13 @@
-import React from 'react';
+import { forwardRef } from 'react';
 import { cn } from '../../utils/classNames';
 import type { ButtonProps } from '../../types/ui';
+
+/**
+ * 扩展的按钮属性接口
+ */
+export interface ExtendedButtonProps extends ButtonProps {
+  loading?: boolean;
+}
 
 /**
  * 通用按钮组件
@@ -15,18 +22,17 @@ import type { ButtonProps } from '../../types/ui';
  * - cta: 行动号召按钮，绿色强调
  * - icon: 图标按钮，圆形
  */
-export const Button: React.FC<ButtonProps & {
-  loading?: boolean;
-}> = ({
-  children,
-  variant = 'primary',
-  className,
-  icon: Icon,
-  loading = false,
-  disabled,
-  onClick,
-  ...props
-}) => {
+export const Button = forwardRef<HTMLButtonElement, ExtendedButtonProps>(
+  ({
+    children,
+    variant = 'primary',
+    className,
+    icon: Icon,
+    loading = false,
+    disabled,
+    onClick,
+    ...props
+  }, ref) => {
   const variants = {
     primary: "bg-primary hover:bg-primary-hover text-white shadow-sm hover:shadow-glow-primary active:scale-[0.98]",
     secondary: "bg-bg-card hover:bg-bg-hover text-text-main border border-border-base hover:border-border-light active:scale-[0.98]",
@@ -41,6 +47,7 @@ export const Button: React.FC<ButtonProps & {
 
   return (
     <button
+      ref={ref}
       type="button"
       className={cn(
         "h-11 px-4 rounded-md text-sm font-medium transition-all duration-200 touch-target",
@@ -87,4 +94,6 @@ export const Button: React.FC<ButtonProps & {
       {children}
     </button>
   );
-};
+});
+
+Button.displayName = 'Button';

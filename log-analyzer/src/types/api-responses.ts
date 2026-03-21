@@ -344,11 +344,48 @@ const AppConfigFileFilterSchema = z.object({
 });
 
 /**
+ * 关键词模式 Schema
+ */
+const KeywordPatternSchema = z.object({
+  regex: z.string(),
+  comment: z.string(),
+});
+
+/**
+ * 颜色键类型
+ */
+const ColorKeySchema = z.enum(['blue', 'green', 'red', 'orange', 'purple']);
+
+/**
+ * 关键词组 Schema
+ */
+const KeywordGroupSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  color: ColorKeySchema,
+  patterns: z.array(KeywordPatternSchema),
+  enabled: z.boolean(),
+});
+
+/**
+ * 工作区 Schema
+ */
+const WorkspaceSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  path: z.string(),
+  status: z.enum(['READY', 'OFFLINE', 'PROCESSING']),
+  size: z.string(),
+  files: z.number(),
+  watching: z.boolean().optional(),
+});
+
+/**
  * 应用配置 Schema（对应 api.ts AppConfig）
  */
 export const AppConfigSchema = z.object({
-  keyword_groups: z.array(z.any()),  // KeywordGroup — 由 keywordStore 类型管理
-  workspaces: z.array(z.any()),      // Workspace — 由 workspaceStore 类型管理
+  keyword_groups: z.array(KeywordGroupSchema),
+  workspaces: z.array(WorkspaceSchema),
   file_filter: AppConfigFileFilterSchema,
 });
 
