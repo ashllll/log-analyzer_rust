@@ -1034,6 +1034,7 @@ mod tests {
                 // Search timed out as expected
             }
             Err(e) => {
+                // Unexpected error type - this should not happen in normal circumstances
                 panic!("Unexpected error during empty index search: {}", e);
             }
         }

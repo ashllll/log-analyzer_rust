@@ -178,7 +178,7 @@ mod tests {
         let result = get_error_statistics().await;
         assert!(result.is_ok());
 
-        let stats = result.unwrap();
+        let stats = result.expect("Failed to get error statistics");
         assert_eq!(stats.total_errors, 0);
         assert_eq!(stats.frontend_errors, 0);
         assert_eq!(stats.backend_errors, 0);

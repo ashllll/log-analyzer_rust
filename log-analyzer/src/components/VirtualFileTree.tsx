@@ -49,12 +49,23 @@ interface VirtualFileTreeProps {
 
 /**
  * Format file size for display
+ * 
+ * # Safety
+ * - Handles bytes=0 case
+ * - Handles very large numbers (PB+ range)
+ * - Prevents array index out of bounds
  */
 function formatFileSize(bytes: number): string {
   if (bytes === 0) return '0 B';
+  if (bytes < 0) return 'Invalid size';
+  
   const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+  // Limit index to prevent array out of bounds
+  const i = Math.min(
+    Math.floor(Math.log(bytes) / Math.log(k)),
+    sizes.length - 1
+  );
   return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
 }
 

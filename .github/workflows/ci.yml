@@ -74,11 +74,7 @@ jobs:
     - name: Run clippy linter
       run: |
         cd log-analyzer/src-tauri
-        if [ "$RUNNER_OS" = "Windows" ]; then
-          cargo clippy --all-features --all-targets --no-deps -- -W clippy::all
-        else
-          cargo clippy --all-features --all-targets --no-deps -- -D warnings
-        fi
+        cargo clippy --all-features --all-targets --no-deps -- -D warnings
       shell: bash
 
     - name: Run unit tests
