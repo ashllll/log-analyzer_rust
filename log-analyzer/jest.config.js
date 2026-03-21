@@ -25,10 +25,10 @@ export default {
   ],
   coverageThreshold: {
     global: {
-      branches: 9,     // 实际覆盖率约 9.98%，留 1% 安全余量
-      functions: 14,   // 实际覆盖率约 14.x%，留安全余量
-      lines: 14,       // 实际覆盖率约 14.x%，留安全余量
-      statements: 14,  // 实际覆盖率约 14.x%，留安全余量
+      branches: 40,    // 阶段性目标：40%，后续逐步提升至 60%+
+      functions: 40,
+      lines: 40,
+      statements: 40,
     },
   },
   testTimeout: 15000, // 从 10000ms 增加到 15000ms 以应对 CI 环境

@@ -1,4 +1,4 @@
-import { useRef, useEffect, lazy, Suspense } from "react";
+import { useRef, useEffect, lazy, Suspense, useCallback, useMemo } from "react";
 import {
   Search, LayoutGrid, ListTodo, Cog, Layers,
   Zap, FileText, Activity
@@ -65,10 +65,24 @@ function AppContent() {
 
   const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId) || null;
 
-  // 导航函数
-  const setPage = (page: string) => {
+  // 导航函数 - 使用 useCallback 避免重复创建
+  const setPage = useCallback((page: string) => {
     navigate(`/${page}`);
-  };
+  }, [navigate]);
+
+  // 导航点击处理器 - 使用 useCallback 缓存
+  const handleNavClick = useCallback((page: string) => {
+    return () => setPage(page);
+  }, [setPage]);
+
+  // 导航项配置 - 使用 useMemo 缓存
+  const navItems = useMemo(() => [
+    { icon: LayoutGrid, label: "Workspaces", page: "workspaces", testId: "nav-workspaces" },
+    { icon: Search, label: "Search Logs", page: "search", testId: "nav-search" },
+    { icon: ListTodo, label: "Keywords", page: "keywords", testId: "nav-keywords" },
+    { icon: Layers, label: "Tasks", page: "tasks", testId: "nav-tasks" },
+    { icon: Activity, label: "Performance", page: "performance", testId: "nav-performance" },
+  ], []);
 
   // 初始化状态同步并监听工作区事件
   useEffect(() => {
@@ -163,11 +177,16 @@ function AppContent() {
           <span className="font-bold text-lg tracking-tight">LogAnalyzer</span>
         </div>
         <div className="flex-1 px-3 py-4 space-y-1">
-            <NavItem icon={LayoutGrid} label="Workspaces" active={currentPage === 'workspaces'} onClick={() => setPage('workspaces')} data-testid="nav-workspaces" />
-            <NavItem icon={Search} label="Search Logs" active={currentPage === 'search'} onClick={() => setPage('search')} data-testid="nav-search" />
-            <NavItem icon={ListTodo} label="Keywords" active={currentPage === 'keywords'} onClick={() => setPage('keywords')} data-testid="nav-keywords" />
-            <NavItem icon={Layers} label="Tasks" active={currentPage === 'tasks'} onClick={() => setPage('tasks')} data-testid="nav-tasks" />
-            <NavItem icon={Activity} label="Performance" active={currentPage === 'performance'} onClick={() => setPage('performance')} data-testid="nav-performance" />
+          {navItems.map(({ icon, label, page, testId }) => (
+            <NavItem
+              key={page}
+              icon={icon}
+              label={label}
+              active={currentPage === page}
+              onClick={handleNavClick(page)}
+              data-testid={testId}
+            />
+          ))}
         </div>
         <div className="p-3 border-t border-border-subtle">
           <NavItem icon={Cog} label="Settings" active={currentPage === 'settings'} onClick={() => setPage('settings')} data-testid="nav-settings" />

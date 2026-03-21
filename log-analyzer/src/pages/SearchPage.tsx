@@ -87,10 +87,10 @@ const LogRow = memo<LogRowProps>(({
       <div className="flex items-center">
         <span className={cn(
           "inline-block text-xs font-bold px-1.5 py-0.5 rounded leading-none",
-          log.level === 'ERROR' ? 'bg-red-500/20 text-red-400' :
-          log.level === 'WARN'  ? 'bg-amber-500/20 text-amber-400' :
-          log.level === 'INFO'  ? 'bg-blue-500/20 text-blue-400' :
-          'bg-zinc-500/20 text-zinc-400'
+          log.level === 'ERROR' ? 'bg-log-error/20 text-log-error' :
+          log.level === 'WARN'  ? 'bg-log-warn/20 text-log-warn' :
+          log.level === 'INFO'  ? 'bg-log-info/20 text-log-info' :
+          'bg-log-debug/20 text-log-debug'
         )}>
           {log.level.substring(0,1)}
         </span>

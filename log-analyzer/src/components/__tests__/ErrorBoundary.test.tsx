@@ -6,6 +6,7 @@
 
 import React from 'react';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { ErrorBoundary } from 'react-error-boundary';
 import { ErrorFallback } from '../ErrorFallback';
 import { ErrorBoundaryWrapper } from '../ErrorBoundaryWrapper';
@@ -62,7 +63,8 @@ describe('Error Boundary Components', () => {
       expect(screen.getByText('Test error message')).toBeInTheDocument();
     });
 
-    it('should call reset function when try again button is clicked', () => {
+    it('should call reset function when try again button is clicked', async () => {
+      const user = userEvent.setup();
       const mockReset = jest.fn();
       const error = new Error('Test error');
 
@@ -74,7 +76,7 @@ describe('Error Boundary Components', () => {
       );
 
       const resetButton = screen.getByRole('button', { name: /重试/i });
-      resetButton.click();
+      await user.click(resetButton);
 
       expect(mockReset).toHaveBeenCalledTimes(1);
     });
@@ -123,7 +125,8 @@ describe('Error Boundary Components', () => {
       expect(screen.getByText('Test error for error boundary')).toBeInTheDocument();
     });
 
-    it('should call reset when reset button is clicked', () => {
+    it('should call reset when reset button is clicked', async () => {
+      const user = userEvent.setup();
       const mockReset = jest.fn();
       const error = new Error('Test error');
 
@@ -135,7 +138,7 @@ describe('Error Boundary Components', () => {
       );
 
       const resetButton = screen.getByRole('button', { name: /重试/i });
-      resetButton.click();
+      await user.click(resetButton);
 
       expect(mockReset).toHaveBeenCalledTimes(1);
     });

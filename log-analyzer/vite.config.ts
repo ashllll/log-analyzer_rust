@@ -23,4 +23,32 @@ export default defineConfig(async () => ({
       ignored: ["**/src-tauri/**"],
     },
   },
+  
+  // 4. Build optimization - code splitting and asset optimization
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // Core React ecosystem
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          // UI components and icons
+          'vendor-ui': ['lucide-react', 'framer-motion'],
+          // Data fetching and state management
+          'vendor-query': ['@tanstack/react-query', '@tanstack/react-virtual'],
+          // State management
+          'vendor-state': ['zustand', 'immer'],
+          // Internationalization
+          'vendor-i18n': ['react-i18next', 'i18next'],
+          // Charts (if used)
+          'vendor-charts': ['recharts'],
+        },
+      },
+    },
+    // Inline assets smaller than 4KB as base64
+    assetsInlineLimit: 4096,
+    // Enable CSS code splitting
+    cssCodeSplit: true,
+    // Chunk size warning limit (in KB)
+    chunkSizeWarningLimit: 1000,
+  },
 }));
