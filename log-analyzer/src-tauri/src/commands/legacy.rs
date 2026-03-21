@@ -121,7 +121,8 @@ mod tests {
             workspace_ids: vec!["workspace1".to_string(), "workspace2".to_string()],
         };
 
-        let json = serde_json::to_string(&response).unwrap();
+        let json = serde_json::to_string(&response)
+            .expect("Failed to serialize response");
         assert!(json.contains("has_legacy_workspaces"));
         assert!(json.contains("workspace1"));
     }

@@ -43,6 +43,16 @@ use walkdir::WalkDir;
 /// # Returns
 ///
 /// 可用空间字节数，如果无法获取则返回 0
+///
+/// # Safety
+///
+/// 这个函数使用 `unsafe` 块调用系统调用 `statvfs`，已经通过以下方式确保安全：
+/// - 使用 `CString::new()` 确保路径字符串以 NUL 结尾，不含内部 NUL
+/// - 使用 `std::mem::zeroed()` 初始化 `statvfs` 结构体，确保内存安全
+/// - `c_path.as_ptr()` 返回的指针在 `statvfs` 调用期间有效
+/// - 所有错误都被妥善处理，返回 0 而非 panic
+///
+/// 这些 unsafe 操作是调用 libc 系统调用所必需的，已通过输入验证和错误处理确保安全。
 #[cfg(target_os = "linux")]
 async fn get_available_space(path: &Path) -> u64 {
     use libc::statvfs;
@@ -70,6 +80,14 @@ async fn get_available_space(path: &Path) -> u64 {
     }
 }
 
+/// 获取指定路径的磁盘可用空间 (macOS 版本)
+///
+/// # Safety
+///
+/// 与 Linux 版本相同，使用 `unsafe` 块调用 `statvfs` 系统调用：
+/// - 路径已转换为有效的 C 字符串 (NUL 结尾)
+/// - `statvfs` 结构体已正确初始化
+/// - 所有错误都被妥善处理
 #[cfg(target_os = "macos")]
 #[allow(clippy::unnecessary_cast)]
 async fn get_available_space(path: &Path) -> u64 {
@@ -96,6 +114,16 @@ async fn get_available_space(path: &Path) -> u64 {
     }
 }
 
+/// 获取指定路径的磁盘可用空间 (Windows 版本)
+///
+/// # Safety
+///
+/// 使用 `unsafe` 块调用 Windows API `GetDiskFreeSpaceExW`：
+/// - 路径已转换为宽字符 (UTF-16) 格式，以 NUL 结尾
+/// - 使用有效的可变指针接收返回值
+/// - 所有错误都被妥善处理，返回 0 而非 panic
+///
+/// 这些 unsafe 操作是调用 Windows API 所必需的，已通过输入验证确保安全。
 #[cfg(target_os = "windows")]
 async fn get_available_space(path: &Path) -> u64 {
     use std::os::windows::ffi::OsStrExt;
