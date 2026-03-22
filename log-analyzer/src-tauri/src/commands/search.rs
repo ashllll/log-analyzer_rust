@@ -208,9 +208,90 @@ pub async fn search_logs(
         *searches += 1;
     }
 
+    // Get workspace directory BEFORE spawn_blocking to avoid holding lock during async operations
+    let workspace_dir = {
+        let dirs = workspace_dirs.lock();
+        match dirs.get(&workspace_id) {
+            Some(dir) => dir.clone(),
+            None => {
+                let _ = app_handle.emit(
+                    "search-error",
+                    format!("Workspace not found: {}", workspace_id),
+                );
+                return Err("Workspace not found".to_string());
+            }
+        }
+    };
+
+    // Get or create MetadataStore BEFORE spawn_blocking
+    // This avoids calling block_on inside spawn_blocking
+    // Note: We must not hold a lock across an await point
+    let metadata_store = {
+        // First, check if store exists (quick lock)
+        let store_exists = {
+            let stores = metadata_stores.lock();
+            stores.get(&workspace_id).is_some()
+        };
+
+        if store_exists {
+            // Store exists, clone and return
+            let stores = metadata_stores.lock();
+            Arc::clone(stores.get(&workspace_id).unwrap())
+        } else {
+            // Store doesn't exist, create it (no lock held during async creation)
+            let store = crate::storage::metadata_store::MetadataStore::new(&workspace_dir)
+                .await
+                .map_err(|e| format!("Failed to open metadata store: {}", e))?;
+            let store_arc = Arc::new(store);
+            // Re-acquire lock to store
+            let mut stores = metadata_stores.lock();
+            stores.insert(workspace_id.clone(), Arc::clone(&store_arc));
+            store_arc
+        }
+    };
+
+    // Get or create CAS (sync operation, but we need to handle it properly)
+    let cas = {
+        let mut instances = cas_instances.lock();
+        if let Some(cas) = instances.get(&workspace_id) {
+            Arc::clone(cas)
+        } else {
+            let cas_arc = Arc::new(crate::storage::ContentAddressableStorage::new(
+                workspace_dir.clone(),
+            ));
+            instances.insert(workspace_id.clone(), Arc::clone(&cas_arc));
+            cas_arc
+        }
+    };
+
+    // Get all files from MetadataStore BEFORE spawn_blocking
+    let files = match metadata_store.get_all_files().await {
+        Ok(result) => result,
+        Err(e) => {
+            error!(
+                workspace_id = %workspace_id,
+                error = %e,
+                "Failed to get files from metadata store"
+            );
+            let _ = app_handle.emit(
+                "search-error",
+                format!(
+                    "Internal error occurred while accessing workspace: {}",
+                    workspace_id
+                ),
+            );
+            return Err(format!(
+                "Internal error occurred while accessing workspace: {}",
+                workspace_id
+            ));
+        }
+    };
+
     let search_id_clone = search_id.clone();
+    let files_for_search = files.clone();
     // 老王备注：修复线程泄漏！使用tokio::task::spawn_blocking代替std::thread::spawn
     // 这样tokio运行时会管理线程生命周期，避免资源泄漏
+    // 注意：现在 MetadataStore 和文件获取已在 spawn_blocking 外部完成，避免了嵌套 runtime 阻塞问题
     let _handle = tokio::task::spawn_blocking(move || {
         let start_time = std::time::Instant::now();
 
@@ -266,102 +347,8 @@ pub async fn search_logs(
             }
         };
 
-        // Get workspace directory
-        let workspace_dir = {
-            let dirs = workspace_dirs.lock();
-            debug!(
-                workspace_id = %workspace_id,
-                available_workspaces = ?dirs.keys().collect::<Vec<_>>(),
-                "Looking up workspace directory"
-            );
-            match dirs.get(&workspace_id) {
-                Some(dir) => {
-                    debug!(
-                        workspace_id = %workspace_id,
-                        directory = %dir.display(),
-                        "Found workspace directory"
-                    );
-                    dir.clone()
-                }
-                None => {
-                    error!(
-                        workspace_id = %workspace_id,
-                        available_workspaces = ?dirs.keys().collect::<Vec<_>>(),
-                        "Workspace directory not found"
-                    );
-
-                    let _ = app_handle.emit(
-                        "search-error",
-                        format!("Workspace not found: {}", workspace_id),
-                    );
-                    return;
-                }
-            }
-        };
-
-        // Get or create MetadataStore for this workspace
-        let metadata_store = {
-            let mut stores = metadata_stores.lock();
-            if let Some(store) = stores.get(&workspace_id) {
-                Arc::clone(store)
-            } else {
-                // Create new MetadataStore - 使用 Handle::current().block_on 替代 block_in_place
-                let store_result = tokio::runtime::Handle::current().block_on(
-                    crate::storage::metadata_store::MetadataStore::new(&workspace_dir),
-                );
-
-                match store_result {
-                    Ok(store) => {
-                        let store_arc = Arc::new(store);
-                        stores.insert(workspace_id.clone(), Arc::clone(&store_arc));
-                        store_arc
-                    }
-                    Err(e) => {
-                        let _ = app_handle.emit(
-                            "search-error",
-                            format!("Failed to open metadata store: {}", e),
-                        );
-                        return;
-                    }
-                }
-            }
-        };
-
-        // Get or create CAS for this workspace
-        let cas = {
-            let mut instances = cas_instances.lock();
-            if let Some(cas) = instances.get(&workspace_id) {
-                Arc::clone(cas)
-            } else {
-                // Create new CAS instance
-                let cas_arc = Arc::new(crate::storage::ContentAddressableStorage::new(
-                    workspace_dir.clone(),
-                ));
-                instances.insert(workspace_id.clone(), Arc::clone(&cas_arc));
-                cas_arc
-            }
-        };
-
-        // Get all files from MetadataStore (Requirements 2.3)
-        let files = match tokio::runtime::Handle::current().block_on(metadata_store.get_all_files())
-        {
-            Ok(result) => result,
-            Err(e) => {
-                error!(
-                    workspace_id = %workspace_id,
-                    error = %e,
-                    "Failed to get files from metadata store"
-                );
-                let _ = app_handle.emit(
-                    "search-error",
-                    format!(
-                        "Internal error occurred while accessing workspace: {}",
-                        workspace_id
-                    ),
-                );
-                return;
-            }
-        };
+        // Note: workspace_dir, metadata_store, cas, and files are now obtained
+        // BEFORE spawn_blocking to avoid nested runtime blocking issues
 
         debug!(
             total_files = files.len(),
@@ -385,7 +372,7 @@ pub async fn search_logs(
         // 先发送开始事件
         let _ = app_handle.emit("search-start", "Starting search...");
 
-        'outer: for file_batch in files.chunks(10) {
+        'outer: for file_batch in files_for_search.chunks(10) {
             // 检查取消状态
             if cancellation_token.is_cancelled() {
                 let _ = app_handle.emit("search-cancelled", search_id_clone.clone());
@@ -663,20 +650,19 @@ fn search_single_file_with_details(
             return results;
         }
 
-        // Read content from CAS using hash
-        let content =
-            match tokio::runtime::Handle::current().block_on(cas.read_content(sha256_hash)) {
-                Ok(bytes) => bytes,
-                Err(e) => {
-                    warn!(
-                        hash = %sha256_hash,
-                        virtual_path = %virtual_path,
-                        error = %e,
-                        "Failed to read content from CAS, skipping file"
-                    );
-                    return results;
-                }
-            };
+        // Read content from CAS using hash (sync version for spawn_blocking context)
+        let content = match cas.read_content_sync(sha256_hash) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                warn!(
+                    hash = %sha256_hash,
+                    virtual_path = %virtual_path,
+                    error = %e,
+                    "Failed to read content from CAS, skipping file"
+                );
+                return results;
+            }
+        };
 
         // Convert bytes to string with encoding fallback (三层容错策略)
         let (content_str, encoding_info) = decode_log_content(&content);
@@ -952,13 +938,67 @@ pub async fn search_logs_paged(
         })?
     };
 
+    // Get workspace directory BEFORE spawn_blocking
+    let workspace_dir = {
+        let dirs = workspace_dirs.lock();
+        dirs.get(&workspace_id)
+            .cloned()
+            .ok_or_else(|| format!("Workspace directory not found for: {}", workspace_id))?
+    };
+
+    // Get or create MetadataStore BEFORE spawn_blocking
+    // Note: We must not hold a lock across an await point
+    let metadata_store = {
+        // First, check if store exists (quick lock)
+        let store_exists = {
+            let stores = metadata_stores.lock();
+            stores.get(&workspace_id).is_some()
+        };
+
+        if store_exists {
+            // Store exists, clone and return
+            let stores = metadata_stores.lock();
+            Arc::clone(stores.get(&workspace_id).unwrap())
+        } else {
+            // Store doesn't exist, create it (no lock held during async creation)
+            let store = crate::storage::metadata_store::MetadataStore::new(&workspace_dir)
+                .await
+                .map_err(|e| format!("Failed to open metadata store: {}", e))?;
+            let store_arc = Arc::new(store);
+            // Re-acquire lock to store
+            let mut stores = metadata_stores.lock();
+            stores.insert(workspace_id.clone(), Arc::clone(&store_arc));
+            store_arc
+        }
+    };
+
+    // Get CAS (sync)
+    let cas = {
+        let mut instances = cas_instances.lock();
+        if let Some(cas) = instances.get(&workspace_id) {
+            Arc::clone(cas)
+        } else {
+            let cas_arc = Arc::new(crate::storage::ContentAddressableStorage::new(
+                workspace_dir.clone(),
+            ));
+            instances.insert(workspace_id.clone(), Arc::clone(&cas_arc));
+            cas_arc
+        }
+    };
+
+    // Get all files BEFORE spawn_blocking
+    let files = metadata_store
+        .get_all_files()
+        .await
+        .map_err(|e| format!("Failed to get files: {}", e))?;
+
     // 生成搜索ID
     let search_id = uuid::Uuid::new_v4().to_string();
     let search_id_for_spawn = search_id.clone();
+    let files_for_search = files.clone();
 
     // 克隆需要在闭包中使用的变量
     let query_for_spawn = query.clone();
-    let workspace_id_for_spawn = workspace_id.clone();
 
     // 在阻塞任务中执行搜索
     let results = tokio::task::spawn_blocking(move || -> Result<Vec<LogEntry>, String> {
@@ -1007,63 +1047,15 @@ pub async fn search_logs_paged(
             .execute(&structured_query)
             .map_err(|e| format!("Query execution error: {}", e))?;
 
-        // 获取工作区目录
-        let workspace_dir = {
-            let dirs = workspace_dirs.lock();
-            dirs.get(&workspace_id_for_spawn).cloned().ok_or_else(|| {
-                format!(
-                    "Workspace directory not found for: {}",
-                    workspace_id_for_spawn
-                )
-            })?
-        };
-
-        // 获取或创建 MetadataStore
-        let metadata_store = {
-            let mut stores = metadata_stores.lock();
-            if let Some(store) = stores.get(&workspace_id_for_spawn) {
-                Arc::clone(store)
-            } else {
-                let store_result = tokio::runtime::Handle::current().block_on(
-                    crate::storage::metadata_store::MetadataStore::new(&workspace_dir),
-                );
-
-                match store_result {
-                    Ok(store) => {
-                        let store_arc = Arc::new(store);
-                        stores.insert(workspace_id_for_spawn.clone(), Arc::clone(&store_arc));
-                        store_arc
-                    }
-                    Err(e) => return Err(format!("Failed to open metadata store: {}", e)),
-                }
-            }
-        };
-
-        // 获取或创建 CAS
-        let cas = {
-            let mut instances = cas_instances.lock();
-            if let Some(cas) = instances.get(&workspace_id_for_spawn) {
-                Arc::clone(cas)
-            } else {
-                let cas_arc = Arc::new(crate::storage::ContentAddressableStorage::new(
-                    workspace_dir.clone(),
-                ));
-                instances.insert(workspace_id_for_spawn.clone(), Arc::clone(&cas_arc));
-                cas_arc
-            }
-        };
-
-        // 获取所有文件
-        let files = tokio::runtime::Handle::current()
-            .block_on(metadata_store.get_all_files())
-            .map_err(|e| format!("Failed to get files: {}", e))?;
+        // Note: workspace_dir, metadata_store, cas, and files are now obtained
+        // BEFORE spawn_blocking to avoid nested runtime blocking issues
 
         // 执行搜索
         let mut all_results: Vec<LogEntry> = Vec::new();
         let mut keyword_counts: std::collections::HashMap<String, usize> =
             std::collections::HashMap::new();
 
-        for file_batch in files.chunks(10) {
+        for file_batch in files_for_search.chunks(10) {
             let batch: Vec<_> = file_batch
                 .iter()
                 .enumerate()

@@ -138,7 +138,9 @@ pub async fn start_watch(
                                     // 如果line_counts中有记录，使用 record + 1
                                     // 如果没有记录但offset > 0（文件之前有内容），需要正确初始化
                                     // 如果没有记录且offset = 0（新文件），从第1行开始
-                                    let start_line = if let Some(&count) = watcher.line_counts.get(&file_path_str) {
+                                    let start_line = if let Some(&count) =
+                                        watcher.line_counts.get(&file_path_str)
+                                    {
                                         // 已有记录，基于之前的行数计算
                                         count + 1
                                     } else {

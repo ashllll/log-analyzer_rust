@@ -740,6 +740,37 @@ impl ContentAddressableStorage {
         result
     }
 
+    /// Read content from storage (sync version)
+    ///
+    /// This is a synchronous version that uses std::fs::read instead of
+    /// tokio async I/O. Suitable for use in spawn_blocking contexts.
+    ///
+    /// # Arguments
+    ///
+    /// * `hash` - SHA-256 hash of the content
+    ///
+    /// # Returns
+    ///
+    /// Content bytes on success
+    pub fn read_content_sync(&self, hash: &str) -> Result<Vec<u8>> {
+        let object_path = self.get_object_path(hash);
+
+        if !object_path.exists() {
+            return Err(AppError::not_found(format!(
+                "Object not found: {} at path: {}",
+                hash,
+                object_path.display()
+            )));
+        }
+
+        std::fs::read(&object_path).map_err(|e| {
+            AppError::io_error(
+                format!("Failed to read object {}: {}", hash, e),
+                Some(object_path),
+            )
+        })
+    }
+
     /// Check if content exists in storage (async version with cache)
     ///
     /// # Arguments

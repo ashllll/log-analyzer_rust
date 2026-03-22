@@ -22,10 +22,10 @@ jest.mock('../../../../components/modals', () => ({
   FilterPalette: () => <div data-testid="filter-palette">FilterPalette</div>,
 }));
 
-// Mock react-i18next
+// Mock react-i18next - 返回 key 作为默认值
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string) => key,
+    t: (key: string, defaultValue?: string) => defaultValue || key,
   }),
 }));
 
@@ -108,7 +108,7 @@ describe('SearchControls', () => {
   it('should render Filter button', () => {
     render(<SearchControls {...defaultProps} />);
 
-    expect(screen.getByText('Filters')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /过滤器/i })).toBeInTheDocument();
     expect(screen.getByTestId('filter-icon')).toBeInTheDocument();
   });
 
@@ -116,7 +116,7 @@ describe('SearchControls', () => {
     const onFilterPaletteToggle = jest.fn();
     render(<SearchControls {...defaultProps} onFilterPaletteToggle={onFilterPaletteToggle} />);
 
-    const filterButton = screen.getByText('Filters');
+    const filterButton = screen.getByRole('button', { name: /过滤器/i });
     fireEvent.click(filterButton);
 
     expect(onFilterPaletteToggle).toHaveBeenCalledTimes(1);
@@ -157,15 +157,15 @@ describe('SearchControls', () => {
   it('should render Search button', () => {
     render(<SearchControls {...defaultProps} />);
 
-    // Search button shows "Search" text
-    expect(screen.getAllByText('Search').length).toBeGreaterThan(0);
+    // Search button shows "搜索" text
+    expect(screen.getAllByText('搜索').length).toBeGreaterThan(0);
   });
 
   it('should call onSearch when Search button clicked', () => {
     const onSearch = jest.fn();
     render(<SearchControls {...defaultProps} onSearch={onSearch} />);
 
-    const searchButton = screen.getByText('Search');
+    const searchButton = screen.getByText('搜索');
     fireEvent.click(searchButton);
 
     expect(onSearch).toHaveBeenCalledTimes(1);
@@ -188,14 +188,14 @@ describe('SearchControls', () => {
   it('should disable Search button when disabled=true', () => {
     render(<SearchControls {...defaultProps} disabled={true} />);
 
-    const searchButton = screen.getByText('Search');
+    const searchButton = screen.getByText('搜索');
     expect(searchButton.closest('button')).toBeDisabled();
   });
 
   it('should disable Search button when isSearching=true', () => {
     render(<SearchControls {...defaultProps} isSearching={true} />);
 
-    const searchButton = screen.getByText('...');
+    const searchButton = screen.getByText('搜索中');
     expect(searchButton.closest('button')).toBeDisabled();
   });
 
@@ -232,7 +232,7 @@ describe('SearchControls', () => {
     render(<SearchControls {...defaultProps} isFilterPaletteOpen={false} />);
 
     // The mock FilterPalette always renders, but we can verify the component structure
-    const filterButton = screen.getByText('Filters');
+    const filterButton = screen.getByRole('button', { name: /过滤器/i });
     expect(filterButton).toBeInTheDocument();
   });
 
@@ -272,7 +272,7 @@ describe('SearchControls', () => {
   it('should apply pulse animation class when searching', () => {
     render(<SearchControls {...defaultProps} isSearching={true} />);
 
-    const searchButton = screen.getByText('...');
+    const searchButton = screen.getByText('搜索中');
     expect(searchButton.className).toContain('animate-pulse');
   });
 
