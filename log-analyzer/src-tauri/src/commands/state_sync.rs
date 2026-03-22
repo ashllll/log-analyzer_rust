@@ -25,7 +25,6 @@ pub async fn init_state_sync(app: AppHandle, state: State<'_, AppState>) -> Resu
 
 /// Get workspace state
 #[command]
-#[allow(clippy::await_holding_lock)]
 pub async fn get_workspace_state(
     #[allow(non_snake_case)] workspaceId: String,
     state: State<'_, AppState>,
@@ -44,7 +43,6 @@ pub async fn get_workspace_state(
 
 /// Get event history for a workspace
 #[command]
-#[allow(clippy::await_holding_lock)]
 pub async fn get_event_history(
     #[allow(non_snake_case)] workspaceId: String,
     limit: Option<usize>,
@@ -65,7 +63,6 @@ pub async fn get_event_history(
 
 /// Broadcast a test event (for debugging)
 #[command]
-#[allow(clippy::await_holding_lock)]
 pub async fn broadcast_test_event(
     #[allow(non_snake_case)] workspaceId: String,
     state: State<'_, AppState>,

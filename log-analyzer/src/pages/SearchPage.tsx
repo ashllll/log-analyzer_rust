@@ -684,7 +684,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
   // 同步 handleSearch 到 ref，供 useEffect 读取最新版本（避免旧闭包）
   useEffect(() => {
     handleSearchRef.current = handleSearch;
-  });
+  }, [handleSearch]);
 
   /**
    * 重置过滤器

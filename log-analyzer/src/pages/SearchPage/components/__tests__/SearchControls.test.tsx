@@ -53,7 +53,7 @@ describe('SearchControls', () => {
   it('should render search input with placeholder', () => {
     render(<SearchControls {...defaultProps} />);
 
-    const input = screen.getByPlaceholderText('Search keywords separated by | ...');
+    const input = screen.getByPlaceholderText('输入关键词，用 | 分隔...');
     expect(input).toBeInTheDocument();
     expect(input.tagName).toBe('INPUT');
   });
@@ -61,7 +61,7 @@ describe('SearchControls', () => {
   it('should display current query in input', () => {
     render(<SearchControls {...defaultProps} query="error|warning" />);
 
-    const input = screen.getByPlaceholderText('Search keywords separated by | ...') as HTMLInputElement;
+    const input = screen.getByPlaceholderText('输入关键词，用 | 分隔...') as HTMLInputElement;
     expect(input.value).toBe('error|warning');
   });
 
@@ -69,7 +69,7 @@ describe('SearchControls', () => {
     const onQueryChange = jest.fn();
     render(<SearchControls {...defaultProps} onQueryChange={onQueryChange} />);
 
-    const input = screen.getByPlaceholderText('Search keywords separated by | ...');
+    const input = screen.getByPlaceholderText('输入关键词，用 | 分隔...');
     fireEvent.change(input, { target: { value: 'test' } });
 
     expect(onQueryChange).toHaveBeenCalledWith('test');
@@ -79,7 +79,7 @@ describe('SearchControls', () => {
     const onQueryChange = jest.fn();
     render(<SearchControls {...defaultProps} onQueryChange={onQueryChange} />);
 
-    const input = screen.getByPlaceholderText('Search keywords separated by | ...');
+    const input = screen.getByPlaceholderText('输入关键词，用 | 分隔...');
     fireEvent.change(input, { target: { value: 'error | warning | info' } });
 
     expect(onQueryChange).toHaveBeenCalledWith('error|warning|info');
@@ -89,7 +89,7 @@ describe('SearchControls', () => {
     const onQueryChange = jest.fn();
     render(<SearchControls {...defaultProps} onQueryChange={onQueryChange} />);
 
-    const input = screen.getByPlaceholderText('Search keywords separated by | ...');
+    const input = screen.getByPlaceholderText('输入关键词，用 | 分隔...');
     fireEvent.change(input, { target: { value: 'a|b|c' } });
 
     expect(onQueryChange).toHaveBeenCalledWith('a|b|c');
@@ -99,7 +99,7 @@ describe('SearchControls', () => {
     const onSearch = jest.fn();
     render(<SearchControls {...defaultProps} onSearch={onSearch} />);
 
-    const input = screen.getByPlaceholderText('Search keywords separated by | ...');
+    const input = screen.getByPlaceholderText('输入关键词，用 | 分隔...');
     fireEvent.keyDown(input, { key: 'Enter' });
 
     expect(onSearch).toHaveBeenCalledTimes(1);
@@ -257,7 +257,7 @@ describe('SearchControls', () => {
   it('should display query with font-mono class', () => {
     render(<SearchControls {...defaultProps} query="test" />);
 
-    const input = screen.getByPlaceholderText('Search keywords separated by | ...');
+    const input = screen.getByPlaceholderText('输入关键词，用 | 分隔...');
     expect(input.className).toContain('font-mono');
   });
 
@@ -265,7 +265,7 @@ describe('SearchControls', () => {
     const onQueryChange = jest.fn();
     render(<SearchControls {...defaultProps} query="" onQueryChange={onQueryChange} />);
 
-    const input = screen.getByPlaceholderText('Search keywords separated by | ...') as HTMLInputElement;
+    const input = screen.getByPlaceholderText('输入关键词，用 | 分隔...') as HTMLInputElement;
     expect(input.value).toBe('');
   });
 

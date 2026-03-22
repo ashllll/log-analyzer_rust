@@ -1,4 +1,4 @@
-import { useEffect, ReactNode } from 'react';
+import { useEffect, useRef, ReactNode } from 'react';
 import toast from 'react-hot-toast';
 import { useAppStore } from './appStore';
 import { useWorkspaceStore } from './workspaceStore';
@@ -44,6 +44,10 @@ export const AppStoreProvider = ({ children }: AppStoreProviderProps) => {
 
   // 启用配置自动保存（防抖1000ms后保存到后端）
   useConfigManager();
+
+  // 使用 ref 存储 Tauri 清理函数，确保在组件卸载时同步调用
+  // 注意：必须在组件顶层声明，不能在 useEffect 内部
+  const tauriCleanupRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -211,7 +215,10 @@ export const AppStoreProvider = ({ children }: AppStoreProviderProps) => {
       };
     };
 
-    const cleanupPromise = setupTauriListeners();
+    // 异步设置 Tauri 监听器
+    setupTauriListeners().then((cleanup) => {
+      tauriCleanupRef.current = cleanup;
+    });
 
     // 清理函数：同时清理EventBus订阅、Tauri监听和定时器
     return () => {
@@ -221,8 +228,11 @@ export const AppStoreProvider = ({ children }: AppStoreProviderProps) => {
       unsubscribeTaskUpdate();
       unsubscribeTaskRemoved();
 
-      // 清理Tauri监听
-      cleanupPromise.then((cleanup) => cleanup());
+      // 清理Tauri监听（同步调用，避免 Promise 时序问题）
+      if (tauriCleanupRef.current) {
+        tauriCleanupRef.current();
+        tauriCleanupRef.current = null;
+      }
     };
   }, [addToast, setWorkspaces, setKeywordGroups, addTaskIfNotExists, updateTask, deleteTask, updateWorkspace, setInitialized]);
 

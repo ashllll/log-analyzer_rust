@@ -141,40 +141,47 @@ const FileFilterSettings: React.FC<FileFilterSettingsProps> = ({
     }
   }, [config, onSaved, onClose]);
 
-  const addPattern = () => {
-    if (newPattern.trim() && !config.filename_patterns.includes(newPattern.trim())) {
-      setConfig({
-        ...config,
-        filename_patterns: [...config.filename_patterns, newPattern.trim()]
+  const addPattern = useCallback(() => {
+    const pattern = newPattern.trim();
+    if (pattern) {
+      setConfig(prev => {
+        if (prev.filename_patterns.includes(pattern)) return prev;
+        return {
+          ...prev,
+          filename_patterns: [...prev.filename_patterns, pattern]
+        };
       });
       setNewPattern('');
     }
-  };
+  }, [newPattern]);
 
-  const removePattern = (pattern: string) => {
-    setConfig({
-      ...config,
-      filename_patterns: config.filename_patterns.filter(p => p !== pattern)
-    });
-  };
+  const removePattern = useCallback((pattern: string) => {
+    setConfig(prev => ({
+      ...prev,
+      filename_patterns: prev.filename_patterns.filter(p => p !== pattern)
+    }));
+  }, []);
 
-  const addExtension = () => {
+  const addExtension = useCallback(() => {
     const ext = newExtension.trim().toLowerCase().replace(/^\./, '');
-    if (ext && !config.allowed_extensions.includes(ext)) {
-      setConfig({
-        ...config,
-        allowed_extensions: [...config.allowed_extensions, ext]
+    if (ext) {
+      setConfig(prev => {
+        if (prev.allowed_extensions.includes(ext)) return prev;
+        return {
+          ...prev,
+          allowed_extensions: [...prev.allowed_extensions, ext]
+        };
       });
       setNewExtension('');
     }
-  };
+  }, [newExtension]);
 
-  const removeExtension = (ext: string) => {
-    setConfig({
-      ...config,
-      allowed_extensions: config.allowed_extensions.filter(e => e !== ext)
-    });
-  };
+  const removeExtension = useCallback((ext: string) => {
+    setConfig(prev => ({
+      ...prev,
+      allowed_extensions: prev.allowed_extensions.filter(e => e !== ext)
+    }));
+  }, []);
 
   if (!isOpen) return null;
 
