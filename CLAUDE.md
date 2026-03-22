@@ -18,7 +18,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > **项目**: log-analyzer_rust - 高性能桌面日志分析工具
 > **版本**: 1.2.35
 > **技术栈**: Tauri 2.0 + Rust 1.70+ + React 19.1.0 + TypeScript 5.8.3
-> **最后更新**: 2026-03-20
+> **最后更新**: 2026-03-22
 
 ***
 
@@ -27,6 +27,49 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **[项目文档中心](docs/README.md)** - 架构文档、用户指南、开发指南
 - **[Rust后端文档](log-analyzer/src-tauri/CLAUDE.md)** - 后端模块详细实现
 - **[React前端文档](log-analyzer/src/CLAUDE.md)** - 前端模块详细实现
+
+***
+
+## OpenSpec 工作流
+
+本项目使用 OpenSpec 实验性工作流管理变更。
+
+### 核心命令
+
+```bash
+# 查看活动变更列表
+openspec-cn list
+
+# 查看变更状态
+openspec-cn status --change "<name>"
+
+# 创建新变更（提案 + 设计 + 任务）
+openspec-cn new change "<name>"
+
+# 探索模式 - 思考问题，不实施代码
+/opsx:explore
+
+# 提案新变更 - 一步生成所有产出物
+/opsx:propose
+
+# 实现变更任务
+/opsx:apply
+
+# 归档完成的变更
+/opsx:archive
+```
+
+### 变更目录
+
+- `.trae/specs/` - 已完成的变更规格说明
+- `.trae/skills/` - OpenSpec 相关技能定义
+
+### 工作流说明
+
+1. **探索** (`/opsx:explore`) - 深入思考问题，自由探索，不编写代码
+2. **提案** (`/opsx:propose`) - 创建 proposal.md、design.md、tasks.md 产出物
+3. **实现** (`/opsx:apply`) - 按照 tasks.md 逐步实现功能
+4. **归档** (`/opsx:archive`) - 完成后归档变更
 
 ***
 
@@ -350,26 +393,3 @@ pkg-config --modversion gtk4
 | 加载1GB日志内存 | <500MB |
 | CAS去重节省空间 | 30%+ |
 
-***
-
-## 高危缺陷修复优先级
-
-> **分析日期**: 2026-03-16 | **缺陷总数**: 50项（高危12 / 中危18 / 低危20）
-
-### 第一阶段 — 高危（立即修复）
-
-1. **C-H1** 搜索工作区ID降级逻辑 (`search.rs:298`)
-2. **B-H3** `blocking_lock()` 阻塞tokio worker (`performance.rs:52`)
-3. **~~B-H4~~** ~~路径遍历：符号链接可绕过检查~~ ✅ 已修复 (O_NOFOLLOW)
-4. **C-H4** 无工作区时搜索按钮未禁用 (`SearchPage.tsx:389-394`)
-5. **F-H4** API响应无Zod Schema验证 (`SearchPage.tsx:623`)
-
-### 第二阶段 — 中危（本周内）
-
-1. **B-M5** 行号计算逻辑错误 (`watch.rs:119-123`)
-2. **B-M6** MetadataDB O(n)遍历性能瓶颈 (`metadata_db.rs:71-81`)
-3. **C-M2** 配置加载失败无默认工作区 (`AppStoreProvider.tsx:46-66`)
-4. **C-M3** SearchPage无空状态UI
-5. **C-M4** FileFilterSettings无AbortController (`FileFilterSettings.tsx:39-57`)
-
-***

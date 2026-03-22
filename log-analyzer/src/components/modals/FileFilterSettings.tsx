@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Plus, Trash2, Info } from 'lucide-react';
 import { Button } from '../ui';
 import type { FileFilterConfig } from '../../types/common';
@@ -35,6 +35,9 @@ const FileFilterSettings: React.FC<FileFilterSettingsProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // AbortController ref 用于管理异步操作的取消
+  const abortControllerRef = useRef<AbortController | null>(null);
+
   // ESC 键关闭模态框
   useEffect(() => {
     if (!isOpen) return;
@@ -52,7 +55,14 @@ const FileFilterSettings: React.FC<FileFilterSettingsProps> = ({
   // 当模态框打开时，加载当前配置（使用 AbortController 防止竞态条件）
   useEffect(() => {
     if (!isOpen) return;
+
+    // 取消之前的请求
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
     const controller = new AbortController();
+    abortControllerRef.current = controller;
 
     const loadConfig = async () => {
       try {
@@ -75,23 +85,61 @@ const FileFilterSettings: React.FC<FileFilterSettingsProps> = ({
     };
 
     loadConfig();
-    return () => controller.abort();
+
+    // 组件卸载或 isOpen 变化时取消请求
+    return () => {
+      controller.abort();
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+      }
+    };
   }, [isOpen]);
 
-  const handleSave = async () => {
+  // 组件卸载时清理所有进行中的操作
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+    };
+  }, []);
+
+  const handleSave = useCallback(async () => {
+    // 取消之前的保存操作
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
       setIsLoading(true);
       setError(null);
       await api.saveFileFilterConfig(config);
+
+      // 检查是否被取消
+      if (controller.signal.aborted) {
+        return;
+      }
+
       onSaved?.();
       onClose();
     } catch (err) {
+      // 忽略取消错误
+      if (err instanceof Error && err.name === 'AbortError') {
+        return;
+      }
       console.error('Failed to save file filter config:', err);
       setError(`保存配置失败: ${getFullErrorMessage(err)}`);
     } finally {
-      setIsLoading(false);
+      // 检查当前 controller 是否仍然有效（避免状态更新到已卸载组件）
+      if (abortControllerRef.current === controller) {
+        setIsLoading(false);
+      }
     }
-  };
+  }, [config, onSaved, onClose]);
 
   const addPattern = () => {
     if (newPattern.trim() && !config.filename_patterns.includes(newPattern.trim())) {

@@ -17,6 +17,8 @@ import { api } from '../services/api';
 import { getFullErrorMessage } from '../services/errors';
 import { useInfiniteSearch, registerSearchSession } from '../hooks/useInfiniteSearch';
 import { useSearchListeners } from '../hooks/useSearchListeners';
+import { useWorkspaceStore } from '../stores/workspaceStore';
+import { useAppStore } from '../stores/appStore';
 import { SEARCH_CONFIG } from '../constants/search';
 import type {
   LogEntry,
@@ -131,6 +133,8 @@ const SearchPage: React.FC<SearchPageProps> = ({
   activeWorkspace
 }) => {
   const { t } = useTranslation();
+  const workspaceLoading = useWorkspaceStore((state) => state.loading);
+  const isInitialized = useAppStore((state) => state.isInitialized);
   // 缓存启用的关键词组，避免每次渲染都重新计算
   const enabledKeywordGroups = useMemo(() =>
     keywordGroups.filter(g => g.enabled),
@@ -936,10 +940,66 @@ const SearchPage: React.FC<SearchPageProps> = ({
             </div>
           )}
           
-          {/* 空状态 */}
+          {/* 空状态 - 根据不同场景显示不同提示 */}
           {bufferRef.current.length === 0 && !isSearching && (
-            <div className="flex items-center justify-center h-full text-text-dim">
-              {t('search.empty', '选择工作区并执行搜索')}
+            <div className="flex flex-col items-center justify-center h-full min-h-[200px] text-text-dim">
+              {/* 场景1: 应用未初始化或工作区正在加载 */}
+              {(!isInitialized || workspaceLoading) ? (
+                <>
+                  <Loader2 className="animate-spin mb-3 text-primary" size={32} />
+                  <p className="text-sm font-medium text-text-muted">
+                    {t('search.empty_state.workspace_loading', '工作区加载中')}
+                  </p>
+                  <p className="text-xs text-text-dim mt-1">
+                    {t('search.empty_state.workspace_loading_hint', '正在初始化工作区，请稍候...')}
+                  </p>
+                </>
+              ) : !activeWorkspace ? (
+                /* 场景2: 没有工作区 */
+                <>
+                  <div className="mb-3 text-text-dim">
+                    <svg className="w-12 h-12 mx-auto opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                    </svg>
+                  </div>
+                  <p className="text-sm font-medium text-text-muted">
+                    {t('search.empty_state.no_workspace', '没有工作区')}
+                  </p>
+                  <p className="text-xs text-text-dim mt-1">
+                    {t('search.empty_state.no_workspace_hint', '请先创建或导入工作区以开始搜索日志')}
+                  </p>
+                </>
+              ) : !query.trim() ? (
+                /* 场景3: 没有输入搜索关键词 */
+                <>
+                  <div className="mb-3 text-text-dim">
+                    <svg className="w-12 h-12 mx-auto opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                  </div>
+                  <p className="text-sm font-medium text-text-muted">
+                    {t('search.empty_state.no_query', '输入搜索关键词')}
+                  </p>
+                  <p className="text-xs text-text-dim mt-1">
+                    {t('search.empty_state.no_query_hint', '在上方输入框中输入关键词进行搜索')}
+                  </p>
+                </>
+              ) : (
+                /* 场景4: 搜索已完成但没有结果 */
+                <>
+                  <div className="mb-3 text-text-dim">
+                    <svg className="w-12 h-12 mx-auto opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <p className="text-sm font-medium text-text-muted">
+                    {t('search.empty_state.no_results', '没有搜索结果')}
+                  </p>
+                  <p className="text-xs text-text-dim mt-1">
+                    {t('search.empty_state.no_results_hint', '尝试调整搜索条件或关键词')}
+                  </p>
+                </>
+              )}
             </div>
           )}
         </div>

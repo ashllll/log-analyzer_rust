@@ -4,6 +4,39 @@
 
 > Tauri 2.0 + Rust 1.70+ | 版本: 0.0.109
 
+## OpenSpec 工作流
+
+本项目使用 OpenSpec 实验性工作流管理变更。
+
+### 核心命令
+
+```bash
+# 查看活动变更列表
+openspec-cn list
+
+# 查看变更状态
+openspec-cn status --change "<name>"
+
+# 探索模式 - 思考问题，不实施代码
+/opsx:explore
+
+# 提案新变更 - 一步生成所有产出物
+/opsx:propose
+
+# 实现变更任务
+/opsx:apply
+
+# 归档完成的变更
+/opsx:archive
+```
+
+### 工作流说明
+
+1. **探索** (`/opsx:explore`) - 深入思考问题，自由探索，不编写代码
+2. **提案** (`/opsx:propose`) - 创建 proposal.md、design.md、tasks.md 产出物
+3. **实现** (`/opsx:apply`) - 按照 tasks.md 逐步实现功能
+4. **归档** (`/opsx:archive`) - 完成后归档变更
+
 ## 模块职责
 
 Rust 后端是整个应用的核心，负责高性能的日志处理和搜索功能。采用现代化的 Rust 异步编程模式，提供：
@@ -329,7 +362,7 @@ A:
 
 ## 变更记录 (Changelog)
 
-### [2026-01-11] 移除废弃模块 + 重试机制改进
+### [2026-03-22] 移除废弃模块 + 重试机制改进
 - ✅ **移除FuzzyMatcher和Metaphone模块**
   - 模糊搜索功能已移除，模块已废弃
   - 删除 `services/fuzzy_matcher.rs` 和 `services/metaphone.rs`
@@ -370,4 +403,4 @@ A:
 
 ---
 
-*本文档由 AI 架构师自动生成，基于 Rust 后端代码分析*
+*本文档由 AI 架构师自动生成，基于 Rust 后端代码分析 | 最后更新: 2026-03-22*

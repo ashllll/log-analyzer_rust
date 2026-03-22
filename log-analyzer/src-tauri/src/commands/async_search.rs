@@ -34,7 +34,14 @@ pub async fn async_search_logs(
     }
 
     let search_id = Uuid::new_v4().to_string();
-    let workspace_id = workspaceId.unwrap_or_else(|| "default".to_string());
+    // C-H1 优化: 从 workspace_dirs 动态获取第一个可用的工作区，而非硬编码 "default"
+    let workspace_id = {
+        let dirs = state.workspace_dirs.lock();
+        workspaceId
+            .clone()
+            .or_else(|| dirs.keys().next().cloned())
+            .unwrap_or_else(|| "default".to_string())
+    };
     let max_results = max_results.unwrap_or(10000).clamp(1, 50000);
     // timeout_seconds 最小值为 1，防止 Duration::from_secs(0) 导致立即超时
     let timeout = Duration::from_secs(timeout_seconds.unwrap_or(30).max(1));

@@ -22,6 +22,16 @@
     "action": "搜索",
     "searching": "搜索中",
     "empty": "选择工作区并执行搜索",
+    "empty_state": {
+      "no_workspace": "没有工作区",
+      "no_workspace_hint": "请先创建或导入工作区以开始搜索日志",
+      "workspace_loading": "工作区加载中",
+      "workspace_loading_hint": "正在初始化工作区，请稍候...",
+      "no_results": "没有搜索结果",
+      "no_results_hint": "尝试调整搜索条件或关键词",
+      "no_query": "输入搜索关键词",
+      "no_query_hint": "在上方输入框中输入关键词进行搜索"
+    },
     "table": {
       "level": "级别",
       "time": "时间",

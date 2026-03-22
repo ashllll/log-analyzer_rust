@@ -68,10 +68,19 @@ export const AppStoreProvider = ({ children }: AppStoreProviderProps) => {
       } catch (error) {
         if (!isMounted) return; // 组件已卸载，跳过状态更新
         logger.error({ error }, 'Failed to load config');
-        // 确保空默认值，避免应用因无工作区/关键词组而不可用
-        setWorkspaces([]);
+        // 配置加载失败时提供默认工作区作为降级方案
+        const defaultWorkspace: Workspace = {
+          id: 'default-workspace',
+          name: '默认工作区',
+          path: '', // 空路径，用户需要添加实际路径
+          status: 'OFFLINE',
+          size: '0 B',
+          files: 0,
+          watching: false,
+        };
+        setWorkspaces([defaultWorkspace]);
         setKeywordGroups([]);
-        addToast('error', '加载配置失败，使用默认配置');
+        addToast('error', '加载配置失败，使用默认工作区');
         setInitialized(true); // 关键：即使失败也标记为已初始化
       }
     };
