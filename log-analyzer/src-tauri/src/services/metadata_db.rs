@@ -9,7 +9,6 @@
 use crate::error::Result;
 use dashmap::DashMap;
 use std::sync::Arc;
-use tracing::warn;
 
 /// Metadata database for path shortening mappings
 ///
@@ -162,20 +161,17 @@ impl MetadataDB {
         &self,
         workspace_id: &str,
     ) -> Result<Vec<(String, String)>> {
-        let prefix = format!("{}:", workspace_id);
         let mut mappings = Vec::new();
 
-        for entry in self.mappings.iter() {
-            if entry.key().starts_with(&prefix) {
-                let Some(original) = entry.key().strip_prefix(&prefix) else {
-                    warn!(
-                        key = %entry.key(),
-                        prefix = %prefix,
-                        "strip_prefix 失败，跳过此条目"
-                    );
-                    continue;
-                };
-                mappings.push((entry.value().clone(), original.to_string()));
+        // 使用 workspace_keys 索引进行 O(k) 查找，而非 O(n) 遍历所有条目
+        if let Some(forward_keys) = self.workspace_keys.get(workspace_id) {
+            for key in forward_keys.iter() {
+                if let Some(short_path) = self.mappings.get(key) {
+                    // key 格式为 "workspace_id:original_path"，需要提取 original_path
+                    if let Some(original) = key.strip_prefix(&format!("{}:", workspace_id)) {
+                        mappings.push((short_path.value().clone(), original.to_string()));
+                    }
+                }
             }
         }
 

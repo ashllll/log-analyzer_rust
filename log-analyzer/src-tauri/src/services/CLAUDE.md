@@ -2,7 +2,40 @@
 
 # 核心业务服务模块文档
 
-> 高性能日志搜索与查询执行引擎
+> 高性能日志搜索与查询执行引擎 | 最后更新: 2026-03-22
+
+## OpenSpec 工作流
+
+本项目使用 OpenSpec 实验性工作流管理变更。
+
+### 核心命令
+
+```bash
+# 查看活动变更列表
+openspec-cn list
+
+# 查看变更状态
+openspec-cn status --change "<name>"
+
+# 探索模式 - 思考问题，不实施代码
+/opsx:explore
+
+# 提案新变更 - 一步生成所有产出物
+/opsx:propose
+
+# 实现变更任务
+/opsx:apply
+
+# 归档完成的变更
+/opsx:archive
+```
+
+### 工作流说明
+
+1. **探索** (`/opsx:explore`) - 深入思考问题，自由探索，不编写代码
+2. **提案** (`/opsx:propose`) - 创建 proposal.md、design.md、tasks.md 产出物
+3. **实现** (`/opsx:apply`) - 按照 tasks.md 逐步实现功能
+4. **归档** (`/opsx:archive`) - 完成后归档变更
 
 ## 模块职责
 

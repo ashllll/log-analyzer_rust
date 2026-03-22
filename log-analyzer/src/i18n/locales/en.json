@@ -22,6 +22,16 @@
     "action": "Search",
     "searching": "Searching",
     "empty": "Select workspace and search",
+    "empty_state": {
+      "no_workspace": "No Workspace",
+      "no_workspace_hint": "Please create or import a workspace to start searching logs",
+      "workspace_loading": "Loading Workspace",
+      "workspace_loading_hint": "Workspace is being initialized, please wait...",
+      "no_results": "No Search Results",
+      "no_results_hint": "Try adjusting your search criteria or keywords",
+      "no_query": "Enter Search Keywords",
+      "no_query_hint": "Enter keywords in the input above to start searching"
+    },
     "table": {
       "level": "Level",
       "time": "Time",
