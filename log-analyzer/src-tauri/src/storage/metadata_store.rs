@@ -368,11 +368,10 @@ impl MetadataStore {
         // 注意：sqlx 0.7.x SQLite 驱动的 INSERT...RETURNING 在 execute 路径上存在兼容性问题，
         // 需使用 INSERT OR IGNORE + 单独 SELECT 模式确保正确性。
         // 事务保证：即使并发写入，SELECT 也能看到正确已提交的记录 ID。
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .map_err(|e| AppError::database_error(format!("Failed to begin transaction: {}", e)))?;
+        let mut tx =
+            self.pool.begin().await.map_err(|e| {
+                AppError::database_error(format!("Failed to begin transaction: {}", e))
+            })?;
 
         sqlx::query(
             r#"
@@ -403,9 +402,9 @@ impl MetadataStore {
             .map_err(|e| AppError::database_error(format!("Failed to fetch file ID: {}", e)))?
             .0;
 
-        tx.commit()
-            .await
-            .map_err(|e| AppError::database_error(format!("Failed to commit transaction: {}", e)))?;
+        tx.commit().await.map_err(|e| {
+            AppError::database_error(format!("Failed to commit transaction: {}", e))
+        })?;
 
         debug!(
             id = id,
