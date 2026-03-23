@@ -212,7 +212,10 @@ impl QueryExecutor {
                                 .iter()
                                 .find(|t| t.id == compiled.term_id)
                                 .map(|t| t.value.clone())
-                                .unwrap_or_else(|| line[mat.start..mat.end].to_string());
+                                .unwrap_or_else(|| {
+                                    // 使用 get() 避免多字节 UTF-8 字符边界处的 panic
+                                    line.get(mat.start..mat.end).unwrap_or_default().to_string()
+                                });
 
                             details.push(MatchDetail {
                                 term_id: compiled.term_id.clone(),
@@ -241,7 +244,10 @@ impl QueryExecutor {
                             .iter()
                             .find(|t| t.id == compiled.term_id)
                             .map(|t| t.value.clone())
-                            .unwrap_or_else(|| line[mat.start..mat.end].to_string());
+                            .unwrap_or_else(|| {
+                                // 使用 get() 避免多字节 UTF-8 字符边界处的 panic
+                                line.get(mat.start..mat.end).unwrap_or_default().to_string()
+                            });
 
                         details.push(MatchDetail {
                             term_id: compiled.term_id.clone(),

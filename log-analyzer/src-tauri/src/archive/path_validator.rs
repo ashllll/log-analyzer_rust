@@ -258,10 +258,14 @@ impl PathValidator {
     /// （例如 /logs.bak/file 的字符串前缀包含 /logs，但实际不在 /logs/ 内）
     fn validate_path_within_base(&self, path: &Path, base_dir: &Path) -> Result<()> {
         // 对 base_dir 进行规范化，解析其中可能存在的符号链接
-        // base_dir 在提取前应该已经存在，canonicalize 通常会成功
-        let canonical_base = base_dir
-            .canonicalize()
-            .unwrap_or_else(|_| base_dir.to_path_buf());
+        // base_dir 在提取前应该已经存在（调用方已执行 create_dir_all），canonicalize 应当成功
+        // 若失败则传播错误，避免回退到原始路径导致符号链接逃逸绕过路径穿越防御
+        let canonical_base = base_dir.canonicalize().map_err(|e| {
+            AppError::archive_error(
+                format!("无法规范化提取目标目录路径（可能包含无效符号链接）: {e}"),
+                Some(base_dir.to_path_buf()),
+            )
+        })?;
 
         // 对目标路径进行规范化：
         // - 如果路径已存在（例如后验证场景），直接规范化

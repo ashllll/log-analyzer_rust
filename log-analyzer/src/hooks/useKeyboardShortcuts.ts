@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 /**
  * 键盘快捷键Hook
@@ -16,9 +16,13 @@ export interface KeyboardShortcut {
 }
 
 export const useKeyboardShortcuts = (shortcuts: KeyboardShortcut[]) => {
+  // 用 ref 保存最新 shortcuts，避免将数组引用放入依赖导致每次 re-render 都重新注册监听器
+  const shortcutsRef = useRef(shortcuts);
+  shortcutsRef.current = shortcuts;
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      for (const shortcut of shortcuts) {
+      for (const shortcut of shortcutsRef.current) {
         const ctrlMatch = shortcut.ctrl === undefined || shortcut.ctrl === (e.ctrlKey || e.metaKey);
         const metaMatch = shortcut.meta === undefined || shortcut.meta === e.metaKey;
         const shiftMatch = shortcut.shift === undefined || shortcut.shift === e.shiftKey;
@@ -38,7 +42,7 @@ export const useKeyboardShortcuts = (shortcuts: KeyboardShortcut[]) => {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [shortcuts]);
+  }, []); // 空依赖：仅在挂载/卸载时注册/注销，通过 ref 读取最新 shortcuts
 };
 
 /**
