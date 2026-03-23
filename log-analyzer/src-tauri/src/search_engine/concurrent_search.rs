@@ -103,14 +103,14 @@ impl ReaderPool {
                     successful_readers += 1;
                 }
                 Err(e) => {
-                    last_error = Some(e);
                     warn!(
                         reader_index = i,
                         pool_size = pool_size,
                         successful = successful_readers,
-                        error = %last_error.as_ref().unwrap(),
+                        error = %e,
                         "Failed to create reader for pool, skipping and continuing"
                     );
+                    last_error = Some(e);
                     continue;
                 }
             }

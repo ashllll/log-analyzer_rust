@@ -260,7 +260,7 @@ async fn search_content_async(
         if line.contains(query) {
             let (ts, lvl) = parse_metadata(line);
             results.push(LogEntry {
-                id: global_offset + line_number,
+                id: global_offset.saturating_add(line_number),
                 timestamp: ts.into(),
                 level: lvl.into(),
                 file: virtual_path.into(),

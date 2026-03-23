@@ -112,7 +112,10 @@ export const useTaskStore = create<TaskState>()(
         addTaskIfNotExists: (task) => set((state) => {
           const exists = state.tasks.some(t => t.id === task.id);
           if (!exists) {
-            state.tasks.push(task);
+            const safeTask = createSafeTask(task);
+            if (safeTask) {
+              state.tasks.push(safeTask);
+            }
           }
         }),
         

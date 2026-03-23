@@ -93,14 +93,17 @@ pub async fn import_folder(
     };
 
     if let Some(task_manager) = task_manager_clone {
-        let _ = task_manager
+        if let Err(e) = task_manager
             .update_task_async(
                 &task_id_clone,
                 10,
                 "Scanning...".to_string(),
                 crate::task_manager::TaskStatus::Running,
             )
-            .await;
+            .await
+        {
+            tracing::warn!(task_id = %task_id_clone, error = %e, "Failed to update task progress");
+        }
     }
 
     // Initialize CAS and MetadataStore for this workspace
@@ -206,14 +209,17 @@ pub async fn import_folder(
     };
 
     if let Some(task_manager) = task_manager_clone {
-        let _ = task_manager
+        if let Err(e) = task_manager
             .update_task_async(
                 &task_id_clone,
                 95,
                 "Verifying integrity...".to_string(),
                 crate::task_manager::TaskStatus::Running,
             )
-            .await;
+            .await
+        {
+            tracing::warn!(task_id = %task_id_clone, error = %e, "Failed to update task progress");
+        }
     }
 
     match verify_after_import(&workspace_dir).await {

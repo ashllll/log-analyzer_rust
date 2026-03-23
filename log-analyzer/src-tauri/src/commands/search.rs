@@ -227,16 +227,14 @@ pub async fn search_logs(
     // This avoids calling block_on inside spawn_blocking
     // Note: We must not hold a lock across an await point
     let metadata_store = {
-        // First, check if store exists (quick lock)
-        let store_exists = {
+        // 单次加锁完成检查与克隆，避免两步操作之间的竞态条件
+        let existing = {
             let stores = metadata_stores.lock();
-            stores.get(&workspace_id).is_some()
+            stores.get(&workspace_id).map(Arc::clone)
         };
 
-        if store_exists {
-            // Store exists, clone and return
-            let stores = metadata_stores.lock();
-            Arc::clone(stores.get(&workspace_id).unwrap())
+        if let Some(store) = existing {
+            store
         } else {
             // Store doesn't exist, create it (no lock held during async creation)
             let store = crate::storage::metadata_store::MetadataStore::new(&workspace_dir)
@@ -949,16 +947,14 @@ pub async fn search_logs_paged(
     // Get or create MetadataStore BEFORE spawn_blocking
     // Note: We must not hold a lock across an await point
     let metadata_store = {
-        // First, check if store exists (quick lock)
-        let store_exists = {
+        // 单次加锁完成检查与克隆，避免两步操作之间的竞态条件
+        let existing = {
             let stores = metadata_stores.lock();
-            stores.get(&workspace_id).is_some()
+            stores.get(&workspace_id).map(Arc::clone)
         };
 
-        if store_exists {
-            // Store exists, clone and return
-            let stores = metadata_stores.lock();
-            Arc::clone(stores.get(&workspace_id).unwrap())
+        if let Some(store) = existing {
+            store
         } else {
             // Store doesn't exist, create it (no lock held during async creation)
             let store = crate::storage::metadata_store::MetadataStore::new(&workspace_dir)
