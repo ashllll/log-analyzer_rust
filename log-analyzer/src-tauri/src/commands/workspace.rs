@@ -726,7 +726,7 @@ pub async fn get_workspace_status(
         .sum::<u64>();
 
     let size_mb = total_size / (1024 * 1024);
-    let size_str = if size_mb > 1024 {
+    let size_str = if size_mb >= 1024 {
         format!("{:.1}GB", size_mb as f64 / 1024.0)
     } else {
         format!("{}MB", size_mb)

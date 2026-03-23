@@ -381,7 +381,9 @@ impl StreamingIndexBuilder {
                 file_path: file_path.clone(),
             };
 
-            let _ = tx.send(processed_batch).await;
+            if tx.send(processed_batch).await.is_err() {
+                tracing::debug!("流式构建器：最后一批数据发送时接收端已关闭");
+            }
         }
 
         Ok(())
