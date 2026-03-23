@@ -67,7 +67,12 @@ impl Histogram {
     }
 
     pub fn record(&self, value: f64) {
-        let value = (value * 1000.0) as u64; // 转换为毫秒精度
+        // 安全转换：NaN/Inf/负值统一视为 0，超大值截断为 u64::MAX
+        let value = if value.is_finite() && value >= 0.0 {
+            (value * 1000.0).min(u64::MAX as f64) as u64
+        } else {
+            0u64
+        };
 
         self.count.fetch_add(1, Ordering::Relaxed);
         self.sum.fetch_add(value, Ordering::Relaxed);

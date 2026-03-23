@@ -293,12 +293,30 @@ impl UnifiedMonitoringManager {
         let metrics = Arc::new(AdvancedMetricsCollector::new()?);
         let tracer = Arc::new(DistributedTracer::new());
         let health = Arc::new(HealthMonitor::new(metrics.clone()));
-        
+
         Ok(Self {
             metrics,
             tracer,
             health,
         })
+    }
+
+    /// 创建降级实例，用于初始化失败时兜底
+    ///
+    /// `AdvancedMetricsCollector::new()` 使用私有 `Registry::new()`，在正常情况下
+    /// 不会失败。此处使用 `expect` 而非 `panic!`，若再次失败说明是不可恢复的内部错误。
+    fn new_degraded() -> Self {
+        let metrics = Arc::new(
+            AdvancedMetricsCollector::new()
+                .expect("降级监控收集器创建失败（私有注册表不应注册失败，这是内部错误）"),
+        );
+        let tracer = Arc::new(DistributedTracer::new());
+        let health = Arc::new(HealthMonitor::new(metrics.clone()));
+        Self {
+            metrics,
+            tracer,
+            health,
+        }
     }
     
     pub fn metrics(&self) -> &Arc<AdvancedMetricsCollector> {
@@ -342,12 +360,12 @@ impl Default for UnifiedMonitoringManager {
     fn default() -> Self {
         Self::new().unwrap_or_else(|e| {
             // Prometheus 指标注册失败通常是由于同一进程中重复注册
-            // 输出明确错误日志以便快速定位，再 panic
+            // 不再 panic，改为记录错误并使用降级实例，防止生产环境崩溃
             tracing::error!(
                 error = %e,
-                "UnifiedMonitoringManager 初始化失败（可能原因：Prometheus 指标重复注册），请检查是否多次调用 Default::default()"
+                "UnifiedMonitoringManager 初始化失败，切换到降级模式运行（指标可能不可用）"
             );
-            panic!("UnifiedMonitoringManager 初始化失败: {e}")
+            Self::new_degraded()
         })
     }
 }

@@ -208,16 +208,23 @@ export const AppStoreProvider = ({ children }: AppStoreProviderProps) => {
       });
 
       return () => {
-        taskUpdateUnlisten();
-        taskRemovedUnlisten();
-        importCompleteUnlisten();
-        importErrorUnlisten();
+        // 逐个 try-catch，防止第一个 unlisten 抛出时后续监听器泄漏
+        [taskUpdateUnlisten, taskRemovedUnlisten, importCompleteUnlisten, importErrorUnlisten]
+          .forEach((unlisten) => {
+            try { unlisten(); } catch { /* 静默处理，Tauri unlisten 不应抛出 */ }
+          });
       };
     };
 
     // 异步设置 Tauri 监听器
     setupTauriListeners().then((cleanup) => {
-      tauriCleanupRef.current = cleanup;
+      if (isMounted) {
+        // 组件仍挂载，正常保存清理函数
+        tauriCleanupRef.current = cleanup;
+      } else {
+        // 组件已卸载（如 React StrictMode 双重挂载、快速路由切换），立即清理
+        cleanup();
+      }
     });
 
     // 清理函数：同时清理EventBus订阅、Tauri监听和定时器

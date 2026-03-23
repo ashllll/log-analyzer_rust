@@ -50,7 +50,9 @@ impl SupervisorActor {
                         }
                         SupervisorMessage::ActorPanicked { actor_id, reason } => {
                             warn!(actor_id = %actor_id, reason = %reason, "Actor panicked, evaluating restart");
-                            let _ = self.handle_restart(&actor_id).await;
+                            if let Err(e) = self.handle_restart(&actor_id).await {
+                                error!(actor_id = %actor_id, error = %e, "Actor 重启失败，熔断器将隔离该 Actor");
+                            }
                         }
                     }
                 }

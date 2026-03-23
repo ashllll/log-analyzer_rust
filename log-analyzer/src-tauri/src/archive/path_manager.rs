@@ -168,8 +168,14 @@ impl PathManager {
         let short_path = self.create_shortened_path(&normalized).await?;
 
         // Store in database
+        let short_path_str = short_path.to_str().ok_or_else(|| {
+            crate::error::AppError::archive_error(
+                "路径包含非 UTF-8 字符，无法存储路径映射".to_string(),
+                Some(short_path.to_path_buf()),
+            )
+        })?;
         self.metadata_db
-            .store_mapping(workspace_id, short_path.to_str().unwrap(), &path_str)
+            .store_mapping(workspace_id, short_path_str, &path_str)
             .await
             .map_err(|e| {
                 crate::error::AppError::archive_error(
