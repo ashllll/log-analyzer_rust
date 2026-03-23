@@ -84,7 +84,9 @@ impl ArchiveHandler for RarHandler {
                 let size = entry.unpacked_size;
 
                 if entry.is_directory() {
-                    let _ = std::fs::create_dir_all(&out_path);
+                    if let Err(e) = std::fs::create_dir_all(&out_path) {
+                        warn!(path = ?out_path, error = %e, "创建 RAR 目录条目失败，跳过");
+                    }
                     archive = header
                         .skip()
                         .map_err(|e| AppError::archive_error(e.to_string(), None))?;
@@ -100,7 +102,12 @@ impl ArchiveHandler for RarHandler {
                     }
 
                     if let Some(parent) = out_path.parent() {
-                        let _ = std::fs::create_dir_all(parent);
+                        std::fs::create_dir_all(parent).map_err(|e| {
+                            AppError::archive_error(
+                                format!("创建 RAR 条目父目录失败: {e}"),
+                                Some(parent.to_path_buf()),
+                            )
+                        })?;
                     }
 
                     match header.extract_to(&target_path) {

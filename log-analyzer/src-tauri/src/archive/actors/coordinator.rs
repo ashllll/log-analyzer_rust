@@ -56,15 +56,21 @@ impl CoordinatorActor {
                     let res = self
                         .handle_extract_request(archive_path, workspace_id, policy)
                         .await;
-                    let _ = response.send(res);
+                    if response.send(res).is_err() {
+                        tracing::debug!("协调器：extract 响应接收方已取消");
+                    }
                 }
                 CoordinatorMessage::CancelTask { task_id, response } => {
                     let res = self.handle_cancel_task(task_id).await;
-                    let _ = response.send(res);
+                    if response.send(res).is_err() {
+                        tracing::debug!("协调器：cancel_task 响应接收方已取消");
+                    }
                 }
                 CoordinatorMessage::QueryStatus { task_id, response } => {
                     let status = self.tasks.get(&task_id).map(|t| t.status.clone());
-                    let _ = response.send(status);
+                    if response.send(status).is_err() {
+                        tracing::debug!("协调器：query_status 响应接收方已取消");
+                    }
                 }
                 CoordinatorMessage::TaskCompleted { task_id, result } => {
                     self.handle_task_completed(task_id, result).await;

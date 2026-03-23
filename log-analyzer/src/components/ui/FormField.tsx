@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useId } from 'react';
 import { cn } from '../../utils/classNames';
 
 interface FormFieldProps {
@@ -23,7 +23,8 @@ export const FormField: React.FC<FormFieldProps> = ({
   id,
   description
 }) => {
-  const fieldId = id || `field-${Math.random().toString(36).substr(2, 9)}`;
+  const generatedId = useId();
+  const fieldId = id || generatedId;
   const errorId = `${fieldId}-error`;
   const descriptionId = `${fieldId}-description`;
   const hasError = !!error;

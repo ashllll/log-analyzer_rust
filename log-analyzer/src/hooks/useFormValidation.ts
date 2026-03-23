@@ -393,7 +393,7 @@ export function validateFilenameFrontend(filename: string): ValidationResult {
   // 检查禁止的名称
   const nameWithoutExt = filename.replace(/\.[^.]+$/, '');
   const upperName = nameWithoutExt.toUpperCase();
-  if (FILENAME_RULES.FORBIDDEN_NAMES.includes(upperName as any)) {
+  if ((FILENAME_RULES.FORBIDDEN_NAMES as readonly string[]).includes(upperName)) {
     return {
       isValid: false,
       errorMessage: `"${nameWithoutExt}" 是系统保留名称，不能用作文件名`,

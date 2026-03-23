@@ -55,11 +55,9 @@ fn export_to_csv(results: &[LogEntry], path: &str) -> Result<String, String> {
         .map_err(|e| format!("Failed to write CSV header: {}", e))?;
 
     for entry in results {
-        let content_escaped = entry
-            .content
-            .replace('\"', "\"\"")
-            .replace('\n', " ")
-            .replace('\r', "");
+        // 按 RFC 4180 规范：含换行的字段用双引号包裹，内部换行保留（不替换为空格）
+        // 内部双引号转义为 ""，\r 移除（CSV 行分隔符为 \r\n，内容中的 \r 无意义）
+        let content_escaped = entry.content.replace('\"', "\"\"").replace('\r', "");
         let file_escaped = entry.file.replace('\"', "\"\"");
 
         writeln!(

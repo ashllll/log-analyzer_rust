@@ -185,7 +185,10 @@ impl TarHandler {
                 }
 
                 if let Some(parent) = out_path.parent() {
-                    let _ = std::fs::create_dir_all(parent);
+                    if let Err(e) = std::fs::create_dir_all(parent) {
+                        warn!(path = ?parent, error = %e, "创建 TAR 条目父目录失败，跳过此文件");
+                        continue;
+                    }
                 }
 
                 if let Err(e) = entry.unpack(&out_path) {
@@ -194,7 +197,9 @@ impl TarHandler {
                     summary.add_file(safe_path, size);
                 }
             } else if entry.header().entry_type().is_dir() {
-                let _ = std::fs::create_dir_all(&out_path);
+                if let Err(e) = std::fs::create_dir_all(&out_path) {
+                    warn!(path = ?out_path, error = %e, "创建 TAR 目录条目失败，跳过");
+                }
             }
         }
         Ok(())

@@ -46,7 +46,9 @@ pub fn try_cleanup_temp_dir(path: &Path, cleanup_queue: &Arc<CleanupQueue>) {
             {
                 // Windows：递归移除只读属性
                 for entry in WalkDir::new(path).into_iter().flatten() {
-                    let _ = remove_readonly(entry.path());
+                    if let Err(e) = remove_readonly(entry.path()) {
+                        warn!(path = ?entry.path(), error = %e, "清理 Windows 只读属性失败，可能影响目录删除");
+                    }
                 }
             }
 

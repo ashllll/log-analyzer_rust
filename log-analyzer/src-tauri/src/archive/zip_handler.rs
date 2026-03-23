@@ -73,7 +73,9 @@ impl ArchiveHandler for ZipHandler {
                 let size = file.size();
 
                 if file.is_dir() {
-                    let _ = std::fs::create_dir_all(&out_path);
+                    if let Err(e) = std::fs::create_dir_all(&out_path) {
+                        warn!(path = ?out_path, error = %e, "创建 ZIP 目录条目失败，跳过");
+                    }
                 } else {
                     // Check limits before extraction
                     let would_exceed_limits = size > max_file_size
@@ -109,7 +111,10 @@ impl ArchiveHandler for ZipHandler {
                     }
 
                     if let Some(parent) = out_path.parent() {
-                        let _ = std::fs::create_dir_all(parent);
+                        if let Err(e) = std::fs::create_dir_all(parent) {
+                            warn!(path = ?parent, error = %e, "创建 ZIP 条目父目录失败，跳过此文件");
+                            continue;
+                        }
                     }
 
                     match std::fs::File::create(&out_path) {
