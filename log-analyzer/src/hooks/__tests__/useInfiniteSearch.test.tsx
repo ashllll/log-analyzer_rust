@@ -3,7 +3,7 @@
  * 测试流式无限搜索 Hook 的功能
  */
 
-import { renderHook, waitFor } from '@testing-library/react';
+import { renderHook } from '@testing-library/react';
 import { useInfiniteSearch, registerSearchSession, removeSearchSession, getSearchSessionInfo, getVirtualSearchStats } from '../useInfiniteSearch';
 
 // Mock @tanstack/react-query
@@ -47,7 +47,7 @@ describe('useInfiniteSearch', () => {
         error: null
       });
 
-      const { result } = renderHook(() =>
+      const _result = renderHook(() =>
         useInfiniteSearch({
           searchId: 'test-search',
           query: 'error',

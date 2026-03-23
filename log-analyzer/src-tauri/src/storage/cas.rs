@@ -54,6 +54,7 @@ use walkdir::WalkDir;
 ///
 /// 这些 unsafe 操作是调用 libc 系统调用所必需的，已通过输入验证和错误处理确保安全。
 #[cfg(target_os = "linux")]
+#[allow(clippy::unnecessary_cast)]
 async fn get_available_space(path: &Path) -> u64 {
     use libc::statvfs;
     use std::ffi::CString;
@@ -125,6 +126,7 @@ async fn get_available_space(path: &Path) -> u64 {
 ///
 /// 这些 unsafe 操作是调用 Windows API 所必需的，已通过输入验证确保安全。
 #[cfg(target_os = "windows")]
+#[allow(clippy::unnecessary_cast, clippy::ptr_null)]
 async fn get_available_space(path: &Path) -> u64 {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
@@ -132,7 +134,7 @@ async fn get_available_space(path: &Path) -> u64 {
     let wide_path: Vec<u16> = path
         .as_os_str()
         .encode_wide()
-        .chain(std::iter::once(0))
+        .chain(std::iter::once(0u16))
         .collect();
 
     let mut free_bytes_available: u64 = 0;
