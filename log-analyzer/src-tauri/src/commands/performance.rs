@@ -251,10 +251,9 @@ pub async fn get_performance_metrics(
             p99: p99_latency,
         },
         search_throughput: SearchThroughput {
-            current: if last_duration.as_secs() > 0 {
-                1000 / last_duration.as_secs()
-            } else {
-                0
+            current: {
+                let ms = last_duration.as_millis().max(1) as u64;
+                1000 / ms
             },
             average: total_searches,
             peak: total_searches.max(1),

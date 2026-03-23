@@ -153,7 +153,7 @@ impl PagedSearchResult {
         search_id: String,
     ) -> Self {
         let total_pages = (total_count as f64 / page_size as f64).ceil() as usize;
-        let has_more = (page_index as usize + 1) < total_pages;
+        let has_more = page_index >= 0 && ((page_index as usize) + 1) < total_pages;
 
         Self {
             results,
