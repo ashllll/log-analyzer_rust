@@ -229,7 +229,9 @@ impl TaskManagerActor {
                     );
                 }
 
-                let _ = respond_to.send(task);
+                if respond_to.send(task).is_err() {
+                    tracing::debug!("任务管理器：create_task 响应接收方已取消");
+                }
             }
             ActorMessage::UpdateTask {
                 id,
@@ -322,20 +324,28 @@ impl TaskManagerActor {
                     warn!(task_id = %id, "Task not found for update");
                     None
                 };
-                let _ = respond_to.send(result);
+                if respond_to.send(result).is_err() {
+                    tracing::debug!("任务管理器：update_task 响应接收方已取消");
+                }
             }
             ActorMessage::GetTask { id, respond_to } => {
                 let result = self.tasks.get(&id).cloned();
-                let _ = respond_to.send(result);
+                if respond_to.send(result).is_err() {
+                    tracing::debug!("任务管理器：get_task 响应接收方已取消");
+                }
             }
             ActorMessage::GetAllTasks { respond_to } => {
                 let tasks: Vec<TaskInfo> = self.tasks.values().cloned().collect();
-                let _ = respond_to.send(tasks);
+                if respond_to.send(tasks).is_err() {
+                    tracing::debug!("任务管理器：get_all_tasks 响应接收方已取消");
+                }
             }
             ActorMessage::RemoveTask { id, respond_to } => {
                 debug!(task_id = %id, "Removing task");
                 let result = self.tasks.remove(&id);
-                let _ = respond_to.send(result);
+                if respond_to.send(result).is_err() {
+                    tracing::debug!("任务管理器：remove_task 响应接收方已取消");
+                }
             }
             ActorMessage::GetMetrics { respond_to } => {
                 let metrics = self.collect_metrics();
@@ -346,7 +356,9 @@ impl TaskManagerActor {
                     failed = metrics.failed_tasks,
                     "Collected TaskManager metrics"
                 );
-                let _ = respond_to.send(metrics);
+                if respond_to.send(metrics).is_err() {
+                    tracing::debug!("任务管理器：get_metrics 响应接收方已取消");
+                }
             }
             ActorMessage::CleanupExpired => {
                 self.cleanup_expired_tasks();
