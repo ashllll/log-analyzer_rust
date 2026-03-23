@@ -229,7 +229,7 @@ export const useAsyncOperation = () => {
       
       return result;
     } catch (error) {
-      activeOperationsRef.current.delete(operation as any);
+      activeOperationsRef.current.delete(promise);
       
       if (controller.signal.aborted) {
         logger.debug('[ASYNC_OPERATION] Operation was cancelled');

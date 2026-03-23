@@ -83,7 +83,7 @@ export const useWorkspaceImport = (): UseWorkspaceImportReturn => {
       await importPath(selected as string);
     } catch (e) {
       logger.error('importFolder error:', e);
-      addToast('error', `导入失败: ${e}`);
+      addToast('error', `导入失败: ${getFullErrorMessage(e)}`);
     }
   }, [addToast, importPath]);
 
@@ -105,7 +105,7 @@ export const useWorkspaceImport = (): UseWorkspaceImportReturn => {
       await importPath(selected as string);
     } catch (e) {
       logger.error('importFile error:', e);
-      addToast('error', `导入失败: ${e}`);
+      addToast('error', `导入失败: ${getFullErrorMessage(e)}`);
     }
   }, [addToast, importPath]);
 

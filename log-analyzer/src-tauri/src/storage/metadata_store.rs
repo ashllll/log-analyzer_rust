@@ -364,11 +364,16 @@ impl MetadataStore {
     ///
     /// The auto-generated file ID
     pub async fn insert_file(&self, metadata: &FileMetadata) -> Result<i64> {
-        // 使用 INSERT OR IGNORE 处理 UNIQUE 约束冲突
-        // 如果 sha256_hash 已存在，跳过插入（CAS 去重设计）
-        // 然后查询已存在的记录 ID
+        // 使用事务包裹 INSERT OR IGNORE + SELECT，确保两步操作的原子性。
         // 注意：sqlx 0.7.x SQLite 驱动的 INSERT...RETURNING 在 execute 路径上存在兼容性问题，
         // 需使用 INSERT OR IGNORE + 单独 SELECT 模式确保正确性。
+        // 事务保证：即使并发写入，SELECT 也能看到正确已提交的记录 ID。
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| AppError::database_error(format!("Failed to begin transaction: {}", e)))?;
+
         sqlx::query(
             r#"
             INSERT OR IGNORE INTO files (
@@ -386,17 +391,21 @@ impl MetadataStore {
         .bind(metadata.parent_archive_id)
         .bind(metadata.depth_level)
         .bind(chrono::Utc::now().timestamp())
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(|e| AppError::database_error(format!("Failed to insert file: {}", e)))?;
 
-        // 查询插入的记录或已存在的记录 ID
+        // 查询插入的记录或已存在的记录 ID（UNIQUE 约束保证只有一条）
         let id = sqlx::query_as::<_, (i64,)>("SELECT id FROM files WHERE sha256_hash = ? LIMIT 1")
             .bind(&metadata.sha256_hash)
-            .fetch_one(&self.pool)
+            .fetch_one(&mut *tx)
             .await
             .map_err(|e| AppError::database_error(format!("Failed to fetch file ID: {}", e)))?
             .0;
+
+        tx.commit()
+            .await
+            .map_err(|e| AppError::database_error(format!("Failed to commit transaction: {}", e)))?;
 
         debug!(
             id = id,

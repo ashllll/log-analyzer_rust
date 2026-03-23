@@ -240,12 +240,15 @@ impl PluginManager {
                 )));
             }
             if plugin_minor > PLUGIN_ABI_MINOR {
-                warn!(
-                    host_minor = PLUGIN_ABI_MINOR,
-                    plugin_minor = plugin_minor,
-                    plugin_name = plugin.name(),
-                    "Plugin ABI minor version is newer than host; plugin may require unavailable features"
-                );
+                // 插件要求更高的次版本，说明它依赖宿主尚未提供的接口，拒绝加载以防止运行时崩溃
+                let plugin_name = plugin.name().to_string();
+                let _ = Box::into_raw(plugin); // 避免 double free
+                library_handle.decrement();
+                return Err(crate::error::AppError::Internal(format!(
+                    "Plugin ABI minor version too new: host={}.{}, plugin={}.{}, plugin='{}'. \
+                     Plugin requires features not available in this host version.",
+                    PLUGIN_ABI_MAJOR, PLUGIN_ABI_MINOR, plugin_major, plugin_minor, plugin_name
+                )));
             }
 
             plugin

@@ -257,21 +257,29 @@ impl PathValidator {
     /// 使用 Path::starts_with 进行组件级匹配，避免字符串前缀假阳性
     /// （例如 /logs.bak/file 的字符串前缀包含 /logs，但实际不在 /logs/ 内）
     fn validate_path_within_base(&self, path: &Path, base_dir: &Path) -> Result<()> {
-        // 优先使用 canonicalize 解析符号链接，仅在路径已存在时适用
-        let (check_path, check_base) = match (path.canonicalize(), base_dir.canonicalize()) {
-            (Ok(cp), Ok(cb)) => (cp, cb),
-            _ => {
-                // 路径不存在时，回退到 Path::starts_with 组件级比较
-                // Rust 的 Path::starts_with 是按路径组件匹配，不是字符串前缀
-                (path.to_path_buf(), base_dir.to_path_buf())
-            }
+        // 对 base_dir 进行规范化，解析其中可能存在的符号链接
+        // base_dir 在提取前应该已经存在，canonicalize 通常会成功
+        let canonical_base = base_dir
+            .canonicalize()
+            .unwrap_or_else(|_| base_dir.to_path_buf());
+
+        // 对目标路径进行规范化：
+        // - 如果路径已存在（例如后验证场景），直接规范化
+        // - 如果路径不存在（提取前的预验证，正常情况），从规范化的 base_dir
+        //   重建路径，确保比较基准始终是真实物理路径，而非符号链接路径
+        let check_path = match path.canonicalize() {
+            Ok(p) => p,
+            Err(_) => match path.strip_prefix(base_dir) {
+                Ok(relative) => canonical_base.join(relative),
+                Err(_) => path.to_path_buf(),
+            },
         };
 
-        if !check_path.starts_with(&check_base) {
+        if !check_path.starts_with(&canonical_base) {
             warn!(
                 "Path escape detected: {} not within {}",
                 check_path.display(),
-                check_base.display()
+                canonical_base.display()
             );
             return Err(AppError::archive_error(
                 format!("Path escapes base directory: {}", path.display()),
