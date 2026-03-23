@@ -83,11 +83,17 @@ impl ExtractorActor {
         debug!(task_id = %task_id, "Calling archive handler");
 
         // Initial progress update
-        let _ = progress_tx.send(ProgressUpdate {
-            task_id: task_id.clone(),
-            current_file: Some("Initializing...".to_string()),
-            ..Default::default()
-        });
+        if progress_tx
+            .send(ProgressUpdate {
+                task_id: task_id.clone(),
+                current_file: Some("Initializing...".to_string()),
+                ..Default::default()
+            })
+            .await
+            .is_err()
+        {
+            tracing::debug!("提取器：进度接收方已取消，跳过初始进度更新");
+        }
 
         // We wrap the potentially blocking or long-running async call
         // Note: Existing extract_with_limits is async, but might block threads if it uses std::fs internally.
@@ -102,13 +108,19 @@ impl ExtractorActor {
             .await?;
 
         // Final progress update
-        let _ = progress_tx.send(ProgressUpdate {
-            task_id: task_id.clone(),
-            files_processed: summary.files_extracted,
-            bytes_processed: summary.total_size,
-            current_file: Some("Completed".to_string()),
-            ..Default::default()
-        });
+        if progress_tx
+            .send(ProgressUpdate {
+                task_id: task_id.clone(),
+                files_processed: summary.files_extracted,
+                bytes_processed: summary.total_size,
+                current_file: Some("Completed".to_string()),
+                ..Default::default()
+            })
+            .await
+            .is_err()
+        {
+            tracing::debug!("提取器：进度接收方已取消，跳过最终进度更新");
+        }
 
         info!(task_id = %task_id, files = summary.files_extracted, "Extraction summary generated");
         Ok(())

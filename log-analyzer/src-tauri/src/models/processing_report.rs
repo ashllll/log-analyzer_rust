@@ -98,7 +98,7 @@ impl ProcessingError {
             nesting_depth: None,
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_default()
                 .as_secs(),
             stack_trace: None,
         }

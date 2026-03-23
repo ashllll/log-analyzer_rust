@@ -98,7 +98,7 @@ impl FilterEngine {
         // Update document count - 使用实际文档数量而非最大ID
         {
             let mut count = self.document_count.write();
-            *count = (*count).max(doc_id + 1);
+            *count = (*count).max(doc_id.saturating_add(1));
         }
     }
 
