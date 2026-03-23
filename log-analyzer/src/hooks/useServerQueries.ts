@@ -3,7 +3,7 @@ import { useAppStore } from '../stores/appStore';
 import { useWorkspaceStore, type Workspace } from '../stores/workspaceStore';
 import { useKeywordStore, type KeywordGroup } from '../stores/keywordStore';
 import { logger } from '../utils/logger';
-import { api } from '../services/api';
+import { api, type SearchParams, type ExportParams } from '../services/api';
 import { getFullErrorMessage } from '../services/errors';
 
 // ============================================================================
@@ -301,7 +301,7 @@ export const useSearchMutation = () => {
   const addToast = useAppStore((state) => state.addToast);
 
   return useMutation({
-    mutationFn: async (searchParams: any) => {
+    mutationFn: async (searchParams: SearchParams) => {
       logger.debug('[MUTATION] Performing search:', searchParams);
       const results = await api.searchLogs(searchParams);
       return results;
@@ -326,7 +326,7 @@ export const useExportMutation = () => {
   const addToast = useAppStore((state) => state.addToast);
 
   return useMutation({
-    mutationFn: async (exportParams: any) => {
+    mutationFn: async (exportParams: ExportParams) => {
       logger.debug('[MUTATION] Exporting results:', exportParams);
       await api.exportResults(exportParams);
       return exportParams;

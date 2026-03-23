@@ -15,6 +15,7 @@
     "no_results": "未找到匹配的日志",
     "fetch_next_failed": "加载更多数据失败，请重试",
     "error": "搜索失败: {{message}}",
+    "streamSessionFailed": "流式搜索会话注册失败: {{error}}",
     "remove_keyword": "删除关键词 {{keyword}}",
     "export_success": "导出成功",
     "export_failed": "导出失败",

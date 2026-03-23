@@ -277,24 +277,37 @@ impl TaskManagerActor {
                     }
 
                     // 老王备注：发送task-update事件给前端（业内成熟的事件驱动架构）
-                    if let Err(e) = self.app.emit(
-                        "task-update",
-                        serde_json::json!({
-                                "task_id": id,
-                                "task_type": task.task_type,
-                            "target": task.target,
-                            "progress": task.progress,
-                            "message": task.message,
-                            "status": status,
-                            "version": task.version,
-                            "workspace_id": task.workspace_id,
-                        }),
-                    ) {
-                        error!(
+                    let payload = serde_json::json!({
+                        "task_id": id,
+                        "task_type": task.task_type,
+                        "target": task.target,
+                        "progress": task.progress,
+                        "message": task.message,
+                        "status": status,
+                        "version": task.version,
+                        "workspace_id": task.workspace_id,
+                    });
+                    if let Err(e) = self.app.emit("task-update", payload.clone()) {
+                        // emit 失败时立即重试一次，防止终态更新（Completed/Failed/Stopped）永久丢失
+                        warn!(
                             task_id = %id,
                             error = %e,
-                            "Failed to emit task-update event"
+                            "Failed to emit task-update event, retrying once"
                         );
+                        if let Err(e2) = self.app.emit("task-update", payload) {
+                            error!(
+                                task_id = %id,
+                                error = %e2,
+                                "Failed to emit task-update event after retry"
+                            );
+                        } else {
+                            info!(
+                                task_id = %id,
+                                progress = task.progress,
+                                status = ?status,
+                                "Emitted task-update event (retry succeeded)"
+                            );
+                        }
                     } else {
                         info!(
                             task_id = %id,

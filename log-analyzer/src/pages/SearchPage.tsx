@@ -389,7 +389,10 @@ const SearchPage: React.FC<SearchPageProps> = ({
             setCurrentSearchId(searchId);
             setIsStreamSearchEnabled(true);
           })
-          .catch((err) => logger.error('Failed to register search session:', err));
+          .catch((err) => {
+            logger.error('Failed to register search session:', err);
+            addToast('error', t('search.streamSessionFailed', { error: getFullErrorMessage(err) }));
+          });
       }
 
       // 仅非流式搜索（结果数量 <= 阈值）时才回到顶部

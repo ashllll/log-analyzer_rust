@@ -219,17 +219,21 @@ export const useAsyncOperation = () => {
     operation: (signal: AbortSignal) => Promise<T>
   ): Promise<T | null> => {
     const controller = createAbortController();
-    
+    // 在 try 块外声明，确保 catch 块可访问
+    let promise: Promise<T> | undefined;
+
     try {
-      const promise = operation(controller.signal);
+      promise = operation(controller.signal);
       activeOperationsRef.current.add(promise);
-      
+
       const result = await promise;
       activeOperationsRef.current.delete(promise);
-      
+
       return result;
     } catch (error) {
-      activeOperationsRef.current.delete(promise);
+      if (promise) {
+        activeOperationsRef.current.delete(promise);
+      }
       
       if (controller.signal.aborted) {
         logger.debug('[ASYNC_OPERATION] Operation was cancelled');

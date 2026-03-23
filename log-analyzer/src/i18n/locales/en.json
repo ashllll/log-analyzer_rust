@@ -15,6 +15,7 @@
     "no_results": "No matching log entries found",
     "fetch_next_failed": "Failed to load more data, please try again",
     "error": "Search failed: {{message}}",
+    "streamSessionFailed": "Failed to register stream search session: {{error}}",
     "remove_keyword": "Remove keyword {{keyword}}",
     "export_success": "Export successful",
     "export_failed": "Export failed",

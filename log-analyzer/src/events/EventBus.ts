@@ -68,7 +68,15 @@ class IdempotencyManager {
     }
 
     // 如果新版本小于已处理版本，跳过（防止旧事件延迟到达）
+    // 但需排除版本号环绕重置的场景：后端版本接近 u64::MAX 时会重置为 1
+    // 若两者差值超过阈值，说明发生了版本重置，应清除幂等性记录允许新版本通过
     if (processed.version > version) {
+      const VERSION_RESET_GAP = 1_000_000;
+      if (processed.version - version > VERSION_RESET_GAP) {
+        // 版本发生了环绕重置，清除旧记录并允许新版本事件通过
+        this.processed.delete(taskId);
+        return false;
+      }
       console.warn(
         `[IdempotencyManager] Skipping stale event with older version: ` +
         `taskId=${taskId}, processedVersion=${processed.version}, incomingVersion=${version}`
