@@ -3,6 +3,7 @@
 //! 提供带有安全限制和验证的压缩文件提取功能
 //! 包含 TOCTOU 安全检查，使用 O_NOFOLLOW 标志原子性验证文件
 
+#[cfg(unix)]
 use eyre::eyre;
 use eyre::Result;
 #[cfg(unix)]
