@@ -126,7 +126,7 @@ async fn get_available_space(path: &Path) -> u64 {
 ///
 /// 这些 unsafe 操作是调用 Windows API 所必需的，已通过输入验证确保安全。
 #[cfg(target_os = "windows")]
-#[allow(clippy::unnecessary_cast, clippy::ptr_null)]
+#[allow(clippy::unnecessary_cast)]
 async fn get_available_space(path: &Path) -> u64 {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;

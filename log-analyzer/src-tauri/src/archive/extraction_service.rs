@@ -5,6 +5,7 @@
 
 use eyre::eyre;
 use eyre::Result;
+#[cfg(unix)]
 use rustix::fs::OFlags;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -133,6 +134,10 @@ impl ArchiveExtractionService {
 /// 攻击者可以在检查后、操作前修改文件为符号链接。
 /// 使用 openat with O_NOFOLLOW 可以在打开文件时原子性地检测符号链接，
 /// 如果路径是符号链接则打开失败，而不是先检查后使用。
+/// 使用 O_NOFOLLOW 检查文件安全性（仅 Unix）
+///
+/// Windows 上此函数恒返回 Ok(())，因为 Windows 使用不同的安全机制。
+#[cfg(unix)]
 pub fn check_file_safety_with_nofollow(file_path: &Path) -> Result<()> {
     // 使用 rustix 的 open 配合 O_NOFOLLOW 标志
     // O_NOFOLLOW: 如果路径是符号链接，则打开失败 (ELOOP)
@@ -146,31 +151,24 @@ pub fn check_file_safety_with_nofollow(file_path: &Path) -> Result<()> {
     match result {
         Ok(fd) => {
             // 成功打开文件（不是符号链接），OwnedFd 会自动关闭
-            // 不需要手动关闭，Drop 会自动处理
             let _ = fd;
             Ok(())
         }
         Err(e) => {
-            // rustix 的错误使用 Errno 类型
             let error_code = e.raw_os_error();
             if error_code == libc::ELOOP || error_code == libc::EMLINK {
-                // ELOOP: 符号链接（在 POSIX 系统上）
-                // EMLINK: 指向符号链接（某些系统的行为）
                 Err(eyre!(
                     "Symbolic link detected (O_NOFOLLOW): {}",
                     file_path.display()
                 ))
             } else if error_code == libc::ENOENT {
-                // 文件不存在
                 Err(eyre!("File does not exist: {}", file_path.display()))
             } else if error_code == libc::EACCES {
-                // 权限不足
                 Err(eyre!(
                     "Permission denied accessing file: {}",
                     file_path.display()
                 ))
             } else {
-                // 其他错误
                 Err(eyre!(
                     "Cannot open file (O_NOFOLLOW): {} - {}",
                     file_path.display(),
@@ -179,6 +177,12 @@ pub fn check_file_safety_with_nofollow(file_path: &Path) -> Result<()> {
             }
         }
     }
+}
+
+/// Windows stub: O_NOFOLLOW 等效由 Windows 操作系统处理
+#[cfg(windows)]
+pub fn check_file_safety_with_nofollow(_file_path: &Path) -> Result<()> {
+    Ok(())
 }
 
 #[cfg(test)]
