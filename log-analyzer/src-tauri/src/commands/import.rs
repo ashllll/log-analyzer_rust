@@ -181,7 +181,7 @@ pub async fn import_folder(
         // 删除磁盘上不完整的工作区目录
         if workspace_dir.exists() {
             if let Err(rm_err) = std::fs::remove_dir_all(&workspace_dir) {
-                warn!(path = ?workspace_dir, error = %rm_err, "清理失败的导入工作区目录出错");
+                tracing::warn!(path = ?workspace_dir, error = %rm_err, "清理失败的导入工作区目录出错");
             }
         }
 
