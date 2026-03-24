@@ -378,7 +378,11 @@ where
         // 构建计划
         let plan_result = self.planner.plan(query)?;
 
-        // 转换为 ExecutionPlan（这里使用简化版本）
+        // BUG: 此处构建的 ExecutionPlan 中 engines 和 terms 均为空。
+        // 当 strategy = And 且 terms 为空时，matches_line() 因空循环而返回 true，
+        // 导致所有日志行都匹配（vacuous truth）。
+        // GenericQueryExecutor / StandardQueryExecutor 目前未被实际调用，属于死代码；
+        // 若未来启用，需将 planner.build_plan() 的结果完整赋给此处。
         let plan = ExecutionPlan {
             strategy: crate::services::query_planner::SearchStrategy::And,
             engines: Vec::new(),

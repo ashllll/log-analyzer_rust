@@ -73,7 +73,8 @@ impl QueryValidator {
             )));
         }
 
-        if term.value.len() > 100 {
+        // 使用字符数（而非字节数）检查长度，避免多字节 UTF-8（如中文）被提前截断
+        if term.value.chars().count() > 100 {
             return Err(AppError::validation_error(format!(
                 "Term {} value is too long",
                 term.id
