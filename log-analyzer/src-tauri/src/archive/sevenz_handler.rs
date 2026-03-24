@@ -64,6 +64,14 @@ impl ArchiveHandler for SevenZHandler {
                     };
 
                     let out_path = target_path.join(&safe_path);
+                    // 验证最终路径不逃逸提取目录（防御 7z Slip 末级绕过）
+                    if !out_path.starts_with(&target_path) {
+                        warn!(
+                            path = %safe_path.display(),
+                            "7z Slip 尝试被拦截，跳过此条目"
+                        );
+                        return Ok(true);
+                    }
                     let size = entry.size();
 
                     if entry.is_directory() {

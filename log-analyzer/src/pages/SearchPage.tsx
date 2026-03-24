@@ -346,14 +346,17 @@ const SearchPage: React.FC<SearchPageProps> = ({
     }
 
     // 获取工作区的时间范围
+    let isMounted = true;
+
     const fetchTimeRange = async () => {
       try {
         const timeRange = await api.getWorkspaceTimeRange(activeWorkspace.id);
+        if (!isMounted) return;
         if (timeRange.minTimestamp && timeRange.maxTimestamp) {
           // 将 ISO 8601 格式转换为 datetime-local 格式 (YYYY-MM-DDTHH:mm)
           const minDate = new Date(timeRange.minTimestamp);
           const maxDate = new Date(timeRange.maxTimestamp);
-          
+
           const formatDateTimeLocal = (date: Date) => {
             const year = date.getFullYear();
             const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -372,12 +375,17 @@ const SearchPage: React.FC<SearchPageProps> = ({
           }));
         }
       } catch (error) {
-        console.warn('Failed to fetch workspace time range:', error);
-        // 失败时不清空已有的时间范围，保持用户手动设置
+        if (isMounted) {
+          console.warn('Failed to fetch workspace time range:', error);
+          // 失败时不清空已有的时间范围，保持用户手动设置
+        }
       }
     };
 
     fetchTimeRange();
+    return () => {
+      isMounted = false;
+    };
   }, [activeWorkspace?.id, activeWorkspace]);
 
   // 用 ref 存储最新的 handleSearch，避免 useEffect 中使用 eslint-disable
@@ -430,10 +438,15 @@ const SearchPage: React.FC<SearchPageProps> = ({
       });
       setCurrentSearchId(searchId);
 
-      // 如果使用了结构化查询，更新执行次数
+      // 如果使用了结构化查询，更新执行次数（不可变更新，避免直接修改原对象）
       if (currentQuery) {
-        currentQuery.metadata.executionCount += 1;
-        setCurrentQuery({...currentQuery});
+        setCurrentQuery({
+          ...currentQuery,
+          metadata: {
+            ...currentQuery.metadata,
+            executionCount: currentQuery.metadata.executionCount + 1,
+          },
+        });
       }
     } catch (err) {
       logger.error('Search failed:', err);

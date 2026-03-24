@@ -181,6 +181,9 @@ pub async fn search_logs(
             // 记录缓存统计
             log_cache_statistics(&total_searches, &cache_hits);
 
+            // 缓存命中时也需发送 search-start，使前端清空旧结果、重置滚动位置
+            let _ = app_handle.emit("search-start", ());
+
             // 将缓存结果写入磁盘（新架构：不通过 IPC 发送原始数据，前端按需分页读取）
             if let Err(e) = disk_result_store.create_session(&search_id) {
                 warn!(error = %e, "缓存命中：无法创建磁盘搜索会话");
@@ -211,6 +214,11 @@ pub async fn search_logs(
 
             let _ = app_handle.emit("search-summary", &summary);
             let _ = app_handle.emit("search-complete", cached_results.len());
+            // 缓存命中路径：清理之前创建的 cancellation token（缓存路径无需保留）
+            {
+                let mut tokens = cancellation_tokens.lock();
+                tokens.remove(&search_id);
+            }
             return Ok(search_id);
         }
     }
@@ -400,6 +408,8 @@ pub async fn search_logs(
                     let mut tokens = cancellation_tokens.lock();
                     tokens.remove(&search_id_clone);
                 }
+                // 清理磁盘会话（.ndjson 和 .idx 文件），避免文件泄漏和会话槽位占用
+                disk_store_spawn.remove_session(&search_id_clone);
                 return;
             }
 

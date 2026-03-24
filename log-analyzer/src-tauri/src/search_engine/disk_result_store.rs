@@ -269,7 +269,9 @@ impl DiskResultStore {
             }
         }
 
-        let next_offset = offset + entries.len();
+        // next_offset 使用实际消费的索引位置（offset + 已请求条目数），
+        // 而非成功解析的条目数，避免因空行/损坏数据导致偏移量漂移。
+        let next_offset = offset + actual_limit;
         let has_more = next_offset < total || !is_complete;
 
         Ok(SearchPageResult {

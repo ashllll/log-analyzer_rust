@@ -304,11 +304,17 @@ impl UnifiedMonitoringManager {
     /// 创建降级实例，用于初始化失败时兜底
     ///
     /// `AdvancedMetricsCollector::new()` 使用私有 `Registry::new()`，在正常情况下
-    /// 不会失败。此处使用 `expect` 而非 `panic!`，若再次失败说明是不可恢复的内部错误。
+    /// 不会失败（指标名称为硬编码常量，私有注册表无冲突）。
+    /// 若再次失败则在 panic 前记录完整错误日志，便于事后排查。
     fn new_degraded() -> Self {
         let metrics = Arc::new(
-            AdvancedMetricsCollector::new()
-                .expect("降级监控收集器创建失败（私有注册表不应注册失败，这是内部错误）"),
+            AdvancedMetricsCollector::new().unwrap_or_else(|e| {
+                tracing::error!(
+                    error = %e,
+                    "降级监控收集器创建失败（私有注册表不应注册失败，这是不可恢复的内部错误）"
+                );
+                panic!("UnifiedMonitoringManager::new_degraded failed: {e}");
+            }),
         );
         let tracer = Arc::new(DistributedTracer::new());
         let health = Arc::new(HealthMonitor::new(metrics.clone()));

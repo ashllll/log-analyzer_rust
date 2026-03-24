@@ -136,6 +136,14 @@ impl TarHandler {
             };
 
             let out_path = target_dir.join(&safe_path);
+            // 验证最终路径不逃逸提取目录（防御 TAR Slip 末级绕过）
+            if !out_path.starts_with(target_dir) {
+                warn!(
+                    path = %safe_path.display(),
+                    "TAR Slip 尝试被拦截，跳过此条目"
+                );
+                continue;
+            }
             let size = entry.header().size().unwrap_or(0);
 
             // 拒绝符号链接和硬链接，防止 ZIP Slip 变种攻击

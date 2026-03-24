@@ -26,7 +26,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
           - os: windows-latest
             target: x86_64-pc-windows-msvc
@@ -52,38 +52,18 @@ jobs:
         workspaces: log-analyzer/src-tauri -> target
 
     - name: Install Tauri dependencies (Ubuntu)
-      if: matrix.os == 'ubuntu-latest'
+      if: matrix.os == 'ubuntu-22.04'
       run: |
-        # Ubuntu 24.04 兼容性：尝试安装 Tauri 2.0 所需的依赖
         sudo apt-get update
-
-        # 基础依赖（大多数 Ubuntu 版本都有）
-        BASE_DEPS="libgtk-3-dev librsvg2-dev libglib2.0-dev patchelf libssl-dev"
-
-        # WebKit2 依赖 - Ubuntu 24.04 可能需要不同的包名
-        # Tauri 2.0 需要 webkit2gtk-4.1，但 Ubuntu 24.04 默认可能只有 4.0
-        WEBKIT_DEPS="libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev"
-        WEBKIT_FALLBACK="libwebkit2gtk-4.0-dev libjavascriptcoregtk-4.0-dev"
-
-        # 尝试安装主要依赖
-        echo "尝试安装 WebKit2 开发依赖..."
-        sudo apt-get install -y $BASE_DEPS $WEBKIT_DEPS || {
-          echo "主要 WebKit2 包不可用，尝试备用包..."
-          sudo apt-get install -y $BASE_DEPS $WEBKIT_FALLBACK || {
-            # 如果备用也不存在，添加 jammy (Ubuntu 22.04) 源作为最后后备
-            echo "添加 Ubuntu jammy 源作为后备..."
-            echo 'deb http://archive.ubuntu.com/ubuntu jammy main restricted universe multiverse' | sudo tee /etc/apt/sources.list.d/jammy.list
-            sudo apt-get update
-            sudo apt-get install -y $BASE_DEPS $WEBKIT_DEPS
-          }
-        }
-
-        # 额外依赖（适用于通知图标等）
-        sudo apt-get install -y libayatana-appindicator3-dev libsoup-3.0-dev || true
-
-        # 验证安装
-        echo "验证 WebKit2 安装..."
-        dpkg -l | grep -E 'libwebkit|libgtk-3' || echo "警告: 无法验证 WebKit2 安装"
+        sudo apt-get install -y \
+          libgtk-3-dev \
+          libwebkit2gtk-4.1-dev \
+          librsvg2-dev \
+          patchelf \
+          libssl-dev \
+          libayatana-appindicator3-dev \
+          libsoup-3.0-dev \
+          libjavascriptcoregtk-4.1-dev
 
     - name: Check code formatting
       run: |
@@ -148,7 +128,7 @@ jobs:
   # 集成测试
   integration-test:
     name: Integration Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs: [test-rust, test-frontend]
     if: always()
     steps:
@@ -165,123 +145,19 @@ jobs:
 
     - name: Install Tauri dependencies
       run: |
-        # Ubuntu 24.04 兼容性：尝试安装 Tauri 2.0 所需的依赖
         sudo apt-get update
-
-        # 基础依赖
-        BASE_DEPS="libgtk-3-dev librsvg2-dev patchelf libssl-dev"
-
-        # WebKit2 依赖 - 尝试主要版本，失败则使用备用版本
-        WEBKIT_DEPS="libwebkit2gtk-4.1-dev"
-        WEBKIT_FALLBACK="libwebkit2gtk-4.0-dev"
-
-        echo "尝试安装 WebKit2 开发依赖..."
-        sudo apt-get install -y $BASE_DEPS $WEBKIT_DEPS || {
-          echo "主要 WebKit2 包不可用，尝试备用包..."
-          sudo apt-get install -y $BASE_DEPS $WEBKIT_FALLBACK || {
-            # 添加 jammy 源作为后备
-            echo "添加 Ubuntu jammy 源作为后备..."
-            echo 'deb http://archive.ubuntu.com/ubuntu jammy main restricted universe multiverse' | sudo tee /etc/apt/sources.list.d/jammy.list
-            sudo apt-get update
-            sudo apt-get install -y $BASE_DEPS $WEBKIT_DEPS
-          }
-        }
-
-        # 验证安装
-        echo "验证 WebKit2 安装..."
-        dpkg -l | grep -E 'libwebkit|libgtk-3' || echo "警告: 无法验证 WebKit2 安装"
+        sudo apt-get install -y \
+          libgtk-3-dev \
+          libwebkit2gtk-4.1-dev \
+          librsvg2-dev \
+          patchelf \
+          libssl-dev \
+          libayatana-appindicator3-dev \
+          libsoup-3.0-dev \
+          libjavascriptcoregtk-4.1-dev
 
     - name: Run integration tests
       run: |
         cd log-analyzer/src-tauri
         # 运行所有集成测试
         cargo test --test '*' --verbose -- --test-threads=2
-
-  # 构建和发布预览（仅在 main 分支推送时运行）
-  build:
-    name: Build Release
-    runs-on: ${{ matrix.os }}
-    needs: [integration-test]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-          - os: macos-latest
-            target: x86_64-apple-darwin
-          - os: macos-14
-            target: aarch64-apple-darwin
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        targets: ${{ matrix.target }}
-
-    - name: Rust Cache
-      uses: swatinem/rust-cache@v2
-      with:
-        workspaces: log-analyzer/src-tauri -> target
-
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ env.NODE_VERSION }}
-        cache: 'npm'
-        cache-dependency-path: log-analyzer/package-lock.json
-
-    - name: Install dependencies
-      run: |
-        cd log-analyzer
-        npm ci
-
-    - name: Install Tauri dependencies (Ubuntu)
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        # Ubuntu 24.04 兼容性：尝试安装 Tauri 2.0 所需的依赖
-        sudo apt-get update
-
-        # 基础依赖
-        BASE_DEPS="libgtk-3-dev librsvg2-dev patchelf libssl-dev"
-
-        # WebKit2 依赖 - 尝试主要版本，失败则使用备用版本
-        WEBKIT_DEPS="libwebkit2gtk-4.1-dev"
-        WEBKIT_FALLBACK="libwebkit2gtk-4.0-dev"
-
-        echo "尝试安装 WebKit2 开发依赖..."
-        sudo apt-get install -y $BASE_DEPS $WEBKIT_DEPS || {
-          echo "主要 WebKit2 包不可用，尝试备用包..."
-          sudo apt-get install -y $BASE_DEPS $WEBKIT_FALLBACK || {
-            # 添加 jammy 源作为后备
-            echo "添加 Ubuntu jammy 源作为后备..."
-            echo 'deb http://archive.ubuntu.com/ubuntu jammy main restricted universe multiverse' | sudo tee /etc/apt/sources.list.d/jammy.list
-            sudo apt-get update
-            sudo apt-get install -y $BASE_DEPS $WEBKIT_DEPS
-          }
-        }
-
-        # 验证安装
-        echo "验证 WebKit2 安装..."
-        dpkg -l | grep -E 'libwebkit|libgtk-3' || echo "警告: 无法验证 WebKit2 安装"
-
-    - name: Build Tauri App
-      run: |
-        cd log-analyzer
-        npm run tauri build
-      timeout-minutes: 90
-
-    - name: Upload artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: log-analyzer-${{ matrix.target }}
-        path: |
-          log-analyzer/src-tauri/target/release/bundle/*/*.*
-          !log-analyzer/src-tauri/target/release/bundle/*/*.pdb
-        if-no-files-found: warn
