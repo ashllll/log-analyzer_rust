@@ -45,15 +45,18 @@ jobs:
         targets: ${{ matrix.target }}
         components: rustfmt, clippy
 
-    - name: Install Visual Studio Build Tools (Windows)
+    - name: Setup MSVC (Windows)
       if: matrix.os == 'windows-latest'
-      uses: microsoft/setup-msbuild@v2
+      uses: ilammy/msvc-toolchain@v1
+      with:
+        toolset: latest
 
     # 使用专业的 Rust 缓存插件
     - name: Rust Cache
       uses: swatinem/rust-cache@v2
       with:
         workspaces: log-analyzer/src-tauri -> target
+        cache-all-crates: true
 
     - name: Install Tauri dependencies (Ubuntu)
       if: matrix.os == 'ubuntu-22.04'
