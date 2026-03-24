@@ -77,13 +77,13 @@ jobs:
     - name: Run clippy linter
       run: |
         cd log-analyzer/src-tauri
-        cargo clippy --all-features --all-targets --no-deps --target ${{ matrix.target }} -- -D warnings
+        cargo clippy --all-features --all-targets --no-deps -- -D warnings
       shell: bash
 
     - name: Run unit tests
       run: |
         cd log-analyzer/src-tauri
-        cargo test --all-features --lib --bins --verbose --target ${{ matrix.target }} -- --test-threads=4
+        cargo test --all-features --lib --bins --verbose -- --test-threads=4
 
   # 前端测试
   test-frontend:
