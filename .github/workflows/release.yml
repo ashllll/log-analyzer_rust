@@ -64,6 +64,10 @@ jobs:
         with:
           targets: ${{ matrix.platform.target }}
 
+      - name: Install Visual Studio Build Tools (Windows)
+        if: matrix.platform.os == 'windows-latest'
+        uses: microsoft/setup-msbuild@v2
+
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
