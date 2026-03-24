@@ -181,6 +181,9 @@ pub async fn search_logs(
             // 记录缓存统计
             log_cache_statistics(&total_searches, &cache_hits);
 
+            // 缓存命中时也需发送 search-start，使前端清空旧结果、重置滚动位置
+            let _ = app_handle.emit("search-start", ());
+
             // 将缓存结果写入磁盘（新架构：不通过 IPC 发送原始数据，前端按需分页读取）
             if let Err(e) = disk_result_store.create_session(&search_id) {
                 warn!(error = %e, "缓存命中：无法创建磁盘搜索会话");
