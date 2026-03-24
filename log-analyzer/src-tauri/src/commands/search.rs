@@ -158,7 +158,7 @@ pub async fn search_logs(
         filters.time_end.clone(),
         filters.levels.clone(),
         filters.file_pattern.clone(),
-        false, // case_sensitive - 需要从查询中获取
+        false, // 全局 case_sensitive 占位（per-term 大小写敏感已包含在 query.terms 中，此维度暂保留以维持缓存键类型兼容）
         max_results,
         query_version, // 使用 SHA-256 哈希作为版本号
     );

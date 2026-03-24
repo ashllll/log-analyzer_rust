@@ -272,7 +272,11 @@ impl DiskResultStore {
         // next_offset 使用实际消费的索引位置（offset + 已请求条目数），
         // 而非成功解析的条目数，避免因空行/损坏数据导致偏移量漂移。
         let next_offset = offset + actual_limit;
-        let has_more = next_offset < total || !is_complete;
+        // 仅当下一偏移量小于已写入总数时才返回 has_more=true，
+        // 不再用 !is_complete 独立触发：搜索进行中时 next_offset >= total 意味着
+        // 当前无更多可读数据，前端应等待 search-complete 事件后再继续分页，
+        // 而非立即发起空请求导致无效轮询
+        let has_more = next_offset < total;
 
         Ok(SearchPageResult {
             entries,

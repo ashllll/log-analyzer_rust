@@ -258,9 +258,10 @@ impl TaskManagerActor {
                         warn!(
                             task_id = %id,
                             current_version = task.version,
-                            "任务版本号接近饱和，已重置为 1"
+                            reset_to = VERSION_RESET_THRESHOLD + 1,
+                            "任务版本号接近饱和，从阈值+1继续递增（不跳回1，保持前端幂等性）"
                         );
-                        1
+                        VERSION_RESET_THRESHOLD + 1
                     } else {
                         task.version.saturating_add(1)
                     };

@@ -32,6 +32,8 @@ pub struct ExtractionPolicy {
     pub dir_batch_size: usize,
     /// Maximum parallel file extractions within single archive (default: 4)
     pub max_parallel_files: usize,
+    /// Maximum number of files per archive (default: 10_000, ZIP bomb 防护)
+    pub max_file_count: usize,
 }
 
 impl Default for ExtractionPolicy {
@@ -43,6 +45,7 @@ impl Default for ExtractionPolicy {
             buffer_size: 1024 * 1024,                // 1MB (优化: 从 64KB 增大，提升大文件处理性能)
             dir_batch_size: 10,                      // Batch 10 directories
             max_parallel_files: 4,                   // Extract up to 4 files in parallel
+            max_file_count: 10_000,                  // 单次压缩包最多解压文件数，与 ExtractionLimits 对齐
         }
     }
 }
