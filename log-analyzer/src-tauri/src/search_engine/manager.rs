@@ -539,19 +539,15 @@ impl SearchEngineManager {
         let mut doc = TantivyDocument::default();
 
         doc.add_text(self.schema.content, &log_entry.content);
-        // 解析时间戳字符串到 i64；解析失败时使用当前时间作为占位，并输出警告便于定位数据问题
+        // 解析时间戳字符串到 i64；解析失败时使用 0（1970-01-01）作为占位，
+        // 避免使用当前时间导致历史日志时序混乱
         let timestamp_i64 = log_entry.timestamp.parse::<i64>().unwrap_or_else(|_| {
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs() as i64;
             tracing::warn!(
                 timestamp = %log_entry.timestamp,
                 file = %log_entry.file,
-                fallback_timestamp = now,
-                "时间戳解析失败，使用当前时间作为占位值；可能影响日志时序排序"
+                "时间戳解析失败，使用 0 (1970-01-01) 作为占位值；不影响其他日志时序"
             );
-            now
+            0i64
         });
         doc.add_i64(self.schema.timestamp, timestamp_i64);
         doc.add_text(self.schema.level, &log_entry.level);
@@ -591,7 +587,7 @@ impl SearchEngineManager {
         require_all: bool,
         limit: Option<usize>,
         timeout_duration: Option<Duration>,
-        _token: Option<CancellationToken>,
+        token: Option<CancellationToken>,
     ) -> SearchResult<SearchResults> {
         let start_time = Instant::now();
         let limit = limit.unwrap_or(self.config.max_results);
@@ -609,13 +605,14 @@ impl SearchEngineManager {
         let boolean_processor = self.boolean_processor.clone();
         let reader = self.reader.clone();
         let schema = self.schema.clone();
+        let token_inner = token; // move token 进闭包，传递给内部调用以支持取消
 
         let search_result =
             timeout(
                 timeout_duration,
                 tokio::task::spawn_blocking(move || {
                     let (doc_addresses, total_count) = boolean_processor
-                        .process_multi_keyword_query(&keywords_owned, require_all, limit, None)?;
+                        .process_multi_keyword_query(&keywords_owned, require_all, limit, token_inner)?;
 
                     let searcher = reader.searcher();
                     let mut entries = Vec::with_capacity(doc_addresses.len());

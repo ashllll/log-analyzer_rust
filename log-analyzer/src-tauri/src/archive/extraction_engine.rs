@@ -604,7 +604,7 @@ impl ExtractionEngine {
                 &item.target_dir,
                 self.policy.max_file_size,
                 self.policy.max_total_size,
-                usize::MAX, // File count limit controlled by outer loop
+                self.policy.max_file_count, // 使用策略配置的文件数限制，防止 ZIP bomb
             )
             .await
             .map_err(|e| {
