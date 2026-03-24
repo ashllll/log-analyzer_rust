@@ -76,6 +76,9 @@ impl CommandHandler {
         let results = self.log_service.search_logs(&cmd.query).await?;
         let duration = start.elapsed();
 
+        // 分页前记录总匹配数，避免返回分页后的子集长度作为总数
+        let total_count = results.len();
+
         let limited_results = results
             .into_iter()
             .skip(cmd.offset.unwrap_or(0))
@@ -91,8 +94,6 @@ impl CommandHandler {
                 })
             })
             .collect::<Vec<_>>();
-
-        let total_count = limited_results.len();
 
         Ok(SearchLogsResult {
             results: limited_results,

@@ -217,15 +217,21 @@ export const AppStoreProvider = ({ children }: AppStoreProviderProps) => {
     };
 
     // 异步设置 Tauri 监听器
-    setupTauriListeners().then((cleanup) => {
-      if (isMounted) {
-        // 组件仍挂载，正常保存清理函数
-        tauriCleanupRef.current = cleanup;
-      } else {
-        // 组件已卸载（如 React StrictMode 双重挂载、快速路由切换），立即清理
-        cleanup();
-      }
-    });
+    setupTauriListeners()
+      .then((cleanup) => {
+        if (isMounted) {
+          // 组件仍挂载，正常保存清理函数
+          tauriCleanupRef.current = cleanup;
+        } else {
+          // 组件已卸载（如 React StrictMode 双重挂载、快速路由切换），立即清理
+          cleanup();
+        }
+      })
+      .catch((error: unknown) => {
+        // 捕获 listen() 失败等初始化错误，避免静默丢弃
+        // 不向用户显示 toast（初始化阶段 store 可能未就绪），仅记录诊断日志
+        logger.error({ error }, '[AppStoreProvider] Tauri 事件监听器初始化失败，部分实时更新不可用');
+      });
 
     // 清理函数：同时清理EventBus订阅、Tauri监听和定时器
     return () => {

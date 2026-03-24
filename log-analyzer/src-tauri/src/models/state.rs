@@ -77,10 +77,22 @@ impl Default for AppState {
                 // main.rs setup 阶段可替换为应用专属目录
                 let cache_dir = std::env::temp_dir().join("log-analyzer-search-cache");
                 DiskResultStore::new(cache_dir, 50).unwrap_or_else(|e| {
-                    tracing::warn!(error = %e, "无法创建搜索磁盘缓存，使用降级内存路径");
-                    // 降级：尝试另一个临时目录
+                    tracing::warn!(error = %e, "无法创建搜索磁盘缓存，尝试降级路径");
+                    // 降级：尝试另一个临时目录，仍失败时记录错误并 panic（输出清晰诊断信息）
                     DiskResultStore::new(std::env::temp_dir().join("la-sc-fallback"), 20)
-                        .expect("无法初始化任何搜索结果存储目录")
+                        .unwrap_or_else(|e2| {
+                            tracing::error!(
+                                primary_error = %e,
+                                fallback_error = %e2,
+                                tmp_dir = ?std::env::temp_dir(),
+                                "所有搜索缓存目录均初始化失败，请检查临时目录权限或磁盘空间"
+                            );
+                            panic!(
+                                "无法初始化搜索缓存（主路径: {}, 降级路径: {}）。\
+                                 请确认临时目录可写且磁盘空间充足。",
+                                e, e2
+                            )
+                        })
                 })
             }),
         }

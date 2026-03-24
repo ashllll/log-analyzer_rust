@@ -462,10 +462,11 @@ impl HighlightingEngine {
 
         for term in &query_terms {
             let term_lower = term.to_lowercase();
-            // 使用 char_indices 遍历字符位置，避免字节边界问题
-            for (char_idx, _) in content_lower.char_indices() {
-                if content_lower[char_idx..].starts_with(&term_lower) {
-                    let start = char_idx.saturating_sub(self.config.context_size);
+            // char_indices() 返回字节偏移(byte_idx)，enumerate() 获取字符位置(char_pos)
+            // 字节偏移用于字符串切片，字符位置用于 skip() 和 context 计算
+            for (char_pos, (byte_idx, _)) in content_lower.char_indices().enumerate() {
+                if content_lower[byte_idx..].starts_with(&term_lower) {
+                    let start = char_pos.saturating_sub(self.config.context_size);
                     best_char_start = Some(match best_char_start {
                         None => start,
                         Some(prev) => prev.min(start),

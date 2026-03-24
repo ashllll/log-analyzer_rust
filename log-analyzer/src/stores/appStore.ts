@@ -47,9 +47,15 @@ export const useAppStore = create<AppState>()(
         
         // Actions
         addToast: (type, message) => {
-          // 使用 react-hot-toast 替代自定义 Toast
+          const id = Date.now();
           const duration = type === 'error' ? 4000 : 3000;
-          
+
+          // 写入 Zustand 状态，使 removeToast 和订阅者能正确感知
+          set((state) => {
+            state.toasts.push({ id, type, message });
+          });
+
+          // 显示 react-hot-toast UI（需在 immer set 外执行）
           switch (type) {
             case 'success':
               toast.success(message, { duration });
@@ -61,6 +67,13 @@ export const useAppStore = create<AppState>()(
               toast(message, { duration, icon: 'ℹ️' });
               break;
           }
+
+          // TTL 到期后自动从 Zustand 状态移除
+          setTimeout(() => {
+            set((state) => {
+              state.toasts = state.toasts.filter((t) => t.id !== id);
+            });
+          }, duration);
         },
         
         removeToast: (id) => set((state) => {
