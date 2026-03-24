@@ -339,7 +339,11 @@ async fn process_path_recursive_inner(
                                     let resolved = if target.is_absolute() {
                                         target
                                     } else {
-                                        entry.path().parent().unwrap().join(&target)
+                                        entry
+                                            .path()
+                                            .parent()
+                                            .unwrap_or(std::path::Path::new(""))
+                                            .join(&target)
                                     };
                                     // 验证符号链接目标不逃逸基础目录（B-H1 修复）
                                     let canonical_base =
@@ -532,7 +536,11 @@ async fn process_path_recursive_inner_with_metadata(
                                     let resolved = if target.is_absolute() {
                                         target
                                     } else {
-                                        entry.path().parent().unwrap().join(&target)
+                                        entry
+                                            .path()
+                                            .parent()
+                                            .unwrap_or(std::path::Path::new(""))
+                                            .join(&target)
                                     };
                                     // 验证符号链接目标不逃逸基础目录（B-H1 修复）
                                     let canonical_base =
@@ -820,7 +828,11 @@ pub async fn process_path_with_cas_and_checkpoints(
                                     let resolved = if target.is_absolute() {
                                         target
                                     } else {
-                                        entry.path().parent().unwrap().join(&target)
+                                        entry
+                                            .path()
+                                            .parent()
+                                            .unwrap_or(std::path::Path::new(""))
+                                            .join(&target)
                                     };
                                     // 验证符号链接目标不逃逸基础目录（B-H1 修复）
                                     let canonical_base =

@@ -1,0 +1,111 @@
+name: Bump Version and Tag
+
+on:
+  workflow_run:
+    workflows: ["CI/CD Pipeline"]
+    branches: [main]
+    types: [completed]
+
+jobs:
+  bump-and-tag:
+    name: Auto Bump Patch Version
+    runs-on: ubuntu-latest
+    # 仅在 CI 全部通过后执行，且不重复处理版本 bump 提交本身
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      !contains(github.event.workflow_run.head_commit.message, '[skip ci]')
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # 使用 PAT 以便触发后续 release.yml（GITHUB_TOKEN push 不会触发其他 workflow）
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Compute next patch version
+        id: version
+        run: |
+          # 取最新 semver tag，若无则从 v0.0.0 起
+          LATEST_TAG=$(git tag -l "v*" --sort=-v:refname | head -n 1)
+          if [ -z "$LATEST_TAG" ]; then
+            LATEST_TAG="v0.0.0"
+          fi
+          LATEST_VERSION="${LATEST_TAG#v}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$LATEST_VERSION"
+          PATCH=$((PATCH + 1))
+          VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          TAG="v${VERSION}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "下一版本: $VERSION"
+
+      - name: Update version in source files
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          cd log-analyzer
+
+          # 更新 package.json
+          node -e "
+            const fs = require('fs');
+            const p = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            p.version = '${VERSION}';
+            fs.writeFileSync('package.json', JSON.stringify(p, null, 2) + '\n');
+          "
+
+          # 更新 Cargo.toml（仅替换 [package] 下第一个 version 行）
+          python3 -c "
+          import re
+          content = open('src-tauri/Cargo.toml').read()
+          content = re.sub(r'^version = \"[^\"]*\"', 'version = \"${VERSION}\"', content, count=1, flags=re.MULTILINE)
+          open('src-tauri/Cargo.toml', 'w').write(content)
+          "
+
+          # 更新 tauri.conf.json
+          node -e "
+            const fs = require('fs');
+            const p = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
+            p.version = '${VERSION}';
+            fs.writeFileSync('src-tauri/tauri.conf.json', JSON.stringify(p, null, 2) + '\n');
+          "
+
+          echo "package.json:      $(node -p \"require('./package.json').version\")"
+          echo "Cargo.toml:        $(grep '^version' src-tauri/Cargo.toml | head -1)"
+          echo "tauri.conf.json:   $(node -p \"require('./src-tauri/tauri.conf.json').version\")"
+
+      - name: Commit version bump and push tag
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="${{ steps.version.outputs.tag }}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add \
+            log-analyzer/package.json \
+            log-analyzer/src-tauri/Cargo.toml \
+            log-analyzer/src-tauri/tauri.conf.json
+
+          if git diff --staged --quiet; then
+            echo "版本文件未变更，跳过 commit"
+          else
+            git commit -m "chore: bump version to ${VERSION} [skip ci]"
+            git push origin main
+            echo "已推送版本 bump commit"
+          fi
+
+          # 创建并推送 tag（触发 release.yml）
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag ${TAG} 已存在，跳过"
+          else
+            git tag "$TAG"
+            git push origin "$TAG"
+            echo "已创建并推送 tag: ${TAG}"
+          fi

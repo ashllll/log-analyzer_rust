@@ -171,6 +171,20 @@ pub async fn import_folder(
     {
         error!(error = %e, "Failed to process path");
 
+        // 清理导入失败前已插入的内存状态，防止孤儿条目
+        state.cas_instances.lock().remove(&workspace_id_clone);
+        state.metadata_stores.lock().remove(&workspace_id_clone);
+        {
+            let mut dirs = state.workspace_dirs.lock();
+            dirs.remove(&workspace_id_clone);
+        }
+        // 删除磁盘上不完整的工作区目录
+        if workspace_dir.exists() {
+            if let Err(rm_err) = std::fs::remove_dir_all(&workspace_dir) {
+                warn!(path = ?workspace_dir, error = %rm_err, "清理失败的导入工作区目录出错");
+            }
+        }
+
         // Update task with error
         let task_manager_clone = {
             let guard = state.task_manager.lock();
