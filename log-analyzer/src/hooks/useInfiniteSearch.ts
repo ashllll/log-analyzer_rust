@@ -1,19 +1,29 @@
 /**
  * 流式无限搜索 Hook
- * 
- * 使用 @tanstack/react-query 的 useInfiniteQuery 实现流式搜索结果加载，
- * 配合后端的 VirtualSearchManager 实现分页数据获取。
- * 
+ *
+ * 使用 @tanstack/react-query 的 useInfiniteQuery 实现搜索结果分页加载。
+ * 新架构（磁盘直写）：搜索结果存储在后端磁盘，前端通过 fetch_search_page 按需读取。
+ *
  * 特性：
  * - 虚拟滚动友好的分页加载
- * - 自动内存管理 (配合 CircularBuffer)
+ * - O(1) 随机页读取（NDJSON + 二进制偏移索引）
  * - 缓存策略优化
- * - 与现有事件驱动搜索模式兼容
  */
 
 import { useInfiniteQuery, InfiniteData } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/core';
 import { LogEntry } from '../types/common';
+
+/**
+ * 后端 SearchPageResult 结构（对应 Rust search_engine::disk_result_store::SearchPageResult）
+ */
+interface BackendSearchPageResult {
+  entries: LogEntry[];
+  total_count: number;
+  is_complete: boolean;
+  has_more: boolean;
+  next_offset: number | null;
+}
 
 /**
  * 搜索页面数据结构
@@ -25,8 +35,8 @@ export interface SearchPage {
   nextOffset: number | null;
   /** 是否还有更多数据 */
   hasMore: boolean;
-  /** 总条目数（如果已知） */
-  totalCount?: number;
+  /** 总条目数 */
+  totalCount: number;
 }
 
 /**
@@ -47,21 +57,6 @@ export interface UseInfiniteSearchOptions {
   staleTime?: number;
 }
 
-/**
- * 搜索结果上下文（用于与 CircularBuffer 集成）
- */
-export interface SearchContext {
-  /** 搜索会话 ID */
-  searchId: string;
-  /** 是否正在获取下一页 */
-  isFetchingNextPage: boolean;
-  /** 是否还有更多数据 */
-  hasNextPage: boolean;
-  /** 获取下一页 */
-  fetchNextPage: () => Promise<void>;
-  /** 获取总条目数 */
-  fetchTotalCount: () => Promise<number>;
-}
 
 // 查询键工厂
 const searchQueryKeys = {
@@ -123,35 +118,18 @@ export function useInfiniteSearch({
       }
 
       try {
-        // 调用后端 fetch_search_page 命令获取分页数据
-        const results = await invoke<LogEntry[]>('fetch_search_page', {
+        // 调用后端 fetch_search_page 命令，返回包含完整元数据的 SearchPageResult
+        const backendResult = await invoke<BackendSearchPageResult>('fetch_search_page', {
           searchId,
           offset: pageParam,
           limit: pageSize,
         });
 
-        // 判断是否还有更多数据
-        const hasMore = results.length === pageSize;
-        const nextOffset = hasMore ? pageParam + results.length : null;
-
-        // 尝试获取总数（仅在第一页时）
-        let totalCount: number | undefined;
-        if (pageParam === 0) {
-          try {
-            totalCount = await invoke<number>('get_search_total_count', {
-              searchId,
-            });
-          } catch {
-            // 如果获取失败，使用当前结果估算
-            totalCount = results.length;
-          }
-        }
-
         return {
-          results,
-          nextOffset,
-          hasMore,
-          totalCount,
+          results: backendResult.entries,
+          nextOffset: backendResult.next_offset,
+          hasMore: backendResult.has_more,
+          totalCount: backendResult.total_count,
         };
       } catch (error) {
         console.error('Failed to fetch search page:', error);
@@ -186,12 +164,10 @@ export function useInfiniteSearch({
     
     // 数据选择器：聚合所有页面结果
     select: (data) => {
-      // 计算总条目数
-      const totalCount = data.pages[0]?.totalCount;
-      
       return {
         ...data,
-        totalCount,
+        // 总条目数取第一页的 totalCount（后端持续更新）
+        totalCount: data.pages[0]?.totalCount ?? 0,
         // 聚合所有结果（便于需要时访问）
         allResults: data.pages.flatMap(page => page.results),
       };

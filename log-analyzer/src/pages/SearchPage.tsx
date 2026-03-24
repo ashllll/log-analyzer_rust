@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback, useDeferredValue, memo, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, memo, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Copy, Loader2, X } from 'lucide-react';
@@ -9,13 +8,12 @@ import { HybridLogRenderer } from '../components/renderers';
 import { KeywordStatsPanel } from '../components/search/KeywordStatsPanel';
 import { logger } from '../utils/logger';
 import { cn } from '../utils/classNames';
-import { CircularBuffer } from '../utils/CircularBuffer';
 import { SearchQueryBuilder } from '../services/SearchQueryBuilder';
 import { SearchQuery, SearchResultSummary } from '../types/search';
 import { saveQuery, loadQuery } from '../services/queryStorage';
 import { api } from '../services/api';
 import { getFullErrorMessage } from '../services/errors';
-import { useInfiniteSearch, registerSearchSession } from '../hooks/useInfiniteSearch';
+import { useInfiniteSearch } from '../hooks/useInfiniteSearch';
 import { useSearchListeners } from '../hooks/useSearchListeners';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useAppStore } from '../stores/appStore';
@@ -33,7 +31,6 @@ import { SearchControls } from './SearchPage/components/SearchControls';
 import { SearchFilters } from './SearchPage/components/SearchFilters';
 import { ActiveKeywords } from './SearchPage/components/ActiveKeywords';
 import { useSearchState } from './SearchPage/hooks/useSearchState';
-import { PagedSearchResultSchema } from './SearchPage/types/search-schemas';
 
 // ============================================================================
 /**
@@ -143,23 +140,16 @@ const SearchPage: React.FC<SearchPageProps> = ({
   
   // 搜索状态
   const [query, setQuery] = useState("");
-  // 环形缓冲区容量上限，防止内存泄漏
-  const bufferRef = useRef(new CircularBuffer<LogEntry>(SEARCH_CONFIG.MAX_LOG_ENTRIES));
-  const [logVersion, setLogVersion] = useState(0);
-  // ESLint 误判：logVersion 作为依赖是必要的，因为 buffer 内容通过 flushPendingLogs 更新后，
-  // 会调用 setLogVersion 触发重新渲染，此时 displayLogs 需要重新计算
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const displayLogs = useMemo(() => bufferRef.current.toArray(), [logVersion]);
-  const deferredLogs = useDeferredValue(displayLogs); // 使用延迟值优化渲染
+  // 虚拟列表总行数（由 search-progress/search-complete 事件驱动，磁盘直写架构）
+  const [liveCount, setLiveCount] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isFilterPaletteOpen, setIsFilterPaletteOpen] = useState(false);
   // 搜索执行状态（isSearching / searchSummary / keywordStats）统一通过 useSearchState hook 管理
   const [searchExec, dispatchSearchExec] = useSearchState();
   const { isSearching, searchSummary, keywordStats } = searchExec;
-  
-  // 流式搜索分页状态
+
+  // 磁盘直写搜索分页：searchId 由 api.searchLogs() 返回，即可启用 InfiniteQuery
   const [currentSearchId, setCurrentSearchId] = useState<string>('');
-  const [isStreamSearchEnabled, setIsStreamSearchEnabled] = useState(false);
   
   // 防抖搜索触发器
   const [searchTrigger, setSearchTrigger] = useState(0);
@@ -175,31 +165,15 @@ const SearchPage: React.FC<SearchPageProps> = ({
     searchId: currentSearchId,
     query,
     workspaceId: activeWorkspace?.id ?? null,
-    enabled: isStreamSearchEnabled && !!currentSearchId,
+    enabled: !!currentSearchId,
     pageSize: 1000,
   });
 
-  // 流式搜索结果添加到 CircularBuffer
-  useEffect(() => {
-    if (infiniteSearchData?.pages && isStreamSearchEnabled) {
-      // 获取所有页面的结果
-      const allResults = infiniteSearchData.pages.flatMap(page => page.results);
-      
-      // 如果结果数量变化，更新缓冲区
-      if (allResults.length > 0 && allResults.length !== bufferRef.current.length) {
-        if (allResults.length > bufferRef.current.length) {
-          // 仅追加新增项，保留虚拟滚动器已缓存的行高度，避免全量重测引发卡顿
-          const newItems = allResults.slice(bufferRef.current.length);
-          bufferRef.current.pushMany(newItems);
-        } else {
-          // 数据缩减（如工作区切换/重置），完整重建
-          bufferRef.current.clear();
-          bufferRef.current.pushMany(allResults);
-        }
-        setLogVersion(v => v + 1);
-      }
-    }
-  }, [infiniteSearchData, isStreamSearchEnabled]);
+  // 磁盘直写架构：已加载的条目（从磁盘分页读取），用于虚拟列表渲染
+  const loadedEntries = useMemo(
+    () => infiniteSearchData?.pages.flatMap(page => page.results) ?? [],
+    [infiniteSearchData]
+  );
 
   // 处理无限搜索错误
   useEffect(() => {
@@ -209,27 +183,8 @@ const SearchPage: React.FC<SearchPageProps> = ({
     }
   }, [infiniteSearchError, addToast]);
 
-  // 滚动到底部触发加载下一页
-  const checkAndFetchNextPage = useCallback(() => {
-    if (hasNextPage && !isFetchingNextPage && isStreamSearchEnabled) {
-      fetchNextPage().catch(err => {
-        logger.error('Failed to fetch next page:', err);
-        addToast('error', t('search.fetch_next_failed'));
-      });
-    }
-  }, [hasNextPage, isFetchingNextPage, isStreamSearchEnabled, fetchNextPage, addToast, t]);
-
-  // 刷新状态管理
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const isRefreshingRef = useRef(false);
-  const lastRefreshTimeRef = useRef(0);
-  // 流式分页触发节流，防止 scroll 事件（~60fps）高频调用 fetchNextPage
-  const lastFetchNextPageTimeRef = useRef(0);
-  const lastScrollTopRef = useRef(0);
-  const refreshLogsRef = useRef<(() => void) | null>(null);
-  const isNearBottomRef = useRef<((scrollTop: number, clientHeight: number, scrollHeight: number) => boolean) | null>(null);
   const REFRESH_THRESHOLD = SEARCH_CONFIG.REFRESH_THRESHOLD;
-  const REFRESH_DEBOUNCE_MS = SEARCH_CONFIG.REFRESH_DEBOUNCE_MS;
+  const lastFetchNextPageTimeRef = useRef(0);
 
   // 给每个关键词分配颜色 - 使用新的设计系统
   const keywordColors = useMemo(
@@ -252,32 +207,6 @@ const SearchPage: React.FC<SearchPageProps> = ({
   // 使用 ref 存储虚拟滚动器实例，避免声明顺序问题
   const rowVirtualizerRef = useRef<ReturnType<typeof useVirtualizer<HTMLDivElement, Element>>>(null);
   
-  // ============ 性能优化：批量处理搜索结果的 refs ============
-  // 累积批次，避免 O(n²) 的展开操作和频繁的 state update
-  const pendingLogsRef = useRef<LogEntry[]>([]);
-  const batchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const BATCH_INTERVAL = SEARCH_CONFIG.BATCH_INTERVAL_MS;
-  const MAX_BATCH_SIZE = SEARCH_CONFIG.MAX_BATCH_SIZE;
-  
-  // 刷新待处理的日志批次
-  const flushPendingLogs = useCallback(() => {
-    if (pendingLogsRef.current.length === 0) return;
-    
-    const batch = pendingLogsRef.current.splice(0); // 清空 ref，取出所有待处理日志
-    // 优化：使用环形缓冲区，限制内存中最大条目数
-    bufferRef.current.pushMany(batch);
-    setLogVersion(v => v + 1);
-  }, []);
-  
-  // 清理函数
-  useEffect(() => {
-    return () => {
-      if (batchTimeoutRef.current) {
-        clearTimeout(batchTimeoutRef.current);
-        batchTimeoutRef.current = null;
-      }
-    };
-  }, []);
 
   // ResizeObserver优化：监听容器尺寸变化，即时更新虚拟滚动
   useEffect(() => {
@@ -303,38 +232,19 @@ const SearchPage: React.FC<SearchPageProps> = ({
     const handleScrollEvent = (event: Event) => {
       const target = event.target as HTMLDivElement;
       const { scrollTop, clientHeight, scrollHeight } = target;
-      
-      lastScrollTopRef.current = scrollTop;
-      
-      // 检查是否接近底部（用于流式分页加载）
+
+      // 接近底部时触发 fetchNextPage（500ms 节流）
       const isNearBottom = scrollHeight - scrollTop - clientHeight <= REFRESH_THRESHOLD;
-      
-      // 流式分页加载优先，500ms 节流避免 scroll 事件高频触发
-      if (isNearBottom && isStreamSearchEnabled) {
+      if (isNearBottom) {
         const now = Date.now();
         if (now - lastFetchNextPageTimeRef.current >= 500) {
           lastFetchNextPageTimeRef.current = now;
-          checkAndFetchNextPage();
+          if (hasNextPage && !isFetchingNextPage) {
+            fetchNextPage().catch(err => {
+              logger.error('fetchNextPage failed:', err);
+            });
+          }
         }
-        return;
-      }
-
-      // 非流式搜索已全量加载结果，底部刷新会触发 invoke("search_logs") → onStart → scrollTop=0，造成循环滚动
-      if (!isStreamSearchEnabled) return;
-
-      if (isRefreshingRef.current) return;
-      
-      if (isNearBottomRef.current && !isNearBottomRef.current(scrollTop, clientHeight, scrollHeight)) return;
-      
-      const now = Date.now();
-      if (now - lastRefreshTimeRef.current < REFRESH_DEBOUNCE_MS) return;
-      
-      lastRefreshTimeRef.current = now;
-      isRefreshingRef.current = true;
-      setIsRefreshing(true);
-      
-      if (refreshLogsRef.current) {
-        refreshLogsRef.current();
       }
     };
 
@@ -343,25 +253,13 @@ const SearchPage: React.FC<SearchPageProps> = ({
     return () => {
       element.removeEventListener('scroll', handleScrollEvent);
     };
-  }, [isStreamSearchEnabled, checkAndFetchNextPage, REFRESH_DEBOUNCE_MS, REFRESH_THRESHOLD]);
+  }, [REFRESH_THRESHOLD, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   // 监听搜索事件 — 通过 useSearchListeners hook 注册 Tauri 事件
   useSearchListeners({
-    onResults: useCallback((results: LogEntry[]) => {
-      pendingLogsRef.current.push(...results);
-      if (pendingLogsRef.current.length >= MAX_BATCH_SIZE) {
-        if (batchTimeoutRef.current) {
-          clearTimeout(batchTimeoutRef.current);
-          batchTimeoutRef.current = null;
-        }
-        flushPendingLogs();
-      } else if (!batchTimeoutRef.current) {
-        batchTimeoutRef.current = setTimeout(() => {
-          batchTimeoutRef.current = null;
-          flushPendingLogs();
-        }, BATCH_INTERVAL);
-      }
-    }, [flushPendingLogs, MAX_BATCH_SIZE, BATCH_INTERVAL]),
+    onProgress: useCallback((count: number) => {
+      setLiveCount(count);
+    }, []),
 
     onSummary: useCallback((summary: SearchResultSummary) => {
       dispatchSearchExec({ type: 'SUMMARY', summary, keywordColors });
@@ -369,48 +267,18 @@ const SearchPage: React.FC<SearchPageProps> = ({
 
     onComplete: useCallback((count: number) => {
       dispatchSearchExec({ type: 'COMPLETE' });
-
-      // add_search_history 命令后端未实现，暂注释
-      // if (query.trim() && activeWorkspace) {
-      //   invoke('add_search_history', {
-      //     query: query.trim(),
-      //     workspaceId: activeWorkspace.id,
-      //     resultCount: count,
-      //   }).catch((err) => {
-      //     logger.error('Failed to save search history:', getFullErrorMessage(err));
-      //   });
-      // }
-
-      if (count > SEARCH_CONFIG.STREAM_SEARCH_THRESHOLD && bufferRef.current.length > 0) {
-        const searchId = `search_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        const allResults = bufferRef.current.toArray();
-        registerSearchSession(searchId, query, allResults)
-          .then(() => {
-            setCurrentSearchId(searchId);
-            setIsStreamSearchEnabled(true);
-          })
-          .catch((err) => {
-            logger.error('Failed to register search session:', err);
-            addToast('error', t('search.streamSessionFailed', { error: getFullErrorMessage(err) }));
-          });
-      }
-
-      // 仅非流式搜索（结果数量 <= 阈值）时才回到顶部
-      // 流式分页场景下用户可能已在翻页，强制跳回顶部会造成"循环滚动"假象
-      if (count <= SEARCH_CONFIG.STREAM_SEARCH_THRESHOLD) {
-        setTimeout(() => {
-          if (bufferRef.current.length > 0 && rowVirtualizerRef.current) {
-            try { rowVirtualizerRef.current.scrollToIndex(0); } catch { /* silent */ }
-          }
-        }, 50);
-      }
-
+      setLiveCount(count);
+      setTimeout(() => {
+        if (rowVirtualizerRef.current) {
+          try { rowVirtualizerRef.current.scrollToIndex(0); } catch { /* silent */ }
+        }
+      }, 50);
       if (count > 0) {
         addToast('success', `找到 ${count.toLocaleString()} 条日志`);
       } else {
         addToast('info', t('search.no_results'));
       }
-    }, [query, addToast, t, dispatchSearchExec]),
+    }, [addToast, t, dispatchSearchExec]),
 
     onError: useCallback((errorMsg: string) => {
       dispatchSearchExec({ type: 'ERROR' });
@@ -419,11 +287,8 @@ const SearchPage: React.FC<SearchPageProps> = ({
 
     onStart: useCallback(() => {
       dispatchSearchExec({ type: 'START' });
-      bufferRef.current.clear();
-      setLogVersion((v) => v + 1);
-      setCurrentSearchId('');
-      setIsStreamSearchEnabled(false);
-      // 通过 ref 读取最新 DOM，不将 Ref 对象放入 deps
+      setLiveCount(0);
+      setSelectedId(null);
       if (parentRef.current) parentRef.current.scrollTop = 0;
       if (rowVirtualizerRef.current) rowVirtualizerRef.current.scrollOffset = 0;
     }, [dispatchSearchExec]),
@@ -449,8 +314,8 @@ const SearchPage: React.FC<SearchPageProps> = ({
   // 监听查询变化，自动触发搜索（防抖500ms）
   useEffect(() => {
     if (!query.trim()) {
-      bufferRef.current.clear();
-      setLogVersion(v => v + 1);
+      setLiveCount(0);
+      setCurrentSearchId('');
       return;
     }
 
@@ -515,106 +380,6 @@ const SearchPage: React.FC<SearchPageProps> = ({
     fetchTimeRange();
   }, [activeWorkspace?.id, activeWorkspace]);
 
-  /**
-   * 检查是否接近滚动底部
-   * @param scrollTop - 当前滚动位置
-   * @param clientHeight - 视口高度
-   * @param scrollHeight - 内容总高度
-   * @returns 是否接近底部
-   */
-  const isNearBottom = useCallback((
-    scrollTop: number,
-    clientHeight: number,
-    scrollHeight: number
-  ): boolean => {
-    return scrollHeight - scrollTop - clientHeight <= REFRESH_THRESHOLD;
-  }, [REFRESH_THRESHOLD]);
-
-  // 存储 isNearBottom 到 ref 供滚动事件使用
-  useEffect(() => {
-    isNearBottomRef.current = isNearBottom;
-  }, [isNearBottom]);
-
-  /**
-   * 刷新日志数据
-   * 追加获取新数据，不替换现有结果
-   * 使用 search_logs_paged 命令并通过 Zod Schema 验证响应
-   */
-  const refreshLogs = useCallback(async () => {
-    if (!activeWorkspace) {
-      isRefreshingRef.current = false;
-      setIsRefreshing(false);
-      return;
-    }
-
-    const trimmedQuery = query.trim();
-    if (!trimmedQuery) {
-      isRefreshingRef.current = false;
-      setIsRefreshing(false);
-      return;
-    }
-
-    const pageSize = 100;
-
-    try {
-      const filters = {
-        time_start: filterOptions.timeRange.start,
-        time_end: filterOptions.timeRange.end,
-        levels: filterOptions.levels,
-        file_pattern: filterOptions.filePattern || null
-      };
-
-      // 使用 search_logs_paged 命令，page_index=-1 表示执行新搜索
-      const rawResult = await invoke("search_logs_paged", {
-        query: trimmedQuery,
-        workspaceId: activeWorkspace.id,
-        pageSize,
-        pageIndex: -1,
-        searchId: null,
-        filters,
-      });
-
-      // 使用 Zod Schema 验证 API 响应，防止后端返回缺字段时崩溃
-      const parseResult = PagedSearchResultSchema.safeParse(rawResult);
-      if (!parseResult.success) {
-        console.error('Search logs response validation failed:', parseResult.error);
-        addToast('error', '搜索结果格式错误');
-        return;
-      }
-
-      const result = parseResult.data;
-
-      if (result.results && result.results.length > 0) {
-        const newLogs: LogEntry[] = result.results.map((r) => ({
-          id: String(r.id),
-          timestamp: r.timestamp,
-          level: r.level,
-          content: r.content,
-          file: r.file,
-          line: r.line,
-          real_path: r.real_path,
-          tags: r.tags,
-          match_details: r.match_details,
-          matched_keywords: r.matched_keywords,
-        }));
-
-        bufferRef.current.pushMany(newLogs);
-        setLogVersion(v => v + 1);
-      }
-    } catch (err) {
-      console.error('Refresh failed:', err);
-      addToast('error', `刷新失败: ${err}`);
-    } finally {
-      isRefreshingRef.current = false;
-      setIsRefreshing(false);
-    }
-  }, [query, activeWorkspace, filterOptions, addToast]);
-
-  // 存储 refreshLogs 到 ref 供滚动事件使用
-  useEffect(() => {
-    refreshLogsRef.current = refreshLogs;
-  }, [refreshLogs]);
-
   // 用 ref 存储最新的 handleSearch，避免 useEffect 中使用 eslint-disable
   const handleSearchRef = useRef<() => Promise<void>>(async () => {});
 
@@ -629,25 +394,16 @@ const SearchPage: React.FC<SearchPageProps> = ({
 
     const trimmedQuery = query.trim();
     if (!trimmedQuery) {
-      bufferRef.current.clear();
-      setLogVersion(v => v + 1);
+      setLiveCount(0);
+      setCurrentSearchId('');
       return;
     }
 
-    // 重置状态 - 必须先清理待处理的日志，避免旧搜索结果覆盖新搜索
-    if (batchTimeoutRef.current) {
-      clearTimeout(batchTimeoutRef.current);
-      batchTimeoutRef.current = null;
-    }
-    pendingLogsRef.current = []; // 关键：清理待处理日志，避免旧数据覆盖新数据
-    bufferRef.current.clear();
-    setLogVersion(v => v + 1);
+    // 重置状态
+    setLiveCount(0);
+    setCurrentSearchId('');
     dispatchSearchExec({ type: 'START' });
     setSelectedId(null);
-    
-    // 重置流式搜索状态
-    setCurrentSearchId('');
-    setIsStreamSearchEnabled(false);
 
     // 重置滚动位置到顶部
     if (parentRef.current) {
@@ -666,11 +422,13 @@ const SearchPage: React.FC<SearchPageProps> = ({
         file_pattern: filterOptions.filePattern || null
       };
 
-      await api.searchLogs({
+      // 后端返回 search_id，前端凭此 ID 从磁盘分页读取搜索结果
+      const searchId = await api.searchLogs({
         query: trimmedQuery,
         workspaceId: activeWorkspace.id,
         filters,
       });
+      setCurrentSearchId(searchId);
 
       // 如果使用了结构化查询，更新执行次数
       if (currentQuery) {
@@ -794,7 +552,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
    * 导出搜索结果
    */
   const handleExport = async (format: 'csv' | 'json') => {
-    if (bufferRef.current.length === 0) {
+    if (loadedEntries.length === 0) {
       addToast('error', '没有可导出的数据');
       return;
     }
@@ -816,12 +574,12 @@ const SearchPage: React.FC<SearchPageProps> = ({
 
       logger.debug('Exporting to:', savePath);
       await api.exportResults({
-        results: bufferRef.current.toArray(),
+        results: loadedEntries,
         format,
         savePath
       });
 
-      addToast('success', `已导出 ${bufferRef.current.length} 条日志到 ${format.toUpperCase()}`);
+      addToast('success', `已导出 ${loadedEntries.length} 条日志到 ${format.toUpperCase()}`);
     } catch (e) {
       logger.error('Export error:', e);
       addToast('error', `导出失败: ${getFullErrorMessage(e)}`);
@@ -834,16 +592,16 @@ const SearchPage: React.FC<SearchPageProps> = ({
    * 将结果存储到 ref 中以便在其他 useEffect 中访问
    */
   const rowVirtualizer = useVirtualizer({
-    count: deferredLogs.length,
+    count: liveCount,  // 磁盘直写架构：总行数由 search-progress 事件驱动
     getScrollElement: () => parentRef.current,
     estimateSize: useCallback(() => 48, []), // 调整为 48px，更接近实际行高
-    overscan: 10,
+    overscan: 20,
   });
   
   // 将虚拟滚动器存储到 ref 中
   rowVirtualizerRef.current = rowVirtualizer;
   
-  const activeLog = deferredLogs.find(l => l.id === selectedId);
+  const activeLog = loadedEntries.find(l => l.id === selectedId);
 
   return (
     <div className="flex flex-col h-full relative">
@@ -899,11 +657,25 @@ const SearchPage: React.FC<SearchPageProps> = ({
             <div>{t('search.table.content', '内容')}</div>
           </div>
           
-          {/* 虚拟滚动列表 - 使用 LogRow 组件优化渲染 */}
+          {/* 虚拟滚动列表 - 磁盘直写架构：count=liveCount，按需从磁盘加载可见页 */}
           <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, width: '100%', position: 'relative' }}>
             {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-              const log = deferredLogs[virtualRow.index];
-              if (!log) return null; // 防止延迟渲染时索引越界
+              const log = loadedEntries[virtualRow.index];
+              if (!log) {
+                // 未从磁盘加载的行显示骨架屏，搜索进行中时数据将按需加载
+                return (
+                  <div
+                    key={virtualRow.key}
+                    style={{ transform: `translateY(${virtualRow.start}px)` }}
+                    className="absolute top-0 left-0 w-full grid grid-cols-[50px_160px_150px_1fr] px-3 py-1.5 border-b border-border-subtle"
+                  >
+                    <div className="h-4 bg-bg-elevated/60 rounded animate-pulse w-8" />
+                    <div className="h-4 bg-bg-elevated/60 rounded animate-pulse w-32" />
+                    <div className="h-4 bg-bg-elevated/60 rounded animate-pulse w-24" />
+                    <div className="h-4 bg-bg-elevated/60 rounded animate-pulse w-3/4" />
+                  </div>
+                );
+              }
               return (
                 <LogRow
                   key={virtualRow.key}
@@ -917,34 +689,26 @@ const SearchPage: React.FC<SearchPageProps> = ({
               );
             })}
           </div>
-          
-          {/* 加载指示器 - 底部刷新时显示 */}
-          {isRefreshing && (
-            <div className="flex items-center justify-center py-4">
-              <Loader2 className="animate-spin text-primary" size={20} />
-              <span className="ml-2 text-sm text-text-muted">加载更多...</span>
-            </div>
-          )}
-          
-          {/* 流式分页加载指示器 */}
+
+          {/* 分页加载指示器 */}
           {isFetchingNextPage && (
             <div className="flex items-center justify-center py-4 bg-bg-sidebar/50 border-t border-border-base">
               <Loader2 className="animate-spin text-primary mr-2" size={16} />
               <span className="text-sm text-text-muted">
-                正在加载更多结果... ({bufferRef.current.length.toLocaleString()} 条已加载)
+                正在加载更多结果... ({loadedEntries.length.toLocaleString()} 条已加载)
               </span>
             </div>
           )}
-          
-          {/* 流式分页加载完成提示 */}
-          {isStreamSearchEnabled && !hasNextPage && !isFetchingNextPage && bufferRef.current.length > 0 && (
+
+          {/* 全部加载完成提示 */}
+          {!!currentSearchId && !hasNextPage && !isFetchingNextPage && liveCount > 0 && (
             <div className="flex items-center justify-center py-3 text-text-muted text-xs">
-              已加载全部 {bufferRef.current.length.toLocaleString()} 条结果
+              已加载全部 {liveCount.toLocaleString()} 条结果
             </div>
           )}
-          
+
           {/* 空状态 - 根据不同场景显示不同提示 */}
-          {bufferRef.current.length === 0 && !isSearching && (
+          {liveCount === 0 && !isSearching && (
             <div className="flex flex-col items-center justify-center h-full min-h-[200px] text-text-dim">
               {/* 场景1: 应用未初始化或工作区正在加载 */}
               {(!isInitialized || workspaceLoading) ? (

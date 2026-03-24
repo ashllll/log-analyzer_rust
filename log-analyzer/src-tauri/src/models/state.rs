@@ -1,5 +1,6 @@
 //! 应用状态管理 - 简化版本
 
+use crate::search_engine::disk_result_store::DiskResultStore;
 use crate::search_engine::manager::SearchEngineManager;
 use crate::search_engine::virtual_search_manager::VirtualSearchManager;
 use crate::services::file_watcher::WatcherState;
@@ -41,6 +42,9 @@ pub struct AppState {
     pub search_engine_managers: Arc<Mutex<HashMap<String, Arc<SearchEngineManager>>>>,
     /// 虚拟搜索管理器 - 支持服务端虚拟化和分页加载
     pub virtual_search_manager: Arc<VirtualSearchManager>,
+    /// 磁盘搜索结果存储 - Notepad++ 式磁盘直写架构
+    /// 搜索结果写入磁盘，前端按需分页读取，避免前端持有大量 JS 对象
+    pub disk_result_store: Arc<DiskResultStore>,
 }
 
 impl Default for AppState {
@@ -68,6 +72,17 @@ impl Default for AppState {
             async_resource_manager: Arc::new(AsyncResourceManager::new()),
             search_engine_managers: Arc::new(Mutex::new(HashMap::new())),
             virtual_search_manager: Arc::new(VirtualSearchManager::new(100)),
+            disk_result_store: Arc::new({
+                // 使用系统临时目录存储搜索结果缓存
+                // main.rs setup 阶段可替换为应用专属目录
+                let cache_dir = std::env::temp_dir().join("log-analyzer-search-cache");
+                DiskResultStore::new(cache_dir, 50).unwrap_or_else(|e| {
+                    tracing::warn!(error = %e, "无法创建搜索磁盘缓存，使用降级内存路径");
+                    // 降级：尝试另一个临时目录
+                    DiskResultStore::new(std::env::temp_dir().join("la-sc-fallback"), 20)
+                        .expect("无法初始化任何搜索结果存储目录")
+                })
+            }),
         }
     }
 }
