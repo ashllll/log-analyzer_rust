@@ -459,13 +459,22 @@ impl ContentAddressableStorage {
                 );
             }
             Ok(Err(e)) => {
-                // Copy failed with error
+                // Copy failed with error — clean up the partial file so it is not
+                // mistaken for valid content on the next store attempt (create_new
+                // would return AlreadyExists and silently serve corrupted data).
                 error!(
                     file = %file_path.display(),
                     target = %object_path.display(),
                     error = %e,
                     "File copy failed"
                 );
+                if let Err(cleanup_err) = fs::remove_file(&object_path).await {
+                    warn!(
+                        target = %object_path.display(),
+                        error = %cleanup_err,
+                        "写入失败后清理部分文件出错"
+                    );
+                }
                 return Err(e);
             }
             Err(_) => {

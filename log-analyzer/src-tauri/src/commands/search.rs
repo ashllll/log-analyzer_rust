@@ -214,6 +214,11 @@ pub async fn search_logs(
 
             let _ = app_handle.emit("search-summary", &summary);
             let _ = app_handle.emit("search-complete", cached_results.len());
+            // 缓存命中路径：清理之前创建的 cancellation token（缓存路径无需保留）
+            {
+                let mut tokens = cancellation_tokens.lock();
+                tokens.remove(&search_id);
+            }
             return Ok(search_id);
         }
     }
@@ -403,6 +408,8 @@ pub async fn search_logs(
                     let mut tokens = cancellation_tokens.lock();
                     tokens.remove(&search_id_clone);
                 }
+                // 清理磁盘会话（.ndjson 和 .idx 文件），避免文件泄漏和会话槽位占用
+                disk_store_spawn.remove_session(&search_id_clone);
                 return;
             }
 
