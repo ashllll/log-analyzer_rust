@@ -56,6 +56,7 @@ jobs:
       uses: swatinem/rust-cache@v2
       with:
         workspaces: log-analyzer/src-tauri -> target
+        cache-all-crates: true
 
     - name: Install Tauri dependencies (Ubuntu)
       if: matrix.os == 'ubuntu-22.04'
