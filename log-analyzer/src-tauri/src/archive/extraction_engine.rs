@@ -45,7 +45,7 @@ impl Default for ExtractionPolicy {
             buffer_size: 1024 * 1024,                // 1MB (优化: 从 64KB 增大，提升大文件处理性能)
             dir_batch_size: 10,                      // Batch 10 directories
             max_parallel_files: 4,                   // Extract up to 4 files in parallel
-            max_file_count: 10_000,                  // 单次压缩包最多解压文件数，与 ExtractionLimits 对齐
+            max_file_count: 10_000, // 单次压缩包最多解压文件数，与 ExtractionLimits 对齐
         }
     }
 }

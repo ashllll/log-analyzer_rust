@@ -607,37 +607,38 @@ impl SearchEngineManager {
         let schema = self.schema.clone();
         let token_inner = token; // move token 进闭包，传递给内部调用以支持取消
 
-        let search_result =
-            timeout(
-                timeout_duration,
-                tokio::task::spawn_blocking(move || {
-                    let (doc_addresses, total_count) = boolean_processor
-                        .process_multi_keyword_query(&keywords_owned, require_all, limit, token_inner)?;
+        let search_result = timeout(
+            timeout_duration,
+            tokio::task::spawn_blocking(move || {
+                let (doc_addresses, total_count) = boolean_processor.process_multi_keyword_query(
+                    &keywords_owned,
+                    require_all,
+                    limit,
+                    token_inner,
+                )?;
 
-                    let searcher = reader.searcher();
-                    let mut entries = Vec::with_capacity(doc_addresses.len());
-                    let mut addresses = Vec::with_capacity(doc_addresses.len());
+                let searcher = reader.searcher();
+                let mut entries = Vec::with_capacity(doc_addresses.len());
+                let mut addresses = Vec::with_capacity(doc_addresses.len());
 
-                    for doc_address in doc_addresses {
-                        let retrieved_doc = searcher.doc(doc_address)?;
-                        if let Some(log_entry) =
-                            document_to_log_entry_inner(&schema, &retrieved_doc)
-                        {
-                            entries.push(log_entry);
-                            addresses.push(doc_address);
-                        }
+                for doc_address in doc_addresses {
+                    let retrieved_doc = searcher.doc(doc_address)?;
+                    if let Some(log_entry) = document_to_log_entry_inner(&schema, &retrieved_doc) {
+                        entries.push(log_entry);
+                        addresses.push(doc_address);
                     }
+                }
 
-                    Ok(SearchResults {
-                        entries,
-                        doc_addresses: addresses,
-                        total_count,
-                        query_time_ms: 0,
-                        was_timeout: false,
-                    })
-                }),
-            )
-            .await;
+                Ok(SearchResults {
+                    entries,
+                    doc_addresses: addresses,
+                    total_count,
+                    query_time_ms: 0,
+                    was_timeout: false,
+                })
+            }),
+        )
+        .await;
 
         let query_time = start_time.elapsed();
 
