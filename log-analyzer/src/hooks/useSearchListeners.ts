@@ -1,8 +1,12 @@
 /**
  * useSearchListeners — 封装 Tauri 搜索事件监听
  *
- * 将 SearchPage 中 5 个 `listen()` 调用提取到此 hook，
+ * 将 SearchPage 中的 `listen()` 调用提取到此 hook，
  * 消除组件内的事件配置样板代码，使 SearchPage 专注于渲染逻辑。
+ *
+ * 新架构（磁盘直写）：
+ * - 不再监听 search-results（后端不发送原始数据，改为写磁盘）
+ * - 改为监听 search-progress（count），前端据此调整虚拟列表大小
  *
  * 生命周期：组件挂载时注册监听器，卸载时自动解除。
  */
@@ -10,12 +14,11 @@
 import { useEffect, useMemo } from 'react';
 import { logger } from '../utils/logger';
 import { listen } from '@tauri-apps/api/event';
-import type { LogEntry } from '../types/common';
 import type { SearchResultSummary } from '../types/search';
 
 export interface SearchListenerHandlers {
-  /** 收到一批流式搜索结果 */
-  onResults: (results: LogEntry[]) => void;
+  /** 收到搜索进度更新（磁盘写入计数），前端据此调整虚拟列表大小 */
+  onProgress?: (count: number) => void;
   /** 收到搜索汇总统计 */
   onSummary: (summary: SearchResultSummary) => void;
   /** 搜索完成，payload 为总结果数 */
@@ -27,8 +30,8 @@ export interface SearchListenerHandlers {
 }
 
 /**
- * @param enabled 仅当为 true 时注册监听器（默认 true）
  * @param handlers 各事件的处理函数对象
+ * @param enabled 仅当为 true 时注册监听器（默认 true）
  */
 export function useSearchListeners(
   handlers: SearchListenerHandlers,
@@ -47,15 +50,15 @@ export function useSearchListeners(
     const setup = async () => {
       try {
         const [
-          resultsUnlisten,
+          progressUnlisten,
           summaryUnlisten,
           completeUnlisten,
           errorUnlisten,
           startUnlisten,
         ] = await Promise.all([
-          listen<LogEntry[]>('search-results', (e) => {
-            if (!e.payload || !Array.isArray(e.payload)) return;
-            handlersRef.current.onResults(e.payload);
+          listen<number>('search-progress', (e) => {
+            const count = typeof e.payload === 'number' ? e.payload : 0;
+            handlersRef.current.onProgress?.(count);
           }),
           listen<SearchResultSummary>('search-summary', (e) => {
             if (!e.payload) return;
@@ -74,14 +77,14 @@ export function useSearchListeners(
         ]);
 
         if (abortController.signal.aborted) {
-          [resultsUnlisten, summaryUnlisten, completeUnlisten, errorUnlisten, startUnlisten].forEach(
+          [progressUnlisten, summaryUnlisten, completeUnlisten, errorUnlisten, startUnlisten].forEach(
             (u) => u(),
           );
           return;
         }
 
         unlisteners.push(
-          resultsUnlisten,
+          progressUnlisten,
           summaryUnlisten,
           completeUnlisten,
           errorUnlisten,

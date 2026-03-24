@@ -100,6 +100,8 @@ pub async fn search_logs(
     let cache_hits = Arc::clone(&state.cache_hits);
     let last_search_duration = Arc::clone(&state.last_search_duration);
     let cancellation_tokens = Arc::clone(&state.search_cancellation_tokens);
+    // 磁盘搜索结果存储：新架构的核心，替代 search-results IPC 事件
+    let disk_result_store = Arc::clone(&state.disk_result_store);
 
     let max_results = max_results.unwrap_or(50000).min(100_000);
     let filters = filters.unwrap_or_default();
@@ -179,12 +181,22 @@ pub async fn search_logs(
             // 记录缓存统计
             log_cache_statistics(&total_searches, &cache_hits);
 
-            // 发送缓存结果（批量发送，优化：chunk 大小从 500 增加到 2000，减少 IPC 调用次数 75%）
-            for chunk in cached_results.chunks(2000) {
-                let _ = app_handle.emit("search-results", chunk);
-                // 移除 thread::sleep，使用 tokio::task::yield_now 避免阻塞
-                // 但由于在同步上下文中，直接发送即可
+            // 将缓存结果写入磁盘（新架构：不通过 IPC 发送原始数据，前端按需分页读取）
+            if let Err(e) = disk_result_store.create_session(&search_id) {
+                warn!(error = %e, "缓存命中：无法创建磁盘搜索会话");
+            } else {
+                for chunk in cached_results.chunks(2000) {
+                    if let Err(e) = disk_result_store.append_entries(&search_id, chunk) {
+                        warn!(error = %e, "缓存命中：磁盘写入失败");
+                        break;
+                    }
+                }
+                if let Err(e) = disk_result_store.complete_session(&search_id) {
+                    warn!(error = %e, "缓存命中：完成磁盘会话失败");
+                }
             }
+            // 仅发送实时计数事件，前端通过 fetch_search_page 按需读取实际数据
+            let _ = app_handle.emit("search-progress", cached_results.len());
 
             let raw_terms: Vec<String> = query
                 .split('|')
@@ -287,6 +299,15 @@ pub async fn search_logs(
 
     let search_id_clone = search_id.clone();
     let files_for_search = files.clone();
+
+    // 创建磁盘搜索会话（仅在非缓存命中路径下创建，缓存命中路径已创建）
+    if !disk_result_store.has_session(&search_id) {
+        if let Err(e) = disk_result_store.create_session(&search_id) {
+            warn!(error = %e, search_id = %search_id, "无法创建磁盘搜索会话，分页读取功能将不可用");
+        }
+    }
+    let disk_store_spawn = Arc::clone(&disk_result_store);
+
     // 老王备注：修复线程泄漏！使用tokio::task::spawn_blocking代替std::thread::spawn
     // 这样tokio运行时会管理线程生命周期，避免资源泄漏
     // 注意：现在 MetadataStore 和文件获取已在 spawn_blocking 外部完成，避免了嵌套 runtime 阻塞问题
@@ -499,10 +520,16 @@ pub async fn search_logs(
                         batch_results.push(entry);
                         results_count += 1;
 
-                        // 当批次满时发送
+                        // 批次满时写入磁盘并发送实时计数（不再发送原始数据到前端）
                         if batch_results.len() >= batch_size {
-                            let _ = app_handle.emit("search-results", &batch_results);
+                            if let Err(e) =
+                                disk_store_spawn.append_entries(&search_id_clone, &batch_results)
+                            {
+                                warn!(error = %e, "磁盘写入搜索结果批次失败");
+                            }
                             batch_results.clear();
+                            // 发送实时条目计数（前端用于调整虚拟列表大小，不含实际数据）
+                            let _ = app_handle.emit("search-progress", results_count);
                         }
                     }
                 }
@@ -514,15 +541,17 @@ pub async fn search_logs(
             }
 
             total_processed += file_batch.len();
-
-            // 发送进度更新
-            let progress = (total_processed as f64 / files.len() as f64 * 100.0) as i32;
-            let _ = app_handle.emit("search-progress", progress);
         }
 
-        // 发送剩余结果
+        // 将剩余结果写入磁盘并完成会话
         if !pending_batch.is_empty() {
-            let _ = app_handle.emit("search-results", &pending_batch);
+            if let Err(e) = disk_store_spawn.append_entries(&search_id_clone, &pending_batch) {
+                warn!(error = %e, "磁盘写入剩余搜索结果失败");
+            }
+        }
+        // 完成磁盘会话，确保所有写入对读者可见
+        if let Err(e) = disk_store_spawn.complete_session(&search_id_clone) {
+            warn!(error = %e, "完成磁盘搜索会话失败");
         }
 
         // 计算搜索统计信息
@@ -1253,32 +1282,62 @@ pub async fn fetch_search_page(
     search_id: String,
     offset: usize,
     limit: usize,
-) -> Result<Vec<LogEntry>, String> {
-    let manager = &state.virtual_search_manager;
-
-    // 检查会话是否存在
-    if !manager.has_session(&search_id) {
-        return Err(format!(
-            "Search session '{}' not found or expired",
-            search_id
-        ));
-    }
+) -> Result<crate::search_engine::disk_result_store::SearchPageResult, String> {
+    use crate::search_engine::disk_result_store::SearchPageResult;
 
     // 限制每页最大数量，防止内存问题
     let limit = limit.min(10000);
 
-    // 从 VirtualSearchManager 获取指定范围的结果
-    let results = manager.get_range(&search_id, offset, limit);
+    let disk_store = &state.disk_result_store;
 
-    debug!(
-        search_id = %search_id,
-        offset = offset,
-        limit = limit,
-        returned = results.len(),
-        "Fetched search page"
-    );
+    // 优先从磁盘存储读取（新架构：Notepad++ 式磁盘直写，前端按需分页）
+    if disk_store.has_session(&search_id) {
+        let result = disk_store
+            .read_page(&search_id, offset, limit)
+            .map_err(|e| e.to_string())?;
 
-    Ok(results)
+        debug!(
+            search_id = %search_id,
+            offset = offset,
+            limit = limit,
+            returned = result.entries.len(),
+            total = result.total_count,
+            is_complete = result.is_complete,
+            "从磁盘读取搜索分页"
+        );
+
+        return Ok(result);
+    }
+
+    // 降级：从 VirtualSearchManager 内存缓存读取（向后兼容旧架构）
+    let manager = &state.virtual_search_manager;
+    if manager.has_session(&search_id) {
+        let results = manager.get_range(&search_id, offset, limit);
+        let total = manager.get_total_count(&search_id);
+        let next_offset = if offset + results.len() < total {
+            Some(offset + results.len())
+        } else {
+            None
+        };
+        debug!(
+            search_id = %search_id,
+            offset = offset,
+            returned = results.len(),
+            "从 VirtualSearchManager 降级读取搜索分页"
+        );
+        return Ok(SearchPageResult {
+            entries: results,
+            total_count: total,
+            is_complete: true,
+            has_more: next_offset.is_some(),
+            next_offset,
+        });
+    }
+
+    Err(format!(
+        "Search session '{}' not found or expired",
+        search_id
+    ))
 }
 
 /// 注册搜索会话到 VirtualSearchManager
@@ -1353,8 +1412,12 @@ pub async fn get_search_total_count(
     state: State<'_, AppState>,
     search_id: String,
 ) -> Result<usize, String> {
-    let manager = &state.virtual_search_manager;
-    Ok(manager.get_total_count(&search_id))
+    // 新架构：优先从 DiskResultStore 读取
+    if let Some(status) = state.disk_result_store.get_status(&search_id) {
+        return Ok(status.total_count);
+    }
+    // 降级：从 VirtualSearchManager 读取
+    Ok(state.virtual_search_manager.get_total_count(&search_id))
 }
 
 /// 移除搜索会话

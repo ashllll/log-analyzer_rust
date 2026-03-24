@@ -17,7 +17,6 @@ export {
 export type {
   SearchPage,
   UseInfiniteSearchOptions,
-  SearchContext,
 } from './useInfiniteSearch';
 
 // 性能监控查询

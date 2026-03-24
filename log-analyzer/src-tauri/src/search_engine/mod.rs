@@ -9,6 +9,7 @@
 pub mod advanced_features;
 pub mod boolean_query_processor;
 pub mod concurrent_search;
+pub mod disk_result_store;
 pub mod highlighting_engine;
 pub mod index_optimizer;
 pub mod manager;
@@ -30,6 +31,7 @@ pub use boolean_query_processor::BooleanQueryProcessor;
 pub use concurrent_search::{
     ConcurrentSearchConfig, ConcurrentSearchManager, ConcurrentSearchStats,
 };
+pub use disk_result_store::{DiskResultStore, SearchPageResult};
 pub use highlighting_engine::{HighlightingConfig, HighlightingEngine, HighlightingStats};
 pub use manager::SearchEngineManager;
 #[allow(unused_imports)]
