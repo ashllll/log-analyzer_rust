@@ -138,8 +138,9 @@ pub async fn validate_path_security(path: String) -> Result<ValidationErrorRepor
         result.error_count += 1;
     }
 
-    // 检查路径遍历攻击
-    if path.contains("..") || path.contains("~") {
+    // 检查路径遍历攻击：仅检查波浪号；".." 的判断交由下方 Component::ParentDir 精确检查，
+    // 避免对合法文件名（如 "file..log"）产生误报
+    if path.contains('~') {
         result.errors.insert(
             "path".to_string(),
             vec!["Path contains dangerous sequences".to_string()],
@@ -182,8 +183,10 @@ pub async fn validate_path_security(path: String) -> Result<ValidationErrorRepor
         for component in path_buf.components() {
             if let std::path::Component::Normal(name) = component {
                 if let Some(name_str) = name.to_str() {
-                    let name_upper = name_str.to_uppercase();
-                    if reserved_names.contains(&name_upper.as_str()) {
+                    // 去掉扩展名后再比较：Windows 中 CON.log / CON.txt 同样是保留名
+                    let stem = name_str.split('.').next().unwrap_or(name_str);
+                    let stem_upper = stem.to_uppercase();
+                    if reserved_names.contains(&stem_upper.as_str()) {
                         result.errors.insert(
                             "path".to_string(),
                             vec![format!("Path contains Windows reserved name: {}", name_str)],
