@@ -639,23 +639,23 @@ impl MetricsStore {
 
         // 获取最新快照时间戳
         let latest_timestamp: Option<i64> =
-            sqlx::query("SELECT timestamp FROM metrics_snapshots ORDER BY timestamp DESC LIMIT 1")
+            sqlx::query::<sqlx::Sqlite>("SELECT timestamp FROM metrics_snapshots ORDER BY timestamp DESC LIMIT 1")
                 .fetch_optional(&self.pool)
                 .await
                 .map_err(|e| {
                     AppError::database_error(format!("Failed to get latest timestamp: {}", e))
                 })?
-                .map(|row| row.get("timestamp"));
+                .map(|row: sqlx::sqlite::SqliteRow| row.get("timestamp"));
 
         // 获取最旧快照时间戳
         let oldest_timestamp: Option<i64> =
-            sqlx::query("SELECT timestamp FROM metrics_snapshots ORDER BY timestamp ASC LIMIT 1")
+            sqlx::query::<sqlx::Sqlite>("SELECT timestamp FROM metrics_snapshots ORDER BY timestamp ASC LIMIT 1")
                 .fetch_optional(&self.pool)
                 .await
                 .map_err(|e| {
                     AppError::database_error(format!("Failed to get oldest timestamp: {}", e))
                 })?
-                .map(|row| row.get("timestamp"));
+                .map(|row: sqlx::sqlite::SqliteRow| row.get("timestamp"));
 
         Ok(MetricsStoreStats {
             snapshot_count: snapshot_count as u64,
