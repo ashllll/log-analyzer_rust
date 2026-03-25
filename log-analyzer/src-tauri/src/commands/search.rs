@@ -199,6 +199,7 @@ pub async fn search_logs(
                 warn!(error = %e, "缓存命中：无法创建磁盘搜索会话");
             } else {
                 for chunk in cached_results.chunks(2000) {
+                    let chunk: &[crate::models::LogEntry] = chunk;
                     if let Err(e) = disk_result_store.append_entries(&search_id, chunk) {
                         warn!(error = %e, "缓存命中：磁盘写入失败");
                         break;
@@ -1317,7 +1318,7 @@ pub async fn fetch_search_page(
 
     // 优先从磁盘存储读取（新架构：Notepad++ 式磁盘直写，前端按需分页）
     if disk_store.has_session(&search_id) {
-        let result = disk_store
+        let result: crate::search_engine::disk_result_store::SearchPageResult = disk_store
             .read_page(&search_id, offset, limit)
             .map_err(|e| e.to_string())?;
 

@@ -98,6 +98,7 @@ pub async fn load_workspace(
     if let Some(state_sync) = state_sync_opt {
         use crate::state_sync::models::{WorkspaceEvent, WorkspaceStatus};
         use std::time::Duration;
+        let state_sync: crate::state_sync::StateSync = state_sync;
         let _ = state_sync
             .broadcast_workspace_event(WorkspaceEvent::StatusChanged {
                 workspace_id: workspaceId.clone(),
@@ -583,6 +584,7 @@ pub async fn delete_workspace(
     if let Some(state_sync) = state_sync_opt {
         use crate::state_sync::models::{WorkspaceEvent, WorkspaceStatus};
         use std::time::SystemTime;
+        let state_sync: crate::state_sync::StateSync = state_sync;
         let _ = state_sync
             .broadcast_workspace_event(WorkspaceEvent::StatusChanged {
                 workspace_id: workspaceId.clone(),
@@ -631,6 +633,7 @@ pub async fn cancel_task(
         .ok_or_else(|| "Task manager not initialized".to_string())?
         .clone();
 
+    let task_manager: crate::task_manager::TaskManager = task_manager;
     // 更新任务状态为 Stopped
     let _ = task_manager
         .update_task_async(
@@ -715,7 +718,7 @@ pub async fn get_workspace_status(
         .cloned()
         .ok_or_else(|| format!("Workspace store not initialized: {}", workspaceId))?;
 
-    let file_count = metadata_store.count_files().await.unwrap_or(0);
+    let file_count: i64 = metadata_store.count_files().await.unwrap_or(0);
 
     // 计算目录大小
     let total_size = walkdir::WalkDir::new(&workspace_dir)

@@ -64,15 +64,15 @@ pub async fn import_folder(
     // Extract task_manager before await
     let task_manager: Option<TaskManager> = state.task_manager.lock().clone();
     let _task = if let Some(task_manager) = task_manager.as_ref() {
-        task_manager
-            .create_task_async(
-                task_id.clone(),
-                "Import".to_string(),
-                target_name.clone(),
-                Some(workspaceId.clone()),
-            )
-            .await
-            .map_err(|e| format!("Failed to create task: {}", e))?
+        let tm: &TaskManager = task_manager;
+        tm.create_task_async(
+            task_id.clone(),
+            "Import".to_string(),
+            target_name.clone(),
+            Some(workspaceId.clone()),
+        )
+        .await
+        .map_err(|e| format!("Failed to create task: {}", e))?
     } else {
         return Err("Task manager not initialized".to_string());
     };
@@ -93,7 +93,8 @@ pub async fn import_folder(
         guard.as_ref().cloned()
     };
 
-    if let Some(task_manager) = task_manager_clone {
+    if let Some(ref task_manager) = task_manager_clone {
+        let task_manager: &TaskManager = task_manager;
         if let Err(e) = task_manager
             .update_task_async(
                 &task_id_clone,
@@ -192,7 +193,8 @@ pub async fn import_folder(
             guard.as_ref().cloned()
         };
 
-        if let Some(task_manager) = task_manager_clone {
+        if let Some(ref task_manager) = task_manager_clone {
+            let task_manager: &TaskManager = task_manager;
             // 添加完整的错误处理和降级方案
             if let Err(update_err) = task_manager
                 .update_task_async(
@@ -223,7 +225,8 @@ pub async fn import_folder(
         guard.as_ref().cloned()
     };
 
-    if let Some(task_manager) = task_manager_clone {
+    if let Some(ref task_manager) = task_manager_clone {
+        let task_manager: &TaskManager = task_manager;
         if let Err(e) = task_manager
             .update_task_async(
                 &task_id_clone,
@@ -287,7 +290,8 @@ pub async fn import_folder(
         guard.as_ref().cloned()
     };
 
-    if let Some(task_manager) = task_manager_clone {
+    if let Some(ref task_manager) = task_manager_clone {
+        let task_manager: &TaskManager = task_manager;
         // 添加完整的错误处理和降级方案
         if let Err(e) = task_manager
             .update_task_async(

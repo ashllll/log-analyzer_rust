@@ -474,7 +474,7 @@ impl MetadataStore {
             .await
             .map_err(|e| AppError::database_error(format!("Failed to query file: {}", e)))?;
 
-        Ok(row.map(|r| FileMetadata {
+        Ok(row.map(|r: sqlx::sqlite::SqliteRow| FileMetadata {
             id: r.get("id"),
             sha256_hash: r.get("sha256_hash"),
             virtual_path: r.get("virtual_path"),
@@ -495,7 +495,7 @@ impl MetadataStore {
             .await
             .map_err(|e| AppError::database_error(format!("Failed to query file: {}", e)))?;
 
-        Ok(row.map(|r| FileMetadata {
+        Ok(row.map(|r: sqlx::sqlite::SqliteRow| FileMetadata {
             id: r.get("id"),
             sha256_hash: r.get("sha256_hash"),
             virtual_path: r.get("virtual_path"),
@@ -521,7 +521,7 @@ impl MetadataStore {
 
         Ok(rows
             .into_iter()
-            .map(|r| FileMetadata {
+            .map(|r: sqlx::sqlite::SqliteRow| FileMetadata {
                 id: r.get("id"),
                 sha256_hash: r.get("sha256_hash"),
                 virtual_path: r.get("virtual_path"),
@@ -544,7 +544,7 @@ impl MetadataStore {
 
         Ok(rows
             .into_iter()
-            .map(|r| FileMetadata {
+            .map(|r: sqlx::sqlite::SqliteRow| FileMetadata {
                 id: r.get("id"),
                 sha256_hash: r.get("sha256_hash"),
                 virtual_path: r.get("virtual_path"),
@@ -630,7 +630,7 @@ impl MetadataStore {
 
         Ok(rows
             .into_iter()
-            .map(|r| FileMetadata {
+            .map(|r: sqlx::sqlite::SqliteRow| FileMetadata {
                 id: r.get("id"),
                 sha256_hash: r.get("sha256_hash"),
                 virtual_path: r.get("virtual_path"),
@@ -1059,7 +1059,7 @@ impl MetadataStore {
             .await
             .map_err(|e| AppError::database_error(format!("Failed to query archive: {}", e)))?;
 
-        Ok(row.map(|r| ArchiveMetadata {
+        Ok(row.map(|r: sqlx::sqlite::SqliteRow| ArchiveMetadata {
             id: r.get("id"),
             sha256_hash: r.get("sha256_hash"),
             virtual_path: r.get("virtual_path"),
@@ -1082,7 +1082,7 @@ impl MetadataStore {
 
         Ok(rows
             .into_iter()
-            .map(|r| ArchiveMetadata {
+            .map(|r: sqlx::sqlite::SqliteRow| ArchiveMetadata {
                 id: r.get("id"),
                 sha256_hash: r.get("sha256_hash"),
                 virtual_path: r.get("virtual_path"),
@@ -1154,7 +1154,7 @@ impl MetadataStore {
             .await
             .map_err(|e| AppError::database_error(format!("Failed to load index state: {}", e)))?;
 
-        Ok(row.map(|r| IndexState {
+        Ok(row.map(|r: sqlx::sqlite::SqliteRow| IndexState {
             workspace_id: r.get("workspace_id"),
             last_commit_time: r.get("last_commit_time"),
             index_version: r.get("index_version"),
@@ -1280,7 +1280,7 @@ impl MetadataStore {
 
         Ok(rows
             .into_iter()
-            .map(|r| IndexedFile {
+            .map(|r: sqlx::sqlite::SqliteRow| IndexedFile {
                 file_path: r.get("file_path"),
                 workspace_id: r.get("workspace_id"),
                 last_offset: {
@@ -1317,7 +1317,7 @@ impl MetadataStore {
         .await
         .map_err(|e| AppError::database_error(format!("Failed to load indexed file: {}", e)))?;
 
-        Ok(row.map(|r| IndexedFile {
+        Ok(row.map(|r: sqlx::sqlite::SqliteRow| IndexedFile {
             file_path: r.get("file_path"),
             workspace_id: r.get("workspace_id"),
             last_offset: {

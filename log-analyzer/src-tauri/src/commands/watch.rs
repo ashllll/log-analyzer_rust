@@ -279,8 +279,8 @@ pub async fn stop_watch(
 
     // 在锁外进行 join，避免死锁并确保线程资源回收
     if let Some(handle) = thread_handle {
-        if let Err(e) = handle.join() {
-            error!("Failed to join watcher thread: {:?}", e);
+        if let Err(_e) = handle.join() {
+            error!("Failed to join watcher thread");
         }
     }
 
