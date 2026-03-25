@@ -165,5 +165,5 @@ jobs:
     - name: Run integration tests
       run: |
         cd log-analyzer/src-tauri
-        # 运行所有集成测试
-        cargo test --test '*' --verbose -- --test-threads=2
+        # 运行所有集成测试（添加 --all-features 确保所有特性启用）
+        cargo test --all-features --test '*' --verbose -- --test-threads=2
