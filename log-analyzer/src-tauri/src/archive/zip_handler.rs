@@ -72,7 +72,12 @@ impl ArchiveHandler for ZipHandler {
                 }
                 // 安全检查：跳过 ZIP 内的符号链接，防止沙箱逃逸
                 // ZIP 格式支持符号链接条目，若解压到目标目录会创建指向任意路径的链接
-                if file.is_symlink() {
+                // 使用 unix_mode() 检查符号链接：S_IFLNK = 0o120000
+                let is_symlink = file
+                    .unix_mode()
+                    .map(|mode| mode & 0o170000 == 0o120000)
+                    .unwrap_or(false);
+                if is_symlink {
                     warn!(
                         name = %name,
                         "ZIP 条目为符号链接，跳过以防沙箱逃逸"

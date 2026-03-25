@@ -447,40 +447,67 @@ impl HighlightingEngine {
         result
     }
 
-    /// Extract relevant content around potential matches for large documents
+    /// 从大文档中提取与查询相关的片段内容
+    ///
+    /// 优化策略：
+    /// 1. 使用字节位置而非字符位置进行切片，避免 O(n) 的 chars() 遍历
+    /// 2. 限制搜索范围，避免在超大文档中全文扫描
+    /// 3. 优先在文档前部查找匹配，提高响应速度
     fn extract_relevant_content(&self, content: &str, query: &str, max_length: usize) -> String {
         let query_terms: Vec<&str> = query.split_whitespace().collect();
 
         if query_terms.is_empty() {
-            return content.chars().take(max_length).collect();
+            // 快速路径：直接字节切片，无需字符遍历
+            return self.truncate_by_bytes(content, max_length);
         }
 
-        // 遍历所有查询词，在字符空间找到最早出现位置
-        // 使用 char_indices() 正确处理 UTF-8 字符边界，避免字节切片 panic
-        let content_lower = content.to_lowercase();
-        let mut best_char_start: Option<usize> = None;
+        // 优化：限制搜索范围，避免在超大文档中全文扫描
+        // 优先搜索文档前 10KB 内容，如未找到则返回开头片段
+        const SEARCH_LIMIT_BYTES: usize = 10 * 1024; // 10KB 搜索限制
+        let search_window = &content[..content.len().min(SEARCH_LIMIT_BYTES)];
+        let content_lower = search_window.to_lowercase();
+
+        let mut best_byte_start: Option<usize> = None;
 
         for term in &query_terms {
             let term_lower = term.to_lowercase();
-            // char_indices() 返回字节偏移(byte_idx)，enumerate() 获取字符位置(char_pos)
-            // 字节偏移用于字符串切片，字符位置用于 skip() 和 context 计算
-            for (char_pos, (byte_idx, _)) in content_lower.char_indices().enumerate() {
-                if content_lower[byte_idx..].starts_with(&term_lower) {
-                    let start = char_pos.saturating_sub(self.config.context_size);
-                    best_char_start = Some(match best_char_start {
-                        None => start,
-                        Some(prev) => prev.min(start),
-                    });
-                    break; // 找到第一个匹配后继续下一个 term
-                }
+            // 使用 memchr 风格的快速查找（如果 term 较长）
+            if let Some(byte_pos) = content_lower.find(&term_lower) {
+                // 找到匹配，计算上下文起始位置（按字节）
+                // 估算 UTF-8 字符边界：平均每个字符 1-4 字节
+                let context_bytes = self.config.context_size * 4; // 保守估计
+                let start = byte_pos.saturating_sub(context_bytes);
+                best_byte_start = Some(match best_byte_start {
+                    None => start,
+                    Some(prev) => prev.min(start),
+                });
             }
         }
 
-        content
-            .chars()
-            .skip(best_char_start.unwrap_or(0))
-            .take(max_length)
-            .collect()
+        // 根据找到的位置提取内容
+        let start_byte = best_byte_start.unwrap_or(0);
+        let end_byte = (start_byte + max_length * 4).min(content.len()); // 保守估计 UTF-8
+
+        // 确保在有效的 UTF-8 边界处切片
+        let slice = &content[start_byte..end_byte];
+        self.truncate_by_bytes(slice, max_length)
+    }
+
+    /// 按字节截断字符串，确保 UTF-8 有效性
+    ///
+    /// 比 chars().take(n).collect() 快得多，特别是对大字符串
+    fn truncate_by_bytes(&self, s: &str, max_chars: usize) -> String {
+        // 快速路径：如果字符串很短，直接返回
+        if s.len() <= max_chars {
+            return s.to_string();
+        }
+
+        // 使用 char_indices 找到第 max_chars 个字符的字节位置
+        // 这比 .chars().take().collect() 更高效，因为避免了字符复制
+        match s.char_indices().nth(max_chars) {
+            Some((byte_idx, _)) => s[..byte_idx].to_string(),
+            None => s.to_string(), // 字符串字符数少于 max_chars
+        }
     }
 
     /// Update highlighting configuration

@@ -74,20 +74,59 @@ impl FilterEngine {
                 .insert(doc_id);
         }
 
-        // Update time range bitmaps (partition by hour)
-        // 解析时间戳字符串到 i64；失败时输出警告并使用 0（1970-01-01），不影响搜索但会使位图时间分区不准确
-        let timestamp_i64 = log_entry.timestamp.parse::<i64>().unwrap_or_else(|_| {
-            tracing::warn!(
-                timestamp = %log_entry.timestamp,
-                file = %log_entry.file,
-                "时间戳解析失败（位图时间分区），使用默认值 0；时间范围过滤可能不准确"
-            );
-            0
-        });
-        let hour_timestamp = (timestamp_i64 / 3600) * 3600;
-        let time_range = TimeRange {
-            start: hour_timestamp,
-            end: hour_timestamp + 3600,
+        // 更新时间范围位图（按小时分区）
+        // 改进的时间戳处理策略：
+        // 1. 有效时间戳：正常分区
+        // 2. 无效/零时间戳：放入特殊 "unknown" 分区，避免污染有效时间线
+        const UNKNOWN_TIME_KEY: i64 = i64::MIN; // 使用 i64::MIN 作为未知时间标记
+
+        let timestamp_result = log_entry.timestamp.parse::<i64>();
+        let hour_timestamp = match timestamp_result {
+            Ok(ts) if ts > 0 => (ts / 3600) * 3600, // 有效正时间戳
+            Ok(0) => {
+                // 时间戳为 0（可能是纪元时间），视为无效
+                tracing::debug!(
+                    timestamp = %log_entry.timestamp,
+                    file = %log_entry.file,
+                    doc_id = doc_id,
+                    "时间戳为0（纪元时间），归入未知时间分区"
+                );
+                UNKNOWN_TIME_KEY
+            }
+            Ok(negative_ts) => {
+                // 负时间戳（早于1970年），虽有效但可能是数据问题
+                tracing::warn!(
+                    timestamp = %log_entry.timestamp,
+                    file = %log_entry.file,
+                    doc_id = doc_id,
+                    "检测到负时间戳（早于1970-01-01），归入未知时间分区"
+                );
+                UNKNOWN_TIME_KEY
+            }
+            Err(e) => {
+                // 解析失败
+                tracing::warn!(
+                    timestamp = %log_entry.timestamp,
+                    file = %log_entry.file,
+                    doc_id = doc_id,
+                    error = %e,
+                    "时间戳解析失败，归入未知时间分区；该文档将无法通过时间范围过滤"
+                );
+                UNKNOWN_TIME_KEY
+            }
+        };
+
+        // 构建时间范围：有效时间戳使用实际范围，无效时间戳使用特殊标记
+        let time_range = if hour_timestamp == UNKNOWN_TIME_KEY {
+            TimeRange {
+                start: UNKNOWN_TIME_KEY,
+                end: UNKNOWN_TIME_KEY + 1,
+            }
+        } else {
+            TimeRange {
+                start: hour_timestamp,
+                end: hour_timestamp + 3600,
+            }
         };
 
         {

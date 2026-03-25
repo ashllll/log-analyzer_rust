@@ -1151,16 +1151,37 @@ impl MetadataStore {
     /// Returns error if database operation fails
     pub async fn save_indexed_file(&self, file: &IndexedFile) -> Result<()> {
         // Ensure workspace exists in index_state before inserting indexed file
-        // This prevents FOREIGN KEY constraint failures
-        sqlx::query(
+        // This prevents FOREIGN KEY constraint failures (ERR-002 fix: improved error handling)
+        let workspace_result = sqlx::query(
             "INSERT OR IGNORE INTO index_state (workspace_id, last_commit_time, index_version) VALUES (?, 0, 1)"
         )
         .bind(&file.workspace_id)
         .execute(&self.pool)
-        .await
-        .map_err(|e| AppError::database_error(format!("Failed to ensure workspace exists: {}", e)))?;
+        .await;
 
-        sqlx::query(
+        match workspace_result {
+            Ok(result) => {
+                if result.rows_affected() > 0 {
+                    debug!(workspace_id = %file.workspace_id, "Created new workspace entry in index_state");
+                }
+            }
+            Err(e) => {
+                // Check if it's a constraint violation or other serious error
+                let error_msg = e.to_string();
+                if error_msg.contains("constraint") || error_msg.contains("FOREIGN KEY") {
+                    return Err(AppError::database_error(format!(
+                        "Foreign key constraint failed when ensuring workspace exists: {}. This may indicate database corruption.",
+                        e
+                    )));
+                }
+                return Err(AppError::database_error(format!(
+                    "Failed to ensure workspace exists: {}", e
+                )));
+            }
+        }
+
+        // Insert or update the indexed file record with detailed error handling
+        let insert_result = sqlx::query(
             r#"
             INSERT INTO indexed_files (file_path, workspace_id, last_offset, file_size, modified_time, hash)
             VALUES (?, ?, ?, ?, ?, ?)
@@ -1178,17 +1199,38 @@ impl MetadataStore {
         .bind(file.modified_time)
         .bind(&file.hash)
         .execute(&self.pool)
-        .await
-        .map_err(|e| AppError::database_error(format!("Failed to save indexed file: {}", e)))?;
+        .await;
 
-        debug!(
-            file_path = %file.file_path,
-            workspace_id = %file.workspace_id,
-            last_offset = file.last_offset,
-            "Saved indexed file record"
-        );
-
-        Ok(())
+        match insert_result {
+            Ok(result) => {
+                debug!(
+                    file_path = %file.file_path,
+                    workspace_id = %file.workspace_id,
+                    last_offset = file.last_offset,
+                    rows_affected = result.rows_affected(),
+                    "Saved indexed file record"
+                );
+                Ok(())
+            }
+            Err(e) => {
+                let error_msg = e.to_string();
+                if error_msg.contains("FOREIGN KEY") {
+                    Err(AppError::database_error(format!(
+                        "Foreign key constraint failed when saving indexed file. File: {}, Workspace: {}. Error: {}. This may indicate the workspace was deleted.",
+                        file.file_path, file.workspace_id, e
+                    )))
+                } else if error_msg.contains("UNIQUE") {
+                    Err(AppError::database_error(format!(
+                        "Unique constraint violation when saving indexed file. File: {}. Error: {}",
+                        file.file_path, e
+                    )))
+                } else {
+                    Err(AppError::database_error(format!(
+                        "Failed to save indexed file: {}", e
+                    )))
+                }
+            }
+        }
     }
 
     /// Load all indexed files for a workspace

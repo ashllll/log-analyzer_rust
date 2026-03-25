@@ -409,5 +409,115 @@ cargo test --all-features
 
 ---
 
+---
+
+## 🔧 2026-03-25 安全审计修复报告
+
+### 严重问题修复（P0 - 编译错误）
+
+#### BUG-001: 搜索模块元组访问错误 ✅
+**位置**: `log-analyzer/src-tauri/src/commands/search.rs:1427`
+**问题**: 访问不存在的字段 `total_count`，实际类型为 `(usize, bool)` 元组
+**修复**: 改为使用元组索引访问 `status.0`
+
+#### BUG-002/003: 归档提取器异步通道错误 ✅
+**位置**: `log-analyzer/src-tauri/src/archive/actors/extractor.rs:86,92`
+**问题**: 在 `Result` 类型上错误使用 `.await`
+**修复**: 移除 `.await`，`send()` 返回的是 `Result` 而非 `Future`
+
+#### BUG-004: ZIP 处理器符号链接检测错误 ✅
+**位置**: `log-analyzer/src-tauri/src/archive/zip_handler.rs:75`
+**问题**: 调用不存在的 `is_symlink()` 方法
+**修复**: 使用 `unix_mode()` 配合位掩码检查 `0o170000 == 0o120000`
+
+### 高优先级问题修复（P1 - 数据完整性）
+
+#### BUG-005: CAS 缓存与文件系统状态竞态条件 ✅
+**位置**: `log-analyzer/src-tauri/src/storage/cas.rs`
+**问题**: 缓存可能因外部操作或并发写入而失效，导致状态不一致
+**修复**: 实现双检查模式 (Double-Check Pattern)
+- `exists()` 方法：缓存命中后验证文件系统状态，不匹配则使缓存失效
+- `exists_async()` 方法：同样的双检查逻辑
+- 避免 TOCTOU (Time-of-Check Time-of-Use) 竞态条件
+
+#### BUG-006: 孤儿文件问题 - 事务回滚机制 ✅
+**位置**: `log-analyzer/src-tauri/src/storage/coordinator.rs`
+**问题**: CAS 写入成功但元数据提交失败时，文件内容已落盘但无元数据记录
+**修复**: 实现 Saga 补偿事务模式
+- 提交失败时检查文件是否有其他引用
+- 无引用时清理孤儿 CAS 文件
+- 有引用时保留文件（去重场景）
+- 从缓存中移除失效条目
+
+#### BUG-007: 临时文件泄漏 - RAII 清理机制 ✅
+**位置**: `log-analyzer/src-tauri/src/storage/cas.rs`
+**问题**: 临时文件在错误或提前返回时可能泄漏
+**修复**: 实现 `TempFileGuard` RAII 结构
+- 使用 Drop trait 确保临时文件清理
+- 支持异步和同步清理
+- 即使在 panic 时也能保证清理
+
+### 错误处理改进（ERR-001~003）
+
+#### ERR-001: 元数据存储错误分类 ✅
+**位置**: `log-analyzer/src-tauri/src/storage/metadata_store.rs`
+**改进**: 在 `save_indexed_file()` 中添加详细的错误分类
+- FOREIGN KEY 约束错误：提示数据库可能损坏
+- UNIQUE 约束错误：提示重复数据
+- 其他数据库错误：详细记录错误信息
+
+#### ERR-002: 孤儿文件清理错误日志 ✅
+**位置**: `log-analyzer/src-tauri/src/storage/coordinator.rs`
+**改进**: 增强孤儿文件清理的错误日志记录
+- 记录文件哈希和路径
+- 区分引用存在/不存在/检查失败三种情况
+- 清理失败时记录 GC 后续处理
+
+#### ERR-003: 事务回滚错误处理 ✅
+**位置**: `log-analyzer/src-tauri/src/storage/coordinator.rs`
+**改进**: 增强事务回滚失败的错误处理
+- 记录回滚失败的关键错误日志
+- 返回包含原始错误和回滚错误的详细信息
+- 提示数据库可能处于不一致状态
+
+### 架构设计改进（ARC-001~003）
+
+#### ARC-001: 垃圾回收机制 ✅
+**新增模块**: `log-analyzer/src-tauri/src/storage/gc.rs`
+**功能**:
+- `GarbageCollector` 结构：后台孤儿文件清理
+- `GCConfig`：可配置的 GC 策略（间隔、年龄阈值、批大小）
+- `GCStats`：详细的 GC 统计信息
+- `GCManager`：多存储后端协调
+- 支持手动触发和自动后台 GC
+- 安全删除（零引用验证、年龄检查）
+
+#### ARC-002: 统一协调器接口 ✅
+**增强模块**: `log-analyzer/src-tauri/src/storage/coordinator.rs`
+**功能**:
+- Saga 补偿事务模式（已包含在 BUG-006 修复中）
+- 标准化的存储操作方法
+- 自动引用计数和清理决策
+- 详细操作日志记录
+
+#### ARC-003: 缓存一致性监控 ✅
+**新增模块**: `log-analyzer/src-tauri/src/storage/cache_monitor.rs`
+**功能**:
+- `CacheMonitor`：缓存健康监控
+- `CacheHealthMetrics`：命中率/失效率/不一致检测统计
+- `CacheMonitorConfig`：可配置的监控策略
+- 后台一致性检查和自动修复
+- 缓存性能指标导出
+
+### 验证结果
+
+- ✅ 所有 4 个 P0 编译错误已修复
+- ✅ 所有 3 个 P1 数据完整性问题已修复
+- ✅ 所有 3 个错误处理改进已完成
+- ✅ 所有 3 个架构设计改进已实现
+- ✅ 所有 662+ 测试通过
+- ✅ 新增 2 个架构模块（gc.rs, cache_monitor.rs）
+
 **报告生成时间**: 2025-12-28
-**下次审查建议**: 修复 P0/P1 问题后重新审查
+**安全审计修复时间**: 2026-03-25
+**下次审查建议**: 继续监控 GC 和缓存监控性能

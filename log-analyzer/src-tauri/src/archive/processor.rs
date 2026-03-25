@@ -321,9 +321,17 @@ async fn process_path_recursive_inner(
         let mut stats = DirectoryProcessingStats::default();
         let follow_symlinks = should_follow_symlinks();
 
+        // 使用可配置的最大遍历深度，默认无限制（遍历所有子目录）
+        // 通过环境变量 PROCESSOR_MAX_DEPTH 可设置深度限制
+        const DEFAULT_MAX_DEPTH: usize = usize::MAX;
+        let max_depth = std::env::var("PROCESSOR_MAX_DEPTH")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(DEFAULT_MAX_DEPTH);
+
         let walkdir_iter = WalkDir::new(path)
             .min_depth(1)
-            .max_depth(1)
+            .max_depth(max_depth)
             .follow_links(follow_symlinks)
             .into_iter();
 
@@ -518,9 +526,17 @@ async fn process_path_recursive_inner_with_metadata(
         let mut stats = DirectoryProcessingStats::default();
         let follow_symlinks = should_follow_symlinks();
 
+        // 使用可配置的最大遍历深度，默认无限制（遍历所有子目录）
+        // 通过环境变量 PROCESSOR_MAX_DEPTH 可设置深度限制
+        const DEFAULT_MAX_DEPTH: usize = usize::MAX;
+        let max_depth = std::env::var("PROCESSOR_MAX_DEPTH")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(DEFAULT_MAX_DEPTH);
+
         let walkdir_iter = WalkDir::new(path)
             .min_depth(1)
-            .max_depth(1)
+            .max_depth(max_depth)
             .follow_links(follow_symlinks)
             .into_iter();
 
@@ -810,9 +826,17 @@ pub async fn process_path_with_cas_and_checkpoints(
         let mut stats = DirectoryProcessingStats::default();
         let follow_symlinks = should_follow_symlinks();
 
+        // 使用可配置的最大遍历深度，默认无限制（遍历所有子目录）
+        // 通过环境变量 PROCESSOR_MAX_DEPTH 可设置深度限制
+        const DEFAULT_MAX_DEPTH: usize = usize::MAX;
+        let max_depth = std::env::var("PROCESSOR_MAX_DEPTH")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(DEFAULT_MAX_DEPTH);
+
         let walkdir_iter = WalkDir::new(path)
             .min_depth(1)
-            .max_depth(1)
+            .max_depth(max_depth)
             .follow_links(follow_symlinks)
             .into_iter();
 

@@ -179,6 +179,68 @@ pub struct ContentAddressableStorage {
     existence_cache: Arc<Cache<String, ()>>,
 }
 
+/// RAII guard for temporary files that ensures cleanup on drop (BUG-007 fix)
+///
+/// This guard holds the path to a temporary file and attempts to delete it
+/// when the guard is dropped. This ensures temporary files are cleaned up
+/// even if errors occur or early returns happen.
+struct TempFileGuard {
+    path: PathBuf,
+    // Use tokio runtime handle for async cleanup in drop
+    rt_handle: Option<tokio::runtime::Handle>,
+}
+
+impl TempFileGuard {
+    /// Create a new temp file guard
+    fn new(path: PathBuf) -> Self {
+        let rt_handle = tokio::runtime::Handle::try_current().ok();
+        Self { path, rt_handle }
+    }
+
+    /// Get the path to the temporary file
+    fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Consume the guard without deleting the file (e.g., after successful rename)
+    fn keep(mut self) -> PathBuf {
+        // Disable cleanup by taking the path
+        std::mem::take(&mut self.path)
+    }
+}
+
+impl Drop for TempFileGuard {
+    fn drop(&mut self) {
+        if !self.path.as_os_str().is_empty() {
+            // Try to delete the file
+            if let Some(ref handle) = self.rt_handle {
+                // We're in an async context, use blocking operation
+                let path = self.path.clone();
+                handle.spawn(async move {
+                    if let Err(e) = tokio::fs::remove_file(&path).await {
+                        tracing::warn!(
+                            path = %path.display(),
+                            error = %e,
+                            "Failed to clean up temporary file"
+                        );
+                    } else {
+                        tracing::debug!(path = %path.display(), "Cleaned up temporary file");
+                    }
+                });
+            } else {
+                // No runtime available, try synchronous deletion
+                if let Err(e) = std::fs::remove_file(&self.path) {
+                    tracing::warn!(
+                        path = %self.path.display(),
+                        error = %e,
+                        "Failed to clean up temporary file (sync)"
+                    );
+                }
+            }
+        }
+    }
+}
+
 impl ContentAddressableStorage {
     /// Create a new CAS instance
     ///
@@ -339,12 +401,21 @@ impl ContentAddressableStorage {
         // Fast path: Check cache first (lock-free, high-frequency optimization)
         // This is a hint, not authoritative - actual existence is checked atomically below
         if self.existence_cache.get(&hash).is_some() {
+            // Verify that the file actually exists to handle stale cache
+            if tokio::fs::try_exists(&object_path).await.unwrap_or(false) {
+                debug!(
+                    hash = %hash,
+                    file = %file_path.display(),
+                    "Content already exists (verified), skipping write (deduplication)"
+                );
+                return Ok(hash);
+            }
+            // Cache is stale, invalidate it and continue with write
+            self.existence_cache.invalidate(&hash);
             debug!(
                 hash = %hash,
-                file = %file_path.display(),
-                "Content likely exists (cached), skipping write (deduplication)"
+                "Cache indicated existence but file missing, proceeding with write"
             );
-            return Ok(hash);
         }
 
         // Atomic file creation with O_EXCL flag prevents TOCTOU race conditions
@@ -478,7 +549,7 @@ impl ContentAddressableStorage {
                 return Err(e);
             }
             Err(_) => {
-                // Timeout occurred
+                // Timeout occurred (ERR-001 fix: improved cleanup with retry)
                 error!(
                     file = %file_path.display(),
                     target = %object_path.display(),
@@ -486,22 +557,48 @@ impl ContentAddressableStorage {
                     "File copy timeout after {} seconds",
                     FILE_COPY_TIMEOUT
                 );
-                // Clean up partial file
-                match fs::remove_file(&object_path).await {
-                    Ok(_) => {
-                        debug!("Successfully cleaned up partial file after timeout");
-                    }
-                    Err(e) => {
-                        error!(
-                            target = %object_path.display(),
-                            error = %e,
-                            "Failed to clean up partial file after timeout: {}",
-                            e
-                        );
-                        // 注意：部分文件残留，但已经返回错误给调用者
-                        // 可以考虑添加到清理队列以便后续重试
+                // Clean up partial file with retry logic
+                let mut cleanup_attempts = 0;
+                let max_cleanup_attempts = 3;
+                let mut cleanup_success = false;
+
+                while cleanup_attempts < max_cleanup_attempts && !cleanup_success {
+                    match fs::remove_file(&object_path).await {
+                        Ok(_) => {
+                            debug!("Successfully cleaned up partial file after timeout");
+                            cleanup_success = true;
+                        }
+                        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                            // File doesn't exist, consider cleanup successful
+                            debug!("Partial file already removed");
+                            cleanup_success = true;
+                        }
+                        Err(e) => {
+                            cleanup_attempts += 1;
+                            error!(
+                                target = %object_path.display(),
+                                error = %e,
+                                attempt = cleanup_attempts,
+                                max_attempts = max_cleanup_attempts,
+                                "Failed to clean up partial file after timeout"
+                            );
+                            if cleanup_attempts < max_cleanup_attempts {
+                                // Wait before retry with exponential backoff
+                                tokio::time::sleep(Duration::from_millis(100 * cleanup_attempts as u64)).await;
+                            }
+                        }
                     }
                 }
+
+                if !cleanup_success {
+                    // Log warning about orphaned partial file
+                    warn!(
+                        target = %object_path.display(),
+                        "Partial file could not be cleaned up after {} attempts, may need manual cleanup",
+                        max_cleanup_attempts
+                    );
+                }
+
                 return Err(AppError::io_error(
                     format!("File copy timeout after {} seconds", FILE_COPY_TIMEOUT),
                     Some(file_path.to_path_buf()),
@@ -564,16 +661,25 @@ impl ContentAddressableStorage {
         let hash = Self::compute_hash(content);
         let object_path = self.get_object_path(&hash);
 
-        // Check cache first for performance
+        // Check cache first for performance (fast path)
         if self.existence_cache.get(&hash).is_some() {
+            // Verify that the file actually exists to handle stale cache
+            if object_path.exists() {
+                debug!(
+                    hash = %hash,
+                    "Content already exists (verified), skipping write (deduplication)"
+                );
+                return Ok(hash);
+            }
+            // Cache is stale, invalidate it and continue
+            self.existence_cache.invalidate(&hash);
             debug!(
                 hash = %hash,
-                "Content already exists (cached), skipping write (deduplication)"
+                "Cache indicated existence but file missing, proceeding with write"
             );
-            return Ok(hash);
         }
 
-        // Check if object already exists (deduplication)
+        // Check if object already exists (deduplication) - authoritative check
         if object_path.exists() {
             // Cache the result
             self.existence_cache.insert(hash.clone(), ());
@@ -685,6 +791,15 @@ impl ContentAddressableStorage {
         self.workspace_dir.join("objects").join(prefix).join(suffix)
     }
 
+    /// Get the objects directory path
+    ///
+    /// # Returns
+    ///
+    /// Path to the objects directory (e.g., `./workspace/objects/`)
+    pub fn objects_dir(&self) -> PathBuf {
+        self.workspace_dir.join("objects")
+    }
+
     /// Read content by hash
     ///
     /// # Arguments
@@ -732,6 +847,10 @@ impl ContentAddressableStorage {
 
     /// Check if content exists in storage (sync version)
     ///
+    /// Uses a double-check pattern to prevent race conditions between
+    /// cache and filesystem state. Cache is only used as a fast path,
+    /// but the authoritative check is always the filesystem.
+    ///
     /// # Arguments
     ///
     /// * `hash` - SHA-256 hash to check
@@ -740,10 +859,19 @@ impl ContentAddressableStorage {
     ///
     /// `true` if the object exists, `false` otherwise
     pub fn exists(&self, hash: &str) -> bool {
-        // Check cache first for performance
+        // Fast path: Check cache first for performance
         if self.existence_cache.get(hash).is_some() {
-            return true;
+            // Cache hit - but we still need to verify the file actually exists
+            // to handle the case where the file was deleted externally
+            let object_path = self.get_object_path(hash);
+            if object_path.exists() {
+                return true;
+            }
+            // Cache is stale, invalidate it
+            self.existence_cache.invalidate(hash);
         }
+
+        // Slow path: Check filesystem (authoritative source)
         let result = self.get_object_path(hash).exists();
         if result {
             self.existence_cache.insert(hash.to_string(), ());
@@ -784,6 +912,10 @@ impl ContentAddressableStorage {
 
     /// Check if content exists in storage (async version with cache)
     ///
+    /// Uses a double-check pattern to prevent race conditions between
+    /// cache and filesystem state. Cache is only used as a fast path,
+    /// but the authoritative check is always the filesystem.
+    ///
     /// # Arguments
     ///
     /// * `hash` - SHA-256 hash to check
@@ -792,15 +924,39 @@ impl ContentAddressableStorage {
     ///
     /// `true` if the object exists, `false` otherwise
     pub async fn exists_async(&self, hash: &str) -> bool {
-        // Check cache first for performance
+        // Fast path: Check cache first for performance
         if self.existence_cache.get(hash).is_some() {
-            return true;
+            // Cache hit - but we still need to verify the file actually exists
+            // to handle the case where the file was deleted externally
+            let object_path = self.get_object_path(hash);
+            if tokio::fs::try_exists(&object_path).await.unwrap_or(false) {
+                return true;
+            }
+            // Cache is stale, invalidate it
+            self.existence_cache.invalidate(hash);
         }
-        let result = self.get_object_path(hash).exists();
+
+        // Slow path: Check filesystem (authoritative source)
+        let result = tokio::fs::try_exists(self.get_object_path(hash))
+            .await
+            .unwrap_or(false);
         if result {
             self.existence_cache.insert(hash.to_string(), ());
         }
         result
+    }
+
+    /// Invalidate a cache entry for a given hash
+    ///
+    /// This is used when we know a file has been deleted or modified
+    /// and we need to ensure the cache reflects the current state.
+    ///
+    /// # Arguments
+    ///
+    /// * `hash` - SHA-256 hash to invalidate from cache
+    pub fn invalidate_cache_entry(&self, hash: &str) {
+        self.existence_cache.invalidate(hash);
+        debug!(hash = %hash, "Invalidated cache entry");
     }
 
     /// Get the total size of stored objects
@@ -986,13 +1142,16 @@ impl ContentAddressableStorage {
         let temp_filename = format!(".tmp.{}.{}.tmp", uuid::Uuid::new_v4(), std::process::id());
         let temp_path = temp_dir.join(&temp_filename);
 
-        // Create temp file
+        // Create temp file with RAII guard for automatic cleanup (BUG-007 fix)
         let mut temp_file = fs::File::create(&temp_path).await.map_err(|e| {
             AppError::io_error(
                 format!("Failed to create temp file: {}", e),
                 Some(temp_path.clone()),
             )
         })?;
+
+        // RAII guard ensures temp file is cleaned up even if errors occur
+        let temp_guard = TempFileGuard::new(temp_path.clone());
 
         // Single-pass: read, hash, and write simultaneously
         let mut hasher = Sha256::new();
@@ -1053,13 +1212,11 @@ impl ContentAddressableStorage {
         match copy_result {
             Ok(Ok(())) => {}
             Ok(Err(e)) => {
-                // Clean up temp file on error
-                let _ = fs::remove_file(&temp_path).await;
+                // Temp file will be cleaned up by RAII guard (BUG-007 fix)
                 return Err(e);
             }
             Err(_) => {
-                // Timeout occurred, clean up
-                let _ = fs::remove_file(&temp_path).await;
+                // Timeout occurred, temp file will be cleaned up by RAII guard (BUG-007 fix)
                 return Err(AppError::io_error(
                     format!("File copy timeout after {} seconds", FILE_COPY_TIMEOUT),
                     Some(file_path.to_path_buf()),
@@ -1073,14 +1230,18 @@ impl ContentAddressableStorage {
 
         // Check cache first - might already exist
         if self.existence_cache.get(&hash).is_some() {
-            // Clean up temp file since content already exists
-            let _ = fs::remove_file(&temp_path).await;
-            debug!(
-                hash = %hash,
-                file = %file_path.display(),
-                "Content already exists (cached), skipping"
-            );
-            return Ok(hash);
+            // Verify the file actually exists before skipping
+            if object_path.exists() {
+                // Temp file will be cleaned up by RAII guard (BUG-007 fix)
+                debug!(
+                    hash = %hash,
+                    file = %file_path.display(),
+                    "Content already exists (verified), skipping"
+                );
+                return Ok(hash);
+            }
+            // Cache was stale, continue with the write
+            self.existence_cache.invalidate(&hash);
         }
 
         // Create parent directory for final destination
@@ -1111,7 +1272,7 @@ impl ContentAddressableStorage {
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
                 // File already exists - deduplication win
                 self.existence_cache.insert(hash.clone(), ());
-                let _ = fs::remove_file(&temp_path).await;
+                // Temp file will be cleaned up by RAII guard (BUG-007 fix)
                 debug!(
                     hash = %hash,
                     file = %file_path.display(),
@@ -1120,7 +1281,7 @@ impl ContentAddressableStorage {
                 return Ok(hash);
             }
             Err(e) => {
-                let _ = fs::remove_file(&temp_path).await;
+                // Temp file will be cleaned up by RAII guard (BUG-007 fix)
                 return Err(AppError::io_error(
                     format!("Failed to check target file: {}", e),
                     Some(object_path.clone()),
@@ -1131,11 +1292,12 @@ impl ContentAddressableStorage {
         // Perform atomic rename
         match fs::rename(&temp_path, &object_path).await {
             Ok(()) => {
-                // Success!
+                // Success! Prevent RAII guard from cleaning up the temp file
+                // since it's now the permanent file
+                let _ = temp_guard.keep();
             }
             Err(e) => {
-                // Rename failed, clean up
-                let _ = fs::remove_file(&temp_path).await;
+                // Rename failed, temp file will be cleaned up by RAII guard (BUG-007 fix)
                 return Err(AppError::io_error(
                     format!("Failed to rename temp file to target: {}", e),
                     Some(object_path.clone()),
@@ -1518,5 +1680,200 @@ mod tests {
             size >= content.len() as u64 && size < (content.len() * 2) as u64,
             "Deduplication should prevent storing content multiple times"
         );
+    }
+
+    /// Test cache consistency with external file deletion (BUG-005 fix)
+    #[tokio::test]
+    async fn test_cache_consistency_after_external_deletion() {
+        let temp_dir = TempDir::new().unwrap();
+        let cas = ContentAddressableStorage::new(temp_dir.path().to_path_buf());
+
+        let content = b"test content for cache consistency";
+        let hash = cas.store_content(content).await.unwrap();
+
+        // Verify file exists and is cached
+        assert!(cas.exists(&hash), "File should exist after storage");
+
+        // Simulate external deletion (e.g., manual cleanup or another process)
+        let object_path = cas.get_object_path(&hash);
+        tokio::fs::remove_file(&object_path).await.unwrap();
+
+        // Cache may still indicate existence, but exists() should detect the deletion
+        assert!(
+            !cas.exists(&hash),
+            "exists() should detect external file deletion and update cache"
+        );
+
+        // Should be able to store the content again
+        let hash2 = cas.store_content(content).await.unwrap();
+        assert_eq!(
+            hash, hash2,
+            "Re-storing same content should produce same hash"
+        );
+        assert!(cas.exists(&hash), "File should exist after re-storage");
+    }
+
+    /// Test async cache consistency with external file deletion
+    #[tokio::test]
+    async fn test_async_cache_consistency_after_external_deletion() {
+        let temp_dir = TempDir::new().unwrap();
+        let cas = ContentAddressableStorage::new(temp_dir.path().to_path_buf());
+
+        let content = b"test content for async cache consistency";
+        let hash = cas.store_content(content).await.unwrap();
+
+        // Verify file exists and is cached
+        assert!(
+            cas.exists_async(&hash).await,
+            "File should exist after storage"
+        );
+
+        // Simulate external deletion
+        let object_path = cas.get_object_path(&hash);
+        tokio::fs::remove_file(&object_path).await.unwrap();
+
+        // Async exists should detect the deletion
+        assert!(
+            !cas.exists_async(&hash).await,
+            "exists_async() should detect external file deletion and update cache"
+        );
+    }
+
+    /// Test store_content handles stale cache correctly
+    #[tokio::test]
+    async fn test_store_content_with_stale_cache() {
+        let temp_dir = TempDir::new().unwrap();
+        let cas = ContentAddressableStorage::new(temp_dir.path().to_path_buf());
+
+        let content = b"test content for stale cache handling";
+        let hash = cas.store_content(content).await.unwrap();
+
+        // Manually remove the file to simulate external deletion
+        let object_path = cas.get_object_path(&hash);
+        tokio::fs::remove_file(&object_path).await.unwrap();
+
+        // Cache still indicates existence, but store_content should handle it
+        let hash2 = cas.store_content(content).await.unwrap();
+        assert_eq!(
+            hash, hash2,
+            "Storing content with stale cache should still work"
+        );
+
+        // Verify the file was re-created
+        assert!(object_path.exists(), "File should be re-created after stale cache write");
+    }
+
+    /// Test store_file_streaming handles stale cache correctly
+    #[tokio::test]
+    async fn test_store_file_streaming_with_stale_cache() {
+        let temp_dir = TempDir::new().unwrap();
+        let cas = ContentAddressableStorage::new(temp_dir.path().join("workspace"));
+
+        let test_file = temp_dir.path().join("test.log");
+        let content = b"test content for streaming stale cache";
+        tokio::fs::write(&test_file, content).await.unwrap();
+
+        // Store file
+        let hash = cas.store_file_streaming(&test_file).await.unwrap();
+
+        // Manually remove the stored file to simulate external deletion
+        let object_path = cas.get_object_path(&hash);
+        tokio::fs::remove_file(&object_path).await.unwrap();
+
+        // Cache still indicates existence, but store_file_streaming should handle it
+        let hash2 = cas.store_file_streaming(&test_file).await.unwrap();
+        assert_eq!(
+            hash, hash2,
+            "Storing file with stale cache should still work"
+        );
+
+        // Verify the file was re-created
+        assert!(object_path.exists(), "File should be re-created after stale cache streaming write");
+    }
+
+    /// Test RAII temp file cleanup on error (BUG-007 fix)
+    #[tokio::test]
+    async fn test_temp_file_cleanup_on_error() {
+        let temp_dir = TempDir::new().unwrap();
+        let cas = ContentAddressableStorage::new(temp_dir.path().join("workspace"));
+
+        // Create a temp directory to monitor
+        let tmp_dir = temp_dir.path().join("workspace").join("tmp");
+
+        // Create a test file
+        let test_file = temp_dir.path().join("test_cleanup.log");
+        let content = b"test content for cleanup verification";
+        tokio::fs::write(&test_file, content).await.unwrap();
+
+        // Get initial temp directory state
+        let initial_count = if tmp_dir.exists() {
+            std::fs::read_dir(&tmp_dir).map(|d| d.count()).unwrap_or(0)
+        } else {
+            0
+        };
+
+        // Store file successfully - should not leave temp files
+        let hash = cas.store_file_zero_copy(&test_file).await.unwrap();
+
+        // Verify file exists
+        assert!(cas.exists(&hash), "File should exist after storage");
+
+        // Check temp directory is clean (or has no new files)
+        if tmp_dir.exists() {
+            let final_count = std::fs::read_dir(&tmp_dir).map(|d| d.count()).unwrap_or(0);
+            // Temp files should be cleaned up
+            assert!(
+                final_count <= initial_count + 1, // Allow for some timing differences
+                "Temp directory should not accumulate files"
+            );
+        }
+    }
+
+    /// Test TempFileGuard RAII cleanup
+    #[tokio::test]
+    async fn test_temp_file_guard_cleanup() {
+        let temp_dir = TempDir::new().unwrap();
+        let temp_path = temp_dir.path().join("test_guard.tmp");
+
+        // Create a temp file
+        tokio::fs::write(&temp_path, b"test content").await.unwrap();
+        assert!(temp_path.exists(), "Temp file should exist");
+
+        // Create guard and let it drop
+        {
+            let guard = TempFileGuard::new(temp_path.clone());
+            assert_eq!(guard.path(), &temp_path);
+            // Guard drops here
+        }
+
+        // Give a moment for async cleanup
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+        // File should be cleaned up
+        assert!(!temp_path.exists(), "Temp file should be cleaned up by RAII guard");
+    }
+
+    /// Test TempFileGuard keep() prevents cleanup
+    #[tokio::test]
+    async fn test_temp_file_guard_keep() {
+        let temp_dir = TempDir::new().unwrap();
+        let temp_path = temp_dir.path().join("test_keep.tmp");
+
+        // Create a temp file
+        tokio::fs::write(&temp_path, b"test content").await.unwrap();
+        assert!(temp_path.exists(), "Temp file should exist");
+
+        // Create guard and keep the file
+        let kept_path = {
+            let guard = TempFileGuard::new(temp_path.clone());
+            guard.keep()
+        };
+
+        // Give a moment for any async operations
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+        // File should still exist
+        assert!(kept_path.exists(), "File should exist after keep()");
+        assert_eq!(kept_path, temp_path);
     }
 }

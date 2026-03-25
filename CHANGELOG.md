@@ -265,6 +265,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 垃圾回收：后台运行，对正常操作无性能影响
 - 缓存监控：低开销后台任务，可配置关闭
 
+### 🔍 Search Engine Optimizations
+
+#### Bug Fixes
+
+- **WalkDir 目录遍历深度限制** (processor.rs)
+  - 修复 `max_depth(1)` 只遍历一层目录的问题
+  - 默认改为无限制遍历（`usize::MAX`），可通过 `PROCESSOR_MAX_DEPTH` 环境变量配置
+  - 确保深层嵌套目录中的日志文件能被正确处理
+
+- **时间戳验证改进** (advanced_features.rs: ADV-H1)
+  - 改进无效时间戳处理策略：使用特殊标记 `i64::MIN` 而非默认值 0
+  - 区分处理：解析失败、零值、负时间戳分别进入 "unknown" 分区
+  - 避免无效时间戳污染正常时间线，提升时间范围过滤准确性
+
+- **递归改迭代实现** (advanced_features.rs: ADV-M3)
+  - `collect_suggestions()` 已改为 BFS 迭代实现，避免深层 Trie 递归栈溢出
+  - `count_nodes()` 已改为 BFS 迭代实现，防止栈溢出风险
+
+#### ♻️ Refactor
+
+- **取消机制改进** (boolean_query_processor.rs: BQP-H3)
+  - 细粒度取消检查：从每 1024 个文档改为每 256 个文档检查一次
+  - 新增高分文档（score > 0.9）立即检查策略，确保快速响应取消请求
+  - 添加详细的注释说明取消策略和优化原理
+
+- **成本估计算法优化** (boolean_query_processor.rs: BQP-H5)
+  - 重新设计成本模型：考虑布尔操作符类型、选择性、项数量、交集/并集复杂度
+  - 使用反比关系计算扫描成本（选择性越低，成本越高）
+  - 添加布尔复杂度因子：Must 项越多，交集成本呈次线性增长（+30%/项）
+  - 添加 Should 项惩罚：超过 5 个后每个额外增加 10% 成本
+  - 详细的调试日志输出，便于性能调优分析
+
+- **字符计数缓存优化** (highlighting_engine.rs: HLE-H4)
+  - 大文档内容提取优化：使用字节位置切片替代字符遍历
+  - 限制搜索范围：只搜索文档前 10KB，避免超大文档全文扫描
+  - 新增 `truncate_by_bytes()` 辅助函数，使用 `char_indices()` 高效截断
+  - 性能提升：对于大文档，提取相关内容的复杂度从 O(n) 降至 O(搜索范围)
+
+#### 🧪 Testing
+
+- 所有 677 个单元测试通过
+- 验证 WalkDir 遍历深层目录结构
+- 验证时间戳分区正确处理无效时间
+- 验证搜索取消机制在各种场景下正常工作
+
 ---
 
 ## [0.1.0] - 2025-12-27

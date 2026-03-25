@@ -76,12 +76,22 @@ impl<C: tantivy::collector::SegmentCollector> tantivy::collector::SegmentCollect
 {
     type Fruit = C::Fruit;
 
+    /// 文档收集时的取消检查
+    /// 使用更细粒度的检查策略：
+    /// - 每 256 个文档检查一次取消状态（平衡开销和响应性）
+    /// - 对于高分文档（score > 0.9）立即检查，确保能快速响应
     fn collect(&mut self, doc: DocId, score: Score) {
-        // Periodic check for cancellation (every 1000 documents to avoid overhead)
-        if doc.is_multiple_of(1024) && self.token.is_cancelled() {
-            // Note: Tantivy's collect doesn't return Result, so we can't stop it immediately here
-            // except by some hacks, but checking at the segment level is usually enough.
-            // For now, we'll just stop collecting if cancelled.
+        // 细粒度取消检查：每 256 个文档检查一次，比原来的 1024 更频繁
+        const CANCEL_CHECK_INTERVAL: u32 = 256;
+        // 高分文档阈值：对于高相关性文档立即检查取消状态
+        const HIGH_SCORE_THRESHOLD: f32 = 0.9;
+
+        let should_check_cancel = doc.is_multiple_of(CANCEL_CHECK_INTERVAL)
+            || score > HIGH_SCORE_THRESHOLD;
+
+        if should_check_cancel && self.token.is_cancelled() {
+            // 取消时停止收集当前段，但保留已收集的结果
+            // 通过 inner.harvest() 返回的部分结果可以被上层使用
             return;
         }
         self.inner.collect(doc, score);
@@ -273,19 +283,80 @@ impl BooleanQueryProcessor {
         }
     }
 
-    /// Estimate the computational cost of a query
+    /// 估算查询的计算成本
+    ///
+    /// 使用改进的成本模型，考虑：
+    /// 1. 布尔操作符类型（Must/Should/MustNot）
+    /// 2. 选择性（低选择性 = 高成本，因为需要扫描更多文档）
+    /// 3. 项数量（更多项 = 更高成本）
+    /// 4. 交集/并集复杂度（Must 使用交集，成本更高）
     fn estimate_query_cost(&self, terms: &[(String, Occur, f64)]) -> f64 {
-        // Simple cost model: sum of selectivities weighted by occurrence type
-        terms
-            .iter()
-            .map(|(_, occur, selectivity)| {
-                match occur {
-                    Occur::Must => selectivity * 1.0,   // Must terms are most expensive
-                    Occur::Should => selectivity * 0.7, // Should terms are less expensive
-                    Occur::MustNot => selectivity * 0.3, // MustNot terms are cheapest
+        if terms.is_empty() {
+            return 0.0;
+        }
+
+        // 基础成本权重配置
+        const MUST_WEIGHT: f64 = 1.5;      // Must 使用交集，成本最高
+        const SHOULD_WEIGHT: f64 = 1.0;    // Should 使用并集，成本中等
+        const MUST_NOT_WEIGHT: f64 = 0.5;  // MustNot 只需排除，成本较低
+        const BASE_COST_PER_TERM: f64 = 100.0; // 每项基础成本
+
+        // 计算各项成本
+        let mut total_cost = 0.0;
+        let mut must_count = 0;
+        let mut should_count = 0;
+        let mut must_not_count = 0;
+
+        for (_, occur, selectivity) in terms {
+            // 选择性越低（接近0），成本越高（需要扫描更多文档）
+            // 使用对数变换平滑极端值
+            let adjusted_selectivity = selectivity.max(0.001).min(1.0);
+            let scan_cost = 1.0 / adjusted_selectivity; // 反比关系
+
+            let operator_cost = match occur {
+                Occur::Must => {
+                    must_count += 1;
+                    MUST_WEIGHT * scan_cost
                 }
-            })
-            .sum()
+                Occur::Should => {
+                    should_count += 1;
+                    SHOULD_WEIGHT * scan_cost
+                }
+                Occur::MustNot => {
+                    must_not_count += 1;
+                    MUST_NOT_WEIGHT * scan_cost
+                }
+            };
+
+            total_cost += BASE_COST_PER_TERM + operator_cost;
+        }
+
+        // 布尔复杂度因子：Must 项越多，交集成本呈次线性增长
+        let complexity_factor = if must_count > 1 {
+            1.0 + (must_count as f64 - 1.0) * 0.3 // 额外 30% 成本 per 额外的 Must
+        } else {
+            1.0
+        };
+
+        // Should 项过多时增加成本（并集操作）
+        let should_penalty = if should_count > 5 {
+            (should_count - 5) as f64 * 0.1 // 超过5个后，每个额外增加 10%
+        } else {
+            0.0
+        };
+
+        let final_cost = total_cost * complexity_factor * (1.0 + should_penalty);
+
+        debug!(
+            terms = terms.len(),
+            must = must_count,
+            should = should_count,
+            must_not = must_not_count,
+            cost = final_cost,
+            "Query cost estimated"
+        );
+
+        final_cost
     }
 
     /// Build an optimized boolean query from the query plan

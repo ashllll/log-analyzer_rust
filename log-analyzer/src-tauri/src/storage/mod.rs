@@ -20,8 +20,10 @@
 //!         └── e145a3b2...
 //! ```
 
+pub mod cache_monitor;
 pub mod cas;
 pub mod coordinator;
+pub mod gc;
 pub mod integrity;
 pub mod metadata_store;
 pub mod metrics_store;
@@ -29,8 +31,10 @@ pub mod metrics_store;
 #[cfg(test)]
 mod integration_tests;
 
+pub use cache_monitor::{CacheHealthMetrics, CacheMonitor, CacheMonitorConfig};
 pub use cas::ContentAddressableStorage;
 pub use coordinator::StorageCoordinator;
+pub use gc::{GCConfig, GCManager, GCStats, GarbageCollector};
 pub use integrity::{
     verify_after_import, verify_file_integrity, verify_workspace_integrity, InvalidFileInfo,
     ValidationReport,

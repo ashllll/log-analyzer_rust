@@ -305,7 +305,120 @@ impl MetadataStore {
 }
 ```
 
-### 3. Archive Processor (CAS Integration)
+### 3. Storage Coordinator (Saga Pattern)
+
+**Location**: `src-tauri/src/storage/coordinator.rs`
+
+**Responsibilities**:
+- Ensure atomicity between CAS and MetadataStore operations
+- Implement Saga compensation transaction pattern
+- Handle failures with automatic rollback
+- Prevent orphaned files and inconsistent metadata
+
+**Key Methods**:
+
+```rust
+impl StorageCoordinator {
+    /// Atomically store a file with its metadata
+    /// Uses Saga pattern: CAS write first, then metadata transaction
+    pub async fn store_file_atomic(
+        &self,
+        path: &Path,
+        file_metadata: FileMetadata,
+    ) -> Result<(String, i64)>;
+}
+```
+
+**Saga Pattern Flow**:
+
+```
+1. Write file to CAS (content-addressable storage)
+   └─ If fails: Return error, no cleanup needed
+
+2. Begin metadata transaction
+   └─ If fails: Return error, CAS file may be orphaned (GC will clean)
+
+3. Insert metadata record with hash
+   └─ If fails: Rollback transaction, cleanup CAS file if no other refs
+
+4. Commit transaction
+   └─ If fails: Rollback transaction, cleanup orphaned CAS file
+```
+
+**Benefits**:
+- ✅ Strong consistency between CAS and metadata
+- ✅ Automatic cleanup on failure
+- ✅ Reference counting prevents premature deletion
+- ✅ Detailed error logging for debugging
+
+### 4. Garbage Collector
+
+**Location**: `src-tauri/src/storage/gc.rs`
+
+**Responsibilities**:
+- Background cleanup of orphaned CAS files
+- Reference counting to identify unreferenced objects
+- Configurable GC policies (interval, age thresholds)
+- Safe deletion with verification
+
+**Configuration**:
+
+```rust
+pub struct GCConfig {
+    /// Interval between automatic GC runs (default: 1 hour)
+    pub interval: Duration,
+    /// Minimum file age before GC (safety buffer, default: 5 minutes)
+    pub min_file_age: Duration,
+    /// Maximum files to process per run (default: 1000)
+    pub batch_size: usize,
+    /// Dry-run mode for testing (default: false)
+    pub dry_run: bool,
+}
+```
+
+**Usage**:
+
+```rust
+// Create GC instance
+let gc = Arc::new(GarbageCollector::new(
+    cas.clone(),
+    metadata_store.clone(),
+    GCConfig::default(),
+));
+
+// Run manual full GC
+let stats = gc.run_full_gc().await?;
+println!("Reclaimed {} bytes", stats.bytes_reclaimed);
+
+// Start automatic background GC
+let (shutdown_tx, shutdown_rx) = tokio::sync::mpsc::channel(1);
+gc.start_background_gc(shutdown_rx);
+```
+
+### 5. Cache Consistency Monitor
+
+**Location**: `src-tauri/src/storage/cache_monitor.rs`
+
+**Responsibilities**:
+- Monitor CAS existence cache health
+- Detect and fix stale cache entries
+- Track hit/miss ratios
+- Background consistency verification
+
+**Metrics**:
+
+```rust
+pub struct CacheHealthMetrics {
+    pub total_lookups: u64,
+    pub hits: u64,
+    pub misses: u64,
+    pub stale_entries: u64,
+    pub inconsistencies_fixed: u64,
+    pub hit_ratio: f64,
+}
+```
+
+### 6. Archive Processor (CAS Integration)
 
 **Location**: `src-tauri/src/archive/processor.rs`
 
@@ -553,15 +666,38 @@ If migration fails:
 - **SQLite connection**: ~10 MB per workspace
 - **CAS cache**: Configurable (default: 100 MB)
 
+## Reliability Features
+
+### Implemented Safety Mechanisms
+
+1. **TempFileGuard (RAII Pattern)**
+   - Ensures temporary files are cleaned up even on panic or early return
+   - Uses Rust's Drop trait for guaranteed cleanup
+   - Supports both sync and async cleanup
+
+2. **Double-Check Cache Pattern**
+   - Cache indicates existence → Verify filesystem state
+   - Prevents stale cache reads after external modifications
+   - Automatic invalidation on mismatch
+
+3. **TOCTOU Protection**
+   - Uses `create_new(true)` (O_EXCL flag) for atomic file creation
+   - Prevents race conditions in concurrent writes
+   - Graceful handling of `AlreadyExists` errors
+
+4. **Transaction Rollback with Orphan Cleanup**
+   - Metadata transaction rollback on failure
+   - Automatic detection and cleanup of orphaned CAS files
+   - Reference counting prevents premature deletion
+
 ## Future Enhancements
 
 ### Planned Features
 
 1. **Compression**: Store objects with gzip compression
-2. **Garbage Collection**: Remove unreferenced objects
-3. **Distributed Storage**: Support remote CAS backends
-4. **Incremental Hashing**: Resume hash computation for large files
-5. **Content Verification**: Periodic integrity checks
+2. **Distributed Storage**: Support remote CAS backends
+3. **Incremental Hashing**: Resume hash computation for large files
+4. **Advanced Content Verification**: Periodic integrity checks with checksums
 
 ### API Extensions
 
@@ -570,11 +706,8 @@ If migration fails:
 impl ContentAddressableStorage {
     // Compress objects
     pub async fn compact(&self) -> Result<CompactionStats>;
-    
-    // Remove unreferenced objects
-    pub async fn gc(&self, metadata_store: &MetadataStore) -> Result<GCStats>;
-    
-    // Verify integrity
+
+    // Advanced integrity verification
     pub async fn verify(&self) -> Result<VerificationReport>;
 }
 ```

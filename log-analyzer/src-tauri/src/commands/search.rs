@@ -1424,7 +1424,7 @@ pub async fn get_search_total_count(
 ) -> Result<usize, String> {
     // 新架构：优先从 DiskResultStore 读取
     if let Some(status) = state.disk_result_store.get_status(&search_id) {
-        return Ok(status.total_count);
+        return Ok(status.0);
     }
     // 降级：从 VirtualSearchManager 读取
     Ok(state.virtual_search_manager.get_total_count(&search_id))

@@ -89,7 +89,6 @@ impl ExtractorActor {
                 current_file: Some("Initializing...".to_string()),
                 ..Default::default()
             })
-            .await
             .is_err()
         {
             tracing::debug!("提取器：进度接收方已取消，跳过初始进度更新");
@@ -116,7 +115,6 @@ impl ExtractorActor {
                 current_file: Some("Completed".to_string()),
                 ..Default::default()
             })
-            .await
             .is_err()
         {
             tracing::debug!("提取器：进度接收方已取消，跳过最终进度更新");
