@@ -45,10 +45,6 @@ jobs:
         targets: ${{ matrix.target }}
         components: rustfmt, clippy
 
-    - name: Setup MSVC (Windows)
-      if: matrix.os == 'windows-latest'
-      uses: ilammy/msvc-toolchain@v1.13.0
-
     # 使用专业的 Rust 缓存插件
     - name: Rust Cache
       uses: swatinem/rust-cache@v2
