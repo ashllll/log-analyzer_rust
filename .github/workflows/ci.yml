@@ -162,8 +162,16 @@ jobs:
           libsoup-3.0-dev \
           libjavascriptcoregtk-4.1-dev
 
+    - name: Clean build artifacts
+      run: |
+        cd log-analyzer/src-tauri
+        # 清理可能损坏的增量编译缓存
+        cargo clean
+
     - name: Run integration tests
       run: |
         cd log-analyzer/src-tauri
+        # 先运行 cargo check 确保依赖正确下载
+        cargo check --all-features
         # 运行所有集成测试（添加 --all-features 确保所有特性启用）
         cargo test --all-features --test '*' --verbose -- --test-threads=2
