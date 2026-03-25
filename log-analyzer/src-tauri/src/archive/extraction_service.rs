@@ -219,6 +219,7 @@ mod tests {
 
     /// TOCTOU 安全测试：O_NOFOLLOW 检查普通文件
     #[test]
+    #[cfg(unix)]
     fn test_check_file_safety_with_nofollow_regular_file() {
         let temp_dir = TempDir::new().unwrap();
         let test_file = temp_dir.path().join("test.txt");
@@ -235,6 +236,7 @@ mod tests {
 
     /// TOCTOU 安全测试：O_NOFOLLOW 检查不存在的文件
     #[test]
+    #[cfg(unix)]
     fn test_check_file_safety_with_nofollow_nonexistent() {
         let temp_dir = TempDir::new().unwrap();
         let nonexistent = temp_dir.path().join("nonexistent.txt");
