@@ -594,7 +594,7 @@ impl MetricsStore {
 
         // 删除旧的指标快照
         let deleted_snapshots: u64 =
-            sqlx::query("DELETE FROM metrics_snapshots WHERE timestamp < ?")
+            sqlx::query::<sqlx::Sqlite>("DELETE FROM metrics_snapshots WHERE timestamp < ?")
                 .bind(cutoff)
                 .execute(pool)
                 .await
@@ -604,7 +604,7 @@ impl MetricsStore {
                 .rows_affected();
 
         // 删除旧的搜索事件
-        let deleted_events: u64 = sqlx::query("DELETE FROM search_events WHERE timestamp < ?")
+        let deleted_events: u64 = sqlx::query::<sqlx::Sqlite>("DELETE FROM search_events WHERE timestamp < ?")
             .bind(cutoff)
             .execute(pool)
             .await
@@ -633,14 +633,16 @@ impl MetricsStore {
                 .map_err(|e| {
                     AppError::database_error(format!("Failed to get snapshot count: {}", e))
                 })?
-                .get("count");
+                .try_get::<i64, _>("count")
+                .unwrap_or(0);
 
         let event_count: i64 =
             sqlx::query::<sqlx::Sqlite>("SELECT COUNT(*) as count FROM search_events")
                 .fetch_one(&self.pool)
                 .await
                 .map_err(|e| AppError::database_error(format!("Failed to get event count: {}", e)))?
-                .get("count");
+                .try_get::<i64, _>("count")
+                .unwrap_or(0);
 
         // 获取最新快照时间戳
         let latest_timestamp: Option<i64> = sqlx::query::<sqlx::Sqlite>(
@@ -649,7 +651,7 @@ impl MetricsStore {
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| AppError::database_error(format!("Failed to get latest timestamp: {}", e)))?
-        .map(|row: sqlx::sqlite::SqliteRow| row.get("timestamp"));
+        .and_then(|row: sqlx::sqlite::SqliteRow| row.try_get::<i64, _>("timestamp").ok());
 
         // 获取最旧快照时间戳
         let oldest_timestamp: Option<i64> = sqlx::query::<sqlx::Sqlite>(
@@ -658,7 +660,7 @@ impl MetricsStore {
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| AppError::database_error(format!("Failed to get oldest timestamp: {}", e)))?
-        .map(|row: sqlx::sqlite::SqliteRow| row.get("timestamp"));
+        .and_then(|row: sqlx::sqlite::SqliteRow| row.try_get::<i64, _>("timestamp").ok());
 
         Ok(MetricsStoreStats {
             snapshot_count: snapshot_count as u64,

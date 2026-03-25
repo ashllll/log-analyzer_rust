@@ -325,10 +325,11 @@ fn cleanup_workspace_resources(
     let mut deleted_count = 0;
     let mut failed_count = 0;
 
-    for index_path in [compressed_index, uncompressed_index] {
+    for index_path in [compressed_index, uncompressed_index].iter() {
+        let index_path: &std::path::PathBuf = index_path;
         let exists = index_path.exists();
         if exists {
-            match fs::metadata(&index_path) {
+            match fs::metadata(index_path) {
                 Ok(metadata) => {
                     if metadata.is_file() {
                         match fs::remove_file(&index_path) {
