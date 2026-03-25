@@ -457,13 +457,14 @@ pub enum AlertSeverity {
 /// 缓存管理器
 ///
 /// 管理搜索缓存的生命周期和性能优化
+#[derive(Clone)]
 pub struct CacheManager {
     /// L1 搜索结果缓存（同步版本，热数据）
     search_cache: Arc<Cache<SearchCacheKey, Vec<LogEntry>>>,
     /// L2 搜索结果缓存（异步版本，用于compute-on-miss操作）
     async_search_cache: Arc<AsyncCache<SearchCacheKey, Vec<LogEntry>>>,
     /// L2 扩展缓存（moka sync Cache，10,000条上限 + 30min TTL）
-    l2_cache: Cache<SearchCacheKey, Vec<LogEntry>>,
+    l2_cache: Arc<Cache<SearchCacheKey, Vec<LogEntry>>>,
     /// 性能指标追踪器
     metrics: Arc<CacheMetrics>,
     /// 缓存配置
@@ -512,7 +513,7 @@ impl CacheManager {
         Self {
             search_cache,
             async_search_cache,
-            l2_cache,
+            l2_cache: Arc::new(l2_cache),
             metrics,
             config,
             access_tracker,
@@ -549,7 +550,7 @@ impl CacheManager {
         Self {
             search_cache,
             async_search_cache,
-            l2_cache,
+            l2_cache: Arc::new(l2_cache),
             metrics,
             config,
             access_tracker,
