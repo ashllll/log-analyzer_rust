@@ -268,7 +268,7 @@ impl MetricsStore {
         })?;
 
         // 创建搜索事件索引
-        sqlx::query(
+        sqlx::query::<sqlx::Sqlite>(
             "CREATE INDEX IF NOT EXISTS idx_search_events_timestamp ON search_events(timestamp)",
         )
         .execute(pool)
@@ -280,7 +280,7 @@ impl MetricsStore {
             ))
         })?;
 
-        sqlx::query(
+        sqlx::query::<sqlx::Sqlite>(
             "CREATE INDEX IF NOT EXISTS idx_search_events_workspace ON search_events(workspace_id)",
         )
         .execute(pool)
@@ -298,7 +298,7 @@ impl MetricsStore {
 
     /// 保存指标快照
     pub async fn save_snapshot(&self, snapshot: &MetricsSnapshot) -> Result<()> {
-        sqlx::query(
+        sqlx::query::<sqlx::Sqlite>(
             r#"
             INSERT INTO metrics_snapshots (
                 timestamp, search_latency_current, search_latency_average, search_latency_p95, search_latency_p99,
@@ -342,7 +342,7 @@ impl MetricsStore {
 
     /// 记录搜索事件
     pub async fn record_search_event(&self, event: &SearchEvent) -> Result<i64> {
-        let result = sqlx::query(
+        let result = sqlx::query::<sqlx::Sqlite>(
             r#"
             INSERT INTO search_events (timestamp, workspace_id, query, results_count, duration_ms, cache_hit)
             VALUES (?, ?, ?, ?, ?, ?)
@@ -374,7 +374,7 @@ impl MetricsStore {
         let start = range.start_timestamp();
         let end = range.end_timestamp();
 
-        let rows = sqlx::query(
+        let rows = sqlx::query::<sqlx::Sqlite>(
             r#"
             SELECT timestamp, search_latency_current, search_latency_average, search_latency_p95, search_latency_p99,
                    throughput_current, throughput_average, throughput_peak,
@@ -395,7 +395,7 @@ impl MetricsStore {
 
         let snapshots: Vec<MetricsSnapshot> = rows
             .iter()
-            .map(|row| MetricsSnapshot {
+            .map(|row: &sqlx::sqlite::SqliteRow| MetricsSnapshot {
                 timestamp: row.get("timestamp"),
                 search_latency_current: row.get::<i64, _>("search_latency_current") as u64,
                 search_latency_average: row.get::<i64, _>("search_latency_average") as u64,
@@ -442,7 +442,7 @@ impl MetricsStore {
         let end = range.end_timestamp();
 
         // 使用 GROUP BY 将数据聚合到指定间隔
-        let rows = sqlx::query(
+        let rows = sqlx::query::<sqlx::Sqlite>(
             r#"
             SELECT
                 (timestamp / ?) * ? as time_bucket,
@@ -484,7 +484,7 @@ impl MetricsStore {
 
         let snapshots: Vec<MetricsSnapshot> = rows
             .iter()
-            .map(|row| MetricsSnapshot {
+            .map(|row: &sqlx::sqlite::SqliteRow| MetricsSnapshot {
                 timestamp: row.get::<i64, _>("time_bucket"),
                 search_latency_current: row.get::<f64, _>("search_latency_current") as u64,
                 search_latency_average: row.get::<f64, _>("search_latency_average") as u64,
@@ -530,7 +530,7 @@ impl MetricsStore {
         let end = range.end_timestamp();
 
         let rows: Vec<sqlx::sqlite::SqliteRow> = if let Some(wid) = workspace_id {
-            sqlx::query(
+            sqlx::query::<sqlx::Sqlite>(
                 r#"
                 SELECT id, timestamp, workspace_id, query, results_count, duration_ms, cache_hit
                 FROM search_events
@@ -545,7 +545,7 @@ impl MetricsStore {
             .fetch_all(&self.pool)
             .await
         } else {
-            sqlx::query(
+            sqlx::query::<sqlx::Sqlite>(
                 r#"
                 SELECT id, timestamp, workspace_id, query, results_count, duration_ms, cache_hit
                 FROM search_events
