@@ -879,37 +879,36 @@ impl MetadataStore {
 
         // Use DELETE with IF EXISTS check to avoid errors when tables don't exist
         // This is safer for test scenarios where schema might not be fully initialized
-        sqlx::query("DELETE FROM files WHERE 1=1")
+        match sqlx::query("DELETE FROM files WHERE 1=1")
             .execute(&mut *tx)
             .await
-            .or_else(|e| {
+        {
+            Ok(_) => {}
+            Err(e) => {
                 // If table doesn't exist, treat as success (nothing to delete)
                 let err_str = e.to_string();
-                if err_str.contains("no such table") {
-                    Ok::<sqlx::sqlite::SqliteQueryResult, sqlx::Error>(
-                        sqlx::sqlite::SqliteQueryResult::default(),
-                    )
-                } else {
-                    Err(e)
+                if !err_str.contains("no such table") {
+                    return Err(AppError::database_error(format!("Failed to delete files: {}", e)));
                 }
-            })
-            .map_err(|e| AppError::database_error(format!("Failed to delete files: {}", e)))?;
+            }
+        }
 
-        sqlx::query("DELETE FROM archives WHERE 1=1")
+        match sqlx::query("DELETE FROM archives WHERE 1=1")
             .execute(&mut *tx)
             .await
-            .or_else(|e| {
+        {
+            Ok(_) => {}
+            Err(e) => {
                 // If table doesn't exist, treat as success (nothing to delete)
                 let err_str = e.to_string();
-                if err_str.contains("no such table") {
-                    Ok::<sqlx::sqlite::SqliteQueryResult, sqlx::Error>(
-                        sqlx::sqlite::SqliteQueryResult::default(),
-                    )
-                } else {
-                    Err(e)
+                if !err_str.contains("no such table") {
+                    return Err(AppError::database_error(format!(
+                        "Failed to delete archives: {}",
+                        e
+                    )));
                 }
-            })
-            .map_err(|e| AppError::database_error(format!("Failed to delete archives: {}", e)))?;
+            }
+        }
 
         tx.commit().await.map_err(|e| {
             AppError::database_error(format!("Failed to commit transaction: {}", e))
