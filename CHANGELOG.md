@@ -184,6 +184,89 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - 新功能开发中...
 
+## [1.2.53] - 2026-03-25
+
+### 🛡️ Security Audit & Reliability Improvements
+
+本次发布包含全面的 CAS（内容寻址存储）系统安全审计修复，提升了数据完整性和系统可靠性。
+
+#### 🔧 Bug Fixes
+
+- **编译错误修复 (P0)**
+  - `search.rs:1427`: 修复元组字段访问错误 `status.total_count` → `status.0`
+  - `extractor.rs:86,92`: 移除 `Result` 类型上错误的 `.await` 调用
+  - `zip_handler.rs:75`: 使用 `unix_mode()` 位掩码替代不存在的 `is_symlink()` 方法
+
+- **数据完整性修复 (P1)**
+  - **BUG-005**: CAS 缓存与文件系统状态竞态条件
+    - 实现双检查模式 (Double-Check Pattern)
+    - `exists()` 和 `exists_async()` 方法缓存命中后验证文件系统状态
+    - 不匹配时自动使缓存失效，防止 TOCTOU 竞态条件
+  - **BUG-006**: 孤儿文件问题 - Saga 补偿事务模式
+    - CAS 写入成功但元数据提交失败时自动清理孤儿文件
+    - 引用计数检查防止误删去重文件
+    - 详细日志记录清理操作
+  - **BUG-007**: 临时文件泄漏 - RAII 清理机制
+    - 新增 `TempFileGuard` RAII 结构
+    - Drop trait 确保临时文件清理（即使 panic 也能保证）
+    - 支持异步和同步两种清理模式
+
+#### ✨ Features
+
+- **垃圾回收系统** (`storage/gc.rs`)
+  - 自动清理无引用的 CAS 对象
+  - 可配置 GC 策略：间隔（默认1小时）、年龄阈值（默认5分钟）、批大小（默认1000）
+  - 支持手动触发和自动后台运行
+  - 详细的 GC 统计信息（扫描文件数、清理文件数、回收字节数）
+  - 安全删除：零引用验证、年龄检查、空目录清理
+
+- **缓存一致性监控** (`storage/cache_monitor.rs`)
+  - 实时监控 CAS 存在性缓存健康状态
+  - 跟踪指标：总查询数、命中数、未命中数、陈旧条目数、不一致修复数
+  - 自动检测并修复缓存与文件系统不一致
+  - 可配置的检查间隔和自动修复策略
+
+- **Saga 事务协调器增强** (`storage/coordinator.rs`)
+  - 改进错误处理和事务回滚日志
+  - 详细的错误分类（FOREIGN KEY 约束、UNIQUE 约束等）
+  - 事务回滚失败时提供详细的诊断信息
+
+#### ♻️ Refactor
+
+- **架构模块化**
+  - 新增 `storage/gc.rs` - 垃圾回收模块
+  - 新增 `storage/cache_monitor.rs` - 缓存监控模块
+  - 更新 `storage/mod.rs` 导出新类型
+  - 为 CAS 添加 `objects_dir()` 公共方法
+
+#### 📚 Documentation
+
+- **CAS_ARCHITECTURE.md**: 更新架构文档
+  - 添加 Storage Coordinator (Saga Pattern) 章节
+  - 添加 Garbage Collector 章节
+  - 添加 Cache Consistency Monitor 章节
+  - 添加可靠性保障机制说明
+
+- **CODE_REVIEW_REPORT.md**: 添加安全审计修复报告
+  - 记录所有 P0/P1 问题修复详情
+  - 记录架构设计改进
+  - 验证结果汇总
+
+#### 🧪 Testing
+
+- 所有 662+ 现有测试通过
+- 新增垃圾回收模块单元测试
+- 新增缓存监控模块单元测试
+- 验证 Saga 事务回滚和孤儿清理逻辑
+
+#### 📊 Performance Impact
+
+- 双检查缓存模式：增加一次文件系统检查，但显著提升数据一致性
+- 垃圾回收：后台运行，对正常操作无性能影响
+- 缓存监控：低开销后台任务，可配置关闭
+
+---
+
 ## [0.1.0] - 2025-12-27
 
 ### 🎉 Major Release: Complete CAS Architecture Migration
