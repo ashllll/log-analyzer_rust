@@ -1418,59 +1418,6 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
     Ok(())
 }
 
-/// Extract and process archive using CAS
-///
-/// This function handles nested archive extraction with depth tracking.
-///
-/// # Arguments
-///
-/// * `archive_path` - Path to the archive file
-/// * `virtual_path` - Virtual path prefix
-/// * `workspace_dir` - Workspace directory
-/// * `cas` - Content-Addressable Storage instance
-/// * `metadata_store` - Metadata store instance (wrapped in Arc)
-/// * `app` - Tauri app handle
-/// * `task_id` - Task ID
-/// * `workspace_id` - Workspace ID
-/// * `parent_archive_id` - Parent archive ID (None for root)
-/// * `depth_level` - Current nesting depth
-///
-/// # Requirements
-///
-/// Validates: Requirements 4.1, 4.2, 4.3
-#[allow(clippy::too_many_arguments)]
-#[allow(dead_code)]
-async fn extract_and_process_archive_with_cas(
-    archive_path: &Path,
-    virtual_path: &str,
-    workspace_dir: &Path,
-    cas: &ContentAddressableStorage,
-    metadata_store: Arc<MetadataStore>,
-    app: &AppHandle,
-    task_id: &str,
-    workspace_id: &str,
-    parent_archive_id: Option<i64>,
-    depth_level: i32,
-) -> Result<()> {
-    // Wrap CAS in Arc for the context
-    let cas_arc = Arc::new(cas.clone());
-
-    // Create context without checkpoints for backward compatibility
-    let context = CasProcessingContext::new(workspace_dir.to_path_buf(), cas_arc, metadata_store);
-
-    extract_and_process_archive_with_cas_and_checkpoints(
-        archive_path,
-        virtual_path,
-        &context,
-        app,
-        task_id,
-        workspace_id,
-        parent_archive_id,
-        depth_level,
-    )
-    .await
-}
-
 /// 检查文件是否为压缩文件
 ///
 /// # 支持的格式

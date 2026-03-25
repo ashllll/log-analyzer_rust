@@ -27,7 +27,7 @@ import type { TaskUpdateEvent } from './types';
 // 事件处理器类型
 // ============================================================================
 
-export type EventHandler<T = any> = (event: T) => void | Promise<void>;
+export type EventHandler<T = unknown> = (event: T) => void | Promise<void>;
 
 export interface EventBusConfig {
   enableValidation?: boolean;      // 是否启用Schema验证
@@ -173,7 +173,7 @@ class EventBus {
    * @param handler - 事件处理函数
    * @returns 取消订阅函数
    */
-  on<T = any>(
+  on<T = unknown>(
     eventType: string,
     handler: EventHandler<T>
   ): () => void {
@@ -213,7 +213,7 @@ class EventBus {
    * @param eventType - 事件类型
    * @param rawData - 原始事件数据
    */
-  async processEvent(eventType: 'task-update' | 'task-removed', rawData: any): Promise<void> {
+  async processEvent(eventType: 'task-update' | 'task-removed', rawData: unknown): Promise<void> {
     this.metrics.totalEvents++;
     this.metrics.lastEventTime = Date.now();
 
@@ -297,7 +297,7 @@ class EventBus {
   // Schema验证
   // ========================================================================
 
-  private validateEvent(eventType: string, rawData: any): any | null {
+  private validateEvent(eventType: string, rawData: unknown): unknown | null {
     if (!this.config.enableValidation) {
       return rawData;
     }
@@ -314,7 +314,7 @@ class EventBus {
       }
     } catch (err: unknown) {
       if (err instanceof z.ZodError) {
-        const zodErrors = (err as any).issues || [];
+        const zodErrors = err.issues || [];
         if (this.config.enableLogging) {
           logger.error(
             {
@@ -335,7 +335,7 @@ class EventBus {
   // 事件分发
   // ========================================================================
 
-  private async dispatchEvent(eventType: string, event: any): Promise<void> {
+  private async dispatchEvent(eventType: string, event: unknown): Promise<void> {
     const handlers = this.handlers.get(eventType);
     if (!handlers || handlers.size === 0) {
       if (this.config.enableLogging) {

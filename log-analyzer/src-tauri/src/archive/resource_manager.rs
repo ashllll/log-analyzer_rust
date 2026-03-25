@@ -38,8 +38,6 @@ pub struct ResourceManager {
 #[derive(Debug, Clone)]
 struct FileHandle {
     path: PathBuf,
-    #[allow(dead_code)]
-    opened_at: SystemTime,
     workspace_id: String,
 }
 
@@ -97,7 +95,6 @@ impl ResourceManager {
     pub async fn register_file_handle(&self, path: PathBuf, workspace_id: String) {
         let handle = FileHandle {
             path: path.clone(),
-            opened_at: SystemTime::now(),
             workspace_id,
         };
 

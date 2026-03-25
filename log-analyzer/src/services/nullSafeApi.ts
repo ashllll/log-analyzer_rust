@@ -20,8 +20,8 @@ export function isEmptyArray<T>(value: T[] | null | undefined): boolean {
  * API 调用参数空值处理
  * 移除 null/undefined 值，防止 Rust 后端解析错误
  */
-export function sanitizeArgs(args: Record<string, any>): Record<string, any> {
-  const sanitized: Record<string, any> = {};
+export function sanitizeArgs(args: Record<string, unknown>): Record<string, unknown> {
+  const sanitized: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(args)) {
     if (isEmpty(value)) {
@@ -34,7 +34,7 @@ export function sanitizeArgs(args: Record<string, any>): Record<string, any> {
       sanitized[key] = value;
     } else if (typeof value === 'object' && value !== null) {
       // 递归处理嵌套对象
-      const sanitizedNested = sanitizeArgs(value);
+      const sanitizedNested = sanitizeArgs(value as Record<string, unknown>);
       if (Object.keys(sanitizedNested).length > 0) {
         sanitized[key] = sanitizedNested;
       }
@@ -47,11 +47,16 @@ export function sanitizeArgs(args: Record<string, any>): Record<string, any> {
 }
 
 /**
+ * API 调用参数类型
+ */
+export type ApiArgs = Record<string, unknown>;
+
+/**
  * 带超时的 IPC 调用包装器（增强版）
  */
 export async function invokeWithTimeout<T>(
   command: string,
-  args: Record<string, any>,
+  args: ApiArgs,
   timeoutMs: number = 30000
 ): Promise<T> {
   // 参数空值处理
@@ -82,7 +87,7 @@ export async function invokeWithTimeout<T>(
  */
 export async function safeInvoke<T>(
   command: string,
-  args: Record<string, any> = {},
+  args: ApiArgs = {},
   options: { timeoutMs?: number; fallback?: T; onError?: (error: Error) => void } = {}
 ): Promise<T> {
   const { timeoutMs = 30000, fallback, onError } = options;
@@ -115,7 +120,7 @@ export async function safeInvoke<T>(
  */
 export async function safeInvokeList<T>(
   command: string,
-  args: Record<string, any> = {}
+  args: ApiArgs = {}
 ): Promise<T[]> {
   try {
     const result = await safeInvoke<T[]>(command, args, { fallback: [] });
@@ -133,7 +138,7 @@ export async function safeInvokeList<T>(
  */
 export async function safeInvokeObject<T extends object>(
   command: string,
-  args: Record<string, any> = {},
+  args: ApiArgs = {},
   defaultValue: T
 ): Promise<T> {
   try {

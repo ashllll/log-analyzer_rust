@@ -22,9 +22,10 @@ export async function executeStructuredQuery(
     }, { timeoutMs: 30000 });
 
     return Array.isArray(result) ? result : [];
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Failed to execute query:', error);
-    throw new Error(`查询执行失败: ${error}`);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    throw new Error(`查询执行失败: ${errorMessage}`);
   }
 }
 
@@ -42,7 +43,7 @@ export async function validateQuery(query: SearchQuery): Promise<boolean> {
       timeoutMs: 5000,
       fallback: false
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Failed to validate query:', error);
     return false;
   }

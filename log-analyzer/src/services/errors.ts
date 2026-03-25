@@ -658,11 +658,11 @@ export function getFullErrorMessage(error: unknown): string {
  * @param fn - 要执行的异步函数
  * @returns 包装后的函数
  */
-export function withErrorHandler<T extends (...args: any[]) => Promise<any>>(
+export function withErrorHandler<T extends (...args: unknown[]) => Promise<unknown>>(
   command: string,
   fn: T
 ): T {
-  return (async (...args: any[]) => {
+  return (async (...args: unknown[]) => {
     try {
       return await fn(...args);
     } catch (error) {
