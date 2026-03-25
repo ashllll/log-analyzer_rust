@@ -146,13 +146,15 @@ impl AppState {
         let cache = self.cache_manager.lock();
         cache
             .invalidate_workspace_cache(workspace_id)
-            .map_err(|e| e.to_string())
+            .map_err(|e: eyre::Error| e.to_string())
     }
 
     /// 清理过期缓存条目
     pub fn cleanup_expired_entries(&self) -> Result<(), String> {
         let cache = self.cache_manager.lock();
-        cache.cleanup_expired_entries().map_err(|e| e.to_string())
+        cache
+            .cleanup_expired_entries()
+            .map_err(|e: eyre::Error| e.to_string())
     }
 
     /// 清理异步缓存条目
@@ -161,7 +163,7 @@ impl AppState {
     pub fn cleanup_expired_entries_async(&self) -> Result<(), String> {
         let cache = self.cache_manager.lock();
         let result = tauri::async_runtime::block_on(cache.cleanup_expired_entries_async());
-        result.map_err(|e| e.to_string())
+        result.map_err(|e: eyre::Error| e.to_string())
     }
 
     /// 获取缓存性能指标
@@ -212,7 +214,7 @@ impl AppState {
         let cache = self.cache_manager.lock();
         let result =
             tauri::async_runtime::block_on(cache.intelligent_eviction(target_reduction_percent));
-        result.map_err(|e| e.to_string())
+        result.map_err(|e: eyre::Error| e.to_string())
     }
 
     /// 重置缓存性能指标
@@ -259,7 +261,7 @@ impl AppState {
         self.async_resource_manager
             .cancel_operation(operation_id)
             .await
-            .map_err(|e| e.to_string())
+            .map_err(|e: eyre::Error| e.to_string())
     }
 
     /// 获取活跃操作数量
