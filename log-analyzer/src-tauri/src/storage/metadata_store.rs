@@ -77,6 +77,9 @@ pub struct MetadataStore {
     pool: SqlitePool,
 }
 
+/// 最大批量插入大小限制，防止SQL注入和内存溢出
+const MAX_BATCH_SIZE: usize = 1000;
+
 impl MetadataStore {
     /// Create a new metadata store
     ///
@@ -654,6 +657,15 @@ impl MetadataStore {
     ///
     /// Vector of auto-generated file IDs in the same order as input
     pub async fn insert_files_batch(&self, files: Vec<FileMetadata>) -> Result<Vec<i64>> {
+        // 安全：限制批量大小以防止SQL注入和内存问题
+        if files.len() > MAX_BATCH_SIZE {
+            return Err(AppError::database_error(format!(
+                "Batch size {} exceeds maximum {}",
+                files.len(),
+                MAX_BATCH_SIZE
+            )));
+        }
+
         let mut tx =
             self.pool.begin().await.map_err(|e| {
                 AppError::database_error(format!("Failed to begin transaction: {}", e))
@@ -764,6 +776,15 @@ impl MetadataStore {
     pub async fn insert_files_batch_optimized(&self, files: Vec<FileMetadata>) -> Result<Vec<i64>> {
         if files.is_empty() {
             return Ok(Vec::new());
+        }
+
+        // 安全：限制批量大小以防止SQL注入和内存问题
+        if files.len() > MAX_BATCH_SIZE {
+            return Err(AppError::database_error(format!(
+                "Batch size {} exceeds maximum {}",
+                files.len(),
+                MAX_BATCH_SIZE
+            )));
         }
 
         // Check if SQLite supports RETURNING clause

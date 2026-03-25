@@ -191,12 +191,22 @@ impl AppError {
     }
 
     /**
-     * 创建详细的IO错误
+     * 创建详细的IO错误，自动脱敏路径信息
+     *
+     * 安全考虑：只保留文件名，不暴露完整路径
      */
     pub fn io_error(message: impl Into<String>, path: Option<PathBuf>) -> Self {
+        let message = message.into();
+        // 路径脱敏：只保留文件名，避免泄漏系统目录结构
+        let sanitized_path = path.map(|p| {
+            p.file_name()
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("[REDACTED]"))
+        });
+
         AppError::IoDetailed {
-            message: message.into(),
-            path,
+            message,
+            path: sanitized_path,
         }
     }
 }
@@ -208,20 +218,6 @@ impl AppError {
  * 对于用户可见的错误，转换为 AppError
  */
 pub type Result<T> = std::result::Result<T, AppError>;
-
-/**
- * 内部结果类型 - 使用 eyre 进行错误传播
- */
-#[allow(dead_code)]
-pub type EyreResult<T> = eyre::Result<T>;
-
-/**
- * 将 eyre::Error 转换为 AppError
- */
-#[allow(dead_code)]
-pub fn eyre_to_app_error(error: eyre::Error) -> AppError {
-    AppError::search_error(error.to_string())
-}
 
 // ============================================================================
 // 命令层错误类型
@@ -443,6 +439,47 @@ mod tests {
 
         let error = AppError::validation_error("Invalid input");
         assert!(error.help().is_some());
+    }
+
+    #[test]
+    fn test_io_error_path_sanitization() {
+        // 测试完整路径被脱敏为文件名
+        let full_path = PathBuf::from("/home/user/secret/project/file.log");
+        let error = AppError::io_error("File not found", Some(full_path));
+
+        if let AppError::IoDetailed { message, path } = error {
+            assert_eq!(message, "File not found");
+            assert_eq!(path, Some(PathBuf::from("file.log")));
+        } else {
+            panic!("Expected IoDetailed error");
+        }
+    }
+
+    #[test]
+    fn test_io_error_path_sanitization_windows() {
+        // 测试Windows风格路径脱敏（使用模拟路径）
+        // 注意：在Unix系统上，反斜杠被视为普通字符
+        let full_path = PathBuf::from("C:/Users/Admin/Documents/secret.txt");
+        let error = AppError::io_error("Access denied", Some(full_path));
+
+        if let AppError::IoDetailed { path, .. } = error {
+            assert_eq!(path, Some(PathBuf::from("secret.txt")));
+        } else {
+            panic!("Expected IoDetailed error");
+        }
+    }
+
+    #[test]
+    fn test_io_error_no_path() {
+        // 测试无路径情况
+        let error = AppError::io_error("Generic error", None);
+
+        if let AppError::IoDetailed { message, path } = error {
+            assert_eq!(message, "Generic error");
+            assert_eq!(path, None);
+        } else {
+            panic!("Expected IoDetailed error");
+        }
     }
 }
 

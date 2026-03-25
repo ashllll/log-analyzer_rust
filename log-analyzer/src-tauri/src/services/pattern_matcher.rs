@@ -9,7 +9,6 @@ use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
 pub struct PatternMatcher {
     ac: Option<AhoCorasick>,
     patterns: Vec<String>,
-    #[allow(dead_code)]
     case_insensitive: bool,
 }
 
@@ -50,6 +49,17 @@ impl PatternMatcher {
             patterns,
             case_insensitive,
         })
+    }
+
+    /**
+     * 获取匹配器是否配置为大小写不敏感
+     *
+     * # 返回
+     * * `true` - 如果匹配器是大小写不敏感的
+     * * `false` - 否则
+     */
+    pub fn is_case_insensitive(&self) -> bool {
+        self.case_insensitive
     }
 
     /**
@@ -94,7 +104,6 @@ impl PatternMatcher {
      * * `true` - 如果文本包含任意模式
      * * `false` - 否则
      */
-    #[allow(dead_code)]
     pub fn matches_any(&self, text: &str) -> bool {
         let Some(ref ac) = self.ac else {
             return false;
@@ -112,7 +121,6 @@ impl PatternMatcher {
      * # 返回
      * * `Vec<usize>` - 匹配的模式索引列表
      */
-    #[allow(dead_code)]
     pub fn find_matches(&self, text: &str) -> Vec<usize> {
         let Some(ref ac) = self.ac else {
             return Vec::new();

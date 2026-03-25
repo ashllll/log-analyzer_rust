@@ -3,9 +3,11 @@
 //! 提供全面的路径安全检查功能,防止路径穿越、文件系统错误和恶意压缩包攻击。
 //! 支持Windows保留字符过滤、保留文件名检测、路径长度限制等安全措施。
 
-use std::path::Path;
 use tracing::warn;
 use unicode_normalization::UnicodeNormalization;
+
+#[cfg(test)]
+use std::path::Path;
 
 /// 路径组件验证结果
 #[derive(Debug, Clone, PartialEq)]
@@ -24,11 +26,7 @@ pub struct SecurityConfig {
     /// 单个路径组件最大长度(默认255)
     pub max_component_length: usize,
     /// 最大路径深度(默认100)
-    #[allow(dead_code)]
     pub max_path_depth: usize,
-    /// 是否允许Unicode字符
-    #[allow(dead_code)]
-    pub allow_unicode: bool,
     /// 是否强制Windows兼容
     pub windows_compatible: bool,
 }
@@ -38,7 +36,6 @@ impl Default for SecurityConfig {
         Self {
             max_component_length: 255,
             max_path_depth: 100,
-            allow_unicode: true,
             windows_compatible: true,
         }
     }
@@ -341,7 +338,7 @@ fn truncate_long_component(component: &str, max_len: usize) -> String {
 /// # Returns
 ///
 /// 如果深度超过限制返回Err,否则返回Ok
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn check_path_depth(path: &Path, max_depth: usize) -> Result<(), String> {
     let depth = path.components().count();
     if depth > max_depth {
@@ -354,6 +351,7 @@ pub fn check_path_depth(path: &Path, max_depth: usize) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     #[test]
     fn test_validate_normal_path() {

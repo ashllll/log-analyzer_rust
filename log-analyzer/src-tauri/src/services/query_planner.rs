@@ -30,7 +30,6 @@ impl QueryPlanner {
      * # 参数
      * * `max_capacity` - 引擎缓存最大容量
      */
-    #[allow(dead_code)]
     pub fn new(max_capacity: usize) -> Self {
         Self {
             engine_cache: Cache::new(max_capacity as u64),
@@ -56,7 +55,7 @@ impl QueryPlanner {
      *
      * 保留此函数用于未来可能的扩展需求，当前不再自动使用。
      */
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn should_use_word_boundary(term: &SearchTerm) -> bool {
         if term.is_regex {
             return false;
@@ -107,12 +106,12 @@ impl QueryPlanner {
             });
         }
 
-        Ok(ExecutionPlan {
+        Ok(ExecutionPlan::new(
             strategy,
             engines,
-            term_count: enabled_terms.len(),
-            terms: terms_list,
-        })
+            enabled_terms.len(),
+            terms_list,
+        ))
     }
 
     /**
@@ -173,9 +172,10 @@ impl QueryPlanner {
 pub struct ExecutionPlan {
     pub strategy: SearchStrategy,
     pub engines: Vec<CompiledEngine>,
-    #[allow(dead_code)]
     pub term_count: usize,
     pub terms: Vec<PlanTerm>,
+    /// term_id 到 engine 的 HashMap 映射，用于 O(1) 查找
+    engine_map: std::collections::HashMap<String, Arc<RegexEngine>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -187,9 +187,41 @@ pub struct PlanTerm {
 
 impl ExecutionPlan {
     /**
+     * 创建新的执行计划
+     */
+    pub fn new(
+        strategy: SearchStrategy,
+        engines: Vec<CompiledEngine>,
+        term_count: usize,
+        terms: Vec<PlanTerm>,
+    ) -> Self {
+        // 构建 term_id 到 engine 的 HashMap，实现 O(1) 查找
+        let engine_map: std::collections::HashMap<String, Arc<RegexEngine>> = engines
+            .iter()
+            .map(|e| (e.term_id.clone(), Arc::clone(&e.engine)))
+            .collect();
+
+        Self {
+            strategy,
+            engines,
+            term_count,
+            terms,
+            engine_map,
+        }
+    }
+
+    /**
+     * 根据 term_id 获取对应的引擎
+     * 使用 HashMap 实现 O(1) 查找
+     */
+    pub fn get_engine_for_term(&self, term_id: &str) -> Option<Arc<RegexEngine>> {
+        self.engine_map.get(term_id).cloned()
+    }
+
+    /**
      * 获取搜索项数量
      */
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn get_term_count(&self) -> usize {
         self.term_count
     }
@@ -197,7 +229,7 @@ impl ExecutionPlan {
     /**
      * 获取所有搜索项
      */
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn get_terms(&self) -> &[PlanTerm] {
         &self.terms
     }
@@ -207,6 +239,12 @@ impl ExecutionPlan {
      */
     pub fn sort_by_priority(&mut self) {
         self.engines.sort_by_key(|e| std::cmp::Reverse(e.priority));
+        // 重新构建 HashMap 以保持同步
+        self.engine_map = self
+            .engines
+            .iter()
+            .map(|e| (e.term_id.clone(), Arc::clone(&e.engine)))
+            .collect();
     }
 }
 
@@ -394,34 +432,31 @@ mod tests {
 
     #[test]
     fn test_execution_plan_engines_field() {
-        let plan = ExecutionPlan {
-            strategy: SearchStrategy::And,
-            engines: vec![
-                CompiledEngine {
-                    engine: Arc::new(RegexEngine::new("error", false).unwrap()),
-                    term_id: "1".to_string(),
-                    priority: 1,
-                },
-                CompiledEngine {
-                    engine: Arc::new(RegexEngine::new("warn", false).unwrap()),
-                    term_id: "2".to_string(),
-                    priority: 3,
-                },
-            ],
-            term_count: 2,
-            terms: vec![
-                PlanTerm {
-                    id: "1".to_string(),
-                    value: "error".to_string(),
-                    case_sensitive: false,
-                },
-                PlanTerm {
-                    id: "2".to_string(),
-                    value: "warn".to_string(),
-                    case_sensitive: false,
-                },
-            ],
-        };
+        let engines = vec![
+            CompiledEngine {
+                engine: Arc::new(RegexEngine::new("error", false).unwrap()),
+                term_id: "1".to_string(),
+                priority: 1,
+            },
+            CompiledEngine {
+                engine: Arc::new(RegexEngine::new("warn", false).unwrap()),
+                term_id: "2".to_string(),
+                priority: 3,
+            },
+        ];
+        let terms = vec![
+            PlanTerm {
+                id: "1".to_string(),
+                value: "error".to_string(),
+                case_sensitive: false,
+            },
+            PlanTerm {
+                id: "2".to_string(),
+                value: "warn".to_string(),
+                case_sensitive: false,
+            },
+        ];
+        let plan = ExecutionPlan::new(SearchStrategy::And, engines, 2, terms);
 
         assert_eq!(plan.engines.len(), 2);
         assert_eq!(plan.engines[0].priority, 1);
@@ -430,28 +465,24 @@ mod tests {
 
     #[test]
     fn test_plan_sort_by_priority_engines() {
-        let mut plan = ExecutionPlan {
-            strategy: SearchStrategy::And,
-            engines: vec![
-                CompiledEngine {
-                    engine: Arc::new(RegexEngine::new("test1", false).unwrap()),
-                    term_id: "1".to_string(),
-                    priority: 1,
-                },
-                CompiledEngine {
-                    engine: Arc::new(RegexEngine::new("test2", false).unwrap()),
-                    term_id: "2".to_string(),
-                    priority: 3,
-                },
-                CompiledEngine {
-                    engine: Arc::new(RegexEngine::new("test3", false).unwrap()),
-                    term_id: "3".to_string(),
-                    priority: 2,
-                },
-            ],
-            term_count: 3,
-            terms: vec![],
-        };
+        let engines = vec![
+            CompiledEngine {
+                engine: Arc::new(RegexEngine::new("test1", false).unwrap()),
+                term_id: "1".to_string(),
+                priority: 1,
+            },
+            CompiledEngine {
+                engine: Arc::new(RegexEngine::new("test2", false).unwrap()),
+                term_id: "2".to_string(),
+                priority: 3,
+            },
+            CompiledEngine {
+                engine: Arc::new(RegexEngine::new("test3", false).unwrap()),
+                term_id: "3".to_string(),
+                priority: 2,
+            },
+        ];
+        let mut plan = ExecutionPlan::new(SearchStrategy::And, engines, 3, vec![]);
 
         plan.sort_by_priority();
 

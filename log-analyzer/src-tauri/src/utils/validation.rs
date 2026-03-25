@@ -46,12 +46,22 @@ pub fn validate_safe_path(path: &str) -> Result<(), ValidationError> {
 
 /// 全面的路径遍历攻击防护
 ///
-/// 检测各种路径遍历攻击模式
+/// 检测各种路径遍历攻击模式，包括：
+/// - 基本的 .. 模式
+/// - URL 编码的路径遍历（如 %2e%2e）
+/// - 双重 URL 编码（如 %252e%252e）
+/// - Unicode 规范化绕过
 pub fn prevent_path_traversal(path: &str) -> Result<String, String> {
-    // Unicode 规范化
+    // Unicode NFC 规范化 - 防止使用不同 Unicode 表示的相同字符绕过检查
     let normalized: String = path.nfc().collect();
 
-    // 检查常见的路径遍历模式
+    // URL 解码 - 防止编码后的路径遍历攻击
+    let decoded = url_decode(&normalized);
+
+    // 再次 NFC 规范化（解码后可能产生新的组合字符）
+    let decoded_normalized: String = decoded.nfc().collect();
+
+    // 检查常见的路径遍历模式（在解码后的路径上检查）
     let dangerous_patterns = [
         "..",
         "/../",
@@ -64,14 +74,22 @@ pub fn prevent_path_traversal(path: &str) -> Result<String, String> {
         "%2e%2e\\",
     ];
 
+    // 在原始路径、解码后的路径上都进行检查
     for pattern in &dangerous_patterns {
-        if normalized.to_lowercase().contains(pattern) {
+        if normalized.to_lowercase().contains(pattern)
+            || decoded_normalized.to_lowercase().contains(pattern)
+        {
             return Err(format!("Path traversal pattern detected: {}", pattern));
         }
     }
 
+    // 检查解码后的路径中的 .. 模式（捕获任何 URL 编码变体）
+    if decoded_normalized.contains("..") {
+        return Err("Path traversal pattern detected: decoded ..".to_string());
+    }
+
     // 检查 null 字节注入
-    if normalized.contains('\0') {
+    if normalized.contains('\0') || decoded_normalized.contains('\0') {
         return Err("Null byte injection detected".to_string());
     }
 
@@ -83,7 +101,57 @@ pub fn prevent_path_traversal(path: &str) -> Result<String, String> {
         return Err("Control characters detected in path".to_string());
     }
 
-    Ok(normalized)
+    // 返回解码并规范化后的路径
+    Ok(decoded_normalized)
+}
+
+/// URL 解码辅助函数
+///
+/// 对字符串进行 URL 解码，处理 %XX 编码的字符
+fn url_decode(input: &str) -> String {
+    let mut result = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c == '%' {
+            // 尝试读取两个十六进制字符
+            let hex1 = chars.next();
+            let hex2 = chars.next();
+
+            if let (Some(h1), Some(h2)) = (hex1, hex2) {
+                let hex_str = format!("{}{}", h1, h2);
+                if let Ok(byte) = u8::from_str_radix(&hex_str, 16) {
+                    // 将字节转换为字符（假设 UTF-8）
+                    if let Some(decoded_char) = char::from_u32(byte as u32) {
+                        result.push(decoded_char);
+                    } else {
+                        // 无效的字符，保留原始序列
+                        result.push('%');
+                        result.push(h1);
+                        result.push(h2);
+                    }
+                } else {
+                    // 无效的十六进制，保留原始序列
+                    result.push('%');
+                    result.push(h1);
+                    result.push(h2);
+                }
+            } else {
+                // 不完整的 % 序列，保留 %
+                result.push('%');
+                if let Some(h1) = hex1 {
+                    result.push(h1);
+                }
+            }
+        } else if c == '+' {
+            // URL 编码中 + 表示空格
+            result.push(' ');
+        } else {
+            result.push(c);
+        }
+    }
+
+    result
 }
 
 /// 路径规范化和安全验证
@@ -250,6 +318,47 @@ mod tests {
 
         // 控制字符
         assert!(prevent_path_traversal("/path/\x01file").is_err());
+
+        // URL 编码的路径遍历攻击 - 新增测试
+        assert!(prevent_path_traversal("%2e%2e/%2e%2e/etc/passwd").is_err());
+        assert!(prevent_path_traversal("%252e%252e/%252e%252e/etc").is_err());
+        assert!(prevent_path_traversal("path/%2e%2e%2f%2e%2e%2fetc").is_err());
+        assert!(prevent_path_traversal("..%2f..%2fsecret.txt").is_err());
+        assert!(prevent_path_traversal("..%5c..%5cwindows%5csystem32").is_err());
+
+        // 双重编码攻击
+        assert!(prevent_path_traversal("%252e%252e/%252e%252e/etc/passwd").is_err());
+
+        // 混合编码攻击
+        assert!(prevent_path_traversal("%2e.%2f/etc/passwd").is_err());
+    }
+
+    #[test]
+    fn test_url_decode() {
+        // 基本解码
+        assert_eq!(url_decode("hello%20world"), "hello world");
+        assert_eq!(url_decode("path%2fto%2ffile"), "path/to/file");
+        assert_eq!(url_decode("path%5cfile"), r"path\file");
+
+        // + 号解码为空格
+        assert_eq!(url_decode("hello+world"), "hello world");
+
+        // 路径遍历编码解码
+        assert_eq!(url_decode("%2e%2e"), "..");
+        assert_eq!(url_decode("%2e%2e%2f"), "../");
+        assert_eq!(url_decode("%252e%252e"), "%2e%2e");
+
+        // 无编码的字符串保持不变
+        assert_eq!(url_decode("normal/path"), "normal/path");
+        assert_eq!(url_decode(""), "");
+
+        // 不完整的编码序列保留原样
+        assert_eq!(url_decode("path%2"), "path%2");
+        assert_eq!(url_decode("path%"), "path%");
+
+        // 无效的十六进制保留原样
+        assert_eq!(url_decode("path%GG"), "path%GG");
+        assert_eq!(url_decode("path%2G"), "path%2G");
     }
 
     #[test]

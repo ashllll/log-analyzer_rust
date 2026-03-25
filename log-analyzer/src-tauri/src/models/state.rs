@@ -133,12 +133,12 @@ impl AppState {
 
     /// 获取异步缓存统计信息
     ///
-    /// 内部调用 CacheManager 的异步方法（实际上执行的是同步操作）
-    /// 注意：此方法为同步方法，持锁期间不跨越 await 点，避免死锁风险
+    /// 注意：此方法直接使用 CacheManager 的同步方法获取统计信息，
+    /// 避免在持锁期间调用 block_on，消除死锁风险
     pub fn get_async_cache_statistics(&self) -> CacheStatistics {
+        // 缩小锁作用域：获取统计信息后立即释放锁
         let cache = self.cache_manager.lock();
-        // 底层方法执行同步操作，block_on 在此安全（调用方不在 tokio 上下文中持锁 await）
-        tauri::async_runtime::block_on(cache.get_async_cache_statistics())
+        cache.get_cache_statistics()
     }
 
     /// 清理工作区缓存

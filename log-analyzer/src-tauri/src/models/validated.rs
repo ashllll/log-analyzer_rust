@@ -2,8 +2,6 @@
 //!
 //! 使用 validator 框架提供结构化验证和错误报告
 
-#![allow(dead_code)]
-
 use chrono;
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -11,16 +9,13 @@ use serde::{Deserialize, Serialize};
 use validator::{Validate, ValidationError};
 
 // 定义本地的 WORKSPACE_ID_REGEX 用于 validator
-#[allow(dead_code)]
 static WORKSPACE_ID_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"^[a-zA-Z0-9\-_]+$").unwrap());
 
 // Email 验证正则
-#[allow(dead_code)]
 static EMAIL_REGEX: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$").unwrap());
 
 // URL 验证正则
-#[allow(dead_code)]
 static URL_REGEX: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^https?://[a-zA-Z0-9\-._~:/?#\[\]@!$&'()*+,;=]+$").unwrap());
 
@@ -168,7 +163,6 @@ fn validate_iso_date(date: &str) -> Result<(), ValidationError> {
 }
 
 // 包装函数用于 validator
-#[allow(dead_code)]
 fn validate_safe_path_wrapper(path: &str) -> Result<(), validator::ValidationError> {
     crate::utils::validation::validate_safe_path(path)
 }

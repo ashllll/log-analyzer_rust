@@ -21,6 +21,13 @@ pub const PLUGIN_ABI_MINOR: u32 = 0;
 #[deprecated(since = "0.1.0", note = "使用 PLUGIN_ABI_MAJOR / PLUGIN_ABI_MINOR")]
 pub const PLUGIN_ABI_VERSION: u32 = PLUGIN_ABI_MAJOR;
 
+/// 最大插件文件大小 (50MB)
+pub const MAX_PLUGIN_FILE_SIZE: u64 = 50 * 1024 * 1024;
+
+/// 插件文件签名验证配置 (预留，用于未来签名验证功能)
+#[allow(unused)]
+const PLUGIN_SIGNATURE_CONFIG: &str = "v1";
+
 /// 插件接口定义
 pub trait Plugin: Send + Sync {
     /// 插件名称
@@ -150,9 +157,53 @@ impl PluginManager {
             .canonicalize()
             .unwrap_or_else(|_| self.plugin_directory.clone());
         if !canonical_path.starts_with(&canonical_plugin_dir) {
+            // 脱敏：只记录文件名，不暴露完整路径
+            let filename = canonical_path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "[REDACTED]".to_string());
             return Err(crate::error::AppError::Security(format!(
-                "Plugin path not in whitelist: {:?}",
-                canonical_path
+                "Plugin path not in whitelist: {}",
+                filename
+            )));
+        }
+
+        // ✅ 安全性检查：验证文件大小，防止超大文件攻击
+        let metadata = std::fs::metadata(&canonical_path).map_err(|e| {
+            crate::error::AppError::Security(format!("Cannot read plugin file metadata: {}", e))
+        })?;
+
+        if !metadata.is_file() {
+            return Err(crate::error::AppError::Security(
+                "Plugin path is not a file".to_string(),
+            ));
+        }
+
+        let file_size = metadata.len();
+        if file_size > MAX_PLUGIN_FILE_SIZE {
+            return Err(crate::error::AppError::Security(format!(
+                "Plugin file too large: {} bytes (max: {} bytes)",
+                file_size, MAX_PLUGIN_FILE_SIZE
+            )));
+        }
+
+        // ✅ 安全性检查：验证文件扩展名
+        let extension = canonical_path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("");
+
+        #[cfg(target_os = "windows")]
+        let valid_extension = extension.eq_ignore_ascii_case("dll");
+        #[cfg(target_os = "macos")]
+        let valid_extension = extension.eq_ignore_ascii_case("dylib");
+        #[cfg(target_os = "linux")]
+        let valid_extension = extension.eq_ignore_ascii_case("so");
+
+        if !valid_extension {
+            return Err(crate::error::AppError::Security(format!(
+                "Invalid plugin file extension: .{}",
+                extension
             )));
         }
 
@@ -164,7 +215,7 @@ impl PluginManager {
                 // 库已加载，增加引用计数
                 handle.increment();
                 info!(
-                    path = ?canonical_path,
+                    path = ?canonical_path.file_name().unwrap_or_default(),
                     ref_count = handle.ref_count(),
                     "Plugin library already loaded, incremented reference count"
                 );
@@ -172,12 +223,20 @@ impl PluginManager {
             } else {
                 // 3. 加载新的动态库
                 let lib = unsafe { Library::new(&canonical_path) }.map_err(|e| {
-                    crate::error::AppError::Internal(format!("Failed to load plugin: {}", e))
+                    // 脱敏：不暴露完整路径
+                    let filename = canonical_path
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| "[REDACTED]".to_string());
+                    crate::error::AppError::Internal(format!(
+                        "Failed to load plugin '{}': {}",
+                        filename, e
+                    ))
                 })?;
 
                 let handle = LibraryHandle::new(canonical_path.clone(), lib);
                 info!(
-                    path = ?canonical_path,
+                    path = ?canonical_path.file_name().unwrap_or_default(),
                     "Loaded new plugin library"
                 );
                 libs.insert(canonical_path.clone(), handle.clone());
@@ -268,7 +327,7 @@ impl PluginManager {
 
         info!(
             plugin_name = %name,
-            path = ?canonical_path,
+            path = ?canonical_path.file_name().unwrap_or_default(),
             ref_count = library_handle.ref_count(),
             is_new_load = is_new_load,
             "Plugin loaded successfully"
@@ -350,13 +409,13 @@ impl PluginManager {
         if should_unload {
             info!(
                 plugin_name = %name,
-                path = ?library_path,
+                path = ?library_path.file_name().unwrap_or_default(),
                 "Plugin unloaded and library freed"
             );
         } else {
             info!(
                 plugin_name = %name,
-                path = ?library_path,
+                path = ?library_path.file_name().unwrap_or_default(),
                 "Plugin unloaded (library still referenced by other plugins)"
             );
         }
@@ -505,4 +564,195 @@ macro_rules! register_plugin {
             Box::into_raw(boxed)
         }
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn test_plugin_manager_new() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = PluginManager::new(temp_dir.path().to_path_buf());
+
+        let plugins = manager.get_plugins().await;
+        assert!(plugins.is_empty());
+
+        let count = manager.loaded_library_count().await;
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_max_plugin_file_size_constant() {
+        // 验证最大插件文件大小限制为 50MB
+        assert_eq!(MAX_PLUGIN_FILE_SIZE, 50 * 1024 * 1024);
+    }
+
+    #[test]
+    fn test_plugin_abi_version_constants() {
+        // 验证 ABI 版本常量
+        assert_eq!(PLUGIN_ABI_MAJOR, 1);
+        assert_eq!(PLUGIN_ABI_MINOR, 0);
+    }
+
+    #[tokio::test]
+    async fn test_plugin_path_validation_outside_whitelist() {
+        let temp_dir = TempDir::new().unwrap();
+        let plugin_dir = temp_dir.path().join("plugins");
+        std::fs::create_dir(&plugin_dir).unwrap();
+
+        // 创建一个在插件目录外的文件
+        let outside_file = temp_dir.path().join("outside.so");
+        std::fs::write(&outside_file, b"fake plugin").unwrap();
+
+        let manager = PluginManager::new(plugin_dir);
+
+        // 尝试加载白名单外的插件应该失败
+        let result = manager.load_plugin(&outside_file).await;
+        assert!(result.is_err());
+
+        let error_msg = format!("{}", result.unwrap_err());
+        assert!(error_msg.contains("not in whitelist"));
+        // 验证路径已被脱敏（不包含完整路径）
+        assert!(!error_msg.contains(temp_dir.path().to_str().unwrap()));
+    }
+
+    #[tokio::test]
+    async fn test_plugin_file_size_limit() {
+        let temp_dir = TempDir::new().unwrap();
+        let plugin_dir = temp_dir.path().join("plugins");
+        std::fs::create_dir(&plugin_dir).unwrap();
+
+        // 创建一个超大文件（超过 50MB 限制）
+        let large_file = plugin_dir.join("large.so");
+        let mut file = std::fs::File::create(&large_file).unwrap();
+        // 写入超过限制的数据
+        let data = vec![0u8; (MAX_PLUGIN_FILE_SIZE + 1) as usize];
+        file.write_all(&data).unwrap();
+        drop(file);
+
+        let manager = PluginManager::new(plugin_dir.clone());
+
+        // 尝试加载超大插件应该失败
+        let result = manager.load_plugin(&large_file).await;
+        assert!(result.is_err());
+
+        let error_msg = format!("{}", result.unwrap_err());
+        assert!(error_msg.contains("too large"));
+    }
+
+    #[tokio::test]
+    async fn test_plugin_invalid_extension() {
+        let temp_dir = TempDir::new().unwrap();
+        let plugin_dir = temp_dir.path().join("plugins");
+        std::fs::create_dir(&plugin_dir).unwrap();
+
+        // 创建具有无效扩展名的文件
+        let invalid_file = plugin_dir.join("plugin.exe");
+        std::fs::write(&invalid_file, b"fake plugin").unwrap();
+
+        let manager = PluginManager::new(plugin_dir);
+
+        // 尝试加载无效扩展名的插件应该失败
+        let result = manager.load_plugin(&invalid_file).await;
+        assert!(result.is_err());
+
+        let error_msg = format!("{}", result.unwrap_err());
+        assert!(error_msg.contains("Invalid plugin file extension"));
+    }
+
+    #[tokio::test]
+    async fn test_plugin_not_a_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let plugin_dir = temp_dir.path().join("plugins");
+        std::fs::create_dir(&plugin_dir).unwrap();
+
+        // 创建一个目录而不是文件
+        let dir_path = plugin_dir.join("not_a_file.so");
+        std::fs::create_dir(&dir_path).unwrap();
+
+        let manager = PluginManager::new(plugin_dir);
+
+        // 尝试加载目录应该失败
+        let result = manager.load_plugin(&dir_path).await;
+        assert!(result.is_err());
+
+        let error_msg = format!("{}", result.unwrap_err());
+        assert!(error_msg.contains("not a file"));
+    }
+
+    #[test]
+    fn test_log_enhancer_plugin() {
+        let plugin = LogEnhancerPlugin;
+
+        assert_eq!(plugin.name(), "log_enhancer");
+        assert_eq!(plugin.version(), "1.0.0");
+        assert_eq!(plugin.abi_major(), PLUGIN_ABI_MAJOR);
+        assert_eq!(plugin.abi_minor(), PLUGIN_ABI_MINOR);
+
+        let mut entry = LogEntry::new(
+            chrono::DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
+                .unwrap()
+                .with_timezone(&chrono::Utc),
+            crate::domain::log_analysis::value_objects::LogLevel::Info,
+            "test message".to_string(),
+            "test.log".to_string(),
+            1,
+        );
+
+        plugin.process_log(&mut entry).unwrap();
+
+        // 验证元数据被添加
+        assert!(entry.metadata.contains_key("processed_at"));
+        assert!(entry.metadata.contains_key("message_length"));
+    }
+
+    #[test]
+    fn test_search_filter_plugin() {
+        let plugin = SearchFilterPlugin;
+
+        assert_eq!(plugin.name(), "search_filter");
+        assert_eq!(plugin.version(), "1.0.0");
+
+        let result = plugin.process_search("test password query").unwrap();
+        assert_eq!(result, "test *** query");
+
+        let result = plugin.process_search("normal query").unwrap();
+        assert_eq!(result, "normal query");
+    }
+
+    #[test]
+    fn test_plugin_trait_defaults() {
+        struct TestPlugin;
+        impl Plugin for TestPlugin {
+            fn name(&self) -> &'static str {
+                "test_plugin"
+            }
+            fn version(&self) -> &'static str {
+                "1.0.0"
+            }
+            fn description(&self) -> &'static str {
+                "Test plugin"
+            }
+            fn initialize(&mut self, _config: &serde_json::Value) -> Result<()> {
+                Ok(())
+            }
+            fn process_log(&self, _entry: &mut LogEntry) -> Result<()> {
+                Ok(())
+            }
+            fn process_search(&self, query: &str) -> Result<String> {
+                Ok(query.to_string())
+            }
+            fn cleanup(&self) -> Result<()> {
+                Ok(())
+            }
+        }
+
+        let plugin = TestPlugin;
+        assert_eq!(plugin.abi_major(), PLUGIN_ABI_MAJOR);
+        assert_eq!(plugin.abi_minor(), PLUGIN_ABI_MINOR);
+        assert_eq!(plugin.abi_version(), PLUGIN_ABI_MAJOR);
+    }
 }

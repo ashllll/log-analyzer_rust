@@ -434,9 +434,10 @@ fn document_to_log_entry_inner(schema: &LogSchema, doc: &TantivyDocument) -> Opt
 
 fn document_to_log_entry_impl(schema: &LogSchema, doc: &TantivyDocument) -> Option<LogEntry> {
     // Extract all fields with detailed error tracking
-    let content = match doc.get_first(schema.content) {
+    // 优化：直接使用 Arc::from(s) 从 &str 创建 Arc<str>，避免 String 中间分配
+    let content: Arc<str> = match doc.get_first(schema.content) {
         Some(v) => match v.as_str() {
-            Some(s) => s.to_string(),
+            Some(s) => Arc::from(s),
             None => {
                 tracing::warn!("Document has non-string content field, skipping");
                 return None;
@@ -448,9 +449,9 @@ fn document_to_log_entry_impl(schema: &LogSchema, doc: &TantivyDocument) -> Opti
         }
     };
 
-    let timestamp_i64 = match doc.get_first(schema.timestamp) {
+    let timestamp: Arc<str> = match doc.get_first(schema.timestamp) {
         Some(v) => match v.as_i64() {
-            Some(n) => n,
+            Some(n) => Arc::from(n.to_string()),
             None => {
                 tracing::warn!("Document has non-i64 timestamp field, skipping");
                 return None;
@@ -461,11 +462,10 @@ fn document_to_log_entry_impl(schema: &LogSchema, doc: &TantivyDocument) -> Opti
             return None;
         }
     };
-    let timestamp = timestamp_i64.to_string();
 
-    let level = match doc.get_first(schema.level) {
+    let level: Arc<str> = match doc.get_first(schema.level) {
         Some(v) => match v.as_str() {
-            Some(s) => s.to_string(),
+            Some(s) => Arc::from(s),
             None => {
                 tracing::warn!("Document has non-string level field, skipping");
                 return None;
@@ -477,9 +477,9 @@ fn document_to_log_entry_impl(schema: &LogSchema, doc: &TantivyDocument) -> Opti
         }
     };
 
-    let file_path = match doc.get_first(schema.file_path) {
+    let file_path: Arc<str> = match doc.get_first(schema.file_path) {
         Some(v) => match v.as_str() {
-            Some(s) => s.to_string(),
+            Some(s) => Arc::from(s),
             None => {
                 tracing::warn!("Document has non-string file_path field, skipping");
                 return None;
@@ -491,9 +491,9 @@ fn document_to_log_entry_impl(schema: &LogSchema, doc: &TantivyDocument) -> Opti
         }
     };
 
-    let real_path = match doc.get_first(schema.real_path) {
+    let real_path: Arc<str> = match doc.get_first(schema.real_path) {
         Some(v) => match v.as_str() {
-            Some(s) => s.to_string(),
+            Some(s) => Arc::from(s),
             None => {
                 tracing::warn!("Document has non-string real_path field, skipping");
                 return None;
@@ -521,12 +521,12 @@ fn document_to_log_entry_impl(schema: &LogSchema, doc: &TantivyDocument) -> Opti
 
     Some(LogEntry {
         id: 0,
-        timestamp: timestamp.into(),
-        level: level.into(),
-        file: file_path.into(),
-        real_path: real_path.into(),
+        timestamp,
+        level,
+        file: file_path,
+        real_path,
         line: line_number,
-        content: content.into(),
+        content,
         tags: vec![],
         match_details: None,
         matched_keywords: None,

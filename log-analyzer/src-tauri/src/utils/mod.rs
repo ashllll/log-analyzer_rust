@@ -8,6 +8,7 @@ pub mod cancellation_manager;
 pub mod cleanup;
 pub mod encoding;
 pub mod legacy_detection;
+#[cfg(test)]
 pub mod log_file_detector;
 pub mod path;
 pub mod path_security;

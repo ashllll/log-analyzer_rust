@@ -6,20 +6,20 @@ use crate::models::{log_entry::LogEntry, search_statistics::KeywordStatistics};
 ///
 /// # 参数
 /// * `results` - 搜索结果列表
-/// * `keywords` - 原始关键词列表
+/// * `keywords` - 原始关键词列表（使用 &str 避免克隆）
 ///
 /// # 返回值
 /// 返回按匹配数量降序排列的关键词统计信息列表
 pub fn calculate_keyword_statistics(
     results: &[LogEntry],
-    keywords: &[String],
+    keywords: &[&str],
 ) -> Vec<KeywordStatistics> {
     // 初始化每个关键词的计数器
     let mut keyword_counts: HashMap<String, usize> = HashMap::new();
 
     // 初始化所有关键词计数为0
     for keyword in keywords {
-        keyword_counts.insert(keyword.clone(), 0);
+        keyword_counts.insert(keyword.to_string(), 0);
     }
 
     // 遍历所有结果，统计每个关键词的匹配次数
@@ -53,11 +53,7 @@ mod tests {
     #[test]
     fn test_calculate_keyword_statistics_normal() {
         // 创建测试数据，确保不同关键词有不同的匹配数量
-        let keywords = vec![
-            "error".to_string(),
-            "timeout".to_string(),
-            "warning".to_string(),
-        ];
+        let keywords = ["error", "timeout", "warning"];
 
         // entry1: 匹配 error
         let entry1 = LogEntry {
@@ -159,7 +155,7 @@ mod tests {
 
     #[test]
     fn test_calculate_keyword_statistics_empty_results() {
-        let keywords = vec!["error".to_string(), "timeout".to_string()];
+        let keywords = ["error", "timeout"];
         let results: Vec<LogEntry> = vec![];
         let stats = calculate_keyword_statistics(&results, &keywords);
 
@@ -170,7 +166,7 @@ mod tests {
 
     #[test]
     fn test_calculate_keyword_statistics_no_matches() {
-        let keywords = vec!["error".to_string()];
+        let keywords = ["error"];
         let entry = LogEntry {
             id: 1,
             timestamp: "2024-01-01 12:00:00".into(),

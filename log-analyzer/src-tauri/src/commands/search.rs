@@ -201,14 +201,12 @@ pub async fn search_logs(
             // 仅发送实时计数事件，前端通过 fetch_search_page 按需读取实际数据
             let _ = app_handle.emit("search-progress", cached_results.len());
 
-            let raw_terms: Vec<String> = query
+            let raw_terms: Vec<&str> = query
                 .split('|')
                 .map(|t| t.trim())
                 .filter(|t| !t.is_empty())
-                .map(|t| t.to_string())
                 .collect();
 
-            #[allow(clippy::needless_borrow)]
             let keyword_stats = calculate_keyword_statistics(&cached_results, &raw_terms);
             let summary = SearchResultSummary::new(cached_results.len(), keyword_stats, 0, false);
 

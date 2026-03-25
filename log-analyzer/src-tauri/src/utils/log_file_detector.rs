@@ -28,12 +28,6 @@ pub enum LogFileType {
     AndroidTombstone,
     /// Android Kernel日志
     AndroidKernel,
-    /// 系统日志(syslog等)
-    #[allow(dead_code)]
-    SystemLog,
-    /// 应用日志
-    #[allow(dead_code)]
-    ApplicationLog,
 }
 
 /// 检测配置
@@ -95,15 +89,16 @@ impl Default for DetectorConfig {
 }
 
 /// 日志文件检测器
-#[allow(dead_code)]
+#[cfg(test)]
 pub struct LogFileDetector {
     config: DetectorConfig,
     filename_patterns: Vec<Regex>,
 }
 
+#[cfg(test)]
 impl LogFileDetector {
     /// 创建新的检测器
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn new(config: DetectorConfig) -> Self {
         // 编译文件名模式正则表达式
         let patterns = vec![
@@ -130,7 +125,7 @@ impl LogFileDetector {
     }
 
     /// 检测文件是否为日志文件
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub async fn detect(&self, path: &Path) -> Result<FileTypeResult, String> {
         // 1. 扩展名黑名单检测(最高优先级,直接拒绝)
         if let Some(result) = self.detect_by_blacklist(path) {
@@ -157,7 +152,7 @@ impl LogFileDetector {
     }
 
     /// 基于黑名单检测
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn detect_by_blacklist(&self, path: &Path) -> Option<FileTypeResult> {
         if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
             let ext_lower = ext.to_lowercase();
@@ -172,7 +167,7 @@ impl LogFileDetector {
     }
 
     /// 基于扩展名检测
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn detect_by_extension(&self, path: &Path) -> Option<FileTypeResult> {
         if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
             let ext_lower = ext.to_lowercase();
@@ -184,7 +179,7 @@ impl LogFileDetector {
     }
 
     /// 基于文件名检测
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn detect_by_filename(&self, path: &Path) -> Option<FileTypeResult> {
         let filename = path.file_name()?.to_str()?;
 
@@ -211,7 +206,7 @@ impl LogFileDetector {
     }
 
     /// 基于内容检测
-    #[allow(dead_code)]
+    #[cfg(test)]
     async fn detect_by_content(&self, path: &Path) -> Result<FileTypeResult, String> {
         use tokio::fs::File;
         use tokio::io::{AsyncBufReadExt, BufReader};
@@ -257,7 +252,7 @@ impl LogFileDetector {
     }
 
     /// Android日志特征检测
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn detect_android_log(&self, lines: &[String]) -> Option<LogFileType> {
         // Tombstone特征检测
         if self.is_android_tombstone(lines) {
@@ -278,7 +273,7 @@ impl LogFileDetector {
     }
 
     /// 检测是否为Android Logcat
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn is_android_logcat(&self, lines: &[String]) -> bool {
         let mut logcat_features = 0;
 
@@ -311,7 +306,7 @@ impl LogFileDetector {
     }
 
     /// 检测是否为Android Tombstone
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn is_android_tombstone(&self, lines: &[String]) -> bool {
         for line in lines.iter().take(20) {
             if line.contains("*** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***")
@@ -326,7 +321,7 @@ impl LogFileDetector {
     }
 
     /// 检测是否为Android Kernel日志
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn is_android_kernel_log(&self, lines: &[String]) -> bool {
         for line in lines.iter().take(20) {
             if line.contains("[    0.000000]")
@@ -340,7 +335,7 @@ impl LogFileDetector {
     }
 
     /// 通用日志特征检测
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn detect_generic_log_features(&self, lines: &[String]) -> bool {
         let mut timestamp_count = 0;
         let mut log_level_count = 0;
@@ -366,7 +361,7 @@ impl LogFileDetector {
     }
 
     /// 检测行中是否包含时间戳
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn contains_timestamp(&self, line: &str) -> bool {
         use once_cell::sync::Lazy;
 
@@ -410,7 +405,7 @@ impl LogFileDetector {
     }
 
     /// 检测行中是否包含日志级别
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn contains_log_level(&self, line: &str) -> bool {
         let line_upper = line.to_uppercase();
         line_upper.contains("ERROR")
@@ -427,6 +422,7 @@ impl LogFileDetector {
     }
 }
 
+#[cfg(test)]
 impl Default for LogFileDetector {
     fn default() -> Self {
         Self::new(DetectorConfig::default())
