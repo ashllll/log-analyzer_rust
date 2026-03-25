@@ -97,7 +97,7 @@ function AppContent() {
         addToast('success', 'Application initialized successfully');
 
         // 监听工作区事件
-        unlisten = await listen('workspace-event', (event: any) => {
+        unlisten = await listen('workspace-event', (event: { payload: { type: string; status?: { status: string } } }) => {
           const { status } = event.payload;
 
           // 根据事件类型更新UI

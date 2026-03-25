@@ -326,7 +326,7 @@ fn cleanup_workspace_resources(
     let mut failed_count = 0;
 
     for index_path in [compressed_index, uncompressed_index] {
-        let exists: bool = index_path.exists();
+        let exists = index_path.exists();
         if exists {
             match fs::metadata(&index_path) {
                 Ok(metadata) => {

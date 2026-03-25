@@ -48,7 +48,7 @@ export class ErrorHandler {
    * @param error - 错误对象或字符串
    * @returns 格式化的错误消息
    */
-  static handle(error: any): string {
+  static handle(error: unknown): string {
     const errorStr = String(error);
     logger.error('Error occurred:', errorStr);
     
@@ -71,7 +71,7 @@ export class ErrorHandler {
    * @param error - 错误对象
    * @returns 是否可重试
    */
-  static isRetryable(error: any): boolean {
+  static isRetryable(error: unknown): boolean {
     const errorStr = String(error);
     return errorStr.includes('Failed to lock') || 
            errorStr.includes('Resource busy') ||

@@ -159,9 +159,14 @@ impl AppState {
 
     /// 清理异步缓存条目
     ///
-    /// 注意：此方法为同步方法，持锁期间不跨越 await 点，避免死锁风险
+    /// 注意：此方法先克隆 CacheManager，释放锁后再调用异步操作，避免死锁风险
     pub fn cleanup_expired_entries_async(&self) -> Result<(), String> {
-        let cache = self.cache_manager.lock();
+        // 缩小锁作用域：克隆 CacheManager 后立即释放锁
+        let cache = {
+            let guard = self.cache_manager.lock();
+            // CacheManager 内部使用 Arc，克隆是廉价的
+            guard.clone()
+        };
         let result = tauri::async_runtime::block_on(cache.cleanup_expired_entries_async());
         result.map_err(|e: eyre::Error| e.to_string())
     }

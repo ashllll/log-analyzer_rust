@@ -15,7 +15,7 @@
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 interface LogContext {
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 /**
@@ -75,10 +75,10 @@ class LoggerImpl {
   /**
    * 调试日志(仅在开发环境输出)
    */
-  debug(message: string, ...args: any[]): void;
+  debug(message: string, ...args: unknown[]): void;
   debug(context: LogContext, message?: string): void;
 
-  debug(messageOrContext: string | LogContext, ...args: any[]): void {
+  debug(messageOrContext: string | LogContext, ...args: unknown[]): void {
     if (typeof messageOrContext === 'string') {
       // 兼容原有API
       if (this.shouldLog('debug')) {
@@ -95,10 +95,10 @@ class LoggerImpl {
   /**
    * 信息日志
    */
-  info(message: string, ...args: any[]): void;
+  info(message: string, ...args: unknown[]): void;
   info(context: LogContext, message?: string): void;
 
-  info(messageOrContext: string | LogContext, ...args: any[]): void {
+  info(messageOrContext: string | LogContext, ...args: unknown[]): void {
     if (typeof messageOrContext === 'string') {
       // 兼容原有API
       console.log(`[${LogLevelEnum.INFO}] ${messageOrContext}`, ...args);
@@ -111,10 +111,10 @@ class LoggerImpl {
   /**
    * 警告日志
    */
-  warn(message: string, ...args: any[]): void;
+  warn(message: string, ...args: unknown[]): void;
   warn(context: LogContext, message?: string): void;
 
-  warn(messageOrContext: string | LogContext, ...args: any[]): void {
+  warn(messageOrContext: string | LogContext, ...args: unknown[]): void {
     if (typeof messageOrContext === 'string') {
       // 兼容原有API
       console.warn(`[WARN] ${messageOrContext}`, ...args);
@@ -127,10 +127,10 @@ class LoggerImpl {
   /**
    * 错误日志
    */
-  error(message: string, ...args: any[]): void;
+  error(message: string, ...args: unknown[]): void;
   error(context: LogContext, message?: string): void;
 
-  error(messageOrContext: string | LogContext, ...args: any[]): void {
+  error(messageOrContext: string | LogContext, ...args: unknown[]): void {
     if (typeof messageOrContext === 'string') {
       // 兼容原有API
       console.error(`[${LogLevelEnum.ERROR}] ${messageOrContext}`, ...args);

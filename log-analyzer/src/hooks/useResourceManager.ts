@@ -119,7 +119,7 @@ export const useResourceManager = () => {
 /**
  * Hook for debounced operations using React patterns
  */
-export const useDebounce = <T extends (...args: any[]) => any>(
+export const useDebounce = <T extends (...args: unknown[]) => unknown>(
   callback: T,
   delay: number
 ): T => {
@@ -151,7 +151,7 @@ export const useDebounce = <T extends (...args: any[]) => any>(
 /**
  * Hook for throttled operations using React patterns
  */
-export const useThrottle = <T extends (...args: any[]) => any>(
+export const useThrottle = <T extends (...args: unknown[]) => unknown>(
   callback: T,
   delay: number
 ): T => {
@@ -213,7 +213,7 @@ export const useLifecycle = (
  */
 export const useAsyncOperation = () => {
   const { createAbortController } = useResourceManager();
-  const activeOperationsRef = useRef<Set<Promise<any>>>(new Set());
+  const activeOperationsRef = useRef<Set<Promise<unknown>>>(new Set());
 
   const runAsyncOperation = useCallback(async <T>(
     operation: (signal: AbortSignal) => Promise<T>

@@ -529,7 +529,7 @@ impl MetricsStore {
         let start = range.start_timestamp();
         let end = range.end_timestamp();
 
-        let rows = if let Some(wid) = workspace_id {
+        let rows: Vec<sqlx::sqlite::SqliteRow> = if let Some(wid) = workspace_id {
             sqlx::query(
                 r#"
                 SELECT id, timestamp, workspace_id, query, results_count, duration_ms, cache_hit
@@ -593,7 +593,7 @@ impl MetricsStore {
         let cutoff = retention_timestamp.timestamp();
 
         // 删除旧的指标快照
-        let deleted_snapshots = sqlx::query("DELETE FROM metrics_snapshots WHERE timestamp < ?")
+        let deleted_snapshots: u64 = sqlx::query("DELETE FROM metrics_snapshots WHERE timestamp < ?")
             .bind(cutoff)
             .execute(pool)
             .await
@@ -603,7 +603,7 @@ impl MetricsStore {
             .rows_affected();
 
         // 删除旧的搜索事件
-        let deleted_events = sqlx::query("DELETE FROM search_events WHERE timestamp < ?")
+        let deleted_events: u64 = sqlx::query("DELETE FROM search_events WHERE timestamp < ?")
             .bind(cutoff)
             .execute(pool)
             .await
@@ -625,13 +625,13 @@ impl MetricsStore {
 
     /// 获取统计信息
     pub async fn get_stats(&self) -> Result<MetricsStoreStats> {
-        let snapshot_count: i64 = sqlx::query("SELECT COUNT(*) as count FROM metrics_snapshots")
+        let snapshot_count: i64 = sqlx::query::<sqlx::Sqlite>("SELECT COUNT(*) as count FROM metrics_snapshots")
             .fetch_one(&self.pool)
             .await
             .map_err(|e| AppError::database_error(format!("Failed to get snapshot count: {}", e)))?
             .get("count");
 
-        let event_count: i64 = sqlx::query("SELECT COUNT(*) as count FROM search_events")
+        let event_count: i64 = sqlx::query::<sqlx::Sqlite>("SELECT COUNT(*) as count FROM search_events")
             .fetch_one(&self.pool)
             .await
             .map_err(|e| AppError::database_error(format!("Failed to get event count: {}", e)))?

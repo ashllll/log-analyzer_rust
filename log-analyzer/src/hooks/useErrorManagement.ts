@@ -5,10 +5,27 @@ import { useToastManager } from './useToastManager';
 declare global {
   interface Window {
     __TAURI__?: {
-      invoke: (command: string, args?: any) => Promise<any>;
+      invoke: (command: string, args?: unknown) => Promise<unknown>;
     };
   }
 }
+
+/**
+ * 网络错误类型定义
+ */
+interface NetworkError {
+  response?: {
+    status: number;
+  };
+  message?: string;
+}
+
+/**
+ * 类型守卫：检查是否为网络错误
+ */
+const isNetworkError = (error: unknown): error is NetworkError => {
+  return typeof error === 'object' && error !== null && ('response' in error || 'message' in error);
+};
 
 export interface ErrorInfo {
   id: string;
@@ -16,7 +33,7 @@ export interface ErrorInfo {
   type: 'validation' | 'network' | 'system' | 'user';
   severity: 'low' | 'medium' | 'high' | 'critical';
   timestamp: Date;
-  context?: Record<string, any>;
+  context?: Record<string, unknown>;
   stack?: string;
   recoverable: boolean;
 }
@@ -164,12 +181,14 @@ export const useErrorManagement = () => {
   /**
    * Handle network errors (for react-query integration)
    */
-  const handleNetworkError = useCallback((error: any, context?: { operation?: string }) => {
+  const handleNetworkError = useCallback((error: unknown, context?: { operation?: string }) => {
     let errorMessage = 'Network error occurred';
     let severity: ErrorInfo['severity'] = 'medium';
 
-    if (error?.response?.status) {
-      switch (error.response.status) {
+    const networkError = isNetworkError(error) ? error : null;
+
+    if (networkError?.response?.status) {
+      switch (networkError.response.status) {
         case 400:
           errorMessage = 'Invalid request';
           severity = 'low';
@@ -191,10 +210,10 @@ export const useErrorManagement = () => {
           severity = 'high';
           break;
         default:
-          errorMessage = `Request failed (${error.response.status})`;
+          errorMessage = `Request failed (${networkError.response.status})`;
       }
-    } else if (error?.message) {
-      errorMessage = error.message;
+    } else if (networkError?.message) {
+      errorMessage = networkError.message;
     }
 
     return reportError(errorMessage, {

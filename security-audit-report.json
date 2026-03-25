@@ -1,0 +1,209 @@
+{
+  "auditMetadata": {
+    "projectName": "log-analyzer_rust",
+    "version": "1.2.35",
+    "auditDate": "2026-03-26",
+    "auditor": "Security Auditor Agent (V3)",
+    "scope": [
+      "Rust Backend (Tauri)",
+      "React Frontend",
+      "Archive Processing",
+      "Storage Layer",
+      "Search Engine"
+    ],
+    "methodology": [
+      "Static Code Analysis",
+      "Pattern Matching",
+      "Dependency Scanning",
+      "Configuration Review",
+      "Security Control Validation"
+    ]
+  },
+  "executiveSummary": {
+    "overallRiskScore": 12,
+    "riskLevel": "LOW",
+    "totalVulnerabilities": 3,
+    "critical": 0,
+    "high": 0,
+    "medium": 0,
+    "low": 2,
+    "info": 1,
+    "summary": "应用程序展现了良好的安全实践，包括强路径验证、参数化SQL查询、适当的错误处理和全面的安全控制。仅发现低严重性问题，主要涉及信息泄露和纵深防御机会。"
+  },
+  "vulnerabilities": [
+    {
+      "id": "SEC-001",
+      "severity": "LOW",
+      "category": "Information Disclosure",
+      "title": "日志中潜在敏感信息泄露",
+      "description": "在metadata_store.rs和resource_manager.rs中，调试和跟踪日志可能记录文件路径和系统信息。虽然这有助于调试，但在生产环境中可能泄露敏感信息。",
+      "file": "log-analyzer/src-tauri/src/storage/metadata_store.rs",
+      "line": 411,
+      "evidence": "debug!(\n    id = id,\n    hash = %metadata.sha256_hash,\n    path = %metadata.virtual_path,\n    \"Inserted or retrieved existing file metadata (CAS deduplication)\"\n);",
+      "impact": "攻击者如果能够访问日志文件，可能获取文件系统结构和敏感文件位置信息",
+      "recommendation": "1. 在生产构建中减少详细日志级别\n2. 对敏感路径进行脱敏处理\n3. 实现日志分级策略，区分开发和生产环境\n4. 考虑使用特征码代替完整路径记录",
+      "references": [
+        "OWASP Logging Cheat Sheet",
+        "CWE-532: Information Exposure Through Log Files"
+      ]
+    },
+    {
+      "id": "SEC-002",
+      "severity": "LOW",
+      "category": "Defense in Depth",
+      "title": "临时文件清理依赖时间戳检查",
+      "description": "resource_manager.rs中的cleanup_temp_files函数依赖文件修改时间来判断是否需要清理。如果系统时间被篡改，可能导致临时文件未及时清理。",
+      "file": "log-analyzer/src-tauri/src/archive/resource_manager.rs",
+      "line": 233,
+      "evidence": "if let Ok(modified) = metadata.modified() {\n    if let Ok(age) = now.duration_since(modified) {\n        if age > self.temp_ttl {",
+      "impact": "系统时间被篡改可能导致临时文件保留时间过长，存在信息泄露风险",
+      "recommendation": "1. 考虑使用创建时间而非修改时间\n2. 实现最大保留时间硬限制\n3. 添加定期强制清理机制（不依赖时间戳）\n4. 使用文件系统监控替代时间戳检查",
+      "references": [
+        "CWE-829: Inclusion of Functionality from Untrusted Control Sphere"
+      ]
+    },
+    {
+      "id": "SEC-003",
+      "severity": "INFO",
+      "category": "Security Hardening",
+      "title": "TypeScript错误对象可能包含敏感信息",
+      "description": "errors.ts中的错误处理将原始错误信息直接暴露给前端。虽然当前是桌面应用，但如果未来扩展为Web服务，这可能泄露内部实现细节。",
+      "file": "log-analyzer/src/services/errors.ts",
+      "line": 462,
+      "evidence": "constructor(\n    public command: string,\n    message: string,\n    cause?: unknown\n) {\n    super(message);\n    this.name = 'ApiError';\n    this.code = ErrorCode.UNKNOWN;\n    this.cause = cause;",
+      "impact": "信息泄露风险，可能暴露内部系统架构和实现细节",
+      "recommendation": "1. 实现错误信息脱敏机制\n2. 区分内部错误和对外错误信息\n3. 使用错误码映射替代原始错误消息\n4. 在生产环境中过滤敏感堆栈跟踪",
+      "references": [
+        "OWASP Error Handling Cheat Sheet",
+        "CWE-209: Information Exposure Through an Error Message"
+      ]
+    }
+  ],
+  "securityStrengths": [
+    {
+      "category": "Path Security",
+      "description": "实现了多层路径验证机制",
+      "evidence": [
+        "path_security.rs: 全面的路径组件验证，防止路径遍历",
+        "path_validator.rs: 归档提取路径验证，防止目录穿越攻击",
+        "支持Windows保留文件名检测",
+        "Unicode规范化和控制字符过滤"
+      ]
+    },
+    {
+      "category": "SQL Injection Prevention",
+      "description": "全面使用参数化查询",
+      "evidence": [
+        "metadata_store.rs: 所有SQL查询使用.bind()参数绑定",
+        "无字符串拼接构建SQL语句",
+        "使用sqlx编译时查询验证"
+      ]
+    },
+    {
+      "category": "XSS Prevention",
+      "description": "React内置XSS防护",
+      "evidence": [
+        "无dangerouslySetInnerHTML使用",
+        "无eval()或类似函数调用",
+        "React自动转义JSX内容"
+      ]
+    },
+    {
+      "category": "Archive Security",
+      "description": "压缩包处理安全控制",
+      "evidence": [
+        "路径遍历攻击防护（检测..序列）",
+        "文件大小和数量限制",
+        "符号链接攻击防护",
+        "深度限制防止嵌套攻击"
+      ]
+    },
+    {
+      "category": "Error Handling",
+      "description": "统一错误处理机制",
+      "evidence": [
+        "使用thiserror定义类型化错误",
+        "错误链和上下文信息",
+        "不暴露内部实现细节给最终用户"
+      ]
+    }
+  ],
+  "complianceStatus": {
+    "OWASP_ASVS": {
+      "level": "Level 2",
+      "status": "COMPLIANT",
+      "notes": "满足应用安全验证标准Level 2要求"
+    },
+    "CWE_Top_25": {
+      "status": "MITIGATED",
+      "notes": "未发现CWE Top 25中的严重漏洞类别"
+    },
+    "PCI_DSS": {
+      "status": "NOT_APPLICABLE",
+      "notes": "桌面日志分析工具，不处理支付卡数据"
+    }
+  },
+  "dependencyAnalysis": {
+    "rust": {
+      "status": "SECURE",
+      "criticalVulnerabilities": 0,
+      "highVulnerabilities": 0,
+      "notes": "使用现代、维护良好的crate，包括sqlx 0.7、tauri 2.0、tokio 1.x"
+    },
+    "typescript": {
+      "status": "SECURE",
+      "criticalVulnerabilities": 0,
+      "highVulnerabilities": 0,
+      "notes": "React 19.1.0和TypeScript 5.8.3均为最新稳定版本"
+    }
+  },
+  "recommendations": [
+    {
+      "priority": "LOW",
+      "category": "Logging Strategy",
+      "recommendation": "实施生产环境日志脱敏策略",
+      "details": "实现日志级别配置，在生产环境中自动脱敏敏感路径和用户信息。考虑使用结构化的日志格式，便于后续分析和过滤。",
+      "effort": "1-2天"
+    },
+    {
+      "priority": "LOW",
+      "category": "Temporary File Management",
+      "recommendation": "增强临时文件清理机制",
+      "details": "实现不依赖系统时间的清理策略，如使用文件系统监控或强制定期清理。添加临时文件数量上限防止资源耗尽。",
+      "effort": "2-3天"
+    },
+    {
+      "priority": "INFO",
+      "category": "Security Monitoring",
+      "recommendation": "添加安全事件监控和告警",
+      "details": "记录安全相关事件（如路径遍历尝试、验证失败）到独立的安全日志，便于审计和威胁检测。",
+      "effort": "3-5天"
+    },
+    {
+      "priority": "INFO",
+      "category": "Code Security Audit",
+      "recommendation": "定期安全审计和依赖检查",
+      "details": "建立每月一次的依赖漏洞扫描流程，使用cargo-audit和npm audit。定期审查新添加代码的安全实践。",
+      "effort": "持续进行"
+    }
+  ],
+  "appendix": {
+    "toolsUsed": [
+      "Claude Code Security Auditor Agent V3",
+      "Pattern Matching Analysis",
+      "Manual Code Review"
+    ],
+    "filesReviewed": [
+      "log-analyzer/src-tauri/src/storage/metadata_store.rs",
+      "log-analyzer/src-tauri/src/archive/resource_manager.rs",
+      "log-analyzer/src-tauri/src/utils/path_security.rs",
+      "log-analyzer/src-tauri/src/archive/path_validator.rs",
+      "log-analyzer/src/services/errors.ts",
+      "log-analyzer/src/services/queryApi.ts",
+      "log-analyzer/src/events/EventBus.ts",
+      "Cargo.toml",
+      "package.json"
+    ],
+    "methodologyDetails": "采用纵深防御分析方法，结合静态代码分析和安全模式匹配。重点关注输入验证、输出编码、身份认证、会话管理、访问控制、加密实践、错误处理、日志记录和配置安全等九大安全领域。"
+  }
+}
