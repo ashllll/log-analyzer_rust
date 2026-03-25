@@ -76,7 +76,8 @@ pub async fn start_watch(
 
     let app_handle = app.clone();
     let workspace_id_clone = workspaceId.clone();
-    let watchers_arc = Arc::clone(&state.watchers);
+    let watchers_arc: Arc<parking_lot::Mutex<HashMap<String, WatcherState>>> =
+        Arc::clone(&state.watchers);
 
     let handle = thread::spawn(move || {
         for res in rx {

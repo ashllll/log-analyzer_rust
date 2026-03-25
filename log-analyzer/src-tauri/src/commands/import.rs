@@ -13,6 +13,7 @@ use uuid::Uuid;
 
 use crate::models::AppState;
 use crate::storage::{verify_after_import, MetadataStore};
+use crate::task_manager::TaskManager;
 use crate::utils::{canonicalize_path, validate_path_param, validate_workspace_id};
 
 #[command]
@@ -61,7 +62,7 @@ pub async fn import_folder(
         .to_string();
 
     // Extract task_manager before await
-    let task_manager = state.task_manager.lock().clone();
+    let task_manager: Option<TaskManager> = state.task_manager.lock().clone();
     let _task = if let Some(task_manager) = task_manager.as_ref() {
         task_manager
             .create_task_async(
@@ -87,7 +88,7 @@ pub async fn import_folder(
 
     // 更新任务进度
     // 老王备注：TaskManager.UpdateTask 会自动发送 task-update 事件，不需要重复发送
-    let task_manager_clone = {
+    let task_manager_clone: Option<TaskManager> = {
         let guard = state.task_manager.lock();
         guard.as_ref().cloned()
     };
@@ -186,7 +187,7 @@ pub async fn import_folder(
         }
 
         // Update task with error
-        let task_manager_clone = {
+        let task_manager_clone: Option<TaskManager> = {
             let guard = state.task_manager.lock();
             guard.as_ref().cloned()
         };
@@ -217,7 +218,7 @@ pub async fn import_folder(
     // This generates a validation report to ensure all imported files are accessible
     // and have valid hashes in the CAS
     // 老王备注：TaskManager.UpdateTask 会自动发送 task-update 事件，不需要重复发送
-    let task_manager_clone = {
+    let task_manager_clone: Option<TaskManager> = {
         let guard = state.task_manager.lock();
         guard.as_ref().cloned()
     };
@@ -281,7 +282,7 @@ pub async fn import_folder(
 
     // 导入完成，使用 TaskManager 更新任务状态
     // 老王备注：TaskManager.UpdateTask 会自动发送 task-update 事件，不需要重复发送
-    let task_manager_clone = {
+    let task_manager_clone: Option<TaskManager> = {
         let guard = state.task_manager.lock();
         guard.as_ref().cloned()
     };

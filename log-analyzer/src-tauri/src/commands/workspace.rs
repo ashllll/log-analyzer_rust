@@ -91,7 +91,7 @@ pub async fn load_workspace(
         .map_err(|e| format!("Failed to count files: {}", e))? as usize;
 
     // Broadcast workspace loaded event
-    let state_sync_opt = {
+    let state_sync_opt: Option<crate::state_sync::StateSync> = {
         let guard = state.state_sync.lock();
         guard.as_ref().cloned()
     };
@@ -576,7 +576,7 @@ pub async fn delete_workspace(
 
     // 广播工作区删除事件
     // 注意：先克隆 state_sync，释放锁后再 await，避免跨 await 点持有锁
-    let state_sync_opt = {
+    let state_sync_opt: Option<crate::state_sync::StateSync> = {
         let guard = state.state_sync.lock();
         guard.as_ref().cloned()
     };
@@ -624,7 +624,7 @@ pub async fn cancel_task(
         "Cancel task command called"
     );
 
-    let task_manager = state
+    let task_manager: crate::task_manager::TaskManager = state
         .task_manager
         .lock()
         .as_ref()

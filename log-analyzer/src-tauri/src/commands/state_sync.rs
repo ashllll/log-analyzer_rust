@@ -29,7 +29,7 @@ pub async fn get_workspace_state(
     #[allow(non_snake_case)] workspaceId: String,
     state: State<'_, AppState>,
 ) -> Result<Option<crate::state_sync::WorkspaceState>, String> {
-    let state_sync = {
+    let state_sync: StateSync = {
         let sync_guard = state.state_sync.lock();
         if let Some(state_sync) = sync_guard.as_ref() {
             state_sync.clone()
@@ -48,7 +48,7 @@ pub async fn get_event_history(
     limit: Option<usize>,
     state: State<'_, AppState>,
 ) -> Result<Vec<WorkspaceEvent>, String> {
-    let state_sync = {
+    let state_sync: StateSync = {
         let sync_guard = state.state_sync.lock();
         if let Some(state_sync) = sync_guard.as_ref() {
             state_sync.clone()
@@ -67,7 +67,7 @@ pub async fn broadcast_test_event(
     #[allow(non_snake_case)] workspaceId: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let state_sync = {
+    let state_sync: StateSync = {
         let sync_guard = state.state_sync.lock();
         if let Some(state_sync) = sync_guard.as_ref() {
             state_sync.clone()

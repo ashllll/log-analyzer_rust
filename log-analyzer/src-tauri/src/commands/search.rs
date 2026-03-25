@@ -92,16 +92,26 @@ pub async fn search_logs(
     }
 
     let app_handle = app.clone();
-    let workspace_dirs = Arc::clone(&state.workspace_dirs);
-    let cas_instances = Arc::clone(&state.cas_instances);
-    let metadata_stores = Arc::clone(&state.metadata_stores);
-    let cache_manager = Arc::clone(&state.cache_manager);
-    let total_searches = Arc::clone(&state.total_searches);
-    let cache_hits = Arc::clone(&state.cache_hits);
-    let last_search_duration = Arc::clone(&state.last_search_duration);
-    let cancellation_tokens = Arc::clone(&state.search_cancellation_tokens);
+    let workspace_dirs: Arc<Mutex<std::collections::BTreeMap<String, std::path::PathBuf>>> =
+        Arc::clone(&state.workspace_dirs);
+    let cas_instances: Arc<
+        Mutex<std::collections::HashMap<String, Arc<crate::storage::ContentAddressableStorage>>>,
+    > = Arc::clone(&state.cas_instances);
+    let metadata_stores: Arc<
+        Mutex<std::collections::HashMap<String, Arc<crate::storage::MetadataStore>>>,
+    > = Arc::clone(&state.metadata_stores);
+    let cache_manager: Arc<Mutex<crate::utils::cache_manager::CacheManager>> =
+        Arc::clone(&state.cache_manager);
+    let total_searches: Arc<Mutex<u64>> = Arc::clone(&state.total_searches);
+    let cache_hits: Arc<Mutex<u64>> = Arc::clone(&state.cache_hits);
+    let last_search_duration: Arc<Mutex<std::time::Duration>> =
+        Arc::clone(&state.last_search_duration);
+    let cancellation_tokens: Arc<
+        Mutex<std::collections::HashMap<String, tokio_util::sync::CancellationToken>>,
+    > = Arc::clone(&state.search_cancellation_tokens);
     // 磁盘搜索结果存储：新架构的核心，替代 search-results IPC 事件
-    let disk_result_store = Arc::clone(&state.disk_result_store);
+    let disk_result_store: Arc<crate::search_engine::disk_result_store::DiskResultStore> =
+        Arc::clone(&state.disk_result_store);
 
     let max_results = max_results.unwrap_or(50000).min(100_000);
     let filters = filters.unwrap_or_default();
@@ -613,7 +623,9 @@ pub async fn cancel_search(
     #[allow(non_snake_case)] searchId: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let cancellation_tokens = Arc::clone(&state.search_cancellation_tokens);
+    let cancellation_tokens: Arc<
+        Mutex<std::collections::HashMap<String, tokio_util::sync::CancellationToken>>,
+    > = Arc::clone(&state.search_cancellation_tokens);
 
     let token = {
         let tokens = cancellation_tokens.lock();
@@ -957,9 +969,14 @@ pub async fn search_logs_paged(
     }
 
     // 执行新搜索（page_index == -1）
-    let workspace_dirs = Arc::clone(&state.workspace_dirs);
-    let cas_instances = Arc::clone(&state.cas_instances);
-    let metadata_stores = Arc::clone(&state.metadata_stores);
+    let workspace_dirs: Arc<Mutex<std::collections::BTreeMap<String, std::path::PathBuf>>> =
+        Arc::clone(&state.workspace_dirs);
+    let cas_instances: Arc<
+        Mutex<std::collections::HashMap<String, Arc<crate::storage::ContentAddressableStorage>>>,
+    > = Arc::clone(&state.cas_instances);
+    let metadata_stores: Arc<
+        Mutex<std::collections::HashMap<String, Arc<crate::storage::MetadataStore>>>,
+    > = Arc::clone(&state.metadata_stores);
 
     let filters = filters.unwrap_or_default();
 
