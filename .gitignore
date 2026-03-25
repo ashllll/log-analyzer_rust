@@ -1,4 +1,12 @@
+# Claude Code / Claude Flow
+.claude/
+.claude-flow/
+.swarm/
+
+# macOS
 .DS_Store
+# Dependencies
+node_modules/
 log-analyzer/node_modules
 log-analyzer/dist
 log-analyzer/dist-ssr

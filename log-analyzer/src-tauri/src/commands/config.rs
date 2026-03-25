@@ -15,7 +15,10 @@ use crate::models::config::{
 
 /// 加载配置（使用新的 ConfigLoader 系统）
 fn load_config_internal(app: &AppHandle) -> Result<AppConfig, String> {
-    let config_dir = app.path().app_config_dir().map_err(|e: tauri::Error| e.to_string())?;
+    let config_dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e: tauri::Error| e.to_string())?;
 
     let config_path = config_dir.join("config.json");
 
@@ -41,7 +44,10 @@ fn load_config_internal(app: &AppHandle) -> Result<AppConfig, String> {
 #[command]
 pub async fn save_config(app: AppHandle, config: AppConfig) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
-        let config_dir = app.path().app_config_dir().map_err(|e: tauri::Error| e.to_string())?;
+        let config_dir = app
+            .path()
+            .app_config_dir()
+            .map_err(|e: tauri::Error| e.to_string())?;
         if !config_dir.exists() {
             fs::create_dir_all(&config_dir).map_err(|e| e.to_string())?;
         }
