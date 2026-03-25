@@ -165,7 +165,7 @@ pub async fn refresh_workspace(
     import_folder(app, path, workspaceId, state).await
 }
 
-use std::{fs, path::Path};
+use std::{fs, path::Path, sync::Arc};
 
 use tauri::{command, AppHandle, Manager, State};
 use tracing::{error, info, warn};
@@ -635,7 +635,7 @@ pub async fn cancel_task(
 
     let task_manager: crate::task_manager::TaskManager = task_manager;
     // 更新任务状态为 Stopped
-    let _ = task_manager
+    let _: Result<Option<crate::task_manager::TaskInfo>, String> = task_manager
         .update_task_async(
             &taskId,
             0, // progress 保持不变
@@ -643,7 +643,7 @@ pub async fn cancel_task(
             crate::task_manager::TaskStatus::Stopped,
         )
         .await
-        .map_err(|e| format!("Failed to cancel task: {}", e))?;
+        .map_err(|e| format!("Failed to cancel task: {}", e));
 
     info!(
         task_id = %taskId,
@@ -773,9 +773,12 @@ pub async fn get_workspace_time_range(
     };
 
     let (min_ts, max_ts, total_logs) = match search_engine_opt {
-        Some(manager) => manager
-            .get_time_range()
-            .map_err(|e| format!("Failed to get time range from index: {}", e))?,
+        Some(manager) => {
+            let manager: Arc<crate::search_engine::SearchEngineManager> = manager;
+            manager
+                .get_time_range()
+                .map_err(|e| format!("Failed to get time range from index: {}", e))?
+        }
         None => {
             // No search engine manager found for this workspace
             return Ok(WorkspaceTimeRange {

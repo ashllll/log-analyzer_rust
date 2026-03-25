@@ -1320,7 +1320,7 @@ pub async fn fetch_search_page(
     if disk_store.has_session(&search_id) {
         let result: crate::search_engine::disk_result_store::SearchPageResult = disk_store
             .read_page(&search_id, offset, limit)
-            .map_err(|e| e.to_string())?;
+            .map_err(|e: std::io::Error| e.to_string())?;
 
         debug!(
             search_id = %search_id,

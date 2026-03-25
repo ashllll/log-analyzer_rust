@@ -112,7 +112,7 @@ impl MetadataStore {
 
         // 老王备注：使用业内成熟的SQLite连接池配置
         // 连接池大小和超时配置基于SQLite最佳实践
-        let pool = SqlitePoolOptions::new()
+        let pool: SqlitePool = SqlitePoolOptions::new()
             .min_connections(1) // 最小连接数：桌面应用通常1个足够
             .max_connections(10) // 最大连接数：WAL模式支持更多并发
             .acquire_timeout(Duration::from_secs(30)) // 获取连接超时
