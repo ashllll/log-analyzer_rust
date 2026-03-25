@@ -604,12 +604,15 @@ impl MetricsStore {
                 .rows_affected();
 
         // 删除旧的搜索事件
-        let deleted_events: u64 = sqlx::query::<sqlx::Sqlite>("DELETE FROM search_events WHERE timestamp < ?")
-            .bind(cutoff)
-            .execute(pool)
-            .await
-            .map_err(|e| AppError::database_error(format!("Failed to cleanup old events: {}", e)))?
-            .rows_affected();
+        let deleted_events: u64 =
+            sqlx::query::<sqlx::Sqlite>("DELETE FROM search_events WHERE timestamp < ?")
+                .bind(cutoff)
+                .execute(pool)
+                .await
+                .map_err(|e| {
+                    AppError::database_error(format!("Failed to cleanup old events: {}", e))
+                })?
+                .rows_affected();
 
         info!(
             cutoff,
