@@ -332,7 +332,7 @@ fn cleanup_workspace_resources(
             match fs::metadata(index_path) {
                 Ok(metadata) => {
                     if metadata.is_file() {
-                        match fs::remove_file(&index_path) {
+                        match fs::remove_file(index_path) {
                             Ok(_) => {
                                 deleted_count += 1;
                                 info!(
