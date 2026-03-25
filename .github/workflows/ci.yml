@@ -71,10 +71,15 @@ jobs:
         cd log-analyzer/src-tauri
         cargo fmt -- --check
 
+    - name: Fetch dependencies
+      run: |
+        cd log-analyzer/src-tauri
+        cargo fetch
+
     - name: Run clippy linter
       run: |
         cd log-analyzer/src-tauri
-        cargo clippy --all-features --all-targets --no-deps -- -D warnings
+        cargo clippy --all-features --all-targets -- -D warnings
       shell: bash
 
     - name: Run unit tests
