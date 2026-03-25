@@ -183,7 +183,10 @@ impl CacheMonitor {
         let interval = self.config.check_interval;
 
         tokio::spawn(async move {
-            info!(interval_secs = interval.as_secs(), "Starting cache monitoring");
+            info!(
+                interval_secs = interval.as_secs(),
+                "Starting cache monitoring"
+            );
 
             let mut interval = tokio::time::interval(interval);
 
@@ -212,7 +215,6 @@ impl CacheMonitor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
 
     #[test]
     fn test_cache_metrics_default() {

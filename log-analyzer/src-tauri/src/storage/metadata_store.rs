@@ -1175,7 +1175,8 @@ impl MetadataStore {
                     )));
                 }
                 return Err(AppError::database_error(format!(
-                    "Failed to ensure workspace exists: {}", e
+                    "Failed to ensure workspace exists: {}",
+                    e
                 )));
             }
         }
@@ -1226,7 +1227,8 @@ impl MetadataStore {
                     )))
                 } else {
                     Err(AppError::database_error(format!(
-                        "Failed to save indexed file: {}", e
+                        "Failed to save indexed file: {}",
+                        e
                     )))
                 }
             }

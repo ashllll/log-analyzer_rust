@@ -381,7 +381,9 @@ mod tests {
 
         // Create test file
         let test_file = temp_dir.path().join("orphan_test.log");
-        fs::write(&test_file, b"unique content for orphan test").await.unwrap();
+        fs::write(&test_file, b"unique content for orphan test")
+            .await
+            .unwrap();
 
         // First, store the file successfully to get the hash
         let metadata = create_test_metadata("/test/orphan_test.log");
@@ -391,7 +393,10 @@ mod tests {
             .unwrap();
 
         // Verify file exists
-        assert!(coordinator.cas.exists(&hash), "CAS file should exist after successful store");
+        assert!(
+            coordinator.cas.exists(&hash),
+            "CAS file should exist after successful store"
+        );
 
         // Delete the metadata to simulate the orphan scenario
         // (In real failure scenario, metadata commit would fail before record is created)
@@ -402,7 +407,10 @@ mod tests {
 
         // Verify the CAS file still exists (we didn't delete it in this simulation)
         // In real scenario with the fix, the file would be cleaned up
-        assert!(coordinator.cas.exists(&hash), "CAS file should still exist after metadata clear");
+        assert!(
+            coordinator.cas.exists(&hash),
+            "CAS file should still exist after metadata clear"
+        );
     }
 
     /// Test that orphan files are cleaned up when metadata commit fails
@@ -420,15 +428,26 @@ mod tests {
         fs::write(&test_file, content).await.unwrap();
 
         // Store content in CAS directly
-        let hash = coordinator.cas.store_file_streaming(&test_file).await.unwrap();
+        let hash = coordinator
+            .cas
+            .store_file_streaming(&test_file)
+            .await
+            .unwrap();
 
         // Verify CAS file exists
         let object_path = coordinator.cas.get_object_path(&hash);
         assert!(object_path.exists(), "CAS file should exist");
 
         // Verify no metadata references this file
-        let metadata = coordinator.metadata_store.get_file_by_hash(&hash).await.unwrap();
-        assert!(metadata.is_none(), "No metadata should reference this file yet");
+        let metadata = coordinator
+            .metadata_store
+            .get_file_by_hash(&hash)
+            .await
+            .unwrap();
+        assert!(
+            metadata.is_none(),
+            "No metadata should reference this file yet"
+        );
 
         // Simulate orphan cleanup by manually removing the file
         // (In production, this is done by the coordinator when metadata commit fails)
@@ -439,7 +458,10 @@ mod tests {
 
         // Verify file is cleaned up
         assert!(!object_path.exists(), "CAS file should be cleaned up");
-        assert!(!coordinator.cas.exists(&hash), "CAS should report file as non-existent");
+        assert!(
+            !coordinator.cas.exists(&hash),
+            "CAS should report file as non-existent"
+        );
     }
 
     /// Test that deduplication prevents orphan cleanup when other references exist
@@ -449,7 +471,9 @@ mod tests {
 
         // Create test file
         let test_file = temp_dir.path().join("shared_content.log");
-        fs::write(&test_file, b"shared content for dedup test").await.unwrap();
+        fs::write(&test_file, b"shared content for dedup test")
+            .await
+            .unwrap();
 
         // Store first file (creates both CAS and metadata)
         let metadata1 = create_test_metadata("/test/shared1.log");

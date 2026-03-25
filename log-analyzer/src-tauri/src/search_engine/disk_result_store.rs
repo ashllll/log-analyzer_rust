@@ -148,7 +148,7 @@ impl DiskResultStore {
         let mut writer_guard = session.writer.lock();
         let writer = writer_guard
             .as_mut()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "会话已完成，无法继续写入"))?;
+            .ok_or_else(|| io::Error::other("会话已完成，无法继续写入"))?;
 
         for entry in entries {
             // 写入当前字节偏移到索引文件（8 字节小端序）

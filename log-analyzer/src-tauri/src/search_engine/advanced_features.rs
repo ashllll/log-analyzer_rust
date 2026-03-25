@@ -93,7 +93,7 @@ impl FilterEngine {
                 );
                 UNKNOWN_TIME_KEY
             }
-            Ok(negative_ts) => {
+            Ok(_negative_ts) => {
                 // 负时间戳（早于1970年），虽有效但可能是数据问题
                 tracing::warn!(
                     timestamp = %log_entry.timestamp,

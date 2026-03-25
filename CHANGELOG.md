@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.54] - 2026-03-25
+
+### 🐛 Bug Fixes
+
+- **CI/CD 修复**: 修复 GitHub Actions 工作流失败
+  - `ilammy/msvc-toolchain@v1` 改为 `@v1.13.0` 固定版本
+  - 移除已弃用的 `toolset: latest` 参数
+  - 解决 action 无法解析的问题
+
+- **Clippy 警告修复**: 解决 CI 中 `-D warnings` 导致的构建失败
+  - `boolean_query_processor.rs`: 使用 `clamp()` 替换 `max().min()` 模式
+  - `disk_result_store.rs`: 使用 `io::Error::other()` 替换 `io::Error::new(Other, ...)`
+  - `cas.rs`: 为 `TempFileGuard` 添加 `#[allow(dead_code)]` 属性
+  - `cache_monitor.rs`: 移除未使用的 `tempfile::TempDir` 导入
+  - `gc.rs`: 移除未使用的 `tempfile::TempDir` 导入
+  - `advanced_features.rs`: 修复未使用变量 `negative_ts` 警告
+
+---
+
 ## [0.0.140] - 2026-02-11
 
 ### ✨ Features

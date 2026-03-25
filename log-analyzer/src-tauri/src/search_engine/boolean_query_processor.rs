@@ -86,8 +86,8 @@ impl<C: tantivy::collector::SegmentCollector> tantivy::collector::SegmentCollect
         // 高分文档阈值：对于高相关性文档立即检查取消状态
         const HIGH_SCORE_THRESHOLD: f32 = 0.9;
 
-        let should_check_cancel = doc.is_multiple_of(CANCEL_CHECK_INTERVAL)
-            || score > HIGH_SCORE_THRESHOLD;
+        let should_check_cancel =
+            doc.is_multiple_of(CANCEL_CHECK_INTERVAL) || score > HIGH_SCORE_THRESHOLD;
 
         if should_check_cancel && self.token.is_cancelled() {
             // 取消时停止收集当前段，但保留已收集的结果
@@ -296,9 +296,9 @@ impl BooleanQueryProcessor {
         }
 
         // 基础成本权重配置
-        const MUST_WEIGHT: f64 = 1.5;      // Must 使用交集，成本最高
-        const SHOULD_WEIGHT: f64 = 1.0;    // Should 使用并集，成本中等
-        const MUST_NOT_WEIGHT: f64 = 0.5;  // MustNot 只需排除，成本较低
+        const MUST_WEIGHT: f64 = 1.5; // Must 使用交集，成本最高
+        const SHOULD_WEIGHT: f64 = 1.0; // Should 使用并集，成本中等
+        const MUST_NOT_WEIGHT: f64 = 0.5; // MustNot 只需排除，成本较低
         const BASE_COST_PER_TERM: f64 = 100.0; // 每项基础成本
 
         // 计算各项成本
@@ -310,7 +310,7 @@ impl BooleanQueryProcessor {
         for (_, occur, selectivity) in terms {
             // 选择性越低（接近0），成本越高（需要扫描更多文档）
             // 使用对数变换平滑极端值
-            let adjusted_selectivity = selectivity.max(0.001).min(1.0);
+            let adjusted_selectivity = selectivity.clamp(0.001, 1.0);
             let scan_cost = 1.0 / adjusted_selectivity; // 反比关系
 
             let operator_cost = match occur {

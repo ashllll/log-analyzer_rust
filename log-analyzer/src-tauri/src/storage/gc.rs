@@ -63,7 +63,7 @@ pub struct GCConfig {
 impl Default for GCConfig {
     fn default() -> Self {
         Self {
-            interval: Duration::from_secs(3600), // 1 hour default
+            interval: Duration::from_secs(3600),    // 1 hour default
             min_file_age: Duration::from_secs(300), // 5 minutes safety buffer
             batch_size: 1000,
             dry_run: false,
@@ -360,10 +360,7 @@ impl GarbageCollector {
     /// # Arguments
     ///
     /// * `shutdown_rx` - Receiver for shutdown signal
-    pub fn start_background_gc(
-        self: Arc<Self>,
-        mut shutdown_rx: tokio::sync::mpsc::Receiver<()>,
-    ) {
+    pub fn start_background_gc(self: Arc<Self>, mut shutdown_rx: tokio::sync::mpsc::Receiver<()>) {
         let interval = self.config.interval;
 
         tokio::spawn(async move {
@@ -442,7 +439,6 @@ impl Default for GCManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
 
     // Note: These tests would need proper mocking of MetadataStore
     // For now, we just verify the structure compiles

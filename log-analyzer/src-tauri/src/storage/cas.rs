@@ -198,6 +198,7 @@ impl TempFileGuard {
     }
 
     /// Get the path to the temporary file
+    #[allow(dead_code)]
     fn path(&self) -> &Path {
         &self.path
     }
@@ -584,7 +585,10 @@ impl ContentAddressableStorage {
                             );
                             if cleanup_attempts < max_cleanup_attempts {
                                 // Wait before retry with exponential backoff
-                                tokio::time::sleep(Duration::from_millis(100 * cleanup_attempts as u64)).await;
+                                tokio::time::sleep(Duration::from_millis(
+                                    100 * cleanup_attempts as u64,
+                                ))
+                                .await;
                             }
                         }
                     }
@@ -1760,7 +1764,10 @@ mod tests {
         );
 
         // Verify the file was re-created
-        assert!(object_path.exists(), "File should be re-created after stale cache write");
+        assert!(
+            object_path.exists(),
+            "File should be re-created after stale cache write"
+        );
     }
 
     /// Test store_file_streaming handles stale cache correctly
@@ -1788,7 +1795,10 @@ mod tests {
         );
 
         // Verify the file was re-created
-        assert!(object_path.exists(), "File should be re-created after stale cache streaming write");
+        assert!(
+            object_path.exists(),
+            "File should be re-created after stale cache streaming write"
+        );
     }
 
     /// Test RAII temp file cleanup on error (BUG-007 fix)
@@ -1850,7 +1860,10 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
         // File should be cleaned up
-        assert!(!temp_path.exists(), "Temp file should be cleaned up by RAII guard");
+        assert!(
+            !temp_path.exists(),
+            "Temp file should be cleaned up by RAII guard"
+        );
     }
 
     /// Test TempFileGuard keep() prevents cleanup
