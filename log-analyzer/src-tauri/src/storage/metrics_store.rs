@@ -593,14 +593,15 @@ impl MetricsStore {
         let cutoff = retention_timestamp.timestamp();
 
         // 删除旧的指标快照
-        let deleted_snapshots: u64 = sqlx::query("DELETE FROM metrics_snapshots WHERE timestamp < ?")
-            .bind(cutoff)
-            .execute(pool)
-            .await
-            .map_err(|e| {
-                AppError::database_error(format!("Failed to cleanup old snapshots: {}", e))
-            })?
-            .rows_affected();
+        let deleted_snapshots: u64 =
+            sqlx::query("DELETE FROM metrics_snapshots WHERE timestamp < ?")
+                .bind(cutoff)
+                .execute(pool)
+                .await
+                .map_err(|e| {
+                    AppError::database_error(format!("Failed to cleanup old snapshots: {}", e))
+                })?
+                .rows_affected();
 
         // 删除旧的搜索事件
         let deleted_events: u64 = sqlx::query("DELETE FROM search_events WHERE timestamp < ?")
@@ -625,17 +626,21 @@ impl MetricsStore {
 
     /// 获取统计信息
     pub async fn get_stats(&self) -> Result<MetricsStoreStats> {
-        let snapshot_count: i64 = sqlx::query::<sqlx::Sqlite>("SELECT COUNT(*) as count FROM metrics_snapshots")
-            .fetch_one(&self.pool)
-            .await
-            .map_err(|e| AppError::database_error(format!("Failed to get snapshot count: {}", e)))?
-            .get("count");
+        let snapshot_count: i64 =
+            sqlx::query::<sqlx::Sqlite>("SELECT COUNT(*) as count FROM metrics_snapshots")
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|e| {
+                    AppError::database_error(format!("Failed to get snapshot count: {}", e))
+                })?
+                .get("count");
 
-        let event_count: i64 = sqlx::query::<sqlx::Sqlite>("SELECT COUNT(*) as count FROM search_events")
-            .fetch_one(&self.pool)
-            .await
-            .map_err(|e| AppError::database_error(format!("Failed to get event count: {}", e)))?
-            .get("count");
+        let event_count: i64 =
+            sqlx::query::<sqlx::Sqlite>("SELECT COUNT(*) as count FROM search_events")
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|e| AppError::database_error(format!("Failed to get event count: {}", e)))?
+                .get("count");
 
         // 获取最新快照时间戳
         let latest_timestamp: Option<i64> = sqlx::query::<sqlx::Sqlite>(

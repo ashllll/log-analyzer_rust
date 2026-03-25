@@ -888,7 +888,10 @@ impl MetadataStore {
                 // If table doesn't exist, treat as success (nothing to delete)
                 let err_str = e.to_string();
                 if !err_str.contains("no such table") {
-                    return Err(AppError::database_error(format!("Failed to delete files: {}", e)));
+                    return Err(AppError::database_error(format!(
+                        "Failed to delete files: {}",
+                        e
+                    )));
                 }
             }
         }

@@ -185,9 +185,13 @@ impl AppState {
 
     /// 执行缓存健康检查
     ///
-    /// 注意：此方法为同步方法，持锁期间不跨越 await 点，避免死锁风险
+    /// 注意：此方法先克隆 CacheManager，释放锁后再调用异步操作，避免死锁风险
     pub fn cache_health_check(&self) -> CacheHealthCheck {
-        let cache = self.cache_manager.lock();
+        // 缩小锁作用域：克隆 CacheManager 后立即释放锁
+        let cache = {
+            let guard = self.cache_manager.lock();
+            guard.clone()
+        };
         tauri::async_runtime::block_on(cache.health_check())
     }
 
@@ -211,12 +215,16 @@ impl AppState {
 
     /// 智能缓存驱逐
     ///
-    /// 注意：此方法为同步方法，持锁期间不跨越 await 点，避免死锁风险
+    /// 注意：此方法先克隆 CacheManager，释放锁后再调用异步操作，避免死锁风险
     pub fn intelligent_cache_eviction(
         &self,
         target_reduction_percent: f64,
     ) -> Result<usize, String> {
-        let cache = self.cache_manager.lock();
+        // 缩小锁作用域：克隆 CacheManager 后立即释放锁
+        let cache = {
+            let guard = self.cache_manager.lock();
+            guard.clone()
+        };
         let result =
             tauri::async_runtime::block_on(cache.intelligent_eviction(target_reduction_percent));
         result.map_err(|e: eyre::Error| e.to_string())
