@@ -150,12 +150,9 @@ impl MetadataStore {
         // 执行 WAL checkpoint（RESTART 模式）：WAL 写入者完成后检查点，
         // 不等待读取者，避免无限阻塞；TRUNCATE 模式会等待所有读取者完成，
         // 在存在长时间读取者时可能永久阻塞（STO-M2）
-        if let Err(e) = sqlx::query("PRAGMA wal_checkpoint(RESTART)")
+        let _ = sqlx::query("PRAGMA wal_checkpoint(RESTART)")
             .execute(&self.pool)
-            .await
-        {
-            tracing::warn!(error = %e, "WAL checkpoint failed on close");
-        }
+            .await;
         self.pool.close().await;
     }
 
@@ -371,8 +368,10 @@ impl MetadataStore {
         // 注意：sqlx 0.7.x SQLite 驱动的 INSERT...RETURNING 在 execute 路径上存在兼容性问题，
         // 需使用 INSERT OR IGNORE + 单独 SELECT 模式确保正确性。
         // 事务保证：即使并发写入，SELECT 也能看到正确已提交的记录 ID。
-        let mut tx =
-            self.pool.begin().await.map_err(|e| {
+        let mut tx: sqlx::Transaction<'_, sqlx::Sqlite> = self.pool
+            .begin()
+            .await
+            .map_err(|e| {
                 AppError::database_error(format!("Failed to begin transaction: {}", e))
             })?;
 
