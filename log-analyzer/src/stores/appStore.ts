@@ -1,6 +1,6 @@
 /**
  * 应用全局状态 Store - 使用 Zustand + Immer
- * 
+ *
  * 替换原有的 Context + Reducer 模式,提供更好的性能和开发体验
  */
 
@@ -17,13 +17,17 @@ import type { Toast, ToastType } from './types';
 
 export type { Toast, ToastType } from './types';
 
+// 自增 ID 生成器，避免 Date.now() 在快速调用时重复
+let toastIdCounter = 0;
+const generateToastId = () => ++toastIdCounter;
+
 export interface AppState {
   // State
   toasts: Toast[];
   activeWorkspaceId: string | null;
   isInitialized: boolean;
   initializationError: string | null;
-  
+
   // Actions
   addToast: (type: ToastType, message: string) => void;
   removeToast: (id: number) => void;
@@ -47,7 +51,7 @@ export const useAppStore = create<AppState>()(
         
         // Actions
         addToast: (type, message) => {
-          const id = Date.now();
+          const id = generateToastId();
           const duration = type === 'error' ? 4000 : 3000;
 
           // 写入 Zustand 状态，使 removeToast 和订阅者能正确感知

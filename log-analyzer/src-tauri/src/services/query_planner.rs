@@ -310,6 +310,11 @@ impl QueryPlanning for QueryPlannerAdapter {
         let cost = plan.term_count as u32 * 10; // Simple cost estimation
         Ok(PlanResult::new(steps, cost))
     }
+
+    fn build_execution_plan(&self, query: &SearchQuery) -> Result<ExecutionPlan> {
+        let mut planner = self.inner.lock();
+        planner.build_plan(query)
+    }
 }
 
 #[cfg(test)]

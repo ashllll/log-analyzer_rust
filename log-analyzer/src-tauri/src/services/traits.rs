@@ -101,6 +101,28 @@ pub trait QueryPlanning: Send + Sync {
     /// # Returns
     /// A `Result` containing the plan result or an error
     fn plan(&self, query: &SearchQuery) -> Result<PlanResult>;
+
+    /// Build an execution plan for a search query
+    ///
+    /// This method returns the actual ExecutionPlan used by QueryExecutor.
+    /// Subclasses should override this to provide the actual execution plan.
+    ///
+    /// # Arguments
+    /// * `query` - The search query to plan
+    ///
+    /// # Returns
+    /// A `Result` containing the execution plan or an error
+    fn build_execution_plan(&self, query: &SearchQuery) -> Result<crate::services::query_planner::ExecutionPlan> {
+        // Default implementation: call plan() and return a minimal execution plan
+        // This is a fallback for backward compatibility
+        let plan_result = self.plan(query)?;
+        Ok(crate::services::query_planner::ExecutionPlan::new(
+            crate::services::query_planner::SearchStrategy::And,
+            Vec::new(),
+            plan_result.steps.len(),
+            Vec::new(),
+        ))
+    }
 }
 
 /// Content storage trait (CAS abstraction)

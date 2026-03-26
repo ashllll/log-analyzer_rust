@@ -388,19 +388,8 @@ where
         }
 
         // 构建计划
-        let plan_result = self.planner.plan(query)?;
-
-        // BUG: 此处构建的 ExecutionPlan 中 engines 和 terms 均为空。
-        // 当 strategy = And 且 terms 为空时，matches_line() 因空循环而返回 true，
-        // 导致所有日志行都匹配（vacuous truth）。
-        // GenericQueryExecutor / StandardQueryExecutor 目前未被实际调用，属于死代码；
-        // 若未来启用，需将 planner.build_plan() 的结果完整赋给此处。
-        let plan = ExecutionPlan::new(
-            crate::services::query_planner::SearchStrategy::And,
-            Vec::new(),
-            plan_result.steps.len(),
-            Vec::new(),
-        );
+        // 使用 build_execution_plan 方法获取完整的执行计划
+        let plan = self.planner.build_execution_plan(query)?;
 
         // 缓存计划
         self.plan_cache.insert(cache_key, Arc::new(plan.clone()));

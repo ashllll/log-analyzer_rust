@@ -49,6 +49,12 @@ export const AppStoreProvider = ({ children }: AppStoreProviderProps) => {
   // 注意：必须在组件顶层声明，不能在 useEffect 内部
   const tauriCleanupRef = useRef<(() => void) | null>(null);
 
+  // 使用 ref 跟踪初始化状态，防止 React StrictMode 重复初始化
+  const initRef = useRef<{ tauri: boolean; eventBus: boolean }>({
+    tauri: false,
+    eventBus: false,
+  });
+
   useEffect(() => {
     let isMounted = true;
 
@@ -98,6 +104,15 @@ export const AppStoreProvider = ({ children }: AppStoreProviderProps) => {
        // 企业级事件系统 - EventBus集成
        // ============================================================================
 
+    // 防止 React StrictMode 重复初始化
+    if (initRef.current.eventBus) {
+      // EventBus 订阅已初始化，跳过
+      return () => {
+        // 空清理函数，因为没有新的订阅
+      };
+    }
+    initRef.current.eventBus = true;
+
     // 注册任务更新事件处理器
     const unsubscribeTaskUpdate = eventBus.on<TaskUpdateEvent>(
       'task-update',
@@ -144,6 +159,15 @@ export const AppStoreProvider = ({ children }: AppStoreProviderProps) => {
 
     // 设置Tauri原生事件监听（桥接到EventBus）
     const setupTauriListeners = async () => {
+      // 防止 React StrictMode 重复初始化
+      if (initRef.current.tauri) {
+        logger.debug('[AppStoreProvider] Tauri listeners already initialized, skipping');
+        return () => {
+          // 空清理函数
+        };
+      }
+      initRef.current.tauri = true;
+
       // 监听任务更新事件（从Tauri后端）
       const taskUpdateUnlisten = await listen<TaskUpdateEvent>('task-update', (event) => {
         logger.debug({ payload: event.payload }, '[AppStoreProvider] Received task-update from Tauri');
@@ -176,11 +200,21 @@ export const AppStoreProvider = ({ children }: AppStoreProviderProps) => {
       type ImportCompletePayload = string | { task_id?: string; workspace_id?: string };
       const importCompleteUnlisten = await listen<ImportCompletePayload>('import-complete', (event) => {
         logger.debug({ payload: event.payload }, '[AppStoreProvider] Received import-complete from Tauri');
-        
-        // 支持两种 payload 格式：字符串（旧格式）或对象（新格式）
+
+        // 统一解析 payload：支持字符串（旧格式）或对象（新格式）
         const payload = event.payload;
-        const taskId = typeof payload === 'string' ? payload : payload?.task_id;
-        const workspaceId = typeof payload === 'object' ? payload?.workspace_id : null;
+        let taskId: string | null = null;
+        let workspaceId: string | null = null;
+
+        if (typeof payload === 'string') {
+          // 旧格式：直接是 task_id 字符串
+          taskId = payload;
+        } else if (payload !== null && typeof payload === 'object') {
+          // 新格式：对象包含 task_id 和 workspace_id
+          taskId = payload.task_id ?? null;
+          workspaceId = payload.workspace_id ?? null;
+        }
+        // 注意：null 和 undefined 不满足任何条件，无需处理
         
         if (taskId) {
           updateTask(taskId, { status: 'COMPLETED', progress: 100 });
