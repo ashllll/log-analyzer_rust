@@ -8,13 +8,37 @@
 //! - 后台任务管理
 
 use crate::utils::ResourceManager;
-use eyre::Result;
+use thiserror::Error;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{Mutex as AsyncMutex, RwLock as AsyncRwLock};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, instrument, warn};
+
+/// 异步资源管理错误类型
+#[derive(Error, Debug)]
+pub enum AsyncResourceError {
+    #[error("Operation not found: {0}")]
+    OperationNotFound(String),
+    #[error("Workspace not found: {0}")]
+    WorkspaceNotFound(String),
+    #[error("Operation timeout: {0}")]
+    Timeout(String),
+    #[error("Cancellation failed: {0}")]
+    CancellationFailed(String),
+    #[error("Resource cleanup failed: {0}")]
+    CleanupFailed(String),
+}
+
+impl From<eyre::Report> for AsyncResourceError {
+    fn from(e: eyre::Report) -> Self {
+        AsyncResourceError::CleanupFailed(e.to_string())
+    }
+}
+
+/// 异步资源操作结果类型
+pub type Result<T> = std::result::Result<T, AsyncResourceError>;
 
 /// 操作信息
 #[derive(Debug, Clone)]

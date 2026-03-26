@@ -9,7 +9,8 @@ use crate::storage::ContentAddressableStorage;
 use crate::storage::MetadataStore;
 use crate::task_manager::TaskManager;
 use crate::utils::async_resource_manager::AsyncResourceManager;
-use crate::utils::cache_manager::CacheManager;
+use crate::utils::cache_manager::{CacheError, CacheManager};
+use crate::utils::async_resource_manager::AsyncResourceError;
 use crate::utils::cleanup::CleanupQueue;
 use crossbeam::queue::SegQueue;
 use moka::sync::Cache;
@@ -146,7 +147,7 @@ impl AppState {
         let cache = self.cache_manager.lock();
         cache
             .invalidate_workspace_cache(workspace_id)
-            .map_err(|e: eyre::Error| e.to_string())
+            .map_err(|e: CacheError| e.to_string())
     }
 
     /// 清理过期缓存条目
@@ -154,7 +155,7 @@ impl AppState {
         let cache = self.cache_manager.lock();
         cache
             .cleanup_expired_entries()
-            .map_err(|e: eyre::Error| e.to_string())
+            .map_err(|e: CacheError| e.to_string())
     }
 
     /// 清理异步缓存条目
@@ -168,7 +169,7 @@ impl AppState {
             guard.clone()
         };
         let result = tauri::async_runtime::block_on(cache.cleanup_expired_entries_async());
-        result.map_err(|e: eyre::Error| e.to_string())
+        result.map_err(|e: CacheError| e.to_string())
     }
 
     /// 获取缓存性能指标
@@ -227,7 +228,7 @@ impl AppState {
         };
         let result =
             tauri::async_runtime::block_on(cache.intelligent_eviction(target_reduction_percent));
-        result.map_err(|e: eyre::Error| e.to_string())
+        result.map_err(|e: CacheError| e.to_string())
     }
 
     /// 重置缓存性能指标
@@ -274,7 +275,7 @@ impl AppState {
         self.async_resource_manager
             .cancel_operation(operation_id)
             .await
-            .map_err(|e: eyre::Error| e.to_string())
+            .map_err(|e: AsyncResourceError| e.to_string())
     }
 
     /// 获取活跃操作数量

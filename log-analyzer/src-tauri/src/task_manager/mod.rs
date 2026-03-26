@@ -16,7 +16,7 @@
 //! - Tokio Actors Pattern
 //! - Erlang/OTP Supervision Trees
 
-use eyre::{Result, WrapErr};
+use thiserror::Error;
 use scopeguard::defer;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -25,6 +25,26 @@ use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc;
 use tokio::time::{interval, timeout};
 use tracing::{debug, error, info, warn};
+
+/// 任务管理器错误类型
+#[derive(Error, Debug)]
+pub enum TaskManagerError {
+    /// Actor 通道已关闭
+    #[error("TaskManager actor has stopped")]
+    ActorStopped,
+
+    /// 操作超时
+    #[error("Operation timed out")]
+    OperationTimeout,
+
+    /// Actor 响应通道被丢弃
+    #[error("Actor dropped response channel")]
+    ActorDroppedResponse,
+
+    /// 发送关闭消息失败
+    #[error("Failed to send shutdown message: {0}")]
+    ShutdownFailed(String),
+}
 
 /// 任务状态
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -525,7 +545,7 @@ pub struct TaskManager {
 
 impl TaskManager {
     /// 创建新的任务管理器
-    pub fn new(app: AppHandle, config: TaskManagerConfig) -> Result<Self> {
+    pub fn new(app: AppHandle, config: TaskManagerConfig) -> Result<Self, TaskManagerError> {
         info!("Initializing TaskManager");
 
         let (sender, receiver) = mpsc::unbounded_channel();
@@ -547,7 +567,7 @@ impl TaskManager {
         task_type: String,
         target: String,
         workspace_id: Option<String>,
-    ) -> Result<TaskInfo> {
+    ) -> Result<TaskInfo, TaskManagerError> {
         let (tx, rx) = tokio::sync::oneshot::channel();
 
         let msg = ActorMessage::CreateTask {
@@ -560,14 +580,14 @@ impl TaskManager {
 
         self.sender
             .send(msg)
-            .wrap_err("TaskManager actor has stopped")?;
+            .map_err(|_| TaskManagerError::ActorStopped)?;
 
         // 直接使用 await，不需要 block_on
         let timeout_duration = Duration::from_secs(self.config.operation_timeout);
         timeout(timeout_duration, rx)
             .await
-            .wrap_err("Operation timed out")?
-            .wrap_err("Actor dropped response channel")
+            .map_err(|_| TaskManagerError::OperationTimeout)?
+            .map_err(|_| TaskManagerError::ActorDroppedResponse)
     }
 
     /// 更新任务进度（异步版本）
@@ -577,7 +597,7 @@ impl TaskManager {
         progress: u8,
         message: String,
         status: TaskStatus,
-    ) -> Result<Option<TaskInfo>> {
+    ) -> Result<Option<TaskInfo>, TaskManagerError> {
         let (tx, rx) = tokio::sync::oneshot::channel();
 
         let msg = ActorMessage::UpdateTask {
@@ -590,13 +610,13 @@ impl TaskManager {
 
         self.sender
             .send(msg)
-            .wrap_err("TaskManager actor has stopped")?;
+            .map_err(|_| TaskManagerError::ActorStopped)?;
 
         let timeout_duration = Duration::from_secs(self.config.operation_timeout);
         timeout(timeout_duration, rx)
             .await
-            .wrap_err("Operation timed out")?
-            .wrap_err("Actor dropped response channel")
+            .map_err(|_| TaskManagerError::OperationTimeout)?
+            .map_err(|_| TaskManagerError::ActorDroppedResponse)
     }
 
     /// 健康检查
@@ -609,7 +629,7 @@ impl TaskManager {
     /// # 注意
     /// 此方法使用 `std::thread::sleep`，会阻塞当前线程。
     /// 在异步上下文中，请优先使用 `shutdown_async()`。
-    pub fn shutdown(&self) -> Result<()> {
+    pub fn shutdown(&self) -> Result<(), TaskManagerError> {
         info!("Shutting down TaskManager (synchronous)");
 
         // 尝试优雅关闭，带重试机制
@@ -631,7 +651,7 @@ impl TaskManager {
                             "Failed to send shutdown message after {} retries, forcing shutdown",
                             max_retries
                         );
-                        return Err(e).wrap_err("Failed to send shutdown message after timeout");
+                        return Err(TaskManagerError::ShutdownFailed(e.to_string()));
                     }
 
                     if retries % 10 == 0 {
@@ -658,7 +678,7 @@ impl TaskManager {
     /// - 使用 `tokio::time::sleep` 实现异步等待
     /// - 不会阻塞异步运行时
     /// - 带有 5 秒超时保护
-    pub async fn shutdown_async(&self) -> Result<()> {
+    pub async fn shutdown_async(&self) -> Result<(), TaskManagerError> {
         info!("Shutting down TaskManager (asynchronous)");
 
         let max_retries = 50; // 5秒 (50次 * 100ms)
@@ -679,7 +699,7 @@ impl TaskManager {
                             "Failed to send shutdown message after {} retries, forcing shutdown",
                             max_retries
                         );
-                        return Err(e).wrap_err("Failed to send shutdown message after timeout");
+                        return Err(TaskManagerError::ShutdownFailed(e.to_string()));
                     }
 
                     if retries % 10 == 0 {

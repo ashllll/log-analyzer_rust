@@ -1,10 +1,22 @@
-use eyre::Result;
+use thiserror::Error;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tracing::{debug, error, info, warn};
 
 use crate::models::{FileChangeEvent, TaskProgress};
+
+/// 事件总线错误类型
+#[derive(Error, Debug)]
+pub enum EventError {
+    #[error("Failed to receive event: {0}")]
+    ReceiveFailed(String),
+    #[error("Failed to publish event: {0}")]
+    PublishFailed(String),
+}
+
+/// 事件总线操作结果类型
+pub type Result<T> = std::result::Result<T, EventError>;
 
 /// 应用事件类型定义
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -208,7 +220,7 @@ impl EventSubscriber {
                 }
                 Err(e) => {
                     error!("Subscriber '{}' recv error: {}", self.name, e);
-                    return Err(eyre::eyre!("Failed to receive event: {}", e));
+                    return Err(EventError::ReceiveFailed(e.to_string()));
                 }
             }
         }

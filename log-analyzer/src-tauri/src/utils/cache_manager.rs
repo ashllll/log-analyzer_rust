@@ -11,7 +11,7 @@
 //! - 基于访问模式的预加载
 
 use crate::models::{LogEntry, SearchCacheKey};
-use eyre::Result;
+use thiserror::Error;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
@@ -24,6 +24,22 @@ use std::io::{Read, Write};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+/// 缓存错误类型
+#[derive(Error, Debug)]
+pub enum CacheError {
+    #[error("Cache compute operation failed: {0}")]
+    ComputeFailed(String),
+    #[error("Cache compression failed: {0}")]
+    CompressionFailed(String),
+    #[error("Cache decompression failed: {0}")]
+    DecompressionFailed(String),
+    #[error("IO error: {0}")]
+    IoError(#[from] std::io::Error),
+}
+
+/// 缓存操作结果类型
+pub type Result<T> = std::result::Result<T, CacheError>;
 
 /// 缓存性能指标追踪器
 #[derive(Debug)]
@@ -951,7 +967,7 @@ impl CacheManager {
         self.async_search_cache
             .try_get_with(key, compute())
             .await
-            .map_err(|e| eyre::eyre!("Cache compute operation failed: {}", e))
+            .map_err(|e| CacheError::ComputeFailed(e.to_string()))
     }
 
     /// 异步插入缓存条目 (支持多层)
@@ -1872,7 +1888,7 @@ mod tests {
             String::new(),
         );
         let error_result = manager
-            .get_or_try_compute(error_key, || async { Err(eyre::eyre!("Test error")) })
+            .get_or_try_compute(error_key, || async { Err(CacheError::ComputeFailed("Test error".to_string())) })
             .await;
         assert!(error_result.is_err());
     }

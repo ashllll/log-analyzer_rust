@@ -5,10 +5,24 @@
 //! - 健康检查
 //! - 优雅关闭
 
-use eyre::Result;
+use thiserror::Error;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::SystemTime;
+
+/// 服务生命周期错误
+#[derive(Error, Debug)]
+pub enum ServiceError {
+    #[error("Service start failed: {0}")]
+    StartFailed(String),
+    #[error("Service stop failed: {0}")]
+    StopFailed(String),
+    #[error("Service health check failed: {0}")]
+    HealthCheckFailed(String),
+}
+
+/// 服务操作结果类型
+pub type Result<T> = std::result::Result<T, ServiceError>;
 
 /// 服务特征 - 定义服务的生命周期接口
 ///
@@ -356,14 +370,14 @@ mod tests {
 
         fn start(&self) -> Result<()> {
             if self.should_fail {
-                eyre::bail!("Service start failed");
+                return Err(ServiceError::StartFailed("Service start failed".to_string()));
             }
             Ok(())
         }
 
         fn stop(&self) -> Result<()> {
             if self.should_fail {
-                eyre::bail!("Service stop failed");
+                return Err(ServiceError::StopFailed("Service stop failed".to_string()));
             }
             Ok(())
         }

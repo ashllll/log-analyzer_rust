@@ -3,14 +3,30 @@
 //! 提供带有安全限制和验证的压缩文件提取功能
 //! 包含 TOCTOU 安全检查，使用 O_NOFOLLOW 标志原子性验证文件
 
-#[cfg(unix)]
-use eyre::eyre;
-use eyre::Result;
+use thiserror::Error;
 #[cfg(unix)]
 use rustix::fs::OFlags;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
+
+/// 提取服务错误类型
+#[derive(Error, Debug)]
+pub enum ExtractionError {
+    #[error("Symbolic link detected (O_NOFOLLOW): {0}")]
+    SymbolicLink(String),
+    #[error("File does not exist: {0}")]
+    FileNotFound(String),
+    #[error("Permission denied accessing file: {0}")]
+    PermissionDenied(String),
+    #[error("Cannot open file (O_NOFOLLOW): {0} - {1}")]
+    CannotOpen(String, String),
+    #[error("File check not supported on this platform: {0}")]
+    NotSupported(String),
+}
+
+/// 提取服务操作结果类型
+pub type Result<T> = std::result::Result<T, ExtractionError>;
 
 /// 提取进度跟踪器
 #[derive(Debug)]
@@ -158,22 +174,15 @@ pub fn check_file_safety_with_nofollow(file_path: &Path) -> Result<()> {
         Err(e) => {
             let error_code = e.raw_os_error();
             if error_code == libc::ELOOP || error_code == libc::EMLINK {
-                Err(eyre!(
-                    "Symbolic link detected (O_NOFOLLOW): {}",
-                    file_path.display()
-                ))
+                Err(ExtractionError::SymbolicLink(file_path.display().to_string()))
             } else if error_code == libc::ENOENT {
-                Err(eyre!("File does not exist: {}", file_path.display()))
+                Err(ExtractionError::FileNotFound(file_path.display().to_string()))
             } else if error_code == libc::EACCES {
-                Err(eyre!(
-                    "Permission denied accessing file: {}",
-                    file_path.display()
-                ))
+                Err(ExtractionError::PermissionDenied(file_path.display().to_string()))
             } else {
-                Err(eyre!(
-                    "Cannot open file (O_NOFOLLOW): {} - {}",
-                    file_path.display(),
-                    e
+                Err(ExtractionError::CannotOpen(
+                    file_path.display().to_string(),
+                    e.to_string(),
                 ))
             }
         }
