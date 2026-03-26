@@ -6,14 +6,34 @@
 //! - 零运行时开销
 //! - 清晰的服务生命周期
 
-use eyre::{Context, Result};
+use thiserror::Error;
 use std::path::Path;
 use std::sync::Arc;
 
-use super::service_config::ServiceConfiguration;
+use super::service_config::{ServiceConfiguration, ServiceConfigError};
 use super::service_lifecycle::{OverallHealth, ServiceHealth};
 use super::{EventBus, QueryExecutor};
 use crate::utils::{CancellationManager, ResourceManager, ResourceTracker};
+
+/// 服务容器错误类型
+#[derive(Error, Debug)]
+pub enum ServiceContainerError {
+    #[error("Service configuration validation failed: {0}")]
+    ConfigValidationFailed(String),
+    #[error("Service initialization failed: {0}")]
+    InitializationFailed(String),
+    #[error("Service not found: {0}")]
+    ServiceNotFound(String),
+}
+
+/// 服务容器操作结果类型
+pub type Result<T> = std::result::Result<T, ServiceContainerError>;
+
+impl From<ServiceConfigError> for ServiceContainerError {
+    fn from(e: ServiceConfigError) -> Self {
+        ServiceContainerError::ConfigValidationFailed(e.to_string())
+    }
+}
 
 /// 服务容器 - 管理所有应用服务
 ///
@@ -312,7 +332,7 @@ impl AppServicesBuilder {
         // 验证配置
         config
             .validate()
-            .context("Service configuration validation failed")?;
+            .map_err(|e| ServiceContainerError::ConfigValidationFailed(e.to_string()))?;
 
         // 1. 创建基础服务（无依赖）
         let cleanup_queue = Arc::new(crossbeam::queue::SegQueue::new());
