@@ -31,8 +31,8 @@ pub enum AsyncResourceError {
     CleanupFailed(String),
 }
 
-impl From<eyre::Report> for AsyncResourceError {
-    fn from(e: eyre::Report) -> Self {
+impl From<std::io::Error> for AsyncResourceError {
+    fn from(e: std::io::Error) -> Self {
         AsyncResourceError::CleanupFailed(e.to_string())
     }
 }

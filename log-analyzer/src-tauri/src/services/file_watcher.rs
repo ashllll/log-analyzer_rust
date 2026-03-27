@@ -8,6 +8,8 @@
 
 use crate::error::{AppError, Result};
 use crate::models::log_entry::LogEntry;
+use once_cell::sync::Lazy;
+use regex::Regex;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -198,15 +200,16 @@ pub fn read_file_from_offset(path: &Path, offset: u64) -> Result<(Vec<String>, u
 /// - **时间戳**：使用改进的时间戳解析器
 /// - **日志级别**：按优先级匹配 ERROR > WARN > INFO > DEBUG（默认）
 pub fn parse_metadata(line: &str) -> (String, String) {
-    let level = if line.contains("ERROR") {
-        "ERROR"
-    } else if line.contains("WARN") {
-        "WARN"
-    } else if line.contains("INFO") {
-        "INFO"
-    } else {
-        "DEBUG"
-    };
+    // 使用正则边界匹配，避免误匹配如 "ErrorCode" 等子串
+    // \b 确保匹配完整单词，优先级由正则顺序决定：ERROR > WARN > INFO > DEBUG
+    static LOG_LEVEL_REGEX: Lazy<Regex> = Lazy::new(|| {
+        Regex::new(r"\b(ERROR|WARN|INFO|DEBUG)\b").unwrap()
+    });
+
+    let level = LOG_LEVEL_REGEX
+        .find(line)
+        .map(|m| m.as_str())
+        .unwrap_or("DEBUG");
 
     // 使用改进的时间戳解析器
     let timestamp = TimestampParser::parse_timestamp(line).unwrap_or_else(|| {

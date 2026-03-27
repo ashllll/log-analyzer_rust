@@ -20,6 +20,9 @@ use crate::models::{AppState, LogEntry, SearchCacheKey, SearchFilters, SearchQue
 // MessagePack 序列化支持
 use serde::{Deserialize, Serialize};
 
+// 搜索超时配置 - 默认 5 分钟超时，防止长时间运行的搜索阻塞
+const SEARCH_TIMEOUT_SECS: u64 = 300;
+
 /// 二进制搜索结果结构（用于 MessagePack 传输）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BinarySearchResult {
@@ -325,10 +328,15 @@ pub async fn search_logs(
     }
     let disk_store_spawn = Arc::clone(&disk_result_store);
 
+    // 为超时处理克隆必要的变量
+    let cancellation_tokens_for_timeout = Arc::clone(&cancellation_tokens);
+    let app_handle_for_timeout = app_handle.clone();
+
     // 老王备注：修复线程泄漏！使用tokio::task::spawn_blocking代替std::thread::spawn
     // 这样tokio运行时会管理线程生命周期，避免资源泄漏
     // 注意：现在 MetadataStore 和文件获取已在 spawn_blocking 外部完成，避免了嵌套 runtime 阻塞问题
-    let _handle = tokio::task::spawn_blocking(move || {
+    // 添加超时控制，防止长时间运行的搜索阻塞
+    let handle = tokio::task::spawn_blocking(move || {
         let start_time = std::time::Instant::now();
 
         let raw_terms: Vec<String> = query
@@ -615,7 +623,33 @@ pub async fn search_logs(
         }
     });
 
-    Ok(search_id)
+    // 添加超时控制，等待搜索任务完成
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(SEARCH_TIMEOUT_SECS),
+        handle,
+    )
+    .await
+    {
+        Ok(Ok(())) => Ok(search_id),
+        Ok(Err(e)) => {
+            error!(error = %e, search_id = %search_id, "Search task panicked");
+            Err(format!("Search task panicked: {}", e))
+        }
+        Err(_) => {
+            warn!(search_id = %search_id, "Search timed out after {} seconds", SEARCH_TIMEOUT_SECS);
+            // 发送超时事件
+            let _ = app_handle_for_timeout.emit("search-timeout", &search_id);
+            // 清理取消令牌
+            {
+                let mut tokens = cancellation_tokens_for_timeout.lock();
+                tokens.remove(&search_id);
+            }
+            Err(format!(
+                "Search timed out after {} seconds",
+                SEARCH_TIMEOUT_SECS
+            ))
+        }
+    }
 }
 
 /// 取消正在进行的搜索

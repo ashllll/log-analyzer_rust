@@ -212,10 +212,10 @@ impl AppError {
 }
 
 /**
- * 统一结果类型 - 使用 eyre::Result 提供更好的错误链
+ * 统一结果类型 - 使用 thiserror::Error 提供更好的错误处理
  *
- * 对于内部错误处理，使用 eyre::Result
- * 对于用户可见的错误，转换为 AppError
+ * 对于内部错误处理，使用 AppError
+ * 对于用户可见的错误，通过 CommandError 转换
  */
 pub type Result<T> = std::result::Result<T, AppError>;
 

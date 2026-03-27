@@ -230,7 +230,7 @@ impl ResourceManager {
     ///
     /// 目前 ResourceManager 使用 RAII 模式自动清理，所以这个方法暂时为空。
     /// 未来可以扩展以清理任何未自动清理的残留资源。
-    pub fn cleanup_all(&self) -> Result<(), eyre::Error> {
+    pub fn cleanup_all(&self) -> std::io::Result<()> {
         info!("ResourceManager::cleanup_all called (no-op for now)");
         Ok(())
     }
