@@ -18,7 +18,7 @@ use flate2::Compression;
 use moka::future::Cache as AsyncCache;
 use moka::sync::Cache;
 use parking_lot::RwLock;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::future::Future;
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -124,8 +124,8 @@ impl Default for CacheConfig {
 pub struct AccessPatternTracker {
     /// 访问计数 (key_hash -> count)
     access_counts: RwLock<HashMap<u64, u32>>,
-    /// 最近访问的键 (用于预加载)
-    recent_keys: RwLock<Vec<(SearchCacheKey, u32)>>,
+    /// 最近访问的键 (用于预加载)，使用 VecDeque 实现 O(1) 前端移除
+    recent_keys: RwLock<VecDeque<(SearchCacheKey, u32)>>,
     /// 窗口大小
     window_size: usize,
     /// 预加载阈值
@@ -136,7 +136,7 @@ impl AccessPatternTracker {
     pub fn new(window_size: usize, preload_threshold: u32) -> Self {
         Self {
             access_counts: RwLock::new(HashMap::new()),
-            recent_keys: RwLock::new(Vec::new()),
+            recent_keys: RwLock::new(VecDeque::new()),
             window_size,
             preload_threshold,
         }
@@ -162,12 +162,12 @@ impl AccessPatternTracker {
         {
             recent[pos].1 = current_count;
         } else {
-            recent.push((key.clone(), current_count));
+            recent.push_back((key.clone(), current_count));
         }
 
         // 保持窗口大小
         if recent.len() > self.window_size {
-            recent.remove(0);
+            recent.pop_front();
         }
     }
 

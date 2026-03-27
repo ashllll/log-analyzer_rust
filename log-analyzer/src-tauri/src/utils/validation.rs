@@ -441,16 +441,16 @@ mod tests {
 /// 验证路径参数
 ///
 /// 验证路径参数是否有效并返回规范化的绝对路径
-pub fn validate_path_param(path: &str, _param_name: &str) -> Result<std::path::PathBuf, String> {
+pub fn validate_path_param(path: &str, param_name: &str) -> Result<std::path::PathBuf, String> {
     // 验证路径安全性
-    validate_safe_path(path).map_err(|e| format!("Invalid path: {:?}", e))?;
+    validate_safe_path(path).map_err(|e| format!("Invalid {}: {:?}", param_name, e))?;
 
     // 转换为 PathBuf
     let path_buf = std::path::PathBuf::from(path);
 
     // 规范化路径
     let canonical = dunce::canonicalize(&path_buf)
-        .map_err(|e| format!("Failed to canonicalize path: {}", e))?;
+        .map_err(|e| format!("Failed to canonicalize {}: {}", param_name, e))?;
 
     Ok(canonical)
 }

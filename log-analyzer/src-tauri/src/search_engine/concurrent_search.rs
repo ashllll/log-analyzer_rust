@@ -19,6 +19,7 @@
 //! - Industry-standard pattern for concurrent async operations
 
 use parking_lot::RwLock;
+use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tantivy::{Index, IndexReader, ReloadPolicy};
@@ -156,7 +157,8 @@ pub struct ConcurrentSearchManager {
 /// Performance monitoring for concurrent operations
 struct PerformanceMonitor {
     baseline_response_time: Option<Duration>,
-    recent_response_times: Vec<Duration>,
+    /// 使用 VecDeque 实现 O(1) 前端移除
+    recent_response_times: VecDeque<Duration>,
     max_samples: usize,
 }
 
@@ -164,17 +166,17 @@ impl PerformanceMonitor {
     fn new() -> Self {
         Self {
             baseline_response_time: None,
-            recent_response_times: Vec::new(),
+            recent_response_times: VecDeque::new(),
             max_samples: 100,
         }
     }
 
     fn record_response_time(&mut self, response_time: Duration) {
-        self.recent_response_times.push(response_time);
+        self.recent_response_times.push_back(response_time);
 
-        // Keep only recent samples
+        // Keep only recent samples (使用 VecDeque::pop_front() 实现 O(1) 移除)
         if self.recent_response_times.len() > self.max_samples {
-            self.recent_response_times.remove(0);
+            self.recent_response_times.pop_front();
         }
 
         // Update baseline if not set or if we have enough samples
