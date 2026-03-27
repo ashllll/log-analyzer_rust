@@ -16,9 +16,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ***
 
 > **项目**: log-analyzer_rust - 高性能桌面日志分析工具
-> **版本**: 1.2.35
+> **版本**: 1.2.53
 > **技术栈**: Tauri 2.0 + Rust 1.70+ + React 19.1.0 + TypeScript 5.8.3
-> **最后更新**: 2026-03-22
+> **最后更新**: 2026-03-27
 
 ***
 
@@ -77,7 +77,7 @@ openspec-cn new change "<name>"
 
 ### 技术栈
 
-- **前端**: React 19.1.0 + TypeScript 5.8.3 + Zustand 5.0.9 + @tanstack/react-query 5.90.12 + Tailwind CSS 3.4.17
+- **前端**: React 19.1.0 + TypeScript 5.8.3 + Zustand 5.0.9 + @tanstack/react-query 5.90.12 + @tanstack/react-virtual 3.13.12 + Tailwind CSS 3.4.17
 - **后端**: Rust 1.70+ + Tauri 2.0 + tokio 1.x + SQLite (sqlx 0.7)
 - **搜索**: Aho-Corasick 算法 + Tantivy 0.22 全文搜索引擎 (性能提升 80%+)
 - **存储**: 内容寻址存储(CAS) + SQLite + FTS5 全文搜索
@@ -94,29 +94,34 @@ openspec-cn new change "<name>"
 ```
 log-analyzer_rust/
 ├── log-analyzer/
-│   ├── src/                   # React前端
-│   │   ├── components/        # UI组件 (ui/, modals/, renderers/, search/)
-│   │   ├── pages/            # 页面(SearchPage, WorkspacesPage等)
-│   │   ├── services/         # API封装、SearchQueryBuilder
-│   │   ├── hooks/            # 自定义Hooks (useKeyboardShortcuts等)
-│   │   ├── stores/           # Zustand状态管理
-│   │   ├── types/            # TypeScript类型定义
-│   │   └── i18n/             # 国际化翻译 (zh.json, en.json)
-│   └── src-tauri/            # Rust后端
-│       ├── src/
-│       │   ├── application/   # 应用接入层 (plugins/, commands.rs)
-│       │   ├── commands/     # Tauri命令(search, import, workspace等)
-│       │   ├── search_engine/ # 搜索引擎(Tantivy,布尔查询,高亮引擎)
-│       │   ├── services/     # 业务逻辑(PatternMatcher, QueryExecutor等)
-│       │   ├── storage/      # CAS存储系统 + SQLite元数据
-│       │   ├── archive/      # 压缩包处理(ZIP/RAR/GZ/TAR), 熔断自愈
-│       │   ├── task_manager/ # 异步任务Actor模型
-│       │   ├── monitoring/   # 观测性 (metrics, advanced)
-│       │   └── models/       # 数据模型
-│       └── tests/            # 集成测试
-├── docs/                     # 项目文档
-├── scripts/                  # 工具脚本 (validate-ci.sh等)
-└── CHANGELOG.md              # 更新日志
+│   ├── src/                        # React前端
+│   │   ├── components/             # UI组件
+│   │   │   ├── modals/            # 弹窗（关键词、文件过滤等）
+│   │   │   ├── renderers/         # 日志渲染器（虚拟滚动、高亮）
+│   │   │   ├── search/            # 搜索相关组件
+│   │   │   └── ui/                # 基础UI组件
+│   │   ├── pages/                  # 页面（Search / Workspaces / Keywords / Tasks / Performance）
+│   │   ├── services/               # API封装、SearchQueryBuilder
+│   │   ├── hooks/                  # 自定义Hooks
+│   │   ├── stores/                 # Zustand全局状态
+│   │   ├── types/                  # TypeScript类型定义
+│   │   ├── constants/              # 颜色常量、搜索配置
+│   │   └── i18n/                  # 国际化（zh.json / en.json）
+│   └── src-tauri/                  # Rust后端
+│       └── src/
+│           ├── application/         # 应用接入层（插件系统、命令注册）
+│           ├── commands/            # Tauri命令（search / import / workspace / watch等）
+│           ├── search_engine/       # 搜索引擎（Tantivy、布尔查询、高亮）
+│           ├── services/           # 业务逻辑（PatternMatcher、QueryExecutor等）
+│           ├── storage/             # CAS存储 + SQLite元数据
+│           ├── archive/             # 压缩包处理（ZIP/RAR/GZ/TAR/7Z）
+│           ├── task_manager/        # 异步任务Actor模型
+│           ├── monitoring/          # 可观测性（metrics、OpenTelemetry）
+│           ├── domain/              # 领域模型
+│           └── models/              # 数据模型
+├── docs/                           # 项目文档
+├── scripts/                        # CI验证脚本
+└── CHANGELOG.md                    # 更新日志
 ```
 
 ***
@@ -129,7 +134,7 @@ log-analyzer_rust/
 # 安装依赖
 npm install
 
-# 启动开发服务器
+# 启动开发服务器（Tauri + Vite HMR）
 npm run tauri dev
 
 # TypeScript类型检查
@@ -168,7 +173,7 @@ cargo clippy --all-features --all-targets -- -D warnings
 
 ```bash
 npm test                    # 运行Jest测试
-npm run test:watch         # 监听模式
+npm run test:watch          # 监听模式（开发时使用）
 ```
 
 ***

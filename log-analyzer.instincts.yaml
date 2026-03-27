@@ -1,0 +1,246 @@
+---
+id: use-openspec-workflow
+trigger: "when starting a new feature or change"
+confidence: 0.9
+domain: workflow
+source: project-generated
+scope: project
+project_id: "8a4711b07355"
+project_name: "log-analyzer_rust"
+---
+
+# 使用 OpenSpec 工作流
+
+## Action
+使用 OpenSpec 工作流管理变更（openspec-cn 命令）
+
+## Examples
+- /opsx:explore 探索问题
+- /opsx:propose 提案变更
+- /opsx:apply 实现任务
+- /opsx:archive 归档完成
+
+---
+id: rust-backend-tauri-commands
+trigger: "when adding new Tauri command"
+confidence: 0.85
+domain: architecture
+source: project-generated
+scope: project
+project_id: "8a4711b07355"
+project_name: "log-analyzer_rust"
+---
+
+# Rust 后端 Tauri 命令结构
+
+## Action
+遵循 Tauri 命令结构：commands/ 目录 + mod.rs 导出 + lib.rs 注册
+
+## Examples
+1. 在 commands/ 创建新文件
+2. 使用 #[tauri::command] 装饰
+3. 在 mod.rs 导出
+4. 在 lib.rs invoke_handler 注册
+
+---
+id: snake-case-ipc-fields
+trigger: "when defining IPC data structures"
+confidence: 0.95
+domain: convention
+source: project-generated
+scope: project
+project_id: "8a4711b07355"
+project_name: "log-analyzer_rust"
+---
+
+# 前后端 IPC 字段名规范
+
+## Action
+前后端 IPC 通信必须使用 snake_case 字段名
+
+## Examples
+- Rust: task_id, workspace_id, file_path
+- TypeScript: task_id, workspace_id, file_path
+- 禁止: taskId, workspaceId (camelCase)
+
+---
+id: cas-storage-insert-ignore
+trigger: "when inserting files to CAS storage"
+confidence: 0.85
+domain: pattern
+source: project-generated
+scope: project
+project_id: "8a4711b07355"
+project_name: "log-analyzer_rust"
+---
+
+# CAS 存储 UNIQUE 约束处理
+
+## Action
+使用 INSERT OR IGNORE + SELECT 模式处理 UNIQUE 约束
+
+## Examples
+- sqlx::query('INSERT OR IGNORE INTO files ...')
+- followed by: SELECT id FROM files WHERE sha256_hash = ?
+
+---
+id: search-permission-check
+trigger: "when executing search operations"
+confidence: 0.9
+domain: validation
+source: project-generated
+scope: project
+project_id: "8a4711b07355"
+project_name: "log-analyzer_rust"
+---
+
+# 搜索操作前检查工作区状态
+
+## Action
+搜索操作前检查工作区状态必须为 READY
+
+## Examples
+- check workspace.status == 'READY'
+- if not READY, return error instead of proceeding
+
+---
+id: use-vecdeque-pop-front
+trigger: "when implementing queue-like data structures"
+confidence: 0.8
+domain: performance
+source: project-generated
+scope: project
+project_id: "8a4711b07355"
+project_name: "log-analyzer_rust"
+---
+
+# VecDeque 前端移除优化
+
+## Action
+需要频繁前端移除时使用 VecDeque::pop_front() 而非 Vec::remove(0)
+
+## Examples
+- VecDeque::pop_front() 是 O(1)
+- Vec::remove(0) 是 O(n)
+
+---
+id: frontend-zustand-query
+trigger: "when managing frontend state"
+confidence: 0.85
+domain: architecture
+source: project-generated
+scope: project
+project_id: "8a4711b07355"
+project_name: "log-analyzer_rust"
+---
+
+# 前端状态管理规范
+
+## Action
+使用 Zustand 全局状态 + TanStack Query 服务端状态
+
+## Examples
+- Zustand: 全局 UI 状态（如当前工作区、主题）
+- TanStack Query: 服务端数据（如搜索结果、文件列表）
+
+---
+id: react-virtual-scroll-large-lists
+trigger: "when rendering lists with 1000+ items"
+confidence: 0.85
+domain: performance
+source: project-generated
+scope: project
+project_id: "8a4711b07355"
+project_name: "log-analyzer_rust"
+---
+
+# 虚拟滚动优化
+
+## Action
+渲染大列表使用 @tanstack/react-virtual 虚拟滚动
+
+## Examples
+- useVirtualizer from @tanstack/react-virtual
+- overscan: 10 for smooth scrolling
+
+---
+id: validate-path-before-canonicalize
+trigger: "when validating user-provided paths"
+confidence: 0.9
+domain: security
+source: project-generated
+scope: project
+project_id: "8a4711b07355"
+project_name: "log-analyzer_rust"
+---
+
+# 路径验证顺序
+
+## Action
+路径验证在 canonicalize 之前执行，防止路径遍历攻击
+
+## Examples
+- validate_safe_path(path)? first
+- then dunce::canonicalize(path_buf)
+- archive extraction uses path_validator with starts_with check
+
+---
+id: error-propagation-with-questionmark
+trigger: "when handling errors in Rust"
+confidence: 0.9
+domain: convention
+source: project-generated
+scope: project
+project_id: "8a4711b07355"
+project_name: "log-analyzer_rust"
+---
+
+# Rust 错误传播规范
+
+## Action
+Rust 错误传播使用 ? 操作符，避免 unwrap/expect
+
+## Examples
+- fn foo() -> Result<T, AppError> { ... }
+- some_func()?.chain_error()?
+- 禁止: unwrap(), expect() in production code
+
+---
+id: pre-commit-validate-ci
+trigger: "before git push"
+confidence: 0.95
+domain: workflow
+source: project-generated
+scope: project
+project_id: "8a4711b07355"
+project_name: "log-analyzer_rust"
+---
+
+# 推送前验证
+
+## Action
+推送前运行 npm run validate:ci 完整检查
+
+## Examples
+- npm run validate:ci
+- includes: ESLint, TypeScript, tests, build, clippy, format
+
+---
+id: async-trait-for-async-methods
+trigger: "when defining async trait methods"
+confidence: 0.85
+domain: convention
+source: project-generated
+scope: project
+project_id: "8a4711b07355"
+project_name: "log-analyzer_rust"
+---
+
+# 异步 Trait 方法
+
+## Action
+异步 trait 方法使用 async-trait crate
+
+## Examples
+- #[async_trait::async_trait]
+- pub async fn method(&self) -> Result<T, E>
