@@ -16,12 +16,12 @@
 //! - Tokio Actors Pattern
 //! - Erlang/OTP Supervision Trees
 
-use thiserror::Error;
 use scopeguard::defer;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
+use thiserror::Error;
 use tokio::sync::mpsc;
 use tokio::time::{interval, timeout};
 use tracing::{debug, error, info, warn};

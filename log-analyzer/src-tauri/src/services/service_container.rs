@@ -6,11 +6,11 @@
 //! - 零运行时开销
 //! - 清晰的服务生命周期
 
-use thiserror::Error;
 use std::path::Path;
 use std::sync::Arc;
+use thiserror::Error;
 
-use super::service_config::{ServiceConfiguration, ServiceConfigError};
+use super::service_config::{ServiceConfigError, ServiceConfiguration};
 use super::service_lifecycle::{OverallHealth, ServiceHealth};
 use super::{EventBus, QueryExecutor};
 use crate::utils::{CancellationManager, ResourceManager, ResourceTracker};

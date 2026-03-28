@@ -112,7 +112,10 @@ pub trait QueryPlanning: Send + Sync {
     ///
     /// # Returns
     /// A `Result` containing the execution plan or an error
-    fn build_execution_plan(&self, query: &SearchQuery) -> Result<crate::services::query_planner::ExecutionPlan> {
+    fn build_execution_plan(
+        &self,
+        query: &SearchQuery,
+    ) -> Result<crate::services::query_planner::ExecutionPlan> {
         // Default implementation: call plan() and return a minimal execution plan
         // This is a fallback for backward compatibility
         let plan_result = self.plan(query)?;

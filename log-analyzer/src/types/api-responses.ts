@@ -94,6 +94,37 @@ export const EventRecordSchema = z.object({
 export type EventRecord = z.infer<typeof EventRecordSchema>;
 
 // ============================================================================
+// 搜索相关
+// ============================================================================
+
+/**
+ * 搜索 ID Schema
+ * 验证搜索返回的 ID 是有效的 UUID 字符串
+ */
+export const SearchIdSchema = z.string().uuid();
+
+/**
+ * 搜索 ID 类型
+ */
+export type SearchId = z.infer<typeof SearchIdSchema>;
+
+/**
+ * 命令错误 Schema
+ * 验证后端返回的结构化错误信息
+ */
+export const CommandErrorSchema = z.object({
+  code: z.string(),
+  message: z.string(),
+  help: z.string().optional(),
+  details: z.unknown().optional(),
+});
+
+/**
+ * 命令错误类型
+ */
+export type CommandError = z.infer<typeof CommandErrorSchema>;
+
+// ============================================================================
 // 文件过滤模式
 // ============================================================================
 

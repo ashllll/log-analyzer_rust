@@ -11,7 +11,6 @@
 //! - 基于访问模式的预加载
 
 use crate::models::{LogEntry, SearchCacheKey};
-use thiserror::Error;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
@@ -24,6 +23,7 @@ use std::io::{Read, Write};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use thiserror::Error;
 
 /// 缓存错误类型
 #[derive(Error, Debug)]
@@ -1888,7 +1888,9 @@ mod tests {
             String::new(),
         );
         let error_result = manager
-            .get_or_try_compute(error_key, || async { Err(CacheError::ComputeFailed("Test error".to_string())) })
+            .get_or_try_compute(error_key, || async {
+                Err(CacheError::ComputeFailed("Test error".to_string()))
+            })
             .await;
         assert!(error_result.is_err());
     }

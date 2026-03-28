@@ -19,6 +19,7 @@ import {
   EventRecordSchema,
   WorkspaceLoadResponseSchema,
   AppConfigSchema,
+  SearchIdSchema,
   type RarSupportInfo,
   type FileFilterConfig,
   type PerformanceMetrics,
@@ -235,7 +236,9 @@ class LogAnalyzerApi {
    */
   async searchLogs(params: SearchParams): Promise<string> {
     try {
-      return await invoke('search_logs', params as unknown as InvokeArgs);
+      const result = await invoke('search_logs', params as unknown as InvokeArgs);
+      // 使用 Zod 验证返回的搜索 ID
+      return SearchIdSchema.parse(result);
     } catch (error) {
       throw createApiError('search_logs', error);
     }
@@ -262,7 +265,9 @@ class LogAnalyzerApi {
    */
   async asyncSearchLogs(params: SearchParams): Promise<string> {
     try {
-      return await invoke('async_search_logs', params as unknown as InvokeArgs);
+      const result = await invoke('async_search_logs', params as unknown as InvokeArgs);
+      // 使用 Zod 验证返回的搜索 ID
+      return SearchIdSchema.parse(result);
     } catch (error) {
       throw createApiError('async_search_logs', error);
     }

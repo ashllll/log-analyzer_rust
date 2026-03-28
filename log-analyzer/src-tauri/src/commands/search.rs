@@ -11,6 +11,7 @@ use std::{collections::HashSet, sync::Arc};
 use tauri::{command, AppHandle, Emitter, State};
 use tracing::{debug, error, info, warn};
 
+use crate::error::CommandError;
 use crate::models::search::{
     PagedSearchResult, QueryMetadata, QueryOperator, SearchTerm, TermSource,
 };
@@ -86,12 +87,19 @@ pub async fn search_logs(
     max_results: Option<usize>,
     filters: Option<SearchFilters>,
     state: State<'_, AppState>,
-) -> Result<String, String> {
+) -> Result<String, CommandError> {
     if query.is_empty() {
-        return Err("Search query cannot be empty".to_string());
+        return Err(
+            CommandError::new("VALIDATION_ERROR", "Search query cannot be empty")
+                .with_help("Please enter at least one search term"),
+        );
     }
     if query.len() > 1000 {
-        return Err("Search query too long (max 1000 characters)".to_string());
+        return Err(CommandError::new(
+            "VALIDATION_ERROR",
+            "Search query too long (max 1000 characters)",
+        )
+        .with_help("Try reducing the number of search terms"));
     }
 
     let app_handle = app.clone();
@@ -138,7 +146,8 @@ pub async fn search_logs(
                 "search-error",
                 "No workspaces available. Please create a workspace first.",
             );
-            return Err("No workspaces available".to_string());
+            return Err(CommandError::new("NOT_FOUND", "No workspaces available")
+                .with_help("Please create a workspace first using the import feature"));
         }
     };
 
@@ -250,7 +259,13 @@ pub async fn search_logs(
                     "search-error",
                     format!("Workspace not found: {}", workspace_id),
                 );
-                return Err("Workspace not found".to_string());
+                return Err(CommandError::new(
+                    "NOT_FOUND",
+                    format!("Workspace not found: {}", workspace_id),
+                )
+                .with_help(
+                    "The workspace may have been deleted. Try refreshing the workspace list",
+                ));
             }
         }
     };
@@ -271,7 +286,15 @@ pub async fn search_logs(
             // Store doesn't exist, create it (no lock held during async creation)
             let store = crate::storage::metadata_store::MetadataStore::new(&workspace_dir)
                 .await
-                .map_err(|e| format!("Failed to open metadata store: {}", e))?;
+                .map_err(|e| {
+                    CommandError::new(
+                        "DATABASE_ERROR",
+                        format!("Failed to open metadata store: {}", e),
+                    )
+                    .with_help(
+                        "Check if the workspace directory is accessible and has proper permissions",
+                    )
+                })?;
             let store_arc = Arc::new(store);
             // Re-acquire lock to store
             let mut stores = metadata_stores.lock();
@@ -310,10 +333,8 @@ pub async fn search_logs(
                     workspace_id
                 ),
             );
-            return Err(format!(
-                "Internal error occurred while accessing workspace: {}",
-                workspace_id
-            ));
+            return Err(CommandError::new("DATABASE_ERROR", format!("Internal error occurred while accessing workspace: {}", workspace_id))
+                .with_help("The workspace database may be corrupted. Try refreshing or reimporting the workspace"));
         }
     };
 
@@ -624,16 +645,14 @@ pub async fn search_logs(
     });
 
     // 添加超时控制，等待搜索任务完成
-    match tokio::time::timeout(
-        std::time::Duration::from_secs(SEARCH_TIMEOUT_SECS),
-        handle,
-    )
-    .await
-    {
+    match tokio::time::timeout(std::time::Duration::from_secs(SEARCH_TIMEOUT_SECS), handle).await {
         Ok(Ok(())) => Ok(search_id),
         Ok(Err(e)) => {
             error!(error = %e, search_id = %search_id, "Search task panicked");
-            Err(format!("Search task panicked: {}", e))
+            Err(
+                CommandError::new("INTERNAL_ERROR", format!("Search task panicked: {}", e))
+                    .with_help("This is an unexpected error. Try simplifying your search query"),
+            )
         }
         Err(_) => {
             warn!(search_id = %search_id, "Search timed out after {} seconds", SEARCH_TIMEOUT_SECS);
@@ -644,10 +663,11 @@ pub async fn search_logs(
                 let mut tokens = cancellation_tokens_for_timeout.lock();
                 tokens.remove(&search_id);
             }
-            Err(format!(
-                "Search timed out after {} seconds",
-                SEARCH_TIMEOUT_SECS
-            ))
+            Err(CommandError::new(
+                "TIMEOUT_ERROR",
+                format!("Search timed out after {} seconds", SEARCH_TIMEOUT_SECS),
+            )
+            .with_help("Try using more specific search terms to reduce processing time"))
         }
     }
 }
@@ -657,7 +677,7 @@ pub async fn search_logs(
 pub async fn cancel_search(
     #[allow(non_snake_case)] searchId: String,
     state: State<'_, AppState>,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     let cancellation_tokens: Arc<
         Mutex<std::collections::HashMap<String, tokio_util::sync::CancellationToken>>,
     > = Arc::clone(&state.search_cancellation_tokens);
@@ -671,10 +691,11 @@ pub async fn cancel_search(
         token.cancel();
         Ok(())
     } else {
-        Err(format!(
-            "Search with ID {} not found or already completed",
-            searchId
-        ))
+        Err(CommandError::new(
+            "NOT_FOUND",
+            format!("Search with ID {} not found or already completed", searchId),
+        )
+        .with_help("The search may have already finished or been cancelled"))
     }
 }
 
@@ -951,13 +972,20 @@ pub async fn search_logs_paged(
     #[allow(non_snake_case)] workspaceId: Option<String>,
     filters: Option<SearchFilters>,
     state: State<'_, AppState>,
-) -> Result<PagedSearchResult, String> {
+) -> Result<PagedSearchResult, CommandError> {
     // 参数验证
     if query.is_empty() {
-        return Err("Search query cannot be empty".to_string());
+        return Err(
+            CommandError::new("VALIDATION_ERROR", "Search query cannot be empty")
+                .with_help("Please enter at least one search term"),
+        );
     }
     if query.len() > 1000 {
-        return Err("Search query too long (max 1000 characters)".to_string());
+        return Err(CommandError::new(
+            "VALIDATION_ERROR",
+            "Search query too long (max 1000 characters)",
+        )
+        .with_help("Try reducing the number of search terms"));
     }
 
     let page_size = page_size.unwrap_or(DEFAULT_PAGE_SIZE).min(10000);
@@ -998,9 +1026,11 @@ pub async fn search_logs_paged(
             }
         }
         // 缓存未找到，需要重新搜索
-        return Err(
-            "Search not found in cache. Please start a new search with page_index = -1".to_string(),
-        );
+        return Err(CommandError::new(
+            "NOT_FOUND",
+            "Search not found in cache. Please start a new search with page_index = -1",
+        )
+        .with_help("The cached search may have expired. Start a new search instead"));
     }
 
     // 执行新搜索（page_index == -1）
@@ -1021,16 +1051,24 @@ pub async fn search_logs_paged(
     } else {
         let dirs = workspace_dirs.lock();
         dirs.keys().next().cloned().ok_or_else(|| {
-            "No workspaces available. Please create a workspace first.".to_string()
+            CommandError::new(
+                "NOT_FOUND",
+                "No workspaces available. Please create a workspace first.",
+            )
+            .with_help("Use the import feature to create a workspace first")
         })?
     };
 
     // Get workspace directory BEFORE spawn_blocking
     let workspace_dir = {
         let dirs = workspace_dirs.lock();
-        dirs.get(&workspace_id)
-            .cloned()
-            .ok_or_else(|| format!("Workspace directory not found for: {}", workspace_id))?
+        dirs.get(&workspace_id).cloned().ok_or_else(|| {
+            CommandError::new(
+                "NOT_FOUND",
+                format!("Workspace directory not found for: {}", workspace_id),
+            )
+            .with_help("The workspace may have been deleted. Try refreshing the workspace list")
+        })?
     };
 
     // Get or create MetadataStore BEFORE spawn_blocking
@@ -1048,7 +1086,15 @@ pub async fn search_logs_paged(
             // Store doesn't exist, create it (no lock held during async creation)
             let store = crate::storage::metadata_store::MetadataStore::new(&workspace_dir)
                 .await
-                .map_err(|e| format!("Failed to open metadata store: {}", e))?;
+                .map_err(|e| {
+                    CommandError::new(
+                        "DATABASE_ERROR",
+                        format!("Failed to open metadata store: {}", e),
+                    )
+                    .with_help(
+                        "Check if the workspace directory is accessible and has proper permissions",
+                    )
+                })?;
             let store_arc = Arc::new(store);
             // Re-acquire lock to store
             let mut stores = metadata_stores.lock();
@@ -1072,10 +1118,11 @@ pub async fn search_logs_paged(
     };
 
     // Get all files BEFORE spawn_blocking
-    let files = metadata_store
-        .get_all_files()
-        .await
-        .map_err(|e| format!("Failed to get files: {}", e))?;
+    let files = metadata_store.get_all_files().await.map_err(|e| {
+        CommandError::new("DATABASE_ERROR", format!("Failed to get files: {}", e)).with_help(
+            "The workspace database may be corrupted. Try refreshing or reimporting the workspace",
+        )
+    })?;
 
     // 生成搜索ID
     let search_id = uuid::Uuid::new_v4().to_string();
@@ -1231,9 +1278,14 @@ pub async fn search_logs_paged(
         Ok(all_results)
     })
     .await
-    .map_err(|e| format!("Search task failed: {}", e))?;
+    .map_err(|e| {
+        CommandError::new("INTERNAL_ERROR", format!("Search task failed: {}", e))
+            .with_help("This is an unexpected error. Try simplifying your search query")
+    })?;
 
-    let results = results?;
+    let results = results.map_err(|e| {
+        CommandError::new("SEARCH_ERROR", e).with_help("Try simplifying your search query")
+    })?;
 
     // 计算关键词统计
     let raw_terms: Vec<String> = query
@@ -1295,7 +1347,7 @@ pub async fn search_logs_paged(
 
 /// 清理过期的分页搜索缓存
 #[command]
-pub async fn cleanup_paged_search_cache(max_age_secs: Option<u64>) -> Result<usize, String> {
+pub async fn cleanup_paged_search_cache(max_age_secs: Option<u64>) -> Result<usize, CommandError> {
     let max_age = max_age_secs.unwrap_or(3600); // 默认1小时
     let mut cache = get_paged_search_cache().lock();
     let before_count = cache.entries.len();
@@ -1306,7 +1358,7 @@ pub async fn cleanup_paged_search_cache(max_age_secs: Option<u64>) -> Result<usi
 
 /// 获取分页搜索缓存统计
 #[command]
-pub async fn get_paged_search_cache_stats() -> Result<serde_json::Value, String> {
+pub async fn get_paged_search_cache_stats() -> Result<serde_json::Value, CommandError> {
     let cache = get_paged_search_cache().lock();
     let total_entries = cache.entries.len();
     let total_results: usize = cache.entries.iter().map(|e| e.results.len()).sum();
@@ -1342,7 +1394,7 @@ pub async fn fetch_search_page(
     search_id: String,
     offset: usize,
     limit: usize,
-) -> Result<crate::search_engine::disk_result_store::SearchPageResult, String> {
+) -> Result<crate::search_engine::disk_result_store::SearchPageResult, CommandError> {
     use crate::search_engine::disk_result_store::SearchPageResult;
 
     // 限制每页最大数量，防止内存问题
@@ -1354,7 +1406,12 @@ pub async fn fetch_search_page(
     if disk_store.has_session(&search_id) {
         let result: crate::search_engine::disk_result_store::SearchPageResult = disk_store
             .read_page(&search_id, offset, limit)
-            .map_err(|e: std::io::Error| e.to_string())?;
+            .map_err(|e: std::io::Error| {
+                CommandError::new("IO_ERROR", format!("Failed to read search page: {}", e))
+                    .with_help(
+                        "The search results may have been cleared. Try running the search again",
+                    )
+            })?;
 
         debug!(
             search_id = %search_id,
@@ -1394,10 +1451,11 @@ pub async fn fetch_search_page(
         });
     }
 
-    Err(format!(
-        "Search session '{}' not found or expired",
-        search_id
-    ))
+    Err(CommandError::new(
+        "NOT_FOUND",
+        format!("Search session '{}' not found or expired", search_id),
+    )
+    .with_help("The search results may have been cleared. Try running the search again"))
 }
 
 /// 注册搜索会话到 VirtualSearchManager
@@ -1419,7 +1477,7 @@ pub async fn register_search_session(
     search_id: String,
     query: String,
     entries: Vec<LogEntry>,
-) -> Result<String, String> {
+) -> Result<String, CommandError> {
     let manager = &state.virtual_search_manager;
 
     let registered_id = manager.register_session(search_id, query, entries);
@@ -1444,7 +1502,7 @@ pub async fn register_search_session(
 pub async fn get_search_session_info(
     state: State<'_, AppState>,
     search_id: String,
-) -> Result<Option<serde_json::Value>, String> {
+) -> Result<Option<serde_json::Value>, CommandError> {
     let manager = &state.virtual_search_manager;
 
     if let Some(session) = manager.get_session_info(&search_id) {
@@ -1471,7 +1529,7 @@ pub async fn get_search_session_info(
 pub async fn get_search_total_count(
     state: State<'_, AppState>,
     search_id: String,
-) -> Result<usize, String> {
+) -> Result<usize, CommandError> {
     // 新架构：优先从 DiskResultStore 读取
     if let Some(status) = state.disk_result_store.get_status(&search_id) {
         return Ok(status.0);
@@ -1494,7 +1552,7 @@ pub async fn get_search_total_count(
 pub async fn remove_search_session(
     state: State<'_, AppState>,
     search_id: String,
-) -> Result<bool, String> {
+) -> Result<bool, CommandError> {
     let manager = &state.virtual_search_manager;
     Ok(manager.remove_session(&search_id))
 }
@@ -1511,7 +1569,7 @@ pub async fn remove_search_session(
 pub async fn cleanup_expired_search_sessions(
     state: State<'_, AppState>,
     _max_age_secs: Option<u64>,
-) -> Result<usize, String> {
+) -> Result<usize, CommandError> {
     let manager = &state.virtual_search_manager;
 
     // 注意：VirtualSearchManager 内部有 TTL 机制
@@ -1531,7 +1589,7 @@ pub async fn cleanup_expired_search_sessions(
 #[command]
 pub async fn get_virtual_search_stats(
     state: State<'_, AppState>,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value, CommandError> {
     let manager = &state.virtual_search_manager;
     let stats = manager.get_statistics();
 

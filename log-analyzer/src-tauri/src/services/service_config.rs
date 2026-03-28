@@ -5,9 +5,9 @@
 //! - 开发和生产环境的默认配置
 //! - 配置验证和错误处理
 
-use thiserror::Error;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+use thiserror::Error;
 
 /// 服务配置错误类型
 #[derive(Error, Debug)]
@@ -194,11 +194,21 @@ impl ServiceConfiguration {
     /// 如果文件不存在或格式错误，返回错误
     pub fn from_toml_file<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path = path.as_ref();
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| ServiceConfigError::ValidationFailed(format!("Failed to read config file {}: {}", path.display(), e)))?;
+        let content = std::fs::read_to_string(path).map_err(|e| {
+            ServiceConfigError::ValidationFailed(format!(
+                "Failed to read config file {}: {}",
+                path.display(),
+                e
+            ))
+        })?;
 
-        let config: Self = toml::from_str(&content)
-            .map_err(|e| ServiceConfigError::TomlDeserializeFailed(format!("Failed to parse TOML config {}: {}", path.display(), e)))?;
+        let config: Self = toml::from_str(&content).map_err(|e| {
+            ServiceConfigError::TomlDeserializeFailed(format!(
+                "Failed to parse TOML config {}: {}",
+                path.display(),
+                e
+            ))
+        })?;
 
         tracing::info!("Loaded service configuration from: {}", path.display());
         Ok(config)
@@ -213,11 +223,21 @@ impl ServiceConfiguration {
     /// 如果文件不存在或格式错误，返回错误
     pub fn from_json_file<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path = path.as_ref();
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| ServiceConfigError::ValidationFailed(format!("Failed to read config file {}: {}", path.display(), e)))?;
+        let content = std::fs::read_to_string(path).map_err(|e| {
+            ServiceConfigError::ValidationFailed(format!(
+                "Failed to read config file {}: {}",
+                path.display(),
+                e
+            ))
+        })?;
 
-        let config: Self = serde_json::from_str(&content)
-            .map_err(|e| ServiceConfigError::JsonDeserializeFailed(format!("Failed to parse JSON config {}: {}", path.display(), e)))?;
+        let config: Self = serde_json::from_str(&content).map_err(|e| {
+            ServiceConfigError::JsonDeserializeFailed(format!(
+                "Failed to parse JSON config {}: {}",
+                path.display(),
+                e
+            ))
+        })?;
 
         tracing::info!("Loaded service configuration from: {}", path.display());
         Ok(config)
@@ -235,8 +255,13 @@ impl ServiceConfiguration {
         let content = toml::to_string_pretty(self)
             .map_err(|e| ServiceConfigError::TomlSerializeFailed(e.to_string()))?;
 
-        std::fs::write(path, content)
-            .map_err(|e| ServiceConfigError::ValidationFailed(format!("Failed to write config file {}: {}", path.display(), e)))?;
+        std::fs::write(path, content).map_err(|e| {
+            ServiceConfigError::ValidationFailed(format!(
+                "Failed to write config file {}: {}",
+                path.display(),
+                e
+            ))
+        })?;
 
         tracing::info!("Saved service configuration to: {}", path.display());
         Ok(())
@@ -251,11 +276,16 @@ impl ServiceConfiguration {
     /// 如果写入失败，返回错误
     pub fn save_to_json<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         let path = path.as_ref();
-        let content =
-            serde_json::to_string_pretty(self).map_err(|e| ServiceConfigError::JsonSerializeFailed(e.to_string()))?;
+        let content = serde_json::to_string_pretty(self)
+            .map_err(|e| ServiceConfigError::JsonSerializeFailed(e.to_string()))?;
 
-        std::fs::write(path, content)
-            .map_err(|e| ServiceConfigError::ValidationFailed(format!("Failed to write config file {}: {}", path.display(), e)))?;
+        std::fs::write(path, content).map_err(|e| {
+            ServiceConfigError::ValidationFailed(format!(
+                "Failed to write config file {}: {}",
+                path.display(),
+                e
+            ))
+        })?;
 
         tracing::info!("Saved service configuration to: {}", path.display());
         Ok(())
@@ -310,34 +340,50 @@ impl ServiceConfiguration {
     pub fn validate(&self) -> Result<()> {
         // 验证事件总线容量
         if self.event_bus.capacity == 0 {
-            return Err(ServiceConfigError::ValidationFailed("Event bus capacity must be greater than 0".to_string()));
+            return Err(ServiceConfigError::ValidationFailed(
+                "Event bus capacity must be greater than 0".to_string(),
+            ));
         }
 
         // 验证查询执行器配置
         if self.query_executor.cache_size == 0 {
-            return Err(ServiceConfigError::ValidationFailed("Query executor cache size must be greater than 0".to_string()));
+            return Err(ServiceConfigError::ValidationFailed(
+                "Query executor cache size must be greater than 0".to_string(),
+            ));
         }
         if self.query_executor.max_query_complexity == 0 {
-            return Err(ServiceConfigError::ValidationFailed("Max query complexity must be greater than 0".to_string()));
+            return Err(ServiceConfigError::ValidationFailed(
+                "Max query complexity must be greater than 0".to_string(),
+            ));
         }
 
         // 验证缓存配置
         if self.cache.max_capacity == 0 {
-            return Err(ServiceConfigError::ValidationFailed("Cache max capacity must be greater than 0".to_string()));
+            return Err(ServiceConfigError::ValidationFailed(
+                "Cache max capacity must be greater than 0".to_string(),
+            ));
         }
         if self.cache.ttl_seconds == 0 {
-            return Err(ServiceConfigError::ValidationFailed("Cache TTL must be greater than 0".to_string()));
+            return Err(ServiceConfigError::ValidationFailed(
+                "Cache TTL must be greater than 0".to_string(),
+            ));
         }
         if self.cache.tti_seconds == 0 {
-            return Err(ServiceConfigError::ValidationFailed("Cache TTI must be greater than 0".to_string()));
+            return Err(ServiceConfigError::ValidationFailed(
+                "Cache TTI must be greater than 0".to_string(),
+            ));
         }
 
         // 验证资源管理配置
         if self.resource_management.cleanup_queue_size == 0 {
-            return Err(ServiceConfigError::ValidationFailed("Cleanup queue size must be greater than 0".to_string()));
+            return Err(ServiceConfigError::ValidationFailed(
+                "Cleanup queue size must be greater than 0".to_string(),
+            ));
         }
         if self.resource_management.leak_detection_timeout_seconds == 0 {
-            return Err(ServiceConfigError::ValidationFailed("Leak detection timeout must be greater than 0".to_string()));
+            return Err(ServiceConfigError::ValidationFailed(
+                "Leak detection timeout must be greater than 0".to_string(),
+            ));
         }
 
         tracing::debug!("Service configuration validated successfully");

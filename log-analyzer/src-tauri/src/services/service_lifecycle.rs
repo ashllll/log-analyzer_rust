@@ -5,10 +5,10 @@
 //! - 健康检查
 //! - 优雅关闭
 
-use thiserror::Error;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::SystemTime;
+use thiserror::Error;
 
 /// 服务生命周期错误
 #[derive(Error, Debug)]
@@ -370,7 +370,9 @@ mod tests {
 
         fn start(&self) -> Result<()> {
             if self.should_fail {
-                return Err(ServiceError::StartFailed("Service start failed".to_string()));
+                return Err(ServiceError::StartFailed(
+                    "Service start failed".to_string(),
+                ));
             }
             Ok(())
         }

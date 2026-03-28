@@ -3,12 +3,12 @@
 //! 提供带有安全限制和验证的压缩文件提取功能
 //! 包含 TOCTOU 安全检查，使用 O_NOFOLLOW 标志原子性验证文件
 
-use thiserror::Error;
 #[cfg(unix)]
 use rustix::fs::OFlags;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
+use thiserror::Error;
 
 /// 提取服务错误类型
 #[derive(Error, Debug)]
@@ -174,11 +174,17 @@ pub fn check_file_safety_with_nofollow(file_path: &Path) -> Result<()> {
         Err(e) => {
             let error_code = e.raw_os_error();
             if error_code == libc::ELOOP || error_code == libc::EMLINK {
-                Err(ExtractionError::SymbolicLink(file_path.display().to_string()))
+                Err(ExtractionError::SymbolicLink(
+                    file_path.display().to_string(),
+                ))
             } else if error_code == libc::ENOENT {
-                Err(ExtractionError::FileNotFound(file_path.display().to_string()))
+                Err(ExtractionError::FileNotFound(
+                    file_path.display().to_string(),
+                ))
             } else if error_code == libc::EACCES {
-                Err(ExtractionError::PermissionDenied(file_path.display().to_string()))
+                Err(ExtractionError::PermissionDenied(
+                    file_path.display().to_string(),
+                ))
             } else {
                 Err(ExtractionError::CannotOpen(
                     file_path.display().to_string(),

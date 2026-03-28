@@ -13,7 +13,7 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 use tantivy::{
-    query::{Query, QueryParser},
+    query::{Query, QueryClone, QueryParser},
     schema::Field,
     DocAddress, Index, IndexReader, Snippet, SnippetGenerator, Term,
 };
@@ -79,6 +79,10 @@ pub struct HighlightingStats {
     pub average_highlight_time_ms: f64,
     pub large_document_optimizations: u64,
     pub html_escapes_performed: u64,
+    /// 查询解析缓存命中次数
+    pub query_cache_hits: u64,
+    /// 查询解析缓存未命中次数
+    pub query_cache_misses: u64,
 }
 
 /// Efficient search result highlighting engine
@@ -89,6 +93,9 @@ pub struct HighlightingEngine {
     content_field: Field,
     config: HighlightingConfig,
     snippet_cache: Arc<RwLock<LruCache<SnippetCacheKey, CachedSnippet>>>,
+    /// 查询解析缓存：避免重复解析相同查询字符串
+    /// 使用 query_hash 作为 key，缓存已解析的 Query 对象
+    query_cache: Arc<RwLock<LruCache<u64, Box<dyn Query>>>>,
     stats: Arc<RwLock<HighlightingStats>>,
 }
 
@@ -105,10 +112,16 @@ impl HighlightingEngine {
             NonZeroUsize::new(config.cache_size).unwrap_or(NonZeroUsize::new(1000).unwrap());
         let snippet_cache = Arc::new(RwLock::new(LruCache::new(cache_size)));
 
+        // 查询解析缓存大小：使用较小的缓存，因为查询解析结果占用较多内存
+        // 通常查询模式有限，100个缓存槽位足够
+        let query_cache_size = NonZeroUsize::new(100).unwrap();
+        let query_cache = Arc::new(RwLock::new(LruCache::new(query_cache_size)));
+
         info!(
             cache_size = config.cache_size,
             max_snippet_length = config.max_snippet_length,
             context_size = config.context_size,
+            query_cache_size = 100,
             "Highlighting engine initialized"
         );
 
@@ -119,6 +132,7 @@ impl HighlightingEngine {
             content_field,
             config,
             snippet_cache,
+            query_cache,
             stats: Arc::new(RwLock::new(HighlightingStats::default())),
         }
     }
@@ -210,10 +224,33 @@ impl HighlightingEngine {
         results
     }
 
-    /// Parse query for highlighting purposes
+    /// Parse query for highlighting purposes with caching
+    ///
+    /// 使用 LRU 缓存避免重复解析相同查询字符串，提升高亮性能。
+    /// 由于 `Box<dyn Query>` 不实现 `Clone`，使用 Tantivy 的 `box_clone()` 方法进行克隆。
     fn parse_query_for_highlighting(&self, query_str: &str) -> SearchResult<Box<dyn Query>> {
-        match self.query_parser.parse_query(query_str) {
-            Ok(query) => Ok(query),
+        // 计算查询哈希作为缓存 key
+        let query_hash = self.calculate_query_hash(query_str);
+
+        // 检查缓存
+        {
+            let mut cache = self.query_cache.write();
+            if let Some(cached_query) = cache.get_mut(&query_hash) {
+                // 缓存命中：使用 box_clone() 克隆查询对象
+                let mut stats = self.stats.write();
+                stats.query_cache_hits += 1;
+                return Ok(cached_query.box_clone());
+            }
+        }
+
+        // 缓存未命中：解析查询
+        {
+            let mut stats = self.stats.write();
+            stats.query_cache_misses += 1;
+        }
+
+        let query = match self.query_parser.parse_query(query_str) {
+            Ok(query) => query,
             Err(e) => {
                 warn!(query = %query_str, error = %e, "Query parsing failed for highlighting");
 
@@ -233,10 +270,10 @@ impl HighlightingEngine {
                 // 使用所有有效的terms而非仅第一个
                 if terms.len() == 1 {
                     let term = Term::from_field_text(self.content_field, &terms[0]);
-                    Ok(Box::new(tantivy::query::TermQuery::new(
+                    Box::new(tantivy::query::TermQuery::new(
                         term,
                         tantivy::schema::IndexRecordOption::Basic,
-                    )))
+                    )) as Box<dyn Query>
                 } else {
                     // 使用BooleanQuery组合多个terms
                     use tantivy::query::{BooleanQuery, Occur};
@@ -249,13 +286,21 @@ impl HighlightingEngine {
                         );
                         clauses.push((
                             Occur::Should,
-                            Box::new(term_query) as Box<dyn tantivy::query::Query>,
+                            Box::new(term_query) as Box<dyn Query>,
                         ));
                     }
-                    Ok(Box::new(BooleanQuery::new(clauses)))
+                    Box::new(BooleanQuery::new(clauses)) as Box<dyn Query>
                 }
             }
+        };
+
+        // 存入缓存
+        {
+            let mut cache = self.query_cache.write();
+            cache.put(query_hash, query.box_clone());
         }
+
+        Ok(query)
     }
 
     /// Generate snippets using Tantivy's snippet generator

@@ -1,6 +1,6 @@
-use thiserror::Error;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use thiserror::Error;
 use tokio::sync::broadcast;
 use tracing::{debug, error, info, warn};
 
