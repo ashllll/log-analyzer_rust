@@ -74,6 +74,7 @@ impl PatternMatcher {
      *
      * # 说明
      * 执行子串匹配。例如：模式["error"]会匹配任何包含"error"子串的文本。
+     * 使用 u128 位向量替代 HashSet，消除热路径上的堆分配。
      */
     pub fn matches_all(&self, text: &str) -> bool {
         let Some(ref ac) = self.ac else {
@@ -84,14 +85,41 @@ impl PatternMatcher {
             return false;
         }
 
-        // 收集所有匹配的模式ID
-        let mut matched_ids = std::collections::HashSet::new();
-        for mat in ac.find_iter(text) {
-            matched_ids.insert(mat.pattern().as_usize());
-        }
+        let pattern_count = self.patterns.len();
 
-        // 检查是否所有模式都匹配
-        matched_ids.len() == self.patterns.len()
+        // <= 128 个模式：使用栈上 u128 位向量（零堆分配）
+        if pattern_count <= 128 {
+            let all_bits = (1u128 << pattern_count) - 1;
+            let mut matched: u128 = 0;
+
+            for mat in ac.find_iter(text) {
+                let idx = mat.pattern().as_usize();
+                if idx < 128 {
+                    matched |= 1u128 << idx;
+                    // 提前退出：所有模式都已匹配
+                    if matched == all_bits {
+                        return true;
+                    }
+                }
+            }
+            matched == all_bits
+        } else {
+            // 回退到 Vec<bool>（比 HashSet 快，无哈希计算开销）
+            let mut matched = vec![false; pattern_count];
+            let mut remaining = pattern_count;
+
+            for mat in ac.find_iter(text) {
+                let idx = mat.pattern().as_usize();
+                if idx < pattern_count && !matched[idx] {
+                    matched[idx] = true;
+                    remaining -= 1;
+                    if remaining == 0 {
+                        return true;
+                    }
+                }
+            }
+            remaining == 0
+        }
     }
 
     /**

@@ -175,6 +175,12 @@ const SearchPage: React.FC<SearchPageProps> = ({
     [infiniteSearchData]
   );
 
+  // O(1) 日志查找 Map，替代 loadedEntries.find() 的 O(n) 线性查找
+  const loadedEntriesMap = useMemo(
+    () => new Map(loadedEntries.map(entry => [entry.id, entry])),
+    [loadedEntries]
+  );
+
   // 处理无限搜索错误
   useEffect(() => {
     if (infiniteSearchError) {
@@ -206,23 +212,6 @@ const SearchPage: React.FC<SearchPageProps> = ({
   
   // 使用 ref 存储虚拟滚动器实例，避免声明顺序问题
   const rowVirtualizerRef = useRef<ReturnType<typeof useVirtualizer<HTMLDivElement, Element>>>(null);
-  
-
-  // ResizeObserver优化：监听容器尺寸变化，即时更新虚拟滚动
-  useEffect(() => {
-    if (!parentRef.current) return;
-    
-    const resizeObserver = new ResizeObserver(() => {
-      // 当容器尺寸变化时，虚拟滚动会自动重新计算
-      // 这里无需额外操作，useVirtualizer会自动响应
-    });
-    
-    resizeObserver.observe(parentRef.current);
-    
-    return () => {
-      resizeObserver.disconnect();
-    };
-  }, []);
 
   // 滚动事件监听（用于底部刷新和流式分页加载）
   useEffect(() => {
@@ -614,7 +603,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
   // 将虚拟滚动器存储到 ref 中
   rowVirtualizerRef.current = rowVirtualizer;
   
-  const activeLog = loadedEntries.find(l => l.id === selectedId);
+  const activeLog = selectedId ? loadedEntriesMap.get(selectedId) : undefined;
 
   return (
     <div className="flex flex-col h-full relative">

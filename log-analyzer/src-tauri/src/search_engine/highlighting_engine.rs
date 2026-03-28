@@ -284,10 +284,7 @@ impl HighlightingEngine {
                             term,
                             tantivy::schema::IndexRecordOption::Basic,
                         );
-                        clauses.push((
-                            Occur::Should,
-                            Box::new(term_query) as Box<dyn Query>,
-                        ));
+                        clauses.push((Occur::Should, Box::new(term_query) as Box<dyn Query>));
                     }
                     Box::new(BooleanQuery::new(clauses)) as Box<dyn Query>
                 }
@@ -353,12 +350,20 @@ impl HighlightingEngine {
     }
 
     /// Escape HTML characters for safe display
+    /// 单次遍历替代 5 次 String::replace 链式调用，消除 5 次临时 String 分配
     fn escape_html(&self, text: &str) -> String {
-        text.replace('&', "&amp;")
-            .replace('<', "&lt;")
-            .replace('>', "&gt;")
-            .replace('"', "&quot;")
-            .replace('\'', "&#x27;")
+        let mut result = String::with_capacity(text.len() + text.len() / 10);
+        for ch in text.chars() {
+            match ch {
+                '&' => result.push_str("&amp;"),
+                '<' => result.push_str("&lt;"),
+                '>' => result.push_str("&gt;"),
+                '"' => result.push_str("&quot;"),
+                '\'' => result.push_str("&#x27;"),
+                _ => result.push(ch),
+            }
+        }
+        result
     }
 
     /// Calculate hash for query caching
