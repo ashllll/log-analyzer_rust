@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.55] - 2026-03-29
+
+### ⚡ Performance
+
+Rust 后端:
+- `matches_all()` 使用 u128 位向量替代 HashSet，消除万次/秒热路径堆分配，O(n) 提前退出优化)
+  - `escape_html()` 单次遍历替代 5 次 String::replace 链式调用，从 5 次临时分配降到 1 次
+- 新增性能测试覆盖：128 模式边界、 >128 回退、 零堆分配验证
+
+React 前端:
+- `activeLog` 查找改用 Map O(1)，替代 Array.find O(n)
+- 移除空 ResizeObserver 回调（TanStack Virtual 内置处理）
+- 删除死代码 `useWorkspaceMutations.ts`（-224 行未使用的 React Query mutations）
+
+---
+
 ## [1.2.54] - 2026-03-25
 
 ### 🐛 Bug Fixes
