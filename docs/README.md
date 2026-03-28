@@ -10,6 +10,10 @@
 - **CAS_ARCHITECTURE.md** - 内容寻址存储(CAS)架构详解
 - **API.md** - API 接口文档
 - **ADVANCED_SEARCH_FEATURES_EXPLANATION.md** - 高级搜索功能说明
+- **ARCHITECTURE_OPTIMIZATION_SUMMARY.md** - 架构优化总结
+- **modules/** - 模块架构文档
+  - **MODULE_ARCHITECTURE.md** - 完整模块架构文档
+  - **README.md** - 模块架构索引
 
 ### 📚 用户指南 (`guides/`)
 用户使用指南和快速参考
@@ -45,6 +49,7 @@
 
 #### 验证报告
 - **TASK_13_FINAL_VALIDATION_REPORT.md** - TaskManager 生产就绪验证报告
+- **CODE_REVIEW_REPORT.md** - 代码审查报告
 
 ## 🔍 快速导航
 
