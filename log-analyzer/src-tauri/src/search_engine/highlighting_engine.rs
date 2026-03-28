@@ -690,4 +690,64 @@ mod tests {
         assert_eq!(used, 0);
         assert!(capacity > 0);
     }
+
+    // ========== 单次遍历 HTML 转义专项测试 ==========
+
+    #[test]
+    fn test_escape_html_no_special_chars() {
+        let (engine, _temp_dir) = create_test_highlighting_engine();
+        let input = "plain text without special chars";
+        assert_eq!(engine.escape_html(input), input);
+    }
+
+    #[test]
+    fn test_escape_html_all_special_chars() {
+        let (engine, _temp_dir) = create_test_highlighting_engine();
+        let input = "&<>\"'";
+        assert_eq!(engine.escape_html(input), "&amp;&lt;&gt;&quot;&#x27;");
+    }
+
+    #[test]
+    fn test_escape_html_mixed_content() {
+        let (engine, _temp_dir) = create_test_highlighting_engine();
+        let input = "status=200 & type=<json> with \"key\" and 'value'";
+        let expected =
+            "status=200 &amp; type=&lt;json&gt; with &quot;key&quot; and &#x27;value&#x27;";
+        assert_eq!(engine.escape_html(input), expected);
+    }
+
+    #[test]
+    fn test_escape_html_empty_string() {
+        let (engine, _temp_dir) = create_test_highlighting_engine();
+        assert_eq!(engine.escape_html(""), "");
+    }
+
+    #[test]
+    fn test_escape_html_unicode() {
+        let (engine, _temp_dir) = create_test_highlighting_engine();
+        // UTF-8 多字节字符不应被破坏
+        let input = "中文日志 & 日本語ログ < 테스트 >";
+        let expected = "中文日志 &amp; 日本語ログ &lt; 테스트 &gt;";
+        assert_eq!(engine.escape_html(input), expected);
+    }
+
+    #[test]
+    fn test_escape_html_long_text_performance() {
+        // 性能验证：单次遍历应在合理时间内完成大文本转义
+        // debug 构建下阈值放宽，release 构建下应快数倍
+        let (engine, _temp_dir) = create_test_highlighting_engine();
+        let input = "normal text with <tag> & \"quotes\" mixed ".repeat(1000);
+
+        let start = std::time::Instant::now();
+        for _ in 0..1000 {
+            let _ = engine.escape_html(&input);
+        }
+        let avg = start.elapsed() / 1000;
+
+        assert!(
+            avg < std::time::Duration::from_millis(2),
+            "escape_html should process ~35KB text in < 2ms (debug build), actual: {:?}",
+            avg
+        );
+    }
 }

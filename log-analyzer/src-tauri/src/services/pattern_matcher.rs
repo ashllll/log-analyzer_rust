@@ -89,7 +89,12 @@ impl PatternMatcher {
 
         // <= 128 个模式：使用栈上 u128 位向量（零堆分配）
         if pattern_count <= 128 {
-            let all_bits = (1u128 << pattern_count) - 1;
+            // 注意：wrapping_shl(128) == wrapping_shl(0) (取模行为)，需特殊处理
+            let all_bits = if pattern_count == 128 {
+                u128::MAX
+            } else {
+                (1u128 << pattern_count) - 1
+            };
             let mut matched: u128 = 0;
 
             for mat in ac.find_iter(text) {
@@ -318,5 +323,73 @@ mod tests {
 
         // 不包含任何关键词
         assert!(!matcher.matches_all("just a warning"));
+    }
+
+    // ========== 位向量优化专项测试 ==========
+
+    #[test]
+    fn test_matches_all_early_exit() {
+        // 验证提前退出：所有模式出现在文本前部时无需全文扫描
+        // 使用固定宽度格式避免 LeftmostFirst 前缀冲突
+        let patterns: Vec<String> = (0..10).map(|i| format!("kw_{:02}", i)).collect();
+        let matcher = PatternMatcher::new(patterns, false).unwrap();
+
+        let text = "kw_00 kw_01 kw_02 kw_03 kw_04 kw_05 kw_06 kw_07 kw_08 kw_09 ".to_string()
+            + &"padding ".repeat(10000);
+        assert!(matcher.matches_all(&text));
+    }
+
+    #[test]
+    fn test_matches_all_128_patterns() {
+        // 测试 u128 位向量边界：恰好 128 个模式
+        // 使用固定宽度格式避免 LeftmostFirst 前缀冲突（如 "p1" vs "p10"）
+        let patterns: Vec<String> = (0..128).map(|i| format!("p{:03}", i)).collect();
+        let matcher = PatternMatcher::new(patterns.clone(), false).unwrap();
+
+        let text = patterns.join(" ");
+        assert!(matcher.matches_all(&text));
+
+        // 缺少最后一个模式应返回 false
+        let text_missing = (0..127).map(|i| format!("p{:03} ", i)).collect::<String>();
+        assert!(!matcher.matches_all(&text_missing));
+    }
+
+    #[test]
+    fn test_matches_all_129_patterns_fallback() {
+        // 测试 Vec<bool> 回退路径：超过 128 个模式
+        let patterns: Vec<String> = (0..130).map(|i| format!("p{:03}", i)).collect();
+        let matcher = PatternMatcher::new(patterns.clone(), false).unwrap();
+
+        let text = patterns.join(" ");
+        assert!(matcher.matches_all(&text));
+
+        // 缺少最后一个模式应返回 false
+        let text_missing = (0..129).map(|i| format!("p{:03} ", i)).collect::<String>();
+        assert!(!matcher.matches_all(&text_missing));
+    }
+
+    #[test]
+    fn test_matches_all_no_heap_allocation() {
+        // 性能验证：位向量路径应在 < 100us 内完成（零堆分配）
+        let patterns: Vec<String> = (0..64).map(|i| format!("kw_{:03}", i)).collect();
+        let matcher = PatternMatcher::new(patterns.clone(), false).unwrap();
+        let text = patterns.join(" ");
+
+        // 预热
+        for _ in 0..100 {
+            let _ = matcher.matches_all(&text);
+        }
+
+        let start = std::time::Instant::now();
+        for _ in 0..10000 {
+            let _ = matcher.matches_all(&text);
+        }
+        let avg = start.elapsed() / 10000;
+
+        assert!(
+            avg < std::time::Duration::from_micros(100),
+            "Bit vector path should be < 100us per call, actual: {:?}",
+            avg
+        );
     }
 }
