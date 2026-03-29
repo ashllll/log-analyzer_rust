@@ -7,17 +7,7 @@ import {
   ValidationIssue,
   TermSource
 } from '../types/search';
-
-/**
- * 关键词组接口
- */
-interface KeywordGroup {
-  id: string;
-  patterns: Array<{ regex: string; description?: string }>;
-  enabled?: boolean;
-  color?: string;
-  name?: string;
-}
+import type { KeywordGroup } from '../types/common';
 
 /**
  * 搜索查询构建器

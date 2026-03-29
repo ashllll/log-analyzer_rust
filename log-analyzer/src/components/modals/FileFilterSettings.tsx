@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { X, Plus, Trash2, Info } from 'lucide-react';
 import { Button } from '../ui';
 import type { FileFilterConfig } from '../../types/common';
@@ -21,6 +22,7 @@ const FileFilterSettings: React.FC<FileFilterSettingsProps> = ({
   onClose,
   onSaved
 }) => {
+  const { t } = useTranslation();
   const [config, setConfig] = useState<FileFilterConfig>({
     enabled: false,
     binary_detection_enabled: true,
@@ -75,7 +77,7 @@ const FileFilterSettings: React.FC<FileFilterSettingsProps> = ({
       } catch (err) {
         if (!controller.signal.aborted) {
           console.error('Failed to load file filter config:', err);
-          setError(`无法加载配置: ${getFullErrorMessage(err)}`);
+          setError(t('file_filter.load_error', { error: getFullErrorMessage(err) }));
         }
       } finally {
         if (!controller.signal.aborted) {
@@ -132,7 +134,7 @@ const FileFilterSettings: React.FC<FileFilterSettingsProps> = ({
         return;
       }
       console.error('Failed to save file filter config:', err);
-      setError(`保存配置失败: ${getFullErrorMessage(err)}`);
+      setError(t('file_filter.save_error', { error: getFullErrorMessage(err) }));
     } finally {
       // 检查当前 controller 是否仍然有效（避免状态更新到已卸载组件）
       if (abortControllerRef.current === controller) {
@@ -197,9 +199,9 @@ const FileFilterSettings: React.FC<FileFilterSettingsProps> = ({
         {/* 标题栏 */}
         <div className="px-6 py-4 border-b border-border-base flex justify-between items-center bg-bg-sidebar">
           <h2 className="text-lg font-bold text-text-main">
-            文件过滤设置
+            {t('file_filter.title')}
           </h2>
-          <Button variant="icon" icon={X} onClick={onClose} aria-label="关闭" />
+          <Button variant="icon" icon={X} onClick={onClose} aria-label={t('file_filter.close')} />
         </div>
 
         {/* 表单内容 */}
@@ -215,11 +217,11 @@ const FileFilterSettings: React.FC<FileFilterSettingsProps> = ({
             <div className="flex items-start gap-2">
               <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
               <div className="space-y-1">
-                <p className="font-semibold">三层检测策略</p>
+                <p className="font-semibold">{t('file_filter.three_layer_strategy')}</p>
                 <ul className="text-xs space-y-0.5 text-blue-300">
-                  <li>• 第1层：二进制文件检测（自动识别图片、视频、可执行文件）</li>
-                  <li>• 第2层：智能过滤规则（文件名模式 + 扩展名白名单/黑名单）</li>
-                  <li>• 防御性设计：任何错误都默认允许文件通过</li>
+                  <li>• {t('file_filter.layer1_binary')}</li>
+                  <li>• {t('file_filter.layer2_smart')}</li>
+                  <li>• {t('file_filter.defensive_design')}</li>
                 </ul>
               </div>
             </div>
@@ -228,7 +230,7 @@ const FileFilterSettings: React.FC<FileFilterSettingsProps> = ({
           {/* 第1层：二进制检测 */}
           <div className="space-y-2">
             <label className="text-xs text-text-dim uppercase font-bold block">
-              第1层：二进制文件检测
+              {t('file_filter.binary_detection')}
             </label>
             <div className="flex items-center gap-3">
               <label className="relative inline-flex items-center cursor-pointer">
@@ -241,18 +243,18 @@ const FileFilterSettings: React.FC<FileFilterSettingsProps> = ({
                 <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
               </label>
               <span className="text-sm text-text-main">
-                启用二进制文件检测（推荐）
+                {t('file_filter.binary_detection_label')}
               </span>
             </div>
             <p className="text-xs text-text-dim">
-              自动识别图片、视频、可执行文件等二进制格式，仅读取文件前1KB进行魔数检测
+              {t('file_filter.binary_detection_hint')}
             </p>
           </div>
 
           {/* 第2层：智能过滤开关 */}
           <div className="space-y-2">
             <label className="text-xs text-text-dim uppercase font-bold block">
-              第2层：智能过滤规则
+              {t('file_filter.smart_filter')}
             </label>
             <div className="flex items-center gap-3">
               <label className="relative inline-flex items-center cursor-pointer">
@@ -265,11 +267,11 @@ const FileFilterSettings: React.FC<FileFilterSettingsProps> = ({
                 <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
               </label>
               <span className="text-sm text-text-main">
-                启用智能过滤规则（可选）
+                {t('file_filter.smart_filter_label')}
               </span>
             </div>
             <p className="text-xs text-text-dim">
-              通过文件名模式和扩展名列表进一步过滤文件。支持无后缀日志文件（如 syslog、messages）
+              {t('file_filter.smart_filter_hint')}
             </p>
           </div>
 
@@ -277,7 +279,7 @@ const FileFilterSettings: React.FC<FileFilterSettingsProps> = ({
           {config.enabled && (
             <div className="space-y-2">
               <label className="text-xs text-text-dim uppercase font-bold block">
-                过滤模式
+                {t('file_filter.filter_mode')}
               </label>
               <div className="flex gap-4">
                 <label className="flex items-center gap-2 cursor-pointer">
@@ -289,7 +291,7 @@ const FileFilterSettings: React.FC<FileFilterSettingsProps> = ({
                     onChange={() => setConfig({ ...config, mode: FilterMode.Whitelist })}
                     className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 focus:ring-blue-600"
                   />
-                  <span className="text-sm text-text-main">白名单模式</span>
+                  <span className="text-sm text-text-main">{t('file_filter.whitelist_mode')}</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -300,13 +302,13 @@ const FileFilterSettings: React.FC<FileFilterSettingsProps> = ({
                     onChange={() => setConfig({ ...config, mode: FilterMode.Blacklist })}
                     className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 focus:ring-blue-600"
                   />
-                  <span className="text-sm text-text-main">黑名单模式</span>
+                  <span className="text-sm text-text-main">{t('file_filter.blacklist_mode')}</span>
                 </label>
               </div>
               <p className="text-xs text-text-dim">
                 {config.mode === FilterMode.Whitelist
-                  ? '白名单：仅导入匹配文件名模式或在扩展名白名单中的文件'
-                  : '黑名单：跳过匹配扩展名黑名单的文件'}
+                  ? t('file_filter.whitelist_description')
+                  : t('file_filter.blacklist_description')}
               </p>
             </div>
           )}
@@ -315,7 +317,7 @@ const FileFilterSettings: React.FC<FileFilterSettingsProps> = ({
           {config.enabled && (
             <div className="space-y-2">
               <label className="text-xs text-text-dim uppercase font-bold block">
-                文件名 Glob 模式（支持无后缀日志）
+                {t('file_filter.glob_patterns')}
               </label>
               <div className="flex gap-2">
                 <input
@@ -323,13 +325,13 @@ const FileFilterSettings: React.FC<FileFilterSettingsProps> = ({
                   value={newPattern}
                   onChange={e => setNewPattern(e.target.value)}
                   onKeyPress={e => e.key === 'Enter' && addPattern()}
-                  placeholder="例如: *log*, syslog, *.20*"
+                  placeholder={t('file_filter.pattern_placeholder')}
                   className="flex-1 px-3 py-2 bg-bg-sidebar border border-border-base rounded text-sm text-text-main placeholder:text-text-dim focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
                 />
-                <Button onClick={addPattern} variant="icon" icon={Plus} aria-label="添加模式" />
+                <Button onClick={addPattern} variant="icon" icon={Plus} aria-label={t('file_filter.add_pattern')} />
               </div>
               <div className="text-xs text-text-dim">
-                支持通配符：*（任意字符）、?（单个字符）。示例：*log* 匹配 app.log、error_log、mylog.txt
+                {t('file_filter.glob_hint')}
               </div>
               {config.filename_patterns.length > 0 && (
                 <div className="flex flex-wrap gap-2 mt-2">
@@ -342,7 +344,7 @@ const FileFilterSettings: React.FC<FileFilterSettingsProps> = ({
                       <button
                         onClick={() => removePattern(pattern)}
                         className="ml-1 text-text-dim hover:text-red-400 transition-colors"
-                        aria-label={`删除模式 ${pattern}`}
+                        aria-label={t('file_filter.remove_pattern', { pattern })}
                       >
                         <Trash2 className="w-3 h-3" />
                       </button>
@@ -357,7 +359,7 @@ const FileFilterSettings: React.FC<FileFilterSettingsProps> = ({
           {config.enabled && config.mode === FilterMode.Whitelist && (
             <div className="space-y-2">
               <label className="text-xs text-text-dim uppercase font-bold block">
-                扩展名白名单
+                {t('file_filter.extension_whitelist')}
               </label>
               <div className="flex gap-2">
                 <input
@@ -365,10 +367,10 @@ const FileFilterSettings: React.FC<FileFilterSettingsProps> = ({
                   value={newExtension}
                   onChange={e => setNewExtension(e.target.value)}
                   onKeyPress={e => e.key === 'Enter' && addExtension()}
-                  placeholder="例如: log, txt, json"
+                  placeholder={t('file_filter.extension_placeholder')}
                   className="flex-1 px-3 py-2 bg-bg-sidebar border border-border-base rounded text-sm text-text-main placeholder:text-text-dim focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
                 />
-                <Button onClick={addExtension} variant="icon" icon={Plus} aria-label="添加扩展名" />
+                <Button onClick={addExtension} variant="icon" icon={Plus} aria-label={t('file_filter.add_extension')} />
               </div>
               {config.allowed_extensions.length > 0 && (
                 <div className="flex flex-wrap gap-2 mt-2">
@@ -381,7 +383,7 @@ const FileFilterSettings: React.FC<FileFilterSettingsProps> = ({
                       <button
                         onClick={() => removeExtension(ext)}
                         className="ml-1 text-text-dim hover:text-red-400 transition-colors"
-                        aria-label={`删除扩展名 ${ext}`}
+                        aria-label={t('file_filter.remove_extension', { extension: ext })}
                       >
                         <Trash2 className="w-3 h-3" />
                       </button>
@@ -396,10 +398,10 @@ const FileFilterSettings: React.FC<FileFilterSettingsProps> = ({
         {/* 底部按钮 */}
         <div className="px-6 py-4 border-t border-border-base flex justify-end gap-3 bg-bg-sidebar">
           <Button onClick={onClose} variant="secondary">
-            取消
+            {t('file_filter.cancel')}
           </Button>
           <Button onClick={handleSave} disabled={isLoading}>
-            {isLoading ? '保存中...' : '保存配置'}
+            {isLoading ? t('file_filter.save_saving') : t('file_filter.save')}
           </Button>
         </div>
       </div>

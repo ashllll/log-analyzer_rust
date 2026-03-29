@@ -7,11 +7,10 @@
 //! 为保持与 JavaScript camelCase 惯例一致，Tauri 命令参数使用 camelCase 命名。
 
 use std::time::Duration;
-use tauri::{command, AppHandle, Manager, State};
+use tauri::{command, AppHandle, Emitter, Manager, State};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use crate::events::bridge::emit;
 use crate::models::{AppState, LogEntry};
 use crate::services::parse_metadata;
 use crate::storage::{ContentAddressableStorage, MetadataStore};
@@ -56,6 +55,7 @@ pub async fn async_search_logs(
         .await;
 
     let app_handle = app.clone();
+    let app_handle_for_result = app.clone();
     let search_id_clone = search_id.clone();
     let query_clone = query.clone();
     let workspace_id_clone = workspace_id.clone();
@@ -75,10 +75,10 @@ pub async fn async_search_logs(
 
         match result {
             Ok(count) => {
-                let _ = emit::async_search_complete(search_id_clone, count);
+                let _ = app_handle_for_result.emit("async-search-complete", (&search_id_clone, count));
             }
             Err(e) => {
-                let _ = emit::async_search_error(search_id_clone, e);
+                let _ = app_handle_for_result.emit("async-search-error", (&search_id_clone, &e));
             }
         }
     });
@@ -115,7 +115,7 @@ async fn perform_async_search(
     let start_time = std::time::Instant::now();
 
     // 发送搜索开始事件
-    let _ = emit::async_search_start(&search_id);
+    let _ = app.emit("async-search-start", &search_id);
 
     // Get workspace directory
     let app_data_dir = app
@@ -201,7 +201,7 @@ async fn perform_async_search(
 
                     // 批量发送结果
                     if batch_results.len() >= batch_size {
-                        let _ = emit::async_search_results(std::mem::take(&mut batch_results));
+                        let _ = app.emit("async-search-results", &std::mem::take(&mut batch_results));
                     }
                 }
             }
@@ -218,7 +218,7 @@ async fn perform_async_search(
         // 发送进度更新
         if i % 10 == 0 {
             let progress = (i as f64 / files.len() as f64 * 100.0) as u32;
-            let _ = emit::async_search_progress(search_id.clone(), progress);
+            let _ = app.emit("async-search-progress", (&search_id, progress));
         }
 
         // 让出控制权，避免阻塞
@@ -229,7 +229,7 @@ async fn perform_async_search(
 
     // 发送剩余结果
     if !batch_results.is_empty() {
-        let _ = emit::async_search_results(batch_results);
+        let _ = app.emit("async-search-results", &batch_results);
     }
 
     let duration = start_time.elapsed();

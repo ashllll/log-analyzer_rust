@@ -5,6 +5,7 @@ import { useWorkspaceStore, type Workspace } from '../stores/workspaceStore';
 import { logger } from '../utils/logger';
 import { api } from '../services/api';
 import { getFullErrorMessage } from '../services/errors';
+import { useToast } from './useToast';
 
 export interface UseWorkspaceImportReturn {
   importPath: (pathStr: string) => Promise<void>;
@@ -18,7 +19,7 @@ export interface UseWorkspaceImportReturn {
  * 封装工作区导入相关操作
  */
 export const useWorkspaceImport = (): UseWorkspaceImportReturn => {
-  const addToast = useAppStore((state) => state.addToast);
+  const { showToast: addToast } = useToast();
   const setActiveWorkspace = useAppStore((state) => state.setActiveWorkspace);
   const activeWorkspaceId = useAppStore((state) => state.activeWorkspaceId);
   const addWorkspace = useWorkspaceStore((state) => state.addWorkspace);

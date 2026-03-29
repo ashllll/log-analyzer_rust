@@ -1,4 +1,5 @@
-import { useRef, useEffect, lazy, Suspense, useCallback, useMemo } from "react";
+import { useEffect, lazy, Suspense, useCallback, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Search, LayoutGrid, ListTodo, Cog, Layers,
   Zap, FileText, Activity
@@ -19,8 +20,9 @@ import { queryClient } from './lib/queryClient';
 // 导入全局Store和Hooks
 import { AppStoreProvider } from './stores/AppStoreProvider';
 import { useAppStore } from './stores/appStore';
-import { useWorkspaceOperations } from './hooks/useWorkspaceOperations';
-import { useKeywordManager } from './hooks/useKeywordManager';
+import { useWorkspaceSelection } from './hooks/useWorkspaceSelection';
+import { useWorkspaceList } from './hooks/useWorkspaceList';
+import { useToast } from './hooks/useToast';
 
 // 导入UI组件
 import { NavItem } from './components/ui';
@@ -47,6 +49,7 @@ const PageSkeleton: React.FC = () => (
 
 // --- Main App Component (Internal) ---
 function AppContent() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   
@@ -54,14 +57,12 @@ function AppContent() {
   const currentPage = location.pathname.slice(1) || 'workspaces';
   
   const activeWorkspaceId = useAppStore((state) => state.activeWorkspaceId);
-  const addToast = useAppStore((state) => state.addToast);
   const isInitialized = useAppStore((state) => state.isInitialized);
   const initializationError = useAppStore((state) => state.initializationError);
+  const { showToast: addToast } = useToast();
 
-  const { keywordGroups } = useKeywordManager();
-  const { workspaces, refreshWorkspaces } = useWorkspaceOperations();
-
-  const searchInputRef = useRef<HTMLInputElement>(null);
+  const { workspaces } = useWorkspaceSelection();
+  const { refreshWorkspaces } = useWorkspaceList();
 
   const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId) || null;
 
@@ -77,12 +78,12 @@ function AppContent() {
 
   // 导航项配置 - 使用 useMemo 缓存
   const navItems = useMemo(() => [
-    { icon: LayoutGrid, label: "Workspaces", page: "workspaces", testId: "nav-workspaces" },
-    { icon: Search, label: "Search Logs", page: "search", testId: "nav-search" },
-    { icon: ListTodo, label: "Keywords", page: "keywords", testId: "nav-keywords" },
-    { icon: Layers, label: "Tasks", page: "tasks", testId: "nav-tasks" },
-    { icon: Activity, label: "Performance", page: "performance", testId: "nav-performance" },
-  ], []);
+    { icon: LayoutGrid, label: t('nav.workspaces'), page: "workspaces", testId: "nav-workspaces" },
+    { icon: Search, label: t('nav.search'), page: "search", testId: "nav-search" },
+    { icon: ListTodo, label: t('nav.keywords'), page: "keywords", testId: "nav-keywords" },
+    { icon: Layers, label: t('nav.tasks'), page: "tasks", testId: "nav-tasks" },
+    { icon: Activity, label: t('nav.performance'), page: "performance", testId: "nav-performance" },
+  ], [t]);
 
   // 初始化状态同步并监听工作区事件
   useEffect(() => {
@@ -164,7 +165,7 @@ function AppContent() {
         href="#main-content"
         className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-[1000] focus:px-4 focus:py-2 focus:bg-primary focus:text-white focus:rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-bg-main"
       >
-        跳转到主要内容
+        {t('nav.skip_to_content')}
       </a>
 
       {/* 侧边栏 - 使用更柔和的背景和更好的视觉层次 */}
@@ -189,7 +190,7 @@ function AppContent() {
           ))}
         </div>
         <div className="p-3 border-t border-border-subtle">
-          <NavItem icon={Cog} label="Settings" active={currentPage === 'settings'} onClick={() => setPage('settings')} data-testid="nav-settings" />
+          <NavItem icon={Cog} label={t('nav.settings')} active={currentPage === 'settings'} onClick={() => setPage('settings')} data-testid="nav-settings" />
         </div>
       </div>
       {/* 主内容区 */}
@@ -231,7 +232,7 @@ function AppContent() {
               <Routes>
                 <Route path="/" element={<Navigate to="/workspaces" replace />} />
                 <Route path="/workspaces" element={<WorkspacesPage />} />
-                <Route path="/search" element={<SearchPage keywordGroups={keywordGroups} addToast={addToast} searchInputRef={searchInputRef} activeWorkspace={activeWorkspace} />} />
+                <Route path="/search" element={<SearchPage />} />
                 <Route path="/keywords" element={<KeywordsPage />} />
                 <Route path="/tasks" element={<TasksPage />} />
                 <Route path="/performance" element={<PerformancePage />} />

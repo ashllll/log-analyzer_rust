@@ -3,7 +3,7 @@
  */
 
 import { create } from 'zustand';
-import { devtools, subscribeWithSelector } from 'zustand/middleware';
+import { devtools, persist, subscribeWithSelector } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 
 import type { KeywordGroup } from './types';
@@ -36,48 +36,57 @@ interface KeywordState {
 
 export const useKeywordStore = create<KeywordState>()(
   devtools(
-    subscribeWithSelector(
-      immer((set) => ({
-        // Initial State
-        keywordGroups: [],
-        loading: false,
-        error: null,
-        
-        // Actions
-        setKeywordGroups: (groups) => set((state) => {
-          state.keywordGroups = groups;
+    persist(
+      subscribeWithSelector(
+        immer((set) => ({
+          // Initial State
+          keywordGroups: [],
+          loading: false,
+          error: null,
+
+          // Actions
+          setKeywordGroups: (groups) => set((state) => {
+            state.keywordGroups = groups;
+          }),
+
+          addKeywordGroup: (group) => set((state) => {
+            state.keywordGroups.push(group);
+          }),
+
+          updateKeywordGroup: (group) => set((state) => {
+            const index = state.keywordGroups.findIndex(g => g.id === group.id);
+            if (index !== -1) {
+              state.keywordGroups[index] = group;
+            }
+          }),
+
+          deleteKeywordGroup: (id) => set((state) => {
+            state.keywordGroups = state.keywordGroups.filter(g => g.id !== id);
+          }),
+
+          toggleKeywordGroup: (id) => set((state) => {
+            const group = state.keywordGroups.find(g => g.id === id);
+            if (group) {
+              group.enabled = !group.enabled;
+            }
+          }),
+
+          setLoading: (loading) => set((state) => {
+            state.loading = loading;
+          }),
+
+          setError: (error) => set((state) => {
+            state.error = error;
+          }),
+        }))
+      ),
+      {
+        name: 'log-analyzer-keywords',
+        // 仅持久化关键词数据，不持久化临时状态（loading/error）
+        partialize: (state) => ({
+          keywordGroups: state.keywordGroups,
         }),
-        
-        addKeywordGroup: (group) => set((state) => {
-          state.keywordGroups.push(group);
-        }),
-        
-        updateKeywordGroup: (group) => set((state) => {
-          const index = state.keywordGroups.findIndex(g => g.id === group.id);
-          if (index !== -1) {
-            state.keywordGroups[index] = group;
-          }
-        }),
-        
-        deleteKeywordGroup: (id) => set((state) => {
-          state.keywordGroups = state.keywordGroups.filter(g => g.id !== id);
-        }),
-        
-        toggleKeywordGroup: (id) => set((state) => {
-          const group = state.keywordGroups.find(g => g.id === id);
-          if (group) {
-            group.enabled = !group.enabled;
-          }
-        }),
-        
-        setLoading: (loading) => set((state) => {
-          state.loading = loading;
-        }),
-        
-        setError: (error) => set((state) => {
-          state.error = error;
-        }),
-      }))
+      }
     ),
     { name: 'keyword-store' }
   )

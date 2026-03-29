@@ -580,6 +580,61 @@ impl SearchEngineManager {
         Ok(())
     }
 
+    /// 提交并等待所有 segment 合并完成
+    ///
+    /// 在大批量导入后调用此方法，确保 Tantivy 后台 segment 合并线程完成工作，
+    /// 减少后续搜索时的段数量，提升查询性能。合并由 Tantivy 的 MergePolicy 自动触发。
+    ///
+    /// 注意：`IndexWriter::wait_merging_threads()` 会消费 `self`（获取所有权），
+    /// 因此本方法使用 `Option<IndexWriter>` 包装，通过 `take()` 暂时取出 writer，
+    /// 等待合并完成后再放入新的 writer。
+    pub async fn commit_and_wait_merge(&self) -> SearchResult<()> {
+        // 先执行常规 commit
+        self.commit()?;
+
+        // 将 Mutex<IndexWriter> 中当前 writer 替换为 placeholder，
+        // 取出旧的用于等待合并
+        let index = self.index.clone();
+        let reader = self.reader.clone();
+        let writer_arc = self.writer.clone();
+        let writer_heap_size = self.config.writer_heap_size;
+
+        // 先创建一个新的 IndexWriter 作为临时占位，取出旧的用于等待合并
+        let old_writer = {
+            let mut guard = self.writer.lock();
+            // 创建新的 writer 作为占位放入
+            let placeholder = index.writer(writer_heap_size)?;
+            std::mem::replace(&mut *guard, placeholder)
+        };
+
+        let result = tokio::task::spawn_blocking(move || -> SearchResult<()> {
+            // wait_merging_threads 消费 IndexWriter，等待后台合并完成
+            match old_writer.wait_merging_threads() {
+                Ok(()) => {
+                    info!("Segment 合并已完成");
+                }
+                Err(e) => {
+                    warn!(error = %e, "等待 segment 合并线程失败，数据已 commit 但合并未完成");
+                }
+            }
+
+            // reload reader 以看到合并后的最新段状态
+            if let Err(e) = reader.reload() {
+                warn!(error = %e, "合并后 reader reload 失败");
+            }
+
+            // 释放临时占位 writer，换回一个干净的 writer 供后续使用
+            // 由于之前的 placeholder 已在 Mutex 中，这里不需要额外操作
+            drop(writer_arc);
+
+            Ok(())
+        })
+        .await
+        .map_err(|e| SearchError::IndexError(format!("合并任务执行失败: {}", e)))?;
+
+        result
+    }
+
     /// Search with multiple keywords using optimized intersection algorithms
     pub async fn search_multi_keyword(
         &self,

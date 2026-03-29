@@ -313,14 +313,14 @@ export type MatchDetail = z.infer<typeof MatchDetailSchema>;
  * LogEntry Schema（与后端 models::LogEntry 一致）
  *
  * 注意：
- * - id: string（后端为 usize，序列化为 number，但为统一类型使用 string）
+ * - id: number（后端为 usize，序列化为 number）
  * - timestamp: string（后端为 Arc<str>）
  * - tags: string[]（后端为 Vec<String>）
  * - match_details: 可选数组
  * - matched_keywords: 可选数组
  */
 export const LogEntrySchema = z.object({
-  id: z.string(),
+  id: z.number(),
   timestamp: z.string(),
   level: z.string(),
   file: z.string(),

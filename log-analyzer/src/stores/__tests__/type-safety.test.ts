@@ -25,14 +25,11 @@ describe('Type Safety Tests', () => {
   describe('Property 32: Store Type Completeness', () => {
     it('appStore 应该有完整的类型定义', () => {
       const store = useAppStore.getState();
-      
+
       // 验证状态属性存在且类型正确
-      expect(Array.isArray(store.toasts)).toBe(true);
       expect(store.activeWorkspaceId === null || typeof store.activeWorkspaceId === 'string').toBe(true);
-      
+
       // 验证 action 方法存在且类型正确
-      expect(typeof store.addToast).toBe('function');
-      expect(typeof store.removeToast).toBe('function');
       expect(typeof store.setActiveWorkspace).toBe('function');
     });
 
@@ -96,11 +93,9 @@ describe('Type Safety Tests', () => {
       const store = useAppStore.getState();
       
       // 验证状态类型
-      const toasts: any[] = store.toasts;
       const activeWorkspaceId: string | null = store.activeWorkspaceId;
-      
+
       // 验证类型推断正确
-      expect(Array.isArray(toasts)).toBe(true);
       expect(activeWorkspaceId === null || typeof activeWorkspaceId === 'string').toBe(true);
     });
 
@@ -142,7 +137,6 @@ describe('Type Safety Tests', () => {
     beforeEach(() => {
       // 在每个测试前重置所有 store 状态
       useAppStore.setState({
-        toasts: [],
         activeWorkspaceId: null
       });
       

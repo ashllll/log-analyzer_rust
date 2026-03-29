@@ -13,6 +13,7 @@
  */
 
 import { useState, useCallback, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Activity,
   Cpu,
@@ -109,6 +110,7 @@ function MetricRow({ label, value, color = 'text-text-main', unit = '', alert = 
 // ============================================================================
 
 export function PerformancePage() {
+  const { t } = useTranslation();
   // 状态管理
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [timeRange, setTimeRange] = useState<TimeRangeValue>('24h');
@@ -191,7 +193,7 @@ export function PerformancePage() {
               <Activity className="w-6 h-6 text-primary" />
               Performance Monitor
             </h1>
-            <p className="text-sm text-text-dim mt-1">系统性能指标实时监控</p>
+            <p className="text-sm text-text-dim mt-1">{t('performance.subtitle')}</p>
           </div>
           <div className="flex gap-2 items-center">
             <TimeRangeSelector
@@ -406,7 +408,7 @@ export function PerformancePage() {
         {/* 自动刷新状态 */}
         {autoRefresh && (
           <div className="text-center text-xs text-text-dim">
-            Auto-refreshing every {refreshInterval / 1000}s · Historical data every 30s
+            {t('performance.auto_refresh_info', { interval: refreshInterval / 1000 })}
           </div>
         )}
       </div>

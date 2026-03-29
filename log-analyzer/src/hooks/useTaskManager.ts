@@ -1,8 +1,8 @@
 import { useCallback } from 'react';
-import { useAppStore } from '../stores/appStore';
 import { useTaskStore } from '../stores/taskStore';
 import { api } from '../services/api';
 import { getFullErrorMessage } from '../services/errors';
+import { useToast } from './useToast';
 
 /**
  * 任务管理Hook
@@ -10,7 +10,7 @@ import { getFullErrorMessage } from '../services/errors';
  * 注意：任务事件监听已在 appStore 中处理
  */
 export const useTaskManager = () => {
-  const addToast = useAppStore((state) => state.addToast);
+  const { showToast: addToast } = useToast();
   const tasks = useTaskStore((state) => state.tasks);
   const tasksLoading = useTaskStore((state) => state.loading);
   const tasksError = useTaskStore((state) => state.error);

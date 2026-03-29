@@ -5,6 +5,7 @@ import { useKeywordStore, type KeywordGroup } from '../stores/keywordStore';
 import { logger } from '../utils/logger';
 import { api, type SearchParams, type ExportParams } from '../services/api';
 import { getFullErrorMessage } from '../services/errors';
+import { useToast } from './useToast';
 
 // ============================================================================
 // Query Keys
@@ -56,7 +57,7 @@ export const useConfigQuery = () => {
  */
 export const useConfigMutation = () => {
   const queryClient = useQueryClient();
-  const addToast = useAppStore((state) => state.addToast);
+  const { showToast: addToast } = useToast();
 
   return useMutation({
     mutationFn: async (config: { keyword_groups: KeywordGroup[]; workspaces: Workspace[] }) => {
@@ -98,7 +99,7 @@ export const useConfigMutation = () => {
  * Load workspace index
  */
 export const useLoadWorkspaceMutation = () => {
-  const addToast = useAppStore((state) => state.addToast);
+  const { showToast: addToast } = useToast();
 
   return useMutation({
     mutationFn: async (workspaceId: string) => {
@@ -123,7 +124,7 @@ export const useLoadWorkspaceMutation = () => {
  */
 export const useImportFolderMutation = () => {
   const queryClient = useQueryClient();
-  const addToast = useAppStore((state) => state.addToast);
+  const { showToast: addToast } = useToast();
   const addWorkspace = useWorkspaceStore((state) => state.addWorkspace);
   const setActiveWorkspace = useAppStore((state) => state.setActiveWorkspace);
 
@@ -177,7 +178,7 @@ export const useImportFolderMutation = () => {
  */
 export const useRefreshWorkspaceMutation = () => {
   const queryClient = useQueryClient();
-  const addToast = useAppStore((state) => state.addToast);
+  const { showToast: addToast } = useToast();
 
   return useMutation({
     mutationFn: async ({ workspaceId }: { workspaceId: string; path: string }) => {
@@ -206,7 +207,7 @@ export const useRefreshWorkspaceMutation = () => {
  */
 export const useDeleteWorkspaceMutation = () => {
   const queryClient = useQueryClient();
-  const addToast = useAppStore((state) => state.addToast);
+  const { showToast: addToast } = useToast();
   const deleteWorkspace = useWorkspaceStore((state) => state.deleteWorkspace);
   const setActiveWorkspace = useAppStore((state) => state.setActiveWorkspace);
   const workspaces = useWorkspaceStore((state) => state.workspaces);
@@ -253,7 +254,7 @@ export const useDeleteWorkspaceMutation = () => {
  * Toggle workspace watching
  */
 export const useToggleWatchMutation = () => {
-  const addToast = useAppStore((state) => state.addToast);
+  const { showToast: addToast } = useToast();
   const updateWorkspace = useWorkspaceStore((state) => state.updateWorkspace);
 
   return useMutation({
@@ -298,7 +299,7 @@ export const useToggleWatchMutation = () => {
  * Perform search operation
  */
 export const useSearchMutation = () => {
-  const addToast = useAppStore((state) => state.addToast);
+  const { showToast: addToast } = useToast();
 
   return useMutation({
     mutationFn: async (searchParams: SearchParams) => {
@@ -323,7 +324,7 @@ export const useSearchMutation = () => {
  * Export search results
  */
 export const useExportMutation = () => {
-  const addToast = useAppStore((state) => state.addToast);
+  const { showToast: addToast } = useToast();
 
   return useMutation({
     mutationFn: async (exportParams: ExportParams) => {

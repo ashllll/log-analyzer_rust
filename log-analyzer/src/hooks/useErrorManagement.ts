@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { useToastManager } from './useToastManager';
+import { useToast } from './useToast';
 
 // Tauri API types
 declare global {
@@ -55,7 +55,7 @@ export interface FormErrors {
 export const useErrorManagement = () => {
   const [errors, setErrors] = useState<ErrorInfo[]>([]);
   const [formErrors, setFormErrors] = useState<FormErrors>({});
-  const { showError, showInfo } = useToastManager();
+  const { showError, showInfo } = useToast();
 
   /**
    * Report an error to the backend and optionally to the user

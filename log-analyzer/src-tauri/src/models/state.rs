@@ -19,6 +19,31 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 /// 简化应用状态
+///
+/// # 锁策略分析 (O6)
+///
+/// 所有字段使用 `parking_lot::Mutex` 而非 `tokio::sync::Mutex`。
+/// 经过审计，当前所有使用模式均遵循以下安全模式：
+///
+/// 1. **短暂持锁 + 克隆**：`task_manager`、`state_sync`、`metadata_stores` 等字段
+///    在 `.await` 点前通过 `.lock().clone()` 获取值的副本，然后释放锁。
+///    这避免了跨 `.await` 持锁的问题。
+///
+/// 2. **纯同步操作**：`workspace_dirs`、`cas_instances`、`search_engine_managers`
+///    等字段的锁仅在同步代码块中使用（插入/查询/删除），不涉及 `.await`。
+///
+/// 3. **简单计数器**：`total_searches`、`cache_hits`、`last_search_duration` 等
+///    仅进行短暂的读/写操作。
+///
+/// **潜在风险点**：`file_watcher.rs` 中 `search_engine_managers.lock()` 持锁期间
+/// 执行 `add_document()` + `commit()`，虽然都是同步操作，但如果数据量大导致
+/// commit 耗时较长，可能阻塞其他需要访问 `search_engine_managers` 的线程。
+/// 如果未来出现性能问题，可考虑将该字段改为 `tokio::sync::Mutex` 或使用
+/// `DashMap`（类似 `WorkspaceState` 的做法）。
+///
+/// **结论**：当前使用 `parking_lot::Mutex` 是安全的，因为不存在跨 `.await`
+/// 持锁的情况。改为 `tokio::sync::Mutex` 会增加性能开销且需要修改大量命令代码，
+/// 收益不足以证明风险。
 pub struct AppState {
     // C-H1 优化: 使用 BTreeMap 替代 HashMap 保证工作区选择的确定性
     // BTreeMap 按 key 的字母顺序排列，确保 dirs.keys().next() 返回确定的工作区

@@ -4,6 +4,7 @@ import { useWorkspaceStore, type Workspace } from '../stores/workspaceStore';
 import { logger } from '../utils/logger';
 import { api } from '../services/api';
 import { getFullErrorMessage } from '../services/errors';
+import { useToast } from './useToast';
 
 export interface UseWorkspaceManagementReturn {
   deleteWorkspace: (id: string) => Promise<void>;
@@ -16,7 +17,7 @@ export interface UseWorkspaceManagementReturn {
  * 封装工作区删除、刷新等管理操作
  */
 export const useWorkspaceManagement = (): UseWorkspaceManagementReturn => {
-  const addToast = useAppStore((state) => state.addToast);
+  const { showToast: addToast } = useToast();
   const setActiveWorkspace = useAppStore((state) => state.setActiveWorkspace);
   const deleteWorkspace = useWorkspaceStore((state) => state.deleteWorkspace);
 

@@ -4,6 +4,7 @@ import { useWorkspaceStore, type Workspace } from '../stores/workspaceStore';
 import { logger } from '../utils/logger';
 import { api } from '../services/api';
 import { getFullErrorMessage } from '../services/errors';
+import { useToast } from './useToast';
 
 export interface UseWorkspaceSelectionReturn {
   switchWorkspace: (id: string) => Promise<void>;
@@ -18,7 +19,7 @@ export interface UseWorkspaceSelectionReturn {
  * 封装工作区切换相关操作
  */
 export const useWorkspaceSelection = (): UseWorkspaceSelectionReturn => {
-  const addToast = useAppStore((state) => state.addToast);
+  const { showToast: addToast } = useToast();
   const setActiveWorkspace = useAppStore((state) => state.setActiveWorkspace);
   const activeWorkspaceId = useAppStore((state) => state.activeWorkspaceId);
   const workspaces = useWorkspaceStore((state) => state.workspaces);

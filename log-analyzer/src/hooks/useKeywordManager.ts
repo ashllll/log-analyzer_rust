@@ -1,13 +1,13 @@
 import { useCallback } from 'react';
-import { useAppStore } from '../stores/appStore';
 import { useKeywordStore, KeywordGroup } from '../stores/keywordStore';
+import { useToast } from './useToast';
 
 /**
  * 关键词管理Hook
  * 封装关键词组的CRUD操作
  */
 export const useKeywordManager = () => {
-  const addToast = useAppStore((state) => state.addToast);
+  const { showToast: addToast } = useToast();
   const keywordGroups = useKeywordStore((state) => state.keywordGroups);
   const keywordsLoading = useKeywordStore((state) => state.loading);
   const keywordsError = useKeywordStore((state) => state.error);

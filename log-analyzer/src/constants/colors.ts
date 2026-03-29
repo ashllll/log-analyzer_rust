@@ -1,8 +1,28 @@
 // 颜色系统常量定义
 import { ColorKey } from '../types/common';
 
+/**
+ * 单个颜色键对应的 Tailwind 样式集合
+ */
+export interface ColorStyles {
+  /** 列表圆点背景色 */
+  dot: string;
+  /** 徽章样式（背景 + 文字 + 边框） */
+  badge: string;
+  /** 边框颜色 */
+  border: string;
+  /** 文字颜色 */
+  text: string;
+  /** 激活按钮样式（背景 + 文字 + 边框 + 阴影） */
+  activeBtn: string;
+  /** 悬停边框样式 */
+  hoverBorder: string;
+  /** 高亮样式（背景 + 文字 + 边框） */
+  highlight: string;
+}
+
 // 颜色样式映射
-export const COLOR_STYLES: Record<ColorKey, any> = {
+export const COLOR_STYLES: Record<ColorKey, ColorStyles> = {
   blue: {
     dot: "bg-blue-500",
     badge: "bg-blue-500/15 text-blue-400 border-blue-500/20",

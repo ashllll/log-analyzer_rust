@@ -1,9 +1,9 @@
 import { useCallback, useState } from 'react';
-import { useAppStore } from '../stores/appStore';
 import { useWorkspaceStore, type Workspace } from '../stores/workspaceStore';
 import { logger } from '../utils/logger';
 import { api } from '../services/api';
 import { getFullErrorMessage } from '../services/errors';
+import { useToast } from './useToast';
 
 export interface UseWorkspaceWatchReturn {
   toggleWatch: (workspace: Workspace) => Promise<void>;
@@ -15,7 +15,7 @@ export interface UseWorkspaceWatchReturn {
  * 封装工作区文件监听切换操作
  */
 export const useWorkspaceWatch = (): UseWorkspaceWatchReturn => {
-  const addToast = useAppStore((state) => state.addToast);
+  const { showToast: addToast } = useToast();
   const updateWorkspace = useWorkspaceStore((state) => state.updateWorkspace);
 
   const [isLoading, setIsLoading] = useState(false);

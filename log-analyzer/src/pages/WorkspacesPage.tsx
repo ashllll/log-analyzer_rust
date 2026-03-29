@@ -2,7 +2,10 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FileText, Plus, RefreshCw, Trash2, Eye, EyeOff, CheckCircle2, Settings } from 'lucide-react';
 import { useAppStore } from '../stores/appStore';
-import { useWorkspaceOperations } from '../hooks/useWorkspaceOperations';
+import { useWorkspaceSelection } from '../hooks/useWorkspaceSelection';
+import { useWorkspaceImport } from '../hooks/useWorkspaceImport';
+import { useWorkspaceManagement } from '../hooks/useWorkspaceManagement';
+import { useWorkspaceWatch } from '../hooks/useWorkspaceWatch';
 import { Button, Card } from '../components/ui';
 import { FileFilterSettings } from '../components/modals';
 import { cn } from '../utils/classNames';
@@ -19,7 +22,10 @@ import type { Workspace } from '../types/common';
  */
 const WorkspacesPage: React.FC = () => {
   const { t } = useTranslation();
-  const { workspaces, importFile, importFolder, refreshWorkspace, deleteWorkspace, toggleWatch, switchWorkspace } = useWorkspaceOperations();
+  const { workspaces, switchWorkspace } = useWorkspaceSelection();
+  const { importFile, importFolder } = useWorkspaceImport();
+  const { deleteWorkspace, refreshWorkspace } = useWorkspaceManagement();
+  const { toggleWatch } = useWorkspaceWatch();
   const activeWorkspaceId = useAppStore((state) => state.activeWorkspaceId);
   const [isFilterSettingsOpen, setIsFilterSettingsOpen] = useState(false);
 

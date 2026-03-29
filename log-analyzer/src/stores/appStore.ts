@@ -7,30 +7,18 @@
 import { create } from 'zustand';
 import { devtools, subscribeWithSelector } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
-import toast from 'react-hot-toast';
-
-import type { Toast, ToastType } from './types';
 
 // ============================================================================
 // Types
 // ============================================================================
 
-export type { Toast, ToastType } from './types';
-
-// 自增 ID 生成器，避免 Date.now() 在快速调用时重复
-let toastIdCounter = 0;
-const generateToastId = () => ++toastIdCounter;
-
 export interface AppState {
   // State
-  toasts: Toast[];
   activeWorkspaceId: string | null;
   isInitialized: boolean;
   initializationError: string | null;
 
   // Actions
-  addToast: (type: ToastType, message: string) => void;
-  removeToast: (id: number) => void;
   setActiveWorkspace: (id: string | null) => void;
   setInitialized: (initialized: boolean, error?: string | null) => void;
 }
@@ -44,50 +32,15 @@ export const useAppStore = create<AppState>()(
     subscribeWithSelector(
       immer((set) => ({
         // Initial State
-        toasts: [],
         activeWorkspaceId: null,
         isInitialized: false,
         initializationError: null,
-        
+
         // Actions
-        addToast: (type, message) => {
-          const id = generateToastId();
-          const duration = type === 'error' ? 4000 : 3000;
-
-          // 写入 Zustand 状态，使 removeToast 和订阅者能正确感知
-          set((state) => {
-            state.toasts.push({ id, type, message });
-          });
-
-          // 显示 react-hot-toast UI（需在 immer set 外执行）
-          switch (type) {
-            case 'success':
-              toast.success(message, { duration });
-              break;
-            case 'error':
-              toast.error(message, { duration });
-              break;
-            case 'info':
-              toast(message, { duration, icon: 'ℹ️' });
-              break;
-          }
-
-          // TTL 到期后自动从 Zustand 状态移除
-          setTimeout(() => {
-            set((state) => {
-              state.toasts = state.toasts.filter((t) => t.id !== id);
-            });
-          }, duration);
-        },
-        
-        removeToast: (id) => set((state) => {
-          state.toasts = state.toasts.filter(t => t.id !== id);
-        }),
-        
         setActiveWorkspace: (id) => set((state) => {
           state.activeWorkspaceId = id;
         }),
-        
+
         setInitialized: (initialized, error = null) => set((state) => {
           state.isInitialized = initialized;
           state.initializationError = error;

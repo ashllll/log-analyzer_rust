@@ -2,6 +2,7 @@
  * 统一 API 层
  *
  * 封装所有 Tauri 命令调用，提供类型安全的接口和统一的错误处理。
+ * 同时整合空值安全调用（原 nullSafeApi）和查询 API（原 queryApi）。
  *
  * @module api
  */
@@ -9,7 +10,9 @@
 import { invoke, type InvokeArgs } from '@tauri-apps/api/core';
 import { z } from 'zod';
 import { createApiError } from './errors';
+import { logger } from '../utils/logger';
 import type { KeywordGroup, Workspace } from '../types/common';
+import type { SearchQuery } from '../types/search';
 import {
   RarSupportInfoSchema,
   FileFilterConfigSchema,
@@ -27,6 +30,149 @@ import {
   type WorkspaceState,
   type EventRecord,
 } from '../types/api-responses';
+
+// ============================================================================
+// 空值安全工具函数（原 nullSafeApi）
+// ============================================================================
+
+/**
+ * 空值安全检查工具
+ */
+export function isEmpty<T>(value: T | null | undefined): value is null | undefined {
+  return value === null || value === undefined;
+}
+
+export function isEmptyString(value: string | null | undefined): boolean {
+  return value === null || value === undefined || value === '';
+}
+
+export function isEmptyArray<T>(value: T[] | null | undefined): boolean {
+  return value === null || value === undefined || value.length === 0;
+}
+
+/**
+ * API 调用参数空值处理
+ * 移除 null/undefined 值，防止 Rust 后端解析错误
+ */
+export function sanitizeArgs(args: Record<string, unknown>): Record<string, unknown> {
+  const sanitized: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(args)) {
+    if (isEmpty(value)) {
+      continue;
+    }
+    if (Array.isArray(value) && value.length === 0) {
+      sanitized[key] = value;
+    } else if (typeof value === 'object' && value !== null) {
+      const sanitizedNested = sanitizeArgs(value as Record<string, unknown>);
+      if (Object.keys(sanitizedNested).length > 0) {
+        sanitized[key] = sanitizedNested;
+      }
+    } else {
+      sanitized[key] = value;
+    }
+  }
+
+  return sanitized;
+}
+
+/**
+ * API 调用参数类型
+ */
+export type ApiArgs = Record<string, unknown>;
+
+/**
+ * 带超时的 IPC 调用包装器
+ */
+export async function invokeWithTimeout<T>(
+  command: string,
+  args: ApiArgs,
+  timeoutMs: number = 30000
+): Promise<T> {
+  const sanitizedArgs = sanitizeArgs(args);
+
+  return new Promise<T>((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      reject(new Error(`操作超时（${timeoutMs}ms）: ${command}`));
+    }, timeoutMs);
+
+    invoke<T>(command, sanitizedArgs)
+      .then((result) => {
+        clearTimeout(timeoutId);
+        logger.debug('IPC 调用成功:', { command, hasResult: !!result });
+        resolve(result);
+      })
+      .catch((error) => {
+        clearTimeout(timeoutId);
+        logger.error('IPC 调用失败:', { command, error });
+        reject(error);
+      });
+  });
+}
+
+/**
+ * 空值安全的 API 调用
+ * 包装 invokeWithTimeout，提供更友好的错误处理
+ */
+export async function safeInvoke<T>(
+  command: string,
+  args: ApiArgs = {},
+  options: { timeoutMs?: number; fallback?: T; onError?: (error: Error) => void } = {}
+): Promise<T> {
+  const { timeoutMs = 30000, fallback, onError } = options;
+
+  try {
+    const result = await invokeWithTimeout<T>(command, args, timeoutMs);
+    return result;
+  } catch (error) {
+    const err = error instanceof Error ? error : new Error(String(error));
+
+    if (onError) {
+      onError(err);
+    } else {
+      logger.warn(`API 调用失败，使用默认值: ${command}`, { error: err.message });
+    }
+
+    if (fallback !== undefined) {
+      return fallback;
+    }
+
+    throw err;
+  }
+}
+
+/**
+ * 空值安全的列表 API 调用
+ * 确保返回空数组而不是 null
+ */
+export async function safeInvokeList<T>(
+  command: string,
+  args: ApiArgs = {}
+): Promise<T[]> {
+  try {
+    const result = await safeInvoke<T[]>(command, args, { fallback: [] });
+    return Array.isArray(result) ? result : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 空值安全的单值 API 调用
+ * 确保返回对象而不是 null
+ */
+export async function safeInvokeObject<T extends object>(
+  command: string,
+  args: ApiArgs = {},
+  defaultValue: T
+): Promise<T> {
+  try {
+    const result = await safeInvoke<T>(command, args, { fallback: defaultValue });
+    return result && typeof result === 'object' ? result : defaultValue;
+  } catch {
+    return defaultValue;
+  }
+}
 
 // ============================================================================
 // 类型定义
@@ -79,7 +225,7 @@ export interface SearchFilters {
  * 导出结果条目
  */
 export interface ExportResultEntry {
-  id?: string;
+  id?: number;
   timestamp?: string;
   level?: string;
   content?: string;
@@ -565,6 +711,60 @@ class LogAnalyzerApi {
       throw createApiError('invalidate_workspace_cache', error);
     }
   }
+
+  // ========================================================================
+  // 结构化查询（原 queryApi）
+  // ========================================================================
+
+  /**
+   * 执行结构化查询（带超时控制 + 空值保护）
+   *
+   * @param query - 搜索查询结构
+   * @param logs - 待查询的日志行
+   * @returns 匹配的日志行
+   */
+  async executeStructuredQuery(query: SearchQuery, logs: string[]): Promise<string[]> {
+    try {
+      if (isEmptyArray(logs)) {
+        logger.warn('executeStructuredQuery: logs 数组为空');
+        return [];
+      }
+
+      const result = await safeInvoke<string[]>('execute_structured_query', {
+        query,
+        logs
+      }, { timeoutMs: 30000 });
+
+      return Array.isArray(result) ? result : [];
+    } catch (error: unknown) {
+      console.error('Failed to execute query:', error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`查询执行失败: ${errorMessage}`);
+    }
+  }
+
+  /**
+   * 验证查询（带超时控制 + 空值保护）
+   *
+   * @param query - 搜索查询结构
+   * @returns 查询是否有效
+   */
+  async validateQuery(query: SearchQuery): Promise<boolean> {
+    try {
+      if (!query || typeof query !== 'object') {
+        logger.warn('validateQuery: 无效的 query 参数');
+        return false;
+      }
+
+      return await safeInvoke<boolean>('validate_query', { query }, {
+        timeoutMs: 5000,
+        fallback: false
+      });
+    } catch (error: unknown) {
+      console.error('Failed to validate query:', error);
+      return false;
+    }
+  }
 }
 
 // ============================================================================
@@ -590,3 +790,80 @@ class LogAnalyzerApi {
  * ```
  */
 export const api = new LogAnalyzerApi();
+
+// ============================================================================
+// 查询 API 便捷对象（向后兼容）
+// ============================================================================
+
+/**
+ * 查询 API 便捷对象
+ *
+ * @example
+ * import { queryApi } from '@/services/api';
+ * const results = await queryApi.execute(query, logs);
+ * const valid = await queryApi.validate(query);
+ */
+export const queryApi = {
+  execute: (query: SearchQuery, logs: string[]) => api.executeStructuredQuery(query, logs),
+  validate: (query: SearchQuery) => api.validateQuery(query),
+};
+
+// ============================================================================
+// 文件内容响应类型（原 fileApi）
+// ============================================================================
+
+/**
+ * 文件内容响应
+ */
+export interface FileContentResponse {
+  content: string;
+  hash: string;
+  size: number;
+}
+
+/**
+ * 空值安全的文件读取（增强版）
+ */
+export async function readFileByHash(
+  workspaceId: string,
+  hash: string
+): Promise<FileContentResponse | null> {
+  try {
+    if (isEmptyString(workspaceId)) {
+      logger.warn('readFileByHash: workspaceId 为空');
+      return null;
+    }
+    if (isEmptyString(hash)) {
+      logger.warn('readFileByHash: hash 为空');
+      return null;
+    }
+
+    logger.debug('Reading file by hash:', { workspaceId, hash });
+
+    const response = await safeInvoke<FileContentResponse | null>(
+      'read_file_by_hash',
+      { workspaceId, hash },
+      {
+        timeoutMs: 10000,
+        fallback: null,
+        onError: (err) => logger.error('读取文件失败', { error: err.message })
+      }
+    );
+
+    if (response) {
+      logger.debug('Successfully read file:', { hash, size: response.size });
+    }
+
+    return response;
+  } catch (error) {
+    logger.error('Failed to read file by hash:', error);
+    throw new Error(`Failed to read file: ${error}`);
+  }
+}
+
+/**
+ * 文件 API 便捷对象
+ */
+export const fileApi = {
+  readByHash: readFileByHash
+};

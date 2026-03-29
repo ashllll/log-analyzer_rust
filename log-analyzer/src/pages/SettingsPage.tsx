@@ -6,7 +6,7 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { FormField } from '../components/ui/FormField';
-import { useToastManager } from '../hooks/useToastManager';
+import { useToast } from '../hooks/useToast';
 import { useConfig, type CacheConfig, type SearchConfig, type TaskManagerConfig } from '../hooks/useConfig';
 
 interface ExtractionPolicy {
@@ -57,7 +57,7 @@ const defaultPolicy: ExtractionPolicy = {
 
 export function SettingsPage() {
   const { t } = useTranslation();
-  const { showToast } = useToastManager();
+  const { showToast } = useToast();
 
   // Extraction Policy State
   const [policy, setPolicy] = useState<ExtractionPolicy>(defaultPolicy);
@@ -91,7 +91,7 @@ export function SettingsPage() {
         await loadAllConfigs();
       } catch (error) {
         console.error('Failed to load configurations:', error);
-        showToast('error', `加载配置失败: ${String(error)}`);
+        showToast('error', t('settings.load_config_error', { error: String(error) }));
       }
     };
     loadConfigs();
@@ -154,27 +154,27 @@ export function SettingsPage() {
         case 'cache':
           if (localCacheConfig && validateCacheConfig()) {
             await saveCacheConfig(localCacheConfig);
-            showToast('success', '缓存配置已保存');
+            showToast('success', t('settings.cache.save_success'));
           } else {
-            showToast('error', '缓存配置无效');
+            showToast('error', t('settings.cache.invalid'));
             return;
           }
           break;
         case 'search':
           if (localSearchConfig && validateSearchConfig(localSearchConfig)) {
             await saveSearchConfig(localSearchConfig);
-            showToast('success', '搜索配置已保存');
+            showToast('success', t('settings.search_config.save_success'));
           } else {
-            showToast('error', '搜索配置无效');
+            showToast('error', t('settings.search_config.invalid'));
             return;
           }
           break;
         case 'task':
           if (localTaskConfig && validateTaskManagerConfig()) {
             await saveTaskManagerConfig(localTaskConfig);
-            showToast('success', '任务管理器配置已保存');
+            showToast('success', t('settings.task_manager.save_success'));
           } else {
-            showToast('error', '任务管理器配置无效');
+            showToast('error', t('settings.task_manager.invalid'));
             return;
           }
           break;
@@ -223,7 +223,7 @@ export function SettingsPage() {
               : 'text-text-muted hover:text-text-main'
           }`}
         >
-          压缩策略
+          {t('settings.tabs.extraction')}
         </button>
         <button
           onClick={() => setActiveTab('cache')}
@@ -233,7 +233,7 @@ export function SettingsPage() {
               : 'text-text-muted hover:text-text-main'
           }`}
         >
-          缓存配置
+          {t('settings.tabs.cache')}
         </button>
         <button
           onClick={() => setActiveTab('search')}
@@ -243,7 +243,7 @@ export function SettingsPage() {
               : 'text-text-muted hover:text-text-main'
           }`}
         >
-          搜索配置
+          {t('settings.tabs.search')}
         </button>
         <button
           onClick={() => setActiveTab('task')}
@@ -253,7 +253,7 @@ export function SettingsPage() {
               : 'text-text-muted hover:text-text-main'
           }`}
         >
-          任务管理器
+          {t('settings.tabs.task')}
         </button>
       </div>
 
@@ -395,29 +395,29 @@ export function SettingsPage() {
 
       {activeTab === 'cache' && localCacheConfig && (
         <Card className="p-6">
-          <h2 className="text-xl font-semibold mb-4 text-text-main">缓存配置</h2>
+          <h2 className="text-xl font-semibold mb-4 text-text-main">{t('settings.cache.title')}</h2>
           <div className="space-y-4">
-            <FormField label="最大缓存条目数">
+            <FormField label={t('settings.cache.max_capacity')}>
               <Input
                 type="number"
                 value={localCacheConfig.max_capacity}
                 onChange={(e) => setLocalCacheConfig({ ...localCacheConfig, max_capacity: parseInt(e.target.value) || 1000 })}
                 min={1}
               />
-              <span className="text-xs text-text-dim mt-1">控制 L1 缓存的最大条目数量</span>
+              <span className="text-xs text-text-dim mt-1">{t('settings.cache.max_capacity_hint')}</span>
             </FormField>
 
-            <FormField label="缓存过期时间 (TTL, 秒)">
+            <FormField label={t('settings.cache.ttl')}>
               <Input
                 type="number"
                 value={localCacheConfig.ttl}
                 onChange={(e) => setLocalCacheConfig({ ...localCacheConfig, ttl: parseInt(e.target.value) || 300 })}
                 min={1}
               />
-              <span className="text-xs text-text-dim mt-1">缓存条目的生存时间（秒）</span>
+              <span className="text-xs text-text-dim mt-1">{t('settings.cache.ttl_hint')}</span>
             </FormField>
 
-            <FormField label="启用 L2 缓存">
+            <FormField label={t('settings.cache.l2_enabled')}>
               <div className="flex items-center gap-2">
                 <input
                   type="checkbox"
@@ -426,12 +426,12 @@ export function SettingsPage() {
                   className="w-4 h-4 rounded border-border-base text-primary focus:ring-primary/50"
                 />
                 <span className="text-sm text-text-muted">
-                  启用二级缓存以提高长期缓存性能
+                  {t('settings.cache.l2_enabled_hint')}
                 </span>
               </div>
             </FormField>
 
-            <FormField label="L2 缓存大小">
+            <FormField label={t('settings.cache.l2_capacity')}>
               <Input
                 type="number"
                 value={localCacheConfig.l2_capacity}
@@ -439,7 +439,7 @@ export function SettingsPage() {
                 min={1}
                 disabled={!localCacheConfig.l2_enabled}
               />
-              <span className="text-xs text-text-dim mt-1">二级缓存的最大条目数量</span>
+              <span className="text-xs text-text-dim mt-1">{t('settings.cache.l2_capacity_hint')}</span>
             </FormField>
           </div>
         </Card>
@@ -447,19 +447,19 @@ export function SettingsPage() {
 
       {activeTab === 'search' && localSearchConfig && (
         <Card className="p-6">
-          <h2 className="text-xl font-semibold mb-4 text-text-main">搜索配置</h2>
+          <h2 className="text-xl font-semibold mb-4 text-text-main">{t('settings.search_config.title')}</h2>
           <div className="space-y-4">
-            <FormField label="默认最大结果数">
+            <FormField label={t('settings.search_config.default_max_results')}>
               <Input
                 type="number"
                 value={localSearchConfig.default_max_results}
                 onChange={(e) => setLocalSearchConfig({ ...localSearchConfig, default_max_results: parseInt(e.target.value) || 1000 })}
                 min={1}
               />
-              <span className="text-xs text-text-dim mt-1">单次搜索返回的最大结果数量</span>
+              <span className="text-xs text-text-dim mt-1">{t('settings.search_config.default_max_results_hint')}</span>
             </FormField>
 
-            <FormField label="启用搜索缓存">
+            <FormField label={t('settings.search_config.cache_enabled')}>
               <div className="flex items-center gap-2">
                 <input
                   type="checkbox"
@@ -468,12 +468,12 @@ export function SettingsPage() {
                   className="w-4 h-4 rounded border-border-base text-primary focus:ring-primary/50"
                 />
                 <span className="text-sm text-text-muted">
-                  缓存搜索结果以提高重复查询性能
+                  {t('settings.search_config.cache_enabled_hint')}
                 </span>
               </div>
             </FormField>
 
-            <FormField label="搜索缓存大小">
+            <FormField label={t('settings.search_config.cache_size')}>
               <Input
                 type="number"
                 value={localSearchConfig.cache_size}
@@ -481,17 +481,17 @@ export function SettingsPage() {
                 min={1}
                 disabled={!localSearchConfig.cache_enabled}
               />
-              <span className="text-xs text-text-dim mt-1">搜索缓存的最大条目数量</span>
+              <span className="text-xs text-text-dim mt-1">{t('settings.search_config.cache_size_hint')}</span>
             </FormField>
 
-            <FormField label="搜索超时时间 (秒)">
+            <FormField label={t('settings.search_config.search_timeout')}>
               <Input
                 type="number"
                 value={localSearchConfig.search_timeout}
                 onChange={(e) => setLocalSearchConfig({ ...localSearchConfig, search_timeout: parseInt(e.target.value) || 30 })}
                 min={1}
               />
-              <span className="text-xs text-text-dim mt-1">搜索操作的超时时间（秒）</span>
+              <span className="text-xs text-text-dim mt-1">{t('settings.search_config.search_timeout_hint')}</span>
             </FormField>
           </div>
         </Card>
@@ -499,39 +499,39 @@ export function SettingsPage() {
 
       {activeTab === 'task' && localTaskConfig && (
         <Card className="p-6">
-          <h2 className="text-xl font-semibold mb-4 text-text-main">任务管理器配置</h2>
+          <h2 className="text-xl font-semibold mb-4 text-text-main">{t('settings.task_manager.title')}</h2>
           <div className="space-y-4">
-            <FormField label="最大并发任务数">
+            <FormField label={t('settings.task_manager.max_concurrent_tasks')}>
               <Input
                 type="number"
                 value={localTaskConfig.max_concurrent_tasks}
                 onChange={(e) => setLocalTaskConfig({ ...localTaskConfig, max_concurrent_tasks: parseInt(e.target.value) || 10 })}
                 min={1}
               />
-              <span className="text-xs text-text-dim mt-1">同时执行的最大任务数量</span>
+              <span className="text-xs text-text-dim mt-1">{t('settings.task_manager.max_concurrent_tasks_hint')}</span>
             </FormField>
 
-            <FormField label="任务超时时间 (秒)">
+            <FormField label={t('settings.task_manager.task_timeout')}>
               <Input
                 type="number"
                 value={localTaskConfig.task_timeout}
                 onChange={(e) => setLocalTaskConfig({ ...localTaskConfig, task_timeout: parseInt(e.target.value) || 300 })}
                 min={1}
               />
-              <span className="text-xs text-text-dim mt-1">单个任务的超时时间（秒）</span>
+              <span className="text-xs text-text-dim mt-1">{t('settings.task_manager.task_timeout_hint')}</span>
             </FormField>
 
-            <FormField label="数据目录">
+            <FormField label={t('settings.task_manager.data_dir')}>
               <Input
                 type="text"
                 value={localTaskConfig.data_dir}
                 onChange={(e) => setLocalTaskConfig({ ...localTaskConfig, data_dir: e.target.value })}
-                placeholder="默认路径"
+                placeholder={t('settings.task_manager.data_dir_placeholder')}
               />
-              <span className="text-xs text-text-dim mt-1">任务数据的存储目录</span>
+              <span className="text-xs text-text-dim mt-1">{t('settings.task_manager.data_dir_hint')}</span>
             </FormField>
 
-            <FormField label="日志级别">
+            <FormField label={t('settings.task_manager.log_level')}>
               <select
                 value={localTaskConfig.log_level}
                 onChange={(e) => setLocalTaskConfig({ ...localTaskConfig, log_level: e.target.value })}
@@ -543,10 +543,10 @@ export function SettingsPage() {
                 <option value="warn">Warn</option>
                 <option value="error">Error</option>
               </select>
-              <span className="text-xs text-text-dim mt-1">任务管理器的日志级别</span>
+              <span className="text-xs text-text-dim mt-1">{t('settings.task_manager.log_level_hint')}</span>
             </FormField>
 
-            <FormField label="调试模式">
+            <FormField label={t('settings.task_manager.debug_mode')}>
               <div className="flex items-center gap-2">
                 <input
                   type="checkbox"
@@ -555,12 +555,12 @@ export function SettingsPage() {
                   className="w-4 h-4 rounded border-border-base text-primary focus:ring-primary/50"
                 />
                 <span className="text-sm text-text-muted">
-                  启用详细调试日志
+                  {t('settings.task_manager.debug_mode_hint')}
                 </span>
               </div>
             </FormField>
 
-            <FormField label="性能监控">
+            <FormField label={t('settings.task_manager.profiling')}>
               <div className="flex items-center gap-2">
                 <input
                   type="checkbox"
@@ -569,7 +569,7 @@ export function SettingsPage() {
                   className="w-4 h-4 rounded border-border-base text-primary focus:ring-primary/50"
                 />
                 <span className="text-sm text-text-muted">
-                  启用任务性能分析和监控
+                  {t('settings.task_manager.profiling_hint')}
                 </span>
               </div>
             </FormField>

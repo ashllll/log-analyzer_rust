@@ -24,13 +24,7 @@ pub mod state_sync;
 pub mod task_manager;
 
 // 事件和监控
-pub mod events;
 pub mod monitoring;
-
-// 领域驱动设计模块
-pub mod application;
-pub mod domain;
-pub mod infrastructure;
 
 // 测试策略模块
 #[cfg(test)]

@@ -310,6 +310,29 @@ pub async fn import_folder(
         }
     }
 
+    // 导入完成后尝试触发 Tantivy segment 合并
+    // 如果该工作区已有 SearchEngineManager，则等待后台 segment 合并完成
+    // 这可以减少段数量，提升后续搜索性能
+    {
+        let search_engine_opt = {
+            let managers = state.search_engine_managers.lock();
+            managers.get(&workspace_id_clone).cloned()
+        };
+        if let Some(search_manager) = search_engine_opt {
+            tracing::info!(
+                workspace_id = %workspace_id_clone,
+                "导入完成，开始等待 Tantivy segment 合并"
+            );
+            if let Err(e) = search_manager.commit_and_wait_merge().await {
+                tracing::warn!(
+                    workspace_id = %workspace_id_clone,
+                    error = %e,
+                    "Tantivy segment 合并等待失败，不影响导入结果"
+                );
+            }
+        }
+    }
+
     let _ = app_handle.emit("import-complete", task_id_clone);
 
     Ok(task_id)

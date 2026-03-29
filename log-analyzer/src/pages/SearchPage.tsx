@@ -16,14 +16,15 @@ import { getFullErrorMessage } from '../services/errors';
 import { useInfiniteSearch } from '../hooks/useInfiniteSearch';
 import { useSearchListeners } from '../hooks/useSearchListeners';
 import { useWorkspaceStore } from '../stores/workspaceStore';
+import { useWorkspaceSelection } from '../hooks/useWorkspaceSelection';
+import { useKeywordStore } from '../stores/keywordStore';
 import { useAppStore } from '../stores/appStore';
+import { useToast } from '../hooks/useToast';
 import { SEARCH_CONFIG } from '../constants/search';
 import type {
   LogEntry,
   FilterOptions,
-  Workspace,
   KeywordGroup,
-  ToastType
 } from '../types/common';
 
 // 新组件导入
@@ -42,13 +43,6 @@ import { useSearchState } from './SearchPage/hooks/useSearchState';
  * 4. 结果导出 - 支持CSV和JSON格式
  * 5. 日志高亮 - 搜索关键词和关键词组颜色高亮
  */
-
-interface SearchPageProps {
-  keywordGroups: KeywordGroup[];
-  addToast: (type: ToastType, message: string) => void;
-  searchInputRef: React.RefObject<HTMLInputElement | null>;
-  activeWorkspace: Workspace | null;
-}
 
 /**
  * 虚拟行组件 Props
@@ -123,13 +117,13 @@ const LogRow = memo<LogRowProps>(({
   );
 });
 
-const SearchPage: React.FC<SearchPageProps> = ({
-  keywordGroups,
-  addToast,
-  searchInputRef,
-  activeWorkspace
-}) => {
+const SearchPage: React.FC = () => {
+  // 从 Store 直接读取状态，消除 props drilling
+  const keywordGroups = useKeywordStore((state) => state.keywordGroups);
+  const { activeWorkspace } = useWorkspaceSelection();
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const { t } = useTranslation();
+  const { showToast: addToast } = useToast();
   const workspaceLoading = useWorkspaceStore((state) => state.loading);
   const isInitialized = useAppStore((state) => state.isInitialized);
   // 缓存启用的关键词组，避免每次渲染都重新计算
@@ -142,7 +136,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
   const [query, setQuery] = useState("");
   // 虚拟列表总行数（由 search-progress/search-complete 事件驱动，磁盘直写架构）
   const [liveCount, setLiveCount] = useState(0);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
   const [isFilterPaletteOpen, setIsFilterPaletteOpen] = useState(false);
   // 搜索执行状态（isSearching / searchSummary / keywordStats）统一通过 useSearchState hook 管理
   const [searchExec, dispatchSearchExec] = useSearchState();

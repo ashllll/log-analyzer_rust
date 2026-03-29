@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { CheckCircle2, AlertCircle, RefreshCw, Trash2, X } from 'lucide-react';
 import { useTaskManager } from '../hooks/useTaskManager';
 import { Button } from '../components/ui';
@@ -15,6 +16,7 @@ import type { Task } from '../types/common';
  * 5. 取消运行中的任务
  */
 const TasksPage: React.FC = () => {
+  const { t } = useTranslation();
   const { tasks, deleteTask, cancelTask } = useTaskManager();
 
   const handleDelete = (id: string) => {
@@ -27,9 +29,9 @@ const TasksPage: React.FC = () => {
 
   return (
     <div className="p-8 max-w-4xl mx-auto h-full overflow-auto">
-      <h1 className="text-2xl font-bold mb-6 text-text-main">后台任务</h1>
+      <h1 className="text-2xl font-bold mb-6 text-text-main">{t('tasks.title')}</h1>
       <div className="space-y-4">
-        {tasks.length === 0 && <div className="text-text-dim text-center py-10">暂无活动任务</div>}
+        {tasks.length === 0 && <div className="text-text-dim text-center py-10">{t('tasks.no_tasks')}</div>}
         {tasks.filter((t: Task) => Boolean(t.id)).map((t: Task) => {
           return (
           <div key={t.id} className="p-4 bg-bg-card border border-border-base rounded-lg flex items-center gap-4 animate-in fade-in slide-in-from-bottom-2">

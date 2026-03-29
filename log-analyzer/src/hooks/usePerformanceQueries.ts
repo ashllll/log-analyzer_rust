@@ -111,8 +111,8 @@ export const usePerformanceMetrics = (options?: {
     },
     enabled: options?.enabled ?? true,
     refetchInterval: options?.refetchInterval ?? false,
-    staleTime: 5000, // 5秒后数据过期
-    gcTime: 60000, // 1分钟后垃圾回收
+    staleTime: 10 * 1000, // 10秒，性能指标需实时性
+    gcTime: 5 * 60 * 1000, // 5分钟
     retry: 2,
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
   });

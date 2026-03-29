@@ -3,8 +3,7 @@
  * 测试结构化查询 API 的执行和验证功能
  */
 
-import { executeStructuredQuery, validateQuery, queryApi } from '../queryApi';
-import * as nullSafeApi from '../nullSafeApi';
+import { executeStructuredQuery, validateQuery, queryApi, safeInvoke, isEmptyArray } from '../api';
 
 // Mock logger
 jest.mock('../../utils/logger', () => ({
