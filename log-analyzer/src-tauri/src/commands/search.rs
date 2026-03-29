@@ -585,6 +585,12 @@ pub async fn search_logs(
 
             // 保存未发送的结果
             if !batch_results.is_empty() {
+                // 先将上一轮遗留的 pending_batch 写入磁盘，避免覆盖丢失
+                if !pending_batch.is_empty() {
+                    if let Err(e) = disk_store_spawn.append_entries(&search_id_clone, &pending_batch) {
+                        warn!(error = %e, "磁盘写入遗留 pending_batch 失败");
+                    }
+                }
                 pending_batch = batch_results;
             }
 
@@ -1187,7 +1193,7 @@ pub async fn search_logs_paged(
         let mut keyword_counts: std::collections::HashMap<String, usize> =
             std::collections::HashMap::new();
 
-        for file_batch in files_for_search.chunks(10) {
+        'paged_outer: for file_batch in files_for_search.chunks(10) {
             let batch: Vec<_> = file_batch
                 .iter()
                 .enumerate()
@@ -1268,7 +1274,7 @@ pub async fn search_logs_paged(
 
                         // 限制最大结果数
                         if all_results.len() >= MAX_RESULTS_PER_SEARCH {
-                            break;
+                            break 'paged_outer;
                         }
                     }
                 }

@@ -55,6 +55,12 @@ export interface UseInfiniteSearchOptions {
   pageSize?: number;
   /** 缓存时间（毫秒），默认 5 分钟 */
   staleTime?: number;
+  /**
+   * 内存中最大保留页数，默认 10。
+   * 超出时按滑动窗口裁剪（向前加载丢弃旧页，向后加载丢弃新页）。
+   * 磁盘直写架构下，被裁剪的页面可随时从磁盘重新读取。
+   */
+  maxPages?: number;
 }
 
 
@@ -96,6 +102,7 @@ export function useInfiniteSearch({
   enabled,
   pageSize = 1000,
   staleTime = 5 * 60 * 1000, // 5 minutes
+  maxPages = 10,
 }: UseInfiniteSearchOptions) {
   return useInfiniteQuery<
     SearchPage,
@@ -105,7 +112,7 @@ export function useInfiniteSearch({
     number
   >({
     queryKey: searchQueryKeys.infinite(searchId, query, workspaceId),
-    
+
     queryFn: async ({ pageParam = 0 }): Promise<SearchPage> => {
       // 验证前置条件
       if (!workspaceId || !query.trim() || !searchId) {
@@ -136,32 +143,41 @@ export function useInfiniteSearch({
         throw error;
       }
     },
-    
+
     // 获取下一页参数
     getNextPageParam: (lastPage) => lastPage.nextOffset,
-    
+
+    // 获取上一页参数（支持双向滑动窗口）
+    getPreviousPageParam: (_firstPage, _allPages, firstPageParam) => {
+      const prevOffset = (firstPageParam as number) - pageSize;
+      return prevOffset >= 0 ? prevOffset : undefined;
+    },
+
     // 初始页参数
     initialPageParam: 0,
-    
+
     // 启用条件
     enabled: enabled && !!workspaceId && !!query.trim() && !!searchId,
-    
+
+    // 内存中最大保留页数（滑动窗口，超出时自动裁剪旧页面）
+    maxPages,
+
     // 缓存策略
     staleTime,
-    
+
     // 错误重试策略
     retry: (failureCount, error) => {
       // 如果是会话不存在错误，不重试
-      if (error instanceof Error && 
+      if (error instanceof Error &&
           error.message.includes('not found or expired')) {
         return false;
       }
       return failureCount < 3;
     },
-    
+
     // 重试延迟
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
-    
+
     // 注意：不在此处使用 select 聚合 allResults。
     // 原因：flatMap 在每次数据变化时创建完整数组副本，对大结果集（10万+条）造成双重内存开销。
     // 消费者（SearchPage.tsx）已通过 loadedEntries 自行按需 flatMap。

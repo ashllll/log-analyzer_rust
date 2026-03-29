@@ -154,12 +154,15 @@ const SearchPage: React.FC<SearchPageProps> = ({
   // 防抖搜索触发器
   const [searchTrigger, setSearchTrigger] = useState(0);
 
-  // ========== 流式无限搜索 (VirtualSearchManager 集成) ==========
+  // ========== 流式无限搜索 (磁盘直写 + 滑动窗口分页) ==========
   const {
     data: infiniteSearchData,
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
+    fetchPreviousPage,
+    hasPreviousPage,
+    isFetchingPreviousPage,
     error: infiniteSearchError,
   } = useInfiniteSearch({
     searchId: currentSearchId,
@@ -167,11 +170,18 @@ const SearchPage: React.FC<SearchPageProps> = ({
     workspaceId: activeWorkspace?.id ?? null,
     enabled: !!currentSearchId,
     pageSize: 1000,
+    maxPages: 10,
   });
 
   // 磁盘直写架构：已加载的条目（从磁盘分页读取），用于虚拟列表渲染
   const loadedEntries = useMemo(
     () => infiniteSearchData?.pages.flatMap(page => page.results) ?? [],
+    [infiniteSearchData]
+  );
+
+  // 首页偏移量：maxPages 裁剪旧页面后，loadedEntries[0] 对应的虚拟索引
+  const firstPageOffset = useMemo(
+    () => (infiniteSearchData?.pageParams?.[0] as number) ?? 0,
     [infiniteSearchData]
   );
 
@@ -220,6 +230,12 @@ const SearchPage: React.FC<SearchPageProps> = ({
   isFetchingNextPageRef.current = isFetchingNextPage;
   const fetchNextPageRef = useRef(fetchNextPage);
   fetchNextPageRef.current = fetchNextPage;
+  const hasPreviousPageRef = useRef(hasPreviousPage);
+  hasPreviousPageRef.current = hasPreviousPage;
+  const isFetchingPreviousPageRef = useRef(isFetchingPreviousPage);
+  isFetchingPreviousPageRef.current = isFetchingPreviousPage;
+  const fetchPreviousPageRef = useRef(fetchPreviousPage);
+  fetchPreviousPageRef.current = fetchPreviousPage;
 
   // 滚动事件监听 — 使用 ref 模式避免闭包引用不稳定导致频繁注销/重注册
   // TanStack Virtual 内部已有自己的 scroll listener，此处仅负责分页加载触发
@@ -229,18 +245,27 @@ const SearchPage: React.FC<SearchPageProps> = ({
 
     const handleScrollEvent = () => {
       const { scrollTop, clientHeight, scrollHeight } = element;
+      const now = Date.now();
 
       // 接近底部时触发 fetchNextPage（500ms 节流）
       const isNearBottom = scrollHeight - scrollTop - clientHeight <= REFRESH_THRESHOLD;
-      if (isNearBottom) {
-        const now = Date.now();
-        if (now - lastFetchNextPageTimeRef.current >= 500) {
-          lastFetchNextPageTimeRef.current = now;
-          if (hasNextPageRef.current && !isFetchingNextPageRef.current) {
-            fetchNextPageRef.current().catch(err => {
-              logger.error('fetchNextPage failed:', err);
-            });
-          }
+      if (isNearBottom && now - lastFetchNextPageTimeRef.current >= 500) {
+        lastFetchNextPageTimeRef.current = now;
+        if (hasNextPageRef.current && !isFetchingNextPageRef.current) {
+          fetchNextPageRef.current().catch(err => {
+            logger.error('fetchNextPage failed:', err);
+          });
+        }
+      }
+
+      // 接近顶部时触发 fetchPreviousPage（500ms 节流）
+      const isNearTop = scrollTop <= REFRESH_THRESHOLD;
+      if (isNearTop && now - lastFetchNextPageTimeRef.current >= 500) {
+        lastFetchNextPageTimeRef.current = now;
+        if (hasPreviousPageRef.current && !isFetchingPreviousPageRef.current) {
+          fetchPreviousPageRef.current().catch(err => {
+            logger.error('fetchPreviousPage failed:', err);
+          });
         }
       }
     };
@@ -252,10 +277,19 @@ const SearchPage: React.FC<SearchPageProps> = ({
     };
   }, [REFRESH_THRESHOLD]); // 仅依赖常量，不再依赖 fetchNextPage/hasNextPage/isFetchingNextPage
 
+  // 节流：避免 search-progress 事件风暴导致高频 setState
+  const lastProgressTimeRef = useRef(0);
+
   // 监听搜索事件 — 通过 useSearchListeners hook 注册 Tauri 事件
   useSearchListeners({
     onProgress: useCallback((count: number) => {
-      setLiveCount(count);
+      const now = Date.now();
+      if (now - lastProgressTimeRef.current >= 200) {
+        lastProgressTimeRef.current = now;
+        setLiveCount(count);
+      }
+      // 注意：被节流丢弃的中间值不影响最终结果，
+      // 因为 onComplete 会设置精确的最终计数
     }, []),
 
     onSummary: useCallback((summary: SearchResultSummary) => {
@@ -615,13 +649,16 @@ const SearchPage: React.FC<SearchPageProps> = ({
   // 解决用户滚动到中间区域时只看到骨架屏、永远无法加载的问题。
   const virtualItems = rowVirtualizer.getVirtualItems();
   const lastVisibleIndex = virtualItems.length > 0 ? virtualItems[virtualItems.length - 1].index : -1;
+  const firstVisibleIndex = virtualItems.length > 0 ? virtualItems[0].index : -1;
 
   useEffect(() => {
     if (lastVisibleIndex < 0) return;
 
-    // 如果最后一个可见行接近或超出已加载数据边界，触发加载
-    if (lastVisibleIndex >= loadedEntries.length - 50 && hasNextPage && !isFetchingNextPage) {
-      const now = Date.now();
+    const loadedEndIndex = firstPageOffset + loadedEntries.length;
+    const now = Date.now();
+
+    // 向前加载：最后一个可见行接近已加载数据的尾部边界
+    if (lastVisibleIndex >= loadedEndIndex - 50 && hasNextPage && !isFetchingNextPage) {
       if (now - lastFetchNextPageTimeRef.current >= 500) {
         lastFetchNextPageTimeRef.current = now;
         fetchNextPage().catch(err => {
@@ -629,7 +666,17 @@ const SearchPage: React.FC<SearchPageProps> = ({
         });
       }
     }
-  }, [lastVisibleIndex, loadedEntries.length, hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+    // 向后加载：第一个可见行接近已加载数据的头部边界
+    if (firstVisibleIndex <= firstPageOffset + 50 && hasPreviousPage && !isFetchingPreviousPage) {
+      if (now - lastFetchNextPageTimeRef.current >= 500) {
+        lastFetchNextPageTimeRef.current = now;
+        fetchPreviousPage().catch(err => {
+          logger.error('Range-based fetchPreviousPage failed:', err);
+        });
+      }
+    }
+  }, [lastVisibleIndex, firstVisibleIndex, firstPageOffset, loadedEntries.length, hasNextPage, isFetchingNextPage, hasPreviousPage, isFetchingPreviousPage, fetchNextPage, fetchPreviousPage]);
   
   const activeLog = selectedId ? loadedEntriesMap.get(selectedId) : undefined;
 
@@ -690,7 +737,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
           {/* 虚拟滚动列表 - 磁盘直写架构：count=liveCount，按需从磁盘加载可见页 */}
           <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, width: '100%', position: 'relative' }}>
             {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-              const log = loadedEntries[virtualRow.index];
+              const log = loadedEntries[virtualRow.index - firstPageOffset];
               if (!log) {
                 // 未从磁盘加载的行显示骨架屏，搜索进行中时数据将按需加载
                 return (
@@ -721,19 +768,21 @@ const SearchPage: React.FC<SearchPageProps> = ({
           </div>
 
           {/* 分页加载指示器 */}
-          {isFetchingNextPage && (
+          {(isFetchingNextPage || isFetchingPreviousPage) && (
             <div className="flex items-center justify-center py-4 bg-bg-sidebar/50 border-t border-border-base">
               <Loader2 className="animate-spin text-primary mr-2" size={16} />
               <span className="text-sm text-text-muted">
-                正在加载更多结果... ({loadedEntries.length.toLocaleString()} 条已加载)
+                {isFetchingNextPage
+                  ? `正在加载更多结果... (${loadedEntries.length.toLocaleString()} 条已加载)`
+                  : '正在加载历史结果...'}
               </span>
             </div>
           )}
 
           {/* 全部加载完成提示 */}
-          {!!currentSearchId && !hasNextPage && !isFetchingNextPage && liveCount > 0 && (
+          {!!currentSearchId && !hasNextPage && !isFetchingNextPage && !hasPreviousPage && liveCount > 0 && (
             <div className="flex items-center justify-center py-3 text-text-muted text-xs">
-              已加载全部 {liveCount.toLocaleString()} 条结果
+              共 {liveCount.toLocaleString()} 条结果
             </div>
           )}
 
