@@ -201,21 +201,36 @@ impl IntelligentFileFilter {
 
     /// 检测日志格式
     fn detect_log_format(&self, text: &str) -> (String, bool, f64) {
-        // 日志级别关键词
+        // 日志级别关键词（小写形式，用于不区分大小写匹配）
         let log_levels = [
-            "TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL", "CRITICAL",
+            "trace", "debug", "info", "warn", "error", "fatal", "critical",
         ];
 
-        // ISO 8601 时间戳模式 (简化)
-        let has_timestamp = text
-            .chars()
-            .take(200)
-            .any(|c| c == ':' || c == '-' || c == 'T')
-            && text.chars().take(200).any(|c| c.is_ascii_digit());
+        // 单次遍历前200字符，同时检测时间戳特征
+        let has_colon_or_dash_or_t;
+        let has_digit;
+        {
+            let mut found_delim = false;
+            let mut found_digit = false;
+            for c in text.chars().take(200) {
+                if c == ':' || c == '-' || c == 'T' {
+                    found_delim = true;
+                }
+                if c.is_ascii_digit() {
+                    found_digit = true;
+                }
+                if found_delim && found_digit {
+                    break;
+                }
+            }
+            has_colon_or_dash_or_t = found_delim;
+            has_digit = found_digit;
+        }
+        let has_timestamp = has_colon_or_dash_or_t && has_digit;
 
-        // 检查日志级别
-        let text_upper = text.to_uppercase();
-        let has_log_level = log_levels.iter().any(|&level| text_upper.contains(level));
+        // 检查日志级别（避免 to_uppercase() 分配，使用大小写不敏感匹配）
+        let text_lower = text.to_lowercase();
+        let has_log_level = log_levels.iter().any(|&level| text_lower.contains(level));
 
         // 检查JSON格式（更严格的检测）
         let trimmed = text.trim_start();
@@ -242,37 +257,38 @@ impl IntelligentFileFilter {
             return 0.0;
         }
 
-        // 如果已确认为二进制，返回低分
-        if self.is_binary_content(buffer) {
-            return 0.1;
-        }
-
         // 尝试解码为UTF-8
         let text = match std::str::from_utf8(buffer) {
             Ok(t) => t,
             Err(_) => return 0.2, // 不是有效UTF-8
         };
 
+        // 单次遍历统计：字符数、可打印字符数、字母数字数、换行符数
+        let mut char_count: usize = 0;
+        let mut printable_count: usize = 0;
+        let mut alnum_count: usize = 0;
+        let mut has_newlines: bool = false;
+
+        for c in text.chars() {
+            char_count += 1;
+            if c.is_ascii_graphic() || c.is_whitespace() {
+                printable_count += 1;
+            }
+            if c.is_alphanumeric() {
+                alnum_count += 1;
+            }
+            if c == '\n' {
+                has_newlines = true;
+            }
+        }
+
         // 防止空文本除以零
-        let char_count = text.chars().count();
         if char_count == 0 {
             return 0.0;
         }
 
-        // 可打印字符比例
-        let printable_count = text
-            .chars()
-            .filter(|c| c.is_ascii_graphic() || c.is_whitespace())
-            .count();
         let printable_ratio = printable_count as f64 / char_count as f64;
-
-        // 字母数字字符比例
-        let alnum_count = text.chars().filter(|c| c.is_alphanumeric()).count();
         let alnum_ratio = alnum_count as f64 / char_count as f64;
-
-        // 换行符比例（文本文件通常有换行）
-        let newline_count = text.chars().filter(|&c| c == '\n').count();
-        let has_newlines = newline_count > 0;
 
         // 综合评分
         let mut score = 0.0;

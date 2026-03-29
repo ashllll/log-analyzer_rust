@@ -13,6 +13,30 @@ Rust 后端:
 - `matches_all()` 使用 u128 位向量替代 HashSet，消除万次/秒热路径堆分配，O(n) 提前退出优化)
   - `escape_html()` 单次遍历替代 5 次 String::replace 链式调用，从 5 次临时分配降到 1 次
 - 新增性能测试覆盖：128 模式边界、 >128 回退、 零堆分配验证
+- **热路径零拷贝优化**（第二批）:
+  - `async_search.rs`: `std::mem::take` 替代 `.clone()` 消除 2000 条批次深拷贝
+  - `virtual_tree.rs`: `String::from_utf8` 消耗 Vec<u8> 避免完整内容克隆
+  - `query.rs`: `into_iter()` 替代 `iter()` 消费所有权，避免逐条 clone
+  - `virtual_search_manager.rs`: `truncate` 原地截断替代 `into_iter().take().collect()`
+  - `metadata_db.rs`: 移动 `format!` 出循环体 + 移除不必要的 `forward_key.clone()`
+- **锁与原子操作优化**:
+  - `metrics_state.rs`: `Mutex<Duration>` → `AtomicU64` 无锁计数器，消除搜索热路径锁竞争
+  - `progress_tracker.rs`: `SeqCst` → `Relaxed` 内存序，降低原子操作开销
+  - `monitoring/advanced.rs`: `tokio::RwLock` → `parking_lot::RwLock`，避免 tokio runtime 开销
+  - `report_collector.rs`: 缩小写锁作用域，释放锁后再通知
+- **算法复杂度优化**:
+  - `virtual_tree.rs`: HashMap 索引预构建 O(n) 替代递归线性扫描 O(n²)
+  - `query_planner.rs`: 移除 `sort_by_priority` 后不必要的 HashMap 重建
+  - `models/search.rs`: `div_ceil` 整数除法替代浮点 `ceil`
+- **文件过滤优化**:
+  - `file_type_filter.rs`: 预编译 glob 正则模式到构造函数，避免每个文件重新编译
+  - `intelligent_file_filter.rs`: 合并 4 次 `chars()` 遍历为单次遍历
+  - `intelligent_file_filter.rs`: 移除 `calculate_readability` 中重复的 `is_binary_content` 调用
+- **流式索引优化**:
+  - `streaming_builder.rs`: 预构建 `Arc<str>` 文件路径，避免每行 `to_string_lossy()` 堆分配
+- **字符串构建优化**:
+  - `monitoring/metrics.rs`: `format!+push_str` 链改为 `writeln!` + 预分配 `String::with_capacity`
+  - `highlighting_engine.rs`: 非大文档直接返回，跳过不必要的 `to_string()` 拷贝
 
 React 前端:
 - `activeLog` 查找改用 Map O(1)，替代 Array.find O(n)

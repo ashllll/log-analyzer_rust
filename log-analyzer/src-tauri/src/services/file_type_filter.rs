@@ -15,15 +15,45 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
+/// 预编译的 glob 正则
+struct CompiledGlob {
+    original_pattern: String,
+    regex: regex::Regex,
+}
+
 /// 文件类型过滤器（三层检测策略）
 pub struct FileTypeFilter {
     config: FileFilterConfig,
+    /// 预编译的文件名 glob 正则，避免每次调用时重新编译
+    compiled_globs: Vec<CompiledGlob>,
 }
 
 impl FileTypeFilter {
     /// 创建新的过滤器
     pub fn new(config: FileFilterConfig) -> Self {
-        Self { config }
+        // 预编译所有文件名 glob 模式
+        let compiled_globs: Vec<CompiledGlob> = config
+            .filename_patterns
+            .iter()
+            .filter_map(|pattern| {
+                let pattern_lower = pattern.to_lowercase();
+                let regex_pattern = pattern_lower
+                    .replace('.', r"\.")
+                    .replace('*', ".*")
+                    .replace('?', ".");
+                regex::Regex::new(&regex_pattern)
+                    .ok()
+                    .map(|regex| CompiledGlob {
+                        original_pattern: pattern.clone(),
+                        regex,
+                    })
+            })
+            .collect();
+
+        Self {
+            config,
+            compiled_globs,
+        }
     }
 
     /// 检查文件是否应该被导入（三层检测）
@@ -147,18 +177,17 @@ impl FileTypeFilter {
 
     /// 第2层：应用智能过滤规则
     fn apply_filter_rules(&self, path: &Path) -> bool {
-        // A. 文件名 Glob 模式匹配（支持无后缀日志）
+        // A. 文件名 Glob 模式匹配（使用预编译正则，避免每次调用重新编译）
         if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
-            for pattern in &self.config.filename_patterns {
-                if let Ok(matched) = self.glob_match(pattern, file_name) {
-                    if matched {
-                        tracing::debug!(
-                            file = %file_name,
-                            pattern = pattern,
-                            "File matched filename pattern"
-                        );
-                        return true; // 匹配模式，允许导入
-                    }
+            let file_name_lower = file_name.to_lowercase();
+            for compiled in &self.compiled_globs {
+                if compiled.regex.is_match(&file_name_lower) {
+                    tracing::debug!(
+                        file = %file_name,
+                        pattern = %compiled.original_pattern,
+                        "File matched filename pattern"
+                    );
+                    return true; // 匹配模式，允许导入
                 }
             }
         }

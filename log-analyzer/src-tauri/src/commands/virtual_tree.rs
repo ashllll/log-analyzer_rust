@@ -233,6 +233,21 @@ async fn build_tree_structure(
 ) -> Result<Vec<VirtualTreeNode>, String> {
     let mut tree = Vec::new();
 
+    // 预构建索引：parent_archive_id -> 子 archive/file 列表，O(n) → O(1) 查找
+    use std::collections::HashMap;
+    let mut archive_children: HashMap<i64, Vec<&crate::storage::ArchiveMetadata>> = HashMap::new();
+    for a in archives {
+        if let Some(parent_id) = a.parent_archive_id {
+            archive_children.entry(parent_id).or_default().push(a);
+        }
+    }
+    let mut file_children: HashMap<i64, Vec<&crate::storage::FileMetadata>> = HashMap::new();
+    for f in files {
+        if let Some(parent_id) = f.parent_archive_id {
+            file_children.entry(parent_id).or_default().push(f);
+        }
+    }
+
     // Find root-level archives (no parent)
     let root_archives: Vec<_> = archives
         .iter()
@@ -247,7 +262,7 @@ async fn build_tree_structure(
 
     // Add root archives with their children
     for archive in root_archives {
-        let node = build_archive_node(archive, archives, files, metadata_store).await?;
+        let node = build_archive_node_indexed(archive, &archive_children, &file_children).await?;
         tree.push(node);
     }
 
@@ -265,7 +280,48 @@ async fn build_tree_structure(
     Ok(tree)
 }
 
-/// Build archive node with its children recursively
+/// Build archive node with pre-built HashMap indexes, O(n) total instead of O(n²)
+fn build_archive_node_indexed<'a>(
+    archive: &'a crate::storage::ArchiveMetadata,
+    archive_children: &'a std::collections::HashMap<i64, Vec<&'a crate::storage::ArchiveMetadata>>,
+    file_children: &'a std::collections::HashMap<i64, Vec<&'a crate::storage::FileMetadata>>,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<VirtualTreeNode, String>> + Send + 'a>>
+{
+    Box::pin(async move {
+        let mut children = Vec::new();
+
+        // O(1) HashMap lookup instead of O(n) linear scan
+        if let Some(child_archives) = archive_children.get(&archive.id) {
+            for child_archive in child_archives {
+                let child_node = build_archive_node_indexed(child_archive, archive_children, file_children).await?;
+                children.push(child_node);
+            }
+        }
+
+        if let Some(child_files) = file_children.get(&archive.id) {
+            for file in child_files {
+                children.push(VirtualTreeNode::File {
+                    name: file.original_name.clone(),
+                    path: file.virtual_path.clone(),
+                    hash: file.sha256_hash.clone(),
+                    size: file.size,
+                    mime_type: file.mime_type.clone(),
+                });
+            }
+        }
+
+        Ok(VirtualTreeNode::Archive {
+            name: archive.original_name.clone(),
+            path: archive.virtual_path.clone(),
+            hash: archive.sha256_hash.clone(),
+            archive_type: archive.archive_type.clone(),
+            children,
+        })
+    })
+}
+
+/// Build archive node with its children recursively (linear scan, kept for backward compatibility)
+#[allow(dead_code)]
 #[allow(clippy::only_used_in_recursion)]
 fn build_archive_node<'a>(
     archive: &'a crate::storage::ArchiveMetadata,

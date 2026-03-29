@@ -327,6 +327,9 @@ impl StreamingIndexBuilder {
             .saturating_mul(1000000)
             .saturating_add(file_idx.saturating_mul(100000));
 
+        // 预构建文件路径 Arc<str>，避免每行重复 to_string_lossy()
+        let file_path_str: Arc<str> = file_path.to_string_lossy().into();
+
         for line_result in reader.lines() {
             // Check for cancellation
             if cancellation_token.load(Ordering::Relaxed) {
@@ -348,8 +351,8 @@ impl StreamingIndexBuilder {
                 id: global_offset + line_number,
                 timestamp: timestamp.into(),
                 level: level.into(),
-                file: file_path.to_string_lossy().into(),
-                real_path: file_path.to_string_lossy().into(),
+                file: Arc::clone(&file_path_str),
+                real_path: Arc::clone(&file_path_str),
                 line: line_number,
                 content: line.into(),
                 tags: vec![],
