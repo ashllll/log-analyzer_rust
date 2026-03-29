@@ -418,7 +418,11 @@ impl MetadataStore {
 
     /// Insert archive metadata
     pub async fn insert_archive(&self, metadata: &ArchiveMetadata) -> Result<i64> {
-        // 使用 INSERT OR IGNORE 处理 UNIQUE 约束冲突（CAS 去重设计）
+        // 使用事务包裹 INSERT OR IGNORE + SELECT，确保并发安全（与 insert_file 保持一致）
+        let mut tx = self.pool.begin().await.map_err(|e| {
+            AppError::database_error(format!("Failed to begin transaction: {}", e))
+        })?;
+
         sqlx::query(
             r#"
             INSERT OR IGNORE INTO archives (
@@ -435,7 +439,7 @@ impl MetadataStore {
         .bind(metadata.depth_level)
         .bind(&metadata.extraction_status)
         .bind(chrono::Utc::now().timestamp())
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(|e| AppError::database_error(format!("Failed to insert archive: {}", e)))?;
 
@@ -443,12 +447,16 @@ impl MetadataStore {
         let id =
             sqlx::query_as::<_, (i64,)>("SELECT id FROM archives WHERE sha256_hash = ? LIMIT 1")
                 .bind(&metadata.sha256_hash)
-                .fetch_one(&self.pool)
+                .fetch_one(&mut *tx)
                 .await
                 .map_err(|e| {
                     AppError::database_error(format!("Failed to fetch archive ID: {}", e))
                 })?
                 .0;
+
+        tx.commit().await.map_err(|e| {
+            AppError::database_error(format!("Failed to commit transaction: {}", e))
+        })?;
 
         debug!(
             id = id,

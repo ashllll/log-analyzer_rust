@@ -341,6 +341,31 @@ impl DiskResultStore {
             self.remove_session(&id);
         }
     }
+
+    /// 清理所有会话并删除对应的磁盘文件
+    pub fn cleanup_all(&self) {
+        let session_ids: Vec<String> = self.sessions.iter().map(|e| e.key().clone()).collect();
+        for id in session_ids {
+            self.remove_session(&id);
+        }
+    }
+}
+
+impl Drop for DiskResultStore {
+    fn drop(&mut self) {
+        // 清理所有会话的磁盘文件
+        let session_ids: Vec<String> = self.sessions.iter().map(|e| e.key().clone()).collect();
+        for id in &session_ids {
+            let data_path = self.cache_dir.join(format!("{id}.ndjson"));
+            let index_path = self.cache_dir.join(format!("{id}.idx"));
+            let _ = std::fs::remove_file(&data_path);
+            let _ = std::fs::remove_file(&index_path);
+        }
+        tracing::debug!(
+            sessions_cleaned = session_ids.len(),
+            "DiskResultStore 已清理所有磁盘缓存文件"
+        );
+    }
 }
 
 #[cfg(test)]

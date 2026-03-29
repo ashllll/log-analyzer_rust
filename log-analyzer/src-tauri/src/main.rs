@@ -164,10 +164,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .run(|app_handle, event| {
             // 处理应用事件
             if let tauri::RunEvent::ExitRequested { .. } = event {
-                info!("🔄 应用退出请求，开始清理 TaskManager");
+                info!("🔄 应用退出请求，开始清理资源");
 
-                // 获取 AppState
                 let state_guard = app_handle.state::<AppState>();
+
+                // 1. 清理 DiskResultStore（删除磁盘缓存文件）
+                state_guard.disk_result_store.cleanup_all();
+                tracing::debug!("DiskResultStore 已清理所有磁盘缓存");
+
+                // 2. 关闭所有 MetadataStore（WAL checkpoint）
+                {
+                    let stores = state_guard.metadata_stores.lock();
+                    if !stores.is_empty() {
+                        let stores_clone: Vec<_> = stores.values().cloned().collect();
+                        // 在新线程中执行异步 close，避免阻塞 UI 线程
+                        std::thread::spawn(move || {
+                            let rt = tokio::runtime::Runtime::new().unwrap();
+                            rt.block_on(async {
+                                for store in stores_clone {
+                                    store.close().await;
+                                }
+                            });
+                        })
+                        .join()
+                        .ok();
+                    }
+                }
+
+                // 3. 收集 SearchEngineManager 实例
                 let state = state_guard.task_manager.lock();
 
                 // 收集所有 SearchEngineManager 实例以便关闭

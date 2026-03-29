@@ -790,31 +790,33 @@ fn search_single_file_with_details(
 
         // Process lines
         for (i, line) in content_str.lines().enumerate() {
-            if executor.matches_line(plan, line) {
-                let (ts, lvl) = parse_metadata(line);
-                let match_details = executor.match_with_details(plan, line);
-                let matched_keywords = match_details.as_ref().map(|details| {
-                    details
-                        .iter()
-                        .map(|detail| detail.term_value.clone())
-                        .collect::<HashSet<_>>()
-                        .into_iter()
-                        .collect::<Vec<_>>()
-                });
-
-                results.push(LogEntry {
-                    id: global_offset + i,
-                    timestamp: ts.into(),
-                    level: lvl.into(),
-                    file: virtual_path.into(),
-                    real_path: file_identifier.into(),
-                    line: i + 1,
-                    content: line.into(),
-                    tags: vec![],
-                    match_details,
-                    matched_keywords: matched_keywords.filter(|v| !v.is_empty()),
-                });
+            // 直接使用 match_with_details，避免双重模式匹配（P2-3: 每行匹配两次 Aho-Corasick）
+            let match_details = executor.match_with_details(plan, line);
+            if match_details.as_ref().is_none_or(|v| v.is_empty()) {
+                continue;
             }
+            let (ts, lvl) = parse_metadata(line);
+            let matched_keywords = match_details.as_ref().map(|details| {
+                details
+                    .iter()
+                    .map(|detail| detail.term_value.clone())
+                    .collect::<HashSet<_>>()
+                    .into_iter()
+                    .collect::<Vec<_>>()
+            });
+
+            results.push(LogEntry {
+                id: global_offset + i,
+                timestamp: ts.into(),
+                level: lvl.into(),
+                file: virtual_path.into(),
+                real_path: file_identifier.into(),
+                line: i + 1,
+                content: line.into(),
+                tags: vec![],
+                match_details,
+                matched_keywords: matched_keywords.filter(|v| !v.is_empty()),
+            });
         }
 
         debug!(
@@ -846,31 +848,33 @@ fn search_single_file_with_details(
 
                 for (i, line_res) in reader.lines().enumerate() {
                     if let Ok(line) = line_res {
-                        if executor.matches_line(plan, &line) {
-                            let (ts, lvl) = parse_metadata(&line);
-                            let match_details = executor.match_with_details(plan, &line);
-                            let matched_keywords = match_details.as_ref().map(|details| {
-                                details
-                                    .iter()
-                                    .map(|detail| detail.term_value.clone())
-                                    .collect::<HashSet<_>>()
-                                    .into_iter()
-                                    .collect::<Vec<_>>()
-                            });
-
-                            results.push(LogEntry {
-                                id: global_offset + i,
-                                timestamp: ts.into(),
-                                level: lvl.into(),
-                                file: virtual_path.into(),
-                                real_path: real_path.into(),
-                                line: i + 1,
-                                content: line.into(),
-                                tags: vec![],
-                                match_details,
-                                matched_keywords: matched_keywords.filter(|v| !v.is_empty()),
-                            });
+                        // 直接使用 match_with_details，避免双重模式匹配（先 matches_line 再 match_with_details）
+                        let match_details = executor.match_with_details(plan, &line);
+                        if match_details.as_ref().is_none_or(|v| v.is_empty()) {
+                            continue;
                         }
+                        let (ts, lvl) = parse_metadata(&line);
+                        let matched_keywords = match_details.as_ref().map(|details| {
+                            details
+                                .iter()
+                                .map(|detail| detail.term_value.clone())
+                                .collect::<HashSet<_>>()
+                                .into_iter()
+                                .collect::<Vec<_>>()
+                        });
+
+                        results.push(LogEntry {
+                            id: global_offset + i,
+                            timestamp: ts.into(),
+                            level: lvl.into(),
+                            file: virtual_path.into(),
+                            real_path: real_path.into(),
+                            line: i + 1,
+                            content: line.into(),
+                            tags: vec![],
+                            match_details,
+                            matched_keywords: matched_keywords.filter(|v| !v.is_empty()),
+                        });
                     }
                 }
 
