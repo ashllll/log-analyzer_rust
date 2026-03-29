@@ -239,12 +239,7 @@ impl ExecutionPlan {
      */
     pub fn sort_by_priority(&mut self) {
         self.engines.sort_by_key(|e| std::cmp::Reverse(e.priority));
-        // 重新构建 HashMap 以保持同步
-        self.engine_map = self
-            .engines
-            .iter()
-            .map(|e| (e.term_id.clone(), Arc::clone(&e.engine)))
-            .collect();
+        // engine_map 的键值对内容不变，仅 engines Vec 顺序变化，无需重建 HashMap
     }
 }
 

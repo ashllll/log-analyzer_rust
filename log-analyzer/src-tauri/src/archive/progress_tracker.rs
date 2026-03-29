@@ -97,26 +97,26 @@ impl ProgressMetrics {
 
     /// Increment files processed counter
     pub fn increment_files(&self) -> usize {
-        self.files_processed.fetch_add(1, Ordering::SeqCst) + 1
+        self.files_processed.fetch_add(1, Ordering::Relaxed) + 1
     }
 
     /// Add bytes processed
     pub fn add_bytes(&self, bytes: u64) -> u64 {
-        self.bytes_processed.fetch_add(bytes, Ordering::SeqCst) + bytes
+        self.bytes_processed.fetch_add(bytes, Ordering::Relaxed) + bytes
     }
 
     /// Update current depth
     pub fn set_current_depth(&self, depth: usize) {
-        self.current_depth.store(depth, Ordering::SeqCst);
+        self.current_depth.store(depth, Ordering::Relaxed);
 
         // Update max depth if needed
-        let mut max = self.max_depth_reached.load(Ordering::SeqCst);
+        let mut max = self.max_depth_reached.load(Ordering::Relaxed);
         while depth > max {
             match self.max_depth_reached.compare_exchange(
                 max,
                 depth,
-                Ordering::SeqCst,
-                Ordering::SeqCst,
+                Ordering::AcqRel,
+                Ordering::Relaxed,
             ) {
                 Ok(_) => break,
                 Err(current) => max = current,
@@ -126,7 +126,7 @@ impl ProgressMetrics {
 
     /// Increment path shortening counter
     pub fn increment_path_shortenings(&self) -> usize {
-        self.path_shortenings_applied.fetch_add(1, Ordering::SeqCst) + 1
+        self.path_shortenings_applied.fetch_add(1, Ordering::Relaxed) + 1
     }
 
     /// Increment suspicious files counter

@@ -14,9 +14,8 @@ pub fn execute_structured_query(
     let plan = executor.execute(&query).map_err(|e| e.to_string())?;
 
     let filtered: Vec<String> = logs
-        .iter()
+        .into_iter()
         .filter(|line| executor.matches_line(&plan, line))
-        .cloned()
         .collect();
 
     Ok(filtered)

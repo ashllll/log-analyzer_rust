@@ -480,10 +480,11 @@ impl HighlightingEngine {
         );
 
         // For large documents, truncate content around potential matches
-        let optimized_content = if document_content.len() > max_content_length {
+        let optimized_content: String = if document_content.len() > max_content_length {
             self.extract_relevant_content(document_content, query, max_content_length)
         } else {
-            document_content.to_string()
+            // 非大文档无需拷贝，直接高亮原始内容
+            return self.highlight_document(doc_address, query, document_content);
         };
 
         // Use regular highlighting on optimized content

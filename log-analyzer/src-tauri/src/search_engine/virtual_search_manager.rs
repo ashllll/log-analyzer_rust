@@ -82,7 +82,7 @@ impl VirtualSearchManager {
         &self,
         search_id: String,
         query: String,
-        entries: Vec<LogEntry>,
+        mut entries: Vec<LogEntry>,
     ) -> String {
         let now = std::time::Instant::now();
 
@@ -97,10 +97,8 @@ impl VirtualSearchManager {
                 max_allowed = self.max_entries_per_session,
                 "Search results truncated to prevent memory overflow"
             );
+            entries.truncate(self.max_entries_per_session);
             entries
-                .into_iter()
-                .take(self.max_entries_per_session)
-                .collect()
         } else {
             entries
         };

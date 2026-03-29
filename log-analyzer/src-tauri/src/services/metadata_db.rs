@@ -101,7 +101,7 @@ impl MetadataDB {
         self.workspace_keys
             .entry(workspace_id.to_string())
             .or_default()
-            .push(forward_key.clone());
+            .push(forward_key);
 
         // 同时维护反向映射
         let reverse_key = format!("{}:{}", workspace_id, short_path);
@@ -165,10 +165,11 @@ impl MetadataDB {
 
         // 使用 workspace_keys 索引进行 O(k) 查找，而非 O(n) 遍历所有条目
         if let Some(forward_keys) = self.workspace_keys.get(workspace_id) {
+            let prefix = format!("{}:", workspace_id);
             for key in forward_keys.iter() {
                 if let Some(short_path) = self.mappings.get(key) {
                     // key 格式为 "workspace_id:original_path"，需要提取 original_path
-                    if let Some(original) = key.strip_prefix(&format!("{}:", workspace_id)) {
+                    if let Some(original) = key.strip_prefix(&prefix) {
                         mappings.push((short_path.value().clone(), original.to_string()));
                     }
                 }

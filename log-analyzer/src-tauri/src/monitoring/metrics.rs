@@ -190,10 +190,11 @@ impl MetricsRegistry {
     }
 
     pub fn export(&self) -> String {
-        let mut output = String::new();
+        let mut output = String::with_capacity(1024);
 
         for counter in self.counters.values() {
-            output.push_str(&format!("{}: {}\n", counter.name, counter.get()));
+            use std::fmt::Write;
+            let _ = writeln!(output, "{}: {}", counter.name, counter.get());
         }
 
         for histogram in self.histograms.values() {

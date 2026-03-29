@@ -201,8 +201,7 @@ async fn perform_async_search(
 
                     // 批量发送结果
                     if batch_results.len() >= batch_size {
-                        let _ = emit::async_search_results(batch_results.clone());
-                        batch_results.clear();
+                        let _ = emit::async_search_results(std::mem::take(&mut batch_results));
                     }
                 }
             }

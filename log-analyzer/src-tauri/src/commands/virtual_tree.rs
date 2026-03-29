@@ -104,20 +104,21 @@ pub async fn read_file_by_hash(
         .await
         .map_err(|e| format!("Failed to read file: {}", e))?;
 
-    // Convert to UTF-8 string
-    let content = String::from_utf8(content_bytes.clone())
+    // 先记录大小，再消费 content_bytes 避免完整克隆
+    let size = content_bytes.len();
+    let content = String::from_utf8(content_bytes)
         .map_err(|e| format!("File content is not valid UTF-8: {}", e))?;
 
     debug!(
         hash = %hash,
-        size = content_bytes.len(),
+        size,
         "Successfully read file content"
     );
 
     Ok(FileContentResponse {
         content,
         hash,
-        size: content_bytes.len(),
+        size,
     })
 }
 

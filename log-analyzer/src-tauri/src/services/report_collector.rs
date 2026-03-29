@@ -62,11 +62,19 @@ impl ReportCollector {
     where
         F: FnOnce(&mut ProcessingReport),
     {
-        let mut reports = self.reports.write().await;
-        if let Some(report) = reports.get_mut(report_id) {
-            updater(report);
-            // 通知进度
-            self.notify_progress(report.summary()).await;
+        // 先在写锁内更新，获取 summary 后立即释放锁
+        let summary = {
+            let mut reports = self.reports.write().await;
+            if let Some(report) = reports.get_mut(report_id) {
+                updater(report);
+                Some(report.summary())
+            } else {
+                None
+            }
+        }; // 写锁在此释放
+
+        if let Some(summary) = summary {
+            self.notify_progress(summary).await;
             true
         } else {
             false

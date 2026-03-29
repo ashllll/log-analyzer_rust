@@ -2,18 +2,17 @@
 //!
 //! 使用原子类型和轻量级锁实现高性能指标收集
 
-use parking_lot::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-/// 指标状态 - 管理性能指标和统计数据
+/// 指标状态 - 管理性能指标和统计数据（完全无锁设计）
 pub struct MetricsState {
     /// 总搜索次数
     pub total_searches: AtomicU64,
     /// 缓存命中次数
     pub cache_hits: AtomicU64,
-    /// 上次搜索持续时间
-    pub last_search_duration: Mutex<Duration>,
+    /// 上次搜索持续时间（微秒表示）
+    pub last_search_duration_us: AtomicU64,
 }
 
 impl Default for MetricsState {
@@ -21,7 +20,7 @@ impl Default for MetricsState {
         Self {
             total_searches: AtomicU64::new(0),
             cache_hits: AtomicU64::new(0),
-            last_search_duration: Mutex::new(Duration::default()),
+            last_search_duration_us: AtomicU64::new(0),
         }
     }
 }
@@ -65,20 +64,19 @@ impl MetricsState {
 
     /// 记录搜索持续时间
     pub fn record_search_duration(&self, duration: Duration) {
-        let mut guard = self.last_search_duration.lock();
-        *guard = duration;
+        self.last_search_duration_us
+            .store(duration.as_micros() as u64, Ordering::Relaxed);
     }
 
     /// 获取上次搜索持续时间
     pub fn get_last_search_duration(&self) -> Duration {
-        *self.last_search_duration.lock()
+        Duration::from_micros(self.last_search_duration_us.load(Ordering::Relaxed))
     }
 
     /// 重置所有指标
     pub fn reset(&self) {
         self.total_searches.store(0, Ordering::Relaxed);
         self.cache_hits.store(0, Ordering::Relaxed);
-        let mut guard = self.last_search_duration.lock();
-        *guard = Duration::default();
+        self.last_search_duration_us.store(0, Ordering::Relaxed);
     }
 }

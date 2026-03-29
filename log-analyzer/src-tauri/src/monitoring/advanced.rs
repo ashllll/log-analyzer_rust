@@ -11,7 +11,7 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Instant;
 use sysinfo::System;
-use tokio::sync::RwLock;
+use parking_lot::RwLock;
 
 /// 缓存的 System 实例，避免每次调用 get_metrics() 都新建 System::new_all()
 static CACHED_SYSTEM: Lazy<Mutex<System>> = Lazy::new(|| Mutex::new(System::new_all()));
