@@ -162,16 +162,9 @@ export function useInfiniteSearch({
     // 重试延迟
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
     
-    // 数据选择器：聚合所有页面结果
-    select: (data) => {
-      return {
-        ...data,
-        // 总条目数取第一页的 totalCount（后端持续更新）
-        totalCount: data.pages[0]?.totalCount ?? 0,
-        // 聚合所有结果（便于需要时访问）
-        allResults: data.pages.flatMap(page => page.results),
-      };
-    },
+    // 注意：不在此处使用 select 聚合 allResults。
+    // 原因：flatMap 在每次数据变化时创建完整数组副本，对大结果集（10万+条）造成双重内存开销。
+    // 消费者（SearchPage.tsx）已通过 loadedEntries 自行按需 flatMap。
   });
 }
 
