@@ -209,18 +209,26 @@ const SearchPage: React.FC<SearchPageProps> = ({
   });
   
   const parentRef = useRef<HTMLDivElement>(null);
-  
+
   // 使用 ref 存储虚拟滚动器实例，避免声明顺序问题
   const rowVirtualizerRef = useRef<ReturnType<typeof useVirtualizer<HTMLDivElement, Element>>>(null);
 
-  // 滚动事件监听（用于底部刷新和流式分页加载）
+  // 使用 ref 存储分页状态的最新值，避免 scroll listener 频繁注销/重注册
+  const hasNextPageRef = useRef(hasNextPage);
+  hasNextPageRef.current = hasNextPage;
+  const isFetchingNextPageRef = useRef(isFetchingNextPage);
+  isFetchingNextPageRef.current = isFetchingNextPage;
+  const fetchNextPageRef = useRef(fetchNextPage);
+  fetchNextPageRef.current = fetchNextPage;
+
+  // 滚动事件监听 — 使用 ref 模式避免闭包引用不稳定导致频繁注销/重注册
+  // TanStack Virtual 内部已有自己的 scroll listener，此处仅负责分页加载触发
   useEffect(() => {
     const element = parentRef.current;
     if (!element) return;
 
-    const handleScrollEvent = (event: Event) => {
-      const target = event.target as HTMLDivElement;
-      const { scrollTop, clientHeight, scrollHeight } = target;
+    const handleScrollEvent = () => {
+      const { scrollTop, clientHeight, scrollHeight } = element;
 
       // 接近底部时触发 fetchNextPage（500ms 节流）
       const isNearBottom = scrollHeight - scrollTop - clientHeight <= REFRESH_THRESHOLD;
@@ -228,8 +236,8 @@ const SearchPage: React.FC<SearchPageProps> = ({
         const now = Date.now();
         if (now - lastFetchNextPageTimeRef.current >= 500) {
           lastFetchNextPageTimeRef.current = now;
-          if (hasNextPage && !isFetchingNextPage) {
-            fetchNextPage().catch(err => {
+          if (hasNextPageRef.current && !isFetchingNextPageRef.current) {
+            fetchNextPageRef.current().catch(err => {
               logger.error('fetchNextPage failed:', err);
             });
           }
@@ -242,7 +250,7 @@ const SearchPage: React.FC<SearchPageProps> = ({
     return () => {
       element.removeEventListener('scroll', handleScrollEvent);
     };
-  }, [REFRESH_THRESHOLD, hasNextPage, isFetchingNextPage, fetchNextPage]);
+  }, [REFRESH_THRESHOLD]); // 仅依赖常量，不再依赖 fetchNextPage/hasNextPage/isFetchingNextPage
 
   // 监听搜索事件 — 通过 useSearchListeners hook 注册 Tauri 事件
   useSearchListeners({
@@ -599,9 +607,29 @@ const SearchPage: React.FC<SearchPageProps> = ({
     estimateSize: useCallback(() => 48, []), // 调整为 48px，更接近实际行高
     overscan: 20,
   });
-  
+
   // 将虚拟滚动器存储到 ref 中
   rowVirtualizerRef.current = rowVirtualizer;
+
+  // 范围加载：当可见行包含未加载的数据时，自动触发分页加载。
+  // 解决用户滚动到中间区域时只看到骨架屏、永远无法加载的问题。
+  const virtualItems = rowVirtualizer.getVirtualItems();
+  const lastVisibleIndex = virtualItems.length > 0 ? virtualItems[virtualItems.length - 1].index : -1;
+
+  useEffect(() => {
+    if (lastVisibleIndex < 0) return;
+
+    // 如果最后一个可见行接近或超出已加载数据边界，触发加载
+    if (lastVisibleIndex >= loadedEntries.length - 50 && hasNextPage && !isFetchingNextPage) {
+      const now = Date.now();
+      if (now - lastFetchNextPageTimeRef.current >= 500) {
+        lastFetchNextPageTimeRef.current = now;
+        fetchNextPage().catch(err => {
+          logger.error('Range-based fetchNextPage failed:', err);
+        });
+      }
+    }
+  }, [lastVisibleIndex, loadedEntries.length, hasNextPage, isFetchingNextPage, fetchNextPage]);
   
   const activeLog = selectedId ? loadedEntriesMap.get(selectedId) : undefined;
 

@@ -149,38 +149,39 @@ const HybridLogRendererInner: React.FC<HybridLogRendererProps> = ({ text, query,
   }, [keywordGroups, query]);
 
   // 渲染带高亮的文本
+  // 性能保护：每个关键词最多渲染 MAX_HIGHLIGHT_PER_KEYWORD 个高亮 span，
+  // 超出后该关键词退化为纯文本，避免单行数千匹配导致 DOM 节点爆炸。
+  // 不同关键词独立计数，不会相互影响。
+  const MAX_HIGHLIGHT_PER_KEYWORD = 30;
+
   const renderHighlightedText = (textToRender: string, showEllipsis: { start?: boolean; end?: boolean } = {}) => {
     if (!regexPattern) return <span>{textToRender}</span>;
 
     const parts = textToRender.split(regexPattern);
 
-    // 性能优化：匹配数量检查
-    const matchCount = parts.filter(part => patternMap.has(part.toLowerCase())).length;
-    if (matchCount > 20) {
-      // 降级为纯文本+提示
-      return (
-        <span className="text-text-dim">
-          {textToRender}{' '}
-          <span className="text-[10px] bg-red-500/20 text-red-400 px-1 py-0.5 rounded border border-red-500/30 ml-1">
-            [{matchCount} matches - rendering disabled for performance]
-          </span>
-        </span>
-      );
-    }
+    // 跟踪每个关键词已渲染的高亮次数
+    const highlightCounts = new Map<string, number>();
 
     return (
       <span>
         {showEllipsis.start && <span className="text-gray-400 dark:text-gray-600">...</span>}
         {parts.map((part: string, i: number) => {
-          const info = patternMap.get(part.toLowerCase());
+          const lowerPart = part.toLowerCase();
+          const info = patternMap.get(lowerPart);
           if (info) {
+            const currentCount = highlightCounts.get(lowerPart) ?? 0;
+            if (currentCount >= MAX_HIGHLIGHT_PER_KEYWORD) {
+              // 该关键词已达到渲染上限，退化为纯文本
+              return <span key={i}>{part}</span>;
+            }
+            highlightCounts.set(lowerPart, currentCount + 1);
             const style = COLOR_STYLES[info.color as ColorKey]?.highlight || COLOR_STYLES['blue'].highlight;
             return (
               <span key={i} className="inline-block mx-[1px]">
                 <span className={`rounded-[2px] px-1 border font-bold break-words ${style}`}>
                   {part}
                 </span>
-                {info.comment && (
+                {info.comment && currentCount === 0 && (
                   <span
                     className={`ml-1 px-1.5 rounded-[2px] text-[10px] font-normal border select-none whitespace-nowrap transform -translate-y-[1px] ${COLOR_STYLES[info.color as ColorKey]?.badge ?? COLOR_STYLES['blue'].badge}`}
                   >
