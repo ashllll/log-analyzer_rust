@@ -2,10 +2,10 @@
 //!
 //! 使用 DashMap 替代 Arc<Mutex<HashMap<...>>> 实现无锁并发访问
 
-use crate::search_engine::manager::SearchEngineManager;
 use crate::services::file_watcher::WatcherState;
-use crate::storage::{ContentAddressableStorage, MetadataStore};
 use dashmap::DashMap;
+use la_search::SearchEngineManager;
+use la_storage::{ContentAddressableStorage, MetadataStore};
 use std::path::PathBuf;
 use std::sync::Arc;
 

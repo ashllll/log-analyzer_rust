@@ -6,8 +6,8 @@
 //! **Note**: This is a temporary solution during the CAS migration.
 //! The path shortening functionality may be refactored in the future.
 
-use crate::error::Result;
 use dashmap::DashMap;
+use la_core::error::Result;
 use std::sync::Arc;
 
 /// Metadata database for path shortening mappings

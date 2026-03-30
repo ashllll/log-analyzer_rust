@@ -3,14 +3,14 @@
 //! This module provides both synchronous and asynchronous interfaces for
 //! archive extraction with comprehensive error handling and result structures.
 
-use crate::archive::extraction_engine::{
+use la_archive::extraction_engine::{
     ExtractionEngine, ExtractionPolicy, ExtractionResult as InternalExtractionResult,
     WarningCategory as InternalWarningCategory,
 };
-use crate::archive::extraction_orchestrator::ExtractionOrchestrator;
-use crate::archive::path_manager::{PathConfig, PathManager};
-use crate::archive::security_detector::{SecurityDetector, SecurityPolicy};
-use crate::error::AppError;
+use la_archive::extraction_orchestrator::ExtractionOrchestrator;
+use la_archive::path_manager::{PathConfig, PathManager};
+use la_archive::security_detector::{SecurityDetector, SecurityPolicy};
+use la_core::error::AppError;
 use crate::services::MetadataDB;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

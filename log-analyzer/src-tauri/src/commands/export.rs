@@ -10,7 +10,7 @@ use std::io::{BufWriter, Write};
 use serde_json::json;
 use tauri::command;
 
-use crate::models::LogEntry;
+use la_core::models::LogEntry;
 
 #[command]
 pub async fn export_results(

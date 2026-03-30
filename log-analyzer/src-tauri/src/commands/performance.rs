@@ -19,7 +19,7 @@
 //! - **定时快照**: tokio::time::interval 异步定时器
 
 use crate::models::AppState;
-use crate::storage::{MetricsSnapshot, MetricsStore, MetricsStoreStats, SearchEvent, TimeRange};
+use la_storage::{MetricsSnapshot, MetricsStore, MetricsStoreStats, SearchEvent, TimeRange};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::path::Path;

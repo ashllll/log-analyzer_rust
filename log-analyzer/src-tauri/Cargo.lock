@@ -2941,7 +2941,6 @@ dependencies = [
  "sevenz-rust",
  "sha2",
  "tar",
- "tauri",
  "tempfile",
  "tokio",
  "tokio-tar",

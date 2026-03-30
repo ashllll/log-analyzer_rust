@@ -16,8 +16,8 @@ pub use la_core::traits::{
     ContentStorage, MetadataStorage, PlanResult, QueryExecutor, QueryValidation, ValidationResult,
 };
 
-use crate::error::Result;
-use crate::models::search::SearchQuery;
+use la_core::error::Result;
+use la_core::models::search::SearchQuery;
 
 /// 查询计划 trait
 ///

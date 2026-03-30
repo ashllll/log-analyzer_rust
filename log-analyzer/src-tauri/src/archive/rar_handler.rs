@@ -1,7 +1,7 @@
 #[cfg(feature = "rar-support")]
-use crate::archive::archive_handler::{ArchiveHandler, ExtractionSummary};
+use la_archive::archive_handler::{ArchiveHandler, ExtractionSummary};
 #[cfg(feature = "rar-support")]
-use crate::error::{AppError, Result};
+use la_core::error::{AppError, Result};
 #[cfg(feature = "rar-support")]
 use crate::utils::path_security::{
     validate_and_sanitize_archive_path, PathValidationResult, SecurityConfig,
@@ -146,9 +146,9 @@ impl ArchiveHandler for RarHandler {
 
 // 无 RAR 支持时的空实现
 #[cfg(not(feature = "rar-support"))]
-use crate::archive::archive_handler::{ArchiveHandler, ExtractionSummary};
+use la_archive::archive_handler::{ArchiveHandler, ExtractionSummary};
 #[cfg(not(feature = "rar-support"))]
-use crate::error::{AppError, Result};
+use la_core::error::{AppError, Result};
 #[cfg(not(feature = "rar-support"))]
 use async_trait::async_trait;
 #[cfg(not(feature = "rar-support"))]

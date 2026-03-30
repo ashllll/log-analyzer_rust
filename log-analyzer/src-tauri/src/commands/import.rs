@@ -12,9 +12,9 @@ use tracing::error;
 use uuid::Uuid;
 
 use crate::models::AppState;
-use crate::storage::{verify_after_import, MetadataStore};
 use crate::task_manager::TaskManager;
 use crate::utils::{canonicalize_path, validate_path_param, validate_workspace_id};
+use la_storage::{verify_after_import, MetadataStore};
 
 #[command]
 pub async fn import_folder(
@@ -155,7 +155,10 @@ pub async fn import_folder(
     }
 
     // Process the path using CAS architecture
-    use crate::archive::processor::process_path_with_cas;
+    use crate::commands::TauriAppConfigProvider;
+    use la_archive::processor::process_path_with_cas;
+
+    let provider = TauriAppConfigProvider(app_handle.clone());
 
     if let Err(e) = process_path_with_cas(
         source_path,
@@ -163,7 +166,7 @@ pub async fn import_folder(
         &workspace_dir,
         &cas,
         metadata_store.clone(),
-        &app_handle,
+        &provider,
         &task_id_clone,
         &workspace_id_clone,
         None, // parent_archive_id

@@ -160,3 +160,12 @@ pub trait QueryExecutor: Send + Sync {
     where
         T: Send + Sync + 'static;
 }
+
+/// 应用配置提供者 trait
+///
+/// 解耦业务逻辑对 Tauri AppHandle 的直接依赖。
+/// 具体实现在主 crate 中为 `tauri::AppHandle` 提供。
+pub trait AppConfigProvider: Send + Sync {
+    /// 获取应用配置目录路径
+    fn config_dir(&self) -> std::result::Result<std::path::PathBuf, String>;
+}

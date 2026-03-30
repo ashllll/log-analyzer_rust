@@ -18,8 +18,8 @@ pub fn proptest_config() -> Config {
 /// Custom strategies for domain-specific types
 pub mod strategies {
     use super::*;
-    use crate::models::log_entry::LogEntry;
-    use crate::models::search::{
+    use la_core::models::log_entry::LogEntry;
+    use la_core::models::search::{
         QueryMetadata, QueryOperator, SearchQuery, SearchTerm, TermSource,
     };
 

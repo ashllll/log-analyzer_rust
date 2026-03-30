@@ -1,5 +1,5 @@
-use crate::archive::archive_handler::{ArchiveHandler, ExtractionSummary};
-use crate::error::{AppError, Result};
+use la_archive::archive_handler::{ArchiveHandler, ExtractionSummary};
+use la_core::error::{AppError, Result};
 use async_compression::tokio::bufread::GzipDecoder;
 use async_trait::async_trait;
 use std::path::Path;

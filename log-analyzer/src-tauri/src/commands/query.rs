@@ -2,8 +2,8 @@
 
 use tauri::command;
 
-use crate::models::SearchQuery;
 use crate::services::QueryExecutor;
+use la_core::models::SearchQuery;
 
 #[command]
 pub fn execute_structured_query(

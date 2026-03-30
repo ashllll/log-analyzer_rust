@@ -7,15 +7,15 @@
 //! - 收集元数据（增量索引）
 //! - 错误处理和进度报告
 
-use crate::archive::checkpoint_manager::{Checkpoint, CheckpointManager};
-use crate::archive::extraction_engine::ExtractionPolicy;
-use crate::archive::public_api::extract_archive_async;
-use crate::archive::ArchiveManager;
-use crate::error::{AppError, Result};
-use crate::models::FileFilterConfig;
+use la_archive::checkpoint_manager::{Checkpoint, CheckpointManager};
+use la_archive::extraction_engine::ExtractionPolicy;
+use la_archive::public_api::extract_archive_async;
+use la_archive::ArchiveManager;
+use la_core::error::{AppError, Result};
+use la_core::models::FileFilterConfig;
 use crate::services::file_type_filter::FileTypeFilter;
 use crate::services::file_watcher::get_file_metadata;
-use crate::storage::{ArchiveMetadata, ContentAddressableStorage, FileMetadata, MetadataStore};
+use la_storage::{ArchiveMetadata, ContentAddressableStorage, FileMetadata, MetadataStore};
 use crate::utils::path::normalize_path_separator;
 use std::collections::HashMap;
 use std::path::{Component, Path, PathBuf};

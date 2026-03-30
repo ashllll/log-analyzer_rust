@@ -5,7 +5,7 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::storage::{ContentAddressableStorage, FileMetadata, MetadataStore};
+    use la_storage::{ContentAddressableStorage, FileMetadata, MetadataStore};
     use tempfile::TempDir;
 
     async fn create_test_workspace() -> (ContentAddressableStorage, MetadataStore, TempDir) {

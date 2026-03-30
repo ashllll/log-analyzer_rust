@@ -13,10 +13,11 @@ use notify::{recommended_watcher, Event, EventKind, RecursiveMode, Watcher};
 use tauri::{command, AppHandle, Emitter, Manager, State};
 use tracing::error;
 
-use crate::models::{AppState, FileChangeEvent};
+use crate::models::AppState;
 use crate::services::file_watcher::WatcherState;
 use crate::services::{append_to_workspace_index, parse_log_lines, read_file_from_offset};
 use crate::utils::{validate_path_param, validate_workspace_id};
+use la_core::models::log_entry::FileChangeEvent;
 
 #[command]
 pub async fn start_watch(

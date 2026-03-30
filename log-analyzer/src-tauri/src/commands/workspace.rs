@@ -763,9 +763,9 @@ pub async fn get_workspace_status(
 pub async fn get_workspace_time_range(
     #[allow(non_snake_case)] workspaceId: String,
     state: State<'_, AppState>,
-) -> Result<crate::models::search::WorkspaceTimeRange, String> {
-    use crate::models::search::WorkspaceTimeRange;
+) -> Result<la_core::models::search::WorkspaceTimeRange, String> {
     use chrono::DateTime;
+    use la_core::models::search::WorkspaceTimeRange;
 
     // Get search engine manager for this workspace
     let search_engine_opt = {

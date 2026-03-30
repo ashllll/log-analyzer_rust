@@ -6,8 +6,8 @@
 //! - 增量索引更新
 //! - 实时事件推送到前端
 
-use crate::error::{AppError, Result};
-use crate::models::log_entry::LogEntry;
+use la_core::error::{AppError, Result};
+use la_core::models::log_entry::LogEntry;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use std::collections::HashMap;

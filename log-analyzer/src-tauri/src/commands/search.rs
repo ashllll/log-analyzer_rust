@@ -11,12 +11,13 @@ use std::{collections::HashSet, sync::Arc};
 use tauri::{command, AppHandle, Emitter, State};
 use tracing::{debug, error, info, warn};
 
-use crate::error::CommandError;
-use crate::models::search::{
+use crate::models::AppState;
+use la_core::error::CommandError;
+use la_core::models::search::{
     PagedSearchResult, QueryMetadata, QueryOperator, SearchTerm, TermSource,
 };
-use crate::models::search_statistics::SearchResultSummary;
-use crate::models::{AppState, LogEntry, SearchCacheKey, SearchFilters, SearchQuery};
+use la_core::models::search_statistics::SearchResultSummary;
+use la_core::models::{LogEntry, SearchCacheKey, SearchFilters, SearchQuery};
 
 // MessagePack 序列化支持
 use serde::{Deserialize, Serialize};
@@ -1407,7 +1408,7 @@ pub async fn fetch_search_page(
     offset: usize,
     limit: usize,
 ) -> Result<crate::search_engine::disk_result_store::SearchPageResult, CommandError> {
-    use crate::search_engine::disk_result_store::SearchPageResult;
+    use la_search::SearchPageResult;
 
     // 限制每页最大数量，防止内存问题
     let limit = limit.min(10000);

@@ -16,8 +16,8 @@
 //! - 避免对未变更文件重新索引
 //! - 检测文件截断和内容变更
 
-use crate::error::{AppError, Result};
-use crate::storage::ContentAddressableStorage;
+use la_core::error::{AppError, Result};
+use la_storage::ContentAddressableStorage;
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::path::Path;
@@ -238,7 +238,7 @@ impl Default for FileChangeDetector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::IndexedFile;
+    use la_storage::IndexedFile;
     use std::io::Write;
     use tempfile::TempDir;
 

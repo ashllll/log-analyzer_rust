@@ -2,7 +2,7 @@
 //!
 //! 提供数据验证功能
 
-use crate::models::validated::{
+use la_core::models::validated::{
     ValidatedArchiveConfig, ValidatedSearchQuery, ValidatedWorkspaceConfig, ValidationErrorReport,
 };
 use tauri::command;

@@ -5,10 +5,10 @@
 //! depth limits, manages extraction state, and coordinates with security
 //! detection and path management components.
 
-use crate::archive::{
+use la_archive::{
     ExtractionContext, ExtractionItem, ExtractionStack, PathManager, SecurityDetector,
 };
-use crate::error::{AppError, Result};
+use la_core::error::{AppError, Result};
 use moka::sync::Cache;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -968,7 +968,7 @@ impl ExtractionEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::archive::PathConfig;
+    use la_archive::PathConfig;
     use crate::services::MetadataDB;
 
     async fn create_test_engine() -> ExtractionEngine {

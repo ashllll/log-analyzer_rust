@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::models::{log_entry::LogEntry, search_statistics::KeywordStatistics};
+use la_core::models::{log_entry::LogEntry, search_statistics::KeywordStatistics};
 
 /// 计算关键词统计信息
 ///
@@ -48,7 +48,7 @@ pub fn calculate_keyword_statistics(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::services::MatchDetail;
+    use la_core::models::match_detail::MatchDetail;
 
     #[test]
     fn test_calculate_keyword_statistics_normal() {

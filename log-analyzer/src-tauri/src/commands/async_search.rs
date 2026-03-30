@@ -11,10 +11,11 @@ use tauri::{command, AppHandle, Emitter, Manager, State};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use crate::models::{AppState, LogEntry};
+use crate::models::AppState;
 use crate::services::parse_metadata;
-use crate::storage::{ContentAddressableStorage, MetadataStore};
 use crate::utils::async_resource_manager::OperationType;
+use la_core::models::LogEntry;
+use la_storage::{ContentAddressableStorage, MetadataStore};
 
 /// 异步搜索日志
 ///

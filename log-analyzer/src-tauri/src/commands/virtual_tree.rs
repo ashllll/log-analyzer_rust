@@ -16,7 +16,7 @@
 //!
 //! 为保持与 JavaScript camelCase 惯例一致，Tauri 命令参数使用 camelCase 命名。
 
-use crate::storage::{ContentAddressableStorage, MetadataStore};
+use la_storage::{ContentAddressableStorage, MetadataStore};
 use serde::{Deserialize, Serialize};
 use tauri::{command, AppHandle, Manager};
 use tracing::{debug, error, info};

@@ -1,9 +1,9 @@
-use crate::error::Result;
-use crate::models::search::*;
 use crate::services::query_planner::{ExecutionPlan, QueryPlanner};
 use crate::services::query_validator::QueryValidator;
 use crate::services::regex_engine::RegexEngine;
 use crate::services::traits::{QueryPlanning, QueryValidation};
+use la_core::error::Result;
+use la_core::models::search::*;
 use moka::sync::Cache;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -396,7 +396,7 @@ pub type StandardQueryExecutor = GenericQueryExecutor<QueryValidator, super::Que
 mod tests {
     use super::*;
 
-    use crate::models::search::{QueryMetadata, TermSource};
+    use la_core::models::search::{QueryMetadata, TermSource};
 
     fn build_term(
         id: &str,

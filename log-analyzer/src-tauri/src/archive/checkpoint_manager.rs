@@ -5,7 +5,7 @@
 //! Checkpoints are written at regular intervals (every 100 files or 1GB) and
 //! cleaned up on successful completion.
 
-use crate::error::{AppError, Result};
+use la_core::error::{AppError, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};

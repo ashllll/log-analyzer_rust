@@ -10,7 +10,7 @@
 //! - 零侵入：独立模块，可随时移除
 //! - 可观测：详细日志记录每个决策
 
-use crate::models::{FileFilterConfig, FilterMode};
+use la_core::models::{FileFilterConfig, FilterMode};
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;

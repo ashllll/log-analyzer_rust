@@ -10,10 +10,10 @@
 //! - 智能缓存压缩
 //! - 基于访问模式的预加载
 
-use crate::models::{LogEntry, SearchCacheKey};
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
+use la_core::models::{LogEntry, SearchCacheKey};
 use moka::future::Cache as AsyncCache;
 use moka::sync::Cache;
 use parking_lot::RwLock;

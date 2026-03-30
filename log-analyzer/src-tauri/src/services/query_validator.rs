@@ -1,6 +1,6 @@
-use crate::error::{AppError, Result};
-use crate::models::search::*;
 use crate::services::traits::{QueryValidation, ValidationResult};
+use la_core::error::{AppError, Result};
+use la_core::models::search::*;
 use regex::Regex;
 
 /**
@@ -94,7 +94,7 @@ impl QueryValidator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::search::{QueryMetadata, TermSource};
+    use la_core::models::search::{QueryMetadata, TermSource};
 
     fn create_test_term(value: &str, enabled: bool) -> SearchTerm {
         SearchTerm {

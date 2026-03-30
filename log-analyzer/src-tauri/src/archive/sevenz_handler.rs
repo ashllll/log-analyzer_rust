@@ -1,5 +1,5 @@
-use crate::archive::archive_handler::{ArchiveHandler, ExtractionSummary};
-use crate::error::{AppError, Result};
+use la_archive::archive_handler::{ArchiveHandler, ExtractionSummary};
+use la_core::error::{AppError, Result};
 use crate::utils::path_security::{
     validate_and_sanitize_archive_path, PathValidationResult, SecurityConfig,
 };

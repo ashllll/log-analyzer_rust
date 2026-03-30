@@ -5,8 +5,8 @@
 //! It wraps the ExtractionEngine and provides controlled access with
 //! resource management.
 
-use crate::archive::extraction_engine::{ExtractionEngine, ExtractionResult};
-use crate::error::{AppError, Result};
+use la_archive::extraction_engine::{ExtractionEngine, ExtractionResult};
+use la_core::error::{AppError, Result};
 use dashmap::DashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -229,7 +229,7 @@ impl ExtractionOrchestrator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::archive::{PathConfig, PathManager, SecurityDetector, SecurityPolicy};
+    use la_archive::{PathConfig, PathManager, SecurityDetector, SecurityPolicy};
     use crate::services::MetadataDB;
     use std::time::Duration;
     use tempfile::TempDir;

@@ -10,8 +10,8 @@
 //! - Identify missing or corrupted objects
 //! - Support for batch validation
 
-use crate::error::Result;
-use crate::storage::{ContentAddressableStorage, MetadataStore};
+use la_core::error::Result;
+use la_storage::{ContentAddressableStorage, MetadataStore};
 use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
 use tracing::{debug, info, warn};
@@ -232,8 +232,8 @@ impl IndexValidator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::FileMetadata;
-    use crate::storage::{ContentAddressableStorage, MetadataStore};
+    use la_storage::FileMetadata;
+    use la_storage::{ContentAddressableStorage, MetadataStore};
     use tempfile::TempDir;
 
     // Helper function to create FileMetadata

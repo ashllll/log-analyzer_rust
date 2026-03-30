@@ -62,9 +62,6 @@ sha2 = "0.10"
 unicode-normalization = "0.1"
 num_cpus = "1.16"
 
-# Tauri (processor.rs 中使用 AppHandle)
-tauri = { version = "2.0.0", features = [] }
-
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.52", features = ["Win32_Storage_FileSystem", "Win32_Foundation"] }
 

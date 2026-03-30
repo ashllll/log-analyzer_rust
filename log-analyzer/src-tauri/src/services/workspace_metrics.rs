@@ -10,8 +10,8 @@
 //! - Total file count and size
 //! - Archive count and distribution
 
-use crate::error::Result;
-use crate::storage::{ContentAddressableStorage, MetadataStore};
+use la_core::error::Result;
+use la_storage::{ContentAddressableStorage, MetadataStore};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info};
 
@@ -294,8 +294,8 @@ impl WorkspaceMetricsCollector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::FileMetadata;
-    use crate::storage::{ContentAddressableStorage, MetadataStore};
+    use la_storage::FileMetadata;
+    use la_storage::{ContentAddressableStorage, MetadataStore};
     use tempfile::TempDir;
 
     // Helper function to create FileMetadata

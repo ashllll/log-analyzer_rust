@@ -5,7 +5,7 @@
 //! - 错误聚合和分类
 //! - 报告持久化
 
-use crate::models::processing_report::{
+use la_core::models::processing_report::{
     ErrorCategory, ErrorSeverity, ProcessingError, ProcessingReport, ProcessingReportSummary,
     ProcessingStatistics, ProcessingStatus,
 };

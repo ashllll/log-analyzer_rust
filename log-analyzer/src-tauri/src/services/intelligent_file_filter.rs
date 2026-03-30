@@ -11,7 +11,7 @@
 //! - 可读性评分机制
 //! - 编码检测
 
-use crate::models::{
+use la_core::models::{
     config::ArchiveProcessingConfig,
     import_decision::{FileTypeInfo, ImportDecisionDetails, RejectionReason},
 };

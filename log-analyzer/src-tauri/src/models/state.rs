@@ -1,18 +1,18 @@
 //! 应用状态管理 - 简化版本
 
-use crate::search_engine::disk_result_store::DiskResultStore;
-use crate::search_engine::manager::SearchEngineManager;
-use crate::search_engine::virtual_search_manager::VirtualSearchManager;
 use crate::services::file_watcher::WatcherState;
 use crate::state_sync::StateSync;
-use crate::storage::ContentAddressableStorage;
-use crate::storage::MetadataStore;
 use crate::task_manager::TaskManager;
 use crate::utils::async_resource_manager::AsyncResourceError;
 use crate::utils::async_resource_manager::AsyncResourceManager;
 use crate::utils::cache_manager::{CacheError, CacheManager};
 use crate::utils::cleanup::CleanupQueue;
 use crossbeam::queue::SegQueue;
+use la_search::DiskResultStore;
+use la_search::SearchEngineManager;
+use la_search::VirtualSearchManager;
+use la_storage::ContentAddressableStorage;
+use la_storage::MetadataStore;
 use moka::sync::Cache;
 use parking_lot::Mutex;
 use std::collections::{BTreeMap, HashMap};

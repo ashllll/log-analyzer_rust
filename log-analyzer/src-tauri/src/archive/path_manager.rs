@@ -4,7 +4,7 @@
  * Handles long path support, path shortening, and path mapping management.
  * Implements Windows UNC prefix support and content-based hashing for path shortening.
  */
-use crate::error::Result;
+use la_core::error::Result;
 use crate::services::MetadataDB;
 use dashmap::DashMap;
 use sha2::{Digest, Sha256};

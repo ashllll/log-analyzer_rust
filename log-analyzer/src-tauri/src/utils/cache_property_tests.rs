@@ -8,7 +8,7 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::models::{LogEntry, SearchCacheKey};
+    use la_core::models::{LogEntry, SearchCacheKey};
     use crate::utils::cache_manager::{CacheConfig, CacheManager, CacheThresholds};
     use moka::sync::Cache;
     use proptest::prelude::*;

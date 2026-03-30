@@ -15,12 +15,12 @@ use crate::public_api::extract_archive_async;
 use crate::ArchiveManager;
 use la_core::error::{AppError, Result};
 use la_core::models::config::FileFilterConfig;
+use la_core::traits::AppConfigProvider;
 use la_core::utils::path::normalize_path_separator;
 use la_storage::{ArchiveMetadata, ContentAddressableStorage, FileMetadata, MetadataStore};
 use std::collections::HashMap;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
-use tauri::{AppHandle, Manager};
 use tokio::fs;
 use tokio::sync::Mutex;
 use tracing::{debug, error, info, warn};
@@ -207,7 +207,7 @@ fn validate_virtual_path(virtual_path: &str) -> Result<()> {
 /// - `virtual_path`: 虚拟路径（用于索引）
 /// - `target_root`: 临时目录根路径
 /// - `map`: 真实路径到虚拟路径的映射表
-/// - `app`: Tauri 应用句柄
+/// - `provider`: 应用配置提供者（解耦 Tauri 依赖）
 /// - `task_id`: 任务 ID
 /// - `workspace_id`: 工作区ID(用于解压目录命名)
 ///
@@ -222,7 +222,7 @@ pub async fn process_path_recursive(
     virtual_path: &str,
     target_root: &Path,
     map: &mut HashMap<String, String>,
-    app: &AppHandle,
+    provider: &dyn AppConfigProvider,
     task_id: &str,
     workspace_id: &str,
 ) {
@@ -232,7 +232,7 @@ pub async fn process_path_recursive(
         virtual_path,
         target_root,
         map,
-        app,
+        provider,
         task_id,
         workspace_id,
     )
@@ -257,7 +257,7 @@ pub async fn process_path_recursive(
 /// - `target_root`: 临时目录根路径
 /// - `map`: 路径映射表
 /// - `metadata_map`: 文件元数据映射表（用于增量索引）
-/// - `app`: Tauri 应用句柄
+/// - `provider`: 应用配置提供者（解耦 Tauri 依赖）
 /// - `task_id`: 任务 ID
 /// - `workspace_id`: 工作区ID
 #[allow(clippy::too_many_arguments)]
@@ -267,7 +267,7 @@ pub async fn process_path_recursive_with_metadata(
     target_root: &Path,
     map: &mut HashMap<String, String>,
     metadata_map: &mut HashMap<String, la_storage::FileMetadata>,
-    app: &AppHandle,
+    provider: &dyn AppConfigProvider,
     task_id: &str,
     workspace_id: &str,
 ) {
@@ -277,7 +277,7 @@ pub async fn process_path_recursive_with_metadata(
         target_root,
         map,
         metadata_map,
-        app,
+        provider,
         task_id,
         workspace_id,
     )
@@ -311,7 +311,7 @@ async fn process_path_recursive_inner(
     virtual_path: &str,
     target_root: &Path,
     map: &mut HashMap<String, String>,
-    app: &AppHandle,
+    provider: &dyn AppConfigProvider,
     task_id: &str,
     workspace_id: &str,
 ) -> Result<()> {
@@ -408,7 +408,7 @@ async fn process_path_recursive_inner(
                         &new_virtual,
                         target_root,
                         map,
-                        app,
+                        provider,
                         task_id,
                         workspace_id,
                     ))
@@ -456,7 +456,7 @@ async fn process_path_recursive_inner(
             virtual_path,
             target_root,
             map,
-            app,
+            provider,
             task_id,
             workspace_id,
         )
@@ -516,7 +516,7 @@ async fn process_path_recursive_inner_with_metadata(
     target_root: &Path,
     map: &mut HashMap<String, String>,
     metadata_map: &mut HashMap<String, la_storage::FileMetadata>,
-    app: &AppHandle,
+    provider: &dyn AppConfigProvider,
     task_id: &str,
     workspace_id: &str,
 ) -> Result<()> {
@@ -614,7 +614,7 @@ async fn process_path_recursive_inner_with_metadata(
                         target_root,
                         map,
                         metadata_map,
-                        app,
+                        provider,
                         task_id,
                         workspace_id,
                     ))
@@ -657,7 +657,7 @@ async fn process_path_recursive_inner_with_metadata(
             virtual_path,
             target_root,
             map,
-            app,
+            provider,
             task_id,
             workspace_id,
         ))
@@ -779,7 +779,7 @@ impl CasProcessingContext {
 /// * `path` - Path to process (file or directory)
 /// * `virtual_path` - Virtual path for indexing
 /// * `context` - Processing context with CAS, metadata store, and optional checkpoints
-/// * `app` - Tauri app handle
+/// * `provider` - 应用配置提供者（解耦 Tauri 依赖）
 /// * `task_id` - Task ID for progress reporting
 /// * `workspace_id` - Workspace ID
 /// * `parent_archive_id` - Parent archive ID (None for root level)
@@ -793,7 +793,7 @@ pub async fn process_path_with_cas_and_checkpoints(
     path: &Path,
     virtual_path: &str,
     context: &CasProcessingContext,
-    app: &AppHandle,
+    provider: &dyn AppConfigProvider,
     task_id: &str,
     workspace_id: &str,
     parent_archive_id: Option<i64>,
@@ -911,7 +911,7 @@ pub async fn process_path_with_cas_and_checkpoints(
                         path_to_process,
                         &new_virtual,
                         context,
-                        app,
+                        provider,
                         task_id,
                         workspace_id,
                         parent_archive_id,
@@ -957,7 +957,7 @@ pub async fn process_path_with_cas_and_checkpoints(
     // 3. 详细日志记录决策过程
     if !path.is_dir() && !is_archive_file(path) {
         // 可选的文件过滤检查（防御性：失败时允许文件通过）
-        let import_allowed = should_import_file_defensive(path, app).await;
+        let import_allowed = should_import_file_defensive(path, provider).await;
 
         if !import_allowed {
             tracing::info!(
@@ -989,7 +989,7 @@ pub async fn process_path_with_cas_and_checkpoints(
             path,
             virtual_path,
             context,
-            app,
+            provider,
             task_id,
             workspace_id,
             parent_archive_id,
@@ -1077,7 +1077,7 @@ pub async fn process_path_with_cas_and_checkpoints(
 /// * `workspace_dir` - Workspace directory (contains CAS and metadata.db)
 /// * `cas` - Content-Addressable Storage instance
 /// * `metadata_store` - Metadata store instance (wrapped in Arc)
-/// * `app` - Tauri app handle
+/// * `provider` - 应用配置提供者（解耦 Tauri 依赖）
 /// * `task_id` - Task ID for progress reporting
 /// * `workspace_id` - Workspace ID
 /// * `parent_archive_id` - Parent archive ID (None for root level)
@@ -1093,7 +1093,7 @@ pub async fn process_path_with_cas(
     workspace_dir: &Path,
     cas: &ContentAddressableStorage,
     metadata_store: Arc<MetadataStore>,
-    app: &AppHandle,
+    provider: &dyn AppConfigProvider,
     task_id: &str,
     workspace_id: &str,
     parent_archive_id: Option<i64>,
@@ -1109,7 +1109,7 @@ pub async fn process_path_with_cas(
         path,
         virtual_path,
         &context,
-        app,
+        provider,
         task_id,
         workspace_id,
         parent_archive_id,
@@ -1127,7 +1127,7 @@ pub async fn process_path_with_cas(
 /// * `archive_path` - Path to the archive file
 /// * `virtual_path` - Virtual path prefix
 /// * `context` - Processing context with CAS, metadata store, and optional checkpoints
-/// * `app` - Tauri app handle
+/// * `provider` - 应用配置提供者（解耦 Tauri 依赖）
 /// * `task_id` - Task ID
 /// * `workspace_id` - Workspace ID
 /// * `parent_archive_id` - Parent archive ID (None for root)
@@ -1141,7 +1141,7 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
     archive_path: &Path,
     virtual_path: &str,
     context: &CasProcessingContext,
-    app: &AppHandle,
+    provider: &dyn AppConfigProvider,
     task_id: &str,
     workspace_id: &str,
     parent_archive_id: Option<i64>,
@@ -1374,7 +1374,7 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
             &full_path, // Use full path for file operations
             &new_virtual,
             context,
-            app,
+            provider,
             task_id,
             workspace_id,
             Some(archive_id),
@@ -1460,7 +1460,7 @@ fn is_archive_file(path: &Path) -> bool {
 /// - `virtual_path`: 虚拟路径前缀
 /// - `target_root`: 解压目标根目录
 /// - `map`: 路径映射表
-/// - `app`: Tauri 应用句柄
+/// - `provider`: 应用配置提供者（解耦 Tauri 依赖）
 /// - `task_id`: 任务 ID
 /// - `workspace_id`: 工作区 ID
 ///
@@ -1482,7 +1482,7 @@ async fn extract_and_process_archive(
     virtual_path: &str,
     target_root: &Path,
     map: &mut HashMap<String, String>,
-    app: &AppHandle,
+    provider: &dyn AppConfigProvider,
     task_id: &str,
     workspace_id: &str,
 ) -> Result<()> {
@@ -1680,7 +1680,7 @@ async fn extract_and_process_archive(
             &new_virtual,
             target_root,
             map,
-            app,
+            provider,
             task_id,
             workspace_id,
         ))
@@ -1698,9 +1698,9 @@ async fn extract_and_process_archive(
 /// 1. 配置加载失败 → 返回 true（允许所有文件）
 /// 2. 过滤逻辑异常 → 返回 true（允许当前文件）
 /// 3. 记录详细日志 → 便于问题排查
-async fn should_import_file_defensive(path: &Path, app: &AppHandle) -> bool {
+async fn should_import_file_defensive(path: &Path, provider: &dyn AppConfigProvider) -> bool {
     // Step 1: 安全加载配置（失败时返回 true）
-    let filter_config = match load_file_filter_config_safe(app).await {
+    let filter_config = match load_file_filter_config_safe(provider).await {
         Ok(config) => config,
         Err(e) => {
             tracing::warn!(
@@ -1731,8 +1731,10 @@ async fn should_import_file_defensive(path: &Path, app: &AppHandle) -> bool {
 }
 
 /// 安全加载配置（失败时返回默认配置）
-async fn load_file_filter_config_safe(app: &AppHandle) -> Result<FileFilterConfig> {
-    match load_config_from_app(app).await {
+async fn load_file_filter_config_safe(
+    provider: &dyn AppConfigProvider,
+) -> Result<FileFilterConfig> {
+    match load_config_from_provider(provider).await {
         Ok(config) => Ok(config.file_filter),
         Err(e) => {
             tracing::warn!(
@@ -1744,38 +1746,28 @@ async fn load_file_filter_config_safe(app: &AppHandle) -> Result<FileFilterConfi
     }
 }
 
-/// 从 Tauri AppHandle 加载应用配置
-async fn load_config_from_app(
-    app: &AppHandle,
+/// 从 AppConfigProvider 加载应用配置
+async fn load_config_from_provider(
+    provider: &dyn AppConfigProvider,
 ) -> std::result::Result<la_core::models::config::AppConfig, String> {
     use la_core::models::config::ConfigLoader as AppConfigLoader;
-    let app = app.clone();
-    tokio::task::spawn_blocking(
-        move || -> std::result::Result<la_core::models::config::AppConfig, String> {
-            let config_dir = app
-                .path()
-                .app_config_dir()
-                .map_err(|e: tauri::Error| e.to_string())?;
-            let config_path = config_dir.join("config.json");
-            if config_path.exists() {
-                match AppConfigLoader::load(Some(config_path.clone())) {
-                    Ok(loader) => Ok(loader.get_config().clone()),
-                    Err(e) => {
-                        tracing::warn!(
-                            path = %config_path.display(),
-                            error = %e,
-                            "配置文件解析失败，使用默认配置"
-                        );
-                        Ok(la_core::models::config::AppConfig::default())
-                    }
-                }
-            } else {
+    let config_dir = provider.config_dir()?;
+    let config_path = config_dir.join("config.json");
+    if config_path.exists() {
+        match AppConfigLoader::load(Some(config_path.clone())) {
+            Ok(loader) => Ok(loader.get_config().clone()),
+            Err(e) => {
+                tracing::warn!(
+                    path = %config_path.display(),
+                    error = %e,
+                    "配置文件解析失败，使用默认配置"
+                );
                 Ok(la_core::models::config::AppConfig::default())
             }
-        },
-    )
-    .await
-    .map_err(|e| format!("Task panicked: {}", e))?
+        }
+    } else {
+        Ok(la_core::models::config::AppConfig::default())
+    }
 }
 
 // ========== 防御性集成结束 ==========

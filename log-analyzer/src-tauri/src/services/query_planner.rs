@@ -1,7 +1,7 @@
-use crate::error::{AppError, Result};
-use crate::models::search::*;
 use crate::services::regex_engine::RegexEngine;
 use crate::services::traits::{PlanResult, QueryPlanning};
+use la_core::error::{AppError, Result};
+use la_core::models::search::*;
 use moka::sync::Cache;
 use std::sync::Arc;
 
@@ -315,7 +315,7 @@ impl QueryPlanning for QueryPlannerAdapter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::search::{QueryMetadata, TermSource};
+    use la_core::models::search::{QueryMetadata, TermSource};
 
     fn create_test_term(value: &str, operator: QueryOperator) -> SearchTerm {
         SearchTerm {

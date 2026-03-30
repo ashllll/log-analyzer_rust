@@ -9,7 +9,7 @@ use std::fs;
 
 use tauri::{command, AppHandle, Manager};
 
-use crate::models::config::{
+use la_core::models::config::{
     AppConfig, AppConfigLoader, CacheConfig, FileFilterConfig, SearchConfig, TaskManagerConfig,
 };
 

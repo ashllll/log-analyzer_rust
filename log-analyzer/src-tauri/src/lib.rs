@@ -30,4 +30,4 @@ pub mod monitoring;
 #[cfg(test)]
 pub mod proptest_strategies;
 
-pub use error::{AppError, Result};
+pub use la_core::error::{AppError, Result};
