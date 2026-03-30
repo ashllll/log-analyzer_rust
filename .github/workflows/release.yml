@@ -73,7 +73,8 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: './log-analyzer/src-tauri -> target'
+          workspaces: log-analyzer/src-tauri -> target
+          cache-all-crates: true
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
