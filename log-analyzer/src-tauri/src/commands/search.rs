@@ -284,7 +284,7 @@ pub async fn search_logs(
             store
         } else {
             // Store doesn't exist, create it (no lock held during async creation)
-            let store = crate::storage::metadata_store::MetadataStore::new(&workspace_dir)
+            let store = crate::storage::MetadataStore::new(&workspace_dir)
                 .await
                 .map_err(|e| {
                     CommandError::new(
@@ -587,7 +587,9 @@ pub async fn search_logs(
             if !batch_results.is_empty() {
                 // 先将上一轮遗留的 pending_batch 写入磁盘，避免覆盖丢失
                 if !pending_batch.is_empty() {
-                    if let Err(e) = disk_store_spawn.append_entries(&search_id_clone, &pending_batch) {
+                    if let Err(e) =
+                        disk_store_spawn.append_entries(&search_id_clone, &pending_batch)
+                    {
                         warn!(error = %e, "磁盘写入遗留 pending_batch 失败");
                     }
                 }
@@ -1094,7 +1096,7 @@ pub async fn search_logs_paged(
             store
         } else {
             // Store doesn't exist, create it (no lock held during async creation)
-            let store = crate::storage::metadata_store::MetadataStore::new(&workspace_dir)
+            let store = crate::storage::MetadataStore::new(&workspace_dir)
                 .await
                 .map_err(|e| {
                     CommandError::new(

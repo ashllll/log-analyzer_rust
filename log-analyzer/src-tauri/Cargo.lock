@@ -2914,6 +2914,131 @@ dependencies = [
 ]
 
 [[package]]
+name = "la-archive"
+version = "1.2.53"
+dependencies = [
+ "async-compression",
+ "async-trait",
+ "async_zip",
+ "bytes",
+ "chrono",
+ "dashmap",
+ "encoding_rs",
+ "flate2",
+ "futures",
+ "la-core",
+ "la-storage",
+ "mime_guess",
+ "moka",
+ "num_cpus",
+ "once_cell",
+ "parking_lot",
+ "proptest",
+ "regex",
+ "scopeguard",
+ "serde",
+ "serde_json",
+ "sevenz-rust",
+ "sha2",
+ "tar",
+ "tauri",
+ "tempfile",
+ "tokio",
+ "tokio-tar",
+ "tokio-util",
+ "tracing",
+ "unicode-normalization",
+ "unrar",
+ "walkdir",
+ "windows-sys 0.52.0",
+ "zip",
+]
+
+[[package]]
+name = "la-core"
+version = "1.2.53"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "config",
+ "miette",
+ "num_cpus",
+ "once_cell",
+ "proptest",
+ "regex",
+ "sanitize-filename",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "toml 0.8.2",
+ "tracing",
+ "unicode-normalization",
+ "uuid",
+ "validator",
+]
+
+[[package]]
+name = "la-search"
+version = "1.2.53"
+dependencies = [
+ "aho-corasick",
+ "bincode",
+ "chrono",
+ "crossbeam",
+ "dashmap",
+ "futures",
+ "la-core",
+ "lru",
+ "num_cpus",
+ "once_cell",
+ "parking_lot",
+ "proptest",
+ "rayon",
+ "regex",
+ "roaring",
+ "serde",
+ "serde_json",
+ "tantivy",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
+name = "la-storage"
+version = "1.2.53"
+dependencies = [
+ "async-trait",
+ "bincode",
+ "chrono",
+ "dashmap",
+ "futures",
+ "la-core",
+ "libc",
+ "moka",
+ "parking_lot",
+ "proptest",
+ "rmp-serde",
+ "rustix 0.38.44",
+ "scopeguard",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sqlx",
+ "tempfile",
+ "tokio",
+ "tokio-test",
+ "tracing",
+ "uuid",
+ "walkdir",
+ "windows-sys 0.52.0",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3094,6 +3219,10 @@ dependencies = [
  "flate2",
  "futures",
  "governor",
+ "la-archive",
+ "la-core",
+ "la-search",
+ "la-storage",
  "libc",
  "libloading 0.8.9",
  "lru",

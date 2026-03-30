@@ -227,6 +227,7 @@ impl FileTypeFilter {
     }
 
     /// 简单的 glob 模式匹配（支持 * 和 ?）
+    #[allow(dead_code)]
     fn glob_match(&self, pattern: &str, text: &str) -> Result<bool, regex::Error> {
         // 转换为小写进行不区分大小写匹配
         let pattern_lower = pattern.to_lowercase();

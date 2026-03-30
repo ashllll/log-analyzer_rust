@@ -75,7 +75,8 @@ pub async fn async_search_logs(
 
         match result {
             Ok(count) => {
-                let _ = app_handle_for_result.emit("async-search-complete", (&search_id_clone, count));
+                let _ =
+                    app_handle_for_result.emit("async-search-complete", (&search_id_clone, count));
             }
             Err(e) => {
                 let _ = app_handle_for_result.emit("async-search-error", (&search_id_clone, &e));
@@ -201,7 +202,8 @@ async fn perform_async_search(
 
                     // 批量发送结果
                     if batch_results.len() >= batch_size {
-                        let _ = app.emit("async-search-results", &std::mem::take(&mut batch_results));
+                        let _ =
+                            app.emit("async-search-results", &std::mem::take(&mut batch_results));
                     }
                 }
             }

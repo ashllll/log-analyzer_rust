@@ -215,11 +215,15 @@ fn test_cas_architecture_present() {
     // Verify that CAS architecture components are present and being used
 
     let src_dir = Path::new("src");
-    assert!(src_dir.exists(), "Source directory should exist");
+    let crates_dir = Path::new("crates/la-storage/src");
+    assert!(
+        src_dir.exists() || crates_dir.exists(),
+        "Source directory should exist"
+    );
 
-    // Check for CAS-related files
-    let cas_file = src_dir.join("storage").join("cas.rs");
-    let metadata_store_file = src_dir.join("storage").join("metadata_store.rs");
+    // Check for CAS-related files (now in la-storage crate)
+    let cas_file = crates_dir.join("cas.rs");
+    let metadata_store_file = crates_dir.join("metadata_store.rs");
 
     assert!(
         cas_file.exists(),
@@ -329,8 +333,8 @@ fn test_metadata_db_uses_cas_schema() {
         }
     }
 
-    // Check metadata_store.rs for proper CAS schema
-    let metadata_store_file = Path::new("src/storage/metadata_store.rs");
+    // Check metadata_store.rs for proper CAS schema (now in la-storage crate)
+    let metadata_store_file = Path::new("crates/la-storage/src/metadata_store.rs");
     assert!(
         metadata_store_file.exists(),
         "MetadataStore file should exist"

@@ -229,7 +229,7 @@ pub async fn get_virtual_file_tree(
 async fn build_tree_structure(
     archives: &[crate::storage::ArchiveMetadata],
     files: &[crate::storage::FileMetadata],
-    metadata_store: &MetadataStore,
+    _metadata_store: &MetadataStore,
 ) -> Result<Vec<VirtualTreeNode>, String> {
     let mut tree = Vec::new();
 
@@ -293,7 +293,9 @@ fn build_archive_node_indexed<'a>(
         // O(1) HashMap lookup instead of O(n) linear scan
         if let Some(child_archives) = archive_children.get(&archive.id) {
             for child_archive in child_archives {
-                let child_node = build_archive_node_indexed(child_archive, archive_children, file_children).await?;
+                let child_node =
+                    build_archive_node_indexed(child_archive, archive_children, file_children)
+                        .await?;
                 children.push(child_node);
             }
         }

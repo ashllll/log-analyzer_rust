@@ -20,27 +20,18 @@
 //!         └── e145a3b2...
 //! ```
 
-pub mod cache_monitor;
-pub mod cas;
-pub mod coordinator;
-pub mod gc;
-pub mod integrity;
-pub mod metadata_store;
-pub mod metrics_store;
+// Re-export all types from la-storage crate
+pub use la_storage::{
+    verify_after_import, verify_file_integrity, verify_workspace_integrity, CacheHealthMetrics,
+    CacheMonitor, CacheMonitorConfig, ContentAddressableStorage, GCConfig, GCManager, GCStats,
+    GarbageCollector, IndexState, IndexedFile, InvalidFileInfo, MetadataStore, MetricsSnapshot,
+    MetricsSnapshotScheduler, MetricsStore, MetricsStoreStats, SearchEvent, StorageCoordinator,
+    TimeRange, ValidationReport,
+};
+
+// FileMetadata 和 ArchiveMetadata 的定义来自 la-core::storage_types，
+// 通过 la-storage 的 re-export 保持公开 API 不变。
+pub use la_storage::{ArchiveMetadata, FileMetadata};
 
 #[cfg(test)]
 mod integration_tests;
-
-pub use cache_monitor::{CacheHealthMetrics, CacheMonitor, CacheMonitorConfig};
-pub use cas::ContentAddressableStorage;
-pub use coordinator::StorageCoordinator;
-pub use gc::{GCConfig, GCManager, GCStats, GarbageCollector};
-pub use integrity::{
-    verify_after_import, verify_file_integrity, verify_workspace_integrity, InvalidFileInfo,
-    ValidationReport,
-};
-pub use metadata_store::{ArchiveMetadata, FileMetadata, IndexState, IndexedFile, MetadataStore};
-pub use metrics_store::{
-    MetricsSnapshot, MetricsSnapshotScheduler, MetricsStore, MetricsStoreStats, SearchEvent,
-    TimeRange,
-};

@@ -11,113 +11,44 @@
 //! - Support dependency injection for better architecture
 //! - Allow different implementations to be swapped at runtime
 
+// 从 la-core 重新导出的 trait 和类型
+pub use la_core::traits::{
+    ContentStorage, MetadataStorage, PlanResult, QueryExecutor, QueryValidation, ValidationResult,
+};
+
 use crate::error::Result;
 use crate::models::search::SearchQuery;
-use crate::storage::metadata_store::FileMetadata;
-use async_trait::async_trait;
 
-/// Query validation result
-#[derive(Debug, Clone)]
-pub struct ValidationResult {
-    /// Whether the query is valid
-    pub is_valid: bool,
-    /// List of validation errors (empty if valid)
-    pub errors: Vec<String>,
-}
-
-impl ValidationResult {
-    /// Create a successful validation result
-    pub fn valid() -> Self {
-        Self {
-            is_valid: true,
-            errors: Vec::new(),
-        }
-    }
-
-    /// Create a failed validation result with errors
-    pub fn invalid(errors: Vec<String>) -> Self {
-        Self {
-            is_valid: false,
-            errors,
-        }
-    }
-
-    /// Create a failed validation result with a single error
-    pub fn error(msg: impl Into<String>) -> Self {
-        Self {
-            is_valid: false,
-            errors: vec![msg.into()],
-        }
-    }
-}
-
-/// Query validation trait
+/// 查询计划 trait
 ///
-/// Implementors can validate search queries for correctness and constraints.
-/// This trait is object-safe and can be used for dependency injection.
-pub trait QueryValidation: Send + Sync {
-    /// Validate a search query
-    ///
-    /// # Arguments
-    /// * `query` - The search query to validate
-    ///
-    /// # Returns
-    /// A `ValidationResult` containing the validation status and any errors
-    fn validate(&self, query: &SearchQuery) -> ValidationResult;
-}
-
-/// Execution plan for query planning
-///
-/// This is a simplified representation of the planning result.
-/// The actual plan details are implementation-specific.
-#[derive(Debug, Clone)]
-pub struct PlanResult {
-    /// Execution steps description
-    pub steps: Vec<String>,
-    /// Estimated cost (arbitrary units, lower is better)
-    pub estimated_cost: u32,
-}
-
-impl PlanResult {
-    /// Create a new plan result
-    pub fn new(steps: Vec<String>, estimated_cost: u32) -> Self {
-        Self {
-            steps,
-            estimated_cost,
-        }
-    }
-}
-
-/// Query planning trait
-///
-/// Implementors can create execution plans from search queries.
-/// This enables different planning strategies to be used interchangeably.
+/// QueryPlanning 保留在主 crate 中，因为它引用了 ExecutionPlan（运行时类型）。
+/// 实现者可以从搜索查询创建执行计划，支持不同的计划策略互换使用。
 pub trait QueryPlanning: Send + Sync {
-    /// Create an execution plan for a search query
+    /// 为搜索查询创建执行计划
     ///
     /// # Arguments
-    /// * `query` - The search query to plan
+    /// * `query` - 待计划的搜索查询
     ///
     /// # Returns
-    /// A `Result` containing the plan result or an error
+    /// 包含计划结果或错误的 `Result`
     fn plan(&self, query: &SearchQuery) -> Result<PlanResult>;
 
-    /// Build an execution plan for a search query
+    /// 为搜索查询构建执行计划
     ///
-    /// This method returns the actual ExecutionPlan used by QueryExecutor.
-    /// Subclasses should override this to provide the actual execution plan.
+    /// 该方法返回 QueryExecutor 使用的实际 ExecutionPlan。
+    /// 子类应重写此方法以提供实际的执行计划。
     ///
     /// # Arguments
-    /// * `query` - The search query to plan
+    /// * `query` - 待计划的搜索查询
     ///
     /// # Returns
-    /// A `Result` containing the execution plan or an error
+    /// 包含执行计划或错误的 `Result`
     fn build_execution_plan(
         &self,
         query: &SearchQuery,
     ) -> Result<crate::services::query_planner::ExecutionPlan> {
-        // Default implementation: call plan() and return a minimal execution plan
-        // This is a fallback for backward compatibility
+        // 默认实现：调用 plan() 并返回最小执行计划
+        // 这是向后兼容的降级方案
         let plan_result = self.plan(query)?;
         Ok(crate::services::query_planner::ExecutionPlan::new(
             crate::services::query_planner::SearchStrategy::And,
@@ -128,93 +59,7 @@ pub trait QueryPlanning: Send + Sync {
     }
 }
 
-/// Content storage trait (CAS abstraction)
-///
-/// This trait abstracts content-addressable storage operations,
-/// allowing different storage backends to be used interchangeably.
-#[async_trait]
-pub trait ContentStorage: Send + Sync {
-    /// Store content and return its hash
-    ///
-    /// # Arguments
-    /// * `content` - The content bytes to store
-    ///
-    /// # Returns
-    /// The content hash (typically SHA-256) as a string
-    async fn store(&self, content: &[u8]) -> Result<String>;
-
-    /// Retrieve content by its hash
-    ///
-    /// # Arguments
-    /// * `hash` - The content hash
-    ///
-    /// # Returns
-    /// The content bytes, or an error if not found
-    async fn retrieve(&self, hash: &str) -> Result<Vec<u8>>;
-
-    /// Check if content exists by its hash
-    ///
-    /// # Arguments
-    /// * `hash` - The content hash
-    ///
-    /// # Returns
-    /// `true` if the content exists, `false` otherwise
-    async fn exists(&self, hash: &str) -> bool;
-}
-
-/// Metadata storage trait
-///
-/// This trait abstracts metadata storage operations,
-/// enabling different database backends or testing mocks.
-#[async_trait]
-pub trait MetadataStorage: Send + Sync {
-    /// Insert file metadata
-    ///
-    /// # Arguments
-    /// * `metadata` - The file metadata to insert
-    ///
-    /// # Returns
-    /// The auto-generated file ID
-    async fn insert_file(&self, metadata: &FileMetadata) -> Result<i64>;
-
-    /// Get all files
-    ///
-    /// # Returns
-    /// A vector of all file metadata
-    async fn get_all_files(&self) -> Result<Vec<FileMetadata>>;
-
-    /// Get file by its hash
-    ///
-    /// # Arguments
-    /// * `hash` - The file hash
-    ///
-    /// # Returns
-    /// The file metadata if found, or `None`
-    async fn get_file_by_hash(&self, hash: &str) -> Result<Option<FileMetadata>>;
-}
-
-/// Generic query executor trait
-///
-/// This trait abstracts query execution, allowing for different
-/// execution strategies and easy testing.
-pub trait QueryExecutor: Send + Sync {
-    /// Execute a search query and return results
-    ///
-    /// # Type Parameters
-    /// * `T` - The result type
-    ///
-    /// # Arguments
-    /// * `query` - The search query to execute
-    ///
-    /// # Returns
-    /// Query results or an error
-    fn execute<T>(&self, query: &SearchQuery) -> Result<T>
-    where
-        T: Send + Sync + 'static;
-}
-
 // ============== Trait Implementations for Existing Types ==============
 
-// Note: The actual implementations of these traits for the concrete types
-// (QueryValidator, QueryPlanner, ContentAddressableStorage, MetadataStore)
-// are in their respective source files to maintain modularity.
+// 注意：这些 trait 的具体实现（QueryValidator, QueryPlanner, ContentAddressableStorage, MetadataStore）
+// 位于各自的源文件中，以保持模块化。

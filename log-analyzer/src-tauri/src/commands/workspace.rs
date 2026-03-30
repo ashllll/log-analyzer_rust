@@ -81,7 +81,7 @@ pub async fn load_workspace(
     }
 
     // Open metadata store and get file count
-    let metadata_store = crate::storage::metadata_store::MetadataStore::new(&workspace_dir)
+    let metadata_store = crate::storage::MetadataStore::new(&workspace_dir)
         .await
         .map_err(|e| format!("Failed to open metadata store: {}", e))?;
 

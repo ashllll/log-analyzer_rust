@@ -13,8 +13,8 @@ fn create_file_metadata(
     original_name: &str,
     size: i64,
     depth_level: i32,
-) -> log_analyzer::storage::metadata_store::FileMetadata {
-    log_analyzer::storage::metadata_store::FileMetadata {
+) -> log_analyzer::storage::FileMetadata {
+    log_analyzer::storage::FileMetadata {
         id: 0, // Will be auto-generated
         sha256_hash: hash.to_string(),
         virtual_path: virtual_path.to_string(),

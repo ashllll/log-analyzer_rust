@@ -6,10 +6,11 @@
 //! - Respects depth limits
 //! - Logs appropriate warnings when depth limits are reached
 
+use la_archive::internal::metadata_db::MetadataDB;
 use log_analyzer::archive::{
-    ExtractionEngine, ExtractionPolicy, PathConfig, PathManager, SecurityDetector,
+    self as la_archive, ExtractionEngine, ExtractionPolicy, PathConfig, PathManager,
+    SecurityDetector,
 };
-use log_analyzer::services::MetadataDB;
 use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;

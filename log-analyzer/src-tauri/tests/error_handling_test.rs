@@ -1,3 +1,4 @@
+use la_archive::internal::metadata_db::MetadataDB;
 /// Test error handling and warning recording in extraction engine
 ///
 /// This test verifies that the extraction engine properly handles:
@@ -7,9 +8,9 @@
 /// 4. Depth limit warnings
 /// 5. Security event warnings
 use log_analyzer::archive::{
-    ExtractionEngine, ExtractionPolicy, PathConfig, PathManager, SecurityDetector,
+    self as la_archive, ExtractionEngine, ExtractionPolicy, PathConfig, PathManager,
+    SecurityDetector,
 };
-use log_analyzer::services::MetadataDB;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tempfile::TempDir;

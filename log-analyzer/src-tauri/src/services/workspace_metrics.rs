@@ -294,7 +294,7 @@ impl WorkspaceMetricsCollector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::metadata_store::FileMetadata;
+    use crate::storage::FileMetadata;
     use crate::storage::{ContentAddressableStorage, MetadataStore};
     use tempfile::TempDir;
 

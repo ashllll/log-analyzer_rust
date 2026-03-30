@@ -1,3 +1,12 @@
+[workspace]
+members = [
+    "crates/la-core",
+    "crates/la-storage",
+    "crates/la-search",
+    "crates/la-archive",
+]
+resolver = "2"
+
 [package]
 name = "log-analyzer"
 version = "1.2.53"
@@ -9,6 +18,12 @@ edition = "2021"
 tauri-build = { version = "2.0.0", features = [] }
 
 [dependencies]
+# Workspace crates
+la-core = { path = "crates/la-core" }
+la-storage = { path = "crates/la-storage" }
+la-search = { path = "crates/la-search" }
+la-archive = { path = "crates/la-archive" }
+
 tauri = { version = "2.0.0", features = [] }
 tauri-plugin-opener = "2.5"
 tauri-plugin-dialog = "2.6"
