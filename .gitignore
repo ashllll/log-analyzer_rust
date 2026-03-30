@@ -2,6 +2,7 @@
 .claude/
 .claude-flow/
 .swarm/
+.omc/
 
 # macOS
 .DS_Store

@@ -1,4 +1,4 @@
-//! 应用状态管理 - 简化版本
+//! 应用状态管理 - 异步优化版本 (tokio::sync::RwLock)
 
 use crate::services::file_watcher::WatcherState;
 use crate::state_sync::StateSync;
@@ -14,62 +14,43 @@ use la_search::VirtualSearchManager;
 use la_storage::ContentAddressableStorage;
 use la_storage::MetadataStore;
 use moka::sync::Cache;
-use parking_lot::Mutex;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
-/// 简化应用状态
+/// 应用状态 - 使用 tokio::sync::RwLock 支持异步上下文
 ///
-/// # 锁策略分析 (O6)
+/// # 锁策略 (O6-优化后)
 ///
-/// 所有字段使用 `parking_lot::Mutex` 而非 `tokio::sync::Mutex`。
-/// 经过审计，当前所有使用模式均遵循以下安全模式：
+/// 所有字段使用 `tokio::sync::RwLock` 替代 `parking_lot::Mutex`：
 ///
-/// 1. **短暂持锁 + 克隆**：`task_manager`、`state_sync`、`metadata_stores` 等字段
-///    在 `.await` 点前通过 `.lock().clone()` 获取值的副本，然后释放锁。
-///    这避免了跨 `.await` 持锁的问题。
+/// 1. **读写分离**：RwLock 支持多个并发读或单个写，提高并发性能
+/// 2. **异步安全**：可以安全地跨 `.await` 点持有锁，不会阻塞异步运行时
+/// 3. **符合 Tokio 最佳实践**：根据 Tokio 文档推荐，异步上下文中使用异步锁
 ///
-/// 2. **纯同步操作**：`workspace_dirs`、`cas_instances`、`search_engine_managers`
-///    等字段的锁仅在同步代码块中使用（插入/查询/删除），不涉及 `.await`。
+/// # 注意事项
 ///
-/// 3. **简单计数器**：`total_searches`、`cache_hits`、`last_search_duration` 等
-///    仅进行短暂的读/写操作。
-///
-/// **潜在风险点**：`file_watcher.rs` 中 `search_engine_managers.lock()` 持锁期间
-/// 执行 `add_document()` + `commit()`，虽然都是同步操作，但如果数据量大导致
-/// commit 耗时较长，可能阻塞其他需要访问 `search_engine_managers` 的线程。
-/// 如果未来出现性能问题，可考虑将该字段改为 `tokio::sync::Mutex` 或使用
-/// `DashMap`（类似 `WorkspaceState` 的做法）。
-///
-/// **结论**：当前使用 `parking_lot::Mutex` 是安全的，因为不存在跨 `.await`
-/// 持锁的情况。改为 `tokio::sync::Mutex` 会增加性能开销且需要修改大量命令代码，
-/// 收益不足以证明风险。
+/// - 读操作使用 `.read().await`
+/// - 写操作使用 `.write().await`
+/// - 锁守卫不能跨 `.await` 传递，需要时先克隆数据
 pub struct AppState {
-    // C-H1 优化: 使用 BTreeMap 替代 HashMap 保证工作区选择的确定性
-    // BTreeMap 按 key 的字母顺序排列，确保 dirs.keys().next() 返回确定的工作区
-    pub workspace_dirs: Arc<Mutex<BTreeMap<String, std::path::PathBuf>>>,
-    pub cas_instances: Arc<Mutex<HashMap<String, Arc<ContentAddressableStorage>>>>,
-    pub metadata_stores: Arc<Mutex<HashMap<String, Arc<MetadataStore>>>>,
-    pub task_manager: Arc<Mutex<Option<TaskManager>>>,
+    /// 工作区目录映射 - 使用 RwLock 支持并发读
+    pub workspace_dirs: Arc<RwLock<BTreeMap<String, std::path::PathBuf>>>,
+    pub cas_instances: Arc<RwLock<HashMap<String, Arc<ContentAddressableStorage>>>>,
+    pub metadata_stores: Arc<RwLock<HashMap<String, Arc<MetadataStore>>>>,
+    pub task_manager: Arc<RwLock<Option<TaskManager>>>,
     pub search_cancellation_tokens:
-        Arc<Mutex<HashMap<String, tokio_util::sync::CancellationToken>>>,
-    pub total_searches: Arc<Mutex<u64>>,
-    pub cache_hits: Arc<Mutex<u64>>,
-    pub last_search_duration: Arc<Mutex<std::time::Duration>>,
-    pub watchers: Arc<Mutex<HashMap<String, WatcherState>>>,
+        Arc<RwLock<HashMap<String, tokio_util::sync::CancellationToken>>>,
+    pub total_searches: Arc<RwLock<u64>>,
+    pub cache_hits: Arc<RwLock<u64>>,
+    pub last_search_duration: Arc<RwLock<std::time::Duration>>,
+    pub watchers: Arc<RwLock<HashMap<String, WatcherState>>>,
     pub cleanup_queue: Arc<CleanupQueue>,
-    /// 使用 CacheManager 提供高级缓存功能
-    pub cache_manager: Arc<Mutex<CacheManager>>,
-    pub state_sync: Arc<Mutex<Option<StateSync>>>,
-    /// 异步资源管理器，支持搜索取消和超时
+    pub cache_manager: Arc<RwLock<CacheManager>>,
+    pub state_sync: Arc<RwLock<Option<StateSync>>>,
     pub async_resource_manager: Arc<AsyncResourceManager>,
-    /// 搜索引擎管理器映射 (每个工作区独立)
-    /// 用于增量索引时持久化新日志条目到 Tantivy 索引
-    pub search_engine_managers: Arc<Mutex<HashMap<String, Arc<SearchEngineManager>>>>,
-    /// 虚拟搜索管理器 - 支持服务端虚拟化和分页加载
+    pub search_engine_managers: Arc<RwLock<HashMap<String, Arc<SearchEngineManager>>>>,
     pub virtual_search_manager: Arc<VirtualSearchManager>,
-    /// 磁盘搜索结果存储 - Notepad++ 式磁盘直写架构
-    /// 搜索结果写入磁盘，前端按需分页读取，避免前端持有大量 JS 对象
     pub disk_result_store: Arc<DiskResultStore>,
 }
 
