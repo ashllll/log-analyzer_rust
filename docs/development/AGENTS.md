@@ -1,4 +1,29 @@
-# Repository Guidelines
+<!-- Parent: ../AGENTS.md -->
+<!-- Generated: 2026-03-31 | Updated: 2026-03-31 -->
+
+# development (开发指南)
+
+## Purpose
+开发流程、编码规范和最佳实践文档。
+
+## Key Files
+
+| File | Description |
+|------|-------------|
+| `CLAUDE.md` | AI助手上下文文档（项目总览） |
+| `AGENTS.md` | 本文件 |
+
+## For AI Agents
+
+### Working In This Directory
+- 文档应与 CLAUDE.md 保持一致
+- 更新流程变更时同步修改
+
+### Common Patterns
+- 使用具体示例说明规范
+- 包含常见问题解答
+
+<!-- MANUAL: 原有内容保留在下方 -->
 
 ## 项目结构与模块组织
 - 根目录 `log-analyzer/` 为主工程；`src/` 存放 React 界面与业务逻辑（pages、components、contexts、services、types、utils），`public/` 为静态资源。
