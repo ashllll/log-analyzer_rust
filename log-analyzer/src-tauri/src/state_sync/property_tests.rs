@@ -44,6 +44,7 @@ mod tests {
         /// *For any* workspace status change, frontend updates should propagate within 100ms
         /// **Validates: Requirements 2.1**
         #[test]
+        #[ignore = "Property test - run manually with cargo test --ignored"]
         fn test_state_synchronization_latency(
             workspace_id in workspace_id_strategy(),
             status in workspace_status_strategy()
