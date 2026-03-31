@@ -1,101 +1,56 @@
-# 日志分析器文档中心
+# 文档索引
 
-本目录包含日志分析器项目的所有文档。
+本目录只保留当前项目仍需维护的核心文档。原则是：
 
-## 📁 文档结构
+- 保留会随着代码一起长期维护的说明
+- 删除一次性分析、修复计划、工具迁移残留和重复指南
+- 文档内容以当前代码真实行为为准
 
-### 📐 架构文档 (`architecture/`)
-系统架构、设计决策和技术规范
+## 建议阅读顺序
 
-- **CAS_ARCHITECTURE.md** - 内容寻址存储(CAS)架构详解
-- **API.md** - API 接口文档
-- **ADVANCED_SEARCH_FEATURES_EXPLANATION.md** - 高级搜索功能说明
-- **ARCHITECTURE_OPTIMIZATION_SUMMARY.md** - 架构优化总结
-- **modules/** - 模块架构文档
-  - **MODULE_ARCHITECTURE.md** - 完整模块架构文档
-  - **README.md** - 模块架构索引
+1. [项目总览](../README.md)
+2. [贡献指南](./CONTRIB.md)
+3. [IPC API 概览](./architecture/API.md)
+4. [模块架构](./architecture/modules/MODULE_ARCHITECTURE.md)
+5. [CAS 架构](./architecture/CAS_ARCHITECTURE.md)
 
-### 📚 用户指南 (`guides/`)
-用户使用指南和快速参考
+## 保留文档
 
-- **QUICK_REFERENCE.md** - 快速参考指南
-- **MULTI_KEYWORD_SEARCH_GUIDE.md** - 多关键词搜索指南
+### 项目与流程
 
-### 🛠️ 开发文档 (`development/`)
-开发环境配置、工具和流程
+- [CONTRIB.md](./CONTRIB.md)
+  - 开发环境、提交流程、测试约定
+- [RUNBOOK.md](./RUNBOOK.md)
+  - 运行、排障、回滚与常见问题
+- [search-optimization-review.md](./search-optimization-review.md)
+  - 搜索性能和边界条件的最新审核记录
 
-- **AGENTS.md** - AI Agent 开发指南
-- **CLAUDE.md** - Claude AI 使用说明
-- **gitlab-local-testing.md** - GitLab 本地测试指南
-- **jenkins-local-testing.md** - Jenkins 本地测试指南
-- **upgrade-nodejs.md** - Node.js 升级指南
+### 架构
 
-### 📊 项目报告 (`reports/`)
-项目进展报告和验证文档
+- [architecture/API.md](./architecture/API.md)
+  - 前后端 IPC 命令与事件的核心接口说明
+- [architecture/CAS_ARCHITECTURE.md](./architecture/CAS_ARCHITECTURE.md)
+  - 工作区存储、CAS、元数据和导入链路
+- [architecture/modules/MODULE_ARCHITECTURE.md](./architecture/modules/MODULE_ARCHITECTURE.md)
+  - 当前代码模块、职责边界与调用关系
+- [architecture/modules/README.md](./architecture/modules/README.md)
+  - 模块架构文档入口
 
-#### 当前报告 (`reports/current/`)
-- **CAS_OPTIMIZATION_20260109.md** - CAS架构性能优化 (2026-01-09)
-- **RAR_PURE_RUST_20260109.md** - RAR处理器纯Rust重构 (2026-01-09)
-- **MIGRATION_IMPLEMENTATION_SUMMARY.md** - 迁移实施摘要
+### 仓库级文档
 
-#### 历史归档 (`reports/archive/`)
-已完成的历史报告、任务文档和验证文档
+- [../CHANGELOG.md](../CHANGELOG.md)
+  - 历史版本变更记录
+- [../RELEASE_PROCESS.md](../RELEASE_PROCESS.md)
+  - 发布步骤与校验要求
 
-- **[归档文档索引](reports/archive/README.md)** - 查看所有归档文档
-- **[fixes/](reports/archive/fixes/)** - Bug修复和问题解决文档（7个）
-- **[plans/](reports/archive/plans/)** - 已完成的实施计划（4个）
-- **[tasks/](reports/archive/tasks/)** - 任务完成报告（14个）
-- **[validation/](reports/archive/validation/)** - 验证和测试报告（7个）
+## 已移除的文档类型
 
-#### 验证报告
-- **TASK_13_FINAL_VALIDATION_REPORT.md** - TaskManager 生产就绪验证报告
-- **CODE_REVIEW_REPORT.md** - 代码审查报告
+以下类型不再作为主文档保留：
 
-## 🔍 快速导航
+- 一次性架构分析报告
+- 代码审查报告与修复计划
+- AI 工具专用 `CLAUDE.md` 说明
+- 与当前 CI 不匹配的本地 GitLab / Jenkins 模拟文档
+- 与主 README 重复的用户快速参考页
 
-### 新用户
-1. 阅读项目根目录的 [README.md](../README.md)
-2. 了解 [CAS架构](architecture/CAS_ARCHITECTURE.md)
-3. 查看 [快速参考指南](guides/QUICK_REFERENCE.md)
-4. 了解 [多关键词搜索](guides/MULTI_KEYWORD_SEARCH_GUIDE.md)
-
-### 开发者
-1. 了解 [CAS架构设计](architecture/CAS_ARCHITECTURE.md)
-2. 查看 [API 接口](architecture/API.md)
-3. 阅读 [开发文档](development/)
-4. 查看 [架构说明](architecture/)
-
-### 项目管理
-1. 查看 [最新报告](reports/)
-2. 了解项目变更历史 [CHANGELOG.md](../CHANGELOG.md)
-
-## 📝 文档维护
-
-### 文档分类原则
-- **architecture/** - 长期有效的架构和设计文档
-- **guides/** - 面向用户的使用指南
-- **development/** - 开发环境和工具文档
-- **reports/** - 项目报告（当前有效）
-- **reports/archive/** - 历史报告（已完成/过期）
-
-### 归档规则
-当报告或状态文档不再活跃时，应移动到 `reports/archive/` 目录。
-
-## 🏗️ 架构亮点
-
-### 内容寻址存储(CAS)
-
-Log Analyzer 采用类似Git的内容寻址存储架构：
-
-- ✅ **自动去重**: 相同内容只存储一次
-- ✅ **无路径限制**: 使用SHA-256哈希，不受路径长度限制
-- ✅ **数据完整性**: 哈希验证确保内容未被篡改
-- ✅ **高效查询**: SQLite + FTS5全文搜索，性能提升10倍+
-
-详见 [CAS架构文档](architecture/CAS_ARCHITECTURE.md)
-
-## 🔗 相关链接
-
-- [项目主页](../README.md)
-- [变更日志](../CHANGELOG.md)
-- [CAS迁移完成规范](../.kiro/specs/complete-cas-migration/)
+如后续需要恢复某类文档，要求先确认它仍有持续维护价值。

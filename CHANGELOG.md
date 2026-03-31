@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- 精简仓库说明文档，仅保留长期维护的核心 README、流程文档和架构文档
+- 更新搜索、CAS 与模块架构文档，使描述与当前代码主链路一致
+
+### Removed
+- 删除一次性分析报告、修复计划、AI 工具说明和过时的本地 CI/迁移文档
+
 ## [1.2.55] - 2026-03-29
 
 ### ⚡ Performance

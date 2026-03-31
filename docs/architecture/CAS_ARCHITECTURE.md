@@ -1,733 +1,119 @@
-# Content-Addressable Storage (CAS) Architecture
+# CAS 架构
 
-## Overview
+本项目使用内容寻址存储（Content-Addressable Storage, CAS）保存导入后的文件内容，并使用 SQLite 保存元数据。
 
-Log Analyzer uses a Git-style Content-Addressable Storage (CAS) system to manage extracted archive files. This architecture solves critical issues with traditional path-based storage, particularly for nested archives and long file paths.
+## 为什么使用 CAS
 
-## Table of Contents
+目标：
 
-- [Problem Statement](#problem-statement)
-- [Solution: CAS Architecture](#solution-cas-architecture)
-- [Storage Structure](#storage-structure)
-- [Data Flow](#data-flow)
-- [Key Components](#key-components)
-- [Benefits](#benefits)
-- [Migration Guide](#migration-guide)
-- [Troubleshooting](#troubleshooting)
+- 让工作区内容与原始导入路径解耦
+- 对重复内容自动去重
+- 支撑嵌套压缩包导入
+- 为搜索、虚拟文件树和导出提供稳定的数据源
 
-## Problem Statement
+相对传统“路径映射”方案，CAS 的优势是：
 
-### Traditional Path-Based Storage Issues
+- 文件内容只按哈希存一份
+- 虚拟路径可独立维护
+- 不依赖临时解压路径长期存在
 
-The original implementation used a HashMap to map real file paths to virtual paths:
+## 核心组成
 
-```rust
-HashMap<String, String>  // real_path -> virtual_path
-```
+### 1. CAS 对象存储
 
-This approach had several critical problems:
+实现位置：
 
-1. **Path Length Limitations**
-   - Windows has a 260-character path limit
-   - Nested archives quickly exceed this limit
-   - Example: `C:\Users\...\workspace\archive1_123\archive2_456\archive3_789\file.log`
+- `log-analyzer/src-tauri/src/storage/`
+- `log-analyzer/src-tauri/crates/la-storage/`
 
-2. **Search Failures**
-   - Path mappings could become inconsistent
-   - Extracted files might not be accessible during search
-   - No validation of path existence
+对象以 SHA-256 哈希为标识保存。
 
-3. **Disk Space Waste**
-   - Duplicate files stored multiple times
-   - No deduplication mechanism
-   - Large archives consume excessive space
+目录形态：
 
-4. **Nested Archive Complexity**
-   - Deep nesting creates extremely long paths
-   - Temporary directories difficult to manage
-   - Cleanup challenges
-
-## Solution: CAS Architecture
-
-### Core Concept
-
-Content-Addressable Storage uses the **content hash** (SHA-256) as the file identifier instead of file paths:
-
-```rust
-// Old approach
-HashMap<String, String>  // real_path -> virtual_path
-
-// New approach (CAS)
-ContentAddressableStorage {
-    objects_dir: PathBuf,  // Storage directory
-}
-
-MetadataStore {
-    database: SqliteConnection,  // SQLite database
-    // Tables: files, archives, files_fts
-}
-```
-
-### Key Principles
-
-1. **Content-Based Addressing**: Files are identified by their SHA-256 hash
-2. **Automatic Deduplication**: Identical content stored only once
-3. **Path Independence**: No reliance on file system paths
-4. **Metadata Separation**: File metadata stored in SQLite database
-5. **Full-Text Search**: FTS5 index for fast content queries
-
-## Storage Structure
-
-### Directory Layout
-
-```
-workspace_dir/
-├── objects/                    # CAS object storage (Git-style)
-│   ├── ab/                    # First 2 chars of hash
-│   │   ├── cdef1234...        # Full SHA-256 hash (remaining chars)
-│   │   └── 5678abcd...
-│   ├── cd/
-│   │   └── ef456789...
+```text
+workspace/
+├── objects/
+│   ├── ab/
+│   │   └── cdef...
 │   └── ...
-├── metadata.db                # SQLite metadata database
-└── extracted/                 # Temporary extraction directory
-    ├── archive1_timestamp/
-    └── archive2_timestamp/
+└── metadata.db
 ```
 
-### SQLite Schema
+### 2. SQLite 元数据
 
-#### files Table
+元数据保存：
 
-```sql
-CREATE TABLE files (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    sha256_hash TEXT NOT NULL UNIQUE,
-    virtual_path TEXT NOT NULL,
-    original_name TEXT NOT NULL,
-    size INTEGER NOT NULL,
-    modified_time INTEGER,
-    mime_type TEXT,
-    parent_archive_id INTEGER,
-    depth_level INTEGER NOT NULL DEFAULT 0,
-    FOREIGN KEY (parent_archive_id) REFERENCES archives(id)
-);
+- 文件虚拟路径
+- 原始名称
+- 大小和修改时间
+- 所属压缩包关系
+- 层级深度
 
-CREATE INDEX idx_files_virtual_path ON files(virtual_path);
-CREATE INDEX idx_files_parent_archive ON files(parent_archive_id);
-CREATE INDEX idx_files_hash ON files(sha256_hash);
+核心表：
+
+- `files`
+- `archives`
+
+### 3. 搜索读取链路
+
+当前真实搜索主链路不是直接依赖数据库全文索引，而是：
+
+1. `MetadataStore::get_all_files()` 取出候选文件
+2. 通过 CAS 读取文件内容
+3. 由 `QueryExecutor` 做逐行匹配
+4. 结果写入磁盘分页存储
+
+这意味着：
+
+- CAS 是搜索主链路的真实内容来源
+- 文档描述必须以这条链路为准
+
+## 数据流
+
+导入：
+
+```text
+文件/压缩包
+→ 计算 SHA-256
+→ 写入 CAS 对象目录
+→ 写入 SQLite 元数据
+→ 建立文件与归档关系
 ```
 
-#### archives Table
+搜索：
 
-```sql
-CREATE TABLE archives (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    sha256_hash TEXT NOT NULL UNIQUE,
-    virtual_path TEXT NOT NULL,
-    original_name TEXT NOT NULL,
-    archive_type TEXT NOT NULL,
-    parent_archive_id INTEGER,
-    depth_level INTEGER NOT NULL DEFAULT 0,
-    extraction_status TEXT NOT NULL DEFAULT 'pending',
-    FOREIGN KEY (parent_archive_id) REFERENCES archives(id)
-);
-
-CREATE INDEX idx_archives_parent ON archives(parent_archive_id);
-CREATE INDEX idx_archives_status ON archives(extraction_status);
+```text
+search_logs
+→ MetadataStore 取文件列表
+→ CAS 读取内容
+→ QueryExecutor 匹配
+→ DiskResultStore 按页写盘
+→ fetch_search_page 读取分页
 ```
 
-#### files_fts Table (Full-Text Search)
+## 与压缩包处理的关系
 
-```sql
-CREATE VIRTUAL TABLE files_fts USING fts5(
-    virtual_path,
-    original_name,
-    content='files',
-    content_rowid='id'
-);
-```
+压缩包能力主要由 `la-archive` 提供。CAS 在这里承担两件事：
 
-## Data Flow
+- 保存解压后的实际内容
+- 让嵌套文件通过虚拟路径对外可见
 
-### Import Flow
+因此业务上可以同时保留：
 
-```
-┌─────────────┐
-│ User File   │
-└──────┬──────┘
-       │
-       ▼
-┌─────────────────────┐
-│ Compute SHA-256     │
-│ (streaming, 8KB)    │
-└──────┬──────────────┘
-       │
-       ▼
-┌─────────────────────┐
-│ Check Deduplication │
-│ (exists in CAS?)    │
-└──────┬──────────────┘
-       │
-       ├─ Yes ─> Skip storage, use existing hash
-       │
-       └─ No ──> Store to objects/ab/cdef123...
-                 │
-                 ▼
-          ┌──────────────────┐
-          │ Insert Metadata  │
-          │ to SQLite        │
-          └──────────────────┘
-```
+- 内容哈希
+- 虚拟路径
+- 父归档层级关系
 
-### Search Flow
+## 当前边界
 
-```
-┌─────────────┐
-│ User Query  │
-└──────┬──────┘
-       │
-       ▼
-┌─────────────────────┐
-│ FTS5 Index Query    │
-│ (metadata.db)       │
-└──────┬──────────────┘
-       │
-       ▼
-┌─────────────────────┐
-│ Get File Hash List  │
-└──────┬──────────────┘
-       │
-       ▼
-┌─────────────────────┐
-│ Read from CAS       │
-│ (objects/ab/cdef...) │
-└──────┬──────────────┘
-       │
-       ▼
-┌─────────────────────┐
-│ Search Content      │
-│ Return Results      │
-└─────────────────────┘
-```
+当前需要认清的边界：
 
-### Nested Archive Processing
+- CAS 负责内容与元数据，不等于“搜索引擎”
+- SQLite 中存在与搜索相关的基础设施，但主搜索链路仍是文件扫描 + 匹配执行
+- 旧迁移说明和历史兼容文档已移除，不再作为当前架构依据
 
-```
-archive1.zip
-├── file1.log          → Store in CAS, depth=0
-├── file2.log          → Store in CAS, depth=0
-└── archive2.tar.gz    → Extract recursively
-    ├── file3.log      → Store in CAS, depth=1
-    └── archive3.gz    → Extract recursively
-        └── file4.log  → Store in CAS, depth=2
-```
+## 相关文档
 
-Each level:
-1. Extract to temporary directory
-2. Store archive metadata in `archives` table
-3. Process extracted files recursively
-4. Store file content in CAS
-5. Record file metadata with `parent_archive_id` and `depth_level`
-
-## Key Components
-
-### 1. ContentAddressableStorage
-
-**Location**: `crates/la-storage/src/cas.rs`
-
-**Responsibilities**:
-- Compute SHA-256 hashes (streaming for large files)
-- Store content in Git-style directory structure
-- Read content by hash
-- Check content existence
-- Automatic deduplication
-
-**Key Methods**:
-
-```rust
-impl ContentAddressableStorage {
-    // Compute hash from bytes
-    pub fn compute_hash(content: &[u8]) -> String;
-    
-    // Store content and return hash
-    pub async fn store_content(&self, content: &[u8]) -> Result<String>;
-    
-    // Store file using streaming (memory-efficient)
-    pub async fn store_file_streaming(&self, path: &Path) -> Result<String>;
-    
-    // Read content by hash
-    pub async fn read_content(&self, hash: &str) -> Result<Vec<u8>>;
-    
-    // Check if hash exists
-    pub fn exists(&self, hash: &str) -> bool;
-    
-    // Get object path from hash
-    pub fn get_object_path(&self, hash: &str) -> PathBuf;
-}
-```
-
-### 2. MetadataStore
-
-**Location**: `crates/la-storage/src/metadata_store.rs`
-
-**Responsibilities**:
-- Manage SQLite database connection
-- Insert/query file metadata
-- Insert/query archive metadata
-- Full-text search using FTS5
-- Transaction management
-
-**Key Methods**:
-
-```rust
-impl MetadataStore {
-    // Initialize database and create tables
-    pub async fn new(db_path: &str) -> Result<Self>;
-    
-    // Insert file metadata
-    pub async fn insert_file(&self, metadata: &FileMetadata) -> Result<i64>;
-    
-    // Insert archive metadata
-    pub async fn insert_archive(&self, metadata: &ArchiveMetadata) -> Result<i64>;
-    
-    // Search files by virtual path
-    pub async fn search_files(&self, query: &str) -> Result<Vec<FileMetadata>>;
-    
-    // Get file by virtual path
-    pub async fn get_file_by_virtual_path(&self, path: &str) -> Result<Option<FileMetadata>>;
-    
-    // Get archive children
-    pub async fn get_archive_children(&self, archive_id: i64) -> Result<Vec<FileMetadata>>;
-    
-    // Update archive extraction status
-    pub async fn update_archive_status(&self, archive_id: i64, status: &str) -> Result<()>;
-}
-```
-
-### 3. Storage Coordinator (Saga Pattern)
-
-**Location**: `crates/la-storage/src/coordinator.rs`
-
-**Responsibilities**:
-- Ensure atomicity between CAS and MetadataStore operations
-- Implement Saga compensation transaction pattern
-- Handle failures with automatic rollback
-- Prevent orphaned files and inconsistent metadata
-
-**Key Methods**:
-
-```rust
-impl StorageCoordinator {
-    /// Atomically store a file with its metadata
-    /// Uses Saga pattern: CAS write first, then metadata transaction
-    pub async fn store_file_atomic(
-        &self,
-        path: &Path,
-        file_metadata: FileMetadata,
-    ) -> Result<(String, i64)>;
-}
-```
-
-**Saga Pattern Flow**:
-
-```
-1. Write file to CAS (content-addressable storage)
-   └─ If fails: Return error, no cleanup needed
-
-2. Begin metadata transaction
-   └─ If fails: Return error, CAS file may be orphaned (GC will clean)
-
-3. Insert metadata record with hash
-   └─ If fails: Rollback transaction, cleanup CAS file if no other refs
-
-4. Commit transaction
-   └─ If fails: Rollback transaction, cleanup orphaned CAS file
-```
-
-**Benefits**:
-- ✅ Strong consistency between CAS and metadata
-- ✅ Automatic cleanup on failure
-- ✅ Reference counting prevents premature deletion
-- ✅ Detailed error logging for debugging
-
-### 4. Garbage Collector
-
-**Location**: `crates/la-storage/src/gc.rs`
-
-**Responsibilities**:
-- Background cleanup of orphaned CAS files
-- Reference counting to identify unreferenced objects
-- Configurable GC policies (interval, age thresholds)
-- Safe deletion with verification
-
-**Configuration**:
-
-```rust
-pub struct GCConfig {
-    /// Interval between automatic GC runs (default: 1 hour)
-    pub interval: Duration,
-    /// Minimum file age before GC (safety buffer, default: 5 minutes)
-    pub min_file_age: Duration,
-    /// Maximum files to process per run (default: 1000)
-    pub batch_size: usize,
-    /// Dry-run mode for testing (default: false)
-    pub dry_run: bool,
-}
-```
-
-**Usage**:
-
-```rust
-// Create GC instance
-let gc = Arc::new(GarbageCollector::new(
-    cas.clone(),
-    metadata_store.clone(),
-    GCConfig::default(),
-));
-
-// Run manual full GC
-let stats = gc.run_full_gc().await?;
-println!("Reclaimed {} bytes", stats.bytes_reclaimed);
-
-// Start automatic background GC
-let (shutdown_tx, shutdown_rx) = tokio::sync::mpsc::channel(1);
-gc.start_background_gc(shutdown_rx);
-```
-
-### 5. Cache Consistency Monitor
-
-**Location**: `crates/la-storage/src/cache_monitor.rs`
-
-**Responsibilities**:
-- Monitor CAS existence cache health
-- Detect and fix stale cache entries
-- Track hit/miss ratios
-- Background consistency verification
-
-**Metrics**:
-
-```rust
-pub struct CacheHealthMetrics {
-    pub total_lookups: u64,
-    pub hits: u64,
-    pub misses: u64,
-    pub stale_entries: u64,
-    pub inconsistencies_fixed: u64,
-    pub hit_ratio: f64,
-}
-```
-
-### 6. Archive Processor (CAS Integration)
-
-**Location**: `crates/la-archive/src/processor.rs`
-
-**Key Functions**:
-
-```rust
-// Process path with CAS
-pub async fn process_path_with_cas(
-    path: &Path,
-    virtual_path: &str,
-    workspace_dir: &Path,
-    cas: &ContentAddressableStorage,
-    metadata_store: Arc<MetadataStore>,
-    app: &AppHandle,
-    task_id: &str,
-    workspace_id: &str,
-    parent_archive_id: Option<i64>,
-    depth_level: i32,
-) -> Result<()>;
-
-// Process with checkpoint support
-pub async fn process_path_with_cas_and_checkpoints(
-    path: &Path,
-    virtual_path: &str,
-    context: &CasProcessingContext,
-    app: &AppHandle,
-    task_id: &str,
-    workspace_id: &str,
-    parent_archive_id: Option<i64>,
-    depth_level: i32,
-) -> Result<()>;
-```
-
-### 4. Search Integration
-
-**Location**: `src-tauri/src/commands/search.rs`
-
-**CAS-Based Search**:
-
-```rust
-// File identifier format: "cas://<sha256_hash>"
-fn search_single_file_with_details(
-    file_identifier: &str,  // "cas://abc123..." or "/path/to/file"
-    virtual_path: &str,
-    cas_opt: Option<&ContentAddressableStorage>,
-    executor: &QueryExecutor,
-    plan: &ExecutionPlan,
-    global_offset: usize,
-) -> Vec<LogEntry>;
-```
-
-## Benefits
-
-### 1. No Path Length Limitations
-
-**Before (Path-Based)**:
-```
-❌ C:\Users\...\workspace\archive1_123\archive2_456\archive3_789\very_long_filename.log
-   (Exceeds 260 characters on Windows)
-```
-
-**After (CAS)**:
-```
-✅ objects/ab/cdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
-   (Fixed length, no nesting issues)
-```
-
-### 2. Automatic Deduplication
-
-**Scenario**: Import 3 archives containing the same `config.json` file
-
-**Before**:
-```
-workspace/archive1/config.json  (1 KB)
-workspace/archive2/config.json  (1 KB)
-workspace/archive3/config.json  (1 KB)
-Total: 3 KB
-```
-
-**After**:
-```
-objects/ab/cdef123...  (1 KB)
-Total: 1 KB (66% space saved)
-```
-
-### 3. Data Integrity
-
-- SHA-256 hash verifies content hasn't been corrupted
-- Immutable storage (content never modified)
-- Atomic operations with SQLite transactions
-
-### 4. Fast Queries
-
-**FTS5 Full-Text Search**:
-- 10x faster than scanning all files
-- Supports complex queries
-- Automatic index updates
-
-**Example Query Performance**:
-```
-Traditional: Scan 10,000 files → 5 seconds
-CAS + FTS5:  Query index → 0.5 seconds (10x faster)
-```
-
-### 5. Perfect Nested Archive Support
-
-- No depth limit (configurable max: 10 levels)
-- Each level tracked in database
-- Parent-child relationships maintained
-- Virtual file tree reconstruction
-
-## Migration Guide
-
-### Automatic Migration
-
-The application automatically detects old-format workspaces and prompts for migration:
-
-1. **Detection**: On workspace load, check for `path_map.bin` (old format)
-2. **Prompt**: Show migration dialog to user
-3. **Migration**: Convert old path mappings to CAS + metadata
-4. **Verification**: Validate all files accessible after migration
-
-### Manual Migration
-
-If automatic migration fails, use the migration command:
-
-```rust
-// Tauri command
-#[command]
-pub async fn migrate_workspace_to_cas(
-    workspace_id: String,
-    state: State<'_, AppState>,
-) -> Result<MigrationResult, String>;
-```
-
-### Migration Process
-
-```
-1. Read old path_map.bin
-2. For each file:
-   a. Read file content
-   b. Compute SHA-256 hash
-   c. Store in CAS (if not exists)
-   d. Insert metadata to SQLite
-3. Verify all files accessible
-4. Backup old format
-5. Mark workspace as migrated
-```
-
-### Rollback
-
-If migration fails:
-1. Old `path_map.bin` is preserved as `path_map.bin.backup`
-2. Delete `metadata.db` and `objects/` directory
-3. Restore from backup
-
-## Troubleshooting
-
-### Issue: "Hash not found in CAS"
-
-**Symptoms**: Search returns no results, or files can't be opened
-
-**Causes**:
-- Incomplete migration
-- Corrupted CAS storage
-- Database out of sync
-
-**Solutions**:
-1. Check CAS integrity:
-   ```rust
-   // Verify all hashes in database exist in CAS
-   let validator = IndexValidator::new(cas, metadata_store);
-   let report = validator.validate().await?;
-   ```
-
-2. Re-import workspace if validation fails
-
-### Issue: "Database locked"
-
-**Symptoms**: Import fails with "database is locked" error
-
-**Causes**:
-- Multiple processes accessing same workspace
-- Incomplete transaction
-
-**Solutions**:
-1. Close other instances of the application
-2. Wait for current operations to complete
-3. If persists, delete `metadata.db-wal` and `metadata.db-shm` files
-
-### Issue: "Out of disk space"
-
-**Symptoms**: Import fails partway through
-
-**Causes**:
-- Large archives
-- Insufficient disk space
-
-**Solutions**:
-1. Check available disk space
-2. Clean up old workspaces
-3. Use checkpoint recovery to resume import
-
-### Issue: "Slow search performance"
-
-**Symptoms**: Search takes several seconds
-
-**Causes**:
-- FTS5 index not built
-- Large number of files
-- Complex query
-
-**Solutions**:
-1. Rebuild FTS5 index:
-   ```sql
-   INSERT INTO files_fts(files_fts) VALUES('rebuild');
-   ```
-
-2. Optimize database:
-   ```sql
-   VACUUM;
-   ANALYZE;
-   ```
-
-3. Simplify query or add filters
-
-## Performance Characteristics
-
-### Storage Overhead
-
-- **Hash computation**: ~50 MB/s (streaming)
-- **Deduplication check**: O(1) - hash lookup
-- **Storage write**: Limited by disk I/O
-- **Metadata insert**: ~10,000 records/second
-
-### Query Performance
-
-- **FTS5 search**: ~100,000 records/second
-- **Hash-based retrieval**: O(1) - direct file access
-- **Virtual path lookup**: O(log n) - indexed query
-
-### Memory Usage
-
-- **Streaming hash**: 8 KB buffer (constant)
-- **SQLite connection**: ~10 MB per workspace
-- **CAS cache**: Configurable (default: 100 MB)
-
-## Reliability Features
-
-### Implemented Safety Mechanisms
-
-1. **TempFileGuard (RAII Pattern)**
-   - Ensures temporary files are cleaned up even on panic or early return
-   - Uses Rust's Drop trait for guaranteed cleanup
-   - Supports both sync and async cleanup
-
-2. **Double-Check Cache Pattern**
-   - Cache indicates existence → Verify filesystem state
-   - Prevents stale cache reads after external modifications
-   - Automatic invalidation on mismatch
-
-3. **TOCTOU Protection**
-   - Uses `create_new(true)` (O_EXCL flag) for atomic file creation
-   - Prevents race conditions in concurrent writes
-   - Graceful handling of `AlreadyExists` errors
-
-4. **Transaction Rollback with Orphan Cleanup**
-   - Metadata transaction rollback on failure
-   - Automatic detection and cleanup of orphaned CAS files
-   - Reference counting prevents premature deletion
-
-## Future Enhancements
-
-### Planned Features
-
-1. **Compression**: Store objects with gzip compression
-2. **Distributed Storage**: Support remote CAS backends
-3. **Incremental Hashing**: Resume hash computation for large files
-4. **Advanced Content Verification**: Periodic integrity checks with checksums
-
-### API Extensions
-
-```rust
-// Planned APIs
-impl ContentAddressableStorage {
-    // Compress objects
-    pub async fn compact(&self) -> Result<CompactionStats>;
-
-    // Advanced integrity verification
-    pub async fn verify(&self) -> Result<VerificationReport>;
-}
-```
-
-## References
-
-- [Git Internals - Git Objects](https://git-scm.com/book/en/v2/Git-Internals-Git-Objects)
-- [SQLite FTS5 Extension](https://www.sqlite.org/fts5.html)
-- [SHA-256 Specification](https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.180-4.pdf)
-- [Content-Addressable Storage (Wikipedia)](https://en.wikipedia.org/wiki/Content-addressable_storage)
-
-## Conclusion
-
-The CAS architecture provides a robust, scalable solution for managing extracted archive files. By decoupling content from file paths and leveraging content-based addressing, we achieve:
-
-- ✅ No path length limitations
-- ✅ Automatic deduplication
-- ✅ Data integrity guarantees
-- ✅ Fast full-text search
-- ✅ Perfect nested archive support
-- ✅ Efficient disk space usage
-
-This architecture forms the foundation for reliable, high-performance log analysis at scale.
+- [IPC API 概览](./API.md)
+- [模块架构](./modules/MODULE_ARCHITECTURE.md)
+- [搜索优化与边界条件审核](../search-optimization-review.md)
