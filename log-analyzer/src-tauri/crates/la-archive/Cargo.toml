@@ -61,6 +61,7 @@ scopeguard = "1.2"
 sha2 = "0.10"
 unicode-normalization = "0.1"
 num_cpus = "1.16"
+dunce = "1.0"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.52", features = ["Win32_Storage_FileSystem", "Win32_Foundation"] }
