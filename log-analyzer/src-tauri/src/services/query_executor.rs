@@ -57,20 +57,42 @@ impl QueryExecutor {
      * 生成查询缓存键
      *
      * 使用自定义哈希函数替代 serde_json，性能提升约 5-10 倍
+     * 包含所有查询字段以确保缓存键的唯一性
      */
     fn cache_key(query: &SearchQuery) -> String {
         let mut hasher = DefaultHasher::new();
 
-        // 哈希每个搜索项的关键字段
-        for term in &query.terms {
-            term.value.hash(&mut hasher);
-            term.is_regex.hash(&mut hasher);
-            term.case_sensitive.hash(&mut hasher);
-            term.enabled.hash(&mut hasher);
+        // 哈希查询ID和全局操作符
+        query.id.hash(&mut hasher);
+        hash_query_operator(&query.global_operator, &mut hasher);
+
+        // 哈希过滤器（如果存在）
+        if let Some(filters) = &query.filters {
+            // 哈希时间范围
+            if let Some(time_range) = &filters.time_range {
+                time_range.start.hash(&mut hasher);
+                time_range.end.hash(&mut hasher);
+            }
+            filters.levels.hash(&mut hasher);
+            filters.file_pattern.hash(&mut hasher);
         }
 
-        // 哈希全局操作符
-        hash_query_operator(&query.global_operator, &mut hasher);
+        // 按ID排序以确保哈希一致性
+        let mut sorted_terms = query.terms.clone();
+        sorted_terms.sort_by(|a, b| a.id.cmp(&b.id));
+
+        // 哈希每个搜索项的所有关键字段
+        for term in &sorted_terms {
+            term.id.hash(&mut hasher);
+            term.value.hash(&mut hasher);
+            term.operator.hash(&mut hasher);
+            term.source.hash(&mut hasher);
+            term.preset_group_id.hash(&mut hasher);
+            term.is_regex.hash(&mut hasher);
+            term.priority.hash(&mut hasher);
+            term.enabled.hash(&mut hasher);
+            term.case_sensitive.hash(&mut hasher);
+        }
 
         // 返回 16 进制哈希值作为缓存键
         format!("{:x}", hasher.finish())

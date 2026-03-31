@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 /// 高级搜索过滤器
 ///
 /// 支持按时间范围、日志级别和文件模式等条件过滤搜索结果。
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default, Hash)]
 pub struct SearchFilters {
     /// 开始时间（ISO 8601 格式）
     pub time_start: Option<String>,

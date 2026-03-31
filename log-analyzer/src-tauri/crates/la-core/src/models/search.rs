@@ -17,7 +17,7 @@ pub type SearchCacheKey = (
 /**
  * 查询操作符
  */
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Hash)]
 pub enum QueryOperator {
     #[serde(rename = "AND")]
     And,
@@ -30,7 +30,7 @@ pub enum QueryOperator {
 /**
  * 关键词来源
  */
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Hash)]
 pub enum TermSource {
     #[serde(rename = "user")]
     User,
@@ -41,7 +41,7 @@ pub enum TermSource {
 /**
  * 单个搜索条件
  */
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Hash)]
 pub struct SearchTerm {
     pub id: String,
     pub value: String,
@@ -60,7 +60,7 @@ pub struct SearchTerm {
 /**
  * 查询元数据
  */
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Hash)]
 pub struct QueryMetadata {
     #[serde(rename = "createdAt")]
     pub created_at: i64,
@@ -74,7 +74,7 @@ pub struct QueryMetadata {
 /**
  * 时间范围
  */
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Hash)]
 pub struct TimeRange {
     pub start: Option<String>,
     pub end: Option<String>,
@@ -96,7 +96,7 @@ pub struct WorkspaceTimeRange {
 /**
  * 搜索过滤器
  */
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Hash)]
 pub struct SearchFilters {
     pub levels: Option<Vec<String>>,
     #[serde(rename = "timeRange")]
@@ -108,7 +108,7 @@ pub struct SearchFilters {
 /**
  * 完整搜索查询
  */
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Hash)]
 pub struct SearchQuery {
     pub id: String,
     pub terms: Vec<SearchTerm>,
