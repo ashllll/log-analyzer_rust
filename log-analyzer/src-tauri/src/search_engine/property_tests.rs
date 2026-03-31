@@ -8,6 +8,8 @@
 //! - Property 22: Time-Partitioned Index Usage
 //! - Property 23: Autocomplete Performance
 
+#![allow(unexpected_cfgs)]
+
 use proptest::prelude::*;
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
