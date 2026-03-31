@@ -10,17 +10,15 @@ max_width = 100
 tab_spaces = 4
 hard_tabs = false
 
-# 自动整理imports
-imports_granularity = "Module"
-group_imports = "StdExternalCrate"
+# 以下配置需要 nightly 工具链，CI 使用 stable，暂时注释
+# imports_granularity = "Module"
+# group_imports = "StdExternalCrate"
+# wrap_comments = true
+# comment_width = 80
 
 # 其他格式选项
 reorder_imports = true
 reorder_modules = true
-
-# 注释格式化
-wrap_comments = true
-comment_width = 80
 
 # 链式调用
 chain_width = 60
