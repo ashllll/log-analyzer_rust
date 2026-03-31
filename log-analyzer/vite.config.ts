@@ -15,8 +15,8 @@ export default defineConfig(async () => ({
   // 2. tauri expects a fixed port, fail if that port is not available
   server: {
     port: 3000,
-    // strictPort: true, // Disable strict port to allow system-assigned ports
-    host: false, // Let system choose host
+    strictPort: true, // 固定端口，占用时直接失败而不是漂移
+    host: "127.0.0.1", // 明确绑定到本地回环
     hmr: false, // Disable HMR to avoid WebSocket permission issues
     watch: {
       // 3. tell Vite to ignore watching `src-tauri`
