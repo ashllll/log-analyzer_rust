@@ -131,12 +131,58 @@ jobs:
         cd log-analyzer
         npm run build
 
+  desktop-smoke:
+    name: Desktop Smoke Build
+    runs-on: ubuntu-22.04
+    needs: [test-rust, test-frontend]
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: log-analyzer/package-lock.json
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Rust Cache
+      uses: swatinem/rust-cache@v2
+      with:
+        workspaces: log-analyzer/src-tauri -> target
+        cache-all-crates: true
+
+    - name: Install Tauri dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          libgtk-3-dev \
+          libwebkit2gtk-4.1-dev \
+          librsvg2-dev \
+          patchelf \
+          libssl-dev \
+          libayatana-appindicator3-dev \
+          libsoup-3.0-dev \
+          libjavascriptcoregtk-4.1-dev
+
+    - name: Install frontend dependencies
+      run: |
+        cd log-analyzer
+        npm ci
+
+    - name: Build Tauri app (debug smoke)
+      run: |
+        cd log-analyzer
+        npm run tauri build -- --debug
+
   # 集成测试
   integration-test:
     name: Integration Tests
     runs-on: ubuntu-22.04
-    needs: [test-rust, test-frontend]
-    if: always()
+    needs: [test-rust, test-frontend, desktop-smoke]
     steps:
     - name: Checkout code
       uses: actions/checkout@v4

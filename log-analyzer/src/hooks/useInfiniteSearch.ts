@@ -190,8 +190,9 @@ export function useInfiniteSearch({
 
 /**
  * 注册搜索会话到 VirtualSearchManager
- * 
- * 在搜索完成后，将结果注册到后端管理器以支持分页查询。
+ *
+ * 兼容旧分页方案的辅助函数。当前交互式主路径使用
+ * `search_logs + fetch_search_page` 的磁盘直写分页，不依赖此注册步骤。
  * 
  * @param searchId 搜索会话 ID
  * @param query 搜索查询
@@ -240,8 +241,8 @@ export async function getSearchSessionInfo(
 
 /**
  * 获取 VirtualSearchManager 统计信息
- * 
- * @returns 统计信息
+ *
+ * 仅用于兼容旧分页方案的诊断。
  */
 export async function getVirtualSearchStats(): Promise<{
   active_sessions: number;

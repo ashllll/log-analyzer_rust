@@ -16,13 +16,13 @@ jobs:
       !contains(github.event.workflow_run.head_commit.message, '[skip ci]')
     permissions:
       contents: write
+      actions: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          # 使用 PAT 以便触发后续 release.yml（GITHUB_TOKEN push 不会触发其他 workflow）
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js
@@ -68,6 +68,16 @@ jobs:
           open('src-tauri/Cargo.toml', 'w').write(content)
           "
 
+          for crate in src-tauri/crates/la-core/Cargo.toml src-tauri/crates/la-storage/Cargo.toml src-tauri/crates/la-search/Cargo.toml src-tauri/crates/la-archive/Cargo.toml; do
+            python3 -c "
+          import re
+          path = '${crate}'
+          content = open(path).read()
+          content = re.sub(r'^version = \"[^\"]*\"', 'version = \"${VERSION}\"', content, count=1, flags=re.MULTILINE)
+          open(path, 'w').write(content)
+          "
+          done
+
           # 更新 tauri.conf.json
           node -e "
             const fs = require('fs');
@@ -79,8 +89,13 @@ jobs:
           echo "package.json:      $(node -p \"require('./package.json').version\")"
           echo "Cargo.toml:        $(grep '^version' src-tauri/Cargo.toml | head -1)"
           echo "tauri.conf.json:   $(node -p \"require('./src-tauri/tauri.conf.json').version\")"
+          echo "la-core:           $(grep '^version' src-tauri/crates/la-core/Cargo.toml | head -1)"
+          echo "la-storage:        $(grep '^version' src-tauri/crates/la-storage/Cargo.toml | head -1)"
+          echo "la-search:         $(grep '^version' src-tauri/crates/la-search/Cargo.toml | head -1)"
+          echo "la-archive:        $(grep '^version' src-tauri/crates/la-archive/Cargo.toml | head -1)"
 
       - name: Commit version bump and push tag
+        id: publish
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           TAG="${{ steps.version.outputs.tag }}"
@@ -91,17 +106,23 @@ jobs:
           git add \
             log-analyzer/package.json \
             log-analyzer/src-tauri/Cargo.toml \
-            log-analyzer/src-tauri/tauri.conf.json
+            log-analyzer/src-tauri/tauri.conf.json \
+            log-analyzer/src-tauri/crates/la-core/Cargo.toml \
+            log-analyzer/src-tauri/crates/la-storage/Cargo.toml \
+            log-analyzer/src-tauri/crates/la-search/Cargo.toml \
+            log-analyzer/src-tauri/crates/la-archive/Cargo.toml
 
           if git diff --staged --quiet; then
             echo "版本文件未变更，跳过 commit"
+            echo "tag=${TAG}" >> $GITHUB_OUTPUT
           else
             git commit -m "chore: bump version to ${VERSION} [skip ci]"
             git push origin main
             echo "已推送版本 bump commit"
+            echo "tag=${TAG}" >> $GITHUB_OUTPUT
           fi
 
-          # 创建并推送 tag（触发 release.yml）
+          # 创建并推送 tag
           if git rev-parse "$TAG" >/dev/null 2>&1; then
             echo "Tag ${TAG} 已存在，跳过"
           else
@@ -109,3 +130,34 @@ jobs:
             git push origin "$TAG"
             echo "已创建并推送 tag: ${TAG}"
           fi
+
+      - name: Dispatch release workflow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.publish.outputs.tag }}
+        run: |
+          sleep 5
+          payload=$(python3 - <<'PY'
+          import json
+          import os
+
+          print(json.dumps({
+              "ref": "main",
+              "inputs": {
+                  "tag": os.environ["TAG"],
+                  "prerelease": "false",
+              },
+              "return_run_details": True,
+          }))
+          PY
+          )
+
+          response=$(curl -sSL \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/release.yml/dispatches" \
+            -d "${payload}")
+
+          echo "release dispatch response: ${response}"

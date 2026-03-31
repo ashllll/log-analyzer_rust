@@ -121,6 +121,11 @@ jobs:
           cd log-analyzer
           npm run build
 
+      - name: Desktop smoke build
+        run: |
+          cd log-analyzer
+          npm run tauri build -- --debug
+
   # 检查发布准备状态
   release-readiness:
     name: Release Readiness Check
