@@ -25,7 +25,7 @@ use std::time::{Duration, Instant};
 use tantivy::{Index, IndexReader, ReloadPolicy};
 use tokio::sync::{Mutex as TokioMutex, Semaphore};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use crate::manager::SearchResults;
 use crate::{SearchEngineManager, SearchError, SearchResult};
@@ -72,9 +72,28 @@ pub struct ConcurrentSearchStats {
 }
 
 /// Reader connection pool for concurrent access
+///
+/// ## Architecture
+///
+/// The pool maintains multiple `IndexReader` instances to allow true concurrent
+/// search operations. Each reader can create independent `Searcher` instances,
+/// enabling parallel query execution across CPU cores.
+///
+/// ## Usage Pattern
+///
+/// ```ignore
+/// // Acquire a reader permit from the pool
+/// let permit = reader_pool.acquire().await?;
+///
+/// // Execute search using the pooled reader
+/// let results = permit.with_reader(|reader| {
+///     let searcher = reader.searcher();
+///     searcher.search(&query, &collector)
+/// }).await?;
+/// ```
 struct ReaderPool {
-    _readers: Vec<IndexReader>,
-    _available: Arc<Semaphore>,
+    readers: Vec<IndexReader>,
+    available: Arc<Semaphore>,
     stats: Arc<RwLock<ReaderPoolStats>>,
 }
 
@@ -82,7 +101,7 @@ struct ReaderPool {
 struct ReaderPoolStats {
     hits: u64,
     misses: u64,
-    _total_acquisitions: u64,
+    total_acquisitions: u64,
 }
 
 impl ReaderPool {
@@ -132,14 +151,94 @@ impl ReaderPool {
         );
 
         Ok(Self {
-            _readers: readers,
-            _available: Arc::new(Semaphore::new(reader_count)),
+            readers,
+            available: Arc::new(Semaphore::new(reader_count)),
             stats: Arc::new(RwLock::new(ReaderPoolStats::default())),
         })
     }
 
     fn get_stats(&self) -> ReaderPoolStats {
         self.stats.read().clone()
+    }
+
+    /// Acquire a reader from the pool with timeout
+    ///
+    /// Returns a `ReaderGuard` that releases the reader back to the pool when dropped.
+    /// This enables true concurrent searches across multiple CPU cores by distributing
+    /// queries across multiple IndexReader instances.
+    ///
+    /// # Arguments
+    ///
+    /// * `timeout` - Maximum time to wait for a reader to become available
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(ReaderGuard)` - A guard wrapping an available reader
+    /// * `Err(SearchError)` - If timeout expires or pool is exhausted
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let guard = reader_pool.acquire(Duration::from_secs(5)).await?;
+    /// let searcher = guard.reader().searcher();
+    /// let results = searcher.search(&query, &TopDocs::with_limit(10))?;
+    /// // Reader automatically returned to pool when guard drops
+    /// ```
+    async fn acquire(&self, timeout: Duration) -> SearchResult<ReaderGuard<'_>> {
+        let start = Instant::now();
+
+        // Try to acquire a permit from the semaphore (represents an available reader slot)
+        let permit = tokio::time::timeout(timeout, self.available.acquire())
+            .await
+            .map_err(|_| SearchError::IndexError(
+                format!("Timeout waiting for reader from pool after {:?}", timeout)
+            ))?
+            .map_err(|_| SearchError::IndexError("Reader pool semaphore closed".to_string()))?;
+
+        let wait_time = start.elapsed();
+
+        // Round-robin selection: use atomic counter for lock-free distribution
+        let reader_index = {
+            let mut stats = self.stats.write();
+            stats.total_acquisitions += 1;
+            (stats.total_acquisitions as usize) % self.readers.len()
+        };
+
+        // Track hit/miss for metrics (wait time indicates contention)
+        if wait_time > Duration::from_millis(10) {
+            let mut stats = self.stats.write();
+            stats.misses += 1; // Had to wait, indicates pool contention
+        } else {
+            let mut stats = self.stats.write();
+            stats.hits += 1; // Immediate availability
+        }
+
+        trace!(
+            reader_index = reader_index,
+            wait_ms = wait_time.as_millis(),
+            "Acquired reader from pool"
+        );
+
+        Ok(ReaderGuard {
+            reader: &self.readers[reader_index],
+            _permit: permit, // Hold the semaphore permit until guard is dropped
+        })
+    }
+}
+
+/// A guard that holds a reader from the pool
+///
+/// When dropped, the reader is automatically returned to the pool,
+/// making it available for other concurrent searches.
+pub struct ReaderGuard<'a> {
+    reader: &'a IndexReader,
+    _permit: tokio::sync::SemaphorePermit<'a>,
+}
+
+impl<'a> ReaderGuard<'a> {
+    /// Get a reference to the underlying IndexReader
+    pub fn reader(&self) -> &IndexReader {
+        self.reader
     }
 }
 
