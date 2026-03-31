@@ -9,7 +9,7 @@
 // 导入 log_analyzer 库的模块
 use log_analyzer::commands::{
     async_search::*, cache::*, config::*, error_reporting::*, export::*, import::*, legacy::*,
-    performance::*, query::*, search::*, state_sync::*, validation::*, virtual_tree::*, watch::*,
+    log_config::*, performance::*, query::*, search::*, state_sync::*, validation::*, virtual_tree::*, watch::*,
     workspace::*,
 };
 use log_analyzer::models::{AppState, CacheState, MetricsState, SearchState, WorkspaceState};
@@ -19,8 +19,43 @@ use tracing::{error, info, warn};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // 初始化日志
-    tracing_subscriber::fmt::init();
+    // 初始化日志系统
+    // 使用条件编译：debug 模式启用 DEBUG 级别，release 模式启用 INFO 级别
+    init_logging_with_profile();
+
+    fn init_logging_with_profile() {
+        use tracing_subscriber::EnvFilter;
+
+        let filter = EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| {
+                #[cfg(debug_assertions)]
+                {
+                    // Debug 模式：启用 DEBUG 级别日志
+                    EnvFilter::new("debug")
+                        .add_directive("log_analyzer::task_manager=info".parse().unwrap())
+                        .add_directive("log_analyzer::search_engine=info".parse().unwrap())
+                        .add_directive("log_analyzer::cache_manager=info".parse().unwrap())
+                }
+                #[cfg(not(debug_assertions))]
+                {
+                    // Release 模式：启用 INFO 级别日志，高频模块使用 WARN
+                    EnvFilter::new("info")
+                        .add_directive("log_analyzer::task_manager=warn".parse().unwrap())
+                        .add_directive("log_analyzer::search_engine=warn".parse().unwrap())
+                        .add_directive("log_analyzer::cache_manager=warn".parse().unwrap())
+                        .add_directive("log_analyzer::commands=info".parse().unwrap())
+                }
+            });
+
+        tracing_subscriber::fmt()
+            .with_env_filter(filter)
+            .with_target(true)
+            .with_thread_ids(false)
+            .with_thread_names(false)
+            .with_file(false)
+            .with_line_number(false)
+            .init();
+    }
 
     info!("🚀 Log Analyzer v{} - 启动中...", env!("CARGO_PKG_VERSION"));
 
@@ -93,6 +128,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             save_search_config,
             get_task_manager_config,
             save_task_manager_config,
+            // ===== 日志配置管理 =====
+            get_current_log_config,
+            set_log_level,
+            set_module_level,
+            reset_log_configuration,
+            get_recommended_production_config,
+            get_recommended_debug_config,
+            load_log_config,
+            save_log_config,
+            get_available_log_levels,
+            apply_log_preset,
             // ===== 工作区管理 =====
             load_workspace,
             refresh_workspace,

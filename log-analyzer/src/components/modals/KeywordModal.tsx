@@ -260,7 +260,7 @@ const KeywordModal: React.FC<KeywordModalProps> = ({ isOpen, onClose, onSave, in
                   <Button
                     variant="icon"
                     icon={Trash2}
-                    className="text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="text-log-error opacity-0 group-hover:opacity-100 transition-opacity"
                     onClick={() => setPatterns(patterns.filter((_, idx) => idx !== i))}
                   />
                 </div>

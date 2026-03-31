@@ -121,3 +121,62 @@ impl ArchiveHandler for SevenZHandler {
         vec!["7z"]
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sevenz_handler_can_handle() {
+        let handler = SevenZHandler;
+
+        // 应该能处理 .7z 文件
+        assert!(handler.can_handle(Path::new("test.7z")));
+        assert!(handler.can_handle(Path::new("test.7Z")));
+        assert!(handler.can_handle(Path::new("/path/to/archive.7z")));
+
+        // 不应该处理其他格式
+        assert!(!handler.can_handle(Path::new("test.zip")));
+        assert!(!handler.can_handle(Path::new("test.tar")));
+        assert!(!handler.can_handle(Path::new("test.rar")));
+        assert!(!handler.can_handle(Path::new("test.gz")));
+        assert!(!handler.can_handle(Path::new("test.txt")));
+        assert!(!handler.can_handle(Path::new("test")));
+    }
+
+    #[test]
+    fn test_sevenz_handler_file_extensions() {
+        let handler = SevenZHandler;
+        let extensions = handler.file_extensions();
+
+        assert_eq!(extensions, vec!["7z"]);
+    }
+
+    #[tokio::test]
+    async fn test_extract_invalid_7z() {
+        let temp_dir = tempfile::TempDir::new().expect("创建临时目录失败");
+        let sevenz_file = temp_dir.path().join("test.7z");
+        let output_dir = temp_dir.path().join("output");
+
+        // 创建一个无效的 7z 文件
+        std::fs::write(&sevenz_file, b"This is not a valid 7z file").unwrap();
+
+        let handler = SevenZHandler;
+        let result = handler.extract(&sevenz_file, &output_dir).await;
+
+        // 由于文件内容无效，应该返回错误
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_extract_nonexistent_7z() {
+        let temp_dir = tempfile::TempDir::new().expect("创建临时目录失败");
+        let sevenz_file = temp_dir.path().join("nonexistent.7z");
+        let output_dir = temp_dir.path().join("output");
+
+        let handler = SevenZHandler;
+        let result = handler.extract(&sevenz_file, &output_dir).await;
+
+        assert!(result.is_err());
+    }
+}

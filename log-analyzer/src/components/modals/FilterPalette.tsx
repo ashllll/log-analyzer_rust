@@ -32,7 +32,7 @@ const FilterPalette: React.FC<FilterPaletteProps> = ({
       ></div>
 
       {/* 面板内容 */}
-      <div className="absolute top-full right-0 mt-2 w-[600px] max-h-[60vh] overflow-y-auto bg-[#18181b] border border-border-base rounded-lg shadow-2xl z-50 p-4 grid gap-6 animate-in fade-in zoom-in-95 duration-100 origin-top-right ring-1 ring-white/10">
+      <div className="absolute top-full right-0 mt-2 w-[600px] max-h-[60vh] overflow-y-auto bg-bg-popover border border-border-base rounded-lg shadow-2xl z-50 p-4 grid gap-6 animate-in fade-in zoom-in-95 duration-100 origin-top-right ring-1 ring-white/10">
         {/* 标题 */}
         <div className="flex justify-between items-center pb-2 border-b border-white/10">
           <h3 className="text-sm font-bold text-text-main flex items-center gap-2">

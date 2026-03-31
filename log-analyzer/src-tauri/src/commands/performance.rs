@@ -17,8 +17,10 @@
 //! - **P95/P99 计算**: 业内成熟的排序算法计算百分位数
 //! - **历史数据存储**: SQLite 时序数据（metrics_store）
 //! - **定时快照**: tokio::time::interval 异步定时器
+//! - **监控模块集成**: 使用 monitoring 模块的 MetricsCollector 获取实时指标
 
 use crate::models::AppState;
+use crate::monitoring;
 use la_storage::{MetricsSnapshot, MetricsStore, MetricsStoreStats, SearchEvent, TimeRange};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
@@ -183,6 +185,9 @@ pub struct IndexMetrics {
 ///
 /// 返回当前系统性能的完整监控数据。
 ///
+/// 优先使用 monitoring 模块的 MetricsCollector 获取实时指标，
+/// 如果全局收集器未初始化，则回退到从 AppState 直接获取。
+///
 /// # 返回
 ///
 /// 返回性能指标数据
@@ -195,6 +200,63 @@ pub struct IndexMetrics {
 /// ```
 #[command]
 pub async fn get_performance_metrics(
+    state: State<'_, AppState>,
+) -> Result<PerformanceMetrics, String> {
+    // 优先使用 monitoring 模块的指标收集器
+    if let Some(metrics) = monitoring::get_current_metrics() {
+        // 获取缓存统计信息（补充数据）
+        let cache_stats = state.get_cache_statistics();
+
+        return Ok(PerformanceMetrics {
+            search_latency: SearchLatency {
+                current: metrics.search.current_latency_ms,
+                average: metrics.search.average_latency_ms,
+                p95: metrics.search.p95_latency_ms,
+                p99: metrics.search.p99_latency_ms,
+            },
+            search_throughput: SearchThroughput {
+                current: metrics.search.current_throughput as u64,
+                average: metrics.search.average_throughput as u64,
+                peak: metrics.search.peak_throughput as u64,
+            },
+            cache_metrics: CacheMetrics {
+                hit_rate: metrics.search.cache_hit_rate,
+                miss_count: cache_stats.l1_miss_count,
+                hit_count: (metrics.search.total_searches as f64 * metrics.search.cache_hit_rate / 100.0) as u64,
+                size: cache_stats.estimated_size,
+                capacity: 1000,
+                evictions: cache_stats.eviction_count,
+            },
+            memory_metrics: MemoryMetrics {
+                used: metrics.memory.current_used_mb,
+                total: metrics.memory.total_system_mb,
+                heap_used: metrics.memory.resident_memory_mb,
+                external: metrics.memory.virtual_memory_mb,
+            },
+            task_metrics: TaskMetrics {
+                total: metrics.task.total_tasks,
+                running: metrics.task.running_tasks,
+                completed: metrics.task.completed_tasks,
+                failed: metrics.task.failed_tasks,
+                average_duration: metrics.task.average_task_duration_ms,
+            },
+            index_metrics: IndexMetrics {
+                total_files: metrics.file.total_imported_files,
+                indexed_files: metrics.index.indexed_files,
+                total_size: metrics.file.total_imported_bytes,
+                index_size: metrics.index.index_size_bytes,
+            },
+        });
+    }
+
+    // 回退到原有实现（如果 monitoring 模块未初始化）
+    get_performance_metrics_fallback(state).await
+}
+
+/// 获取性能指标的回退实现
+///
+/// 当 monitoring 模块未初始化时使用，从 AppState 直接获取数据。
+async fn get_performance_metrics_fallback(
     state: State<'_, AppState>,
 ) -> Result<PerformanceMetrics, String> {
     // 获取缓存统计信息

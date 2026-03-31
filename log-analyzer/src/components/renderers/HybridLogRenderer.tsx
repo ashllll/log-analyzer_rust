@@ -210,7 +210,7 @@ const HybridLogRendererInner: React.FC<HybridLogRendererProps> = ({ text, query,
         {isExpanded && text.length > TRUNCATE_THRESHOLD && (
           <button
             onClick={() => setIsExpanded(false)}
-            className="ml-2 text-xs text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 underline cursor-pointer"
+            className="ml-2 text-xs text-primary hover:text-primary-hover underline cursor-pointer"
           >
             {t('search.collapse_text', 'Collapse')}
           </button>
@@ -260,7 +260,7 @@ const HybridLogRendererInner: React.FC<HybridLogRendererProps> = ({ text, query,
               end: showEndEllipsis && index === mergedSnippets.length - 1
             })}
             {index < mergedSnippets.length - 1 && (
-              <span className="text-gray-400 dark:text-gray-600"> ... </span>
+              <span className="text-text-dim"> ... </span>
             )}
           </span>
         );

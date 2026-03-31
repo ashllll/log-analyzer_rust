@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc;
 use tokio::time::interval;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use crate::task_manager::types::{TaskInfo, TaskManagerConfig, TaskManagerMetrics, TaskStatus};
 
@@ -114,7 +114,8 @@ impl TaskManagerActor {
                 status,
                 respond_to,
             } => {
-                debug!(
+                // 高频操作使用 trace 级别，避免 DEBUG 日志性能开销
+                trace!(
                     task_id = %id,
                     progress = progress,
                     status = ?status,
@@ -173,7 +174,7 @@ impl TaskManagerActor {
                 }
             }
             ActorMessage::RemoveTask { id, respond_to } => {
-                debug!(task_id = %id, "Removing task");
+                trace!(task_id = %id, "Removing task");
                 let result = self.tasks.remove(&id);
                 if respond_to.send(result).is_err() {
                     tracing::debug!("任务管理器：remove_task 响应接收方已取消");
@@ -181,7 +182,8 @@ impl TaskManagerActor {
             }
             ActorMessage::GetMetrics { respond_to } => {
                 let metrics = self.collect_metrics();
-                debug!(
+                // 高频轮询操作使用 trace 级别
+                trace!(
                     total = metrics.total_tasks,
                     running = metrics.running_tasks,
                     completed = metrics.completed_tasks,
@@ -256,7 +258,8 @@ impl TaskManagerActor {
                     0
                 };
 
-                debug!(
+                // 定期清理任务使用 trace 级别
+                trace!(
                     task_id = %id,
                     task_type = %task.task_type,
                     status = ?task.status,

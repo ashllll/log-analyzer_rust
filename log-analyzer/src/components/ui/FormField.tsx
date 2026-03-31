@@ -38,13 +38,13 @@ export const FormField: React.FC<FormFieldProps> = ({
           htmlFor={fieldId}
           className={cn(
             'block text-sm font-medium',
-            hasError ? 'text-red-600 dark:text-red-400' : 'text-text-main'
+            hasError ? 'text-status-error dark:text-log-error' : 'text-text-main'
           )}
         >
           {label}
           {required && (
             <span 
-              className="text-red-500 ml-1" 
+              className="text-status-error ml-1" 
               aria-label="required"
             >
               *
@@ -83,7 +83,7 @@ export const FormField: React.FC<FormFieldProps> = ({
               ).trim() || undefined,
               className: cn(
                 (child as React.ReactElement<any>).props?.className,
-                hasError && 'border-red-500 focus:border-red-500 focus:ring-red-500'
+                hasError && 'border-status-error focus:border-status-error focus:ring-status-error'
               )
             });
           }
@@ -102,7 +102,7 @@ export const FormField: React.FC<FormFieldProps> = ({
           {errorMessages.map((message, index) => (
             <p 
               key={index}
-              className="text-sm text-red-600 dark:text-red-400 flex items-start gap-2"
+              className="text-sm text-status-error dark:text-log-error flex items-start gap-2"
             >
               <svg
                 className="h-4 w-4 mt-0.5 flex-shrink-0"
@@ -172,14 +172,14 @@ export const FormErrorSummary: React.FC<{
       role="alert"
       aria-live="polite"
       className={cn(
-        'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-4',
+        'bg-log-error/5 dark:bg-log-error/10 border border-log-error/20 dark:border-log-error/30 rounded-md p-4',
         className
       )}
     >
       <div className="flex">
         <div className="flex-shrink-0">
           <svg
-            className="h-5 w-5 text-red-400"
+            className="h-5 w-5 text-log-error"
             fill="currentColor"
             viewBox="0 0 20 20"
             aria-hidden="true"
@@ -192,10 +192,10 @@ export const FormErrorSummary: React.FC<{
           </svg>
         </div>
         <div className="ml-3">
-          <h3 className="text-sm font-medium text-red-800 dark:text-red-200">
+          <h3 className="text-sm font-medium text-log-error dark:text-log-error">
             {title}
           </h3>
-          <div className="mt-2 text-sm text-red-700 dark:text-red-300">
+          <div className="mt-2 text-sm text-log-error/80 dark:text-log-error/90">
             <ul className="list-disc list-inside space-y-1">
               {errorEntries.map(([field, error]) => {
                 const messages = Array.isArray(error) ? error : [error];

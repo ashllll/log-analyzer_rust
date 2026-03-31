@@ -18,14 +18,13 @@ use tempfile::TempDir;
 /// Helper function to create a test ZIP archive
 fn create_test_zip(path: &PathBuf, files: &[(&str, &str)]) -> std::io::Result<()> {
     use std::io::Write;
-    use zip::write::FileOptions;
     use zip::ZipWriter;
 
     let file = fs::File::create(path)?;
     let mut zip = ZipWriter::new(file);
 
     for (name, content) in files {
-        zip.start_file(*name, FileOptions::default())?;
+        zip.start_file(*name, zip::write::FileOptions::<'_, ()>::default())?;
         zip.write_all(content.as_bytes())?;
     }
 
@@ -225,7 +224,6 @@ async fn test_backward_compatibility() {
 #[tokio::test]
 async fn test_nested_archive_extraction() {
     use std::io::Write;
-    use zip::write::FileOptions;
     use zip::ZipWriter;
 
     let temp_dir = TempDir::new().unwrap();
@@ -242,7 +240,7 @@ async fn test_nested_archive_extraction() {
     // Manually create outer archive with binary inner.zip
     let outer_file = fs::File::create(&outer_archive).unwrap();
     let mut zip = ZipWriter::new(outer_file);
-    zip.start_file("inner.zip", FileOptions::default()).unwrap();
+    zip.start_file("inner.zip", zip::write::FileOptions::<'_, ()>::default()).unwrap();
     zip.write_all(&inner_bytes).unwrap();
     zip.finish().unwrap();
 

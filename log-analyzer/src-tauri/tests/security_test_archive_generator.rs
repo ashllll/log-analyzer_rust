@@ -30,7 +30,7 @@ use zip::CompressionMethod;
 pub fn create_zip_bomb(output_path: &Path, uncompressed_size_mb: usize) -> io::Result<u64> {
     let file = File::create(output_path)?;
     let mut zip = ZipWriter::new(file);
-    let options = FileOptions::default()
+    let options: zip::write::FileOptions<'_, ()> = FileOptions::default()
         .compression_method(CompressionMethod::Deflated)
         .compression_level(Some(9)); // Maximum compression
 
@@ -83,7 +83,7 @@ pub fn create_nested_zip_bomb(
     // Create outer archive containing the inner one
     let file = File::create(output_path)?;
     let mut zip = ZipWriter::new(file);
-    let options = FileOptions::default()
+    let options: zip::write::FileOptions<'_, ()> = FileOptions::default()
         .compression_method(CompressionMethod::Deflated)
         .compression_level(Some(9));
 
@@ -116,7 +116,7 @@ pub fn create_nested_zip_bomb(
 pub fn create_path_traversal_archive(output_path: &Path) -> io::Result<()> {
     let file = File::create(output_path)?;
     let mut zip = ZipWriter::new(file);
-    let options = FileOptions::default().compression_method(CompressionMethod::Stored);
+    let options: zip::write::FileOptions<'_, ()> = FileOptions::default().compression_method(CompressionMethod::Stored);
 
     // Various path traversal attempts
     let malicious_paths = [
@@ -161,7 +161,7 @@ pub fn create_many_files_archive(
 ) -> io::Result<()> {
     let file = File::create(output_path)?;
     let mut zip = ZipWriter::new(file);
-    let options = FileOptions::default().compression_method(CompressionMethod::Stored);
+    let options: zip::write::FileOptions<'_, ()> = FileOptions::default().compression_method(CompressionMethod::Stored);
 
     let content = vec![b'x'; file_size_bytes];
 
@@ -196,7 +196,7 @@ pub fn create_many_files_archive(
 pub fn create_special_chars_archive(output_path: &Path) -> io::Result<()> {
     let file = File::create(output_path)?;
     let mut zip = ZipWriter::new(file);
-    let options = FileOptions::default().compression_method(CompressionMethod::Stored);
+    let options: zip::write::FileOptions<'_, ()> = FileOptions::default().compression_method(CompressionMethod::Stored);
 
     // Note: Some characters may not be valid in ZIP format and will be skipped
     let special_filenames = vec![
@@ -259,7 +259,7 @@ pub fn create_special_chars_archive(output_path: &Path) -> io::Result<()> {
 pub fn create_long_filename_archive(output_path: &Path, filename_length: usize) -> io::Result<()> {
     let file = File::create(output_path)?;
     let mut zip = ZipWriter::new(file);
-    let options = FileOptions::default().compression_method(CompressionMethod::Stored);
+    let options: zip::write::FileOptions<'_, ()> = FileOptions::default().compression_method(CompressionMethod::Stored);
 
     // Create filenames of various lengths
     for i in 0..10 {
@@ -288,7 +288,7 @@ pub fn create_long_filename_archive(output_path: &Path, filename_length: usize) 
 pub fn create_deep_directory_archive(output_path: &Path, depth: usize) -> io::Result<()> {
     let file = File::create(output_path)?;
     let mut zip = ZipWriter::new(file);
-    let options = FileOptions::default().compression_method(CompressionMethod::Stored);
+    let options: zip::write::FileOptions<'_, ()> = FileOptions::default().compression_method(CompressionMethod::Stored);
 
     // Create a deeply nested path
     let mut path = String::new();

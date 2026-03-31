@@ -147,7 +147,7 @@ function ErrorCard({ title, message, details, stack, code, canRetry, onRetry, on
         {code && (
           <div className="mb-4">
             <span className="text-xs text-text-dim uppercase font-bold">错误代码：</span>
-            <span className="ml-2 px-2 py-1 bg-red-500/20 text-red-400 rounded text-sm font-mono">
+            <span className="ml-2 px-2 py-1 bg-log-error/20 text-log-error rounded text-sm font-mono">
               {code}
             </span>
           </div>
@@ -204,7 +204,7 @@ function ErrorCard({ title, message, details, stack, code, canRetry, onRetry, on
           {onReport && (
             <button
               onClick={onReport}
-              className="px-4 py-2 bg-blue-500/20 text-blue-400 border border-blue-500/50 rounded-lg hover:bg-blue-500/30 transition-colors flex items-center gap-2"
+              className="px-4 py-2 bg-log-info/20 text-log-info border border-log-info/50 rounded-lg hover:bg-log-info/30 transition-colors flex items-center gap-2"
             >
               <Bug className="w-4 h-4" />
               报告问题

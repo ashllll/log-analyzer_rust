@@ -2,9 +2,12 @@
  * 错误处理模块
  *
  * 定义错误码、错误类型和错误处理工具函数
+ * 支持i18n国际化错误消息
  *
  * @module errors
  */
+
+import i18n from '../i18n';
 
 // ============================================================================
 // 错误码定义
@@ -409,32 +412,44 @@ const ERROR_CODE_CATEGORIES: Record<string, ErrorCategory> = {
 };
 
 // ============================================================================
-// 错误码到默认消息的映射
+// 错误码到i18n键的映射
 // ============================================================================
 
-const ERROR_CODE_MESSAGES: Record<string, string> = {
-  [ErrorCode.IO_ERROR]: '文件操作失败，请检查文件权限和磁盘空间',
-  [ErrorCode.SEARCH_ERROR]: '搜索失败，请尝试简化搜索词或检查工作区状态',
-  [ErrorCode.ARCHIVE_ERROR]: '压缩文件处理失败，请确保文件格式正确',
-  [ErrorCode.VALIDATION_ERROR]: '输入验证失败，请检查输入格式',
-  [ErrorCode.SECURITY_ERROR]: '安全检查失败，操作被拒绝',
-  [ErrorCode.NOT_FOUND]: '未找到指定资源',
-  [ErrorCode.INVALID_PATH]: '路径无效或不存在',
-  [ErrorCode.ENCODING_ERROR]: '文件编码读取失败',
-  [ErrorCode.QUERY_EXECUTION_ERROR]: '查询执行失败，请检查查询语法',
-  [ErrorCode.FILE_WATCHER_ERROR]: '文件监听启动失败',
-  [ErrorCode.INDEX_ERROR]: '索引错误，请尝试重新加载工作区',
-  [ErrorCode.PATTERN_ERROR]: '正则表达式格式错误',
-  [ErrorCode.DATABASE_ERROR]: '数据库操作失败',
-  [ErrorCode.CONFIG_ERROR]: '配置保存失败',
-  [ErrorCode.NETWORK_ERROR]: '网络操作失败',
-  [ErrorCode.INTERNAL_ERROR]: '系统内部错误',
-  [ErrorCode.RESOURCE_CLEANUP_ERROR]: '资源清理失败',
-  [ErrorCode.CONCURRENCY_ERROR]: '并发操作冲突',
-  [ErrorCode.PARSE_ERROR]: '数据解析失败',
-  [ErrorCode.TIMEOUT_ERROR]: '操作超时',
-  [ErrorCode.UNKNOWN]: '未知错误',
+const ERROR_CODE_I18N_KEYS: Record<string, string> = {
+  [ErrorCode.IO_ERROR]: 'errors.io.error',
+  [ErrorCode.SEARCH_ERROR]: 'errors.search.execution_error',
+  [ErrorCode.ARCHIVE_ERROR]: 'errors.io.error',
+  [ErrorCode.VALIDATION_ERROR]: 'errors.validation.path_canonicalization_failed',
+  [ErrorCode.SECURITY_ERROR]: 'errors.validation.path_traversal',
+  [ErrorCode.NOT_FOUND]: 'errors.workspace.not_found',
+  [ErrorCode.INVALID_PATH]: 'errors.validation.path_canonicalization_failed',
+  [ErrorCode.ENCODING_ERROR]: 'errors.io.encoding',
+  [ErrorCode.QUERY_EXECUTION_ERROR]: 'errors.search.execution_error',
+  [ErrorCode.FILE_WATCHER_ERROR]: 'errors.watch.watcher_create_failed',
+  [ErrorCode.INDEX_ERROR]: 'errors.search.database_error',
+  [ErrorCode.PATTERN_ERROR]: 'errors.keywords.invalid_regex',
+  [ErrorCode.DATABASE_ERROR]: 'errors.performance.database_error',
+  [ErrorCode.CONFIG_ERROR]: 'errors.config.validation_failed',
+  [ErrorCode.NETWORK_ERROR]: 'errors.io.error',
+  [ErrorCode.INTERNAL_ERROR]: 'errors.unknown',
+  [ErrorCode.RESOURCE_CLEANUP_ERROR]: 'errors.resource.cleanup_failed',
+  [ErrorCode.CONCURRENCY_ERROR]: 'errors.task.operation_timeout',
+  [ErrorCode.PARSE_ERROR]: 'errors.io.error',
+  [ErrorCode.TIMEOUT_ERROR]: 'errors.search.timeout',
+  [ErrorCode.UNKNOWN]: 'errors.unknown',
 };
+
+/**
+ * 获取本地化的错误消息
+ *
+ * @param code - 错误码
+ * @param params - 可选的参数对象
+ * @returns 本地化的错误消息
+ */
+export function getLocalizedErrorMessage(code: string, params?: Record<string, unknown>): string {
+  const key = ERROR_CODE_I18N_KEYS[code] || 'errors.unknown';
+  return i18n.t(key, params || {});
+}
 
 // ============================================================================
 // API 错误类
@@ -544,25 +559,38 @@ export class ApiError extends Error implements StructuredError {
   }
 
   /**
-   * 获取用户友好的错误消息
+   * 获取用户友好的错误消息（支持i18n）
    */
   getUserMessage(): string {
-    // 如果有原始消息，使用原始消息
+    // 优先使用i18n本地化的错误消息
+    const localizedMessage = getLocalizedErrorMessage(this.code);
+    if (localizedMessage && localizedMessage !== 'errors.unknown') {
+      return localizedMessage;
+    }
+
+    // 回退到原始消息
     if (this.message && this.message !== this.code) {
       return this.message;
     }
 
-    // 否则使用错误码的默认消息
-    return ERROR_CODE_MESSAGES[this.code] || this.message;
+    return this.message;
   }
 
   /**
-   * 获取完整的错误提示（包含帮助信息）
+   * 获取本地化的错误消息
+   */
+  getLocalizedMessage(): string {
+    return getLocalizedErrorMessage(this.code);
+  }
+
+  /**
+   * 获取完整的错误提示（包含帮助信息，支持i18n）
    */
   getFullMessage(): string {
     const userMessage = this.getUserMessage();
     if (this.help) {
-      return `${userMessage}\n提示：${this.help}`;
+      const helpLabel = i18n.t('errors.details');
+      return `${userMessage}\n${helpLabel}：${this.help}`;
     }
     return userMessage;
   }

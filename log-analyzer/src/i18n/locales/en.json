@@ -237,5 +237,127 @@
     "tasks": "Tasks",
     "performance": "Performance",
     "settings": "Settings"
+  },
+  "errors": {
+    "title": "Error",
+    "unknown": "An unknown error occurred",
+    "details": "Error Details",
+    "retry": "Retry",
+    "dismiss": "Dismiss",
+    "report": "Report Issue",
+    "search": {
+      "query_empty": "Search query cannot be empty",
+      "query_too_long": "Search query too long (max 1000 characters)",
+      "query_empty_after_processing": "Search query is empty after processing",
+      "workspace_not_found": "Workspace not found: {{workspaceId}}",
+      "no_workspaces_available": "No workspaces available. Please create a workspace first.",
+      "metadata_store_failed": "Failed to open metadata store: {{error}}",
+      "database_error": "Internal error occurred while accessing workspace: {{workspaceId}}",
+      "execution_error": "Query execution error: {{error}}",
+      "task_panicked": "Search task panicked: {{error}}",
+      "timeout": "Search timed out after {{seconds}} seconds",
+      "session_not_found": "Search with ID {{searchId}} not found or already completed",
+      "session_expired": "Search session '{{searchId}}' not found or expired",
+      "page_read_failed": "Failed to read search page: {{error}}",
+      "cache_not_found": "Search not found in cache. Please start a new search with page_index = -1"
+    },
+    "import": {
+      "path_not_exist": "Path does not exist: {{path}}",
+      "path_canonicalization_failed": "Path canonicalization failed: {{error}}",
+      "app_data_dir_failed": "Failed to get app data dir: {{error}}",
+      "workspace_dir_failed": "Failed to create workspace dir: {{error}}",
+      "task_creation_failed": "Failed to create task: {{error}}",
+      "task_manager_not_initialized": "Task manager not initialized",
+      "task_update_failed": "Failed to update task progress: {{error}}",
+      "metadata_store_failed": "Failed to create metadata store: {{error}}",
+      "cleanup_failed": "Failed to cleanup workspace directory: {{error}}",
+      "process_failed": "Failed to process path: {{error}}",
+      "verification_failed": "Failed to verify integrity after import: {{error}}"
+    },
+    "workspace": {
+      "id_empty": "Workspace ID cannot be empty",
+      "id_too_long": "Workspace ID too long (max 50 characters)",
+      "id_invalid": "Workspace ID can only contain alphanumeric characters, hyphens, and underscores",
+      "not_found": "Workspace not found: {{workspaceId}}",
+      "not_cas_format": "Workspace {{workspaceId}} is not in CAS format. Please create a new workspace.",
+      "store_not_initialized": "Workspace store not initialized: {{workspaceId}}",
+      "file_count_failed": "Failed to count files: {{error}}",
+      "time_range_failed": "Failed to get time range from index: {{error}}"
+    },
+    "validation": {
+      "path_traversal": "Path traversal pattern detected: {{pattern}}",
+      "null_byte": "Null byte injection detected",
+      "control_chars": "Control characters detected in path",
+      "path_canonicalization_failed": "Failed to canonicalize path: {{error}}",
+      "filename_empty": "Filename cannot be empty",
+      "filename_invalid": "Filename contains only invalid characters",
+      "filename_too_long": "Filename too long (max 255 characters)",
+      "filename_reserved": "Reserved filename: {{name}}",
+      "too_many_duplicates": "Too many duplicate filenames at index {{index}}"
+    },
+    "export": {
+      "path_traversal": "Export path contains illegal path traversal (..)",
+      "directory_not_exist": "Export directory does not exist: {{path}}",
+      "unsupported_format": "Unsupported export format: {{format}}",
+      "task_panicked": "Export task panicked: {{error}}",
+      "csv_create_failed": "Failed to create CSV file: {{error}}",
+      "csv_write_failed": "Failed to write CSV: {{error}}",
+      "json_serialize_failed": "Failed to serialize JSON: {{error}}",
+      "json_write_failed": "Failed to write JSON file: {{error}}"
+    },
+    "watch": {
+      "path_not_exist": "Path does not exist: {{path}}",
+      "already_watched": "Workspace is already being watched",
+      "watcher_create_failed": "Failed to create file watcher: {{error}}",
+      "start_failed": "Failed to start watching path: {{error}}",
+      "no_active_watcher": "No active watcher found for this workspace"
+    },
+    "performance": {
+      "metrics_store_init_failed": "Failed to initialize metrics store: {{error}}",
+      "metrics_store_not_initialized": "Metrics store not initialized",
+      "database_error": "Database error: {{error}}"
+    },
+    "task": {
+      "manager_not_initialized": "Task manager not initialized",
+      "cancel_failed": "Failed to cancel task: {{error}}",
+      "actor_stopped": "TaskManager actor has stopped",
+      "operation_timeout": "Operation timed out",
+      "actor_dropped": "Actor dropped response channel",
+      "shutdown_failed": "Failed to send shutdown message: {{error}}",
+      "channel_full": "TaskManager channel is full"
+    },
+    "config": {
+      "toml_serialize_failed": "Failed to serialize config to TOML: {{error}}",
+      "json_serialize_failed": "Failed to serialize config to JSON: {{error}}",
+      "toml_deserialize_failed": "Failed to deserialize config from TOML: {{error}}",
+      "json_deserialize_failed": "Failed to deserialize config from JSON: {{error}}",
+      "validation_failed": "Configuration validation failed: {{error}}",
+      "event_bus_capacity": "Event bus capacity must be greater than 0",
+      "cache_size": "Query executor cache size must be greater than 0",
+      "max_complexity": "Max query complexity must be greater than 0",
+      "cache_capacity": "Cache max capacity must be greater than 0",
+      "cache_ttl": "Cache TTL must be greater than 0",
+      "cache_tti": "Cache TTI must be greater than 0",
+      "cleanup_queue_size": "Cleanup queue size must be greater than 0",
+      "leak_timeout": "Leak detection timeout must be greater than 0"
+    },
+    "io": {
+      "error": "IO error: {{message}}",
+      "not_found": "Not found: {{path}}",
+      "invalid_path": "Invalid path: {{path}}",
+      "encoding": "Encoding error: {{message}}"
+    },
+    "cache": {
+      "compute_failed": "Cache compute operation failed: {{error}}",
+      "compression_failed": "Cache compression failed: {{error}}",
+      "decompression_failed": "Cache decompression failed: {{error}}"
+    },
+    "resource": {
+      "operation_not_found": "Operation not found: {{id}}",
+      "workspace_not_found": "Workspace not found: {{id}}",
+      "operation_timeout": "Operation timeout: {{id}}",
+      "cancellation_failed": "Cancellation failed: {{error}}",
+      "cleanup_failed": "Resource cleanup failed: {{error}}"
+    }
   }
 }

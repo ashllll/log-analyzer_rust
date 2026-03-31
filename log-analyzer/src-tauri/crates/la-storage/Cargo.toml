@@ -15,10 +15,10 @@ futures = "0.3"
 moka = { version = "0.12", features = ["sync"] }
 sha2 = "0.10"
 walkdir = "2.4"
-dashmap = "5.5"
+dashmap = "6"
 
 # 数据库
-sqlx = { version = "0.7", features = ["runtime-tokio-native-tls", "sqlite"] }
+sqlx = { version = "0.8", features = ["runtime-tokio-native-tls", "sqlite"] }
 
 # 序列化
 serde = { version = "1", features = ["derive"] }
@@ -42,7 +42,7 @@ libc = "0.2"
 rustix = { version = "0.38", features = ["fs", "std"] }
 
 # UUID (cas.rs 中 store_file_zero_copy 使用)
-uuid = { version = "1.0", features = ["v4"] }
+uuid = { version = "1.16", features = ["v4"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.52", features = ["Win32_Storage_FileSystem", "Win32_Foundation"] }

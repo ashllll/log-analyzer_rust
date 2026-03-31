@@ -162,7 +162,7 @@ const VirtualTreeNodeRow = memo<VirtualTreeNodeRowProps>(({
           )}
           onClick={handleFileClick}
         >
-          <File size={14} className="text-blue-400 shrink-0" />
+          <File size={14} className="text-log-info shrink-0" />
           <span className="text-xs text-text-main truncate flex-1" title={node.name}>
             {node.name}
           </span>
@@ -201,7 +201,7 @@ const VirtualTreeNodeRow = memo<VirtualTreeNodeRowProps>(({
         ) : (
           <ChevronRight size={14} className="text-text-dim shrink-0" />
         )}
-        <Archive size={14} className="text-yellow-400 shrink-0" />
+        <Archive size={14} className="text-log-warn shrink-0" />
         <span className="text-xs text-text-main truncate flex-1" title={node.name}>
           {node.name}
         </span>
@@ -351,9 +351,9 @@ const VirtualFileTree: React.FC<VirtualFileTreeProps> = ({
   if (error) {
     return (
       <div className={cn("flex items-center justify-center p-8", className)}>
-        <AlertCircle size={24} className="text-red-400" />
+        <AlertCircle size={24} className="text-log-error" />
         <div className="ml-2">
-          <div className="text-sm font-semibold text-red-400">Failed to load file tree</div>
+          <div className="text-sm font-semibold text-log-error">Failed to load file tree</div>
           <div className="text-xs text-text-dim mt-1">{error}</div>
         </div>
       </div>
@@ -439,9 +439,9 @@ const VirtualFileTree: React.FC<VirtualFileTreeProps> = ({
                 )
               )}
               {flatNode.node.type === 'file' ? (
-                <File size={14} className="text-blue-400 shrink-0" />
+                <File size={14} className="text-log-info shrink-0" />
               ) : (
-                <Archive size={14} className="text-yellow-400 shrink-0" />
+                <Archive size={14} className="text-log-warn shrink-0" />
               )}
               <span className="text-xs text-text-main truncate flex-1" title={flatNode.node.name}>
                 {flatNode.node.name}

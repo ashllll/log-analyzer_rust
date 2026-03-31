@@ -14,6 +14,9 @@ export default {
           card: "#334155",    // Slate-700 - 卡片/输入框
           hover: "#475569",   // Slate-600 - 悬停态
           elevated: "#1E293B", // 浮动元素背景
+          popover: "#18181B",  // Zinc-900 - 弹出层/下拉面板背景
+          subtle: "#1E293B",   // Slate-800 - 微妙背景/空状态
+          surface: "#334155",  // Slate-700 - 表面背景（按钮、输入框）
         },
         border: {
           base: "#334155",    // Slate-700 - 基础边框

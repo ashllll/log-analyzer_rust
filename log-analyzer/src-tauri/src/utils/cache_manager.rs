@@ -9,7 +9,9 @@
 //! - L1 (Moka) 内存缓存
 //! - 智能缓存压缩
 //! - 基于访问模式的预加载
+//! - TTL 过期策略支持
 
+use crate::utils::cache::{InMemoryTtlCache, TtlCache, TtlCacheStats};
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
@@ -473,7 +475,6 @@ pub enum AlertSeverity {
 /// 缓存管理器
 ///
 /// 管理搜索缓存的生命周期和性能优化
-#[derive(Clone)]
 pub struct CacheManager {
     /// L1 搜索结果缓存（同步版本，热数据）
     search_cache: Arc<Cache<SearchCacheKey, Vec<LogEntry>>>,
@@ -487,6 +488,31 @@ pub struct CacheManager {
     config: CacheConfig,
     /// 访问模式追踪器
     access_tracker: Arc<AccessPatternTracker>,
+    /// TTL 缓存（用于元数据和配置缓存）
+    ttl_cache: Arc<InMemoryTtlCache<String, Vec<u8>>>,
+    /// TTL 清理调度器
+    ttl_cleanup_interval: Duration,
+    /// 上次 TTL 清理时间
+    last_ttl_cleanup: RwLock<Instant>,
+    /// TTL 清理统计
+    ttl_cleanup_count: AtomicU64,
+}
+
+impl Clone for CacheManager {
+    fn clone(&self) -> Self {
+        Self {
+            search_cache: self.search_cache.clone(),
+            async_search_cache: self.async_search_cache.clone(),
+            l2_cache: self.l2_cache.clone(),
+            metrics: self.metrics.clone(),
+            config: self.config.clone(),
+            access_tracker: self.access_tracker.clone(),
+            ttl_cache: self.ttl_cache.clone(),
+            ttl_cleanup_interval: self.ttl_cleanup_interval,
+            last_ttl_cleanup: RwLock::new(*self.last_ttl_cleanup.read()),
+            ttl_cleanup_count: AtomicU64::new(self.ttl_cleanup_count.load(Ordering::Relaxed)),
+        }
+    }
 }
 
 /// L2 缓存默认配置
@@ -526,6 +552,9 @@ impl CacheManager {
             config.preload_threshold,
         ));
 
+        // 创建 TTL 缓存（用于元数据和配置缓存）
+        let ttl_cache = Arc::new(InMemoryTtlCache::with_default_ttl(config.ttl));
+
         Self {
             search_cache,
             async_search_cache,
@@ -533,6 +562,10 @@ impl CacheManager {
             metrics,
             config,
             access_tracker,
+            ttl_cache,
+            ttl_cleanup_interval: Duration::from_secs(60), // 默认60秒清理一次
+            last_ttl_cleanup: RwLock::new(Instant::now()),
+            ttl_cleanup_count: AtomicU64::new(0),
         }
     }
 
@@ -563,6 +596,9 @@ impl CacheManager {
             config.preload_threshold,
         ));
 
+        // 创建 TTL 缓存（用于元数据和配置缓存）
+        let ttl_cache = Arc::new(InMemoryTtlCache::with_default_ttl(config.ttl));
+
         Self {
             search_cache,
             async_search_cache,
@@ -570,6 +606,10 @@ impl CacheManager {
             metrics,
             config,
             access_tracker,
+            ttl_cache,
+            ttl_cleanup_interval: Duration::from_secs(60),
+            last_ttl_cleanup: RwLock::new(Instant::now()),
+            ttl_cleanup_count: AtomicU64::new(0),
         }
     }
 
@@ -1471,6 +1511,87 @@ impl CacheManager {
             recommendations: report.recommendations,
         }
     }
+
+    // ===== TTL 缓存方法 =====
+
+    /// 插入带 TTL 的元数据缓存项
+    pub fn put_ttl_metadata(&self, key: &str, data: Vec<u8>, ttl: Duration) {
+        self.ttl_cache.put_with_ttl(key.to_string(), data, ttl);
+    }
+
+    /// 获取 TTL 元数据缓存项
+    pub fn get_ttl_metadata(&self, key: &str) -> Option<Vec<u8>> {
+        self.ttl_cache.get_with_ttl_check(&key.to_string())
+    }
+
+    /// 检查 TTL 项是否过期
+    pub fn is_ttl_expired(&self, key: &str) -> bool {
+        self.ttl_cache.is_expired(&key.to_string())
+    }
+
+    /// 获取 TTL 缓存统计
+    pub fn get_ttl_statistics(&self) -> TtlCacheStats {
+        self.ttl_cache.stats()
+    }
+
+    /// 执行 TTL 缓存清理
+    pub fn cleanup_ttl_expired(&self) -> usize {
+        let cleaned = self.ttl_cache.cleanup_expired();
+        if cleaned > 0 {
+            self.ttl_cleanup_count.fetch_add(cleaned as u64, Ordering::Relaxed);
+            *self.last_ttl_cleanup.write() = Instant::now();
+            tracing::debug!(cleaned_count = cleaned, "TTL cache cleanup completed");
+        }
+        cleaned
+    }
+
+    /// 检查是否需要 TTL 清理
+    pub fn should_cleanup_ttl(&self) -> bool {
+        self.last_ttl_cleanup.read().elapsed() >= self.ttl_cleanup_interval
+    }
+
+    /// 获取 TTL 清理统计
+    pub fn get_ttl_cleanup_stats(&self) -> TtlCleanupStats {
+        TtlCleanupStats {
+            cleanup_count: self.ttl_cleanup_count.load(Ordering::Relaxed),
+            last_cleanup: *self.last_ttl_cleanup.read(),
+            next_cleanup_in: if self.should_cleanup_ttl() {
+                Duration::from_secs(0)
+            } else {
+                self.ttl_cleanup_interval - self.last_ttl_cleanup.read().elapsed()
+            },
+            interval: self.ttl_cleanup_interval,
+        }
+    }
+
+    /// 设置 TTL 清理间隔
+    pub fn set_ttl_cleanup_interval(&mut self, interval: Duration) {
+        self.ttl_cleanup_interval = interval;
+    }
+
+    /// 使 TTL 缓存中的指定键失效
+    pub fn invalidate_ttl(&self, key: &str) -> bool {
+        self.ttl_cache.invalidate(&key.to_string())
+    }
+
+    /// 清空所有 TTL 缓存
+    pub fn clear_ttl_cache(&self) {
+        self.ttl_cache.clear();
+        tracing::info!("Cleared all TTL cache entries");
+    }
+}
+
+/// TTL 清理统计
+#[derive(Debug, Clone)]
+pub struct TtlCleanupStats {
+    /// 清理次数
+    pub cleanup_count: u64,
+    /// 上次清理时间
+    pub last_cleanup: Instant,
+    /// 距离下次清理的时间
+    pub next_cleanup_in: Duration,
+    /// 清理间隔
+    pub interval: Duration,
 }
 
 /// 缓存统计信息
@@ -2290,5 +2411,178 @@ mod tests {
                     "Health check timestamp should be recent");
             });
         });
+    }
+
+    // ===== TTL 缓存测试 =====
+
+    #[test]
+    fn test_ttl_cache_basic_operations() {
+        let cache = create_test_cache();
+        let manager = CacheManager::new(cache);
+
+        // 插入带 TTL 的数据
+        let key = "test_metadata";
+        let data = vec![1, 2, 3, 4, 5];
+        manager.put_ttl_metadata(key, data.clone(), Duration::from_secs(60));
+
+        // 验证可以获取
+        let retrieved = manager.get_ttl_metadata(key);
+        assert_eq!(retrieved, Some(data));
+
+        // 验证未过期
+        assert!(!manager.is_ttl_expired(key));
+    }
+
+    #[test]
+    fn test_ttl_cache_expiration() {
+        let cache = create_test_cache();
+        let manager = CacheManager::new(cache);
+
+        // 插入短 TTL 数据
+        let key = "expiring_key";
+        let data = vec![1, 2, 3];
+        manager.put_ttl_metadata(key, data, Duration::from_millis(50));
+
+        // 立即检查 - 应该未过期
+        assert!(!manager.is_ttl_expired(key));
+
+        // 等待过期
+        std::thread::sleep(Duration::from_millis(100));
+
+        // 应该已过期
+        assert!(manager.is_ttl_expired(key));
+
+        // 获取应该返回 None
+        let retrieved = manager.get_ttl_metadata(key);
+        assert_eq!(retrieved, None);
+    }
+
+    #[test]
+    fn test_ttl_cache_cleanup() {
+        let cache = create_test_cache();
+        let manager = CacheManager::new(cache);
+
+        // 插入多个带 TTL 的数据
+        for i in 0..5 {
+            let key = format!("key_{}", i);
+            let ttl = if i < 2 {
+                Duration::from_millis(50) // 2 个会过期
+            } else {
+                Duration::from_secs(60)   // 3 个不会过期
+            };
+            manager.put_ttl_metadata(&key,
+                vec![i as u8],
+                ttl
+            );
+        }
+
+        // 等待部分过期
+        std::thread::sleep(Duration::from_millis(100));
+
+        // 执行清理
+        let cleaned = manager.cleanup_ttl_expired();
+        assert_eq!(cleaned, 2, "Should clean up 2 expired entries");
+
+        // 验证统计
+        let stats = manager.get_ttl_statistics();
+        assert_eq!(stats.total_entries, 3, "Should have 3 remaining entries");
+        assert_eq!(stats.total_expired_cleaned, 2, "Should track 2 cleaned entries");
+    }
+
+    #[test]
+    fn test_ttl_cache_statistics() {
+        let cache = create_test_cache();
+        let manager = CacheManager::new(cache);
+
+        // 插入带不同 TTL 的数据
+        manager.put_ttl_metadata("key1", vec![1], Duration::from_secs(60));
+        manager.put_ttl_metadata("key2", vec![2], Duration::from_secs(120));
+        manager.put_ttl_metadata("key3", vec![3], Duration::from_secs(180));
+
+        let stats = manager.get_ttl_statistics();
+        assert_eq!(stats.total_entries, 3);
+        assert_eq!(stats.entries_with_ttl, 3);
+        assert!(stats.avg_ttl_ms > 0.0, "Average TTL should be positive");
+    }
+
+    #[test]
+    fn test_ttl_cache_invalidation() {
+        let cache = create_test_cache();
+        let manager = CacheManager::new(cache);
+
+        // 插入数据
+        manager.put_ttl_metadata("key1", vec![1, 2, 3], Duration::from_secs(60));
+
+        // 验证存在
+        assert!(manager.get_ttl_metadata("key1").is_some());
+
+        // 手动失效
+        let invalidated = manager.invalidate_ttl("key1");
+        assert!(invalidated, "Should return true when key existed");
+
+        // 验证已删除
+        assert!(manager.get_ttl_metadata("key1").is_none());
+
+        // 再次失效应该返回 false
+        let invalidated_again = manager.invalidate_ttl("key1");
+        assert!(!invalidated_again, "Should return false when key didn't exist");
+    }
+
+    #[test]
+    fn test_ttl_cache_clear() {
+        let cache = create_test_cache();
+        let manager = CacheManager::new(cache);
+
+        // 插入多个数据
+        for i in 0..5 {
+            manager.put_ttl_metadata(
+                &format!("key_{}", i),
+                vec![i as u8],
+                Duration::from_secs(60)
+            );
+        }
+
+        // 验证统计
+        let stats = manager.get_ttl_statistics();
+        assert_eq!(stats.total_entries, 5);
+
+        // 清空
+        manager.clear_ttl_cache();
+
+        // 验证已清空
+        let stats = manager.get_ttl_statistics();
+        assert_eq!(stats.total_entries, 0);
+    }
+
+    #[test]
+    fn test_ttl_cleanup_stats() {
+        let cache = create_test_cache();
+        let manager = CacheManager::new(cache);
+
+        // 初始状态
+        let stats = manager.get_ttl_cleanup_stats();
+        assert_eq!(stats.cleanup_count, 0);
+        assert_eq!(stats.interval, Duration::from_secs(60));
+
+        // 插入并清理过期项
+        manager.put_ttl_metadata("key1", vec![1], Duration::from_millis(50));
+        std::thread::sleep(Duration::from_millis(100));
+        manager.cleanup_ttl_expired();
+
+        // 验证清理统计
+        let stats = manager.get_ttl_cleanup_stats();
+        assert_eq!(stats.cleanup_count, 1);
+    }
+
+    #[test]
+    fn test_ttl_should_cleanup_check() {
+        let cache = create_test_cache();
+        let manager = CacheManager::new(cache);
+
+        // 初始状态应该不需要清理
+        assert!(!manager.should_cleanup_ttl());
+
+        // 注意：由于时间间隔是 60 秒，我们无法在单元测试中等待那么久
+        // 这个测试主要验证方法存在且可调用
     }
 }

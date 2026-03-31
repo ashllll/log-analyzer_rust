@@ -28,7 +28,7 @@ fn create_zip_with_files(dir: &Path, name: &str, files: Vec<(&str, &[u8])>) -> P
     let zip_path = dir.join(name);
     let file = fs::File::create(&zip_path).unwrap();
     let mut zip = ZipWriter::new(file);
-    let options = FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    let options: zip::write::FileOptions<'_, ()> = FileOptions::default().compression_method(zip::CompressionMethod::Stored);
 
     for (filename, content) in files {
         zip.start_file(filename, options).unwrap();
@@ -49,7 +49,7 @@ fn create_nested_zip(dir: &Path, outer_name: &str, inner_name: &str) -> PathBuf 
     let outer_path = dir.join(outer_name);
     let file = fs::File::create(&outer_path).unwrap();
     let mut zip = ZipWriter::new(file);
-    let options = FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    let options: zip::write::FileOptions<'_, ()> = FileOptions::default().compression_method(zip::CompressionMethod::Stored);
 
     // Read inner archive content and add to outer
     let inner_content = fs::read(&inner_zip).unwrap();

@@ -144,6 +144,80 @@ impl ArchiveHandler for RarHandler {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_rar_handler_can_handle() {
+        let handler = RarHandler;
+
+        // 应该能处理 .rar 文件
+        assert!(handler.can_handle(Path::new("test.rar")));
+        assert!(handler.can_handle(Path::new("test.RAR")));
+        assert!(handler.can_handle(Path::new("/path/to/archive.rar")));
+
+        // 不应该处理其他格式
+        assert!(!handler.can_handle(Path::new("test.zip")));
+        assert!(!handler.can_handle(Path::new("test.tar")));
+        assert!(!handler.can_handle(Path::new("test.gz")));
+        assert!(!handler.can_handle(Path::new("test.txt")));
+        assert!(!handler.can_handle(Path::new("test")));
+    }
+
+    #[test]
+    fn test_rar_handler_file_extensions() {
+        let handler = RarHandler;
+        let extensions = handler.file_extensions();
+
+        assert_eq!(extensions, vec!["rar"]);
+    }
+
+    #[tokio::test]
+    async fn test_extract_rar_without_support() {
+        // 测试在没有 rar-support feature 时的行为
+        let temp_dir = tempfile::TempDir::new().expect("创建临时目录失败");
+        let rar_file = temp_dir.path().join("test.rar");
+        let output_dir = temp_dir.path().join("output");
+
+        // 创建一个虚拟的 RAR 文件（即使内容无效）
+        std::fs::write(&rar_file, b"RAR").unwrap();
+
+        let handler = RarHandler;
+        let result = handler.extract(&rar_file, &output_dir).await;
+
+        // 在没有 rar-support feature 时应该返回错误
+        #[cfg(not(feature = "rar-support"))]
+        {
+            assert!(result.is_err());
+            let err_msg = result.unwrap_err().to_string();
+            assert!(
+                err_msg.contains("RAR support is not enabled"),
+                "错误消息应该提示 RAR 支持未启用: {}",
+                err_msg
+            );
+        }
+
+        // 在有 rar-support feature 时，由于文件内容无效，也会返回错误
+        #[cfg(feature = "rar-support")]
+        {
+            assert!(result.is_err());
+        }
+    }
+
+    #[tokio::test]
+    async fn test_extract_nonexistent_rar() {
+        let temp_dir = tempfile::TempDir::new().expect("创建临时目录失败");
+        let rar_file = temp_dir.path().join("nonexistent.rar");
+        let output_dir = temp_dir.path().join("output");
+
+        let handler = RarHandler;
+        let result = handler.extract(&rar_file, &output_dir).await;
+
+        assert!(result.is_err());
+    }
+}
+
 // 无 RAR 支持时的空实现
 #[cfg(not(feature = "rar-support"))]
 use crate::archive_handler::{ArchiveHandler, ExtractionSummary};

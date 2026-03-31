@@ -142,7 +142,7 @@ async fn test_depth_limit_warning() {
 
     // Add a simple file
     let options =
-        zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        zip::write::FileOptions::<'_, ()>::default().compression_method(zip::CompressionMethod::Stored);
     zip.start_file("test.txt", options).unwrap();
     std::io::Write::write_all(&mut zip, b"test content").unwrap();
 
@@ -176,7 +176,7 @@ async fn test_security_event_warning() {
 
     // Try to add a file with path traversal (this should be caught)
     let options =
-        zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        zip::write::FileOptions::<'_, ()>::default().compression_method(zip::CompressionMethod::Stored);
 
     // Note: The zip library may sanitize paths, so this test verifies
     // that our security checks work when such paths are encountered
@@ -250,7 +250,7 @@ async fn test_continue_after_file_error() {
     let mut zip = zip::ZipWriter::new(file);
 
     let options =
-        zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        zip::write::FileOptions::<'_, ()>::default().compression_method(zip::CompressionMethod::Stored);
 
     // Add multiple files
     for i in 0..5 {

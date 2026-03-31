@@ -29,14 +29,14 @@ tauri-plugin-opener = "2.5"
 tauri-plugin-dialog = "2.6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-uuid = { version = "1.0", features = ["v4", "serde"] }
+uuid = { version = "1.16", features = ["v4", "serde"] }
 regex = "1.11"          # 正则表达式库
 aho-corasick = "1.1"     # 多模式匹配算法（搜索性能优化）
 chrono = { version = "0.4", features = ["serde"] }  # 时间序列化支持
 walkdir = "2.4"
 tempfile = "3.10"
-zip = "0.6"
-tar = "0.4"
+zip = "2.2"
+tar = "0.4.45"
 flate2 = "1.0"
 mime_guess = "2.0"
 encoding_rs = "0.8"
@@ -55,7 +55,7 @@ once_cell = "1.20"  # 延迟初始化静态变量
 # Phase 1: Industry-Standard Error Handling & Logging
 eyre = "0.6"  # 现代错误处理
 color-eyre = "0.6"  # 增强错误报告
-miette = { version = "5.0", features = ["fancy"] }  # 用户友好的错误诊断
+miette = { version = "7", features = ["fancy"] }  # 用户友好的错误诊断
 tracing = "0.1"  # 结构化日志和追踪
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }  # 日志订阅器
 tracing-appender = "0.2"  # 日志文件轮转
@@ -85,29 +85,29 @@ roaring = "0.10"  # 高效位图索引
 futures = "0.3"  # 异步工具（join_all 等）
 
 # Phase 3: Production Validation Framework
-validator = { version = "0.18", features = ["derive"] }  # 结构化验证框架
+validator = { version = "0.19", features = ["derive"] }  # 结构化验证框架
 sanitize-filename = "0.5"  # 文件名安全化
 
 # Phase 3: Automatic Resource Management
 scopeguard = "1.2"  # RAII模式和自动资源清理
 
 # Phase 4: Configuration Management
-config = "0.14"  # 行业标准配置管理（多层配置、env支持）
+config = "0.15"  # 行业标准配置管理（多层配置、env支持）
 rmp-serde = "1.1"  # MessagePack 序列化（高性能二进制传输）
 toml = "0.8"  # TOML 配置文件解析
-dashmap = "5.5"  # 并发哈希映射
+dashmap = "6"  # 并发哈希映射
 sha2 = "0.10"  # SHA-256 哈希算法
 libc = "0.2"  # Unix 系统调用 (磁盘空间检查)
 rustix = { version = "0.38", features = ["fs", "std"] }  # 安全文件系统操作 (O_NOFOLLOW)
 tokio-retry = "0.3"
 async-compression = { version = "0.4", features = ["tokio", "gzip", "zstd"] }
-sqlx = { version = "0.7", features = ["runtime-tokio-native-tls", "sqlite"] }
+sqlx = { version = "0.8", features = ["runtime-tokio-native-tls", "sqlite"] }
 num_cpus = "1.16"
 
 # Phase 5: Archive Support (Pure Rust Priority)
 unrar = { version = "0.5", optional = true }  # libunrar C bindings
 sevenz-rust = "0.5"  # Pure Rust 7z support
-async_zip = { version = "0.0.17", features = ["full"] }
+async_zip = { version = "0.0.18", features = ["full"] }
 tokio-tar = "0.3"
 bytes = "1.0"
 

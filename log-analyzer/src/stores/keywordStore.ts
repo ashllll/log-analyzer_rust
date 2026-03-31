@@ -82,6 +82,7 @@ export const useKeywordStore = create<KeywordState>()(
       ),
       {
         name: 'log-analyzer-keywords',
+        version: 1,
         // 仅持久化关键词数据，不持久化临时状态（loading/error）
         partialize: (state) => ({
           keywordGroups: state.keywordGroups,

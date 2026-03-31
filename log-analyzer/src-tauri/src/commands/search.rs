@@ -9,7 +9,7 @@ use parking_lot::Mutex;
 use sha2::{Digest, Sha256};
 use std::{collections::HashSet, sync::Arc};
 use tauri::{command, AppHandle, Emitter, State};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use crate::models::AppState;
 use la_core::error::CommandError;
@@ -822,7 +822,8 @@ fn search_single_file_with_details(
             });
         }
 
-        debug!(
+        // 高频循环中使用 trace 级别，避免 DEBUG 日志性能开销
+        trace!(
             hash = %sha256_hash,
             virtual_path = %virtual_path,
             matches = results.len(),
@@ -881,7 +882,8 @@ fn search_single_file_with_details(
                     }
                 }
 
-                debug!(
+                // 高频循环中使用 trace 级别
+                trace!(
                     path = %real_path,
                     virtual_path = %virtual_path,
                     matches = results.len(),

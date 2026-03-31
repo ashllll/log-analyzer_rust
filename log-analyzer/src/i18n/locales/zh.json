@@ -237,5 +237,127 @@
     "tasks": "Tasks",
     "performance": "Performance",
     "settings": "Settings"
+  },
+  "errors": {
+    "title": "错误",
+    "unknown": "发生未知错误",
+    "details": "错误详情",
+    "retry": "重试",
+    "dismiss": "关闭",
+    "report": "报告问题",
+    "search": {
+      "query_empty": "搜索查询不能为空",
+      "query_too_long": "搜索查询过长（最多1000个字符）",
+      "query_empty_after_processing": "处理后搜索查询为空",
+      "workspace_not_found": "工作区不存在: {{workspaceId}}",
+      "no_workspaces_available": "没有可用的工作区。请先创建工作区。",
+      "metadata_store_failed": "打开元数据存储失败: {{error}}",
+      "database_error": "访问工作区时发生内部错误: {{workspaceId}}",
+      "execution_error": "查询执行错误: {{error}}",
+      "task_panicked": "搜索任务异常: {{error}}",
+      "timeout": "搜索超时（{{seconds}}秒）",
+      "session_not_found": "搜索ID {{searchId}} 不存在或已完成",
+      "session_expired": "搜索会话 '{{searchId}}' 不存在或已过期",
+      "page_read_failed": "读取搜索结果分页失败: {{error}}",
+      "cache_not_found": "缓存中未找到搜索。请使用 page_index = -1 开始新搜索"
+    },
+    "import": {
+      "path_not_exist": "路径不存在: {{path}}",
+      "path_canonicalization_failed": "路径规范化失败: {{error}}",
+      "app_data_dir_failed": "获取应用数据目录失败: {{error}}",
+      "workspace_dir_failed": "创建工作区目录失败: {{error}}",
+      "task_creation_failed": "创建任务失败: {{error}}",
+      "task_manager_not_initialized": "任务管理器未初始化",
+      "task_update_failed": "更新任务进度失败: {{error}}",
+      "metadata_store_failed": "创建元数据存储失败: {{error}}",
+      "cleanup_failed": "清理工作区目录失败: {{error}}",
+      "process_failed": "处理路径失败: {{error}}",
+      "verification_failed": "导入后验证完整性失败: {{error}}"
+    },
+    "workspace": {
+      "id_empty": "工作区ID不能为空",
+      "id_too_long": "工作区ID过长（最多50个字符）",
+      "id_invalid": "工作区ID只能包含字母、数字、连字符和下划线",
+      "not_found": "工作区不存在: {{workspaceId}}",
+      "not_cas_format": "工作区 {{workspaceId}} 不是CAS格式。请创建新工作区。",
+      "store_not_initialized": "工作区存储未初始化: {{workspaceId}}",
+      "file_count_failed": "统计文件数量失败: {{error}}",
+      "time_range_failed": "获取时间范围失败: {{error}}"
+    },
+    "validation": {
+      "path_traversal": "检测到路径遍历模式: {{pattern}}",
+      "null_byte": "检测到空字节注入",
+      "control_chars": "路径中包含控制字符",
+      "path_canonicalization_failed": "路径规范化失败: {{error}}",
+      "filename_empty": "文件名不能为空",
+      "filename_invalid": "文件名仅包含无效字符",
+      "filename_too_long": "文件名过长（最多255个字符）",
+      "filename_reserved": "保留文件名: {{name}}",
+      "too_many_duplicates": "索引 {{index}} 处重复文件名过多"
+    },
+    "export": {
+      "path_traversal": "导出路径包含非法路径遍历 (..)",
+      "directory_not_exist": "导出目录不存在: {{path}}",
+      "unsupported_format": "不支持的导出格式: {{format}}",
+      "task_panicked": "导出任务异常: {{error}}",
+      "csv_create_failed": "创建CSV文件失败: {{error}}",
+      "csv_write_failed": "写入CSV失败: {{error}}",
+      "json_serialize_failed": "序列化JSON失败: {{error}}",
+      "json_write_failed": "写入JSON文件失败: {{error}}"
+    },
+    "watch": {
+      "path_not_exist": "路径不存在: {{path}}",
+      "already_watched": "工作区已被监听",
+      "watcher_create_failed": "创建文件监听器失败: {{error}}",
+      "start_failed": "启动路径监听失败: {{error}}",
+      "no_active_watcher": "此工作区没有活动的监听器"
+    },
+    "performance": {
+      "metrics_store_init_failed": "初始化指标存储失败: {{error}}",
+      "metrics_store_not_initialized": "指标存储未初始化",
+      "database_error": "数据库错误: {{error}}"
+    },
+    "task": {
+      "manager_not_initialized": "任务管理器未初始化",
+      "cancel_failed": "取消任务失败: {{error}}",
+      "actor_stopped": "TaskManager actor已停止",
+      "operation_timeout": "操作超时",
+      "actor_dropped": "Actor丢弃了响应通道",
+      "shutdown_failed": "发送关闭消息失败: {{error}}",
+      "channel_full": "TaskManager通道已满"
+    },
+    "config": {
+      "toml_serialize_failed": "序列化TOML配置失败: {{error}}",
+      "json_serialize_failed": "序列化JSON配置失败: {{error}}",
+      "toml_deserialize_failed": "反序列化TOML配置失败: {{error}}",
+      "json_deserialize_failed": "反序列化JSON配置失败: {{error}}",
+      "validation_failed": "配置验证失败: {{error}}",
+      "event_bus_capacity": "事件总线容量必须大于0",
+      "cache_size": "查询执行器缓存大小必须大于0",
+      "max_complexity": "最大查询复杂度必须大于0",
+      "cache_capacity": "缓存最大容量必须大于0",
+      "cache_ttl": "缓存TTL必须大于0",
+      "cache_tti": "缓存TTI必须大于0",
+      "cleanup_queue_size": "清理队列大小必须大于0",
+      "leak_timeout": "泄漏检测超时必须大于0"
+    },
+    "io": {
+      "error": "IO错误: {{message}}",
+      "not_found": "未找到: {{path}}",
+      "invalid_path": "无效路径: {{path}}",
+      "encoding": "编码错误: {{message}}"
+    },
+    "cache": {
+      "compute_failed": "缓存计算操作失败: {{error}}",
+      "compression_failed": "缓存压缩失败: {{error}}",
+      "decompression_failed": "缓存解压失败: {{error}}"
+    },
+    "resource": {
+      "operation_not_found": "操作不存在: {{id}}",
+      "workspace_not_found": "工作区不存在: {{id}}",
+      "operation_timeout": "操作超时: {{id}}",
+      "cancellation_failed": "取消失败: {{error}}",
+      "cleanup_failed": "资源清理失败: {{error}}"
+    }
   }
 }

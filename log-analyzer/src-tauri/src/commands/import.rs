@@ -39,7 +39,10 @@ pub async fn import_folder(
     let canonical_path = match canonicalize_path(source_path) {
         Ok(path) => path,
         Err(e) => {
-            tracing::warn!("Path canonicalization failed: {}, using original path", e);
+            let error_msg = format!("Path canonicalization failed: {}", e);
+            tracing::warn!("{}", error_msg);
+            // 发送错误事件给前端
+            let _ = app_handle.emit("import-error", &error_msg);
             source_path.to_path_buf()
         }
     };
@@ -104,7 +107,10 @@ pub async fn import_folder(
             )
             .await
         {
-            tracing::warn!(task_id = %task_id_clone, error = %e, "Failed to update task progress");
+            let error_msg = format!("Failed to update task progress: {}", e);
+            tracing::warn!(task_id = %task_id_clone, error = %e, "{}", error_msg);
+            // 发送错误事件给前端
+            let _ = app_handle.emit("import-error", &error_msg);
         }
     }
 
@@ -186,7 +192,10 @@ pub async fn import_folder(
         // 删除磁盘上不完整的工作区目录
         if workspace_dir.exists() {
             if let Err(rm_err) = std::fs::remove_dir_all(&workspace_dir) {
-                tracing::warn!(path = ?workspace_dir, error = %rm_err, "清理失败的导入工作区目录出错");
+                let error_msg = format!("Failed to cleanup workspace directory: {}", rm_err);
+                tracing::warn!(path = ?workspace_dir, error = %rm_err, "{}", error_msg);
+                // 发送错误事件给前端
+                let _ = app_handle.emit("import-error", &error_msg);
             }
         }
 
@@ -208,11 +217,18 @@ pub async fn import_folder(
                 )
                 .await
             {
+                let error_msg = format!(
+                    "Failed to update task status to Failed: {}. Task may be in inconsistent state.",
+                    update_err
+                );
                 tracing::error!(
                     task_id = %task_id_clone,
                     error = %update_err,
-                    "Failed to update task status to Failed. Not sending fallback event."
+                    "{}",
+                    error_msg
                 );
+                // 发送错误事件给前端
+                let _ = app_handle.emit("import-error", &error_msg);
             }
         }
 
@@ -239,7 +255,10 @@ pub async fn import_folder(
             )
             .await
         {
-            tracing::warn!(task_id = %task_id_clone, error = %e, "Failed to update task progress");
+            let error_msg = format!("Failed to update task progress during verification: {}", e);
+            tracing::warn!(task_id = %task_id_clone, error = %e, "{}", error_msg);
+            // 发送错误事件给前端
+            let _ = app_handle.emit("import-error", &error_msg);
         }
     }
 
@@ -278,11 +297,15 @@ pub async fn import_folder(
             }
         }
         Err(e) => {
+            let error_msg = format!("Failed to verify integrity after import: {}", e);
             tracing::error!(
                 workspace_id = %workspace_id_clone,
                 error = %e,
-                "Failed to verify integrity after import"
+                "{}",
+                error_msg
             );
+            // 发送错误事件给前端
+            let _ = app_handle.emit("import-error", &error_msg);
         }
     }
 
@@ -305,11 +328,18 @@ pub async fn import_folder(
             )
             .await
         {
+            let error_msg = format!(
+                "Failed to update task status to Completed: {}. Task may be in inconsistent state.",
+                e
+            );
             tracing::error!(
                 task_id = %task_id_clone,
                 error = %e,
-                "Failed to update task status to Completed. Not sending fallback event."
+                "{}",
+                error_msg
             );
+            // 发送错误事件给前端
+            let _ = app_handle.emit("import-error", &error_msg);
         }
     }
 
@@ -327,11 +357,18 @@ pub async fn import_folder(
                 "导入完成，开始等待 Tantivy segment 合并"
             );
             if let Err(e) = search_manager.commit_and_wait_merge().await {
+                let error_msg = format!(
+                    "Tantivy segment merge warning (non-critical): {}. Import completed successfully.",
+                    e
+                );
                 tracing::warn!(
                     workspace_id = %workspace_id_clone,
                     error = %e,
-                    "Tantivy segment 合并等待失败，不影响导入结果"
+                    "{}",
+                    error_msg
                 );
+                // 发送警告事件给前端（非致命错误）
+                let _ = app_handle.emit("import-error", &error_msg);
             }
         }
     }

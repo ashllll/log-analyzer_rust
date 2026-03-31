@@ -3,7 +3,7 @@
  */
 
 import { create } from 'zustand';
-import { devtools, subscribeWithSelector } from 'zustand/middleware';
+import { devtools, persist, subscribeWithSelector } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 
 import type { Workspace } from './types';
@@ -35,41 +35,51 @@ interface WorkspaceState {
 
 export const useWorkspaceStore = create<WorkspaceState>()(
   devtools(
-    subscribeWithSelector(
-      immer((set) => ({
-        // Initial State
-        workspaces: [],
-        loading: false,
-        error: null,
-        
-        // Actions
-        setWorkspaces: (workspaces) => set((state) => {
-          state.workspaces = workspaces;
+    persist(
+      subscribeWithSelector(
+        immer((set) => ({
+          // Initial State
+          workspaces: [],
+          loading: false,
+          error: null,
+
+          // Actions
+          setWorkspaces: (workspaces) => set((state) => {
+            state.workspaces = workspaces;
+          }),
+
+          addWorkspace: (workspace) => set((state) => {
+            state.workspaces.push(workspace);
+          }),
+
+          updateWorkspace: (id, updates) => set((state) => {
+            const index = state.workspaces.findIndex(w => w.id === id);
+            if (index !== -1) {
+              Object.assign(state.workspaces[index], updates);
+            }
+          }),
+
+          deleteWorkspace: (id) => set((state) => {
+            state.workspaces = state.workspaces.filter(w => w.id !== id);
+          }),
+
+          setLoading: (loading) => set((state) => {
+            state.loading = loading;
+          }),
+
+          setError: (error) => set((state) => {
+            state.error = error;
+          }),
+        }))
+      ),
+      {
+        name: 'log-analyzer-workspaces',
+        version: 1,
+        // 仅持久化工作区列表，不持久化临时状态（loading/error）
+        partialize: (state) => ({
+          workspaces: state.workspaces,
         }),
-        
-        addWorkspace: (workspace) => set((state) => {
-          state.workspaces.push(workspace);
-        }),
-        
-        updateWorkspace: (id, updates) => set((state) => {
-          const index = state.workspaces.findIndex(w => w.id === id);
-          if (index !== -1) {
-            Object.assign(state.workspaces[index], updates);
-          }
-        }),
-        
-        deleteWorkspace: (id) => set((state) => {
-          state.workspaces = state.workspaces.filter(w => w.id !== id);
-        }),
-        
-        setLoading: (loading) => set((state) => {
-          state.loading = loading;
-        }),
-        
-        setError: (error) => set((state) => {
-          state.error = error;
-        }),
-      }))
+      }
     ),
     { name: 'workspace-store' }
   )

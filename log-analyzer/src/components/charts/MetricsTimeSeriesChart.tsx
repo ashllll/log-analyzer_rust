@@ -56,60 +56,88 @@ interface MetricConfig {
 /**
  * 指标配置映射
  */
+// 主题色彩系统 - 与Tailwind配置保持一致
+const THEME_COLORS = {
+  // 主色调 (Blue)
+  primary: {
+    500: '#3B82F6',
+    400: '#60A5FA',
+    300: '#93C5FD',
+    200: '#BFDBFE',
+  },
+  // CTA/成功色 (Green)
+  success: {
+    500: '#22C55E',
+    400: '#4ADE80',
+  },
+  // 警告色 (Amber)
+  warning: {
+    500: '#F59E0B',
+  },
+  // 紫色 (Purple)
+  purple: {
+    500: '#8B5CF6',
+  },
+  // 状态色
+  status: {
+    error: '#EF4444',
+  },
+} as const;
+
 export const METRIC_CONFIGS: Record<MetricType, MetricConfig> = {
   search_latency_current: {
     key: 'search_latency_current',
     label: 'Current Latency',
-    color: '#3b82f6',
+    color: THEME_COLORS.primary[500],
     unit: 'ms',
     yAxisId: 'left',
   },
   search_latency_average: {
     key: 'search_latency_average',
     label: 'Average Latency',
-    color: '#60a5fa',
+    color: THEME_COLORS.primary[400],
     unit: 'ms',
     yAxisId: 'left',
   },
   search_latency_p95: {
     key: 'search_latency_p95',
     label: 'P95 Latency',
-    color: '#93c5fd',
+    color: THEME_COLORS.primary[300],
     unit: 'ms',
     yAxisId: 'left',
   },
   search_latency_p99: {
     key: 'search_latency_p99',
     label: 'P99 Latency',
-    color: '#bfdbfe',
+    color: THEME_COLORS.primary[200],
     unit: 'ms',
     yAxisId: 'left',
   },
   throughput_current: {
     key: 'throughput_current',
     label: 'Throughput',
-    color: '#10b981',
+    color: THEME_COLORS.success[500],
     unit: 'req/s',
     yAxisId: 'right',
   },
   throughput_average: {
     key: 'throughput_average',
     label: 'Avg Throughput',
-    color: '#34d399',
+    color: THEME_COLORS.success[400],
     unit: 'req/s',
     yAxisId: 'right',
   },
   cache_hit_rate: {
     key: 'cache_hit_rate',
     label: 'Cache Hit Rate',
-    color: '#f59e0b',
+    color: THEME_COLORS.warning[500],
     unit: '%',
     yAxisId: 'right',
   },
   memory_used: {
     key: 'memory_used',
     label: 'Memory Used',
-    color: '#8b5cf6',
+    color: THEME_COLORS.purple[500],
     unit: 'MB',
     yAxisId: 'right',
   },
@@ -339,12 +367,12 @@ export function MetricsTimeSeriesChart({
           <ReferenceLine
             y={alertThreshold.value}
             yAxisId={METRIC_CONFIGS[alertThreshold.metric].yAxisId || 'left'}
-            stroke="#ef4444"
+            stroke={THEME_COLORS.status.error}
             strokeDasharray="5 5"
             label={{
               value: alertThreshold.label || 'Alert',
               position: 'right',
-              fill: '#ef4444',
+              fill: THEME_COLORS.status.error,
               fontSize: 11,
             }}
           />

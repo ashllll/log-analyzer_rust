@@ -213,12 +213,12 @@ const FileFilterSettings: React.FC<FileFilterSettingsProps> = ({
           )}
 
           {/* 说明信息 */}
-          <div className="bg-blue-500/10 border border-blue-500/30 text-blue-400 px-4 py-3 rounded text-sm">
+          <div className="bg-log-info/10 border border-log-info/30 text-log-info px-4 py-3 rounded text-sm">
             <div className="flex items-start gap-2">
               <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
               <div className="space-y-1">
                 <p className="font-semibold">{t('file_filter.three_layer_strategy')}</p>
-                <ul className="text-xs space-y-0.5 text-blue-300">
+                <ul className="text-xs space-y-0.5 text-log-info/80">
                   <li>• {t('file_filter.layer1_binary')}</li>
                   <li>• {t('file_filter.layer2_smart')}</li>
                   <li>• {t('file_filter.defensive_design')}</li>
@@ -340,10 +340,10 @@ const FileFilterSettings: React.FC<FileFilterSettingsProps> = ({
                       key={pattern}
                       className="flex items-center gap-1 px-2 py-1 bg-bg-sidebar border border-border-base rounded text-xs text-text-main"
                     >
-                      <code className="text-blue-400">{pattern}</code>
+                      <code className="text-log-info">{pattern}</code>
                       <button
                         onClick={() => removePattern(pattern)}
-                        className="ml-1 text-text-dim hover:text-red-400 transition-colors"
+                        className="ml-1 text-text-dim hover:text-log-error transition-colors"
                         aria-label={t('file_filter.remove_pattern', { pattern })}
                       >
                         <Trash2 className="w-3 h-3" />
@@ -382,7 +382,7 @@ const FileFilterSettings: React.FC<FileFilterSettingsProps> = ({
                       <code className="text-green-400">.{ext}</code>
                       <button
                         onClick={() => removeExtension(ext)}
-                        className="ml-1 text-text-dim hover:text-red-400 transition-colors"
+                        className="ml-1 text-text-dim hover:text-log-error transition-colors"
                         aria-label={t('file_filter.remove_extension', { extension: ext })}
                       >
                         <Trash2 className="w-3 h-3" />

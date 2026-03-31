@@ -43,7 +43,7 @@ fn create_simple_zip(dir: &Path, name: &str, files: Vec<(&str, &[u8])>) -> PathB
     let mut zip = zip::ZipWriter::new(file);
 
     let options =
-        zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        zip::write::FileOptions::<'_, ()>::default().compression_method(zip::CompressionMethod::Stored);
 
     for (filename, content) in files {
         zip.start_file(filename, options).unwrap();
@@ -61,7 +61,7 @@ fn create_nested_zip(dir: &Path, name: &str, inner_archives: Vec<PathBuf>) -> Pa
     let mut zip = zip::ZipWriter::new(file);
 
     let options =
-        zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        zip::write::FileOptions::<'_, ()>::default().compression_method(zip::CompressionMethod::Stored);
 
     // Add inner archives
     for inner_archive in inner_archives {
