@@ -5,16 +5,158 @@
 //!
 //! 为保持与 JavaScript camelCase 惯例一致，Tauri 命令参数使用 camelCase 命名。
 
-use std::{fs, path::Path};
+use std::{fs, path::Path, sync::Arc};
 
 use tauri::{command, AppHandle, Emitter, Manager, State};
 use tracing::error;
 use uuid::Uuid;
 
 use crate::models::AppState;
+use crate::services::parse_log_lines;
 use crate::task_manager::TaskManager;
+use crate::utils::encoding::decode_log_content;
 use crate::utils::{canonicalize_path, validate_path_param, validate_workspace_id};
+use la_core::models::config::AppConfigLoader;
 use la_storage::{verify_after_import, MetadataStore};
+
+const SEARCH_INDEX_DIR_NAME: &str = "search_index";
+const SEARCH_INDEX_WRITER_HEAP_BYTES: usize = 50_000_000;
+const SEARCH_INDEX_COMMIT_EVERY_FILES: usize = 25;
+
+fn load_workspace_search_config(app: &AppHandle) -> la_core::models::config::SearchConfig {
+    let config_path = match app.path().app_config_dir() {
+        Ok(dir) => dir.join("config.json"),
+        Err(_) => return Default::default(),
+    };
+
+    if !config_path.exists() {
+        return Default::default();
+    }
+
+    AppConfigLoader::load(Some(config_path))
+        .ok()
+        .map(|loader| loader.get_search_config().clone())
+        .unwrap_or_default()
+}
+
+fn ensure_search_engine_manager(
+    app: &AppHandle,
+    state: &AppState,
+    workspace_id: &str,
+    workspace_dir: &Path,
+) -> Result<Arc<crate::search_engine::SearchEngineManager>, String> {
+    if let Some(manager) = state
+        .search_engine_managers
+        .lock()
+        .get(workspace_id)
+        .cloned()
+    {
+        return Ok(manager);
+    }
+
+    let app_search_config = load_workspace_search_config(app);
+    let index_path = workspace_dir.join(SEARCH_INDEX_DIR_NAME);
+    let manager = Arc::new(
+        crate::search_engine::manager::SearchEngineManager::with_app_config(
+            app_search_config,
+            index_path,
+            SEARCH_INDEX_WRITER_HEAP_BYTES,
+        )
+        .map_err(|e| format!("Failed to initialize search engine: {}", e))?,
+    );
+
+    state
+        .search_engine_managers
+        .lock()
+        .insert(workspace_id.to_string(), Arc::clone(&manager));
+
+    Ok(manager)
+}
+
+async fn rebuild_workspace_search_index(
+    metadata_store: Arc<MetadataStore>,
+    cas: Arc<crate::storage::ContentAddressableStorage>,
+    search_manager: Arc<crate::search_engine::SearchEngineManager>,
+) -> Result<usize, String> {
+    let files = metadata_store
+        .get_all_files()
+        .await
+        .map_err(|e| format!("Failed to enumerate imported files for indexing: {}", e))?;
+
+    tokio::task::spawn_blocking(move || -> Result<usize, String> {
+        search_manager
+            .clear_index()
+            .map_err(|e| format!("Failed to clear search index before rebuild: {}", e))?;
+
+        let mut indexed_lines = 0usize;
+
+        for (file_index, file) in files.into_iter().enumerate() {
+            let content = cas.read_content_sync(&file.sha256_hash).map_err(|e| {
+                format!(
+                    "Failed to read CAS content for {}: {}",
+                    file.virtual_path, e
+                )
+            })?;
+            let (content_str, _) = decode_log_content(&content);
+            let real_path = format!("cas://{}", file.sha256_hash);
+
+            let mut line_buffer = Vec::with_capacity(1024);
+            let mut start_line_number = 1usize;
+
+            for line in content_str.lines() {
+                line_buffer.push(line.to_string());
+
+                if line_buffer.len() >= 1024 {
+                    let entries = parse_log_lines(
+                        &line_buffer,
+                        &file.virtual_path,
+                        &real_path,
+                        indexed_lines,
+                        start_line_number,
+                    );
+                    for entry in &entries {
+                        search_manager
+                            .add_document(entry)
+                            .map_err(|e| format!("Failed to add indexed document: {}", e))?;
+                    }
+                    indexed_lines += entries.len();
+                    start_line_number += line_buffer.len();
+                    line_buffer.clear();
+                }
+            }
+
+            if !line_buffer.is_empty() {
+                let entries = parse_log_lines(
+                    &line_buffer,
+                    &file.virtual_path,
+                    &real_path,
+                    indexed_lines,
+                    start_line_number,
+                );
+                for entry in &entries {
+                    search_manager
+                        .add_document(entry)
+                        .map_err(|e| format!("Failed to add indexed document: {}", e))?;
+                }
+                indexed_lines += entries.len();
+            }
+
+            if (file_index + 1) % SEARCH_INDEX_COMMIT_EVERY_FILES == 0 {
+                search_manager
+                    .commit()
+                    .map_err(|e| format!("Failed to commit rebuilt search index: {}", e))?;
+            }
+        }
+
+        search_manager
+            .commit()
+            .map_err(|e| format!("Failed to finalize rebuilt search index: {}", e))?;
+
+        Ok(indexed_lines)
+    })
+    .await
+    .map_err(|e| format!("Search index rebuild task panicked: {}", e))?
+}
 
 #[command]
 pub async fn import_folder(
@@ -160,6 +302,13 @@ pub async fn import_folder(
         workspace_dirs.insert(workspace_id_clone.clone(), workspace_dir.clone());
     }
 
+    let search_manager =
+        ensure_search_engine_manager(&app_handle, &state, &workspace_id_clone, &workspace_dir)
+            .map_err(|e| {
+                let _ = app_handle.emit("import-error", &e);
+                e
+            })?;
+
     // Process the path using CAS architecture
     use crate::commands::TauriAppConfigProvider;
     use la_archive::processor::process_path_with_cas;
@@ -185,6 +334,10 @@ pub async fn import_folder(
         // 清理导入失败前已插入的内存状态，防止孤儿条目
         state.cas_instances.lock().remove(&workspace_id_clone);
         state.metadata_stores.lock().remove(&workspace_id_clone);
+        state
+            .search_engine_managers
+            .lock()
+            .remove(&workspace_id_clone);
         {
             let mut dirs = state.workspace_dirs.lock();
             dirs.remove(&workspace_id_clone);
@@ -233,6 +386,61 @@ pub async fn import_folder(
         }
 
         return Err(format!("Failed to process path: {}", e));
+    }
+
+    if let Some(ref task_manager) = task_manager_clone {
+        let task_manager: &TaskManager = task_manager;
+        if let Err(e) = task_manager
+            .update_task_async(
+                &task_id_clone,
+                97,
+                "Building search index...".to_string(),
+                crate::task_manager::TaskStatus::Running,
+            )
+            .await
+        {
+            let error_msg = format!("Failed to update task progress during index build: {}", e);
+            tracing::warn!(task_id = %task_id_clone, error = %e, "{}", error_msg);
+            let _ = app_handle.emit("import-error", &error_msg);
+        }
+    }
+
+    if let Err(e) = rebuild_workspace_search_index(
+        metadata_store.clone(),
+        Arc::clone(&cas),
+        Arc::clone(&search_manager),
+    )
+    .await
+    {
+        state
+            .search_engine_managers
+            .lock()
+            .remove(&workspace_id_clone);
+        state.cas_instances.lock().remove(&workspace_id_clone);
+        state.metadata_stores.lock().remove(&workspace_id_clone);
+        state.workspace_dirs.lock().remove(&workspace_id_clone);
+
+        if workspace_dir.exists() {
+            let _ = std::fs::remove_dir_all(&workspace_dir);
+        }
+
+        let error_msg = format!("Failed to build initial search index: {}", e);
+        tracing::error!(workspace_id = %workspace_id_clone, error = %e, "{}", error_msg);
+        let _ = app_handle.emit("import-error", &error_msg);
+
+        if let Some(ref task_manager) = task_manager_clone {
+            let task_manager: &TaskManager = task_manager;
+            let _ = task_manager
+                .update_task_async(
+                    &task_id_clone,
+                    0,
+                    error_msg.clone(),
+                    crate::task_manager::TaskStatus::Failed,
+                )
+                .await;
+        }
+
+        return Err(error_msg);
     }
 
     // Verify integrity after import (Task 5.2)
@@ -347,10 +555,7 @@ pub async fn import_folder(
     // 如果该工作区已有 SearchEngineManager，则等待后台 segment 合并完成
     // 这可以减少段数量，提升后续搜索性能
     {
-        let search_engine_opt = {
-            let managers = state.search_engine_managers.lock();
-            managers.get(&workspace_id_clone).cloned()
-        };
+        let search_engine_opt = Some(Arc::clone(&search_manager));
         if let Some(search_manager) = search_engine_opt {
             tracing::info!(
                 workspace_id = %workspace_id_clone,

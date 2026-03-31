@@ -301,12 +301,13 @@ fn cleanup_workspace_resources(
     // 这样可以避免遍历缓存键的性能开销
     info!("Step 2: Skipping search cache cleanup (LRU auto-eviction)");
 
-    // ===== 步骤3: 清除内存状态 =====
-    // CAS架构下，不需要清理全局的 path_map 和 file_metadata
-    // 这些已经在之前的任务中被移除
-    info!("Step 3: No memory state to clear (CAS architecture)");
-
-    info!("Step 3 completed: Memory state cleared");
+    // ===== 步骤3: 清除工作区运行态资源 =====
+    info!("Step 3: Removing workspace runtime resources");
+    state.workspace_dirs.lock().remove(workspace_id);
+    state.cas_instances.lock().remove(workspace_id);
+    state.metadata_stores.lock().remove(workspace_id);
+    state.search_engine_managers.lock().remove(workspace_id);
+    info!("Step 3 completed: Workspace runtime resources removed");
 
     // ===== 步骤4: 清理旧的索引文件（如果存在）=====
     // 为了向后兼容，检查并删除旧的 .idx.gz 文件

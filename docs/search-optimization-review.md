@@ -78,6 +78,20 @@
 
 - 常见的 `error|warning|timeout` 这类 OR 查询，在真实入口上会退化为“每行多次单词匹配”，没有利用现成的多模式引擎做快速预检。
 
+### 6. `SearchEngineManager` 生命周期不闭环
+
+真实现状：
+
+- 运行时代码中，文件监听增量索引、导入后 segment merge、工作区时间范围查询都依赖 `state.search_engine_managers`。
+- 但导入主路径此前只初始化了 CAS 和 `MetadataStore`，没有真实创建并注册 `SearchEngineManager`。
+- 同时，索引写入侧把 `LogEntry.timestamp` 直接按整数解析，而主业务日志时间戳大多是 `2024-01-15 10:30:45` 这类字符串。
+
+业务后果：
+
+- 导入后的历史日志没有被建立 Tantivy 索引。
+- 文件监听新增日志可能命中 “manager 不存在” 分支，根本不会写入索引。
+- 工作区时间范围查询可能返回空值或大量 `0` 时间戳，无法反映真实日志时间线。
+
 ## 已落地的改进
 
 ### 1. 新增过滤编译层
@@ -192,6 +206,42 @@
 - `search_logs` 真实入口的 `error|warning|timeout` 这类查询终于能利用项目内已存在的多模式引擎能力。
 - 先做一次线性多模式判定，再做详情提取，避免每个未命中行都反复执行多次单词匹配。
 
+### 9. 补齐 `SearchEngineManager` 初始化与首次建索引
+
+实现位置：
+
+- `commands/import.rs`
+- `crates/la-search/src/manager.rs`
+- `commands/workspace.rs`
+
+实现方式：
+
+- 在 `import_folder` 中创建工作区 CAS / `MetadataStore` 后，立即初始化并注册 `SearchEngineManager`。
+- 导入成功后，从 CAS + `MetadataStore` 重新遍历已导入文件，批量解析日志行并回填 Tantivy 索引。
+- 建索引期间按文件批次定期 `commit`，导入结束后继续沿用现有 `commit_and_wait_merge`。
+- 删除工作区时，补充移除运行态的 `workspace_dirs` / `cas_instances` / `metadata_stores` / `search_engine_managers`，保证生命周期对称。
+
+收益：
+
+- 导入后的历史日志首次就能拥有完整索引，而不是只靠后续 watch 增量补丁。
+- `append_to_workspace_index`、`get_workspace_time_range`、导入后 merge 这些既有调用终于有了真实运行态依赖。
+- 工作区删除后不会再保留悬空的搜索引擎资源引用。
+
+### 10. 统一索引侧时间戳解析
+
+实现方式：
+
+- `SearchEngineManager::add_document` 现在支持：
+  - Unix 秒/毫秒时间戳
+  - RFC3339
+  - 项目当前常见日志时间格式
+- 只有真正无法解析时，才回退到 `0` 作为占位。
+
+收益：
+
+- 时间范围 fast field 不再被大面积写成 `0`。
+- `get_time_range()` 返回的最小/最大时间更接近真实业务日志分布。
+
 ## 边界条件清单
 
 本次已覆盖并补测的边界：
@@ -208,6 +258,9 @@
 - 分段中同时存在范围内和范围外时间：只保留范围内行，不扩大匹配
 - 级别过滤存在但整段只含其他级别：整段直接排除
 - 多个简单 OR 关键词：共享快速预检与原有详情提取结果保持一致
+- `SearchEngineManager` 未初始化：导入后已补齐注册
+- 历史导入日志无初始索引：导入完成后补建
+- 日志时间戳为常见字符串格式：索引侧可解析为 Unix 时间
 
 本次刻意未改变的语义：
 
@@ -223,6 +276,7 @@
 已执行：
 
 - `cargo fmt`
+- `cargo test -q manager -- --nocapture`
 - `cargo test -q segment_pruning -- --nocapture`
 - `cargo test -q fast_or_engine -- --nocapture`
 - `cargo test -q search -- --nocapture`
@@ -252,6 +306,12 @@
 - Regex `Regex`
   - 用于保持现有 `is_match` / `find_iter` 详情提取语义不变
   - 参考: <https://docs.rs/regex/latest/regex/struct.Regex.html>
+- Tantivy `ReloadPolicy`
+  - 用于确认 `OnCommitWithDelay` 与显式 `reader.reload()` 的可见性语义
+  - 参考: <https://docs.rs/tantivy/latest/tantivy/enum.ReloadPolicy.html>
+- Tantivy `IndexWriter::commit`
+  - 用于确认提交后再 reload reader 的生命周期做法
+  - 参考: <https://docs.rs/tantivy/latest/tantivy/struct.IndexWriter.html>
 
 ## 说明
 

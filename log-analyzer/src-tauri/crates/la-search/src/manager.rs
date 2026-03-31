@@ -29,6 +29,47 @@ use crate::{
 use la_core::models::config::SearchConfig as AppSearchConfig;
 use la_core::models::LogEntry;
 
+const INDEX_TIMESTAMP_FORMATS: &[&str] = &[
+    "%Y-%m-%dT%H:%M:%S%.f",
+    "%Y-%m-%dT%H:%M:%S",
+    "%Y-%m-%d %H:%M:%S%.f",
+    "%Y-%m-%d %H:%M:%S",
+    "%d/%m/%Y %H:%M:%S%.f",
+    "%d/%m/%Y %H:%M:%S",
+    "%m/%d/%Y %H:%M:%S%.f",
+    "%m/%d/%Y %H:%M:%S",
+    "%Y/%m/%d %H:%M:%S%.f",
+    "%Y/%m/%d %H:%M:%S",
+    "%d-%m-%Y %H:%M:%S",
+    "%m-%d-%Y %H:%M:%S",
+    "%Y%m%d %H:%M:%S",
+    "%Y-%m-%dT%H:%M",
+    "%Y-%m-%d %H:%M",
+    "%b %d %H:%M:%S",
+    "%d/%b/%Y:%H:%M:%S",
+];
+
+fn parse_log_timestamp_to_unix(timestamp: &str) -> Option<i64> {
+    let trimmed = timestamp.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    if let Ok(raw) = trimmed.parse::<i64>() {
+        return Some(if trimmed.len() >= 13 { raw / 1000 } else { raw });
+    }
+
+    for format in INDEX_TIMESTAMP_FORMATS {
+        if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(trimmed, format) {
+            return Some(dt.and_utc().timestamp());
+        }
+    }
+
+    chrono::DateTime::parse_from_rfc3339(trimmed)
+        .ok()
+        .map(|dt| dt.timestamp())
+}
+
 /// Search result entry with document address for highlighting
 #[derive(Debug, Clone)]
 pub struct SearchResultEntry {
@@ -539,16 +580,17 @@ impl SearchEngineManager {
         let mut doc = TantivyDocument::default();
 
         doc.add_text(self.schema.content, &log_entry.content);
-        // 解析时间戳字符串到 i64；解析失败时使用 0（1970-01-01）作为占位，
-        // 避免使用当前时间导致历史日志时序混乱
-        let timestamp_i64 = log_entry.timestamp.parse::<i64>().unwrap_or_else(|_| {
-            tracing::warn!(
-                timestamp = %log_entry.timestamp,
-                file = %log_entry.file,
-                "时间戳解析失败，使用 0 (1970-01-01) 作为占位值；不影响其他日志时序"
-            );
-            0i64
-        });
+        // 统一接受 Unix 时间戳、RFC3339 和项目常见日志时间格式。
+        // 解析失败时使用 0（1970-01-01）占位，避免伪造“当前时间”污染时序索引。
+        let timestamp_i64 =
+            parse_log_timestamp_to_unix(&log_entry.timestamp).unwrap_or_else(|| {
+                tracing::warn!(
+                    timestamp = %log_entry.timestamp,
+                    file = %log_entry.file,
+                    "时间戳解析失败，使用 0 (1970-01-01) 作为占位值；不影响其他日志时序"
+                );
+                0i64
+            });
         doc.add_i64(self.schema.timestamp, timestamp_i64);
         doc.add_text(self.schema.level, &log_entry.level);
         doc.add_text(self.schema.file_path, &log_entry.file);
@@ -1086,6 +1128,58 @@ mod tests {
                 panic!("Unexpected error during empty index search: {}", e);
             }
         }
+    }
+
+    #[test]
+    fn test_parse_log_timestamp_to_unix_accepts_common_formats() {
+        let iso = parse_log_timestamp_to_unix("2024-01-01T00:00:00").unwrap();
+        let common = parse_log_timestamp_to_unix("2024-01-01 00:00:00").unwrap();
+        let millis = parse_log_timestamp_to_unix("1704067200000").unwrap();
+        let rfc3339 = parse_log_timestamp_to_unix("2024-01-01T00:00:00Z").unwrap();
+
+        assert_eq!(iso, 1_704_067_200);
+        assert_eq!(common, 1_704_067_200);
+        assert_eq!(millis, 1_704_067_200);
+        assert_eq!(rfc3339, 1_704_067_200);
+    }
+
+    #[tokio::test]
+    async fn test_get_time_range_uses_parsed_human_readable_timestamps() {
+        let (manager, _temp_dir) = create_test_manager();
+
+        let entry1 = la_core::models::LogEntry {
+            id: 1,
+            timestamp: "2024-01-01 00:00:00".into(),
+            level: "INFO".into(),
+            file: "logs/app.log".into(),
+            real_path: "cas://a".into(),
+            line: 1,
+            content: "First log entry".into(),
+            tags: vec![],
+            match_details: None,
+            matched_keywords: None,
+        };
+        let entry2 = la_core::models::LogEntry {
+            id: 2,
+            timestamp: "2024-01-01 00:05:00".into(),
+            level: "ERROR".into(),
+            file: "logs/app.log".into(),
+            real_path: "cas://a".into(),
+            line: 2,
+            content: "Second log entry".into(),
+            tags: vec![],
+            match_details: None,
+            matched_keywords: None,
+        };
+
+        manager.add_document(&entry1).unwrap();
+        manager.add_document(&entry2).unwrap();
+        manager.commit().unwrap();
+
+        let (min_ts, max_ts, total) = manager.get_time_range().unwrap();
+        assert_eq!(min_ts, 1_704_067_200);
+        assert_eq!(max_ts, 1_704_067_500);
+        assert_eq!(total, 2);
     }
 
     /// Test delete_file_documents functionality
