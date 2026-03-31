@@ -240,7 +240,8 @@ async fn test_nested_archive_extraction() {
     // Manually create outer archive with binary inner.zip
     let outer_file = fs::File::create(&outer_archive).unwrap();
     let mut zip = ZipWriter::new(outer_file);
-    zip.start_file("inner.zip", zip::write::FileOptions::<'_, ()>::default()).unwrap();
+    zip.start_file("inner.zip", zip::write::FileOptions::<'_, ()>::default())
+        .unwrap();
     zip.write_all(&inner_bytes).unwrap();
     zip.finish().unwrap();
 

@@ -234,10 +234,7 @@ fn validate_monitoring_field(
                 if !valid_levels.contains(&level.to_lowercase().as_str()) {
                     return Ok(Some(FieldValidationError {
                         field: "log_level".to_string(),
-                        message: format!(
-                            "无效的日志级别，必须是以下之一: {:?}",
-                            valid_levels
-                        ),
+                        message: format!("无效的日志级别，必须是以下之一: {:?}", valid_levels),
                         code: "invalid_log_level".to_string(),
                     }));
                 }
@@ -441,10 +438,7 @@ pub async fn get_search_config(app: AppHandle) -> Result<SearchConfig, String> {
 
 /// 保存搜索配置
 #[command]
-pub async fn save_search_config(
-    app: AppHandle,
-    search_config: SearchConfig,
-) -> Result<(), String> {
+pub async fn save_search_config(app: AppHandle, search_config: SearchConfig) -> Result<(), String> {
     // 验证配置
     let validation = search_config.validate();
     if !validation.is_valid {

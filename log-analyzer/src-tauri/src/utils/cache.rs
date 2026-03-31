@@ -622,7 +622,11 @@ mod tests {
 
     #[test]
     fn test_tti_expiration() {
-        let entry = CacheEntry::with_ttl_and_tti("value", Duration::from_secs(60), Duration::from_millis(50));
+        let entry = CacheEntry::with_ttl_and_tti(
+            "value",
+            Duration::from_secs(60),
+            Duration::from_millis(50),
+        );
         assert!(!entry.is_expired());
 
         // 等待 TTI 过期
@@ -632,7 +636,11 @@ mod tests {
 
     #[test]
     fn test_touch_updates_access_time() {
-        let mut entry = CacheEntry::with_ttl_and_tti("value", Duration::from_secs(60), Duration::from_millis(50));
+        let mut entry = CacheEntry::with_ttl_and_tti(
+            "value",
+            Duration::from_secs(60),
+            Duration::from_millis(50),
+        );
 
         thread::sleep(Duration::from_millis(30));
         entry.touch();

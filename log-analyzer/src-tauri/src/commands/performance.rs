@@ -222,7 +222,8 @@ pub async fn get_performance_metrics(
             cache_metrics: CacheMetrics {
                 hit_rate: metrics.search.cache_hit_rate,
                 miss_count: cache_stats.l1_miss_count,
-                hit_count: (metrics.search.total_searches as f64 * metrics.search.cache_hit_rate / 100.0) as u64,
+                hit_count: (metrics.search.total_searches as f64 * metrics.search.cache_hit_rate
+                    / 100.0) as u64,
                 size: cache_stats.estimated_size,
                 capacity: 1000,
                 evictions: cache_stats.eviction_count,

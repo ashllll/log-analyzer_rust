@@ -280,8 +280,8 @@ fn create_test_zip(dir: &Path, name: &str, files: Vec<(&str, &[u8])>) -> CasTest
     let file = fs::File::create(&zip_path)?;
     let mut zip = zip::ZipWriter::new(file);
 
-    let options =
-        zip::write::FileOptions::<'_, ()>::default().compression_method(zip::CompressionMethod::Stored);
+    let options = zip::write::FileOptions::<'_, ()>::default()
+        .compression_method(zip::CompressionMethod::Stored);
 
     for (filename, content) in files {
         zip.start_file(filename, options)?;
@@ -302,8 +302,8 @@ fn create_nested_test_zip(
     let file = fs::File::create(&zip_path)?;
     let mut zip = zip::ZipWriter::new(file);
 
-    let options =
-        zip::write::FileOptions::<'_, ()>::default().compression_method(zip::CompressionMethod::Stored);
+    let options = zip::write::FileOptions::<'_, ()>::default()
+        .compression_method(zip::CompressionMethod::Stored);
 
     // Add inner archives
     for inner_archive in inner_archives {

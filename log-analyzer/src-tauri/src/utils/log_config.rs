@@ -166,17 +166,15 @@ pub fn init_logging(config: Option<LogConfig>) {
         .with_line_number(false)
         .finish();
 
-    tracing::subscriber::set_global_default(subscriber)
-        .expect("Failed to set global subscriber");
+    tracing::subscriber::set_global_default(subscriber).expect("Failed to set global subscriber");
 
     tracing::info!("日志系统初始化完成，默认级别: {:?}", config.default_level);
 }
 
 /// 构建环境过滤器
 fn build_env_filter(config: &LogConfig) -> tracing_subscriber::EnvFilter {
-    let mut filter = tracing_subscriber::EnvFilter::new(
-        config.default_level.to_level_filter().to_string()
-    );
+    let mut filter =
+        tracing_subscriber::EnvFilter::new(config.default_level.to_level_filter().to_string());
 
     // 添加模块特定配置
     for module_config in &config.modules {
@@ -269,11 +267,10 @@ pub fn load_log_config_from_file(path: &std::path::Path) -> Result<LogConfig, St
         return Err(format!("配置文件不存在: {}", path.display()));
     }
 
-    let content = std::fs::read_to_string(path)
-        .map_err(|e| format!("读取配置文件失败: {}", e))?;
+    let content = std::fs::read_to_string(path).map_err(|e| format!("读取配置文件失败: {}", e))?;
 
-    let config: LogConfig = serde_json::from_str(&content)
-        .map_err(|e| format!("解析配置文件失败: {}", e))?;
+    let config: LogConfig =
+        serde_json::from_str(&content).map_err(|e| format!("解析配置文件失败: {}", e))?;
 
     Ok(config)
 }
@@ -287,15 +284,11 @@ pub fn load_log_config_from_file(path: &std::path::Path) -> Result<LogConfig, St
 /// # 返回
 /// - `Ok(())`: 保存成功
 /// - `Err(String)`: 保存失败
-pub fn save_log_config_to_file(
-    path: &std::path::Path,
-    config: &LogConfig,
-) -> Result<(), String> {
-    let content = serde_json::to_string_pretty(config)
-        .map_err(|e| format!("序列化配置失败: {}", e))?;
+pub fn save_log_config_to_file(path: &std::path::Path, config: &LogConfig) -> Result<(), String> {
+    let content =
+        serde_json::to_string_pretty(config).map_err(|e| format!("序列化配置失败: {}", e))?;
 
-    std::fs::write(path, content)
-        .map_err(|e| format!("写入配置文件失败: {}", e))?;
+    std::fs::write(path, content).map_err(|e| format!("写入配置文件失败: {}", e))?;
 
     Ok(())
 }
@@ -411,10 +404,7 @@ mod tests {
         set_module_log_level("test_module", LogLevel::Error);
 
         let config = get_log_config();
-        let module_config = config
-            .modules
-            .iter()
-            .find(|m| m.module == "test_module");
+        let module_config = config.modules.iter().find(|m| m.module == "test_module");
         assert!(module_config.is_some());
         assert_eq!(module_config.unwrap().level, LogLevel::Error);
     }

@@ -357,8 +357,7 @@ impl SearchMetricsCollector {
     pub fn record_search(&self, latency_ms: u64, results_count: u64, cache_hit: bool) {
         // 更新计数器
         self.total_searches.fetch_add(1, Ordering::Relaxed);
-        self.current_latency_ms
-            .store(latency_ms, Ordering::Relaxed);
+        self.current_latency_ms.store(latency_ms, Ordering::Relaxed);
         self.total_latency_ms
             .fetch_add(latency_ms, Ordering::Relaxed);
         self.total_results
@@ -409,9 +408,7 @@ impl SearchMetricsCollector {
 
         debug!(
             latency_ms,
-            results_count,
-            cache_hit,
-            "Recorded search metrics"
+            results_count, cache_hit, "Recorded search metrics"
         );
     }
 
@@ -424,11 +421,7 @@ impl SearchMetricsCollector {
         let total_cache_ops = cache_hits + cache_misses;
 
         // 计算平均延迟
-        let average_latency = if total > 0 {
-            total_latency / total
-        } else {
-            0
-        };
+        let average_latency = if total > 0 { total_latency / total } else { 0 };
 
         // 计算吞吐量
         let first_time = self.first_search_time.read();
@@ -712,10 +705,7 @@ impl FileMetricsCollector {
 
         debug!(
             file_count,
-            bytes,
-            duration_ms,
-            success,
-            "Recorded file import metrics"
+            bytes, duration_ms, success, "Recorded file import metrics"
         );
     }
 
@@ -867,9 +857,7 @@ impl IndexMetricsCollector {
 
         debug!(
             duration_ms,
-            files_indexed,
-            index_size,
-            "Recorded index build metrics"
+            files_indexed, index_size, "Recorded index build metrics"
         );
     }
 
@@ -1124,7 +1112,8 @@ impl MetricsCollector {
     /// * `results_count` - 结果数量
     /// * `cache_hit` - 是否命中缓存
     pub fn record_search(&self, latency_ms: u64, results_count: u64, cache_hit: bool) {
-        self.search.record_search(latency_ms, results_count, cache_hit);
+        self.search
+            .record_search(latency_ms, results_count, cache_hit);
     }
 
     /// 获取搜索指标收集器引用
@@ -1159,7 +1148,8 @@ impl MetricsCollector {
     /// * `duration_ms` - 导入耗时（毫秒）
     /// * `success` - 是否成功
     pub fn record_import(&self, file_count: u64, bytes: u64, duration_ms: u64, success: bool) {
-        self.file.record_import(file_count, bytes, duration_ms, success);
+        self.file
+            .record_import(file_count, bytes, duration_ms, success);
     }
 
     /// 记录文件类型
@@ -1184,7 +1174,8 @@ impl MetricsCollector {
     /// * `files_indexed` - 索引的文件数量
     /// * `index_size` - 索引大小（字节）
     pub fn record_index_build(&self, duration_ms: u64, files_indexed: u64, index_size: u64) {
-        self.index.record_build(duration_ms, files_indexed, index_size);
+        self.index
+            .record_build(duration_ms, files_indexed, index_size);
     }
 
     /// 记录一次索引更新操作
@@ -1320,10 +1311,7 @@ impl MetricsCollector {
             }
         });
 
-        info!(
-            interval_secs,
-            "Started background monitoring task"
-        );
+        info!(interval_secs, "Started background monitoring task");
     }
 }
 
@@ -1361,7 +1349,10 @@ fn calculate_percentiles(values: &[u64]) -> (u64, u64) {
     let p95_idx = ((sorted.len() - 1) as f64 * 0.95).round() as usize;
     let p99_idx = ((sorted.len() - 1) as f64 * 0.99).round() as usize;
 
-    (sorted[p95_idx.min(sorted.len() - 1)], sorted[p99_idx.min(sorted.len() - 1)])
+    (
+        sorted[p95_idx.min(sorted.len() - 1)],
+        sorted[p99_idx.min(sorted.len() - 1)],
+    )
 }
 
 // ============================================================================
@@ -1502,7 +1493,9 @@ mod tests {
 
     #[test]
     fn test_calculate_percentiles() {
-        let values = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
+        let values = vec![
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+        ];
 
         let (p95, p99) = calculate_percentiles(&values);
 

@@ -7,17 +7,17 @@ pub mod cache;
 pub mod cache_manager;
 pub mod cancellation_manager;
 pub mod cleanup;
+pub mod command_validation;
 pub mod encoding;
 pub mod legacy_detection;
+pub mod log_config;
 #[cfg(test)]
 pub mod log_file_detector;
-pub mod log_config;
 pub mod path;
 pub mod path_security;
 pub mod resource_manager;
 pub mod resource_tracker;
 pub mod retry;
-pub mod command_validation;
 pub mod validation;
 
 #[cfg(test)]

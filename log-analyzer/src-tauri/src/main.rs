@@ -9,8 +9,8 @@
 // 导入 log_analyzer 库的模块
 use log_analyzer::commands::{
     async_search::*, cache::*, config::*, error_reporting::*, export::*, import::*, legacy::*,
-    log_config::*, performance::*, query::*, search::*, state_sync::*, validation::*, virtual_tree::*, watch::*,
-    workspace::*,
+    log_config::*, performance::*, query::*, search::*, state_sync::*, validation::*,
+    virtual_tree::*, watch::*, workspace::*,
 };
 use log_analyzer::models::{AppState, CacheState, MetricsState, SearchState, WorkspaceState};
 use log_analyzer::task_manager::TaskManager;
@@ -26,26 +26,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     fn init_logging_with_profile() {
         use tracing_subscriber::EnvFilter;
 
-        let filter = EnvFilter::try_from_default_env()
-            .unwrap_or_else(|_| {
-                #[cfg(debug_assertions)]
-                {
-                    // Debug 模式：启用 DEBUG 级别日志
-                    EnvFilter::new("debug")
-                        .add_directive("log_analyzer::task_manager=info".parse().unwrap())
-                        .add_directive("log_analyzer::search_engine=info".parse().unwrap())
-                        .add_directive("log_analyzer::cache_manager=info".parse().unwrap())
-                }
-                #[cfg(not(debug_assertions))]
-                {
-                    // Release 模式：启用 INFO 级别日志，高频模块使用 WARN
-                    EnvFilter::new("info")
-                        .add_directive("log_analyzer::task_manager=warn".parse().unwrap())
-                        .add_directive("log_analyzer::search_engine=warn".parse().unwrap())
-                        .add_directive("log_analyzer::cache_manager=warn".parse().unwrap())
-                        .add_directive("log_analyzer::commands=info".parse().unwrap())
-                }
-            });
+        let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+            #[cfg(debug_assertions)]
+            {
+                // Debug 模式：启用 DEBUG 级别日志
+                EnvFilter::new("debug")
+                    .add_directive("log_analyzer::task_manager=info".parse().unwrap())
+                    .add_directive("log_analyzer::search_engine=info".parse().unwrap())
+                    .add_directive("log_analyzer::cache_manager=info".parse().unwrap())
+            }
+            #[cfg(not(debug_assertions))]
+            {
+                // Release 模式：启用 INFO 级别日志，高频模块使用 WARN
+                EnvFilter::new("info")
+                    .add_directive("log_analyzer::task_manager=warn".parse().unwrap())
+                    .add_directive("log_analyzer::search_engine=warn".parse().unwrap())
+                    .add_directive("log_analyzer::cache_manager=warn".parse().unwrap())
+                    .add_directive("log_analyzer::commands=info".parse().unwrap())
+            }
+        });
 
         tracing_subscriber::fmt()
             .with_env_filter(filter)

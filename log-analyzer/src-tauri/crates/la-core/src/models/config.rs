@@ -66,7 +66,12 @@ impl ValidationResult {
         }
     }
 
-    pub fn add_error(&mut self, field: impl Into<String>, message: impl Into<String>, code: impl Into<String>) {
+    pub fn add_error(
+        &mut self,
+        field: impl Into<String>,
+        message: impl Into<String>,
+        code: impl Into<String>,
+    ) {
         self.errors.push(FieldValidationError {
             field: field.into(),
             message: message.into(),
@@ -246,7 +251,10 @@ fn validate_extension(ext: &str) -> Option<FieldValidationError> {
     }
 
     // 扩展名应该只包含字母数字和少量特殊字符
-    if !ext.chars().all(|c| c.is_alphanumeric() || c == '.' || c == '-') {
+    if !ext
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '.' || c == '-')
+    {
         return Some(FieldValidationError {
             field: "extension".to_string(),
             message: "扩展名只能包含字母、数字、点和连字符".to_string(),
@@ -380,11 +388,7 @@ impl ConfigValidator for FileFilterConfig {
         // 验证允许的扩展名
         for (i, ext) in self.allowed_extensions.iter().enumerate() {
             if let Some(err) = validate_extension(ext) {
-                result.add_error(
-                    format!("allowed_extensions[{}]", i),
-                    err.message,
-                    err.code,
-                );
+                result.add_error(format!("allowed_extensions[{}]", i), err.message, err.code);
             }
         }
 
@@ -407,11 +411,7 @@ impl ConfigValidator for FileFilterConfig {
             }
             // 其他模式尝试作为正则验证
             if let Some(err) = validate_regex_pattern(pattern) {
-                result.add_error(
-                    format!("filename_patterns[{}]", i),
-                    err.message,
-                    err.code,
-                );
+                result.add_error(format!("filename_patterns[{}]", i), err.message, err.code);
             }
         }
 
@@ -612,7 +612,9 @@ impl ConfigValidator for StorageConfig {
         }
 
         // 验证并发文件数
-        if let Some(err) = validate_range("max_concurrent_files", self.max_concurrent_files, 1, 1000) {
+        if let Some(err) =
+            validate_range("max_concurrent_files", self.max_concurrent_files, 1, 1000)
+        {
             result.add_error(err.field, err.message, err.code);
         }
 
@@ -694,7 +696,12 @@ impl ConfigValidator for SearchConfig {
         }
 
         // 验证并发搜索数
-        if let Some(err) = validate_range("max_concurrent_searches", self.max_concurrent_searches, 1, 100) {
+        if let Some(err) = validate_range(
+            "max_concurrent_searches",
+            self.max_concurrent_searches,
+            1,
+            100,
+        ) {
             result.add_error(err.field, err.message, err.code);
         }
 
@@ -871,7 +878,12 @@ impl ConfigValidator for SecurityConfig {
         }
 
         // 验证速率限制
-        if let Some(err) = validate_range("rate_limit_per_minute", self.rate_limit_per_minute, 1, 10000) {
+        if let Some(err) = validate_range(
+            "rate_limit_per_minute",
+            self.rate_limit_per_minute,
+            1,
+            10000,
+        ) {
             result.add_error(err.field, err.message, err.code);
         }
 
@@ -975,19 +987,36 @@ impl ConfigValidator for NestedArchivePolicy {
     fn validate(&self) -> ValidationResult {
         let mut result = ValidationResult::new();
 
-        if let Some(err) = validate_range("file_count_threshold", self.file_count_threshold, 1, 100000) {
+        if let Some(err) =
+            validate_range("file_count_threshold", self.file_count_threshold, 1, 100000)
+        {
             result.add_error(err.field, err.message, err.code);
         }
 
-        if let Some(err) = validate_range("total_size_threshold", self.total_size_threshold, 1, u64::MAX) {
+        if let Some(err) = validate_range(
+            "total_size_threshold",
+            self.total_size_threshold,
+            1,
+            u64::MAX,
+        ) {
             result.add_error(err.field, err.message, err.code);
         }
 
-        if let Some(err) = validate_range("compression_ratio_threshold", self.compression_ratio_threshold, 1.0, 10000.0) {
+        if let Some(err) = validate_range(
+            "compression_ratio_threshold",
+            self.compression_ratio_threshold,
+            1.0,
+            10000.0,
+        ) {
             result.add_error(err.field, err.message, err.code);
         }
 
-        if let Some(err) = validate_range("exponential_backoff_threshold", self.exponential_backoff_threshold, 1.0, 1e12) {
+        if let Some(err) = validate_range(
+            "exponential_backoff_threshold",
+            self.exponential_backoff_threshold,
+            1.0,
+            1e12,
+        ) {
             result.add_error(err.field, err.message, err.code);
         }
 
@@ -1096,7 +1125,9 @@ impl ConfigValidator for FileSizePolicy {
             modified = true;
         }
 
-        if self.streaming_search_limit == 0 || self.streaming_search_limit <= self.full_extraction_limit {
+        if self.streaming_search_limit == 0
+            || self.streaming_search_limit <= self.full_extraction_limit
+        {
             modified = true;
         }
 
@@ -1213,17 +1244,32 @@ impl ConfigValidator for ArchiveProcessingConfig {
         }
 
         // 验证内容采样大小
-        if let Some(err) = validate_range("content_sample_size", self.content_sample_size, 1, 10 * 1024 * 1024) {
+        if let Some(err) = validate_range(
+            "content_sample_size",
+            self.content_sample_size,
+            1,
+            10 * 1024 * 1024,
+        ) {
             result.add_error(err.field, err.message, err.code);
         }
 
         // 验证可读性评分范围
-        if let Some(err) = validate_range("min_readability_score", self.min_readability_score, 0.0, 1.0) {
+        if let Some(err) = validate_range(
+            "min_readability_score",
+            self.min_readability_score,
+            0.0,
+            1.0,
+        ) {
             result.add_error(err.field, err.message, err.code);
         }
 
         // 验证进度报告间隔
-        if let Some(err) = validate_range("progress_report_interval_ms", self.progress_report_interval_ms, 100, 60000) {
+        if let Some(err) = validate_range(
+            "progress_report_interval_ms",
+            self.progress_report_interval_ms,
+            100,
+            60000,
+        ) {
             result.add_error(err.field, err.message, err.code);
         }
 
@@ -1455,7 +1501,8 @@ impl ConfigValidator for ArchiveConfig {
         let mut result = ValidationResult::new();
 
         // 验证提取深度
-        if let Some(err) = validate_range("max_extraction_depth", self.max_extraction_depth, 1, 50) {
+        if let Some(err) = validate_range("max_extraction_depth", self.max_extraction_depth, 1, 50)
+        {
             result.add_error(err.field, err.message, err.code);
         }
 
@@ -1465,34 +1512,69 @@ impl ConfigValidator for ArchiveConfig {
         }
 
         // 验证压缩比
-        if let Some(err) = validate_range("max_compression_ratio", self.max_compression_ratio, 1.0, 10000.0) {
+        if let Some(err) = validate_range(
+            "max_compression_ratio",
+            self.max_compression_ratio,
+            1.0,
+            10000.0,
+        ) {
             result.add_error(err.field, err.message, err.code);
         }
 
         // 验证路径缩短阈值
-        if let Some(err) = validate_range("path_shorten_threshold", self.path_shorten_threshold, 0.0, 1.0) {
+        if let Some(err) = validate_range(
+            "path_shorten_threshold",
+            self.path_shorten_threshold,
+            0.0,
+            1.0,
+        ) {
             result.add_error(err.field, err.message, err.code);
         }
 
         // 验证超时时间
-        if let Some(err) = validate_range("temp_file_ttl_seconds", self.temp_file_ttl_seconds, 60, 86400 * 30) {
+        if let Some(err) = validate_range(
+            "temp_file_ttl_seconds",
+            self.temp_file_ttl_seconds,
+            60,
+            86400 * 30,
+        ) {
             result.add_error(err.field, err.message, err.code);
         }
 
-        if let Some(err) = validate_range("max_resource_release_seconds", self.max_resource_release_seconds, 1, 3600) {
+        if let Some(err) = validate_range(
+            "max_resource_release_seconds",
+            self.max_resource_release_seconds,
+            1,
+            3600,
+        ) {
             result.add_error(err.field, err.message, err.code);
         }
 
-        if let Some(err) = validate_range("file_copy_timeout_seconds", self.file_copy_timeout_seconds, 1, 3600 * 24) {
+        if let Some(err) = validate_range(
+            "file_copy_timeout_seconds",
+            self.file_copy_timeout_seconds,
+            1,
+            3600 * 24,
+        ) {
             result.add_error(err.field, err.message, err.code);
         }
 
         // 验证缓冲区大小
-        if let Some(err) = validate_range("streaming_buffer_size", self.streaming_buffer_size, 1024, 100 * 1024 * 1024) {
+        if let Some(err) = validate_range(
+            "streaming_buffer_size",
+            self.streaming_buffer_size,
+            1024,
+            100 * 1024 * 1024,
+        ) {
             result.add_error(err.field, err.message, err.code);
         }
 
-        if let Some(err) = validate_range("copy_buffer_size", self.copy_buffer_size, 1024, 100 * 1024 * 1024) {
+        if let Some(err) = validate_range(
+            "copy_buffer_size",
+            self.copy_buffer_size,
+            1024,
+            100 * 1024 * 1024,
+        ) {
             result.add_error(err.field, err.message, err.code);
         }
 
@@ -1501,7 +1583,9 @@ impl ConfigValidator for ArchiveConfig {
             result.add_error(err.field, err.message, err.code);
         }
 
-        if let Some(err) = validate_range("directory_batch_size", self.directory_batch_size, 1, 10000) {
+        if let Some(err) =
+            validate_range("directory_batch_size", self.directory_batch_size, 1, 10000)
+        {
             result.add_error(err.field, err.message, err.code);
         }
 
@@ -1627,7 +1711,8 @@ impl ConfigValidator for CacheConfig {
         }
 
         // 验证 TTL
-        if let Some(err) = validate_range("cache_ttl_seconds", self.cache_ttl_seconds, 1, 86400 * 7) {
+        if let Some(err) = validate_range("cache_ttl_seconds", self.cache_ttl_seconds, 1, 86400 * 7)
+        {
             result.add_error(err.field, err.message, err.code);
         }
 
@@ -1636,12 +1721,22 @@ impl ConfigValidator for CacheConfig {
         }
 
         // 验证压缩阈值
-        if let Some(err) = validate_range("compression_threshold", self.compression_threshold, 1, 100 * 1024 * 1024) {
+        if let Some(err) = validate_range(
+            "compression_threshold",
+            self.compression_threshold,
+            1,
+            100 * 1024 * 1024,
+        ) {
             result.add_error(err.field, err.message, err.code);
         }
 
         // 验证命中率阈值
-        if let Some(err) = validate_range("min_hit_rate_threshold", self.min_hit_rate_threshold, 0.0, 1.0) {
+        if let Some(err) = validate_range(
+            "min_hit_rate_threshold",
+            self.min_hit_rate_threshold,
+            0.0,
+            1.0,
+        ) {
             result.add_error(err.field, err.message, err.code);
         }
 
@@ -1744,7 +1839,9 @@ impl ConfigValidator for TaskManagerConfig {
         let mut result = ValidationResult::new();
 
         // 验证 TTL
-        if let Some(err) = validate_range("completed_task_ttl", self.completed_task_ttl, 1, 86400 * 7) {
+        if let Some(err) =
+            validate_range("completed_task_ttl", self.completed_task_ttl, 1, 86400 * 7)
+        {
             result.add_error(err.field, err.message, err.code);
         }
 
@@ -1763,7 +1860,9 @@ impl ConfigValidator for TaskManagerConfig {
         }
 
         // 验证并发数
-        if let Some(err) = validate_range("max_concurrent_tasks", self.max_concurrent_tasks, 1, 1000) {
+        if let Some(err) =
+            validate_range("max_concurrent_tasks", self.max_concurrent_tasks, 1, 1000)
+        {
             result.add_error(err.field, err.message, err.code);
         }
 
@@ -1859,17 +1958,32 @@ impl ConfigValidator for DatabaseConfig {
         let mut result = ValidationResult::new();
 
         // 验证连接超时
-        if let Some(err) = validate_range("connection_timeout_seconds", self.connection_timeout_seconds, 1, 300) {
+        if let Some(err) = validate_range(
+            "connection_timeout_seconds",
+            self.connection_timeout_seconds,
+            1,
+            300,
+        ) {
             result.add_error(err.field, err.message, err.code);
         }
 
         // 验证空闲超时
-        if let Some(err) = validate_range("idle_timeout_seconds", self.idle_timeout_seconds, 1, 3600 * 24) {
+        if let Some(err) = validate_range(
+            "idle_timeout_seconds",
+            self.idle_timeout_seconds,
+            1,
+            3600 * 24,
+        ) {
             result.add_error(err.field, err.message, err.code);
         }
 
         // 验证最大生命周期
-        if let Some(err) = validate_range("max_lifetime_seconds", self.max_lifetime_seconds, 1, 3600 * 24 * 7) {
+        if let Some(err) = validate_range(
+            "max_lifetime_seconds",
+            self.max_lifetime_seconds,
+            1,
+            3600 * 24 * 7,
+        ) {
             result.add_error(err.field, err.message, err.code);
         }
 
@@ -1882,20 +1996,33 @@ impl ConfigValidator for DatabaseConfig {
             result.add_error(err.field, err.message, err.code);
         }
 
-        if let Some(err) = validate_range("max_cached_results", self.max_cached_results, 1, 10_000_000) {
+        if let Some(err) =
+            validate_range("max_cached_results", self.max_cached_results, 1, 10_000_000)
+        {
             result.add_error(err.field, err.message, err.code);
         }
 
         // 验证读取缓冲区
-        if let Some(err) = validate_range("read_buffer_size", self.read_buffer_size, 1024, 100 * 1024 * 1024) {
+        if let Some(err) = validate_range(
+            "read_buffer_size",
+            self.read_buffer_size,
+            1024,
+            100 * 1024 * 1024,
+        ) {
             result.add_error(err.field, err.message, err.code);
         }
 
-        if let Some(err) = validate_range("streaming_builder_buffer_size", self.streaming_builder_buffer_size, 1024, 100 * 1024 * 1024) {
+        if let Some(err) = validate_range(
+            "streaming_builder_buffer_size",
+            self.streaming_builder_buffer_size,
+            1024,
+            100 * 1024 * 1024,
+        ) {
             result.add_error(err.field, err.message, err.code);
         }
 
-        if let Some(err) = validate_range("buffer_size", self.buffer_size, 1024, 100 * 1024 * 1024) {
+        if let Some(err) = validate_range("buffer_size", self.buffer_size, 1024, 100 * 1024 * 1024)
+        {
             result.add_error(err.field, err.message, err.code);
         }
 
@@ -1995,7 +2122,9 @@ impl ConfigValidator for RateLimitConfig {
         }
 
         // 验证工作区速率限制
-        if let Some(err) = validate_range("workspace_per_minute", self.workspace_per_minute, 1, 1000) {
+        if let Some(err) =
+            validate_range("workspace_per_minute", self.workspace_per_minute, 1, 1000)
+        {
             result.add_error(err.field, err.message, err.code);
         }
 
@@ -2032,7 +2161,13 @@ impl ConfigValidator for RateLimitConfig {
 
         for (name, value, min, max) in fields {
             if value < min || value > max {
-                tracing::warn!("配置字段 {} 的值 {} 超出范围 [{}-{}], 将使用默认值", name, value, min, max);
+                tracing::warn!(
+                    "配置字段 {} 的值 {} 超出范围 [{}-{}], 将使用默认值",
+                    name,
+                    value,
+                    min,
+                    max
+                );
                 modified = true;
             }
         }
@@ -2201,16 +2336,61 @@ impl ConfigValidator for FrontendConfig {
 
         // 验证超时配置
         let timeout_fields = [
-            ("default_ipc_timeout_ms", self.default_ipc_timeout_ms, 1000, 300000),
-            ("query_execution_timeout_ms", self.query_execution_timeout_ms, 1000, 600000),
-            ("query_validation_timeout_ms", self.query_validation_timeout_ms, 100, 60000),
-            ("config_save_debounce_ms", self.config_save_debounce_ms, 0, 10000),
-            ("optimistic_update_timeout_ms", self.optimistic_update_timeout_ms, 1000, 60000),
+            (
+                "default_ipc_timeout_ms",
+                self.default_ipc_timeout_ms,
+                1000,
+                300000,
+            ),
+            (
+                "query_execution_timeout_ms",
+                self.query_execution_timeout_ms,
+                1000,
+                600000,
+            ),
+            (
+                "query_validation_timeout_ms",
+                self.query_validation_timeout_ms,
+                100,
+                60000,
+            ),
+            (
+                "config_save_debounce_ms",
+                self.config_save_debounce_ms,
+                0,
+                10000,
+            ),
+            (
+                "optimistic_update_timeout_ms",
+                self.optimistic_update_timeout_ms,
+                1000,
+                60000,
+            ),
             ("batch_update_delay_ms", self.batch_update_delay_ms, 0, 5000),
-            ("default_retry_delay_ms", self.default_retry_delay_ms, 100, 60000),
-            ("max_search_retry_delay_ms", self.max_search_retry_delay_ms, 1000, 300000),
-            ("query_cache_stale_time_ms", self.query_cache_stale_time_ms, 1000, 3600000),
-            ("retry_exponential_backoff_limit_ms", self.retry_exponential_backoff_limit_ms, 1000, 300000),
+            (
+                "default_retry_delay_ms",
+                self.default_retry_delay_ms,
+                100,
+                60000,
+            ),
+            (
+                "max_search_retry_delay_ms",
+                self.max_search_retry_delay_ms,
+                1000,
+                300000,
+            ),
+            (
+                "query_cache_stale_time_ms",
+                self.query_cache_stale_time_ms,
+                1000,
+                3600000,
+            ),
+            (
+                "retry_exponential_backoff_limit_ms",
+                self.retry_exponential_backoff_limit_ms,
+                1000,
+                300000,
+            ),
         ];
 
         for (name, value, min, max) in timeout_fields {
@@ -2230,11 +2410,36 @@ impl ConfigValidator for FrontendConfig {
 
         // 验证 WebSocket 配置
         let ws_fields = [
-            ("websocket_reconnect_interval_ms", self.websocket_reconnect_interval_ms, 100, 60000),
-            ("websocket_max_reconnect_attempts", self.websocket_max_reconnect_attempts, 0, 100),
-            ("websocket_heartbeat_interval_ms", self.websocket_heartbeat_interval_ms, 1000, 300000),
-            ("websocket_connection_timeout_ms", self.websocket_connection_timeout_ms, 1000, 300000),
-            ("websocket_max_reconnect_wait_ms", self.websocket_max_reconnect_wait_ms, 1000, 600000),
+            (
+                "websocket_reconnect_interval_ms",
+                self.websocket_reconnect_interval_ms,
+                100,
+                60000,
+            ),
+            (
+                "websocket_max_reconnect_attempts",
+                self.websocket_max_reconnect_attempts,
+                0,
+                100,
+            ),
+            (
+                "websocket_heartbeat_interval_ms",
+                self.websocket_heartbeat_interval_ms,
+                1000,
+                300000,
+            ),
+            (
+                "websocket_connection_timeout_ms",
+                self.websocket_connection_timeout_ms,
+                1000,
+                300000,
+            ),
+            (
+                "websocket_max_reconnect_wait_ms",
+                self.websocket_max_reconnect_wait_ms,
+                1000,
+                600000,
+            ),
         ];
 
         for (name, value, min, max) in ws_fields {
@@ -2244,7 +2449,12 @@ impl ConfigValidator for FrontendConfig {
         }
 
         // 验证 UI 配置
-        if let Some(err) = validate_range("log_truncate_threshold", self.log_truncate_threshold, 1, 100000) {
+        if let Some(err) = validate_range(
+            "log_truncate_threshold",
+            self.log_truncate_threshold,
+            1,
+            100000,
+        ) {
             result.add_error(err.field, err.message, err.code);
         }
 
@@ -2252,7 +2462,8 @@ impl ConfigValidator for FrontendConfig {
             result.add_error(err.field, err.message, err.code);
         }
 
-        if let Some(err) = validate_range("event_bus_max_cache", self.event_bus_max_cache, 1, 10000) {
+        if let Some(err) = validate_range("event_bus_max_cache", self.event_bus_max_cache, 1, 10000)
+        {
             result.add_error(err.field, err.message, err.code);
         }
 
@@ -2262,11 +2473,21 @@ impl ConfigValidator for FrontendConfig {
         }
 
         // 验证虚拟滚动配置
-        if let Some(err) = validate_range("virtual_scroll_overscan", self.virtual_scroll_overscan, 0, 1000) {
+        if let Some(err) = validate_range(
+            "virtual_scroll_overscan",
+            self.virtual_scroll_overscan,
+            0,
+            1000,
+        ) {
             result.add_error(err.field, err.message, err.code);
         }
 
-        if let Some(err) = validate_range("virtual_scroll_estimated_row_height", self.virtual_scroll_estimated_row_height, 1, 1000) {
+        if let Some(err) = validate_range(
+            "virtual_scroll_estimated_row_height",
+            self.virtual_scroll_estimated_row_height,
+            1,
+            1000,
+        ) {
             result.add_error(err.field, err.message, err.code);
         }
 
@@ -2285,7 +2506,9 @@ impl ConfigValidator for FrontendConfig {
             modified = true;
         }
 
-        if self.virtual_scroll_estimated_row_height == 0 || self.virtual_scroll_estimated_row_height > 1000 {
+        if self.virtual_scroll_estimated_row_height == 0
+            || self.virtual_scroll_estimated_row_height > 1000
+        {
             modified = true;
         }
 
@@ -2401,7 +2624,10 @@ impl ConfigValidator for AppConfig {
             ("monitoring", self.monitoring.validate_with_defaults()),
             ("security", self.security.validate_with_defaults()),
             ("archive", self.archive.validate_with_defaults()),
-            ("archive_processing", self.archive_processing.validate_with_defaults()),
+            (
+                "archive_processing",
+                self.archive_processing.validate_with_defaults(),
+            ),
             ("cache", self.cache.validate_with_defaults()),
             ("task_manager", self.task_manager.validate_with_defaults()),
             ("database", self.database.validate_with_defaults()),
@@ -2453,7 +2679,9 @@ impl ConfigLoader {
             if path.exists() {
                 config_builder = config_builder.add_source(config::File::from(path));
             } else {
-                return Err(ConfigError::FileNotFound(path.to_string_lossy().to_string()));
+                return Err(ConfigError::FileNotFound(
+                    path.to_string_lossy().to_string(),
+                ));
             }
         }
 

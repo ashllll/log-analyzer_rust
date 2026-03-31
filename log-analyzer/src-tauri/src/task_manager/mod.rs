@@ -655,9 +655,7 @@ impl TaskManager {
                             retries = retries,
                             "Task channel full, cannot send shutdown message, forcing shutdown"
                         );
-                        return Err(TaskManagerError::ShutdownFailed(
-                            "Channel full".to_string(),
-                        ));
+                        return Err(TaskManagerError::ShutdownFailed("Channel full".to_string()));
                     }
                     std::thread::sleep(std::time::Duration::from_millis(100));
                 }

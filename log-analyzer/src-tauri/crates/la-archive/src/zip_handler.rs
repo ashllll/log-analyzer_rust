@@ -177,7 +177,8 @@ mod tests {
     ) -> std::result::Result<(), Box<dyn std::error::Error>> {
         let file = std::fs::File::create(path)?;
         let mut zip = zip::ZipWriter::new(file);
-        let options: zip::write::FileOptions<'_, ()> = FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        let options: zip::write::FileOptions<'_, ()> =
+            FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
         for (name, content) in files {
             zip.start_file(name, options)?;
@@ -416,7 +417,8 @@ mod tests {
         // 注意：zip crate 在写入时会自动规范化路径，所以我们测试的是解压时的保护
         let file = std::fs::File::create(&zip_file).unwrap();
         let mut zip = zip::ZipWriter::new(file);
-        let options: zip::write::FileOptions<'_, ()> = FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        let options: zip::write::FileOptions<'_, ()> =
+            FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
         // 添加一个正常文件
         zip.start_file("normal.txt", options).unwrap();
@@ -510,7 +512,8 @@ mod tests {
 
         let file = std::fs::File::create(&zip_file).unwrap();
         let mut zip = zip::ZipWriter::new(file);
-        let options: zip::write::FileOptions<'_, ()> = FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        let options: zip::write::FileOptions<'_, ()> =
+            FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
         for (name, content) in files {
             zip.start_file(&name, options).unwrap();

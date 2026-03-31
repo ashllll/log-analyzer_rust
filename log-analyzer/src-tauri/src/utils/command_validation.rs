@@ -49,9 +49,7 @@ pub fn validate_workspace_id(id: &str) -> Result<(), String> {
         ));
     }
     if !WORKSPACE_ID_REGEX.is_match(id) {
-        return Err(
-            "工作区ID只能包含字母数字、连字符和下划线".to_string(),
-        );
+        return Err("工作区ID只能包含字母数字、连字符和下划线".to_string());
     }
     Ok(())
 }
@@ -64,10 +62,7 @@ pub fn validate_path_param(path: &str, param_name: &str) -> Result<(), String> {
         return Err(format!("{}不能为空", param_name));
     }
     if path.len() > MAX_PATH_LENGTH {
-        return Err(format!(
-            "{}过长（最大{}字符）",
-            param_name, MAX_PATH_LENGTH
-        ));
+        return Err(format!("{}过长（最大{}字符）", param_name, MAX_PATH_LENGTH));
     }
     Ok(())
 }
@@ -106,10 +101,7 @@ pub fn validate_range<T: PartialOrd + std::fmt::Display>(
     field_name: &str,
 ) -> Result<(), String> {
     if value < min || value > max {
-        return Err(format!(
-            "{}必须在 {}-{} 之间",
-            field_name, min, max
-        ));
+        return Err(format!("{}必须在 {}-{} 之间", field_name, min, max));
     }
     Ok(())
 }

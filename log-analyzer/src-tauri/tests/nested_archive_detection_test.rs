@@ -35,7 +35,8 @@ async fn create_test_engine(policy: ExtractionPolicy) -> (ExtractionEngine, Temp
 fn create_zip_archive(path: &Path, files: &[(&str, &[u8])]) -> std::io::Result<()> {
     let file = std::fs::File::create(path)?;
     let mut zip = ZipWriter::new(file);
-    let options: zip::write::FileOptions<'_, ()> = FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    let options: zip::write::FileOptions<'_, ()> =
+        FileOptions::default().compression_method(zip::CompressionMethod::Stored);
 
     for (name, content) in files {
         zip.start_file(*name, options)?;

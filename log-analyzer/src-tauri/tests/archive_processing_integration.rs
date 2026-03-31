@@ -33,8 +33,8 @@ fn create_simple_zip(dir: &Path, name: &str, files: Vec<(&str, &[u8])>) -> PathB
     let file = fs::File::create(&zip_path).unwrap();
     let mut zip = zip::ZipWriter::new(file);
 
-    let options =
-        zip::write::FileOptions::<'_, ()>::default().compression_method(zip::CompressionMethod::Stored);
+    let options = zip::write::FileOptions::<'_, ()>::default()
+        .compression_method(zip::CompressionMethod::Stored);
 
     for (filename, content) in files {
         zip.start_file(filename, options).unwrap();
@@ -51,8 +51,8 @@ fn create_nested_zip(dir: &Path, name: &str, inner_archives: Vec<PathBuf>) -> Pa
     let file = fs::File::create(&zip_path).unwrap();
     let mut zip = zip::ZipWriter::new(file);
 
-    let options =
-        zip::write::FileOptions::<'_, ()>::default().compression_method(zip::CompressionMethod::Stored);
+    let options = zip::write::FileOptions::<'_, ()>::default()
+        .compression_method(zip::CompressionMethod::Stored);
 
     // Add inner archives
     for inner_archive in inner_archives {
@@ -587,8 +587,8 @@ async fn test_mixed_nested_and_regular_files() {
     let outer_path = temp_dir.path().join("mixed.zip");
     let file = fs::File::create(&outer_path).unwrap();
     let mut zip = zip::ZipWriter::new(file);
-    let options =
-        zip::write::FileOptions::<'_, ()>::default().compression_method(zip::CompressionMethod::Stored);
+    let options = zip::write::FileOptions::<'_, ()>::default()
+        .compression_method(zip::CompressionMethod::Stored);
 
     // Add regular file
     zip.start_file("regular.log", options).unwrap();

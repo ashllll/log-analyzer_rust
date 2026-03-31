@@ -1538,7 +1538,8 @@ impl CacheManager {
     pub fn cleanup_ttl_expired(&self) -> usize {
         let cleaned = self.ttl_cache.cleanup_expired();
         if cleaned > 0 {
-            self.ttl_cleanup_count.fetch_add(cleaned as u64, Ordering::Relaxed);
+            self.ttl_cleanup_count
+                .fetch_add(cleaned as u64, Ordering::Relaxed);
             *self.last_ttl_cleanup.write() = Instant::now();
             tracing::debug!(cleaned_count = cleaned, "TTL cache cleanup completed");
         }
@@ -2468,12 +2469,9 @@ mod tests {
             let ttl = if i < 2 {
                 Duration::from_millis(50) // 2 个会过期
             } else {
-                Duration::from_secs(60)   // 3 个不会过期
+                Duration::from_secs(60) // 3 个不会过期
             };
-            manager.put_ttl_metadata(&key,
-                vec![i as u8],
-                ttl
-            );
+            manager.put_ttl_metadata(&key, vec![i as u8], ttl);
         }
 
         // 等待部分过期
@@ -2486,7 +2484,10 @@ mod tests {
         // 验证统计
         let stats = manager.get_ttl_statistics();
         assert_eq!(stats.total_entries, 3, "Should have 3 remaining entries");
-        assert_eq!(stats.total_expired_cleaned, 2, "Should track 2 cleaned entries");
+        assert_eq!(
+            stats.total_expired_cleaned, 2,
+            "Should track 2 cleaned entries"
+        );
     }
 
     #[test]
@@ -2525,7 +2526,10 @@ mod tests {
 
         // 再次失效应该返回 false
         let invalidated_again = manager.invalidate_ttl("key1");
-        assert!(!invalidated_again, "Should return false when key didn't exist");
+        assert!(
+            !invalidated_again,
+            "Should return false when key didn't exist"
+        );
     }
 
     #[test]
@@ -2538,7 +2542,7 @@ mod tests {
             manager.put_ttl_metadata(
                 &format!("key_{}", i),
                 vec![i as u8],
-                Duration::from_secs(60)
+                Duration::from_secs(60),
             );
         }
 

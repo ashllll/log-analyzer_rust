@@ -190,9 +190,12 @@ impl ReaderPool {
         // Try to acquire a permit from the semaphore (represents an available reader slot)
         let permit = tokio::time::timeout(timeout, self.available.acquire())
             .await
-            .map_err(|_| SearchError::IndexError(
-                format!("Timeout waiting for reader from pool after {:?}", timeout)
-            ))?
+            .map_err(|_| {
+                SearchError::IndexError(format!(
+                    "Timeout waiting for reader from pool after {:?}",
+                    timeout
+                ))
+            })?
             .map_err(|_| SearchError::IndexError("Reader pool semaphore closed".to_string()))?;
 
         let wait_time = start.elapsed();

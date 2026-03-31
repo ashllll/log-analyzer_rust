@@ -27,32 +27,31 @@ pub mod metrics;
 
 // 公共 API 导出
 pub use metrics::{
+    // 数据结构
+    FileMetrics,
+    // 子收集器
+    FileMetricsCollector,
+    IndexMetrics,
+    IndexMetricsCollector,
+    MemoryMetrics,
+    MemoryMetricsCollector,
     // 主收集器
     MetricsCollector,
 
-    // 子收集器
-    FileMetricsCollector,
-    IndexMetricsCollector,
-    MemoryMetricsCollector,
-    SearchMetricsCollector,
-    TaskMetricsCollector,
-
-    // 数据结构
-    FileMetrics,
-    IndexMetrics,
-    MemoryMetrics,
     MetricsDataPoint,
     MonitoringMetrics,
-    SearchMetrics,
-    TaskMetrics,
-
     // 工具
     RingBuffer,
+    SearchMetrics,
+    SearchMetricsCollector,
+    TaskMetrics,
+
+    TaskMetricsCollector,
 };
 
-use std::sync::Arc;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
+use std::sync::Arc;
 use tracing::{debug, info};
 
 /// 全局监控指标收集器实例
@@ -90,8 +89,7 @@ pub fn init_global_collector(auto_monitoring: bool, interval_secs: u64) {
         *guard = Some(collector);
         info!(
             auto_monitoring,
-            interval_secs,
-            "Global metrics collector initialized"
+            interval_secs, "Global metrics collector initialized"
         );
     } else {
         debug!("Global metrics collector already initialized");
