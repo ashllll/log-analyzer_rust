@@ -61,6 +61,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tauri::Builder::default()
         // 初始化 dialog 插件（供前端使用）
         .plugin(tauri_plugin_dialog::init())
+        // 初始化 opener 插件（供前端打开外链使用）
+        .plugin(tauri_plugin_opener::init())
         // 管理应用状态 - 领域驱动拆分后的独立状态
         .manage(AppState::default())
         .manage(WorkspaceState::default())

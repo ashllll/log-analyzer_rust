@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "file-dialog",
+  "description": "文件对话框权限 - 打开文件夹与保存结果",
+  "windows": ["main"],
+  "permissions": [
+    "dialog:allow-open",
+    "dialog:allow-save"
+  ]
+}

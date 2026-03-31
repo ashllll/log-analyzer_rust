@@ -17,14 +17,16 @@ chrono = { version = "0.4", features = ["serde"] }
 regex = "1.11"
 tempfile = "3.10"
 walkdir = "2.4"
-dunce = "1.0"
+dunce = "1.0.5"
 
 [package]
 name = "log-analyzer"
 version = "1.2.53"
-description = "A Tauri App"
-authors = ["you"]
+description = "A desktop log analysis tool built with Tauri, React, and TypeScript"
+authors = ["ashllll"]
 edition = "2021"
+homepage = "https://github.com/ashllll/log-analyzer_rust#readme"
+repository = "https://github.com/ashllll/log-analyzer_rust"
 
 [build-dependencies]
 tauri-build = { version = "2.0.0", features = [] }

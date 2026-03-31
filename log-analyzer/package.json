@@ -4,13 +4,17 @@
   "version": "1.2.53",
   "description": "A desktop log analysis tool built with Tauri, React, and TypeScript",
   "author": {
-    "name": "Joe Ash",
-    "email": "joe@example.com"
+    "name": "ashllll",
+    "url": "https://github.com/ashllll"
   },
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/joeash/log-analyzer"
+    "url": "git+https://github.com/ashllll/log-analyzer_rust.git"
+  },
+  "homepage": "https://github.com/ashllll/log-analyzer_rust#readme",
+  "bugs": {
+    "url": "https://github.com/ashllll/log-analyzer_rust/issues"
   },
   "type": "module",
   "scripts": {

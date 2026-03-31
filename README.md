@@ -331,9 +331,9 @@ pub struct TaskInfo {
 
 | 平台 | 路径 |
 |------|------|
-| Windows | `%APPDATA%\com.joeash.log-analyzer\workspaces\` |
-| macOS | `~/Library/Application Support/com.joeash.log-analyzer/workspaces/` |
-| Linux | `~/.local/share/com.joeash.log-analyzer/workspaces/` |
+| Windows | `%APPDATA%\io.github.ashllll.log-analyzer\workspaces\` |
+| macOS | `~/Library/Application Support/io.github.ashllll.log-analyzer/workspaces/` |
+| Linux | `~/.local/share/io.github.ashllll.log-analyzer/workspaces/` |
 
 ---
 
@@ -448,7 +448,7 @@ sudo apt install libgtk-4-dev   # GTK4
 
 <div align="center">
 
-由 [ashllll](https://github.com/ashllll) 用 Rust + React 打造
+维护者：[ashllll](https://github.com/ashllll)
 
 [报告问题](https://github.com/ashllll/log-analyzer_rust/issues) · [功能建议](https://github.com/ashllll/log-analyzer_rust/issues)
 
