@@ -234,7 +234,7 @@ Each level:
 
 ### 1. ContentAddressableStorage
 
-**Location**: `src-tauri/src/storage/cas.rs`
+**Location**: `crates/la-storage/src/cas.rs`
 
 **Responsibilities**:
 - Compute SHA-256 hashes (streaming for large files)
@@ -269,7 +269,7 @@ impl ContentAddressableStorage {
 
 ### 2. MetadataStore
 
-**Location**: `src-tauri/src/storage/metadata_store.rs`
+**Location**: `crates/la-storage/src/metadata_store.rs`
 
 **Responsibilities**:
 - Manage SQLite database connection
@@ -307,7 +307,7 @@ impl MetadataStore {
 
 ### 3. Storage Coordinator (Saga Pattern)
 
-**Location**: `src-tauri/src/storage/coordinator.rs`
+**Location**: `crates/la-storage/src/coordinator.rs`
 
 **Responsibilities**:
 - Ensure atomicity between CAS and MetadataStore operations
@@ -353,7 +353,7 @@ impl StorageCoordinator {
 
 ### 4. Garbage Collector
 
-**Location**: `src-tauri/src/storage/gc.rs`
+**Location**: `crates/la-storage/src/gc.rs`
 
 **Responsibilities**:
 - Background cleanup of orphaned CAS files
@@ -397,7 +397,7 @@ gc.start_background_gc(shutdown_rx);
 
 ### 5. Cache Consistency Monitor
 
-**Location**: `src-tauri/src/storage/cache_monitor.rs`
+**Location**: `crates/la-storage/src/cache_monitor.rs`
 
 **Responsibilities**:
 - Monitor CAS existence cache health
@@ -420,7 +420,7 @@ pub struct CacheHealthMetrics {
 
 ### 6. Archive Processor (CAS Integration)
 
-**Location**: `src-tauri/src/archive/processor.rs`
+**Location**: `crates/la-archive/src/processor.rs`
 
 **Key Functions**:
 

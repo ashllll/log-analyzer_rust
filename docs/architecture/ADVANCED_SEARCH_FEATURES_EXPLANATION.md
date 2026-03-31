@@ -1,10 +1,21 @@
 # 高级搜索功能说明文档
 
-**日期**: 2024-12-22
+**日期**: 2024-12-22 | **更新**: 2026-03-31
 
 ## 概述
 
-这些高级功能是为未来的性能优化和功能扩展预留的，使用业内成熟的算法和数据结构实现。虽然目前未被使用，但它们代表了搜索引擎的高级能力，可以在需要时快速启用。
+这些高级搜索功能位于 `la-search` workspace crate 中，使用业内成熟的算法和数据结构实现：
+
+| 功能 | 文件路径 | 状态 |
+|------|----------|------|
+| FilterEngine | `crates/la-search/src/advanced_features.rs` | 可用 |
+| RegexSearchEngine | `crates/la-search/src/advanced_features.rs` | 可用 |
+| TimePartitionedIndex | `crates/la-search/src/advanced_features.rs` | 可用 |
+| AutocompleteEngine | `crates/la-search/src/advanced_features.rs` | 可用 |
+| QueryOptimizer | `crates/la-search/src/query_optimizer.rs` | 可用 |
+| StreamingIndexBuilder | `crates/la-search/src/streaming_builder.rs` | 可用 |
+
+这些功能可根据实际需求选择性启用。
 
 ---
 
@@ -398,129 +409,103 @@ println!("完成: {} 文件, {} 行, 耗时 {:?}",
 
 ---
 
-## 为什么这些功能未被使用？
+## 功能启用方式
 
-### 1. **渐进式开发策略**
+### 按需启用
 
-我们采用了 **MVP（最小可行产品）** 策略：
-- ✅ 先实现核心搜索功能（Tantivy 基础搜索）
-- ✅ 确保基础功能稳定可靠
-- ⏳ 根据用户需求逐步启用高级功能
+这些功能位于 `la-search` crate，可根据实际需求选择性启用：
 
-### 2. **性能优先级**
+```rust
+use la_search::{FilterEngine, RegexSearchEngine, QueryOptimizer};
 
-当前的基础搜索已经很快：
-- 响应时间 < 200ms（100MB 数据集）
-- 满足大多数用户需求
-- 高级功能是"锦上添花"，不是"雪中送炭"
+// FilterEngine: 多条件位图过滤
+let filter_engine = FilterEngine::new();
 
-### 3. **复杂度管理**
+// RegexSearchEngine: 带缓存的正则搜索
+let regex_engine = RegexSearchEngine::new(1000);
 
-高级功能增加系统复杂度：
-- 需要额外的索引维护
-- 需要更多的内存
-- 需要更复杂的查询规划
+// QueryOptimizer: 查询优化建议
+let optimizer = QueryOptimizer::new();
+```
 
-### 4. **按需启用**
+### 使用场景
 
-这些功能可以根据实际需求快速启用：
-- **FilterEngine**: 当用户频繁使用多条件过滤时启用
-- **RegexSearchEngine**: 当用户频繁使用正则搜索时启用
-- **TimePartitionedIndex**: 当数据集超过 10GB 时启用
-- **AutocompleteEngine**: 当用户需要搜索建议时启用
-- **QueryOptimizer**: 当发现慢查询时启用
-- **StreamingIndexBuilder**: 当数据集超过可用内存时启用
+| 功能 | 启用条件 |
+|------|----------|
+| **FilterEngine** | 用户频繁使用多条件过滤 |
+| **RegexSearchEngine** | 用户频繁使用相同正则模式 |
+| **TimePartitionedIndex** | 数据集超过 10GB，时间范围查询频繁 |
+| **AutocompleteEngine** | 需要搜索框自动补全 |
+| **QueryOptimizer** | 发现慢查询需要优化建议 |
+| **StreamingIndexBuilder** | 数据集超过可用内存 |
+
+### 注意事项
+
+这些功能会增加系统复杂度：
+- 额外的索引维护
+- 更多的内存占用
+- 更复杂的查询规划
+
+建议根据实际性能需求和用户反馈选择性启用。
 
 ---
 
 ## 如何启用这些功能？
 
-### 方案 1：逐个启用（推荐）
-
-根据实际需求，逐个集成：
+### 方案 1：直接使用 la-search crate
 
 ```rust
-// 1. 在 SearchEngineManager 中添加字段
-pub struct SearchEngineManager {
-    // 现有字段...
+use la_search::{
+    FilterEngine, RegexSearchEngine, TimePartitionedIndex,
+    AutocompleteEngine, QueryOptimizer, StreamingIndexBuilder
+};
+
+// FilterEngine: 多条件位图过滤
+let mut filter_engine = FilterEngine::new();
+filter_engine.add_document(doc_id, &log_entry);
+let matching_docs = filter_engine.apply_filters(&filters);
+
+// RegexSearchEngine: 带缓存的正则搜索
+let regex_engine = RegexSearchEngine::new(1000); // 缓存1000个模式
+let matches = regex_engine.search_with_regex(pattern, content)?;
+
+// TimePartitionedIndex: 时间分区索引
+let time_index = TimePartitionedIndex::new(Duration::from_secs(3600));
+time_index.add_document(doc_id, timestamp);
+let docs = time_index.query_time_range(start, end);
+
+// AutocompleteEngine: 自动补全
+let autocomplete = AutocompleteEngine::new(10);
+autocomplete.add_word("error", 1000);
+let suggestions = autocomplete.get_suggestions("e")?;
+
+// QueryOptimizer: 查询优化
+let optimizer = QueryOptimizer::new();
+let optimized = optimizer.optimize_query(query);
+
+// StreamingIndexBuilder: 流式索引
+let builder = StreamingIndexBuilder::new(search_manager, config);
+let stats = builder.build_index_streaming(log_files, progress_callback).await?;
+```
+
+### 方案 2：在服务层集成
+
+在 `src-tauri/src/search_engine/` 或其他业务模块中：
+
+```rust
+use la_search::FilterEngine;
+
+pub struct AdvancedSearchService {
     filter_engine: Option<FilterEngine>,
     regex_engine: Option<RegexSearchEngine>,
-    time_index: Option<TimePartitionedIndex>,
-    autocomplete: Option<AutocompleteEngine>,
 }
 
-// 2. 在配置中添加开关
-pub struct SearchConfig {
-    // 现有配置...
-    enable_filter_engine: bool,
-    enable_regex_cache: bool,
-    enable_time_partitioning: bool,
-    enable_autocomplete: bool,
-}
-
-// 3. 根据配置初始化
-impl SearchEngineManager {
-    pub fn new(config: SearchConfig) -> Result<Self> {
-        let filter_engine = if config.enable_filter_engine {
-            Some(FilterEngine::new())
-        } else {
-            None
-        };
-        
-        // ... 其他功能类似
-    }
-}
-```
-
-### 方案 2：创建高级搜索模式
-
-提供"标准模式"和"高级模式"：
-
-```rust
-pub enum SearchMode {
-    Standard,  // 基础搜索
-    Advanced,  // 启用所有高级功能
-}
-
-impl SearchEngineManager {
-    pub fn set_mode(&mut self, mode: SearchMode) {
-        match mode {
-            SearchMode::Standard => {
-                // 禁用高级功能
-            }
-            SearchMode::Advanced => {
-                // 启用所有高级功能
-                self.filter_engine = Some(FilterEngine::new());
-                self.regex_engine = Some(RegexSearchEngine::new(1000));
-                // ...
-            }
+impl AdvancedSearchService {
+    pub fn with_advanced_features() -> Self {
+        Self {
+            filter_engine: Some(FilterEngine::new()),
+            regex_engine: Some(RegexSearchEngine::new(1000)),
         }
-    }
-}
-```
-
-### 方案 3：自动检测和启用
-
-根据使用模式自动启用：
-
-```rust
-impl SearchEngineManager {
-    pub fn search(&mut self, query: &str) -> Result<Vec<LogEntry>> {
-        // 检测查询模式
-        if self.should_enable_regex_cache(query) {
-            self.enable_regex_cache();
-        }
-        
-        if self.should_enable_time_partitioning() {
-            self.enable_time_partitioning();
-        }
-        
-        // 执行搜索...
-    }
-    
-    fn should_enable_regex_cache(&self, query: &str) -> bool {
-        // 如果查询包含正则表达式，且这是第3次使用相同模式
-        self.regex_pattern_count.get(query).unwrap_or(&0) >= 3
     }
 }
 ```
