@@ -3,6 +3,7 @@
 .claude-flow/
 .swarm/
 .omc/
+AGENTS.md
 
 # macOS
 .DS_Store
