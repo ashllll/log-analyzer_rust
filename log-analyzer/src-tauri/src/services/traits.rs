@@ -55,6 +55,7 @@ pub trait QueryPlanning: Send + Sync {
             Vec::new(),
             plan_result.steps.len(),
             Vec::new(),
+            None,
         ))
     }
 }

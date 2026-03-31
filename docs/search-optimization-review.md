@@ -6,12 +6,15 @@
 
 - `log-analyzer/src-tauri/src/commands/search.rs`
 - `log-analyzer/src-tauri/src/services/file_watcher.rs`
+- `log-analyzer/src-tauri/src/services/query_planner.rs`
+- `log-analyzer/src-tauri/src/services/query_executor.rs`
 
 核对结果：
 
 - 主搜索链路实际走的是 `search_logs` / `search_logs_paged`。
 - 查询执行实际由 `QueryExecutor` / `QueryPlanner` / `RegexEngine` 完成逐行匹配。
 - 时间、级别、文件路径过滤实际在 `commands/search.rs` 中执行。
+- 主流程此前没有把“多关键词 OR 查询”的多模式匹配优势真正用到 `search_logs` 入口。
 - README 中提到的 Tantivy / 高级索引能力当前并不是主搜索链路的实际执行入口，本次没有按“预留能力”误改主逻辑。
 
 ## 已确认的真实问题
@@ -51,6 +54,29 @@
 业务后果：
 
 - 前端使用 `entry.id` 建图和选中状态时，存在重复覆盖风险。
+
+### 4. 时间 / 级别过滤仍然按“逐行重匹配后再过滤”执行
+
+真实现状：
+
+- 主搜索链路虽然已经支持文件级和行级过滤，但有时间范围或级别过滤时，仍然会对整份文件的每一行执行 `match_with_details`。
+- 也就是说，过滤条件并没有形成真正的“先裁剪，再执行全文匹配”。
+
+业务后果：
+
+- 大文件场景下，即使用户已经明确选择了某个时间窗口或单一日志级别，搜索仍然会为大量注定被过滤掉的行付出匹配成本。
+- 这与架构文档中的 “Segment Pruner before RecordMatcher” 不一致。
+
+### 5. `query.split('|')` 主路径没有利用多模式 OR 匹配
+
+真实现状：
+
+- `search_logs` 会把用户输入按 `|` 切成多个 `SearchTerm`，然后交给 `QueryExecutor` 逐个 term 判断。
+- `RegexEngine` 本身支持 Aho-Corasick 多模式匹配，但主路径此前只在“单个 term 内部包含 `|`”时才可能使用。
+
+业务后果：
+
+- 常见的 `error|warning|timeout` 这类 OR 查询，在真实入口上会退化为“每行多次单词匹配”，没有利用现成的多模式引擎做快速预检。
 
 ## 已落地的改进
 
@@ -124,6 +150,48 @@
 
 - 前端 `loadedEntriesMap`、选中态与虚拟滚动映射更稳定
 
+### 7. 增加文件内分段摘要与预裁剪
+
+实现位置：
+
+- `commands/search.rs`
+
+实现方式：
+
+- 仅当用户启用了时间范围或级别过滤时，主链路切换为“分段扫描”。
+- 每 `256` 行构建一个轻量分段摘要，记录：
+  - 分段内出现过的日志级别位图
+  - 分段内可解析时间戳的最小值 / 最大值
+- 若某个分段与当前时间范围、级别过滤不可能相交，则直接跳过，不再对该分段逐行执行 `match_with_details`。
+
+收益：
+
+- 把过滤真正前移到全文匹配之前。
+- 对时间窗口很窄、级别过滤很严的大文件搜索，能够显著减少无效匹配调用次数。
+- 保持现有返回结构、分页方式、事件流和 `LogEntry` 结构不变，属于可直接落地的主链路优化。
+
+### 8. 为 OR 多关键词查询增加快速预检引擎
+
+实现位置：
+
+- `query_planner.rs`
+- `query_executor.rs`
+
+实现方式：
+
+- 当查询满足以下条件时：
+  - 全局操作符为 `OR`
+  - 至少两个启用 term
+  - term 都是非正则
+  - 大小写敏感配置一致
+- 额外构建一个共享的 `fast_or_engine`，优先使用 Aho-Corasick 对整行做一次多模式预检。
+- 只有预检命中后，才回到现有逐 term 详情收集逻辑，保证高亮和命中词统计语义不变。
+
+收益：
+
+- `search_logs` 真实入口的 `error|warning|timeout` 这类查询终于能利用项目内已存在的多模式引擎能力。
+- 先做一次线性多模式判定，再做详情提取，避免每个未命中行都反复执行多次单词匹配。
+
 ## 边界条件清单
 
 本次已覆盖并补测的边界：
@@ -136,12 +204,17 @@
 - 文件模式为普通字符串：保持 `contains` 兼容
 - 级别过滤大小写差异：统一按小写比较
 - 搜索结果 ID 重复：消除
+- 时间过滤存在但整段日志都没有可解析时间：整段直接排除
+- 分段中同时存在范围内和范围外时间：只保留范围内行，不扩大匹配
+- 级别过滤存在但整段只含其他级别：整段直接排除
+- 多个简单 OR 关键词：共享快速预检与原有详情提取结果保持一致
 
 本次刻意未改变的语义：
 
 - 简单查询主入口仍然是 `query.split('|')`
 - 未把前端结构化查询直接接入 `search_logs`
 - 未把 README 中预留的 Tantivy 路径强行接入现有主搜索
+- 未把仓库里 `FilterEngine` / `TimePartitionedIndex` 直接切为主搜索执行器，因为当前真实结果详情、分页缓存、事件通知仍围绕 `commands/search.rs` 组织
 
 这是为了避免把未投入真实业务主链路的能力误当成当前行为。
 
@@ -150,6 +223,8 @@
 已执行：
 
 - `cargo fmt`
+- `cargo test -q segment_pruning -- --nocapture`
+- `cargo test -q fast_or_engine -- --nocapture`
 - `cargo test -q search -- --nocapture`
 - `cargo test -q`
 
@@ -172,8 +247,11 @@
   - 用于把 wildcard 模式安全转换为正则
   - 参考: <https://docs.rs/regex/latest/regex/fn.escape.html>
 - Aho-Corasick builder 文档
-  - 当前项目现有大小写不敏感多模式匹配能力仍保持不变
+  - 用于确认 `ascii_case_insensitive` 和多模式构建能力，支撑 OR 快速预检
   - 参考: <https://docs.rs/aho-corasick/latest/aho_corasick/struct.AhoCorasickBuilder.html>
+- Regex `Regex`
+  - 用于保持现有 `is_match` / `find_iter` 详情提取语义不变
+  - 参考: <https://docs.rs/regex/latest/regex/struct.Regex.html>
 
 ## 说明
 

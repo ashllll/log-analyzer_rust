@@ -141,8 +141,8 @@ impl QueryExecutor {
     pub fn matches_line(&self, plan: &ExecutionPlan, line: &str) -> bool {
         match plan.strategy {
             crate::services::query_planner::SearchStrategy::And => {
-                for term in &plan.terms {
-                    let term_matches = if let Some(engine) = plan.get_engine_for_term(&term.id) {
+                for term_id in plan.execution_term_ids() {
+                    let term_matches = if let Some(engine) = plan.get_engine_for_term(term_id) {
                         Self::engine_is_match(&engine, line)
                     } else {
                         false
@@ -155,8 +155,12 @@ impl QueryExecutor {
                 true
             }
             crate::services::query_planner::SearchStrategy::Or => {
-                for term in &plan.terms {
-                    let term_matches = if let Some(engine) = plan.get_engine_for_term(&term.id) {
+                if let Some(engine) = &plan.fast_or_engine {
+                    return Self::engine_is_match(engine.as_ref(), line);
+                }
+
+                for term_id in plan.execution_term_ids() {
+                    let term_matches = if let Some(engine) = plan.get_engine_for_term(term_id) {
                         Self::engine_is_match(&engine, line)
                     } else {
                         false
@@ -169,8 +173,8 @@ impl QueryExecutor {
                 false
             }
             crate::services::query_planner::SearchStrategy::Not => {
-                for term in &plan.terms {
-                    let term_matches = if let Some(engine) = plan.get_engine_for_term(&term.id) {
+                for term_id in plan.execution_term_ids() {
+                    let term_matches = if let Some(engine) = plan.get_engine_for_term(term_id) {
                         Self::engine_is_match(&engine, line)
                     } else {
                         false

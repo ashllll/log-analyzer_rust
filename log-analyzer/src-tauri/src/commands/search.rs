@@ -7,7 +7,7 @@
 
 use parking_lot::Mutex;
 use sha2::{Digest, Sha256};
-use std::{collections::HashSet, sync::Arc};
+use std::{borrow::Cow, collections::HashSet, sync::Arc};
 use tauri::{command, AppHandle, Emitter, Manager, State};
 use tracing::{debug, error, info, trace, warn};
 
@@ -52,6 +52,7 @@ use crate::utils::encoding::decode_log_content;
 const MAX_CACHED_SEARCHES: usize = 100;
 const MAX_RESULTS_PER_SEARCH: usize = 1_000_000;
 const DEFAULT_PAGE_SIZE: usize = 1000;
+const SEARCH_SEGMENT_LINE_COUNT: usize = 256;
 
 #[derive(Debug, Clone)]
 struct SearchRuntimeConfig {
@@ -126,9 +127,33 @@ fn compute_query_version(query: &str) -> String {
 #[derive(Debug, Clone)]
 struct CompiledSearchFilters {
     levels: Option<HashSet<String>>,
+    level_mask: Option<u8>,
     time_start: Option<chrono::NaiveDateTime>,
     time_end: Option<chrono::NaiveDateTime>,
     file_matcher: Option<FilePatternMatcher>,
+}
+
+#[derive(Debug, Clone)]
+struct ParsedLineMetadata {
+    timestamp: String,
+    level: String,
+    level_normalized: String,
+    datetime: Option<chrono::NaiveDateTime>,
+    level_mask: u8,
+}
+
+#[derive(Debug, Clone, Default)]
+struct SearchSegmentSummary {
+    min_datetime: Option<chrono::NaiveDateTime>,
+    max_datetime: Option<chrono::NaiveDateTime>,
+    level_mask: u8,
+}
+
+#[derive(Debug, Clone)]
+struct SearchLineCandidate<'a> {
+    index: usize,
+    line: Cow<'a, str>,
+    metadata: ParsedLineMetadata,
 }
 
 #[derive(Debug, Clone)]
@@ -164,6 +189,55 @@ impl FilePatternMatcher {
     }
 }
 
+fn level_to_mask(level: &str) -> u8 {
+    match level.trim().to_ascii_lowercase().as_str() {
+        "error" => 1 << 0,
+        "warn" | "warning" => 1 << 1,
+        "info" => 1 << 2,
+        "debug" => 1 << 3,
+        _ => 0,
+    }
+}
+
+impl ParsedLineMetadata {
+    fn parse(line: &str, needs_datetime: bool) -> Self {
+        let (timestamp, level) = parse_metadata(line);
+        let level_normalized = level.to_ascii_lowercase();
+        let datetime = if needs_datetime {
+            TimestampParser::parse_naive_datetime(&timestamp)
+        } else {
+            None
+        };
+
+        Self {
+            timestamp,
+            level,
+            level_normalized: level_normalized.clone(),
+            datetime,
+            level_mask: level_to_mask(&level_normalized),
+        }
+    }
+}
+
+impl SearchSegmentSummary {
+    fn record(&mut self, metadata: &ParsedLineMetadata) {
+        self.level_mask |= metadata.level_mask;
+
+        if let Some(datetime) = metadata.datetime {
+            self.min_datetime = Some(
+                self.min_datetime
+                    .map(|current| current.min(datetime))
+                    .unwrap_or(datetime),
+            );
+            self.max_datetime = Some(
+                self.max_datetime
+                    .map(|current| current.max(datetime))
+                    .unwrap_or(datetime),
+            );
+        }
+    }
+}
+
 impl CompiledSearchFilters {
     fn compile(filters: &SearchFilters) -> Result<Self, CommandError> {
         let levels = if filters.levels.is_empty() {
@@ -180,6 +254,11 @@ impl CompiledSearchFilters {
             )
             .filter(|levels| !levels.is_empty())
         };
+        let level_mask = levels.as_ref().map(|levels| {
+            levels
+                .iter()
+                .fold(0u8, |mask, level| mask | level_to_mask(level))
+        });
 
         let time_start = Self::parse_filter_datetime(filters.time_start.as_deref(), "start time")?;
         let time_end = Self::parse_filter_datetime(filters.time_end.as_deref(), "end time")?;
@@ -204,6 +283,7 @@ impl CompiledSearchFilters {
 
         Ok(Self {
             levels,
+            level_mask,
             time_start,
             time_end,
             file_matcher,
@@ -239,18 +319,35 @@ impl CompiledSearchFilters {
         matcher.matches(virtual_path) || real_path.is_some_and(|path| matcher.matches(path))
     }
 
+    #[cfg(test)]
     fn matches_line_metadata(&self, timestamp: &str, level: &str) -> bool {
+        let metadata = ParsedLineMetadata {
+            timestamp: timestamp.to_string(),
+            level: level.to_string(),
+            level_normalized: level.to_ascii_lowercase(),
+            datetime: if self.has_time_filter() {
+                TimestampParser::parse_naive_datetime(timestamp)
+            } else {
+                None
+            },
+            level_mask: level_to_mask(level),
+        };
+
+        self.matches_parsed_line_metadata(&metadata)
+    }
+
+    fn matches_parsed_line_metadata(&self, metadata: &ParsedLineMetadata) -> bool {
         if let Some(levels) = &self.levels {
-            if !levels.contains(&level.to_ascii_lowercase()) {
+            if !levels.contains(&metadata.level_normalized) {
                 return false;
             }
         }
 
-        if self.time_start.is_none() && self.time_end.is_none() {
+        if !self.has_time_filter() {
             return true;
         }
 
-        let Some(entry_dt) = TimestampParser::parse_naive_datetime(timestamp) else {
+        let Some(entry_dt) = metadata.datetime else {
             return false;
         };
 
@@ -262,6 +359,49 @@ impl CompiledSearchFilters {
 
         if let Some(end) = self.time_end {
             if entry_dt > end {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    fn has_time_filter(&self) -> bool {
+        self.time_start.is_some() || self.time_end.is_some()
+    }
+
+    fn needs_segment_pruning(&self) -> bool {
+        self.levels.is_some() || self.has_time_filter()
+    }
+
+    fn segment_may_match(&self, summary: &SearchSegmentSummary) -> bool {
+        if let Some(levels) = &self.levels {
+            if self.level_mask.unwrap_or(0) == 0 && !levels.is_empty() {
+                return false;
+            }
+
+            if summary.level_mask & self.level_mask.unwrap_or(0) == 0 {
+                return false;
+            }
+        }
+
+        if !self.has_time_filter() {
+            return true;
+        }
+
+        let (Some(min_datetime), Some(max_datetime)) = (summary.min_datetime, summary.max_datetime)
+        else {
+            return false;
+        };
+
+        if let Some(start) = self.time_start {
+            if max_datetime < start {
+                return false;
+            }
+        }
+
+        if let Some(end) = self.time_end {
+            if min_datetime > end {
                 return false;
             }
         }
@@ -861,6 +1001,214 @@ pub async fn cancel_search(
     }
 }
 
+fn search_lines_with_details<'a, I>(
+    lines: I,
+    virtual_path: &str,
+    real_path: &str,
+    executor: &QueryExecutor,
+    plan: &ExecutionPlan,
+    filters: &CompiledSearchFilters,
+    global_offset: usize,
+) -> Vec<LogEntry>
+where
+    I: IntoIterator<Item = (usize, Cow<'a, str>)>,
+{
+    if filters.needs_segment_pruning() {
+        search_lines_with_segment_pruning(
+            lines,
+            virtual_path,
+            real_path,
+            executor,
+            plan,
+            filters,
+            global_offset,
+        )
+    } else {
+        search_lines_direct(
+            lines,
+            virtual_path,
+            real_path,
+            executor,
+            plan,
+            global_offset,
+        )
+    }
+}
+
+fn search_lines_direct<'a, I>(
+    lines: I,
+    virtual_path: &str,
+    real_path: &str,
+    executor: &QueryExecutor,
+    plan: &ExecutionPlan,
+    global_offset: usize,
+) -> Vec<LogEntry>
+where
+    I: IntoIterator<Item = (usize, Cow<'a, str>)>,
+{
+    let mut results = Vec::new();
+
+    for (index, line) in lines {
+        let line_ref = line.as_ref();
+        let match_details = executor.match_with_details(plan, line_ref);
+        if match_details
+            .as_ref()
+            .is_none_or(|details| details.is_empty())
+        {
+            continue;
+        }
+
+        let metadata = ParsedLineMetadata::parse(line_ref, false);
+        results.push(build_log_entry(
+            global_offset + index,
+            index + 1,
+            virtual_path,
+            real_path,
+            line,
+            metadata,
+            match_details,
+        ));
+    }
+
+    results
+}
+
+fn search_lines_with_segment_pruning<'a, I>(
+    lines: I,
+    virtual_path: &str,
+    real_path: &str,
+    executor: &QueryExecutor,
+    plan: &ExecutionPlan,
+    filters: &CompiledSearchFilters,
+    global_offset: usize,
+) -> Vec<LogEntry>
+where
+    I: IntoIterator<Item = (usize, Cow<'a, str>)>,
+{
+    let mut results = Vec::new();
+    let mut segment = Vec::with_capacity(SEARCH_SEGMENT_LINE_COUNT);
+    let mut summary = SearchSegmentSummary::default();
+    let needs_datetime = filters.has_time_filter();
+
+    for (index, line) in lines {
+        let metadata = ParsedLineMetadata::parse(line.as_ref(), needs_datetime);
+        summary.record(&metadata);
+        segment.push(SearchLineCandidate {
+            index,
+            line,
+            metadata,
+        });
+
+        if segment.len() >= SEARCH_SEGMENT_LINE_COUNT {
+            flush_search_segment(
+                &mut segment,
+                &mut summary,
+                &mut results,
+                virtual_path,
+                real_path,
+                executor,
+                plan,
+                filters,
+                global_offset,
+            );
+        }
+    }
+
+    if !segment.is_empty() {
+        flush_search_segment(
+            &mut segment,
+            &mut summary,
+            &mut results,
+            virtual_path,
+            real_path,
+            executor,
+            plan,
+            filters,
+            global_offset,
+        );
+    }
+
+    results
+}
+
+fn flush_search_segment(
+    segment: &mut Vec<SearchLineCandidate<'_>>,
+    summary: &mut SearchSegmentSummary,
+    results: &mut Vec<LogEntry>,
+    virtual_path: &str,
+    real_path: &str,
+    executor: &QueryExecutor,
+    plan: &ExecutionPlan,
+    filters: &CompiledSearchFilters,
+    global_offset: usize,
+) {
+    if segment.is_empty() {
+        return;
+    }
+
+    if filters.segment_may_match(summary) {
+        for candidate in segment.drain(..) {
+            if !filters.matches_parsed_line_metadata(&candidate.metadata) {
+                continue;
+            }
+
+            let match_details = executor.match_with_details(plan, candidate.line.as_ref());
+            if match_details
+                .as_ref()
+                .is_none_or(|details| details.is_empty())
+            {
+                continue;
+            }
+
+            results.push(build_log_entry(
+                global_offset + candidate.index,
+                candidate.index + 1,
+                virtual_path,
+                real_path,
+                candidate.line,
+                candidate.metadata,
+                match_details,
+            ));
+        }
+    } else {
+        segment.clear();
+    }
+
+    *summary = SearchSegmentSummary::default();
+}
+
+fn build_log_entry(
+    id: usize,
+    line_number: usize,
+    virtual_path: &str,
+    real_path: &str,
+    line: Cow<'_, str>,
+    metadata: ParsedLineMetadata,
+    match_details: Option<Vec<crate::services::query_executor::MatchDetail>>,
+) -> LogEntry {
+    let matched_keywords = match_details.as_ref().map(|details| {
+        details
+            .iter()
+            .map(|detail| detail.term_value.clone())
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>()
+    });
+
+    LogEntry {
+        id,
+        timestamp: metadata.timestamp.into(),
+        level: metadata.level.into(),
+        file: virtual_path.into(),
+        real_path: real_path.into(),
+        line: line_number,
+        content: line.into_owned().into(),
+        tags: vec![],
+        match_details,
+        matched_keywords: matched_keywords.filter(|keywords| !keywords.is_empty()),
+    }
+}
+
 /// Search a single file with support for both path-based and hash-based access
 ///
 /// This function supports two modes:
@@ -949,39 +1297,18 @@ fn search_single_file_with_details(
             );
         }
 
-        // Process lines
-        for (i, line) in content_str.lines().enumerate() {
-            // 直接使用 match_with_details，避免双重模式匹配（P2-3: 每行匹配两次 Aho-Corasick）
-            let match_details = executor.match_with_details(plan, line);
-            if match_details.as_ref().is_none_or(|v| v.is_empty()) {
-                continue;
-            }
-            let (ts, lvl) = parse_metadata(line);
-            if !filters.matches_line_metadata(&ts, &lvl) {
-                continue;
-            }
-            let matched_keywords = match_details.as_ref().map(|details| {
-                details
-                    .iter()
-                    .map(|detail| detail.term_value.clone())
-                    .collect::<HashSet<_>>()
-                    .into_iter()
-                    .collect::<Vec<_>>()
-            });
-
-            results.push(LogEntry {
-                id: global_offset + i,
-                timestamp: ts.into(),
-                level: lvl.into(),
-                file: virtual_path.into(),
-                real_path: file_identifier.into(),
-                line: i + 1,
-                content: line.into(),
-                tags: vec![],
-                match_details,
-                matched_keywords: matched_keywords.filter(|v| !v.is_empty()),
-            });
-        }
+        results = search_lines_with_details(
+            content_str
+                .lines()
+                .enumerate()
+                .map(|(index, line)| (index, Cow::Borrowed(line))),
+            virtual_path,
+            file_identifier,
+            executor,
+            plan,
+            filters,
+            global_offset,
+        );
 
         // 高频循环中使用 trace 级别，避免 DEBUG 日志性能开销
         trace!(
@@ -1013,41 +1340,29 @@ fn search_single_file_with_details(
         match File::open(real_path) {
             Ok(file) => {
                 let reader = BufReader::with_capacity(8192, file);
-
-                for (i, line_res) in reader.lines().enumerate() {
-                    if let Ok(line) = line_res {
-                        // 直接使用 match_with_details，避免双重模式匹配（先 matches_line 再 match_with_details）
-                        let match_details = executor.match_with_details(plan, &line);
-                        if match_details.as_ref().is_none_or(|v| v.is_empty()) {
-                            continue;
-                        }
-                        let (ts, lvl) = parse_metadata(&line);
-                        if !filters.matches_line_metadata(&ts, &lvl) {
-                            continue;
-                        }
-                        let matched_keywords = match_details.as_ref().map(|details| {
-                            details
-                                .iter()
-                                .map(|detail| detail.term_value.clone())
-                                .collect::<HashSet<_>>()
-                                .into_iter()
-                                .collect::<Vec<_>>()
-                        });
-
-                        results.push(LogEntry {
-                            id: global_offset + i,
-                            timestamp: ts.into(),
-                            level: lvl.into(),
-                            file: virtual_path.into(),
-                            real_path: real_path.into(),
-                            line: i + 1,
-                            content: line.into(),
-                            tags: vec![],
-                            match_details,
-                            matched_keywords: matched_keywords.filter(|v| !v.is_empty()),
-                        });
-                    }
-                }
+                results = search_lines_with_details(
+                    reader
+                        .lines()
+                        .enumerate()
+                        .filter_map(|(index, line_res)| match line_res {
+                            Ok(line) => Some((index, Cow::Owned(line))),
+                            Err(e) => {
+                                warn!(
+                                    file = %real_path,
+                                    line_index = index + 1,
+                                    error = %e,
+                                    "Failed to read line during search, skipping line"
+                                );
+                                None
+                            }
+                        }),
+                    virtual_path,
+                    real_path,
+                    executor,
+                    plan,
+                    filters,
+                    global_offset,
+                );
 
                 // 高频循环中使用 trace 级别
                 trace!(
@@ -1743,6 +2058,7 @@ pub async fn get_virtual_search_stats(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use la_core::models::search::{QueryMetadata, QueryOperator, SearchTerm, TermSource};
 
     fn build_filters(
         time_start: Option<&str>,
@@ -1756,6 +2072,39 @@ mod tests {
             levels: levels.iter().map(|level| (*level).to_string()).collect(),
             file_pattern: file_pattern.map(str::to_string),
         }
+    }
+
+    fn build_executor_and_plan(query: &str) -> (QueryExecutor, ExecutionPlan) {
+        let mut executor = QueryExecutor::new(64);
+        let terms = query
+            .split('|')
+            .enumerate()
+            .map(|(index, value)| SearchTerm {
+                id: format!("term_{}", index),
+                value: value.trim().to_string(),
+                operator: QueryOperator::Or,
+                source: TermSource::User,
+                preset_group_id: None,
+                is_regex: false,
+                priority: 1,
+                enabled: true,
+                case_sensitive: false,
+            })
+            .collect();
+        let query = SearchQuery {
+            id: "test_query".to_string(),
+            terms,
+            global_operator: QueryOperator::Or,
+            filters: None,
+            metadata: QueryMetadata {
+                created_at: 0,
+                last_modified: 0,
+                execution_count: 0,
+                label: None,
+            },
+        };
+        let plan = executor.execute(&query).unwrap();
+        (executor, plan)
     }
 
     #[test]
@@ -1804,5 +2153,61 @@ mod tests {
 
         assert!(compiled.matches_file("prod/service-error.log", None));
         assert!(!compiled.matches_file("prod/service-info.log", None));
+    }
+
+    #[test]
+    fn segment_pruning_keeps_in_range_matches_only() {
+        let filters = build_filters(
+            Some("2024-01-15T10:00"),
+            Some("2024-01-15T11:00"),
+            &["ERROR"],
+            None,
+        );
+        let compiled = CompiledSearchFilters::compile(&filters).unwrap();
+        let (executor, plan) = build_executor_and_plan("panic");
+        let content = "2024-01-15 09:30:00 ERROR panic before window\n\
+2024-01-15 10:15:00 INFO panic wrong level\n\
+2024-01-15 10:30:00 ERROR panic in window\n";
+
+        let results = search_lines_with_details(
+            content
+                .lines()
+                .enumerate()
+                .map(|(index, line)| (index, Cow::Borrowed(line))),
+            "logs/app.log",
+            "cas://hash",
+            &executor,
+            &plan,
+            &compiled,
+            0,
+        );
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(&*results[0].timestamp, "2024-01-15 10:30:00");
+        assert_eq!(&*results[0].level, "ERROR");
+    }
+
+    #[test]
+    fn segment_pruning_skips_segments_without_matching_levels() {
+        let filters = build_filters(None, None, &["ERROR"], None);
+        let compiled = CompiledSearchFilters::compile(&filters).unwrap();
+        let (executor, plan) = build_executor_and_plan("keyword");
+        let content = "2024-01-15 10:00:00 INFO keyword info only\n\
+2024-01-15 10:01:00 INFO keyword still info\n";
+
+        let results = search_lines_with_details(
+            content
+                .lines()
+                .enumerate()
+                .map(|(index, line)| (index, Cow::Borrowed(line))),
+            "logs/app.log",
+            "cas://hash",
+            &executor,
+            &plan,
+            &compiled,
+            0,
+        );
+
+        assert!(results.is_empty());
     }
 }

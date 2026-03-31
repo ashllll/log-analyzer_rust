@@ -1,4 +1,4 @@
-use crate::services::regex_engine::RegexEngine;
+use crate::services::regex_engine::{EngineType, RegexEngine};
 use crate::services::traits::{PlanResult, QueryPlanning};
 use la_core::error::{AppError, Result};
 use la_core::models::search::*;
@@ -106,12 +106,55 @@ impl QueryPlanner {
             });
         }
 
+        let fast_or_engine = self.build_fast_or_engine(&enabled_terms, &strategy)?;
+
         Ok(ExecutionPlan::new(
             strategy,
             engines,
             enabled_terms.len(),
             terms_list,
+            fast_or_engine,
         ))
+    }
+
+    fn build_fast_or_engine(
+        &mut self,
+        enabled_terms: &[&SearchTerm],
+        strategy: &SearchStrategy,
+    ) -> Result<Option<Arc<RegexEngine>>> {
+        if *strategy != SearchStrategy::Or || enabled_terms.len() < 2 {
+            return Ok(None);
+        }
+
+        if enabled_terms
+            .iter()
+            .any(|term| term.is_regex || term.value.is_empty())
+        {
+            return Ok(None);
+        }
+
+        let case_sensitive = enabled_terms[0].case_sensitive;
+        if enabled_terms
+            .iter()
+            .any(|term| term.case_sensitive != case_sensitive)
+        {
+            return Ok(None);
+        }
+
+        let combined_pattern = enabled_terms
+            .iter()
+            .map(|term| term.value.as_str())
+            .collect::<Vec<_>>()
+            .join("|");
+
+        let engine = if case_sensitive {
+            RegexEngine::new(&combined_pattern, false)
+        } else {
+            RegexEngine::new_with_case(&combined_pattern, false, true)
+        }
+        .map_err(|e| AppError::validation_error(format!("Engine error: {}", e)))?;
+
+        Ok(Some(Arc::new(engine)))
     }
 
     /**
@@ -174,8 +217,10 @@ pub struct ExecutionPlan {
     pub engines: Vec<CompiledEngine>,
     pub term_count: usize,
     pub terms: Vec<PlanTerm>,
+    pub fast_or_engine: Option<Arc<RegexEngine>>,
     /// term_id 到 engine 的 HashMap 映射，用于 O(1) 查找
     engine_map: std::collections::HashMap<String, Arc<RegexEngine>>,
+    execution_order: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -194,6 +239,7 @@ impl ExecutionPlan {
         engines: Vec<CompiledEngine>,
         term_count: usize,
         terms: Vec<PlanTerm>,
+        fast_or_engine: Option<Arc<RegexEngine>>,
     ) -> Self {
         // 构建 term_id 到 engine 的 HashMap，实现 O(1) 查找
         let engine_map: std::collections::HashMap<String, Arc<RegexEngine>> = engines
@@ -201,12 +247,58 @@ impl ExecutionPlan {
             .map(|e| (e.term_id.clone(), Arc::clone(&e.engine)))
             .collect();
 
+        let execution_order = Self::build_execution_order(&engines, &terms);
+
         Self {
             strategy,
             engines,
             term_count,
             terms,
+            fast_or_engine,
             engine_map,
+            execution_order,
+        }
+    }
+
+    fn build_execution_order(engines: &[CompiledEngine], terms: &[PlanTerm]) -> Vec<String> {
+        let term_lengths = terms
+            .iter()
+            .map(|term| (term.id.as_str(), term.value.len()))
+            .collect::<std::collections::HashMap<_, _>>();
+
+        let mut ordered = engines
+            .iter()
+            .map(|engine| {
+                let term_length = term_lengths
+                    .get(engine.term_id.as_str())
+                    .copied()
+                    .unwrap_or(0);
+                (
+                    engine.term_id.clone(),
+                    engine.priority,
+                    Self::engine_cost_rank(engine.engine.as_ref()),
+                    term_length,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        ordered.sort_by(|left, right| {
+            right
+                .1
+                .cmp(&left.1)
+                .then_with(|| left.2.cmp(&right.2))
+                .then_with(|| right.3.cmp(&left.3))
+                .then_with(|| left.0.cmp(&right.0))
+        });
+
+        ordered.into_iter().map(|entry| entry.0).collect()
+    }
+
+    fn engine_cost_rank(engine: &RegexEngine) -> u8 {
+        match engine.engine_type() {
+            EngineType::AhoCorasick => 0,
+            EngineType::Automata => 1,
+            EngineType::Standard => 2,
         }
     }
 
@@ -216,6 +308,10 @@ impl ExecutionPlan {
      */
     pub fn get_engine_for_term(&self, term_id: &str) -> Option<Arc<RegexEngine>> {
         self.engine_map.get(term_id).cloned()
+    }
+
+    pub fn execution_term_ids(&self) -> &[String] {
+        &self.execution_order
     }
 
     /**
@@ -238,8 +334,13 @@ impl ExecutionPlan {
      * 按优先级排序引擎
      */
     pub fn sort_by_priority(&mut self) {
-        self.engines.sort_by_key(|e| std::cmp::Reverse(e.priority));
-        // engine_map 的键值对内容不变，仅 engines Vec 顺序变化，无需重建 HashMap
+        self.engines.sort_by(|left, right| {
+            right.priority.cmp(&left.priority).then_with(|| {
+                Self::engine_cost_rank(left.engine.as_ref())
+                    .cmp(&Self::engine_cost_rank(right.engine.as_ref()))
+            })
+        });
+        self.execution_order = Self::build_execution_order(&self.engines, &self.terms);
     }
 }
 
@@ -456,7 +557,7 @@ mod tests {
                 case_sensitive: false,
             },
         ];
-        let plan = ExecutionPlan::new(SearchStrategy::And, engines, 2, terms);
+        let plan = ExecutionPlan::new(SearchStrategy::And, engines, 2, terms, None);
 
         assert_eq!(plan.engines.len(), 2);
         assert_eq!(plan.engines[0].priority, 1);
@@ -482,13 +583,42 @@ mod tests {
                 priority: 2,
             },
         ];
-        let mut plan = ExecutionPlan::new(SearchStrategy::And, engines, 3, vec![]);
+        let mut plan = ExecutionPlan::new(SearchStrategy::And, engines, 3, vec![], None);
 
         plan.sort_by_priority();
 
         assert_eq!(plan.engines[0].priority, 3);
         assert_eq!(plan.engines[1].priority, 2);
         assert_eq!(plan.engines[2].priority, 1);
+    }
+
+    #[test]
+    fn test_build_or_plan_creates_fast_or_engine_for_simple_terms() {
+        let mut planner = QueryPlanner::new(100);
+        let query = SearchQuery {
+            id: "test".to_string(),
+            terms: vec![
+                create_test_term("error", QueryOperator::Or),
+                create_test_term("warning", QueryOperator::Or),
+            ],
+            global_operator: QueryOperator::Or,
+            filters: None,
+            metadata: QueryMetadata {
+                created_at: 0,
+                last_modified: 0,
+                execution_count: 0,
+                label: None,
+            },
+        };
+
+        let plan = planner.build_plan(&query).unwrap();
+
+        assert!(plan.fast_or_engine.is_some());
+        assert!(plan
+            .fast_or_engine
+            .as_ref()
+            .unwrap()
+            .is_match("warning: service degraded"));
     }
 
     // ========== 自动单词边界检测测试 ==========
