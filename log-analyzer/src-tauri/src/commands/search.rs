@@ -19,6 +19,7 @@ use la_core::models::search::{
 };
 use la_core::models::search_statistics::SearchResultSummary;
 use la_core::models::{LogEntry, SearchCacheKey, SearchFilters, SearchQuery};
+use regex::Regex;
 
 // MessagePack 序列化支持
 use serde::{Deserialize, Serialize};
@@ -43,6 +44,7 @@ pub struct BinarySearchRequest {
 }
 
 // 导入移除: SearchEngineManager 相关类型未使用
+use crate::services::file_watcher::TimestampParser;
 use crate::services::{calculate_keyword_statistics, parse_metadata, ExecutionPlan, QueryExecutor};
 use crate::utils::encoding::decode_log_content;
 
@@ -121,6 +123,153 @@ fn compute_query_version(query: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
+#[derive(Debug, Clone)]
+struct CompiledSearchFilters {
+    levels: Option<HashSet<String>>,
+    time_start: Option<chrono::NaiveDateTime>,
+    time_end: Option<chrono::NaiveDateTime>,
+    file_matcher: Option<FilePatternMatcher>,
+}
+
+#[derive(Debug, Clone)]
+enum FilePatternMatcher {
+    Substring(String),
+    Wildcard(Regex),
+}
+
+impl FilePatternMatcher {
+    fn compile(raw: &str) -> Result<Self, CommandError> {
+        let trimmed = raw.trim();
+        if trimmed.contains('*') || trimmed.contains('?') {
+            let escaped = regex::escape(trimmed);
+            let regex_pattern = format!("^{}$", escaped.replace(r"\*", ".*").replace(r"\?", "."));
+            let regex = Regex::new(&regex_pattern).map_err(|e| {
+                CommandError::new(
+                    "VALIDATION_ERROR",
+                    format!("Invalid file pattern '{}': {}", trimmed, e),
+                )
+                .with_help("Use a valid file pattern such as '*.log' or 'service-error.log'")
+            })?;
+            Ok(Self::Wildcard(regex))
+        } else {
+            Ok(Self::Substring(trimmed.to_string()))
+        }
+    }
+
+    fn matches(&self, value: &str) -> bool {
+        match self {
+            Self::Substring(pattern) => value.contains(pattern),
+            Self::Wildcard(regex) => regex.is_match(value),
+        }
+    }
+}
+
+impl CompiledSearchFilters {
+    fn compile(filters: &SearchFilters) -> Result<Self, CommandError> {
+        let levels = if filters.levels.is_empty() {
+            None
+        } else {
+            Some(
+                filters
+                    .levels
+                    .iter()
+                    .map(|level| level.trim())
+                    .filter(|level| !level.is_empty())
+                    .map(|level| level.to_ascii_lowercase())
+                    .collect::<HashSet<_>>(),
+            )
+            .filter(|levels| !levels.is_empty())
+        };
+
+        let time_start = Self::parse_filter_datetime(filters.time_start.as_deref(), "start time")?;
+        let time_end = Self::parse_filter_datetime(filters.time_end.as_deref(), "end time")?;
+
+        if let (Some(start), Some(end)) = (time_start, time_end) {
+            if start > end {
+                return Err(CommandError::new(
+                    "VALIDATION_ERROR",
+                    "Search filter start time cannot be later than end time",
+                )
+                .with_help("Adjust the selected time range and try again"));
+            }
+        }
+
+        let file_matcher = filters
+            .file_pattern
+            .as_deref()
+            .map(str::trim)
+            .filter(|pattern| !pattern.is_empty())
+            .map(FilePatternMatcher::compile)
+            .transpose()?;
+
+        Ok(Self {
+            levels,
+            time_start,
+            time_end,
+            file_matcher,
+        })
+    }
+
+    fn parse_filter_datetime(
+        value: Option<&str>,
+        label: &str,
+    ) -> Result<Option<chrono::NaiveDateTime>, CommandError> {
+        let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) else {
+            return Ok(None);
+        };
+
+        TimestampParser::parse_naive_datetime(value)
+            .ok_or_else(|| {
+                CommandError::new(
+                "VALIDATION_ERROR",
+                format!("Invalid {} '{}'", label, value),
+            )
+            .with_help(
+                "Use a valid datetime value such as '2024-01-15T10:30' or '2024-01-15 10:30:45'",
+            )
+            })
+            .map(Some)
+    }
+
+    fn matches_file(&self, virtual_path: &str, real_path: Option<&str>) -> bool {
+        let Some(matcher) = &self.file_matcher else {
+            return true;
+        };
+
+        matcher.matches(virtual_path) || real_path.is_some_and(|path| matcher.matches(path))
+    }
+
+    fn matches_line_metadata(&self, timestamp: &str, level: &str) -> bool {
+        if let Some(levels) = &self.levels {
+            if !levels.contains(&level.to_ascii_lowercase()) {
+                return false;
+            }
+        }
+
+        if self.time_start.is_none() && self.time_end.is_none() {
+            return true;
+        }
+
+        let Some(entry_dt) = TimestampParser::parse_naive_datetime(timestamp) else {
+            return false;
+        };
+
+        if let Some(start) = self.time_start {
+            if entry_dt < start {
+                return false;
+            }
+        }
+
+        if let Some(end) = self.time_end {
+            if entry_dt > end {
+                return false;
+            }
+        }
+
+        true
+    }
+}
+
 #[command]
 pub async fn search_logs(
     app: AppHandle,
@@ -172,6 +321,7 @@ pub async fn search_logs(
         .unwrap_or(runtime_config.default_max_results)
         .min(100_000);
     let filters = filters.unwrap_or_default();
+    let compiled_filters = CompiledSearchFilters::compile(&filters)?;
     let case_sensitive = runtime_config.case_sensitive;
     let search_timeout_secs = runtime_config.timeout_seconds;
     let regex_cache_size = runtime_config.regex_cache_size.max(1);
@@ -388,7 +538,10 @@ pub async fn search_logs(
     };
 
     let search_id_clone = search_id.clone();
-    let files_for_search = files.clone();
+    let files_for_search: Vec<_> = files
+        .into_iter()
+        .filter(|file| compiled_filters.matches_file(&file.virtual_path, None))
+        .collect();
 
     // 创建磁盘搜索会话（仅在非缓存命中路径下创建，缓存命中路径已创建）
     if !disk_result_store.has_session(&search_id) {
@@ -397,6 +550,7 @@ pub async fn search_logs(
         }
     }
     let disk_store_spawn = Arc::clone(&disk_result_store);
+    let compiled_filters_for_search = compiled_filters.clone();
 
     // 为超时处理克隆必要的变量
     let cancellation_tokens_for_timeout = Arc::clone(&cancellation_tokens);
@@ -465,7 +619,7 @@ pub async fn search_logs(
         // BEFORE spawn_blocking to avoid nested runtime blocking issues
 
         debug!(
-            total_files = files.len(),
+            total_files = files_for_search.len(),
             workspace_id = %workspace_id,
             "Starting search across files using CAS"
         );
@@ -527,6 +681,7 @@ pub async fn search_logs(
                         Some(&*cas), // Pass CAS instance for hash-based access
                         &executor,
                         &plan,
+                        &compiled_filters_for_search,
                         total_processed + idx * 10000,
                     )
                 })
@@ -539,95 +694,45 @@ pub async fn search_logs(
 
             // 收集当前批次的结果
             for file_results in batch {
-                for entry in file_results {
+                for mut entry in file_results {
                     // 检查是否已达到max_results限制
                     if results_count >= max_results {
                         was_truncated = true;
                         break 'outer;
                     }
 
-                    // 应用过滤器
-                    let mut include = true;
+                    entry.id = results_count;
 
-                    let entry_level_lower = entry.level.to_string().to_lowercase();
-                    if !filters.levels.is_empty()
-                        && !filters
-                            .levels
-                            .iter()
-                            .any(|l| l.to_lowercase() == entry_level_lower)
-                    {
-                        include = false;
-                    }
-                    if include && filters.time_start.is_some() {
-                        if let Some(ref start) = filters.time_start {
-                            if let Ok(entry_dt) =
-                                chrono::DateTime::parse_from_rfc3339(entry.timestamp.as_ref())
-                            {
-                                if let Ok(start_dt) =
-                                    chrono::DateTime::parse_from_rfc3339(start.as_str())
-                                {
-                                    if entry_dt < start_dt {
-                                        include = false;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if include && filters.time_end.is_some() {
-                        if let Some(ref end) = filters.time_end {
-                            if let Ok(entry_dt) =
-                                chrono::DateTime::parse_from_rfc3339(entry.timestamp.as_ref())
-                            {
-                                if let Ok(end_dt) =
-                                    chrono::DateTime::parse_from_rfc3339(end.as_str())
-                                {
-                                    if entry_dt > end_dt {
-                                        include = false;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if include && filters.file_pattern.is_some() {
-                        if let Some(ref pattern) = filters.file_pattern {
-                            if !entry.file.contains(pattern) && !entry.real_path.contains(pattern) {
-                                include = false;
-                            }
+                    // 流式统计：增量更新关键词计数
+                    if let Some(ref keywords) = entry.matched_keywords {
+                        for kw in keywords {
+                            *keyword_counts.entry(kw.clone()).or_insert(0) += 1;
                         }
                     }
 
-                    if include {
-                        // 流式统计：增量更新关键词计数
-                        if let Some(ref keywords) = entry.matched_keywords {
-                            for kw in keywords {
-                                *keyword_counts.entry(kw.clone()).or_insert(0) += 1;
-                            }
-                        }
+                    // 保存到完整结果集用于缓存（限制大小）
+                    if all_results.len() < MAX_CACHE_SIZE {
+                        all_results.push(entry.clone());
+                    } else if all_results.len() == MAX_CACHE_SIZE {
+                        // 首次达到限制时记录警告
+                        tracing::warn!(
+                            "Cache size limit reached ({}), additional results will not be cached",
+                            MAX_CACHE_SIZE
+                        );
+                    }
+                    batch_results.push(entry);
+                    results_count += 1;
 
-                        // 保存到完整结果集用于缓存（限制大小）
-                        if all_results.len() < MAX_CACHE_SIZE {
-                            all_results.push(entry.clone());
-                        } else if all_results.len() == MAX_CACHE_SIZE {
-                            // 首次达到限制时记录警告
-                            tracing::warn!(
-                                "Cache size limit reached ({}), additional results will not be cached",
-                                MAX_CACHE_SIZE
-                            );
+                    // 批次满时写入磁盘并发送实时计数（不再发送原始数据到前端）
+                    if batch_results.len() >= batch_size {
+                        if let Err(e) =
+                            disk_store_spawn.append_entries(&search_id_clone, &batch_results)
+                        {
+                            warn!(error = %e, "磁盘写入搜索结果批次失败");
                         }
-                        batch_results.push(entry);
-                        results_count += 1;
-
-                        // 批次满时写入磁盘并发送实时计数（不再发送原始数据到前端）
-                        if batch_results.len() >= batch_size {
-                            if let Err(e) =
-                                disk_store_spawn.append_entries(&search_id_clone, &batch_results)
-                            {
-                                warn!(error = %e, "磁盘写入搜索结果批次失败");
-                            }
-                            batch_results.clear();
-                            // 发送实时条目计数（前端用于调整虚拟列表大小，不含实际数据）
-                            let _ = app_handle.emit("search-progress", results_count);
-                        }
+                        batch_results.clear();
+                        // 发送实时条目计数（前端用于调整虚拟列表大小，不含实际数据）
+                        let _ = app_handle.emit("search-progress", results_count);
                     }
                 }
             }
@@ -780,12 +885,17 @@ fn search_single_file_with_details(
     cas_opt: Option<&crate::storage::ContentAddressableStorage>,
     executor: &QueryExecutor,
     plan: &ExecutionPlan,
+    filters: &CompiledSearchFilters,
     global_offset: usize,
 ) -> Vec<LogEntry> {
     let mut results = Vec::new();
 
     // Determine if this is CAS-based or path-based access
     if let Some(sha256_hash) = file_identifier.strip_prefix("cas://") {
+        if !filters.matches_file(virtual_path, None) {
+            return results;
+        }
+
         // Hash-based access via CAS
 
         let cas = match cas_opt {
@@ -847,6 +957,9 @@ fn search_single_file_with_details(
                 continue;
             }
             let (ts, lvl) = parse_metadata(line);
+            if !filters.matches_line_metadata(&ts, &lvl) {
+                continue;
+            }
             let matched_keywords = match_details.as_ref().map(|details| {
                 details
                     .iter()
@@ -884,6 +997,9 @@ fn search_single_file_with_details(
         use std::path::Path;
 
         let real_path = file_identifier;
+        if !filters.matches_file(virtual_path, Some(real_path)) {
+            return results;
+        }
         let path = Path::new(real_path);
 
         if !path.exists() {
@@ -906,6 +1022,9 @@ fn search_single_file_with_details(
                             continue;
                         }
                         let (ts, lvl) = parse_metadata(&line);
+                        if !filters.matches_line_metadata(&ts, &lvl) {
+                            continue;
+                        }
                         let matched_keywords = match_details.as_ref().map(|details| {
                             details
                                 .iter()
@@ -1107,6 +1226,7 @@ pub async fn search_logs_paged(
     > = Arc::clone(&state.metadata_stores);
 
     let filters = filters.unwrap_or_default();
+    let compiled_filters = CompiledSearchFilters::compile(&filters)?;
 
     // 确定工作区ID
     let workspace_id = if let Some(ref id) = workspaceId {
@@ -1190,10 +1310,14 @@ pub async fn search_logs_paged(
     // 生成搜索ID
     let search_id = uuid::Uuid::new_v4().to_string();
     let search_id_for_spawn = search_id.clone();
-    let files_for_search = files.clone();
+    let files_for_search: Vec<_> = files
+        .into_iter()
+        .filter(|file| compiled_filters.matches_file(&file.virtual_path, None))
+        .collect();
 
     // 克隆需要在闭包中使用的变量
     let query_for_spawn = query.clone();
+    let compiled_filters_for_search = compiled_filters.clone();
 
     // 在阻塞任务中执行搜索
     let results = tokio::task::spawn_blocking(move || -> Result<Vec<LogEntry>, String> {
@@ -1262,77 +1386,28 @@ pub async fn search_logs_paged(
                         Some(&*cas),
                         &executor,
                         &plan,
+                        &compiled_filters_for_search,
                         idx * 10000,
                     )
                 })
                 .collect();
 
             for file_results in batch {
-                for entry in file_results {
-                    // 应用过滤器
-                    let mut include = true;
+                for mut entry in file_results {
+                    entry.id = all_results.len();
 
-                    let entry_level_lower = entry.level.to_string().to_lowercase();
-                    if !filters.levels.is_empty()
-                        && !filters
-                            .levels
-                            .iter()
-                            .any(|l| l.to_lowercase() == entry_level_lower)
-                    {
-                        include = false;
-                    }
-                    if include && filters.time_start.is_some() {
-                        if let Some(ref start) = filters.time_start {
-                            if let Ok(entry_dt) =
-                                chrono::DateTime::parse_from_rfc3339(entry.timestamp.as_ref())
-                            {
-                                if let Ok(start_dt) =
-                                    chrono::DateTime::parse_from_rfc3339(start.as_str())
-                                {
-                                    if entry_dt < start_dt {
-                                        include = false;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if include && filters.time_end.is_some() {
-                        if let Some(ref end) = filters.time_end {
-                            if let Ok(entry_dt) =
-                                chrono::DateTime::parse_from_rfc3339(entry.timestamp.as_ref())
-                            {
-                                if let Ok(end_dt) =
-                                    chrono::DateTime::parse_from_rfc3339(end.as_str())
-                                {
-                                    if entry_dt > end_dt {
-                                        include = false;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if include && filters.file_pattern.is_some() {
-                        if let Some(ref pattern) = filters.file_pattern {
-                            if !entry.file.contains(pattern) && !entry.real_path.contains(pattern) {
-                                include = false;
-                            }
+                    // 流式统计
+                    if let Some(ref keywords) = entry.matched_keywords {
+                        for kw in keywords {
+                            *keyword_counts.entry(kw.clone()).or_insert(0) += 1;
                         }
                     }
 
-                    if include {
-                        // 流式统计
-                        if let Some(ref keywords) = entry.matched_keywords {
-                            for kw in keywords {
-                                *keyword_counts.entry(kw.clone()).or_insert(0) += 1;
-                            }
-                        }
+                    all_results.push(entry);
 
-                        all_results.push(entry);
-
-                        // 限制最大结果数
-                        if all_results.len() >= MAX_RESULTS_PER_SEARCH {
-                            break 'paged_outer;
-                        }
+                    // 限制最大结果数
+                    if all_results.len() >= MAX_RESULTS_PER_SEARCH {
+                        break 'paged_outer;
                     }
                 }
             }
@@ -1663,4 +1738,71 @@ pub async fn get_virtual_search_stats(
         "max_entries_per_session": stats.max_entries_per_session,
         "session_ttl_seconds": stats.session_ttl_seconds,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn build_filters(
+        time_start: Option<&str>,
+        time_end: Option<&str>,
+        levels: &[&str],
+        file_pattern: Option<&str>,
+    ) -> SearchFilters {
+        SearchFilters {
+            time_start: time_start.map(str::to_string),
+            time_end: time_end.map(str::to_string),
+            levels: levels.iter().map(|level| (*level).to_string()).collect(),
+            file_pattern: file_pattern.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn compiled_filters_support_datetime_local_range() {
+        let filters = build_filters(
+            Some("2024-01-15T10:00"),
+            Some("2024-01-15T11:00"),
+            &["ERROR"],
+            None,
+        );
+
+        let compiled = CompiledSearchFilters::compile(&filters).unwrap();
+
+        assert!(compiled.matches_line_metadata("2024-01-15 10:30:45", "ERROR"));
+        assert!(!compiled.matches_line_metadata("2024-01-15 09:59:59", "ERROR"));
+        assert!(!compiled.matches_line_metadata("", "ERROR"));
+        assert!(!compiled.matches_line_metadata("2024-01-15 10:30:45", "INFO"));
+    }
+
+    #[test]
+    fn compiled_filters_reject_invalid_time_range() {
+        let filters = build_filters(
+            Some("2024-01-15T12:00"),
+            Some("2024-01-15T11:00"),
+            &[],
+            None,
+        );
+
+        let error = CompiledSearchFilters::compile(&filters).unwrap_err();
+        assert!(error.to_string().contains("start time"));
+    }
+
+    #[test]
+    fn file_pattern_supports_wildcards() {
+        let filters = build_filters(None, None, &[], Some("logs/*.log"));
+        let compiled = CompiledSearchFilters::compile(&filters).unwrap();
+
+        assert!(compiled.matches_file("logs/app.log", None));
+        assert!(!compiled.matches_file("logs/app.txt", None));
+    }
+
+    #[test]
+    fn file_pattern_without_wildcard_uses_substring_match() {
+        let filters = build_filters(None, None, &[], Some("service-error"));
+        let compiled = CompiledSearchFilters::compile(&filters).unwrap();
+
+        assert!(compiled.matches_file("prod/service-error.log", None));
+        assert!(!compiled.matches_file("prod/service-info.log", None));
+    }
 }

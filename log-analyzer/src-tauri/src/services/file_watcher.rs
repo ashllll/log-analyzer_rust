@@ -58,6 +58,43 @@ impl TimestampParser {
         "%d/%b/%Y:%H:%M:%S", // Apache format
     ];
 
+    /// 过滤器输入额外支持的时间格式
+    ///
+    /// 前端 `datetime-local` 默认会提交不带时区的 `YYYY-MM-DDTHH:MM`，
+    /// 搜索过滤器需要额外支持这类边界输入。
+    const FILTER_FORMATS: &'static [&'static str] = &[
+        "%Y-%m-%dT%H:%M",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S%.f",
+        "%Y-%m-%d %H:%M",
+    ];
+
+    /// 将时间字符串解析为 `NaiveDateTime`
+    ///
+    /// 同时用于：
+    /// - 日志内容中的时间戳
+    /// - 搜索过滤器中的开始/结束时间
+    pub fn parse_naive_datetime(value: &str) -> Option<chrono::NaiveDateTime> {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+
+        for format in Self::FORMATS
+            .iter()
+            .chain(Self::FILTER_FORMATS.iter())
+            .copied()
+        {
+            if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(trimmed, format) {
+                return Some(dt);
+            }
+        }
+
+        chrono::DateTime::parse_from_rfc3339(trimmed)
+            .ok()
+            .map(|dt| dt.naive_utc())
+    }
+
     /// 解析时间戳
     pub fn parse_timestamp(line: &str) -> Option<String> {
         use once_cell::sync::Lazy;
@@ -87,10 +124,8 @@ impl TimestampParser {
                 let timestamp_str = mat.as_str();
 
                 // 验证时间戳格式
-                for format in Self::FORMATS {
-                    if let Ok(_dt) = chrono::NaiveDateTime::parse_from_str(timestamp_str, format) {
-                        return Some(timestamp_str.to_string());
-                    }
+                if Self::parse_naive_datetime(timestamp_str).is_some() {
+                    return Some(timestamp_str.to_string());
                 }
             }
         }
@@ -435,5 +470,15 @@ mod tests {
         let line = "This is a log line without timestamp";
         let timestamp = TimestampParser::parse_timestamp(line);
         assert!(timestamp.is_none());
+    }
+
+    #[test]
+    fn test_parse_naive_datetime_supports_datetime_local() {
+        let timestamp = TimestampParser::parse_naive_datetime("2024-01-15T10:30");
+        assert!(timestamp.is_some());
+        assert_eq!(
+            timestamp.unwrap().format("%Y-%m-%d %H:%M:%S").to_string(),
+            "2024-01-15 10:30:00"
+        );
     }
 }

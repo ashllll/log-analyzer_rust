@@ -70,7 +70,7 @@ static GLOBAL_COLLECTOR: Lazy<Mutex<Option<Arc<MetricsCollector>>>> =
 ///
 /// # 示例
 ///
-/// ```rust
+/// ```rust,no_run
 /// use log_analyzer::monitoring;
 ///
 /// // 初始化并启动后台监控（每 60 秒采样一次）
