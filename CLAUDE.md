@@ -209,3 +209,87 @@ interface TaskInfo {
 | Tantivy 全文搜索 | <200ms |
 | 空闲内存 | <100MB |
 | CAS 去重节省空间 | 30%+ |
+
+***
+
+## 已知问题 (Known Issues)
+
+> 基于全面代码审查确认的36个真实问题（截至2026-03-31）
+> 其中 4个 CRITICAL、10个 HIGH、12个 MEDIUM、10个 LOW
+
+### 🔴 CRITICAL (需立即修复)
+
+| 问题 | 位置 | 描述 | 风险 |
+|------|------|------|------|
+| **cache_key哈希不完整** | `services/query_executor.rs:61-77` | `generate_cache_key()`只哈希了`value/is_regex/case_sensitive/enabled`，遗漏`term.id/operator/priority`和`query.filters/id` | 缓存污染，查询返回错误结果 |
+| **文档与实现不一致** | `models/state.rs:21-35` vs `67-81` | 注释声明使用`tokio::sync::RwLock`实现写并发，实际代码使用`std::sync::Mutex` | 并发能力下降，单写锁阻塞所有读取 |
+| **无界通道内存泄漏** | `task_manager/mod.rs:551` | 使用`mpsc::unbounded_channel()`接收任务事件，无流量控制 | 高负载下内存无限增长直至OOM |
+| **孤儿文件清理竞态** | `crates/la-storage/src/coordinator.rs:190-231` | `cleanup_orphan_files()`check-then-act模式，多线程下可能误删新建文件 | 数据丢失风险 |
+
+### 🟠 HIGH (建议尽快修复)
+
+| 问题 | 位置 | 描述 | 风险 |
+|------|------|------|------|
+| **ReaderPool未使用** | `crates/la-search/src/concurrent_search.rs:75-144` | `ReaderPool`结构体创建后`_readers`字段从未被访问，无`get_reader()`方法 | 设计缺陷，资源浪费 |
+| **block_on阻塞运行时** | `services/query_executor.rs:112-119` | `tokio::task::block_on()`在async上下文中同步等待，持有锁期间阻塞线程 | 线程池耗尽，性能下降 |
+| **check-then-rename竞态** | `crates/la-storage/src/cas.rs:1265-1310` | `store_file_zero_copy()`先检查再重命名，非原子操作 | 并发导入时数据损坏 |
+| **错误信息不一致** | `storage/mod.rs` vs `errors.rs` | 存储层错误与全局错误类型不统一，转换时信息丢失 | 调试困难 |
+| **TODO未处理** | `crates/la-search/src/index.rs:156-160` | `commit_and_wait_merge()`有硬编码超时和未处理的错误分支 | 索引提交可能死锁或静默失败 |
+| **文档同步滞后** | `services/CLAUDE.md` | 模糊搜索模块已删除但文档仍引用`fuzzy_matcher.rs` | 维护成本增加 |
+| **unsafe代码无注释** | `crates/la-search/src/pattern_matcher.rs` | 使用`unsafe`进行字节操作但无安全注释说明 | 潜在UB风险 |
+| **递归解压无深度限制** | `archive/*.rs` | 压缩包递归解压未限制嵌套深度 | 解压炸弹攻击风险 |
+| **索引文件句柄泄漏** | `search_engine/manager.rs` | IndexReader未实现Drop，依赖系统回收 | 长时间运行文件句柄耗尽 |
+| **SQLite连接池过小** | `storage/metadata.rs` | 连接池大小硬编码，无动态调整 | 高并发下连接等待 |
+
+### 🟡 MEDIUM (计划修复)
+
+| 问题 | 位置 | 描述 |
+|------|------|------|
+| **测试覆盖率不足** | `archive/` | 压缩包处理模块测试覆盖<50% |
+| **错误处理不完善** | `commands/import.rs` | 部分错误只打印日志未返回给前端 |
+| **性能监控缺失** | `monitoring/` | 监控模块为空壳，无实际指标收集 |
+| **配置验证缺失** | `models/config.rs` | 用户配置无schema验证，可能导致运行时错误 |
+| **国际化不完整** | `i18n/` | 部分错误信息未走i18n字典 |
+| **缓存无过期策略** | `utils/cache.rs` | LRU缓存无TTL，过期数据长期驻留 |
+| **日志级别不合理** | 多处 | DEBUG级别日志过多，影响性能 |
+| **依赖版本滞后** | `Cargo.toml` | 部分crate使用旧版本，存在已知漏洞 |
+| **前端状态不同步** | `stores/` | 部分Zustand状态未持久化，刷新丢失 |
+| **类型定义重复** | `types/` vs `models/` | 前后端共享类型存在重复定义 |
+| **CSS硬编码** | `components/` | 部分组件使用硬编码颜色，不支持主题切换 |
+| **事件监听未清理** | `hooks/` | 部分useEffect返回的清理函数不完整 |
+
+### 🟢 LOW (优化项)
+
+| 问题 | 位置 | 描述 |
+|------|------|------|
+| **冗余代码** | `services/pattern_matcher.rs` | 部分辅助函数未使用 |
+| **命名不一致** | 多处 | 部分变量使用缩写，可读性差 |
+| **文档注释缺失** | `task_manager/` | 部分pub函数无doc comment |
+| **魔术数字** | `search_engine/` | 缓冲区大小等参数硬编码 |
+| **导入顺序混乱** | 多处 | 未按标准顺序组织use语句 |
+| **单元测试分散** | `*/mod.rs` | 部分测试放在生产代码文件中 |
+| **clippy警告** | 多处 | 存在allow(clippy::*)压制警告 |
+| **死代码** | `utils/` | 部分工具函数已废弃但未删除 |
+| **重复逻辑** | `commands/` | 部分命令有重复的验证逻辑 |
+| **版本号硬编码** | `lib.rs` | 版本号未从Cargo.toml读取 |
+
+### 修复建议与优先级
+
+**立即修复 (本周):**
+1. `cache_key` 完整性修复 → 添加所有相关字段到哈希计算
+2. 替换无界通道 → 使用`tokio::sync::mpsc::channel(1000)`并处理背压
+3. 竞态条件修复 → 使用原子操作或文件锁
+
+**短期修复 (本月):**
+- ReaderPool实现或移除
+- block_on调用审查，考虑使用spawn_blocking
+- 错误类型统一
+
+**中期优化 (下季度):**
+- 测试覆盖率提升
+- 性能监控实现
+- 配置验证完善
+
+***
+
+*最后更新: 2026-03-31 | 问题清单基于完整代码库审查*
