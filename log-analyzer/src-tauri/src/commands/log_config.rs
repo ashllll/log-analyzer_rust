@@ -22,11 +22,10 @@ pub async fn get_current_log_config() -> Result<LogConfig, String> {
 /// - `level`: 日志级别字符串 (trace, debug, info, warn, error)
 #[command]
 pub async fn set_log_level(level: String) -> Result<(), String> {
-    let log_level = LogLevel::from_string(&level)
-        .ok_or_else(|| format!("无效的日志级别: {}", level))?;
+    let log_level =
+        LogLevel::from_string(&level).ok_or_else(|| format!("无效的日志级别: {}", level))?;
 
-    set_global_log_level(log_level)
-        .map_err(|e| format!("设置日志级别失败: {}", e))?;
+    set_global_log_level(log_level).map_err(|e| format!("设置日志级别失败: {}", e))?;
 
     Ok(())
 }
@@ -38,8 +37,8 @@ pub async fn set_log_level(level: String) -> Result<(), String> {
 /// - `level`: 日志级别字符串
 #[command]
 pub async fn set_module_level(module: String, level: String) -> Result<(), String> {
-    let log_level = LogLevel::from_string(&level)
-        .ok_or_else(|| format!("无效的日志级别: {}", level))?;
+    let log_level =
+        LogLevel::from_string(&level).ok_or_else(|| format!("无效的日志级别: {}", level))?;
 
     set_module_log_level(&module, log_level);
     Ok(())
@@ -105,20 +104,20 @@ pub async fn get_available_log_levels() -> Result<Vec<String>, String> {
 pub async fn apply_log_preset(preset: String) -> Result<LogConfig, String> {
     let config = match preset.as_str() {
         "production" => {
-            let cfg = get_production_log_config();
+            let config = get_production_log_config();
             // 应用生产环境配置
-            for module_config in &cfg.modules {
+            for module_config in &config.modules {
                 set_module_log_level(&module_config.module, module_config.level);
             }
-            cfg
+            config
         }
         "debug" => {
-            let cfg = get_debug_log_config();
+            let config = get_debug_log_config();
             // 应用调试配置
-            for module_config in &cfg.modules {
+            for module_config in &config.modules {
                 set_module_log_level(&module_config.module, module_config.level);
             }
-            cfg
+            config
         }
         "default" => {
             reset_log_config();

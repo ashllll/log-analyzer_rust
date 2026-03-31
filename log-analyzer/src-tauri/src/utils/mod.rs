@@ -17,6 +17,7 @@ pub mod path_security;
 pub mod resource_manager;
 pub mod resource_tracker;
 pub mod retry;
+pub mod command_validation;
 pub mod validation;
 
 #[cfg(test)]
@@ -39,3 +40,10 @@ pub use path::{canonicalize_path, normalize_path_separator};
 pub use resource_manager::{create_guarded_temp_dir, ResourceManager, TempDirGuard};
 pub use resource_tracker::{ResourceInfo, ResourceReport, ResourceTracker, ResourceType};
 pub use validation::{validate_path_param, validate_workspace_id};
+
+// 重新导出命令验证函数
+pub use command_validation::{
+    validate_api_key, validate_export_path, validate_log_level, validate_port, validate_range,
+    validate_search_query, validate_websocket_url, MAX_PATH_LENGTH, MAX_SEARCH_QUERY_LENGTH,
+    MAX_WORKSPACE_ID_LENGTH,
+};

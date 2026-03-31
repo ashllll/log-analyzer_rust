@@ -98,9 +98,9 @@ impl PatternMatcher {
             let mut matched: u128 = 0;
 
             for mat in ac.find_iter(text) {
-                let idx = mat.pattern().as_usize();
-                if idx < 128 {
-                    matched |= 1u128 << idx;
+                let pattern_index = mat.pattern().as_usize();
+                if pattern_index < 128 {
+                    matched |= 1u128 << pattern_index;
                     // 提前退出：所有模式都已匹配
                     if matched == all_bits {
                         return true;
@@ -114,9 +114,9 @@ impl PatternMatcher {
             let mut remaining = pattern_count;
 
             for mat in ac.find_iter(text) {
-                let idx = mat.pattern().as_usize();
-                if idx < pattern_count && !matched[idx] {
-                    matched[idx] = true;
+                let pattern_index = mat.pattern().as_usize();
+                if pattern_index < pattern_count && !matched[pattern_index] {
+                    matched[pattern_index] = true;
                     remaining -= 1;
                     if remaining == 0 {
                         return true;

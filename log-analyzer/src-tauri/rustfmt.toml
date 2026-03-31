@@ -1,0 +1,26 @@
+# Rustfmt 配置
+
+# 使用Unix风格换行符
+newline_style = "Unix"
+
+# 最大行宽
+max_width = 100
+
+# 缩进
+tab_spaces = 4
+hard_tabs = false
+
+# 自动整理imports
+imports_granularity = "Module"
+group_imports = "StdExternalCrate"
+
+# 其他格式选项
+reorder_imports = true
+reorder_modules = true
+
+# 注释格式化
+wrap_comments = true
+comment_width = 80
+
+# 链式调用
+chain_width = 60
