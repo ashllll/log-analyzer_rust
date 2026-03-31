@@ -8,7 +8,7 @@ use std::sync::Arc;
 use crate::cas::ContentAddressableStorage;
 use crate::metadata_store::{FileMetadata, MetadataStore};
 use la_core::error::{AppError, Result};
-use tracing::{debug, error, info, warn};
+use tracing::{info, warn};
 
 pub struct StorageCoordinator {
     cas: Arc<ContentAddressableStorage>,
