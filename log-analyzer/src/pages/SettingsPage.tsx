@@ -126,18 +126,33 @@ export function SettingsPage() {
   };
 
   const validateCacheConfig = (): boolean => {
-    if (!cacheConfig) return false;
-    return cacheConfig.max_capacity > 0 && cacheConfig.ttl > 0 && cacheConfig.l2_capacity > 0;
+    if (!localCacheConfig) return false;
+    return (
+      localCacheConfig.max_cache_capacity > 0 &&
+      localCacheConfig.cache_ttl_seconds > 0 &&
+      localCacheConfig.regex_cache_size > 0 &&
+      localCacheConfig.compression_threshold > 0
+    );
   };
 
   const validateSearchConfig = (config: SearchConfig | null): boolean => {
     if (!config) return false;
-    return config.default_max_results > 0 && config.cache_size > 0 && config.search_timeout > 0;
+    return (
+      config.max_results > 0 &&
+      config.timeout_seconds > 0 &&
+      config.max_concurrent_searches > 0
+    );
   };
 
   const validateTaskManagerConfig = (): boolean => {
-    if (!taskManagerConfig) return false;
-    return taskManagerConfig.max_concurrent_tasks > 0 && taskManagerConfig.task_timeout > 0;
+    if (!localTaskConfig) return false;
+    return (
+      localTaskConfig.max_concurrent_tasks > 0 &&
+      localTaskConfig.operation_timeout > 0 &&
+      localTaskConfig.completed_task_ttl > 0 &&
+      localTaskConfig.failed_task_ttl > 0 &&
+      localTaskConfig.cleanup_interval > 0
+    );
   };
 
   const handleSave = async () => {
@@ -397,49 +412,81 @@ export function SettingsPage() {
         <Card className="p-6">
           <h2 className="text-xl font-semibold mb-4 text-text-main">{t('settings.cache.title')}</h2>
           <div className="space-y-4">
-            <FormField label={t('settings.cache.max_capacity')}>
+            <FormField label="最大缓存容量">
               <Input
                 type="number"
-                value={localCacheConfig.max_capacity}
-                onChange={(e) => setLocalCacheConfig({ ...localCacheConfig, max_capacity: parseInt(e.target.value) || 1000 })}
+                value={localCacheConfig.max_cache_capacity}
+                onChange={(e) =>
+                  setLocalCacheConfig({
+                    ...localCacheConfig,
+                    max_cache_capacity: parseInt(e.target.value, 10) || 100,
+                  })
+                }
                 min={1}
               />
-              <span className="text-xs text-text-dim mt-1">{t('settings.cache.max_capacity_hint')}</span>
+              <span className="text-xs text-text-dim mt-1">控制搜索结果缓存的条目上限。</span>
             </FormField>
 
-            <FormField label={t('settings.cache.ttl')}>
+            <FormField label="缓存 TTL（秒）">
               <Input
                 type="number"
-                value={localCacheConfig.ttl}
-                onChange={(e) => setLocalCacheConfig({ ...localCacheConfig, ttl: parseInt(e.target.value) || 300 })}
+                value={localCacheConfig.cache_ttl_seconds}
+                onChange={(e) =>
+                  setLocalCacheConfig({
+                    ...localCacheConfig,
+                    cache_ttl_seconds: parseInt(e.target.value, 10) || 300,
+                  })
+                }
                 min={1}
               />
-              <span className="text-xs text-text-dim mt-1">{t('settings.cache.ttl_hint')}</span>
+              <span className="text-xs text-text-dim mt-1">缓存条目最长保留时间。</span>
             </FormField>
 
-            <FormField label={t('settings.cache.l2_enabled')}>
+            <FormField label="正则缓存大小">
+              <Input
+                type="number"
+                value={localCacheConfig.regex_cache_size}
+                onChange={(e) =>
+                  setLocalCacheConfig({
+                    ...localCacheConfig,
+                    regex_cache_size: parseInt(e.target.value, 10) || 1000,
+                  })
+                }
+                min={1}
+              />
+              <span className="text-xs text-text-dim mt-1">决定查询执行器可复用的正则表达式缓存容量。</span>
+            </FormField>
+
+            <FormField label="压缩阈值（字节）">
+              <Input
+                type="number"
+                value={localCacheConfig.compression_threshold}
+                onChange={(e) =>
+                  setLocalCacheConfig({
+                    ...localCacheConfig,
+                    compression_threshold: parseInt(e.target.value, 10) || 10240,
+                  })
+                }
+                min={1}
+              />
+              <span className="text-xs text-text-dim mt-1">超过该大小的缓存内容会进入压缩判定。</span>
+            </FormField>
+
+            <FormField label="启用压缩">
               <div className="flex items-center gap-2">
                 <input
                   type="checkbox"
-                  checked={localCacheConfig.l2_enabled}
-                  onChange={(e) => setLocalCacheConfig({ ...localCacheConfig, l2_enabled: e.target.checked })}
+                  checked={localCacheConfig.compression_enabled}
+                  onChange={(e) =>
+                    setLocalCacheConfig({
+                      ...localCacheConfig,
+                      compression_enabled: e.target.checked,
+                    })
+                  }
                   className="w-4 h-4 rounded border-border-base text-primary focus:ring-primary/50"
                 />
-                <span className="text-sm text-text-muted">
-                  {t('settings.cache.l2_enabled_hint')}
-                </span>
+                <span className="text-sm text-text-muted">关闭后会减少 CPU 开销，但会增加缓存占用。</span>
               </div>
-            </FormField>
-
-            <FormField label={t('settings.cache.l2_capacity')}>
-              <Input
-                type="number"
-                value={localCacheConfig.l2_capacity}
-                onChange={(e) => setLocalCacheConfig({ ...localCacheConfig, l2_capacity: parseInt(e.target.value) || 10000 })}
-                min={1}
-                disabled={!localCacheConfig.l2_enabled}
-              />
-              <span className="text-xs text-text-dim mt-1">{t('settings.cache.l2_capacity_hint')}</span>
             </FormField>
           </div>
         </Card>
@@ -449,49 +496,100 @@ export function SettingsPage() {
         <Card className="p-6">
           <h2 className="text-xl font-semibold mb-4 text-text-main">{t('settings.search_config.title')}</h2>
           <div className="space-y-4">
-            <FormField label={t('settings.search_config.default_max_results')}>
+            <FormField label="默认最大结果数">
               <Input
                 type="number"
-                value={localSearchConfig.default_max_results}
-                onChange={(e) => setLocalSearchConfig({ ...localSearchConfig, default_max_results: parseInt(e.target.value) || 1000 })}
+                value={localSearchConfig.max_results}
+                onChange={(e) =>
+                  setLocalSearchConfig({
+                    ...localSearchConfig,
+                    max_results: parseInt(e.target.value, 10) || 1000,
+                  })
+                }
                 min={1}
               />
-              <span className="text-xs text-text-dim mt-1">{t('settings.search_config.default_max_results_hint')}</span>
+              <span className="text-xs text-text-dim mt-1">未显式指定时，搜索命令默认返回的最大结果数。</span>
             </FormField>
 
-            <FormField label={t('settings.search_config.cache_enabled')}>
+            <FormField label="搜索超时（秒）">
+              <Input
+                type="number"
+                value={localSearchConfig.timeout_seconds}
+                onChange={(e) =>
+                  setLocalSearchConfig({
+                    ...localSearchConfig,
+                    timeout_seconds: parseInt(e.target.value, 10) || 10,
+                  })
+                }
+                min={1}
+              />
+              <span className="text-xs text-text-dim mt-1">同步搜索超过该时间会返回超时错误。</span>
+            </FormField>
+
+            <FormField label="最大并发搜索数">
+              <Input
+                type="number"
+                value={localSearchConfig.max_concurrent_searches}
+                onChange={(e) =>
+                  setLocalSearchConfig({
+                    ...localSearchConfig,
+                    max_concurrent_searches: parseInt(e.target.value, 10) || 10,
+                  })
+                }
+                min={1}
+              />
+              <span className="text-xs text-text-dim mt-1">限制后台同时执行的搜索任务数。</span>
+            </FormField>
+
+            <FormField label="区分大小写">
               <div className="flex items-center gap-2">
                 <input
                   type="checkbox"
-                  checked={localSearchConfig.cache_enabled}
-                  onChange={(e) => setLocalSearchConfig({ ...localSearchConfig, cache_enabled: e.target.checked })}
+                  checked={localSearchConfig.case_sensitive}
+                  onChange={(e) =>
+                    setLocalSearchConfig({
+                      ...localSearchConfig,
+                      case_sensitive: e.target.checked,
+                    })
+                  }
                   className="w-4 h-4 rounded border-border-base text-primary focus:ring-primary/50"
                 />
-                <span className="text-sm text-text-muted">
-                  {t('settings.search_config.cache_enabled_hint')}
-                </span>
+                <span className="text-sm text-text-muted">启用后，默认搜索会按大小写精确匹配。</span>
               </div>
             </FormField>
 
-            <FormField label={t('settings.search_config.cache_size')}>
-              <Input
-                type="number"
-                value={localSearchConfig.cache_size}
-                onChange={(e) => setLocalSearchConfig({ ...localSearchConfig, cache_size: parseInt(e.target.value) || 1000 })}
-                min={1}
-                disabled={!localSearchConfig.cache_enabled}
-              />
-              <span className="text-xs text-text-dim mt-1">{t('settings.search_config.cache_size_hint')}</span>
+            <FormField label="启用正则搜索">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={localSearchConfig.regex_enabled}
+                  onChange={(e) =>
+                    setLocalSearchConfig({
+                      ...localSearchConfig,
+                      regex_enabled: e.target.checked,
+                    })
+                  }
+                  className="w-4 h-4 rounded border-border-base text-primary focus:ring-primary/50"
+                />
+                <span className="text-sm text-text-muted">保留正则搜索能力；关闭后仅允许普通文本匹配。</span>
+              </div>
             </FormField>
 
-            <FormField label={t('settings.search_config.search_timeout')}>
-              <Input
-                type="number"
-                value={localSearchConfig.search_timeout}
-                onChange={(e) => setLocalSearchConfig({ ...localSearchConfig, search_timeout: parseInt(e.target.value) || 30 })}
-                min={1}
-              />
-              <span className="text-xs text-text-dim mt-1">{t('settings.search_config.search_timeout_hint')}</span>
+            <FormField label="启用模糊搜索">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={localSearchConfig.fuzzy_search_enabled}
+                  onChange={(e) =>
+                    setLocalSearchConfig({
+                      ...localSearchConfig,
+                      fuzzy_search_enabled: e.target.checked,
+                    })
+                  }
+                  className="w-4 h-4 rounded border-border-base text-primary focus:ring-primary/50"
+                />
+                <span className="text-sm text-text-muted">保留模糊匹配配置，供后续搜索策略扩展使用。</span>
+              </div>
             </FormField>
           </div>
         </Card>
@@ -501,77 +599,79 @@ export function SettingsPage() {
         <Card className="p-6">
           <h2 className="text-xl font-semibold mb-4 text-text-main">{t('settings.task_manager.title')}</h2>
           <div className="space-y-4">
-            <FormField label={t('settings.task_manager.max_concurrent_tasks')}>
+            <FormField label="最大并发任务数">
               <Input
                 type="number"
                 value={localTaskConfig.max_concurrent_tasks}
-                onChange={(e) => setLocalTaskConfig({ ...localTaskConfig, max_concurrent_tasks: parseInt(e.target.value) || 10 })}
+                onChange={(e) =>
+                  setLocalTaskConfig({
+                    ...localTaskConfig,
+                    max_concurrent_tasks: parseInt(e.target.value, 10) || 10,
+                  })
+                }
                 min={1}
               />
-              <span className="text-xs text-text-dim mt-1">{t('settings.task_manager.max_concurrent_tasks_hint')}</span>
+              <span className="text-xs text-text-dim mt-1">任务管理器允许同时运行的任务数量。</span>
             </FormField>
 
-            <FormField label={t('settings.task_manager.task_timeout')}>
+            <FormField label="任务超时（秒）">
               <Input
                 type="number"
-                value={localTaskConfig.task_timeout}
-                onChange={(e) => setLocalTaskConfig({ ...localTaskConfig, task_timeout: parseInt(e.target.value) || 300 })}
+                value={localTaskConfig.operation_timeout}
+                onChange={(e) =>
+                  setLocalTaskConfig({
+                    ...localTaskConfig,
+                    operation_timeout: parseInt(e.target.value, 10) || 30,
+                  })
+                }
                 min={1}
               />
-              <span className="text-xs text-text-dim mt-1">{t('settings.task_manager.task_timeout_hint')}</span>
+              <span className="text-xs text-text-dim mt-1">单个后台操作的超时时间。</span>
             </FormField>
 
-            <FormField label={t('settings.task_manager.data_dir')}>
+            <FormField label="完成任务保留时长（秒）">
               <Input
-                type="text"
-                value={localTaskConfig.data_dir}
-                onChange={(e) => setLocalTaskConfig({ ...localTaskConfig, data_dir: e.target.value })}
-                placeholder={t('settings.task_manager.data_dir_placeholder')}
+                type="number"
+                value={localTaskConfig.completed_task_ttl}
+                onChange={(e) =>
+                  setLocalTaskConfig({
+                    ...localTaskConfig,
+                    completed_task_ttl: parseInt(e.target.value, 10) || 300,
+                  })
+                }
+                min={1}
               />
-              <span className="text-xs text-text-dim mt-1">{t('settings.task_manager.data_dir_hint')}</span>
+              <span className="text-xs text-text-dim mt-1">已完成任务在状态列表中的保留时间。</span>
             </FormField>
 
-            <FormField label={t('settings.task_manager.log_level')}>
-              <select
-                value={localTaskConfig.log_level}
-                onChange={(e) => setLocalTaskConfig({ ...localTaskConfig, log_level: e.target.value })}
-                className="w-full px-3 py-2 bg-bg-base border border-border-base rounded-lg text-text-main focus:outline-none focus:ring-2 focus:ring-primary/50"
-              >
-                <option value="trace">Trace</option>
-                <option value="debug">Debug</option>
-                <option value="info">Info</option>
-                <option value="warn">Warn</option>
-                <option value="error">Error</option>
-              </select>
-              <span className="text-xs text-text-dim mt-1">{t('settings.task_manager.log_level_hint')}</span>
+            <FormField label="失败任务保留时长（秒）">
+              <Input
+                type="number"
+                value={localTaskConfig.failed_task_ttl}
+                onChange={(e) =>
+                  setLocalTaskConfig({
+                    ...localTaskConfig,
+                    failed_task_ttl: parseInt(e.target.value, 10) || 1800,
+                  })
+                }
+                min={1}
+              />
+              <span className="text-xs text-text-dim mt-1">失败任务会保留更久，便于排查问题。</span>
             </FormField>
 
-            <FormField label={t('settings.task_manager.debug_mode')}>
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={localTaskConfig.debug_mode}
-                  onChange={(e) => setLocalTaskConfig({ ...localTaskConfig, debug_mode: e.target.checked })}
-                  className="w-4 h-4 rounded border-border-base text-primary focus:ring-primary/50"
-                />
-                <span className="text-sm text-text-muted">
-                  {t('settings.task_manager.debug_mode_hint')}
-                </span>
-              </div>
-            </FormField>
-
-            <FormField label={t('settings.task_manager.profiling')}>
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={localTaskConfig.enable_profiling}
-                  onChange={(e) => setLocalTaskConfig({ ...localTaskConfig, enable_profiling: e.target.checked })}
-                  className="w-4 h-4 rounded border-border-base text-primary focus:ring-primary/50"
-                />
-                <span className="text-sm text-text-muted">
-                  {t('settings.task_manager.profiling_hint')}
-                </span>
-              </div>
+            <FormField label="清理间隔（秒）">
+              <Input
+                type="number"
+                value={localTaskConfig.cleanup_interval}
+                onChange={(e) =>
+                  setLocalTaskConfig({
+                    ...localTaskConfig,
+                    cleanup_interval: parseInt(e.target.value, 10) || 60,
+                  })
+                }
+                min={1}
+              />
+              <span className="text-xs text-text-dim mt-1">后台任务清理器的轮询间隔。</span>
             </FormField>
           </div>
         </Card>

@@ -8,11 +8,12 @@
 use parking_lot::Mutex;
 use sha2::{Digest, Sha256};
 use std::{collections::HashSet, sync::Arc};
-use tauri::{command, AppHandle, Emitter, State};
+use tauri::{command, AppHandle, Emitter, Manager, State};
 use tracing::{debug, error, info, trace, warn};
 
 use crate::models::AppState;
 use la_core::error::CommandError;
+use la_core::models::config::AppConfigLoader;
 use la_core::models::search::{
     PagedSearchResult, QueryMetadata, QueryOperator, SearchTerm, TermSource,
 };
@@ -21,9 +22,6 @@ use la_core::models::{LogEntry, SearchCacheKey, SearchFilters, SearchQuery};
 
 // MessagePack 序列化支持
 use serde::{Deserialize, Serialize};
-
-// 搜索超时配置 - 默认 5 分钟超时，防止长时间运行的搜索阻塞
-const SEARCH_TIMEOUT_SECS: u64 = 300;
 
 /// 二进制搜索结果结构（用于 MessagePack 传输）
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,6 +50,49 @@ use crate::utils::encoding::decode_log_content;
 const MAX_CACHED_SEARCHES: usize = 100;
 const MAX_RESULTS_PER_SEARCH: usize = 1_000_000;
 const DEFAULT_PAGE_SIZE: usize = 1000;
+
+#[derive(Debug, Clone)]
+struct SearchRuntimeConfig {
+    default_max_results: usize,
+    timeout_seconds: u64,
+    regex_cache_size: usize,
+    case_sensitive: bool,
+}
+
+impl Default for SearchRuntimeConfig {
+    fn default() -> Self {
+        Self {
+            default_max_results: 1000,
+            timeout_seconds: 10,
+            regex_cache_size: 1000,
+            case_sensitive: false,
+        }
+    }
+}
+
+fn load_search_runtime_config(app: &AppHandle) -> SearchRuntimeConfig {
+    let config_path = match app.path().app_config_dir() {
+        Ok(dir) => dir.join("config.json"),
+        Err(_) => return SearchRuntimeConfig::default(),
+    };
+
+    if !config_path.exists() {
+        return SearchRuntimeConfig::default();
+    }
+
+    AppConfigLoader::load(Some(config_path))
+        .ok()
+        .map(|loader| {
+            let config = loader.get_config();
+            SearchRuntimeConfig {
+                default_max_results: config.search.max_results,
+                timeout_seconds: config.search.timeout_seconds,
+                regex_cache_size: config.cache.regex_cache_size.max(1),
+                case_sensitive: config.search.case_sensitive,
+            }
+        })
+        .unwrap_or_default()
+}
 
 /// 计算并打印缓存统计信息
 fn log_cache_statistics(total_searches: &Arc<Mutex<u64>>, cache_hits: &Arc<Mutex<u64>>) {
@@ -103,6 +144,8 @@ pub async fn search_logs(
         .with_help("Try reducing the number of search terms"));
     }
 
+    let runtime_config = load_search_runtime_config(&app);
+
     let app_handle = app.clone();
     let workspace_dirs: Arc<Mutex<std::collections::BTreeMap<String, std::path::PathBuf>>> =
         Arc::clone(&state.workspace_dirs);
@@ -125,8 +168,13 @@ pub async fn search_logs(
     let disk_result_store: Arc<crate::search_engine::disk_result_store::DiskResultStore> =
         Arc::clone(&state.disk_result_store);
 
-    let max_results = max_results.unwrap_or(50000).min(100_000);
+    let max_results = max_results
+        .unwrap_or(runtime_config.default_max_results)
+        .min(100_000);
     let filters = filters.unwrap_or_default();
+    let case_sensitive = runtime_config.case_sensitive;
+    let search_timeout_secs = runtime_config.timeout_seconds;
+    let regex_cache_size = runtime_config.regex_cache_size.max(1);
 
     // 修复工作区ID处理：当没有提供workspaceId时，使用第一个可用的工作区而不是硬编码的"default"
     let workspace_id = if let Some(ref id) = workspaceId {
@@ -385,7 +433,7 @@ pub async fn search_logs(
                 is_regex: false,
                 priority: 1,
                 enabled: true,
-                case_sensitive: false,
+                case_sensitive,
             })
             .collect();
 
@@ -404,7 +452,7 @@ pub async fn search_logs(
 
         // ============================================================        // 高级搜索特性集成点        // ============================================================        // FilterEngine: 位图索引加速过滤（10K文档 < 10ms）        // RegexSearchEngine: LRU缓存正则搜索（加速50x+）        // TimePartitionedIndex: 时间分区索引（时序查询优化）        // AutocompleteEngine: Trie树自动补全（< 100ms响应）        //         // 使用方式：        // 1. 从 AppState 获取高级特性实例（已初始化）        // 2. 在搜索前使用 FilterEngine 预过滤候选文档        // 3. 在过滤时使用 RegexSearchEngine 加速正则匹配        // 4. 在时间范围查询时使用 TimePartitionedIndex        //         // 配置开关：config.json -> advanced_features.enable_*        tracing::info!("🔍 高级搜索特性已就绪（可通过配置启用）");
 
-        let mut executor = QueryExecutor::new(100);
+        let mut executor = QueryExecutor::new(regex_cache_size);
         let plan = match executor.execute(&structured_query) {
             Ok(p) => p,
             Err(e) => {
@@ -654,7 +702,7 @@ pub async fn search_logs(
     });
 
     // 添加超时控制，等待搜索任务完成
-    match tokio::time::timeout(std::time::Duration::from_secs(SEARCH_TIMEOUT_SECS), handle).await {
+    match tokio::time::timeout(std::time::Duration::from_secs(search_timeout_secs), handle).await {
         Ok(Ok(())) => Ok(search_id),
         Ok(Err(e)) => {
             error!(error = %e, search_id = %search_id, "Search task panicked");
@@ -664,7 +712,7 @@ pub async fn search_logs(
             )
         }
         Err(_) => {
-            warn!(search_id = %search_id, "Search timed out after {} seconds", SEARCH_TIMEOUT_SECS);
+            warn!(search_id = %search_id, "Search timed out after {} seconds", search_timeout_secs);
             // 发送超时事件
             let _ = app_handle_for_timeout.emit("search-timeout", &search_id);
             // 清理取消令牌
@@ -674,7 +722,7 @@ pub async fn search_logs(
             }
             Err(CommandError::new(
                 "TIMEOUT_ERROR",
-                format!("Search timed out after {} seconds", SEARCH_TIMEOUT_SECS),
+                format!("Search timed out after {} seconds", search_timeout_secs),
             )
             .with_help("Try using more specific search terms to reduce processing time"))
         }

@@ -14,8 +14,53 @@ use log_analyzer::commands::{
 };
 use log_analyzer::models::{AppState, CacheState, MetricsState, SearchState, WorkspaceState};
 use log_analyzer::task_manager::TaskManager;
+use log_analyzer::utils::cache_manager::{
+    CacheConfig as RuntimeCacheConfig, CacheManager, CacheThresholds,
+};
+use moka::sync::Cache;
+use std::{sync::Arc, time::Duration};
 use tauri::Manager;
 use tracing::{error, info, warn};
+
+fn load_app_config(app: &tauri::AppHandle) -> Option<la_core::models::config::AppConfig> {
+    let config_path = app.path().app_config_dir().ok()?.join("config.json");
+    if !config_path.exists() {
+        return None;
+    }
+
+    log_analyzer::models::config::AppConfigLoader::load(Some(config_path))
+        .ok()
+        .map(|loader| loader.get_config().clone())
+}
+
+fn build_runtime_cache_manager(
+    cache_config: &la_core::models::config::CacheConfig,
+) -> CacheManager {
+    let runtime_config = RuntimeCacheConfig {
+        max_capacity: cache_config.max_cache_capacity as u64,
+        ttl: Duration::from_secs(cache_config.cache_ttl_seconds),
+        tti: Duration::from_secs(cache_config.cache_tti_seconds),
+        compression_threshold: cache_config.compression_threshold as usize,
+        enable_compression: cache_config.compression_enabled,
+        access_pattern_window: cache_config.access_window_size,
+        preload_threshold: cache_config.preload_threshold as u32,
+    };
+
+    let thresholds = CacheThresholds {
+        min_hit_rate: cache_config.min_hit_rate_threshold,
+        max_avg_access_time_ms: cache_config.max_avg_access_time_ms,
+        max_avg_load_time_ms: cache_config.max_avg_load_time_ms,
+        max_eviction_rate_per_minute: cache_config.max_eviction_rate_per_min,
+    };
+
+    let sync_cache = Cache::builder()
+        .max_capacity(runtime_config.max_capacity)
+        .time_to_live(runtime_config.ttl)
+        .time_to_idle(runtime_config.tti)
+        .build();
+
+    CacheManager::with_thresholds(Arc::new(sync_cache), runtime_config, thresholds)
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -71,34 +116,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .manage(MetricsState::default())
         // 初始化后设置 TaskManager
         .setup(|app| {
-            use log_analyzer::models::config::AppConfigLoader;
             use log_analyzer::models::AppState;
 
             let app_state: tauri::State<'_, AppState> = app.state();
+            let app_config = load_app_config(app.app_handle());
 
-            // 从配置文件加载 TaskManager 配置
-            let config_path = app
-                .path()
-                .app_config_dir()
-                .ok()
-                .map(|p| p.join("config.json"));
-            let task_manager_config = if let Some(ref path) = config_path {
-                if path.exists() {
-                    AppConfigLoader::load(Some(path.clone()))
-                        .ok()
-                        .map(|loader| {
-                            let config = loader.get_config();
-                            log_analyzer::task_manager::TaskManagerConfig::from_app_config(
-                                &config.task_manager,
-                            )
-                        })
-                        .unwrap_or_default()
-                } else {
-                    log_analyzer::task_manager::TaskManagerConfig::default()
-                }
-            } else {
-                log_analyzer::task_manager::TaskManagerConfig::default()
-            };
+            if let Some(config) = app_config.as_ref() {
+                let cache_manager = build_runtime_cache_manager(&config.cache);
+                let mut cache_guard = app_state.cache_manager.lock();
+                *cache_guard = cache_manager;
+                info!("✅ 已从配置文件加载运行时缓存参数");
+            }
+
+            let task_manager_config = app_config
+                .as_ref()
+                .map(|config| {
+                    log_analyzer::task_manager::TaskManagerConfig::from_app_config(
+                        &config.task_manager,
+                    )
+                })
+                .unwrap_or_default();
 
             // 初始化 TaskManager
             let task_manager = TaskManager::new(app.handle().clone(), task_manager_config)?;

@@ -18,57 +18,42 @@ import { createApiError } from '../services/errors';
  * 缓存配置
  */
 export interface CacheConfig {
-  /** 最大缓存条目数 */
-  max_capacity: number;
-
-  /** TTL (秒) */
-  ttl: number;
-
-  /** 是否启用 L2 缓存 */
-  l2_enabled: boolean;
-
-  /** L2 缓存大小 */
-  l2_capacity: number;
+  regex_cache_size: number;
+  autocomplete_limit: number;
+  max_cache_capacity: number;
+  cache_ttl_seconds: number;
+  cache_tti_seconds: number;
+  compression_threshold: number;
+  compression_enabled: boolean;
+  access_window_size: number;
+  preload_threshold: number;
+  min_hit_rate_threshold: number;
+  max_avg_access_time_ms: number;
+  max_avg_load_time_ms: number;
+  max_eviction_rate_per_min: number;
 }
 
 /**
  * 搜索配置
  */
 export interface SearchConfig {
-  /** 默认最大结果数 */
-  default_max_results: number;
-
-  /** 是否启用缓存 */
-  cache_enabled: boolean;
-
-  /** 缓存大小 */
-  cache_size: number;
-
-  /** 搜索超时 (秒) */
-  search_timeout: number;
+  max_results: number;
+  timeout_seconds: number;
+  max_concurrent_searches: number;
+  fuzzy_search_enabled: boolean;
+  case_sensitive: boolean;
+  regex_enabled: boolean;
 }
 
 /**
  * 任务管理器配置
  */
 export interface TaskManagerConfig {
-  /** 最大并发任务数 */
   max_concurrent_tasks: number;
-
-  /** 任务超时 (秒) */
-  task_timeout: number;
-
-  /** 数据目录 */
-  data_dir: string;
-
-  /** 日志级别 */
-  log_level: string;
-
-  /** 是否启用调试模式 */
-  debug_mode: boolean;
-
-  /** 是否启用性能监控 */
-  enable_profiling: boolean;
+  completed_task_ttl: number;
+  failed_task_ttl: number;
+  cleanup_interval: number;
+  operation_timeout: number;
 }
 
 /**
@@ -189,7 +174,7 @@ export function useConfig() {
       setSearchConfig(search);
       setTaskManagerConfig(taskManager);
 
-      return { cache, search, taskManager };
+      return { cache, search, task_manager: taskManager };
     } catch (err) {
       const apiError = createApiError('load_configs', err);
       setError(apiError.getUserMessage());
@@ -296,24 +281,34 @@ export function useConfig() {
   const resetToDefaults = useCallback(async () => {
     const defaults: AllConfigs = {
       cache: {
-        max_capacity: 1000,
-        ttl: 300,
-        l2_enabled: false,
-        l2_capacity: 10000,
+        regex_cache_size: 1000,
+        autocomplete_limit: 100,
+        max_cache_capacity: 100,
+        cache_ttl_seconds: 300,
+        cache_tti_seconds: 60,
+        compression_threshold: 10 * 1024,
+        compression_enabled: true,
+        access_window_size: 1000,
+        preload_threshold: 5,
+        min_hit_rate_threshold: 0.7,
+        max_avg_access_time_ms: 10,
+        max_avg_load_time_ms: 100,
+        max_eviction_rate_per_min: 10,
       },
       search: {
-        default_max_results: 1000,
-        cache_enabled: true,
-        cache_size: 1000,
-        search_timeout: 30,
+        max_results: 1000,
+        timeout_seconds: 10,
+        max_concurrent_searches: 10,
+        fuzzy_search_enabled: true,
+        case_sensitive: false,
+        regex_enabled: true,
       },
       task_manager: {
         max_concurrent_tasks: 10,
-        task_timeout: 300,
-        data_dir: '',
-        log_level: 'info',
-        debug_mode: false,
-        enable_profiling: false,
+        completed_task_ttl: 300,
+        failed_task_ttl: 1800,
+        cleanup_interval: 60,
+        operation_timeout: 30,
       },
     };
 

@@ -868,16 +868,15 @@ impl CacheManager {
 
     /// 获取缓存统计信息
     pub fn get_cache_statistics(&self) -> CacheStatistics {
-        // 注意：moka的同步缓存不提供详细的统计信息
-        // 这些值主要用于监控和调试
+        let snapshot = self.metrics.snapshot();
         CacheStatistics {
             entry_count: self.search_cache.entry_count(),
             estimated_size: self.search_cache.weighted_size(),
-            l1_hit_count: 0,
-            l1_miss_count: 0,
-            load_count: 0,
-            eviction_count: 0,
-            l1_hit_rate: 0.0,
+            l1_hit_count: snapshot.l1_hit_count,
+            l1_miss_count: snapshot.l1_miss_count,
+            load_count: snapshot.load_count,
+            eviction_count: snapshot.eviction_count,
+            l1_hit_rate: snapshot.l1_hit_rate,
         }
     }
 
@@ -1055,6 +1054,11 @@ impl CacheManager {
     /// 获取缓存性能指标快照
     pub fn get_performance_metrics(&self) -> CacheMetricsSnapshot {
         self.metrics.snapshot()
+    }
+
+    /// 获取当前 L1 缓存容量配置
+    pub fn get_max_capacity(&self) -> u64 {
+        self.config.max_capacity
     }
 
     /// 检查性能告警

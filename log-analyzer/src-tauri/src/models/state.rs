@@ -184,6 +184,12 @@ impl AppState {
         cache.get_performance_metrics()
     }
 
+    /// 获取缓存容量配置
+    pub fn get_cache_capacity(&self) -> u64 {
+        let cache = self.cache_manager.lock();
+        cache.get_max_capacity()
+    }
+
     /// 生成缓存性能报告
     pub fn get_cache_performance_report(&self) -> CachePerformanceReport {
         let cache = self.cache_manager.lock();

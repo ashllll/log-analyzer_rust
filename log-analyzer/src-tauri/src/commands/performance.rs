@@ -202,11 +202,12 @@ pub struct IndexMetrics {
 pub async fn get_performance_metrics(
     state: State<'_, AppState>,
 ) -> Result<PerformanceMetrics, String> {
+    let cache_stats = state.get_cache_statistics();
+    let cache_metrics_snapshot = state.get_cache_performance_metrics();
+    let cache_capacity = state.get_cache_capacity();
+
     // 优先使用 monitoring 模块的指标收集器
     if let Some(metrics) = monitoring::get_current_metrics() {
-        // 获取缓存统计信息（补充数据）
-        let cache_stats = state.get_cache_statistics();
-
         return Ok(PerformanceMetrics {
             search_latency: SearchLatency {
                 current: metrics.search.current_latency_ms,
@@ -220,13 +221,12 @@ pub async fn get_performance_metrics(
                 peak: metrics.search.peak_throughput as u64,
             },
             cache_metrics: CacheMetrics {
-                hit_rate: metrics.search.cache_hit_rate,
-                miss_count: cache_stats.l1_miss_count,
-                hit_count: (metrics.search.total_searches as f64 * metrics.search.cache_hit_rate
-                    / 100.0) as u64,
+                hit_rate: cache_metrics_snapshot.l1_hit_rate * 100.0,
+                miss_count: cache_metrics_snapshot.l1_miss_count,
+                hit_count: cache_metrics_snapshot.l1_hit_count,
                 size: cache_stats.estimated_size,
-                capacity: 1000,
-                evictions: cache_stats.eviction_count,
+                capacity: cache_capacity,
+                evictions: cache_metrics_snapshot.eviction_count,
             },
             memory_metrics: MemoryMetrics {
                 used: metrics.memory.current_used_mb,
@@ -262,10 +262,11 @@ async fn get_performance_metrics_fallback(
 ) -> Result<PerformanceMetrics, String> {
     // 获取缓存统计信息
     let cache_stats = state.get_cache_statistics();
+    let cache_metrics_snapshot = state.get_cache_performance_metrics();
+    let cache_capacity = state.get_cache_capacity();
 
     // 获取搜索统计数据
     let total_searches = *state.total_searches.lock();
-    let cache_hits = *state.cache_hits.lock();
     let last_duration = *state.last_search_duration.lock();
 
     // 计算搜索延迟（毫秒）
@@ -287,14 +288,6 @@ async fn get_performance_metrics_fallback(
         sum / latencies.len() as u64
     } else {
         current_latency
-    };
-
-    // 计算缓存命中率
-    let total_requests = cache_hits + cache_stats.l1_miss_count;
-    let hit_rate = if total_requests > 0 {
-        (cache_hits as f64 / total_requests as f64) * 100.0
-    } else {
-        0.0
     };
 
     // 获取任务管理器指标
@@ -322,12 +315,12 @@ async fn get_performance_metrics_fallback(
             peak: total_searches.max(1),
         },
         cache_metrics: CacheMetrics {
-            hit_rate,
-            miss_count: cache_stats.l1_miss_count,
-            hit_count: cache_hits,
+            hit_rate: cache_metrics_snapshot.l1_hit_rate * 100.0,
+            miss_count: cache_metrics_snapshot.l1_miss_count,
+            hit_count: cache_metrics_snapshot.l1_hit_count,
             size: cache_stats.estimated_size,
-            capacity: 1000,
-            evictions: cache_stats.eviction_count,
+            capacity: cache_capacity,
+            evictions: cache_metrics_snapshot.eviction_count,
         },
         memory_metrics,
         task_metrics: task_manager_metrics,
