@@ -475,7 +475,7 @@ impl TaskManagerActor {
         }
     }
 
-    async fn run(mut self, mut receiver: mpsc::UnboundedReceiver<ActorMessage>) {
+    async fn run(mut self, mut receiver: mpsc::Receiver<ActorMessage>) {
         info!("TaskManager actor started");
 
         // 使用 scopeguard 确保清理日志被记录
@@ -539,7 +539,7 @@ impl TaskManagerActor {
 /// 任务管理器句柄（客户端）
 #[derive(Clone)]
 pub struct TaskManager {
-    sender: mpsc::UnboundedSender<ActorMessage>,
+    sender: mpsc::Sender<ActorMessage>,
     config: TaskManagerConfig,
 }
 
@@ -548,7 +548,9 @@ impl TaskManager {
     pub fn new(app: AppHandle, config: TaskManagerConfig) -> Result<Self, TaskManagerError> {
         info!("Initializing TaskManager");
 
-        let (sender, receiver) = mpsc::unbounded_channel();
+        // C-H3 修复: 使用有界通道替代无界通道，实现背压控制，防止OOM
+        const CHANNEL_CAPACITY: usize = 1000;
+        let (sender, receiver) = mpsc::channel(CHANNEL_CAPACITY);
         let actor = TaskManagerActor::new(app, config.clone());
 
         // 使用 tauri::async_runtime 启动 Actor
@@ -580,6 +582,7 @@ impl TaskManager {
 
         self.sender
             .send(msg)
+            .await
             .map_err(|_| TaskManagerError::ActorStopped)?;
 
         // 直接使用 await，不需要 block_on
@@ -610,6 +613,7 @@ impl TaskManager {
 
         self.sender
             .send(msg)
+            .await
             .map_err(|_| TaskManagerError::ActorStopped)?;
 
         let timeout_duration = Duration::from_secs(self.config.operation_timeout);
@@ -637,33 +641,46 @@ impl TaskManager {
         let mut retries = 0;
 
         loop {
-            match self.sender.send(ActorMessage::Shutdown) {
+            // C-H3 修复: 使用 try_send 替代 send，因为 Sender::send 是异步的
+            match self.sender.try_send(ActorMessage::Shutdown) {
                 Ok(()) => {
                     info!("Shutdown message sent successfully");
                     break;
                 }
-                Err(e) => {
+                Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                    // 通道已满，等待后重试
+                    retries += 1;
+                    if retries >= max_retries {
+                        warn!(
+                            retries = retries,
+                            "Task channel full, cannot send shutdown message, forcing shutdown"
+                        );
+                        return Err(TaskManagerError::ShutdownFailed(
+                            "Channel full".to_string(),
+                        ));
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+                Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                    // 通道已关闭
                     retries += 1;
                     if retries >= max_retries {
                         error!(
-                            error = %e,
                             retries = retries,
                             "Failed to send shutdown message after {} retries, forcing shutdown",
                             max_retries
                         );
-                        return Err(TaskManagerError::ShutdownFailed(e.to_string()));
+                        return Err(TaskManagerError::ShutdownFailed(
+                            "Channel closed".to_string(),
+                        ));
                     }
 
                     if retries % 10 == 0 {
-                        // 每秒记录一次警告
                         warn!(
-                            error = %e,
                             retries = retries,
                             "Actor channel closed, retrying shutdown..."
                         );
                     }
-
-                    // 短暂等待后重试
                     std::thread::sleep(std::time::Duration::from_millis(100));
                 }
             }
@@ -685,7 +702,8 @@ impl TaskManager {
         let mut retries = 0;
 
         loop {
-            match self.sender.send(ActorMessage::Shutdown) {
+            // C-H3 修复: 使用 .await 因为 Sender::send 是异步的
+            match self.sender.send(ActorMessage::Shutdown).await {
                 Ok(()) => {
                     info!("Shutdown message sent successfully");
                     break;

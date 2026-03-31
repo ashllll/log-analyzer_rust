@@ -1,4 +1,4 @@
-//! 应用状态管理 - 异步优化版本 (tokio::sync::RwLock)
+//! 应用状态管理 - 使用 parking_lot::Mutex 实现高效同步锁
 
 use crate::services::file_watcher::WatcherState;
 use crate::state_sync::StateSync;
@@ -14,42 +14,42 @@ use la_search::VirtualSearchManager;
 use la_storage::ContentAddressableStorage;
 use la_storage::MetadataStore;
 use moka::sync::Cache;
+use parking_lot::Mutex;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
-use tokio::sync::RwLock;
 
-/// 应用状态 - 使用 tokio::sync::RwLock 支持异步上下文
+/// 应用状态 - 使用 parking_lot::Mutex 实现高效同步锁
 ///
-/// # 锁策略 (O6-优化后)
+/// # 锁策略
 ///
-/// 所有字段使用 `tokio::sync::RwLock` 替代 `parking_lot::Mutex`：
+/// 所有字段使用 `parking_lot::Mutex`：
 ///
-/// 1. **读写分离**：RwLock 支持多个并发读或单个写，提高并发性能
-/// 2. **异步安全**：可以安全地跨 `.await` 点持有锁，不会阻塞异步运行时
-/// 3. **符合 Tokio 最佳实践**：根据 Tokio 文档推荐，异步上下文中使用异步锁
+/// 1. **高性能**：parking_lot::Mutex 比 std::sync::Mutex 更快，无 poison 状态
+/// 2. **简洁API**：使用 `.lock()` 获取锁，无需处理 unwrap
+/// 3. **不跨 await**：锁不跨 `.await` 点持有，先克隆数据再释放锁
 ///
 /// # 注意事项
 ///
-/// - 读操作使用 `.read().await`
-/// - 写操作使用 `.write().await`
+/// - 使用 `.lock()` 获取锁守卫
 /// - 锁守卫不能跨 `.await` 传递，需要时先克隆数据
+/// - 遵循 "lock → clone → unlock → await" 模式
 pub struct AppState {
-    /// 工作区目录映射 - 使用 RwLock 支持并发读
-    pub workspace_dirs: Arc<RwLock<BTreeMap<String, std::path::PathBuf>>>,
-    pub cas_instances: Arc<RwLock<HashMap<String, Arc<ContentAddressableStorage>>>>,
-    pub metadata_stores: Arc<RwLock<HashMap<String, Arc<MetadataStore>>>>,
-    pub task_manager: Arc<RwLock<Option<TaskManager>>>,
+    /// 工作区目录映射
+    pub workspace_dirs: Arc<Mutex<BTreeMap<String, std::path::PathBuf>>>,
+    pub cas_instances: Arc<Mutex<HashMap<String, Arc<ContentAddressableStorage>>>>,
+    pub metadata_stores: Arc<Mutex<HashMap<String, Arc<MetadataStore>>>>,
+    pub task_manager: Arc<Mutex<Option<TaskManager>>>,
     pub search_cancellation_tokens:
-        Arc<RwLock<HashMap<String, tokio_util::sync::CancellationToken>>>,
-    pub total_searches: Arc<RwLock<u64>>,
-    pub cache_hits: Arc<RwLock<u64>>,
-    pub last_search_duration: Arc<RwLock<std::time::Duration>>,
-    pub watchers: Arc<RwLock<HashMap<String, WatcherState>>>,
+        Arc<Mutex<HashMap<String, tokio_util::sync::CancellationToken>>>,
+    pub total_searches: Arc<Mutex<u64>>,
+    pub cache_hits: Arc<Mutex<u64>>,
+    pub last_search_duration: Arc<Mutex<std::time::Duration>>,
+    pub watchers: Arc<Mutex<HashMap<String, WatcherState>>>,
     pub cleanup_queue: Arc<CleanupQueue>,
-    pub cache_manager: Arc<RwLock<CacheManager>>,
-    pub state_sync: Arc<RwLock<Option<StateSync>>>,
+    pub cache_manager: Arc<Mutex<CacheManager>>,
+    pub state_sync: Arc<Mutex<Option<StateSync>>>,
     pub async_resource_manager: Arc<AsyncResourceManager>,
-    pub search_engine_managers: Arc<RwLock<HashMap<String, Arc<SearchEngineManager>>>>,
+    pub search_engine_managers: Arc<Mutex<HashMap<String, Arc<SearchEngineManager>>>>,
     pub virtual_search_manager: Arc<VirtualSearchManager>,
     pub disk_result_store: Arc<DiskResultStore>,
 }
