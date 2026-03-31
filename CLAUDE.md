@@ -22,8 +22,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 常用命令
 
 ```bash
-# 开发（Tauri + Vite HMR）
+# 开发（Tauri + Vite，固定端口 3000）
+# 注意：如果 3000 端口被占用，启动会直接失败（不会漂移）
 npm run tauri dev
+
+# 单独启动前端开发服务器（端口 3000）
+npm run dev
 
 # TypeScript 类型检查
 npm run type-check
