@@ -53,7 +53,10 @@ interface LogRowProps {
   onClick: () => void;
   query: string;
   keywordGroups: KeywordGroup[];
+  virtualIndex: number;
   virtualStart: number;
+  virtualSize: number;
+  measureElement: (element: HTMLDivElement | null) => void;
 }
 
 /**
@@ -66,12 +69,20 @@ const LogRow = memo<LogRowProps>(({
   onClick,
   query,
   keywordGroups,
-  virtualStart
+  virtualIndex,
+  virtualStart,
+  virtualSize,
+  measureElement,
 }) => {
   return (
     <div
+      ref={measureElement}
+      data-index={virtualIndex}
       onClick={onClick}
-      style={{ transform: `translateY(${virtualStart}px)` }}
+      style={{
+        transform: `translateY(${virtualStart}px)`,
+        minHeight: `${virtualSize}px`,
+      }}
       className={cn(
         "absolute top-0 left-0 w-full grid grid-cols-[50px_160px_150px_1fr] px-3 py-1.5 border-b border-border-subtle cursor-pointer text-xs font-mono hover:bg-bg-hover/50 transition-colors duration-150 items-start",
         isActive && "bg-primary/10 border-l-2 border-l-primary"
@@ -113,7 +124,9 @@ const LogRow = memo<LogRowProps>(({
     prevProps.isActive === nextProps.isActive &&
     prevProps.query === nextProps.query &&
     prevProps.keywordGroups === nextProps.keywordGroups &&
-    prevProps.virtualStart === nextProps.virtualStart
+    prevProps.virtualIndex === nextProps.virtualIndex &&
+    prevProps.virtualStart === nextProps.virtualStart &&
+    prevProps.virtualSize === nextProps.virtualSize
   );
 });
 
@@ -151,6 +164,7 @@ const SearchPage: React.FC = () => {
   // ========== 流式无限搜索 (磁盘直写 + 滑动窗口分页) ==========
   const {
     data: infiniteSearchData,
+    refetch: refetchSearchPages,
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
@@ -173,6 +187,14 @@ const SearchPage: React.FC = () => {
     [infiniteSearchData]
   );
 
+  const totalResultCount = useMemo(() => {
+    const pagedTotal = infiniteSearchData?.pages[0]?.totalCount;
+    if (typeof pagedTotal === 'number' && pagedTotal >= 0) {
+      return pagedTotal;
+    }
+    return liveCount;
+  }, [infiniteSearchData, liveCount]);
+
   // 首页偏移量：maxPages 裁剪旧页面后，loadedEntries[0] 对应的虚拟索引
   const firstPageOffset = useMemo(
     () => (infiniteSearchData?.pageParams?.[0] as number) ?? 0,
@@ -184,6 +206,17 @@ const SearchPage: React.FC = () => {
     () => new Map(loadedEntries.map(entry => [entry.id, entry])),
     [loadedEntries]
   );
+
+  const currentSearchIdRef = useRef(currentSearchId);
+  currentSearchIdRef.current = currentSearchId;
+
+  const loadedEntriesLengthRef = useRef(loadedEntries.length);
+  loadedEntriesLengthRef.current = loadedEntries.length;
+
+  const refetchSearchPagesRef = useRef(refetchSearchPages);
+  refetchSearchPagesRef.current = refetchSearchPages;
+
+  const lastSearchPageRefetchTimeRef = useRef(0);
 
   // 处理无限搜索错误
   useEffect(() => {
@@ -282,6 +315,17 @@ const SearchPage: React.FC = () => {
         lastProgressTimeRef.current = now;
         setLiveCount(count);
       }
+      if (
+        count > 0 &&
+        currentSearchIdRef.current &&
+        loadedEntriesLengthRef.current < count &&
+        now - lastSearchPageRefetchTimeRef.current >= 300
+      ) {
+        lastSearchPageRefetchTimeRef.current = now;
+        refetchSearchPagesRef.current().catch((error) => {
+          logger.error('Refetch search page after progress failed:', error);
+        });
+      }
       // 注意：被节流丢弃的中间值不影响最终结果，
       // 因为 onComplete 会设置精确的最终计数
     }, []),
@@ -293,6 +337,11 @@ const SearchPage: React.FC = () => {
     onComplete: useCallback((count: number) => {
       dispatchSearchExec({ type: 'COMPLETE' });
       setLiveCount(count);
+      if (currentSearchIdRef.current) {
+        refetchSearchPagesRef.current().catch((error) => {
+          logger.error('Refetch search page after completion failed:', error);
+        });
+      }
       setTimeout(() => {
         if (rowVirtualizerRef.current) {
           try { rowVirtualizerRef.current.scrollToIndex(0); } catch { /* silent */ }
@@ -314,6 +363,7 @@ const SearchPage: React.FC = () => {
       dispatchSearchExec({ type: 'START' });
       setLiveCount(0);
       setSelectedId(null);
+      lastSearchPageRefetchTimeRef.current = 0;
       if (parentRef.current) parentRef.current.scrollTop = 0;
       if (rowVirtualizerRef.current) rowVirtualizerRef.current.scrollOffset = 0;
     }, [dispatchSearchExec]),
@@ -630,9 +680,12 @@ const SearchPage: React.FC = () => {
    * 将结果存储到 ref 中以便在其他 useEffect 中访问
    */
   const rowVirtualizer = useVirtualizer({
-    count: liveCount,  // 磁盘直写架构：总行数由 search-progress 事件驱动
+    count: totalResultCount,
     getScrollElement: () => parentRef.current,
     estimateSize: useCallback(() => 48, []), // 调整为 48px，更接近实际行高
+    measureElement: useCallback((element: Element | null) => {
+      return element?.getBoundingClientRect().height ?? 48;
+    }, []),
     overscan: 20,
   });
 
@@ -737,7 +790,12 @@ const SearchPage: React.FC = () => {
                 return (
                   <div
                     key={virtualRow.key}
-                    style={{ transform: `translateY(${virtualRow.start}px)` }}
+                    ref={rowVirtualizer.measureElement}
+                    data-index={virtualRow.index}
+                    style={{
+                      transform: `translateY(${virtualRow.start}px)`,
+                      minHeight: `${virtualRow.size}px`,
+                    }}
                     className="absolute top-0 left-0 w-full grid grid-cols-[50px_160px_150px_1fr] px-3 py-1.5 border-b border-border-subtle"
                   >
                     <div className="h-4 bg-bg-elevated/60 rounded animate-pulse w-8" />
@@ -755,7 +813,10 @@ const SearchPage: React.FC = () => {
                   onClick={() => setSelectedId(log.id)}
                   query={query}
                   keywordGroups={enabledKeywordGroups}
+                  virtualIndex={virtualRow.index}
                   virtualStart={virtualRow.start}
+                  virtualSize={virtualRow.size}
+                  measureElement={rowVirtualizer.measureElement}
                 />
               );
             })}
@@ -774,9 +835,9 @@ const SearchPage: React.FC = () => {
           )}
 
           {/* 全部加载完成提示 */}
-          {!!currentSearchId && !hasNextPage && !isFetchingNextPage && !hasPreviousPage && liveCount > 0 && (
+          {!!currentSearchId && !hasNextPage && !isFetchingNextPage && !hasPreviousPage && totalResultCount > 0 && (
             <div className="flex items-center justify-center py-3 text-text-muted text-xs">
-              共 {liveCount.toLocaleString()} 条结果
+              共 {totalResultCount.toLocaleString()} 条结果
             </div>
           )}
 

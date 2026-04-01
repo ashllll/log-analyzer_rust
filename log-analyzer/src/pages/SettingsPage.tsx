@@ -95,7 +95,7 @@ export function SettingsPage() {
       }
     };
     loadConfigs();
-  }, [loadAllConfigs, showToast]);
+  }, [loadAllConfigs, showToast, t]);
 
   // Sync local state when configs change
   useEffect(() => {

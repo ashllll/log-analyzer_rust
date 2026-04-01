@@ -10,7 +10,7 @@
  * - 缓存策略优化
  */
 
-import { useInfiniteQuery, InfiniteData, keepPreviousData } from '@tanstack/react-query';
+import { useInfiniteQuery, InfiniteData } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/core';
 import { LogEntry } from '../types/common';
 
@@ -165,9 +165,6 @@ export function useInfiniteSearch({
     // 缓存策略
     staleTime,
     gcTime: 30 * 60 * 1000, // 30分钟，搜索结果相对稳定
-
-    // 保留上一次数据，消除搜索参数变化时的闪烁
-    placeholderData: keepPreviousData,
 
     // 错误重试策略
     retry: (failureCount, error) => {

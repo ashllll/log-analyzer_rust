@@ -316,9 +316,8 @@ pub async fn import_folder(
     let (cas, metadata_store, search_manager) =
         ensure_workspace_runtime_state(&app_handle, &state, &workspace_id_clone, &workspace_dir)
             .await
-            .map_err(|e| {
+            .inspect_err(|e| {
                 let _ = app_handle.emit("import-error", &e);
-                e
             })?;
 
     // Process the path using CAS architecture
@@ -585,7 +584,7 @@ pub async fn import_folder(
                     error_msg
                 );
                 // 发送警告事件给前端（非致命错误）
-                let _ = app_handle.emit("import-error", &error_msg);
+                let _ = app_handle.emit("import-warning", &error_msg);
             }
         }
     }

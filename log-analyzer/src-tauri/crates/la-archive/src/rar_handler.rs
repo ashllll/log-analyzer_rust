@@ -64,26 +64,33 @@ impl ArchiveHandler for RarHandler {
                 .read_header()
                 .map_err(|e| AppError::archive_error(e.to_string(), None))?
             {
-                let entry = header.entry();
-                let name = entry.filename.to_string_lossy();
+                let (name, safe_path, out_path, size, is_directory) = {
+                    let entry = header.entry();
+                    let name = entry.filename.to_string_lossy().to_string();
 
-                let validation =
-                    validate_and_sanitize_archive_path(&name, &SecurityConfig::default());
-                let safe_path = match validation {
-                    PathValidationResult::Unsafe(_) => {
-                        archive = header
-                            .skip()
-                            .map_err(|e| AppError::archive_error(e.to_string(), None))?;
-                        continue;
-                    }
-                    PathValidationResult::Valid(p) => std::path::PathBuf::from(p),
-                    PathValidationResult::RequiresSanitization(_, p) => std::path::PathBuf::from(p),
+                    let validation =
+                        validate_and_sanitize_archive_path(&name, &SecurityConfig::default());
+                    let safe_path = match validation {
+                        PathValidationResult::Unsafe(_) => {
+                            archive = header
+                                .skip()
+                                .map_err(|e| AppError::archive_error(e.to_string(), None))?;
+                            continue;
+                        }
+                        PathValidationResult::Valid(p) => std::path::PathBuf::from(p),
+                        PathValidationResult::RequiresSanitization(_, p) => {
+                            std::path::PathBuf::from(p)
+                        }
+                    };
+
+                    let out_path = target_path.join(&safe_path);
+                    let size = entry.unpacked_size;
+                    let is_directory = entry.is_directory();
+
+                    (name, safe_path, out_path, size, is_directory)
                 };
 
-                let out_path = target_path.join(&safe_path);
-                let size = entry.unpacked_size;
-
-                if entry.is_directory() {
+                if is_directory {
                     if let Err(e) = std::fs::create_dir_all(&out_path) {
                         warn!(path = ?out_path, error = %e, "创建 RAR 目录条目失败，跳过");
                     }
@@ -116,16 +123,22 @@ impl ArchiveHandler for RarHandler {
                             summary.add_file(safe_path, size);
                         }
                         Err(e) => {
+                            let error_message =
+                                format!("Failed to extract RAR entry {}: {}", name, e);
                             warn!(
                                 path = ?out_path,
                                 error = %e,
                                 "RAR 条目提取失败，清理残留文件后中止"
                             );
+                            summary.add_error(error_message.clone());
                             // 清理可能的残留文件，防止不完整文件留在磁盘
                             if out_path.exists() {
                                 let _ = std::fs::remove_file(&out_path);
                             }
-                            return Err(AppError::archive_error(e.to_string(), None));
+                            if summary.files_extracted == 0 {
+                                return Err(AppError::archive_error(error_message, None));
+                            }
+                            return Ok::<ExtractionSummary, AppError>(summary);
                         }
                     }
                 }

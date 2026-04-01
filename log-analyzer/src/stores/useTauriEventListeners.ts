@@ -15,8 +15,8 @@ import { logger } from '../utils/logger';
  * - task-removed → eventBus.processEvent('task-removed')
  * - import-complete → 直接更新 task/workspace 状态
  * - import-error → toast 错误提示
+ * - import-warning → toast 警告提示
  *
- * 使用 initRef 防止 React StrictMode 重复注册。
  * 使用 tauriCleanupRef 确保异步注册完成后同步清理。
  */
 export const useTauriEventListeners = () => {
@@ -25,17 +25,7 @@ export const useTauriEventListeners = () => {
 
   // 使用 ref 存储 Tauri 清理函数，确保在组件卸载时同步调用
   const tauriCleanupRef = useRef<(() => void) | null>(null);
-  const initRef = useRef(false);
-
   useEffect(() => {
-    // 防止 React StrictMode 重复初始化
-    if (initRef.current) {
-      return () => {
-        // 空清理函数
-      };
-    }
-    initRef.current = true;
-
     let isMounted = true;
 
     const setupTauriListeners = async () => {
@@ -107,9 +97,15 @@ export const useTauriEventListeners = () => {
         toast.error(`导入失败: ${event.payload}`);
       });
 
+      // 监听导入警告事件（从Tauri后端）
+      const importWarningUnlisten = await listen<string>('import-warning', (event) => {
+        logger.warn({ payload: event.payload }, '[TauriEventListeners] Received import-warning from Tauri');
+        toast(`导入提示: ${event.payload}`);
+      });
+
       return () => {
         // 逐个 try-catch，防止第一个 unlisten 抛出时后续监听器泄漏
-        [taskUpdateUnlisten, taskRemovedUnlisten, importCompleteUnlisten, importErrorUnlisten]
+        [taskUpdateUnlisten, taskRemovedUnlisten, importCompleteUnlisten, importErrorUnlisten, importWarningUnlisten]
           .forEach((unlisten) => {
             try { unlisten(); } catch { /* 静默处理，Tauri unlisten 不应抛出 */ }
           });

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { useWorkspaceStore } from './workspaceStore';
 import { useTaskStore } from './taskStore';
@@ -13,7 +13,6 @@ import { logger } from '../utils/logger';
  * - task-update: 任务状态更新（去重添加、工作区状态联动、toast 通知）
  * - task-removed: 任务自动清理
  *
- * 使用 initRef 防止 React StrictMode 重复注册。
  */
 export const useEventBusSubscriptions = () => {
   const updateWorkspace = useWorkspaceStore((state) => state.updateWorkspace);
@@ -21,17 +20,7 @@ export const useEventBusSubscriptions = () => {
   const updateTask = useTaskStore((state) => state.updateTask);
   const deleteTask = useTaskStore((state) => state.deleteTask);
 
-  const initRef = useRef(false);
-
   useEffect(() => {
-    // 防止 React StrictMode 重复初始化
-    if (initRef.current) {
-      return () => {
-        // 空清理函数
-      };
-    }
-    initRef.current = true;
-
     // 注册任务更新事件处理器
     const unsubscribeTaskUpdate = eventBus.on<TaskUpdateEvent>(
       'task-update',

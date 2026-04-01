@@ -742,9 +742,20 @@ pub async fn search_logs(
         let mut keyword_counts: std::collections::HashMap<String, usize> =
             std::collections::HashMap::new();
         let mut was_truncated = false;
-        let mut pending_batch: Vec<LogEntry> = Vec::new(); // 当前待发送批次
         let mut all_results: Vec<LogEntry> = Vec::new(); // 用于缓存的完整结果集
         const MAX_CACHE_SIZE: usize = 100_000; // 限制缓存中的结果数量
+
+        let flush_batch = |batch: &mut Vec<LogEntry>, progress_count: usize| {
+            if batch.is_empty() {
+                return;
+            }
+
+            if let Err(e) = disk_store_spawn.append_entries(&search_id_clone, batch) {
+                warn!(error = %e, "磁盘写入搜索结果批次失败");
+            }
+            batch.clear();
+            let _ = app_handle.emit("search-progress", progress_count);
+        };
 
         // 先发送开始事件
         let _ = app_handle.emit("search-start", "Starting search...");
@@ -806,6 +817,7 @@ pub async fn search_logs(
                 for mut entry in file_results {
                     // 检查是否已达到max_results限制
                     if results_count >= max_results {
+                        flush_batch(&mut batch_results, results_count);
                         was_truncated = true;
                         break 'outer;
                     }
@@ -834,40 +846,17 @@ pub async fn search_logs(
 
                     // 批次满时写入磁盘并发送实时计数（不再发送原始数据到前端）
                     if batch_results.len() >= batch_size {
-                        if let Err(e) =
-                            disk_store_spawn.append_entries(&search_id_clone, &batch_results)
-                        {
-                            warn!(error = %e, "磁盘写入搜索结果批次失败");
-                        }
-                        batch_results.clear();
-                        // 发送实时条目计数（前端用于调整虚拟列表大小，不含实际数据）
-                        let _ = app_handle.emit("search-progress", results_count);
+                        flush_batch(&mut batch_results, results_count);
                     }
                 }
             }
 
-            // 保存未发送的结果
-            if !batch_results.is_empty() {
-                // 先将上一轮遗留的 pending_batch 写入磁盘，避免覆盖丢失
-                if !pending_batch.is_empty() {
-                    if let Err(e) =
-                        disk_store_spawn.append_entries(&search_id_clone, &pending_batch)
-                    {
-                        warn!(error = %e, "磁盘写入遗留 pending_batch 失败");
-                    }
-                }
-                pending_batch = batch_results;
-            }
+            // 将当前文件批次尚未发送的结果立即写盘，避免下一轮截断时丢失尾批次。
+            flush_batch(&mut batch_results, results_count);
 
             total_processed += file_batch.len();
         }
 
-        // 将剩余结果写入磁盘并完成会话
-        if !pending_batch.is_empty() {
-            if let Err(e) = disk_store_spawn.append_entries(&search_id_clone, &pending_batch) {
-                warn!(error = %e, "磁盘写入剩余搜索结果失败");
-            }
-        }
         // 完成磁盘会话，确保所有写入对读者可见
         if let Err(e) = disk_store_spawn.complete_session(&search_id_clone) {
             warn!(error = %e, "完成磁盘搜索会话失败");

@@ -61,8 +61,13 @@ export function sanitizeArgs(args: Record<string, unknown>): Record<string, unkn
     if (isEmpty(value)) {
       continue;
     }
-    if (Array.isArray(value) && value.length === 0) {
-      sanitized[key] = value;
+    if (Array.isArray(value)) {
+      sanitized[key] = value.map((item) => {
+        if (item && typeof item === 'object' && !Array.isArray(item)) {
+          return sanitizeArgs(item as Record<string, unknown>);
+        }
+        return item;
+      });
     } else if (typeof value === 'object' && value !== null) {
       const sanitizedNested = sanitizeArgs(value as Record<string, unknown>);
       if (Object.keys(sanitizedNested).length > 0) {
@@ -300,11 +305,20 @@ class LogAnalyzerApi {
    * 刷新工作区
    *
    * @param workspaceId - 工作区 ID
+   * @param path - 工作区原始路径
    * @returns 工作区 ID
    */
-  async refreshWorkspace(workspaceId: string): Promise<string> {
+  async refreshWorkspace(workspaceId: string, path?: string): Promise<string> {
     try {
-      return await invoke('refresh_workspace', { workspaceId });
+      const resolvedPath = path && path.trim().length > 0
+        ? path
+        : (await this.loadConfig()).workspaces.find((workspace) => workspace.id === workspaceId)?.path;
+
+      const args = resolvedPath && resolvedPath.trim().length > 0
+        ? { workspaceId, path: resolvedPath }
+        : { workspaceId };
+
+      return await invoke('refresh_workspace', args as InvokeArgs);
     } catch (error) {
       throw createApiError('refresh_workspace', error);
     }

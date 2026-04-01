@@ -15,6 +15,7 @@
  * showError('操作失败', { duration: 5000 });
  */
 
+import { useCallback } from 'react';
 import toast from 'react-hot-toast';
 
 export type ToastType = 'success' | 'error' | 'info' | 'loading';
@@ -30,7 +31,7 @@ interface ToastOptions {
  * 所有组件应通过此 Hook 显示 Toast 通知，不要直接使用 react-hot-toast 或 appStore.addToast。
  */
 export const useToast = () => {
-  const showToast = (type: ToastType, message: string, options?: number | ToastOptions) => {
+  const showToast = useCallback((type: ToastType, message: string, options?: number | ToastOptions) => {
     // 兼容旧 API：第三个参数可能是 number（duration）或 ToastOptions
     const resolvedOptions: ToastOptions = typeof options === 'number'
       ? { duration: options }
@@ -57,32 +58,32 @@ export const useToast = () => {
       default:
         return toast(message, defaultOptions);
     }
-  };
+  }, []);
 
   // 便捷方法：显示成功提示
-  const showSuccess = (message: string, options?: number | ToastOptions) => {
+  const showSuccess = useCallback((message: string, options?: number | ToastOptions) => {
     return showToast('success', message, options);
-  };
+  }, [showToast]);
 
   // 便捷方法：显示错误提示
-  const showError = (message: string, options?: number | ToastOptions) => {
+  const showError = useCallback((message: string, options?: number | ToastOptions) => {
     return showToast('error', message, options);
-  };
+  }, [showToast]);
 
   // 便捷方法：显示信息提示
-  const showInfo = (message: string, options?: number | ToastOptions) => {
+  const showInfo = useCallback((message: string, options?: number | ToastOptions) => {
     return showToast('info', message, options);
-  };
+  }, [showToast]);
 
-  const dismissToast = (toastId?: string) => {
+  const dismissToast = useCallback((toastId?: string) => {
     if (toastId) {
       toast.dismiss(toastId);
     } else {
       toast.dismiss();
     }
-  };
+  }, []);
 
-  const promise = <T,>(
+  const promise = useCallback(<T,>(
     promise: Promise<T>,
     messages: {
       loading: string;
@@ -92,7 +93,7 @@ export const useToast = () => {
     options?: ToastOptions
   ) => {
     return toast.promise(promise, messages, options);
-  };
+  }, []);
 
   return {
     showToast,

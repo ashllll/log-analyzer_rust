@@ -562,15 +562,16 @@ export class ApiError extends Error implements StructuredError {
    * 获取用户友好的错误消息（支持i18n）
    */
   getUserMessage(): string {
-    // 优先使用i18n本地化的错误消息
+    // 对 UNKNOWN 或未结构化错误，优先保留后端/原始消息，避免把真实错误覆盖成
+    // “An unknown error occurred” 这类无信息提示。
+    if (this.message && this.message !== this.code) {
+      return this.message;
+    }
+
+    // 已识别的结构化错误再回退到本地化文案
     const localizedMessage = getLocalizedErrorMessage(this.code);
     if (localizedMessage && localizedMessage !== 'errors.unknown') {
       return localizedMessage;
-    }
-
-    // 回退到原始消息
-    if (this.message && this.message !== this.code) {
-      return this.message;
     }
 
     return this.message;

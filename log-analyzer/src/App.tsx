@@ -116,9 +116,6 @@ function AppContent() {
         // 初始化状态同步
         await invoke('init_state_sync');
 
-        // 标记应用已初始化
-        addToast('success', 'Application initialized successfully');
-
         // 监听工作区事件
         unlisten = await listen('workspace-event', (event: { payload: { type: string; status?: { status: string } } }) => {
           const { status } = event.payload;

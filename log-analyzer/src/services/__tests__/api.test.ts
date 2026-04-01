@@ -1,0 +1,61 @@
+import { api } from '../api';
+
+jest.mock('@tauri-apps/api/core', () => ({
+  invoke: jest.fn(),
+}));
+
+const mockInvoke = require('@tauri-apps/api/core').invoke as jest.Mock;
+
+const makeConfig = (workspacePath: string) => ({
+  keyword_groups: [],
+  workspaces: [
+    {
+      id: 'workspace-1',
+      name: 'Test Workspace',
+      path: workspacePath,
+      status: 'READY' as const,
+      size: '100MB',
+      files: 10,
+    },
+  ],
+  file_filter: {
+    enabled: false,
+    binary_detection_enabled: true,
+    mode: 'blacklist' as const,
+    filename_patterns: [],
+    allowed_extensions: [],
+    forbidden_extensions: [],
+  },
+});
+
+describe('api.refreshWorkspace', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('should invoke refresh_workspace directly when path is provided', async () => {
+    mockInvoke.mockResolvedValueOnce('task-123');
+
+    await expect(api.refreshWorkspace('workspace-1', '/logs/app')).resolves.toBe('task-123');
+
+    expect(mockInvoke).toHaveBeenCalledTimes(1);
+    expect(mockInvoke).toHaveBeenCalledWith('refresh_workspace', {
+      workspaceId: 'workspace-1',
+      path: '/logs/app',
+    });
+  });
+
+  it('should load config and recover path when it is missing', async () => {
+    mockInvoke
+      .mockResolvedValueOnce(makeConfig('/logs/from-config'))
+      .mockResolvedValueOnce('task-456');
+
+    await expect(api.refreshWorkspace('workspace-1')).resolves.toBe('task-456');
+
+    expect(mockInvoke).toHaveBeenNthCalledWith(1, 'load_config');
+    expect(mockInvoke).toHaveBeenNthCalledWith(2, 'refresh_workspace', {
+      workspaceId: 'workspace-1',
+      path: '/logs/from-config',
+    });
+  });
+});

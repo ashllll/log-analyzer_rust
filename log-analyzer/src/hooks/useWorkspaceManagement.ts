@@ -55,7 +55,7 @@ export const useWorkspaceManagement = (): UseWorkspaceManagementReturn => {
     setIsLoading(true);
 
     try {
-      const taskId = await api.refreshWorkspace(workspace.id);
+      const taskId = await api.refreshWorkspace(workspace.id, workspace.path);
 
       if (import.meta.env.DEV) logger.debug('refresh_workspace returned taskId:', taskId);
 

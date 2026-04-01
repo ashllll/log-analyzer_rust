@@ -181,9 +181,9 @@ export const useRefreshWorkspaceMutation = () => {
   const { showToast: addToast } = useToast();
 
   return useMutation({
-    mutationFn: async ({ workspaceId }: { workspaceId: string; path: string }) => {
+    mutationFn: async ({ workspaceId, path }: { workspaceId: string; path: string }) => {
       logger.debug('[MUTATION] Refreshing workspace:', workspaceId);
-      const taskId = await api.refreshWorkspace(workspaceId);
+      const taskId = await api.refreshWorkspace(workspaceId, path);
       return { taskId, workspaceId };
     },
     onSuccess: ({ taskId, workspaceId }) => {

@@ -95,7 +95,7 @@ const FileFilterSettings: React.FC<FileFilterSettingsProps> = ({
         abortControllerRef.current = null;
       }
     };
-  }, [isOpen]);
+  }, [isOpen, t]);
 
   // 组件卸载时清理所有进行中的操作
   useEffect(() => {
@@ -141,7 +141,7 @@ const FileFilterSettings: React.FC<FileFilterSettingsProps> = ({
         setIsLoading(false);
       }
     }
-  }, [config, onSaved, onClose]);
+  }, [config, onSaved, onClose, t]);
 
   const addPattern = useCallback(() => {
     const pattern = newPattern.trim();

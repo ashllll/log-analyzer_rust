@@ -1,9 +1,9 @@
-import { useEffect, useRef } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { useEffect } from 'react';
 import { useWorkspaceStore } from './workspaceStore';
 import { useKeywordStore } from './keywordStore';
 import { useAppStore } from './appStore';
 import { useToast } from '../hooks/useToast';
+import { api } from '../services/api';
 import type { Workspace, KeywordGroup } from '../types/common';
 import { logger } from '../utils/logger';
 
@@ -19,28 +19,18 @@ export const useConfigInitializer = () => {
   const setKeywordGroups = useKeywordStore((state) => state.setKeywordGroups);
   const setInitialized = useAppStore((state) => state.setInitialized);
 
-  // 使用 ref 跟踪初始化状态，防止 React StrictMode 重复初始化
-  const initializedRef = useRef(false);
-
   useEffect(() => {
-    if (initializedRef.current) return;
-    initializedRef.current = true;
-
     let isMounted = true;
 
     const loadConfig = async () => {
       try {
-        const config = await invoke<Record<string, unknown>>('load_config');
+        const config = await api.loadConfig();
         if (!isMounted) return;
 
-        if (config) {
-          if (config.workspaces) {
-            setWorkspaces(config.workspaces as Workspace[]);
-          }
-          if (config.keyword_groups) {
-            setKeywordGroups(config.keyword_groups as KeywordGroup[]);
-          }
-        }
+        setWorkspaces(Array.isArray(config.workspaces) ? (config.workspaces as Workspace[]) : []);
+        setKeywordGroups(
+          Array.isArray(config.keyword_groups) ? (config.keyword_groups as KeywordGroup[]) : []
+        );
 
         setInitialized(true);
       } catch (error) {
@@ -63,14 +53,16 @@ export const useConfigInitializer = () => {
       }
     };
 
-    // 延迟加载配置，避免阻塞首屏渲染
-    const timer = setTimeout(() => {
+    // 延迟加载配置，避免阻塞首屏渲染。
+    // 不要用 ref 短路 effect；React StrictMode 会在开发态额外执行 setup+cleanup，
+    // ref 短路会导致第一次 timer 被 cleanup 清掉后，第二次 setup 不再重新初始化。
+    const timer = window.setTimeout(() => {
       loadConfig();
     }, 100);
 
     return () => {
       isMounted = false;
-      clearTimeout(timer);
+      window.clearTimeout(timer);
     };
   }, [addToast, setWorkspaces, setKeywordGroups, setInitialized]);
 };

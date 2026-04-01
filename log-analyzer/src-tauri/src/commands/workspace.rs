@@ -116,9 +116,11 @@ pub async fn load_workspace(
 pub async fn refresh_workspace(
     app: AppHandle,
     #[allow(non_snake_case)] workspaceId: String,
-    path: String,
+    path: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
+    let path = resolve_refresh_source_path(&app, &workspaceId, path)?;
+
     info!(
         workspace_id = %workspaceId,
         path = %path,
@@ -155,6 +157,7 @@ pub async fn refresh_workspace(
 
 use std::{fs, path::Path, sync::Arc};
 
+use la_core::models::config::AppConfigLoader;
 use tauri::{command, AppHandle, Manager, State};
 use tracing::{error, info, warn};
 
@@ -162,6 +165,64 @@ use crate::commands::import::{ensure_workspace_runtime_state, import_folder};
 use crate::models::AppState;
 use crate::utils::workspace_paths::resolve_workspace_dir;
 use crate::utils::{cleanup::try_cleanup_temp_dir, validation::validate_workspace_id};
+
+#[derive(Debug, serde::Deserialize)]
+struct StoredWorkspaceConfig {
+    id: String,
+    path: Option<String>,
+}
+
+fn resolve_refresh_source_path(
+    app: &AppHandle,
+    workspace_id: &str,
+    path: Option<String>,
+) -> Result<String, String> {
+    if let Some(path) = path.filter(|value| !value.trim().is_empty()) {
+        return Ok(path);
+    }
+
+    let config_path = app
+        .path()
+        .app_config_dir()
+        .map_err(|e: tauri::Error| e.to_string())?
+        .join("config.json");
+
+    if config_path.exists() {
+        let loader = AppConfigLoader::load(Some(config_path.clone())).map_err(|e| {
+            format!(
+                "Failed to load config while resolving workspace path: {}",
+                e
+            )
+        })?;
+
+        let workspaces: Vec<StoredWorkspaceConfig> =
+            serde_json::from_value(loader.get_config().workspaces.clone()).map_err(|e| {
+                format!(
+                    "Failed to parse stored workspaces while resolving workspace path: {}",
+                    e
+                )
+            })?;
+
+        if let Some(path) = workspaces
+            .into_iter()
+            .find(|workspace| workspace.id == workspace_id)
+            .and_then(|workspace| workspace.path)
+            .filter(|value| !value.trim().is_empty())
+        {
+            info!(
+                workspace_id = %workspace_id,
+                path = %path,
+                "Resolved workspace source path from saved config"
+            );
+            return Ok(path);
+        }
+    }
+
+    Err(format!(
+        "Workspace source path missing for {}. Please refresh the workspace list or re-import it.",
+        workspace_id
+    ))
+}
 
 /// 判断工作区是否使用CAS存储
 ///

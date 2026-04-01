@@ -2,7 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
 // @ts-expect-error process is a nodejs global
-const host = process.env.TAURI_DEV_HOST;
+const tauriDevHost = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
@@ -16,7 +16,7 @@ export default defineConfig(async () => ({
   server: {
     port: 3000,
     strictPort: true, // 固定端口，占用时直接失败而不是漂移
-    host: "127.0.0.1", // 明确绑定到本地回环
+    host: tauriDevHost || "127.0.0.1", // 与 Tauri devUrl 保持一致；移动端时遵循官方 TAURI_DEV_HOST
     hmr: false, // Disable HMR to avoid WebSocket permission issues
     watch: {
       // 3. tell Vite to ignore watching `src-tauri`
