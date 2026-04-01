@@ -625,12 +625,12 @@ mod tests {
         let entry = CacheEntry::with_ttl_and_tti(
             "value",
             Duration::from_secs(60),
-            Duration::from_millis(50),
+            Duration::from_millis(200),
         );
         assert!(!entry.is_expired());
 
-        // 等待 TTI 过期
-        thread::sleep(Duration::from_millis(100));
+        // 等待 TTI 过期（留足余量）
+        thread::sleep(Duration::from_millis(400));
         assert!(entry.is_expired());
     }
 
@@ -639,17 +639,17 @@ mod tests {
         let mut entry = CacheEntry::with_ttl_and_tti(
             "value",
             Duration::from_secs(60),
-            Duration::from_millis(50),
+            Duration::from_millis(200),
         );
 
-        thread::sleep(Duration::from_millis(30));
+        thread::sleep(Duration::from_millis(100));
         entry.touch();
 
-        // TTI 应该被重置
-        thread::sleep(Duration::from_millis(30));
-        assert!(!entry.is_expired()); // 因为 touch 重置了 TTI
+        // TTI 应该被重置，距 touch 仅过 100ms（远小于 200ms TTI）
+        thread::sleep(Duration::from_millis(100));
+        assert!(!entry.is_expired());
 
-        thread::sleep(Duration::from_millis(60));
+        thread::sleep(Duration::from_millis(200));
         assert!(entry.is_expired());
     }
 }
