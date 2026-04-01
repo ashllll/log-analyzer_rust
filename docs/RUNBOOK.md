@@ -37,6 +37,30 @@ cargo test -q
 
 ## 搜索相关排障
 
+### 运行时配置加载
+
+应用启动时从 `{app_config_dir}/config.json` 加载配置：
+
+- 缓存参数（容量、TTL、TTI、压缩阈值）
+- 任务管理器参数（并发度、超时）
+- 搜索引擎参数
+
+配置未找到时使用内置默认值。
+
+### 归档提取配置
+
+归档解压行为由 `src-tauri/config/extraction_policy.toml` 控制：
+
+- 模板参考：`extraction_policy.toml.example`
+- 修改后需要重启应用生效
+
+排障要点：
+
+- 大文件解压失败 → 检查 `max_file_size` 和 `max_total_size`
+- 嵌套归档截断 → 检查 `max_depth`
+- 路径过长错误 → 启用 `use_enhanced_extraction` 并设置 `enable_long_paths`
+- zip 炸弹误报 → 调整 `compression_ratio_threshold`
+
 ### 搜索无结果
 
 优先检查：

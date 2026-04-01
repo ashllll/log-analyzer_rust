@@ -144,6 +144,37 @@ React UI
 职责：
 
 - 性能指标采集与历史指标查询
+- 指标聚合与统计摘要
+
+关键文件：
+
+- `metrics.rs`
+
+### `src/task_manager/`
+
+职责：
+
+- 后台任务调度与生命周期管理
+- Actor 模式的任务执行
+- 任务消息传递与错误恢复
+
+关键文件：
+
+- `actor.rs`
+- `messages.rs`
+- `types.rs`
+
+### `src/state_sync/`
+
+职责：
+
+- 前后端实时状态同步
+- 工作区状态变更通知
+- 事件历史记录与回放
+
+关键文件：
+
+- `models.rs`
 
 ## Workspace crates
 

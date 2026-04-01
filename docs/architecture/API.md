@@ -71,6 +71,30 @@
 
 - 校验结构化查询对象
 
+## 流式搜索会话管理
+
+<!-- AUTO-GENERATED: start -->
+| 命令 | 用途 |
+|------|------|
+| `fetch_search_page` | 按 search_id + offset + limit 分页读取搜索结果 |
+| `register_search_session` | 注册新搜索会话 |
+| `get_search_session_info` | 获取会话元信息 |
+| `get_search_total_count` | 获取搜索结果总数 |
+| `remove_search_session` | 手动移除搜索会话 |
+| `cleanup_expired_search_sessions` | 清理过期会话 |
+| `get_virtual_search_stats` | 获取搜索引擎运行统计 |
+<!-- AUTO-GENERATED: end -->
+
+## 异步搜索
+
+<!-- AUTO-GENERATED: start -->
+| 命令 | 用途 |
+|------|------|
+| `async_search_logs` | 异步启动搜索任务（由 TaskManager 调度） |
+| `cancel_async_search` | 取消异步搜索 |
+| `get_active_searches_count` | 查询当前活跃搜索数 |
+<!-- AUTO-GENERATED: end -->
+
 ## 工作区与导入命令
 
 核心命令：
@@ -81,16 +105,99 @@
 - `delete_workspace`
 - `import_folder`
 - `get_workspace_time_range`
+- `get_workspace_status`
+- `cancel_task`（取消工作区任务）
+- `check_rar_support`（检测 RAR 解压支持）
 
 这些命令与 CAS / 元数据存储、虚拟文件树和搜索入口共同组成工作区主流程。
 
-## 其他核心命令
+## 文件监听与虚拟文件树
 
-- 文件监听：`start_watch` / `stop_watch`
-- 虚拟文件树：`get_virtual_file_tree` / `read_file_by_hash`
+- `start_watch` / `stop_watch`
+- `get_virtual_file_tree` / `read_file_by_hash`
+
+## 配置管理
+
+<!-- AUTO-GENERATED: start -->
+| 命令 | 用途 |
+|------|------|
+| `load_config` / `save_config` | 应用全局配置读写 |
+| `get_file_filter_config` / `save_file_filter_config` | 文件过滤规则 |
+| `get_cache_config` / `save_cache_config` | 缓存策略配置 |
+| `get_search_config` / `save_search_config` | 搜索引擎配置 |
+| `get_task_manager_config` / `save_task_manager_config` | 任务管理器配置 |
+<!-- AUTO-GENERATED: end -->
+
+## 日志配置管理
+
+<!-- AUTO-GENERATED: start -->
+| 命令 | 用途 |
+|------|------|
+| `get_current_log_config` | 获取当前日志配置 |
+| `set_log_level` / `set_module_level` | 运行时调整日志级别 |
+| `reset_log_configuration` | 重置为默认配置 |
+| `get_recommended_production_config` / `get_recommended_debug_config` | 预设配置模板 |
+| `load_log_config` / `save_log_config` | 持久化日志配置 |
+| `get_available_log_levels` | 枚举可用级别 |
+| `apply_log_preset` | 应用预设方案 |
+<!-- AUTO-GENERATED: end -->
+
+## 错误报告
+
+<!-- AUTO-GENERATED: start -->
+| 命令 | 用途 |
+|------|------|
+| `report_frontend_error` | 前端异常上报 |
+| `submit_user_feedback` | 用户反馈提交 |
+| `get_error_statistics` | 错误统计查询 |
+<!-- AUTO-GENERATED: end -->
+
+## 状态同步
+
+<!-- AUTO-GENERATED: start -->
+| 命令 | 用途 |
+|------|------|
+| `init_state_sync` | 初始化状态同步通道 |
+| `get_workspace_state` | 获取工作区实时状态 |
+| `get_event_history` | 查询事件历史 |
+| `broadcast_test_event` | 广播测试事件（调试用） |
+<!-- AUTO-GENERATED: end -->
+
+## 数据验证
+
+<!-- AUTO-GENERATED: start -->
+| 命令 | 用途 |
+|------|------|
+| `validate_workspace_config_cmd` | 校验工作区配置 |
+| `validate_search_query_cmd` | 校验搜索查询 |
+| `validate_archive_config_cmd` | 校验归档配置 |
+| `batch_validate_workspace_configs` | 批量校验工作区配置 |
+| `validate_workspace_id_format` | 校验 ID 格式 |
+| `validate_path_security` | 校验路径安全性 |
+<!-- AUTO-GENERATED: end -->
+
+## 导出与缓存
+
 - 导出：`export_results`
-- 性能监控：`get_performance_metrics` 等
-- 配置：`load_config` / `save_config` 及若干配置子命令
+- 缓存：`invalidate_workspace_cache`
+
+## 性能监控
+
+<!-- AUTO-GENERATED: start -->
+| 命令 | 用途 |
+|------|------|
+| `get_performance_metrics` | 获取当前性能指标 |
+| `get_historical_metrics` | 查询历史指标 |
+| `get_aggregated_metrics` | 获取聚合指标 |
+| `get_search_events` | 搜索事件流 |
+| `get_metrics_stats` | 指标统计摘要 |
+| `cleanup_metrics_data` | 清理过期指标数据 |
+<!-- AUTO-GENERATED: end -->
+
+## 传统格式兼容
+
+- `scan_legacy_formats`
+- `get_legacy_workspace_info`
 
 ## 搜索事件
 

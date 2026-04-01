@@ -25,6 +25,33 @@ npm install
 npm run tauri dev
 ```
 
+<!-- AUTO-GENERATED: start -->
+### 前端脚本参考
+
+| 命令 | 说明 |
+|------|------|
+| `npm run dev` | 启动 Vite 开发服务器（纯前端） |
+| `npm run build` | TypeScript 编译 + Vite 生产构建 |
+| `npm run tauri dev` | 启动 Tauri 开发模式（前端 + 后端） |
+| `npm run tauri build` | Tauri 生产构建 |
+| `npm run type-check` | TypeScript 类型检查（无输出） |
+| `npm run lint` | ESLint 检查 |
+| `npm run lint:fix` | ESLint 自动修复 |
+| `npm test` | 运行 Jest 测试 |
+| `npm run test:watch` | Jest 监听模式 |
+| `npm run validate:ci` | 本地 CI 校验脚本 |
+| `npm run preview` | Vite 生产构建预览 |
+
+### Rust 常用命令
+
+| 命令 | 说明 |
+|------|------|
+| `cargo fmt -- --check` | 格式检查 |
+| `cargo clippy --all-features --all-targets -- -D warnings` | Lint 检查 |
+| `cargo test -q` | 运行测试 |
+| `cargo build` | 编译检查 |
+<!-- AUTO-GENERATED: end -->
+
 ## 目录约定
 
 - `log-analyzer/src/`
@@ -79,6 +106,27 @@ cargo test -q
 - 当前 UI 主搜索仍使用简单字符串查询
 - 关键词之间用 `|` 表示 OR 逻辑
 - 结构化查询能力已存在，但不是当前主搜索入口
+
+## 归档提取策略配置
+
+归档解压行为通过 TOML 配置文件控制：
+
+- 模板：`src-tauri/config/extraction_policy.toml.example`
+- 运行时路径：`src-tauri/config/extraction_policy.toml`（已在 `.gitignore` 中）
+
+关键配置项：
+
+| 配置段 | 参数 | 说明 |
+|--------|------|------|
+| `[extraction]` | `max_depth` | 嵌套归档最大深度 (1-20) |
+| `[extraction]` | `max_file_size` | 单文件大小上限 (字节) |
+| `[extraction]` | `max_total_size` | 单归档总大小上限 |
+| `[extraction]` | `use_enhanced_extraction` | 启用高级特性（长路径、zip 炸弹检测等） |
+| `[security]` | `enable_zip_bomb_detection` | 启用 zip 炸弹检测 |
+| `[security]` | `compression_ratio_threshold` | 压缩比阈值 |
+| `[paths]` | `enable_long_paths` | Windows 长路径支持 |
+| `[performance]` | `enable_streaming` | 流式解压（降低内存占用） |
+| `[audit]` | `enable_audit_logging` | 审计日志 |
 
 ## 提交流程
 
