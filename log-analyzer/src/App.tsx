@@ -2,13 +2,14 @@ import { useEffect, lazy, Suspense, useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Search, LayoutGrid, ListTodo, Cog, Layers,
-  Zap, FileText, Activity
+  Zap, FileText, Activity, CheckCircle2, RefreshCw
 } from "lucide-react";
 import { ErrorBoundary } from 'react-error-boundary';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { Toaster } from 'react-hot-toast';
 import { MemoryRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
+import { AnimatePresence, LayoutGroup, motion } from 'framer-motion';
 
 // 初始化i18n
 import './i18n';
@@ -37,25 +38,46 @@ const TasksPage = lazy(() => import('./pages/TasksPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const PerformancePage = lazy(() => import('./pages/PerformancePage'));
 
-// 懒加载页面加载骨架
-const PageSkeleton: React.FC = () => (
-  <div className="flex items-center justify-center h-full">
-    <div className="text-center">
-      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-      <p className="text-sm text-text-muted">Loading...</p>
+// 懒加载页面加载骨架 - 使用 h-full 确保在 motion.div(h-full) 容器内撑满
+const LoadingSkeleton: React.FC = () => (
+  <div className="h-full overflow-auto p-8 space-y-6">
+    <div className="flex justify-between items-center">
+      <div className="space-y-2">
+        <div className="animate-pulse h-7 w-48 rounded bg-bg-hover/40" />
+        <div className="animate-pulse h-4 w-72 rounded bg-bg-hover/40" />
+      </div>
+      <div className="animate-pulse h-10 w-32 rounded bg-bg-hover/40" />
+    </div>
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {Array.from({ length: 6 }).map((_, i) => (
+        <div key={i} className="rounded-lg border border-border-base overflow-hidden">
+          <div className="animate-pulse h-12 bg-bg-hover/40 rounded-none" />
+          <div className="p-4 space-y-3">
+            <div className="animate-pulse h-4 w-full rounded bg-bg-hover/40" />
+            <div className="animate-pulse h-4 w-3/4 rounded bg-bg-hover/40" />
+          </div>
+        </div>
+      ))}
     </div>
   </div>
 );
+
+// 页面过渡动画 variants
+const pageVariants = {
+  initial: { opacity: 0, y: 6 },
+  enter: { opacity: 1, y: 0, transition: { duration: 0.18, ease: 'easeOut' as const } },
+  exit: { opacity: 0, y: -6, transition: { duration: 0.12, ease: 'easeIn' as const } },
+};
 
 // --- Main App Component (Internal) ---
 function AppContent() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
-  
+
   // 当前页面路径
   const currentPage = location.pathname.slice(1) || 'workspaces';
-  
+
   const activeWorkspaceId = useAppStore((state) => state.activeWorkspaceId);
   const isInitialized = useAppStore((state) => state.isInitialized);
   const initializationError = useAppStore((state) => state.initializationError);
@@ -105,12 +127,12 @@ function AppContent() {
           if (event.payload.type === 'StatusChanged') {
             // 显示Toast通知
             const toastType = status?.status === 'Cancelled' ? 'error' : 'success';
-            const toastMessage = status?.status === 'Cancelled' 
-              ? 'Workspace deleted' 
-              : status?.status === 'Completed' 
-                ? 'Workspace updated' 
+            const toastMessage = status?.status === 'Cancelled'
+              ? 'Workspace deleted'
+              : status?.status === 'Completed'
+                ? 'Workspace updated'
                 : 'Workspace status changed';
-             
+
             addToast(toastType, toastMessage);
 
             // 刷新工作区列表
@@ -147,11 +169,11 @@ function AppContent() {
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
           {initializationError ? (
             <div>
-              <p className="text-red-500 mb-2">Initialization failed</p>
+              <p className="text-status-error mb-2">Initialization failed</p>
               <p className="text-sm text-text-muted">{initializationError}</p>
             </div>
           ) : (
-            <p>Loading application...</p>
+            <p className="text-text-muted text-sm">Loading application...</p>
           )}
         </div>
       </div>
@@ -168,31 +190,44 @@ function AppContent() {
         {t('nav.skip_to_content')}
       </a>
 
-      {/* 侧边栏 - 使用更柔和的背景和更好的视觉层次 */}
-      <div className="w-[240px] bg-bg-sidebar border-r border-border-subtle flex flex-col shrink-0 z-50">
+      {/* 侧边栏 */}
+      <div className="w-[240px] bg-gradient-to-b from-bg-sidebar to-bg-main border-r border-border-subtle flex flex-col shrink-0 z-50">
         {/* Logo 区域 */}
         <div className="h-14 flex items-center px-5 border-b border-border-subtle mb-2 select-none">
           <div className="h-8 w-8 bg-gradient-to-br from-primary to-cta rounded-lg flex items-center justify-center text-white mr-3 shadow-lg shadow-primary/30">
             <Zap size={18} fill="currentColor" />
           </div>
-          <span className="font-bold text-lg tracking-tight">LogAnalyzer</span>
+          <span className="font-bold text-lg tracking-tight bg-gradient-to-r from-primary-text to-cta-text bg-clip-text text-transparent">
+            LogAnalyzer
+          </span>
         </div>
-        <div className="flex-1 px-3 py-4 space-y-1">
-          {navItems.map(({ icon, label, page, testId }) => (
+
+        {/* 导航菜单 - LayoutGroup 确保 layoutId 动画跨组件共享 */}
+        <LayoutGroup>
+          <div className="flex-1 px-3 py-4 space-y-1">
+            {navItems.map(({ icon, label, page, testId }) => (
+              <NavItem
+                key={page}
+                icon={icon}
+                label={label}
+                active={currentPage === page}
+                onClick={handleNavClick(page)}
+                data-testid={testId}
+              />
+            ))}
+          </div>
+          <div className="p-3 border-t border-border-subtle">
             <NavItem
-              key={page}
-              icon={icon}
-              label={label}
-              active={currentPage === page}
-              onClick={handleNavClick(page)}
-              data-testid={testId}
+              icon={Cog}
+              label={t('nav.settings')}
+              active={currentPage === 'settings'}
+              onClick={() => setPage('settings')}
+              data-testid="nav-settings"
             />
-          ))}
-        </div>
-        <div className="p-3 border-t border-border-subtle">
-          <NavItem icon={Cog} label={t('nav.settings')} active={currentPage === 'settings'} onClick={() => setPage('settings')} data-testid="nav-settings" />
-        </div>
+          </div>
+        </LayoutGroup>
       </div>
+
       {/* 主内容区 */}
       <div id="main-content" className="flex-1 flex flex-col min-w-0 bg-bg-main">
         {/* 顶部导航栏 */}
@@ -200,56 +235,87 @@ function AppContent() {
           <div className="flex items-center text-sm text-text-muted select-none">
             {currentPage === 'settings' ? (
               <span className="font-medium text-text-main flex items-center gap-2">
-                <Cog size={14} className="text-primary"/> Settings
+                <Cog size={14} className="text-primary-text"/> Settings
               </span>
             ) : currentPage === 'performance' ? (
               <span className="font-medium text-text-main flex items-center gap-2">
-                <Activity size={14} className="text-primary"/> Performance
+                <Activity size={14} className="text-primary-text"/> Performance
               </span>
             ) : (
               <>
                 <span className="opacity-50">Workspace / </span>
                 <span className="font-medium text-text-main ml-2 flex items-center gap-2">
-                  <FileText size={14} className="text-primary"/> {activeWorkspace ? activeWorkspace.name : "Select Workspace"}
+                  <FileText size={14} className="text-primary-text"/>
+                  {activeWorkspace ? activeWorkspace.name : "Select Workspace"}
                 </span>
               </>
             )}
           </div>
+          {/* 工作区状态 badge */}
+          {activeWorkspace && currentPage !== 'settings' && currentPage !== 'performance' && (
+            <div className="flex items-center gap-1.5 text-xs font-semibold">
+              {activeWorkspace.status === 'READY' ? (
+                <>
+                  <CheckCircle2 size={12} className="text-cta" />
+                  <span className="text-cta">READY</span>
+                </>
+              ) : (
+                <>
+                  <RefreshCw size={12} className="text-primary-text animate-spin" />
+                  <span className="text-primary-text">PROCESSING</span>
+                </>
+              )}
+            </div>
+          )}
         </div>
+
         <div className="flex-1 overflow-hidden relative">
           {/* ErrorBoundary 移到 Suspense 外部 - React 19 最佳实践 */}
-          <ErrorBoundary 
-            FallbackComponent={CompactErrorFallback} 
+          <ErrorBoundary
+            FallbackComponent={CompactErrorFallback}
             onReset={() => {
-              // 清除错误状态并保持在当前页面
               if (import.meta.env.DEV) {
                 console.log('Error boundary reset, staying on page:', currentPage);
               }
             }}
             resetKeys={[currentPage]}
           >
-            <Suspense fallback={<PageSkeleton />}>
-              <Routes>
-                <Route path="/" element={<Navigate to="/workspaces" replace />} />
-                <Route path="/workspaces" element={<WorkspacesPage />} />
-                <Route path="/search" element={<SearchPage />} />
-                <Route path="/keywords" element={<KeywordsPage />} />
-                <Route path="/tasks" element={<TasksPage />} />
-                <Route path="/performance" element={<PerformancePage />} />
-                <Route path="/settings" element={<SettingsPage />} />
-              </Routes>
-            </Suspense>
+            {/* AnimatePresence 驱动页面切换过渡动画 */}
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key={location.pathname}
+                variants={pageVariants}
+                initial="initial"
+                animate="enter"
+                exit="exit"
+                className="h-full"
+              >
+                <Suspense fallback={<LoadingSkeleton />}>
+                  {/* Routes 传入 location 以保证 AnimatePresence 的 exit 动画正确触发 */}
+                  <Routes location={location}>
+                    <Route path="/" element={<Navigate to="/workspaces" replace />} />
+                    <Route path="/workspaces" element={<WorkspacesPage />} />
+                    <Route path="/search" element={<SearchPage />} />
+                    <Route path="/keywords" element={<KeywordsPage />} />
+                    <Route path="/tasks" element={<TasksPage />} />
+                    <Route path="/performance" element={<PerformancePage />} />
+                    <Route path="/settings" element={<SettingsPage />} />
+                  </Routes>
+                </Suspense>
+              </motion.div>
+            </AnimatePresence>
           </ErrorBoundary>
         </div>
       </div>
+
       <Toaster
         position="bottom-right"
         toastOptions={{
           duration: 3000,
           style: {
-            background: '#1E293B', // Slate-800
-            color: '#F1F5F9', // Slate-100
-            border: '1px solid #334155', // Slate-700
+            background: '#27272A', // Zinc-800
+            color: '#F4F4F5', // Zinc-100
+            border: '1px solid #3F3F46', // Zinc-700
             borderRadius: '0.5rem',
             padding: '0.75rem 1rem',
             fontSize: '0.875rem',
@@ -259,18 +325,18 @@ function AppContent() {
           success: {
             duration: 2500,
             iconTheme: {
-              primary: '#22C55E', // Green-500
-              secondary: '#1E293B',
+              primary: '#10B981', // Emerald-500
+              secondary: '#27272A',
             },
             style: {
-              border: '1px solid rgba(34, 197, 94, 0.4)',
+              border: '1px solid rgba(16, 185, 129, 0.4)',
             },
           },
           error: {
             duration: 4000,
             iconTheme: {
               primary: '#EF4444', // Red-500
-              secondary: '#1E293B',
+              secondary: '#27272A',
             },
             style: {
               border: '1px solid rgba(239, 68, 68, 0.4)',

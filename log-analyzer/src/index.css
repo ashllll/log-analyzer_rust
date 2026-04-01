@@ -10,7 +10,7 @@
 body {
   margin: 0;
   padding: 0;
-  background-color: #0F172A; /* Slate-900 - 与设计系统一致 */
+  background-color: #18181B; /* Zinc-900 - 与设计系统一致 */
   font-family: 'Fira Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -27,23 +27,23 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #334155; /* Slate-700 */
+  background: #3F3F46; /* Zinc-700 */
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #475569; /* Slate-600 */
+  background: #52525B; /* Zinc-600 */
 }
 
 /* Focus 样式 - 键盘导航 */
 *:focus-visible {
-  outline: 2px solid #3B82F6; /* Blue-500 */
+  outline: 2px solid #0D9488; /* Teal-600 */
   outline-offset: 2px;
 }
 
 /* 选中文本样式 */
 ::selection {
-  background: rgba(59, 130, 246, 0.3);
+  background: rgba(13, 148, 136, 0.3);
 }
 
 /* 平滑滚动 */

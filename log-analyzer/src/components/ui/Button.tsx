@@ -1,4 +1,5 @@
 import { forwardRef } from 'react';
+import { motion } from 'framer-motion';
 import { cn } from '../../utils/classNames';
 import type { ButtonProps } from '../../types/ui';
 
@@ -10,19 +11,33 @@ export interface ExtendedButtonProps extends ButtonProps {
 }
 
 /**
+ * 从 ButtonProps 中排除与 Framer Motion MotionProps 冲突的 HTML 事件属性
+ * onDrag*, onAnimation*, onTransitionEnd 在 HTML 和 Framer Motion 中签名不同
+ */
+type SafeButtonHtmlProps = Omit<
+  ExtendedButtonProps,
+  | 'onDrag' | 'onDragCapture' | 'onDragEnd' | 'onDragEndCapture'
+  | 'onDragEnter' | 'onDragEnterCapture' | 'onDragExit' | 'onDragExitCapture'
+  | 'onDragLeave' | 'onDragLeaveCapture' | 'onDragOver' | 'onDragOverCapture'
+  | 'onDragStart' | 'onDragStartCapture' | 'onDrop' | 'onDropCapture'
+  | 'onAnimationStart' | 'onAnimationEnd' | 'onAnimationIteration'
+  | 'onTransitionEnd'
+>;
+
+/**
  * 通用按钮组件
- * 支持多种变体样式、图标、加载状态
+ * 支持多种变体样式、图标、加载状态、Framer Motion 点击反馈
  *
  * 变体说明:
- * - primary: 主要操作按钮，蓝色背景
+ * - primary: 主要操作按钮，Teal 背景
  * - secondary: 次要操作，带边框
  * - ghost: 透明背景，仅悬停时显示
  * - danger: 危险操作，红色调
- * - active: 激活状态，蓝色边框
- * - cta: 行动号召按钮，绿色强调
+ * - active: 激活状态，Teal 边框
+ * - cta: 行动号召按钮，Emerald 强调
  * - icon: 图标按钮，圆形
  */
-export const Button = forwardRef<HTMLButtonElement, ExtendedButtonProps>(
+export const Button = forwardRef<HTMLButtonElement, SafeButtonHtmlProps>(
   ({
     children,
     variant = 'primary',
@@ -33,20 +48,20 @@ export const Button = forwardRef<HTMLButtonElement, ExtendedButtonProps>(
     onClick,
     ...props
   }, ref) => {
-  const variants = {
-    primary: "bg-primary hover:bg-primary-hover text-white shadow-sm hover:shadow-glow-primary active:scale-[0.98]",
-    secondary: "bg-bg-card hover:bg-bg-hover text-text-main border border-border-base hover:border-border-light active:scale-[0.98]",
+  const variantClasses = {
+    primary: "bg-primary hover:bg-primary-hover text-white shadow-sm hover:shadow-glow-primary",
+    secondary: "bg-bg-card hover:bg-bg-hover text-text-main border border-border-base hover:border-border-light",
     ghost: "hover:bg-bg-hover text-text-muted hover:text-text-main active:bg-bg-hover/80",
-    danger: "bg-status-error/10 text-status-error hover:bg-status-error/20 border border-status-error/20 hover:border-status-error/40 active:scale-[0.98]",
-    active: "bg-primary/20 text-primary border border-primary/50 hover:bg-primary/30",
-    cta: "bg-cta hover:bg-cta-hover text-white shadow-sm hover:shadow-glow-cta active:scale-[0.98]",
+    danger: "bg-status-error/10 text-status-error hover:bg-status-error/20 border border-status-error/20 hover:border-status-error/40",
+    active: "bg-primary/20 text-primary-text border border-primary/50 hover:bg-primary/30",
+    cta: "bg-cta hover:bg-cta-hover text-white shadow-sm hover:shadow-glow-cta",
     icon: "h-11 w-11 p-0 bg-transparent hover:bg-bg-hover text-text-dim hover:text-text-main rounded-lg"
   };
 
   const isDisabled = disabled || loading;
 
   return (
-    <button
+    <motion.button
       ref={ref}
       type="button"
       className={cn(
@@ -55,14 +70,16 @@ export const Button = forwardRef<HTMLButtonElement, ExtendedButtonProps>(
         "disabled:opacity-50 disabled:cursor-not-allowed",
         "shrink-0 select-none cursor-pointer",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-bg-main",
-        variants[variant],
+        variantClasses[variant ?? 'primary'],
         className
       )}
       disabled={isDisabled}
+      whileTap={!isDisabled ? { scale: 0.97 } : undefined}
+      transition={{ duration: 0.1 }}
       onClick={(e) => {
         e.stopPropagation();
         if (!isDisabled && onClick) {
-          onClick(e);
+          onClick(e as React.MouseEvent<HTMLButtonElement>);
         }
       }}
       {...props}
@@ -92,7 +109,7 @@ export const Button = forwardRef<HTMLButtonElement, ExtendedButtonProps>(
         Icon && <Icon size={16} aria-hidden="true" />
       )}
       {children}
-    </button>
+    </motion.button>
   );
 });
 
