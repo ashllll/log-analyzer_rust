@@ -19,6 +19,7 @@ pub mod resource_manager;
 pub mod resource_tracker;
 pub mod retry;
 pub mod validation;
+pub mod workspace_paths;
 
 #[cfg(test)]
 mod resource_management_property_tests;

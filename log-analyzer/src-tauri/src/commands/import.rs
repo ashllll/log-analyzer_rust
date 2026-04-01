@@ -15,6 +15,7 @@ use crate::models::AppState;
 use crate::services::parse_log_lines;
 use crate::task_manager::TaskManager;
 use crate::utils::encoding::decode_log_content;
+use crate::utils::workspace_paths::preferred_workspace_dir;
 use crate::utils::{canonicalize_path, validate_path_param, validate_workspace_id};
 use la_core::models::config::AppConfigLoader;
 use la_storage::{verify_after_import, MetadataStore};
@@ -23,7 +24,9 @@ const SEARCH_INDEX_DIR_NAME: &str = "search_index";
 const SEARCH_INDEX_WRITER_HEAP_BYTES: usize = 50_000_000;
 const SEARCH_INDEX_COMMIT_EVERY_FILES: usize = 25;
 
-fn load_workspace_search_config(app: &AppHandle) -> la_core::models::config::SearchConfig {
+pub(crate) fn load_workspace_search_config(
+    app: &AppHandle,
+) -> la_core::models::config::SearchConfig {
     let config_path = match app.path().app_config_dir() {
         Ok(dir) => dir.join("config.json"),
         Err(_) => return Default::default(),
@@ -39,7 +42,7 @@ fn load_workspace_search_config(app: &AppHandle) -> la_core::models::config::Sea
         .unwrap_or_default()
 }
 
-fn ensure_search_engine_manager(
+pub(crate) fn ensure_search_engine_manager(
     app: &AppHandle,
     state: &AppState,
     workspace_id: &str,
@@ -71,6 +74,65 @@ fn ensure_search_engine_manager(
         .insert(workspace_id.to_string(), Arc::clone(&manager));
 
     Ok(manager)
+}
+
+pub(crate) async fn ensure_workspace_runtime_state(
+    app: &AppHandle,
+    state: &AppState,
+    workspace_id: &str,
+    workspace_dir: &Path,
+) -> Result<
+    (
+        Arc<crate::storage::ContentAddressableStorage>,
+        Arc<MetadataStore>,
+        Arc<crate::search_engine::SearchEngineManager>,
+    ),
+    String,
+> {
+    let cas = {
+        let mut cas_instances = state.cas_instances.lock();
+        cas_instances
+            .entry(workspace_id.to_string())
+            .or_insert_with(|| {
+                Arc::new(crate::storage::ContentAddressableStorage::new(
+                    workspace_dir.to_path_buf(),
+                ))
+            })
+            .clone()
+    };
+
+    let metadata_store = {
+        let existing = {
+            let metadata_stores = state.metadata_stores.lock();
+            metadata_stores.get(workspace_id).cloned()
+        };
+
+        if let Some(store) = existing {
+            store
+        } else {
+            let store = Arc::new(
+                MetadataStore::new(workspace_dir)
+                    .await
+                    .map_err(|e| format!("Failed to open metadata store: {}", e))?,
+            );
+
+            state
+                .metadata_stores
+                .lock()
+                .insert(workspace_id.to_string(), Arc::clone(&store));
+
+            store
+        }
+    };
+
+    state
+        .workspace_dirs
+        .lock()
+        .insert(workspace_id.to_string(), workspace_dir.to_path_buf());
+
+    let search_manager = ensure_search_engine_manager(app, state, workspace_id, workspace_dir)?;
+
+    Ok((cas, metadata_store, search_manager))
 }
 
 async fn rebuild_workspace_search_index(
@@ -189,12 +251,7 @@ pub async fn import_folder(
         }
     };
 
-    let workspace_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("Failed to get app data dir: {}", e))?
-        .join("workspaces")
-        .join(&workspaceId);
+    let workspace_dir = preferred_workspace_dir(&app, &workspaceId)?;
 
     fs::create_dir_all(&workspace_dir)
         .map_err(|e| format!("Failed to create workspace dir: {}", e))?;
@@ -256,54 +313,9 @@ pub async fn import_folder(
         }
     }
 
-    // Initialize CAS and MetadataStore for this workspace
-    let cas = {
-        let mut cas_instances = state.cas_instances.lock();
-        cas_instances
-            .entry(workspace_id_clone.clone())
-            .or_insert_with(|| {
-                std::sync::Arc::new(crate::storage::ContentAddressableStorage::new(
-                    workspace_dir.clone(),
-                ))
-            })
-            .clone()
-    };
-
-    let metadata_store = {
-        // 第一步：检查是否已存在
-        let store_opt = {
-            let metadata_stores = state.metadata_stores.lock();
-            metadata_stores.get(&workspace_id_clone).cloned()
-        };
-
-        if let Some(store) = store_opt {
-            store
-        } else {
-            // 第二步：创建新的 store（不持锁）
-            let store = std::sync::Arc::new(
-                MetadataStore::new(&workspace_dir)
-                    .await
-                    .map_err(|e| format!("Failed to create metadata store: {}", e))?,
-            );
-
-            // 第三步：插入到 map（短暂持锁）
-            {
-                let mut metadata_stores = state.metadata_stores.lock();
-                metadata_stores.insert(workspace_id_clone.clone(), store.clone());
-            }
-
-            store
-        }
-    };
-
-    // Store workspace directory mapping
-    {
-        let mut workspace_dirs = state.workspace_dirs.lock();
-        workspace_dirs.insert(workspace_id_clone.clone(), workspace_dir.clone());
-    }
-
-    let search_manager =
-        ensure_search_engine_manager(&app_handle, &state, &workspace_id_clone, &workspace_dir)
+    let (cas, metadata_store, search_manager) =
+        ensure_workspace_runtime_state(&app_handle, &state, &workspace_id_clone, &workspace_dir)
+            .await
             .map_err(|e| {
                 let _ = app_handle.emit("import-error", &e);
                 e

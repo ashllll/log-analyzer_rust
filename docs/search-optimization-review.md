@@ -11,7 +11,7 @@
 
 核对结果：
 
-- 主搜索链路实际走的是 `search_logs` / `search_logs_paged`。
+- 主搜索链路实际走的是 `search_logs` / `fetch_search_page`。
 - 查询执行实际由 `QueryExecutor` / `QueryPlanner` / `RegexEngine` 完成逐行匹配。
 - 时间、级别、文件路径过滤实际在 `commands/search.rs` 中执行。
 - 主流程此前没有把“多关键词 OR 查询”的多模式匹配优势真正用到 `search_logs` 入口。
@@ -92,6 +92,19 @@
 - 文件监听新增日志可能命中 “manager 不存在” 分支，根本不会写入索引。
 - 工作区时间范围查询可能返回空值或大量 `0` 时间戳，无法反映真实日志时间线。
 
+### 7. 工作区运行态恢复与路径解析仍然分叉
+
+真实现状：
+
+- `import_folder` 将 CAS 工作区写入 `app_data/workspaces/<workspace_id>`。
+- 但 `load_workspace`、`get_workspace_status`、`virtual_tree`、`async_search` 等旧入口仍有多处使用 `app_data/extracted/<workspace_id>`。
+- `search_logs` 主入口在内存里找不到 `workspace_dirs` 时，会直接返回 `workspace not found`，不会从磁盘恢复工作区运行态。
+
+业务后果：
+
+- 用户重启应用后重新加载工作区，搜索链路、时间范围查询、虚拟文件树读取可能各自命中不同目录约定。
+- “导入后可搜、重启后切换工作区不可搜” 会成为真实场景故障，而不是纯技术债。
+
 ## 已落地的改进
 
 ### 1. 新增过滤编译层
@@ -158,7 +171,7 @@
 调整后：
 
 - 命中结果在最终纳入结果集时再分配 `entry.id`
-- `search_logs` 与 `search_logs_paged` 都保证当前搜索会话内唯一
+- `search_logs` 保证当前搜索会话内唯一
 
 收益：
 
@@ -242,6 +255,44 @@
 - 时间范围 fast field 不再被大面积写成 `0`。
 - `get_time_range()` 返回的最小/最大时间更接近真实业务日志分布。
 
+### 11. 统一工作区路径解析并补齐运行态懒恢复
+
+实现位置：
+
+- `utils/workspace_paths.rs`
+- `commands/workspace.rs`
+- `commands/search.rs`
+- `commands/virtual_tree.rs`
+- `commands/async_search.rs`
+
+实现方式：
+
+- 新增共享工作区路径解析：优先使用当前 `workspaces/` 布局，兼容回退历史 `extracted/` 布局。
+- `load_workspace`、`get_workspace_status`、`get_workspace_time_range` 在读取前会恢复 `workspace_dirs`、CAS、`MetadataStore`、`SearchEngineManager` 等运行态资源。
+- `search_logs` 主入口在内存中没有工作区映射时，也会按磁盘目录惰性恢复，而不是直接报错。
+- `virtual_tree` 和 `async_search` 也改为走同一套路径解析规则，避免同一工作区在不同入口读到不同目录。
+
+收益：
+
+- 工作区导入、重启后重新加载、虚拟树读取、时间范围查询和搜索主链路终于使用同一套目录约定。
+- 搜索运行态不再依赖“必须先走一遍某个特定命令把内存状态挂起来”。
+
+### 12. 收敛未注册的旧分页搜索入口
+
+实现位置：
+
+- `commands/search.rs`
+
+实现方式：
+
+- 删除未注册、未被前端主路径使用的 `search_logs_paged`、分页缓存及相关诊断命令。
+- 保留 `fetch_search_page` 的磁盘结果分页主路径，以及 `VirtualSearchManager` 的兼容降级读取能力。
+
+收益：
+
+- 后端不再同时维护两套搜索分页实现，减少未来修改时的语义漂移风险。
+- 代码审计时可以把注意力集中在真实会被调用的主链路上。
+
 ## 边界条件清单
 
 本次已覆盖并补测的边界：
@@ -261,6 +312,7 @@
 - `SearchEngineManager` 未初始化：导入后已补齐注册
 - 历史导入日志无初始索引：导入完成后补建
 - 日志时间戳为常见字符串格式：索引侧可解析为 Unix 时间
+- 工作区运行态在重启后丢失：可按磁盘目录懒恢复
 
 本次刻意未改变的语义：
 

@@ -58,12 +58,7 @@ pub async fn load_workspace(
 ) -> Result<WorkspaceLoadResponse, String> {
     validate_workspace_id(&workspaceId)?;
 
-    // Get workspace directory
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
-    let workspace_dir = app_data_dir.join("extracted").join(&workspaceId);
+    let workspace_dir = resolve_workspace_dir(&app, &workspaceId)?;
 
     // Check if workspace exists and is CAS format
     if !workspace_dir.exists() {
@@ -80,10 +75,8 @@ pub async fn load_workspace(
         ));
     }
 
-    // Open metadata store and get file count
-    let metadata_store = crate::storage::MetadataStore::new(&workspace_dir)
-        .await
-        .map_err(|e| format!("Failed to open metadata store: {}", e))?;
+    let (_, metadata_store, _) =
+        ensure_workspace_runtime_state(&app, &state, &workspaceId, &workspace_dir).await?;
 
     let file_count = metadata_store
         .count_files()
@@ -137,12 +130,7 @@ pub async fn refresh_workspace(
         return Err(format!("Path does not exist: {}", path));
     }
 
-    // Get workspace directory
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
-    let workspace_dir = app_data_dir.join("extracted").join(&workspaceId);
+    let workspace_dir = resolve_workspace_dir(&app, &workspaceId)?;
 
     // Check if workspace exists and is CAS format
     if !workspace_dir.exists() {
@@ -170,43 +158,10 @@ use std::{fs, path::Path, sync::Arc};
 use tauri::{command, AppHandle, Manager, State};
 use tracing::{error, info, warn};
 
-use crate::commands::import::import_folder;
+use crate::commands::import::{ensure_workspace_runtime_state, import_folder};
 use crate::models::AppState;
+use crate::utils::workspace_paths::resolve_workspace_dir;
 use crate::utils::{cleanup::try_cleanup_temp_dir, validation::validate_workspace_id};
-
-/// 判断工作区是否为解压类型
-///
-/// 检查解压目录是否存在来判断工作区类型。
-///
-/// # 参数
-///
-/// - `workspace_id` - 工作区ID
-/// - `app` - Tauri应用句柄
-///
-/// # 返回值
-///
-/// - `Ok(true)` - 解压目录存在,为解压类型工作区
-/// - `Ok(false)` - 解压目录不存在,为普通文件夹工作区
-/// - `Err(String)` - 获取应用目录失败
-///
-/// # 示例
-///
-/// ```ignore
-/// let is_extracted = is_extracted_workspace("workspace-123", &app)?;
-/// if is_extracted {
-///     // 需要删除解压目录
-/// }
-/// ```
-fn is_extracted_workspace(workspace_id: &str, app: &AppHandle) -> Result<bool, String> {
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
-
-    let extracted_dir = app_data_dir.join("extracted").join(workspace_id);
-
-    Ok(extracted_dir.exists())
-}
 
 /// 判断工作区是否使用CAS存储
 ///
@@ -223,12 +178,7 @@ fn is_extracted_workspace(workspace_id: &str, app: &AppHandle) -> Result<bool, S
 /// - `Ok(false)` - 工作区使用传统存储
 /// - `Err(String)` - 获取应用目录失败
 fn is_cas_workspace(workspace_id: &str, app: &AppHandle) -> Result<bool, String> {
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
-
-    let workspace_dir = app_data_dir.join("extracted").join(workspace_id);
+    let workspace_dir = resolve_workspace_dir(app, workspace_id)?;
 
     // Check for metadata.db or objects directory
     let metadata_db = workspace_dir.join("metadata.db");
@@ -396,36 +346,25 @@ fn cleanup_workspace_resources(
         );
     }
 
-    // ===== 步骤5: 删除解压目录 =====
-    info!("Step 5: Checking for extracted directory");
+    // ===== 步骤5: 删除工作区目录 =====
+    info!("Step 5: Checking for workspace directory");
 
-    match is_extracted_workspace(workspace_id, app) {
-        Ok(true) => {
-            let app_data_dir = app
-                .path()
-                .app_data_dir()
-                .map_err(|e| format!("Failed to get app data dir: {}", e))?;
-            let extracted_dir = app_data_dir.join("extracted").join(workspace_id);
-
+    match resolve_workspace_dir(app, workspace_id) {
+        Ok(workspace_dir) if workspace_dir.exists() => {
             info!(
-                path = %extracted_dir.display(),
-                "Attempting to delete extracted directory"
+                path = %workspace_dir.display(),
+                "Attempting to delete workspace directory"
             );
 
-            // Check if this is a CAS workspace
             match is_cas_workspace(workspace_id, app) {
                 Ok(true) => {
                     info!("Detected CAS workspace, cleaning up CAS resources");
 
-                    // Step 5.1: Delete SQLite database
-                    let metadata_db = extracted_dir.join("metadata.db");
+                    let metadata_db = workspace_dir.join("metadata.db");
                     if metadata_db.exists() {
                         match fs::remove_file(&metadata_db) {
                             Ok(_) => {
-                                info!(
-                                    path = %metadata_db.display(),
-                                    "Deleted SQLite database"
-                                );
+                                info!(path = %metadata_db.display(), "Deleted SQLite database");
                             }
                             Err(e) => {
                                 let error = format!(
@@ -439,10 +378,9 @@ fn cleanup_workspace_resources(
                         }
                     }
 
-                    // Also try to delete SQLite journal files
                     for journal_ext in &["-wal", "-shm", "-journal"] {
                         let journal_file =
-                            extracted_dir.join(format!("metadata.db{}", journal_ext));
+                            workspace_dir.join(format!("metadata.db{}", journal_ext));
                         if journal_file.exists() {
                             if let Err(e) = fs::remove_file(&journal_file) {
                                 warn!(
@@ -454,15 +392,11 @@ fn cleanup_workspace_resources(
                         }
                     }
 
-                    // Step 5.2: Delete CAS objects directory
-                    let objects_dir = extracted_dir.join("objects");
+                    let objects_dir = workspace_dir.join("objects");
                     if objects_dir.exists() {
                         match fs::remove_dir_all(&objects_dir) {
                             Ok(_) => {
-                                info!(
-                                    path = %objects_dir.display(),
-                                    "Deleted CAS objects directory"
-                                );
+                                info!(path = %objects_dir.display(), "Deleted CAS objects directory");
                             }
                             Err(e) => {
                                 let error = format!(
@@ -476,27 +410,18 @@ fn cleanup_workspace_resources(
                         }
                     }
                 }
-                Ok(false) => {
-                    info!("Traditional workspace, no CAS cleanup needed");
-                }
-                Err(e) => {
-                    warn!(error = %e, "Failed to check CAS status");
-                }
+                Ok(false) => info!("Traditional workspace, no CAS cleanup needed"),
+                Err(e) => warn!(error = %e, "Failed to check CAS status"),
             }
 
-            // Use cleanup tool's retry mechanism for the entire extracted directory
-            try_cleanup_temp_dir(&extracted_dir, &state.cleanup_queue);
-
-            // Note: try_cleanup_temp_dir handles failures internally
-            // Failed deletions are automatically added to cleanup queue
-
-            info!("Step 5 completed: Extracted directory cleanup initiated");
+            try_cleanup_temp_dir(&workspace_dir, &state.cleanup_queue);
+            info!("Step 5 completed: Workspace directory cleanup initiated");
         }
-        Ok(false) => {
-            info!("Step 5 skipped: Not an extracted workspace");
+        Ok(_) => {
+            info!("Step 5 skipped: Workspace directory does not exist");
         }
         Err(e) => {
-            let error = format!("Failed to check if workspace is extracted: {}", e);
+            let error = format!("Failed to resolve workspace directory: {}", e);
             warn!(error = %error, "Step 5 failed");
             errors.push(error);
         }
@@ -687,12 +612,7 @@ pub async fn get_workspace_status(
 ) -> Result<WorkspaceStatusResponse, String> {
     validate_workspace_id(&workspaceId)?;
 
-    // 获取工作区目录
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
-    let workspace_dir = app_data_dir.join("extracted").join(&workspaceId);
+    let workspace_dir = resolve_workspace_dir(&app, &workspaceId)?;
 
     // 检查工作区是否存在
     if !workspace_dir.exists() {
@@ -712,13 +632,8 @@ pub async fn get_workspace_status(
         ));
     }
 
-    // 获取 MetadataStore
-    let metadata_store = state
-        .metadata_stores
-        .lock()
-        .get(&workspaceId)
-        .cloned()
-        .ok_or_else(|| format!("Workspace store not initialized: {}", workspaceId))?;
+    let (_, metadata_store, _) =
+        ensure_workspace_runtime_state(&app, &state, &workspaceId, &workspace_dir).await?;
 
     let file_count: i64 = metadata_store.count_files().await.unwrap_or(0);
 
@@ -762,34 +677,21 @@ pub async fn get_workspace_status(
 /// - `Err(String)` - 获取失败
 #[command]
 pub async fn get_workspace_time_range(
+    app: AppHandle,
     #[allow(non_snake_case)] workspaceId: String,
     state: State<'_, AppState>,
 ) -> Result<la_core::models::search::WorkspaceTimeRange, String> {
     use chrono::DateTime;
     use la_core::models::search::WorkspaceTimeRange;
 
-    // Get search engine manager for this workspace
-    let search_engine_opt = {
-        let managers = state.search_engine_managers.lock();
-        managers.get(&workspaceId).cloned()
-    };
+    let workspace_dir = resolve_workspace_dir(&app, &workspaceId)?;
+    let (_, _, manager) =
+        ensure_workspace_runtime_state(&app, &state, &workspaceId, &workspace_dir).await?;
 
-    let (min_ts, max_ts, total_logs) = match search_engine_opt {
-        Some(manager) => {
-            let manager: Arc<crate::search_engine::SearchEngineManager> = manager;
-            manager
-                .get_time_range()
-                .map_err(|e| format!("Failed to get time range from index: {}", e))?
-        }
-        None => {
-            // No search engine manager found for this workspace
-            return Ok(WorkspaceTimeRange {
-                min_timestamp: None,
-                max_timestamp: None,
-                total_logs: 0,
-            });
-        }
-    };
+    let manager: Arc<crate::search_engine::SearchEngineManager> = manager;
+    let (min_ts, max_ts, total_logs) = manager
+        .get_time_range()
+        .map_err(|e| format!("Failed to get time range from index: {}", e))?;
 
     // Convert timestamps to ISO 8601 format
     let min_timestamp = if min_ts > 0 {

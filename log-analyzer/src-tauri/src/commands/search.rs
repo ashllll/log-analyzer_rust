@@ -11,12 +11,11 @@ use std::{borrow::Cow, collections::HashSet, sync::Arc};
 use tauri::{command, AppHandle, Emitter, Manager, State};
 use tracing::{debug, error, info, trace, warn};
 
+use crate::commands::import::ensure_workspace_runtime_state;
 use crate::models::AppState;
 use la_core::error::CommandError;
 use la_core::models::config::AppConfigLoader;
-use la_core::models::search::{
-    PagedSearchResult, QueryMetadata, QueryOperator, SearchTerm, TermSource,
-};
+use la_core::models::search::{QueryMetadata, QueryOperator, SearchTerm, TermSource};
 use la_core::models::search_statistics::SearchResultSummary;
 use la_core::models::{LogEntry, SearchCacheKey, SearchFilters, SearchQuery};
 use regex::Regex;
@@ -47,19 +46,16 @@ pub struct BinarySearchRequest {
 use crate::services::file_watcher::TimestampParser;
 use crate::services::{calculate_keyword_statistics, parse_metadata, ExecutionPlan, QueryExecutor};
 use crate::utils::encoding::decode_log_content;
+use crate::utils::workspace_paths::resolve_workspace_dir;
 
-// 分页搜索缓存配置
-const MAX_CACHED_SEARCHES: usize = 100;
-const MAX_RESULTS_PER_SEARCH: usize = 1_000_000;
-const DEFAULT_PAGE_SIZE: usize = 1000;
 const SEARCH_SEGMENT_LINE_COUNT: usize = 256;
 
 #[derive(Debug, Clone)]
-struct SearchRuntimeConfig {
-    default_max_results: usize,
-    timeout_seconds: u64,
-    regex_cache_size: usize,
-    case_sensitive: bool,
+pub(crate) struct SearchRuntimeConfig {
+    pub(crate) default_max_results: usize,
+    pub(crate) timeout_seconds: u64,
+    pub(crate) regex_cache_size: usize,
+    pub(crate) case_sensitive: bool,
 }
 
 impl Default for SearchRuntimeConfig {
@@ -73,7 +69,7 @@ impl Default for SearchRuntimeConfig {
     }
 }
 
-fn load_search_runtime_config(app: &AppHandle) -> SearchRuntimeConfig {
+pub(crate) fn load_search_runtime_config(app: &AppHandle) -> SearchRuntimeConfig {
     let config_path = match app.path().app_config_dir() {
         Ok(dir) => dir.join("config.json"),
         Err(_) => return SearchRuntimeConfig::default(),
@@ -95,6 +91,58 @@ fn load_search_runtime_config(app: &AppHandle) -> SearchRuntimeConfig {
             }
         })
         .unwrap_or_default()
+}
+
+pub(crate) fn build_structured_search_query(
+    query: &str,
+    case_sensitive: bool,
+    query_id: &str,
+) -> Result<(Vec<String>, SearchQuery), CommandError> {
+    let raw_terms: Vec<String> = query
+        .split('|')
+        .map(|t| t.trim())
+        .filter(|t| !t.is_empty())
+        .map(|t| t.to_string())
+        .collect();
+
+    if raw_terms.is_empty() {
+        return Err(
+            CommandError::new("VALIDATION_ERROR", "Search query cannot be empty")
+                .with_help("Please enter at least one search term"),
+        );
+    }
+
+    let terms = raw_terms
+        .iter()
+        .enumerate()
+        .map(|(index, value)| SearchTerm {
+            id: format!("term_{}", index),
+            value: value.clone(),
+            operator: QueryOperator::Or,
+            source: TermSource::User,
+            preset_group_id: None,
+            is_regex: false,
+            priority: 1,
+            enabled: true,
+            case_sensitive,
+        })
+        .collect();
+
+    Ok((
+        raw_terms,
+        SearchQuery {
+            id: query_id.to_string(),
+            terms,
+            global_operator: QueryOperator::Or,
+            filters: None,
+            metadata: QueryMetadata {
+                created_at: 0,
+                last_modified: 0,
+                execution_count: 0,
+                label: None,
+            },
+        },
+    ))
 }
 
 /// 计算并打印缓存统计信息
@@ -438,12 +486,6 @@ pub async fn search_logs(
     let app_handle = app.clone();
     let workspace_dirs: Arc<Mutex<std::collections::BTreeMap<String, std::path::PathBuf>>> =
         Arc::clone(&state.workspace_dirs);
-    let cas_instances: Arc<
-        Mutex<std::collections::HashMap<String, Arc<crate::storage::ContentAddressableStorage>>>,
-    > = Arc::clone(&state.cas_instances);
-    let metadata_stores: Arc<
-        Mutex<std::collections::HashMap<String, Arc<crate::storage::MetadataStore>>>,
-    > = Arc::clone(&state.metadata_stores);
     let cache_manager: Arc<Mutex<crate::utils::cache_manager::CacheManager>> =
         Arc::clone(&state.cache_manager);
     let total_searches: Arc<Mutex<u64>> = Arc::clone(&state.total_searches);
@@ -588,73 +630,34 @@ pub async fn search_logs(
         *searches += 1;
     }
 
-    // Get workspace directory BEFORE spawn_blocking to avoid holding lock during async operations
     let workspace_dir = {
-        let dirs = workspace_dirs.lock();
-        match dirs.get(&workspace_id) {
-            Some(dir) => dir.clone(),
-            None => {
-                let _ = app_handle.emit(
-                    "search-error",
-                    format!("Workspace not found: {}", workspace_id),
-                );
-                return Err(CommandError::new(
-                    "NOT_FOUND",
-                    format!("Workspace not found: {}", workspace_id),
-                )
-                .with_help(
-                    "The workspace may have been deleted. Try refreshing the workspace list",
-                ));
-            }
-        }
-    };
-
-    // Get or create MetadataStore BEFORE spawn_blocking
-    // This avoids calling block_on inside spawn_blocking
-    // Note: We must not hold a lock across an await point
-    let metadata_store = {
-        // 单次加锁完成检查与克隆，避免两步操作之间的竞态条件
         let existing = {
-            let stores = metadata_stores.lock();
-            stores.get(&workspace_id).map(Arc::clone)
+            let dirs = workspace_dirs.lock();
+            dirs.get(&workspace_id).cloned()
         };
 
-        if let Some(store) = existing {
-            store
+        if let Some(dir) = existing {
+            dir
         } else {
-            // Store doesn't exist, create it (no lock held during async creation)
-            let store = crate::storage::MetadataStore::new(&workspace_dir)
-                .await
-                .map_err(|e| {
-                    CommandError::new(
-                        "DATABASE_ERROR",
-                        format!("Failed to open metadata store: {}", e),
-                    )
-                    .with_help(
-                        "Check if the workspace directory is accessible and has proper permissions",
-                    )
-                })?;
-            let store_arc = Arc::new(store);
-            // Re-acquire lock to store
-            let mut stores = metadata_stores.lock();
-            stores.insert(workspace_id.clone(), Arc::clone(&store_arc));
-            store_arc
+            resolve_workspace_dir(&app_handle, &workspace_id).map_err(|e| {
+                let _ = app_handle.emit("search-error", &e);
+                CommandError::new("NOT_FOUND", e).with_help(
+                    "The workspace may have been deleted. Try refreshing the workspace list",
+                )
+            })?
         }
     };
 
-    // Get or create CAS (sync operation, but we need to handle it properly)
-    let cas = {
-        let mut instances = cas_instances.lock();
-        if let Some(cas) = instances.get(&workspace_id) {
-            Arc::clone(cas)
-        } else {
-            let cas_arc = Arc::new(crate::storage::ContentAddressableStorage::new(
-                workspace_dir.clone(),
-            ));
-            instances.insert(workspace_id.clone(), Arc::clone(&cas_arc));
-            cas_arc
-        }
-    };
+    let (cas, metadata_store, _) =
+        ensure_workspace_runtime_state(&app_handle, &state, &workspace_id, &workspace_dir)
+            .await
+            .map_err(|e| {
+                CommandError::new(
+                    "DATABASE_ERROR",
+                    format!("Failed to initialize workspace runtime state: {}", e),
+                )
+                .with_help("Try reloading the workspace before searching again")
+            })?;
 
     // Get all files from MetadataStore BEFORE spawn_blocking
     let files = match metadata_store.get_all_files().await {
@@ -703,48 +706,14 @@ pub async fn search_logs(
     let handle = tokio::task::spawn_blocking(move || {
         let start_time = std::time::Instant::now();
 
-        let raw_terms: Vec<String> = query
-            .split('|')
-            .map(|t| t.trim())
-            .filter(|t| !t.is_empty())
-            .map(|t| t.to_string())
-            .collect();
-
-        if raw_terms.is_empty() {
-            let _ = app_handle.emit("search-error", "Search query is empty after processing");
-            return;
-        }
-
-        let search_terms: Vec<SearchTerm> = raw_terms
-            .iter()
-            .enumerate()
-            .map(|(i, term)| SearchTerm {
-                id: format!("term_{}", i),
-                value: term.clone(),
-                operator: QueryOperator::Or,
-                source: TermSource::User,
-                preset_group_id: None,
-                is_regex: false,
-                priority: 1,
-                enabled: true,
-                case_sensitive,
-            })
-            .collect();
-
-        let structured_query = SearchQuery {
-            id: "search_logs_query".to_string(),
-            terms: search_terms,
-            global_operator: QueryOperator::Or,
-            filters: None,
-            metadata: QueryMetadata {
-                created_at: 0,
-                last_modified: 0,
-                execution_count: 0,
-                label: None,
-            },
-        };
-
-        // ============================================================        // 高级搜索特性集成点        // ============================================================        // FilterEngine: 位图索引加速过滤（10K文档 < 10ms）        // RegexSearchEngine: LRU缓存正则搜索（加速50x+）        // TimePartitionedIndex: 时间分区索引（时序查询优化）        // AutocompleteEngine: Trie树自动补全（< 100ms响应）        //         // 使用方式：        // 1. 从 AppState 获取高级特性实例（已初始化）        // 2. 在搜索前使用 FilterEngine 预过滤候选文档        // 3. 在过滤时使用 RegexSearchEngine 加速正则匹配        // 4. 在时间范围查询时使用 TimePartitionedIndex        //         // 配置开关：config.json -> advanced_features.enable_*        tracing::info!("🔍 高级搜索特性已就绪（可通过配置启用）");
+        let (raw_terms, structured_query) =
+            match build_structured_search_query(&query, case_sensitive, "search_logs_query") {
+                Ok(result) => result,
+                Err(err) => {
+                    let _ = app_handle.emit("search-error", err.to_string());
+                    return;
+                }
+            };
 
         let mut executor = QueryExecutor::new(regex_cache_size);
         let plan = match executor.execute(&structured_query) {
@@ -1389,449 +1358,9 @@ fn search_single_file_with_details(
 // 分页搜索功能
 // ============================================================================
 
-use std::collections::VecDeque;
-
-/// 分页搜索结果缓存项
-#[derive(Clone)]
-#[allow(dead_code)]
-struct PagedSearchCacheEntry {
-    search_id: String,
-    query: String,
-    workspace_id: String,
-    results: Vec<LogEntry>,
-    summary: SearchResultSummary,
-    cached_at: std::time::Instant,
-}
-
-/// 分页搜索缓存
-pub struct PagedSearchCache {
-    entries: VecDeque<PagedSearchCacheEntry>,
-    max_size: usize,
-}
-
-impl PagedSearchCache {
-    fn new(max_size: usize) -> Self {
-        Self {
-            entries: VecDeque::with_capacity(max_size),
-            max_size,
-        }
-    }
-
-    fn get(&self, search_id: &str) -> Option<&PagedSearchCacheEntry> {
-        self.entries.iter().find(|e| e.search_id == search_id)
-    }
-
-    fn insert(&mut self, entry: PagedSearchCacheEntry) {
-        // 移除相同 search_id 的旧缓存
-        self.entries.retain(|e| e.search_id != entry.search_id);
-
-        // 如果超出容量，移除最旧的
-        if self.entries.len() >= self.max_size {
-            self.entries.pop_front();
-        }
-
-        self.entries.push_back(entry);
-    }
-
-    #[allow(dead_code)]
-    fn cleanup_expired(&mut self, max_age_secs: u64) {
-        let now = std::time::Instant::now();
-        self.entries
-            .retain(|e| now.duration_since(e.cached_at).as_secs() < max_age_secs);
-    }
-}
-
-// 全局分页搜索缓存（使用 parking_lot::Mutex 避免 poison 问题）
-static PAGED_SEARCH_CACHE: std::sync::OnceLock<parking_lot::Mutex<PagedSearchCache>> =
-    std::sync::OnceLock::new();
-
-fn get_paged_search_cache() -> &'static parking_lot::Mutex<PagedSearchCache> {
-    PAGED_SEARCH_CACHE
-        .get_or_init(|| parking_lot::Mutex::new(PagedSearchCache::new(MAX_CACHED_SEARCHES)))
-}
-
-/// 分页搜索日志
-///
-/// # 参数
-/// - `query`: 搜索查询字符串
-/// - `page_size`: 每页大小
-/// - `page_index`: 页索引，-1 表示执行新搜索并缓存
-/// - `state`: 应用状态
-///
-/// # 返回
-/// 分页搜索结果，包含当前页数据和元数据
-#[command]
-pub async fn search_logs_paged(
-    query: String,
-    page_size: Option<usize>,
-    page_index: i32,
-    #[allow(non_snake_case)] searchId: Option<String>,
-    #[allow(non_snake_case)] workspaceId: Option<String>,
-    filters: Option<SearchFilters>,
-    state: State<'_, AppState>,
-) -> Result<PagedSearchResult, CommandError> {
-    // 参数验证
-    if query.is_empty() {
-        return Err(
-            CommandError::new("VALIDATION_ERROR", "Search query cannot be empty")
-                .with_help("Please enter at least one search term"),
-        );
-    }
-    if query.len() > 1000 {
-        return Err(CommandError::new(
-            "VALIDATION_ERROR",
-            "Search query too long (max 1000 characters)",
-        )
-        .with_help("Try reducing the number of search terms"));
-    }
-
-    let page_size = page_size.unwrap_or(DEFAULT_PAGE_SIZE).min(10000);
-
-    // 处理已有缓存的搜索（page_index >= 0 且有 searchId）
-    if page_index >= 0 {
-        if let Some(ref sid) = searchId {
-            let cache = get_paged_search_cache().lock();
-            if let Some(entry) = cache.get(sid) {
-                let page = page_index as usize;
-                let start = page * page_size;
-
-                if start >= entry.results.len() {
-                    // 返回空页
-                    return Ok(PagedSearchResult::new(
-                        vec![],
-                        entry.results.len(),
-                        page_index,
-                        page_size,
-                        entry.summary.clone(),
-                        query,
-                        sid.clone(),
-                    ));
-                }
-
-                let end = (start + page_size).min(entry.results.len());
-                let page_results = entry.results[start..end].to_vec();
-
-                return Ok(PagedSearchResult::new(
-                    page_results,
-                    entry.results.len(),
-                    page_index,
-                    page_size,
-                    entry.summary.clone(),
-                    query,
-                    sid.clone(),
-                ));
-            }
-        }
-        // 缓存未找到，需要重新搜索
-        return Err(CommandError::new(
-            "NOT_FOUND",
-            "Search not found in cache. Please start a new search with page_index = -1",
-        )
-        .with_help("The cached search may have expired. Start a new search instead"));
-    }
-
-    // 执行新搜索（page_index == -1）
-    let workspace_dirs: Arc<Mutex<std::collections::BTreeMap<String, std::path::PathBuf>>> =
-        Arc::clone(&state.workspace_dirs);
-    let cas_instances: Arc<
-        Mutex<std::collections::HashMap<String, Arc<crate::storage::ContentAddressableStorage>>>,
-    > = Arc::clone(&state.cas_instances);
-    let metadata_stores: Arc<
-        Mutex<std::collections::HashMap<String, Arc<crate::storage::MetadataStore>>>,
-    > = Arc::clone(&state.metadata_stores);
-
-    let filters = filters.unwrap_or_default();
-    let compiled_filters = CompiledSearchFilters::compile(&filters)?;
-
-    // 确定工作区ID
-    let workspace_id = if let Some(ref id) = workspaceId {
-        id.clone()
-    } else {
-        let dirs = workspace_dirs.lock();
-        dirs.keys().next().cloned().ok_or_else(|| {
-            CommandError::new(
-                "NOT_FOUND",
-                "No workspaces available. Please create a workspace first.",
-            )
-            .with_help("Use the import feature to create a workspace first")
-        })?
-    };
-
-    // Get workspace directory BEFORE spawn_blocking
-    let workspace_dir = {
-        let dirs = workspace_dirs.lock();
-        dirs.get(&workspace_id).cloned().ok_or_else(|| {
-            CommandError::new(
-                "NOT_FOUND",
-                format!("Workspace directory not found for: {}", workspace_id),
-            )
-            .with_help("The workspace may have been deleted. Try refreshing the workspace list")
-        })?
-    };
-
-    // Get or create MetadataStore BEFORE spawn_blocking
-    // Note: We must not hold a lock across an await point
-    let metadata_store = {
-        // 单次加锁完成检查与克隆，避免两步操作之间的竞态条件
-        let existing = {
-            let stores = metadata_stores.lock();
-            stores.get(&workspace_id).map(Arc::clone)
-        };
-
-        if let Some(store) = existing {
-            store
-        } else {
-            // Store doesn't exist, create it (no lock held during async creation)
-            let store = crate::storage::MetadataStore::new(&workspace_dir)
-                .await
-                .map_err(|e| {
-                    CommandError::new(
-                        "DATABASE_ERROR",
-                        format!("Failed to open metadata store: {}", e),
-                    )
-                    .with_help(
-                        "Check if the workspace directory is accessible and has proper permissions",
-                    )
-                })?;
-            let store_arc = Arc::new(store);
-            // Re-acquire lock to store
-            let mut stores = metadata_stores.lock();
-            stores.insert(workspace_id.clone(), Arc::clone(&store_arc));
-            store_arc
-        }
-    };
-
-    // Get CAS (sync)
-    let cas = {
-        let mut instances = cas_instances.lock();
-        if let Some(cas) = instances.get(&workspace_id) {
-            Arc::clone(cas)
-        } else {
-            let cas_arc = Arc::new(crate::storage::ContentAddressableStorage::new(
-                workspace_dir.clone(),
-            ));
-            instances.insert(workspace_id.clone(), Arc::clone(&cas_arc));
-            cas_arc
-        }
-    };
-
-    // Get all files BEFORE spawn_blocking
-    let files = metadata_store.get_all_files().await.map_err(|e| {
-        CommandError::new("DATABASE_ERROR", format!("Failed to get files: {}", e)).with_help(
-            "The workspace database may be corrupted. Try refreshing or reimporting the workspace",
-        )
-    })?;
-
-    // 生成搜索ID
-    let search_id = uuid::Uuid::new_v4().to_string();
-    let search_id_for_spawn = search_id.clone();
-    let files_for_search: Vec<_> = files
-        .into_iter()
-        .filter(|file| compiled_filters.matches_file(&file.virtual_path, None))
-        .collect();
-
-    // 克隆需要在闭包中使用的变量
-    let query_for_spawn = query.clone();
-    let compiled_filters_for_search = compiled_filters.clone();
-
-    // 在阻塞任务中执行搜索
-    let results = tokio::task::spawn_blocking(move || -> Result<Vec<LogEntry>, String> {
-        let raw_terms: Vec<String> = query_for_spawn
-            .split('|')
-            .map(|t| t.trim())
-            .filter(|t| !t.is_empty())
-            .map(|t| t.to_string())
-            .collect();
-
-        if raw_terms.is_empty() {
-            return Err("Search query is empty after processing".to_string());
-        }
-
-        let search_terms: Vec<SearchTerm> = raw_terms
-            .iter()
-            .enumerate()
-            .map(|(i, term)| SearchTerm {
-                id: format!("term_{}", i),
-                value: term.clone(),
-                operator: QueryOperator::Or,
-                source: TermSource::User,
-                preset_group_id: None,
-                is_regex: false,
-                priority: 1,
-                enabled: true,
-                case_sensitive: false,
-            })
-            .collect();
-
-        let structured_query = SearchQuery {
-            id: "paged_search_query".to_string(),
-            terms: search_terms,
-            global_operator: QueryOperator::Or,
-            filters: None,
-            metadata: QueryMetadata {
-                created_at: 0,
-                last_modified: 0,
-                execution_count: 0,
-                label: None,
-            },
-        };
-
-        let mut executor = QueryExecutor::new(100);
-        let plan = executor
-            .execute(&structured_query)
-            .map_err(|e| format!("Query execution error: {}", e))?;
-
-        // Note: workspace_dir, metadata_store, cas, and files are now obtained
-        // BEFORE spawn_blocking to avoid nested runtime blocking issues
-
-        // 执行搜索
-        let mut all_results: Vec<LogEntry> = Vec::new();
-        let mut keyword_counts: std::collections::HashMap<String, usize> =
-            std::collections::HashMap::new();
-
-        'paged_outer: for file_batch in files_for_search.chunks(10) {
-            let batch: Vec<_> = file_batch
-                .iter()
-                .enumerate()
-                .map(|(idx, file_metadata)| {
-                    let file_identifier = format!("cas://{}", file_metadata.sha256_hash);
-                    search_single_file_with_details(
-                        &file_identifier,
-                        &file_metadata.virtual_path,
-                        Some(&*cas),
-                        &executor,
-                        &plan,
-                        &compiled_filters_for_search,
-                        idx * 10000,
-                    )
-                })
-                .collect();
-
-            for file_results in batch {
-                for mut entry in file_results {
-                    entry.id = all_results.len();
-
-                    // 流式统计
-                    if let Some(ref keywords) = entry.matched_keywords {
-                        for kw in keywords {
-                            *keyword_counts.entry(kw.clone()).or_insert(0) += 1;
-                        }
-                    }
-
-                    all_results.push(entry);
-
-                    // 限制最大结果数
-                    if all_results.len() >= MAX_RESULTS_PER_SEARCH {
-                        break 'paged_outer;
-                    }
-                }
-            }
-        }
-
-        Ok(all_results)
-    })
-    .await
-    .map_err(|e| {
-        CommandError::new("INTERNAL_ERROR", format!("Search task failed: {}", e))
-            .with_help("This is an unexpected error. Try simplifying your search query")
-    })?;
-
-    let results = results.map_err(|e| {
-        CommandError::new("SEARCH_ERROR", e).with_help("Try simplifying your search query")
-    })?;
-
-    // 计算关键词统计
-    let raw_terms: Vec<String> = query
-        .split('|')
-        .map(|t| t.trim())
-        .filter(|t| !t.is_empty())
-        .map(|t| t.to_string())
-        .collect();
-
-    let keyword_stats: Vec<crate::models::search_statistics::KeywordStatistics> = raw_terms
-        .iter()
-        .map(|term| {
-            let count = results.iter().filter(|e| e.content.contains(term)).count();
-            crate::models::search_statistics::KeywordStatistics::new(
-                term.clone(),
-                count,
-                results.len(),
-            )
-        })
-        .collect();
-
-    let summary = SearchResultSummary::new(
-        results.len(),
-        keyword_stats,
-        0, // 简化处理，不计算实际耗时
-        results.len() >= MAX_RESULTS_PER_SEARCH,
-    );
-
-    // 缓存结果
-    {
-        let mut cache = get_paged_search_cache().lock();
-        cache.insert(PagedSearchCacheEntry {
-            search_id: search_id_for_spawn.clone(),
-            query: query.clone(),
-            workspace_id: workspace_id.clone(),
-            results: results.clone(),
-            summary: summary.clone(),
-            cached_at: std::time::Instant::now(),
-        });
-    }
-
-    // 返回第一页
-    let page_results = if results.len() > page_size {
-        results[..page_size].to_vec()
-    } else {
-        results.clone()
-    };
-
-    Ok(PagedSearchResult::new(
-        page_results,
-        results.len(),
-        0,
-        page_size,
-        summary,
-        query,
-        search_id_for_spawn,
-    ))
-}
-
-/// 清理过期的分页搜索缓存
-#[command]
-pub async fn cleanup_paged_search_cache(max_age_secs: Option<u64>) -> Result<usize, CommandError> {
-    let max_age = max_age_secs.unwrap_or(3600); // 默认1小时
-    let mut cache = get_paged_search_cache().lock();
-    let before_count = cache.entries.len();
-    cache.cleanup_expired(max_age);
-    let after_count = cache.entries.len();
-    Ok(before_count - after_count)
-}
-
-/// 获取分页搜索缓存统计
-#[command]
-pub async fn get_paged_search_cache_stats() -> Result<serde_json::Value, CommandError> {
-    let cache = get_paged_search_cache().lock();
-    let total_entries = cache.entries.len();
-    let total_results: usize = cache.entries.iter().map(|e| e.results.len()).sum();
-
-    Ok(serde_json::json!({
-        "cached_searches": total_entries,
-        "total_cached_results": total_results,
-        "max_cache_size": MAX_CACHED_SEARCHES,
-        "max_results_per_search": MAX_RESULTS_PER_SEARCH,
-    }))
-}
-
-// ============================================================================
-// 流式搜索分页功能 (VirtualSearchManager 集成)
-// ============================================================================
-
 /// 获取搜索结果的指定分页
 ///
-/// 通过 VirtualSearchManager 获取已缓存的搜索结果分页，
-/// 支持前端使用 useInfiniteQuery 实现流式加载。
+/// 优先从磁盘结果缓存读取分页；VirtualSearchManager 仅作为兼容降级路径。
 ///
 /// # 参数
 /// - `state`: 应用状态，包含 VirtualSearchManager

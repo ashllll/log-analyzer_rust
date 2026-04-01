@@ -7,13 +7,16 @@
 //! 为保持与 JavaScript camelCase 惯例一致，Tauri 命令参数使用 camelCase 命名。
 
 use std::time::Duration;
-use tauri::{command, AppHandle, Emitter, Manager, State};
+use tauri::{command, AppHandle, Emitter, State};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
+use crate::commands::search::load_search_runtime_config;
 use crate::models::AppState;
-use crate::services::parse_metadata;
+use crate::services::{parse_metadata, ExecutionPlan, QueryExecutor};
 use crate::utils::async_resource_manager::OperationType;
+use crate::utils::workspace_paths::resolve_workspace_dir;
+use la_core::models::search::{QueryMetadata, QueryOperator, SearchQuery, SearchTerm, TermSource};
 use la_core::models::LogEntry;
 use la_storage::{ContentAddressableStorage, MetadataStore};
 
@@ -119,12 +122,7 @@ async fn perform_async_search(
     // 发送搜索开始事件
     let _ = app.emit("async-search-start", &search_id);
 
-    // Get workspace directory
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
-    let workspace_dir = app_data_dir.join("extracted").join(&workspace_id);
+    let workspace_dir = resolve_workspace_dir(&app, &workspace_id)?;
 
     if !workspace_dir.exists() {
         return Err(format!("Workspace not found: {}", workspace_id));
@@ -142,6 +140,13 @@ async fn perform_async_search(
         .get_all_files()
         .await
         .map_err(|e| format!("Failed to get file list: {}", e))?;
+
+    let runtime_config = load_search_runtime_config(&app);
+    let search_query = build_async_search_query(&query, runtime_config.case_sensitive)?;
+    let mut executor = QueryExecutor::new(runtime_config.regex_cache_size.max(1));
+    let plan = executor
+        .execute(&search_query)
+        .map_err(|e| format!("Failed to build async search plan: {}", e))?;
 
     let mut results_count = 0;
     let mut batch_results: Vec<LogEntry> = Vec::new();
@@ -192,7 +197,15 @@ async fn perform_async_search(
         }
 
         // Search content line by line
-        match search_content_async(&content_str, &file.virtual_path, &query, results_count).await {
+        match search_content_async(
+            &content_str,
+            &file.virtual_path,
+            &executor,
+            &plan,
+            results_count,
+        )
+        .await
+        {
             Ok(mut file_results) => {
                 for entry in file_results.drain(..) {
                     if results_count >= max_results {
@@ -250,7 +263,8 @@ async fn perform_async_search(
 async fn search_content_async(
     content: &str,
     virtual_path: &str,
-    query: &str,
+    executor: &QueryExecutor,
+    plan: &ExecutionPlan,
     global_offset: usize,
 ) -> Result<Vec<LogEntry>, String> {
     let mut results = Vec::new();
@@ -259,29 +273,75 @@ async fn search_content_async(
     for line in content.lines() {
         line_number += 1;
 
-        if line.contains(query) {
-            let (ts, lvl) = parse_metadata(line);
-            results.push(LogEntry {
-                id: global_offset.saturating_add(line_number),
-                timestamp: ts.into(),
-                level: lvl.into(),
-                file: virtual_path.into(),
-                real_path: virtual_path.into(),
-                line: line_number,
-                content: line.into(),
-                tags: vec![],
-                match_details: None,
-                // 使用 Option 类型，只有当有匹配关键词时才包装为 Some
-                matched_keywords: if !query.is_empty() {
-                    Some(vec![query.to_string()])
-                } else {
-                    None
-                },
-            });
-        }
+        let Some(match_details) = executor.match_with_details(plan, line) else {
+            continue;
+        };
+
+        let matched_keywords = match_details
+            .iter()
+            .map(|detail| detail.term_value.clone())
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+
+        let (ts, lvl) = parse_metadata(line);
+        results.push(LogEntry {
+            id: global_offset.saturating_add(line_number),
+            timestamp: ts.into(),
+            level: lvl.into(),
+            file: virtual_path.into(),
+            real_path: virtual_path.into(),
+            line: line_number,
+            content: line.into(),
+            tags: vec![],
+            match_details: Some(match_details),
+            matched_keywords: (!matched_keywords.is_empty()).then_some(matched_keywords),
+        });
     }
 
     Ok(results)
+}
+
+fn build_async_search_query(query: &str, case_sensitive: bool) -> Result<SearchQuery, String> {
+    let terms = query
+        .split('|')
+        .map(|term| term.trim())
+        .filter(|term| !term.is_empty())
+        .map(|term| term.to_string())
+        .collect::<Vec<_>>();
+
+    if terms.is_empty() {
+        return Err("Search query is empty after processing".to_string());
+    }
+
+    let search_terms = terms
+        .into_iter()
+        .enumerate()
+        .map(|(index, value)| SearchTerm {
+            id: format!("term_{}", index),
+            value,
+            operator: QueryOperator::Or,
+            source: TermSource::User,
+            preset_group_id: None,
+            is_regex: false,
+            priority: 1,
+            enabled: true,
+            case_sensitive,
+        })
+        .collect();
+
+    Ok(SearchQuery {
+        id: "async_search_query".to_string(),
+        terms: search_terms,
+        global_operator: QueryOperator::Or,
+        filters: None,
+        metadata: QueryMetadata {
+            created_at: 0,
+            last_modified: 0,
+            execution_count: 0,
+            label: None,
+        },
+    })
 }
 
 #[cfg(test)]
@@ -292,9 +352,12 @@ mod tests {
     async fn test_search_content_async() {
         let content =
             "2023-01-01 10:00:00 INFO Test log entry\n2023-01-01 10:01:00 ERROR Another entry\n";
+        let query = build_async_search_query("Test", false).expect("Query should build");
+        let mut executor = QueryExecutor::new(100);
+        let plan = executor.execute(&query).expect("Plan should build");
 
         // Test search
-        let results = search_content_async(content, "test.log", "Test", 0)
+        let results = search_content_async(content, "test.log", &executor, &plan, 0)
             .await
             .expect("Search should succeed");
 

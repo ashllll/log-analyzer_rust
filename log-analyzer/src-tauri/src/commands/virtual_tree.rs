@@ -18,8 +18,10 @@
 
 use la_storage::{ContentAddressableStorage, MetadataStore};
 use serde::{Deserialize, Serialize};
-use tauri::{command, AppHandle, Manager};
+use tauri::{command, AppHandle};
 use tracing::{debug, error, info};
+
+use crate::utils::workspace_paths::resolve_workspace_dir;
 
 /// File content response
 #[derive(Debug, Serialize, Deserialize)]
@@ -77,12 +79,7 @@ pub async fn read_file_by_hash(
     );
 
     // Get workspace directory
-    let workspace_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("Failed to get app data dir: {}", e))?
-        .join("extracted")
-        .join(&workspaceId);
+    let workspace_dir = resolve_workspace_dir(&app, &workspaceId)?;
 
     if !workspace_dir.exists() {
         error!(workspace_id = %workspaceId, "Workspace directory not found");
@@ -185,12 +182,7 @@ pub async fn get_virtual_file_tree(
     info!(workspace_id = %workspaceId, "Getting virtual file tree");
 
     // Get workspace directory
-    let workspace_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("Failed to get app data dir: {}", e))?
-        .join("extracted")
-        .join(&workspaceId);
+    let workspace_dir = resolve_workspace_dir(&app, &workspaceId)?;
 
     if !workspace_dir.exists() {
         error!(workspace_id = %workspaceId, "Workspace directory not found");

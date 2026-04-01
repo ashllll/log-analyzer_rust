@@ -56,8 +56,8 @@ const SearchResultSummarySchema = z.object({
 
 /**
  * 分页搜索结果 Schema
- * 对应 Rust 后端 PagedSearchResult 结构
- * 保留给旧的 `search_logs_paged` 路径；当前主路径使用磁盘直写分页结果
+ * 对应历史 PagedSearchResult 结构。
+ * 当前后端主链路已收敛到 `search_logs + fetch_search_page`，此 Schema 仅保留兼容测试。
  */
 const PagedSearchResultSchema = z.object({
   results: z.array(LogEntrySchema),
