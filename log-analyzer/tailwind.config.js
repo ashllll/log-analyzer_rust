@@ -7,51 +7,51 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Slate 色系 - 更专业的深色界面，更好的对比度
+        // Zinc 色系 - 深炭灰专业主题，冷峻工程师风格
         bg: {
-          main: "#0F172A",    // Slate-900 - 主背景
-          sidebar: "#1E293B", // Slate-800 - 侧边栏/面板
-          card: "#334155",    // Slate-700 - 卡片/输入框
-          hover: "#475569",   // Slate-600 - 悬停态
-          elevated: "#1E293B", // 浮动元素背景
+          main: "#18181B",    // Zinc-900 - 主背景
+          sidebar: "#27272A", // Zinc-800 - 侧边栏/面板
+          card: "#3F3F46",    // Zinc-700 - 卡片/输入框
+          hover: "#52525B",   // Zinc-600 - 悬停态
+          elevated: "#27272A", // Zinc-800 - 浮动元素背景
           popover: "#18181B",  // Zinc-900 - 弹出层/下拉面板背景
-          subtle: "#1E293B",   // Slate-800 - 微妙背景/空状态
-          surface: "#334155",  // Slate-700 - 表面背景（按钮、输入框）
+          subtle: "#27272A",   // Zinc-800 - 微妙背景/空状态
+          surface: "#3F3F46",  // Zinc-700 - 表面背景（按钮、输入框）
         },
         border: {
-          base: "#334155",    // Slate-700 - 基础边框
-          light: "#475569",   // Slate-600 - 亮边框
-          subtle: "#1E293B",  // Slate-800 - 微妙边框
+          base: "#3F3F46",    // Zinc-700 - 基础边框
+          light: "#52525B",   // Zinc-600 - 亮边框
+          subtle: "#27272A",  // Zinc-800 - 微妙边框
         },
         primary: {
-          DEFAULT: "#3B82F6", // Blue-500 - 主色
-          hover: "#2563EB",   // Blue-600 - 悬停
-          text: "#60A5FA",    // Blue-400 - 文本
-          muted: "#93C5FD",   // Blue-300 - 柔和
+          DEFAULT: "#0D9488", // Teal-600 - 主色
+          hover: "#0F766E",   // Teal-700 - 悬停
+          text: "#2DD4BF",    // Teal-400 - 文本
+          muted: "#5EEAD4",   // Teal-300 - 柔和
         },
         // CTA 强调色 - 用于重要操作
         cta: {
-          DEFAULT: "#22C55E", // Green-500 - CTA 主色
-          hover: "#16A34A",   // Green-600 - 悬停
-          text: "#4ADE80",    // Green-400 - 文本
+          DEFAULT: "#10B981", // Emerald-500 - CTA 主色
+          hover: "#059669",   // Emerald-600 - 悬停
+          text: "#34D399",    // Emerald-400 - 文本
         },
         text: {
-          main: "#F1F5F9",    // Slate-100 - 主文本
-          muted: "#94A3B8",   // Slate-400 - 次要文本
-          dim: "#64748B",     // Slate-500 - 暗淡文本
+          main: "#F4F4F5",    // Zinc-100 - 主文本
+          muted: "#A1A1AA",   // Zinc-400 - 次要文本
+          dim: "#71717A",     // Zinc-500 - 暗淡文本
         },
         // 状态色 - 优化对比度
         status: {
           error: "#EF4444",   // Red-500
           warn: "#F59E0B",    // Amber-500
-          info: "#3B82F6",    // Blue-500
-          success: "#22C55E", // Green-500
+          info: "#0D9488",    // Teal-600
+          success: "#10B981", // Emerald-500
         },
         // 日志级别专用色
         log: {
           error: "#F87171",   // Red-400
           warn: "#FBBF24",    // Amber-400
-          info: "#60A5FA",    // Blue-400
+          info: "#2DD4BF",    // Teal-400
           debug: "#A78BFA",   // Violet-400
         }
       },
@@ -66,8 +66,8 @@ export default {
         'card': '0 1px 3px 0 rgb(0 0 0 / 0.3), 0 1px 2px -1px rgb(0 0 0 / 0.3)',
         'card-hover': '0 4px 6px -1px rgb(0 0 0 / 0.3), 0 2px 4px -2px rgb(0 0 0 / 0.3)',
         'elevated': '0 10px 15px -3px rgb(0 0 0 / 0.3), 0 4px 6px -4px rgb(0 0 0 / 0.3)',
-        'glow-primary': '0 0 20px rgba(59, 130, 246, 0.3)',
-        'glow-cta': '0 0 20px rgba(34, 197, 94, 0.3)',
+        'glow-primary': '0 0 20px rgba(13, 148, 136, 0.3)',
+        'glow-cta': '0 0 20px rgba(16, 185, 129, 0.3)',
       },
       animation: {
         'fade-in': 'fadeIn 150ms ease-out',

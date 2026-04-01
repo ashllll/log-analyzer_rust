@@ -2,8 +2,8 @@ import React, { useState, useEffect, useRef, useCallback, memo, useMemo } from '
 import { useTranslation } from 'react-i18next';
 import { save } from '@tauri-apps/plugin-dialog';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Copy, Loader2, X } from 'lucide-react';
-import { Button } from '../components/ui';
+import { Copy, Loader2, X, FolderOpen, Search, SearchX } from 'lucide-react';
+import { Button, EmptyState } from '../components/ui';
 import { HybridLogRenderer } from '../components/renderers';
 import { KeywordStatsPanel } from '../components/search/KeywordStatsPanel';
 import { logger } from '../utils/logger';
@@ -719,7 +719,7 @@ const SearchPage: React.FC = () => {
       {/* 结果展示区 */}
       <div className="flex-1 flex overflow-hidden">
         {/* 日志列表 */}
-        <div ref={parentRef} className="flex-1 overflow-auto bg-bg-main scrollbar-thin">
+        <div ref={parentRef} className="flex-1 overflow-auto bg-bg-main scrollbar-thin" style={{ willChange: 'transform' }}>
           {/* 表头 - 优化视觉层次 */}
           <div className="sticky top-0 z-10 grid grid-cols-[50px_160px_150px_1fr] px-3 py-2 bg-bg-elevated border-b border-border-base text-xs font-bold text-text-muted uppercase tracking-wider">
             <div>{t('search.table.level', '级别')}</div>
@@ -782,63 +782,36 @@ const SearchPage: React.FC = () => {
 
           {/* 空状态 - 根据不同场景显示不同提示 */}
           {liveCount === 0 && !isSearching && (
-            <div className="flex flex-col items-center justify-center h-full min-h-[200px] text-text-dim">
-              {/* 场景1: 应用未初始化或工作区正在加载 */}
+            <div className="flex items-center justify-center h-full min-h-[200px]">
               {(!isInitialized || workspaceLoading) ? (
-                <>
-                  <Loader2 className="animate-spin mb-3 text-primary" size={32} />
+                /* 场景1: 应用未初始化或工作区正在加载 */
+                <div className="flex flex-col items-center gap-3 text-text-dim">
+                  <Loader2 className="animate-spin text-primary" size={32} />
                   <p className="text-sm font-medium text-text-muted">
                     {t('search.empty_state.workspace_loading', '工作区加载中')}
                   </p>
-                  <p className="text-xs text-text-dim mt-1">
-                    {t('search.empty_state.workspace_loading_hint', '正在初始化工作区，请稍候...')}
-                  </p>
-                </>
+                </div>
               ) : !activeWorkspace ? (
                 /* 场景2: 没有工作区 */
-                <>
-                  <div className="mb-3 text-text-dim">
-                    <svg className="w-12 h-12 mx-auto opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                    </svg>
-                  </div>
-                  <p className="text-sm font-medium text-text-muted">
-                    {t('search.empty_state.no_workspace', '没有工作区')}
-                  </p>
-                  <p className="text-xs text-text-dim mt-1">
-                    {t('search.empty_state.no_workspace_hint', '请先创建或导入工作区以开始搜索日志')}
-                  </p>
-                </>
+                <EmptyState
+                  icon={FolderOpen}
+                  title={t('search.empty_state.no_workspace', '没有工作区')}
+                  description={t('search.empty_state.no_workspace_hint', '请先创建或导入工作区以开始搜索日志')}
+                />
               ) : !query.trim() ? (
                 /* 场景3: 没有输入搜索关键词 */
-                <>
-                  <div className="mb-3 text-text-dim">
-                    <svg className="w-12 h-12 mx-auto opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                    </svg>
-                  </div>
-                  <p className="text-sm font-medium text-text-muted">
-                    {t('search.empty_state.no_query', '输入搜索关键词')}
-                  </p>
-                  <p className="text-xs text-text-dim mt-1">
-                    {t('search.empty_state.no_query_hint', '在上方输入框中输入关键词进行搜索')}
-                  </p>
-                </>
+                <EmptyState
+                  icon={Search}
+                  title={t('search.empty_state.no_query', '输入搜索关键词')}
+                  description={t('search.empty_state.no_query_hint', '在上方输入框中输入关键词进行搜索')}
+                />
               ) : (
                 /* 场景4: 搜索已完成但没有结果 */
-                <>
-                  <div className="mb-3 text-text-dim">
-                    <svg className="w-12 h-12 mx-auto opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  </div>
-                  <p className="text-sm font-medium text-text-muted">
-                    {t('search.empty_state.no_results', '没有搜索结果')}
-                  </p>
-                  <p className="text-xs text-text-dim mt-1">
-                    {t('search.empty_state.no_results_hint', '尝试调整搜索条件或关键词')}
-                  </p>
-                </>
+                <EmptyState
+                  icon={SearchX}
+                  title={t('search.empty_state.no_results', '没有搜索结果')}
+                  description={t('search.empty_state.no_results_hint', '尝试调整搜索条件或关键词')}
+                />
               )}
             </div>
           )}
