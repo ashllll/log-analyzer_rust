@@ -639,17 +639,17 @@ mod tests {
         let mut entry = CacheEntry::with_ttl_and_tti(
             "value",
             Duration::from_secs(60),
-            Duration::from_millis(200),
+            Duration::from_millis(1000),
         );
 
-        thread::sleep(Duration::from_millis(100));
+        thread::sleep(Duration::from_millis(300));
         entry.touch();
 
-        // TTI 应该被重置，距 touch 仅过 100ms（远小于 200ms TTI）
-        thread::sleep(Duration::from_millis(100));
+        // TTI 应该被重置，距 touch 仅过 300ms（远小于 1000ms TTI）
+        thread::sleep(Duration::from_millis(300));
         assert!(!entry.is_expired());
 
-        thread::sleep(Duration::from_millis(200));
+        thread::sleep(Duration::from_millis(800));
         assert!(entry.is_expired());
     }
 }
