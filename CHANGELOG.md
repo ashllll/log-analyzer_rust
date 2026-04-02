@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - 精简仓库说明文档，仅保留长期维护的核心 README、流程文档和架构文档
 - 更新搜索、CAS 与模块架构文档，使描述与当前代码主链路一致
+- 修正 CI/CD 自动发布链路，改为仅由 tag push 触发 Release，避免重复发布同一版本
+- 自动版本 bump 改为以通过 CI 的 `main` 提交为基准，避免为未验证的新 HEAD 打 tag
+
+### Fixed
+- 修复 Windows Release 工作流仍使用旧版 `ilammy/msvc-toolchain@v1` 且携带过时 `toolset: latest` 配置的问题
 
 ### Removed
 - 删除一次性分析报告、修复计划、AI 工具说明和过时的本地 CI/迁移文档

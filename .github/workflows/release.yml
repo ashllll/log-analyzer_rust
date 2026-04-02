@@ -24,6 +24,9 @@ jobs:
     name: Build and Release (${{ matrix.platform.name }})
     permissions:
       contents: write
+    concurrency:
+      group: release-${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
+      cancel-in-progress: false
     strategy:
       fail-fast: false
       matrix:
@@ -66,9 +69,7 @@ jobs:
 
       - name: Setup MSVC (Windows)
         if: matrix.platform.os == 'windows-latest'
-        uses: ilammy/msvc-toolchain@v1
-        with:
-          toolset: latest
+        uses: ilammy/msvc-toolchain@v1.13.0
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2

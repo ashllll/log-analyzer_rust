@@ -45,8 +45,16 @@ cargo test -q
 
 1. 在分支完成改动并通过校验
 2. 合并到 `main`
-3. 更新版本号
-4. 创建并推送 tag
+3. 由 GitHub Actions 在 `main` 的 CI 成功后自动执行：
+4. 自动补丁递增版本号
+5. 自动提交版本文件
+6. 自动创建并推送 tag
+7. 由 tag 触发 Release 工作流并上传构建产物
+
+说明：
+
+- 自动版本 bump 以“刚刚通过 CI 的 `main` 提交”为基准，不会拿未验证的新 HEAD 直接打 tag。
+- Release 以 tag push 为单一自动触发源，避免重复 dispatch 造成同一版本被发布两次。
 
 ### 方式二：显式 tag 发布
 
@@ -54,6 +62,11 @@ cargo test -q
 git tag v1.2.3
 git push origin v1.2.3
 ```
+
+适用于：
+
+- 手动补发某个已存在版本
+- 需要通过 `workflow_dispatch` 重新执行指定 tag 的 Release
 
 ## 发布产物
 
