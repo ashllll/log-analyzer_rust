@@ -24,6 +24,7 @@ jobs:
       !contains(github.event.workflow_run.head_commit.message, '[skip ci]')
     permissions:
       contents: write
+      actions: write
 
     steps:
       - name: Checkout repository
@@ -103,8 +104,28 @@ jobs:
           # 创建并推送 tag
           if git rev-parse "$TAG" >/dev/null 2>&1; then
             echo "Tag ${TAG} 已存在，跳过"
+            echo "tag_created=false" >> $GITHUB_OUTPUT
           else
             git tag "$TAG"
             git push origin "$TAG"
             echo "已创建并推送 tag: ${TAG}"
+            echo "tag_created=true" >> $GITHUB_OUTPUT
           fi
+
+      - name: Dispatch release workflow
+        if: >
+          steps.base.outputs.skip != 'true' &&
+          steps.publish.outputs.tag_created == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.publish.outputs.tag }}"
+          echo "触发 release 工作流: ${TAG}"
+          curl -sSf \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/release.yml/dispatches" \
+            -d "{\"ref\":\"main\",\"inputs\":{\"tag\":\"${TAG}\",\"prerelease\":\"false\"}}"
+          echo "已触发 release 工作流 for ${TAG}"
