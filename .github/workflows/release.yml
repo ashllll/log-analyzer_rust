@@ -69,7 +69,7 @@ jobs:
 
       - name: Setup MSVC (Windows)
         if: matrix.platform.os == 'windows-latest'
-        uses: ilammy/msvc-toolchain@v1.13.0
+        uses: ilammy/msvc-dev-cmd@v1
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
