@@ -47,6 +47,7 @@ export class SearchQueryBuilder {
     keywordGroups: KeywordGroup[] = []
   ): SearchQueryBuilder {
     const builder = SearchQueryBuilder.create();
+    builder.setGlobalOperator('OR');
     
     if (!queryString || queryString.trim().length === 0) {
       return builder;
@@ -71,8 +72,10 @@ export class SearchQueryBuilder {
       }
 
       builder.addTerm(value, {
+        operator: 'OR',
         source,
         presetGroupId,
+        isRegex: source === 'preset',
         priority: terms.length - idx
       });
     });

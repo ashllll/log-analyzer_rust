@@ -19,8 +19,11 @@ describe('SearchQueryBuilder', () => {
       const query = builder.getQuery();
       
       expect(query.terms).toHaveLength(1);
+      expect(query.globalOperator).toBe('OR');
       expect(query.terms[0].value).toBe('error');
+      expect(query.terms[0].operator).toBe('OR');
       expect(query.terms[0].source).toBe('user');
+      expect(query.terms[0].isRegex).toBe(false);
     });
 
     it('should parse multiple keywords', () => {
@@ -61,6 +64,7 @@ describe('SearchQueryBuilder', () => {
       
       expect(query.terms[0].source).toBe('preset');
       expect(query.terms[0].presetGroupId).toBe('group1');
+      expect(query.terms[0].isRegex).toBe(true);
     });
   });
 

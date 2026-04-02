@@ -359,6 +359,15 @@ const SearchPage: React.FC = () => {
       addToast('error', t('search.error', { message: errorMsg }));
     }, [addToast, t, dispatchSearchExec]),
 
+    onCancelled: useCallback(() => {
+      dispatchSearchExec({ type: 'ERROR' });
+      addToast('info', t('search.cancelled', '搜索已取消'));
+    }, [addToast, t, dispatchSearchExec]),
+
+    onTimeout: useCallback(() => {
+      dispatchSearchExec({ type: 'ERROR' });
+    }, [dispatchSearchExec]),
+
     onStart: useCallback(() => {
       dispatchSearchExec({ type: 'START' });
       setLiveCount(0);
@@ -497,6 +506,10 @@ const SearchPage: React.FC = () => {
     }
 
     try {
+      const structuredQuery = SearchQueryBuilder
+        .fromString(trimmedQuery, enabledKeywordGroups)
+        .getQuery();
+
       // 构建过滤器对象
       const filters = {
         time_start: filterOptions.timeRange.start,
@@ -508,6 +521,7 @@ const SearchPage: React.FC = () => {
       // 后端返回 search_id，前端凭此 ID 从磁盘分页读取搜索结果
       const searchId = await api.searchLogs({
         query: trimmedQuery,
+        structuredQuery,
         workspaceId: activeWorkspace.id,
         filters,
       });
@@ -528,7 +542,16 @@ const SearchPage: React.FC = () => {
       dispatchSearchExec({ type: 'ERROR' });
       addToast('error', `搜索失败: ${getFullErrorMessage(err)}`);
     }
-  }, [query, activeWorkspace, filterOptions, currentQuery, addToast, dispatchSearchExec, t]);
+  }, [
+    query,
+    activeWorkspace,
+    enabledKeywordGroups,
+    filterOptions,
+    currentQuery,
+    addToast,
+    dispatchSearchExec,
+    t,
+  ]);
 
   // 同步 handleSearch 到 ref，供 useEffect 读取最新版本（避免旧闭包）
   useEffect(() => {
@@ -575,8 +598,8 @@ const SearchPage: React.FC = () => {
   const toggleRuleInQuery = useCallback((ruleRegex: string) => {
     // 创建或更新查询构建器
     const builder = currentQuery
-      ? (SearchQueryBuilder.import(JSON.stringify(currentQuery)) ?? SearchQueryBuilder.fromString(query, keywordGroups))
-      : SearchQueryBuilder.fromString(query, keywordGroups);
+      ? (SearchQueryBuilder.import(JSON.stringify(currentQuery)) ?? SearchQueryBuilder.fromString(query, enabledKeywordGroups))
+      : SearchQueryBuilder.fromString(query, enabledKeywordGroups);
 
     // 检查是否已存在
     const existing = builder.findTermByValue(ruleRegex);
@@ -589,7 +612,7 @@ const SearchPage: React.FC = () => {
       builder.addTerm(ruleRegex, {
         source: 'preset',
         isRegex: true,
-        operator: 'AND'
+        operator: 'OR'
       });
     }
 
@@ -612,7 +635,7 @@ const SearchPage: React.FC = () => {
     // 更新查询字符串（用于显示）
     const queryString = builder.toQueryString();
     setQuery(queryString);
-  }, [query, keywordGroups, currentQuery, addToast]);
+  }, [query, enabledKeywordGroups, currentQuery, addToast]);
 
   /**
    * 复制到剪贴板

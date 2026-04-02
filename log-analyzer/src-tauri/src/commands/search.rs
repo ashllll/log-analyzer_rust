@@ -145,6 +145,43 @@ pub(crate) fn build_structured_search_query(
     ))
 }
 
+pub(crate) fn resolve_search_query(
+    query: &str,
+    structured_query: Option<SearchQuery>,
+    case_sensitive: bool,
+    query_id: &str,
+) -> Result<(Vec<String>, SearchQuery), CommandError> {
+    if let Some(mut structured_query) = structured_query {
+        let raw_terms: Vec<String> = structured_query
+            .terms
+            .iter()
+            .filter(|term| term.enabled)
+            .map(|term| term.value.trim())
+            .filter(|term| !term.is_empty())
+            .map(|term| term.to_string())
+            .collect();
+
+        if raw_terms.is_empty() {
+            return Err(
+                CommandError::new("VALIDATION_ERROR", "Search query cannot be empty")
+                    .with_help("Please enter at least one search term"),
+            );
+        }
+
+        structured_query.id = query_id.to_string();
+        structured_query.filters = None;
+        structured_query.metadata = QueryMetadata {
+            created_at: 0,
+            last_modified: 0,
+            execution_count: 0,
+            label: None,
+        };
+        return Ok((raw_terms, structured_query));
+    }
+
+    build_structured_search_query(query, case_sensitive, query_id)
+}
+
 /// 计算并打印缓存统计信息
 fn log_cache_statistics(total_searches: &Arc<Mutex<u64>>, cache_hits: &Arc<Mutex<u64>>) {
     let total = total_searches.lock();
@@ -462,6 +499,7 @@ impl CompiledSearchFilters {
 pub async fn search_logs(
     app: AppHandle,
     query: String,
+    #[allow(non_snake_case)] structuredQuery: Option<SearchQuery>,
     #[allow(non_snake_case)] workspaceId: Option<String>,
     max_results: Option<usize>,
     filters: Option<SearchFilters>,
@@ -507,6 +545,8 @@ pub async fn search_logs(
     let case_sensitive = runtime_config.case_sensitive;
     let search_timeout_secs = runtime_config.timeout_seconds;
     let regex_cache_size = runtime_config.regex_cache_size.max(1);
+    let (raw_terms, structured_query) =
+        resolve_search_query(&query, structuredQuery, case_sensitive, "search_logs_query")?;
 
     // 修复工作区ID处理：当没有提供workspaceId时，使用第一个可用的工作区而不是硬编码的"default"
     let workspace_id = if let Some(ref id) = workspaceId {
@@ -553,7 +593,9 @@ pub async fn search_logs(
 
     // 缓存键：基于查询参数生成，使用查询内容的哈希作为版本号
     // 使用 SHA-256 哈希确保不同查询使用不同缓存键，避免缓存污染
-    let query_version = compute_query_version(&query);
+    let query_version = compute_query_version(
+        &serde_json::to_string(&structured_query).unwrap_or_else(|_| query.clone()),
+    );
     let cache_key: SearchCacheKey = (
         query.clone(),
         workspace_id.clone(),
@@ -605,13 +647,8 @@ pub async fn search_logs(
             // 仅发送实时计数事件，前端通过 fetch_search_page 按需读取实际数据
             let _ = app_handle.emit("search-progress", cached_results.len());
 
-            let raw_terms: Vec<&str> = query
-                .split('|')
-                .map(|t| t.trim())
-                .filter(|t| !t.is_empty())
-                .collect();
-
-            let keyword_stats = calculate_keyword_statistics(&cached_results, &raw_terms);
+            let raw_term_refs: Vec<&str> = raw_terms.iter().map(String::as_str).collect();
+            let keyword_stats = calculate_keyword_statistics(&cached_results, &raw_term_refs);
             let summary = SearchResultSummary::new(cached_results.len(), keyword_stats, 0, false);
 
             let _ = app_handle.emit("search-summary", &summary);
@@ -705,15 +742,6 @@ pub async fn search_logs(
     // 添加超时控制，防止长时间运行的搜索阻塞
     let handle = tokio::task::spawn_blocking(move || {
         let start_time = std::time::Instant::now();
-
-        let (raw_terms, structured_query) =
-            match build_structured_search_query(&query, case_sensitive, "search_logs_query") {
-                Ok(result) => result,
-                Err(err) => {
-                    let _ = app_handle.emit("search-error", err.to_string());
-                    return;
-                }
-            };
 
         let mut executor = QueryExecutor::new(regex_cache_size);
         let plan = match executor.execute(&structured_query) {
@@ -1623,6 +1651,60 @@ mod tests {
         };
         let plan = executor.execute(&query).unwrap();
         (executor, plan)
+    }
+
+    #[test]
+    fn resolve_search_query_uses_structured_query_when_provided() {
+        let structured_query = SearchQuery {
+            id: "saved-query".to_string(),
+            terms: vec![SearchTerm {
+                id: "term-1".to_string(),
+                value: "error.*timeout".to_string(),
+                operator: QueryOperator::Or,
+                source: TermSource::Preset,
+                preset_group_id: Some("preset-1".to_string()),
+                is_regex: true,
+                priority: 10,
+                enabled: true,
+                case_sensitive: false,
+            }],
+            global_operator: QueryOperator::Or,
+            filters: None,
+            metadata: QueryMetadata {
+                created_at: 0,
+                last_modified: 0,
+                execution_count: 0,
+                label: None,
+            },
+        };
+
+        let (raw_terms, resolved) = resolve_search_query(
+            "error.*timeout",
+            Some(structured_query),
+            false,
+            "search_logs_query",
+        )
+        .unwrap();
+
+        assert_eq!(raw_terms, vec!["error.*timeout".to_string()]);
+        assert_eq!(resolved.id, "search_logs_query");
+        assert!(resolved.terms[0].is_regex);
+        assert_eq!(resolved.terms[0].source, TermSource::Preset);
+        assert_eq!(
+            resolved.terms[0].preset_group_id.as_deref(),
+            Some("preset-1")
+        );
+    }
+
+    #[test]
+    fn resolve_search_query_falls_back_to_literal_query_parsing() {
+        let (raw_terms, resolved) =
+            resolve_search_query("error|timeout", None, false, "search_logs_query").unwrap();
+
+        assert_eq!(raw_terms, vec!["error".to_string(), "timeout".to_string()]);
+        assert_eq!(resolved.global_operator, QueryOperator::Or);
+        assert!(!resolved.terms[0].is_regex);
+        assert_eq!(resolved.terms[0].operator, QueryOperator::Or);
     }
 
     #[test]

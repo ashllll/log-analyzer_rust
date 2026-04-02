@@ -36,6 +36,7 @@ const KeywordModal: React.FC<KeywordModalProps> = ({ isOpen, onClose, onSave, in
       setPatterns(initialData?.patterns || [{ regex: "", comment: "" }]);
       setErrors({});
       setTouched({});
+      setRegexErrors([]);
     }
   }, [isOpen, initialData]);
 
@@ -132,7 +133,7 @@ const KeywordModal: React.FC<KeywordModalProps> = ({ isOpen, onClose, onSave, in
       name: name.trim(),
       color,
       patterns: validPatterns,
-      enabled: true
+      enabled: initialData?.enabled ?? true
     });
     onClose();
   }, [name, color, patterns, initialData, onSave, onClose, validateForm]);
@@ -212,7 +213,10 @@ const KeywordModal: React.FC<KeywordModalProps> = ({ isOpen, onClose, onSave, in
                 variant="ghost"
                 className="h-6 text-xs"
                 icon={Plus}
-                onClick={() => setPatterns([...patterns, { regex: "", comment: "" }])}
+                onClick={() => {
+                  setPatterns([...patterns, { regex: "", comment: "" }]);
+                  setRegexErrors([...regexErrors, undefined]);
+                }}
               >
                 Add
               </Button>
@@ -261,7 +265,10 @@ const KeywordModal: React.FC<KeywordModalProps> = ({ isOpen, onClose, onSave, in
                     variant="icon"
                     icon={Trash2}
                     className="text-log-error opacity-0 group-hover:opacity-100 transition-opacity"
-                    onClick={() => setPatterns(patterns.filter((_, idx) => idx !== i))}
+                    onClick={() => {
+                      setPatterns(patterns.filter((_, idx) => idx !== i));
+                      setRegexErrors(regexErrors.filter((_, idx) => idx !== i));
+                    }}
                   />
                 </div>
               ))}

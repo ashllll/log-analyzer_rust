@@ -212,9 +212,21 @@ export interface WorkspaceStatusResponse {
  */
 export interface SearchParams {
   query: string;
+  structuredQuery?: SearchQuery;
   workspaceId?: string;
   maxResults?: number;
   filters?: SearchFilters;
+}
+
+/**
+ * 异步搜索参数
+ */
+export interface AsyncSearchParams {
+  query: string;
+  structuredQuery?: SearchQuery;
+  workspaceId?: string;
+  maxResults?: number;
+  timeoutSeconds?: number;
 }
 
 /**
@@ -423,7 +435,7 @@ class LogAnalyzerApi {
    * @param params - 搜索参数
    * @returns 搜索 ID
    */
-  async asyncSearchLogs(params: SearchParams): Promise<string> {
+  async asyncSearchLogs(params: AsyncSearchParams): Promise<string> {
     try {
       const result = await invoke('async_search_logs', params as unknown as InvokeArgs);
       // 使用 Zod 验证返回的搜索 ID

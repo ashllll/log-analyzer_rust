@@ -27,6 +27,10 @@ export interface SearchListenerHandlers {
   onError: (errorMsg: string) => void;
   /** 新搜索开始（在后端开始发送结果之前触发） */
   onStart: () => void;
+  /** 搜索取消，payload 为 searchId */
+  onCancelled?: (searchId: string) => void;
+  /** 搜索超时，payload 为 searchId */
+  onTimeout?: (searchId: string) => void;
 }
 
 /**
@@ -57,6 +61,8 @@ export function useSearchListeners(
           completeUnlisten,
           errorUnlisten,
           startUnlisten,
+          cancelledUnlisten,
+          timeoutUnlisten,
         ] = await Promise.all([
           listen<number>('search-progress', (e) => {
             const count = typeof e.payload === 'number' ? e.payload : 0;
@@ -76,10 +82,24 @@ export function useSearchListeners(
           listen('search-start', () => {
             handlersRef.current.onStart();
           }),
+          listen<string>('search-cancelled', (e) => {
+            handlersRef.current.onCancelled?.(String(e.payload));
+          }),
+          listen<string>('search-timeout', (e) => {
+            handlersRef.current.onTimeout?.(String(e.payload));
+          }),
         ]);
 
         if (abortController.signal.aborted) {
-          [progressUnlisten, summaryUnlisten, completeUnlisten, errorUnlisten, startUnlisten].forEach(
+          [
+            progressUnlisten,
+            summaryUnlisten,
+            completeUnlisten,
+            errorUnlisten,
+            startUnlisten,
+            cancelledUnlisten,
+            timeoutUnlisten,
+          ].forEach(
             (u) => u(),
           );
           return;
@@ -91,6 +111,8 @@ export function useSearchListeners(
           completeUnlisten,
           errorUnlisten,
           startUnlisten,
+          cancelledUnlisten,
+          timeoutUnlisten,
         );
       } catch (err) {
         if (!abortController.signal.aborted) {

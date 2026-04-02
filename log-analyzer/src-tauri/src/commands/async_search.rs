@@ -11,12 +11,12 @@ use tauri::{command, AppHandle, Emitter, State};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use crate::commands::search::load_search_runtime_config;
+use crate::commands::search::{load_search_runtime_config, resolve_search_query};
 use crate::models::AppState;
 use crate::services::{parse_metadata, ExecutionPlan, QueryExecutor};
 use crate::utils::async_resource_manager::OperationType;
 use crate::utils::workspace_paths::resolve_workspace_dir;
-use la_core::models::search::{QueryMetadata, QueryOperator, SearchQuery, SearchTerm, TermSource};
+use la_core::models::search::SearchQuery;
 use la_core::models::LogEntry;
 use la_storage::{ContentAddressableStorage, MetadataStore};
 
@@ -27,6 +27,7 @@ use la_storage::{ContentAddressableStorage, MetadataStore};
 pub async fn async_search_logs(
     app: AppHandle,
     query: String,
+    #[allow(non_snake_case)] structuredQuery: Option<SearchQuery>,
     #[allow(non_snake_case)] workspaceId: Option<String>,
     max_results: Option<usize>,
     timeout_seconds: Option<u64>,
@@ -62,6 +63,7 @@ pub async fn async_search_logs(
     let app_handle_for_result = app.clone();
     let search_id_clone = search_id.clone();
     let query_clone = query.clone();
+    let structured_query_clone = structuredQuery.clone();
     let workspace_id_clone = workspace_id.clone();
 
     // 启动异步搜索任务
@@ -69,6 +71,7 @@ pub async fn async_search_logs(
         let result = perform_async_search(
             app_handle,
             query_clone,
+            structured_query_clone,
             workspace_id_clone,
             max_results,
             timeout,
@@ -111,6 +114,7 @@ pub async fn get_active_searches_count(state: State<'_, AppState>) -> Result<usi
 async fn perform_async_search(
     app: AppHandle,
     query: String,
+    structured_query: Option<SearchQuery>,
     workspace_id: String,
     max_results: usize,
     timeout: Duration,
@@ -142,7 +146,13 @@ async fn perform_async_search(
         .map_err(|e| format!("Failed to get file list: {}", e))?;
 
     let runtime_config = load_search_runtime_config(&app);
-    let search_query = build_async_search_query(&query, runtime_config.case_sensitive)?;
+    let (_, search_query) = resolve_search_query(
+        &query,
+        structured_query,
+        runtime_config.case_sensitive,
+        "async_search_query",
+    )
+    .map_err(|error| error.to_string())?;
     let mut executor = QueryExecutor::new(runtime_config.regex_cache_size.max(1));
     let plan = executor
         .execute(&search_query)
@@ -302,57 +312,17 @@ async fn search_content_async(
     Ok(results)
 }
 
-fn build_async_search_query(query: &str, case_sensitive: bool) -> Result<SearchQuery, String> {
-    let terms = query
-        .split('|')
-        .map(|term| term.trim())
-        .filter(|term| !term.is_empty())
-        .map(|term| term.to_string())
-        .collect::<Vec<_>>();
-
-    if terms.is_empty() {
-        return Err("Search query is empty after processing".to_string());
-    }
-
-    let search_terms = terms
-        .into_iter()
-        .enumerate()
-        .map(|(index, value)| SearchTerm {
-            id: format!("term_{}", index),
-            value,
-            operator: QueryOperator::Or,
-            source: TermSource::User,
-            preset_group_id: None,
-            is_regex: false,
-            priority: 1,
-            enabled: true,
-            case_sensitive,
-        })
-        .collect();
-
-    Ok(SearchQuery {
-        id: "async_search_query".to_string(),
-        terms: search_terms,
-        global_operator: QueryOperator::Or,
-        filters: None,
-        metadata: QueryMetadata {
-            created_at: 0,
-            last_modified: 0,
-            execution_count: 0,
-            label: None,
-        },
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use la_core::models::search::{QueryMetadata, QueryOperator, SearchTerm, TermSource};
 
     #[tokio::test]
     async fn test_search_content_async() {
         let content =
             "2023-01-01 10:00:00 INFO Test log entry\n2023-01-01 10:01:00 ERROR Another entry\n";
-        let query = build_async_search_query("Test", false).expect("Query should build");
+        let (_, query) = resolve_search_query("Test", None, false, "async_search_query")
+            .expect("Query should build");
         let mut executor = QueryExecutor::new(100);
         let plan = executor.execute(&query).expect("Plan should build");
 
@@ -367,6 +337,49 @@ mod tests {
             "2023-01-01 10:00:00 INFO Test log entry"
         );
         assert_eq!(results[0].line, 1);
+    }
+
+    #[test]
+    fn test_async_search_uses_structured_query_when_provided() {
+        let structured_query = SearchQuery {
+            id: "saved-query".to_string(),
+            terms: vec![SearchTerm {
+                id: "term_1".to_string(),
+                value: "error.*timeout".to_string(),
+                operator: QueryOperator::Or,
+                source: TermSource::Preset,
+                preset_group_id: Some("preset-1".to_string()),
+                is_regex: true,
+                priority: 5,
+                enabled: true,
+                case_sensitive: false,
+            }],
+            global_operator: QueryOperator::Or,
+            filters: None,
+            metadata: QueryMetadata {
+                created_at: 1,
+                last_modified: 2,
+                execution_count: 3,
+                label: Some("saved".to_string()),
+            },
+        };
+
+        let (_, resolved) = resolve_search_query(
+            "error.*timeout",
+            Some(structured_query),
+            false,
+            "async_search_query",
+        )
+        .expect("Query should resolve");
+
+        assert_eq!(resolved.id, "async_search_query");
+        assert!(resolved.terms[0].is_regex);
+        assert_eq!(resolved.terms[0].source, TermSource::Preset);
+        assert_eq!(
+            resolved.terms[0].preset_group_id.as_deref(),
+            Some("preset-1")
+        );
+        assert_eq!(resolved.metadata.execution_count, 0);
     }
 
     #[tokio::test]
