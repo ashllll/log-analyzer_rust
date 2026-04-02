@@ -25,7 +25,7 @@ jobs:
     permissions:
       contents: write
     concurrency:
-      group: release-${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
+      group: release-${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}-${{ matrix.platform.name }}
       cancel-in-progress: false
     strategy:
       fail-fast: false
