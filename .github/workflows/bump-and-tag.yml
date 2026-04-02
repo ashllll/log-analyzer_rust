@@ -10,6 +10,9 @@ concurrency:
   group: bump-and-tag-${{ github.event.workflow_run.head_branch }}
   cancel-in-progress: true
 
+env:
+  NODE_VERSION: '22'
+
 jobs:
   bump-and-tag:
     name: Auto Bump Patch Version
@@ -54,79 +57,25 @@ jobs:
         if: steps.base.outputs.skip != 'true'
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: ${{ env.NODE_VERSION }}
 
       - name: Compute next patch version
         id: version
         if: steps.base.outputs.skip != 'true'
         run: |
-          # 取最新 semver tag，若无则从 v0.0.0 起
-          LATEST_TAG=$(git tag -l "v*" --sort=-v:refname | head -n 1)
-          if [ -z "$LATEST_TAG" ]; then
-            LATEST_TAG="v0.0.0"
-          fi
-          LATEST_VERSION="${LATEST_TAG#v}"
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$LATEST_VERSION"
-          PATCH=$((PATCH + 1))
-          VERSION="${MAJOR}.${MINOR}.${PATCH}"
-          TAG="v${VERSION}"
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
-          echo "下一版本: $VERSION"
+          node scripts/prepare-release.mjs plan
 
       - name: Update version in source files
         if: steps.base.outputs.skip != 'true'
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          cd log-analyzer
-
-          # 更新 package.json
-          node -e "
-            const fs = require('fs');
-            const p = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-            p.version = '${VERSION}';
-            fs.writeFileSync('package.json', JSON.stringify(p, null, 2) + '\n');
-          "
-
-          # 更新 Cargo.toml（仅替换 [package] 下第一个 version 行）
-          python3 -c "
-          import re
-          content = open('src-tauri/Cargo.toml').read()
-          content = re.sub(r'^version = \"[^\"]*\"', 'version = \"${VERSION}\"', content, count=1, flags=re.MULTILINE)
-          open('src-tauri/Cargo.toml', 'w').write(content)
-          "
-
-          for crate in src-tauri/crates/la-core/Cargo.toml src-tauri/crates/la-storage/Cargo.toml src-tauri/crates/la-search/Cargo.toml src-tauri/crates/la-archive/Cargo.toml; do
-            python3 -c "
-          import re
-          path = '${crate}'
-          content = open(path).read()
-          content = re.sub(r'^version = \"[^\"]*\"', 'version = \"${VERSION}\"', content, count=1, flags=re.MULTILINE)
-          open(path, 'w').write(content)
-          "
-          done
-
-          # 更新 tauri.conf.json
-          node -e "
-            const fs = require('fs');
-            const p = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
-            p.version = '${VERSION}';
-            fs.writeFileSync('src-tauri/tauri.conf.json', JSON.stringify(p, null, 2) + '\n');
-          "
-
-          echo "package.json:      $(node -p \"require('./package.json').version\")"
-          echo "Cargo.toml:        $(grep '^version' src-tauri/Cargo.toml | head -1)"
-          echo "tauri.conf.json:   $(node -p \"require('./src-tauri/tauri.conf.json').version\")"
-          echo "la-core:           $(grep '^version' src-tauri/crates/la-core/Cargo.toml | head -1)"
-          echo "la-storage:        $(grep '^version' src-tauri/crates/la-storage/Cargo.toml | head -1)"
-          echo "la-search:         $(grep '^version' src-tauri/crates/la-search/Cargo.toml | head -1)"
-          echo "la-archive:        $(grep '^version' src-tauri/crates/la-archive/Cargo.toml | head -1)"
+          node scripts/prepare-release.mjs apply --version "${{ steps.version.outputs.targetVersion }}"
+          node scripts/prepare-release.mjs check
 
       - name: Commit version bump and push tag
         id: publish
         if: steps.base.outputs.skip != 'true'
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
+          VERSION="${{ steps.version.outputs.targetVersion }}"
           TAG="${{ steps.version.outputs.tag }}"
 
           git config user.name "github-actions[bot]"

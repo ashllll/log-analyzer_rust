@@ -40,20 +40,16 @@ fi
 # 1. Version Consistency Check
 print_status "success" "Step 1: Checking version consistency..."
 
-PACKAGE_VERSION=$(jq -r '.version' log-analyzer/package.json)
-CARGO_VERSION=$(grep '^version =' log-analyzer/src-tauri/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
-TAURI_VERSION=$(jq -r '.version' log-analyzer/src-tauri/tauri.conf.json)
+RELEASE_PLAN_OUTPUT=$(node scripts/prepare-release.mjs plan)
+PACKAGE_VERSION=$(printf '%s\n' "$RELEASE_PLAN_OUTPUT" | awk -F= '/^currentVersion=/{print $2}')
+TARGET_VERSION=$(printf '%s\n' "$RELEASE_PLAN_OUTPUT" | awk -F= '/^targetVersion=/{print $2}')
+LATEST_TAG=$(printf '%s\n' "$RELEASE_PLAN_OUTPUT" | awk -F= '/^latestTag=/{print $2}')
+STRATEGY=$(printf '%s\n' "$RELEASE_PLAN_OUTPUT" | awk -F= '/^strategy=/{print $2}')
 
-print_status "success" "Package.json version: $PACKAGE_VERSION"
-print_status "success" "Cargo.toml version: $CARGO_VERSION"
-print_status "success" "Tauri.conf.json version: $TAURI_VERSION"
-
-if [[ "$PACKAGE_VERSION" != "$CARGO_VERSION" || "$PACKAGE_VERSION" != "$TAURI_VERSION" ]]; then
-    print_status "error" "Version numbers are inconsistent!"
-    exit 1
-fi
-
-print_status "success" "All version numbers are consistent"
+print_status "success" "Workspace version: $PACKAGE_VERSION"
+print_status "success" "Latest tag: $LATEST_TAG"
+print_status "success" "Planned release version: $TARGET_VERSION"
+print_status "success" "Planning strategy: $STRATEGY"
 
 # 2. Build Validation
 print_status "success" "Step 2: Validating build process..."

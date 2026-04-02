@@ -5,9 +5,13 @@ on:
     branches: [ main, develop ]
     types: [opened, synchronize, reopened]
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  NODE_VERSION: '22'
 
 jobs:
   # 验证版本号一致性
@@ -18,61 +22,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
       - name: Check version consistency
         run: |
-          # 获取各个文件的版本号
-          PACKAGE_VERSION=$(jq -r '.version' log-analyzer/package.json)
-          CARGO_VERSION=$(grep '^version =' log-analyzer/src-tauri/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
-          TAURI_VERSION=$(jq -r '.version' log-analyzer/src-tauri/tauri.conf.json)
-
-          # Workspace crates 版本号
-          CORE_VERSION=$(grep '^version =' log-analyzer/src-tauri/crates/la-core/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
-          STORAGE_VERSION=$(grep '^version =' log-analyzer/src-tauri/crates/la-storage/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
-          SEARCH_VERSION=$(grep '^version =' log-analyzer/src-tauri/crates/la-search/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
-          ARCHIVE_VERSION=$(grep '^version =' log-analyzer/src-tauri/crates/la-archive/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
-
-          echo "Package.json version: $PACKAGE_VERSION"
-          echo "Cargo.toml version: $CARGO_VERSION"
-          echo "Tauri.conf.json version: $TAURI_VERSION"
-          echo "la-core version: $CORE_VERSION"
-          echo "la-storage version: $STORAGE_VERSION"
-          echo "la-search version: $SEARCH_VERSION"
-          echo "la-archive version: $ARCHIVE_VERSION"
-
-          # 检查所有版本是否一致
-          VERSIONS_MATCH=true
-          if [[ "$PACKAGE_VERSION" != "$CARGO_VERSION" ]]; then
-            echo "❌ package.json 与 Cargo.toml 版本不一致"
-            VERSIONS_MATCH=false
-          fi
-          if [[ "$PACKAGE_VERSION" != "$TAURI_VERSION" ]]; then
-            echo "❌ package.json 与 tauri.conf.json 版本不一致"
-            VERSIONS_MATCH=false
-          fi
-          if [[ "$PACKAGE_VERSION" != "$CORE_VERSION" ]]; then
-            echo "❌ package.json 与 la-core/Cargo.toml 版本不一致"
-            VERSIONS_MATCH=false
-          fi
-          if [[ "$PACKAGE_VERSION" != "$STORAGE_VERSION" ]]; then
-            echo "❌ package.json 与 la-storage/Cargo.toml 版本不一致"
-            VERSIONS_MATCH=false
-          fi
-          if [[ "$PACKAGE_VERSION" != "$SEARCH_VERSION" ]]; then
-            echo "❌ package.json 与 la-search/Cargo.toml 版本不一致"
-            VERSIONS_MATCH=false
-          fi
-          if [[ "$PACKAGE_VERSION" != "$ARCHIVE_VERSION" ]]; then
-            echo "❌ package.json 与 la-archive/Cargo.toml 版本不一致"
-            VERSIONS_MATCH=false
-          fi
-
-          if [[ "$VERSIONS_MATCH" == "false" ]]; then
-            echo "❌ Version numbers are inconsistent across workspace!"
-            echo "Please ensure all version numbers match across package.json, all Cargo.toml, and tauri.conf.json"
-            exit 1
-          else
-            echo "✅ All version numbers are consistent across workspace"
-          fi
+          node scripts/prepare-release.mjs check
 
   # 验证构建准备
   build-validation:

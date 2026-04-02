@@ -12,9 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 更新搜索、CAS 与模块架构文档，使描述与当前代码主链路一致
 - 修正 CI/CD 自动发布链路，改为仅由 tag push 触发 Release，避免重复发布同一版本
 - 自动版本 bump 改为以通过 CI 的 `main` 提交为基准，避免为未验证的新 HEAD 打 tag
+- 自动发布的版本规划与版本文件写入已收敛到 `scripts/prepare-release.mjs`，避免继续依赖 YAML 内联 shell
+- CI 新增 Release Automation Dry Run，自动验证发布规划脚本与版本边界条件
 
 ### Fixed
 - 修复 Windows Release 工作流仍使用旧版 `ilammy/msvc-toolchain@v1` 且携带过时 `toolset: latest` 配置的问题
+- 修复“工作区版本已领先于最新 tag 时，自动发版可能把版本号回写变低”的边界条件
 
 ### Removed
 - 删除一次性分析报告、修复计划、AI 工具说明和过时的本地 CI/迁移文档

@@ -47,7 +47,7 @@ cargo test -q
 2. 合并到 `main`
 3. 由 GitHub Actions 在 `main` 的 CI 成功后自动执行：
 4. 自动补丁递增版本号
-5. 自动提交版本文件
+5. 通过仓库脚本统一更新版本文件
 6. 自动创建并推送 tag
 7. 由 tag 触发 Release 工作流并上传构建产物
 
@@ -55,6 +55,7 @@ cargo test -q
 
 - 自动版本 bump 以“刚刚通过 CI 的 `main` 提交”为基准，不会拿未验证的新 HEAD 直接打 tag。
 - Release 以 tag push 为单一自动触发源，避免重复 dispatch 造成同一版本被发布两次。
+- 版本规划由 `scripts/prepare-release.mjs` 统一处理，显式覆盖“工作区版本已领先于最新 tag”这类边界条件，避免自动流程把版本号回写变低。
 
 ### 方式二：显式 tag 发布
 
