@@ -636,11 +636,8 @@ mod tests {
 
     #[test]
     fn test_touch_updates_access_time() {
-        let mut entry = CacheEntry::with_ttl_and_tti(
-            "value",
-            Duration::from_secs(60),
-            Duration::from_secs(2),
-        );
+        let mut entry =
+            CacheEntry::with_ttl_and_tti("value", Duration::from_secs(60), Duration::from_secs(2));
 
         thread::sleep(Duration::from_millis(100));
         entry.touch();
