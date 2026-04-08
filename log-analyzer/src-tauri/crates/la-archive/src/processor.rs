@@ -14,7 +14,7 @@ use crate::internal::get_file_metadata;
 use crate::public_api::extract_archive_async;
 use crate::ArchiveManager;
 use la_core::error::{AppError, Result};
-use la_core::models::config::FileFilterConfig;
+use la_core::models::config::{ArchiveConfig, FileFilterConfig};
 use la_core::traits::AppConfigProvider;
 use la_core::utils::path::normalize_path_separator;
 use la_storage::{ArchiveMetadata, ContentAddressableStorage, FileMetadata, MetadataStore};
@@ -41,6 +41,18 @@ fn is_enhanced_extraction_enabled() -> bool {
     // Configuration file support can be added in the future if needed
     // Currently defaults to false for backward compatibility
     false
+}
+
+fn extraction_policy_from_archive_config(config: &ArchiveConfig) -> ExtractionPolicy {
+    ExtractionPolicy {
+        max_depth: config.max_extraction_depth,
+        max_file_size: config.max_file_size,
+        max_total_size: config.max_total_size,
+        buffer_size: config.streaming_buffer_size as usize,
+        dir_batch_size: config.directory_batch_size,
+        max_parallel_files: config.max_parallel_files,
+        max_file_count: config.max_file_count,
+    }
 }
 
 /// 检查是否跟随目录中的符号链接
@@ -445,13 +457,15 @@ async fn process_path_recursive_inner(
     );
 
     // 创建 ArchiveManager 实例
-    let archive_manager = ArchiveManager::new();
+    let archive_config = load_archive_config_safe(provider).await;
+    let archive_manager = ArchiveManager::with_config(archive_config.clone());
 
     // 检查是否为压缩文件
     if is_archive_file(path) {
         // 使用统一接口处理压缩文件
         match extract_and_process_archive(
             &archive_manager,
+            &archive_config,
             path,
             virtual_path,
             target_root,
@@ -1147,15 +1161,17 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
     parent_archive_id: Option<i64>,
     depth_level: i32,
 ) -> Result<()> {
-    const MAX_NESTING_DEPTH: i32 = 10;
+    let archive_config = load_archive_config_safe(provider).await;
+    let max_extraction_depth = archive_config.max_extraction_depth as i32;
 
     // Check depth limit - if reached, still extract but don't recurse into nested archives
-    let is_at_max_depth = depth_level >= MAX_NESTING_DEPTH;
+    let is_at_max_depth = depth_level >= max_extraction_depth;
 
     if is_at_max_depth {
         warn!(
             archive = %archive_path.display(),
             depth = depth_level,
+            max_extraction_depth = max_extraction_depth,
             "Maximum nesting depth reached, will extract but not recurse into nested archives"
         );
     }
@@ -1227,9 +1243,9 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
     })?;
 
     // Extract archive
-    let archive_manager = ArchiveManager::new();
+    let archive_manager = ArchiveManager::with_config(archive_config.clone());
     let extracted_files = if is_enhanced_extraction_enabled() {
-        let policy = ExtractionPolicy::default();
+        let policy = extraction_policy_from_archive_config(&archive_config);
         match extract_archive_async(archive_path, &extract_dir, workspace_id, Some(policy)).await {
             Ok(result) => {
                 info!(
@@ -1478,6 +1494,7 @@ fn is_archive_file(path: &Path) -> bool {
 #[allow(clippy::too_many_arguments)]
 async fn extract_and_process_archive(
     archive_manager: &ArchiveManager,
+    archive_config: &ArchiveConfig,
     archive_path: &Path,
     virtual_path: &str,
     target_root: &Path,
@@ -1486,17 +1503,17 @@ async fn extract_and_process_archive(
     task_id: &str,
     workspace_id: &str,
 ) -> Result<()> {
-    const MAX_NESTING_DEPTH: i32 = 10;
-
     // Track depth to prevent infinite recursion
     // For legacy implementation, we estimate depth from virtual_path
     // Count the number of archive separators to determine nesting level
     let depth_level = virtual_path.matches('/').count() as i32;
+    let max_extraction_depth = archive_config.max_extraction_depth as i32;
 
-    if depth_level >= MAX_NESTING_DEPTH {
+    if depth_level >= max_extraction_depth {
         warn!(
             archive = %archive_path.display(),
             depth = depth_level,
+            max_extraction_depth = max_extraction_depth,
             "Maximum nesting depth reached in legacy mode, skipping archive"
         );
         return Ok(());
@@ -1540,7 +1557,7 @@ async fn extract_and_process_archive(
             "Using enhanced extraction system"
         );
 
-        let policy = ExtractionPolicy::default();
+        let policy = extraction_policy_from_archive_config(archive_config);
 
         match extract_archive_async(archive_path, &extract_dir, workspace_id, Some(policy)).await {
             Ok(result) => {
@@ -1742,6 +1759,19 @@ async fn load_file_filter_config_safe(
                 "Failed to load config, using default file filter config"
             );
             Ok(FileFilterConfig::default())
+        }
+    }
+}
+
+async fn load_archive_config_safe(provider: &dyn AppConfigProvider) -> ArchiveConfig {
+    match load_config_from_provider(provider).await {
+        Ok(config) => config.archive,
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                "Failed to load config, using default archive config"
+            );
+            ArchiveConfig::default()
         }
     }
 }

@@ -339,6 +339,48 @@ mod tests {
         assert_eq!(results[0].line, 1);
     }
 
+    #[tokio::test]
+    async fn test_search_content_async_preserves_not_matches_without_highlights() {
+        let content =
+            "2023-01-01 10:00:00 INFO service healthy\n2023-01-01 10:01:00 DEBUG noisy log\n";
+        let query = SearchQuery {
+            id: "async_search_query".to_string(),
+            terms: vec![SearchTerm {
+                id: "term_1".to_string(),
+                value: "DEBUG".to_string(),
+                operator: QueryOperator::Not,
+                source: TermSource::User,
+                preset_group_id: None,
+                is_regex: false,
+                priority: 1,
+                enabled: true,
+                case_sensitive: false,
+            }],
+            global_operator: QueryOperator::Not,
+            filters: None,
+            metadata: QueryMetadata {
+                created_at: 0,
+                last_modified: 0,
+                execution_count: 0,
+                label: None,
+            },
+        };
+        let mut executor = QueryExecutor::new(100);
+        let plan = executor.execute(&query).expect("Plan should build");
+
+        let results = search_content_async(content, "test.log", &executor, &plan, 0)
+            .await
+            .expect("Search should succeed");
+
+        assert_eq!(results.len(), 1);
+        assert!(results[0]
+            .match_details
+            .as_ref()
+            .is_some_and(|details| details.is_empty()));
+        assert!(results[0].matched_keywords.is_none());
+        assert_eq!(results[0].line, 1);
+    }
+
     #[test]
     fn test_async_search_uses_structured_query_when_provided() {
         let structured_query = SearchQuery {

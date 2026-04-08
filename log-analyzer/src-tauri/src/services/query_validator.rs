@@ -1,3 +1,4 @@
+use crate::services::regex_engine::needs_lookaround;
 use crate::services::traits::{QueryValidation, ValidationResult};
 use la_core::error::{AppError, Result};
 use la_core::models::search::*;
@@ -82,6 +83,20 @@ impl QueryValidator {
         }
 
         if term.is_regex {
+            if needs_lookaround(&term.value) {
+                return Err(AppError::validation_error(format!(
+                    "Term {} uses regex syntax not supported by Rust regex: look-around assertions are not supported",
+                    term.id
+                )));
+            }
+
+            if contains_backreference(&term.value) {
+                return Err(AppError::validation_error(format!(
+                    "Term {} uses regex syntax not supported by Rust regex: backreferences are not supported",
+                    term.id
+                )));
+            }
+
             Regex::new(&term.value).map_err(|e| {
                 AppError::validation_error(format!("Term {} has invalid regex: {}", term.id, e))
             })?;
@@ -89,6 +104,34 @@ impl QueryValidator {
 
         Ok(())
     }
+}
+
+fn contains_backreference(pattern: &str) -> bool {
+    let chars: Vec<char> = pattern.chars().collect();
+
+    for (index, ch) in chars.iter().enumerate() {
+        if *ch != '\\' {
+            continue;
+        }
+
+        let preceding_backslashes = chars[..=index]
+            .iter()
+            .rev()
+            .take_while(|candidate| **candidate == '\\')
+            .count();
+
+        if preceding_backslashes % 2 == 0 {
+            continue;
+        }
+
+        match chars.get(index + 1) {
+            Some(next) if *next >= '1' && *next <= '9' => return true,
+            Some('k') if matches!(chars.get(index + 2), Some('<') | Some('\'')) => return true,
+            _ => {}
+        }
+    }
+
+    pattern.contains("(?P=")
 }
 
 #[cfg(test)]
@@ -350,5 +393,67 @@ mod tests {
 
         let result = QueryValidator::validate(&query);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_rejects_lookaround() {
+        let term = SearchTerm {
+            id: "term1".to_string(),
+            value: "(?=foo)bar".to_string(),
+            operator: QueryOperator::And,
+            source: TermSource::User,
+            preset_group_id: None,
+            is_regex: true,
+            priority: 1,
+            enabled: true,
+            case_sensitive: false,
+        };
+
+        let query = SearchQuery {
+            id: "test".to_string(),
+            terms: vec![term],
+            global_operator: QueryOperator::And,
+            filters: None,
+            metadata: QueryMetadata {
+                created_at: 0,
+                last_modified: 0,
+                execution_count: 0,
+                label: None,
+            },
+        };
+
+        let error = QueryValidator::validate(&query).unwrap_err();
+        assert!(error.to_string().contains("look-around"));
+    }
+
+    #[test]
+    fn test_validate_rejects_backreference() {
+        let term = SearchTerm {
+            id: "term1".to_string(),
+            value: r"(foo)\1".to_string(),
+            operator: QueryOperator::And,
+            source: TermSource::User,
+            preset_group_id: None,
+            is_regex: true,
+            priority: 1,
+            enabled: true,
+            case_sensitive: false,
+        };
+
+        let query = SearchQuery {
+            id: "test".to_string(),
+            terms: vec![term],
+            global_operator: QueryOperator::And,
+            filters: None,
+            metadata: QueryMetadata {
+                created_at: 0,
+                last_modified: 0,
+                execution_count: 0,
+                label: None,
+            },
+        };
+
+        let error = QueryValidator::validate(&query).unwrap_err();
+        assert!(error.to_string().contains("backreferences"));
     }
 }

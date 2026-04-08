@@ -7,6 +7,7 @@
 
 use std::{fs, path::Path, sync::Arc};
 
+use serde::Serialize;
 use tauri::{command, AppHandle, Emitter, Manager, State};
 use tracing::error;
 use uuid::Uuid;
@@ -23,6 +24,33 @@ use la_storage::{verify_after_import, MetadataStore};
 const SEARCH_INDEX_DIR_NAME: &str = "search_index";
 const SEARCH_INDEX_WRITER_HEAP_BYTES: usize = 50_000_000;
 const SEARCH_INDEX_COMMIT_EVERY_FILES: usize = 25;
+
+#[derive(Debug, Clone, Serialize)]
+struct RarSupportInfo {
+    compiled: bool,
+    available: bool,
+    reason: Option<String>,
+}
+
+fn get_rar_support_info() -> RarSupportInfo {
+    #[cfg(feature = "rar-support")]
+    {
+        RarSupportInfo {
+            compiled: true,
+            available: true,
+            reason: None,
+        }
+    }
+
+    #[cfg(not(feature = "rar-support"))]
+    {
+        RarSupportInfo {
+            compiled: false,
+            available: false,
+            reason: Some("RAR support is not compiled into this build".to_string()),
+        }
+    }
+}
 
 pub(crate) fn load_workspace_search_config(
     app: &AppHandle,
@@ -597,9 +625,33 @@ pub async fn import_folder(
 /// 检查 RAR 支持状态（无 sidecar 依赖）
 #[command]
 pub async fn check_rar_support() -> Result<serde_json::Value, String> {
-    Ok(serde_json::json!({
-        "available": true,
-        "install_guide": null,
-        "bundled": false,
-    }))
+    serde_json::to_value(get_rar_support_info())
+        .map_err(|error| format!("Failed to serialize RAR support info: {}", error))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::get_rar_support_info;
+
+    #[test]
+    fn rar_support_reports_compiled_feature_state() {
+        let support = get_rar_support_info();
+
+        #[cfg(feature = "rar-support")]
+        {
+            assert!(support.compiled);
+            assert!(support.available);
+            assert!(support.reason.is_none());
+        }
+
+        #[cfg(not(feature = "rar-support"))]
+        {
+            assert!(!support.compiled);
+            assert!(!support.available);
+            assert!(support
+                .reason
+                .as_deref()
+                .is_some_and(|reason| reason.contains("not compiled")));
+        }
+    }
 }

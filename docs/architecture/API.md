@@ -178,7 +178,7 @@ interface MatchDetail {
 | 命令 | 用途 |
 |------|------|
 | `import_folder` | 导入文件夹（含压缩包递归解压） |
-| `check_rar_support` | 检测当前平台是否支持 RAR 格式（依赖系统库） |
+| `check_rar_support` | 检测当前构建是否编译了 RAR 支持，以及当前运行时是否可用 |
 
 **`import_folder` 事件流（通过 Tauri emit）：**
 

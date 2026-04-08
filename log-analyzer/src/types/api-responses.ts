@@ -16,8 +16,9 @@ import { z } from 'zod';
  * RAR 支持信息 Schema
  */
 export const RarSupportInfoSchema = z.object({
-  supported: z.boolean(),
-  version: z.string().optional(),
+  compiled: z.boolean(),
+  available: z.boolean(),
+  reason: z.string().nullable().optional(),
 });
 
 /**

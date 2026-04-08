@@ -7,7 +7,14 @@
 
 use parking_lot::Mutex;
 use sha2::{Digest, Sha256};
-use std::{borrow::Cow, collections::HashSet, sync::Arc};
+use std::{
+    borrow::Cow,
+    collections::HashSet,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+};
 use tauri::{command, AppHandle, Emitter, Manager, State};
 use tracing::{debug, error, info, trace, warn};
 
@@ -733,8 +740,11 @@ pub async fn search_logs(
     let compiled_filters_for_search = compiled_filters.clone();
 
     // 为超时处理克隆必要的变量
-    let cancellation_tokens_for_timeout = Arc::clone(&cancellation_tokens);
     let app_handle_for_timeout = app_handle.clone();
+    let cancellation_token_for_timeout = cancellation_token.clone();
+    let timed_out = Arc::new(AtomicBool::new(false));
+    let timed_out_for_timeout = Arc::clone(&timed_out);
+    let timed_out_for_search = Arc::clone(&timed_out);
 
     // 老王备注：修复线程泄漏！使用tokio::task::spawn_blocking代替std::thread::spawn
     // 这样tokio运行时会管理线程生命周期，避免资源泄漏
@@ -778,11 +788,19 @@ pub async fn search_logs(
                 return;
             }
 
+            if cancellation_token.is_cancelled() {
+                batch.clear();
+                return;
+            }
+
             if let Err(e) = disk_store_spawn.append_entries(&search_id_clone, batch) {
                 warn!(error = %e, "磁盘写入搜索结果批次失败");
             }
             batch.clear();
-            let _ = app_handle.emit("search-progress", progress_count);
+
+            if !timed_out_for_search.load(Ordering::SeqCst) {
+                let _ = app_handle.emit("search-progress", progress_count);
+            }
         };
 
         // 先发送开始事件
@@ -791,7 +809,9 @@ pub async fn search_logs(
         'outer: for file_batch in files_for_search.chunks(10) {
             // 检查取消状态
             if cancellation_token.is_cancelled() {
-                let _ = app_handle.emit("search-cancelled", search_id_clone.clone());
+                if !timed_out_for_search.load(Ordering::SeqCst) {
+                    let _ = app_handle.emit("search-cancelled", search_id_clone.clone());
+                }
                 // 清理取消令牌
                 {
                     let mut tokens = cancellation_tokens.lock();
@@ -842,7 +862,17 @@ pub async fn search_logs(
 
             // 收集当前批次的结果
             for file_results in batch {
+                if cancellation_token.is_cancelled() {
+                    batch_results.clear();
+                    continue 'outer;
+                }
+
                 for mut entry in file_results {
+                    if cancellation_token.is_cancelled() {
+                        batch_results.clear();
+                        continue 'outer;
+                    }
+
                     // 检查是否已达到max_results限制
                     if results_count >= max_results {
                         flush_batch(&mut batch_results, results_count);
@@ -885,6 +915,15 @@ pub async fn search_logs(
             total_processed += file_batch.len();
         }
 
+        if cancellation_token.is_cancelled() {
+            {
+                let mut tokens = cancellation_tokens.lock();
+                tokens.remove(&search_id_clone);
+            }
+            disk_store_spawn.remove_session(&search_id_clone);
+            return;
+        }
+
         // 完成磁盘会话，确保所有写入对读者可见
         if let Err(e) = disk_store_spawn.complete_session(&search_id_clone) {
             warn!(error = %e, "完成磁盘搜索会话失败");
@@ -922,8 +961,10 @@ pub async fn search_logs(
             cache_manager.lock().insert_sync(cache_key, all_results);
         }
 
-        let _ = app_handle.emit("search-summary", &summary);
-        let _ = app_handle.emit("search-complete", results_count);
+        if !timed_out_for_search.load(Ordering::SeqCst) {
+            let _ = app_handle.emit("search-summary", &summary);
+            let _ = app_handle.emit("search-complete", results_count);
+        }
 
         // 清理取消令牌
         {
@@ -944,13 +985,10 @@ pub async fn search_logs(
         }
         Err(_) => {
             warn!(search_id = %search_id, "Search timed out after {} seconds", search_timeout_secs);
+            timed_out_for_timeout.store(true, Ordering::SeqCst);
+            cancellation_token_for_timeout.cancel();
             // 发送超时事件
             let _ = app_handle_for_timeout.emit("search-timeout", &search_id);
-            // 清理取消令牌
-            {
-                let mut tokens = cancellation_tokens_for_timeout.lock();
-                tokens.remove(&search_id);
-            }
             Err(CommandError::new(
                 "TIMEOUT_ERROR",
                 format!("Search timed out after {} seconds", search_timeout_secs),
@@ -1036,13 +1074,9 @@ where
 
     for (index, line) in lines {
         let line_ref = line.as_ref();
-        let match_details = executor.match_with_details(plan, line_ref);
-        if match_details
-            .as_ref()
-            .is_none_or(|details| details.is_empty())
-        {
+        let Some(match_details) = executor.match_with_details(plan, line_ref) else {
             continue;
-        }
+        };
 
         let metadata = ParsedLineMetadata::parse(line_ref, false);
         results.push(build_log_entry(
@@ -1052,7 +1086,7 @@ where
             real_path,
             line,
             metadata,
-            match_details,
+            Some(match_details),
         ));
     }
 
@@ -1138,13 +1172,10 @@ fn flush_search_segment(
                 continue;
             }
 
-            let match_details = executor.match_with_details(plan, candidate.line.as_ref());
-            if match_details
-                .as_ref()
-                .is_none_or(|details| details.is_empty())
-            {
+            let Some(match_details) = executor.match_with_details(plan, candidate.line.as_ref())
+            else {
                 continue;
-            }
+            };
 
             results.push(build_log_entry(
                 global_offset + candidate.index,
@@ -1153,7 +1184,7 @@ fn flush_search_segment(
                 real_path,
                 candidate.line,
                 candidate.metadata,
-                match_details,
+                Some(match_details),
             ));
         }
     } else {
@@ -1653,6 +1684,34 @@ mod tests {
         (executor, plan)
     }
 
+    fn build_not_executor_and_plan(query: &str) -> (QueryExecutor, ExecutionPlan) {
+        let mut executor = QueryExecutor::new(64);
+        let query = SearchQuery {
+            id: "test_not_query".to_string(),
+            terms: vec![SearchTerm {
+                id: "term_not".to_string(),
+                value: query.to_string(),
+                operator: QueryOperator::Not,
+                source: TermSource::User,
+                preset_group_id: None,
+                is_regex: false,
+                priority: 1,
+                enabled: true,
+                case_sensitive: false,
+            }],
+            global_operator: QueryOperator::Not,
+            filters: None,
+            metadata: QueryMetadata {
+                created_at: 0,
+                last_modified: 0,
+                execution_count: 0,
+                label: None,
+            },
+        };
+        let plan = executor.execute(&query).unwrap();
+        (executor, plan)
+    }
+
     #[test]
     fn resolve_search_query_uses_structured_query_when_provided() {
         let structured_query = SearchQuery {
@@ -1809,5 +1868,38 @@ mod tests {
         );
 
         assert!(results.is_empty());
+    }
+
+    #[test]
+    fn search_lines_with_details_keeps_not_matches_without_highlights() {
+        let compiled = CompiledSearchFilters::compile(&build_filters(None, None, &[], None))
+            .expect("Filters should compile");
+        let (executor, plan) = build_not_executor_and_plan("debug");
+        let content = "2024-01-15 10:00:00 INFO service healthy\n\
+2024-01-15 10:01:00 DEBUG should be excluded\n";
+
+        let results = search_lines_with_details(
+            content
+                .lines()
+                .enumerate()
+                .map(|(index, line)| (index, Cow::Borrowed(line))),
+            "logs/app.log",
+            "cas://hash",
+            &executor,
+            &plan,
+            &compiled,
+            0,
+        );
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(
+            &*results[0].content,
+            "2024-01-15 10:00:00 INFO service healthy"
+        );
+        assert!(results[0]
+            .match_details
+            .as_ref()
+            .is_some_and(|details| details.is_empty()));
+        assert!(results[0].matched_keywords.is_none());
     }
 }

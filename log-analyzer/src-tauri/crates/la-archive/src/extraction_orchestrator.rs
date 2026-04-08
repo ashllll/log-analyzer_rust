@@ -6,16 +6,81 @@
 //! resource management.
 
 use crate::extraction_engine::{ExtractionEngine, ExtractionResult};
+use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
 use la_core::error::{AppError, Result};
+use parking_lot::Mutex;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tokio::sync::{Mutex, Semaphore};
+use tokio::sync::{Notify, Semaphore};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 /// Shared result for request deduplication
-type SharedExtractionResult = Arc<Mutex<Option<Arc<Result<ExtractionResult>>>>>;
+type SharedExtractionResult = Arc<SharedExtractionState>;
+
+struct SharedExtractionState {
+    result: Mutex<Option<Arc<Result<ExtractionResult>>>>,
+    notify: Notify,
+}
+
+impl SharedExtractionState {
+    fn new() -> Self {
+        Self {
+            result: Mutex::new(None),
+            notify: Notify::new(),
+        }
+    }
+
+    fn clone_result(&self) -> Option<Arc<Result<ExtractionResult>>> {
+        self.result.lock().clone()
+    }
+
+    fn store_result(&self, result: Arc<Result<ExtractionResult>>) {
+        *self.result.lock() = Some(result);
+        self.notify.notify_waiters();
+    }
+}
+
+struct InFlightRequestGuard {
+    archive_path: PathBuf,
+    in_flight_requests: Arc<DashMap<PathBuf, SharedExtractionResult>>,
+    shared_result: SharedExtractionResult,
+}
+
+impl InFlightRequestGuard {
+    fn new(
+        archive_path: PathBuf,
+        in_flight_requests: Arc<DashMap<PathBuf, SharedExtractionResult>>,
+        shared_result: SharedExtractionResult,
+    ) -> Self {
+        Self {
+            archive_path,
+            in_flight_requests,
+            shared_result,
+        }
+    }
+
+    fn finish_with(&self, result: Arc<Result<ExtractionResult>>) {
+        self.shared_result.store_result(result);
+    }
+}
+
+impl Drop for InFlightRequestGuard {
+    fn drop(&mut self) {
+        if self.shared_result.clone_result().is_none() {
+            self.shared_result
+                .store_result(Arc::new(Err(AppError::archive_error(
+                    "Extraction request ended before producing a result",
+                    Some(self.archive_path.clone()),
+                ))));
+        } else {
+            self.shared_result.notify.notify_waiters();
+        }
+
+        self.in_flight_requests.remove(&self.archive_path);
+    }
+}
 
 /// Extraction orchestrator for managing concurrent operations
 pub struct ExtractionOrchestrator {
@@ -94,60 +159,70 @@ impl ExtractionOrchestrator {
             ));
         }
 
+        let (shared_result, is_owner) =
+            match self.in_flight_requests.entry(archive_path_buf.clone()) {
+                Entry::Occupied(entry) => (entry.get().clone(), false),
+                Entry::Vacant(entry) => {
+                    let shared_result = Arc::new(SharedExtractionState::new());
+                    entry.insert(shared_result.clone());
+                    (shared_result, true)
+                }
+            };
+
         // Check if there's already an in-flight request for this archive
-        if let Some(existing_result) = self.in_flight_requests.get(&archive_path_buf) {
+        if !is_owner {
             debug!(
                 "Request deduplication: waiting for existing extraction of {:?}",
                 archive_path
             );
 
-            // Wait for the existing extraction to complete
-            let result = {
-                let guard = existing_result.lock().await;
-                guard.clone()
-            };
+            loop {
+                if let Some(result) = shared_result.clone_result() {
+                    return Self::resolve_shared_result(&result, &archive_path_buf);
+                }
 
-            return match result {
-                Some(arc_result) => match arc_result.as_ref() {
-                    Ok(extraction_result) => Ok(extraction_result.clone()),
-                    Err(e) => Err(AppError::archive_error(
-                        format!("Deduplicated request failed: {}", e),
-                        Some(archive_path_buf.clone()),
-                    )),
-                },
-                None => Err(AppError::archive_error(
-                    "Deduplicated request completed but result was not available",
-                    Some(archive_path_buf.clone()),
-                )),
-            };
+                tokio::select! {
+                    _ = shared_result.notify.notified() => {}
+                    _ = self.cancellation_token.cancelled() => {
+                        return Err(AppError::validation_error("Extraction cancelled while waiting for duplicate request"));
+                    }
+                }
+            }
         }
 
-        // Create a shared result for this extraction
-        let shared_result: SharedExtractionResult = Arc::new(Mutex::new(None));
-        self.in_flight_requests
-            .insert(archive_path_buf.clone(), shared_result.clone());
+        let in_flight_guard = InFlightRequestGuard::new(
+            archive_path_buf.clone(),
+            Arc::clone(&self.in_flight_requests),
+            shared_result.clone(),
+        );
 
         // Perform the extraction with concurrency control
         let result = self
             .extract_with_concurrency_control(archive_path, target_dir, workspace_id)
             .await;
 
-        // Store the result in the shared result
-        {
-            let mut guard = shared_result.lock().await;
-            *guard = Some(Arc::new(match &result {
-                Ok(extraction_result) => Ok(extraction_result.clone()),
-                Err(e) => Err(AppError::archive_error(
-                    format!("{}", e),
-                    Some(archive_path_buf.clone()),
-                )),
-            }));
-        }
-
-        // Remove from in-flight requests
-        self.in_flight_requests.remove(&archive_path_buf);
+        in_flight_guard.finish_with(Arc::new(match &result {
+            Ok(extraction_result) => Ok(extraction_result.clone()),
+            Err(e) => Err(AppError::archive_error(
+                format!("{}", e),
+                Some(archive_path_buf.clone()),
+            )),
+        }));
 
         result
+    }
+
+    fn resolve_shared_result(
+        shared_result: &Arc<Result<ExtractionResult>>,
+        archive_path: &Path,
+    ) -> Result<ExtractionResult> {
+        match shared_result.as_ref() {
+            Ok(extraction_result) => Ok(extraction_result.clone()),
+            Err(error) => Err(AppError::archive_error(
+                format!("{}", error),
+                Some(archive_path.to_path_buf()),
+            )),
+        }
     }
 
     /// Extract with concurrency control using semaphore
@@ -254,6 +329,21 @@ mod tests {
         ExtractionOrchestrator::new(engine, Some(2))
     }
 
+    fn sample_extraction_result(workspace_id: &str) -> ExtractionResult {
+        ExtractionResult {
+            workspace_id: workspace_id.to_string(),
+            extracted_files: Vec::new(),
+            warnings: Vec::new(),
+            max_depth_reached: 1,
+            total_files: 2,
+            total_bytes: 128,
+            path_shortenings_applied: 0,
+            depth_limit_skips: 0,
+            extraction_duration_secs: 0.5,
+            extraction_speed_bytes_per_sec: 256.0,
+        }
+    }
+
     #[tokio::test]
     async fn test_orchestrator_creation() {
         let orchestrator = create_test_orchestrator().await;
@@ -303,5 +393,70 @@ mod tests {
         drop(permit2);
         sleep(Duration::from_millis(10)).await;
         assert_eq!(orchestrator.available_slots(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_duplicate_archive_requests_wait_for_same_result() {
+        let orchestrator = Arc::new(create_test_orchestrator().await);
+        let archive_path = PathBuf::from("/tmp/dedup-test.zip");
+        let target_dir = TempDir::new().unwrap();
+        let shared_result = Arc::new(SharedExtractionState::new());
+        let expected = sample_extraction_result("workspace-1");
+
+        orchestrator
+            .in_flight_requests
+            .insert(archive_path.clone(), shared_result.clone());
+
+        let orchestrator_for_waiter = Arc::clone(&orchestrator);
+        let archive_path_for_waiter = archive_path.clone();
+        let target_dir_for_waiter = target_dir.path().to_path_buf();
+        let waiter = tokio::spawn(async move {
+            orchestrator_for_waiter
+                .extract_archive(
+                    &archive_path_for_waiter,
+                    &target_dir_for_waiter,
+                    "workspace-1",
+                )
+                .await
+        });
+
+        sleep(Duration::from_millis(50)).await;
+        assert!(
+            !waiter.is_finished(),
+            "Duplicate request should wait until the shared result is published"
+        );
+
+        shared_result.store_result(Arc::new(Ok(expected.clone())));
+        orchestrator.in_flight_requests.remove(&archive_path);
+
+        let result = waiter.await.unwrap().unwrap();
+        assert_eq!(result.workspace_id, expected.workspace_id);
+        assert_eq!(result.total_files, expected.total_files);
+        assert_eq!(result.total_bytes, expected.total_bytes);
+        assert_eq!(result.max_depth_reached, expected.max_depth_reached);
+    }
+
+    #[tokio::test]
+    async fn test_inflight_entry_cleaned_up_on_error() {
+        let orchestrator = create_test_orchestrator().await;
+        let archive_path = PathBuf::from("/tmp/cleanup-test.zip");
+        let shared_result = Arc::new(SharedExtractionState::new());
+
+        orchestrator
+            .in_flight_requests
+            .insert(archive_path.clone(), shared_result.clone());
+
+        {
+            let _guard = InFlightRequestGuard::new(
+                archive_path.clone(),
+                Arc::clone(&orchestrator.in_flight_requests),
+                shared_result.clone(),
+            );
+        }
+
+        assert_eq!(orchestrator.in_flight_count(), 0);
+        let stored_result = shared_result.clone_result();
+        assert!(stored_result.is_some());
+        assert!(stored_result.unwrap().as_ref().is_err());
     }
 }
