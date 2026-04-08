@@ -1,0 +1,2 @@
+Triggered by automation on 2026-04-08 to restore the release pipeline after merging the rustfmt fix.
+This file exists only to create a normal push event on main so CI -> bump-and-tag -> release can run.
