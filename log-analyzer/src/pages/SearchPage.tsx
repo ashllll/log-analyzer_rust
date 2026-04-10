@@ -507,9 +507,10 @@ const SearchPage: React.FC = () => {
     }
 
     try {
-      const structuredQuery = SearchQueryBuilder
-        .fromString(trimmedQuery, enabledKeywordGroups)
-        .getQuery();
+      const structuredQuery = currentQuery
+        ?? SearchQueryBuilder
+          .fromString(trimmedQuery, enabledKeywordGroups)
+          .getQuery();
 
       // 构建过滤器对象
       const filters = {
@@ -575,21 +576,23 @@ const SearchPage: React.FC = () => {
    * 从查询中删除单个关键词
    */
   const removeTermFromQuery = useCallback((termToRemove: string) => {
-    const terms = query.split('|').map(t => t.trim()).filter(t => t.length > 0);
-    const newTerms = terms.filter(t => t.toLowerCase() !== termToRemove.toLowerCase());
-    setQuery(newTerms.join('|'));
-    
-    // 同时更新结构化查询
     if (currentQuery) {
       const builder = SearchQueryBuilder.import(JSON.stringify(currentQuery));
       if (builder) {
         const existing = builder.findTermByValue(termToRemove);
         if (existing) {
           builder.removeTerm(existing.id);
-          setCurrentQuery(builder.getQuery());
+          const nextQuery = builder.getQuery();
+          setCurrentQuery(nextQuery);
+          setQuery(builder.toQueryString());
+          return;
         }
       }
     }
+
+    const terms = query.split('|').map(t => t.trim()).filter(t => t.length > 0);
+    const newTerms = terms.filter(t => t.toLowerCase() !== termToRemove.toLowerCase());
+    setQuery(newTerms.join('|'));
   }, [query, currentQuery]);
 
   /**
@@ -637,6 +640,36 @@ const SearchPage: React.FC = () => {
     const queryString = builder.toQueryString();
     setQuery(queryString);
   }, [query, enabledKeywordGroups, currentQuery, addToast]);
+
+  const activeTerms = useMemo(() => {
+    if (currentQuery) {
+      return currentQuery.terms
+        .filter((term) => term.enabled)
+        .map((term) => term.value);
+    }
+
+    return query
+      .split('|')
+      .map((term) => term.trim())
+      .filter((term) => term.length > 0);
+  }, [currentQuery, query]);
+
+  const handleQueryChange = useCallback((nextQuery: string) => {
+    setQuery(nextQuery);
+
+    if (!currentQuery) {
+      return;
+    }
+
+    const currentDisplayQuery = currentQuery.terms
+      .filter((term) => term.enabled)
+      .map((term) => term.value)
+      .join('|');
+
+    if (nextQuery !== currentDisplayQuery) {
+      setCurrentQuery(null);
+    }
+  }, [currentQuery]);
 
   /**
    * 复制到剪贴板
@@ -757,7 +790,7 @@ const SearchPage: React.FC = () => {
       <div className="p-4 border-b border-border-subtle bg-bg-sidebar space-y-3 shrink-0 relative z-40">
         <SearchControls
           query={query}
-          onQueryChange={setQuery}
+          onQueryChange={handleQueryChange}
           onSearch={handleSearch}
           onExport={handleExport}
           isFilterPaletteOpen={isFilterPaletteOpen}
@@ -767,7 +800,7 @@ const SearchPage: React.FC = () => {
           disabled={!activeWorkspace || !query.trim()}
           searchInputRef={searchInputRef}
           keywordGroups={keywordGroups}
-          currentQuery={query}
+          activeTerms={activeTerms}
           onToggleRule={toggleRuleInQuery}
         />
 
@@ -778,7 +811,7 @@ const SearchPage: React.FC = () => {
         />
 
         <ActiveKeywords
-          query={query}
+          activeTerms={activeTerms}
           onRemoveTerm={removeTermFromQuery}
         />
 

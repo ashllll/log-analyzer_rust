@@ -54,6 +54,6 @@ export interface FilterPaletteProps {
   isOpen: boolean;
   onClose: () => void;
   groups: KeywordGroup[];
-  currentQuery: string;
+  activeTerms: string[];
   onToggleRule: (regex: string) => void;
 }

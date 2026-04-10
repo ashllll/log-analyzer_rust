@@ -22,7 +22,7 @@ export interface SearchControlsProps {
   disabled: boolean;
   searchInputRef: React.RefObject<HTMLInputElement | null>;
   keywordGroups: KeywordGroup[];
-  currentQuery: string;
+  activeTerms: string[];
   onToggleRule: (regex: string) => void;
 }
 
@@ -38,7 +38,7 @@ export const SearchControls: React.FC<SearchControlsProps> = ({
   disabled,
   searchInputRef,
   keywordGroups,
-  currentQuery,
+  activeTerms,
   onToggleRule,
 }) => {
   const { t } = useTranslation();
@@ -84,7 +84,7 @@ export const SearchControls: React.FC<SearchControlsProps> = ({
           isOpen={isFilterPaletteOpen}
           onClose={onFilterPaletteClose}
           groups={keywordGroups}
-          currentQuery={currentQuery}
+          activeTerms={activeTerms}
           onToggleRule={onToggleRule}
         />
       </div>

@@ -9,7 +9,7 @@ import { ActiveKeywords } from '../ActiveKeywords';
 
 describe('ActiveKeywords', () => {
   const defaultProps = {
-    query: '',
+    activeTerms: [] as string[],
     onRemoveTerm: jest.fn(),
   };
 
@@ -18,14 +18,14 @@ describe('ActiveKeywords', () => {
   });
 
   it('should render None when query is empty', () => {
-    render(<ActiveKeywords {...defaultProps} query="" />);
+    render(<ActiveKeywords {...defaultProps} activeTerms={[]} />);
 
     expect(screen.getByText('None')).toBeInTheDocument();
     expect(screen.queryByText('Active:')).toBeInTheDocument();
   });
 
   it('should render None when query has only whitespace', () => {
-    const { container } = render(<ActiveKeywords {...defaultProps} query="   " />);
+    const { container } = render(<ActiveKeywords {...defaultProps} activeTerms={['   ']} />);
 
     // With whitespace-only query, split gives ["", "", ""], filter removes empties
     // So query becomes empty and "None" is shown
@@ -34,14 +34,14 @@ describe('ActiveKeywords', () => {
   });
 
   it('should render single keyword correctly', () => {
-    render(<ActiveKeywords {...defaultProps} query="error" />);
+    render(<ActiveKeywords {...defaultProps} activeTerms={['error']} />);
 
     expect(screen.getByText('error')).toBeInTheDocument();
     expect(screen.queryByText('None')).not.toBeInTheDocument();
   });
 
-  it('should render keywords split by |', () => {
-    render(<ActiveKeywords {...defaultProps} query="error|warning|info" />);
+  it('should render multiple active terms', () => {
+    render(<ActiveKeywords {...defaultProps} activeTerms={['error', 'warning', 'info']} />);
 
     expect(screen.getByText('error')).toBeInTheDocument();
     expect(screen.getByText('warning')).toBeInTheDocument();
@@ -50,7 +50,7 @@ describe('ActiveKeywords', () => {
 
   it('should call onRemoveTerm with correct term when delete button clicked', () => {
     const onRemoveTerm = jest.fn();
-    render(<ActiveKeywords {...defaultProps} query="error|warning" onRemoveTerm={onRemoveTerm} />);
+    render(<ActiveKeywords {...defaultProps} activeTerms={['error', 'warning']} onRemoveTerm={onRemoveTerm} />);
 
     // Find and click the delete button for 'error'
     const errorDeleteButton = screen
@@ -67,7 +67,7 @@ describe('ActiveKeywords', () => {
 
   it('should call onRemoveTerm with correct term when warning delete button clicked', () => {
     const onRemoveTerm = jest.fn();
-    render(<ActiveKeywords {...defaultProps} query="error|warning" onRemoveTerm={onRemoveTerm} />);
+    render(<ActiveKeywords {...defaultProps} activeTerms={['error', 'warning']} onRemoveTerm={onRemoveTerm} />);
 
     const warningDeleteButton = screen
       .getAllByRole('button', { hidden: true })
@@ -81,17 +81,17 @@ describe('ActiveKeywords', () => {
     }
   });
 
-  it('should trim whitespace from terms', () => {
+  it('should trim whitespace from active terms', () => {
     const onRemoveTerm = jest.fn();
-    render(<ActiveKeywords {...defaultProps} query="  error  |  warning  " onRemoveTerm={onRemoveTerm} />);
+    render(<ActiveKeywords {...defaultProps} activeTerms={['  error  ', '  warning  ']} onRemoveTerm={onRemoveTerm} />);
 
     // Should render trimmed terms
     expect(screen.getByText('error')).toBeInTheDocument();
     expect(screen.getByText('warning')).toBeInTheDocument();
   });
 
-  it('should ignore empty terms', () => {
-    render(<ActiveKeywords {...defaultProps} query="error||warning" />);
+  it('should ignore empty active terms', () => {
+    render(<ActiveKeywords {...defaultProps} activeTerms={['error', '', 'warning']} />);
 
     // Should still render the non-empty terms
     expect(screen.getByText('error')).toBeInTheDocument();
@@ -104,7 +104,7 @@ describe('ActiveKeywords', () => {
 
   it('should not call onRemoveTerm when clicking the term itself', () => {
     const onRemoveTerm = jest.fn();
-    render(<ActiveKeywords {...defaultProps} query="error" onRemoveTerm={onRemoveTerm} />);
+    render(<ActiveKeywords {...defaultProps} activeTerms={['error']} onRemoveTerm={onRemoveTerm} />);
 
     // Click on the term text, not the delete button
     const termElement = screen.getByText('error');
@@ -116,7 +116,7 @@ describe('ActiveKeywords', () => {
   });
 
   it('should render Hash icon before each term', () => {
-    render(<ActiveKeywords {...defaultProps} query="error" />);
+    render(<ActiveKeywords {...defaultProps} activeTerms={['error']} />);
 
     // The component renders Hash icons - verify the component renders
     const container = document.querySelector('.flex.items-center.gap-2');
@@ -126,7 +126,7 @@ describe('ActiveKeywords', () => {
   it('should render all terms with delete buttons', () => {
     const onRemoveTerm = jest.fn();
     render(
-      <ActiveKeywords {...defaultProps} query="a|b|c" onRemoveTerm={onRemoveTerm} />
+      <ActiveKeywords {...defaultProps} activeTerms={['a', 'b', 'c']} onRemoveTerm={onRemoveTerm} />
     );
 
     // Should render all three terms
@@ -139,20 +139,18 @@ describe('ActiveKeywords', () => {
     expect(deleteButtons).toHaveLength(3);
   });
 
-  it('should handle query with trailing |', () => {
+  it('should preserve regex terms containing alternation', () => {
     const onRemoveTerm = jest.fn();
-    render(<ActiveKeywords {...defaultProps} query="error|" onRemoveTerm={onRemoveTerm} />);
+    render(<ActiveKeywords {...defaultProps} activeTerms={['error|warning']} onRemoveTerm={onRemoveTerm} />);
 
-    // Should only show 'error', not an empty term
-    expect(screen.getByText('error')).toBeInTheDocument();
-    // The empty string after | should be filtered out, so we should only have one keyword span
+    expect(screen.getByText('error|warning')).toBeInTheDocument();
     const keywordSpans = document.querySelectorAll('span.flex.items-center');
     expect(keywordSpans.length).toBe(1);
   });
 
-  it('should handle query with leading |', () => {
+  it('should handle whitespace-only active terms', () => {
     const onRemoveTerm = jest.fn();
-    render(<ActiveKeywords {...defaultProps} query="|error" onRemoveTerm={onRemoveTerm} />);
+    render(<ActiveKeywords {...defaultProps} activeTerms={['', 'error']} onRemoveTerm={onRemoveTerm} />);
 
     // Should only show 'error'
     expect(screen.getByText('error')).toBeInTheDocument();
@@ -163,7 +161,7 @@ describe('ActiveKeywords', () => {
 
   it('should display aria-label for accessibility', () => {
     const onRemoveTerm = jest.fn();
-    render(<ActiveKeywords {...defaultProps} query="error" onRemoveTerm={onRemoveTerm} />);
+    render(<ActiveKeywords {...defaultProps} activeTerms={['error']} onRemoveTerm={onRemoveTerm} />);
 
     const deleteButton = screen.getByRole('button', { hidden: true });
     expect(deleteButton).toHaveAttribute('aria-label', '删除关键词 error');

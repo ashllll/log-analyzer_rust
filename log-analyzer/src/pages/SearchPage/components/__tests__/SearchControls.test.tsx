@@ -8,6 +8,8 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { SearchControls } from '../SearchControls';
 import type { KeywordGroup } from '../../../../types/common';
 
+const filterPaletteMock = jest.fn();
+
 // Mock lucide-react icons
 jest.mock('lucide-react', () => ({
   Search: () => <span data-testid="search-icon">SearchIcon</span>,
@@ -19,7 +21,10 @@ jest.mock('lucide-react', () => ({
 
 // Mock FilterPalette component
 jest.mock('../../../../components/modals', () => ({
-  FilterPalette: () => <div data-testid="filter-palette">FilterPalette</div>,
+  FilterPalette: (props: unknown) => {
+    filterPaletteMock(props);
+    return <div data-testid="filter-palette">FilterPalette</div>;
+  },
 }));
 
 // Mock react-i18next - 返回 key 作为默认值
@@ -42,12 +47,13 @@ describe('SearchControls', () => {
     disabled: false,
     searchInputRef: { current: null } as React.RefObject<HTMLInputElement | null>,
     keywordGroups: [] as KeywordGroup[],
-    currentQuery: '',
+    activeTerms: [],
     onToggleRule: jest.fn(),
   };
 
   beforeEach(() => {
     jest.clearAllMocks();
+    filterPaletteMock.mockClear();
   });
 
   it('should render search input with placeholder', () => {
@@ -299,16 +305,21 @@ describe('SearchControls', () => {
     expect(screen.getByTestId('filter-palette')).toBeInTheDocument();
   });
 
-  it('should pass currentQuery to FilterPalette', () => {
+  it('should pass active terms to FilterPalette', () => {
     render(
       <SearchControls
         {...defaultProps}
         isFilterPaletteOpen={true}
-        currentQuery="error|warning"
+        activeTerms={['error|warning']}
       />
     );
 
     expect(screen.getByTestId('filter-palette')).toBeInTheDocument();
+    expect(filterPaletteMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        activeTerms: ['error|warning'],
+      })
+    );
   });
 
   it('should render all buttons in correct order', () => {

@@ -13,13 +13,13 @@ const FilterPalette: React.FC<FilterPaletteProps> = ({
   isOpen, 
   onClose, 
   groups, 
-  currentQuery, 
+  activeTerms, 
   onToggleRule 
 }) => {
   if (!isOpen) return null;
 
   const isPatternActive = (regex: string) => 
-    currentQuery.split('|').map((t: string) => t.trim().toLowerCase()).includes(regex.toLowerCase());
+    activeTerms.some((term: string) => term.trim().toLowerCase() === regex.toLowerCase());
 
   const colorOrder: ColorKey[] = ['red', 'orange', 'blue', 'purple', 'green'];
 

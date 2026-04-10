@@ -6,18 +6,18 @@ import React from 'react';
 import { Hash, X } from 'lucide-react';
 
 export interface ActiveKeywordsProps {
-  query: string;
+  activeTerms: string[];
   onRemoveTerm: (term: string) => void;
 }
 
 export const ActiveKeywords: React.FC<ActiveKeywordsProps> = ({
-  query,
+  activeTerms,
   onRemoveTerm,
 }) => {
   return (
     <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none h-6 min-h-[24px]">
       <span className="text-[10px] font-bold text-text-dim uppercase">Active:</span>
-      {query ? query.split('|').map((term: string) => {
+      {activeTerms.length > 0 ? activeTerms.map((term: string) => {
         const trimmedTerm = term.trim();
         if (!trimmedTerm) return null;
         return (
