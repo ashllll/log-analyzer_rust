@@ -552,11 +552,12 @@ pub async fn delete_workspace(
     // 执行清理
     cleanup_workspace_resources(&workspaceId, &state, &app)?;
 
-    // 失效该工作区的所有缓存
-    // 使用 CacheManager 的 clear 方法
+    // 失效该工作区的缓存（仅目标工作区，不影响其他工作区）
     {
         let cache = state.cache_manager.lock();
-        cache.clear();
+        if let Err(e) = cache.invalidate_workspace_cache(&workspaceId) {
+            warn!(error = %e, "工作区缓存失效失败");
+        }
     }
     info!(
         workspace_id = %workspaceId,
@@ -816,6 +817,9 @@ pub async fn create_workspace(
 
     // 生成 workspace ID（使用名称作为基础，转换为合法 ID）
     let workspace_id = format!("ws-{}", name.to_lowercase().replace([' ', '/', '\\'], "-"));
+
+    // 验证生成的 workspace ID 合法性
+    validate_workspace_id(&workspace_id)?;
 
     // 调用 import_folder 逻辑
     import_folder(app, path, workspace_id, state).await

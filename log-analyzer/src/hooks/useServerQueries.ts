@@ -210,8 +210,6 @@ export const useDeleteWorkspaceMutation = () => {
   const { showToast: addToast } = useToast();
   const deleteWorkspace = useWorkspaceStore((state) => state.deleteWorkspace);
   const setActiveWorkspace = useAppStore((state) => state.setActiveWorkspace);
-  const workspaces = useWorkspaceStore((state) => state.workspaces);
-  const activeWorkspaceId = useAppStore((state) => state.activeWorkspaceId);
 
   return useMutation({
     mutationFn: async (workspaceId: string) => {
@@ -225,8 +223,11 @@ export const useDeleteWorkspaceMutation = () => {
       // Update zustand store
       deleteWorkspace(workspaceId);
 
-      // Handle active workspace switching
-      if (activeWorkspaceId === workspaceId) {
+      // Read latest state via getState() to avoid stale closure
+      const { workspaces } = useWorkspaceStore.getState();
+      const currentActiveId = useAppStore.getState().activeWorkspaceId;
+
+      if (currentActiveId === workspaceId) {
         const remainingWorkspaces = workspaces.filter((w: Workspace) => w.id !== workspaceId);
         if (remainingWorkspaces.length > 0) {
           setActiveWorkspace(remainingWorkspaces[0].id);

@@ -27,32 +27,69 @@ export const RarSupportInfoSchema = z.object({
 export type RarSupportInfo = z.infer<typeof RarSupportInfoSchema>;
 
 // ============================================================================
-// 虚拟文件节点
+// 虚拟文件节点（与后端 VirtualTreeNode tagged enum 对齐）
 // ============================================================================
 
 /**
- * 虚拟文件节点类型
- * 类型定义必须在 Schema 之前，避免循环引用问题
+ * 文件节点类型
  */
 export type VirtualFileNode = {
+  type: 'file';
   name: string;
   path: string;
-  is_directory: boolean;
-  size?: number;
-  children?: VirtualFileNode[];
+  hash: string;
+  size: number;
+  mimeType?: string;
 };
 
 /**
+ * 归档节点类型
+ */
+export type VirtualArchiveNode = {
+  type: 'archive';
+  name: string;
+  path: string;
+  hash: string;
+  archiveType: string;
+  children: VirtualTreeNode[];
+};
+
+/**
+ * 虚拟树节点联合类型
+ */
+export type VirtualTreeNode = VirtualFileNode | VirtualArchiveNode;
+
+/**
  * 虚拟文件节点 Schema
- * 使用 lazy 处理递归结构
  */
 export const VirtualFileNodeSchema: z.ZodType<VirtualFileNode> = z.object({
+  type: z.literal('file'),
   name: z.string(),
   path: z.string(),
-  is_directory: z.boolean(),
-  size: z.number().optional(),
-  children: z.lazy(() => VirtualFileNodeSchema.array()).optional(),
+  hash: z.string(),
+  size: z.number(),
+  mimeType: z.string().optional(),
 });
+
+/**
+ * 虚拟归档节点 Schema（递归）
+ */
+export const VirtualArchiveNodeSchema: z.ZodType<VirtualArchiveNode> = z.object({
+  type: z.literal('archive'),
+  name: z.string(),
+  path: z.string(),
+  hash: z.string(),
+  archiveType: z.string(),
+  children: z.lazy(() => VirtualTreeNodeSchema.array()),
+});
+
+/**
+ * 虚拟树节点联合 Schema
+ */
+export const VirtualTreeNodeSchema: z.ZodType<VirtualTreeNode> = z.union([
+  VirtualFileNodeSchema,
+  VirtualArchiveNodeSchema,
+]);
 
 // ============================================================================
 // 工作区状态

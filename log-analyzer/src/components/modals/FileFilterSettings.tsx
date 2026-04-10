@@ -324,7 +324,7 @@ const FileFilterSettings: React.FC<FileFilterSettingsProps> = ({
                   type="text"
                   value={newPattern}
                   onChange={e => setNewPattern(e.target.value)}
-                  onKeyPress={e => e.key === 'Enter' && addPattern()}
+                  onKeyDown={e => e.key === 'Enter' && addPattern()}
                   placeholder={t('file_filter.pattern_placeholder')}
                   className="flex-1 px-3 py-2 bg-bg-sidebar border border-border-base rounded text-sm text-text-main placeholder:text-text-dim focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
                 />
@@ -366,7 +366,7 @@ const FileFilterSettings: React.FC<FileFilterSettingsProps> = ({
                   type="text"
                   value={newExtension}
                   onChange={e => setNewExtension(e.target.value)}
-                  onKeyPress={e => e.key === 'Enter' && addExtension()}
+                  onKeyDown={e => e.key === 'Enter' && addExtension()}
                   placeholder={t('file_filter.extension_placeholder')}
                   className="flex-1 px-3 py-2 bg-bg-sidebar border border-border-base rounded text-sm text-text-main placeholder:text-text-dim focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
                 />

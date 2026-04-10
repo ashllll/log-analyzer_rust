@@ -167,7 +167,7 @@ const KeywordModal: React.FC<KeywordModalProps> = ({ isOpen, onClose, onSave, in
               </label>
               <Input
                 value={name}
-                onChange={(e: any) => handleNameChange(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleNameChange(e.target.value)}
                 onBlur={handleNameBlur}
                 placeholder="Name"
                 className={cn(errors.name ? "border-red-500 focus:ring-red-500/50" : "")}
@@ -237,7 +237,7 @@ const KeywordModal: React.FC<KeywordModalProps> = ({ isOpen, onClose, onSave, in
                   <div className="flex-1">
                     <Input
                       value={p.regex}
-                      onChange={(e: any) => handlePatternChange(i, 'regex', e.target.value)}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => handlePatternChange(i, 'regex', e.target.value)}
                       onBlur={handlePatternBlur}
                       placeholder="RegEx"
                       className={cn(
@@ -252,7 +252,7 @@ const KeywordModal: React.FC<KeywordModalProps> = ({ isOpen, onClose, onSave, in
                   <div className="flex-1">
                     <Input
                       value={p.comment}
-                      onChange={(e: any) => {
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                         const n = [...patterns];
                         n[i].comment = e.target.value;
                         setPatterns(n);

@@ -17,8 +17,7 @@ import {
   RarSupportInfoSchema,
   FileFilterConfigSchema,
   PerformanceMetricsSchema,
-  VirtualFileNodeSchema,
-  WorkspaceStateSchema,
+  VirtualTreeNodeSchema,  WorkspaceStateSchema,
   EventRecordSchema,
   WorkspaceLoadResponseSchema,
   AppConfigSchema,
@@ -26,7 +25,7 @@ import {
   type RarSupportInfo,
   type FileFilterConfig,
   type PerformanceMetrics,
-  type VirtualFileNode,
+  type VirtualTreeNode,
   type WorkspaceState,
   type EventRecord,
 } from '../types/api-responses';
@@ -663,10 +662,10 @@ class LogAnalyzerApi {
    * @param workspaceId - 工作区 ID
    * @returns 文件树节点数组
    */
-  async getVirtualFileTree(workspaceId: string): Promise<VirtualFileNode[]> {
+  async getVirtualFileTree(workspaceId: string): Promise<VirtualTreeNode[]> {
     try {
       const result = await invoke('get_virtual_file_tree', { workspaceId });
-      return z.array(VirtualFileNodeSchema).parse(result);
+      return z.array(VirtualTreeNodeSchema).parse(result);
     } catch (error) {
       throw createApiError('get_virtual_file_tree', error);
     }

@@ -238,7 +238,7 @@ pub fn parse_metadata(line: &str) -> (String, String) {
     // 使用正则边界匹配，避免误匹配如 "ErrorCode" 等子串
     // \b 确保匹配完整单词，优先级由正则顺序决定：ERROR > WARN > INFO > DEBUG
     static LOG_LEVEL_REGEX: Lazy<Regex> =
-        Lazy::new(|| Regex::new(r"\b(ERROR|WARN|INFO|DEBUG)\b").unwrap());
+        Lazy::new(|| Regex::new(r"\b(ERROR|WARN|INFO|DEBUG)\b").expect("LOG_LEVEL_REGEX is a valid static regex pattern"));
 
     let level = LOG_LEVEL_REGEX
         .find(line)
@@ -337,7 +337,12 @@ pub fn append_to_workspace_index(
     );
 
     // Send new logs to frontend (real-time update)
-    let _ = app.emit("new-logs", new_entries);
+    if let Err(e) = app.emit("new-logs", new_entries) {
+        warn!(
+            error = %e,
+            "Failed to emit new-logs event to frontend"
+        );
+    }
 
     // 持久化到 Tantivy 索引
     // 获取工作区的 SearchEngineManager

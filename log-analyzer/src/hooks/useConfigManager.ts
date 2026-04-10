@@ -31,13 +31,17 @@ export const computeConfigFingerprint = (
 export const useConfigManager = () => {
   const keywordGroups = useKeywordStore((state) => state.keywordGroups);
   const workspaces = useWorkspaceStore((state) => state.workspaces);
-  const configMutation = useConfigMutation();
+  const { mutate: saveConfigMutate, isPending, error, isSuccess } = useConfigMutation();
 
   // Track last saved fingerprint to avoid duplicate saves
   const lastFingerprintRef = useRef<string>('');
   const saveTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
 
-  // Stable save function using useCallback
+  // Use ref for mutate to avoid unstable configMutation reference in deps
+  const mutateRef = useRef(saveConfigMutate);
+  mutateRef.current = saveConfigMutate;
+
+  // Stable save function — only depends on data, not on mutation object
   const saveConfig = useCallback(() => {
     // Skip saving if no data
     if (keywordGroups.length === 0 && workspaces.length === 0) {
@@ -55,14 +59,14 @@ export const useConfigManager = () => {
 
     lastFingerprintRef.current = configFingerprint;
 
-    // Save using React Query mutation
-    configMutation.mutate({
+    // Save using React Query mutation via stable ref
+    mutateRef.current({
       keyword_groups: keywordGroups,
       workspaces: workspaces
     });
 
     logger.debug('[CONFIG_MANAGER] Configuration saved with fingerprint:', configFingerprint);
-  }, [keywordGroups, workspaces, configMutation]);
+  }, [keywordGroups, workspaces]);
 
   // Watch for changes and trigger debounced save
   useEffect(() => {
@@ -85,8 +89,8 @@ export const useConfigManager = () => {
   }, [saveConfig]);
 
   return {
-    isLoading: configMutation.isPending,
-    error: configMutation.error,
-    lastSaved: configMutation.isSuccess ? new Date() : null,
+    isLoading: isPending,
+    error: error,
+    lastSaved: isSuccess ? new Date() : null,
   };
 };

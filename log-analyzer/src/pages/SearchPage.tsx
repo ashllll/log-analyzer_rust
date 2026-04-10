@@ -379,7 +379,8 @@ const SearchPage: React.FC = () => {
       addToast('error', t('search.error', { message: errorMsg }));
     }, [addToast, t, dispatchSearchExec]),
 
-    onCancelled: useCallback(() => {
+    onCancelled: useCallback((searchId: string) => {
+      if (searchId !== currentSearchIdRef.current) return;
       dispatchSearchExec({ type: 'ERROR' });
       addToast('info', t('search.cancelled', '搜索已取消'));
     }, [addToast, t, dispatchSearchExec]),

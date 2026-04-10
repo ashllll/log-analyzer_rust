@@ -98,6 +98,14 @@ impl DiskResultStore {
 
     /// 创建新搜索会话（在搜索开始前调用）
     pub fn create_session(&self, search_id: &str) -> io::Result<()> {
+        // Validate search_id to prevent path traversal
+        if search_id.contains('/') || search_id.contains('\\') || search_id.contains("..") {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Invalid search_id: contains path traversal characters".to_string(),
+            ));
+        }
+
         // 超过最大会话数时驱逐最旧的
         if self.sessions.len() >= self.max_sessions {
             self.evict_oldest_session();

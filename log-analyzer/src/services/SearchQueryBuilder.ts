@@ -407,7 +407,7 @@ export class SearchQueryBuilder {
    * 获取查询对象
    */
   getQuery(): SearchQuery {
-    return { ...this.query };
+    return JSON.parse(JSON.stringify(this.query)) as SearchQuery;
   }
 
   private updateMetadata(): void {

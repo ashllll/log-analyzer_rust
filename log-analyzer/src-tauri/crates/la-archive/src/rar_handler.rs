@@ -84,6 +84,19 @@ impl ArchiveHandler for RarHandler {
                     };
 
                     let out_path = target_path.join(&safe_path);
+
+                    // 防御性边界检查：确保最终路径不逃逸提取目录（防御 ZIP Slip）
+                    if !out_path.starts_with(&target_path) {
+                        warn!(
+                            path = %safe_path.display(),
+                            "RAR 条目路径逃逸提取目录，跳过此条目"
+                        );
+                        archive = header
+                            .skip()
+                            .map_err(|e| AppError::archive_error(e.to_string(), None))?;
+                        continue;
+                    }
+
                     let size = entry.unpacked_size;
                     let is_directory = entry.is_directory();
 
