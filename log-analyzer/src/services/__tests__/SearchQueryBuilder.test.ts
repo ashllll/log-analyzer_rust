@@ -81,6 +81,28 @@ describe('SearchQueryBuilder', () => {
       expect(query.terms[0].source).toBe('preset');
       expect(query.terms[0].isRegex).toBe(true);
     });
+
+    it('should detect regex syntax in user input terms', () => {
+      const builder = SearchQueryBuilder.fromString('error.*timeout');
+      const query = builder.getQuery();
+
+      expect(query.terms[0].source).toBe('user');
+      expect(query.terms[0].isRegex).toBe(true);
+    });
+
+    it('should apply case sensitivity options to parsed terms', () => {
+      const builder = SearchQueryBuilder.fromString('Error', [], { caseSensitive: true });
+      const query = builder.getQuery();
+
+      expect(query.terms[0].caseSensitive).toBe(true);
+    });
+
+    it('should keep regex-like user input literal when regex is disabled', () => {
+      const builder = SearchQueryBuilder.fromString('error.*timeout', [], { regexEnabled: false });
+      const query = builder.getQuery();
+
+      expect(query.terms[0].isRegex).toBe(false);
+    });
   });
 
   describe('addTerm', () => {

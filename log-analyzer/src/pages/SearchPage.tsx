@@ -10,7 +10,7 @@ import { logger } from '../utils/logger';
 import { cn } from '../utils/classNames';
 import { SearchQueryBuilder } from '../services/SearchQueryBuilder';
 import { looksLikeRegexPattern } from '../utils/searchPatterns';
-import { SearchQuery, SearchResultSummary } from '../types/search';
+import { SearchQuery, SearchResultSummary, SearchTerm } from '../types/search';
 import { saveQuery, loadQuery, clearQuery } from '../services/queryStorage';
 import { api } from '../services/api';
 import { getFullErrorMessage } from '../services/errors';
@@ -21,6 +21,7 @@ import { useWorkspaceSelection } from '../hooks/useWorkspaceSelection';
 import { useKeywordStore } from '../stores/keywordStore';
 import { useAppStore } from '../stores/appStore';
 import { useToast } from '../hooks/useToast';
+import { useConfig } from '../hooks/useConfig';
 import { SEARCH_CONFIG } from '../constants/search';
 import type {
   LogEntry,
@@ -36,6 +37,7 @@ import { useSearchState } from './SearchPage/hooks/useSearchState';
 import {
   buildStructuredQueryForSearch,
   deriveActiveTerms,
+  syncStructuredQueryWithSettings,
   shouldResetStructuredQuery,
 } from './SearchPage/utils/queryState';
 
@@ -58,6 +60,7 @@ interface LogRowProps {
   isActive: boolean;
   onClick: () => void;
   query: string;
+  queryTerms: SearchTerm[] | null;
   keywordGroups: KeywordGroup[];
   virtualIndex: number;
   virtualStart: number;
@@ -74,6 +77,7 @@ const LogRow = memo<LogRowProps>(({
   isActive,
   onClick,
   query,
+  queryTerms,
   keywordGroups,
   virtualIndex,
   virtualStart,
@@ -118,6 +122,7 @@ const LogRow = memo<LogRowProps>(({
         <HybridLogRenderer
           text={log.content}
           query={query}
+          queryTerms={queryTerms}
           keywordGroups={keywordGroups}
         />
       </div>
@@ -129,6 +134,7 @@ const LogRow = memo<LogRowProps>(({
     prevProps.log === nextProps.log &&
     prevProps.isActive === nextProps.isActive &&
     prevProps.query === nextProps.query &&
+    prevProps.queryTerms === nextProps.queryTerms &&
     prevProps.keywordGroups === nextProps.keywordGroups &&
     prevProps.virtualIndex === nextProps.virtualIndex &&
     prevProps.virtualStart === nextProps.virtualStart &&
@@ -143,12 +149,20 @@ const SearchPage: React.FC = () => {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const { t } = useTranslation();
   const { showToast: addToast } = useToast();
+  const { searchConfig, loadSearchConfig } = useConfig();
   const workspaceLoading = useWorkspaceStore((state) => state.loading);
   const isInitialized = useAppStore((state) => state.isInitialized);
   // 缓存启用的关键词组，避免每次渲染都重新计算
   const enabledKeywordGroups = useMemo(() =>
     keywordGroups.filter(g => g.enabled),
     [keywordGroups]
+  );
+  const searchParsingOptions = useMemo(
+    () => ({
+      caseSensitive: searchConfig?.case_sensitive ?? false,
+      regexEnabled: searchConfig?.regex_enabled ?? true,
+    }),
+    [searchConfig]
   );
   
   // 搜索状态
@@ -403,6 +417,12 @@ const SearchPage: React.FC = () => {
     }
   }, [currentQuery]);
 
+  useEffect(() => {
+    loadSearchConfig().catch((err) => {
+      logger.warn('Failed to load search config for SearchPage, using defaults', err);
+    });
+  }, [loadSearchConfig]);
+
   // 监听查询变化，自动触发搜索（防抖500ms）
   useEffect(() => {
     if (!query.trim()) {
@@ -514,10 +534,19 @@ const SearchPage: React.FC = () => {
     }
 
     try {
+      const runtimeSearchConfig = searchConfig ?? await loadSearchConfig().catch((err) => {
+        logger.warn('Failed to refresh search config before executing search, using defaults', err);
+        return null;
+      });
+      const parsingOptions = {
+        caseSensitive: runtimeSearchConfig?.case_sensitive ?? false,
+        regexEnabled: runtimeSearchConfig?.regex_enabled ?? true,
+      };
       const structuredQuery = buildStructuredQueryForSearch(
         trimmedQuery,
         currentQuery,
-        enabledKeywordGroups
+        enabledKeywordGroups,
+        parsingOptions
       );
 
       // 构建过滤器对象
@@ -548,6 +577,8 @@ const SearchPage: React.FC = () => {
     enabledKeywordGroups,
     filterOptions,
     currentQuery,
+    searchConfig,
+    loadSearchConfig,
     addToast,
     dispatchSearchExec,
     t,
@@ -613,8 +644,9 @@ const SearchPage: React.FC = () => {
       // 不存在：添加新项
       builder.addTerm(ruleRegex, {
         source: 'preset',
-        isRegex: looksLikeRegexPattern(ruleRegex),
-        operator: 'OR'
+        isRegex: searchParsingOptions.regexEnabled && looksLikeRegexPattern(ruleRegex),
+        operator: 'OR',
+        caseSensitive: searchParsingOptions.caseSensitive,
       });
     }
 
@@ -631,13 +663,13 @@ const SearchPage: React.FC = () => {
     }
 
     // 更新状态
-    const newQuery = builder.getQuery();
+    const newQuery = syncStructuredQueryWithSettings(builder.getQuery(), searchParsingOptions);
     setCurrentQuery(newQuery);
     
     // 更新查询字符串（用于显示）
     const queryString = builder.toQueryString();
     setQuery(queryString);
-  }, [query, enabledKeywordGroups, currentQuery, addToast]);
+  }, [query, enabledKeywordGroups, currentQuery, addToast, searchParsingOptions]);
 
   const activeTerms = useMemo(
     () => deriveActiveTerms(query, currentQuery),
@@ -850,6 +882,7 @@ const SearchPage: React.FC = () => {
                   isActive={log.id === selectedId}
                   onClick={() => setSelectedId(log.id)}
                   query={query}
+                  queryTerms={currentQuery?.terms ?? null}
                   keywordGroups={enabledKeywordGroups}
                   virtualIndex={virtualRow.index}
                   virtualStart={virtualRow.start}
@@ -947,6 +980,7 @@ const SearchPage: React.FC = () => {
                   <HybridLogRenderer 
                     text={tryFormatJSON(activeLog.content)} 
                     query={query} 
+                    queryTerms={currentQuery?.terms ?? null}
                     keywordGroups={enabledKeywordGroups} 
                   />
                 </div>

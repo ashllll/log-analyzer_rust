@@ -224,5 +224,57 @@ describe('HybridLogRenderer', () => {
       expect(highlightedSpans[0].textContent).toBe('error on the critical path before timeout');
       expect(screen.getByText('Expand Full Text')).toBeInTheDocument();
     });
+
+    it('应该按结构化查询的 regex 语义高亮手动输入的正则', () => {
+      const { container } = render(
+        <HybridLogRenderer
+          text="error while reconnecting before timeout"
+          query="error.*timeout"
+          queryTerms={[
+            {
+              id: 'term_1',
+              value: 'error.*timeout',
+              operator: 'OR',
+              source: 'user',
+              isRegex: true,
+              priority: 1,
+              enabled: true,
+              caseSensitive: false,
+            },
+          ]}
+          keywordGroups={[]}
+        />
+      );
+
+      const highlightedSpans = container.querySelectorAll('.rounded-\\[2px\\]');
+      expect(highlightedSpans).toHaveLength(1);
+      expect(highlightedSpans[0].textContent).toBe('error while reconnecting before timeout');
+    });
+
+    it('应该尊重结构化查询的大小写敏感字面量匹配', () => {
+      const { container } = render(
+        <HybridLogRenderer
+          text="ERROR error Error"
+          query="error"
+          queryTerms={[
+            {
+              id: 'term_1',
+              value: 'error',
+              operator: 'OR',
+              source: 'user',
+              isRegex: false,
+              priority: 1,
+              enabled: true,
+              caseSensitive: true,
+            },
+          ]}
+          keywordGroups={[]}
+        />
+      );
+
+      const highlightedSpans = container.querySelectorAll('.rounded-\\[2px\\]');
+      expect(highlightedSpans).toHaveLength(1);
+      expect(highlightedSpans[0].textContent).toBe('error');
+    });
   });
 });

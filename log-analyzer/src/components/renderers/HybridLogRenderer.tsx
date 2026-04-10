@@ -23,6 +23,7 @@ interface HighlightPattern {
   color: ColorKey | string;
   comment: string;
   mode: 'literal' | 'regex';
+  caseSensitive: boolean;
   matcher?: RegExp;
 }
 
@@ -33,11 +34,11 @@ interface HighlightMatch {
   pattern: HighlightPattern;
 }
 
-const createRegexMatcher = (pattern: string): RegExp => {
+const createRegexMatcher = (pattern: string, caseSensitive: boolean): RegExp => {
   try {
-    return new RegExp(pattern, 'gi');
+    return new RegExp(pattern, caseSensitive ? 'g' : 'gi');
   } catch {
-    return new RegExp(escapeRegexLiteral(pattern), 'gi');
+    return new RegExp(escapeRegexLiteral(pattern), caseSensitive ? 'g' : 'gi');
   }
 };
 
@@ -50,14 +51,15 @@ const collectMatches = (text: string, patterns: HighlightPattern[]): HighlightMa
 
   patterns.forEach((pattern) => {
     if (pattern.mode === 'literal') {
-      const lowerKeyword = pattern.raw.toLowerCase();
-      if (!lowerKeyword) {
+      const literalNeedle = pattern.caseSensitive ? pattern.raw : pattern.raw.toLowerCase();
+      if (!literalNeedle) {
         return;
       }
 
       let startIndex = 0;
       while (startIndex < text.length) {
-        const index = lowerText.indexOf(lowerKeyword, startIndex);
+        const haystack = pattern.caseSensitive ? text : lowerText;
+        const index = haystack.indexOf(literalNeedle, startIndex);
         if (index === -1) {
           break;
         }
@@ -181,7 +183,12 @@ const mergeOverlappingSnippets = (snippets: Snippet[]): Snippet[] => {
  * 支持搜索关键词和关键词组的颜色高亮
  * 包含性能优化：智能截断、匹配数量限制、React.memo 防止不必要重渲染
  */
-const HybridLogRendererInner: React.FC<HybridLogRendererProps> = ({ text, query, keywordGroups }) => {
+const HybridLogRendererInner: React.FC<HybridLogRendererProps> = ({
+  text,
+  query,
+  queryTerms,
+  keywordGroups,
+}) => {
   const { t } = useTranslation();
   const [isExpanded, setIsExpanded] = useState(false);
   const highlightPatterns = useMemo(() => {
@@ -202,20 +209,41 @@ const HybridLogRendererInner: React.FC<HybridLogRendererProps> = ({ text, query,
                 color: group.color,
                 comment: p.comment,
                 mode,
-                matcher: mode === 'regex' ? createRegexMatcher(p.regex) : undefined,
+                caseSensitive: false,
+                matcher: mode === 'regex' ? createRegexMatcher(p.regex, false) : undefined,
               });
             }
           }
         });
       });
 
-    if (query) {
+    const resolvedQueryTerms = queryTerms?.filter((term) => term.enabled) ?? [];
+    if (resolvedQueryTerms.length > 0) {
+      resolvedQueryTerms.forEach((term, index) => {
+        const mode = term.isRegex ? 'regex' : 'literal';
+        const key = `${mode}:${term.caseSensitive ? 'cs' : 'ci'}:${term.value.toLowerCase()}`;
+
+        if (!patterns.has(key)) {
+          patterns.set(key, {
+            id: key,
+            raw: term.value,
+            color: ['blue', 'purple', 'green', 'orange'][index % 4],
+            comment: '',
+            mode,
+            caseSensitive: term.caseSensitive,
+            matcher: mode === 'regex'
+              ? createRegexMatcher(term.value, term.caseSensitive)
+              : undefined,
+          });
+        }
+      });
+    } else if (query) {
       query
         .split('|')
         .map((term: string) => term.trim())
         .filter((term: string) => term.length > 0)
         .forEach((term: string, index: number) => {
-          const key = `literal:${term.toLowerCase()}`;
+          const key = `literal:ci:${term.toLowerCase()}`;
           if (!patterns.has(key)) {
             patterns.set(key, {
               id: key,
@@ -223,13 +251,14 @@ const HybridLogRendererInner: React.FC<HybridLogRendererProps> = ({ text, query,
               color: ['blue', 'purple', 'green', 'orange'][index % 4],
               comment: '',
               mode: 'literal',
+              caseSensitive: false,
             });
           }
         });
     }
 
     return Array.from(patterns.values()).sort((a, b) => b.raw.length - a.raw.length);
-  }, [keywordGroups, query]);
+  }, [keywordGroups, query, queryTerms]);
 
   // 渲染带高亮的文本
   // 性能保护：每个关键词最多渲染 MAX_HIGHLIGHT_PER_KEYWORD 个高亮 span，
@@ -386,6 +415,7 @@ const HybridLogRenderer = memo(HybridLogRendererInner, (prevProps, nextProps) =>
   return (
     prevProps.text === nextProps.text &&
     prevProps.query === nextProps.query &&
+    prevProps.queryTerms === nextProps.queryTerms &&
     prevProps.keywordGroups === nextProps.keywordGroups
   );
 });

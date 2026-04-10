@@ -1,6 +1,7 @@
 // UI 组件相关类型定义
 import React from 'react';
 import { KeywordGroup } from './common';
+import type { SearchTerm } from './search';
 
 // 按钮变体类型
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'active' | 'cta' | 'icon';
@@ -46,6 +47,7 @@ export interface KeywordModalProps {
 export interface HybridLogRendererProps {
   text: string;
   query: string;
+  queryTerms?: SearchTerm[] | null;
   keywordGroups: KeywordGroup[];
 }
 

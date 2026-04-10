@@ -1,13 +1,34 @@
 import type { KeywordGroup } from '../../../types/common';
-import type { SearchQuery } from '../../../types/search';
+import type { SearchQuery, SearchTerm } from '../../../types/search';
 import { SearchQueryBuilder } from '../../../services/SearchQueryBuilder';
+import { looksLikeRegexPattern } from '../../../utils/searchPatterns';
+
+export interface SearchParsingOptions {
+  caseSensitive: boolean;
+  regexEnabled: boolean;
+}
+
+export const syncStructuredQueryWithSettings = (
+  query: SearchQuery,
+  options: SearchParsingOptions
+): SearchQuery => ({
+  ...query,
+  terms: query.terms.map((term: SearchTerm) => ({
+    ...term,
+    caseSensitive: options.caseSensitive,
+    isRegex: options.regexEnabled && (term.isRegex || looksLikeRegexPattern(term.value)),
+  })),
+});
 
 export const buildStructuredQueryForSearch = (
   rawQuery: string,
   currentQuery: SearchQuery | null,
-  keywordGroups: KeywordGroup[]
+  keywordGroups: KeywordGroup[],
+  options: SearchParsingOptions
 ): SearchQuery => {
-  const baseQuery = currentQuery ?? SearchQueryBuilder.fromString(rawQuery, keywordGroups).getQuery();
+  const baseQuery = currentQuery
+    ? syncStructuredQueryWithSettings(currentQuery, options)
+    : SearchQueryBuilder.fromString(rawQuery, keywordGroups, options).getQuery();
 
   return {
     ...baseQuery,

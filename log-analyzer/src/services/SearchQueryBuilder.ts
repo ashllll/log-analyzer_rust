@@ -45,10 +45,16 @@ export class SearchQueryBuilder {
    */
   static fromString(
     queryString: string,
-    keywordGroups: KeywordGroup[] = []
+    keywordGroups: KeywordGroup[] = [],
+    options?: {
+      caseSensitive?: boolean;
+      regexEnabled?: boolean;
+    }
   ): SearchQueryBuilder {
     const builder = SearchQueryBuilder.create();
     builder.setGlobalOperator('OR');
+    const caseSensitive = options?.caseSensitive ?? false;
+    const regexEnabled = options?.regexEnabled ?? true;
     
     if (!queryString || queryString.trim().length === 0) {
       return builder;
@@ -76,8 +82,9 @@ export class SearchQueryBuilder {
         operator: 'OR',
         source,
         presetGroupId,
-        isRegex: source === 'preset' && looksLikeRegexPattern(value),
-        priority: terms.length - idx
+        isRegex: regexEnabled && looksLikeRegexPattern(value),
+        priority: terms.length - idx,
+        caseSensitive,
       });
     });
 
