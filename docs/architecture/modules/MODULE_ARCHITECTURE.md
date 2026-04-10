@@ -1288,7 +1288,7 @@ pub struct AppState {
 |------|------|------|
 | 搜索 | `SearchPage.tsx` | 主搜索入口，无限滚动分页，关键词高亮 |
 | 工作区 | `WorkspacesPage.tsx` | 工作区创建/加载/删除，导入归档 |
-| 关键词 | `KeywordsPage.tsx` | 搜索历史与频率统计 |
+| 关键词 | `KeywordsPage.tsx` | 关键词组 CRUD 管理、启用/禁用切换 |
 | 任务 | `TasksPage.tsx` | 导入/导出后台任务监控 |
 | 性能 | `PerformancePage.tsx` | 搜索延迟、缓存命中率等指标图表 |
 | 设置 | `SettingsPage.tsx` | 缓存/搜索/日志级别配置 |
@@ -1342,7 +1342,7 @@ export const api = {
 | `appStore` | 全局应用状态（当前工作区、加载状态） |
 | `workspaceStore` | 工作区列表与选中状态 |
 | `taskStore` | 后台任务列表与进度 |
-| `keywordStore` | 搜索历史与统计 |
+| `keywordStore` | 关键词组 CRUD + 启用/禁用（Zustand persist → localStorage + 后端 config.json） |
 
 ---
 

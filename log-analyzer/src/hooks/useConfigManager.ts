@@ -3,6 +3,27 @@ import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useKeywordStore } from '../stores/keywordStore';
 import { useConfigMutation } from './useServerQueries';
 import { logger } from '../utils/logger';
+import type { KeywordGroup } from '../types/common';
+
+/**
+ * Compute a fingerprint that captures the full content of keyword groups and workspaces.
+ * Must include name, color, patterns (not just id/enabled) so edits trigger persistence.
+ */
+export const computeConfigFingerprint = (
+  keywordGroups: KeywordGroup[],
+  workspaces: { id: string; status: string }[],
+): string => {
+  return JSON.stringify({
+    keywords: keywordGroups.map((g) => ({
+      id: g.id,
+      name: g.name,
+      color: g.color,
+      enabled: g.enabled,
+      patterns: g.patterns.map((p) => p.regex),
+    })),
+    workspaces: workspaces.map((w) => ({ id: w.id, status: w.status })),
+  });
+};
 
 /**
  * Hook for managing configuration with debounced saving using React patterns
@@ -11,7 +32,7 @@ export const useConfigManager = () => {
   const keywordGroups = useKeywordStore((state) => state.keywordGroups);
   const workspaces = useWorkspaceStore((state) => state.workspaces);
   const configMutation = useConfigMutation();
-  
+
   // Track last saved fingerprint to avoid duplicate saves
   const lastFingerprintRef = useRef<string>('');
   const saveTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
@@ -24,10 +45,7 @@ export const useConfigManager = () => {
     }
 
     // Generate config fingerprint to avoid unnecessary saves
-    const configFingerprint = JSON.stringify({
-      keywords: keywordGroups.map((g) => ({ id: g.id, enabled: g.enabled })),
-      workspaces: workspaces.map((w) => ({ id: w.id, status: w.status }))
-    });
+    const configFingerprint = computeConfigFingerprint(keywordGroups, workspaces);
 
     // Skip if config hasn't changed
     if (configFingerprint === lastFingerprintRef.current) {

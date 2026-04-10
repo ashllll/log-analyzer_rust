@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Edit2, Trash2, Tag } from 'lucide-react';
+import { Plus, Edit2, Trash2, Tag, Power, PowerOff } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useKeywordManager } from '../hooks/useKeywordManager';
 import { Button, Card, EmptyState } from '../components/ui';
@@ -27,7 +27,7 @@ const itemVariants = {
  * 4. 删除关键词组
  */
 const KeywordsPage: React.FC = () => {
-  const { saveKeywordGroup, deleteKeywordGroup, keywordGroups } = useKeywordManager();
+  const { saveKeywordGroup, deleteKeywordGroup, toggleKeywordGroup, keywordGroups } = useKeywordManager();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingGroup, setEditingGroup] = useState<KeywordGroup | null>(null);
 
@@ -99,6 +99,18 @@ const KeywordsPage: React.FC = () => {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      icon={group.enabled ? Power : PowerOff}
+                      onClick={() => toggleKeywordGroup(group.id)}
+                      aria-label={`toggle ${group.name}`}
+                      aria-pressed={group.enabled}
+                      className={cn(
+                        group.enabled ? "text-green-400" : "text-text-dim"
+                      )}
+                    >
+                      {group.enabled ? 'Enabled' : 'Disabled'}
+                    </Button>
                     <Button
                       variant="ghost"
                       icon={Edit2}

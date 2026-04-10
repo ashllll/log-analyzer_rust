@@ -9,14 +9,17 @@ import type { KeywordGroup, ColorKey } from '../../types/common';
  * 过滤器面板组件
  * 显示关键词组并支持快速切换规则
  */
-const FilterPalette: React.FC<FilterPaletteProps> = ({ 
-  isOpen, 
-  onClose, 
-  groups, 
-  activeTerms, 
-  onToggleRule 
+const FilterPalette: React.FC<FilterPaletteProps> = ({
+  isOpen,
+  onClose,
+  groups,
+  activeTerms,
+  onToggleRule
 }) => {
   if (!isOpen) return null;
+
+  // Only show enabled keyword groups
+  const enabledGroups = groups.filter((g: KeywordGroup) => g.enabled);
 
   const isPatternActive = (regex: string) => 
     activeTerms.some((term: string) => term.trim().toLowerCase() === regex.toLowerCase());
@@ -43,7 +46,7 @@ const FilterPalette: React.FC<FilterPaletteProps> = ({
 
         {/* 按颜色分组显示 */}
         {colorOrder.map(color => {
-          const colorGroups = groups.filter((g: KeywordGroup) => g.color === color);
+          const colorGroups = enabledGroups.filter((g: KeywordGroup) => g.color === color);
           if (colorGroups.length === 0) return null;
 
           return (
