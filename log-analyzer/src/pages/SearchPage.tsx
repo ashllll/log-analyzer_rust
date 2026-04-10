@@ -11,7 +11,7 @@ import { cn } from '../utils/classNames';
 import { SearchQueryBuilder } from '../services/SearchQueryBuilder';
 import { looksLikeRegexPattern } from '../utils/searchPatterns';
 import { SearchQuery, SearchResultSummary } from '../types/search';
-import { saveQuery, loadQuery } from '../services/queryStorage';
+import { saveQuery, loadQuery, clearQuery } from '../services/queryStorage';
 import { api } from '../services/api';
 import { getFullErrorMessage } from '../services/errors';
 import { useInfiniteSearch } from '../hooks/useInfiniteSearch';
@@ -33,6 +33,11 @@ import { SearchControls } from './SearchPage/components/SearchControls';
 import { SearchFilters } from './SearchPage/components/SearchFilters';
 import { ActiveKeywords } from './SearchPage/components/ActiveKeywords';
 import { useSearchState } from './SearchPage/hooks/useSearchState';
+import {
+  buildStructuredQueryForSearch,
+  deriveActiveTerms,
+  shouldResetStructuredQuery,
+} from './SearchPage/utils/queryState';
 
 // ============================================================================
 /**
@@ -393,6 +398,8 @@ const SearchPage: React.FC = () => {
   useEffect(() => {
     if (currentQuery) {
       saveQuery(currentQuery);
+    } else {
+      clearQuery();
     }
   }, [currentQuery]);
 
@@ -507,10 +514,11 @@ const SearchPage: React.FC = () => {
     }
 
     try {
-      const structuredQuery = currentQuery
-        ?? SearchQueryBuilder
-          .fromString(trimmedQuery, enabledKeywordGroups)
-          .getQuery();
+      const structuredQuery = buildStructuredQueryForSearch(
+        trimmedQuery,
+        currentQuery,
+        enabledKeywordGroups
+      );
 
       // 构建过滤器对象
       const filters = {
@@ -528,17 +536,7 @@ const SearchPage: React.FC = () => {
         filters,
       });
       setCurrentSearchId(searchId);
-
-      // 如果使用了结构化查询，更新执行次数（不可变更新，避免直接修改原对象）
-      if (currentQuery) {
-        setCurrentQuery({
-          ...currentQuery,
-          metadata: {
-            ...currentQuery.metadata,
-            executionCount: currentQuery.metadata.executionCount + 1,
-          },
-        });
-      }
+      setCurrentQuery(structuredQuery);
     } catch (err) {
       logger.error('Search failed:', err);
       dispatchSearchExec({ type: 'ERROR' });
@@ -641,32 +639,15 @@ const SearchPage: React.FC = () => {
     setQuery(queryString);
   }, [query, enabledKeywordGroups, currentQuery, addToast]);
 
-  const activeTerms = useMemo(() => {
-    if (currentQuery) {
-      return currentQuery.terms
-        .filter((term) => term.enabled)
-        .map((term) => term.value);
-    }
-
-    return query
-      .split('|')
-      .map((term) => term.trim())
-      .filter((term) => term.length > 0);
-  }, [currentQuery, query]);
+  const activeTerms = useMemo(
+    () => deriveActiveTerms(query, currentQuery),
+    [currentQuery, query]
+  );
 
   const handleQueryChange = useCallback((nextQuery: string) => {
     setQuery(nextQuery);
 
-    if (!currentQuery) {
-      return;
-    }
-
-    const currentDisplayQuery = currentQuery.terms
-      .filter((term) => term.enabled)
-      .map((term) => term.value)
-      .join('|');
-
-    if (nextQuery !== currentDisplayQuery) {
+    if (shouldResetStructuredQuery(nextQuery, currentQuery)) {
       setCurrentQuery(null);
     }
   }, [currentQuery]);
