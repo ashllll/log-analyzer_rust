@@ -24,6 +24,44 @@ pub struct QueryPlanner {
 }
 
 impl QueryPlanner {
+    fn regex_has_inline_case_flag(pattern: &str) -> bool {
+        let bytes = pattern.as_bytes();
+        let mut index = 0;
+
+        while index + 1 < bytes.len() {
+            if bytes[index] == b'(' && bytes[index + 1] == b'?' {
+                let mut cursor = index + 2;
+                let mut saw_flag = false;
+                let mut has_case_flag = false;
+
+                while cursor < bytes.len() {
+                    let ch = bytes[cursor] as char;
+                    if ch == ')' || ch == ':' {
+                        if saw_flag && has_case_flag {
+                            return true;
+                        }
+                        break;
+                    }
+
+                    if ch.is_ascii_alphabetic() || ch == '-' {
+                        saw_flag = true;
+                        if ch == 'i' {
+                            has_case_flag = true;
+                        }
+                        cursor += 1;
+                        continue;
+                    }
+
+                    break;
+                }
+            }
+
+            index += 1;
+        }
+
+        false
+    }
+
     /**
      * 创建新的计划构建器
      *
@@ -169,7 +207,12 @@ impl QueryPlanner {
      */
     fn get_or_compile_engine(&mut self, term: &SearchTerm) -> Result<Arc<RegexEngine>> {
         let (pattern, use_ci) = if term.is_regex {
-            (term.value.clone(), false) // 正则已含 (?i:) 或用户自行控制
+            let pattern = if term.case_sensitive || Self::regex_has_inline_case_flag(&term.value) {
+                term.value.clone()
+            } else {
+                format!("(?i:{})", term.value)
+            };
+            (pattern, false)
         } else {
             let raw_pattern = &term.value;
 
@@ -711,6 +754,45 @@ mod tests {
         };
 
         assert!(!QueryPlanner::should_use_word_boundary(&term));
+    }
+
+    #[test]
+    fn test_case_insensitive_regex_terms_match_case_variants() {
+        let mut planner = QueryPlanner::new(100);
+        let term = SearchTerm {
+            id: "test".to_string(),
+            value: "error.*timeout".to_string(),
+            operator: QueryOperator::And,
+            source: TermSource::Preset,
+            preset_group_id: Some("group_1".to_string()),
+            is_regex: true,
+            priority: 1,
+            enabled: true,
+            case_sensitive: false,
+        };
+
+        let engine = planner.get_or_compile_engine(&term).unwrap();
+        assert!(engine.is_match("ERROR before TIMEOUT"));
+    }
+
+    #[test]
+    fn test_regex_terms_respect_inline_case_flags() {
+        let mut planner = QueryPlanner::new(100);
+        let term = SearchTerm {
+            id: "test".to_string(),
+            value: "(?-i:error).*timeout".to_string(),
+            operator: QueryOperator::And,
+            source: TermSource::Preset,
+            preset_group_id: Some("group_1".to_string()),
+            is_regex: true,
+            priority: 1,
+            enabled: true,
+            case_sensitive: false,
+        };
+
+        let engine = planner.get_or_compile_engine(&term).unwrap();
+        assert!(!engine.is_match("ERROR before timeout"));
+        assert!(engine.is_match("error before timeout"));
     }
 
     #[test]

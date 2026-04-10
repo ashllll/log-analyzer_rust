@@ -64,6 +64,21 @@ describe('SearchQueryBuilder', () => {
       
       expect(query.terms[0].source).toBe('preset');
       expect(query.terms[0].presetGroupId).toBe('group1');
+      expect(query.terms[0].isRegex).toBe(false);
+    });
+
+    it('should keep regex presets as regex terms', () => {
+      const keywordGroups = [
+        {
+          id: 'group1',
+          patterns: [{ regex: 'error.*timeout' }]
+        }
+      ];
+
+      const builder = SearchQueryBuilder.fromString('error.*timeout', keywordGroups);
+      const query = builder.getQuery();
+
+      expect(query.terms[0].source).toBe('preset');
       expect(query.terms[0].isRegex).toBe(true);
     });
   });
@@ -77,6 +92,7 @@ describe('SearchQueryBuilder', () => {
       expect(query.terms[0].value).toBe('error');
       expect(query.terms[0].enabled).toBe(true);
       expect(query.terms[0].operator).toBe('AND');
+      expect(query.terms[0].isRegex).toBe(false);
     });
 
     it('should add multiple terms', () => {

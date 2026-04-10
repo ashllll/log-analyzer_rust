@@ -9,6 +9,7 @@ import { KeywordStatsPanel } from '../components/search/KeywordStatsPanel';
 import { logger } from '../utils/logger';
 import { cn } from '../utils/classNames';
 import { SearchQueryBuilder } from '../services/SearchQueryBuilder';
+import { looksLikeRegexPattern } from '../utils/searchPatterns';
 import { SearchQuery, SearchResultSummary } from '../types/search';
 import { saveQuery, loadQuery } from '../services/queryStorage';
 import { api } from '../services/api';
@@ -611,7 +612,7 @@ const SearchPage: React.FC = () => {
       // 不存在：添加新项
       builder.addTerm(ruleRegex, {
         source: 'preset',
-        isRegex: true,
+        isRegex: looksLikeRegexPattern(ruleRegex),
         operator: 'OR'
       });
     }

@@ -42,6 +42,18 @@ const defaultKeywordGroups = [
   },
 ];
 
+const regexKeywordGroups = [
+  {
+    id: 'group-2',
+    name: 'Regex Errors',
+    color: 'orange' as const,
+    patterns: [
+      { regex: 'error.*timeout', comment: 'critical path' },
+    ],
+    enabled: true,
+  },
+];
+
 describe('HybridLogRenderer', () => {
   describe('基本高亮', () => {
     it('应该高亮查询中的关键词', () => {
@@ -163,6 +175,21 @@ describe('HybridLogRenderer', () => {
       const highlightedSpans = container.querySelectorAll('.rounded-\\[2px\\]');
       expect(highlightedSpans.length).toBe(0);
     });
+
+    it('应该按正则语义高亮关键词组模式', () => {
+      const { container } = render(
+        <HybridLogRenderer
+          text="error while reconnecting before timeout"
+          query=""
+          keywordGroups={regexKeywordGroups}
+        />
+      );
+
+      const highlightedSpans = container.querySelectorAll('.rounded-\\[2px\\]');
+      expect(highlightedSpans.length).toBeGreaterThan(0);
+      expect(highlightedSpans[0].textContent).toBe('error while reconnecting before timeout');
+      expect(screen.getByText('critical path')).toBeInTheDocument();
+    });
   });
 
   describe('大小写不敏感高亮', () => {
@@ -178,6 +205,24 @@ describe('HybridLogRenderer', () => {
       const highlightedSpans = container.querySelectorAll('.rounded-\\[2px\\]');
       // 应该匹配 4 种大小写变体
       expect(highlightedSpans.length).toBe(4);
+    });
+
+    it('长文本截断时应保留正则模式的高亮片段', () => {
+      const longPrefix = 'a'.repeat(1100);
+      const text = `${longPrefix} error on the critical path before timeout`;
+
+      const { container } = render(
+        <HybridLogRenderer
+          text={text}
+          query=""
+          keywordGroups={regexKeywordGroups}
+        />
+      );
+
+      const highlightedSpans = container.querySelectorAll('.rounded-\\[2px\\]');
+      expect(highlightedSpans.length).toBeGreaterThan(0);
+      expect(highlightedSpans[0].textContent).toBe('error on the critical path before timeout');
+      expect(screen.getByText('Expand Full Text')).toBeInTheDocument();
     });
   });
 });

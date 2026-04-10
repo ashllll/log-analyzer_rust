@@ -3,12 +3,12 @@ import { useTranslation } from 'react-i18next';
 import { COLOR_STYLES } from '../../constants/colors';
 import type { HybridLogRendererProps } from '../../types/ui';
 import type { ColorKey, KeywordPattern } from '../../types/common';
+import { escapeRegexLiteral, looksLikeRegexPattern } from '../../utils/searchPatterns';
 
 // 智能截断相关接口
 interface KeywordPosition {
   start: number;
   end: number;
-  keyword: string;
 }
 
 interface Snippet {
@@ -17,31 +17,117 @@ interface Snippet {
   text: string;
 }
 
+interface HighlightPattern {
+  id: string;
+  raw: string;
+  color: ColorKey | string;
+  comment: string;
+  mode: 'literal' | 'regex';
+  matcher?: RegExp;
+}
+
+interface HighlightMatch {
+  start: number;
+  end: number;
+  text: string;
+  pattern: HighlightPattern;
+}
+
+const createRegexMatcher = (pattern: string): RegExp => {
+  try {
+    return new RegExp(pattern, 'gi');
+  } catch {
+    return new RegExp(escapeRegexLiteral(pattern), 'gi');
+  }
+};
+
 /**
- * 查找文本中所有关键词的位置
+ * 查找文本中所有高亮模式的位置
  */
-const findKeywordPositions = (text: string, keywords: string[]): KeywordPosition[] => {
-  const positions: KeywordPosition[] = [];
+const collectMatches = (text: string, patterns: HighlightPattern[]): HighlightMatch[] => {
+  const matches: HighlightMatch[] = [];
   const lowerText = text.toLowerCase();
-  
-  keywords.forEach(keyword => {
-    const lowerKeyword = keyword.toLowerCase();
-    let startIndex = 0;
-    
-    while (startIndex < text.length) {
-      const index = lowerText.indexOf(lowerKeyword, startIndex);
-      if (index === -1) break;
-      
-      positions.push({
-        start: index,
-        end: index + keyword.length,
-        keyword
+
+  patterns.forEach((pattern) => {
+    if (pattern.mode === 'literal') {
+      const lowerKeyword = pattern.raw.toLowerCase();
+      if (!lowerKeyword) {
+        return;
+      }
+
+      let startIndex = 0;
+      while (startIndex < text.length) {
+        const index = lowerText.indexOf(lowerKeyword, startIndex);
+        if (index === -1) {
+          break;
+        }
+
+        matches.push({
+          start: index,
+          end: index + pattern.raw.length,
+          text: text.slice(index, index + pattern.raw.length),
+          pattern,
+        });
+        startIndex = index + 1;
+      }
+
+      return;
+    }
+
+    if (!pattern.matcher) {
+      return;
+    }
+
+    pattern.matcher.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = pattern.matcher.exec(text)) !== null) {
+      if (match[0].length === 0) {
+        pattern.matcher.lastIndex += 1;
+        continue;
+      }
+
+      matches.push({
+        start: match.index,
+        end: match.index + match[0].length,
+        text: match[0],
+        pattern,
       });
-      startIndex = index + 1;
     }
   });
-  
-  return positions.sort((a, b) => a.start - b.start);
+
+  matches.sort((left, right) => {
+    if (left.start !== right.start) {
+      return left.start - right.start;
+    }
+
+    const leftLength = left.end - left.start;
+    const rightLength = right.end - right.start;
+    if (leftLength !== rightLength) {
+      return rightLength - leftLength;
+    }
+
+    return right.pattern.raw.length - left.pattern.raw.length;
+  });
+
+  const nonOverlapping: HighlightMatch[] = [];
+  let currentEnd = -1;
+  for (const match of matches) {
+    if (match.start < currentEnd) {
+      continue;
+    }
+
+    nonOverlapping.push(match);
+    currentEnd = match.end;
+  }
+
+  return nonOverlapping;
+};
+
+const findKeywordPositions = (text: string, patterns: HighlightPattern[]): KeywordPosition[] => {
+  return collectMatches(text, patterns).map((match) => ({
+    start: match.start,
+    end: match.end,
+  }));
 };
 
 /**
@@ -98,54 +184,51 @@ const mergeOverlappingSnippets = (snippets: Snippet[]): Snippet[] => {
 const HybridLogRendererInner: React.FC<HybridLogRendererProps> = ({ text, query, keywordGroups }) => {
   const { t } = useTranslation();
   const [isExpanded, setIsExpanded] = useState(false);
-  const { patternMap, regexPattern } = useMemo(() => {
-    const map = new Map<string, { color: ColorKey | string; comment: string }>();
-    const patterns = new Set<string>();
+  const highlightPatterns = useMemo(() => {
+    const patterns = new Map<string, HighlightPattern>();
 
-    // 处理关键词组中的模式
     keywordGroups
       .filter((g) => g.enabled)
       .forEach((group) => {
         group.patterns.forEach((p: KeywordPattern) => {
           if (p.regex?.trim()) {
-            map.set(p.regex.toLowerCase(), {
-              color: group.color,
-              comment: p.comment
-            });
-            patterns.add(p.regex);
+            const mode = looksLikeRegexPattern(p.regex) ? 'regex' : 'literal';
+            const key = `${mode}:${p.regex.toLowerCase()}`;
+
+            if (!patterns.has(key)) {
+              patterns.set(key, {
+                id: key,
+                raw: p.regex,
+                color: group.color,
+                comment: p.comment,
+                mode,
+                matcher: mode === 'regex' ? createRegexMatcher(p.regex) : undefined,
+              });
+            }
           }
         });
       });
 
-    // 处理查询字符串中的关键词
     if (query) {
       query
         .split('|')
         .map((term: string) => term.trim())
         .filter((term: string) => term.length > 0)
         .forEach((term: string, index: number) => {
-          if (!map.has(term.toLowerCase())) {
-            map.set(term.toLowerCase(), {
+          const key = `literal:${term.toLowerCase()}`;
+          if (!patterns.has(key)) {
+            patterns.set(key, {
+              id: key,
+              raw: term,
               color: ['blue', 'purple', 'green', 'orange'][index % 4],
-              comment: ""
+              comment: '',
+              mode: 'literal',
             });
           }
-          patterns.add(term);
         });
     }
 
-    // 按长度排序，确保长模式优先匹配
-    const sorted = Array.from(patterns).sort((a: string, b: string) => b.length - a.length);
-
-    return {
-      regexPattern: sorted.length > 0
-        ? new RegExp(
-            `(${sorted.map((p: string) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`,
-            'gi'
-          )
-        : null,
-      patternMap: map
-    };
+    return Array.from(patterns.values()).sort((a, b) => b.raw.length - a.raw.length);
   }, [keywordGroups, query]);
 
   // 渲染带高亮的文本
@@ -155,44 +238,68 @@ const HybridLogRendererInner: React.FC<HybridLogRendererProps> = ({ text, query,
   const MAX_HIGHLIGHT_PER_KEYWORD = 30;
 
   const renderHighlightedText = (textToRender: string, showEllipsis: { start?: boolean; end?: boolean } = {}) => {
-    if (!regexPattern) return <span>{textToRender}</span>;
+    if (highlightPatterns.length === 0) {
+      return <span>{textToRender}</span>;
+    }
 
-    const parts = textToRender.split(regexPattern);
+    const matches = collectMatches(textToRender, highlightPatterns);
+    if (matches.length === 0) {
+      return (
+        <span>
+          {showEllipsis.start && <span className="text-gray-400 dark:text-gray-600">...</span>}
+          <span>{textToRender}</span>
+          {showEllipsis.end && <span className="text-gray-400 dark:text-gray-600">...</span>}
+        </span>
+      );
+    }
 
     // 跟踪每个关键词已渲染的高亮次数
     const highlightCounts = new Map<string, number>();
+    const segments: React.ReactNode[] = [];
+    let cursor = 0;
+
+    matches.forEach((match, index) => {
+      if (cursor < match.start) {
+        segments.push(<span key={`text-${index}-${cursor}`}>{textToRender.slice(cursor, match.start)}</span>);
+      }
+
+      const currentCount = highlightCounts.get(match.pattern.id) ?? 0;
+      if (currentCount >= MAX_HIGHLIGHT_PER_KEYWORD) {
+        segments.push(<span key={`plain-${index}-${match.start}`}>{match.text}</span>);
+      } else {
+        highlightCounts.set(match.pattern.id, currentCount + 1);
+        const style =
+          COLOR_STYLES[match.pattern.color as ColorKey]?.highlight || COLOR_STYLES.blue.highlight;
+
+        segments.push(
+          <span key={`highlight-${index}-${match.start}`} className="inline-block mx-[1px]">
+            <span className={`rounded-[2px] px-1 border font-bold break-words ${style}`}>
+              {match.text}
+            </span>
+            {match.pattern.comment && currentCount === 0 && (
+              <span
+                className={`ml-1 px-1.5 rounded-[2px] text-[10px] font-normal border select-none whitespace-nowrap transform -translate-y-[1px] ${
+                  COLOR_STYLES[match.pattern.color as ColorKey]?.badge ?? COLOR_STYLES.blue.badge
+                }`}
+              >
+                {match.pattern.comment}
+              </span>
+            )}
+          </span>
+        );
+      }
+
+      cursor = match.end;
+    });
+
+    if (cursor < textToRender.length) {
+      segments.push(<span key={`tail-${cursor}`}>{textToRender.slice(cursor)}</span>);
+    }
 
     return (
       <span>
         {showEllipsis.start && <span className="text-gray-400 dark:text-gray-600">...</span>}
-        {parts.map((part: string, i: number) => {
-          const lowerPart = part.toLowerCase();
-          const info = patternMap.get(lowerPart);
-          if (info) {
-            const currentCount = highlightCounts.get(lowerPart) ?? 0;
-            if (currentCount >= MAX_HIGHLIGHT_PER_KEYWORD) {
-              // 该关键词已达到渲染上限，退化为纯文本
-              return <span key={i}>{part}</span>;
-            }
-            highlightCounts.set(lowerPart, currentCount + 1);
-            const style = COLOR_STYLES[info.color as ColorKey]?.highlight || COLOR_STYLES['blue'].highlight;
-            return (
-              <span key={i} className="inline-block mx-[1px]">
-                <span className={`rounded-[2px] px-1 border font-bold break-words ${style}`}>
-                  {part}
-                </span>
-                {info.comment && currentCount === 0 && (
-                  <span
-                    className={`ml-1 px-1.5 rounded-[2px] text-[10px] font-normal border select-none whitespace-nowrap transform -translate-y-[1px] ${COLOR_STYLES[info.color as ColorKey]?.badge ?? COLOR_STYLES['blue'].badge}`}
-                  >
-                    {info.comment}
-                  </span>
-                )}
-              </span>
-            );
-          }
-          return <span key={i}>{part}</span>;
-        })}
+        {segments}
         {showEllipsis.end && <span className="text-gray-400 dark:text-gray-600">...</span>}
       </span>
     );
@@ -220,12 +327,7 @@ const HybridLogRendererInner: React.FC<HybridLogRendererProps> = ({ text, query,
   }
 
   // 文本过长，使用智能截断
-  const keywords = Array.from(patternMap.keys()).map(k => 
-    // 从map的key中找到原始关键词（保持大小写）
-    query?.split('|').find(t => t.trim().toLowerCase() === k) || k
-  );
-  
-  const positions = findKeywordPositions(text, keywords);
+  const positions = findKeywordPositions(text, highlightPatterns);
   
   if (positions.length === 0) {
     // 没有关键词，显示前1000字符
@@ -257,7 +359,7 @@ const HybridLogRendererInner: React.FC<HybridLogRendererProps> = ({ text, query,
           <span key={index}>
             {renderHighlightedText(snippetText, { 
               start: showStartEllipsis, 
-              end: showEndEllipsis && index === mergedSnippets.length - 1
+              end: showEndEllipsis
             })}
             {index < mergedSnippets.length - 1 && (
               <span className="text-text-dim"> ... </span>

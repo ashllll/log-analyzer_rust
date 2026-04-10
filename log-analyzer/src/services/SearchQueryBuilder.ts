@@ -8,6 +8,7 @@ import {
   TermSource
 } from '../types/search';
 import type { KeywordGroup } from '../types/common';
+import { looksLikeRegexPattern } from '../utils/searchPatterns';
 
 /**
  * 搜索查询构建器
@@ -75,7 +76,7 @@ export class SearchQueryBuilder {
         operator: 'OR',
         source,
         presetGroupId,
-        isRegex: source === 'preset',
+        isRegex: source === 'preset' && looksLikeRegexPattern(value),
         priority: terms.length - idx
       });
     });
@@ -125,7 +126,7 @@ export class SearchQueryBuilder {
       operator: options?.operator ?? 'AND',
       source: options?.source ?? 'user',
       presetGroupId: options?.presetGroupId,
-      isRegex: options?.isRegex ?? true,
+      isRegex: options?.isRegex ?? false,
       priority: options?.priority ?? 0,
       enabled: true,
       caseSensitive: options?.caseSensitive ?? false
