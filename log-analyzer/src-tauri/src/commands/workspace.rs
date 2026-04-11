@@ -294,7 +294,26 @@ fn cleanup_workspace_resources(
     {
         let mut watchers = state.watchers.lock();
         if let Some(mut watcher_state) = watchers.remove(workspace_id) {
+            // 设置标志使监听线程自然退出
             watcher_state.is_active = false;
+
+            // 获取句柄和监听器以便正确清理（参考 stop_watch 的实现）
+            let thread_handle = watcher_state.thread_handle.lock().take();
+            let watcher = watcher_state.watcher.lock().take();
+
+            // 释放锁后，显式释放 watcher（会关闭 notify 的通道）
+            drop(watcher);
+
+            // 等待监听线程结束
+            if let Some(handle) = thread_handle {
+                if handle.join().is_err() {
+                    error!(
+                        workspace_id = %workspace_id,
+                        "Failed to join watcher thread"
+                    );
+                }
+            }
+
             info!(
                 workspace_id = %workspace_id,
                 "File watcher stopped"
@@ -314,6 +333,24 @@ fn cleanup_workspace_resources(
 
     // ===== 步骤3: 清除工作区运行态资源 =====
     info!("Step 3: Removing workspace runtime resources");
+
+    // 重要：先调用 SearchEngineManager::close() 确保 Tantivy IndexWriter 完成 commit
+    // 这样可以释放内存映射文件句柄，避免目录删除失败
+    {
+        let search_managers = state.search_engine_managers.lock();
+        if let Some(manager) = search_managers.get(workspace_id) {
+            let manager: &crate::search_engine::SearchEngineManager = manager;
+            // 使用 block_on 运行异步 close 方法
+            // SearchEngineManager::close() 是 async 的，需要运行时执行
+            // close() 方法内部处理错误（记录日志），不返回 Result
+            tokio::runtime::Handle::current().block_on(manager.close());
+            info!(
+                workspace_id = %workspace_id,
+                "SearchEngineManager::close() completed"
+            );
+        }
+    }
+
     state.workspace_dirs.lock().remove(workspace_id);
     state.cas_instances.lock().remove(workspace_id);
     state.metadata_stores.lock().remove(workspace_id);
@@ -476,7 +513,21 @@ fn cleanup_workspace_resources(
             }
 
             try_cleanup_temp_dir(&workspace_dir, &state.cleanup_queue);
-            info!("Step 5 completed: Workspace directory cleanup initiated");
+
+            // 检查工作区目录是否仍然存在（验证删除是否成功）
+            if workspace_dir.exists() {
+                let error = format!(
+                    "Failed to delete workspace directory {} after cleanup",
+                    workspace_dir.display()
+                );
+                error!(error = %error);
+                errors.push(error);
+            } else {
+                info!(
+                    path = %workspace_dir.display(),
+                    "Step 5 completed: Workspace directory successfully deleted"
+                );
+            }
         }
         Ok(_) => {
             info!("Step 5 skipped: Workspace directory does not exist");
@@ -489,22 +540,39 @@ fn cleanup_workspace_resources(
     }
 
     // ===== 汇总结果 =====
+    // 区分严重错误和非严重错误：
+    // - 严重错误：工作区目录仍然存在（用户无法重新导入同一工作区）
+    // - 非严重错误：辅助文件（journal files 等）删除失败（不影响重新导入）
+    let has_directory_exists_error = errors.iter().any(|e| e.contains("Failed to delete workspace directory"));
+
     if errors.is_empty() {
         info!(
             workspace_id = %workspace_id,
             "All cleanup steps completed successfully"
         );
         Ok(())
+    } else if has_directory_exists_error {
+        let error_summary = errors.join("; ");
+        error!(
+            workspace_id = %workspace_id,
+            error_count = errors.len(),
+            error_summary = %error_summary,
+            "Critical error: workspace directory still exists after cleanup"
+        );
+        // 工作区目录未删除，这是严重错误，必须返回错误
+        Err(format!(
+            "工作区目录删除失败: {}. 请关闭所有可能打开文件的程序后重试。",
+            error_summary
+        ))
     } else {
         let error_summary = errors.join("; ");
         warn!(
             workspace_id = %workspace_id,
             error_count = errors.len(),
             error_summary = %error_summary,
-            "Cleanup completed with errors"
+            "Cleanup completed with non-critical errors (auxiliary files)"
         );
-        // 部分资源清理失败不影响整体删除操作
-        // 主要资源(内存状态)已清理,用户可以正常使用
+        // 非严重错误：辅助文件删除失败，但工作区目录已删除，用户可以正常使用
         Ok(())
     }
 }
