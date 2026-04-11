@@ -22,6 +22,7 @@ use tauri::{command, AppHandle};
 use tracing::{debug, error, info};
 
 use crate::utils::workspace_paths::resolve_workspace_dir;
+use crate::utils::validation::validate_workspace_id;
 
 /// File content response
 #[derive(Debug, Serialize, Deserialize)]
@@ -29,6 +30,14 @@ pub struct FileContentResponse {
     pub content: String,
     pub hash: String,
     pub size: usize,
+}
+
+fn validate_file_hash(hash: &str) -> Result<(), String> {
+    if hash.len() != 64 || !hash.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err("Invalid file hash format".to_string());
+    }
+
+    Ok(())
 }
 
 /// Read file content by SHA-256 hash
@@ -72,6 +81,9 @@ pub async fn read_file_by_hash(
     #[allow(non_snake_case)] workspaceId: String,
     hash: String,
 ) -> Result<FileContentResponse, String> {
+    validate_workspace_id(&workspaceId)?;
+    validate_file_hash(&hash)?;
+
     info!(
         workspace_id = %workspaceId,
         hash = %hash,
@@ -401,5 +413,18 @@ mod tests {
             .expect("VirtualTreeNode::Archive should always be serializable");
         assert!(json.contains("\"type\":\"archive\""));
         assert!(json.contains("\"archiveType\":\"zip\""));
+    }
+
+    #[test]
+    fn test_validate_file_hash_accepts_sha256() {
+        let hash = "a3".repeat(32);
+        assert!(validate_file_hash(&hash).is_ok());
+    }
+
+    #[test]
+    fn test_validate_file_hash_rejects_path_like_values() {
+        assert!(validate_file_hash("../etc/passwd").is_err());
+        assert!(validate_file_hash("aa/tmp/escaped").is_err());
+        assert!(validate_file_hash("short").is_err());
     }
 }

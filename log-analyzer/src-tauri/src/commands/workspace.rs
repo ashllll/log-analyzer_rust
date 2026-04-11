@@ -34,6 +34,7 @@
 
 /// Workspace load response
 #[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WorkspaceLoadResponse {
     /// Whether the workspace was loaded successfully
     pub success: bool,

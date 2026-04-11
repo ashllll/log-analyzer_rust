@@ -59,3 +59,33 @@ describe('api.refreshWorkspace', () => {
     });
   });
 });
+
+describe('api.loadWorkspace', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('should accept the backend load_workspace payload shape', async () => {
+    mockInvoke.mockResolvedValueOnce({
+      success: true,
+      fileCount: 42,
+    });
+
+    await expect(api.loadWorkspace('workspace-1')).resolves.toEqual({
+      success: true,
+      fileCount: 42,
+    });
+
+    expect(mockInvoke).toHaveBeenCalledWith('load_workspace', {
+      workspaceId: 'workspace-1',
+    });
+  });
+
+  it('should reject malformed workspace payloads', async () => {
+    mockInvoke.mockResolvedValueOnce({
+      success: true,
+    });
+
+    await expect(api.loadWorkspace('workspace-1')).rejects.toThrow();
+  });
+});

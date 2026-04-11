@@ -383,12 +383,8 @@ export type LogEntry = z.infer<typeof LogEntrySchema>;
  * 工作区加载响应 Schema（对应 api.ts WorkspaceLoadResponse）
  */
 export const WorkspaceLoadResponseSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  path: z.string(),
-  status: z.enum(['READY', 'PROCESSING', 'OFFLINE']),
-  fileCount: z.number().int().nonnegative().optional(),
-  totalSize: z.number().nonnegative().optional(),
+  success: z.boolean(),
+  fileCount: z.number().int().nonnegative(),
 });
 
 /**

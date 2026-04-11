@@ -130,7 +130,7 @@ impl ArchiveHandler for RarHandler {
                         })?;
                     }
 
-                    match header.extract_to(&target_path) {
+                    match header.extract_to(&out_path) {
                         Ok(new_archive) => {
                             archive = new_archive;
                             summary.add_file(safe_path, size);
@@ -173,6 +173,35 @@ impl ArchiveHandler for RarHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::{Path, PathBuf};
+
+    fn find_unrar_fixture(name: &str) -> Option<PathBuf> {
+        let mut candidates = Vec::new();
+
+        if let Ok(cargo_home) = std::env::var("CARGO_HOME") {
+            candidates.push(PathBuf::from(cargo_home));
+        }
+
+        if let Ok(home) = std::env::var("HOME") {
+            candidates.push(PathBuf::from(home).join(".cargo"));
+        }
+
+        for cargo_home in candidates {
+            let registry_src = cargo_home.join("registry").join("src");
+            let Ok(entries) = std::fs::read_dir(registry_src) else {
+                continue;
+            };
+
+            for entry in entries.flatten() {
+                let path = entry.path().join("unrar-0.5.8").join("data").join(name);
+                if path.exists() {
+                    return Some(path);
+                }
+            }
+        }
+
+        None
+    }
 
     #[test]
     fn test_rar_handler_can_handle() {
@@ -241,6 +270,31 @@ mod tests {
         let result = handler.extract(&rar_file, &output_dir).await;
 
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "rar-support")]
+    async fn test_extract_rar_writes_to_the_sanitized_output_path() {
+        let Some(rar_file) = find_unrar_fixture("version.rar") else {
+            return;
+        };
+
+        let temp_dir = tempfile::TempDir::new().expect("创建临时目录失败");
+        let output_dir = temp_dir.path().join("output");
+
+        let handler = RarHandler;
+        let summary = handler.extract(&rar_file, &output_dir).await.expect("RAR 提取应成功");
+
+        assert_eq!(summary.files_extracted, 1);
+        let extracted_file = output_dir.join(Path::new("VERSION"));
+        assert!(
+            extracted_file.exists(),
+            "RAR 条目应落到计算后的目标文件路径，而不是仅把目录传给 extract_to"
+        );
+        assert_eq!(
+            std::fs::read_to_string(extracted_file).expect("读取已解压文件"),
+            "unrar-0.4.0"
+        );
     }
 }
 

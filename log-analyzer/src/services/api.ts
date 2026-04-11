@@ -186,12 +186,8 @@ export async function safeInvokeObject<T extends object>(
  * 工作区加载响应
  */
 export interface WorkspaceLoadResponse {
-  id: string;
-  name: string;
-  path: string;
-  status: 'READY' | 'PROCESSING' | 'OFFLINE';
-  fileCount?: number;
-  totalSize?: number;
+  success: boolean;
+  fileCount: number;
 }
 
 /**

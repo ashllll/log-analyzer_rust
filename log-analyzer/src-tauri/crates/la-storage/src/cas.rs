@@ -179,6 +179,10 @@ pub struct ContentAddressableStorage {
     existence_cache: Arc<Cache<String, ()>>,
 }
 
+fn is_valid_content_hash(hash: &str) -> bool {
+    hash.len() == 64 && hash.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
 /// RAII guard for temporary files that ensures cleanup on drop (BUG-007 fix)
 ///
 /// This guard holds the path to a temporary file and attempts to delete it
@@ -831,6 +835,13 @@ impl ContentAddressableStorage {
     /// # })
     /// ```
     pub async fn read_content(&self, hash: &str) -> Result<Vec<u8>> {
+        if !is_valid_content_hash(hash) {
+            return Err(AppError::validation_error(format!(
+                "Invalid content hash format: {}",
+                hash
+            )));
+        }
+
         let object_path = self.get_object_path(hash);
 
         if !object_path.exists() {
@@ -863,6 +874,11 @@ impl ContentAddressableStorage {
     ///
     /// `true` if the object exists, `false` otherwise
     pub fn exists(&self, hash: &str) -> bool {
+        if !is_valid_content_hash(hash) {
+            warn!(hash = %hash, "Rejected invalid content hash in exists()");
+            return false;
+        }
+
         // Fast path: Check cache first for performance
         if self.existence_cache.get(hash).is_some() {
             // Cache hit - but we still need to verify the file actually exists
@@ -896,6 +912,13 @@ impl ContentAddressableStorage {
     ///
     /// Content bytes on success
     pub fn read_content_sync(&self, hash: &str) -> Result<Vec<u8>> {
+        if !is_valid_content_hash(hash) {
+            return Err(AppError::validation_error(format!(
+                "Invalid content hash format: {}",
+                hash
+            )));
+        }
+
         let object_path = self.get_object_path(hash);
 
         if !object_path.exists() {
@@ -928,6 +951,11 @@ impl ContentAddressableStorage {
     ///
     /// `true` if the object exists, `false` otherwise
     pub async fn exists_async(&self, hash: &str) -> bool {
+        if !is_valid_content_hash(hash) {
+            warn!(hash = %hash, "Rejected invalid content hash in exists_async()");
+            return false;
+        }
+
         // Fast path: Check cache first for performance
         if self.existence_cache.get(hash).is_some() {
             // Cache hit - but we still need to verify the file actually exists
@@ -1888,5 +1916,21 @@ mod tests {
         // File should still exist
         assert!(kept_path.exists(), "File should exist after keep()");
         assert_eq!(kept_path, temp_path);
+    }
+
+    #[tokio::test]
+    async fn test_invalid_hash_is_rejected_before_filesystem_access() {
+        let temp_dir = TempDir::new().unwrap();
+        let cas = ContentAddressableStorage::new(temp_dir.path().join("workspace"));
+
+        let escaped_target = temp_dir.path().join("escaped.txt");
+        tokio::fs::write(&escaped_target, b"secret").await.unwrap();
+
+        let malicious_hash = format!("aa{}", escaped_target.display());
+
+        assert!(cas.read_content(&malicious_hash).await.is_err());
+        assert!(!cas.exists(&malicious_hash));
+        assert!(!cas.exists_async(&malicious_hash).await);
+        assert!(cas.read_content_sync(&malicious_hash).is_err());
     }
 }
