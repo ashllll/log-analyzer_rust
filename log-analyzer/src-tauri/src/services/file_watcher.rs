@@ -237,8 +237,10 @@ pub fn read_file_from_offset(path: &Path, offset: u64) -> Result<(Vec<String>, u
 pub fn parse_metadata(line: &str) -> (String, String) {
     // 使用正则边界匹配，避免误匹配如 "ErrorCode" 等子串
     // \b 确保匹配完整单词，优先级由正则顺序决定：ERROR > WARN > INFO > DEBUG
-    static LOG_LEVEL_REGEX: Lazy<Regex> =
-        Lazy::new(|| Regex::new(r"\b(ERROR|WARN|INFO|DEBUG)\b").expect("LOG_LEVEL_REGEX is a valid static regex pattern"));
+    static LOG_LEVEL_REGEX: Lazy<Regex> = Lazy::new(|| {
+        Regex::new(r"\b(ERROR|WARN|INFO|DEBUG)\b")
+            .expect("LOG_LEVEL_REGEX is a valid static regex pattern")
+    });
 
     let level = LOG_LEVEL_REGEX
         .find(line)
