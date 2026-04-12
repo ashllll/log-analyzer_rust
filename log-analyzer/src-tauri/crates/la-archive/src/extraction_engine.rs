@@ -452,7 +452,10 @@ impl ExtractionEngine {
             }
 
             // Process this archive
-            match self.process_archive_file(&item, &mut stack).await {
+            match self
+                .process_archive_file(&item, &mut stack, result.total_bytes)
+                .await
+            {
                 Ok((extracted_files, bytes_extracted, skips, shortenings)) => {
                     result.total_files += extracted_files.len();
                     result.total_bytes += bytes_extracted;
@@ -567,6 +570,7 @@ impl ExtractionEngine {
         &self,
         item: &ExtractionItem,
         stack: &mut ExtractionStack,
+        current_workspace_bytes: u64,
     ) -> Result<(Vec<PathBuf>, u64, usize, usize)> {
         // Ensure target directory exists
         fs::create_dir_all(&item.target_dir).await.map_err(|e| {
@@ -618,6 +622,23 @@ impl ExtractionEngine {
             "Extracted {} files ({} bytes) from {:?}",
             summary.files_extracted, summary.total_size, item.archive_path
         );
+
+        let (should_halt, violation) = self
+            .security_detector
+            .should_halt_for_workspace_size(current_workspace_bytes, summary.total_size);
+        if should_halt {
+            let message = violation
+                .map(|violation| violation.message)
+                .unwrap_or_else(|| {
+                    format!(
+                        "Workspace extraction size would exceed limit after processing {:?}",
+                        item.archive_path
+                    )
+                });
+
+            let _ = fs::remove_dir_all(&item.target_dir).await;
+            return Err(AppError::Security(message));
+        }
 
         // Process extracted files
         let mut extracted_files = Vec::new();

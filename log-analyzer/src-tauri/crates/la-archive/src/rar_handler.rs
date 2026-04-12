@@ -1,6 +1,8 @@
 #[cfg(feature = "rar-support")]
 use crate::archive_handler::{ArchiveHandler, ExtractionSummary};
 #[cfg(feature = "rar-support")]
+use crate::symlink_guard::{ensure_no_symlink_components, reject_extracted_symlink};
+#[cfg(feature = "rar-support")]
 use async_trait::async_trait;
 #[cfg(feature = "rar-support")]
 use la_core::error::{AppError, Result};
@@ -96,7 +98,6 @@ impl ArchiveHandler for RarHandler {
                             .map_err(|e| AppError::archive_error(e.to_string(), None))?;
                         continue;
                     }
-
                     let size = entry.unpacked_size;
                     let is_directory = entry.is_directory();
 
@@ -104,6 +105,21 @@ impl ArchiveHandler for RarHandler {
                 };
 
                 if is_directory {
+                    if let Err(error) = ensure_no_symlink_components(&target_path, &out_path) {
+                        warn!(
+                            path = %out_path.display(),
+                            error = %error,
+                            "RAR 目录条目目标路径包含符号链接，跳过此条目"
+                        );
+                        summary.add_error(format!(
+                            "Skipped RAR entry {} because extraction path traverses a symbolic link",
+                            name
+                        ));
+                        archive = header
+                            .skip()
+                            .map_err(|e| AppError::archive_error(e.to_string(), None))?;
+                        continue;
+                    }
                     if let Err(e) = std::fs::create_dir_all(&out_path) {
                         warn!(path = ?out_path, error = %e, "创建 RAR 目录条目失败，跳过");
                     }
@@ -122,6 +138,7 @@ impl ArchiveHandler for RarHandler {
                     }
 
                     if let Some(parent) = out_path.parent() {
+                        ensure_no_symlink_components(&target_path, parent)?;
                         std::fs::create_dir_all(parent).map_err(|e| {
                             AppError::archive_error(
                                 format!("创建 RAR 条目父目录失败: {e}"),
@@ -130,9 +147,23 @@ impl ArchiveHandler for RarHandler {
                         })?;
                     }
 
+                    ensure_no_symlink_components(&target_path, &out_path)?;
+
                     match header.extract_to(&out_path) {
                         Ok(new_archive) => {
                             archive = new_archive;
+                            if let Err(error) = reject_extracted_symlink(&out_path) {
+                                warn!(
+                                    path = %out_path.display(),
+                                    error = %error,
+                                    "RAR 条目被提取为符号链接，已删除并跳过"
+                                );
+                                summary.add_error(format!(
+                                    "Removed extracted symbolic link entry {}",
+                                    name
+                                ));
+                                continue;
+                            }
                             summary.add_file(safe_path, size);
                         }
                         Err(e) => {
@@ -283,7 +314,10 @@ mod tests {
         let output_dir = temp_dir.path().join("output");
 
         let handler = RarHandler;
-        let summary = handler.extract(&rar_file, &output_dir).await.expect("RAR 提取应成功");
+        let summary = handler
+            .extract(&rar_file, &output_dir)
+            .await
+            .expect("RAR 提取应成功");
 
         assert_eq!(summary.files_extracted, 1);
         let extracted_file = output_dir.join(Path::new("VERSION"));

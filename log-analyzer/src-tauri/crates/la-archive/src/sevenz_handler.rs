@@ -1,4 +1,5 @@
 use crate::archive_handler::{ArchiveHandler, ExtractionSummary};
+use crate::symlink_guard::ensure_no_symlink_components;
 use async_trait::async_trait;
 use la_core::error::{AppError, Result};
 use la_core::utils::path_security::{
@@ -75,6 +76,14 @@ impl ArchiveHandler for SevenZHandler {
                     let size = entry.size();
 
                     if entry.is_directory() {
+                        if let Err(error) = ensure_no_symlink_components(&target_path, &out_path) {
+                            warn!(
+                                path = %out_path.display(),
+                                error = %error,
+                                "7z 条目目标路径包含符号链接，跳过此条目"
+                            );
+                            return Ok(true);
+                        }
                         let _ = std::fs::create_dir_all(&out_path);
                     } else {
                         if size > max_file_size
@@ -85,7 +94,24 @@ impl ArchiveHandler for SevenZHandler {
                         }
 
                         if let Some(parent) = out_path.parent() {
+                            if let Err(error) = ensure_no_symlink_components(&target_path, parent) {
+                                warn!(
+                                    path = %parent.display(),
+                                    error = %error,
+                                    "7z 条目父目录路径包含符号链接，跳过此条目"
+                                );
+                                return Ok(true);
+                            }
                             let _ = std::fs::create_dir_all(parent);
+                        }
+
+                        if let Err(error) = ensure_no_symlink_components(&target_path, &out_path) {
+                            warn!(
+                                path = %out_path.display(),
+                                error = %error,
+                                "7z 条目目标路径包含符号链接，跳过此条目"
+                            );
+                            return Ok(true);
                         }
 
                         match std::fs::File::create(&out_path) {

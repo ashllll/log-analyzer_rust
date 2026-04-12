@@ -384,7 +384,9 @@ pub async fn extract_archive_async(
 
     let path_manager = Arc::new(PathManager::new(PathConfig::default(), metadata_db.clone()));
 
-    let security_detector = Arc::new(SecurityDetector::new(SecurityPolicy::default()));
+    let security_detector = Arc::new(SecurityDetector::new(
+        security_policy_from_extraction_policy(&policy),
+    ));
 
     // Create extraction engine
     let engine = ExtractionEngine::new(
@@ -464,6 +466,13 @@ pub async fn extract_archive_async(
         performance_metrics,
         security_events,
     })
+}
+
+fn security_policy_from_extraction_policy(policy: &ExtractionPolicy) -> SecurityPolicy {
+    SecurityPolicy {
+        max_cumulative_size: policy.max_total_size,
+        ..SecurityPolicy::default()
+    }
 }
 
 #[cfg(test)]
@@ -700,5 +709,21 @@ mod tests {
 
         assert_eq!(error.context.get("file_size").unwrap(), "1000000");
         assert_eq!(error.context.get("compression_ratio").unwrap(), "1000");
+    }
+
+    #[test]
+    fn test_security_policy_tracks_extraction_limits() {
+        let policy = ExtractionPolicy {
+            max_total_size: 123_456,
+            ..ExtractionPolicy::default()
+        };
+
+        let security_policy = security_policy_from_extraction_policy(&policy);
+
+        assert_eq!(security_policy.max_cumulative_size, 123_456);
+        assert_eq!(
+            security_policy.max_workspace_size,
+            SecurityPolicy::default().max_workspace_size
+        );
     }
 }

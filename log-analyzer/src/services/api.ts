@@ -20,6 +20,8 @@ import {
   VirtualTreeNodeSchema,  WorkspaceStateSchema,
   EventRecordSchema,
   WorkspaceLoadResponseSchema,
+  WorkspaceStatusResponseSchema,
+  WorkspaceTimeRangeSchema,
   AppConfigSchema,
   SearchIdSchema,
   type RarSupportInfo,
@@ -27,6 +29,7 @@ import {
   type PerformanceMetrics,
   type VirtualTreeNode,
   type WorkspaceState,
+  type WorkspaceStatusResponseValidated,
   type EventRecord,
 } from '../types/api-responses';
 
@@ -190,17 +193,7 @@ export interface WorkspaceLoadResponse {
   fileCount: number;
 }
 
-/**
- * 工作区状态响应
- */
-export interface WorkspaceStatusResponse {
-  id: string;
-  name: string;
-  status: 'READY' | 'PROCESSING' | 'OFFLINE';
-  fileCount?: number;
-  totalSize?: number;
-  watching?: boolean;
-}
+export type WorkspaceStatusResponse = WorkspaceStatusResponseValidated;
 
 /**
  * 搜索参数
@@ -325,7 +318,8 @@ class LogAnalyzerApi {
         ? { workspaceId, path: resolvedPath }
         : { workspaceId };
 
-      return await invoke('refresh_workspace', args as InvokeArgs);
+      const result = await invoke('refresh_workspace', args as InvokeArgs);
+      return SearchIdSchema.parse(result);
     } catch (error) {
       throw createApiError('refresh_workspace', error);
     }
@@ -352,7 +346,8 @@ class LogAnalyzerApi {
    */
   async getWorkspaceStatus(workspaceId: string): Promise<WorkspaceStatusResponse> {
     try {
-      return await invoke('get_workspace_status', { workspaceId });
+      const result = await invoke('get_workspace_status', { workspaceId });
+      return WorkspaceStatusResponseSchema.parse(result);
     } catch (error) {
       throw createApiError('get_workspace_status', error);
     }
@@ -385,7 +380,8 @@ class LogAnalyzerApi {
     totalLogs: number;
   }> {
     try {
-      return await invoke('get_workspace_time_range', { workspaceId });
+      const result = await invoke('get_workspace_time_range', { workspaceId });
+      return WorkspaceTimeRangeSchema.parse(result);
     } catch (error) {
       throw createApiError('get_workspace_time_range', error);
     }

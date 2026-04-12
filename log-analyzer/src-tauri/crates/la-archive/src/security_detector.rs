@@ -68,6 +68,8 @@ pub enum ViolationType {
     ExcessiveCompressionRatio,
     /// Cumulative size exceeds limit
     CumulativeSizeExceeded,
+    /// Workspace size exceeds limit
+    WorkspaceSizeExceeded,
     /// Risk score exceeds threshold
     RiskScoreExceeded,
     /// Suspicious pattern detected
@@ -290,6 +292,37 @@ impl SecurityDetector {
         }
 
         // No violations detected
+        (false, None)
+    }
+
+    /// Check whether the workspace-wide extraction size would exceed the configured limit.
+    pub fn should_halt_for_workspace_size(
+        &self,
+        current_workspace_size: u64,
+        pending_extraction_size: u64,
+    ) -> (bool, Option<SecurityViolation>) {
+        let new_workspace_size = current_workspace_size.saturating_add(pending_extraction_size);
+
+        if new_workspace_size > self.policy.max_workspace_size {
+            warn!(
+                "Workspace size limit exceeded: {} bytes (limit: {})",
+                new_workspace_size, self.policy.max_workspace_size
+            );
+            return (
+                true,
+                Some(SecurityViolation {
+                    violation_type: ViolationType::WorkspaceSizeExceeded,
+                    severity: Severity::Critical,
+                    message: format!(
+                        "Workspace extracted size {} exceeds limit {}",
+                        new_workspace_size, self.policy.max_workspace_size
+                    ),
+                    file_path: None,
+                    metrics: None,
+                }),
+            );
+        }
+
         (false, None)
     }
 
@@ -529,6 +562,20 @@ mod tests {
         let v = violation.unwrap();
         assert_eq!(v.violation_type, ViolationType::CumulativeSizeExceeded);
         assert_eq!(v.severity, Severity::Critical);
+    }
+
+    #[test]
+    fn test_should_halt_workspace_size() {
+        let detector = SecurityDetector::new(SecurityPolicy {
+            max_workspace_size: 1_024,
+            ..SecurityPolicy::default()
+        });
+        let (should_halt, violation) = detector.should_halt_for_workspace_size(900, 200);
+
+        assert!(should_halt);
+        let violation = violation.expect("expected workspace size violation");
+        assert_eq!(violation.violation_type, ViolationType::WorkspaceSizeExceeded);
+        assert_eq!(violation.severity, Severity::Critical);
     }
 
     #[test]

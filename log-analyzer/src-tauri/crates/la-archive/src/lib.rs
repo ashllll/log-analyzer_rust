@@ -15,6 +15,7 @@ pub mod public_api;
 pub mod rar_handler;
 pub mod security_detector;
 pub mod sevenz_handler;
+mod symlink_guard;
 pub mod tar_handler;
 pub mod zip_handler;
 

@@ -98,11 +98,21 @@ export const VirtualTreeNodeSchema: z.ZodType<VirtualTreeNode> = z.union([
 /**
  * 工作区状态 Schema
  */
+export const WorkspaceStatusSchema = z.enum(['READY', 'PROCESSING', 'OFFLINE', 'ERROR']);
+
+/**
+ * 工作区状态枚举类型
+ */
+export type WorkspaceStatus = z.infer<typeof WorkspaceStatusSchema>;
+
+/**
+ * 工作区状态 Schema
+ */
 export const WorkspaceStateSchema = z.object({
   id: z.string(),
   name: z.string(),
   path: z.string(),
-  status: z.enum(['READY', 'PROCESSING', 'OFFLINE', 'ERROR']),
+  status: WorkspaceStatusSchema,
   last_accessed: z.number().optional(),
 });
 
@@ -392,6 +402,36 @@ export const WorkspaceLoadResponseSchema = z.object({
  */
 export type WorkspaceLoadResponseValidated = z.infer<typeof WorkspaceLoadResponseSchema>;
 
+/**
+ * 工作区状态响应 Schema
+ */
+export const WorkspaceStatusResponseSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  status: WorkspaceStatusSchema,
+  size: z.string(),
+  files: z.number().int().nonnegative(),
+});
+
+/**
+ * 工作区状态响应类型
+ */
+export type WorkspaceStatusResponseValidated = z.infer<typeof WorkspaceStatusResponseSchema>;
+
+/**
+ * 工作区时间范围响应 Schema
+ */
+export const WorkspaceTimeRangeSchema = z.object({
+  minTimestamp: z.string().nullable(),
+  maxTimestamp: z.string().nullable(),
+  totalLogs: z.number().int().nonnegative(),
+});
+
+/**
+ * 工作区时间范围响应类型
+ */
+export type WorkspaceTimeRangeValidated = z.infer<typeof WorkspaceTimeRangeSchema>;
+
 // ============================================================================
 // 应用配置
 // ============================================================================
@@ -439,7 +479,7 @@ const WorkspaceSchema = z.object({
   id: z.string(),
   name: z.string(),
   path: z.string(),
-  status: z.enum(['READY', 'OFFLINE', 'PROCESSING']),
+  status: z.enum(['READY', 'OFFLINE', 'PROCESSING', 'ERROR']),
   size: z.string(),
   files: z.number(),
   watching: z.boolean().optional(),

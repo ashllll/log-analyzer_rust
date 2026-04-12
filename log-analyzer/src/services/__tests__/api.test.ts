@@ -34,9 +34,9 @@ describe('api.refreshWorkspace', () => {
   });
 
   it('should invoke refresh_workspace directly when path is provided', async () => {
-    mockInvoke.mockResolvedValueOnce('task-123');
+    mockInvoke.mockResolvedValueOnce('550e8400-e29b-41d4-a716-446655440000');
 
-    await expect(api.refreshWorkspace('workspace-1', '/logs/app')).resolves.toBe('task-123');
+    await expect(api.refreshWorkspace('workspace-1', '/logs/app')).resolves.toBe('550e8400-e29b-41d4-a716-446655440000');
 
     expect(mockInvoke).toHaveBeenCalledTimes(1);
     expect(mockInvoke).toHaveBeenCalledWith('refresh_workspace', {
@@ -48,9 +48,9 @@ describe('api.refreshWorkspace', () => {
   it('should load config and recover path when it is missing', async () => {
     mockInvoke
       .mockResolvedValueOnce(makeConfig('/logs/from-config'))
-      .mockResolvedValueOnce('task-456');
+      .mockResolvedValueOnce('550e8400-e29b-41d4-a716-446655440001');
 
-    await expect(api.refreshWorkspace('workspace-1')).resolves.toBe('task-456');
+    await expect(api.refreshWorkspace('workspace-1')).resolves.toBe('550e8400-e29b-41d4-a716-446655440001');
 
     expect(mockInvoke).toHaveBeenNthCalledWith(1, 'load_config');
     expect(mockInvoke).toHaveBeenNthCalledWith(2, 'refresh_workspace', {
@@ -87,5 +87,41 @@ describe('api.loadWorkspace', () => {
     });
 
     await expect(api.loadWorkspace('workspace-1')).rejects.toThrow();
+  });
+});
+
+describe('api.getWorkspaceStatus', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('should accept valid workspace statuses from the backend', async () => {
+    mockInvoke.mockResolvedValueOnce({
+      id: 'workspace-1',
+      name: 'Test Workspace',
+      status: 'ERROR',
+      size: '100MB',
+      files: 10,
+    });
+
+    await expect(api.getWorkspaceStatus('workspace-1')).resolves.toEqual({
+      id: 'workspace-1',
+      name: 'Test Workspace',
+      status: 'ERROR',
+      size: '100MB',
+      files: 10,
+    });
+  });
+
+  it('should reject unexpected workspace statuses', async () => {
+    mockInvoke.mockResolvedValueOnce({
+      id: 'workspace-1',
+      name: 'Test Workspace',
+      status: 'BROKEN',
+      size: '100MB',
+      files: 10,
+    });
+
+    await expect(api.getWorkspaceStatus('workspace-1')).rejects.toThrow();
   });
 });
