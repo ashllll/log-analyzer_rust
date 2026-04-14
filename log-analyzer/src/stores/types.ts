@@ -25,7 +25,7 @@ export interface Workspace {
   id: string;
   name: string;
   path: string;
-  status: 'READY' | 'OFFLINE' | 'PROCESSING';
+  status: 'READY' | 'OFFLINE' | 'PROCESSING' | 'ERROR';
   size: string;
   files: number;
   watching?: boolean;

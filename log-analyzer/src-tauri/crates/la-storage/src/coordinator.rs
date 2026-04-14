@@ -71,19 +71,25 @@ impl StorageCoordinator {
             .map_err(|e| AppError::database_error(format!("Count failed: {}", e)))?;
 
         if count > 0 {
-            tx.rollback().await.ok();
+            if let Err(e) = tx.rollback().await {
+                warn!(hash = %hash, error = %e, "Rollback failed");
+            }
             return Ok(false);
         }
 
         let object_path = self.cas.get_object_path(hash);
         match tokio::fs::remove_file(&object_path).await {
             Ok(_) => {
-                tx.commit().await.ok();
+                if let Err(e) = tx.commit().await {
+                    warn!(hash = %hash, error = %e, "Commit failed");
+                }
                 self.cas.invalidate_cache_entry(hash);
                 Ok(true)
             }
             Err(e) => {
-                tx.rollback().await.ok();
+                if let Err(rollback_err) = tx.rollback().await {
+                    warn!(hash = %hash, error = %rollback_err, "Rollback failed after remove failure");
+                }
                 Err(AppError::io_error(
                     format!("Remove failed: {}", e),
                     Some(object_path),

@@ -460,7 +460,9 @@ pub async fn import_folder(
         state.workspace_dirs.lock().remove(&workspace_id_clone);
 
         if workspace_dir.exists() {
-            let _ = std::fs::remove_dir_all(&workspace_dir);
+            if let Err(e) = std::fs::remove_dir_all(&workspace_dir) {
+                error!(workspace_id = %workspace_id_clone, error = %e, "Failed to remove workspace directory");
+            }
         }
 
         let error_msg = format!("Failed to build initial search index: {}", e);
