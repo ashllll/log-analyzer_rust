@@ -337,19 +337,20 @@ fn cleanup_workspace_resources(
 
     // 重要：先调用 SearchEngineManager::close() 确保 Tantivy IndexWriter 完成 commit
     // 这样可以释放内存映射文件句柄，避免目录删除失败
-    {
+    // 注意：在锁外调用 block_on，避免死锁风险
+    let manager = {
         let search_managers = state.search_engine_managers.lock();
-        if let Some(manager) = search_managers.get(workspace_id) {
-            let manager: &crate::search_engine::SearchEngineManager = manager;
-            // 使用 block_on 运行异步 close 方法
-            // SearchEngineManager::close() 是 async 的，需要运行时执行
-            // close() 方法内部处理错误（记录日志），不返回 Result
-            tokio::runtime::Handle::current().block_on(manager.close());
-            info!(
-                workspace_id = %workspace_id,
-                "SearchEngineManager::close() completed"
-            );
-        }
+        search_managers.get(workspace_id).cloned()
+    };
+    if let Some(manager) = manager {
+        // 使用 block_on 运行异步 close 方法
+        // SearchEngineManager::close() 是 async 的，需要运行时执行
+        // close() 方法内部处理错误（记录日志），不返回 Result
+        tokio::runtime::Handle::current().block_on(manager.close());
+        info!(
+            workspace_id = %workspace_id,
+            "SearchEngineManager::close() completed"
+        );
     }
 
     state.workspace_dirs.lock().remove(workspace_id);

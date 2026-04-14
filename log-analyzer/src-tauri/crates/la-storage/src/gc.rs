@@ -300,6 +300,13 @@ impl GarbageCollector {
 
     /// Clean up a single orphaned file
     async fn cleanup_orphaned_file(&self, hash: &str) -> Result<u64> {
+        // 重新检查引用，防止竞态条件
+        // 在 scan_and_identify_orphans 和实际删除之间可能有新引用
+        if self.has_references(hash).await? {
+            info!(hash = %hash, "File now has references, skipping delete");
+            return Ok(0);
+        }
+
         let object_path = self.cas.get_object_path(hash);
 
         if self.config.dry_run {
