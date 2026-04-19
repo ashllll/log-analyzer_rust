@@ -68,10 +68,11 @@ npm install
 
 | 命令 | 说明 |
 |------|------|
-| `npm run dev` | 启动 Vite 开发服务器（纯前端） |
+| `npm run dev` | 启动 Vite 开发服务器（纯前端，端口 3000） |
 | `npm run build` | TypeScript 编译 + Vite 生产构建 |
-| `npm run tauri dev` | 启动 Tauri 开发模式（前端 + 后端热重载） |
+| `npm run tauri dev` | 启动 Tauri 开发模式（前端 + 后端热重载，固定端口 3000） |
 | `npm run tauri build` | Tauri 生产构建（含平台安装包） |
+| `npm run tauri` | Tauri CLI 直接调用（需配合子命令） |
 | `npm run type-check` | TypeScript 类型检查（无输出为通过） |
 | `npm run lint` | ESLint 检查 |
 | `npm run lint:fix` | ESLint 自动修复 |
@@ -79,6 +80,7 @@ npm install
 | `npm run test:watch` | Jest 监听模式（开发时使用） |
 | `npm run validate:ci` | 本地 CI 完整校验脚本 |
 | `npm run preview` | Vite 生产构建本地预览 |
+| `npm run prepare` | Husky Git hooks 初始化（自动运行于 `npm install` 后） |
 
 ### Rust 命令
 
