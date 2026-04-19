@@ -275,7 +275,8 @@ pub async fn import_folder(
             tracing::warn!("{}", error_msg);
             // 发送错误事件给前端
             let _ = app_handle.emit("import-error", &error_msg);
-            source_path.to_path_buf()
+            // 返回错误而不是继续使用非规范化路径，避免安全风险
+            return Err(error_msg);
         }
     };
 

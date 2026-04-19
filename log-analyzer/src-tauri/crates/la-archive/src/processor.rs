@@ -175,6 +175,13 @@ impl DirectoryProcessingStats {
 ///
 /// Validates: Requirements 1.5, 7.2, 8.3
 fn validate_virtual_path(virtual_path: &str) -> Result<()> {
+    // Check for empty or whitespace-only paths
+    if virtual_path.trim().is_empty() {
+        return Err(AppError::validation_error(
+            "Virtual path cannot be empty".to_string(),
+        ));
+    }
+
     // Check for path traversal sequences
     if virtual_path.contains("..") {
         return Err(AppError::validation_error(format!(

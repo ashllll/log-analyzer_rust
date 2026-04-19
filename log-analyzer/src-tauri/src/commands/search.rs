@@ -586,16 +586,15 @@ pub async fn search_logs(
     let cancellation_token = tokio_util::sync::CancellationToken::new();
     {
         let mut tokens = cancellation_tokens.lock();
-        // 检查是否已存在相同 ID 的令牌，避免覆盖
-        if tokens
-            .insert(search_id.clone(), cancellation_token.clone())
-            .is_some()
-        {
+        // 检查是否已存在相同 ID 的令牌，如果存在则先取消旧令牌
+        if let Some(old_token) = tokens.get(&search_id) {
             tracing::warn!(
-                "Search ID {} already exists in cancellation tokens, overwriting",
-                search_id
+                search_id = %search_id,
+                "Search ID already exists in cancellation tokens, cancelling old token"
             );
+            old_token.cancel();
         }
+        tokens.insert(search_id.clone(), cancellation_token.clone());
     }
 
     // 缓存键：基于查询参数生成，使用查询内容的哈希作为版本号
@@ -742,6 +741,7 @@ pub async fn search_logs(
     // 为超时处理克隆必要的变量
     let app_handle_for_timeout = app_handle.clone();
     let cancellation_token_for_timeout = cancellation_token.clone();
+    let cancellation_tokens_for_timeout = Arc::clone(&cancellation_tokens);
     let timed_out = Arc::new(AtomicBool::new(false));
     let timed_out_for_timeout = Arc::clone(&timed_out);
     let timed_out_for_search = Arc::clone(&timed_out);
@@ -987,6 +987,11 @@ pub async fn search_logs(
             warn!(search_id = %search_id, "Search timed out after {} seconds", search_timeout_secs);
             timed_out_for_timeout.store(true, Ordering::SeqCst);
             cancellation_token_for_timeout.cancel();
+            // 清理取消令牌，防止内存泄漏
+            {
+                let mut tokens = cancellation_tokens_for_timeout.lock();
+                tokens.remove(&search_id);
+            }
             // 发送超时事件
             let _ = app_handle_for_timeout.emit("search-timeout", &search_id);
             Err(CommandError::new(
