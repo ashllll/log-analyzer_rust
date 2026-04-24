@@ -20,7 +20,7 @@ use tracing::{debug, error, info, trace, warn};
 
 use crate::commands::import::ensure_workspace_runtime_state;
 use crate::models::AppState;
-use la_core::error::CommandError;
+use la_core::error::{AppError, CommandError};
 use la_core::models::config::AppConfigLoader;
 use la_core::models::search::{QueryMetadata, QueryOperator, SearchTerm, TermSource};
 use la_core::models::search_statistics::SearchResultSummary;
@@ -68,7 +68,7 @@ pub(crate) struct SearchRuntimeConfig {
 impl Default for SearchRuntimeConfig {
     fn default() -> Self {
         Self {
-            default_max_results: 1000,
+            default_max_results: 100_000,
             timeout_seconds: 10,
             regex_cache_size: 1000,
             case_sensitive: false,
@@ -100,17 +100,79 @@ pub(crate) fn load_search_runtime_config(app: &AppHandle) -> SearchRuntimeConfig
         .unwrap_or_default()
 }
 
+/// Smart split of a query string by `|` (pipe).
+///
+/// Rules:
+/// - `|` at the top level (not inside any bracket pair) is a term separator.
+/// - `\|` is treated as a literal `|` and does NOT split.
+/// - `|` inside `()`, `[]`, or `{}` is protected and does NOT split.
+pub(crate) fn split_query_by_pipe(query: &str) -> Vec<String> {
+    let mut terms = Vec::new();
+    let mut current = String::new();
+    let mut depth: i32 = 0;
+    let mut escaped = false;
+
+    for ch in query.chars() {
+        if escaped {
+            if ch == '|' {
+                current.push('|');
+            } else {
+                current.push('\\');
+                current.push(ch);
+            }
+            escaped = false;
+            continue;
+        }
+
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+
+        if ch == '(' || ch == '[' || ch == '{' {
+            depth += 1;
+            current.push(ch);
+            continue;
+        }
+
+        if ch == ')' || ch == ']' || ch == '}' {
+            if depth > 0 {
+                depth -= 1;
+            }
+            current.push(ch);
+            continue;
+        }
+
+        if ch == '|' && depth == 0 {
+            let trimmed = current.trim();
+            if !trimmed.is_empty() {
+                terms.push(trimmed.to_string());
+            }
+            current.clear();
+            continue;
+        }
+
+        current.push(ch);
+    }
+
+    if escaped {
+        current.push('\\');
+    }
+
+    let trimmed = current.trim();
+    if !trimmed.is_empty() {
+        terms.push(trimmed.to_string());
+    }
+
+    terms
+}
+
 pub(crate) fn build_structured_search_query(
     query: &str,
     case_sensitive: bool,
     query_id: &str,
 ) -> Result<(Vec<String>, SearchQuery), CommandError> {
-    let raw_terms: Vec<String> = query
-        .split('|')
-        .map(|t| t.trim())
-        .filter(|t| !t.is_empty())
-        .map(|t| t.to_string())
-        .collect();
+    let raw_terms: Vec<String> = split_query_by_pipe(query);
 
     if raw_terms.is_empty() {
         return Err(
@@ -481,9 +543,11 @@ impl CompiledSearchFilters {
             return true;
         }
 
+        // 如果段内没有可解析的时间戳，不跳过整个段。
+        // 这些行可能仍然匹配关键词搜索，应由逐行过滤处理。
         let (Some(min_datetime), Some(max_datetime)) = (summary.min_datetime, summary.max_datetime)
         else {
-            return false;
+            return true;
         };
 
         if let Some(start) = self.time_start {
@@ -508,7 +572,7 @@ pub async fn search_logs(
     query: String,
     #[allow(non_snake_case)] structuredQuery: Option<SearchQuery>,
     #[allow(non_snake_case)] workspaceId: Option<String>,
-    max_results: Option<usize>,
+    #[allow(non_snake_case)] maxResults: Option<usize>,
     filters: Option<SearchFilters>,
     state: State<'_, AppState>,
 ) -> Result<String, CommandError> {
@@ -544,7 +608,7 @@ pub async fn search_logs(
     let disk_result_store: Arc<crate::search_engine::disk_result_store::DiskResultStore> =
         Arc::clone(&state.disk_result_store);
 
-    let max_results = max_results
+    let max_results = maxResults
         .unwrap_or(runtime_config.default_max_results)
         .min(100_000);
     let filters = filters.unwrap_or_default();
@@ -586,7 +650,6 @@ pub async fn search_logs(
     let cancellation_token = tokio_util::sync::CancellationToken::new();
     {
         let mut tokens = cancellation_tokens.lock();
-        // 检查是否已存在相同 ID 的令牌，如果存在则先取消旧令牌
         if let Some(old_token) = tokens.get(&search_id) {
             tracing::warn!(
                 search_id = %search_id,
@@ -746,10 +809,6 @@ pub async fn search_logs(
     let timed_out_for_timeout = Arc::clone(&timed_out);
     let timed_out_for_search = Arc::clone(&timed_out);
 
-    // 老王备注：修复线程泄漏！使用tokio::task::spawn_blocking代替std::thread::spawn
-    // 这样tokio运行时会管理线程生命周期，避免资源泄漏
-    // 注意：现在 MetadataStore 和文件获取已在 spawn_blocking 外部完成，避免了嵌套 runtime 阻塞问题
-    // 添加超时控制，防止长时间运行的搜索阻塞
     let handle = tokio::task::spawn_blocking(move || {
         let start_time = std::time::Instant::now();
 
@@ -793,8 +852,18 @@ pub async fn search_logs(
                 return;
             }
 
+            // 修复：磁盘写入失败时不应清除 batch，重试一次后若仍失败则保留在内存中
+            // 由外层循环或搜索完成时的最终 flush 再次尝试
             if let Err(e) = disk_store_spawn.append_entries(&search_id_clone, batch) {
-                warn!(error = %e, "磁盘写入搜索结果批次失败");
+                warn!(error = %e, "磁盘写入搜索结果批次失败，将重试");
+                // 简单重试一次
+                if disk_store_spawn
+                    .append_entries(&search_id_clone, batch)
+                    .is_err()
+                {
+                    error!(error = %e, "磁盘写入重试失败，批次保留在内存中等待下次 flush");
+                    return; // 不清除 batch，下次 flush 会再次尝试
+                }
             }
             batch.clear();
 
@@ -987,7 +1056,6 @@ pub async fn search_logs(
             warn!(search_id = %search_id, "Search timed out after {} seconds", search_timeout_secs);
             timed_out_for_timeout.store(true, Ordering::SeqCst);
             cancellation_token_for_timeout.cancel();
-            // 清理取消令牌，防止内存泄漏
             {
                 let mut tokens = cancellation_tokens_for_timeout.lock();
                 tokens.remove(&search_id);
@@ -1156,6 +1224,7 @@ where
     results
 }
 
+#[allow(clippy::too_many_arguments)]
 fn flush_search_segment(
     segment: &mut Vec<SearchLineCandidate<'_>>,
     summary: &mut SearchSegmentSummary,
@@ -1300,6 +1369,19 @@ fn search_single_file_with_details(
                     error = %e,
                     "Failed to read content from CAS, skipping file"
                 );
+                // 记录到搜索结果中作为不可读文件标记，确保用户知晓有文件被跳过
+                results.push(LogEntry {
+                    id: global_offset,
+                    timestamp: "0".into(),
+                    level: "ERROR".into(),
+                    file: virtual_path.into(),
+                    real_path: file_identifier.into(),
+                    line: 0,
+                    content: format!("[搜索系统: 无法读取文件内容 - {e}]").into(),
+                    tags: vec![],
+                    match_details: None,
+                    matched_keywords: None,
+                });
                 return results;
             }
         };
@@ -1426,7 +1508,7 @@ fn search_single_file_with_details(
 #[command]
 pub async fn fetch_search_page(
     state: State<'_, AppState>,
-    search_id: String,
+    #[allow(non_snake_case)] searchId: String,
     offset: usize,
     limit: usize,
 ) -> Result<crate::search_engine::disk_result_store::SearchPageResult, CommandError> {
@@ -1438,18 +1520,19 @@ pub async fn fetch_search_page(
     let disk_store = &state.disk_result_store;
 
     // 优先从磁盘存储读取（新架构：Notepad++ 式磁盘直写，前端按需分页）
-    if disk_store.has_session(&search_id) {
+    if disk_store.has_session(&searchId) {
         let result: crate::search_engine::disk_result_store::SearchPageResult = disk_store
-            .read_page(&search_id, offset, limit)
+            .read_page(&searchId, offset, limit)
             .map_err(|e: std::io::Error| {
-                CommandError::new("IO_ERROR", format!("Failed to read search page: {}", e))
-                    .with_help(
-                        "The search results may have been cleared. Try running the search again",
-                    )
+                CommandError::from(AppError::io_error(
+                    format!("Failed to read search page: {e}"),
+                    None,
+                ))
+                .with_help("The search results may have been cleared. Try running the search again")
             })?;
 
         debug!(
-            search_id = %search_id,
+            search_id = %searchId,
             offset = offset,
             limit = limit,
             returned = result.entries.len(),
@@ -1463,16 +1546,16 @@ pub async fn fetch_search_page(
 
     // 降级：从 VirtualSearchManager 内存缓存读取（向后兼容旧架构）
     let manager = &state.virtual_search_manager;
-    if manager.has_session(&search_id) {
-        let results = manager.get_range(&search_id, offset, limit);
-        let total = manager.get_total_count(&search_id);
+    if manager.has_session(&searchId) {
+        let results = manager.get_range(&searchId, offset, limit);
+        let total = manager.get_total_count(&searchId);
         let next_offset = if offset + results.len() < total {
             Some(offset + results.len())
         } else {
             None
         };
         debug!(
-            search_id = %search_id,
+            search_id = %searchId,
             offset = offset,
             returned = results.len(),
             "从 VirtualSearchManager 降级读取搜索分页"
@@ -1488,7 +1571,7 @@ pub async fn fetch_search_page(
 
     Err(CommandError::new(
         "NOT_FOUND",
-        format!("Search session '{}' not found or expired", search_id),
+        format!("Search session '{}' not found or expired", searchId),
     )
     .with_help("The search results may have been cleared. Try running the search again"))
 }
@@ -1509,13 +1592,13 @@ pub async fn fetch_search_page(
 #[command]
 pub async fn register_search_session(
     state: State<'_, AppState>,
-    search_id: String,
+    #[allow(non_snake_case)] searchId: String,
     query: String,
     entries: Vec<LogEntry>,
 ) -> Result<String, CommandError> {
     let manager = &state.virtual_search_manager;
 
-    let registered_id = manager.register_session(search_id, query, entries);
+    let registered_id = manager.register_session(searchId, query, entries);
 
     info!(
         search_id = %registered_id,
@@ -1536,13 +1619,13 @@ pub async fn register_search_session(
 #[command]
 pub async fn get_search_session_info(
     state: State<'_, AppState>,
-    search_id: String,
+    #[allow(non_snake_case)] searchId: String,
 ) -> Result<Option<serde_json::Value>, CommandError> {
     let manager = &state.virtual_search_manager;
 
-    if let Some(session) = manager.get_session_info(&search_id) {
+    if let Some(session) = manager.get_session_info(&searchId) {
         Ok(Some(serde_json::json!({
-            "search_id": session.search_id,
+            "searchId": session.search_id,
             "query": session.query,
             "total_count": session.total_count,
             "created_at": session.created_at.elapsed().as_secs(),
@@ -1563,14 +1646,14 @@ pub async fn get_search_session_info(
 #[command]
 pub async fn get_search_total_count(
     state: State<'_, AppState>,
-    search_id: String,
+    #[allow(non_snake_case)] searchId: String,
 ) -> Result<usize, CommandError> {
     // 新架构：优先从 DiskResultStore 读取
-    if let Some(status) = state.disk_result_store.get_status(&search_id) {
+    if let Some(status) = state.disk_result_store.get_status(&searchId) {
         return Ok(status.0);
     }
     // 降级：从 VirtualSearchManager 读取
-    Ok(state.virtual_search_manager.get_total_count(&search_id))
+    Ok(state.virtual_search_manager.get_total_count(&searchId))
 }
 
 /// 移除搜索会话
@@ -1586,10 +1669,10 @@ pub async fn get_search_total_count(
 #[command]
 pub async fn remove_search_session(
     state: State<'_, AppState>,
-    search_id: String,
+    #[allow(non_snake_case)] searchId: String,
 ) -> Result<bool, CommandError> {
     let manager = &state.virtual_search_manager;
-    Ok(manager.remove_session(&search_id))
+    Ok(manager.remove_session(&searchId))
 }
 
 /// 清理过期的搜索会话
@@ -1658,8 +1741,8 @@ mod tests {
 
     fn build_executor_and_plan(query: &str) -> (QueryExecutor, ExecutionPlan) {
         let mut executor = QueryExecutor::new(64);
-        let terms = query
-            .split('|')
+        let terms = split_query_by_pipe(query)
+            .into_iter()
             .enumerate()
             .map(|(index, value)| SearchTerm {
                 id: format!("term_{}", index),
@@ -1906,5 +1989,43 @@ mod tests {
             .as_ref()
             .is_some_and(|details| details.is_empty()));
         assert!(results[0].matched_keywords.is_none());
+    }
+
+    #[test]
+    fn split_query_by_pipe_basic_separation() {
+        assert_eq!(
+            split_query_by_pipe("error | timeout"),
+            vec!["error", "timeout"]
+        );
+        assert_eq!(split_query_by_pipe("a|b|c"), vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn split_query_by_pipe_protects_brackets() {
+        assert_eq!(
+            split_query_by_pipe("(error|timeout)"),
+            vec!["(error|timeout)"]
+        );
+        assert_eq!(
+            split_query_by_pipe("a | (b|c) | d"),
+            vec!["a", "(b|c)", "d"]
+        );
+        assert_eq!(split_query_by_pipe("[foo|bar]"), vec!["[foo|bar]"]);
+    }
+
+    #[test]
+    fn split_query_by_pipe_escapes_literal_pipe() {
+        assert_eq!(split_query_by_pipe("foo\\|bar"), vec!["foo|bar"]);
+        assert_eq!(split_query_by_pipe("a | b\\|c | d"), vec!["a", "b|c", "d"]);
+    }
+
+    #[test]
+    fn split_query_by_pipe_handles_empty_and_whitespace() {
+        assert!(split_query_by_pipe("").is_empty());
+        assert!(split_query_by_pipe("   ").is_empty());
+        assert_eq!(
+            split_query_by_pipe("  error  |  timeout  "),
+            vec!["error", "timeout"]
+        );
     }
 }

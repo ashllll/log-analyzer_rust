@@ -18,6 +18,7 @@ use crate::task_manager::TaskManager;
 use crate::utils::encoding::decode_log_content;
 use crate::utils::workspace_paths::preferred_workspace_dir;
 use crate::utils::{canonicalize_path, validate_path_param, validate_workspace_id};
+use la_core::error::AppError;
 use la_core::models::config::AppConfigLoader;
 use la_storage::{verify_after_import, MetadataStore};
 
@@ -273,17 +274,20 @@ pub async fn import_folder(
         Err(e) => {
             let error_msg = format!("Path canonicalization failed: {}", e);
             tracing::warn!("{}", error_msg);
-            // 发送错误事件给前端
             let _ = app_handle.emit("import-error", &error_msg);
-            // 返回错误而不是继续使用非规范化路径，避免安全风险
             return Err(error_msg);
         }
     };
 
     let workspace_dir = preferred_workspace_dir(&app, &workspaceId)?;
 
-    fs::create_dir_all(&workspace_dir)
-        .map_err(|e| format!("Failed to create workspace dir: {}", e))?;
+    fs::create_dir_all(&workspace_dir).map_err(|e| {
+        AppError::io_error(
+            format!("Failed to create workspace dir: {e}"),
+            Some(workspace_dir.clone()),
+        )
+        .to_string()
+    })?;
 
     // 使用 TaskManager 创建任务
     let target_name = canonical_path
@@ -445,45 +449,31 @@ pub async fn import_folder(
         }
     }
 
-    if let Err(e) = rebuild_workspace_search_index(
-        metadata_store.clone(),
-        Arc::clone(&cas),
-        Arc::clone(&search_manager),
-    )
-    .await
-    {
-        state
-            .search_engine_managers
-            .lock()
-            .remove(&workspace_id_clone);
-        state.cas_instances.lock().remove(&workspace_id_clone);
-        state.metadata_stores.lock().remove(&workspace_id_clone);
-        state.workspace_dirs.lock().remove(&workspace_id_clone);
-
-        if workspace_dir.exists() {
-            if let Err(e) = std::fs::remove_dir_all(&workspace_dir) {
-                error!(workspace_id = %workspace_id_clone, error = %e, "Failed to remove workspace directory");
+    // Tantivy 索引重建：改为后台异步执行，不阻塞导入完成。
+    // 主搜索链路（search_logs）不走 Tantivy，但 get_time_range 依赖它，
+    // 因此保留索引但不在关键路径上重建。
+    let _rebuild_handle = {
+        let metadata_store = metadata_store.clone();
+        let cas = Arc::clone(&cas);
+        let search_manager = Arc::clone(&search_manager);
+        let workspace_id = workspace_id_clone.clone();
+        tokio::task::spawn(async move {
+            if let Err(e) =
+                rebuild_workspace_search_index(metadata_store, cas, search_manager).await
+            {
+                tracing::warn!(
+                    workspace_id = %workspace_id,
+                    error = %e,
+                    "Background Tantivy index rebuild failed; get_time_range may be stale"
+                );
+            } else {
+                tracing::info!(
+                    workspace_id = %workspace_id,
+                    "Background Tantivy index rebuild completed"
+                );
             }
-        }
-
-        let error_msg = format!("Failed to build initial search index: {}", e);
-        tracing::error!(workspace_id = %workspace_id_clone, error = %e, "{}", error_msg);
-        let _ = app_handle.emit("import-error", &error_msg);
-
-        if let Some(ref task_manager) = task_manager_clone {
-            let task_manager: &TaskManager = task_manager;
-            let _ = task_manager
-                .update_task_async(
-                    &task_id_clone,
-                    0,
-                    error_msg.clone(),
-                    crate::task_manager::TaskStatus::Failed,
-                )
-                .await;
-        }
-
-        return Err(error_msg);
-    }
+        })
+    };
 
     // Verify integrity after import (Task 5.2)
     // This generates a validation report to ensure all imported files are accessible
@@ -525,6 +515,18 @@ pub async fn import_folder(
                     file_count = file_count,
                     "Import completed successfully with integrity verification"
                 );
+
+                // 导入成功后清除该工作区的搜索缓存，避免旧缓存返回过时结果
+                {
+                    let cache = state.cache_manager.lock();
+                    if let Err(e) = cache.invalidate_workspace_cache(&workspace_id_clone) {
+                        tracing::warn!(
+                            workspace_id = %workspace_id_clone,
+                            error = %e,
+                            "Failed to invalidate workspace cache after import"
+                        );
+                    }
+                }
             } else {
                 tracing::warn!(
                     workspace_id = %workspace_id_clone,

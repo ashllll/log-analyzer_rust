@@ -1,7 +1,7 @@
 import type { KeywordGroup } from '../../../types/common';
 import type { SearchQuery, SearchTerm } from '../../../types/search';
 import { SearchQueryBuilder } from '../../../services/SearchQueryBuilder';
-import { looksLikeRegexPattern } from '../../../utils/searchPatterns';
+import { looksLikeRegexPattern, splitQueryByPipe } from '../../../utils/searchPatterns';
 
 export interface SearchParsingOptions {
   caseSensitive: boolean;
@@ -47,10 +47,7 @@ export const deriveActiveTerms = (query: string, currentQuery: SearchQuery | nul
       .map((term) => term.value);
   }
 
-  return query
-    .split('|')
-    .map((term) => term.trim())
-    .filter((term) => term.length > 0);
+  return splitQueryByPipe(query);
 };
 
 export const shouldResetStructuredQuery = (

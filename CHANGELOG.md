@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### ⚡ Performance
+- **高亮引擎零拷贝优化**: `highlighting_engine.rs` 核心方法返回 `Cow<'_, str>`，无特殊字符/无需截断时直接借用原文本，避免堆分配
+- **Tauri 命令边界统一**: `io::Error` 统一映射为 `AppError::io_error(...)`，消除冗余 `format!` 构造，错误上下文包含路径信息（影响 `config.rs`、`export.rs`、`import.rs`、`workspace.rs`、`search.rs`）
+
+### 🐛 Bug Fixes
+- **GC 哈希构造修复**: `scan_and_identify_orphans` 与增量 GC 使用 `shard_prefix + file_name` 作为完整哈希，修复此前仅用文件名导致的误报/漏报孤儿对象
+- **SearchPage 内存泄漏**: 添加 `scrollTimeoutRef` 并在组件卸载时清理 `setTimeout`，防止快速连续搜索时定时器堆积
+- **SearchPage 重复请求**: 时间范围获取 Effect 的依赖从 `[activeWorkspace?.id, activeWorkspace]` 精简为 `[activeWorkspace?.id]`，消除因对象引用变化导致的重复 fetch
+
+### ♻️ Refactor
+- **GC 增量实现**: `run_incremental_gc` 替换原占位实现，基于 shard 目录游标按 `batch_size`（默认 1000）分批扫描，后台 `start_background_gc` 默认调用增量模式，降低 I/O 峰值
+- **SearchPage 组件拆分**: 提取 `LogRow` 子组件至 `SearchPage/components/LogRow.tsx`，主文件从 1001 行降至 923 行
+- **FormField 类型安全**: 移除 `(child.type as any).displayName` 检查，改为直接组件引用比较 `child.type === Input`，消除全部 `any` 断言
+- **Clippy 配置兼容**: `.clippy.toml` 中 `unwrap_used`/`expect_used` 等 lint 名称从 snake_case 修正为 kebab-case，适配 Rust 1.94
+
 ### Changed
 - 精简仓库说明文档，仅保留长期维护的核心 README、流程文档和架构文档
 - 更新搜索、CAS 与模块架构文档，使描述与当前代码主链路一致
@@ -14,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 自动版本 bump 改为以通过 CI 的 `main` 提交为基准，避免为未验证的新 HEAD 打 tag
 - 自动发布的版本规划与版本文件写入已收敛到 `scripts/prepare-release.mjs`，避免继续依赖 YAML 内联 shell
 - CI 新增 Release Automation Dry Run，自动验证发布规划脚本与版本边界条件
+- Jest 覆盖率阈值从 12–16% 提升至 14–18%
+- ESLint `no-explicit-any` 从 `off` 恢复为 `warn`
 
 ### Fixed
 - 修复 Windows Release 工作流仍使用旧版 `ilammy/msvc-toolchain@v1` 且携带过时 `toolset: latest` 配置的问题

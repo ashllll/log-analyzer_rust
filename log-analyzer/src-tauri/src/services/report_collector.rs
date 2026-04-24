@@ -19,6 +19,7 @@ pub struct ReportCollector {
     reports: Arc<RwLock<HashMap<String, ProcessingReport>>>,
 
     /// 进度回调函数
+    #[allow(clippy::type_complexity)]
     progress_callbacks: Arc<RwLock<Vec<Box<dyn Fn(ProcessingReportSummary) + Send + Sync>>>>,
 }
 

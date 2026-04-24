@@ -1,16 +1,16 @@
-import React, { useState, useEffect, useRef, useCallback, memo, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { save } from '@tauri-apps/plugin-dialog';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Copy, Loader2, X, FolderOpen, Search, SearchX } from 'lucide-react';
 import { Button, EmptyState } from '../components/ui';
 import { HybridLogRenderer } from '../components/renderers';
+import { LogRow } from './SearchPage/components/LogRow';
 import { KeywordStatsPanel } from '../components/search/KeywordStatsPanel';
 import { logger } from '../utils/logger';
-import { cn } from '../utils/classNames';
 import { SearchQueryBuilder } from '../services/SearchQueryBuilder';
-import { looksLikeRegexPattern } from '../utils/searchPatterns';
-import { SearchQuery, SearchResultSummary, SearchTerm } from '../types/search';
+import { looksLikeRegexPattern, splitQueryByPipe } from '../utils/searchPatterns';
+import { SearchQuery, SearchResultSummary } from '../types/search';
 import { saveQuery, loadQuery, clearQuery } from '../services/queryStorage';
 import { api } from '../services/api';
 import { getFullErrorMessage } from '../services/errors';
@@ -22,11 +22,8 @@ import { useKeywordStore } from '../stores/keywordStore';
 import { useAppStore } from '../stores/appStore';
 import { useToast } from '../hooks/useToast';
 import { useConfig } from '../hooks/useConfig';
-import { SEARCH_CONFIG } from '../constants/search';
 import type {
-  LogEntry,
   FilterOptions,
-  KeywordGroup,
 } from '../types/common';
 
 // 新组件导入
@@ -51,96 +48,6 @@ import {
  * 4. 结果导出 - 支持CSV和JSON格式
  * 5. 日志高亮 - 搜索关键词和关键词组颜色高亮
  */
-
-/**
- * 虚拟行组件 Props
- */
-interface LogRowProps {
-  log: LogEntry;
-  isActive: boolean;
-  onClick: () => void;
-  query: string;
-  queryTerms: SearchTerm[] | null;
-  keywordGroups: KeywordGroup[];
-  virtualIndex: number;
-  virtualStart: number;
-  virtualSize: number;
-  measureElement: (element: HTMLDivElement | null) => void;
-}
-
-/**
- * 虚拟行组件 - 使用 React.memo 优化
- * 只有当 log、isActive、query 或 keywordGroups 变化时才重新渲染
- */
-const LogRow = memo<LogRowProps>(({
-  log,
-  isActive,
-  onClick,
-  query,
-  queryTerms,
-  keywordGroups,
-  virtualIndex,
-  virtualStart,
-  virtualSize,
-  measureElement,
-}) => {
-  return (
-    <div
-      ref={measureElement}
-      data-index={virtualIndex}
-      onClick={onClick}
-      style={{
-        transform: `translateY(${virtualStart}px)`,
-        minHeight: `${virtualSize}px`,
-      }}
-      className={cn(
-        "absolute top-0 left-0 w-full grid grid-cols-[50px_160px_150px_1fr] px-3 py-1.5 border-b border-border-subtle cursor-pointer text-xs font-mono hover:bg-bg-hover/50 transition-colors duration-150 items-start",
-        isActive && "bg-primary/10 border-l-2 border-l-primary"
-      )}
-    >
-      <div className="flex items-center">
-        <span className={cn(
-          "inline-block text-xs font-bold px-1.5 py-0.5 rounded leading-none",
-          log.level === 'ERROR' ? 'bg-log-error/20 text-log-error' :
-          log.level === 'WARN'  ? 'bg-log-warn/20 text-log-warn' :
-          log.level === 'INFO'  ? 'bg-log-info/20 text-log-info' :
-          'bg-log-debug/20 text-log-debug'
-        )}>
-          {log.level.substring(0,1)}
-        </span>
-      </div>
-      <div className="text-text-muted whitespace-nowrap text-xs">
-        {log.timestamp}
-      </div>
-      <div
-        className="text-text-muted truncate pr-2 text-xs leading-tight"
-        title={`${log.file}:${log.line}`}
-      >
-        {(log.file.split('/').pop() ?? log.file).split('\\').pop() ?? log.file}:{log.line}
-      </div>
-      <div className="text-text-main whitespace-pre-wrap break-words leading-tight pr-2">
-        <HybridLogRenderer
-          text={log.content}
-          query={query}
-          queryTerms={queryTerms}
-          keywordGroups={keywordGroups}
-        />
-      </div>
-    </div>
-  );
-}, (prevProps, nextProps) => {
-  // 返回 true 表示 props 相同，不需要重渲染
-  return (
-    prevProps.log === nextProps.log &&
-    prevProps.isActive === nextProps.isActive &&
-    prevProps.query === nextProps.query &&
-    prevProps.queryTerms === nextProps.queryTerms &&
-    prevProps.keywordGroups === nextProps.keywordGroups &&
-    prevProps.virtualIndex === nextProps.virtualIndex &&
-    prevProps.virtualStart === nextProps.virtualStart &&
-    prevProps.virtualSize === nextProps.virtualSize
-  );
-});
 
 const SearchPage: React.FC = () => {
   // 从 Store 直接读取状态，消除 props drilling
@@ -246,7 +153,6 @@ const SearchPage: React.FC = () => {
     }
   }, [infiniteSearchError, addToast]);
 
-  const REFRESH_THRESHOLD = SEARCH_CONFIG.REFRESH_THRESHOLD;
   const lastFetchNextPageTimeRef = useRef(0);
 
   // 给每个关键词分配颜色 - 使用新的设计系统
@@ -269,61 +175,19 @@ const SearchPage: React.FC = () => {
 
   // 使用 ref 存储虚拟滚动器实例，避免声明顺序问题
   const rowVirtualizerRef = useRef<ReturnType<typeof useVirtualizer<HTMLDivElement, Element>>>(null);
+  // 清理未完成的滚动定时器，防止组件卸载后访问已释放的 ref
+  const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+        scrollTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   // 使用 ref 存储分页状态的最新值，避免 scroll listener 频繁注销/重注册
-  const hasNextPageRef = useRef(hasNextPage);
-  hasNextPageRef.current = hasNextPage;
-  const isFetchingNextPageRef = useRef(isFetchingNextPage);
-  isFetchingNextPageRef.current = isFetchingNextPage;
-  const fetchNextPageRef = useRef(fetchNextPage);
-  fetchNextPageRef.current = fetchNextPage;
-  const hasPreviousPageRef = useRef(hasPreviousPage);
-  hasPreviousPageRef.current = hasPreviousPage;
-  const isFetchingPreviousPageRef = useRef(isFetchingPreviousPage);
-  isFetchingPreviousPageRef.current = isFetchingPreviousPage;
-  const fetchPreviousPageRef = useRef(fetchPreviousPage);
-  fetchPreviousPageRef.current = fetchPreviousPage;
-
-  // 滚动事件监听 — 使用 ref 模式避免闭包引用不稳定导致频繁注销/重注册
-  // TanStack Virtual 内部已有自己的 scroll listener，此处仅负责分页加载触发
-  useEffect(() => {
-    const element = parentRef.current;
-    if (!element) return;
-
-    const handleScrollEvent = () => {
-      const { scrollTop, clientHeight, scrollHeight } = element;
-      const now = Date.now();
-
-      // 接近底部时触发 fetchNextPage（500ms 节流）
-      const isNearBottom = scrollHeight - scrollTop - clientHeight <= REFRESH_THRESHOLD;
-      if (isNearBottom && now - lastFetchNextPageTimeRef.current >= 500) {
-        lastFetchNextPageTimeRef.current = now;
-        if (hasNextPageRef.current && !isFetchingNextPageRef.current) {
-          fetchNextPageRef.current().catch(err => {
-            logger.error('fetchNextPage failed:', err);
-          });
-        }
-      }
-
-      // 接近顶部时触发 fetchPreviousPage（500ms 节流）
-      const isNearTop = scrollTop <= REFRESH_THRESHOLD;
-      if (isNearTop && now - lastFetchNextPageTimeRef.current >= 500) {
-        lastFetchNextPageTimeRef.current = now;
-        if (hasPreviousPageRef.current && !isFetchingPreviousPageRef.current) {
-          fetchPreviousPageRef.current().catch(err => {
-            logger.error('fetchPreviousPage failed:', err);
-          });
-        }
-      }
-    };
-
-    element.addEventListener('scroll', handleScrollEvent, { passive: true });
-
-    return () => {
-      element.removeEventListener('scroll', handleScrollEvent);
-    };
-  }, [REFRESH_THRESHOLD]); // 仅依赖常量，不再依赖 fetchNextPage/hasNextPage/isFetchingNextPage
-
   // 节流：避免 search-progress 事件风暴导致高频 setState
   const lastProgressTimeRef = useRef(0);
 
@@ -362,7 +226,10 @@ const SearchPage: React.FC = () => {
           logger.error('Refetch search page after completion failed:', error);
         });
       }
-      setTimeout(() => {
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+      scrollTimeoutRef.current = setTimeout(() => {
         if (rowVirtualizerRef.current) {
           try { rowVirtualizerRef.current.scrollToIndex(0); } catch { /* silent */ }
         }
@@ -499,7 +366,9 @@ const SearchPage: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [activeWorkspace?.id, activeWorkspace]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeWorkspace?.id]);
+  // 仅依赖 ID 而非对象引用，避免同一工作区的重复请求
 
   // 用 ref 存储最新的 handleSearch，避免 useEffect 中使用 eslint-disable
   const handleSearchRef = useRef<() => Promise<void>>(async () => {});
@@ -620,7 +489,7 @@ const SearchPage: React.FC = () => {
       }
     }
 
-    const terms = query.split('|').map(t => t.trim()).filter(t => t.length > 0);
+    const terms = splitQueryByPipe(query);
     const newTerms = terms.filter(t => t.toLowerCase() !== termToRemove.toLowerCase());
     setQuery(newTerms.join('|'));
   }, [query, currentQuery]);
@@ -760,8 +629,10 @@ const SearchPage: React.FC = () => {
     overscan: 20,
   });
 
-  // 将虚拟滚动器存储到 ref 中
-  rowVirtualizerRef.current = rowVirtualizer;
+  // 将虚拟滚动器存储到 ref 中（必须在 useEffect 中赋值，避免 render 阶段副作用）
+  useEffect(() => {
+    rowVirtualizerRef.current = rowVirtualizer;
+  }, [rowVirtualizer]);
 
   // 范围加载：当可见行包含未加载的数据时，自动触发分页加载。
   // 解决用户滚动到中间区域时只看到骨架屏、永远无法加载的问题。

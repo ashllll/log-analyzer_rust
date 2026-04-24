@@ -9,6 +9,7 @@
 
 use lru::LruCache;
 use parking_lot::RwLock;
+use std::borrow::Cow;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
@@ -99,6 +100,10 @@ pub struct HighlightingEngine {
     stats: Arc<RwLock<HighlightingStats>>,
 }
 
+/// 安全常量： NonZeroUsize 默认值，编译期验证永不失败
+const DEFAULT_CACHE_SIZE: NonZeroUsize = NonZeroUsize::new(1000).unwrap();
+const DEFAULT_QUERY_CACHE_SIZE: NonZeroUsize = NonZeroUsize::new(100).unwrap();
+
 impl HighlightingEngine {
     /// Create a new highlighting engine
     pub fn new(
@@ -108,14 +113,12 @@ impl HighlightingEngine {
         content_field: Field,
         config: HighlightingConfig,
     ) -> Self {
-        let cache_size =
-            NonZeroUsize::new(config.cache_size).unwrap_or(NonZeroUsize::new(1000).unwrap());
+        let cache_size = NonZeroUsize::new(config.cache_size).unwrap_or(DEFAULT_CACHE_SIZE);
         let snippet_cache = Arc::new(RwLock::new(LruCache::new(cache_size)));
 
         // 查询解析缓存大小：使用较小的缓存，因为查询解析结果占用较多内存
         // 通常查询模式有限，100个缓存槽位足够
-        let query_cache_size = NonZeroUsize::new(100).unwrap();
-        let query_cache = Arc::new(RwLock::new(LruCache::new(query_cache_size)));
+        let query_cache = Arc::new(RwLock::new(LruCache::new(DEFAULT_QUERY_CACHE_SIZE)));
 
         info!(
             cache_size = config.cache_size,
@@ -350,20 +353,40 @@ impl HighlightingEngine {
     }
 
     /// Escape HTML characters for safe display
-    /// 单次遍历替代 5 次 String::replace 链式调用，消除 5 次临时 String 分配
-    fn escape_html(&self, text: &str) -> String {
+    /// 单次遍历替代 5 次 String::replace 链式调用；若无需转义则直接返回借用，避免分配
+    fn escape_html<'a>(&self, text: &'a str) -> Cow<'a, str> {
         let mut result = String::with_capacity(text.len() + text.len() / 10);
+        let mut changed = false;
         for ch in text.chars() {
             match ch {
-                '&' => result.push_str("&amp;"),
-                '<' => result.push_str("&lt;"),
-                '>' => result.push_str("&gt;"),
-                '"' => result.push_str("&quot;"),
-                '\'' => result.push_str("&#x27;"),
+                '&' => {
+                    result.push_str("&amp;");
+                    changed = true;
+                }
+                '<' => {
+                    result.push_str("&lt;");
+                    changed = true;
+                }
+                '>' => {
+                    result.push_str("&gt;");
+                    changed = true;
+                }
+                '"' => {
+                    result.push_str("&quot;");
+                    changed = true;
+                }
+                '\'' => {
+                    result.push_str("&#x27;");
+                    changed = true;
+                }
                 _ => result.push(ch),
             }
         }
-        result
+        if changed {
+            Cow::Owned(result)
+        } else {
+            Cow::Borrowed(text)
+        }
     }
 
     /// Calculate hash for query caching
@@ -480,7 +503,7 @@ impl HighlightingEngine {
         );
 
         // For large documents, truncate content around potential matches
-        let optimized_content: String = if document_content.len() > max_content_length {
+        let optimized_content = if document_content.len() > max_content_length {
             self.extract_relevant_content(document_content, query, max_content_length)
         } else {
             // 非大文档无需拷贝，直接高亮原始内容
@@ -504,7 +527,13 @@ impl HighlightingEngine {
     /// 1. 使用字节位置而非字符位置进行切片，避免 O(n) 的 chars() 遍历
     /// 2. 限制搜索范围，避免在超大文档中全文扫描
     /// 3. 优先在文档前部查找匹配，提高响应速度
-    fn extract_relevant_content(&self, content: &str, query: &str, max_length: usize) -> String {
+    /// 4. 无变更时返回 Cow::Borrowed，避免不必要的 String 分配
+    fn extract_relevant_content<'a>(
+        &self,
+        content: &'a str,
+        query: &str,
+        max_length: usize,
+    ) -> Cow<'a, str> {
         let query_terms: Vec<&str> = query.split_whitespace().collect();
 
         if query_terms.is_empty() {
@@ -546,18 +575,19 @@ impl HighlightingEngine {
 
     /// 按字节截断字符串，确保 UTF-8 有效性
     ///
-    /// 比 chars().take(n).collect() 快得多，特别是对大字符串
-    fn truncate_by_bytes(&self, s: &str, max_chars: usize) -> String {
-        // 快速路径：如果字符串很短，直接返回
+    /// 比 chars().take(n).collect() 快得多，特别是对大字符串。
+    /// 若无需截断则返回 Cow::Borrowed，避免分配。
+    fn truncate_by_bytes<'a>(&self, s: &'a str, max_chars: usize) -> Cow<'a, str> {
+        // 快速路径：如果字符串很短，直接返回借用
         if s.len() <= max_chars {
-            return s.to_string();
+            return Cow::Borrowed(s);
         }
 
         // 使用 char_indices 找到第 max_chars 个字符的字节位置
         // 这比 .chars().take().collect() 更高效，因为避免了字符复制
         match s.char_indices().nth(max_chars) {
-            Some((byte_idx, _)) => s[..byte_idx].to_string(),
-            None => s.to_string(), // 字符串字符数少于 max_chars
+            Some((byte_idx, _)) => Cow::Borrowed(&s[..byte_idx]),
+            None => Cow::Borrowed(s), // 字符串字符数少于 max_chars
         }
     }
 
@@ -571,8 +601,7 @@ impl HighlightingEngine {
 
         // If cache size changed, recreate cache
         if new_config.cache_size != self.config.cache_size {
-            let cache_size = NonZeroUsize::new(new_config.cache_size)
-                .unwrap_or(NonZeroUsize::new(1000).unwrap());
+            let cache_size = NonZeroUsize::new(new_config.cache_size).unwrap_or(DEFAULT_CACHE_SIZE);
             let mut cache = self.snippet_cache.write();
             *cache = LruCache::new(cache_size);
         }

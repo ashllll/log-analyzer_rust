@@ -175,8 +175,7 @@ impl DirectoryProcessingStats {
 ///
 /// Validates: Requirements 1.5, 7.2, 8.3
 fn validate_virtual_path(virtual_path: &str) -> Result<()> {
-    // Check for empty or whitespace-only paths
-    if virtual_path.trim().is_empty() {
+    if virtual_path.is_empty() || virtual_path.trim().is_empty() {
         return Err(AppError::validation_error(
             "Virtual path cannot be empty".to_string(),
         ));
@@ -1362,12 +1361,8 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
             extract_dir.join(extracted_file)
         };
 
-        let new_virtual = format!(
-            "{}/{}/{}",
-            virtual_path,
-            file_name,
-            relative_path.to_string_lossy()
-        );
+        // 修复虚拟路径重复：virtual_path 已包含压缩包名，只需拼接 relative_path
+        let new_virtual = format!("{}/{}", virtual_path, relative_path.to_string_lossy());
 
         // 虚拟路径长度守卫：防止嵌套压缩包路径无限膨胀（DoS）
         const MAX_VIRTUAL_PATH_LENGTH: usize = 1024;
@@ -1387,9 +1382,26 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
             warn!(
                 file = %file_name,
                 depth = depth_level,
-                "Skipping nested archive at max depth (content will still be accessible)"
+                "Reached max depth: storing nested archive as regular file without extraction"
             );
-            // Still add file metadata to tracking, but don't recurse
+            // 将深层嵌套压缩包作为普通文件存入 CAS，使其可被搜索，但不再递归解压
+            let hash = context.cas.store_file_streaming(&full_path).await?;
+            let file_size = fs::metadata(&full_path)
+                .await
+                .map(|m| m.len() as i64)
+                .unwrap_or(0);
+            let nested_metadata = FileMetadata {
+                id: 0,
+                sha256_hash: hash,
+                virtual_path: normalize_path_separator(&new_virtual),
+                original_name: file_name.clone(),
+                size: file_size,
+                modified_time: 0,
+                mime_type: Some("application/octet-stream".to_string()),
+                parent_archive_id: Some(archive_id),
+                depth_level,
+            };
+            context.metadata_store.insert_file(&nested_metadata).await?;
             continue;
         }
 
@@ -1437,6 +1449,19 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
         files = extracted_files.len(),
         "Archive processing completed"
     );
+
+    // 清理解压临时目录：文件已存入 CAS，临时目录不再需要
+    if extract_dir.exists() {
+        if let Err(e) = fs::remove_dir_all(&extract_dir).await {
+            warn!(
+                path = %extract_dir.display(),
+                error = %e,
+                "Failed to remove extraction temp directory"
+            );
+        } else {
+            debug!(path = %extract_dir.display(), "Removed extraction temp directory");
+        }
+    }
 
     Ok(())
 }

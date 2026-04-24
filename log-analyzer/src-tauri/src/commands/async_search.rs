@@ -29,8 +29,8 @@ pub async fn async_search_logs(
     query: String,
     #[allow(non_snake_case)] structuredQuery: Option<SearchQuery>,
     #[allow(non_snake_case)] workspaceId: Option<String>,
-    max_results: Option<usize>,
-    timeout_seconds: Option<u64>,
+    #[allow(non_snake_case)] maxResults: Option<usize>,
+    #[allow(non_snake_case)] timeoutSeconds: Option<u64>,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
     if query.is_empty() {
@@ -46,9 +46,9 @@ pub async fn async_search_logs(
             .or_else(|| dirs.keys().next().cloned())
             .unwrap_or_else(|| "default".to_string())
     };
-    let max_results = max_results.unwrap_or(10000).clamp(1, 50000);
-    // timeout_seconds 最小值为 1，防止 Duration::from_secs(0) 导致立即超时
-    let timeout = Duration::from_secs(timeout_seconds.unwrap_or(30).max(1));
+    let max_results = maxResults.unwrap_or(10000).clamp(1, 50000);
+    // timeoutSeconds 最小值为 1，防止 Duration::from_secs(0) 导致立即超时
+    let timeout = Duration::from_secs(timeoutSeconds.unwrap_or(30).max(1));
 
     // 注册异步操作
     let cancellation_token = state
@@ -97,10 +97,10 @@ pub async fn async_search_logs(
 /// 取消异步搜索
 #[command]
 pub async fn cancel_async_search(
-    search_id: String,
+    #[allow(non_snake_case)] searchId: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    state.cancel_async_operation(&search_id).await?;
+    state.cancel_async_operation(&searchId).await?;
     Ok(())
 }
 
@@ -111,6 +111,7 @@ pub async fn get_active_searches_count(state: State<'_, AppState>) -> Result<usi
 }
 
 /// 执行异步搜索的核心逻辑
+#[allow(clippy::too_many_arguments)]
 async fn perform_async_search(
     app: AppHandle,
     query: String,

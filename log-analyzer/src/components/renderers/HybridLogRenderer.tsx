@@ -2,8 +2,8 @@ import React, { useMemo, memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { COLOR_STYLES } from '../../constants/colors';
 import type { HybridLogRendererProps } from '../../types/ui';
-import type { ColorKey, KeywordPattern } from '../../types/common';
-import { escapeRegexLiteral, looksLikeRegexPattern } from '../../utils/searchPatterns';
+import type { ColorKey, KeywordPattern, MatchDetail } from '../../types/common';
+import { escapeRegexLiteral, looksLikeRegexPattern, splitQueryByPipe } from '../../utils/searchPatterns';
 
 // 智能截断相关接口
 interface KeywordPosition {
@@ -188,6 +188,7 @@ const HybridLogRendererInner: React.FC<HybridLogRendererProps> = ({
   query,
   queryTerms,
   keywordGroups,
+  matchDetails,
 }) => {
   const { t } = useTranslation();
   const [isExpanded, setIsExpanded] = useState(false);
@@ -238,10 +239,7 @@ const HybridLogRendererInner: React.FC<HybridLogRendererProps> = ({
         }
       });
     } else if (query) {
-      query
-        .split('|')
-        .map((term: string) => term.trim())
-        .filter((term: string) => term.length > 0)
+      splitQueryByPipe(query)
         .forEach((term: string, index: number) => {
           const key = `literal:ci:${term.toLowerCase()}`;
           if (!patterns.has(key)) {
@@ -271,7 +269,52 @@ const HybridLogRendererInner: React.FC<HybridLogRendererProps> = ({
       return <span>{textToRender}</span>;
     }
 
-    const matches = collectMatches(textToRender, highlightPatterns);
+    // 优先使用后端提供的 match_details，确保前后端高亮位置完全一致
+    const matches: HighlightMatch[] = matchDetails && matchDetails.length > 0
+      ? (() => {
+          const backendMatches: HighlightMatch[] = [];
+          matchDetails.forEach((detail: MatchDetail) => {
+            if (!detail.match_position) return;
+            const [start, end] = detail.match_position;
+            // 找到对应的高亮 pattern（按 term_value 匹配）
+            const pattern = highlightPatterns.find(
+              (p) => p.raw.toLowerCase() === detail.term_value.toLowerCase()
+            ) ?? highlightPatterns.find(
+              (p) => detail.term_value.toLowerCase().includes(p.raw.toLowerCase())
+            ) ?? {
+              id: detail.term_id,
+              raw: detail.term_value,
+              color: 'blue' as ColorKey,
+              comment: '',
+              mode: 'literal',
+              caseSensitive: false,
+            };
+            backendMatches.push({
+              start,
+              end,
+              text: textToRender.slice(start, end),
+              pattern,
+            });
+          });
+          // 排序 + 去重叠（与 collectMatches 保持一致）
+          backendMatches.sort((left, right) => {
+            if (left.start !== right.start) return left.start - right.start;
+            const leftLen = left.end - left.start;
+            const rightLen = right.end - right.start;
+            if (leftLen !== rightLen) return rightLen - leftLen;
+            return right.pattern.raw.length - left.pattern.raw.length;
+          });
+          const nonOverlapping: HighlightMatch[] = [];
+          let currentEnd = -1;
+          for (const match of backendMatches) {
+            if (match.start < currentEnd) continue;
+            nonOverlapping.push(match);
+            currentEnd = match.end;
+          }
+          return nonOverlapping;
+        })()
+      : collectMatches(textToRender, highlightPatterns);
+
     if (matches.length === 0) {
       return (
         <span>
@@ -416,7 +459,8 @@ const HybridLogRenderer = memo(HybridLogRendererInner, (prevProps, nextProps) =>
     prevProps.text === nextProps.text &&
     prevProps.query === nextProps.query &&
     prevProps.queryTerms === nextProps.queryTerms &&
-    prevProps.keywordGroups === nextProps.keywordGroups
+    prevProps.keywordGroups === nextProps.keywordGroups &&
+    prevProps.matchDetails === nextProps.matchDetails
   );
 });
 

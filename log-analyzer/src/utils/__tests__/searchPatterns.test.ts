@@ -1,4 +1,4 @@
-import { looksLikeRegexPattern, escapeRegexLiteral } from '../searchPatterns';
+import { looksLikeRegexPattern, escapeRegexLiteral, splitQueryByPipe } from '../searchPatterns';
 
 describe('looksLikeRegexPattern', () => {
   // ——— 应该判定为正则 ———
@@ -82,5 +82,41 @@ describe('escapeRegexLiteral', () => {
     expect(escapeRegexLiteral('error+')).toBe('error\\+');
     expect(escapeRegexLiteral('a*b')).toBe('a\\*b');
     expect(escapeRegexLiteral('(test)')).toBe('\\(test\\)');
+  });
+});
+
+describe('splitQueryByPipe', () => {
+  it('splits basic queries by pipe', () => {
+    expect(splitQueryByPipe('error | timeout')).toEqual(['error', 'timeout']);
+    expect(splitQueryByPipe('a|b|c')).toEqual(['a', 'b', 'c']);
+  });
+
+  it('does NOT split pipes inside brackets', () => {
+    expect(splitQueryByPipe('(error|timeout)')).toEqual(['(error|timeout)']);
+    expect(splitQueryByPipe('a | (b|c) | d')).toEqual(['a', '(b|c)', 'd']);
+    expect(splitQueryByPipe('[foo|bar]')).toEqual(['[foo|bar]']);
+  });
+
+  it('treats escaped pipe as literal', () => {
+    expect(splitQueryByPipe('foo\\|bar')).toEqual(['foo|bar']);
+    expect(splitQueryByPipe('a | b\\|c | d')).toEqual(['a', 'b|c', 'd']);
+  });
+
+  it('handles empty and whitespace-only input', () => {
+    expect(splitQueryByPipe('')).toEqual([]);
+    expect(splitQueryByPipe('   ')).toEqual([]);
+    expect(splitQueryByPipe('  error  |  timeout  ')).toEqual(['error', 'timeout']);
+  });
+
+  it('handles nested brackets correctly', () => {
+    expect(splitQueryByPipe('(a|(b|c))')).toEqual(['(a|(b|c))']);
+    expect(splitQueryByPipe('x | (a|(b|c)) | y')).toEqual(['x', '(a|(b|c))', 'y']);
+  });
+
+  it('handles mismatched brackets gracefully', () => {
+    // closing bracket without opening just reduces depth if already > 0
+    expect(splitQueryByPipe('a) | b')).toEqual(['a)', 'b']);
+    // opening bracket without closing keeps depth elevated
+    expect(splitQueryByPipe('(a | b')).toEqual(['(a | b']);
   });
 });

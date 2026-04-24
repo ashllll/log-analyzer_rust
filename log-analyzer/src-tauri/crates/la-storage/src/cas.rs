@@ -1089,8 +1089,9 @@ impl ContentAddressableStorage {
         let file_size = metadata.len();
 
         // 2. 检查目标磁盘空间 (需要 3x 空间: 原文件 + CAS存储 + 临时文件)
-        // 使用 saturating_mul 防止大文件溢出
-        let required_space = file_size.saturating_mul(3);
+        let required_space = file_size.checked_mul(3).ok_or_else(|| {
+            AppError::validation_error("File too large for disk space check".to_string())
+        })?;
         let available_space = get_available_space(&self.workspace_dir).await;
 
         // 如果无法获取可用空间（返回0），跳过检查但记录警告

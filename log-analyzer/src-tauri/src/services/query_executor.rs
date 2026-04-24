@@ -255,7 +255,10 @@ impl QueryExecutor {
                                 term_id: compiled.term_id.clone(),
                                 term_value,
                                 priority: compiled.priority,
-                                match_position: Some((mat.start, mat.end)),
+                                match_position: Some((
+                                    Self::byte_offset_to_char_index(line, mat.start),
+                                    Self::byte_offset_to_char_index(line, mat.end),
+                                )),
                             });
                         }
                     }
@@ -287,7 +290,10 @@ impl QueryExecutor {
                             term_id: compiled.term_id.clone(),
                             term_value,
                             priority: compiled.priority,
-                            match_position: Some((mat.start, mat.end)),
+                            match_position: Some((
+                                Self::byte_offset_to_char_index(line, mat.start),
+                                Self::byte_offset_to_char_index(line, mat.end),
+                            )),
                         });
                     }
                 }
@@ -300,6 +306,16 @@ impl QueryExecutor {
                 }
             }
         }
+    }
+
+    /// 将 UTF-8 byte offset 转换为字符索引（char count），供前端 JavaScript 字符串切片使用。
+    ///
+    /// 原因：regex/aho-corasick 返回的 match start/end 是 UTF-8 byte offsets，
+    /// 而前端 `String.slice()` 使用 UTF-16 code unit indices。对于 ASCII 文本两者一致，
+    /// 但对于多字节 UTF-8 字符（如中文）会产生偏移。通过转换为 char count，
+    /// 确保前后端高亮位置精确对齐。
+    fn byte_offset_to_char_index(s: &str, byte_offset: usize) -> usize {
+        s[..byte_offset.min(s.len())].chars().count()
     }
 
     fn engine_find_all(

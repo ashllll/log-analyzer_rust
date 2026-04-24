@@ -574,7 +574,10 @@ mod tests {
 
         assert!(should_halt);
         let violation = violation.expect("expected workspace size violation");
-        assert_eq!(violation.violation_type, ViolationType::WorkspaceSizeExceeded);
+        assert_eq!(
+            violation.violation_type,
+            ViolationType::WorkspaceSizeExceeded
+        );
         assert_eq!(violation.severity, Severity::Critical);
     }
 

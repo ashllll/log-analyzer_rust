@@ -1,34 +1,17 @@
 # Clippy Configuration for Log Analyzer
-# Purpose: Enforce code quality and prevent common mistakes
+# Purpose: Configure lint behavior thresholds and allowed patterns
+# Note: Lint levels (warn/deny/allow) are controlled via command-line flags
+#       or crate-level attributes, not in this file.
 
-# Error Handling Rules
-# Prevent panic-inducing methods in production code
-# unwrap() and expect() should only be used in tests or with clear justification
-unwrap-used = "warn"
-expect-used = "warn"
+# Allow unwrap/expect in test code
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
 
-# Require explicit error handling
-# This encourages using ? operator or proper error matching
-missing-errors-doc = "warn"
+# Complexity thresholds
+cognitive-complexity-threshold = 25
+too-many-lines-threshold = 100
+type-complexity-threshold = 250
 
-# Performance Rules
-inefficient-to-string = "warn"
-large-enum-variant = "warn"
-large-stack-arrays = "warn"
-
-# Correctness Rules
-correctness = { level = "deny" }
-
-# Code Quality
-nursery = { level = "warn" }
-pedantic = { level = "warn" }
-
-# Allow some pedantic lints that are too strict
-allow = [
-    "module-name-repetitions",
-    "similar-names", 
-    "too-many-lines",
-    "cast-possible-truncation",
-    "cast-sign-loss",
-    "cast-possible-wrap",
-]
+# Size thresholds
+enum-variant-size-threshold = 200

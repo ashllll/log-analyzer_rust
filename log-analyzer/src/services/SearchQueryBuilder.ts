@@ -8,7 +8,7 @@ import {
   TermSource
 } from '../types/search';
 import type { KeywordGroup } from '../types/common';
-import { looksLikeRegexPattern } from '../utils/searchPatterns';
+import { looksLikeRegexPattern, splitQueryByPipe } from '../utils/searchPatterns';
 
 /**
  * 搜索查询构建器
@@ -60,10 +60,7 @@ export class SearchQueryBuilder {
       return builder;
     }
 
-    const terms = queryString
-      .split('|')
-      .map(t => t.trim())
-      .filter(t => t.length > 0);
+    const terms = splitQueryByPipe(queryString);
 
     terms.forEach((value, idx) => {
       // 检查是否是预置关键词

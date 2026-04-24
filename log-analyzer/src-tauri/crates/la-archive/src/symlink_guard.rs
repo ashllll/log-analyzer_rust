@@ -7,7 +7,11 @@ fn metadata_if_exists(path: &Path) -> Result<Option<std::fs::Metadata>> {
         Ok(metadata) => Ok(Some(metadata)),
         Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
         Err(error) => Err(AppError::archive_error(
-            format!("Failed to inspect extraction path {}: {}", path.display(), error),
+            format!(
+                "Failed to inspect extraction path {}: {}",
+                path.display(),
+                error
+            ),
             Some(path.to_path_buf()),
         )),
     }
@@ -55,7 +59,11 @@ pub fn ensure_no_symlink_components(root: &Path, candidate: &Path) -> Result<()>
 fn remove_symlink(path: &Path) -> Result<()> {
     let metadata = std::fs::symlink_metadata(path).map_err(|error| {
         AppError::archive_error(
-            format!("Failed to inspect extracted path {}: {}", path.display(), error),
+            format!(
+                "Failed to inspect extracted path {}: {}",
+                path.display(),
+                error
+            ),
             Some(path.to_path_buf()),
         )
     })?;
@@ -66,7 +74,11 @@ fn remove_symlink(path: &Path) -> Result<()> {
 
     std::fs::remove_file(path).map_err(|error| {
         AppError::archive_error(
-            format!("Failed to remove extracted symbolic link {}: {}", path.display(), error),
+            format!(
+                "Failed to remove extracted symbolic link {}: {}",
+                path.display(),
+                error
+            ),
             Some(path.to_path_buf()),
         )
     })?;

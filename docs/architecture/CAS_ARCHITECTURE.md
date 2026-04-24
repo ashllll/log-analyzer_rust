@@ -275,10 +275,31 @@ SearchEngineManager 批量建索引（Tantivy）
 
 **触发时机：** 应用启动时（后台任务）+ 可配置定时触发
 
-**流程：**
+**两种模式：**
+
+| 模式 | 适用场景 | 特性 |
+|------|----------|------|
+| 增量 GC (`run_incremental_gc`) | 日常后台运行 | 分片游标轮询，每次处理 `batch_size`（默认 1000）个文件，低 I/O 占用 |
+| 全量 GC (`run_full_gc`) | 手动触发或异常恢复 | 一次性扫描全部对象，彻底清理 |
+
+**增量 GC 流程：**
 
 ```text
-GarbageCollector::collect()
+GarbageCollector::run_incremental_gc()
+  1. 读取 SQLite 中所有 sha256_hash 值 → HashSet<String>
+  2. 按字典序列出 objects/ 下的 shard 目录（如 aa/, bb/...）
+  3. 从 cursor 记录的 shard 索引开始遍历（首次为 0）
+  4. 逐个 shard 扫描文件，拼接 shard_name + filename 为完整哈希
+  5. 若不在 HashSet 中 → 孤儿对象 → 加入待删队列
+  6. 当 files_processed >= batch_size 时，保存 next_index 到 cursor 并暂停
+  7. 一轮遍历完成后重置 cursor 为 None
+  8. 返回 GCStats { scanned, deleted, freed_bytes }
+```
+
+**全量 GC 流程：**
+
+```text
+GarbageCollector::run_full_gc()
   1. 读取 SQLite 中所有 sha256_hash 值 → HashSet<String>
   2. 遍历 objects/ 目录下所有对象文件
   3. 对每个对象文件，拼接 prefix + filename 为完整哈希
@@ -286,7 +307,7 @@ GarbageCollector::collect()
   5. 返回 GCStats { scanned, deleted, freed_bytes }
 ```
 
-**安全边界：** GC 只删除孤儿对象（CAS 有但 SQLite 无），不删除任何有元数据记录的对象，不需要锁定整个存储。
+**安全边界：** GC 只删除孤儿对象（CAS 有但 SQLite 无），不删除任何有元数据记录的对象，不需要锁定整个存储。增量 GC 的 `batch_size` 软限制确保在 shard 边界处自然暂停，避免长时间持有锁或阻塞 I/O。
 
 ---
 

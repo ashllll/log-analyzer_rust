@@ -315,27 +315,41 @@ impl StorageCoordinator {
 
 #### 2.4 垃圾回收 (`gc.rs`)
 
-**职责：** 定期清理 CAS 中不被任何元数据记录引用的孤儿对象，防止磁盘空间泄漏。
+**职责：** 定期清理 CAS 中不被任何元数据记录引用的孤儿对象，防止磁盘空间泄漏。支持增量与全量两种模式。
 
 ```rust
+pub struct GCConfig {
+    pub batch_size: usize,       // 增量 GC 每批处理文件数（默认 1000）
+}
+
 pub struct GarbageCollector {
-    cas_dir: PathBuf,
+    cas: Arc<CASStorage>,
     metadata: Arc<MetadataStore>,
+    config: GCConfig,
+    incremental_cursor: RwLock<Option<usize>>, // 记录下一批起始 shard 索引
 }
 
 impl GarbageCollector {
-    // 扫描 objects/ 目录，与 SQLite 中 sha256_hash 集合取差集
-    pub async fn collect(&self) -> Result<GCStats>;
+    pub fn new(cas: Arc<CASStorage>, metadata: Arc<MetadataStore>, config: GCConfig) -> Self;
+
+    // 一次性扫描全部对象（手动/异常恢复）
+    pub async fn run_full_gc(&self) -> Result<GCStats>;
+
+    // 分片游标轮询，每次处理 batch_size 个文件（日常后台）
+    pub async fn run_incremental_gc(&self) -> Result<GCStats>;
+
+    // 启动 Tokio 后台任务，按 interval 定时调用增量 GC
+    pub async fn start_background_gc(interval: Duration, gc: Arc<GarbageCollector>);
 }
 
 pub struct GCStats {
-    pub scanned: usize,
-    pub deleted: usize,
-    pub freed_bytes: u64,
+    pub files_scanned: usize,
+    pub files_deleted: usize,
+    pub bytes_freed: u64,
 }
 ```
 
-**GCManager** 封装定时调度逻辑，通过 Tokio interval 按配置周期触发 GC。
+**设计要点：** 增量 GC 的 cursor 在 `RwLock<Option<usize>>` 中保存下一轮起始 shard 索引，遍历到 `batch_size` 边界时主动暂停，一轮完成后自动重置。`start_background_gc` 默认调用增量 GC，避免阻塞应用启动。
 
 #### 2.5 缓存监控 (`cache_monitor.rs`)
 

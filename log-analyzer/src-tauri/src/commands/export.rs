@@ -7,10 +7,10 @@
 use std::fs;
 use std::io::{BufWriter, Write};
 
+use la_core::error::AppError;
+use la_core::models::LogEntry;
 use serde_json::json;
 use tauri::command;
-
-use la_core::models::LogEntry;
 
 #[command]
 pub async fn export_results(
@@ -43,16 +43,27 @@ pub async fn export_results(
 }
 
 fn export_to_csv(results: &[LogEntry], path: &str) -> Result<String, String> {
-    let file =
-        std::fs::File::create(path).map_err(|e| format!("Failed to create CSV file: {}", e))?;
+    let file_path = std::path::PathBuf::from(path);
+    let file = std::fs::File::create(path).map_err(|e| {
+        AppError::io_error(
+            format!("Failed to create CSV file: {e}"),
+            Some(file_path.clone()),
+        )
+        .to_string()
+    })?;
     let mut writer = BufWriter::new(file);
 
-    writer
-        .write_all(b"\xEF\xBB\xBF")
-        .map_err(|e| format!("Failed to write BOM: {}", e))?;
+    writer.write_all(b"\xEF\xBB\xBF").map_err(|e| {
+        AppError::io_error(format!("Failed to write BOM: {e}"), Some(file_path.clone())).to_string()
+    })?;
 
-    writeln!(writer, "ID,Timestamp,Level,File,Line,Content")
-        .map_err(|e| format!("Failed to write CSV header: {}", e))?;
+    writeln!(writer, "ID,Timestamp,Level,File,Line,Content").map_err(|e| {
+        AppError::io_error(
+            format!("Failed to write CSV header: {e}"),
+            Some(file_path.clone()),
+        )
+        .to_string()
+    })?;
 
     for entry in results {
         // 按 RFC 4180 规范：含换行的字段用双引号包裹，内部换行保留（不替换为空格）
@@ -65,12 +76,18 @@ fn export_to_csv(results: &[LogEntry], path: &str) -> Result<String, String> {
             "{},\"{}\",{},\"{}\",{},\"{}\"",
             entry.id, entry.timestamp, entry.level, file_escaped, entry.line, content_escaped
         )
-        .map_err(|e| format!("Failed to write CSV row: {}", e))?;
+        .map_err(|e| {
+            AppError::io_error(
+                format!("Failed to write CSV row: {e}"),
+                Some(file_path.clone()),
+            )
+            .to_string()
+        })?;
     }
 
-    writer
-        .flush()
-        .map_err(|e| format!("Failed to flush CSV file: {}", e))?;
+    writer.flush().map_err(|e| {
+        AppError::io_error(format!("Failed to flush CSV file: {e}"), Some(file_path)).to_string()
+    })?;
 
     Ok(path.to_string())
 }
@@ -87,7 +104,10 @@ fn export_to_json(results: &[LogEntry], path: &str) -> Result<String, String> {
     let json_string = serde_json::to_string_pretty(&export_data)
         .map_err(|e| format!("Failed to serialize JSON: {}", e))?;
 
-    fs::write(path, json_string).map_err(|e| format!("Failed to write JSON file: {}", e))?;
+    let file_path = std::path::PathBuf::from(path);
+    fs::write(path, json_string).map_err(|e| {
+        AppError::io_error(format!("Failed to write JSON file: {e}"), Some(file_path)).to_string()
+    })?;
 
     Ok(path.to_string())
 }

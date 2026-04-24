@@ -158,6 +158,7 @@ pub async fn refresh_workspace(
 
 use std::{fs, path::Path, sync::Arc};
 
+use la_core::error::AppError;
 use la_core::models::config::AppConfigLoader;
 use tauri::{command, AppHandle, Manager, State};
 use tracing::{error, info, warn};
@@ -287,6 +288,11 @@ fn cleanup_workspace_resources(
 
     let mut errors = Vec::new();
 
+    // 辅助闭包：统一将 io::Error 映射为结构化错误消息
+    let io_err = |e: std::io::Error, path: &std::path::Path| -> String {
+        AppError::io_error(e.to_string(), Some(path.to_path_buf())).to_string()
+    };
+
     // ===== 步骤1: 停止文件监听器 =====
     info!(
         workspace_id = %workspace_id,
@@ -394,11 +400,7 @@ fn cleanup_workspace_resources(
                             }
                             Err(e) => {
                                 failed_count += 1;
-                                let error = format!(
-                                    "Failed to delete legacy index file {}: {}",
-                                    index_path.display(),
-                                    e
-                                );
+                                let error = io_err(e, index_path);
                                 error!(error = %error);
                                 errors.push(error);
                             }
@@ -412,11 +414,7 @@ fn cleanup_workspace_resources(
                 }
                 Err(e) => {
                     failed_count += 1;
-                    let error = format!(
-                        "Failed to get metadata for legacy index file {}: {}",
-                        index_path.display(),
-                        e
-                    );
+                    let error = io_err(e, index_path);
                     error!(error = %error);
                     errors.push(error);
                 }
@@ -467,11 +465,7 @@ fn cleanup_workspace_resources(
                                 info!(path = %metadata_db.display(), "Deleted SQLite database");
                             }
                             Err(e) => {
-                                let error = format!(
-                                    "Failed to delete SQLite database {}: {}",
-                                    metadata_db.display(),
-                                    e
-                                );
+                                let error = io_err(e, &metadata_db);
                                 error!(error = %error);
                                 errors.push(error);
                             }
@@ -499,11 +493,7 @@ fn cleanup_workspace_resources(
                                 info!(path = %objects_dir.display(), "Deleted CAS objects directory");
                             }
                             Err(e) => {
-                                let error = format!(
-                                    "Failed to delete CAS objects directory {}: {}",
-                                    objects_dir.display(),
-                                    e
-                                );
+                                let error = io_err(e, &objects_dir);
                                 error!(error = %error);
                                 errors.push(error);
                             }
@@ -545,7 +535,9 @@ fn cleanup_workspace_resources(
     // 区分严重错误和非严重错误：
     // - 严重错误：工作区目录仍然存在（用户无法重新导入同一工作区）
     // - 非严重错误：辅助文件（journal files 等）删除失败（不影响重新导入）
-    let has_directory_exists_error = errors.iter().any(|e| e.contains("Failed to delete workspace directory"));
+    let has_directory_exists_error = errors
+        .iter()
+        .any(|e| e.contains("Failed to delete workspace directory"));
 
     if errors.is_empty() {
         info!(

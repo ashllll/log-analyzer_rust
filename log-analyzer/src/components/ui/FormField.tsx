@@ -1,5 +1,6 @@
 import React, { useId } from 'react';
 import { cn } from '../../utils/classNames';
+import { Input } from './Input';
 
 interface FormFieldProps {
   children: React.ReactNode;
@@ -68,13 +69,20 @@ export const FormField: React.FC<FormFieldProps> = ({
         {React.Children.map(children, child => {
           if (!React.isValidElement(child)) return child;
           
-          // 仅对 Input 或类似交互组件注入属性
-          const isInput = typeof child.type === 'string' || 
-                         (child.type as any).displayName === 'Input' ||
-                         (child.type as any).name === 'Input';
+          // 仅对 Input 或原生输入类元素注入属性
+          // 使用组件引用直接比较，避免生产构建压缩后 displayName 失效
+          const isInput = typeof child.type === 'string' || child.type === Input;
 
           if (isInput) {
-            return React.cloneElement(child as React.ReactElement<any>, {
+            const childProps = child.props as {
+              className?: string;
+            };
+            return React.cloneElement(child as React.ReactElement<{
+              id?: string;
+              'aria-invalid'?: boolean;
+              'aria-describedby'?: string;
+              className?: string;
+            }>, {
               id: fieldId,
               'aria-invalid': hasError,
               'aria-describedby': cn(
@@ -82,7 +90,7 @@ export const FormField: React.FC<FormFieldProps> = ({
                 hasError && errorId
               ).trim() || undefined,
               className: cn(
-                (child as React.ReactElement<any>).props?.className,
+                childProps.className,
                 hasError && 'border-status-error focus:border-status-error focus:ring-status-error'
               )
             });

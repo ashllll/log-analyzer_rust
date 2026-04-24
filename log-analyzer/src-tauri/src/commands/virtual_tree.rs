@@ -21,8 +21,8 @@ use serde::{Deserialize, Serialize};
 use tauri::{command, AppHandle};
 use tracing::{debug, error, info};
 
-use crate::utils::workspace_paths::resolve_workspace_dir;
 use crate::utils::validation::validate_workspace_id;
+use crate::utils::workspace_paths::resolve_workspace_dir;
 
 /// File content response
 #[derive(Debug, Serialize, Deserialize)]

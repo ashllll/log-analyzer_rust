@@ -79,6 +79,8 @@ pub struct GarbageCollector {
     config: GCConfig,
     last_run: RwLock<Option<Instant>>,
     total_stats: RwLock<GCStats>,
+    /// 增量 GC 游标：记录下一轮开始扫描的 shard 目录索引（按字母顺序排序后）
+    incremental_cursor: RwLock<Option<usize>>,
 }
 
 impl GarbageCollector {
@@ -100,6 +102,7 @@ impl GarbageCollector {
             config,
             last_run: RwLock::new(None),
             total_stats: RwLock::new(GCStats::default()),
+            incremental_cursor: RwLock::new(None),
         }
     }
 
@@ -165,22 +168,160 @@ impl GarbageCollector {
     /// Run incremental garbage collection
     ///
     /// Processes a limited batch of files for frequent, low-impact cleanup.
+    /// Uses a cursor to resume from the last shard directory, ensuring
+    /// that all files are eventually scanned across multiple runs.
     ///
     /// # Returns
     ///
     /// Returns statistics about the GC run
     pub async fn run_incremental_gc(&self) -> Result<GCStats> {
         let start = Instant::now();
-        let stats = GCStats::default();
+        let mut stats = GCStats::default();
 
-        debug!("Starting incremental garbage collection");
+        info!("Starting incremental garbage collection");
 
-        // TODO: Implement incremental GC with cursor-based scanning
-        // For now, just run a limited full GC
+        let objects_dir = self.cas.objects_dir();
+
+        // Collect and sort shard directories for deterministic traversal
+        let mut shard_dirs = Vec::new();
+        let mut entries = fs::read_dir(&objects_dir).await.map_err(|e| {
+            AppError::io_error(
+                format!("Failed to read objects directory: {}", e),
+                Some(objects_dir.clone()),
+            )
+        })?;
+
+        while let Some(entry) = entries.next_entry().await? {
+            let path = entry.path();
+            if path.is_dir() {
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    shard_dirs.push((name.to_string(), path));
+                }
+            }
+        }
+        shard_dirs.sort_by(|a, b| a.0.cmp(&b.0));
+
+        if shard_dirs.is_empty() {
+            info!("No shard directories found, incremental GC completed");
+            return Ok(stats);
+        }
+
+        let mut cursor = self.incremental_cursor.write().await;
+        let start_index = cursor.unwrap_or(0) % shard_dirs.len();
+        let mut files_processed = 0usize;
+        let mut orphaned_hashes = Vec::new();
+        let min_age_secs = self.config.min_file_age.as_secs();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        for i in 0..shard_dirs.len() {
+            // Soft limit: stop at shard boundary after reaching batch_size
+            if files_processed >= self.config.batch_size && i > 0 {
+                let next_index = (start_index + i) % shard_dirs.len();
+                *cursor = Some(next_index);
+                info!(
+                    files_processed,
+                    next_shard_index = next_index,
+                    "Incremental GC paused at batch limit"
+                );
+                break;
+            }
+
+            let idx = (start_index + i) % shard_dirs.len();
+            let (_, shard_path) = &shard_dirs[idx];
+
+            let mut shard_entries = fs::read_dir(shard_path).await?;
+            while let Some(file_entry) = shard_entries.next_entry().await? {
+                let file_path = file_entry.path();
+                if !file_path.is_file() {
+                    continue;
+                }
+
+                stats.files_scanned += 1;
+                files_processed += 1;
+
+                let metadata = fs::metadata(&file_path).await?;
+                let modified_time = metadata
+                    .modified()?
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+
+                if now - modified_time < min_age_secs {
+                    continue;
+                }
+
+                let shard_name = shard_path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("");
+                let file_name = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                let hash = format!("{}{}", shard_name, file_name);
+
+                if hash.is_empty() {
+                    warn!(path = %file_path.display(), "Found file with invalid name");
+                    continue;
+                }
+
+                match self.has_references(&hash).await {
+                    Ok(false) => {
+                        debug!(hash = %hash, "Found orphaned file");
+                        orphaned_hashes.push(hash);
+                    }
+                    Ok(true) => {
+                        debug!(hash = %hash, "File has references");
+                    }
+                    Err(e) => {
+                        warn!(
+                            hash = %hash,
+                            error = %e,
+                            "Failed to check references, skipping"
+                        );
+                    }
+                }
+            }
+
+            // If we've looped through all shards, mark round as complete
+            if i == shard_dirs.len() - 1 {
+                *cursor = None;
+            }
+        }
+
+        // Clean up orphaned files found in this batch
+        stats.orphaned_files = orphaned_hashes.len();
+        for hash in orphaned_hashes {
+            match self.cleanup_orphaned_file(&hash).await {
+                Ok(bytes) => {
+                    stats.files_deleted += 1;
+                    stats.bytes_reclaimed += bytes;
+                }
+                Err(e) => {
+                    error!(hash = %hash, error = %e, "Failed to cleanup orphaned file");
+                    stats.errors += 1;
+                }
+            }
+        }
+
+        stats.duration_ms = start.elapsed().as_millis() as u64;
+
+        // Update total stats
+        let mut total = self.total_stats.write().await;
+        total.files_scanned += stats.files_scanned;
+        total.orphaned_files += stats.orphaned_files;
+        total.files_deleted += stats.files_deleted;
+        total.bytes_reclaimed += stats.bytes_reclaimed;
+        total.errors += stats.errors;
 
         info!(
-            duration_ms = start.elapsed().as_millis() as u64,
-            "Incremental garbage collection completed (placeholder)"
+            files_scanned = stats.files_scanned,
+            orphaned_files = stats.orphaned_files,
+            files_deleted = stats.files_deleted,
+            bytes_reclaimed = stats.bytes_reclaimed,
+            duration_ms = stats.duration_ms,
+            cursor = ?*cursor,
+            "Incremental garbage collection completed"
         );
 
         Ok(stats)
@@ -224,7 +365,7 @@ impl GarbageCollector {
         let min_age_secs = self.config.min_file_age.as_secs();
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
 
         // Walk the objects directory
@@ -261,12 +402,11 @@ impl GarbageCollector {
                             continue;
                         }
 
-                        // Get hash from filename
-                        let hash = file_path
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .map(|s| s.to_string())
-                            .unwrap_or_default();
+                        // 组合 shard 前缀与文件名得到完整 hash
+                        let shard_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                        let file_name =
+                            file_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                        let hash = format!("{}{}", shard_name, file_name);
 
                         if hash.is_empty() {
                             warn!(path = %file_path.display(), "Found file with invalid name");
@@ -379,16 +519,16 @@ impl GarbageCollector {
             loop {
                 tokio::select! {
                     _ = interval.tick() => {
-                        match self.run_full_gc().await {
+                        match self.run_incremental_gc().await {
                             Ok(stats) => {
                                 info!(
                                     files_deleted = stats.files_deleted,
                                     bytes_reclaimed = stats.bytes_reclaimed,
-                                    "Background GC completed"
+                                    "Background incremental GC completed"
                                 );
                             }
                             Err(e) => {
-                                error!(error = %e, "Background GC failed");
+                                error!(error = %e, "Background incremental GC failed");
                             }
                         }
                     }
@@ -448,9 +588,6 @@ impl Default for GCManager {
 mod tests {
     use super::*;
 
-    // Note: These tests would need proper mocking of MetadataStore
-    // For now, we just verify the structure compiles
-
     #[test]
     fn test_gc_config_default() {
         let config = GCConfig::default();
@@ -468,5 +605,59 @@ mod tests {
         assert_eq!(stats.files_deleted, 0);
         assert_eq!(stats.bytes_reclaimed, 0);
         assert_eq!(stats.errors, 0);
+    }
+
+    /// 验证增量 GC 按 shard 分批推进，并在完成一轮后重置游标
+    #[tokio::test]
+    async fn test_incremental_gc_cursor_advances() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let workspace_dir = temp_dir.path().to_path_buf();
+
+        let cas = Arc::new(ContentAddressableStorage::new(workspace_dir.clone()));
+        let metadata_store = Arc::new(MetadataStore::new(&workspace_dir).await.unwrap());
+
+        let config = GCConfig {
+            interval: Duration::from_secs(3600),
+            min_file_age: Duration::from_secs(0),
+            batch_size: 3,
+            dry_run: false,
+        };
+
+        let gc = Arc::new(GarbageCollector::new(cas, metadata_store, config));
+
+        // 创建 3 个 shard，每个 2 个文件，共 6 个孤儿文件
+        let objects_dir = workspace_dir.join("objects");
+        // 创建符合 CAS 路径约定的文件：objects/{前两位}/{剩余部分}
+        for shard in &["aa", "bb", "cc"] {
+            let shard_dir = objects_dir.join(shard);
+            tokio::fs::create_dir_all(&shard_dir).await.unwrap();
+            for file_idx in 0..2 {
+                let suffix = format!("{}", file_idx);
+                let _hash = format!("{}{}", shard, suffix);
+                let file_path = shard_dir.join(&suffix);
+                tokio::fs::write(&file_path, b"test").await.unwrap();
+            }
+        }
+
+        // 第一次运行：处理 shard aa (2 个) + shard bb (2 个) = 4 个，达到 batch_size 边界后停止
+        let stats1 = gc.run_incremental_gc().await.unwrap();
+        assert_eq!(stats1.files_scanned, 4);
+        assert_eq!(stats1.files_deleted, 4);
+        let cursor1 = *gc.incremental_cursor.read().await;
+        assert_eq!(cursor1, Some(2)); // 指向下一个 shard "cc"
+
+        // 第二次运行：处理 shard cc (2 个)
+        let stats2 = gc.run_incremental_gc().await.unwrap();
+        assert_eq!(stats2.files_scanned, 2);
+        assert_eq!(stats2.files_deleted, 2);
+        let cursor2 = *gc.incremental_cursor.read().await;
+        assert_eq!(cursor2, None); // 一轮完成，游标重置
+
+        // 第三次运行：没有文件可处理
+        let stats3 = gc.run_incremental_gc().await.unwrap();
+        assert_eq!(stats3.files_scanned, 0);
+        assert_eq!(stats3.files_deleted, 0);
     }
 }

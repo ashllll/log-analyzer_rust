@@ -30,7 +30,7 @@ export default [
     },
     rules: {
       // TypeScript specific
-      '@typescript-eslint/no-explicit-any': 'off', // Allow any for Tauri event types
+      '@typescript-eslint/no-explicit-any': 'warn', // Gradually eliminate any; use inline disable with justification where truly needed
       '@typescript-eslint/no-unused-vars': ['warn', { 
         argsIgnorePattern: '^_',
         varsIgnorePattern: '^_',

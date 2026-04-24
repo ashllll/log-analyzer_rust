@@ -48,6 +48,7 @@ export interface HybridLogRendererProps {
   text: string;
   query: string;
   queryTerms?: SearchTerm[] | null;
+  matchDetails?: Array<{ term_id: string; term_value: string; priority: number; match_position?: [number, number] }> | null;
   keywordGroups: KeywordGroup[];
 }
 

@@ -8,6 +8,7 @@
 
 use std::fs;
 
+use la_core::error::AppError;
 use tauri::{command, AppHandle, Manager};
 
 use la_core::models::config::{
@@ -79,15 +80,19 @@ pub async fn save_config(app: AppHandle, config: AppConfig) -> Result<(), String
             .app_config_dir()
             .map_err(|e: tauri::Error| e.to_string())?;
         if !config_dir.exists() {
-            fs::create_dir_all(&config_dir).map_err(|e| e.to_string())?;
+            fs::create_dir_all(&config_dir).map_err(|e| {
+                AppError::io_error(e.to_string(), Some(config_dir.clone())).to_string()
+            })?;
         }
         let path = config_dir.join("config.json");
         let tmp_path = config_dir.join("config.json.tmp");
         let json = serde_json::to_string_pretty(&config)
             .map_err(|e| format!("Failed to serialize config: {}", e))?;
         // 先写临时文件，再原子重命名，防止进程崩溃导致配置损坏
-        fs::write(&tmp_path, &json).map_err(|e| e.to_string())?;
-        fs::rename(&tmp_path, &path).map_err(|e| e.to_string())?;
+        fs::write(&tmp_path, &json)
+            .map_err(|e| AppError::io_error(e.to_string(), Some(tmp_path.clone())).to_string())?;
+        fs::rename(&tmp_path, &path)
+            .map_err(|e| AppError::io_error(e.to_string(), Some(path.clone())).to_string())?;
         Ok(())
     })
     .await
