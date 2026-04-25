@@ -9,10 +9,10 @@
 // 导入 log_analyzer 库的模块
 use log_analyzer::commands::{
     async_search::*, cache::*, config::*, error_reporting::*, export::*, import::*, legacy::*,
-    log_config::*, performance::*, query::*, search::*, state_sync::*, validation::*,
+    log_config::*, query::*, search::*, state_sync::*, validation::*,
     virtual_tree::*, watch::*, workspace::*,
 };
-use log_analyzer::models::{AppState, CacheState, MetricsState, SearchState, WorkspaceState};
+use log_analyzer::models::{AppState, CacheState, SearchState, WorkspaceState};
 use log_analyzer::task_manager::TaskManager;
 use log_analyzer::utils::cache_manager::{
     CacheConfig as RuntimeCacheConfig, CacheManager, CacheThresholds,
@@ -113,7 +113,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .manage(WorkspaceState::default())
         .manage(SearchState::default())
         .manage(CacheState::default())
-        .manage(MetricsState::default())
         // 初始化后设置 TaskManager
         .setup(|app| {
             use log_analyzer::models::AppState;
@@ -235,13 +234,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             async_search_logs,
             cancel_async_search,
             get_active_searches_count,
-            // ===== 性能监控 =====
-            get_performance_metrics,
-            get_historical_metrics,
-            get_aggregated_metrics,
-            get_search_events,
-            get_metrics_stats,
-            cleanup_metrics_data,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

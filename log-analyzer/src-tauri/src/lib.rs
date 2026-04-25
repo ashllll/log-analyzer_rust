@@ -23,9 +23,6 @@ pub mod storage;
 pub mod state_sync;
 pub mod task_manager;
 
-// 事件和监控
-pub mod monitoring;
-
 // 测试策略模块
 #[cfg(test)]
 pub mod proptest_strategies;

@@ -23,14 +23,3 @@ export type {
   UseInfiniteSearchOptions,
 } from './useInfiniteSearch';
 
-// 性能监控查询
-export {
-  usePerformanceMetrics,
-  useAutoRefreshPerformanceMetrics,
-  useHistoricalMetrics,
-  useAggregatedMetrics,
-  useSearchEvents,
-  useMetricsStats,
-  performanceQueryKeys,
-  DEFAULT_PERFORMANCE_METRICS,
-} from './usePerformanceQueries';

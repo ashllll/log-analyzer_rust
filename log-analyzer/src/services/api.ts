@@ -16,7 +16,6 @@ import type { SearchQuery } from '../types/search';
 import {
   RarSupportInfoSchema,
   FileFilterConfigSchema,
-  PerformanceMetricsSchema,
   VirtualTreeNodeSchema,  WorkspaceStateSchema,
   EventRecordSchema,
   WorkspaceLoadResponseSchema,
@@ -26,7 +25,6 @@ import {
   SearchIdSchema,
   type RarSupportInfo,
   type FileFilterConfig,
-  type PerformanceMetrics,
   type VirtualTreeNode,
   type WorkspaceState,
   type WorkspaceStatusResponseValidated,
@@ -587,24 +585,6 @@ class LogAnalyzerApi {
       return validatedConfig;
     } catch (error) {
       throw createApiError('save_file_filter_config', error);
-    }
-  }
-
-  // ========================================================================
-  // 性能监控
-  // ========================================================================
-
-  /**
-   * 获取性能指标
-   *
-   * @returns 性能指标数据
-   */
-  async getPerformanceMetrics(): Promise<PerformanceMetrics> {
-    try {
-      const result = await invoke('get_performance_metrics');
-      return PerformanceMetricsSchema.parse(result);
-    } catch (error) {
-      throw createApiError('get_performance_metrics', error);
     }
   }
 

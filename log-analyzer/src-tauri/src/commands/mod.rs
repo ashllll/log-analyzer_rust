@@ -17,7 +17,6 @@ pub mod export;
 pub mod import;
 pub mod legacy;
 pub mod log_config;
-pub mod performance;
 pub mod query;
 pub mod search;
 pub mod state_sync;

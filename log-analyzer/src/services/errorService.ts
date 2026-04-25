@@ -117,11 +117,6 @@ const ERROR_PATTERN_MAP: Array<{ pattern: RegExp; key: string; params?: (match: 
   { pattern: /Failed to start watching path:\s*(.+)/i, key: 'errors.watch.start_failed', params: (m) => ({ error: m[1] }) },
   { pattern: /No active watcher found for this workspace/i, key: 'errors.watch.no_active_watcher' },
 
-  // 性能相关
-  { pattern: /Failed to initialize metrics store:\s*(.+)/i, key: 'errors.performance.metrics_store_init_failed', params: (m) => ({ error: m[1] }) },
-  { pattern: /Metrics store not initialized/i, key: 'errors.performance.metrics_store_not_initialized' },
-  { pattern: /Database error:\s*(.+)/i, key: 'errors.performance.database_error', params: (m) => ({ error: m[1] }) },
-
   // 任务相关
   { pattern: /Failed to cancel task:\s*(.+)/i, key: 'errors.task.cancel_failed', params: (m) => ({ error: m[1] }) },
   { pattern: /TaskManager actor has stopped/i, key: 'errors.task.actor_stopped' },

@@ -428,7 +428,7 @@ const ERROR_CODE_I18N_KEYS: Record<string, string> = {
   [ErrorCode.FILE_WATCHER_ERROR]: 'errors.watch.watcher_create_failed',
   [ErrorCode.INDEX_ERROR]: 'errors.search.database_error',
   [ErrorCode.PATTERN_ERROR]: 'errors.keywords.invalid_regex',
-  [ErrorCode.DATABASE_ERROR]: 'errors.performance.database_error',
+  [ErrorCode.DATABASE_ERROR]: 'errors.search.database_error',
   [ErrorCode.CONFIG_ERROR]: 'errors.config.validation_failed',
   [ErrorCode.NETWORK_ERROR]: 'errors.io.error',
   [ErrorCode.INTERNAL_ERROR]: 'errors.unknown',

@@ -2,7 +2,7 @@ import { useEffect, lazy, Suspense, useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Search, LayoutGrid, ListTodo, Cog, Layers,
-  Zap, FileText, Activity, CheckCircle2, RefreshCw
+  Zap, FileText, CheckCircle2, RefreshCw
 } from "lucide-react";
 import { ErrorBoundary } from 'react-error-boundary';
 import { listen } from '@tauri-apps/api/event';
@@ -36,7 +36,7 @@ const KeywordsPage = lazy(() => import('./pages/KeywordsPage'));
 const WorkspacesPage = lazy(() => import('./pages/WorkspacesPage'));
 const TasksPage = lazy(() => import('./pages/TasksPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
-const PerformancePage = lazy(() => import('./pages/PerformancePage'));
+
 
 // 懒加载页面加载骨架 - 使用 h-full 确保在 motion.div(h-full) 容器内撑满
 const LoadingSkeleton: React.FC = () => (
@@ -104,7 +104,6 @@ function AppContent() {
     { icon: Search, label: t('nav.search'), page: "search", testId: "nav-search" },
     { icon: ListTodo, label: t('nav.keywords'), page: "keywords", testId: "nav-keywords" },
     { icon: Layers, label: t('nav.tasks'), page: "tasks", testId: "nav-tasks" },
-    { icon: Activity, label: t('nav.performance'), page: "performance", testId: "nav-performance" },
   ], [t]);
 
   // 初始化状态同步并监听工作区事件
@@ -234,10 +233,6 @@ function AppContent() {
               <span className="font-medium text-text-main flex items-center gap-2">
                 <Cog size={14} className="text-primary-text"/> Settings
               </span>
-            ) : currentPage === 'performance' ? (
-              <span className="font-medium text-text-main flex items-center gap-2">
-                <Activity size={14} className="text-primary-text"/> Performance
-              </span>
             ) : (
               <>
                 <span className="opacity-50">Workspace / </span>
@@ -249,7 +244,7 @@ function AppContent() {
             )}
           </div>
           {/* 工作区状态 badge */}
-          {activeWorkspace && currentPage !== 'settings' && currentPage !== 'performance' && (
+          {activeWorkspace && currentPage !== 'settings' && (
             <div className="flex items-center gap-1.5 text-xs font-semibold">
               {activeWorkspace.status === 'READY' ? (
                 <>
@@ -295,7 +290,6 @@ function AppContent() {
                     <Route path="/search" element={<SearchPage />} />
                     <Route path="/keywords" element={<KeywordsPage />} />
                     <Route path="/tasks" element={<TasksPage />} />
-                    <Route path="/performance" element={<PerformancePage />} />
                     <Route path="/settings" element={<SettingsPage />} />
                   </Routes>
                 </Suspense>
