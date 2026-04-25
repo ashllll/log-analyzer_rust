@@ -190,11 +190,7 @@ impl QueryExecutor {
     }
 
     fn engine_is_match(engine: &RegexEngine, text: &str) -> bool {
-        match engine {
-            RegexEngine::AhoCorasick(e) => e.find_iter(text).next().is_some(),
-            RegexEngine::Automata(e) => e.is_match(text),
-            RegexEngine::Standard(e) => e.is_match(text),
-        }
+        engine.is_match(text)
     }
 
     /**
