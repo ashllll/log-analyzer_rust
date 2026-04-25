@@ -1,21 +1,21 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <!--
-  Windows 应用程序清单
+  Windows Application Manifest
 
-  作用 1 — Common Controls v6（必须保留，否则应用崩溃）：
-    Tauri 使用 TaskDialogIndirect() 等函数，该函数仅存在于 comctl32.dll v6。
-    若缺少下方 <dependency> 声明，Windows 加载器启动时会选择 v5（旧版本），
-    导致"无法定位程序输入点 TaskDialogIndirect"运行时崩溃。
+  Purpose 1 - Common Controls v6 (required):
+    Tauri uses TaskDialogIndirect() which only exists in comctl32.dll v6.
+    Without the dependency declaration below, Windows loader selects v5,
+    causing "entry point not found" runtime crash.
 
-  作用 2 — 长路径感知（longPathAware）：
-    当系统管理员通过组策略或注册表启用长路径支持后：
+  Purpose 2 - Long path awareness:
+    When enabled via group policy or registry:
       HKLM\SYSTEM\CurrentControlSet\Control\FileSystem\LongPathsEnabled = 1
-    本清单中的 <longPathAware>true</longPathAware> 使该设置对本应用生效，
-    将路径上限从 MAX_PATH（260 字节）提升至 32,767 字符（与代码层 UNC 前缀形成双重保护）。
+    The longPathAware setting raises the path limit from MAX_PATH (260)
+    to 32,767 characters.
 -->
 <assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
 
-  <!-- ★ 必须保留：声明依赖 Common Controls v6，保证 comctl32.dll v6 被加载 -->
+  <!-- Required: declare dependency on Common Controls v6 -->
   <dependency>
     <dependentAssembly>
       <assemblyIdentity
@@ -48,4 +48,3 @@
     </application>
   </compatibility>
 </assembly>
-
