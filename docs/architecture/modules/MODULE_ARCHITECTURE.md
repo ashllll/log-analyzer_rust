@@ -1250,7 +1250,6 @@ pub struct AppState {
 | 工作区 | `WorkspacesPage.tsx` | 工作区创建/加载/删除，导入归档 |
 | 关键词 | `KeywordsPage.tsx` | 关键词组 CRUD 管理、启用/禁用切换 |
 | 任务 | `TasksPage.tsx` | 导入/导出后台任务监控 |
-| 性能 | `PerformancePage.tsx` | 搜索延迟、缓存命中率等指标图表 |
 | 设置 | `SettingsPage.tsx` | 缓存/搜索/日志级别配置 |
 
 **`SearchPage.tsx` 分页机制：**
