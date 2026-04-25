@@ -2988,6 +2988,7 @@ dependencies = [
  "futures",
  "la-core",
  "libc",
+ "memmap2",
  "moka",
  "parking_lot",
  "proptest",

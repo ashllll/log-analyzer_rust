@@ -163,6 +163,62 @@ impl ArchiveHandler for ZipHandler {
     }
 }
 
+/**
+ * ZIP 流式处理器（async_zip）
+ *
+ * 与同步 `ZipHandler` 并存，供 `processor.rs` 在导入阶段优先使用。
+ * 文本文件直接流式入 CAS，无需创建临时目录。
+ */
+pub struct StreamingZipHandler;
+
+#[async_trait]
+impl crate::archive_handler::StreamingArchiveHandler for StreamingZipHandler {
+    async fn list_entries(&self, source: &Path) -> Result<Vec<crate::archive_handler::ArchiveEntryInfo>> {
+        let reader = async_zip::tokio::read::fs::ZipFileReader::new(source).await.map_err(|e| {
+            AppError::archive_error(format!("Failed to create ZIP reader: {}", e), Some(source.to_path_buf()))
+        })?;
+
+        let mut entries = Vec::new();
+        for entry in reader.file().entries() {
+            let path = PathBuf::from(entry.filename().as_str().unwrap_or(""));
+            entries.push(crate::archive_handler::ArchiveEntryInfo {
+                path,
+                size: entry.uncompressed_size(),
+                is_directory: entry.dir().unwrap_or(false),
+                is_symlink: false,
+            });
+        }
+        Ok(entries)
+    }
+
+    async fn stream_entry_to_cas(
+        &self,
+        source: &Path,
+        entry_path: &str,
+        cas: &la_storage::ContentAddressableStorage,
+    ) -> Result<String> {
+        let reader = async_zip::tokio::read::fs::ZipFileReader::new(source).await.map_err(|e| {
+            AppError::archive_error(format!("Failed to create ZIP reader: {}", e), Some(source.to_path_buf()))
+        })?;
+
+        let index = reader.file().entries().iter()
+            .position(|e| e.filename().as_str().unwrap_or("") == entry_path)
+            .ok_or_else(|| AppError::archive_error(
+                format!("ZIP entry not found: {}", entry_path),
+                Some(source.to_path_buf()),
+            ))?;
+
+        let entry_reader = reader.reader_with_entry(index).await.map_err(|e| {
+            AppError::archive_error(format!("Failed to open ZIP entry reader: {}", e), Some(source.to_path_buf()))
+        })?;
+
+        use tokio_util::compat::FuturesAsyncReadCompatExt;
+        cas.store_stream(entry_reader.compat()).await.map_err(|e| {
+            AppError::archive_error(format!("CAS store stream failed: {}", e), Some(source.to_path_buf()))
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

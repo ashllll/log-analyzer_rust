@@ -36,7 +36,7 @@ parking_lot = { version = "0.12", features = ["arc_lock"] }
 moka = { version = "0.12", features = ["sync"] }
 
 # 异步工具
-tokio-util = { version = "0.7", features = ["rt"] }
+tokio-util = { version = "0.7", features = ["rt", "compat", "io"] }
 
 # 日志
 tracing.workspace = true

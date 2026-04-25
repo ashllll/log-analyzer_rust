@@ -191,6 +191,58 @@ impl ExtractionError {
     }
 }
 
+/**
+ * 压缩包条目信息（流式处理用）
+ */
+#[derive(Debug, Clone)]
+pub struct ArchiveEntryInfo {
+    /// 条目在压缩包内的路径
+    pub path: PathBuf,
+    /// 解压后大小（字节）
+    pub size: u64,
+    /// 是否为目录
+    pub is_directory: bool,
+    /// 是否为符号链接
+    pub is_symlink: bool,
+}
+
+/**
+ * 流式压缩包处理器 trait
+ *
+ * 与 `ArchiveHandler` 的区别：
+ * - `ArchiveHandler::extract_with_limits` 必须解压到目录（全量物化）
+ * - `StreamingArchiveHandler` 支持遍历条目并直接流式写入 CAS（零临时目录）
+ *
+ * 设计为 `stream_entry_to_cas` 而非返回 `AsyncRead`，是为了避免 async_zip
+ * 的 `ZipEntryReader` 对 `ZipFileReader` 的自引用生命周期问题——所有读取
+ * 和写入在同一个 async 函数作用域内完成，编译器可正确推断生命周期。
+ *
+ * 此 trait 供 `processor.rs` 在导入时直接使用：文本文件从压缩包流式直写入 CAS，
+ * 跳过临时目录创建，减少 50% 磁盘写入。
+ */
+#[async_trait]
+pub trait StreamingArchiveHandler {
+    /**
+     * 预扫描所有条目（用于安全检查，不解压数据）
+     */
+    async fn list_entries(&self, source: &Path) -> Result<Vec<ArchiveEntryInfo>>;
+
+    /**
+     * 将指定条目直接流式存入 CAS
+     *
+     * 内部打开条目 reader → 调用 `cas.store_stream()`，handler 自行管理 reader 生命周期。
+     *
+     * # 返回
+     * 内容的 SHA-256 hash
+     */
+    async fn stream_entry_to_cas(
+        &self,
+        source: &Path,
+        entry_path: &str,
+        cas: &la_storage::ContentAddressableStorage,
+    ) -> Result<String>;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
