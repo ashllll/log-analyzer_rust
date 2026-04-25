@@ -5,7 +5,6 @@ pub mod coordinator;
 pub mod gc;
 pub mod integrity;
 pub mod metadata_store;
-pub mod metrics_store;
 
 // 重新导出核心类型
 pub use cache_monitor::{CacheHealthMetrics, CacheMonitor, CacheMonitorConfig};
@@ -17,7 +16,3 @@ pub use integrity::{
     ValidationReport,
 };
 pub use metadata_store::{ArchiveMetadata, FileMetadata, IndexState, IndexedFile, MetadataStore};
-pub use metrics_store::{
-    MetricsSnapshot, MetricsSnapshotScheduler, MetricsStore, MetricsStoreStats, SearchEvent,
-    TimeRange,
-};

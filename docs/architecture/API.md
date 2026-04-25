@@ -257,31 +257,6 @@ interface CacheConfig {
 
 ---
 
-## 性能监控
-
-| 命令 | 用途 |
-|------|------|
-| `get_performance_metrics` | 获取当前实时性能指标快照 |
-| `get_historical_metrics` | 查询指定时间范围的历史指标 |
-| `get_aggregated_metrics` | 获取指定周期的聚合统计（avg/p95/p99） |
-| `get_search_events` | 获取搜索事件流（查询内容、耗时、结果数） |
-| `get_metrics_stats` | 获取指标统计摘要 |
-| `cleanup_metrics_data` | 清理超过保留期的历史指标数据 |
-
-**`PerformanceMetrics` 结构：**
-
-```typescript
-interface PerformanceMetrics {
-  cache_hit_rate: number;        // L1 缓存命中率（0.0~1.0）
-  avg_search_time_ms: number;    // 平均搜索耗时（毫秒）
-  total_searches: number;        // 累计搜索次数
-  active_workspaces: number;     // 当前活跃工作区数
-  disk_usage_bytes: number;      // CAS 磁盘占用（字节）
-}
-```
-
----
-
 ## 状态同步
 
 | 命令 | 用途 |

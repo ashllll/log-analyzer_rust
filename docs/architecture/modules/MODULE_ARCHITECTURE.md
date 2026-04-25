@@ -12,13 +12,13 @@
                         │ Tauri invoke / emit / listen
 ┌───────────────────────▼─────────────────────────────────┐
 │                  Tauri 命令层 (commands/)                │
-│   search / workspace / import / watch / performance      │
+│   search / workspace / import / watch                    │
 └───┬───────────────────┬─────────────────────────────────┘
     │                   │
 ┌───▼──────────┐  ┌─────▼──────────────────────────────────┐
 │ 业务服务层    │  │          基础设施层                      │
 │ services/    │  │  storage / search_engine / archive /    │
-│ monitoring/  │  │  task_manager / state_sync              │
+│              │  │  task_manager / state_sync              │
 └───┬──────────┘  └─────┬──────────────────────────────────┘
     │                   │
 ┌───▼───────────────────▼─────────────────────────────────┐
@@ -889,18 +889,7 @@ pub async fn stop_watch(state, workspace_id) -> CommandResult<()>;
 
 管理应用全局配置的持久化，涵盖缓存、搜索引擎、文件过滤和任务管理器配置。配置存储于 `{config_dir}/config.json`。
 
-#### 5.7 性能监控命令 (`performance.rs`)
-
-```rust
-#[tauri::command]
-pub async fn get_performance_metrics(state) -> CommandResult<PerformanceMetrics>;
-#[tauri::command]
-pub async fn get_historical_metrics(state, start, end) -> CommandResult<Vec<MetricSnapshot>>;
-#[tauri::command]
-pub async fn get_aggregated_metrics(state, period) -> CommandResult<AggregatedMetrics>;
-```
-
-#### 5.8 虚拟文件树命令 (`virtual_tree.rs`)
+#### 5.7 虚拟文件树命令 (`virtual_tree.rs`)
 
 ```rust
 #[tauri::command]
@@ -1173,48 +1162,7 @@ pub struct TaskHandle {
 
 ---
 
-### 10. monitoring/ — 性能指标采集
-
-**路径：** `src-tauri/src/monitoring/`
-
-**职责：** 采集搜索延迟、导入吞吐量、缓存命中率等性能指标，持久化到 SQLite，支持历史查询和聚合统计。
-
-```rust
-pub struct MetricsStore {
-    db: SqlitePool,
-}
-
-impl MetricsStore {
-    pub async fn record_search_event(&self, event: SearchEvent) -> Result<()>;
-    pub async fn get_search_events(
-        &self,
-        start: i64,
-        end: i64,
-    ) -> Result<Vec<SearchEvent>>;
-    pub async fn get_aggregated_metrics(&self, period: Period) -> Result<AggregatedMetrics>;
-    pub async fn cleanup_old_metrics(&self, before: i64) -> Result<()>;
-}
-
-pub struct SearchEvent {
-    pub query: String,
-    pub workspace_id: String,
-    pub result_count: usize,
-    pub duration_ms: u64,
-    pub cache_hit: bool,
-    pub created_at: i64,
-}
-
-pub struct AggregatedMetrics {
-    pub avg_query_time_ms: f64,
-    pub p95_query_time_ms: f64,
-    pub total_searches: u64,
-    pub cache_hit_rate: f64,
-}
-```
-
----
-
-### 11. state_sync/ — 前后端状态同步
+### 10. state_sync/ — 前后端状态同步
 
 **路径：** `src-tauri/src/state_sync/`
 
@@ -1281,8 +1229,6 @@ pub struct AppState {
     // 磁盘结果分页存储（跨搜索共享）
     pub disk_result_store: Arc<DiskResultStore>,
 
-    // 性能指标存储
-    pub metrics_store: Arc<MetricsStore>,
 }
 ```
 

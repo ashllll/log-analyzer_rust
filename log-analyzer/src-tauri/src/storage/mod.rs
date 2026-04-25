@@ -24,9 +24,8 @@
 pub use la_storage::{
     verify_after_import, verify_file_integrity, verify_workspace_integrity, CacheHealthMetrics,
     CacheMonitor, CacheMonitorConfig, ContentAddressableStorage, GCConfig, GCManager, GCStats,
-    GarbageCollector, IndexState, IndexedFile, InvalidFileInfo, MetadataStore, MetricsSnapshot,
-    MetricsSnapshotScheduler, MetricsStore, MetricsStoreStats, SearchEvent, StorageCoordinator,
-    TimeRange, ValidationReport,
+    GarbageCollector, IndexState, IndexedFile, InvalidFileInfo, MetadataStore, StorageCoordinator,
+    ValidationReport,
 };
 
 // FileMetadata 和 ArchiveMetadata 的定义来自 la-core::storage_types，
