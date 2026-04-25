@@ -33,6 +33,7 @@ use tokio::fs;
 use tokio::io::{AsyncReadExt, BufReader};
 use tracing::{debug, error, info, warn};
 use walkdir::WalkDir;
+use memmap2::Mmap;
 
 /// 获取指定路径的磁盘可用空间
 ///
@@ -935,6 +936,167 @@ impl ContentAddressableStorage {
                 Some(object_path),
             )
         })
+    }
+
+    /// Store content from an async stream directly into CAS
+    ///
+    /// Reads incrementally from the stream, computes SHA-256 on the fly,
+    /// and writes to object storage in a single pass. This eliminates the
+    /// double-read overhead of `store_file_streaming` (which reads once to hash,
+    /// then reads again to copy).
+    ///
+    /// # Arguments
+    ///
+    /// * `reader` - AsyncRead stream (e.g., from async_zip entry reader)
+    ///
+    /// # Returns
+    ///
+    /// SHA-256 hash of the stored content
+    pub async fn store_stream<R>(&self, mut reader: R) -> Result<String>
+    where
+        R: tokio::io::AsyncRead + Unpin,
+    {
+        use tokio::io::AsyncWriteExt;
+
+        let tmp_path = self.workspace_dir.join("tmp").join(format!("stream_{}", uuid::Uuid::new_v4()));
+        if let Some(parent) = tmp_path.parent() {
+            fs::create_dir_all(parent).await.map_err(|e| {
+                AppError::io_error(
+                    format!("Failed to create temp directory: {}", e),
+                    Some(parent.to_path_buf()),
+                )
+            })?;
+        }
+
+        let mut tmp_file = tokio::fs::File::create(&tmp_path).await.map_err(|e| {
+            AppError::io_error(
+                format!("Failed to create temp file: {}", e),
+                Some(tmp_path.clone()),
+            )
+        })?;
+
+        let mut hasher = Sha256::new();
+        let mut buf = vec![0u8; 1024 * 1024]; // 1MB buffer
+
+        loop {
+            let n = reader.read(&mut buf).await.map_err(|e| {
+                AppError::io_error(format!("Stream read failed: {}", e), None)
+            })?;
+            if n == 0 {
+                break;
+            }
+            hasher.update(&buf[..n]);
+            tmp_file.write_all(&buf[..n]).await.map_err(|e| {
+                AppError::io_error(
+                    format!("Temp file write failed: {}", e),
+                    Some(tmp_path.clone()),
+                )
+            })?;
+        }
+
+        tmp_file.flush().await.map_err(|e| {
+            AppError::io_error(
+                format!("Temp file flush failed: {}", e),
+                Some(tmp_path.clone()),
+            )
+        })?;
+
+        let hash = format!("{:x}", hasher.finalize());
+        let object_path = self.get_object_path(&hash);
+
+        if let Some(parent) = object_path.parent() {
+            fs::create_dir_all(parent).await.map_err(|e| {
+                AppError::io_error(
+                    format!("Failed to create object directory: {}", e),
+                    Some(parent.to_path_buf()),
+                )
+            })?;
+        }
+
+        match fs::rename(&tmp_path, &object_path).await {
+            Ok(_) => {
+                self.existence_cache.insert(hash.clone(), ());
+                Ok(hash)
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                fs::remove_file(&tmp_path).await.ok();
+                self.existence_cache.insert(hash.clone(), ());
+                Ok(hash)
+            }
+            Err(e) => {
+                fs::remove_file(&tmp_path).await.ok();
+                Err(AppError::io_error(
+                    format!("CAS rename failed: {}", e),
+                    Some(object_path),
+                ))
+            }
+        }
+    }
+
+    /// Read content via memory-mapped I/O (sync version)
+    ///
+    /// Uses mmap for large files to avoid loading entire content into Vec<u8>.
+    /// The returned Mmap is backed by the OS page cache and is zero-copy.
+    /// Suitable for use in spawn_blocking contexts.
+    ///
+    /// # Arguments
+    ///
+    /// * `hash` - SHA-256 hash of the content
+    ///
+    /// # Returns
+    ///
+    /// Mmap handle on success. The caller must keep the Mmap alive while reading.
+    pub fn read_content_mmap_sync(&self, hash: &str) -> Result<Mmap> {
+        if !is_valid_content_hash(hash) {
+            return Err(AppError::validation_error(format!(
+                "Invalid content hash format: {}",
+                hash
+            )));
+        }
+
+        let object_path = self.get_object_path(hash);
+
+        if !object_path.exists() {
+            return Err(AppError::not_found(format!(
+                "Object not found: {} at path: {}",
+                hash,
+                object_path.display()
+            )));
+        }
+
+        let file = std::fs::File::open(&object_path).map_err(|e| {
+            AppError::io_error(
+                format!("Failed to open object {} for mmap: {}", hash, e),
+                Some(object_path.clone()),
+            )
+        })?;
+
+        let mmap = unsafe { Mmap::map(&file) }.map_err(|e| {
+            AppError::io_error(
+                format!("Failed to mmap object {}: {}", hash, e),
+                Some(object_path),
+            )
+        })?;
+
+        Ok(mmap)
+    }
+
+    /// Get the size of a stored object in bytes (sync version)
+    ///
+    /// # Arguments
+    ///
+    /// * `hash` - SHA-256 hash of the content
+    ///
+    /// # Returns
+    ///
+    /// Object size in bytes, or 0 if the object does not exist or hash is invalid.
+    pub fn object_size_sync(&self, hash: &str) -> u64 {
+        if !is_valid_content_hash(hash) {
+            return 0;
+        }
+        std::fs::metadata(self.get_object_path(hash))
+            .map(|m| m.len())
+            .unwrap_or(0)
     }
 
     /// Check if content exists in storage (async version with cache)

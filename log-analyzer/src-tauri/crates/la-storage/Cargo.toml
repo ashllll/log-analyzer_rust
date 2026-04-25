@@ -39,6 +39,7 @@ tracing.workspace = true
 scopeguard = "1.2"
 tempfile.workspace = true
 libc = "0.2"
+memmap2 = "0.9"
 rustix = { version = "0.38", features = ["fs", "std"] }
 
 # UUID (cas.rs 中 store_file_zero_copy 使用)

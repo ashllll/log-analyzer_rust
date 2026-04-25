@@ -18,6 +18,7 @@ use std::{
 use tauri::{command, AppHandle, Emitter, Manager, State};
 use tracing::{debug, error, info, trace, warn};
 
+use rayon::prelude::*;
 use crate::commands::import::ensure_workspace_runtime_state;
 use crate::models::AppState;
 use la_core::error::{AppError, CommandError};
@@ -754,7 +755,7 @@ pub async fn search_logs(
         }
     };
 
-    let (cas, metadata_store, _) =
+    let (cas, metadata_store, search_engine_manager) =
         ensure_workspace_runtime_state(&app_handle, &state, &workspace_id, &workspace_dir)
             .await
             .map_err(|e| {
@@ -764,6 +765,102 @@ pub async fn search_logs(
                 )
                 .with_help("Try reloading the workspace before searching again")
             })?;
+
+    // ========== Tantivy 优先路径 ==========
+    // 如果索引非空，优先使用 Tantivy 查询（亚秒级 vs CAS 扫描的秒级）
+    let tantivy_has_docs = match search_engine_manager.get_time_range() {
+        Ok((_, _, total_count)) => total_count > 0,
+        Err(_) => false,
+    };
+
+    if tantivy_has_docs {
+        let tantivy_query = raw_terms.join(" OR ");
+        let tantivy_start = std::time::Instant::now();
+
+        match search_engine_manager
+            .search_with_timeout(
+                &tantivy_query,
+                Some(max_results),
+                Some(std::time::Duration::from_millis(500)),
+                Some(cancellation_token.clone()),
+            )
+            .await
+        {
+            Ok(tantivy_results) => {
+                info!(
+                    query = %tantivy_query,
+                    hits = tantivy_results.entries.len(),
+                    total = tantivy_results.total_count,
+                    ms = tantivy_start.elapsed().as_millis(),
+                    "Tantivy search succeeded"
+                );
+
+                // 写入 DiskResultStore（与 CAS 路径相同的契约）
+                if !disk_result_store.has_session(&search_id) {
+                    if let Err(e) = disk_result_store.create_session(&search_id) {
+                        warn!(error = %e, "Tantivy: 无法创建磁盘搜索会话");
+                    }
+                }
+                for chunk in tantivy_results.entries.chunks(2000) {
+                    if let Err(e) = disk_result_store.append_entries(&search_id, chunk) {
+                        warn!(error = %e, "Tantivy: 磁盘写入失败");
+                        break;
+                    }
+                }
+                if let Err(e) = disk_result_store.complete_session(&search_id) {
+                    warn!(error = %e, "Tantivy: 完成磁盘会话失败");
+                }
+
+                // 关键词统计（保持与 CAS 路径一致）
+                let keyword_stats: Vec<_> = raw_terms
+                    .iter()
+                    .map(|term| {
+                        let count = tantivy_results
+                            .entries
+                            .iter()
+                            .filter(|e| e.content.contains(term))
+                            .count();
+                        crate::models::search_statistics::KeywordStatistics::new(
+                            term.clone(),
+                            count,
+                            tantivy_results.entries.len(),
+                        )
+                    })
+                    .collect();
+
+                let summary = SearchResultSummary::new(
+                    tantivy_results.entries.len(),
+                    keyword_stats,
+                    tantivy_start.elapsed().as_millis() as u64,
+                    false,
+                );
+
+                let _ = app_handle.emit("search-start", ());
+                let _ = app_handle.emit("search-progress", tantivy_results.entries.len());
+                let _ = app_handle.emit("search-summary", &summary);
+                let _ = app_handle.emit("search-complete", tantivy_results.entries.len());
+
+                // 缓存结果（限制大小避免内存爆炸）
+                if tantivy_results.entries.len() < 100_000 {
+                    cache_manager.lock().insert_sync(cache_key, tantivy_results.entries);
+                }
+
+                // 清理取消令牌
+                {
+                    let mut tokens = cancellation_tokens.lock();
+                    tokens.remove(&search_id);
+                }
+
+                return Ok(search_id);
+            }
+            Err(crate::search_engine::SearchError::Timeout(_)) => {
+                warn!("Tantivy search timed out, falling back to CAS scan");
+            }
+            Err(e) => {
+                warn!(error = %e, "Tantivy search failed, falling back to CAS scan");
+            }
+        }
+    }
 
     // Get all files from MetadataStore BEFORE spawn_blocking
     let files = match metadata_store.get_all_files().await {
@@ -902,7 +999,7 @@ pub async fn search_logs(
 
             // 并行处理当前批次 (Requirements 2.3: 使用 CAS 读取内容)
             let batch: Vec<_> = file_batch
-                .iter()
+                .par_iter()
                 .enumerate()
                 .map(|(idx, file_metadata)| {
                     // 如果已经取消，尽早退出单个文件的搜索（虽然是同步的，但检查可以减少无效工作）
@@ -1359,68 +1456,138 @@ fn search_single_file_with_details(
             return results;
         }
 
-        // Read content from CAS using hash (sync version for spawn_blocking context)
-        let content = match cas.read_content_sync(sha256_hash) {
-            Ok(bytes) => bytes,
-            Err(e) => {
-                warn!(
-                    hash = %sha256_hash,
-                    virtual_path = %virtual_path,
-                    error = %e,
-                    "Failed to read content from CAS, skipping file"
-                );
-                // 记录到搜索结果中作为不可读文件标记，确保用户知晓有文件被跳过
-                results.push(LogEntry {
-                    id: global_offset,
-                    timestamp: "0".into(),
-                    level: "ERROR".into(),
-                    file: virtual_path.into(),
-                    real_path: file_identifier.into(),
-                    line: 0,
-                    content: format!("[搜索系统: 无法读取文件内容 - {e}]").into(),
-                    tags: vec![],
-                    match_details: None,
-                    matched_keywords: None,
-                });
-                return results;
+        let object_size = cas.object_size_sync(sha256_hash);
+
+        if object_size > 1024 * 1024 {
+            // 大文件（>1MB）：mmap 路径，避免 Vec<u8> 全量加载
+            match cas.read_content_mmap_sync(sha256_hash) {
+                Ok(mmap) => {
+                    // 优先零拷贝 UTF-8 解码（日志文件 95%+ 是纯 UTF-8）
+                    match std::str::from_utf8(&mmap) {
+                        Ok(text) => {
+                            results = search_lines_with_details(
+                                text.lines().enumerate().map(|(index, line)| (index, Cow::Borrowed(line))),
+                                virtual_path,
+                                file_identifier,
+                                executor,
+                                plan,
+                                filters,
+                                global_offset,
+                            );
+                        }
+                        Err(_) => {
+                            // 非 UTF-8，回退到容错解码（需复制到堆）
+                            let (content_str, encoding_info) = decode_log_content(&mmap);
+                            if encoding_info.had_errors {
+                                debug!(
+                                    hash = %sha256_hash,
+                                    virtual_path = %virtual_path,
+                                    encoding = %encoding_info.encoding,
+                                    fallback_used = encoding_info.fallback_used,
+                                    "Large file decoded with encoding fallback via mmap"
+                                );
+                            }
+                            results = search_lines_with_details(
+                                content_str.lines().enumerate().map(|(index, line)| (index, Cow::Borrowed(line))),
+                                virtual_path,
+                                file_identifier,
+                                executor,
+                                plan,
+                                filters,
+                                global_offset,
+                            );
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!(
+                        hash = %sha256_hash,
+                        virtual_path = %virtual_path,
+                        error = %e,
+                        "Failed to mmap content from CAS, skipping file"
+                    );
+                    results.push(LogEntry {
+                        id: global_offset,
+                        timestamp: "0".into(),
+                        level: "ERROR".into(),
+                        file: virtual_path.into(),
+                        real_path: file_identifier.into(),
+                        line: 0,
+                        content: format!("[搜索系统: 无法mmap文件内容 - {e}]").into(),
+                        tags: vec![],
+                        match_details: None,
+                        matched_keywords: None,
+                    });
+                }
             }
-        };
 
-        // Convert bytes to string with encoding fallback (三层容错策略)
-        let (content_str, encoding_info) = decode_log_content(&content);
-        // Explicitly drop content bytes as early as possible to free memory and avoid holding potentially large buffers
-        drop(content);
-
-        if encoding_info.had_errors {
-            debug!(
+            trace!(
                 hash = %sha256_hash,
                 virtual_path = %virtual_path,
-                encoding = %encoding_info.encoding,
-                fallback_used = encoding_info.fallback_used,
-                "File content decoded with encoding fallback in structured search"
+                size = object_size,
+                matches = results.len(),
+                "Searched large file via mmap"
+            );
+        } else {
+            // 小文件（<=1MB）：保持原有路径，避免 mmap 固定开销
+            let content = match cas.read_content_sync(sha256_hash) {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    warn!(
+                        hash = %sha256_hash,
+                        virtual_path = %virtual_path,
+                        error = %e,
+                        "Failed to read content from CAS, skipping file"
+                    );
+                    results.push(LogEntry {
+                        id: global_offset,
+                        timestamp: "0".into(),
+                        level: "ERROR".into(),
+                        file: virtual_path.into(),
+                        real_path: file_identifier.into(),
+                        line: 0,
+                        content: format!("[搜索系统: 无法读取文件内容 - {e}]").into(),
+                        tags: vec![],
+                        match_details: None,
+                        matched_keywords: None,
+                    });
+                    return results;
+                }
+            };
+
+            let (content_str, encoding_info) = decode_log_content(&content);
+            drop(content);
+
+            if encoding_info.had_errors {
+                debug!(
+                    hash = %sha256_hash,
+                    virtual_path = %virtual_path,
+                    encoding = %encoding_info.encoding,
+                    fallback_used = encoding_info.fallback_used,
+                    "File content decoded with encoding fallback in structured search"
+                );
+            }
+
+            results = search_lines_with_details(
+                content_str
+                    .lines()
+                    .enumerate()
+                    .map(|(index, line)| (index, Cow::Borrowed(line))),
+                virtual_path,
+                file_identifier,
+                executor,
+                plan,
+                filters,
+                global_offset,
+            );
+
+            trace!(
+                hash = %sha256_hash,
+                virtual_path = %virtual_path,
+                matches = results.len(),
+                "Searched file via CAS"
             );
         }
-
-        results = search_lines_with_details(
-            content_str
-                .lines()
-                .enumerate()
-                .map(|(index, line)| (index, Cow::Borrowed(line))),
-            virtual_path,
-            file_identifier,
-            executor,
-            plan,
-            filters,
-            global_offset,
-        );
-
-        // 高频循环中使用 trace 级别，避免 DEBUG 日志性能开销
-        trace!(
-            hash = %sha256_hash,
-            virtual_path = %virtual_path,
-            matches = results.len(),
-            "Searched file via CAS"
-        );
     } else {
         // Legacy path-based access
         use std::fs::File;
