@@ -1498,38 +1498,29 @@ fn search_single_file_with_details(
                             );
                         }
                     }
+
+                    trace!(
+                        hash = %sha256_hash,
+                        virtual_path = %virtual_path,
+                        size = object_size,
+                        matches = results.len(),
+                        "Searched large file via mmap"
+                    );
+                    return results;
                 }
                 Err(e) => {
                     warn!(
                         hash = %sha256_hash,
                         virtual_path = %virtual_path,
                         error = %e,
-                        "Failed to mmap content from CAS, skipping file"
+                        "Failed to mmap content from CAS, falling back to standard read"
                     );
-                    results.push(LogEntry {
-                        id: global_offset,
-                        timestamp: "0".into(),
-                        level: "ERROR".into(),
-                        file: virtual_path.into(),
-                        real_path: file_identifier.into(),
-                        line: 0,
-                        content: format!("[搜索系统: 无法mmap文件内容 - {e}]").into(),
-                        tags: vec![],
-                        match_details: None,
-                        matched_keywords: None,
-                    });
+                    // 不返回错误，继续执行下方的标准读取路径作为回退
                 }
             }
+        }
 
-            trace!(
-                hash = %sha256_hash,
-                virtual_path = %virtual_path,
-                size = object_size,
-                matches = results.len(),
-                "Searched large file via mmap"
-            );
-        } else {
-            // 小文件（<=1MB）：保持原有路径，避免 mmap 固定开销
+        // 小文件（<=1MB）或 mmap 失败回退：标准读取路径，避免 mmap 固定开销
             let content = match cas.read_content_sync(sha256_hash) {
                 Ok(bytes) => bytes,
                 Err(e) => {
@@ -1587,7 +1578,6 @@ fn search_single_file_with_details(
                 matches = results.len(),
                 "Searched file via CAS"
             );
-        }
     } else {
         // Legacy path-based access
         use std::fs::File;
