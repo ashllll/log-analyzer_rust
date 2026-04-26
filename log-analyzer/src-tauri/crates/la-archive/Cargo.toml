@@ -12,7 +12,7 @@ la-storage = { path = "../la-storage" }
 zip = "2.2"
 tar = "0.4.45"
 flate2 = "1.0"
-async_zip = { version = "0.0.18", features = ["full"] }
+async_zip = { version = "=0.0.18", features = ["full"] }
 tokio-tar = "0.3"
 sevenz-rust = "0.5"
 unrar = { version = "0.5", optional = true }
