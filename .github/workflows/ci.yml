@@ -91,6 +91,22 @@ jobs:
         cd log-analyzer/src-tauri
         cargo test --all-features --lib --bins --verbose -- --test-threads=4
 
+  # IPC 一致性检查
+  ipc-consistency-check:
+    name: IPC Consistency Check
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+
+    - name: Run IPC consistency check
+      run: bash scripts/check_ipc_consistency.sh
+
   # 前端测试
   test-frontend:
     name: Frontend Tests
