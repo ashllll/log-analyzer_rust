@@ -281,7 +281,38 @@ Note: Limit < 100_000 entries is intentional to control memory.
 
 ---
 
-## 8. Changed Files by Theme
+## 8. Implicit Issue Fixes (Post-Release)
+
+以下三项隐式问题在 v1.2.60 发布后通过独立 commit 修复：
+
+### I1 - Tauri v2 Capabilities 配置
+**问题**: `tauri.conf.json` 未引用 capabilities 文件，`main-window-core.json` 缺少自定义命令权限。生产构建中可能导致 IPC 调用返回 `Forbidden`。  
+**修复**: 新建 `capabilities/default.json`，声明 `core:default` + 核心插件权限；更新 `tauri.conf.json` 的 `app.security.capabilities` 字段引用所有权限文件。  
+**验证**: `cargo check --all-features` 通过；32 个前端命令全部纳入权限控制。  
+**文件**: `capabilities/default.json`, `tauri.conf.json`
+
+### I2 - async_zip 预发布版本锁定
+**问题**: `async_zip = { version = "0.0.18", ... }` 使用语义化兼容范围，补丁升级可能引入破坏性 API 变更。  
+**修复**: 主 crate 与 `la-archive` crate 的 `Cargo.toml` 均改为精确锁定 `version = "=0.0.18"`。  
+**验证**: `cargo update -p async_zip` 后版本保持 `0.0.18`，`cargo check` 通过。  
+**文件**: `Cargo.toml`, `crates/la-archive/Cargo.toml`
+
+### I3 - CI IPC 一致性自动检查
+**问题**: 前后端 IPC 接口缺乏自动化校验，参数命名不一致或命令缺失只能在运行时暴露。  
+**修复**:  
+- 创建 `scripts/check_ipc_consistency.cjs`：静态扫描 66 个后端 `#[command]` 函数与 32 个前端 `invoke()` 调用
+- 创建 `scripts/check_ipc_consistency.sh`：CI 入口包装脚本
+- 在 `.github/workflows/ci.yml` 新增 `ipc-consistency-check` job  
+**验证**: 脚本运行结果 `PASSED`；所有前端命令在后端存在；无参数命名不匹配。  
+**文件**: `scripts/check_ipc_consistency.cjs`, `scripts/check_ipc_consistency.sh`, `.github/workflows/ci.yml`
+
+### 深度诊断报告
+完整根因分析、影响范围评估及修复方案设计见：  
+`docs/TAURI_IMPLICIT_ISSUES_DEEP_DIVE.md`
+
+---
+
+## 9. Changed Files by Theme
 
 Search performance (c5ba579, e4839ba): search.rs, regex_engine.rs, query_executor.rs, cas.rs, la-storage/Cargo.toml
 
@@ -297,7 +328,7 @@ Docs: CHANGELOG.md, ARCHIVE_SEARCH_PIPELINE_ANALYSIS.md, CAS_ARCHITECTURE.md, CR
 
 ---
 
-## 9. Commit History
+## 10. Commit History
 
 `	ext
 ddc7ee8 chore(manifest): Windows manifest comment translation
