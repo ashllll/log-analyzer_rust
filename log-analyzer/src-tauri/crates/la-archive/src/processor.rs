@@ -1265,11 +1265,11 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
                             Ok(hash) => {
                                 let mime_type = entry.path.extension()
                                     .and_then(|ext| ext.to_str())
-                                    .and_then(|ext| match ext.to_lowercase().as_str() {
-                                        "log" | "txt" | "md" => Some("text/plain".to_string()),
-                                        "json" => Some("application/json".to_string()),
-                                        "xml" => Some("application/xml".to_string()),
-                                        _ => Some("application/octet-stream".to_string()),
+                                    .map(|ext| match ext.to_lowercase().as_str() {
+                                        "log" | "txt" | "md" => "text/plain".to_string(),
+                                        "json" => "application/json".to_string(),
+                                        "xml" => "application/xml".to_string(),
+                                        _ => "application/octet-stream".to_string(),
                                     });
 
                                 let file_metadata = FileMetadata {

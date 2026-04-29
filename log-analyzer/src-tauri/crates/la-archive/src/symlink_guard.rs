@@ -1,3 +1,13 @@
+//! 符号链接安全检查模块
+//!
+//! ## 安全模型
+//!
+//! 本模块提供预检查 (best-effort): 在解压操作前验证输出路径不含符号链接组件。
+//! **最终安全保证** 由各 handler (zip_handler, tar_handler) 在文件实际创建后通过
+//! `std::fs::canonicalize` 进行路径归属验证, 这是一项防御性深度防御 (TOCTOU 防护).
+//!
+//! 预检查无法消除检查与使用之间的竞态窗口, 故不单独依赖本模块保证安全。
+
 use la_core::error::{AppError, Result};
 use std::io::ErrorKind;
 use std::path::Path;

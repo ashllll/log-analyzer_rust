@@ -148,11 +148,24 @@ impl AppState {
         cache.get_cache_statistics()
     }
 
-    /// 清理工作区缓存
+    /// 清理工作区缓存（同步版本）
     pub fn invalidate_workspace_cache(&self, workspace_id: &str) -> Result<usize, String> {
         let cache = self.cache_manager.lock();
         cache
             .invalidate_workspace_cache(workspace_id)
+            .map_err(|e: CacheError| e.to_string())
+    }
+
+    /// 清理工作区缓存（异步版本，用于 Tauri command 等异步上下文）
+    pub async fn invalidate_workspace_cache_async(&self, workspace_id: &str) -> Result<usize, String> {
+        // 缩小锁作用域：克隆 CacheManager 后立即释放锁
+        let cache = {
+            let guard = self.cache_manager.lock();
+            guard.clone()
+        };
+        cache
+            .invalidate_workspace_cache_async(workspace_id)
+            .await
             .map_err(|e: CacheError| e.to_string())
     }
 

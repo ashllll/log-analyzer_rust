@@ -15,7 +15,7 @@ use crate::metadata_store::{FileMetadata, MetadataStore};
 use la_core::error::Result;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 /// Validation report for integrity verification
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -105,17 +105,9 @@ pub async fn verify_file_integrity(
 ) -> Result<bool> {
     let hash = &file_metadata.sha256_hash;
 
-    // Check if object exists
-    if !cas.exists(hash) {
-        debug!(
-            hash = %hash,
-            virtual_path = %file_metadata.virtual_path,
-            "CAS object does not exist"
-        );
-        return Ok(false);
-    }
-
-    // Verify integrity by recomputing hash
+    // 合并存在性检查与完整性验证为单次调用，消除 TOCTOU 竞态窗口。
+    // verify_integrity 内部会处理文件不存在的情况（返回 io_error），
+    // 我们将所有错误统一视为"完整性检查未通过"。
     match cas.verify_integrity(hash).await {
         Ok(is_valid) => {
             if !is_valid {
@@ -132,7 +124,7 @@ pub async fn verify_file_integrity(
                 hash = %hash,
                 virtual_path = %file_metadata.virtual_path,
                 error = %e,
-                "Failed to verify integrity"
+                "Failed to verify integrity (file may not exist)"
             );
             Ok(false)
         }

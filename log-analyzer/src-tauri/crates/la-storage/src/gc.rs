@@ -210,6 +210,7 @@ impl GarbageCollector {
         let start_index = cursor.unwrap_or(0) % shard_dirs.len();
         let mut files_processed = 0usize;
         let mut orphaned_hashes = Vec::new();
+        let mut candidate_hashes: Vec<String> = Vec::new();
         let min_age_secs = self.config.min_file_age.as_secs();
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -265,27 +266,37 @@ impl GarbageCollector {
                     continue;
                 }
 
-                match self.has_references(&hash).await {
-                    Ok(false) => {
-                        debug!(hash = %hash, "Found orphaned file");
-                        orphaned_hashes.push(hash);
-                    }
-                    Ok(true) => {
-                        debug!(hash = %hash, "File has references");
-                    }
-                    Err(e) => {
-                        warn!(
-                            hash = %hash,
-                            error = %e,
-                            "Failed to check references, skipping"
-                        );
-                    }
-                }
+                // Collect candidate hashes for batch checking (avoids N+1 queries)
+                candidate_hashes.push(hash);
             }
 
             // If we've looped through all shards, mark round as complete
             if i == shard_dirs.len() - 1 {
                 *cursor = None;
+            }
+        }
+
+        // Batch check references: query all candidate hashes at once (avoids N+1)
+        if !candidate_hashes.is_empty() {
+            match self.metadata_store.batch_check_hashes(&candidate_hashes).await {
+                Ok(referenced) => {
+                    let referenced_count = referenced.len();
+                    for hash in &candidate_hashes {
+                        if !referenced.contains(hash) {
+                            debug!(hash = %hash, "Found orphaned file (batch check)");
+                            orphaned_hashes.push(hash.clone());
+                        }
+                    }
+                    debug!(
+                        candidates = candidate_hashes.len(),
+                        referenced = referenced_count,
+                        orphans = orphaned_hashes.len(),
+                        "Batch reference check completed"
+                    );
+                }
+                Err(e) => {
+                    warn!(error = %e, "Batch reference check failed, falling back to conservative GC");
+                }
             }
         }
 
@@ -362,6 +373,7 @@ impl GarbageCollector {
         stats: &mut GCStats,
     ) -> Result<Vec<String>> {
         let mut orphaned_hashes = Vec::new();
+        let mut candidate_hashes: Vec<String> = Vec::new();
         let min_age_secs = self.config.min_file_age.as_secs();
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -413,24 +425,31 @@ impl GarbageCollector {
                             continue;
                         }
 
-                        // Check if file has references
-                        match self.has_references(&hash).await {
-                            Ok(false) => {
-                                debug!(hash = %hash, "Found orphaned file");
-                                orphaned_hashes.push(hash);
-                            }
-                            Ok(true) => {
-                                debug!(hash = %hash, "File has references");
-                            }
-                            Err(e) => {
-                                warn!(
-                                    hash = %hash,
-                                    error = %e,
-                                    "Failed to check references, skipping"
-                                );
-                            }
+                        // Collect candidate for batch reference check (avoids N+1 queries)
+                        candidate_hashes.push(hash);
+                    }
+                }
+            }
+        }
+
+        // Batch check all candidate hashes at once
+        if !candidate_hashes.is_empty() {
+            match self.metadata_store.batch_check_hashes(&candidate_hashes).await {
+                Ok(referenced) => {
+                    debug!(
+                        candidates = candidate_hashes.len(),
+                        referenced = referenced.len(),
+                        "Full GC batch reference check"
+                    );
+                    for hash in &candidate_hashes {
+                        if !referenced.contains(hash) {
+                            debug!(hash = %hash, "Found orphaned file (batch check)");
+                            orphaned_hashes.push(hash.clone());
                         }
                     }
+                }
+                Err(e) => {
+                    warn!(error = %e, "Batch reference check in full GC failed");
                 }
             }
         }

@@ -23,6 +23,14 @@ impl StorageCoordinator {
         }
     }
 
+    /// Store a file atomically (with soft guarantee)
+    ///
+    /// Attempts to write to CAS first, then commits metadata to the database.
+    /// If metadata commit fails, the CAS file is a candidate for cleanup but
+    /// the caller should rely on periodice GC (garbage collection) to reclaim
+    /// orphaned CAS objects. This is a **soft guarantee**, not true two-phase
+    /// commit: in the unlikely event that both metadata commit and CAS cleanup
+    /// fail, the orphaned object will be collected in the next GC pass.
     pub async fn store_file_atomic(
         &self,
         file_path: &std::path::Path,
@@ -30,7 +38,7 @@ impl StorageCoordinator {
     ) -> Result<(String, i64)> {
         let hash = self
             .cas
-            .store_file_streaming(file_path)
+            .store_file_zero_copy(file_path)
             .await
             .map_err(|e| {
                 AppError::io_error(
@@ -45,6 +53,8 @@ impl StorageCoordinator {
         match self.metadata_store.insert_file(&metadata).await {
             Ok(file_id) => Ok((hash, file_id)),
             Err(e) => {
+                // Best-effort cleanup of the just-created CAS object.
+                // If cleanup fails the orphan will be reclaimed by periodic GC.
                 self.cleanup_orphan_in_transaction(&hash).await;
                 Err(AppError::database_error(format!(
                     "Metadata commit failed: {}",
@@ -54,11 +64,33 @@ impl StorageCoordinator {
         }
     }
 
+    /// Cleanup orphaned CAS object with retry on transient failures
+    ///
+    /// Retries up to 3 times with exponential backoff (100ms, 200ms, 400ms)
+    /// for transient errors like file system contention.
     async fn cleanup_orphan_in_transaction(&self, hash: &str) {
-        match self.try_delete_orphan(hash).await {
-            Ok(true) => info!(hash = %hash, "Orphan deleted"),
-            Ok(false) => info!(hash = %hash, "File has references, keeping"),
-            Err(e) => warn!(hash = %hash, error = %e, "Cleanup failed"),
+        const MAX_RETRIES: u32 = 3;
+        let mut delay = std::time::Duration::from_millis(100);
+
+        for attempt in 1..=MAX_RETRIES {
+            match self.try_delete_orphan(hash).await {
+                Ok(true) => {
+                    info!(hash = %hash, attempt, "Orphan deleted");
+                    return;
+                }
+                Ok(false) => {
+                    info!(hash = %hash, "File has references, keeping");
+                    return;
+                }
+                Err(e) if attempt < MAX_RETRIES => {
+                    warn!(hash = %hash, error = %e, attempt, "Cleanup failed, retrying");
+                    tokio::time::sleep(delay).await;
+                    delay *= 2;
+                }
+                Err(e) => {
+                    warn!(hash = %hash, error = %e, attempt, "Cleanup failed after retries");
+                }
+            }
         }
     }
 

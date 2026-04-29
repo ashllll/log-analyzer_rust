@@ -1071,6 +1071,13 @@ impl ContentAddressableStorage {
             )
         })?;
 
+        // SAFETY:
+        // - The file was opened successfully and is guaranteed to exist (checked above)
+        // - Mmap::map uses the file descriptor which is valid for the lifetime of `file`
+        // - Caller must keep the returned Mmap alive while reading
+        // - Concurrent truncation by another process is possible but unlikely in our
+        //   single-writer CAS model; file size is checked via metadata before mmap
+        //   and the file is not modified after initial write
         let mmap = unsafe { Mmap::map(&file) }.map_err(|e| {
             AppError::io_error(
                 format!("Failed to mmap object {}: {}", hash, e),
@@ -1201,8 +1208,10 @@ impl ContentAddressableStorage {
     ///
     /// Returns error if file cannot be read
     pub async fn verify_integrity(&self, hash: &str) -> Result<bool> {
-        let content = self.read_content(hash).await?;
-        let computed_hash = Self::compute_hash(&content);
+        // 使用流式哈希计算避免大文件 (500MB+) 导致 OOM
+        // compute_hash_incremental 使用 1MB buffer 逐块读取，内存占用 O(1)
+        let object_path = self.get_object_path(hash);
+        let computed_hash = Self::compute_hash_incremental(&object_path).await?;
         Ok(computed_hash == hash)
     }
 
@@ -1273,7 +1282,7 @@ impl ContentAddressableStorage {
         }
 
         // 3. 空间充足，继续原有存储逻辑
-        self.store_file_streaming(file_path).await
+        self.store_file_zero_copy(file_path).await
     }
 
     /// Store file using zero-copy streaming (single-pass optimization)

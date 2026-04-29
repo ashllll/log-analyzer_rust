@@ -138,10 +138,9 @@ impl TarHandler {
             let out_path = target_dir.join(&safe_path);
             // 验证最终路径不逃逸提取目录（防御 TAR Slip 末级绕过）
             if !out_path.starts_with(target_dir) {
-                warn!(
-                    path = %safe_path.display(),
-                    "TAR Slip 尝试被拦截，跳过此条目"
-                );
+                let msg = format!("TAR Slip 尝试被拦截: {}", safe_path.display());
+                warn!("{}", msg);
+                summary.errors.push(msg);
                 continue;
             }
             let size = entry.header().size().unwrap_or(0);
@@ -150,10 +149,9 @@ impl TarHandler {
             if entry.header().entry_type().is_symlink()
                 || entry.header().entry_type() == tar::EntryType::Link
             {
-                warn!(
-                    file = %path_str,
-                    "TAR 条目包含符号链接或硬链接，已跳过（安全限制）"
-                );
+                let msg = format!("TAR 条目包含符号链接或硬链接，已跳过: {}", path_str);
+                warn!("{}", msg);
+                summary.errors.push(msg);
                 continue;
             }
 
@@ -200,8 +198,23 @@ impl TarHandler {
                 }
 
                 if let Err(e) = entry.unpack(&out_path) {
-                    warn!("Failed to unpack entry {:?}: {}", out_path, e);
+                    let msg = format!("Failed to unpack TAR entry {}: {}", out_path.display(), e);
+                    warn!("{}", msg);
+                    summary.errors.push(msg);
                 } else {
+                    // TOCTOU 防护: 创建后验证实际路径仍在目标目录内
+                    if let (Ok(real_path), Ok(real_target)) = (
+                        std::fs::canonicalize(&out_path),
+                        std::fs::canonicalize(target_dir),
+                    ) {
+                        if !real_path.starts_with(&real_target) {
+                            std::fs::remove_file(&out_path).ok();
+                            let msg = format!("符号链接逃逸已拦截 (TAR): {}", safe_path.display());
+                            warn!("{}", msg);
+                            summary.errors.push(msg);
+                            continue;
+                        }
+                    }
                     summary.add_file(safe_path, size);
                 }
             } else if entry.header().entry_type().is_dir() {

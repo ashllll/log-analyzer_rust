@@ -1,5 +1,4 @@
 //! 智能缓存管理器
-#![allow(dead_code)]
 //!
 //! 提供高级缓存管理功能，包括：
 //! - 工作区特定的缓存失效
@@ -347,12 +346,12 @@ impl CacheMetrics {
 
     /// 重置所有指标
     pub fn reset(&self) {
-        self.l1_hit_count.store(0, Ordering::Relaxed);
-        self.l1_miss_count.store(0, Ordering::Relaxed);
-        self.load_count.store(0, Ordering::Relaxed);
-        self.eviction_count.store(0, Ordering::Relaxed);
-        self.total_access_time.store(0, Ordering::Relaxed);
-        self.total_load_time.store(0, Ordering::Relaxed);
+        self.l1_hit_count.store(0, Ordering::Release);
+        self.l1_miss_count.store(0, Ordering::Release);
+        self.load_count.store(0, Ordering::Release);
+        self.eviction_count.store(0, Ordering::Release);
+        self.total_access_time.store(0, Ordering::Release);
+        self.total_load_time.store(0, Ordering::Release);
         *self.last_reset.write() = Instant::now();
     }
 
@@ -510,7 +509,7 @@ impl Clone for CacheManager {
             ttl_cache: self.ttl_cache.clone(),
             ttl_cleanup_interval: self.ttl_cleanup_interval,
             last_ttl_cleanup: RwLock::new(*self.last_ttl_cleanup.read()),
-            ttl_cleanup_count: AtomicU64::new(self.ttl_cleanup_count.load(Ordering::Relaxed)),
+            ttl_cleanup_count: AtomicU64::new(self.ttl_cleanup_count.load(Ordering::Acquire)),
         }
     }
 }
@@ -691,24 +690,10 @@ impl CacheManager {
             invalidated_count += 1;
         }
 
-        // 同时失效异步缓存
-        let async_cache = self.async_search_cache.clone();
-        let workspace_id_owned = workspace_id.to_string();
-        tauri::async_runtime::block_on(async {
-            let keys_to_invalidate_async: Vec<SearchCacheKey> = async_cache
-                .iter()
-                .filter_map(|(key, _)| {
-                    if key.1 == workspace_id_owned {
-                        Some((*key).clone())
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-            for key in keys_to_invalidate_async {
-                async_cache.invalidate(&key).await;
-            }
-        });
+        // 注意: 异步缓存 (async_search_cache) 的失效需要通过
+        // invalidate_workspace_cache_async() 方法在异步上下文中执行。
+        // 此同步方法仅为同步缓存 (search_cache + l2_cache) 提供失效能力，
+        // 避免在 tokio 运行时上下文中使用 block_on 导致的潜在 panic。
 
         tracing::info!(
             workspace_id = %workspace_id,
@@ -723,7 +708,41 @@ impl CacheManager {
     pub async fn invalidate_workspace_cache_async(&self, workspace_id: &str) -> Result<usize> {
         let mut invalidated_count = 0;
 
-        // 1. 失效 L1 异步缓存
+        // 1. 失效同步 L1 缓存 (search_cache)
+        let sync_keys: Vec<SearchCacheKey> = self
+            .search_cache
+            .iter()
+            .filter_map(|(key, _)| {
+                if key.1 == workspace_id {
+                    Some((*key).clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        for key in &sync_keys {
+            self.search_cache.invalidate(key);
+            invalidated_count += 1;
+        }
+
+        // 2. 失效同步 L2 缓存
+        let l2_keys: Vec<SearchCacheKey> = self
+            .l2_cache
+            .iter()
+            .filter_map(|(key, _)| {
+                if key.1 == workspace_id {
+                    Some((*key).clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        for key in &l2_keys {
+            self.l2_cache.invalidate(key);
+            invalidated_count += 1;
+        }
+
+        // 3. 失效异步缓存
         let keys_to_invalidate: Vec<SearchCacheKey> = {
             let mut keys = Vec::new();
             for (key, _) in self.async_search_cache.iter() {
@@ -1082,19 +1101,17 @@ impl CacheManager {
         tracing::info!("Cache performance metrics reset");
     }
 
-    /// 生成性能报告
+    /// 生成性能报告（同步版本，仅包含同步缓存统计）
     ///
-    /// 注意：此方法在同步上下文中生成报告，内部使用 `block_on` 获取异步缓存统计。
-    /// 报告生成方法通常在监控或管理界面调用，不是热路径，可以安全使用 block_on。
+    /// 此方法不包含异步缓存统计数据，避免在 tokio 运行时上下文中使用 block_on 导致 panic。
+    /// 如需包含异步缓存统计，请在异步上下文中使用 generate_performance_report_async()。
     pub fn generate_performance_report(&self) -> CachePerformanceReport {
-        // 使用 block_on 在同步上下文中获取异步缓存统计
-        let async_cache_stats =
-            tauri::async_runtime::block_on(async { self.get_async_cache_statistics().await });
-
+        // 使用空异步统计信息生成报告 — 异步统计需通过 generate_performance_report_async 获取
+        let async_cache_stats = CacheStatistics::default();
         self.generate_performance_report_with_stats(async_cache_stats)
     }
 
-    /// 生成性能报告（异步版本，用于已在 tokio runtime 中的上下文）
+    /// 生成性能报告（异步版本，包含完整的异步缓存统计）
     ///
     /// 此方法避免使用 block_on，适合在异步测试或异步上下文中调用。
     pub async fn generate_performance_report_async(&self) -> CachePerformanceReport {
@@ -1156,6 +1173,7 @@ impl CacheManager {
     }
 
     /// 计算缓存整体健康度 (0-100)
+    #[allow(dead_code)]
     fn calculate_cache_health(
         &self,
         snapshot: &CacheMetricsSnapshot,
@@ -1203,6 +1221,7 @@ impl CacheManager {
     }
 
     /// 生成性能优化建议
+    #[allow(dead_code)]
     fn generate_recommendations(
         &self,
         snapshot: &CacheMetricsSnapshot,
@@ -1267,8 +1286,10 @@ impl CacheManager {
 
     /// 获取缓存调试信息
     ///
-    /// 注意：此方法在同步上下文中获取调试信息，内部使用 `block_on` 获取异步缓存信息。
-    /// 调试信息获取不是热路径，可以安全使用 block_on。
+    /// 获取缓存调试信息（同步版本，不包含异步缓存统计）
+    ///
+    /// 避免在同步方法中使用 block_on 获取异步缓存信息。
+    /// 如需包含异步缓存条目数，请使用 get_debug_info_async()。
     pub fn get_debug_info(&self) -> CacheDebugInfo {
         let sync_entry_count = self.search_cache.entry_count();
         let l2_entry_count = self.l2_cache.entry_count();
@@ -1276,11 +1297,38 @@ impl CacheManager {
         let metrics = self.metrics.snapshot();
         let l2_config = self.get_l2_config();
 
-        // 使用 block_on 在同步上下文中获取异步缓存的条目数
-        let async_entry_count =
-            tauri::async_runtime::block_on(async { self.async_search_cache.entry_count() });
+        // 同步上下文中无法安全获取异步缓存统计数据，使用 0 占位
+        let async_entry_count = 0u64;
 
         // 采样一些缓存键用于调试（从同步缓存获取）
+        let sample_keys: Vec<String> = self
+            .search_cache
+            .iter()
+            .take(10)
+            .map(|(key, _)| format!("Query: {}, Workspace: {}", key.0, key.1))
+            .collect();
+
+        CacheDebugInfo {
+            sync_cache_entries: sync_entry_count,
+            async_cache_entries: async_entry_count,
+            l2_cache_entries: l2_entry_count,
+            sample_keys,
+            config,
+            metrics_snapshot: metrics,
+            l2_config,
+        }
+    }
+
+    /// 获取缓存调试信息（异步版本，包含异步缓存统计）
+    pub async fn get_debug_info_async(&self) -> CacheDebugInfo {
+        let sync_entry_count = self.search_cache.entry_count();
+        let l2_entry_count = self.l2_cache.entry_count();
+        let config = self.config.clone();
+        let metrics = self.metrics.snapshot();
+        let l2_config = self.get_l2_config();
+
+        let async_entry_count = self.async_search_cache.entry_count();
+
         let sample_keys: Vec<String> = self
             .search_cache
             .iter()
@@ -1491,8 +1539,8 @@ impl CacheManager {
     /// 获取缓存仪表板数据
     ///
     /// 聚合缓存的各种状态信息用于仪表板展示。
-    /// 注意：此方法调用 generate_performance_report，后者内部使用 block_on 获取异步统计。
-    /// 仪表板数据获取不是热路径，可以接受 block_on 的开销。
+    /// 注意：此方法调用 generate_performance_report（同步版本，不包含异步缓存统计）。
+    /// 如需完整的异步缓存统计，请在异步上下文中使用 generate_performance_report_async() 构造仪表板数据。
     pub fn get_dashboard_data(&self) -> CacheDashboardData {
         let metrics = self.metrics.snapshot();
         let alerts = self.check_performance_alerts();
@@ -1500,7 +1548,7 @@ impl CacheManager {
         let access_patterns = self.get_access_pattern_stats();
         let compression_status = self.get_compression_stats();
 
-        // 生成性能报告（同步方法，内部使用 block_on 获取异步统计）
+        // 生成性能报告（同步版本，不包含异步缓存统计）
         let report = self.generate_performance_report();
         let health_status = CacheHealthStatus::from_health_score(report.overall_health);
 
@@ -1600,7 +1648,7 @@ pub struct TtlCleanupStats {
 }
 
 /// 缓存统计信息
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct CacheStatistics {
     /// 缓存条目数量
     pub entry_count: u64,

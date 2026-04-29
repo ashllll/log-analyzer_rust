@@ -64,24 +64,26 @@ impl ArchiveHandler for ZipHandler {
                 let out_path = target_path.join(&safe_path);
                 // 验证最终路径不逃逸提取目录（防御 ZIP Slip 末级绕过）
                 if !out_path.starts_with(&target_path) {
-                    warn!(
-                        path = %safe_path.display(),
-                        "ZIP Slip 尝试被拦截，跳过此条目"
-                    );
+                    let msg = format!("ZIP Slip 尝试被拦截: {}", safe_path.display());
+                    warn!("{}", msg);
+                    summary.errors.push(msg);
                     continue;
                 }
                 // 安全检查：跳过 ZIP 内的符号链接，防止沙箱逃逸
                 // ZIP 格式支持符号链接条目，若解压到目标目录会创建指向任意路径的链接
-                // 使用 unix_mode() 检查符号链接：S_IFLNK = 0o120000
+                // 使用 unix_mode() 检查符号链接：S_IFMT = 0o170000, S_IFLNK = 0o120000
+                // 注意: unix_mode() 依赖 ZIP 文件中的 Unix extra field (0x000d),
+                // 在 Windows 平台或缺少该 extra field 的 ZIP 文件中可能不可用，
+                // 此时 is_symlink 为 false（保守策略：允许解压）;
+                // 最终的路径逃逸防护由文件创建后的 canonicalize 检查保证 (TOCTOU 防护)
                 let is_symlink = file
                     .unix_mode()
                     .map(|mode| mode & 0o170000 == 0o120000)
                     .unwrap_or(false);
                 if is_symlink {
-                    warn!(
-                        name = %name,
-                        "ZIP 条目为符号链接，跳过以防沙箱逃逸"
-                    );
+                    let msg = format!("ZIP 条目为符号链接已跳过: {}", name);
+                    warn!("{}", msg);
+                    summary.errors.push(msg);
                     continue;
                 }
 
@@ -135,8 +137,23 @@ impl ArchiveHandler for ZipHandler {
                     match std::fs::File::create(&out_path) {
                         Ok(mut out_file) => {
                             if let Err(e) = std::io::copy(&mut file, &mut out_file) {
-                                warn!("Failed to extract file {:?}: {}", out_path, e);
+                                let msg = format!("Failed to extract file {}: {}", out_path.display(), e);
+                                warn!("{}", msg);
+                                summary.errors.push(msg);
                             } else {
+                                // TOCTOU 防护: 创建后验证实际路径仍在目标目录内
+                                if let (Ok(real_path), Ok(real_target)) =
+                                    (std::fs::canonicalize(&out_path), std::fs::canonicalize(&target_path))
+                                {
+                                    if !real_path.starts_with(&real_target) {
+                                        std::fs::remove_file(&out_path).ok();
+                                        let msg = format!("符号链接逃逸已拦截 (ZIP): {}", safe_path.display());
+                                        warn!("{}", msg);
+                                        summary.errors.push(msg);
+                                        drop(out_file);
+                                        continue;
+                                    }
+                                }
                                 summary.add_file(safe_path, size);
                             }
                             // 显式释放文件句柄

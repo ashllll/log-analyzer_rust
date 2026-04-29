@@ -18,6 +18,53 @@ fn hash_query_operator(op: &QueryOperator, hasher: &mut DefaultHasher) {
     }
 }
 
+/// 公共函数: 计算查询缓存键
+///
+/// 统一 QueryExecutor 和 GenericQueryExecutor 的缓存键生成逻辑，
+/// 确保等价的查询产生相同的缓存键。
+///
+/// 哈希所有查询字段:
+/// - 查询 ID, 全局操作符
+/// - 过滤器 (时间范围, 日志级别, 文件模式)
+/// - 搜索项 (按 ID 排序后哈希所有字段)
+pub(crate) fn compute_query_cache_key(query: &SearchQuery) -> String {
+    let mut hasher = DefaultHasher::new();
+
+    // 哈希查询 ID 和全局操作符
+    query.id.hash(&mut hasher);
+    hash_query_operator(&query.global_operator, &mut hasher);
+
+    // 哈希过滤器（如果存在）
+    if let Some(filters) = &query.filters {
+        if let Some(time_range) = &filters.time_range {
+            time_range.start.hash(&mut hasher);
+            time_range.end.hash(&mut hasher);
+        }
+        filters.levels.hash(&mut hasher);
+        filters.file_pattern.hash(&mut hasher);
+    }
+
+    // 按 ID 排序以确保哈希一致性（无论术语顺序如何，等价查询产生相同哈希）
+    let mut sorted_terms = query.terms.clone();
+    sorted_terms.sort_by(|a, b| a.id.cmp(&b.id));
+
+    // 哈希每个搜索项的所有关键字段
+    for term in &sorted_terms {
+        term.id.hash(&mut hasher);
+        term.value.hash(&mut hasher);
+        term.operator.hash(&mut hasher);
+        term.source.hash(&mut hasher);
+        term.preset_group_id.hash(&mut hasher);
+        term.is_regex.hash(&mut hasher);
+        term.priority.hash(&mut hasher);
+        term.enabled.hash(&mut hasher);
+        term.case_sensitive.hash(&mut hasher);
+    }
+
+    // 返回 16 进制哈希值作为缓存键
+    format!("{:x}", hasher.finish())
+}
+
 /**
  * 查询执行器
  *
@@ -56,46 +103,10 @@ impl QueryExecutor {
     /**
      * 生成查询缓存键
      *
-     * 使用自定义哈希函数替代 serde_json，性能提升约 5-10 倍
-     * 包含所有查询字段以确保缓存键的唯一性
+     * 委托给公共函数 compute_query_cache_key，确保与 GenericQueryExecutor 一致性
      */
     fn cache_key(query: &SearchQuery) -> String {
-        let mut hasher = DefaultHasher::new();
-
-        // 哈希查询ID和全局操作符
-        query.id.hash(&mut hasher);
-        hash_query_operator(&query.global_operator, &mut hasher);
-
-        // 哈希过滤器（如果存在）
-        if let Some(filters) = &query.filters {
-            // 哈希时间范围
-            if let Some(time_range) = &filters.time_range {
-                time_range.start.hash(&mut hasher);
-                time_range.end.hash(&mut hasher);
-            }
-            filters.levels.hash(&mut hasher);
-            filters.file_pattern.hash(&mut hasher);
-        }
-
-        // 按ID排序以确保哈希一致性
-        let mut sorted_terms = query.terms.clone();
-        sorted_terms.sort_by(|a, b| a.id.cmp(&b.id));
-
-        // 哈希每个搜索项的所有关键字段
-        for term in &sorted_terms {
-            term.id.hash(&mut hasher);
-            term.value.hash(&mut hasher);
-            term.operator.hash(&mut hasher);
-            term.source.hash(&mut hasher);
-            term.preset_group_id.hash(&mut hasher);
-            term.is_regex.hash(&mut hasher);
-            term.priority.hash(&mut hasher);
-            term.enabled.hash(&mut hasher);
-            term.case_sensitive.hash(&mut hasher);
-        }
-
-        // 返回 16 进制哈希值作为缓存键
-        format!("{:x}", hasher.finish())
+        compute_query_cache_key(query)
     }
 
     /**
@@ -264,8 +275,13 @@ impl QueryExecutor {
                 Some(details)
             }
             crate::services::query_planner::SearchStrategy::Not => {
-                // Not 策略：行通过是因为"没有"任何排除关键词出现，
-                // details 为空是正确的语义（没有需要高亮的匹配），返回 Some([])。
+                // Not 策略语义：行通过匹配验证是因为"没有"任何排除关键词出现，
+                // 因此 details 为空是预期的正确语义（不存在需要高亮的匹配项）。
+                // 返回 Some(vec![]) 而非 None，表示该行确实通过了匹配验证，
+                // 只是 Not 操作符下的匹配结果不会产生高亮信息。
+                // 这与完全不匹配的情况（返回 None）不同，调用方可通过此区分：
+                //   - None: 行被排除（不匹配任何条件）
+                //   - Some([]): 行通过 Not 策略（没有匹配到排除关键词）
                 Some(vec![])
             }
             crate::services::query_planner::SearchStrategy::And => {
@@ -370,36 +386,9 @@ where
 
     /// 生成查询缓存键
     ///
-    /// 使用自定义哈希函数替代 serde_json，性能提升约 5-10 倍
+    /// 委托给公共函数 compute_query_cache_key，确保与 QueryExecutor 一致性
     fn cache_key(query: &SearchQuery) -> String {
-        let mut hasher = DefaultHasher::new();
-
-        // 哈希查询ID和全局操作符
-        query.id.hash(&mut hasher);
-        hash_query_operator(&query.global_operator, &mut hasher);
-
-        // 哈希过滤器（与 QueryExecutor::cache_key 保持一致）
-        if let Some(filters) = &query.filters {
-            if let Some(time_range) = &filters.time_range {
-                time_range.start.hash(&mut hasher);
-                time_range.end.hash(&mut hasher);
-            }
-            filters.levels.hash(&mut hasher);
-            filters.file_pattern.hash(&mut hasher);
-        }
-
-        // 哈希每个搜索项的关键字段
-        for term in &query.terms {
-            term.value.hash(&mut hasher);
-            term.operator.hash(&mut hasher);
-            term.is_regex.hash(&mut hasher);
-            term.case_sensitive.hash(&mut hasher);
-            term.enabled.hash(&mut hasher);
-            term.priority.hash(&mut hasher);
-        }
-
-        // 返回 16 进制哈希值作为缓存键
-        format!("{:x}", hasher.finish())
+        compute_query_cache_key(query)
     }
 
     /// 执行查询（使用泛型验证器和规划器）

@@ -18,12 +18,12 @@ parking_lot = { version = "0.12", features = ["arc_lock", "send_guard"] }
 tracing.workspace = true
 roaring = "0.10"
 crossbeam = "0.8"
-lru = "0.12"
+lru = "0.16"
 futures = "0.3"
 tempfile.workspace = true
 chrono.workspace = true
 thiserror = "1.0"
-bincode = "1.3"
+
 dashmap = "6"
 num_cpus = "1.16"
 once_cell = "1.20"

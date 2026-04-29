@@ -616,8 +616,11 @@ pub async fn delete_workspace(
 
     // 失效该工作区的缓存（仅目标工作区，不影响其他工作区）
     {
-        let cache = state.cache_manager.lock();
-        if let Err(e) = cache.invalidate_workspace_cache(&workspaceId) {
+        let cache = {
+            let guard = state.cache_manager.lock();
+            guard.clone()
+        };
+        if let Err(e) = cache.invalidate_workspace_cache_async(&workspaceId).await {
             warn!(error = %e, "工作区缓存失效失败");
         }
     }

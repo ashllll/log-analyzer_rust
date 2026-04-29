@@ -518,8 +518,11 @@ pub async fn import_folder(
 
                 // 导入成功后清除该工作区的搜索缓存，避免旧缓存返回过时结果
                 {
-                    let cache = state.cache_manager.lock();
-                    if let Err(e) = cache.invalidate_workspace_cache(&workspace_id_clone) {
+                    let cache = {
+                        let guard = state.cache_manager.lock();
+                        guard.clone()
+                    };
+                    if let Err(e) = cache.invalidate_workspace_cache_async(&workspace_id_clone).await {
                         tracing::warn!(
                             workspace_id = %workspace_id_clone,
                             error = %e,

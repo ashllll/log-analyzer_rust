@@ -103,14 +103,23 @@ impl MetadataStore {
 
         // Optimize SQLite performance: WAL mode, synchronous, cache size
         // WAL (Write-Ahead Logging) allows concurrent reads while writing
-        sqlx::query(
-            "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA cache_size = -8000;",
-        )
-        .execute(&pool)
-        .await
-        .map_err(|e| {
-            AppError::database_error(format!("Failed to configure SQLite PRAGMA: {}", e))
-        })?;
+        // PRAGMA statements must be executed separately — sqlx does not support
+        // multi-statement strings in a single query call.
+        for pragma in &[
+            "PRAGMA journal_mode = WAL",
+            "PRAGMA synchronous = NORMAL",
+            "PRAGMA cache_size = -8000",
+            "PRAGMA busy_timeout = 5000",
+            "PRAGMA mmap_size = 268435456",
+            "PRAGMA temp_store = MEMORY",
+        ] {
+            sqlx::query(pragma)
+                .execute(&pool)
+                .await
+                .map_err(|e| {
+                    AppError::database_error(format!("Failed to set PRAGMA '{}': {}", pragma, e))
+                })?;
+        }
 
         info!(path = %db_path.display(), "WAL mode enabled for better concurrency");
 
@@ -489,6 +498,49 @@ impl MetadataStore {
             parent_archive_id: r.get("parent_archive_id"),
             depth_level: r.get("depth_level"),
         }))
+    }
+
+    /// Batch check which hashes have references in the files table
+    ///
+    /// Uses a single SQL IN clause to avoid N+1 query problem during GC.
+    /// Splits into batches of 1000 to avoid exceeding SQLite variable limits.
+    pub async fn batch_check_hashes(&self, hashes: &[String]) -> Result<std::collections::HashSet<String>> {
+        use std::collections::HashSet;
+        let mut referenced = HashSet::new();
+        let batch_size = 1000usize;
+
+        for chunk in hashes.chunks(batch_size) {
+            if chunk.is_empty() {
+                continue;
+            }
+
+            let placeholders: Vec<String> = chunk.iter().enumerate()
+                .map(|(i, _)| format!("?{}", i + 1))
+                .collect();
+            let sql = format!(
+                "SELECT DISTINCT sha256_hash FROM files WHERE sha256_hash IN ({})",
+                placeholders.join(", ")
+            );
+
+            let mut query = sqlx::query(&sql);
+            for hash in chunk {
+                query = query.bind(hash);
+            }
+
+            let rows = query
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| AppError::database_error(format!(
+                    "Failed to batch check hashes: {}", e
+                )))?;
+
+            for row in rows {
+                let hash: String = row.get("sha256_hash");
+                referenced.insert(hash);
+            }
+        }
+
+        Ok(referenced)
     }
 
     /// Get all files in an archive
