@@ -603,6 +603,44 @@ impl SearchEngineManager {
         Ok(())
     }
 
+    /// L1 Fix: Add multiple documents to index in a single writer lock cycle.
+    ///
+    /// This is significantly more efficient than calling `add_document` in a loop
+    /// because it acquires the index writer lock once for the entire batch.
+    /// Tantivy's IndexWriter is single-writer; reducing lock acquisitions
+    /// improves throughput for bulk operations like file watcher indexing.
+    pub fn add_documents(&self, entries: &[LogEntry]) -> SearchResult<()> {
+        if entries.is_empty() {
+            return Ok(());
+        }
+
+        let writer = self.writer.lock();
+        for entry in entries {
+            let mut doc = TantivyDocument::default();
+
+            doc.add_text(self.schema.content, &entry.content);
+            let timestamp_i64 = parse_log_timestamp_to_unix(&entry.timestamp)
+                .unwrap_or_else(|| {
+                    tracing::warn!(
+                        timestamp = %entry.timestamp,
+                        file = %entry.file,
+                        "时间戳解析失败，使用 0 (1970-01-01) 作为占位值；不影响其他日志时序"
+                    );
+                    0i64
+                });
+            doc.add_i64(self.schema.timestamp, timestamp_i64);
+            doc.add_text(self.schema.level, &entry.level);
+            doc.add_text(self.schema.file_path, &entry.file);
+            doc.add_text(self.schema.real_path, &entry.real_path);
+            doc.add_u64(self.schema.line_number, entry.line as u64);
+
+            writer.add_document(doc)?;
+        }
+        // Writer lock is released here when `writer` goes out of scope
+
+        Ok(())
+    }
+
     /// Commit pending changes to index
     pub fn commit(&self) -> SearchResult<()> {
         // 先在独立作用域内提交并释放 writer 锁，

@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
-use tokio::runtime::Runtime;
+use tokio::runtime::{Handle, Runtime};
 
 /// Public extraction result structure with all required fields
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -185,31 +185,25 @@ impl std::fmt::Display for ExtractionError {
 impl std::error::Error for ExtractionError {}
 
 /// Convert internal AppError to public ExtractionError
+///
+/// M2 Fix: Uses AppError::category() for structured error classification
+/// instead of fragile string matching on Display output.
 impl From<AppError> for ExtractionError {
     fn from(error: AppError) -> Self {
         let error_message = error.to_string();
 
-        // Determine error code based on error message content
-        let error_code = if error_message.contains("path") && error_message.contains("long") {
-            ErrorCode::PathTooLong
-        } else if error_message.contains("unsupported") || error_message.contains("format") {
-            ErrorCode::UnsupportedFormat
-        } else if error_message.contains("corrupt") {
-            ErrorCode::CorruptedArchive
-        } else if error_message.contains("permission") || error_message.contains("denied") {
-            ErrorCode::PermissionDenied
-        } else if error_message.contains("zip bomb") || error_message.contains("compression") {
-            ErrorCode::ZipBombDetected
-        } else if error_message.contains("depth") {
-            ErrorCode::DepthLimitExceeded
-        } else if error_message.contains("disk space") || error_message.contains("space") {
-            ErrorCode::DiskSpaceExhausted
-        } else if error_message.contains("cancel") {
-            ErrorCode::CancellationRequested
-        } else if error_message.contains("validation") || error_message.contains("invalid") {
-            ErrorCode::InvalidConfiguration
-        } else {
-            ErrorCode::InternalError
+        // M2 Fix: Use structured category matching instead of string matching
+        let error_code = match error.category() {
+            la_core::ErrorCategory::PathTooLong => ErrorCode::PathTooLong,
+            la_core::ErrorCategory::UnsupportedFormat => ErrorCode::UnsupportedFormat,
+            la_core::ErrorCategory::CorruptedArchive => ErrorCode::CorruptedArchive,
+            la_core::ErrorCategory::PermissionDenied => ErrorCode::PermissionDenied,
+            la_core::ErrorCategory::ZipBombDetected => ErrorCode::ZipBombDetected,
+            la_core::ErrorCategory::DepthLimitExceeded => ErrorCode::DepthLimitExceeded,
+            la_core::ErrorCategory::DiskSpaceExhausted => ErrorCode::DiskSpaceExhausted,
+            la_core::ErrorCategory::CancellationRequested => ErrorCode::CancellationRequested,
+            la_core::ErrorCategory::InvalidConfiguration => ErrorCode::InvalidConfiguration,
+            la_core::ErrorCategory::InternalError => ErrorCode::InternalError,
         };
 
         // Generate suggested remediation based on error code
@@ -296,6 +290,17 @@ pub type Result<T> = std::result::Result<T, ExtractionError>;
 /// println!("Extracted {} files", result.extracted_files.len());
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
+/// Build an ExtractionError for runtime creation failure
+fn runtime_creation_error(e: impl std::fmt::Display) -> ExtractionError {
+    ExtractionError {
+        error_code: ErrorCode::InternalError,
+        error_message: format!("Failed to create runtime: {}", e),
+        failed_file_path: None,
+        suggested_remediation: "Check system resources and try again".to_string(),
+        context: HashMap::new(),
+    }
+}
+
 #[allow(clippy::result_large_err)]
 pub fn extract_archive_sync(
     archive_path: &Path,
@@ -303,22 +308,19 @@ pub fn extract_archive_sync(
     workspace_id: &str,
     policy: Option<ExtractionPolicy>,
 ) -> Result<ExtractionResult> {
-    // Create a new runtime for synchronous execution
-    let runtime = Runtime::new().map_err(|e| ExtractionError {
-        error_code: ErrorCode::InternalError,
-        error_message: format!("Failed to create runtime: {}", e),
-        failed_file_path: None,
-        suggested_remediation: "Check system resources and try again".to_string(),
-        context: HashMap::new(),
-    })?;
+    // H1 Fix: Reuse existing runtime handle to avoid creating unnecessary I/O + worker threads.
+    // Creating Runtime::new() every call is an anti-pattern per Tokio docs; each call spawns
+    // its own thread pool that persists until the Runtime is dropped.
+    let extraction_future = extract_archive_async(archive_path, target_dir, workspace_id, policy);
 
-    // Block on the async extraction
-    runtime.block_on(extract_archive_async(
-        archive_path,
-        target_dir,
-        workspace_id,
-        policy,
-    ))
+    match Handle::try_current() {
+        Ok(handle) => handle.block_on(extraction_future),
+        Err(_) => {
+            // Fallback: no existing runtime context, create a temporary one
+            let runtime = Runtime::new().map_err(runtime_creation_error)?;
+            runtime.block_on(extraction_future)
+        }
+    }
 }
 
 /// Asynchronous extraction API

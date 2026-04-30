@@ -607,7 +607,7 @@ pub async fn search_logs(
     > = Arc::clone(&state.search_cancellation_tokens);
     // 磁盘搜索结果存储：新架构的核心，替代 search-results IPC 事件
     let disk_result_store: Arc<crate::search_engine::disk_result_store::DiskResultStore> =
-        Arc::clone(&state.disk_result_store);
+        state.disk_result_store.read().clone();
 
     let max_results = maxResults
         .unwrap_or(runtime_config.default_max_results)
@@ -1674,7 +1674,8 @@ pub async fn fetch_search_page(
     // 限制每页最大数量，防止内存问题
     let limit = limit.min(10000);
 
-    let disk_store = &state.disk_result_store;
+    let disk_store_arc = state.disk_result_store.read();
+    let disk_store = &*disk_store_arc;
 
     // 优先从磁盘存储读取（新架构：Notepad++ 式磁盘直写，前端按需分页）
     if disk_store.has_session(&searchId) {
@@ -1806,7 +1807,7 @@ pub async fn get_search_total_count(
     #[allow(non_snake_case)] searchId: String,
 ) -> Result<usize, CommandError> {
     // 新架构：优先从 DiskResultStore 读取
-    if let Some(status) = state.disk_result_store.get_status(&searchId) {
+    if let Some(status) = state.disk_result_store.read().get_status(&searchId) {
         return Ok(status.0);
     }
     // 降级：从 VirtualSearchManager 读取

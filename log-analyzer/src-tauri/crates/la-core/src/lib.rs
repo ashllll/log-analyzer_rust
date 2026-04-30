@@ -5,5 +5,5 @@ pub mod storage_types;
 pub mod traits;
 pub mod utils;
 
-pub use error::{AppError, CommandError, CommandResult, Result};
+pub use error::{AppError, CommandError, CommandResult, ErrorCategory, Result};
 pub use storage_types::{ArchiveMetadata, FileMetadata};

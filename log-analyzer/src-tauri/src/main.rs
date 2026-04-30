@@ -145,6 +145,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             info!("✅ TaskManager 初始化成功");
 
+            // M4 Fix: Initialize DiskResultStore at app data dir (persistent)
+            // instead of the OS temp directory (volatile, may be cleaned by system)
+            if let Ok(app_data_dir) = app.path().app_data_dir() {
+                app_state.init_disk_result_store_at(app_data_dir);
+            }
+
             // 注册应用退出钩子（在 setup 外面注册）
             // 注意：这里不能在 setup 内注册，因为 app 生命周期有限
             // 实际的清理逻辑将在 window close 事件中处理
@@ -245,7 +251,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let state_guard = app_handle.state::<AppState>();
 
                 // 1. 清理 DiskResultStore（删除磁盘缓存文件）
-                state_guard.disk_result_store.cleanup_all();
+                state_guard.disk_result_store.read().cleanup_all();
                 tracing::debug!("DiskResultStore 已清理所有磁盘缓存");
 
                 // 2. 关闭所有 MetadataStore（WAL checkpoint）
@@ -255,27 +261,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         stores.values().cloned().collect()
                     };
                     if !stores_clone.is_empty() {
-                        // 安全创建 runtime，避免 unwrap panic
-                        match tokio::runtime::Runtime::new() {
-                            Ok(rt) => {
-                                // 使用 thread::spawn + take() 避免阻塞主线程
-                                let handle = std::thread::spawn(move || {
-                                    rt.block_on(async {
-                                        for store in stores_clone {
-                                            store.close().await;
-                                        }
-                                    });
-                                });
-                                // 带超时等待，避免主线程无限阻塞
-                                let _ = handle.join();
+                        // H1 Fix: Reuse Tauri's global async runtime instead of creating a new one
+                        tauri::async_runtime::block_on(async {
+                            for store in stores_clone {
+                                store.close().await;
                             }
-                            Err(e) => {
-                                tracing::error!(
-                                    error = %e,
-                                    "无法创建 tokio runtime 用于关闭 MetadataStore，跳过清理"
-                                );
-                            }
-                        }
+                        });
                     }
                 }
 
@@ -291,51 +282,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 };
 
                 if let Some(task_manager) = task_manager_opt {
-                    match tokio::runtime::Runtime::new() {
-                        Ok(rt) => {
-                            let handle = std::thread::spawn(move || {
-                                rt.block_on(async move {
-                                    // 关闭所有 SearchEngineManager（提交 IndexWriter 缓冲区）
-                                    for mgr in search_managers {
-                                        let close_result = tokio::time::timeout(
-                                            std::time::Duration::from_secs(3),
-                                            mgr.close(),
-                                        )
-                                        .await;
-                                        match close_result {
-                                            Ok(()) => info!("SearchEngineManager 已成功关闭"),
-                                            Err(_) => {
-                                                error!("SearchEngineManager 关闭超时 (3秒)")
-                                            }
-                                        }
-                                    }
-
-                                    info!("正在关闭 TaskManager...");
-
-                                    // 使用 5 秒超时执行异步关闭
-                                    let shutdown_result = tokio::time::timeout(
-                                        std::time::Duration::from_secs(5),
-                                        task_manager.shutdown_async(),
-                                    )
-                                    .await;
-
-                                    match shutdown_result {
-                                        Ok(Ok(())) => info!("TaskManager 已成功关闭"),
-                                        Ok(Err(e)) => error!("TaskManager 关闭失败: {}", e),
-                                        Err(_) => error!("TaskManager 关闭超时 (5秒)"),
-                                    }
-                                });
-                            });
-                            // 带超时等待清理线程完成（最多 10 秒）
-                            let _ = handle.join();
+                    // H1 Fix: Reuse Tauri's global async runtime instead of creating a new one
+                    tauri::async_runtime::block_on(async move {
+                        // 关闭所有 SearchEngineManager（提交 IndexWriter 缓冲区）
+                        for mgr in search_managers {
+                            let close_result = tokio::time::timeout(
+                                std::time::Duration::from_secs(3),
+                                mgr.close(),
+                            )
+                            .await;
+                            match close_result {
+                                Ok(()) => info!("SearchEngineManager 已成功关闭"),
+                                Err(_) => {
+                                    error!("SearchEngineManager 关闭超时 (3秒)")
+                                }
+                            }
                         }
-                        Err(e) => {
-                            tracing::error!(
-                                error = %e,
-                                "无法创建 tokio runtime 用于关闭 TaskManager，跳过清理"
-                            );
+
+                        info!("正在关闭 TaskManager...");
+
+                        // 使用 5 秒超时执行异步关闭
+                        let shutdown_result = tokio::time::timeout(
+                            std::time::Duration::from_secs(5),
+                            task_manager.shutdown_async(),
+                        )
+                        .await;
+
+                        match shutdown_result {
+                            Ok(Ok(())) => info!("TaskManager 已成功关闭"),
+                            Ok(Err(e)) => error!("TaskManager 关闭失败: {}", e),
+                            Err(_) => error!("TaskManager 关闭超时 (5秒)"),
                         }
-                    }
+                    });
                 } else {
                     warn!("TaskManager 未初始化，跳过清理");
                 }

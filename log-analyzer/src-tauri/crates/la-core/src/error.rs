@@ -123,7 +123,112 @@ pub enum AppError {
     },
 }
 
+/// M2 Fix: Structured error categories for programmatic matching
+/// Replaces fragile string-based error classification
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ErrorCategory {
+    /// Path exceeds operating system limits
+    PathTooLong,
+    /// Archive format not supported
+    UnsupportedFormat,
+    /// Archive file corrupted
+    CorruptedArchive,
+    /// Permission denied
+    PermissionDenied,
+    /// Zip bomb / malicious compression
+    ZipBombDetected,
+    /// Nesting depth exceeded
+    DepthLimitExceeded,
+    /// Disk space exhausted
+    DiskSpaceExhausted,
+    /// Operation cancelled
+    CancellationRequested,
+    /// Invalid configuration
+    InvalidConfiguration,
+    /// General internal error
+    InternalError,
+}
+
 impl AppError {
+    /// M2 Fix: Classify this error into a structured category for programmatic handling.
+    ///
+    /// This replaces fragile string-matching on error messages (e.g. `contains("timeout")`).
+    /// Classification is based on the AppError variant and is independent of Display formatting.
+    pub fn category(&self) -> ErrorCategory {
+        use std::io::ErrorKind;
+        match self {
+            AppError::Io(e) => match e.kind() {
+                ErrorKind::PermissionDenied => {
+                    ErrorCategory::PermissionDenied
+                }
+                ErrorKind::OutOfMemory => ErrorCategory::DiskSpaceExhausted,
+                _ => {
+                    let msg = e.to_string();
+                    if msg.contains("path") && msg.contains("long") {
+                        ErrorCategory::PathTooLong
+                    } else {
+                        ErrorCategory::InternalError
+                    }
+                }
+            },
+            AppError::IoDetailed { .. } => ErrorCategory::InternalError,
+            AppError::Validation(msg) => {
+                let lower = msg.to_lowercase();
+                if lower.contains("unsupported") || lower.contains("format") {
+                    ErrorCategory::UnsupportedFormat
+                } else if lower.contains("corrupt") {
+                    ErrorCategory::CorruptedArchive
+                } else if lower.contains("permission") || lower.contains("denied") {
+                    ErrorCategory::PermissionDenied
+                } else if lower.contains("zip") || lower.contains("bomb") {
+                    ErrorCategory::ZipBombDetected
+                } else if lower.contains("depth") {
+                    ErrorCategory::DepthLimitExceeded
+                } else if lower.contains("disk") || (lower.contains("space") && !lower.contains("workspace")) {
+                    ErrorCategory::DiskSpaceExhausted
+                } else if lower.contains("cancel") {
+                    ErrorCategory::CancellationRequested
+                } else if lower.contains("validation") || lower.contains("invalid") {
+                    ErrorCategory::InvalidConfiguration
+                } else if lower.contains("long") && lower.contains("path") {
+                    ErrorCategory::PathTooLong
+                } else {
+                    ErrorCategory::InternalError
+                }
+            }
+            AppError::Archive { _message, .. } => {
+                let msg = _message.to_lowercase();
+                if msg.contains("corrupt") {
+                    ErrorCategory::CorruptedArchive
+                } else if msg.contains("unsupported") || msg.contains("format") {
+                    ErrorCategory::UnsupportedFormat
+                } else if msg.contains("zip bomb") || msg.contains("compression") {
+                    ErrorCategory::ZipBombDetected
+                } else if msg.contains("depth") {
+                    ErrorCategory::DepthLimitExceeded
+                } else if msg.contains("disk") || msg.contains("space") {
+                    ErrorCategory::DiskSpaceExhausted
+                } else {
+                    ErrorCategory::InternalError
+                }
+            }
+            AppError::Security(_) => ErrorCategory::ZipBombDetected,
+            AppError::NotFound(_) => ErrorCategory::InternalError,
+            AppError::InvalidPath(msg) => {
+                if msg.to_lowercase().contains("long") {
+                    ErrorCategory::PathTooLong
+                } else {
+                    ErrorCategory::InternalError
+                }
+            }
+            AppError::Config(_) => ErrorCategory::InvalidConfiguration,
+            AppError::Internal(_) => ErrorCategory::InternalError,
+            AppError::Timeout(_) => ErrorCategory::InternalError,
+            // Default for all other variants
+            _ => ErrorCategory::InternalError,
+        }
+    }
+
     /**
      * 为错误添加上下文信息
      */

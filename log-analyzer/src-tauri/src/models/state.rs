@@ -51,7 +51,9 @@ pub struct AppState {
     pub async_resource_manager: Arc<AsyncResourceManager>,
     pub search_engine_managers: Arc<Mutex<HashMap<String, Arc<SearchEngineManager>>>>,
     pub virtual_search_manager: Arc<VirtualSearchManager>,
-    pub disk_result_store: Arc<DiskResultStore>,
+    /// M4 Fix: Wrapped in RwLock to allow replacement with app_data_dir path
+    /// during setup(). Read-heavy access pattern — read lock is shared.
+    pub disk_result_store: parking_lot::RwLock<Arc<DiskResultStore>>,
 }
 
 impl Default for AppState {
@@ -79,9 +81,9 @@ impl Default for AppState {
             async_resource_manager: Arc::new(AsyncResourceManager::new()),
             search_engine_managers: Arc::new(Mutex::new(HashMap::new())),
             virtual_search_manager: Arc::new(VirtualSearchManager::new(100)),
-            disk_result_store: Arc::new({
-                // 使用系统临时目录存储搜索结果缓存
-                // main.rs setup 阶段可替换为应用专属目录
+            disk_result_store: parking_lot::RwLock::new(Arc::new({
+                // M4 Fix: Default uses temp_dir as fallback; setup() stage replaces
+                // with app-specific data directory via init_disk_result_store_at()
                 let cache_dir = std::env::temp_dir().join("log-analyzer-search-cache");
                 DiskResultStore::new(cache_dir, 50).unwrap_or_else(|e| {
                     tracing::warn!(error = %e, "无法创建搜索磁盘缓存，尝试降级路径");
@@ -101,7 +103,7 @@ impl Default for AppState {
                             )
                         })
                 })
-            }),
+            })),
         }
     }
 }
@@ -109,6 +111,30 @@ impl Default for AppState {
 impl AppState {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// M4 Fix: Replace the default temp_dir DiskResultStore with one rooted at
+    /// a persistent application data directory. Call this from setup() once the
+    /// app_data_dir is available.
+    pub fn init_disk_result_store_at(&self, base_path: std::path::PathBuf) {
+        let cache_dir = base_path.join("search-cache");
+        match DiskResultStore::new(cache_dir.clone(), 50) {
+            Ok(store) => {
+                let mut guard = self.disk_result_store.write();
+                *guard = Arc::new(store);
+                tracing::info!(
+                    path = %cache_dir.display(),
+                    "DiskResultStore initialized at app data directory"
+                );
+            }
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    path = %cache_dir.display(),
+                    "Failed to create DiskResultStore at app data dir; keeping temp_dir fallback"
+                );
+            }
+        }
     }
 
     pub fn get_workspace_dir(&self, workspace_id: &str) -> Option<std::path::PathBuf> {

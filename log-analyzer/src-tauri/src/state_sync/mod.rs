@@ -44,7 +44,9 @@ impl StateSync {
 
     /// Broadcast workspace event to frontend
     ///
-    /// Uses Tauri's event system for <10ms latency
+    /// Uses Tauri's event system for <10ms latency.
+    /// M3 Fix: Added retry mechanism for emit failures to prevent
+    /// permanent cache-frontend inconsistency.
     pub async fn broadcast_workspace_event(&self, event: WorkspaceEvent) -> Result<(), String> {
         let start_time = std::time::Instant::now();
 
@@ -54,21 +56,47 @@ impl StateSync {
         // 2. Store in event history for debugging
         self.append_to_history(event.clone()).await;
 
-        // 3. Emit Tauri event to frontend (<10ms latency)
-        let emit_result = self
-            .app_handle
-            .emit("workspace-event", &event)
-            .map_err(|e| format!("Failed to emit event: {}", e));
+        // 3. Emit Tauri event to frontend with retry on failure
+        const MAX_RETRIES: u32 = 3;
+        const RETRY_DELAY_MS: u64 = 10;
+        let mut last_error: Option<String> = None;
 
-        let total_duration = start_time.elapsed();
+        for attempt in 0..MAX_RETRIES {
+            match self.app_handle.emit("workspace-event", &event) {
+                Ok(()) => {
+                    let total_duration = start_time.elapsed();
+                    tracing::debug!(
+                        event_type = ?event,
+                        duration_ms = total_duration.as_millis(),
+                        attempt = attempt + 1,
+                        "Broadcasted workspace event"
+                    );
+                    return Ok(());
+                }
+                Err(e) => {
+                    let msg = format!("Failed to emit event: {}", e);
+                    last_error = Some(msg.clone());
+                    if attempt + 1 < MAX_RETRIES {
+                        tracing::warn!(
+                            error = %e,
+                            attempt = attempt + 1,
+                            max_retries = MAX_RETRIES,
+                            "Emit failed, retrying..."
+                        );
+                        tokio::time::sleep(std::time::Duration::from_millis(RETRY_DELAY_MS)).await;
+                    }
+                }
+            }
+        }
 
-        tracing::debug!(
+        let error_msg = last_error.unwrap_or_else(|| "Unknown emit failure".to_string());
+        tracing::error!(
+            error = %error_msg,
             event_type = ?event,
-            duration_ms = total_duration.as_millis(),
-            "Broadcasted workspace event"
+            max_retries = MAX_RETRIES,
+            "Failed to emit workspace event after all retries — cache may be stale"
         );
-
-        emit_result
+        Err(error_msg)
     }
 
     /// Update workspace state in cache

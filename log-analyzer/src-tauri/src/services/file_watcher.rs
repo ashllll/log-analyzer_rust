@@ -350,18 +350,16 @@ pub fn append_to_workspace_index(
     // 获取工作区的 SearchEngineManager
     let managers = state.search_engine_managers.lock();
     if let Some(manager) = managers.get(workspace_id) {
-        // 添加每个新日志条目到索引
-        for entry in new_entries {
-            if let Err(e) = manager.add_document(entry) {
-                tracing::warn!(
-                    error = %e,
-                    file = %entry.file,
-                    line = entry.line,
-                    "Failed to add document to index"
-                );
-                // 继续处理其他条目，不中断整个流程
-                continue;
-            }
+        // L1 Fix: Use batch add_documents instead of per-document add_document.
+        // This acquires the IndexWriter lock once for the entire batch instead
+        // of N times, reducing lock contention and I/O overhead.
+        if let Err(e) = manager.add_documents(new_entries) {
+            tracing::warn!(
+                error = %e,
+                count = new_entries.len(),
+                workspace_id = %workspace_id,
+                "Failed to add documents to index in batch"
+            );
         }
 
         // 提交索引变更

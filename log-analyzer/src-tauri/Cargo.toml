@@ -29,7 +29,7 @@ homepage = "https://github.com/ashllll/log-analyzer_rust#readme"
 repository = "https://github.com/ashllll/log-analyzer_rust"
 
 [build-dependencies]
-tauri-build = { version = "2.0.0", features = [] }
+tauri-build = { version = "2", features = [] }
 
 [dependencies]
 # Workspace crates
@@ -38,9 +38,9 @@ la-storage = { path = "crates/la-storage" }
 la-search = { path = "crates/la-search" }
 la-archive = { path = "crates/la-archive" }
 
-tauri = { version = "2.0.0", features = [] }
-tauri-plugin-opener = "2.5"
-tauri-plugin-dialog = "2.6"
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
 serde.workspace = true
 serde_json.workspace = true
 uuid = { version = "1.16", features = ["v4", "serde"] }

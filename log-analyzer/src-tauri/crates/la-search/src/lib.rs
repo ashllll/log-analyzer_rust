@@ -58,24 +58,41 @@ pub enum SearchError {
 
 impl SearchError {
     /// 判断错误是否可重试
-    /// 可重试错误：临时性问题，如超时、IO错误
-    /// 不可重试错误：永久性问题，如查询语法错误
+    /// 可重试错误：临时性问题，如超时、IO错误、权限临时不足
+    /// 不可重试错误：永久性问题，如查询语法错误、索引损坏
     pub fn is_retryable(&self) -> bool {
         match self {
             SearchError::Timeout(_) => true,
             SearchError::IndexError(msg) => {
-                // 索引损坏等不可重试，权限问题等可重试
-                !msg.contains("permission denied")
-                    && !msg.contains("corrupt")
-                    && !msg.contains("damaged")
+                // M2 Fix: Corrected logic — permission denied is retryable (transient),
+                // while corrupt/damaged indices are not
+                let lower = msg.to_lowercase();
+                if lower.contains("permission denied") || lower.contains("temporarily") {
+                    true
+                } else if lower.contains("corrupt") || lower.contains("damaged") {
+                    false
+                } else {
+                    // Unknown index error — assume not retryable for safety
+                    false
+                }
             }
             SearchError::IoError(_) => true,
             SearchError::TantivyError(e) => {
-                // Tantivy内部错误，根据错误类型判断
-                // 使用更精确的字符串匹配，减少误判（"IO" 过于宽泛，可能匹配无关内容）
-                e.to_string().contains("timeout")
-                    || e.to_string().contains("IO error")
-                    || e.to_string().contains("Os {")
+                // M2 Fix: Check for inner IO errors via std::error::Error::source()
+                // before falling back to string matching for timeout detection
+                let mut source: Option<&(dyn std::error::Error + 'static)> =
+                    std::error::Error::source(e);
+                while let Some(s) = source {
+                    if s.is::<std::io::Error>() {
+                        return true;
+                    }
+                    source = std::error::Error::source(s);
+                }
+
+                let msg = e.to_string().to_lowercase();
+                msg.contains("timeout")
+                    || msg.contains("io error")
+                    || msg.contains("timed out")
             }
             SearchError::QueryError(_) => false,
             SearchError::RegexError(_) => false,
