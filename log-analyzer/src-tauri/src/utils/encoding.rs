@@ -107,7 +107,19 @@ pub fn decode_filename(bytes: &[u8]) -> String {
 pub fn decode_log_content(bytes: &[u8]) -> (String, EncodingInfo) {
     use encoding_rs::{GBK, UTF_8, WINDOWS_1252};
 
-    // 第1层：UTF-8 快速路径（85%+ 场景）
+    // 第0层：simdutf8 超快速验证（纯 ASCII/UTF-8 场景，零拷贝）
+    if let Ok(text) = simdutf8::compat::from_utf8(bytes) {
+        return (
+            text.to_string(),
+            EncodingInfo {
+                encoding: "UTF-8",
+                had_errors: false,
+                fallback_used: false,
+            },
+        );
+    }
+
+    // 第1层：UTF-8 快速路径（encoding_rs SIMD 优化）
     let (cow, _, had_errors) = UTF_8.decode(bytes);
     if !had_errors && !cow.contains('\u{FFFD}') {
         return (

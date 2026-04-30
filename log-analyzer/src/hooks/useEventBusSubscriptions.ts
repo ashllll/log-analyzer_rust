@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import toast from 'react-hot-toast';
-import { useWorkspaceStore } from './workspaceStore';
-import { useTaskStore } from './taskStore';
+import { useWorkspaceStore } from '../stores/workspaceStore';
+import { useTaskStore } from '../stores/taskStore';
 import { eventBus } from '../events/EventBus';
 import type { TaskUpdateEvent, TaskRemovedEvent } from '../events/types';
 import { logger } from '../utils/logger';

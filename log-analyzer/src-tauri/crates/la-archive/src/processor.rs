@@ -7,14 +7,14 @@
 //! - 收集元数据（增量索引）
 //! - 错误处理和进度报告
 
+use crate::archive_handler::StreamingArchiveHandler;
 use crate::checkpoint_manager::{Checkpoint, CheckpointManager};
 use crate::extraction_engine::ExtractionPolicy;
 use crate::internal::file_type_filter::FileTypeFilter;
 use crate::internal::get_file_metadata;
 use crate::public_api::extract_archive_async;
-use crate::ArchiveManager;
-use crate::archive_handler::StreamingArchiveHandler;
 use crate::zip_handler::StreamingZipHandler;
+use crate::ArchiveManager;
 use la_core::error::{AppError, Result};
 use la_core::models::config::{ArchiveConfig, FileFilterConfig};
 use la_core::traits::AppConfigProvider;
@@ -1237,9 +1237,9 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
         let streaming_handler = StreamingZipHandler;
         match streaming_handler.list_entries(archive_path).await {
             Ok(entries) => {
-                let has_nested_archive = entries.iter().any(|e| {
-                    !e.is_directory && is_archive_file(&e.path)
-                });
+                let has_nested_archive = entries
+                    .iter()
+                    .any(|e| !e.is_directory && is_archive_file(&e.path));
 
                 if !has_nested_archive {
                     info!(
@@ -1257,26 +1257,28 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
                         let entry_path_str = entry.path.to_str().unwrap_or("");
                         let new_virtual = format!("{}/{}", virtual_path, entry_path_str);
 
-                        match streaming_handler.stream_entry_to_cas(
-                            archive_path,
-                            entry_path_str,
-                            &context.cas,
-                        ).await {
+                        match streaming_handler
+                            .stream_entry_to_cas(archive_path, entry_path_str, &context.cas)
+                            .await
+                        {
                             Ok(hash) => {
-                                let mime_type = entry.path.extension()
-                                    .and_then(|ext| ext.to_str())
-                                    .map(|ext| match ext.to_lowercase().as_str() {
-                                        "log" | "txt" | "md" => "text/plain".to_string(),
-                                        "json" => "application/json".to_string(),
-                                        "xml" => "application/xml".to_string(),
-                                        _ => "application/octet-stream".to_string(),
-                                    });
+                                let mime_type =
+                                    entry.path.extension().and_then(|ext| ext.to_str()).map(
+                                        |ext| match ext.to_lowercase().as_str() {
+                                            "log" | "txt" | "md" => "text/plain".to_string(),
+                                            "json" => "application/json".to_string(),
+                                            "xml" => "application/xml".to_string(),
+                                            _ => "application/octet-stream".to_string(),
+                                        },
+                                    );
 
                                 let file_metadata = FileMetadata {
                                     id: 0,
                                     sha256_hash: hash,
                                     virtual_path: normalize_path_separator(&new_virtual),
-                                    original_name: entry.path.file_name()
+                                    original_name: entry
+                                        .path
+                                        .file_name()
                                         .unwrap_or_default()
                                         .to_string_lossy()
                                         .to_string(),
@@ -1286,7 +1288,9 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
                                     parent_archive_id: Some(archive_id),
                                     depth_level,
                                 };
-                                if let Err(e) = context.metadata_store.insert_file(&file_metadata).await {
+                                if let Err(e) =
+                                    context.metadata_store.insert_file(&file_metadata).await
+                                {
                                     warn!(error = %e, path = %new_virtual, "Failed to insert streamed file metadata");
                                     all_success = false;
                                     break;
@@ -1301,8 +1305,14 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
                     }
 
                     if all_success {
-                        context.metadata_store.update_archive_status(archive_id, "completed").await?;
-                        info!(archive_id = archive_id, "Streaming ZIP processing completed");
+                        context
+                            .metadata_store
+                            .update_archive_status(archive_id, "completed")
+                            .await?;
+                        info!(
+                            archive_id = archive_id,
+                            "Streaming ZIP processing completed"
+                        );
                         return Ok(());
                     }
                 }

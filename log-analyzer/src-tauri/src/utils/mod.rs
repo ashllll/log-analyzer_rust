@@ -11,10 +11,7 @@ pub mod command_validation;
 pub mod encoding;
 pub mod legacy_detection;
 pub mod log_config;
-#[cfg(test)]
-pub mod log_file_detector;
 pub mod path;
-pub mod path_security;
 pub mod resource_manager;
 pub mod resource_tracker;
 pub mod retry;
@@ -25,7 +22,7 @@ pub mod workspace_paths;
 mod resource_management_property_tests;
 
 // 重新导出常用工具函数
-pub use async_resource_manager::{AsyncResourceManager, OperationType}; // ✅ 添加异步资源管理
+pub use async_resource_manager::{AsyncResourceManager, OperationType};
 pub use cache_manager::CacheManager;
 pub use cancellation_manager::{run_with_cancellation, CancellableOperation, CancellationManager};
 pub use legacy_detection::{

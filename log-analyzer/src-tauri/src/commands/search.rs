@@ -18,7 +18,6 @@ use std::{
 use tauri::{command, AppHandle, Emitter, Manager, State};
 use tracing::{debug, error, info, trace, warn};
 
-use rayon::prelude::*;
 use crate::commands::import::ensure_workspace_runtime_state;
 use crate::models::AppState;
 use la_core::error::{AppError, CommandError};
@@ -26,6 +25,7 @@ use la_core::models::config::AppConfigLoader;
 use la_core::models::search::{QueryMetadata, QueryOperator, SearchTerm, TermSource};
 use la_core::models::search_statistics::SearchResultSummary;
 use la_core::models::{LogEntry, SearchCacheKey, SearchFilters, SearchQuery};
+use rayon::prelude::*;
 use regex::Regex;
 
 // MessagePack 序列化支持
@@ -842,7 +842,9 @@ pub async fn search_logs(
 
                 // 缓存结果（限制大小避免内存爆炸）
                 if tantivy_results.entries.len() < 100_000 {
-                    cache_manager.lock().insert_sync(cache_key, tantivy_results.entries);
+                    cache_manager
+                        .lock()
+                        .insert_sync(cache_key, tantivy_results.entries);
                 }
 
                 // 清理取消令牌
@@ -1463,10 +1465,13 @@ fn search_single_file_with_details(
             match cas.read_content_mmap_sync(sha256_hash) {
                 Ok(mmap) => {
                     // 优先零拷贝 UTF-8 解码（日志文件 95%+ 是纯 UTF-8）
-                    match std::str::from_utf8(&mmap) {
+                    // 使用 simdutf8 加速 UTF-8 验证，比 std::str::from_utf8 快 5-20x
+                    match simdutf8::compat::from_utf8(&mmap) {
                         Ok(text) => {
                             results = search_lines_with_details(
-                                text.lines().enumerate().map(|(index, line)| (index, Cow::Borrowed(line))),
+                                text.lines()
+                                    .enumerate()
+                                    .map(|(index, line)| (index, Cow::Borrowed(line))),
                                 virtual_path,
                                 file_identifier,
                                 executor,
@@ -1488,7 +1493,10 @@ fn search_single_file_with_details(
                                 );
                             }
                             results = search_lines_with_details(
-                                content_str.lines().enumerate().map(|(index, line)| (index, Cow::Borrowed(line))),
+                                content_str
+                                    .lines()
+                                    .enumerate()
+                                    .map(|(index, line)| (index, Cow::Borrowed(line))),
                                 virtual_path,
                                 file_identifier,
                                 executor,
@@ -1521,63 +1529,63 @@ fn search_single_file_with_details(
         }
 
         // 小文件（<=1MB）或 mmap 失败回退：标准读取路径，避免 mmap 固定开销
-            let content = match cas.read_content_sync(sha256_hash) {
-                Ok(bytes) => bytes,
-                Err(e) => {
-                    warn!(
-                        hash = %sha256_hash,
-                        virtual_path = %virtual_path,
-                        error = %e,
-                        "Failed to read content from CAS, skipping file"
-                    );
-                    results.push(LogEntry {
-                        id: global_offset,
-                        timestamp: "0".into(),
-                        level: "ERROR".into(),
-                        file: virtual_path.into(),
-                        real_path: file_identifier.into(),
-                        line: 0,
-                        content: format!("[搜索系统: 无法读取文件内容 - {e}]").into(),
-                        tags: vec![],
-                        match_details: None,
-                        matched_keywords: None,
-                    });
-                    return results;
-                }
-            };
-
-            let (content_str, encoding_info) = decode_log_content(&content);
-            drop(content);
-
-            if encoding_info.had_errors {
-                debug!(
+        let content = match cas.read_content_sync(sha256_hash) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                warn!(
                     hash = %sha256_hash,
                     virtual_path = %virtual_path,
-                    encoding = %encoding_info.encoding,
-                    fallback_used = encoding_info.fallback_used,
-                    "File content decoded with encoding fallback in structured search"
+                    error = %e,
+                    "Failed to read content from CAS, skipping file"
                 );
+                results.push(LogEntry {
+                    id: global_offset,
+                    timestamp: "0".into(),
+                    level: "ERROR".into(),
+                    file: virtual_path.into(),
+                    real_path: file_identifier.into(),
+                    line: 0,
+                    content: format!("[搜索系统: 无法读取文件内容 - {e}]").into(),
+                    tags: vec![],
+                    match_details: None,
+                    matched_keywords: None,
+                });
+                return results;
             }
+        };
 
-            results = search_lines_with_details(
-                content_str
-                    .lines()
-                    .enumerate()
-                    .map(|(index, line)| (index, Cow::Borrowed(line))),
-                virtual_path,
-                file_identifier,
-                executor,
-                plan,
-                filters,
-                global_offset,
-            );
+        let (content_str, encoding_info) = decode_log_content(&content);
+        drop(content);
 
-            trace!(
+        if encoding_info.had_errors {
+            debug!(
                 hash = %sha256_hash,
                 virtual_path = %virtual_path,
-                matches = results.len(),
-                "Searched file via CAS"
+                encoding = %encoding_info.encoding,
+                fallback_used = encoding_info.fallback_used,
+                "File content decoded with encoding fallback in structured search"
             );
+        }
+
+        results = search_lines_with_details(
+            content_str
+                .lines()
+                .enumerate()
+                .map(|(index, line)| (index, Cow::Borrowed(line))),
+            virtual_path,
+            file_identifier,
+            executor,
+            plan,
+            filters,
+            global_offset,
+        );
+
+        trace!(
+            hash = %sha256_hash,
+            virtual_path = %virtual_path,
+            matches = results.len(),
+            "Searched file via CAS"
+        );
     } else {
         // Legacy path-based access
         use std::fs::File;

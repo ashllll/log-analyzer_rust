@@ -9,8 +9,8 @@
 // 导入 log_analyzer 库的模块
 use log_analyzer::commands::{
     async_search::*, cache::*, config::*, error_reporting::*, export::*, import::*, legacy::*,
-    log_config::*, query::*, search::*, state_sync::*, validation::*,
-    virtual_tree::*, watch::*, workspace::*,
+    log_config::*, query::*, search::*, state_sync::*, validation::*, virtual_tree::*, watch::*,
+    workspace::*,
 };
 use log_analyzer::models::{AppState, CacheState, SearchState, WorkspaceState};
 use log_analyzer::task_manager::TaskManager;

@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
-import { useWorkspaceStore } from './workspaceStore';
-import { useKeywordStore } from './keywordStore';
-import { useAppStore } from './appStore';
-import { useToast } from '../hooks/useToast';
+import { useWorkspaceStore } from '../stores/workspaceStore';
+import { useKeywordStore } from '../stores/keywordStore';
+import { useAppStore } from '../stores/appStore';
+import { useToast } from './useToast';
 import { api } from '../services/api';
 import type { Workspace, KeywordGroup } from '../types/common';
 import { logger } from '../utils/logger';

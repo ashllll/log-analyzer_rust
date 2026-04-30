@@ -1,8 +1,8 @@
 import { ReactNode } from 'react';
 import { useConfigManager } from '../hooks/useConfigManager';
-import { useConfigInitializer } from './useConfigInitializer';
-import { useEventBusSubscriptions } from './useEventBusSubscriptions';
-import { useTauriEventListeners } from './useTauriEventListeners';
+import { useConfigInitializer } from '../hooks/useConfigInitializer';
+import { useEventBusSubscriptions } from '../hooks/useEventBusSubscriptions';
+import { useTauriEventListeners } from '../hooks/useTauriEventListeners';
 
 interface AppStoreProviderProps {
   children: ReactNode;

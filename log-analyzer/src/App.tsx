@@ -19,7 +19,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from './lib/queryClient';
 
 // 导入全局Store和Hooks
-import { AppStoreProvider } from './stores/AppStoreProvider';
+import { AppStoreProvider } from './components/AppStoreProvider';
 import { useAppStore } from './stores/appStore';
 import { useWorkspaceSelection } from './hooks/useWorkspaceSelection';
 import { useWorkspaceList } from './hooks/useWorkspaceList';

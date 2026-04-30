@@ -1537,6 +1537,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "fancy-regex"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e1e1dacd0d2082dfcf1351c4bdd566bbe89a2b263235a2b50058f1e130a47277"
+dependencies = [
+ "bit-set 0.8.0",
+ "regex-automata",
+ "regex-syntax",
+]
+
+[[package]]
 name = "fastdivide"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2880,7 +2891,7 @@ dependencies = [
 
 [[package]]
 name = "la-archive"
-version = "1.2.59"
+version = "1.2.60"
 dependencies = [
  "async-compression",
  "async-trait",
@@ -2920,7 +2931,7 @@ dependencies = [
 
 [[package]]
 name = "la-core"
-version = "1.2.59"
+version = "1.2.60"
 dependencies = [
  "async-trait",
  "chrono",
@@ -2945,7 +2956,7 @@ dependencies = [
 
 [[package]]
 name = "la-search"
-version = "1.2.59"
+version = "1.2.60"
 dependencies = [
  "aho-corasick",
  "chrono",
@@ -2973,7 +2984,7 @@ dependencies = [
 
 [[package]]
 name = "la-storage"
-version = "1.2.59"
+version = "1.2.60"
 dependencies = [
  "async-trait",
  "chrono",
@@ -3152,6 +3163,7 @@ dependencies = [
  "dunce",
  "encoding_rs",
  "eyre",
+ "fancy-regex",
  "flate2",
  "futures",
  "governor",
@@ -3162,6 +3174,7 @@ dependencies = [
  "libc",
  "libloading 0.8.9",
  "lru 0.16.4",
+ "memchr",
  "miette",
  "mime_guess",
  "moka",
@@ -3184,6 +3197,7 @@ dependencies = [
  "serde_json",
  "sevenz-rust",
  "sha2",
+ "simdutf8",
  "sqlx",
  "tantivy",
  "tar",
@@ -5793,6 +5807,12 @@ name = "simd-adler32"
 version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e320a6c5ad31d271ad523dcf3ad13e2767ad8b1cb8f047f75a8aeaf8da139da2"
+
+[[package]]
+name = "simdutf8"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 
 [[package]]
 name = "siphasher"

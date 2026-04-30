@@ -8,15 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### ⚡ Performance
+- **搜索引擎 SIMD 加速**: 简单关键词匹配引入 `memchr` 引擎（SIMD 子串搜索），比 `regex` 快 5-50x，查询计划器按 `Memchr > AhoCorasick > Automata > Standard > Fancy` 排序执行
+- **UTF-8 验证 SIMD 加速**: `decode_log_content` 和 mmap 大文件路径引入 `simdutf8` 第0层快速验证，比 `std::str::from_utf8` 快 5-20x，零拷贝通过时直接返回
 - **高亮引擎零拷贝优化**: `highlighting_engine.rs` 核心方法返回 `Cow<'_, str>`，无特殊字符/无需截断时直接借用原文本，避免堆分配
 - **Tauri 命令边界统一**: `io::Error` 统一映射为 `AppError::io_error(...)`，消除冗余 `format!` 构造，错误上下文包含路径信息（影响 `config.rs`、`export.rs`、`import.rs`、`workspace.rs`、`search.rs`）
 
 ### 🐛 Bug Fixes
+- **正则前瞻/后瞻支持**: 引入 `fancy-regex` 引擎，修复 `(?=...)`、`(?<=...)`、`(?!...)`、`(?<!...)` 等 lookaround 模式此前编译直接失败的缺陷
 - **GC 哈希构造修复**: `scan_and_identify_orphans` 与增量 GC 使用 `shard_prefix + file_name` 作为完整哈希，修复此前仅用文件名导致的误报/漏报孤儿对象
 - **SearchPage 内存泄漏**: 添加 `scrollTimeoutRef` 并在组件卸载时清理 `setTimeout`，防止快速连续搜索时定时器堆积
 - **SearchPage 重复请求**: 时间范围获取 Effect 的依赖从 `[activeWorkspace?.id, activeWorkspace]` 精简为 `[activeWorkspace?.id]`，消除因对象引用变化导致的重复 fetch
 
 ### ♻️ Refactor
+- **仓库死代码清理**: 删除零引用的 services 模块 9 个（`file_change_detector`、`file_type_filter`、`index_validator`、`intelligent_file_filter`、`metadata_db`、`pattern_matcher`、`report_collector`、`service_config`、`workspace_metrics`）、utils 模块 4 个、models 死文件 2 个、废弃集成测试 2 个，总计精简 ~5,000 行
+- **前端目录整理**: `AppStoreProvider` 及初始化 hooks 从 `stores/` 移至 `components/` 与 `hooks/`，删除废弃的 `EventManager.tsx` 及 `errorService.ts`
 - **GC 增量实现**: `run_incremental_gc` 替换原占位实现，基于 shard 目录游标按 `batch_size`（默认 1000）分批扫描，后台 `start_background_gc` 默认调用增量模式，降低 I/O 峰值
 - **SearchPage 组件拆分**: 提取 `LogRow` 子组件至 `SearchPage/components/LogRow.tsx`，主文件从 1001 行降至 923 行
 - **FormField 类型安全**: 移除 `(child.type as any).displayName` 检查，改为直接组件引用比较 `child.type === Input`，消除全部 `any` 断言

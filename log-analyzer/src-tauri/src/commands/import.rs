@@ -522,7 +522,10 @@ pub async fn import_folder(
                         let guard = state.cache_manager.lock();
                         guard.clone()
                     };
-                    if let Err(e) = cache.invalidate_workspace_cache_async(&workspace_id_clone).await {
+                    if let Err(e) = cache
+                        .invalidate_workspace_cache_async(&workspace_id_clone)
+                        .await
+                    {
                         tracing::warn!(
                             workspace_id = %workspace_id_clone,
                             error = %e,

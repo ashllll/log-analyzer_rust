@@ -619,8 +619,8 @@ impl SearchEngineManager {
             let mut doc = TantivyDocument::default();
 
             doc.add_text(self.schema.content, &entry.content);
-            let timestamp_i64 = parse_log_timestamp_to_unix(&entry.timestamp)
-                .unwrap_or_else(|| {
+            let timestamp_i64 =
+                parse_log_timestamp_to_unix(&entry.timestamp).unwrap_or_else(|| {
                     tracing::warn!(
                         timestamp = %entry.timestamp,
                         file = %entry.file,

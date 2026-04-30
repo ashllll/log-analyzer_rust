@@ -278,7 +278,11 @@ impl GarbageCollector {
 
         // Batch check references: query all candidate hashes at once (avoids N+1)
         if !candidate_hashes.is_empty() {
-            match self.metadata_store.batch_check_hashes(&candidate_hashes).await {
+            match self
+                .metadata_store
+                .batch_check_hashes(&candidate_hashes)
+                .await
+            {
                 Ok(referenced) => {
                     let referenced_count = referenced.len();
                     for hash in &candidate_hashes {
@@ -434,7 +438,11 @@ impl GarbageCollector {
 
         // Batch check all candidate hashes at once
         if !candidate_hashes.is_empty() {
-            match self.metadata_store.batch_check_hashes(&candidate_hashes).await {
+            match self
+                .metadata_store
+                .batch_check_hashes(&candidate_hashes)
+                .await
+            {
                 Ok(referenced) => {
                     debug!(
                         candidates = candidate_hashes.len(),

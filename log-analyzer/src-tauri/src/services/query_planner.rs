@@ -339,9 +339,11 @@ impl ExecutionPlan {
 
     fn engine_cost_rank(engine: &RegexEngine) -> u8 {
         match engine.engine_type() {
-            EngineType::AhoCorasick => 0,
-            EngineType::Automata => 1,
-            EngineType::Standard => 2,
+            EngineType::Memchr => 0,      // SIMD 子串搜索，最快
+            EngineType::AhoCorasick => 1, // 多模式自动机，次快
+            EngineType::Automata => 2,
+            EngineType::Standard => 3,
+            EngineType::Fancy => 4, // 回溯引擎，最慢
         }
     }
 
@@ -865,14 +867,25 @@ mod tests {
 
     #[test]
     fn test_engine_selection_simple_keyword() {
-        let pattern = "error";
-        let engine = RegexEngine::new(pattern, false).unwrap();
+        // 简单关键词（case-sensitive）应使用 MemchrEngine（SIMD 加速）
+        let engine = RegexEngine::new("error", false).unwrap();
+        assert!(
+            matches!(engine, RegexEngine::Memchr(_)),
+            "Simple keyword should use MemchrEngine"
+        );
+        assert!(engine.is_match("error occurred"));
+        assert!(!engine.is_match("ERROR occurred"));
+    }
 
-        match engine {
-            RegexEngine::AhoCorasick(_) => {}
-            RegexEngine::Automata(_) => {}
-            RegexEngine::Standard(_) => {}
-        }
+    #[test]
+    fn test_engine_selection_case_insensitive() {
+        // case-insensitive 模式 (?i:...) 应回退到 StandardEngine
+        let engine = RegexEngine::new("(?i:error)", false).unwrap();
+        assert!(
+            matches!(engine, RegexEngine::Standard(_)),
+            "Case-insensitive pattern should use StandardEngine"
+        );
+        assert!(engine.is_match("ERROR occurred"));
     }
 
     #[test]
@@ -880,11 +893,23 @@ mod tests {
         let pattern = r"\d{4}-\d{2}-\d{2}";
         let engine = RegexEngine::new(pattern, true).unwrap();
 
-        match engine {
-            RegexEngine::AhoCorasick(_) => {}
-            RegexEngine::Automata(_) => {}
-            RegexEngine::Standard(_) => {}
-        }
+        assert!(
+            matches!(engine, RegexEngine::Standard(_)),
+            "Complex regex should use StandardEngine"
+        );
+        assert!(engine.is_match("2024-01-30"));
+    }
+
+    #[test]
+    fn test_engine_selection_fancy_lookaround() {
+        // lookaround 模式应使用 FancyEngine
+        let engine = RegexEngine::new(r"(?<=foo)bar", true).unwrap();
+        assert!(
+            matches!(engine, RegexEngine::Fancy(_)),
+            "Lookaround should use FancyEngine"
+        );
+        assert!(engine.is_match("foobar"));
+        assert!(!engine.is_match("bar"));
     }
 
     #[test]

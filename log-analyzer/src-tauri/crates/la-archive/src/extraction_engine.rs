@@ -39,13 +39,13 @@ pub struct ExtractionPolicy {
 impl Default for ExtractionPolicy {
     fn default() -> Self {
         Self {
-            max_depth: 10,                            // 统一: 与 nested_archive_config 保持一致
-            max_file_size: 100 * 1024 * 1024, // 100MB (防止单个超大文件耗尽内存)
+            max_depth: 10,                     // 统一: 与 nested_archive_config 保持一致
+            max_file_size: 100 * 1024 * 1024,  // 100MB (防止单个超大文件耗尽内存)
             max_total_size: 500 * 1024 * 1024, // 500MB (防止压缩炸弹攻击)
-            buffer_size: 1024 * 1024,                // 1MB (优化: 从 64KB 增大，提升大文件处理性能)
-            dir_batch_size: 10,                      // Batch 10 directories
-            max_parallel_files: 4,                   // Extract up to 4 files in parallel
-            max_file_count: 10_000, // 单次压缩包最多解压文件数，与 ExtractionLimits 对齐
+            buffer_size: 1024 * 1024,          // 1MB (优化: 从 64KB 增大，提升大文件处理性能)
+            dir_batch_size: 10,                // Batch 10 directories
+            max_parallel_files: 4,             // Extract up to 4 files in parallel
+            max_file_count: 10_000,            // 单次压缩包最多解压文件数，与 ExtractionLimits 对齐
         }
     }
 }

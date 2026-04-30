@@ -190,10 +190,18 @@ pub struct StreamingZipHandler;
 
 #[async_trait]
 impl crate::archive_handler::StreamingArchiveHandler for StreamingZipHandler {
-    async fn list_entries(&self, source: &Path) -> Result<Vec<crate::archive_handler::ArchiveEntryInfo>> {
-        let reader = async_zip::tokio::read::fs::ZipFileReader::new(source).await.map_err(|e| {
-            AppError::archive_error(format!("Failed to create ZIP reader: {}", e), Some(source.to_path_buf()))
-        })?;
+    async fn list_entries(
+        &self,
+        source: &Path,
+    ) -> Result<Vec<crate::archive_handler::ArchiveEntryInfo>> {
+        let reader = async_zip::tokio::read::fs::ZipFileReader::new(source)
+            .await
+            .map_err(|e| {
+                AppError::archive_error(
+                    format!("Failed to create ZIP reader: {}", e),
+                    Some(source.to_path_buf()),
+                )
+            })?;
 
         let mut entries = Vec::new();
         for entry in reader.file().entries() {
@@ -214,24 +222,40 @@ impl crate::archive_handler::StreamingArchiveHandler for StreamingZipHandler {
         entry_path: &str,
         cas: &la_storage::ContentAddressableStorage,
     ) -> Result<String> {
-        let reader = async_zip::tokio::read::fs::ZipFileReader::new(source).await.map_err(|e| {
-            AppError::archive_error(format!("Failed to create ZIP reader: {}", e), Some(source.to_path_buf()))
-        })?;
+        let reader = async_zip::tokio::read::fs::ZipFileReader::new(source)
+            .await
+            .map_err(|e| {
+                AppError::archive_error(
+                    format!("Failed to create ZIP reader: {}", e),
+                    Some(source.to_path_buf()),
+                )
+            })?;
 
-        let index = reader.file().entries().iter()
+        let index = reader
+            .file()
+            .entries()
+            .iter()
             .position(|e| e.filename().as_str().unwrap_or("") == entry_path)
-            .ok_or_else(|| AppError::archive_error(
-                format!("ZIP entry not found: {}", entry_path),
-                Some(source.to_path_buf()),
-            ))?;
+            .ok_or_else(|| {
+                AppError::archive_error(
+                    format!("ZIP entry not found: {}", entry_path),
+                    Some(source.to_path_buf()),
+                )
+            })?;
 
         let entry_reader = reader.reader_with_entry(index).await.map_err(|e| {
-            AppError::archive_error(format!("Failed to open ZIP entry reader: {}", e), Some(source.to_path_buf()))
+            AppError::archive_error(
+                format!("Failed to open ZIP entry reader: {}", e),
+                Some(source.to_path_buf()),
+            )
         })?;
 
         use tokio_util::compat::FuturesAsyncReadCompatExt;
         cas.store_stream(entry_reader.compat()).await.map_err(|e| {
-            AppError::archive_error(format!("CAS store stream failed: {}", e), Some(source.to_path_buf()))
+            AppError::archive_error(
+                format!("CAS store stream failed: {}", e),
+                Some(source.to_path_buf()),
+            )
         })
     }
 }

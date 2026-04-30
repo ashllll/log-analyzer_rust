@@ -90,9 +90,7 @@ impl SearchError {
                 }
 
                 let msg = e.to_string().to_lowercase();
-                msg.contains("timeout")
-                    || msg.contains("io error")
-                    || msg.contains("timed out")
+                msg.contains("timeout") || msg.contains("io error") || msg.contains("timed out")
             }
             SearchError::QueryError(_) => false,
             SearchError::RegexError(_) => false,

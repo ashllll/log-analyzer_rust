@@ -113,12 +113,9 @@ impl MetadataStore {
             "PRAGMA mmap_size = 268435456",
             "PRAGMA temp_store = MEMORY",
         ] {
-            sqlx::query(pragma)
-                .execute(&pool)
-                .await
-                .map_err(|e| {
-                    AppError::database_error(format!("Failed to set PRAGMA '{}': {}", pragma, e))
-                })?;
+            sqlx::query(pragma).execute(&pool).await.map_err(|e| {
+                AppError::database_error(format!("Failed to set PRAGMA '{}': {}", pragma, e))
+            })?;
         }
 
         info!(path = %db_path.display(), "WAL mode enabled for better concurrency");
@@ -504,7 +501,10 @@ impl MetadataStore {
     ///
     /// Uses a single SQL IN clause to avoid N+1 query problem during GC.
     /// Splits into batches of 1000 to avoid exceeding SQLite variable limits.
-    pub async fn batch_check_hashes(&self, hashes: &[String]) -> Result<std::collections::HashSet<String>> {
+    pub async fn batch_check_hashes(
+        &self,
+        hashes: &[String],
+    ) -> Result<std::collections::HashSet<String>> {
         use std::collections::HashSet;
         let mut referenced = HashSet::new();
         let batch_size = 1000usize;
@@ -514,7 +514,9 @@ impl MetadataStore {
                 continue;
             }
 
-            let placeholders: Vec<String> = chunk.iter().enumerate()
+            let placeholders: Vec<String> = chunk
+                .iter()
+                .enumerate()
                 .map(|(i, _)| format!("?{}", i + 1))
                 .collect();
             let sql = format!(
@@ -527,12 +529,9 @@ impl MetadataStore {
                 query = query.bind(hash);
             }
 
-            let rows = query
-                .fetch_all(&self.pool)
-                .await
-                .map_err(|e| AppError::database_error(format!(
-                    "Failed to batch check hashes: {}", e
-                )))?;
+            let rows = query.fetch_all(&self.pool).await.map_err(|e| {
+                AppError::database_error(format!("Failed to batch check hashes: {}", e))
+            })?;
 
             for row in rows {
                 let hash: String = row.get("sha256_hash");

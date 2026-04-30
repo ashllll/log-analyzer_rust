@@ -46,6 +46,9 @@ serde_json.workspace = true
 uuid = { version = "1.16", features = ["v4", "serde"] }
 regex.workspace = true
 aho-corasick = "1.1"
+memchr = "2.8"
+fancy-regex = "0.18"
+simdutf8 = "0.1"
 chrono.workspace = true
 walkdir.workspace = true
 tempfile.workspace = true

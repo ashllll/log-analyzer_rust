@@ -723,7 +723,11 @@ impl TaskManager {
 
         loop {
             let tx = done_tx.take().expect("done_tx already consumed");
-            match self.sender.send(ActorMessage::Shutdown { done_tx: tx }).await {
+            match self
+                .sender
+                .send(ActorMessage::Shutdown { done_tx: tx })
+                .await
+            {
                 Ok(()) => {
                     info!("Shutdown message sent successfully");
                     break;
@@ -772,7 +776,10 @@ impl TaskManager {
                 Ok(()) // Still treat as "stopped" since the actor is gone
             }
             Err(_) => {
-                error!("TaskManager actor drain timed out after {} seconds", DRAIN_TIMEOUT.as_secs());
+                error!(
+                    "TaskManager actor drain timed out after {} seconds",
+                    DRAIN_TIMEOUT.as_secs()
+                );
                 Ok(()) // Timeout is acceptable — the actor will be dropped anyway
             }
         }

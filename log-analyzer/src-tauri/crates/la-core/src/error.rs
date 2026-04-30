@@ -158,9 +158,7 @@ impl AppError {
         use std::io::ErrorKind;
         match self {
             AppError::Io(e) => match e.kind() {
-                ErrorKind::PermissionDenied => {
-                    ErrorCategory::PermissionDenied
-                }
+                ErrorKind::PermissionDenied => ErrorCategory::PermissionDenied,
                 ErrorKind::OutOfMemory => ErrorCategory::DiskSpaceExhausted,
                 _ => {
                     let msg = e.to_string();
@@ -184,7 +182,9 @@ impl AppError {
                     ErrorCategory::ZipBombDetected
                 } else if lower.contains("depth") {
                     ErrorCategory::DepthLimitExceeded
-                } else if lower.contains("disk") || (lower.contains("space") && !lower.contains("workspace")) {
+                } else if lower.contains("disk")
+                    || (lower.contains("space") && !lower.contains("workspace"))
+                {
                     ErrorCategory::DiskSpaceExhausted
                 } else if lower.contains("cancel") {
                     ErrorCategory::CancellationRequested

@@ -24,6 +24,7 @@
 use async_trait::async_trait;
 use la_core::error::{AppError, Result};
 use la_core::traits::ContentStorage;
+use memmap2::Mmap;
 use moka::sync::Cache; // ✅ 使用 moka LRU 缓存替代 DashSet
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
@@ -33,7 +34,6 @@ use tokio::fs;
 use tokio::io::{AsyncReadExt, BufReader};
 use tracing::{debug, error, info, warn};
 use walkdir::WalkDir;
-use memmap2::Mmap;
 
 /// 获取指定路径的磁盘可用空间
 ///
@@ -958,7 +958,10 @@ impl ContentAddressableStorage {
     {
         use tokio::io::AsyncWriteExt;
 
-        let tmp_path = self.workspace_dir.join("tmp").join(format!("stream_{}", uuid::Uuid::new_v4()));
+        let tmp_path = self
+            .workspace_dir
+            .join("tmp")
+            .join(format!("stream_{}", uuid::Uuid::new_v4()));
         if let Some(parent) = tmp_path.parent() {
             fs::create_dir_all(parent).await.map_err(|e| {
                 AppError::io_error(
@@ -979,9 +982,10 @@ impl ContentAddressableStorage {
         let mut buf = vec![0u8; 1024 * 1024]; // 1MB buffer
 
         loop {
-            let n = reader.read(&mut buf).await.map_err(|e| {
-                AppError::io_error(format!("Stream read failed: {}", e), None)
-            })?;
+            let n = reader
+                .read(&mut buf)
+                .await
+                .map_err(|e| AppError::io_error(format!("Stream read failed: {}", e), None))?;
             if n == 0 {
                 break;
             }

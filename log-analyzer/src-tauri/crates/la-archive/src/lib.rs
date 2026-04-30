@@ -20,7 +20,9 @@ pub mod tar_handler;
 pub mod zip_handler;
 
 // 重新导出核心类型
-pub use archive_handler::{ArchiveEntryInfo, ArchiveHandler, ExtractionSummary, StreamingArchiveHandler};
+pub use archive_handler::{
+    ArchiveEntryInfo, ArchiveHandler, ExtractionSummary, StreamingArchiveHandler,
+};
 pub use checkpoint_manager::{Checkpoint, CheckpointConfig, CheckpointManager};
 pub use extraction_context::{ExtractionContext, ExtractionItem, ExtractionStack};
 pub use extraction_engine::{ExtractionEngine, ExtractionPolicy};

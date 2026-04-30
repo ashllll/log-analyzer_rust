@@ -52,6 +52,8 @@ pub enum EngineType {
     AhoCorasick,
     Automata,
     Standard,
+    Memchr,
+    Fancy,
 }
 
 impl fmt::Display for EngineType {
@@ -60,6 +62,8 @@ impl fmt::Display for EngineType {
             EngineType::AhoCorasick => write!(f, "AhoCorasick"),
             EngineType::Automata => write!(f, "Automata"),
             EngineType::Standard => write!(f, "Standard"),
+            EngineType::Memchr => write!(f, "Memchr"),
+            EngineType::Fancy => write!(f, "Fancy"),
         }
     }
 }
@@ -69,6 +73,8 @@ pub enum RegexEngine {
     AhoCorasick(AhoCorasickEngine),
     Automata(AutomataEngine),
     Standard(StandardEngine),
+    Memchr(MemchrEngine),
+    Fancy(FancyEngine),
 }
 
 impl fmt::Debug for RegexEngine {
@@ -86,6 +92,14 @@ impl fmt::Debug for RegexEngine {
                 .debug_struct("Standard")
                 .field("pattern", &e.pattern())
                 .finish(),
+            RegexEngine::Memchr(e) => f
+                .debug_struct("Memchr")
+                .field("pattern", &e.pattern())
+                .finish(),
+            RegexEngine::Fancy(e) => f
+                .debug_struct("Fancy")
+                .field("pattern", &e.pattern())
+                .finish(),
         }
     }
 }
@@ -96,20 +110,23 @@ impl RegexEngine {
             RegexEngine::AhoCorasick(_) => EngineType::AhoCorasick,
             RegexEngine::Automata(_) => EngineType::Automata,
             RegexEngine::Standard(_) => EngineType::Standard,
+            RegexEngine::Memchr(_) => EngineType::Memchr,
+            RegexEngine::Fancy(_) => EngineType::Fancy,
         }
     }
 
     /// 智能选择最佳引擎（业内成熟方案）
     ///
     /// 选择策略：
-    /// 1. **需要 lookahead/lookbehind**: 必须使用 StandardEngine
+    /// 1. **需要 lookahead/lookbehind**: 使用 FancyEngine（支持回溯）
     /// 2. **复杂正则元字符**: 使用 StandardEngine
     /// 3. **简单多模式 (| 分隔)**: 使用 AhoCorasickEngine (O(n) 线性复杂度)
-    /// 4. **单简单关键词**: 使用 StandardEngine (已优化)
+    /// 4. **单简单关键词 (case-sensitive)**: 使用 MemchrEngine（SIMD 加速）
+    /// 5. **其他**: 使用 StandardEngine
     pub fn new(pattern: &str, is_regex: bool) -> Result<Self, EngineError> {
-        // 1. 检测是否需要前瞻/后瞻（必须使用 StandardEngine）
+        // 1. 检测是否需要前瞻/后瞻（使用 FancyEngine）
         if needs_lookaround(pattern) {
-            return StandardEngine::new(pattern).map(RegexEngine::Standard);
+            return FancyEngine::new(pattern).map(RegexEngine::Fancy);
         }
 
         // 2. 如果标记为正则表达式，检查复杂度
@@ -125,7 +142,12 @@ impl RegexEngine {
             return AhoCorasickEngine::new(pattern).map(RegexEngine::AhoCorasick);
         }
 
-        // 4. 默认使用 StandardEngine
+        // 4. 简单关键词 (case-sensitive) 使用 Memchr（SIMD 加速）
+        if is_simple_keyword(pattern) && !pattern.starts_with("(?i:") {
+            return MemchrEngine::new(pattern).map(RegexEngine::Memchr);
+        }
+
+        // 5. 默认使用 StandardEngine（包含 (?i:...) 等 case-insensitive 模式）
         StandardEngine::new(pattern).map(RegexEngine::Standard)
     }
 
@@ -136,7 +158,7 @@ impl RegexEngine {
         case_insensitive: bool,
     ) -> Result<Self, EngineError> {
         if needs_lookaround(pattern) {
-            return StandardEngine::new(pattern).map(RegexEngine::Standard);
+            return FancyEngine::new(pattern).map(RegexEngine::Fancy);
         }
         if is_regex && !is_simple_keyword(pattern) {
             return StandardEngine::new(pattern).map(RegexEngine::Standard);
@@ -144,6 +166,9 @@ impl RegexEngine {
         if is_multi_keyword(pattern) {
             return AhoCorasickEngine::new_with_ci(pattern, case_insensitive)
                 .map(RegexEngine::AhoCorasick);
+        }
+        if !case_insensitive && is_simple_keyword(pattern) {
+            return MemchrEngine::new(pattern).map(RegexEngine::Memchr);
         }
         StandardEngine::new(pattern).map(RegexEngine::Standard)
     }
@@ -153,6 +178,8 @@ impl RegexEngine {
             RegexEngine::AhoCorasick(e) => EngineMatches::AhoCorasick(e.find_iter(text)),
             RegexEngine::Automata(e) => EngineMatches::Automata(e.find_iter(text)),
             RegexEngine::Standard(e) => EngineMatches::Standard(e.find_iter(text)),
+            RegexEngine::Memchr(e) => EngineMatches::Memchr(e.find_iter(text)),
+            RegexEngine::Fancy(e) => EngineMatches::Fancy(e.find_iter(text)),
         }
     }
 
@@ -161,6 +188,8 @@ impl RegexEngine {
             RegexEngine::AhoCorasick(e) => e.is_match(text),
             RegexEngine::Automata(e) => e.is_match(text),
             RegexEngine::Standard(e) => e.is_match(text),
+            RegexEngine::Memchr(e) => e.is_match(text),
+            RegexEngine::Fancy(e) => e.is_match(text),
         }
     }
 }
@@ -359,6 +388,148 @@ impl<'a> Iterator for StandardMatches<'a> {
     }
 }
 
+// ========== MemchrEngine：SIMD 加速子串搜索 ==========
+
+#[derive(Clone)]
+pub struct MemchrEngine {
+    pattern: String,
+    needle: Vec<u8>,
+}
+
+impl MemchrEngine {
+    pub fn new(pattern: &str) -> Result<Self, EngineError> {
+        if pattern.trim().is_empty() {
+            return Err(EngineError::CompilationError("Empty pattern".to_string()));
+        }
+        Ok(Self {
+            pattern: pattern.to_string(),
+            needle: pattern.as_bytes().to_vec(),
+        })
+    }
+
+    pub fn pattern(&self) -> &str {
+        &self.pattern
+    }
+
+    pub fn find_iter<'a>(&'a self, text: &'a str) -> MemchrMatches<'a> {
+        MemchrMatches {
+            needle: self.needle.clone(),
+            text: text.as_bytes(),
+            offset: 0,
+            pattern: self.pattern.clone(),
+        }
+    }
+
+    /// 直接判断文本是否包含子串，零分配
+    pub fn is_match(&self, text: &str) -> bool {
+        memchr::memmem::find(text.as_bytes(), &self.needle).is_some()
+    }
+}
+
+pub struct MemchrMatches<'a> {
+    needle: Vec<u8>,
+    text: &'a [u8],
+    offset: usize,
+    pattern: String,
+}
+
+impl<'a> Iterator for MemchrMatches<'a> {
+    type Item = MatchResult;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let remaining = &self.text[self.offset..];
+        let pos = memchr::memmem::find(remaining, &self.needle)?;
+        let start = self.offset + pos;
+        let end = start + self.needle.len();
+        // 避免空匹配导致死循环（memchr 不会出现，防御性编程）
+        if end <= self.offset {
+            self.offset += 1;
+            return self.next();
+        }
+        self.offset = end;
+        Some(MatchResult {
+            start,
+            end,
+            pattern: self.pattern.clone(),
+        })
+    }
+}
+
+// ========== FancyEngine：支持前瞻/后瞻的回溯正则引擎 ==========
+
+#[derive(Clone)]
+pub struct FancyEngine {
+    regex: fancy_regex::Regex,
+    pattern: String,
+}
+
+impl FancyEngine {
+    pub fn new(pattern: &str) -> Result<Self, EngineError> {
+        if pattern.trim().is_empty() {
+            return Err(EngineError::CompilationError("Empty pattern".to_string()));
+        }
+        let regex = fancy_regex::Regex::new(pattern)
+            .map_err(|e| EngineError::CompilationError(e.to_string()))?;
+        Ok(Self {
+            regex,
+            pattern: pattern.to_string(),
+        })
+    }
+
+    pub fn pattern(&self) -> &str {
+        &self.pattern
+    }
+
+    pub fn find_iter<'a>(&'a self, text: &'a str) -> FancyMatches<'a> {
+        FancyMatches {
+            regex: &self.regex,
+            text,
+            offset: 0,
+            pattern: self.pattern.clone(),
+        }
+    }
+
+    pub fn is_match(&self, text: &str) -> bool {
+        self.regex.is_match(text).unwrap_or(false)
+    }
+}
+
+pub struct FancyMatches<'a> {
+    regex: &'a fancy_regex::Regex,
+    text: &'a str,
+    offset: usize,
+    pattern: String,
+}
+
+impl<'a> Iterator for FancyMatches<'a> {
+    type Item = MatchResult;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let remaining = &self.text[self.offset..];
+        match self.regex.find(remaining) {
+            Ok(Some(mat)) => {
+                let start = self.offset + mat.start();
+                let end = self.offset + mat.end();
+                if end <= self.offset {
+                    self.offset += 1;
+                    return self.next();
+                }
+                self.offset = end;
+                Some(MatchResult {
+                    start,
+                    end,
+                    pattern: self.pattern.clone(),
+                })
+            }
+            Ok(None) => None,
+            Err(_) => {
+                // 回溯失败（如 catastrophic backtracking），优雅降级
+                None
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct MatchResult {
     pub start: usize,
@@ -384,6 +555,8 @@ pub enum EngineMatches<'a> {
     AhoCorasick(AhoCorasickMatches),
     Automata(AutomataMatches<'a>),
     Standard(StandardMatches<'a>),
+    Memchr(MemchrMatches<'a>),
+    Fancy(FancyMatches<'a>),
 }
 
 impl<'a> Iterator for EngineMatches<'a> {
@@ -394,6 +567,8 @@ impl<'a> Iterator for EngineMatches<'a> {
             EngineMatches::AhoCorasick(m) => m.next(),
             EngineMatches::Automata(m) => m.next(),
             EngineMatches::Standard(m) => m.next(),
+            EngineMatches::Memchr(m) => m.next(),
+            EngineMatches::Fancy(m) => m.next(),
         }
     }
 }
@@ -512,19 +687,78 @@ mod tests {
         assert_eq!(matches.len(), 2);
     }
 
+    #[test]
+    fn test_memchr_engine() {
+        let engine = MemchrEngine::new("error").unwrap();
+        let text = "error occurred, error_code, error123";
+        let matches: Vec<_> = engine.find_iter(text).collect();
+        assert_eq!(matches.len(), 3);
+        assert_eq!(matches[0].text(text), "error");
+        assert_eq!(matches[0].start, 0);
+        assert!(!engine.is_match("warning info"));
+        assert!(engine.is_match("ERROR error"));
+    }
+
+    #[test]
+    fn test_memchr_engine_unicode() {
+        // Memchr 在 UTF-8 文本中按字节匹配，对 ASCII 子串仍正确工作
+        let engine = MemchrEngine::new("error").unwrap();
+        let text = "错误 error 信息 error";
+        let matches: Vec<_> = engine.find_iter(text).collect();
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0].text(text), "error");
+    }
+
+    #[test]
+    fn test_memchr_engine_empty_pattern_fails() {
+        assert!(MemchrEngine::new("").is_err());
+        assert!(MemchrEngine::new("   ").is_err());
+    }
+
+    #[test]
+    fn test_fancy_engine_lookaround() {
+        // 正向后瞻：bar 前面必须有 foo
+        let engine = FancyEngine::new(r"(?<=foo)bar").unwrap();
+        assert!(engine.is_match("foobar"));
+        assert!(!engine.is_match("bar"));
+        assert!(!engine.is_match("bazbar"));
+
+        // 正向前瞻：foo 后面必须有 bar
+        let engine = FancyEngine::new(r"foo(?=bar)").unwrap();
+        assert!(engine.is_match("foobar"));
+        assert!(!engine.is_match("foo"));
+
+        let text = "foobar barbaz";
+        let matches: Vec<_> = engine.find_iter(text).collect();
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].text(text), "foo");
+    }
+
+    #[test]
+    fn test_fancy_engine_negative_lookaround() {
+        // 负向前瞻：q 后面不是 u
+        let engine = FancyEngine::new(r"q(?!u)").unwrap();
+        assert!(engine.is_match("Iraq"));
+        assert!(!engine.is_match("queen"));
+
+        // 负向后瞻：bar 前面不是 foo
+        let engine = FancyEngine::new(r"(?<!foo)bar").unwrap();
+        assert!(engine.is_match("bazbar"));
+        assert!(!engine.is_match("foobar"));
+    }
+
     // ========== 引擎选择测试 (智能选择) ==========
 
     #[test]
     fn test_engine_selection_lookaround() {
-        // 注意: 标准的 regex crate 不支持 lookaround
-        // 我们的 needs_lookaround 函数应该正确检测这些模式
-        assert!(needs_lookaround(r"(?=foo)bar"));
+        // 标准的 regex crate 不支持 lookaround，现在用 fancy-regex 支持
+        assert!(needs_lookaround(r"foo(?=bar)"));
         assert!(needs_lookaround(r"(?<=foo)bar"));
 
-        // 由于 regex 不支持 lookaround，创建引擎会失败
-        // 这是预期行为
-        let result = RegexEngine::new(r"(?=foo)bar", true);
-        assert!(result.is_err(), "Lookaround should fail to compile");
+        // FancyEngine 应该能成功编译 lookaround 模式
+        let engine = RegexEngine::new(r"(?<=foo)bar", true).unwrap();
+        assert!(matches!(engine, RegexEngine::Fancy(_)));
+        assert!(engine.is_match("foobar"));
     }
 
     #[test]
@@ -536,9 +770,10 @@ mod tests {
 
     #[test]
     fn test_engine_selection_simple_keyword() {
-        // 简单关键词使用 StandardEngine（已优化）
+        // 简单关键词（case-sensitive）使用 MemchrEngine（SIMD 加速）
         let engine = RegexEngine::new("error", false).unwrap();
-        assert!(matches!(engine, RegexEngine::Standard(_)));
+        assert!(matches!(engine, RegexEngine::Memchr(_)));
+        assert!(engine.is_match("error occurred"));
     }
 
     #[test]
