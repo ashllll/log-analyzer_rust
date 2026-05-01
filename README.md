@@ -152,7 +152,7 @@ SearchPage.tsx
 当前主搜索的实际规则：
 
 - `|` 表示 OR 查询
-- 正则能力以 Rust `regex` 引擎支持的子集为准，不支持 look-around 与 backreference
+- 正则能力以 Rust `regex` 引擎支持的子集为准；包含 look-around 与 backreference 的模式自动通过 FancyEngine 处理
 - 搜索结果支持分页拉取，避免一次性把大结果集全部放进内存
 - 时间过滤与项目当前时间解析规则保持一致
 - 文件模式过滤支持通配符与兼容子串匹配
@@ -169,7 +169,6 @@ SearchPage.tsx
 - SQLite 元数据管理与虚拟路径映射
 - 虚拟文件树浏览、文件内容导出
 - 文件监听与实时增量追踪
-- 搜索性能监控与运行状态指标
 
 ## 仓库结构
 

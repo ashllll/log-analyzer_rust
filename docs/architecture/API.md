@@ -49,7 +49,11 @@ interface SearchStartResult {
 **当前真实行为：**
 
 - 查询以 `|` 分割为多个 `SearchTerm`（OR 逻辑）
-- 多关键词时启用 Aho-Corasick 快速预检引擎
+- 引擎自动选择：
+  - 含 lookaround（`(?=...)`, `(?<=...)`, `(?!...)`, `(?<!...)`）→ FancyEngine（fancy-regex）
+  - 简单纯关键词 → MemchrEngine（SIMD 子串搜索）
+  - 多关键词 → AhoCorasickEngine（Aho-Corasick 快速预检）
+  - 复杂正则 → StandardEngine（标准正则引擎）
 - 过滤条件在搜索开始前预编译（一次性）
 - 结果写入磁盘临时文件，分页读取
 - 工作区运行态在内存丢失时自动从磁盘懒恢复

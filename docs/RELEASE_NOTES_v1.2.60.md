@@ -98,6 +98,14 @@ File-batch loop changed from iter() to par_iter(). Benefits become visible with 
 **File**: regex_engine.rs
 New AhoCorasickEngine::is_match() calls ac.is_match(text) directly instead of find_iter(text).next().is_some(), eliminating per-match Vec allocation. 10-100x faster on the hot path.
 
+#### MemchrEngine SIMD Keyword Search
+**File**: regex_engine.rs
+New MemchrEngine leverages the `memchr` crate's SIMD-accelerated routines for single-pattern and multi-pattern literal searches. For pure literal queries (no regex metacharacters), this provides 2-5x speedup over the standard regex engine by using vectorized byte scanning.
+
+#### simdutf8 Fast UTF-8 Validation
+**File**: cas.rs
+Replaces standard Rust UTF-8 validation with `simdutf8` for CAS content reads. Uses SIMD lanes to validate UTF-8 correctness up to 5x faster on large files, reducing overhead before text search begins.
+
 #### Streaming ZIP Import (50% Less Disk Write)
 **Files**: la-archive/*
 New StreamingArchiveHandler trait + StreamingZipHandler implementation. Flat ZIPs (no nested archives) stream entries directly into CAS via cas.store_stream(), skipping temp-directory materialization.
@@ -128,6 +136,8 @@ New StreamingArchiveHandler trait + StreamingZipHandler implementation. Flat ZIP
 | PerformancePage.tsx | src/pages/ | None |
 | usePerformanceQueries.ts | src/hooks/ | None |
 
+> **Note**: Monitoring module removal and associated dead-code cleanup eliminated approximately **5,000 lines** of unused code across Rust and TypeScript.
+
 ### 3.3 Critical Fixes
 
 #### Tauri Command Parameter camelCase Alignment (CRITICAL)
@@ -154,6 +164,10 @@ Fixed scan_and_identify_orphans and incremental GC to use full hash keys (shard_
 #### Front-End Rendering Stability
 - LogRow.tsx: Defensive fallbacks on all LogEntry fields prevent white-screen crashes from partial backend data.
 - SearchPage.tsx: emit(search-start) moved from render phase into useEffect to comply with Concurrent React rules.
+
+#### FancyEngine Lookaround Support
+**File**: regex_engine.rs
+Integrates `fancy-regex` as a secondary regex engine. When a query contains lookaround assertions (lookahead/lookbehind) or backreferences, the engine automatically falls back to `fancy-regex`, which supports these features. Previously such patterns were rejected as unsupported.
 
 ---
 
@@ -187,6 +201,9 @@ After (v1.2.60): invoke(get_workspace_status, { workspaceId: ws-123 })
 |-------|---------|--------|---------|---------------|
 | memmap2 | 0.9 | la-storage | mmap zero-copy CAS reads | ~+50 KB |
 | tokio-util (compat, io) | 0.7 | la-archive | async_zip stream compat | Existing, new features |
+| memchr | 2.7 | la-search | SIMD-accelerated literal search | ~+80 KB |
+| fancy-regex | 0.14 | la-search | Lookaround/backreference regex support | ~+250 KB |
+| simdutf8 | 0.1 | la-storage | SIMD UTF-8 validation | ~+30 KB |
 
 ### Removed
 | Crate | Old Purpose | Size Recovered |

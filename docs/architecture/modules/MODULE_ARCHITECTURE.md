@@ -850,7 +850,7 @@ pub async fn check_rar_support() -> CommandResult<bool>;
 
 **导入流程：**
 
-1. 扫描目录树，调用 `FileTypeFilter` 识别日志文件
+1. 扫描目录树，识别日志文件
 2. 调用 `la-archive::ExtractionOrchestrator` 处理压缩文件（递归解压）
 3. 每个文件：`StorageCoordinator::store_file()`（CAS + 元数据）
 4. 初始化并注册 `SearchEngineManager`，批量建 Tantivy 索引
@@ -993,7 +993,7 @@ impl QueryValidation for QueryValidator {
 
 #### 6.4 正则引擎 (`regex_engine.rs`)
 
-**职责：** 提供可切换的多种正则匹配实现。
+**职责：** 提供可切换的多种正则匹配实现，根据查询特征自动选择最优引擎。
 
 ```rust
 pub trait RegexEngine: Send + Sync {
@@ -1002,7 +1002,7 @@ pub trait RegexEngine: Send + Sync {
 }
 
 pub struct StandardEngine {
-    cache: Mutex<LruCache<String, Regex>>,  // LRU 缓存预编译正则
+    cache: Mutex<LruCache<String, Regex>>,  // regex crate，LRU 缓存预编译正则
 }
 
 pub struct AhoCorasickEngine {
@@ -1012,15 +1012,28 @@ pub struct AhoCorasickEngine {
 
 pub struct AutomataEngine;  // 基于 roaring bitset 的实验性实现
 
+pub struct MemchrEngine;  // memchr SIMD 加速，单模式字面量极速匹配
+
+pub struct FancyEngine;   // fancy-regex 引擎，支持 lookaround 等高级正则特性
+
 pub struct RegexEngineManager {
     standard: StandardEngine,
     aho_corasick: AhoCorasickEngine,
+    memchr: MemchrEngine,
+    fancy: FancyEngine,
 }
 
 impl RegexEngineManager {
     pub fn select_engine(&self, query: &SearchQuery) -> &dyn RegexEngine;
 }
 ```
+
+引擎选择策略：
+- 纯字面量单模式 → `MemchrEngine`（SIMD 加速）
+- 纯字面量多模式 OR → `AhoCorasickEngine`
+- 含 lookaround / 反向引用 → `FancyEngine`
+- 标准正则语法 → `StandardEngine`
+- 实验性场景 → `AutomataEngine`
 
 `StandardEngine` 使用 LRU 缓存避免相同正则重复编译，线程安全。
 
@@ -1046,28 +1059,6 @@ impl TimestampParser {
 
     // 专用于 search filters 的 datetime-local 解析
     pub fn parse_naive_datetime(&self, s: &str) -> Option<NaiveDateTime>;
-}
-```
-
-#### 6.6 文件类型过滤器 (`file_type_filter.rs`)
-
-**职责：** 在导入时识别文件类型，过滤掉非日志的二进制文件。
-
-```rust
-pub struct FileTypeFilter {
-    log_patterns: Vec<Regex>,        // 文件名模式
-    binary_extensions: HashSet<String>,  // 已知二进制扩展名黑名单
-}
-
-pub enum ImportDecision {
-    Include,  // 确认为文本/日志文件
-    Exclude,  // 确认为二进制文件
-    Unknown,  // 魔数检测无法确定，按配置处理
-}
-
-impl FileTypeFilter {
-    // 综合：扩展名 + 魔数检测 + 文件名模式
-    pub fn decide(&self, path: &Path, content_preview: &[u8]) -> ImportDecision;
 }
 ```
 
@@ -1292,6 +1283,8 @@ export const api = {
 | `useWorkspaceSelection` | 工作区选择状态 |
 | `useWorkspaceList` | 工作区列表（含刷新） |
 | `useTauriEventListeners` | Tauri 事件订阅（import-progress 等） |
+| `useConfigInitializer` | 应用配置初始化 |
+| `useEventBusSubscriptions` | 事件总线订阅管理 |
 | `useToast` | 全局 Toast 通知 |
 
 ### 16. stores/ — Zustand 状态仓库
@@ -1354,7 +1347,7 @@ WorkspacesPage.tsx: 用户选择文件夹
   1. 初始化工作区目录（若不存在）
   2. 创建 CAS + MetadataStore
   3. 扫描目录树
-  4. FileTypeFilter 过滤非日志文件
+  4. 过滤非日志文件（按扩展名与魔数检测）
   5. 对每个文件：
      - 普通文件：StorageCoordinator::store_file()
      - 压缩文件：ExtractionOrchestrator::extract()
