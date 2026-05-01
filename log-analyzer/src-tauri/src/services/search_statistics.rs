@@ -40,7 +40,7 @@ pub fn calculate_keyword_statistics(
         .collect();
 
     // 按匹配数量降序排序
-    stats.sort_by(|a, b| b.match_count.cmp(&a.match_count));
+    stats.sort_by_key(|b| std::cmp::Reverse(b.match_count));
 
     stats
 }

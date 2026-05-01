@@ -580,7 +580,7 @@ impl AutocompleteEngine {
         self.collect_suggestions(current, prefix, &mut suggestions);
 
         // Sort by frequency (descending) and limit results
-        suggestions.sort_by(|a, b| b.frequency.cmp(&a.frequency));
+        suggestions.sort_by_key(|b| std::cmp::Reverse(b.frequency));
         suggestions.truncate(self.max_suggestions);
 
         let elapsed = start_time.elapsed();

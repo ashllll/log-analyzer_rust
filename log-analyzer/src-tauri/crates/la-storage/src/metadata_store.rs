@@ -2525,6 +2525,10 @@ mod tests {
                         if inserted_files.iter().any(|f: &FileMetadata| f.sha256_hash == file.sha256_hash) {
                             continue;
                         }
+                        // Skip files with duplicate virtual_path (database UNIQUE constraint)
+                        if inserted_files.iter().any(|f: &FileMetadata| f.virtual_path == file.virtual_path) {
+                            continue;
+                        }
 
                         match store.insert_file(&file).await {
                             Ok(_) => {
