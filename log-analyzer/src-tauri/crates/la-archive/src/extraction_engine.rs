@@ -1036,13 +1036,19 @@ impl ExtractionEngine {
         let hash = tokio::task::spawn_blocking(move || {
             use std::io::Read;
             let mut file = std::fs::File::open(&path_buf).map_err(|e| {
-                AppError::archive_error(format!("Failed to open file for hashing: {}", e), Some(path_buf.clone()))
+                AppError::archive_error(
+                    format!("Failed to open file for hashing: {}", e),
+                    Some(path_buf.clone()),
+                )
             })?;
             let mut hasher = Sha256::new();
             let mut buffer = [0u8; 8192];
             loop {
                 let n = file.read(&mut buffer).map_err(|e| {
-                    AppError::archive_error(format!("Failed to read file for hashing: {}", e), Some(path_buf.clone()))
+                    AppError::archive_error(
+                        format!("Failed to read file for hashing: {}", e),
+                        Some(path_buf.clone()),
+                    )
                 })?;
                 if n == 0 {
                     break;
@@ -1052,7 +1058,9 @@ impl ExtractionEngine {
             Ok::<[u8; 32], AppError>(hasher.finalize().into())
         })
         .await
-        .map_err(|e| AppError::archive_error(format!("Hash task panicked: {}", e), Some(path_for_err)))?;
+        .map_err(|e| {
+            AppError::archive_error(format!("Hash task panicked: {}", e), Some(path_for_err))
+        })?;
         hash
     }
 }

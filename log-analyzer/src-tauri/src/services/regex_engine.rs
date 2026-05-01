@@ -174,8 +174,7 @@ impl RegexEngine {
         if case_insensitive && is_simple_keyword(pattern) {
             // Case-insensitive simple keyword: use AhoCorasick with ascii_case_insensitive
             // instead of StandardEngine (?i:) wrapper for better performance.
-            return AhoCorasickEngine::new_with_ci(pattern, true)
-                .map(RegexEngine::AhoCorasick);
+            return AhoCorasickEngine::new_with_ci(pattern, true).map(RegexEngine::AhoCorasick);
         }
         StandardEngine::new(pattern).map(RegexEngine::Standard)
     }
@@ -301,15 +300,15 @@ impl<'a> Iterator for AhoCorasickMatches<'a> {
         let end = self.offset + mat.end();
         // Advance offset: for non-overlapping, move past match end;
         // for overlapping, move past match start to allow overlapping matches.
-        self.offset = if self.overlapping {
-            start + 1
-        } else {
-            end
-        };
+        self.offset = if self.overlapping { start + 1 } else { end };
         Some(MatchResult {
             start,
             end,
-            pattern: self.patterns.get(mat.pattern().as_usize()).cloned().unwrap_or_default(),
+            pattern: self
+                .patterns
+                .get(mat.pattern().as_usize())
+                .cloned()
+                .unwrap_or_default(),
         })
     }
 }

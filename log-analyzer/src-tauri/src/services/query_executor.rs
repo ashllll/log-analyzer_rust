@@ -74,9 +74,10 @@ pub(crate) fn compute_query_cache_key(query: &SearchQuery) -> String {
     }
 
     // 返回 16 进制哈希值作为缓存键（取前 8 字节 / 64 位）
-    format!("{:016x}", u64::from_le_bytes(
-        hasher.finalize()[..8].try_into().unwrap()
-    ))
+    format!(
+        "{:016x}",
+        u64::from_le_bytes(hasher.finalize()[..8].try_into().unwrap())
+    )
 }
 
 /**

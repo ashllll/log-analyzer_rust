@@ -690,8 +690,15 @@ mod tests {
     async fn test_gz_zipslip_prevention() {
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
         // Simulate a malicious path like ../../etc/passwd.gz inside the temp dir
-        let malicious_dir = temp_dir.path().join("malicious").join("..").join("..").join("etc");
-        fs::create_dir_all(&malicious_dir).await.expect("Failed to create malicious dir");
+        let malicious_dir = temp_dir
+            .path()
+            .join("malicious")
+            .join("..")
+            .join("..")
+            .join("etc");
+        fs::create_dir_all(&malicious_dir)
+            .await
+            .expect("Failed to create malicious dir");
         let source_file = malicious_dir.join("passwd.gz");
         let output_dir = temp_dir.path().join("output");
 

@@ -174,9 +174,10 @@ impl CheckpointManager {
         let mut hasher = Sha256::new();
         hasher.update(path.as_os_str().as_encoded_bytes());
         // Use first 8 bytes (64 bits) as hex for brevity in filenames
-        format!("{:016x}", u64::from_le_bytes(
-            hasher.finalize()[..8].try_into().unwrap()
-        ))
+        format!(
+            "{:016x}",
+            u64::from_le_bytes(hasher.finalize()[..8].try_into().unwrap())
+        )
     }
 
     /// Check if a checkpoint exists for an archive
