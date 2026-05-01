@@ -951,24 +951,31 @@ pub async fn search_logs(
                 return;
             }
 
-            // 修复：磁盘写入失败时不应清除 batch，重试一次后若仍失败则保留在内存中
-            // 由外层循环或搜索完成时的最终 flush 再次尝试
-            if let Err(e) = disk_store_spawn.append_entries(&search_id_clone, batch) {
-                warn!(error = %e, "磁盘写入搜索结果批次失败，将重试");
-                // 简单重试一次
-                if disk_store_spawn
-                    .append_entries(&search_id_clone, batch)
-                    .is_err()
-                {
-                    error!(error = %e, "磁盘写入重试失败，批次保留在内存中等待下次 flush");
-                    return; // 不清除 batch，下次 flush 会再次尝试
+            // 修复：限制重试次数为 3 次，超过后丢弃批次，避免无限重试和重复数据
+            const MAX_RETRIES: usize = 3;
+            let mut last_err = None;
+            for _ in 0..MAX_RETRIES {
+                match disk_store_spawn.append_entries(&search_id_clone, batch) {
+                    Ok(_) => {
+                        batch.clear();
+                        if !timed_out_for_search.load(Ordering::SeqCst) {
+                            let _ = app_handle.emit("search-progress", progress_count);
+                        }
+                        return;
+                    }
+                    Err(e) => {
+                        last_err = Some(e);
+                    }
                 }
             }
-            batch.clear();
-
-            if !timed_out_for_search.load(Ordering::SeqCst) {
-                let _ = app_handle.emit("search-progress", progress_count);
+            if let Some(e) = last_err {
+                error!(
+                    error = %e,
+                    retries = MAX_RETRIES,
+                    "磁盘写入搜索结果批次失败，丢弃批次以避免重复数据"
+                );
             }
+            batch.clear(); // 丢弃批次，防止下次 flush 重复输出
         };
 
         // 先发送开始事件

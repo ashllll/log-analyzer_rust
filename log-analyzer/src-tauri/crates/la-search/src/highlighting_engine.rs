@@ -1,5 +1,6 @@
 //! Search Result Highlighting Engine
 #![allow(dead_code)]
+// 预留能力，当前主搜索链路未启用。修改前请确认 AGENTS.md 中的搜索主链路说明。
 //!
 //! Provides efficient text highlighting using Tantivy's snippet generation:
 //! - Fast text highlighting using Tantivy's snippet generation
@@ -389,14 +390,13 @@ impl HighlightingEngine {
         }
     }
 
-    /// Calculate hash for query caching
+    /// Calculate stable hash for query caching (SHA-256, cross-version compatible)
     fn calculate_query_hash(&self, query: &str) -> u64 {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
+        use sha2::{Digest, Sha256};
 
-        let mut hasher = DefaultHasher::new();
-        query.hash(&mut hasher);
-        hasher.finish()
+        let mut hasher = Sha256::new();
+        hasher.update(query.as_bytes());
+        u64::from_le_bytes(hasher.finalize()[..8].try_into().unwrap())
     }
 
     /// Get cached snippets if available and not expired

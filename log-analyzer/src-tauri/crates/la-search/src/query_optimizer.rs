@@ -1,5 +1,6 @@
 //! Query Optimization Engine
 #![allow(dead_code)]
+// 预留能力，当前主搜索链路未启用。修改前请确认 AGENTS.md 中的搜索主链路说明。
 //!
 //! Analyzes query patterns and provides optimization suggestions:
 //! - Query rewriting suggestions for slow queries

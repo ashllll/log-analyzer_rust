@@ -167,14 +167,16 @@ impl CheckpointManager {
             .join(format!("{}{}", checkpoint_name, CHECKPOINT_EXTENSION))
     }
 
-    /// Create a simple hash of a path for uniqueness
+    /// Create a stable hash of a path for uniqueness (SHA-256, cross-version compatible)
     fn hash_path(path: &Path) -> String {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
+        use sha2::{Digest, Sha256};
 
-        let mut hasher = DefaultHasher::new();
-        path.hash(&mut hasher);
-        format!("{:x}", hasher.finish())
+        let mut hasher = Sha256::new();
+        hasher.update(path.as_os_str().as_encoded_bytes());
+        // Use first 8 bytes (64 bits) as hex for brevity in filenames
+        format!("{:016x}", u64::from_le_bytes(
+            hasher.finalize()[..8].try_into().unwrap()
+        ))
     }
 
     /// Check if a checkpoint exists for an archive

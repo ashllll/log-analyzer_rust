@@ -23,6 +23,7 @@ futures = "0.3"
 tempfile.workspace = true
 chrono.workspace = true
 thiserror = "1.0"
+sha2 = "0.10"
 
 dashmap = "6"
 num_cpus = "1.16"

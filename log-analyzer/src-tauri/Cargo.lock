@@ -2974,6 +2974,7 @@ dependencies = [
  "roaring",
  "serde",
  "serde_json",
+ "sha2",
  "tantivy",
  "tempfile",
  "thiserror 1.0.69",

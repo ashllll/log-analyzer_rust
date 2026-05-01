@@ -1,13 +1,23 @@
 // la-search: Tantivy 全文搜索 + Aho-Corasick 多模式匹配
+//
+// 注意：以下模块为预留能力，当前主搜索链路（CAS 文件扫描 + RegexEngine）未启用。
+// 修改前请确认 AGENTS.md 中的搜索主链路说明。
+#[doc(hidden)]
 pub mod advanced_features;
+#[doc(hidden)]
 pub mod boolean_query_processor;
+#[doc(hidden)]
 pub mod concurrent_search;
 pub mod disk_result_store;
+#[doc(hidden)]
 pub mod highlighting_engine;
+#[doc(hidden)]
 pub mod index_optimizer;
 pub mod manager;
+#[doc(hidden)]
 pub mod query_optimizer;
 pub mod schema;
+#[doc(hidden)]
 pub mod streaming_builder;
 pub mod virtual_search_manager;
 

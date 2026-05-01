@@ -170,7 +170,13 @@ impl ArchiveHandler for ZipHandler {
             Ok::<ExtractionSummary, AppError>(summary)
         })
         .await
-        .map_err(|e| AppError::archive_error(e.to_string(), None))??;
+        .map_err(|e| {
+            if e.is_panic() {
+                AppError::Internal(format!("ZIP handler panicked: {}", e))
+            } else {
+                AppError::archive_error(e.to_string(), None)
+            }
+        })??;
 
         Ok(summary)
     }

@@ -10,6 +10,7 @@ use crate::path_manager::PathManager;
 use crate::security_detector::SecurityDetector;
 use la_core::error::{AppError, Result};
 use moka::sync::Cache;
+use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -342,13 +343,26 @@ impl ExtractionEngine {
         // Create initial extraction context
         let context = ExtractionContext::new(workspace_id.to_string());
 
+        // Compute SHA-256 of the top-level archive for cycle detection
+        let top_hash = Self::compute_file_hash(archive_path).await.ok();
+
         // Create initial extraction item
-        let initial_item = ExtractionItem::new(
-            archive_path.to_path_buf(),
-            target_dir.to_path_buf(),
-            0,
-            context,
-        );
+        let initial_item = if let Some(hash) = top_hash {
+            ExtractionItem::with_hash(
+                archive_path.to_path_buf(),
+                target_dir.to_path_buf(),
+                0,
+                context,
+                hash,
+            )
+        } else {
+            ExtractionItem::new(
+                archive_path.to_path_buf(),
+                target_dir.to_path_buf(),
+                0,
+                context,
+            )
+        };
 
         // Perform iterative extraction
         let result = self.extract_iterative(initial_item).await?;
@@ -422,11 +436,31 @@ impl ExtractionEngine {
             .map_err(|e| AppError::archive_error(e, None))?;
 
         // Process stack iteratively
-        while let Some(item) = stack.pop() {
+        while let Some(mut item) = stack.pop() {
             debug!(
                 "Processing archive at depth {}: {:?}",
                 item.depth, item.archive_path
             );
+
+            // Cycle detection: check if this archive has already been processed
+            if let Some(hash) = item.archive_hash {
+                if item.parent_context.seen_hashes.contains(&hash) {
+                    warn!(
+                        "Cycle detected: archive {:?} was already processed, skipping",
+                        item.archive_path
+                    );
+                    result.warnings.push(ExtractionWarning {
+                        message: format!(
+                            "Circular archive reference detected, skipping {:?} to prevent infinite loop",
+                            item.archive_path
+                        ),
+                        file_path: Some(item.archive_path.clone()),
+                        category: WarningCategory::SecurityEvent,
+                    });
+                    continue;
+                }
+                item.parent_context.seen_hashes.insert(hash);
+            }
 
             // Update max depth reached
             if item.depth > result.max_depth_reached {
@@ -669,12 +703,25 @@ impl ExtractionEngine {
                         .unwrap_or_else(|| std::ffi::OsStr::new("extracted")),
                 );
 
-                let nested_item = ExtractionItem::new(
-                    nested_archive_path,
-                    nested_target,
-                    item.depth + 1,
-                    item.parent_context.clone(),
-                );
+                // Compute hash for cycle detection (skip if IO fails)
+                let nested_hash = Self::compute_file_hash(&nested_archive_path).await.ok();
+
+                let nested_item = if let Some(hash) = nested_hash {
+                    ExtractionItem::with_hash(
+                        nested_archive_path,
+                        nested_target,
+                        item.depth + 1,
+                        item.parent_context.clone(),
+                        hash,
+                    )
+                } else {
+                    ExtractionItem::new(
+                        nested_archive_path,
+                        nested_target,
+                        item.depth + 1,
+                        item.parent_context.clone(),
+                    )
+                };
 
                 // Add to stack for processing
                 stack.push(nested_item).map_err(|e| {
@@ -980,6 +1027,33 @@ impl ExtractionEngine {
     /// Returns the number of entries in the path cache
     pub fn cache_size(&self) -> usize {
         self.path_cache.entry_count() as usize
+    }
+
+    /// Compute SHA-256 hash of a file for cycle detection
+    async fn compute_file_hash(path: &Path) -> Result<[u8; 32]> {
+        let path_buf = path.to_path_buf();
+        let path_for_err = path_buf.clone();
+        let hash = tokio::task::spawn_blocking(move || {
+            use std::io::Read;
+            let mut file = std::fs::File::open(&path_buf).map_err(|e| {
+                AppError::archive_error(format!("Failed to open file for hashing: {}", e), Some(path_buf.clone()))
+            })?;
+            let mut hasher = Sha256::new();
+            let mut buffer = [0u8; 8192];
+            loop {
+                let n = file.read(&mut buffer).map_err(|e| {
+                    AppError::archive_error(format!("Failed to read file for hashing: {}", e), Some(path_buf.clone()))
+                })?;
+                if n == 0 {
+                    break;
+                }
+                hasher.update(&buffer[..n]);
+            }
+            Ok::<[u8; 32], AppError>(hasher.finalize().into())
+        })
+        .await
+        .map_err(|e| AppError::archive_error(format!("Hash task panicked: {}", e), Some(path_for_err)))?;
+        hash
     }
 }
 

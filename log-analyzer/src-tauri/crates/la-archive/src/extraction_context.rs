@@ -4,6 +4,7 @@
 //! during iterative depth-first traversal of nested archives. It replaces
 //! recursive calls with explicit stack management to prevent stack overflow.
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -31,6 +32,9 @@ pub struct ExtractionContext {
 
     /// Timestamp when extraction started
     pub start_time: Instant,
+
+    /// Set of SHA-256 hashes of already-processed archives (cycle detection)
+    pub seen_hashes: HashSet<[u8; 32]>,
 }
 
 impl ExtractionContext {
@@ -51,6 +55,7 @@ impl ExtractionContext {
             accumulated_size: 0,
             accumulated_files: 0,
             start_time: Instant::now(),
+            seen_hashes: HashSet::new(),
         }
     }
 
@@ -71,6 +76,7 @@ impl ExtractionContext {
             accumulated_size: self.accumulated_size,
             accumulated_files: self.accumulated_files,
             start_time: self.start_time,
+            seen_hashes: self.seen_hashes.clone(),
         }
     }
 
@@ -126,6 +132,9 @@ pub struct ExtractionItem {
 
     /// Parent extraction context
     pub parent_context: ExtractionContext,
+
+    /// SHA-256 hash of this archive (for cycle detection)
+    pub archive_hash: Option<[u8; 32]>,
 }
 
 impl ExtractionItem {
@@ -152,6 +161,23 @@ impl ExtractionItem {
             target_dir,
             depth,
             parent_context,
+            archive_hash: None,
+        }
+    }
+
+    pub fn with_hash(
+        archive_path: PathBuf,
+        target_dir: PathBuf,
+        depth: usize,
+        parent_context: ExtractionContext,
+        archive_hash: [u8; 32],
+    ) -> Self {
+        Self {
+            archive_path,
+            target_dir,
+            depth,
+            parent_context,
+            archive_hash: Some(archive_hash),
         }
     }
 }

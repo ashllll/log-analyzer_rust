@@ -192,6 +192,12 @@ impl From<AppError> for ExtractionError {
     fn from(error: AppError) -> Self {
         let error_message = error.to_string();
 
+        // Extract file path from AppError if available (primarily Archive variant)
+        let failed_file_path = match &error {
+            AppError::Archive { _path, .. } => _path.clone(),
+            _ => None,
+        };
+
         // M2 Fix: Use structured category matching instead of string matching
         let error_code = match error.category() {
             la_core::ErrorCategory::PathTooLong => ErrorCode::PathTooLong,
@@ -248,7 +254,7 @@ impl From<AppError> for ExtractionError {
         ExtractionError {
             error_code,
             error_message,
-            failed_file_path: None,
+            failed_file_path,
             suggested_remediation,
             context,
         }

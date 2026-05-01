@@ -5,16 +5,15 @@ use crate::services::traits::{QueryPlanning, QueryValidation};
 use la_core::error::Result;
 use la_core::models::search::*;
 use moka::sync::Cache;
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
+use sha2::{Digest, Sha256};
 use std::sync::Arc;
 
 /// 辅助函数：哈希 QueryOperator
-fn hash_query_operator(op: &QueryOperator, hasher: &mut DefaultHasher) {
+fn hash_query_operator(op: &QueryOperator, hasher: &mut Sha256) {
     match op {
-        QueryOperator::And => 0u8.hash(hasher),
-        QueryOperator::Or => 1u8.hash(hasher),
-        QueryOperator::Not => 2u8.hash(hasher),
+        QueryOperator::And => hasher.update([0u8]),
+        QueryOperator::Or => hasher.update([1u8]),
+        QueryOperator::Not => hasher.update([2u8]),
     }
 }
 
@@ -23,25 +22,36 @@ fn hash_query_operator(op: &QueryOperator, hasher: &mut DefaultHasher) {
 /// 统一 QueryExecutor 和 GenericQueryExecutor 的缓存键生成逻辑，
 /// 确保等价的查询产生相同的缓存键。
 ///
+/// 使用 SHA-256 替代 DefaultHasher，确保跨 Rust 版本稳定。
 /// 哈希所有查询字段:
 /// - 查询 ID, 全局操作符
 /// - 过滤器 (时间范围, 日志级别, 文件模式)
 /// - 搜索项 (按 ID 排序后哈希所有字段)
 pub(crate) fn compute_query_cache_key(query: &SearchQuery) -> String {
-    let mut hasher = DefaultHasher::new();
+    let mut hasher = Sha256::new();
 
     // 哈希查询 ID 和全局操作符
-    query.id.hash(&mut hasher);
+    hasher.update(query.id.as_bytes());
     hash_query_operator(&query.global_operator, &mut hasher);
 
     // 哈希过滤器（如果存在）
     if let Some(filters) = &query.filters {
         if let Some(time_range) = &filters.time_range {
-            time_range.start.hash(&mut hasher);
-            time_range.end.hash(&mut hasher);
+            if let Some(start) = &time_range.start {
+                hasher.update(start.as_bytes());
+            }
+            if let Some(end) = &time_range.end {
+                hasher.update(end.as_bytes());
+            }
         }
-        filters.levels.hash(&mut hasher);
-        filters.file_pattern.hash(&mut hasher);
+        if let Some(levels) = &filters.levels {
+            for level in levels {
+                hasher.update(level.as_bytes());
+            }
+        }
+        if let Some(fp) = &filters.file_pattern {
+            hasher.update(fp.as_bytes());
+        }
     }
 
     // 按 ID 排序以确保哈希一致性（无论术语顺序如何，等价查询产生相同哈希）
@@ -50,19 +60,23 @@ pub(crate) fn compute_query_cache_key(query: &SearchQuery) -> String {
 
     // 哈希每个搜索项的所有关键字段
     for term in &sorted_terms {
-        term.id.hash(&mut hasher);
-        term.value.hash(&mut hasher);
-        term.operator.hash(&mut hasher);
-        term.source.hash(&mut hasher);
-        term.preset_group_id.hash(&mut hasher);
-        term.is_regex.hash(&mut hasher);
-        term.priority.hash(&mut hasher);
-        term.enabled.hash(&mut hasher);
-        term.case_sensitive.hash(&mut hasher);
+        hasher.update(term.id.as_bytes());
+        hasher.update(term.value.as_bytes());
+        hash_query_operator(&term.operator, &mut hasher);
+        hasher.update(&[term.source.clone() as u8]);
+        if let Some(pid) = &term.preset_group_id {
+            hasher.update(pid.as_bytes());
+        }
+        hasher.update(&[term.is_regex as u8]);
+        hasher.update(&term.priority.to_le_bytes());
+        hasher.update(&[term.enabled as u8]);
+        hasher.update(&[term.case_sensitive as u8]);
     }
 
-    // 返回 16 进制哈希值作为缓存键
-    format!("{:x}", hasher.finish())
+    // 返回 16 进制哈希值作为缓存键（取前 8 字节 / 64 位）
+    format!("{:016x}", u64::from_le_bytes(
+        hasher.finalize()[..8].try_into().unwrap()
+    ))
 }
 
 /**

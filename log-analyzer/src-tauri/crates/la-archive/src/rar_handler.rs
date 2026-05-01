@@ -164,6 +164,24 @@ impl ArchiveHandler for RarHandler {
                                 ));
                                 continue;
                             }
+                            // TOCTOU defense: re-verify after extraction that the file
+                            // did not escape the target directory via symlink race.
+                            if let Ok(canonical) = out_path.canonicalize() {
+                                if let Ok(canonical_target) = target_path.canonicalize() {
+                                    if !canonical.starts_with(&canonical_target) {
+                                        warn!(
+                                            path = %out_path.display(),
+                                            "RAR TOCTOU path traversal detected, removing and skipping"
+                                        );
+                                        let _ = std::fs::remove_file(&out_path);
+                                        summary.add_error(format!(
+                                            "Removed RAR entry {} due to path traversal (TOCTOU)",
+                                            name
+                                        ));
+                                        continue;
+                                    }
+                                }
+                            }
                             summary.add_file(safe_path, size);
                         }
                         Err(e) => {
@@ -191,7 +209,13 @@ impl ArchiveHandler for RarHandler {
             Ok::<ExtractionSummary, AppError>(summary)
         })
         .await
-        .map_err(|e| AppError::archive_error(e.to_string(), None))??;
+        .map_err(|e| {
+            if e.is_panic() {
+                AppError::Internal(format!("RAR handler panicked: {}", e))
+            } else {
+                AppError::archive_error(e.to_string(), None)
+            }
+        })??;
 
         Ok(summary)
     }

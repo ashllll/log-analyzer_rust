@@ -119,7 +119,25 @@ impl ArchiveHandler for SevenZHandler {
                                 if let Err(e) = std::io::copy(reader, &mut out_file) {
                                     warn!("Failed to extract 7z entry {:?}: {}", out_path, e);
                                 } else {
-                                    summary.add_file(safe_path, size);
+                                    // TOCTOU defense: re-verify after extraction that the file
+                                    // did not escape the target directory via symlink race.
+                                    if let Ok(canonical) = out_path.canonicalize() {
+                                        if let Ok(canonical_target) = target_path.canonicalize() {
+                                            if !canonical.starts_with(&canonical_target) {
+                                                warn!(
+                                                    path = %out_path.display(),
+                                                    "7z TOCTOU path traversal detected, removing and skipping"
+                                                );
+                                                let _ = std::fs::remove_file(&out_path);
+                                            } else {
+                                                summary.add_file(safe_path, size);
+                                            }
+                                        } else {
+                                            summary.add_file(safe_path, size);
+                                        }
+                                    } else {
+                                        summary.add_file(safe_path, size);
+                                    }
                                 }
                                 // 显式释放文件句柄
                                 drop(out_file);
@@ -138,7 +156,13 @@ impl ArchiveHandler for SevenZHandler {
             Ok::<ExtractionSummary, AppError>(summary)
         })
         .await
-        .map_err(|e| AppError::archive_error(e.to_string(), None))??;
+        .map_err(|e| {
+            if e.is_panic() {
+                AppError::Internal(format!("7z handler panicked: {}", e))
+            } else {
+                AppError::archive_error(e.to_string(), None)
+            }
+        })??;
 
         Ok(summary)
     }

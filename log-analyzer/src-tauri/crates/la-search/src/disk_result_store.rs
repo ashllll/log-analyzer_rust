@@ -96,23 +96,28 @@ impl DiskResultStore {
 
     // ─── 写入 API ────────────────────────────────────────────────────────────
 
-    /// 创建新搜索会话（在搜索开始前调用）
-    pub fn create_session(&self, search_id: &str) -> io::Result<()> {
-        // Validate search_id to prevent path traversal
+    /// Validate search_id and build validated path
+    fn validated_path(&self, search_id: &str) -> io::Result<std::path::PathBuf> {
         if search_id.contains('/') || search_id.contains('\\') || search_id.contains("..") {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "Invalid search_id: contains path traversal characters".to_string(),
             ));
         }
+        Ok(self.cache_dir.join(search_id))
+    }
+
+    /// 创建新搜索会话（在搜索开始前调用）
+    pub fn create_session(&self, search_id: &str) -> io::Result<()> {
+        let base_path = self.validated_path(search_id)?;
 
         // 超过最大会话数时驱逐最旧的
         if self.sessions.len() >= self.max_sessions {
             self.evict_oldest_session();
         }
 
-        let data_path = self.cache_dir.join(format!("{search_id}.ndjson"));
-        let index_path = self.cache_dir.join(format!("{search_id}.idx"));
+        let data_path = base_path.with_extension("ndjson");
+        let index_path = base_path.with_extension("idx");
 
         let data_file = OpenOptions::new()
             .create(true)
@@ -315,8 +320,15 @@ impl DiskResultStore {
     /// 移除会话并删除磁盘文件
     pub fn remove_session(&self, search_id: &str) -> bool {
         if self.sessions.remove(search_id).is_some() {
-            let data_path = self.cache_dir.join(format!("{search_id}.ndjson"));
-            let index_path = self.cache_dir.join(format!("{search_id}.idx"));
+            let base_path = match self.validated_path(search_id) {
+                Ok(p) => p,
+                Err(e) => {
+                    tracing::warn!(search_id = %search_id, error = %e, "删除时 search_id 校验失败");
+                    return true;
+                }
+            };
+            let data_path = base_path.with_extension("ndjson");
+            let index_path = base_path.with_extension("idx");
             if let Err(e) = fs::remove_file(&data_path) {
                 tracing::warn!(path = ?data_path, error = %e, "删除搜索结果数据文件失败");
             }
@@ -364,8 +376,12 @@ impl Drop for DiskResultStore {
         // 清理所有会话的磁盘文件
         let session_ids: Vec<String> = self.sessions.iter().map(|e| e.key().clone()).collect();
         for id in &session_ids {
-            let data_path = self.cache_dir.join(format!("{id}.ndjson"));
-            let index_path = self.cache_dir.join(format!("{id}.idx"));
+            let base_path = match self.validated_path(id) {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+            let data_path = base_path.with_extension("ndjson");
+            let index_path = base_path.with_extension("idx");
             let _ = std::fs::remove_file(&data_path);
             let _ = std::fs::remove_file(&index_path);
         }

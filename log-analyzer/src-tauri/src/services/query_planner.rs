@@ -224,7 +224,10 @@ impl QueryPlanner {
                 if term.case_sensitive {
                     (escaped, false)
                 } else {
-                    (format!("(?i:{})", escaped), false)
+                    // Fix: do NOT wrap with (?i:) which makes is_simple_keyword fail.
+                    // Instead pass case_insensitive=true to new_with_case so that
+                    // MemchrEngine (for simple keywords) or AhoCorasickEngine can be used.
+                    (escaped, true)
                 }
             }
         };
@@ -894,8 +897,8 @@ mod tests {
         let engine = RegexEngine::new(pattern, true).unwrap();
 
         assert!(
-            matches!(engine, RegexEngine::Standard(_)),
-            "Complex regex should use StandardEngine"
+            matches!(engine, RegexEngine::Automata(_)),
+            "Complex regex should use AutomataEngine"
         );
         assert!(engine.is_match("2024-01-30"));
     }

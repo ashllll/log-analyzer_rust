@@ -1,5 +1,6 @@
 //! Concurrent Search Support
 #![allow(dead_code)]
+// 预留能力，当前主搜索链路未启用。修改前请确认 AGENTS.md 中的搜索主链路说明。
 //!
 //! Provides thread-safe search operations with performance guarantees:
 //! - Thread-safe SearchEngineManager with read-only access patterns

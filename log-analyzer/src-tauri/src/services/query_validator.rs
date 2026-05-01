@@ -1,4 +1,3 @@
-use crate::services::regex_engine::needs_lookaround;
 use crate::services::traits::{QueryValidation, ValidationResult};
 use la_core::error::{AppError, Result};
 use la_core::models::search::*;
@@ -83,12 +82,9 @@ impl QueryValidator {
         }
 
         if term.is_regex {
-            if needs_lookaround(&term.value) {
-                return Err(AppError::validation_error(format!(
-                    "Term {} uses regex syntax not supported by Rust regex: look-around assertions are not supported",
-                    term.id
-                )));
-            }
+            // Note: look-around assertions are supported by FancyEngine (fancy-regex),
+            // so we no longer reject them here. RegexEngine::new automatically routes
+            // look-around patterns to FancyEngine.
 
             if contains_backreference(&term.value) {
                 return Err(AppError::validation_error(format!(
@@ -97,9 +93,22 @@ impl QueryValidator {
                 )));
             }
 
-            Regex::new(&term.value).map_err(|e| {
-                AppError::validation_error(format!("Term {} has invalid regex: {}", term.id, e))
-            })?;
+            // Validate with the appropriate regex engine:
+            // - look-around patterns => fancy-regex
+            // - others => regex crate
+            let has_lookaround = term.value.contains("(?=")
+                || term.value.contains("(?!")
+                || term.value.contains("(?<=")
+                || term.value.contains("(?<!");
+            if has_lookaround {
+                fancy_regex::Regex::new(&term.value).map_err(|e| {
+                    AppError::validation_error(format!("Term {} has invalid regex: {}", term.id, e))
+                })?;
+            } else {
+                Regex::new(&term.value).map_err(|e| {
+                    AppError::validation_error(format!("Term {} has invalid regex: {}", term.id, e))
+                })?;
+            }
         }
 
         Ok(())
@@ -396,7 +405,7 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_rejects_lookaround() {
+    fn test_validate_accepts_lookaround() {
         let term = SearchTerm {
             id: "term1".to_string(),
             value: "(?=foo)bar".to_string(),
@@ -422,8 +431,8 @@ mod tests {
             },
         };
 
-        let error = QueryValidator::validate(&query).unwrap_err();
-        assert!(error.to_string().contains("look-around"));
+        // Look-around assertions are now accepted because FancyEngine supports them
+        assert!(QueryValidator::validate(&query).is_ok());
     }
 
     #[test]

@@ -1,5 +1,6 @@
 //! Automatic Index Optimizer
 #![allow(dead_code)]
+// 预留能力，当前主搜索链路未启用。修改前请确认 AGENTS.md 中的搜索主链路说明。
 //!
 //! Detects frequently searched terms and automatically creates optimized indexes
 //! or suggests specialized index structures for common query patterns.

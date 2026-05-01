@@ -142,10 +142,23 @@ impl GzHandler {
         let mut decoder = GzipDecoder::new(reader);
 
         // Determine output file name (remove .gz extension)
+        // Security: use file_name() instead of file_stem() to prevent ZipSlip.
+        // file_stem() would preserve directory components like "../../etc/passwd",
+        // allowing path traversal. file_name() ensures only the basename is used.
         let output_name = source
-            .file_stem()
+            .file_name()
             .and_then(|s| s.to_str())
             .unwrap_or("output");
+        // Strip .gz extension safely
+        let output_name = if output_name.eq_ignore_ascii_case("gz") {
+            "output"
+        } else if let Some(stem) = output_name.strip_suffix(".gz") {
+            stem
+        } else if let Some(stem) = output_name.strip_suffix(".GZ") {
+            stem
+        } else {
+            output_name
+        };
 
         let output_path = target_dir.join(output_name);
 
@@ -336,10 +349,20 @@ impl ArchiveHandler for GzHandler {
         }
 
         // 确定输出文件名（去掉.gz扩展名）
+        // Security: use file_name() instead of file_stem() to prevent ZipSlip.
         let output_name = source
-            .file_stem()
+            .file_name()
             .and_then(|s| s.to_str())
             .unwrap_or("output");
+        let output_name = if output_name.eq_ignore_ascii_case("gz") {
+            "output"
+        } else if let Some(stem) = output_name.strip_suffix(".gz") {
+            stem
+        } else if let Some(stem) = output_name.strip_suffix(".GZ") {
+            stem
+        } else {
+            output_name
+        };
 
         let output_path = target_dir.join(output_name);
 
@@ -658,6 +681,55 @@ mod tests {
 
         // Verify content
         let extracted_content = fs::read(output_dir.join("large.txt"))
+            .await
+            .expect("Failed to read extracted file");
+        assert_eq!(extracted_content, original_data);
+    }
+
+    #[tokio::test]
+    async fn test_gz_zipslip_prevention() {
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
+        // Simulate a malicious path like ../../etc/passwd.gz inside the temp dir
+        let malicious_dir = temp_dir.path().join("malicious").join("..").join("..").join("etc");
+        fs::create_dir_all(&malicious_dir).await.expect("Failed to create malicious dir");
+        let source_file = malicious_dir.join("passwd.gz");
+        let output_dir = temp_dir.path().join("output");
+
+        let original_data = b"secret data";
+
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder
+            .write_all(original_data)
+            .expect("Failed to write to gzip encoder");
+        let compressed = encoder
+            .finish()
+            .expect("Failed to finalize gzip compression");
+
+        fs::write(&source_file, compressed)
+            .await
+            .expect("Failed to write compressed data");
+
+        let handler = GzHandler;
+        let summary = handler
+            .extract(&source_file, &output_dir)
+            .await
+            .expect("Failed to extract gz file");
+
+        assert_eq!(summary.files_extracted, 1);
+        // The extracted file should be named "passwd" (basename only), NOT "etc/passwd"
+        let expected_file = output_dir.join("passwd");
+        assert!(
+            expected_file.exists(),
+            "Extracted file should be at {:?}, not inside a traversal path",
+            expected_file
+        );
+        // Ensure no path traversal occurred
+        assert!(
+            !temp_dir.path().join("etc").exists(),
+            "Path traversal should not create 'etc' directory outside output_dir"
+        );
+
+        let extracted_content = fs::read(&expected_file)
             .await
             .expect("Failed to read extracted file");
         assert_eq!(extracted_content, original_data);

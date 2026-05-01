@@ -131,9 +131,10 @@ impl RegexEngine {
 
         // 2. 如果标记为正则表达式，检查复杂度
         if is_regex {
-            // 复杂正则使用 StandardEngine
+            // 复杂正则使用 AutomataEngine（与 StandardEngine 均基于 regex crate，
+            // 保留为独立变体以便未来做 DFA 预编译等特殊化优化）
             if !is_simple_keyword(pattern) {
-                return StandardEngine::new(pattern).map(RegexEngine::Standard);
+                return AutomataEngine::new(pattern).map(RegexEngine::Automata);
             }
         }
 
@@ -169,6 +170,12 @@ impl RegexEngine {
         }
         if !case_insensitive && is_simple_keyword(pattern) {
             return MemchrEngine::new(pattern).map(RegexEngine::Memchr);
+        }
+        if case_insensitive && is_simple_keyword(pattern) {
+            // Case-insensitive simple keyword: use AhoCorasick with ascii_case_insensitive
+            // instead of StandardEngine (?i:) wrapper for better performance.
+            return AhoCorasickEngine::new_with_ci(pattern, true)
+                .map(RegexEngine::AhoCorasick);
         }
         StandardEngine::new(pattern).map(RegexEngine::Standard)
     }
@@ -237,14 +244,12 @@ impl AhoCorasickEngine {
         self.patterns.first().map(|s| s.as_str()).unwrap_or("")
     }
 
-    pub fn find_iter(&self, text: &str) -> AhoCorasickMatches {
-        let matches: Vec<_> = self.ac.find_iter(text).collect();
-        AhoCorasickMatches::new(matches, self.patterns.clone())
+    pub fn find_iter<'a>(&'a self, text: &'a str) -> AhoCorasickMatches<'a> {
+        AhoCorasickMatches::new(Arc::clone(&self.ac), text, self.patterns.clone(), false)
     }
 
-    pub fn find_overlapped_iter(&self, text: &str) -> AhoCorasickMatches {
-        let matches: Vec<_> = self.ac.find_overlapping_iter(text).collect();
-        AhoCorasickMatches::new(matches, self.patterns.clone())
+    pub fn find_overlapped_iter<'a>(&'a self, text: &'a str) -> AhoCorasickMatches<'a> {
+        AhoCorasickMatches::new(Arc::clone(&self.ac), text, self.patterns.clone(), true)
     }
 
     /// 直接判断文本是否包含任一模式，零分配（比 `find_iter(text).next().is_some()` 快 10-100 倍）
@@ -253,31 +258,58 @@ impl AhoCorasickEngine {
     }
 }
 
-pub struct AhoCorasickMatches {
-    matches: std::vec::IntoIter<aho_corasick::Match>,
+pub struct AhoCorasickMatches<'a> {
+    ac: Arc<AhoCorasick>,
+    text: &'a str,
+    offset: usize,
     patterns: Vec<String>,
+    overlapping: bool,
+    overlap_state: Option<aho_corasick::automaton::OverlappingState>,
 }
 
-impl AhoCorasickMatches {
-    fn new(matches: Vec<aho_corasick::Match>, patterns: Vec<String>) -> Self {
+impl<'a> AhoCorasickMatches<'a> {
+    fn new(ac: Arc<AhoCorasick>, text: &'a str, patterns: Vec<String>, overlapping: bool) -> Self {
+        let overlap_state = if overlapping {
+            Some(aho_corasick::automaton::OverlappingState::start())
+        } else {
+            None
+        };
         Self {
-            matches: matches.into_iter(),
+            ac,
+            text,
+            offset: 0,
             patterns,
+            overlapping,
+            overlap_state,
         }
     }
 }
 
-impl Iterator for AhoCorasickMatches {
+impl<'a> Iterator for AhoCorasickMatches<'a> {
     type Item = MatchResult;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.matches.next().map(|mat| {
-            let pattern_id = mat.pattern().as_usize();
-            MatchResult {
-                start: mat.start(),
-                end: mat.end(),
-                pattern: self.patterns.get(pattern_id).cloned().unwrap_or_default(),
-            }
+        let haystack = &self.text[self.offset..];
+        let mat = if self.overlapping {
+            let state = self.overlap_state.as_mut()?;
+            self.ac.find_overlapping(haystack, state);
+            state.get_match()?
+        } else {
+            self.ac.find(haystack)?
+        };
+        let start = self.offset + mat.start();
+        let end = self.offset + mat.end();
+        // Advance offset: for non-overlapping, move past match end;
+        // for overlapping, move past match start to allow overlapping matches.
+        self.offset = if self.overlapping {
+            start + 1
+        } else {
+            end
+        };
+        Some(MatchResult {
+            start,
+            end,
+            pattern: self.patterns.get(mat.pattern().as_usize()).cloned().unwrap_or_default(),
         })
     }
 }
@@ -413,7 +445,7 @@ impl MemchrEngine {
 
     pub fn find_iter<'a>(&'a self, text: &'a str) -> MemchrMatches<'a> {
         MemchrMatches {
-            needle: self.needle.clone(),
+            needle: self.needle.as_slice(),
             text: text.as_bytes(),
             offset: 0,
             pattern: self.pattern.clone(),
@@ -427,7 +459,7 @@ impl MemchrEngine {
 }
 
 pub struct MemchrMatches<'a> {
-    needle: Vec<u8>,
+    needle: &'a [u8],
     text: &'a [u8],
     offset: usize,
     pattern: String,
@@ -486,6 +518,7 @@ impl FancyEngine {
             text,
             offset: 0,
             pattern: self.pattern.clone(),
+            error: None,
         }
     }
 
@@ -499,6 +532,20 @@ pub struct FancyMatches<'a> {
     text: &'a str,
     offset: usize,
     pattern: String,
+    error: Option<String>,
+}
+
+impl<'a> FancyMatches<'a> {
+    /// Returns true if the iterator encountered a regex execution error
+    /// (e.g., catastrophic backtracking) during iteration.
+    pub fn has_error(&self) -> bool {
+        self.error.is_some()
+    }
+
+    /// Returns the error message if an error occurred.
+    pub fn error_message(&self) -> Option<&str> {
+        self.error.as_deref()
+    }
 }
 
 impl<'a> Iterator for FancyMatches<'a> {
@@ -522,8 +569,11 @@ impl<'a> Iterator for FancyMatches<'a> {
                 })
             }
             Ok(None) => None,
-            Err(_) => {
-                // 回溯失败（如 catastrophic backtracking），优雅降级
+            Err(e) => {
+                // 回溯失败（如 catastrophic backtracking），记录错误并终止迭代
+                if self.error.is_none() {
+                    self.error = Some(format!("fancy-regex execution error: {}", e));
+                }
                 None
             }
         }
@@ -552,7 +602,7 @@ impl MatchResult {
 }
 
 pub enum EngineMatches<'a> {
-    AhoCorasick(AhoCorasickMatches),
+    AhoCorasick(AhoCorasickMatches<'a>),
     Automata(AutomataMatches<'a>),
     Standard(StandardMatches<'a>),
     Memchr(MemchrMatches<'a>),
@@ -778,12 +828,12 @@ mod tests {
 
     #[test]
     fn test_engine_selection_complex_regex() {
-        // 复杂正则使用 StandardEngine
+        // 复杂正则使用 AutomataEngine（与 StandardEngine 均基于 regex crate）
         let engine = RegexEngine::new(r"\d{4}-\d{2}-\d{2}", true).unwrap();
-        assert!(matches!(engine, RegexEngine::Standard(_)));
+        assert!(matches!(engine, RegexEngine::Automata(_)));
 
         let engine = RegexEngine::new(r"[A-Z]\w+", true).unwrap();
-        assert!(matches!(engine, RegexEngine::Standard(_)));
+        assert!(matches!(engine, RegexEngine::Automata(_)));
     }
 
     #[test]
