@@ -107,51 +107,46 @@ pub fn prevent_path_traversal(path: &str) -> Result<String, String> {
 
 /// URL 解码辅助函数
 ///
-/// 对字符串进行 URL 解码，处理 %XX 编码的字符
+/// 对字符串进行 URL 解码，正确处理 UTF-8 多字节序列（如 %E4%B8%AD → 中）
 fn url_decode(input: &str) -> String {
-    let mut result = String::with_capacity(input.len());
+    let mut bytes: Vec<u8> = Vec::with_capacity(input.len());
     let mut chars = input.chars().peekable();
 
     while let Some(c) = chars.next() {
         if c == '%' {
-            // 尝试读取两个十六进制字符
             let hex1 = chars.next();
             let hex2 = chars.next();
 
             if let (Some(h1), Some(h2)) = (hex1, hex2) {
                 let hex_str = format!("{}{}", h1, h2);
                 if let Ok(byte) = u8::from_str_radix(&hex_str, 16) {
-                    // 将字节转换为字符（假设 UTF-8）
-                    if let Some(decoded_char) = char::from_u32(byte as u32) {
-                        result.push(decoded_char);
-                    } else {
-                        // 无效的字符，保留原始序列
-                        result.push('%');
-                        result.push(h1);
-                        result.push(h2);
-                    }
+                    bytes.push(byte);
                 } else {
                     // 无效的十六进制，保留原始序列
-                    result.push('%');
-                    result.push(h1);
-                    result.push(h2);
+                    bytes.push(b'%');
+                    bytes.push(h1 as u8);
+                    bytes.push(h2 as u8);
                 }
             } else {
                 // 不完整的 % 序列，保留 %
-                result.push('%');
+                bytes.push(b'%');
                 if let Some(h1) = hex1 {
-                    result.push(h1);
+                    bytes.push(h1 as u8);
                 }
             }
         } else if c == '+' {
             // URL 编码中 + 表示空格
-            result.push(' ');
+            bytes.push(b' ');
         } else {
-            result.push(c);
+            // 对非 ASCII 字符直接转为 UTF-8 字节
+            let mut buf = [0u8; 4];
+            let encoded = c.encode_utf8(&mut buf);
+            bytes.extend_from_slice(encoded.as_bytes());
         }
     }
 
-    result
+    // 将字节序列解码为 UTF-8，替换无效序列为替换字符
+    String::from_utf8_lossy(&bytes).into_owned()
 }
 
 /// 路径规范化和安全验证

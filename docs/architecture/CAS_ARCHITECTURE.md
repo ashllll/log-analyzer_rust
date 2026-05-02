@@ -81,38 +81,43 @@ pub async fn retrieve(&self, hash: &str) -> Result<Vec<u8>> {
 -- 文件记录（每个导入文件对应一行）
 CREATE TABLE files (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
-    sha256_hash       TEXT NOT NULL,         -- CAS 对象标识
-    virtual_path      TEXT NOT NULL UNIQUE,  -- 工作区内虚拟路径（唯一）
-    original_name     TEXT NOT NULL,         -- 原始文件名
-    size              INTEGER NOT NULL,      -- 文件大小（字节）
-    modified_time     INTEGER NOT NULL,      -- 修改时间（Unix 时间戳）
-    parent_archive_id INTEGER REFERENCES archives(id) ON DELETE SET NULL,
-    depth_level       INTEGER NOT NULL DEFAULT 0  -- 嵌套深度（0=顶层）
+    sha256_hash       TEXT NOT NULL UNIQUE,     -- CAS 对象标识（唯一）
+    virtual_path      TEXT NOT NULL,            -- 工作区内虚拟路径
+    original_name     TEXT NOT NULL,            -- 原始文件名
+    size              INTEGER NOT NULL,         -- 文件大小（字节）
+    modified_time     INTEGER NOT NULL,         -- 修改时间（Unix 时间戳）
+    mime_type         TEXT,                     -- MIME 类型
+    parent_archive_id INTEGER REFERENCES archives(id) ON DELETE CASCADE,
+    depth_level       INTEGER NOT NULL DEFAULT 0, -- 嵌套深度（0=顶层）
+    created_at        INTEGER NOT NULL          -- 创建时间（Unix 时间戳）
 );
 
 -- 归档文件记录（压缩包本身）
 CREATE TABLE archives (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    virtual_path  TEXT NOT NULL UNIQUE,
-    original_name TEXT NOT NULL,
-    archive_type  TEXT NOT NULL,   -- zip/tar/gz/rar/7z
-    file_count    INTEGER NOT NULL,
-    total_size    INTEGER NOT NULL
-);
-
--- 搜索事件日志（用于性能监控）
-CREATE TABLE search_events (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    query        TEXT NOT NULL,
-    result_count INTEGER NOT NULL,
-    duration_ms  INTEGER NOT NULL,
-    created_at   INTEGER NOT NULL  -- Unix 时间戳（毫秒）
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    sha256_hash       TEXT NOT NULL UNIQUE,     -- 归档内容哈希
+    virtual_path      TEXT NOT NULL,            -- 虚拟路径
+    original_name     TEXT NOT NULL,            -- 原始文件名
+    archive_type      TEXT NOT NULL,            -- zip/tar/gz/rar/7z
+    parent_archive_id INTEGER,                  -- 父归档 ID（嵌套归档）
+    depth_level       INTEGER NOT NULL DEFAULT 0, -- 嵌套深度
+    extraction_status TEXT NOT NULL,            -- 提取状态
+    created_at        INTEGER NOT NULL,         -- 创建时间（Unix 时间戳）
+    FOREIGN KEY (parent_archive_id) REFERENCES archives(id) ON DELETE CASCADE
 );
 
 -- 性能索引
-CREATE INDEX idx_files_hash   ON files(sha256_hash);
-CREATE INDEX idx_files_parent ON files(parent_archive_id);
-CREATE INDEX idx_files_path   ON files(virtual_path);
+CREATE INDEX idx_files_hash           ON files(sha256_hash);
+CREATE INDEX idx_files_virtual_path   ON files(virtual_path);
+CREATE INDEX idx_files_parent_archive ON files(parent_archive_id);
+CREATE INDEX idx_files_depth          ON files(depth_level);
+CREATE INDEX idx_archives_virtual_path ON archives(virtual_path);
+CREATE INDEX idx_archives_parent      ON archives(parent_archive_id);
+CREATE INDEX idx_archives_hash        ON archives(sha256_hash);
+CREATE INDEX idx_archives_depth       ON archives(depth_level);
+
+-- FTS5 全文搜索虚拟表
+CREATE VIRTUAL TABLE files_fts USING fts5(virtual_path, original_name);
 ```
 
 **虚拟路径约定：**

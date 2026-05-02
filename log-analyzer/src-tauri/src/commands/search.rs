@@ -50,7 +50,7 @@ pub struct BinarySearchRequest {
     pub filters: Option<SearchFilters>,
 }
 
-// 导入移除: SearchEngineManager 相关类型未使用
+
 use crate::services::file_watcher::TimestampParser;
 use crate::services::{calculate_keyword_statistics, parse_metadata, ExecutionPlan, QueryExecutor};
 use crate::utils::encoding::decode_log_content;
@@ -916,6 +916,7 @@ pub async fn search_logs(
             Ok(p) => p,
             Err(e) => {
                 let _ = app_handle.emit("search-error", format!("Query execution error: {}", e));
+                disk_store_spawn.remove_session(&search_id_clone);
                 return;
             }
         };

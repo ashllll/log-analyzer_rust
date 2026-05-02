@@ -138,11 +138,11 @@ npm run tauri dev
 SearchPage.tsx
 → api.searchLogs(query, filters)
 → commands/search.rs: search_logs
-  → QueryValidator 校验查询合法性
+  → 内联参数校验（空查询 + 长度检查）
   → MetadataStore::get_all_files() 获取候选文件
   → 文件级 filePattern 早筛
   → CAS::retrieve() 读取内容
-  → QueryExecutor / RegexEngine 逐行匹配
+  → QueryExecutor（内部使用 RegexEngine / FancyEngine）逐行匹配
     → OR 多关键词使用 Aho-Corasick 快速预检
   → 时间 / 级别分段过滤
   → DiskResultStore 写盘分页
