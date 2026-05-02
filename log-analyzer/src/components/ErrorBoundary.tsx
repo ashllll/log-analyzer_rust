@@ -14,6 +14,7 @@
 import React, { Component, ErrorInfo } from 'react';
 import { AlertTriangle, X, RefreshCw, Home, Bug } from 'lucide-react';
 import { createApiError, ErrorCode, isRetryableError } from '../services/errors';
+import toast from 'react-hot-toast';
 
 // ============================================================================
 // 类型定义
@@ -286,7 +287,7 @@ export class AppErrorBoundary extends Component<
     addErrorLog(errorLog);
 
     // 控制台输出
-    if (process.env.NODE_ENV === 'development') {
+    if (import.meta.env.DEV) {
       console.error('[ErrorBoundary]', JSON.stringify(errorLog, null, 2));
     }
 
@@ -551,7 +552,7 @@ export function initGlobalErrorHandlers(): (() => void) | undefined {
     event.preventDefault();
 
     // Toast 通知（生产环境）
-    if (process.env.NODE_ENV === 'production') {
+    if (import.meta.env.PROD) {
       const signature = getErrorSignature(reason);
       const lastShown = recentErrors.get(signature);
       const now = Date.now();
@@ -562,12 +563,7 @@ export function initGlobalErrorHandlers(): (() => void) | undefined {
         setTimeout(() => recentErrors.delete(signature), ERROR_DEBOUNCE_MS);
 
         // 使用 react-hot-toast 显示错误
-        try {
-          const toast = require('react-hot-toast');
-          toast.error('操作失败，请稍后重试', { duration: 4000 });
-        } catch (e) {
-          console.warn('[GlobalError] Failed to show toast:', e);
-        }
+        toast.error('操作失败，请稍后重试', { duration: 4000 });
       }
     }
 
@@ -596,7 +592,7 @@ export function initGlobalErrorHandlers(): (() => void) | undefined {
     console.error('[GlobalError] Global error:', error);
 
     // Toast 通知（生产环境）
-    if (process.env.NODE_ENV === 'production') {
+    if (import.meta.env.PROD) {
       const signature = getErrorSignature(error);
       const lastShown = recentErrors.get(signature);
       const now = Date.now();
@@ -605,12 +601,7 @@ export function initGlobalErrorHandlers(): (() => void) | undefined {
         recentErrors.set(signature, now);
         setTimeout(() => recentErrors.delete(signature), ERROR_DEBOUNCE_MS);
 
-        try {
-          const toast = require('react-hot-toast');
-          toast.error('应用程序发生错误', { duration: 4000 });
-        } catch (e) {
-          console.warn('[GlobalError] Failed to show toast:', e);
-        }
+        toast.error('应用程序发生错误', { duration: 4000 });
       }
     }
 

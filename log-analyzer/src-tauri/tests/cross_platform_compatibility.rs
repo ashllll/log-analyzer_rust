@@ -2,10 +2,8 @@
 //!
 //! 测试所有关键功能在不同平台上的一致性
 
-#[cfg(test)]
-mod cross_platform_tests {
-    use std::path::PathBuf;
-    use tempfile::TempDir;
+use std::path::PathBuf;
+use tempfile::TempDir;
 
     /// 测试路径规范化
     #[test]
@@ -286,4 +284,3 @@ mod cross_platform_tests {
         let content = std::fs::read_to_string(&test_file).unwrap();
         assert_eq!(content, "test");
     }
-}

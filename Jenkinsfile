@@ -17,7 +17,7 @@ pipeline {
 
     // 参数化构建
     parameters {
-        string(name: 'RUST_VERSION', defaultValue: '1.70', description: 'Rust toolchain version')
+        string(name: 'RUST_VERSION', defaultValue: '1.75', description: 'Rust toolchain version')
         string(name: 'NODE_VERSION', defaultValue: '22', description: 'Node.js version')
         booleanParam(name: 'RUN_TESTS', defaultValue: true, description: 'Run unit tests')
         booleanParam(name: 'RUN_INTEGRATION_TESTS', defaultValue: true, description: 'Run integration tests')
@@ -29,8 +29,8 @@ pipeline {
 
     // 工具配置
     tools {
-        nodejs 'NodeJS-18'
-        rust 'Rust-1.70'
+        nodejs 'NodeJS-22'
+        rust 'Rust-1.75'
     }
 
     // 构建选项
@@ -74,7 +74,7 @@ pipeline {
                 stage('Setup Rust') {
                     agent {
                         docker {
-                            image 'rust:1.70'
+                            image 'rust:1.75'
                             args '-v /var/run/docker.sock:/var/run/docker.sock'
                         }
                     }
@@ -93,7 +93,7 @@ pipeline {
                 stage('Setup Node.js') {
                     agent {
                         docker {
-                            image 'node:18'
+                            image 'node:22'
                         }
                     }
                     steps {
@@ -115,7 +115,7 @@ pipeline {
                 stage('Rust Format') {
                     agent {
                         docker {
-                            image 'rust:1.70'
+                            image 'rust:1.75'
                             args '-v /var/run/docker.sock:/var/run/docker.sock'
                         }
                     }
@@ -135,7 +135,7 @@ pipeline {
                 stage('Rust Clippy') {
                     agent {
                         docker {
-                            image 'rust:1.70'
+                            image 'rust:1.75'
                             args '-v /var/run/docker.sock:/var/run/docker.sock'
                         }
                     }
@@ -155,7 +155,7 @@ pipeline {
                 stage('Frontend Lint') {
                     agent {
                         docker {
-                            image 'node:18'
+                            image 'node:22'
                         }
                     }
                     when {
@@ -179,7 +179,7 @@ pipeline {
                 stage('Rust Unit Tests') {
                     agent {
                         docker {
-                            image 'rust:1.70'
+                            image 'rust:1.75'
                             args '-v /var/run/docker.sock:/var/run/docker.sock'
                         }
                     }
@@ -200,7 +200,7 @@ pipeline {
                 stage('Frontend Tests') {
                     agent {
                         docker {
-                            image 'node:18'
+                            image 'node:22'
                         }
                     }
                     when {
@@ -220,7 +220,7 @@ pipeline {
                 stage('Benchmarks') {
                     agent {
                         docker {
-                            image 'rust:1.70'
+                            image 'rust:1.75'
                             args '-v /var/run/docker.sock:/var/run/docker.sock'
                         }
                     }
@@ -250,7 +250,7 @@ pipeline {
         stage('Integration Tests') {
             agent {
                 docker {
-                    image 'rust:1.70'
+                    image 'rust:1.75'
                     args '-v /var/run/docker.sock:/var/run/docker.sock'
                 }
             }
@@ -273,7 +273,7 @@ pipeline {
                 stage('Cargo Audit') {
                     agent {
                         docker {
-                            image 'rust:1.70'
+                            image 'rust:1.75'
                             args '-v /var/run/docker.sock:/var/run/docker.sock'
                         }
                     }
@@ -294,7 +294,7 @@ pipeline {
                 stage('Dependency Check') {
                     agent {
                         docker {
-                            image 'rust:1.70'
+                            image 'rust:1.75'
                             args '-v /var/run/docker.sock:/var/run/docker.sock'
                         }
                     }
@@ -316,7 +316,7 @@ pipeline {
                 stage('NPM Audit') {
                     agent {
                         docker {
-                            image 'node:18'
+                            image 'node:22'
                         }
                     }
                     when {
@@ -339,7 +339,7 @@ pipeline {
                 stage('Build Linux') {
                     agent {
                         docker {
-                            image 'rust:1.70'
+                            image 'rust:1.75'
                             args '-v /var/run/docker.sock:/var/run/docker.sock'
                         }
                     }
@@ -410,7 +410,7 @@ pipeline {
         stage('Quality Report') {
             agent {
                 docker {
-                    image 'rust:1.70'
+                    image 'rust:1.75'
                     args '-v /var/run/docker.sock:/var/run/docker.sock'
                 }
             }
@@ -491,11 +491,11 @@ pipeline {
                     "timestamp": "${new Date().toISOString()}"
                 }
                 """
-            // 清理
- }
+            }
         }
 
-               cleanup {
+        // 清理环境
+        cleanup {
             script {
                 echo "=== 清理构建环境 ==="
                 // 清理 Docker 镜像

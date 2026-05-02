@@ -28,12 +28,12 @@ cache:
 
 # 基础镜像模板
 .base_rust_template: &base_rust_template
-  image: rust:1.70
+  image: rust:1.75
   before_script:
     - apt-get update -qq && apt-get install -y -qq libgtk-3-dev libwebkit2gtk-4.0-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev
 
 .base_node_template: &base_node_template
-  image: node:18
+  image: node:22
   before_script:
     - npm ci
 
