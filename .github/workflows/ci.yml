@@ -90,7 +90,9 @@ jobs:
       - name: Run unit tests
         run: |
           cd log-analyzer/src-tauri
-          cargo test --all-features --lib --bins -- --test-threads=4
+          cargo test --all-features --lib --bins -- --test-threads=4 --nocapture
+        env:
+          RUST_BACKTRACE: full
 
   # IPC 一致性检查
   ipc-consistency-check:
@@ -239,7 +241,9 @@ jobs:
       - name: Run integration tests
         run: |
           cd log-analyzer/src-tauri
-          cargo test --workspace --all-features -- --test-threads=2
+          cargo test --workspace --all-features -- --test-threads=2 --nocapture
+        env:
+          RUST_BACKTRACE: full
 
   release-automation-dry-run:
     name: Release Automation Dry Run
