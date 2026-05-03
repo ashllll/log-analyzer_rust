@@ -307,12 +307,12 @@ fn write_results_to_disk(
 fn compute_keyword_stats(
     entries: &[LogEntry],
     raw_terms: &[String],
-) -> Vec<crate::models::search_statistics::KeywordStatistics> {
+) -> Vec<la_core::models::search_statistics::KeywordStatistics> {
     raw_terms
         .iter()
         .map(|term| {
             let count = entries.iter().filter(|e| e.content.contains(term)).count();
-            crate::models::search_statistics::KeywordStatistics::new(
+            la_core::models::search_statistics::KeywordStatistics::new(
                 term.clone(),
                 count,
                 entries.len(),
@@ -325,7 +325,7 @@ fn compute_keyword_stats(
 fn emit_search_complete(
     app_handle: &AppHandle,
     results_count: usize,
-    keyword_stats: Vec<crate::models::search_statistics::KeywordStatistics>,
+    keyword_stats: Vec<la_core::models::search_statistics::KeywordStatistics>,
     duration_ms: u64,
     was_truncated: bool,
 ) {
@@ -787,7 +787,7 @@ pub async fn search_logs(
                 warn!(error = %e, "缓存命中：无法创建磁盘搜索会话");
             } else {
                 for chunk in cached_results.chunks(2000) {
-                    let chunk: &[crate::models::LogEntry] = chunk;
+                    let chunk: &[la_core::models::LogEntry] = chunk;
                     if let Err(e) = disk_result_store.append_entries(&search_id, chunk) {
                         warn!(error = %e, "缓存命中：磁盘写入失败");
                         break;
@@ -946,6 +946,7 @@ pub async fn search_logs(
     let app_handle_for_timeout = app_handle.clone();
     let cancellation_token_for_timeout = cancellation_token.clone();
     let cancellation_tokens_for_timeout = Arc::clone(&cancellation_tokens);
+    let disk_store_for_timeout = Arc::clone(&disk_result_store);
     let timed_out = Arc::new(AtomicBool::new(false));
     let timed_out_for_timeout = Arc::clone(&timed_out);
     let timed_out_for_search = Arc::clone(&timed_out);
@@ -1154,11 +1155,11 @@ pub async fn search_logs(
         }
 
         // 使用流式统计结果构建关键词统计
-        let keyword_stats: Vec<crate::models::search_statistics::KeywordStatistics> = raw_terms
+        let keyword_stats: Vec<la_core::models::search_statistics::KeywordStatistics> = raw_terms
             .iter()
             .map(|term| {
                 let count = keyword_counts.get(term).copied().unwrap_or(0);
-                crate::models::search_statistics::KeywordStatistics::new(
+                la_core::models::search_statistics::KeywordStatistics::new(
                     term.clone(),
                     count,
                     results_count,
@@ -1202,6 +1203,8 @@ pub async fn search_logs(
                 let mut tokens = cancellation_tokens_for_timeout.lock();
                 tokens.remove(&search_id);
             }
+            // 清理磁盘会话，避免文件泄漏和会话槽位占用
+            disk_store_for_timeout.remove_session(&search_id);
             // 发送超时事件
             let _ = app_handle_for_timeout.emit("search-timeout", &search_id);
             Err(CommandError::new(

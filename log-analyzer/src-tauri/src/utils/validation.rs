@@ -263,24 +263,9 @@ pub fn sanitize_file_names_batch(names: &[String]) -> Result<Vec<String>, String
 
 /// 验证工作区 ID
 ///
-/// 确保 ID 只包含安全字符
+/// 委托给 command_validation 模块的统一实现
 pub fn validate_workspace_id(id: &str) -> Result<(), String> {
-    if id.is_empty() {
-        return Err("Workspace ID cannot be empty".to_string());
-    }
-
-    if id.len() > 50 {
-        return Err("Workspace ID too long (max 50 characters)".to_string());
-    }
-
-    if !WORKSPACE_ID_REGEX.is_match(id) {
-        return Err(
-            "Workspace ID can only contain alphanumeric characters, hyphens, and underscores"
-                .to_string(),
-        );
-    }
-
-    Ok(())
+    crate::utils::command_validation::validate_workspace_id(id)
 }
 
 #[cfg(test)]
@@ -442,6 +427,9 @@ mod tests {
 ///
 /// 验证路径参数是否有效并返回规范化的绝对路径
 pub fn validate_path_param(path: &str, param_name: &str) -> Result<std::path::PathBuf, String> {
+    // 先执行基础验证（空值、长度）
+    crate::utils::command_validation::validate_path_param(path, param_name)?;
+
     // 验证路径安全性
     validate_safe_path(path).map_err(|e| format!("Invalid {}: {:?}", param_name, e))?;
 

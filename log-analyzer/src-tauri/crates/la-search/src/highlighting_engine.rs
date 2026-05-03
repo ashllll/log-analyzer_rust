@@ -17,7 +17,8 @@ use std::time::{Duration, Instant, SystemTime};
 use tantivy::{
     query::{Query, QueryClone, QueryParser},
     schema::Field,
-    DocAddress, Index, IndexReader, Snippet, SnippetGenerator, Term,
+    snippet::{Snippet, SnippetGenerator},
+    DocAddress, Index, IndexReader, Term,
 };
 use tracing::{debug, info, warn};
 

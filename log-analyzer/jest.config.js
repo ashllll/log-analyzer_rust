@@ -25,12 +25,12 @@ export default {
   ],
   coverageThreshold: {
     global: {
-      // 当前实测覆盖率：statements ~18%，branches ~14%，lines ~18%，functions ~18%
+      // 当前实测覆盖率：statements ~31.5%，branches ~27.9%，lines ~31.5%，functions ~30.2%
       // 阈值逐步上调，防止覆盖率倒退
-      branches: 14,
-      functions: 18,
-      lines: 18,
-      statements: 18,
+      branches: 25,
+      functions: 28,
+      lines: 30,
+      statements: 30,
     },
   },
   testTimeout: 15000, // 从 10000ms 增加到 15000ms 以应对 CI 环境

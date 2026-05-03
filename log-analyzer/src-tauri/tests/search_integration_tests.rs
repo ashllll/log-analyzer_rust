@@ -365,6 +365,9 @@ async fn test_search_cas_stored_files() {
             mime_type: Some("text/plain".to_string()),
             parent_archive_id: None,
             depth_level: 0,
+                min_timestamp: None,
+                max_timestamp: None,
+                level_mask: None,
         };
 
         metadata.insert_file(&file_meta).await.unwrap();
@@ -450,6 +453,9 @@ async fn test_search_nested_archives() {
             mime_type: Some("text/plain".to_string()),
             parent_archive_id: None,
             depth_level: 1,
+                min_timestamp: None,
+                max_timestamp: None,
+                level_mask: None,
         };
         metadata.insert_file(&file_meta).await.unwrap();
     }
@@ -481,6 +487,9 @@ async fn test_search_nested_archives() {
                     mime_type: Some("text/plain".to_string()),
                     parent_archive_id: None,
                     depth_level: 2,
+                        min_timestamp: None,
+                        max_timestamp: None,
+                        level_mask: None,
                 };
                 metadata.insert_file(&file_meta).await.unwrap();
             }
@@ -558,6 +567,9 @@ async fn test_search_performance_with_cas() {
             mime_type: Some("text/plain".to_string()),
             parent_archive_id: None,
             depth_level: 0,
+                min_timestamp: None,
+                max_timestamp: None,
+                level_mask: None,
         };
 
         metadata.insert_file(&file_meta).await.unwrap();
@@ -629,6 +641,9 @@ async fn test_search_with_deduplication() {
         mime_type: Some("text/plain".to_string()),
         parent_archive_id: None,
         depth_level: 0,
+            min_timestamp: None,
+            max_timestamp: None,
+            level_mask: None,
     };
 
     metadata.insert_file(&file_meta).await.unwrap();
@@ -675,6 +690,9 @@ async fn test_search_with_missing_cas_objects() {
         mime_type: Some("text/plain".to_string()),
         parent_archive_id: None,
         depth_level: 0,
+            min_timestamp: None,
+            max_timestamp: None,
+            level_mask: None,
     };
     metadata.insert_file(&file_meta).await.unwrap();
 
@@ -690,6 +708,9 @@ async fn test_search_with_missing_cas_objects() {
         mime_type: Some("text/plain".to_string()),
         parent_archive_id: None,
         depth_level: 0,
+            min_timestamp: None,
+            max_timestamp: None,
+            level_mask: None,
     };
     metadata.insert_file(&fake_file_meta).await.unwrap();
 
@@ -748,6 +769,9 @@ async fn test_search_large_files_in_cas() {
         mime_type: Some("text/plain".to_string()),
         parent_archive_id: None,
         depth_level: 0,
+            min_timestamp: None,
+            max_timestamp: None,
+            level_mask: None,
     };
     metadata.insert_file(&file_meta).await.unwrap();
 
@@ -794,6 +818,9 @@ async fn test_search_empty_files_in_cas() {
         mime_type: Some("text/plain".to_string()),
         parent_archive_id: None,
         depth_level: 0,
+            min_timestamp: None,
+            max_timestamp: None,
+            level_mask: None,
     };
     metadata.insert_file(&file_meta).await.unwrap();
 
@@ -828,6 +855,9 @@ async fn test_concurrent_search_on_cas() {
             mime_type: Some("text/plain".to_string()),
             parent_archive_id: None,
             depth_level: 0,
+                min_timestamp: None,
+                max_timestamp: None,
+                level_mask: None,
         };
         metadata.insert_file(&file_meta).await.unwrap();
     }

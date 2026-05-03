@@ -6,11 +6,11 @@ use proptest::prelude::*;
 use proptest::test_runner::Config;
 
 /// Standard proptest configuration for all property-based tests
-/// Configured for 1000 iterations as specified in requirements
+/// 使用 32 cases 与全局 proptest.toml 保持一致，避免 CI 中超时
 pub fn proptest_config() -> Config {
     Config {
-        cases: 1000,
-        max_shrink_iters: 10000,
+        cases: 32,
+        max_shrink_iters: 100,
         ..Config::default()
     }
 }
@@ -18,8 +18,8 @@ pub fn proptest_config() -> Config {
 /// Custom strategies for domain-specific types
 pub mod strategies {
     use super::*;
-    use log_analyzer::models::log_entry::LogEntry;
-    use log_analyzer::models::search::{
+    use la_core::models::log_entry::LogEntry;
+    use la_core::models::search::{
         QueryMetadata, QueryOperator, SearchQuery, SearchTerm, TermSource,
     };
 

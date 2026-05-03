@@ -5,11 +5,11 @@ edition = "2021"
 
 [dependencies]
 # 错误处理
-thiserror = "1.0"
+thiserror = "2"
 miette = { version = "7", features = ["fancy"] }
 
 # 序列化
-serde.workspace = true
+serde = { workspace = true, features = ["rc"] }
 serde_json.workspace = true
 
 # 异步 trait

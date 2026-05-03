@@ -13,6 +13,7 @@ use tracing::error;
 use uuid::Uuid;
 
 use crate::models::AppState;
+use crate::services::file_watcher::parse_metadata;
 use crate::services::parse_log_lines;
 use crate::task_manager::TaskManager;
 use crate::utils::encoding::decode_log_content;
@@ -249,6 +250,80 @@ async fn rebuild_workspace_search_index(
     .map_err(|e| format!("Search index rebuild task panicked: {}", e))?
 }
 
+/// 解析日志文件内容，计算时间范围和级别掩码
+///
+/// # Arguments
+/// * `content` — 文件原始内容（字节）
+///
+/// # Returns
+/// `(min_timestamp, max_timestamp, level_mask)`
+fn compute_file_stats(content: &[u8]) -> (Option<i64>, Option<i64>, Option<u8>) {
+    let text = match std::str::from_utf8(content) {
+        Ok(s) => s,
+        Err(_) => return (None, None, None),
+    };
+
+    // 大文件优化：超过 10MB 只解析前 1000 行和后 1000 行
+    const MAX_FULL_PARSE_BYTES: usize = 10 * 1024 * 1024;
+    const MAX_LINES_SAMPLE: usize = 1000;
+
+    let mut min_ts: Option<i64> = None;
+    let mut max_ts: Option<i64> = None;
+    let mut level_mask: u8 = 0;
+    let mut has_any_level = false;
+
+    let mut process_line = |line: &str| {
+        if line.is_empty() {
+            return;
+        }
+        let (timestamp_str, level) = parse_metadata(line);
+        if !level.is_empty() {
+            has_any_level = true;
+            let mask_bit = match level.as_str() {
+                "DEBUG" => 1u8 << 0,
+                "INFO" => 1u8 << 1,
+                "WARN" => 1u8 << 2,
+                "ERROR" => 1u8 << 3,
+                _ => 0,
+            };
+            level_mask |= mask_bit;
+        }
+        if !timestamp_str.is_empty() {
+            if let Some(ts) = la_search::parse_log_timestamp_to_unix(&timestamp_str) {
+                min_ts = Some(min_ts.map_or(ts, |m| m.min(ts)));
+                max_ts = Some(max_ts.map_or(ts, |m| m.max(ts)));
+            }
+        }
+    };
+
+    if text.len() > MAX_FULL_PARSE_BYTES {
+        let all_lines: Vec<&str> = text.lines().collect();
+        let total = all_lines.len();
+        if total > MAX_LINES_SAMPLE * 2 {
+            for line in &all_lines[..MAX_LINES_SAMPLE] {
+                process_line(line);
+            }
+            for line in &all_lines[total - MAX_LINES_SAMPLE..] {
+                process_line(line);
+            }
+        } else {
+            for line in &all_lines {
+                process_line(line);
+            }
+        }
+    } else {
+        for line in text.lines() {
+            process_line(line);
+        }
+    }
+
+    (
+        min_ts,
+        max_ts,
+        if has_any_level { Some(level_mask) } else { None },
+    )
+}
+
 #[command]
 pub async fn import_folder(
     app: AppHandle,
@@ -430,6 +505,78 @@ pub async fn import_folder(
         }
 
         return Err(format!("Failed to process path: {}", e));
+    }
+
+    // 计算并存储文件级统计信息（时间范围、级别掩码），用于搜索剪枝
+    {
+        let metadata_store = metadata_store.clone();
+        let cas = Arc::clone(&cas);
+        let workspace_id = workspace_id_clone.clone();
+        tokio::task::spawn(async move {
+            match metadata_store.get_all_files().await {
+                Ok(files) => {
+                    let mut updated = 0usize;
+                    let mut failed = 0usize;
+
+                    for file in files {
+                        // 跳过已有统计信息的文件
+                        if file.min_timestamp.is_some()
+                            || file.max_timestamp.is_some()
+                            || file.level_mask.is_some()
+                        {
+                            continue;
+                        }
+
+                        match cas.read_content(&file.sha256_hash).await {
+                            Ok(content) => {
+                                let (min_ts, max_ts, level_mask) = compute_file_stats(&content);
+                                if let Err(e) = metadata_store
+                                    .update_file_stats(
+                                        &file.virtual_path,
+                                        min_ts,
+                                        max_ts,
+                                        level_mask,
+                                    )
+                                    .await
+                                {
+                                    tracing::warn!(
+                                        virtual_path = %file.virtual_path,
+                                        error = %e,
+                                        "Failed to update file stats"
+                                    );
+                                    failed += 1;
+                                } else {
+                                    updated += 1;
+                                }
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    virtual_path = %file.virtual_path,
+                                    hash = %file.sha256_hash,
+                                    error = %e,
+                                    "Failed to read file content for stats computation"
+                                );
+                                failed += 1;
+                            }
+                        }
+                    }
+
+                    tracing::info!(
+                        workspace_id = %workspace_id,
+                        stats_updated = updated,
+                        stats_failed = failed,
+                        "File stats computation completed"
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        workspace_id = %workspace_id,
+                        error = %e,
+                        "Failed to get files for stats computation"
+                    );
+                }
+            }
+        });
     }
 
     if let Some(ref task_manager) = task_manager_clone {

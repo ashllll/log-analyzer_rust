@@ -1063,6 +1063,9 @@ pub async fn process_path_with_cas_and_checkpoints(
         mime_type,
         parent_archive_id,
         depth_level,
+        min_timestamp: None,
+        max_timestamp: None,
+        level_mask: None,
     };
 
     // Insert into metadata store
@@ -1287,6 +1290,9 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
                                     mime_type,
                                     parent_archive_id: Some(archive_id),
                                     depth_level,
+                                    min_timestamp: None,
+                                    max_timestamp: None,
+                                    level_mask: None,
                                 };
                                 if let Err(e) =
                                     context.metadata_store.insert_file(&file_metadata).await
@@ -1493,6 +1499,9 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
                 mime_type: Some("application/octet-stream".to_string()),
                 parent_archive_id: Some(archive_id),
                 depth_level,
+                min_timestamp: None,
+                max_timestamp: None,
+                level_mask: None,
             };
             context.metadata_store.insert_file(&nested_metadata).await?;
             continue;

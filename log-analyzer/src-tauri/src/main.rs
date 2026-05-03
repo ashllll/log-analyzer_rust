@@ -8,9 +8,8 @@
 
 // 导入 log_analyzer 库的模块
 use log_analyzer::commands::{
-    async_search::*, cache::*, config::*, error_reporting::*, export::*, import::*, legacy::*,
-    log_config::*, query::*, search::*, state_sync::*, validation::*, virtual_tree::*, watch::*,
-    workspace::*,
+    async_search::*, config::*, export::*, import::*, log_config::*, search::*, state_sync::*,
+    validation::*, virtual_tree::*, watch::*, workspace::*,
 };
 use log_analyzer::models::{AppState, CacheState, SearchState, WorkspaceState};
 use log_analyzer::task_manager::TaskManager;
@@ -20,7 +19,7 @@ use log_analyzer::utils::cache_manager::{
 use moka::sync::Cache;
 use std::{sync::Arc, time::Duration};
 use tauri::Manager;
-use tracing::{error, info, warn};
+use tracing::info;
 
 fn load_app_config(app: &tauri::AppHandle) -> Option<la_core::models::config::AppConfig> {
     let config_path = app.path().app_config_dir().ok()?.join("config.json");
@@ -28,7 +27,7 @@ fn load_app_config(app: &tauri::AppHandle) -> Option<la_core::models::config::Ap
         return None;
     }
 
-    log_analyzer::models::config::AppConfigLoader::load(Some(config_path))
+    la_core::models::config::AppConfigLoader::load(Some(config_path))
         .ok()
         .map(|loader| loader.get_config().clone())
 }
@@ -151,11 +150,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 app_state.init_disk_result_store_at(app_data_dir);
             }
 
-            // 注册应用退出钩子（在 setup 外面注册）
-            // 注意：这里不能在 setup 内注册，因为 app 生命周期有限
-            // 实际的清理逻辑将在 window close 事件中处理
-
-            info!("✅ 应用退出钩子已注册");
+            info!("✅ 应用初始化完成");
             Ok(())
         })
         // 注册所有命令
@@ -196,12 +191,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // ===== 虚拟文件树 =====
             read_file_by_hash,
             get_virtual_file_tree,
-            // ===== 结构化查询 =====
-            execute_structured_query,
-            validate_query,
-            // ===== 传统格式检测 =====
-            scan_legacy_formats,
-            get_legacy_workspace_info,
             // ===== 日志搜索 =====
             search_logs,
             cancel_search,
@@ -216,19 +205,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // ===== 导入 =====
             import_folder,
             check_rar_support,
-            // ===== 错误报告 =====
-            report_frontend_error,
-            submit_user_feedback,
-            get_error_statistics,
             // ===== 状态同步 =====
             init_state_sync,
-            get_workspace_state,
-            get_event_history,
-            broadcast_test_event,
             // ===== 导出 =====
             export_results,
-            // ===== 缓存管理 =====
-            invalidate_workspace_cache,
             // ===== 数据验证 =====
             validate_workspace_config_cmd,
             validate_search_query_cmd,
@@ -244,78 +224,53 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
-            // 处理应用事件
             if let tauri::RunEvent::ExitRequested { .. } = event {
-                info!("应用退出请求，开始清理资源");
+                info!("应用退出请求，执行清理");
+                let state = app_handle.state::<AppState>();
 
-                let state_guard = app_handle.state::<AppState>();
+                // 1. 清理 DiskResultStore（先执行，释放文件句柄）
+                let disk_store = state.disk_result_store.read().clone();
+                disk_store.cleanup_all();
 
-                // 1. 清理 DiskResultStore（删除磁盘缓存文件）
-                state_guard.disk_result_store.read().cleanup_all();
-                tracing::debug!("DiskResultStore 已清理所有磁盘缓存");
+                // 2. 清理异步组件（MetadataStore / SearchEngineManager / TaskManager）
+                let metadata_stores = Arc::clone(&state.metadata_stores);
+                let search_engine_managers = Arc::clone(&state.search_engine_managers);
+                let task_manager = Arc::clone(&state.task_manager);
 
-                // 2. 关闭所有 MetadataStore（WAL checkpoint）
-                {
-                    let stores_clone: Vec<_> = {
-                        let stores = state_guard.metadata_stores.lock();
-                        stores.values().cloned().collect()
-                    };
-                    if !stores_clone.is_empty() {
-                        // H1 Fix: Reuse Tauri's global async runtime instead of creating a new one
-                        tauri::async_runtime::block_on(async {
-                            for store in stores_clone {
+                let handle = std::thread::spawn(move || {
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build();
+                    match rt {
+                        Ok(rt) => rt.block_on(async {
+                            let stores: Vec<_> = metadata_stores.lock().values().cloned().collect();
+                            for store in stores {
                                 store.close().await;
                             }
-                        });
-                    }
-                }
-
-                // 3. 收集并关闭 SearchEngineManager 和 TaskManager
-                let task_manager_opt: Option<TaskManager> = {
-                    let guard = state_guard.task_manager.lock();
-                    guard.as_ref().cloned()
-                };
-
-                let search_managers: Vec<_> = {
-                    let managers = state_guard.search_engine_managers.lock();
-                    managers.values().cloned().collect()
-                };
-
-                if let Some(task_manager) = task_manager_opt {
-                    // H1 Fix: Reuse Tauri's global async runtime instead of creating a new one
-                    tauri::async_runtime::block_on(async move {
-                        // 关闭所有 SearchEngineManager（提交 IndexWriter 缓冲区）
-                        for mgr in search_managers {
-                            let close_result = tokio::time::timeout(
-                                std::time::Duration::from_secs(3),
-                                mgr.close(),
-                            )
-                            .await;
-                            match close_result {
-                                Ok(()) => info!("SearchEngineManager 已成功关闭"),
-                                Err(_) => {
-                                    error!("SearchEngineManager 关闭超时 (3秒)")
-                                }
+                            let engines: Vec<_> = search_engine_managers.lock().values().cloned().collect();
+                            for mgr in engines {
+                                let _ = tokio::time::timeout(
+                                    std::time::Duration::from_secs(3),
+                                    mgr.close(),
+                                )
+                                .await;
                             }
+                            let tm_opt = task_manager.lock().take();
+                            if let Some(tm) = tm_opt {
+                                let _ = tokio::time::timeout(
+                                    std::time::Duration::from_secs(5),
+                                    tm.shutdown_async(),
+                                )
+                                .await;
+                            }
+                        }),
+                        Err(e) => {
+                            tracing::error!(error = %e, "创建清理用 tokio runtime 失败");
                         }
-
-                        info!("正在关闭 TaskManager...");
-
-                        // 使用 5 秒超时执行异步关闭
-                        let shutdown_result = tokio::time::timeout(
-                            std::time::Duration::from_secs(5),
-                            task_manager.shutdown_async(),
-                        )
-                        .await;
-
-                        match shutdown_result {
-                            Ok(Ok(())) => info!("TaskManager 已成功关闭"),
-                            Ok(Err(e)) => error!("TaskManager 关闭失败: {}", e),
-                            Err(_) => error!("TaskManager 关闭超时 (5秒)"),
-                        }
-                    });
-                } else {
-                    warn!("TaskManager 未初始化，跳过清理");
+                    }
+                });
+                if let Err(e) = handle.join() {
+                    tracing::error!(error = ?e, "应用退出清理线程 panic");
                 }
 
                 info!("应用退出清理完成");

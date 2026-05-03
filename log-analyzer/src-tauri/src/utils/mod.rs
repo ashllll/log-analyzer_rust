@@ -6,13 +6,11 @@ pub mod async_resource_manager;
 pub mod cache;
 pub mod cache_manager;
 pub mod cancellation_manager;
-pub mod cleanup;
 pub mod command_validation;
 pub mod encoding;
 pub mod legacy_detection;
 pub mod log_config;
 pub mod path;
-pub mod resource_manager;
 pub mod resource_tracker;
 pub mod retry;
 pub mod validation;
@@ -35,7 +33,6 @@ pub use log_config::{
     LogConfig, LogLevel, ModuleLogConfig,
 };
 pub use path::{canonicalize_path, normalize_path_separator};
-pub use resource_manager::{create_guarded_temp_dir, ResourceManager, TempDirGuard};
 pub use resource_tracker::{ResourceInfo, ResourceReport, ResourceTracker, ResourceType};
 pub use validation::{validate_path_param, validate_workspace_id};
 

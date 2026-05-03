@@ -123,6 +123,9 @@ impl MetadataStore {
         // Initialize schema
         Self::init_schema(&pool).await?;
 
+        // Schema migration: add file stats columns for v2
+        Self::migrate_schema_v2(&pool).await?;
+
         Ok(Self { pool })
     }
 
@@ -137,6 +140,21 @@ impl MetadataStore {
             .execute(&self.pool)
             .await;
         self.pool.close().await;
+    }
+
+    /// Schema migration v2: add min_timestamp, max_timestamp, level_mask columns
+    ///
+    /// SQLite ALTER TABLE ADD COLUMN 在列已存在时会报错，忽略即可。
+    async fn migrate_schema_v2(pool: &SqlitePool) -> Result<()> {
+        for (col, typ) in [
+            ("min_timestamp", "INTEGER"),
+            ("max_timestamp", "INTEGER"),
+            ("level_mask", "INTEGER"),
+        ] {
+            let sql = format!("ALTER TABLE files ADD COLUMN {} {}", col, typ);
+            let _ = sqlx::query(&sql).execute(pool).await;
+        }
+        Ok(())
     }
 
     /// Initialize database schema
@@ -154,6 +172,9 @@ impl MetadataStore {
                 mime_type TEXT,
                 parent_archive_id INTEGER,
                 depth_level INTEGER NOT NULL DEFAULT 0,
+                min_timestamp INTEGER,
+                max_timestamp INTEGER,
+                level_mask INTEGER,
                 created_at INTEGER NOT NULL,
                 FOREIGN KEY (parent_archive_id) REFERENCES archives(id) ON DELETE CASCADE
             )
@@ -222,6 +243,21 @@ impl MetadataStore {
             .map_err(|e| AppError::database_error(format!("Failed to create index: {}", e)))?;
 
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_files_depth ON files(depth_level)")
+            .execute(pool)
+            .await
+            .map_err(|e| AppError::database_error(format!("Failed to create index: {}", e)))?;
+
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_files_min_ts ON files(min_timestamp)")
+            .execute(pool)
+            .await
+            .map_err(|e| AppError::database_error(format!("Failed to create index: {}", e)))?;
+
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_files_max_ts ON files(max_timestamp)")
+            .execute(pool)
+            .await
+            .map_err(|e| AppError::database_error(format!("Failed to create index: {}", e)))?;
+
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_files_level_mask ON files(level_mask)")
             .execute(pool)
             .await
             .map_err(|e| AppError::database_error(format!("Failed to create index: {}", e)))?;
@@ -360,8 +396,9 @@ impl MetadataStore {
             r#"
             INSERT OR IGNORE INTO files (
                 sha256_hash, virtual_path, original_name, size,
-                modified_time, mime_type, parent_archive_id, depth_level, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                modified_time, mime_type, parent_archive_id, depth_level, created_at,
+                min_timestamp, max_timestamp, level_mask
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&metadata.sha256_hash)
@@ -373,6 +410,9 @@ impl MetadataStore {
         .bind(metadata.parent_archive_id)
         .bind(metadata.depth_level)
         .bind(chrono::Utc::now().timestamp())
+        .bind(metadata.min_timestamp)
+        .bind(metadata.max_timestamp)
+        .bind(metadata.level_mask.map(|m| m as i64))
         .execute(&mut *tx)
         .await
         .map_err(|e| AppError::database_error(format!("Failed to insert file: {}", e)))?;
@@ -473,6 +513,9 @@ impl MetadataStore {
             mime_type: r.get("mime_type"),
             parent_archive_id: r.get("parent_archive_id"),
             depth_level: r.get("depth_level"),
+            min_timestamp: r.try_get("min_timestamp").ok(),
+            max_timestamp: r.try_get("max_timestamp").ok(),
+            level_mask: r.try_get("level_mask").ok(),
         }))
     }
 
@@ -494,6 +537,9 @@ impl MetadataStore {
             mime_type: r.get("mime_type"),
             parent_archive_id: r.get("parent_archive_id"),
             depth_level: r.get("depth_level"),
+            min_timestamp: r.try_get("min_timestamp").ok(),
+            max_timestamp: r.try_get("max_timestamp").ok(),
+            level_mask: r.try_get("level_mask").ok(),
         }))
     }
 
@@ -565,6 +611,9 @@ impl MetadataStore {
                 mime_type: r.get("mime_type"),
                 parent_archive_id: r.get("parent_archive_id"),
                 depth_level: r.get("depth_level"),
+                min_timestamp: r.try_get("min_timestamp").ok(),
+                max_timestamp: r.try_get("max_timestamp").ok(),
+                level_mask: r.try_get("level_mask").ok(),
             })
             .collect())
     }
@@ -588,6 +637,9 @@ impl MetadataStore {
                 mime_type: r.get("mime_type"),
                 parent_archive_id: r.get("parent_archive_id"),
                 depth_level: r.get("depth_level"),
+                min_timestamp: r.try_get("min_timestamp").ok(),
+                max_timestamp: r.try_get("max_timestamp").ok(),
+                level_mask: r.try_get("level_mask").ok(),
             })
             .collect())
     }
@@ -647,6 +699,101 @@ impl MetadataStore {
         Ok(())
     }
 
+    /// Update file stats (min_timestamp, max_timestamp, level_mask)
+    ///
+    /// Used after parsing a file to store its time range and log levels
+    /// for segment pruning during search.
+    pub async fn update_file_stats(
+        &self,
+        virtual_path: &str,
+        min_timestamp: Option<i64>,
+        max_timestamp: Option<i64>,
+        level_mask: Option<u8>,
+    ) -> Result<()> {
+        sqlx::query(
+            "UPDATE files SET min_timestamp = ?, max_timestamp = ?, level_mask = ? WHERE virtual_path = ?"
+        )
+        .bind(min_timestamp)
+        .bind(max_timestamp)
+        .bind(level_mask.map(|m| m as i64))
+        .bind(virtual_path)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| AppError::database_error(format!("Failed to update file stats: {}", e)))?;
+        Ok(())
+    }
+
+    /// Get files with pruning filters (time range + level mask + file pattern)
+    ///
+    /// Files that have NULL stats are always included (conservative pruning).
+    pub async fn get_files_with_pruning(
+        &self,
+        time_start: Option<i64>,
+        time_end: Option<i64>,
+        level_mask: Option<u8>,
+        file_pattern: Option<&str>,
+    ) -> Result<Vec<FileMetadata>> {
+        let mut sql = String::from("SELECT * FROM files WHERE 1=1");
+
+        if let (Some(_start), Some(_end)) = (time_start, time_end) {
+            sql.push_str(" AND (min_timestamp IS NULL OR max_timestamp IS NULL OR (min_timestamp <= ? AND max_timestamp >= ?))");
+        } else if let Some(_start) = time_start {
+            sql.push_str(" AND (max_timestamp IS NULL OR max_timestamp >= ?)");
+        } else if let Some(_end) = time_end {
+            sql.push_str(" AND (min_timestamp IS NULL OR min_timestamp <= ?)");
+        }
+
+        if let Some(_mask) = level_mask {
+            sql.push_str(" AND (level_mask IS NULL OR (level_mask & ?) != 0)");
+        }
+
+        if let Some(_pattern) = file_pattern {
+            sql.push_str(" AND virtual_path GLOB ?");
+        }
+
+        sql.push_str(" ORDER BY virtual_path");
+
+        let mut query = sqlx::query(&sql);
+
+        if let (Some(start), Some(end)) = (time_start, time_end) {
+            query = query.bind(end).bind(start);
+        } else if let Some(start) = time_start {
+            query = query.bind(start);
+        } else if let Some(end) = time_end {
+            query = query.bind(end);
+        }
+
+        if let Some(mask) = level_mask {
+            query = query.bind(mask as i64);
+        }
+
+        if let Some(pattern) = file_pattern {
+            query = query.bind(pattern);
+        }
+
+        let rows = query.fetch_all(&self.pool).await.map_err(|e| {
+            AppError::database_error(format!("Failed to query files with pruning: {}", e))
+        })?;
+
+        Ok(rows
+            .into_iter()
+            .map(|r: sqlx::sqlite::SqliteRow| FileMetadata {
+                id: r.get("id"),
+                sha256_hash: r.get("sha256_hash"),
+                virtual_path: r.get("virtual_path"),
+                original_name: r.get("original_name"),
+                size: r.get("size"),
+                modified_time: r.get("modified_time"),
+                mime_type: r.get("mime_type"),
+                parent_archive_id: r.get("parent_archive_id"),
+                depth_level: r.get("depth_level"),
+                min_timestamp: r.try_get("min_timestamp").ok(),
+                max_timestamp: r.try_get("max_timestamp").ok(),
+                level_mask: r.try_get("level_mask").ok(),
+            })
+            .collect())
+    }
+
     /// Search files using FTS5
     pub async fn search_files(&self, query: &str) -> Result<Vec<FileMetadata>> {
         let rows = sqlx::query(
@@ -674,6 +821,9 @@ impl MetadataStore {
                 mime_type: r.get("mime_type"),
                 parent_archive_id: r.get("parent_archive_id"),
                 depth_level: r.get("depth_level"),
+                min_timestamp: r.try_get("min_timestamp").ok(),
+                max_timestamp: r.try_get("max_timestamp").ok(),
+                level_mask: r.try_get("level_mask").ok(),
             })
             .collect())
     }
@@ -713,8 +863,9 @@ impl MetadataStore {
                 r#"
                 INSERT OR IGNORE INTO files (
                     sha256_hash, virtual_path, original_name, size,
-                    modified_time, mime_type, parent_archive_id, depth_level, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    modified_time, mime_type, parent_archive_id, depth_level, created_at,
+                    min_timestamp, max_timestamp, level_mask
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 "#,
             )
             .bind(&metadata.sha256_hash)
@@ -726,6 +877,9 @@ impl MetadataStore {
             .bind(metadata.parent_archive_id)
             .bind(metadata.depth_level)
             .bind(chrono::Utc::now().timestamp())
+            .bind(metadata.min_timestamp)
+            .bind(metadata.max_timestamp)
+            .bind(metadata.level_mask.map(|m| m as i64))
             .execute(&mut *tx)
             .await
             .map_err(|e| AppError::database_error(format!("Failed to insert file: {}", e)))?;
@@ -834,12 +988,12 @@ impl MetadataStore {
 
         // Build batch INSERT statement with RETURNING clause
         let mut query = String::from(
-            "INSERT OR IGNORE INTO files (sha256_hash, virtual_path, original_name, size, modified_time, mime_type, parent_archive_id, depth_level, created_at) VALUES ",
+            "INSERT OR IGNORE INTO files (sha256_hash, virtual_path, original_name, size, modified_time, mime_type, parent_archive_id, depth_level, created_at, min_timestamp, max_timestamp, level_mask) VALUES ",
         );
 
         let mut placeholders = Vec::with_capacity(files.len());
         for _ in &files {
-            placeholders.push("(?, ?, ?, ?, ?, ?, ?, ?, ?)".to_string());
+            placeholders.push("(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)".to_string());
         }
         query.push_str(&placeholders.join(", "));
         query.push_str(" RETURNING id");
@@ -858,7 +1012,10 @@ impl MetadataStore {
                 .bind(&metadata.mime_type)
                 .bind(metadata.parent_archive_id)
                 .bind(metadata.depth_level)
-                .bind(now);
+                .bind(now)
+                .bind(metadata.min_timestamp)
+                .bind(metadata.max_timestamp)
+                .bind(metadata.level_mask.map(|m| m as i64));
         }
 
         // Execute and fetch all IDs
@@ -1007,8 +1164,9 @@ impl MetadataStore {
             r#"
             INSERT OR IGNORE INTO files (
                 sha256_hash, virtual_path, original_name, size,
-                modified_time, mime_type, parent_archive_id, depth_level, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                modified_time, mime_type, parent_archive_id, depth_level, created_at,
+                min_timestamp, max_timestamp, level_mask
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&metadata.sha256_hash)
@@ -1020,6 +1178,9 @@ impl MetadataStore {
         .bind(metadata.parent_archive_id)
         .bind(metadata.depth_level)
         .bind(chrono::Utc::now().timestamp())
+        .bind(metadata.min_timestamp)
+        .bind(metadata.max_timestamp)
+        .bind(metadata.level_mask.map(|m| m as i64))
         .execute(&mut **tx)
         .await
         .map_err(|e| {
@@ -1497,6 +1658,9 @@ mod tests {
             mime_type: Some("text/plain".to_string()),
             parent_archive_id: None,
             depth_level: 0,
+                min_timestamp: None,
+                max_timestamp: None,
+                level_mask: None,
         };
 
         let id = store.insert_file(&metadata).await.unwrap();
@@ -1526,6 +1690,9 @@ mod tests {
             mime_type: None,
             parent_archive_id: None,
             depth_level: 0,
+                min_timestamp: None,
+                max_timestamp: None,
+                level_mask: None,
         };
         store.insert_file(&metadata).await.unwrap();
 
@@ -1565,6 +1732,9 @@ mod tests {
             mime_type: None,
             parent_archive_id: None,
             depth_level: 0,
+                min_timestamp: None,
+                max_timestamp: None,
+                level_mask: None,
         };
         let id = store.insert_file(&file).await.unwrap();
         assert!(
@@ -1601,6 +1771,9 @@ mod tests {
             mime_type: Some("text/plain".to_string()),
             parent_archive_id: Some(parent_id),
             depth_level: 2,
+                min_timestamp: None,
+                max_timestamp: None,
+                level_mask: None,
         };
 
         let id = store.insert_file(&metadata).await.unwrap();
@@ -1638,6 +1811,9 @@ mod tests {
             mime_type: None,
             parent_archive_id: None,
             depth_level: 0,
+                min_timestamp: None,
+                max_timestamp: None,
+                level_mask: None,
         };
 
         store.insert_file(&metadata).await.unwrap();
@@ -1726,6 +1902,9 @@ mod tests {
             mime_type: None,
             parent_archive_id: Some(parent_id),
             depth_level: 1,
+                min_timestamp: None,
+                max_timestamp: None,
+                level_mask: None,
         };
 
         let file2 = FileMetadata {
@@ -1738,6 +1917,9 @@ mod tests {
             mime_type: None,
             parent_archive_id: Some(parent_id),
             depth_level: 1,
+                min_timestamp: None,
+                max_timestamp: None,
+                level_mask: None,
         };
 
         store.insert_file(&file1).await.unwrap();
@@ -1792,6 +1974,9 @@ mod tests {
             mime_type: None,
             parent_archive_id: Some(nested_id),
             depth_level: 2,
+                min_timestamp: None,
+                max_timestamp: None,
+                level_mask: None,
         };
         store.insert_file(&deep_file).await.unwrap();
 
@@ -1830,6 +2015,9 @@ mod tests {
                 mime_type: None,
                 parent_archive_id: None,
                 depth_level: 0,
+                    min_timestamp: None,
+                    max_timestamp: None,
+                    level_mask: None,
             };
             store.insert_file(&file).await.unwrap();
         }
@@ -1873,6 +2061,9 @@ mod tests {
                 mime_type: None,
                 parent_archive_id: None,
                 depth_level: 0,
+                    min_timestamp: None,
+                    max_timestamp: None,
+                    level_mask: None,
             },
             FileMetadata {
                 id: 0,
@@ -1884,6 +2075,9 @@ mod tests {
                 mime_type: None,
                 parent_archive_id: None,
                 depth_level: 0,
+                    min_timestamp: None,
+                    max_timestamp: None,
+                    level_mask: None,
             },
             FileMetadata {
                 id: 0,
@@ -1895,6 +2089,9 @@ mod tests {
                 mime_type: None,
                 parent_archive_id: None,
                 depth_level: 0,
+                    min_timestamp: None,
+                    max_timestamp: None,
+                    level_mask: None,
             },
         ];
 
@@ -1926,6 +2123,9 @@ mod tests {
                 mime_type: None,
                 parent_archive_id: None,
                 depth_level: 0,
+                    min_timestamp: None,
+                    max_timestamp: None,
+                    level_mask: None,
             };
             store.insert_file(&file).await.unwrap();
         }
@@ -2005,6 +2205,9 @@ mod tests {
             mime_type: None,
             parent_archive_id: None,
             depth_level: 0,
+                min_timestamp: None,
+                max_timestamp: None,
+                level_mask: None,
         };
         store.insert_file(&file).await.unwrap();
 
@@ -2056,6 +2259,9 @@ mod tests {
                 mime_type: None,
                 parent_archive_id: None,
                 depth_level: 0,
+                    min_timestamp: None,
+                    max_timestamp: None,
+                    level_mask: None,
             };
             store.insert_file(&file).await.unwrap();
         }
@@ -2093,6 +2299,9 @@ mod tests {
                 mime_type: None,
                 parent_archive_id: None,
                 depth_level: depth,
+                    min_timestamp: None,
+                    max_timestamp: None,
+                    level_mask: None,
             };
             store.insert_file(&file).await.unwrap();
         }
@@ -2125,6 +2334,9 @@ mod tests {
             mime_type: None,
             parent_archive_id: None,
             depth_level: 0,
+                min_timestamp: None,
+                max_timestamp: None,
+                level_mask: None,
         };
 
         store.insert_file(&file1).await.unwrap();
@@ -2140,6 +2352,9 @@ mod tests {
             mime_type: None,
             parent_archive_id: None,
             depth_level: 0,
+                min_timestamp: None,
+                max_timestamp: None,
+                level_mask: None,
         };
 
         // CAS 去重设计：相同哈希应该成功插入（返回已存在记录的 ID）
@@ -2493,6 +2708,9 @@ mod tests {
                             mime_type,
                             parent_archive_id: None,
                             depth_level,
+                            min_timestamp: None,
+                            max_timestamp: None,
+                            level_mask: None,
                         }
                     },
                 )

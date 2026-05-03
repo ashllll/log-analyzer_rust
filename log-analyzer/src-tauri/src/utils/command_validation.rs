@@ -14,7 +14,7 @@ pub static WORKSPACE_ID_REGEX: Lazy<Regex> =
 pub const MAX_SEARCH_QUERY_LENGTH: usize = 1000;
 
 /// 工作区ID最大长度
-pub const MAX_WORKSPACE_ID_LENGTH: usize = 100;
+pub const MAX_WORKSPACE_ID_LENGTH: usize = 50;
 
 /// 路径最大长度
 pub const MAX_PATH_LENGTH: usize = 500;

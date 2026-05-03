@@ -482,6 +482,9 @@ mod cas_storage_consistency_tests {
                         mime_type: Some("text/plain".to_string()),
                         parent_archive_id: None,
                         depth_level: 0,
+                            min_timestamp: None,
+                            max_timestamp: None,
+                            level_mask: None,
                     };
 
                     // Insert into metadata store
@@ -683,6 +686,9 @@ mod cas_storage_consistency_tests {
                     mime_type: Some("text/plain".to_string()),
                     parent_archive_id: None,
                     depth_level: 0,
+                        min_timestamp: None,
+                        max_timestamp: None,
+                        level_mask: None,
                 };
 
                 metadata_store.insert_file(&file_meta).await.unwrap();
@@ -802,6 +808,9 @@ mod search_uses_cas_tests {
                         mime_type: Some("text/plain".to_string()),
                         parent_archive_id: None,
                         depth_level: 0,
+                            min_timestamp: None,
+                            max_timestamp: None,
+                            level_mask: None,
                     };
 
                     metadata_store.insert_file(&file_meta).await.unwrap();
@@ -889,6 +898,9 @@ mod search_uses_cas_tests {
                     mime_type: Some("text/plain".to_string()),
                     parent_archive_id: None,
                     depth_level: 0,
+                        min_timestamp: None,
+                        max_timestamp: None,
+                        level_mask: None,
                 };
 
                 metadata_store.insert_file(&file_meta).await.unwrap();
@@ -988,6 +1000,9 @@ mod search_uses_cas_tests {
                         mime_type: Some("text/plain".to_string()),
                         parent_archive_id: None,
                         depth_level: 0,
+                            min_timestamp: None,
+                            max_timestamp: None,
+                            level_mask: None,
                     };
 
                     metadata_store.insert_file(&file_meta).await.unwrap();
@@ -1087,6 +1102,9 @@ mod search_uses_cas_tests {
                         mime_type: Some("text/plain".to_string()),
                         parent_archive_id: None,
                         depth_level: 0,
+                            min_timestamp: None,
+                            max_timestamp: None,
+                            level_mask: None,
                     };
 
                     metadata_store.insert_file(&file_meta).await.unwrap();
@@ -1177,6 +1195,9 @@ mod search_uses_cas_tests {
                     mime_type: Some("application/octet-stream".to_string()),
                     parent_archive_id: None,
                     depth_level: 0,
+                        min_timestamp: None,
+                        max_timestamp: None,
+                        level_mask: None,
                 };
 
                 metadata_store.insert_file(&file_meta).await.unwrap();

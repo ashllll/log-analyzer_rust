@@ -7,12 +7,14 @@
 //! - Query parsing and execution
 
 use parking_lot::{Mutex, RwLock};
+use std::collections::HashSet;
+use std::ops::Bound;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tantivy::{
     collector::{Count, TopDocs},
-    query::{Query, QueryParser, TermQuery},
+    query::{BooleanQuery, Occur, Query, QueryParser, RangeQuery, RegexQuery, TermQuery},
     schema::Value,
     DocAddress, Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument, Term,
 };
@@ -49,7 +51,7 @@ const INDEX_TIMESTAMP_FORMATS: &[&str] = &[
     "%d/%b/%Y:%H:%M:%S",
 ];
 
-fn parse_log_timestamp_to_unix(timestamp: &str) -> Option<i64> {
+pub fn parse_log_timestamp_to_unix(timestamp: &str) -> Option<i64> {
     let trimmed = timestamp.trim();
     if trimmed.is_empty() {
         return None;
@@ -68,6 +70,24 @@ fn parse_log_timestamp_to_unix(timestamp: &str) -> Option<i64> {
     chrono::DateTime::parse_from_rfc3339(trimmed)
         .ok()
         .map(|dt| dt.timestamp())
+}
+
+fn glob_to_regex(glob: &str) -> String {
+    let mut regex = String::with_capacity(glob.len() * 2);
+    regex.push('^');
+    for ch in glob.chars() {
+        match ch {
+            '*' => regex.push_str(".*"),
+            '?' => regex.push('.'),
+            '.' | '+' | '(' | ')' | '[' | ']' | '{' | '}' | '\\' | '|' | '^' | '$' => {
+                regex.push('\\');
+                regex.push(ch);
+            }
+            _ => regex.push(ch),
+        }
+    }
+    regex.push('$');
+    regex
 }
 
 /// Search result entry with document address for highlighting
@@ -140,6 +160,7 @@ impl Default for SearchConfig {
 }
 
 /// High-performance search engine manager using Tantivy
+#[allow(dead_code)]
 pub struct SearchEngineManager {
     pub(crate) index: Index,
     reader: IndexReader,
@@ -150,8 +171,7 @@ pub struct SearchEngineManager {
     stats: Arc<RwLock<SearchStats>>,
     boolean_processor: BooleanQueryProcessor,
     highlighting_engine: HighlightingEngine,
-    /// **NEW**: Integrated IndexOptimizer for query pattern analysis
-    optimizer: Option<Arc<crate::index_optimizer::IndexOptimizer>>,
+
 }
 
 #[derive(Debug, Default)]
@@ -212,14 +232,9 @@ impl SearchEngineManager {
             highlighting_config,
         );
 
-        // **NEW**: Initialize IndexOptimizer
-        // Enabled by default with threshold of 100 queries
-        let optimizer = Some(Arc::new(crate::index_optimizer::IndexOptimizer::new(100)));
-
         info!(
             index_path = %config.index_path.display(),
             heap_size = config.writer_heap_size,
-            optimizer_enabled = optimizer.is_some(),
             "Search engine initialized"
         );
 
@@ -233,7 +248,6 @@ impl SearchEngineManager {
             stats: Arc::new(RwLock::new(SearchStats::default())),
             boolean_processor,
             highlighting_engine,
-            optimizer,
         })
     }
 
@@ -296,15 +310,6 @@ impl SearchEngineManager {
                         search_results.query_time_ms = query_time.as_millis() as u64;
                         search_results.was_timeout = false;
 
-                        // **NEW**: Record query for optimization analysis
-                        if let Some(ref optimizer) = self.optimizer {
-                            optimizer.record_query_with_results(
-                                query,
-                                query_time,
-                                search_results.entries.len(),
-                            );
-                        }
-
                         info!(
                             query = %query,
                             results = search_results.entries.len(),
@@ -341,6 +346,118 @@ impl SearchEngineManager {
                 )))
             }
         }
+    }
+
+    /// 使用预构建的 Tantivy Query 执行搜索（支持完整过滤条件）
+    pub async fn search_with_query(
+        &self,
+        query: Box<dyn Query>,
+        limit: Option<usize>,
+        timeout_duration: Option<Duration>,
+        token: Option<CancellationToken>,
+    ) -> SearchResult<SearchResults> {
+        let start_time = Instant::now();
+        let limit = limit.unwrap_or(self.config.max_results);
+        let timeout_duration = timeout_duration.unwrap_or(self.config.default_timeout);
+        let token = token.unwrap_or_default();
+
+        debug!(limit = limit, timeout_ms = timeout_duration.as_millis(), "Starting filtered Tantivy search");
+
+        let search_future = self.execute_search(query, limit, Some(token.clone()));
+
+        match timeout(timeout_duration, search_future).await {
+            Ok(result) => {
+                let query_time = start_time.elapsed();
+                self.update_stats(query_time, false);
+                match result {
+                    Ok(mut search_results) => {
+                        search_results.query_time_ms = query_time.as_millis() as u64;
+                        search_results.was_timeout = false;
+                        info!(
+                            results = search_results.entries.len(),
+                            total = search_results.total_count,
+                            time_ms = search_results.query_time_ms,
+                            "Filtered Tantivy search completed"
+                        );
+                        Ok(search_results)
+                    }
+                    Err(e) => Err(e),
+                }
+            }
+            Err(_) => {
+                self.update_stats(start_time.elapsed(), true);
+                token.cancel();
+                warn!("Filtered Tantivy search timed out");
+                Err(SearchError::Timeout(format!(
+                    "Search timed out after {}ms",
+                    timeout_duration.as_millis()
+                )))
+            }
+        }
+    }
+
+    /// 构建包含内容查询和过滤条件的完整 Tantivy BooleanQuery
+    /// 
+    /// # Arguments
+    /// - `content_query_str` — 用户输入的原始查询字符串（如 "error | timeout"）
+    /// - `time_range` — 可选的时间范围过滤 (start_timestamp, end_timestamp)，Unix 秒
+    /// - `levels` — 可选的日志级别集合，如 {"ERROR", "WARN"}
+    /// - `file_pattern` — 可选的文件路径 GLOB 模式，如 "logs/app*.log"
+    pub fn build_tantivy_query(
+        &self,
+        content_query_str: &str,
+        time_range: Option<(i64, i64)>,
+        levels: Option<&HashSet<String>>,
+        file_pattern: Option<&str>,
+    ) -> SearchResult<Box<dyn Query>> {
+        use tantivy::schema::IndexRecordOption;
+        
+        // 1. 解析内容查询
+        let content_query = self.parse_query(content_query_str)?;
+        
+        let mut clauses: Vec<(Occur, Box<dyn Query>)> = vec![
+            (Occur::Must, content_query)
+        ];
+        
+        // 2. 时间范围过滤 → RangeQuery on schema.timestamp (i64 fast field)
+        if let Some((start, end)) = time_range {
+            let start_term = Term::from_field_i64(self.schema.timestamp, start);
+            let end_term = Term::from_field_i64(self.schema.timestamp, end);
+            let range_query = RangeQuery::new(
+                Bound::Included(start_term),
+                Bound::Included(end_term),
+            );
+            clauses.push((Occur::Must, Box::new(range_query)));
+        }
+        
+        // 3. 日志级别过滤 → 多个 TermQuery 用 BooleanQuery::or 组合
+        if let Some(levels) = levels {
+            if !levels.is_empty() {
+                let level_clauses: Vec<(Occur, Box<dyn Query>)> = levels
+                    .iter()
+                    .map(|lvl| {
+                        let term = Term::from_field_text(self.schema.level, lvl);
+                        (Occur::Should, Box::new(TermQuery::new(term, IndexRecordOption::Basic)) as Box<dyn Query>)
+                    })
+                    .collect();
+                if !level_clauses.is_empty() {
+                    clauses.push((Occur::Must, Box::new(BooleanQuery::new(level_clauses))));
+                }
+            }
+        }
+        
+        // 4. 文件路径过滤 → RegexQuery on schema.file_path
+        if let Some(pattern) = file_pattern {
+            if !pattern.is_empty() {
+                // 将 GLOB 模式转换为正则：* → .*，? → .
+                let regex_pattern = glob_to_regex(pattern);
+                let regex_query = RegexQuery::from_pattern(&regex_pattern, self.schema.file_path)
+                    .map_err(|e| SearchError::QueryError(format!("Invalid file pattern: {}", e)))?;
+                clauses.push((Occur::Must, Box::new(regex_query)));
+            }
+        }
+        
+        Ok(Box::new(BooleanQuery::new(clauses)))
     }
 
     /// Parse query string into Tantivy query
@@ -884,26 +1001,6 @@ impl SearchEngineManager {
     /// Get highlighting statistics
     pub fn get_highlighting_stats(&self) -> crate::highlighting_engine::HighlightingStats {
         self.highlighting_engine.get_highlighting_stats()
-    }
-
-    /// **NEW**: Get index optimization analysis
-    ///
-    /// Analyzes query patterns and returns recommendations for index optimization
-    /// Returns None if optimizer is disabled
-    pub fn get_optimization_analysis(
-        &self,
-    ) -> Option<crate::index_optimizer::IndexPerformanceAnalysis> {
-        self.optimizer.as_ref().map(|opt| opt.analyze_performance())
-    }
-
-    /// **NEW**: Get hot query patterns
-    ///
-    /// Returns the most frequently executed queries for optimization
-    pub fn get_hot_queries(&self) -> Vec<(String, crate::index_optimizer::QueryPatternStats)> {
-        self.optimizer
-            .as_ref()
-            .map(|opt| opt.identify_hot_queries())
-            .unwrap_or_default()
     }
 
     /// Clear the index

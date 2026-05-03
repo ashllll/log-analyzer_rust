@@ -9,12 +9,10 @@
 
 // 核心模块
 pub mod commands;
-pub mod error;
 pub mod models;
 pub mod utils;
 
 // 存储和搜索模块
-pub mod archive;
 pub mod search_engine;
 pub mod services;
 pub mod storage;

@@ -72,8 +72,11 @@ proptest! {
         workspace_id in strategies::workspace_id(),
         operation_count in 1usize..10
     ) {
-        // Create a new tokio runtime for each test case
-        let rt = tokio::runtime::Runtime::new().unwrap();
+        // Create a new tokio runtime for each test case (使用 current_thread 以降低创建开销)
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
 
         // Execute async operations within the runtime
         let result = rt.block_on(async {
@@ -118,7 +121,10 @@ proptest! {
         depth in 1usize..5,
         workspace_id in strategies::workspace_id()
     ) {
-        let rt = tokio::runtime::Runtime::new().unwrap();
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
 
         let result = rt.block_on(async {
             // Simulate nested async calls (like TaskManager methods calling other async methods)
@@ -209,7 +215,10 @@ proptest! {
     fn prop_workspace_deletion_no_panic(
         workspace_id in strategies::workspace_id()
     ) {
-        let rt = tokio::runtime::Runtime::new().unwrap();
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
 
         // Use catch_unwind to detect any panics
         let panic_occurred = Arc::new(AtomicBool::new(false));
@@ -249,7 +258,10 @@ proptest! {
             "[a-zA-Z0-9_-]{40,50}",
         ]
     ) {
-        let rt = tokio::runtime::Runtime::new().unwrap();
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
 
         let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
             rt.block_on(async {
@@ -285,7 +297,10 @@ proptest! {
             Just("workspace\\with\\backslashes".to_string()),
         ]
     ) {
-        let rt = tokio::runtime::Runtime::new().unwrap();
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
 
         let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
             rt.block_on(async {

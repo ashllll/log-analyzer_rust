@@ -5,7 +5,7 @@
  */
 
 import { renderHook, act } from '@testing-library/react';
-import { useResourceManager, useDebounce, useThrottle, useLifecycle } from '../useResourceManager';
+import { useResourceManager } from '../useResourceManager';
 
 // Mock logger
 jest.mock('../../utils/logger', () => ({
@@ -158,165 +158,6 @@ describe('Resource Manager Integration Tests', () => {
     });
   });
 
-  describe('useDebounce', () => {
-    it('should debounce function calls correctly', () => {
-      const callback = jest.fn();
-      const { result } = renderHook(() => useDebounce(callback, 500));
-
-      // Call multiple times rapidly
-      act(() => {
-        result.current('arg1');
-        result.current('arg2');
-        result.current('arg3');
-      });
-
-      // Should not have been called yet
-      expect(callback).not.toHaveBeenCalled();
-
-      // Fast-forward time
-      act(() => {
-        jest.advanceTimersByTime(500);
-      });
-
-      // Should only be called once with the last arguments
-      expect(callback).toHaveBeenCalledTimes(1);
-      expect(callback).toHaveBeenCalledWith('arg3');
-    });
-
-    it('should reset debounce timer on new calls', () => {
-      const callback = jest.fn();
-      const { result } = renderHook(() => useDebounce(callback, 500));
-
-      act(() => {
-        result.current('first');
-      });
-
-      // Advance time partially
-      act(() => {
-        jest.advanceTimersByTime(300);
-      });
-
-      // Call again - should reset timer
-      act(() => {
-        result.current('second');
-      });
-
-      // Advance remaining time from first call
-      act(() => {
-        jest.advanceTimersByTime(200);
-      });
-
-      // Should not have been called yet
-      expect(callback).not.toHaveBeenCalled();
-
-      // Advance full debounce time from second call
-      act(() => {
-        jest.advanceTimersByTime(300);
-      });
-
-      expect(callback).toHaveBeenCalledTimes(1);
-      expect(callback).toHaveBeenCalledWith('second');
-    });
-
-    it('should cleanup debounce timer on unmount', () => {
-      const callback = jest.fn();
-      const { result, unmount } = renderHook(() => useDebounce(callback, 500));
-
-      act(() => {
-        result.current('test');
-      });
-
-      // Unmount before timer fires
-      unmount();
-
-      // Advance time
-      act(() => {
-        jest.advanceTimersByTime(500);
-      });
-
-      // Should not have been called
-      expect(callback).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('useThrottle', () => {
-    it('should throttle function calls correctly', () => {
-      const callback = jest.fn();
-      const { result } = renderHook(() => useThrottle(callback, 500));
-
-      // First call should execute immediately
-      act(() => {
-        result.current('first');
-      });
-
-      expect(callback).toHaveBeenCalledTimes(1);
-      expect(callback).toHaveBeenCalledWith('first');
-
-      // Subsequent calls within throttle period should be ignored
-      act(() => {
-        result.current('second');
-        result.current('third');
-      });
-
-      expect(callback).toHaveBeenCalledTimes(1);
-
-      // After throttle period, next call should execute
-      act(() => {
-        jest.advanceTimersByTime(500);
-        result.current('fourth');
-      });
-
-      expect(callback).toHaveBeenCalledTimes(2);
-      expect(callback).toHaveBeenLastCalledWith('fourth');
-    });
-  });
-
-  describe('useLifecycle', () => {
-    it('should call onMount and onUnmount at appropriate times', () => {
-      const onMount = jest.fn();
-      const onUnmount = jest.fn();
-
-      const { unmount } = renderHook(() => useLifecycle(onMount, onUnmount));
-
-      expect(onMount).toHaveBeenCalledTimes(1);
-      expect(onUnmount).not.toHaveBeenCalled();
-
-      unmount();
-
-      expect(onUnmount).toHaveBeenCalledTimes(1);
-    });
-
-    it('should call cleanup function returned from onMount', () => {
-      const cleanup = jest.fn();
-      const onMount = jest.fn(() => cleanup);
-      const onUnmount = jest.fn();
-
-      const { unmount } = renderHook(() => useLifecycle(onMount, onUnmount));
-
-      expect(onMount).toHaveBeenCalledTimes(1);
-      expect(cleanup).not.toHaveBeenCalled();
-      expect(onUnmount).not.toHaveBeenCalled();
-
-      unmount();
-
-      expect(cleanup).toHaveBeenCalledTimes(1);
-      expect(onUnmount).toHaveBeenCalledTimes(1);
-    });
-
-    it('should handle onMount without cleanup function', () => {
-      const onMount = jest.fn(() => undefined);
-      const onUnmount = jest.fn();
-
-      const { unmount } = renderHook(() => useLifecycle(onMount, onUnmount));
-
-      expect(onMount).toHaveBeenCalledTimes(1);
-
-      // Should not throw when unmounting
-      expect(() => unmount()).not.toThrow();
-      expect(onUnmount).toHaveBeenCalledTimes(1);
-    });
-  });
-
   describe('Integration with React lifecycle', () => {
     it('should properly cleanup all resources when component unmounts', () => {
       const timerCallback = jest.fn();
@@ -325,9 +166,7 @@ describe('Resource Manager Integration Tests', () => {
 
       const { result, unmount } = renderHook(() => {
         const resourceManager = useResourceManager();
-        const debouncedFn = useDebounce(timerCallback, 300);
-        
-        return { resourceManager, debouncedFn };
+        return { resourceManager };
       });
 
       // Create various resources
@@ -335,7 +174,6 @@ describe('Resource Manager Integration Tests', () => {
         result.current.resourceManager.createTimer(timerCallback, 1000);
         result.current.resourceManager.createInterval(intervalCallback, 200);
         result.current.resourceManager.createSubscription(subscriptionCleanup);
-        result.current.debouncedFn('test');
       });
 
       // Advance time partially

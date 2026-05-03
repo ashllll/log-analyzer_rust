@@ -12,10 +12,6 @@ export { useKeywordManager } from './useKeywordManager';
 // 流式无限搜索
 export {
   useInfiniteSearch,
-  registerSearchSession,
-  removeSearchSession,
-  getSearchSessionInfo,
-  getVirtualSearchStats,
   searchQueryKeys,
 } from './useInfiniteSearch';
 export type {

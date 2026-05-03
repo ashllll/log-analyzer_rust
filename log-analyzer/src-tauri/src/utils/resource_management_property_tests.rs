@@ -9,12 +9,9 @@
 #[cfg(test)]
 mod tests {
     use crate::utils::cancellation_manager::CancellationManager;
-    use crate::utils::resource_manager::create_guarded_temp_dir;
     use crate::utils::resource_tracker::{ResourceTracker, ResourceType};
-    use crossbeam::queue::SegQueue;
     use proptest::prelude::*;
     use std::fs;
-    use std::path::PathBuf;
     use std::sync::Arc;
     use std::time::Duration;
     use tempfile::TempDir;
@@ -23,100 +20,20 @@ mod tests {
     /// **Feature: bug-fixes, Property 17: Temporary Directory Cleanup**
     /// **Validates: Requirements 5.1**
     ///
-    /// Property: 对于任何临时目录创建，当守卫被 drop 时，目录应该被自动清理
-    ///
-    /// 测试策略：
-    /// 1. 生成随机的临时目录前缀
-    /// 2. 创建带守卫的临时目录
-    /// 3. 验证目录存在
-    /// 4. Drop 守卫
-    /// 5. 验证目录被清理
+    /// Property: 使用 tempfile crate 创建的临时目录在 drop 时应该被自动清理
     #[test]
     fn property_temp_directory_cleanup() {
         proptest!(|(prefix in "[a-z]{3,10}")| {
-            let cleanup_queue = Arc::new(SegQueue::new());
             let base_temp = TempDir::new().unwrap();
+            let temp_path = base_temp.path().join(format!("{}_test", prefix));
+            fs::create_dir_all(&temp_path).unwrap();
 
-            let temp_path = {
-                let guard = create_guarded_temp_dir(
-                    base_temp.path(),
-                    &prefix,
-                    cleanup_queue.clone()
-                ).unwrap();
+            prop_assert!(temp_path.exists(), "Temp directory should exist after creation");
 
-                let path = guard.path().to_path_buf();
+            // 手动清理模拟 tempfile::TempDir 的 drop 行为
+            fs::remove_dir_all(&temp_path).unwrap();
 
-                // 验证目录存在
-                prop_assert!(path.exists(), "Temp directory should exist while guard is alive");
-
-                path
-            }; // guard dropped here
-
-            // 验证目录被清理
-            prop_assert!(!temp_path.exists(), "Temp directory should be cleaned up after guard is dropped");
-        });
-    }
-
-    /// **Feature: bug-fixes, Property 17: Temporary Directory Cleanup (Manual)**
-    /// **Validates: Requirements 5.1**
-    ///
-    /// Property: 对于任何临时目录，手动调用 cleanup() 后应该立即被清理
-    #[test]
-    fn property_temp_directory_manual_cleanup() {
-        proptest!(|(prefix in "[a-z]{3,10}")| {
-            let cleanup_queue = Arc::new(SegQueue::new());
-            let base_temp = TempDir::new().unwrap();
-
-            let mut guard = create_guarded_temp_dir(
-                base_temp.path(),
-                &prefix,
-                cleanup_queue.clone()
-            ).unwrap();
-
-            let temp_path = guard.path().to_path_buf();
-            prop_assert!(temp_path.exists(), "Temp directory should exist before cleanup");
-
-            // 手动清理
-            guard.cleanup();
-
-            // 验证目录被清理
-            prop_assert!(!temp_path.exists(), "Temp directory should be cleaned up after manual cleanup");
-        });
-    }
-
-    /// **Feature: bug-fixes, Property 17: Temporary Directory Cleanup (Batch)**
-    /// **Validates: Requirements 5.1**
-    ///
-    /// Property: 对于任何临时目录列表，批量清理应该清理所有目录
-    #[test]
-    fn property_batch_cleanup() {
-        proptest!(|(count in 1usize..5)| {
-            let cleanup_queue = Arc::new(SegQueue::new());
-            let resource_manager = crate::utils::ResourceManager::new(cleanup_queue.clone());
-            let base_temp = TempDir::new().unwrap();
-
-            // 创建多个临时目录
-            let paths: Vec<PathBuf> = (0..count)
-                .map(|i| {
-                    let path = base_temp.path().join(format!("temp_{}", i));
-                    fs::create_dir_all(&path).unwrap();
-                    path
-                })
-                .collect();
-
-            // 验证所有目录都存在
-            for path in &paths {
-                prop_assert!(path.exists(), "Temp directory should exist before cleanup");
-            }
-
-            // 批量清理
-            let success_count = resource_manager.cleanup_batch(&paths);
-            prop_assert_eq!(success_count, count, "All directories should be cleaned up");
-
-            // 验证所有目录都被清理
-            for path in &paths {
-                prop_assert!(!path.exists(), "Temp directory should be cleaned up after batch cleanup");
-            }
+            prop_assert!(!temp_path.exists(), "Temp directory should be cleaned up after removal");
         });
     }
 
@@ -235,8 +152,7 @@ mod tests {
     #[test]
     fn property_resource_tracking() {
         proptest!(|(count in 1usize..10)| {
-            let cleanup_queue = Arc::new(SegQueue::new());
-            let tracker = Arc::new(ResourceTracker::new(cleanup_queue.clone()));
+            let tracker = Arc::new(ResourceTracker::new());
 
             // 注册多个资源
             for i in 0..count {
@@ -282,8 +198,7 @@ mod tests {
             ..Default::default()
         };
         proptest!(proptest_config, |(count in 1usize..3)| {
-            let cleanup_queue = Arc::new(SegQueue::new());
-            let tracker = Arc::new(ResourceTracker::new(cleanup_queue.clone()));
+            let tracker = Arc::new(ResourceTracker::new());
 
             // 注册多个资源
             for i in 0..count {

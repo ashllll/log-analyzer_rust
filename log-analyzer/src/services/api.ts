@@ -360,7 +360,8 @@ class LogAnalyzerApi {
    */
   async createWorkspace(name: string, path: string): Promise<string> {
     try {
-      return await invoke('create_workspace', { name, path });
+      const raw = await invoke('create_workspace', { name, path });
+      return z.string().parse(raw);
     } catch (error) {
       throw createApiError('create_workspace', error);
     }
@@ -460,7 +461,8 @@ class LogAnalyzerApi {
    */
   async importFolder(path: string, workspaceId: string): Promise<string> {
     try {
-      return await invoke('import_folder', { path, workspaceId });
+      const raw = await invoke('import_folder', { path, workspaceId });
+      return z.string().parse(raw);
     } catch (error) {
       throw createApiError('import_folder', error);
     }

@@ -122,7 +122,7 @@ impl Default for TaskManagerConfig {
 
 impl TaskManagerConfig {
     /// 从 AppConfig 创建配置
-    pub fn from_app_config(config: &crate::models::config::TaskManagerConfig) -> Self {
+    pub fn from_app_config(config: &la_core::models::config::TaskManagerConfig) -> Self {
         Self {
             completed_task_ttl: config.completed_task_ttl,
             failed_task_ttl: config.failed_task_ttl,

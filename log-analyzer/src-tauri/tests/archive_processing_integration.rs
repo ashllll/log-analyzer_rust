@@ -8,7 +8,7 @@
 //!
 //! **Validates: Requirements 4.1, 4.4**
 
-use log_analyzer::archive::ArchiveManager;
+use la_archive::ArchiveManager;
 use log_analyzer::storage::{ContentAddressableStorage, FileMetadata, MetadataStore};
 use std::fs;
 use std::io::Write;
@@ -127,6 +127,9 @@ async fn test_single_archive_extraction() {
                 mime_type: Some("text/plain".to_string()),
                 parent_archive_id: None,
                 depth_level: 1,
+                    min_timestamp: None,
+                    max_timestamp: None,
+                    level_mask: None,
             };
 
             metadata.insert_file(&file_meta).await.unwrap();
@@ -229,6 +232,9 @@ async fn test_nested_archive_2_levels() {
                     mime_type: Some("text/plain".to_string()),
                     parent_archive_id: None,
                     depth_level: 1,
+                        min_timestamp: None,
+                        max_timestamp: None,
+                        level_mask: None,
                 });
             }
         }
@@ -255,6 +261,9 @@ async fn test_nested_archive_2_levels() {
                 mime_type: Some("text/plain".to_string()),
                 parent_archive_id: None,
                 depth_level: 2,
+                    min_timestamp: None,
+                    max_timestamp: None,
+                    level_mask: None,
             });
         }
     }
@@ -355,6 +364,9 @@ async fn test_nested_archive_3_levels() {
         mime_type: Some("text/plain".to_string()),
         parent_archive_id: None,
         depth_level: 3,
+            min_timestamp: None,
+            max_timestamp: None,
+            level_mask: None,
     };
 
     metadata.insert_file(&file_meta).await.unwrap();
@@ -455,6 +467,9 @@ async fn test_deeply_nested_archive_5_levels() {
         mime_type: Some("text/plain".to_string()),
         parent_archive_id: None,
         depth_level: 5,
+            min_timestamp: None,
+            max_timestamp: None,
+            level_mask: None,
     };
 
     metadata.insert_file(&file_meta).await.unwrap();
@@ -538,6 +553,9 @@ async fn test_path_length_handling() {
         mime_type: Some("text/plain".to_string()),
         parent_archive_id: None,
         depth_level: 1,
+            min_timestamp: None,
+            max_timestamp: None,
+            level_mask: None,
     };
 
     // Should succeed despite long path
@@ -647,6 +665,9 @@ async fn test_mixed_nested_and_regular_files() {
                     mime_type: Some("text/plain".to_string()),
                     parent_archive_id: None,
                     depth_level: 1,
+                        min_timestamp: None,
+                        max_timestamp: None,
+                        level_mask: None,
                 };
 
                 metadata.insert_file(&file_meta).await.unwrap();
@@ -694,6 +715,9 @@ async fn test_mixed_nested_and_regular_files() {
                     mime_type: Some("text/plain".to_string()),
                     parent_archive_id: None,
                     depth_level: 2,
+                        min_timestamp: None,
+                        max_timestamp: None,
+                        level_mask: None,
                 };
 
                 metadata.insert_file(&file_meta).await.unwrap();
@@ -724,7 +748,7 @@ async fn test_process_path_with_cas_nested_archives() {
     // This test verifies the integrated CAS-based processing function
     // Validates: Requirements 4.1, 4.2, 4.3
 
-    use log_analyzer::archive::process_path_with_cas;
+    use la_archive::process_path_with_cas;
     use tauri::Manager;
 
     let (cas, metadata, temp_dir) = create_test_workspace().await;
@@ -760,6 +784,9 @@ async fn test_process_path_with_cas_nested_archives() {
         workspace_id,
         None, // No parent archive
         0,    // Root level
+        None, // min_timestamp
+        None, // max_timestamp
+        None, // level_mask
     )
     .await;
 
@@ -832,7 +859,7 @@ async fn test_process_path_with_cas_depth_limit() {
     // **Test: Depth limit enforcement**
     // Validates: Requirements 4.3
 
-    use log_analyzer::archive::process_path_with_cas;
+    use la_archive::process_path_with_cas;
 
     let (cas, metadata, temp_dir) = create_test_workspace().await;
     let metadata = Arc::new(metadata); // Wrap in Arc for sharing
@@ -856,6 +883,9 @@ async fn test_process_path_with_cas_depth_limit() {
         "workspace1",
         None,
         10, // At the limit
+        None, // min_timestamp
+        None, // max_timestamp
+        None, // level_mask
     )
     .await;
 
@@ -878,7 +908,7 @@ async fn test_archive_metadata_tracking() {
     // **Test: Archive metadata is properly tracked**
     // Validates: Requirements 4.1, 4.2
 
-    use log_analyzer::archive::process_path_with_cas;
+    use la_archive::process_path_with_cas;
 
     let (cas, metadata, temp_dir) = create_test_workspace().await;
     let metadata = Arc::new(metadata); // Wrap in Arc for sharing
@@ -902,6 +932,9 @@ async fn test_archive_metadata_tracking() {
         "workspace",
         None,
         0,
+        None, // min_timestamp
+        None, // max_timestamp
+        None, // level_mask
     )
     .await
     .unwrap();
@@ -1119,6 +1152,9 @@ mod property_tests {
                         mime_type: Some("text/plain".to_string()),
                         parent_archive_id: None,
                         depth_level: *file_depth as i32,
+                            min_timestamp: None,
+                            max_timestamp: None,
+                            level_mask: None,
                     };
 
                     // Skip if hash already exists (deduplication)

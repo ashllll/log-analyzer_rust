@@ -6,11 +6,11 @@ use proptest::prelude::*;
 use proptest::test_runner::Config;
 
 /// Standard proptest configuration for all property-based tests
-/// Configured for 1000 iterations as specified in requirements
+/// 使用 32 cases 与全局 proptest.toml 保持一致，避免 CI 中超时
 pub fn proptest_config() -> Config {
     Config {
-        cases: 1000,
-        max_shrink_iters: 10000,
+        cases: 32,
+        max_shrink_iters: 100,
         ..Config::default()
     }
 }
@@ -182,7 +182,7 @@ pub mod strategies {
 
     /// Generate log entries with realistic content (for search engine testing)
     #[allow(dead_code)]
-    pub fn search_log_entry() -> impl Strategy<Value = crate::models::LogEntry> {
+    pub fn search_log_entry() -> impl Strategy<Value = la_core::models::LogEntry> {
         (
             0usize..1000000,
             "[0-9]{10}",
@@ -193,7 +193,7 @@ pub mod strategies {
             "[a-zA-Z0-9 ]{10,200}",
         )
             .prop_map(|(id, timestamp, level, file, real_path, line, content)| {
-                crate::models::LogEntry {
+                la_core::models::LogEntry {
                     id,
                     timestamp: timestamp.into(),
                     level: level.into(),

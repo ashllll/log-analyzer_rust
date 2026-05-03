@@ -5,7 +5,7 @@
 //!
 //! Tests that extraction can be paused and resumed without re-extracting files.
 
-use log_analyzer::archive::{Checkpoint, CheckpointConfig, CheckpointManager};
+use la_archive::{Checkpoint, CheckpointConfig, CheckpointManager};
 use std::path::PathBuf;
 use tempfile::TempDir;
 

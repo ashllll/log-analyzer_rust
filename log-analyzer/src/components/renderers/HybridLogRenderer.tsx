@@ -46,8 +46,33 @@ const createRegexMatcher = (pattern: string, caseSensitive: boolean): RegExp => 
  * 查找文本中所有高亮模式的位置
  */
 const collectMatches = (text: string, patterns: HighlightPattern[]): HighlightMatch[] => {
+  const MAX_TEXT_LENGTH_FOR_FULL_SCAN = 50000;
+  const MAX_MATCHES_PER_PATTERN = 500;
+  const GLOBAL_MAX_MATCHES = 2000;
+
   const matches: HighlightMatch[] = [];
-  const lowerText = text.toLowerCase();
+
+  // 判断是否需要 lowerText：只有存在 case-insensitive literal pattern 时才需要
+  const needsLowerText = patterns.some(
+    (p) => p.mode === 'literal' && !p.caseSensitive && p.raw.length > 0
+  );
+  const lowerText = needsLowerText ? text.toLowerCase() : '';
+
+  // 超长文本 early exit：快速预检是否有可能匹配
+  if (text.length > MAX_TEXT_LENGTH_FOR_FULL_SCAN) {
+    const hasPotentialMatch = patterns.some((p) => {
+      if (p.mode === 'literal') {
+        const needle = p.caseSensitive ? p.raw : p.raw.toLowerCase();
+        if (needle.length === 0) return false;
+        const haystack = p.caseSensitive ? text : lowerText;
+        return haystack.includes(needle);
+      }
+      return true; // regex 总是尝试匹配
+    });
+    if (!hasPotentialMatch) {
+      return [];
+    }
+  }
 
   patterns.forEach((pattern) => {
     if (pattern.mode === 'literal') {
@@ -56,9 +81,10 @@ const collectMatches = (text: string, patterns: HighlightPattern[]): HighlightMa
         return;
       }
 
+      const haystack = pattern.caseSensitive ? text : lowerText;
       let startIndex = 0;
-      while (startIndex < text.length) {
-        const haystack = pattern.caseSensitive ? text : lowerText;
+      let matchCount = 0;
+      while (startIndex < text.length && matchCount < MAX_MATCHES_PER_PATTERN) {
         const index = haystack.indexOf(literalNeedle, startIndex);
         if (index === -1) {
           break;
@@ -70,6 +96,7 @@ const collectMatches = (text: string, patterns: HighlightPattern[]): HighlightMa
           text: text.slice(index, index + pattern.raw.length),
           pattern,
         });
+        matchCount++;
         startIndex = index + 1;
       }
 
@@ -82,7 +109,8 @@ const collectMatches = (text: string, patterns: HighlightPattern[]): HighlightMa
 
     pattern.matcher.lastIndex = 0;
     let match: RegExpExecArray | null;
-    while ((match = pattern.matcher.exec(text)) !== null) {
+    let matchCount = 0;
+    while ((match = pattern.matcher.exec(text)) !== null && matchCount < MAX_MATCHES_PER_PATTERN) {
       if (match[0].length === 0) {
         pattern.matcher.lastIndex += 1;
         continue;
@@ -94,8 +122,16 @@ const collectMatches = (text: string, patterns: HighlightPattern[]): HighlightMa
         text: match[0],
         pattern,
       });
+      matchCount++;
     }
   });
+
+  if (matches.length > GLOBAL_MAX_MATCHES) {
+    console.warn(
+      `[HybridLogRenderer] Match count exceeded ${GLOBAL_MAX_MATCHES} (${matches.length}), truncating to prevent performance issues.`
+    );
+    matches.length = GLOBAL_MAX_MATCHES;
+  }
 
   matches.sort((left, right) => {
     if (left.start !== right.start) {

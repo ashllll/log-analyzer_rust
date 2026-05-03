@@ -5,7 +5,7 @@
  * Tests correctness properties of security detection: compression ratio,
  * risk scoring, suspicious pattern detection, and cumulative size enforcement.
  */
-use log_analyzer::archive::security_detector::{
+use la_archive::security_detector::{
     ArchiveEntry, SecurityDetector, SecurityPolicy,
 };
 use proptest::prelude::*;

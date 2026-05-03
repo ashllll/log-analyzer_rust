@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 use miette::Diagnostic;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;

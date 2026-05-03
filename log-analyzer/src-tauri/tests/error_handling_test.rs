@@ -7,8 +7,8 @@ use la_archive::internal::metadata_db::MetadataDB;
 /// 3. Path shortening warnings
 /// 4. Depth limit warnings
 /// 5. Security event warnings
-use log_analyzer::archive::{
-    self as la_archive, ExtractionEngine, ExtractionPolicy, PathConfig, PathManager,
+use la_archive::{
+    ExtractionEngine, ExtractionPolicy, PathConfig, PathManager,
     SecurityDetector,
 };
 use std::path::PathBuf;
@@ -62,7 +62,7 @@ async fn test_archive_level_error_handling() {
             let has_archive_error = extraction_result.warnings.iter().any(|w| {
                 matches!(
                     w.category,
-                    log_analyzer::archive::extraction_engine::WarningCategory::ArchiveError
+                    la_archive::extraction_engine::WarningCategory::ArchiveError
                 )
             });
             assert!(has_archive_error, "Expected ArchiveError warning");
@@ -211,7 +211,7 @@ async fn test_security_event_warning() {
 /// Test warning category types
 #[tokio::test]
 async fn test_warning_categories() {
-    use log_analyzer::archive::extraction_engine::{ExtractionWarning, WarningCategory};
+    use la_archive::extraction_engine::{ExtractionWarning, WarningCategory};
 
     // Test that all warning categories can be created
     let categories = vec![

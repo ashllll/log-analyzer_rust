@@ -520,6 +520,7 @@ export function initGlobalErrorHandlers(): (() => void) | undefined {
   // 用于防止短时间内重复显示相同错误
   const recentErrors = new Map<string, number>();
   const ERROR_DEBOUNCE_MS = 5000; // 5秒内相同错误不重复显示
+  const timeoutIds: ReturnType<typeof setTimeout>[] = [];
 
   // 获取错误签名（用于去重）
   const getErrorSignature = (error: unknown): string => {
@@ -559,7 +560,8 @@ export function initGlobalErrorHandlers(): (() => void) | undefined {
       if (!lastShown || now - lastShown > ERROR_DEBOUNCE_MS) {
         recentErrors.set(signature, now);
         // 延迟清理
-        setTimeout(() => recentErrors.delete(signature), ERROR_DEBOUNCE_MS);
+        const timeoutId = setTimeout(() => recentErrors.delete(signature), ERROR_DEBOUNCE_MS);
+        timeoutIds.push(timeoutId);
 
         // 使用 react-hot-toast 显示错误
         try {
@@ -603,7 +605,8 @@ export function initGlobalErrorHandlers(): (() => void) | undefined {
 
       if (!lastShown || now - lastShown > ERROR_DEBOUNCE_MS) {
         recentErrors.set(signature, now);
-        setTimeout(() => recentErrors.delete(signature), ERROR_DEBOUNCE_MS);
+        const timeoutId = setTimeout(() => recentErrors.delete(signature), ERROR_DEBOUNCE_MS);
+        timeoutIds.push(timeoutId);
 
         try {
           const toast = require('react-hot-toast');
@@ -631,6 +634,9 @@ export function initGlobalErrorHandlers(): (() => void) | undefined {
   return () => {
     window.removeEventListener('unhandledrejection', handleUnhandledRejection);
     window.removeEventListener('error', handleError);
+    timeoutIds.forEach(clearTimeout);
+    timeoutIds.length = 0;
+    recentErrors.clear();
   };
 }
 

@@ -6,7 +6,6 @@
 //! - 应用关闭时的自动清理
 //! - 清理队列处理和重试机制
 
-use crate::utils::cleanup::{process_cleanup_queue, try_cleanup_temp_dir, CleanupQueue};
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -65,16 +64,20 @@ impl ResourceInfo {
 /// 资源追踪器
 pub struct ResourceTracker {
     resources: Arc<Mutex<HashMap<String, ResourceInfo>>>,
-    cleanup_queue: Arc<CleanupQueue>,
     leak_detection_enabled: bool,
 }
 
+impl Default for ResourceTracker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ResourceTracker {
-    pub fn new(cleanup_queue: Arc<CleanupQueue>) -> Self {
+    pub fn new() -> Self {
         info!("ResourceTracker initialized");
         Self {
             resources: Arc::new(Mutex::new(HashMap::new())),
-            cleanup_queue,
             leak_detection_enabled: true,
         }
     }
@@ -155,7 +158,11 @@ impl ResourceTracker {
             match info.resource_type {
                 ResourceType::TempDirectory => {
                     let path = PathBuf::from(&info.path);
-                    try_cleanup_temp_dir(&path, &self.cleanup_queue);
+                    if path.exists() {
+                        if let Err(e) = std::fs::remove_dir_all(&path) {
+                            warn!(path = %path.display(), error = %e, "Failed to cleanup temp directory");
+                        }
+                    }
                     self.mark_cleaned(id);
                     Ok(())
                 }
@@ -193,8 +200,6 @@ impl ResourceTracker {
                 }
             }
         }
-
-        process_cleanup_queue(&self.cleanup_queue);
 
         info!(
             "Resource cleanup completed: {} succeeded, {} failed",

@@ -6,8 +6,6 @@ use crate::task_manager::TaskManager;
 use crate::utils::async_resource_manager::AsyncResourceError;
 use crate::utils::async_resource_manager::AsyncResourceManager;
 use crate::utils::cache_manager::{CacheError, CacheManager};
-use crate::utils::cleanup::CleanupQueue;
-use crossbeam::queue::SegQueue;
 use la_search::DiskResultStore;
 use la_search::SearchEngineManager;
 use la_search::VirtualSearchManager;
@@ -45,7 +43,6 @@ pub struct AppState {
     pub cache_hits: Arc<Mutex<u64>>,
     pub last_search_duration: Arc<Mutex<std::time::Duration>>,
     pub watchers: Arc<Mutex<HashMap<String, WatcherState>>>,
-    pub cleanup_queue: Arc<CleanupQueue>,
     pub cache_manager: Arc<Mutex<CacheManager>>,
     pub state_sync: Arc<Mutex<Option<StateSync>>>,
     pub async_resource_manager: Arc<AsyncResourceManager>,
@@ -75,7 +72,6 @@ impl Default for AppState {
             cache_hits: Arc::new(Mutex::new(0)),
             last_search_duration: Arc::new(Mutex::new(std::time::Duration::from_secs(0))),
             watchers: Arc::new(Mutex::new(HashMap::new())),
-            cleanup_queue: Arc::new(SegQueue::new()),
             cache_manager: Arc::new(Mutex::new(cache_manager)),
             state_sync: Arc::new(Mutex::new(None)),
             async_resource_manager: Arc::new(AsyncResourceManager::new()),

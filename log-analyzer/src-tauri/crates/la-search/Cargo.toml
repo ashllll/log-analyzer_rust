@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 la-core = { path = "../la-core" }
 
-tantivy = { version = "0.22", features = ["mmap"] }
+tantivy = { version = "0.24", features = ["mmap"] }
 aho-corasick = "1.1"
 regex.workspace = true
 rayon = "1.8"
@@ -16,13 +16,13 @@ serde.workspace = true
 serde_json.workspace = true
 parking_lot = { version = "0.12", features = ["arc_lock", "send_guard"] }
 tracing.workspace = true
-roaring = "0.10"
+
 crossbeam = "0.8"
 lru = "0.16"
 futures = "0.3"
 tempfile.workspace = true
 chrono.workspace = true
-thiserror = "1.0"
+thiserror = "2"
 sha2 = "0.10"
 
 dashmap = "6"

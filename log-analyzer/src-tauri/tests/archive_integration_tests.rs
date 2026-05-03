@@ -1,6 +1,6 @@
 // Archive integration tests
 
-use log_analyzer::archive::ArchiveManager;
+use la_archive::ArchiveManager;
 use log_analyzer::storage::{ContentAddressableStorage, FileMetadata, MetadataStore};
 use std::fs;
 use std::io::Write;
@@ -96,6 +96,9 @@ async fn extract_and_index_archive(
                 mime_type: Some("text/plain".to_string()),
                 parent_archive_id: None,
                 depth_level: 1,
+                    min_timestamp: None,
+                    max_timestamp: None,
+                    level_mask: None,
             };
 
             metadata.insert_file(&metadata_entry).await.unwrap();

@@ -166,7 +166,7 @@ use tracing::{error, info, warn};
 use crate::commands::import::{ensure_workspace_runtime_state, import_folder};
 use crate::models::AppState;
 use crate::utils::workspace_paths::resolve_workspace_dir;
-use crate::utils::{cleanup::try_cleanup_temp_dir, validation::validate_workspace_id};
+use crate::utils::validation::validate_workspace_id;
 
 #[derive(Debug, serde::Deserialize)]
 struct StoredWorkspaceConfig {
@@ -504,7 +504,17 @@ fn cleanup_workspace_resources(
                 Err(e) => warn!(error = %e, "Failed to check CAS status"),
             }
 
-            try_cleanup_temp_dir(&workspace_dir, &state.cleanup_queue);
+            if workspace_dir.exists() {
+                if let Err(e) = std::fs::remove_dir_all(&workspace_dir) {
+                    let error = format!(
+                        "Failed to delete workspace directory {}: {}",
+                        workspace_dir.display(),
+                        e
+                    );
+                    error!(error = %error);
+                    errors.push(error);
+                }
+            }
 
             // 检查工作区目录是否仍然存在（验证删除是否成功）
             if workspace_dir.exists() {

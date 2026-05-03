@@ -7,7 +7,6 @@
 //! - 搜索操作取消
 //! - 后台任务管理
 
-use crate::utils::ResourceManager;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -70,8 +69,6 @@ pub struct AsyncResourceManager {
     resources: Arc<AsyncRwLock<HashMap<String, String>>>,
     /// 全局取消令牌
     global_cancellation: CancellationToken,
-    /// 同步资源管理器集成
-    sync_resource_manager: Option<Arc<ResourceManager>>,
 }
 
 impl AsyncResourceManager {
@@ -81,17 +78,6 @@ impl AsyncResourceManager {
             active_operations: Arc::new(AsyncMutex::new(HashMap::new())),
             resources: Arc::new(AsyncRwLock::new(HashMap::new())),
             global_cancellation: CancellationToken::new(),
-            sync_resource_manager: None,
-        }
-    }
-
-    /// 创建带有同步资源管理器集成的异步资源管理器
-    pub fn with_sync_manager(sync_manager: Arc<ResourceManager>) -> Self {
-        Self {
-            active_operations: Arc::new(AsyncMutex::new(HashMap::new())),
-            resources: Arc::new(AsyncRwLock::new(HashMap::new())),
-            global_cancellation: CancellationToken::new(),
-            sync_resource_manager: Some(sync_manager),
         }
     }
 
@@ -266,11 +252,6 @@ impl AsyncResourceManager {
                 warn!("Timeout reached, forcing cancellation of remaining operations");
                 self.cancel_all_operations().await?;
             }
-        }
-
-        // 如果有同步资源管理器，也进行清理
-        if let Some(sync_manager) = &self.sync_resource_manager {
-            sync_manager.cleanup_all()?;
         }
 
         info!("Graceful shutdown completed");

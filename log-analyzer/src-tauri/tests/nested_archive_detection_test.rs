@@ -7,8 +7,8 @@
 //! - Logs appropriate warnings when depth limits are reached
 
 use la_archive::internal::metadata_db::MetadataDB;
-use log_analyzer::archive::{
-    self as la_archive, ExtractionEngine, ExtractionPolicy, PathConfig, PathManager,
+use la_archive::{
+    ExtractionEngine, ExtractionPolicy, PathConfig, PathManager,
     SecurityDetector,
 };
 use std::io::Write;

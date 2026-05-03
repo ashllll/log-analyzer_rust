@@ -84,7 +84,10 @@ const SearchPage: React.FC = () => {
 
   // 磁盘直写搜索分页：searchId 由 api.searchLogs() 返回，即可启用 InfiniteQuery
   const [currentSearchId, setCurrentSearchId] = useState<string>('');
-  
+
+  // 搜索序列号，用于防止竞态条件（旧搜索结果覆盖新结果）
+  const searchSeqRef = useRef(0);
+
   // 防抖搜索触发器
   const [searchTrigger, setSearchTrigger] = useState(0);
 
@@ -163,7 +166,13 @@ const SearchPage: React.FC = () => {
   
   // 结构化查询状态
   const [currentQuery, setCurrentQuery] = useState<SearchQuery | null>(null);
-  
+
+  // 稳定化 queryTerms 引用，避免虚拟列表不必要的重渲染
+  const queryTerms = useMemo(
+    () => currentQuery?.terms ?? null,
+    [currentQuery?.id, currentQuery?.terms?.length]
+  );
+
   // 高级过滤状态
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({
     timeRange: { start: null, end: null },
@@ -389,6 +398,9 @@ const SearchPage: React.FC = () => {
       return;
     }
 
+    // 递增搜索序列号，用于丢弃过期搜索结果
+    const currentSeq = ++searchSeqRef.current;
+
     // 重置状态
     setLiveCount(0);
     setCurrentSearchId('');
@@ -434,9 +446,13 @@ const SearchPage: React.FC = () => {
         workspaceId: activeWorkspace.id,
         filters,
       });
+      // 校验序列号：如果已有更新的搜索，丢弃本次结果
+      if (currentSeq !== searchSeqRef.current) return;
       setCurrentSearchId(searchId);
       setCurrentQuery(structuredQuery);
     } catch (err) {
+      // 校验序列号：避免过期搜索的错误提示覆盖新搜索
+      if (currentSeq !== searchSeqRef.current) return;
       logger.error('Search failed:', err);
       dispatchSearchExec({ type: 'ERROR' });
       addToast('error', `搜索失败: ${getFullErrorMessage(err)}`);
@@ -640,6 +656,12 @@ const SearchPage: React.FC = () => {
   const lastVisibleIndex = virtualItems.length > 0 ? virtualItems[virtualItems.length - 1].index : -1;
   const firstVisibleIndex = virtualItems.length > 0 ? virtualItems[0].index : -1;
 
+  // 使用 ref 存储 fetchNextPage/fetchPreviousPage，避免 effect 因函数引用变化而频繁触发
+  const fetchNextPageRef = useRef(fetchNextPage);
+  const fetchPreviousPageRef = useRef(fetchPreviousPage);
+  fetchNextPageRef.current = fetchNextPage;
+  fetchPreviousPageRef.current = fetchPreviousPage;
+
   useEffect(() => {
     if (lastVisibleIndex < 0) return;
 
@@ -650,7 +672,7 @@ const SearchPage: React.FC = () => {
     if (lastVisibleIndex >= loadedEndIndex - 50 && hasNextPage && !isFetchingNextPage) {
       if (now - lastFetchNextPageTimeRef.current >= 500) {
         lastFetchNextPageTimeRef.current = now;
-        fetchNextPage().catch(err => {
+        fetchNextPageRef.current().catch(err => {
           logger.error('Range-based fetchNextPage failed:', err);
         });
       }
@@ -660,12 +682,12 @@ const SearchPage: React.FC = () => {
     if (firstVisibleIndex <= firstPageOffset + 50 && hasPreviousPage && !isFetchingPreviousPage) {
       if (now - lastFetchNextPageTimeRef.current >= 500) {
         lastFetchNextPageTimeRef.current = now;
-        fetchPreviousPage().catch(err => {
+        fetchPreviousPageRef.current().catch(err => {
           logger.error('Range-based fetchPreviousPage failed:', err);
         });
       }
     }
-  }, [lastVisibleIndex, firstVisibleIndex, firstPageOffset, loadedEntries.length, hasNextPage, isFetchingNextPage, hasPreviousPage, isFetchingPreviousPage, fetchNextPage, fetchPreviousPage]);
+  }, [lastVisibleIndex, firstVisibleIndex, firstPageOffset, loadedEntries.length, hasNextPage, isFetchingNextPage, hasPreviousPage, isFetchingPreviousPage]);
   
   const activeLog = selectedId ? loadedEntriesMap.get(selectedId) : undefined;
 
@@ -754,7 +776,7 @@ const SearchPage: React.FC = () => {
                   isActive={log.id === selectedId}
                   onClick={() => setSelectedId(log.id)}
                   query={query}
-                  queryTerms={currentQuery?.terms ?? null}
+                  queryTerms={queryTerms}
                   keywordGroups={enabledKeywordGroups}
                   virtualIndex={virtualRow.index}
                   virtualStart={virtualRow.start}
@@ -849,11 +871,11 @@ const SearchPage: React.FC = () => {
               <div className="bg-bg-main p-3 rounded border border-border-base mb-4">
                 <div className="text-text-dim text-xs uppercase mb-1">{t('search.inspector.message', '消息内容')}</div>
                 <div className="text-text-main whitespace-pre-wrap break-all leading-relaxed">
-                  <HybridLogRenderer 
-                    text={tryFormatJSON(activeLog.content)} 
-                    query={query} 
-                    queryTerms={currentQuery?.terms ?? null}
-                    keywordGroups={enabledKeywordGroups} 
+                  <HybridLogRenderer
+                    text={tryFormatJSON(activeLog.content)}
+                    query={query}
+                    queryTerms={queryTerms}
+                    keywordGroups={enabledKeywordGroups}
                   />
                 </div>
               </div>

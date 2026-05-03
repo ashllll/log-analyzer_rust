@@ -1,9 +1,8 @@
 //! 缓存状态管理
 //!
-//! 提供缓存管理器和清理队列的共享访问
+//! 提供缓存管理器的共享访问
 
 use crate::utils::cache_manager::CacheManager;
-use crate::utils::cleanup::CleanupQueue;
 use moka::sync::Cache;
 use std::sync::Arc;
 
@@ -11,8 +10,6 @@ use std::sync::Arc;
 pub struct CacheState {
     /// 缓存管理器 - 提供高级缓存功能
     pub cache_manager: Arc<CacheManager>,
-    /// 清理队列 - 用于异步清理临时文件
-    pub cleanup_queue: Arc<CleanupQueue>,
 }
 
 impl Default for CacheState {
@@ -23,7 +20,6 @@ impl Default for CacheState {
 
         Self {
             cache_manager: Arc::new(cache_manager),
-            cleanup_queue: Arc::new(CleanupQueue::new()),
         }
     }
 }
@@ -33,7 +29,6 @@ impl CacheState {
     pub fn new(cache_manager: CacheManager) -> Self {
         Self {
             cache_manager: Arc::new(cache_manager),
-            cleanup_queue: Arc::new(CleanupQueue::new()),
         }
     }
 

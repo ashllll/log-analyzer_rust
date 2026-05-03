@@ -109,11 +109,13 @@ function AppContent() {
   // 初始化状态同步并监听工作区事件
   useEffect(() => {
     let unlisten: (() => void) | undefined;
+    let isMounted = true;
 
     const setupStateSync = async () => {
       try {
         // 初始化状态同步
         await invoke('init_state_sync');
+        if (!isMounted) return;
 
         // 监听工作区事件
         unlisten = await listen('workspace-event', (event: { payload: { type: string; status?: { status: string } } }) => {
@@ -136,10 +138,16 @@ function AppContent() {
           }
         });
 
+        if (!isMounted) {
+          unlisten?.();
+          return;
+        }
+
         if (import.meta.env.DEV) {
           console.log('[StateSync] Event listener registered');
         }
       } catch (error) {
+        if (!isMounted) return;
         if (import.meta.env.DEV) {
           console.error('[StateSync] Failed to initialize:', error);
         }
@@ -151,6 +159,7 @@ function AppContent() {
 
     // 清理函数
     return () => {
+      isMounted = false;
       if (unlisten) {
         unlisten();
       }

@@ -14,6 +14,9 @@ pub struct FileMetadata {
     pub mime_type: Option<String>,
     pub parent_archive_id: Option<i64>,
     pub depth_level: i32,
+    pub min_timestamp: Option<i64>,
+    pub max_timestamp: Option<i64>,
+    pub level_mask: Option<u8>,
 }
 
 /// Archive metadata for nested tracking
