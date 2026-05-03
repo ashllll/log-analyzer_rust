@@ -16,8 +16,7 @@ import type { SearchQuery } from '../types/search';
 import {
   RarSupportInfoSchema,
   FileFilterConfigSchema,
-  VirtualTreeNodeSchema,  WorkspaceStateSchema,
-  EventRecordSchema,
+  VirtualTreeNodeSchema,
   WorkspaceLoadResponseSchema,
   WorkspaceStatusResponseSchema,
   WorkspaceTimeRangeSchema,
@@ -26,9 +25,7 @@ import {
   type RarSupportInfo,
   type FileFilterConfig,
   type VirtualTreeNode,
-  type WorkspaceState,
   type WorkspaceStatusResponseValidated,
-  type EventRecord,
 } from '../types/api-responses';
 
 // ============================================================================
@@ -642,72 +639,6 @@ class LogAnalyzerApi {
       return z.array(VirtualTreeNodeSchema).parse(result);
     } catch (error) {
       throw createApiError('get_virtual_file_tree', error);
-    }
-  }
-
-  // ========================================================================
-  // 状态同步
-  // ========================================================================
-
-  /**
-   * 初始化状态同步
-   */
-  async initStateSync(): Promise<void> {
-    try {
-      await invoke('init_state_sync');
-    } catch (error) {
-      throw createApiError('init_state_sync', error);
-    }
-  }
-
-  /**
-   * 获取工作区状态
-   *
-   * @param workspaceId - 工作区 ID
-   * @returns 工作区状态
-   */
-  async getWorkspaceState(workspaceId: string): Promise<WorkspaceState> {
-    try {
-      const result = await invoke('get_workspace_state', { workspaceId });
-      return WorkspaceStateSchema.parse(result);
-    } catch (error) {
-      throw createApiError('get_workspace_state', error);
-    }
-  }
-
-  /**
-   * 获取事件历史
-   *
-   * @param params - 查询参数
-   * @returns 事件数组
-   */
-  async getEventHistory(params: {
-    workspaceId: string;
-    limit?: number;
-  }): Promise<EventRecord[]> {
-    try {
-      const result = await invoke('get_event_history', params);
-      return z.array(EventRecordSchema).parse(result);
-    } catch (error) {
-      throw createApiError('get_event_history', error);
-    }
-  }
-
-  // ========================================================================
-  // 缓存管理
-  // ========================================================================
-
-  /**
-   * 清理工作区缓存
-   *
-   * @param workspaceId - 工作区 ID
-   * @returns 清理的缓存条目数量
-   */
-  async invalidateWorkspaceCache(workspaceId: string): Promise<number> {
-    try {
-      return await invoke('invalidate_workspace_cache', { workspaceId });
-    } catch (error) {
-      throw createApiError('invalidate_workspace_cache', error);
     }
   }
 

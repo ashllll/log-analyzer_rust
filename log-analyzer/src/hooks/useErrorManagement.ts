@@ -91,23 +91,6 @@ export const useErrorManagement = () => {
       return newErrors.slice(-MAX_ERRORS);
     });
 
-    // Report to backend
-    try {
-      if (window.__TAURI__) {
-        await window.__TAURI__.invoke('report_frontend_error', {
-          error: errorMessage,
-          stack: errorStack,
-          timestamp: errorInfo.timestamp.toISOString(),
-          userAgent: navigator.userAgent,
-          url: window.location.href,
-          component: context?.component,
-          user_action: context?.userAction
-        });
-      }
-    } catch (reportingError) {
-      console.error('Failed to report error to backend:', reportingError);
-    }
-
     // Show to user if requested
     if (context?.showToUser !== false) {
       const duration = errorInfo.severity === 'critical' ? 0 : 5000; // Critical errors don't auto-dismiss
