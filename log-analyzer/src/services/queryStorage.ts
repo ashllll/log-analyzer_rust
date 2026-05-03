@@ -8,11 +8,11 @@ const SearchTermSchema = z.object({
   value: z.string(),
   operator: z.string(),
   source: z.string(),
-  preset_group_id: z.string().nullable().optional(),
-  is_regex: z.boolean().optional(),
+  presetGroupId: z.string().nullable().optional(),
+  isRegex: z.boolean().optional(),
   priority: z.number().optional(),
   enabled: z.boolean().optional(),
-  case_sensitive: z.boolean().optional(),
+  caseSensitive: z.boolean().optional(),
 });
 
 const SearchQuerySchema = z.object({
@@ -28,9 +28,9 @@ const SearchQuerySchema = z.object({
     filePattern: z.string().optional(),
   }).nullable().optional(),
   metadata: z.object({
-    created_at: z.number().optional(),
-    last_modified: z.number().optional(),
-    execution_count: z.number().optional(),
+    createdAt: z.number().optional(),
+    lastModified: z.number().optional(),
+    executionCount: z.number().optional(),
     label: z.string().nullable().optional(),
   }),
 });
