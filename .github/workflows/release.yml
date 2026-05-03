@@ -65,12 +65,12 @@ jobs:
         shell: bash
 
       - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           ref: ${{ steps.tag.outputs.name }}
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@56f84321dbba8fae7be8b4f9a0e7c1e5f5c5e8e0
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
         with:
           targets: ${{ matrix.platform.target }}
 
@@ -80,13 +80,13 @@ jobs:
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48ce768e747160aae2
 
       - name: Rust cache
-        uses: swatinem/rust-cache@9d47c6ad4b08e29e8cfdc16f2f97d1e3b0f6e3a2
+        uses: swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
         with:
           workspaces: log-analyzer/src-tauri -> target
           cache-all-crates: true
 
       - name: Setup Node.js
-        uses: actions/setup-node@cdca73653b4d8df71bda0d9d123a7f16f4b6f4e1
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
