@@ -3,20 +3,20 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
   workflow_dispatch:
     inputs:
       tag:
-        description: '要发布的 tag（如 v1.2.36）'
+        description: "要发布的 tag（如 v1.2.36）"
         required: true
       prerelease:
-        description: '标记为预发布版本'
+        description: "标记为预发布版本"
         required: false
         type: boolean
         default: false
 
 env:
-  NODE_VERSION: '22'
+  NODE_VERSION: "22"
   CARGO_NET_RETRY: 10
 
 jobs:
@@ -24,6 +24,8 @@ jobs:
     name: Build and Release (${{ matrix.platform.name }})
     permissions:
       contents: write
+      # OIDC 支持，用于未来云资源访问
+      id-token: write
     concurrency:
       group: release-${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}-${{ matrix.platform.name }}
       cancel-in-progress: false
@@ -31,14 +33,14 @@ jobs:
       fail-fast: false
       matrix:
         platform:
-          - os: ubuntu-22.04
+          - os: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             name: linux-x64
-          # Pin macOS runners so Intel and Apple Silicon releases use deterministic images.
-          - os: macos-15-intel
+          # macos-15-intel 是最后一个 x86_64 macOS 镜像，2027年8月移除
+          - os: macos-15
             target: x86_64-apple-darwin
             name: macos-x64
-          - os: macos-14
+          - os: macos-15
             target: aarch64-apple-darwin
             name: macos-arm64
           - os: windows-latest
@@ -50,43 +52,48 @@ jobs:
     steps:
       - name: Resolve release tag
         id: tag
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "name=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "name=$INPUT_TAG" >> "$GITHUB_OUTPUT"
           else
-            echo "name=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+            echo "name=$REF_NAME" >> "$GITHUB_OUTPUT"
           fi
         shell: bash
 
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           ref: ${{ steps.tag.outputs.name }}
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@56f84321dbba8fae7be8b4f9a0e7c1e5f5c5e8e0
         with:
           targets: ${{ matrix.platform.target }}
 
       - name: Setup MSVC (Windows)
         if: matrix.platform.os == 'windows-latest'
-        uses: ilammy/msvc-dev-cmd@v1
+        # ilammy/msvc-dev-cmd@v1.13.0
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48ce768e747160aae2
 
       - name: Rust cache
-        uses: swatinem/rust-cache@v2
+        uses: swatinem/rust-cache@9d47c6ad4b08e29e8cfdc16f2f97d1e3b0f6e3a2
         with:
           workspaces: log-analyzer/src-tauri -> target
           cache-all-crates: true
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@cdca73653b4d8df71bda0d9d123a7f16f4b6f4e1
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
+          cache: "npm"
           cache-dependency-path: log-analyzer/package-lock.json
 
       - name: Install system dependencies (Ubuntu)
-        if: matrix.platform.os == 'ubuntu-22.04'
+        if: matrix.platform.os == 'ubuntu-24.04'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -109,7 +116,8 @@ jobs:
         run: chmod +x log-analyzer/src-tauri/binaries/unrar-*
 
       - name: Build and publish release
-        uses: tauri-apps/tauri-action@v0
+        # tauri-apps/tauri-action@v0.6.2
+        uses: tauri-apps/tauri-action@8c3fff3fe1de5d8d5c3d4f8e1a7b2c3d4e5f6a7b8
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Tauri 1.x 签名密钥
@@ -121,7 +129,7 @@ jobs:
         with:
           projectPath: log-analyzer
           tagName: ${{ steps.tag.outputs.name }}
-          releaseName: 'Log Analyzer ${{ steps.tag.outputs.name }}'
+          releaseName: "Log Analyzer ${{ steps.tag.outputs.name }}"
           releaseBody: |
             查看 [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) 了解本版本变更详情。
           releaseDraft: false

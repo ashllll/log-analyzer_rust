@@ -2,28 +2,27 @@ name: PR Validation
 
 on:
   pull_request:
-    branches: [ main, develop ]
+    branches: [main, develop]
     types: [opened, synchronize, reopened]
-
-permissions:
-  contents: read
 
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  NODE_VERSION: '22'
+  NODE_VERSION: "22"
 
 jobs:
   # 验证版本号一致性
   version-check:
     name: Version Consistency Check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@cdca73653b4d8df71bda0d9d123a7f16f4b6f4e1
         with:
           node-version: ${{ env.NODE_VERSION }}
 
@@ -34,20 +33,22 @@ jobs:
   # 验证构建准备
   build-validation:
     name: Build Validation
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@cdca73653b4d8df71bda0d9d123a7f16f4b6f4e1
         with:
-          node-version: '22'
-          cache: 'npm'
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
           cache-dependency-path: log-analyzer/package-lock.json
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@56f84321dbba8fae7be8b4f9a0e7c1e5f5c5e8e0
 
       - name: Install Tauri dependencies
         run: |
@@ -86,17 +87,19 @@ jobs:
   # 检查发布准备状态
   release-readiness:
     name: Release Readiness Check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [version-check, build-validation]
+    permissions:
+      contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Check release notes
         run: |
           if [[ -f "CHANGELOG.md" ]]; then
             echo "✅ CHANGELOG.md exists"
-            
+
             # 检查是否有未记录的更改
             LATEST_TAG=$(git tag -l "v*" --sort=-v:refname | head -n 1)
             if [[ -n "$LATEST_TAG" ]]; then

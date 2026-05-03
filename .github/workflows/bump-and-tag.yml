@@ -11,12 +11,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  NODE_VERSION: '22'
+  NODE_VERSION: "22"
 
 jobs:
   bump-and-tag:
     name: Auto Bump Patch Version
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # 仅在 CI 全部通过后执行，且不重复处理版本 bump 提交本身
     if: >
       github.event.workflow_run.event == 'push' &&
@@ -24,11 +24,10 @@ jobs:
       !contains(github.event.workflow_run.head_commit.message, '[skip ci]')
     permissions:
       contents: write
-      actions: write
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -36,10 +35,11 @@ jobs:
 
       - name: Verify workflow run still matches main HEAD
         id: base
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           git fetch origin main --tags
 
-          HEAD_SHA="${{ github.event.workflow_run.head_sha }}"
           REMOTE_MAIN_SHA="$(git rev-parse origin/main)"
 
           echo "workflow_run.head_sha=${HEAD_SHA}"
@@ -56,7 +56,7 @@ jobs:
 
       - name: Setup Node.js
         if: steps.base.outputs.skip != 'true'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@cdca73653b4d8df71bda0d9d123a7f16f4b6f4e1
         with:
           node-version: ${{ env.NODE_VERSION }}
 
@@ -68,17 +68,19 @@ jobs:
 
       - name: Update version in source files
         if: steps.base.outputs.skip != 'true'
+        env:
+          TARGET_VERSION: ${{ steps.version.outputs.targetVersion }}
         run: |
-          node scripts/prepare-release.mjs apply --version "${{ steps.version.outputs.targetVersion }}"
+          node scripts/prepare-release.mjs apply --version "$TARGET_VERSION"
           node scripts/prepare-release.mjs check
 
       - name: Commit version bump and push tag
         id: publish
         if: steps.base.outputs.skip != 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.targetVersion }}
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
-          VERSION="${{ steps.version.outputs.targetVersion }}"
-          TAG="${{ steps.version.outputs.tag }}"
-
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
@@ -93,23 +95,23 @@ jobs:
 
           if git diff --staged --quiet; then
             echo "版本文件未变更，跳过 commit"
-            echo "tag=${TAG}" >> $GITHUB_OUTPUT
+            echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           else
             git commit -m "chore: bump version to ${VERSION} [skip ci]"
             git push origin HEAD:main
             echo "已推送版本 bump commit"
-            echo "tag=${TAG}" >> $GITHUB_OUTPUT
+            echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           fi
 
           # 创建并推送 tag
           if git rev-parse "$TAG" >/dev/null 2>&1; then
             echo "Tag ${TAG} 已存在，跳过"
-            echo "tag_created=false" >> $GITHUB_OUTPUT
+            echo "tag_created=false" >> "$GITHUB_OUTPUT"
           else
             git tag "$TAG"
             git push origin "$TAG"
             echo "已创建并推送 tag: ${TAG}"
-            echo "tag_created=true" >> $GITHUB_OUTPUT
+            echo "tag_created=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Dispatch release workflow
@@ -118,14 +120,11 @@ jobs:
           steps.publish.outputs.tag_created == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.publish.outputs.tag }}
         run: |
-          TAG="${{ steps.publish.outputs.tag }}"
           echo "触发 release 工作流: ${TAG}"
-          curl -sSf \
-            -X POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/release.yml/dispatches" \
-            -d "{\"ref\":\"main\",\"inputs\":{\"tag\":\"${TAG}\",\"prerelease\":\"false\"}}"
+          gh workflow run release.yml \
+            --ref main \
+            -f "tag=${TAG}" \
+            -f "prerelease=false"
           echo "已触发 release 工作流 for ${TAG}"
