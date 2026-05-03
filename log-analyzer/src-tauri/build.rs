@@ -8,5 +8,5 @@ fn main() {
         tauri_build::WindowsAttributes::new().app_manifest(include_str!("windows-app.manifest")),
     );
 
-    tauri_build::try_build(attrs).expect("tauri-build 失败");
+    tauri_build::try_build(attrs).expect("tauri-build failed");
 }

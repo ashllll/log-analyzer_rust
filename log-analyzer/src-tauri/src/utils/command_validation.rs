@@ -2,13 +2,7 @@
 //!
 //! 提供commands/目录下各命令共享的验证逻辑，避免重复代码。
 
-use once_cell::sync::Lazy;
-use regex::Regex;
-
-/// 工作区ID正则表达式
-/// 只允许字母数字、连字符和下划线
-pub static WORKSPACE_ID_REGEX: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^[a-zA-Z0-9\-_]+$").unwrap());
+pub use crate::utils::validation::WORKSPACE_ID_REGEX;
 
 /// 搜索查询最大长度
 pub const MAX_SEARCH_QUERY_LENGTH: usize = 1000;

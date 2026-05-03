@@ -236,10 +236,13 @@ interface TreeNode {
 
 ```typescript
 interface CacheConfig {
-  max_capacity: number;         // 最大缓存条目数
-  ttl_seconds: number;          // 过期时间（秒，0=永不过期）
-  tti_seconds: number;          // 空闲过期时间（秒，0=不启用）
-  compression_threshold: number; // 启用压缩的大小阈值（字节）
+  max_cache_capacity: number;            // 最大缓存条目数
+  cache_ttl_seconds: number;             // 缓存过期时间（秒）
+  cache_tti_seconds: number;             // 空闲过期时间（秒）
+  compression_enabled: boolean;          // 是否启用压缩
+  preload_threshold: number;             // 预加载阈值
+  access_window_size: number;            // 访问窗口大小
+  min_hit_rate_threshold: number;        // 最小命中率阈值
 }
 ```
 

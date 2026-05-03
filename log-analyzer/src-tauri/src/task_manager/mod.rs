@@ -673,7 +673,11 @@ impl TaskManager {
                         );
                         return Err(TaskManagerError::ShutdownFailed("Channel full".to_string()));
                     }
-                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    // Use block_in_place to avoid starving the Tokio runtime if called
+                    // from within an async context (e.g., an async Drop)
+                    tokio::task::block_in_place(|| {
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                    });
                 }
                 Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
                     // 通道已关闭
@@ -695,7 +699,11 @@ impl TaskManager {
                             "Actor channel closed, retrying shutdown..."
                         );
                     }
-                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    // Use block_in_place to avoid starving the Tokio runtime if called
+                    // from within an async context
+                    tokio::task::block_in_place(|| {
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                    });
                 }
             }
         }

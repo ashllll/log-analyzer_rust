@@ -1,6 +1,39 @@
 import { SearchQuery } from '../types/search';
+import { z } from 'zod';
 
 const STORAGE_KEY = 'log_analyzer_current_query';
+
+const SearchTermSchema = z.object({
+  id: z.string(),
+  value: z.string(),
+  operator: z.string(),
+  source: z.string(),
+  preset_group_id: z.string().nullable().optional(),
+  is_regex: z.boolean().optional(),
+  priority: z.number().optional(),
+  enabled: z.boolean().optional(),
+  case_sensitive: z.boolean().optional(),
+});
+
+const SearchQuerySchema = z.object({
+  id: z.string(),
+  terms: z.array(SearchTermSchema),
+  globalOperator: z.string(),
+  filters: z.object({
+    levels: z.array(z.string()).optional(),
+    timeRange: z.object({
+      start: z.number().optional(),
+      end: z.number().optional(),
+    }).optional(),
+    filePattern: z.string().optional(),
+  }).nullable().optional(),
+  metadata: z.object({
+    created_at: z.number().optional(),
+    last_modified: z.number().optional(),
+    execution_count: z.number().optional(),
+    label: z.string().nullable().optional(),
+  }),
+});
 
 /**
  * 保存查询到 localStorage
@@ -20,8 +53,9 @@ export function loadQuery(): SearchQuery | null {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (!stored) return null;
-    
-    return JSON.parse(stored) as SearchQuery;
+
+    const parsed = JSON.parse(stored);
+    return SearchQuerySchema.parse(parsed) as SearchQuery;
   } catch (error) {
     console.error('Failed to load query:', error);
     return null;

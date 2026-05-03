@@ -574,7 +574,12 @@ const SearchPage: React.FC = () => {
    * 复制到剪贴板
    */
   const copyToClipboard = useCallback((text: string) => {
-    navigator.clipboard.writeText(text).then(() => addToast('success', 'Copied'));
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(() => addToast('success', 'Copied'));
+    } else {
+      // Fallback for environments without clipboard API (e.g., some Tauri platforms)
+      addToast('error', 'Clipboard not available');
+    }
   }, [addToast]);
   
   /**

@@ -164,7 +164,7 @@ export function useInfiniteSearch({
 
     // 缓存策略
     staleTime,
-    gcTime: 30 * 60 * 1000, // 30分钟，搜索结果相对稳定
+    gcTime: 5 * 60 * 1000, // 5分钟，与 staleTime 保持一致避免过时数据占用内存
 
     // 错误重试策略
     retry: (failureCount, error) => {
