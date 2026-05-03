@@ -1,7 +1,6 @@
 use crate::services::query_planner::{ExecutionPlan, QueryPlanner};
 use crate::services::query_validator::QueryValidator;
 use crate::services::regex_engine::RegexEngine;
-use crate::services::traits::{QueryPlanning, QueryValidation};
 use la_core::error::Result;
 use la_core::models::search::*;
 use moka::sync::Cache;
@@ -63,14 +62,14 @@ pub(crate) fn compute_query_cache_key(query: &SearchQuery) -> String {
         hasher.update(term.id.as_bytes());
         hasher.update(term.value.as_bytes());
         hash_query_operator(&term.operator, &mut hasher);
-        hasher.update(&[term.source.clone() as u8]);
+        hasher.update([term.source.clone() as u8]);
         if let Some(pid) = &term.preset_group_id {
             hasher.update(pid.as_bytes());
         }
-        hasher.update(&[term.is_regex as u8]);
-        hasher.update(&term.priority.to_le_bytes());
-        hasher.update(&[term.enabled as u8]);
-        hasher.update(&[term.case_sensitive as u8]);
+        hasher.update([term.is_regex as u8]);
+        hasher.update(term.priority.to_le_bytes());
+        hasher.update([term.enabled as u8]);
+        hasher.update([term.case_sensitive as u8]);
     }
 
     // 返回 16 进制哈希值作为缓存键（取前 8 字节 / 64 位）
@@ -367,86 +366,6 @@ pub use la_core::models::match_detail::MatchDetail;
 ///
 /// # 示例
 /// ```rust,ignore
-/// use log_analyzer::services::{GenericQueryExecutor, QueryValidator, QueryPlannerAdapter};
-///
-/// let executor = GenericQueryExecutor::new(
-///     QueryValidator,
-///     QueryPlannerAdapter::new()
-/// );
-/// ```
-pub struct GenericQueryExecutor<V, P> {
-    validator: V,
-    planner: P,
-    /// ExecutionPlan 缓存 (LRU策略)
-    plan_cache: Cache<String, Arc<ExecutionPlan>>,
-}
-
-impl<V, P> GenericQueryExecutor<V, P>
-where
-    V: QueryValidation,
-    P: QueryPlanning,
-{
-    /// 创建新的泛型执行器
-    ///
-    /// # 参数
-    /// * `validator` - 查询验证器
-    /// * `planner` - 查询规划器
-    pub fn new(validator: V, planner: P) -> Self {
-        Self {
-            validator,
-            planner,
-            plan_cache: Cache::new(1000),
-        }
-    }
-
-    /// 生成查询缓存键
-    ///
-    /// 委托给公共函数 compute_query_cache_key，确保与 QueryExecutor 一致性
-    fn cache_key(query: &SearchQuery) -> String {
-        compute_query_cache_key(query)
-    }
-
-    /// 执行查询（使用泛型验证器和规划器）
-    ///
-    /// # 参数
-    /// * `query` - 搜索查询
-    ///
-    /// # 返回
-    /// * `Ok(ExecutionPlan)` - 执行计划
-    /// * `Err(AppError)` - 执行失败
-    pub fn execute(&self, query: &SearchQuery) -> Result<ExecutionPlan> {
-        let cache_key = Self::cache_key(query);
-
-        // 检查缓存
-        if let Some(cached_plan) = self.plan_cache.get(&cache_key) {
-            return Ok((*cached_plan).clone());
-        }
-
-        // 验证查询
-        let validation_result = self.validator.validate(query);
-        if !validation_result.is_valid {
-            return Err(crate::error::AppError::validation_error(
-                validation_result.errors.join(", "),
-            ));
-        }
-
-        // 构建计划
-        // 使用 build_execution_plan 方法获取完整的执行计划
-        let plan = self.planner.build_execution_plan(query)?;
-
-        // 缓存计划
-        self.plan_cache.insert(cache_key, Arc::new(plan.clone()));
-
-        Ok(plan)
-    }
-}
-
-/// 标准查询执行器类型别名
-///
-/// 为了向后兼容，提供默认的具体类型。
-/// 使用 QueryPlannerAdapter 作为规划器实现，它提供了 QueryPlanning trait 的实现。
-pub type StandardQueryExecutor = GenericQueryExecutor<QueryValidator, super::QueryPlannerAdapter>;
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -279,6 +279,89 @@ fn compute_query_version(query: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
+/// 将搜索结果写入 DiskResultStore，统一 Tantivy 和 CAS 路径的写入逻辑
+fn write_results_to_disk(
+    disk_store: &crate::search_engine::disk_result_store::DiskResultStore,
+    search_id: &str,
+    entries: &[LogEntry],
+    context: &str,
+) {
+    if !disk_store.has_session(search_id) {
+        if let Err(e) = disk_store.create_session(search_id) {
+            warn!(error = %e, "{}: 无法创建磁盘搜索会话", context);
+            return;
+        }
+    }
+    for chunk in entries.chunks(2000) {
+        if let Err(e) = disk_store.append_entries(search_id, chunk) {
+            warn!(error = %e, "{}: 磁盘写入失败", context);
+            break;
+        }
+    }
+    if let Err(e) = disk_store.complete_session(search_id) {
+        warn!(error = %e, "{}: 完成磁盘会话失败", context);
+    }
+}
+
+/// 计算关键词统计信息
+fn compute_keyword_stats(
+    entries: &[LogEntry],
+    raw_terms: &[String],
+) -> Vec<crate::models::search_statistics::KeywordStatistics> {
+    raw_terms
+        .iter()
+        .map(|term| {
+            let count = entries.iter().filter(|e| e.content.contains(term)).count();
+            crate::models::search_statistics::KeywordStatistics::new(
+                term.clone(),
+                count,
+                entries.len(),
+            )
+        })
+        .collect()
+}
+
+/// 发送搜索完成事件（search-start / progress / summary / complete）
+fn emit_search_complete(
+    app_handle: &AppHandle,
+    results_count: usize,
+    keyword_stats: Vec<crate::models::search_statistics::KeywordStatistics>,
+    duration_ms: u64,
+    was_truncated: bool,
+) {
+    let summary = SearchResultSummary::new(
+        results_count,
+        keyword_stats,
+        duration_ms,
+        was_truncated,
+    );
+
+    let _ = app_handle.emit("search-start", ());
+    let _ = app_handle.emit("search-progress", results_count);
+    let _ = app_handle.emit("search-summary", &summary);
+    let _ = app_handle.emit("search-complete", results_count);
+}
+
+/// 缓存搜索结果（限制大小避免内存爆炸）
+fn cache_search_results(
+    cache_manager: &Arc<Mutex<crate::utils::cache_manager::CacheManager>>,
+    cache_key: SearchCacheKey,
+    entries: Vec<LogEntry>,
+) {
+    if entries.len() < 100_000 {
+        cache_manager.lock().insert_sync(cache_key, entries);
+    }
+}
+
+/// 清理搜索取消令牌
+fn remove_cancellation_token(
+    cancellation_tokens: &Arc<Mutex<std::collections::HashMap<String, tokio_util::sync::CancellationToken>>>,
+    search_id: &str,
+) {
+    let mut tokens = cancellation_tokens.lock();
+    tokens.remove(search_id);
+}
+
 #[derive(Debug, Clone)]
 struct CompiledSearchFilters {
     levels: Option<HashSet<String>>,
@@ -795,63 +878,22 @@ pub async fn search_logs(
                     "Tantivy search succeeded"
                 );
 
-                // 写入 DiskResultStore（与 CAS 路径相同的契约）
-                if !disk_result_store.has_session(&search_id) {
-                    if let Err(e) = disk_result_store.create_session(&search_id) {
-                        warn!(error = %e, "Tantivy: 无法创建磁盘搜索会话");
-                    }
-                }
-                for chunk in tantivy_results.entries.chunks(2000) {
-                    if let Err(e) = disk_result_store.append_entries(&search_id, chunk) {
-                        warn!(error = %e, "Tantivy: 磁盘写入失败");
-                        break;
-                    }
-                }
-                if let Err(e) = disk_result_store.complete_session(&search_id) {
-                    warn!(error = %e, "Tantivy: 完成磁盘会话失败");
-                }
+                let entries = tantivy_results.entries;
+                let results_count = entries.len();
 
-                // 关键词统计（保持与 CAS 路径一致）
-                let keyword_stats: Vec<_> = raw_terms
-                    .iter()
-                    .map(|term| {
-                        let count = tantivy_results
-                            .entries
-                            .iter()
-                            .filter(|e| e.content.contains(term))
-                            .count();
-                        crate::models::search_statistics::KeywordStatistics::new(
-                            term.clone(),
-                            count,
-                            tantivy_results.entries.len(),
-                        )
-                    })
-                    .collect();
+                write_results_to_disk(&disk_result_store, &search_id, &entries, "Tantivy");
 
-                let summary = SearchResultSummary::new(
-                    tantivy_results.entries.len(),
+                let keyword_stats = compute_keyword_stats(&entries, &raw_terms);
+                emit_search_complete(
+                    &app_handle,
+                    results_count,
                     keyword_stats,
                     tantivy_start.elapsed().as_millis() as u64,
                     false,
                 );
 
-                let _ = app_handle.emit("search-start", ());
-                let _ = app_handle.emit("search-progress", tantivy_results.entries.len());
-                let _ = app_handle.emit("search-summary", &summary);
-                let _ = app_handle.emit("search-complete", tantivy_results.entries.len());
-
-                // 缓存结果（限制大小避免内存爆炸）
-                if tantivy_results.entries.len() < 100_000 {
-                    cache_manager
-                        .lock()
-                        .insert_sync(cache_key, tantivy_results.entries);
-                }
-
-                // 清理取消令牌
-                {
-                    let mut tokens = cancellation_tokens.lock();
-                    tokens.remove(&search_id);
-                }
+                cache_search_results(&cache_manager, cache_key, entries);
+                remove_cancellation_token(&cancellation_tokens, &search_id);
 
                 return Ok(search_id);
             }
@@ -1124,28 +1166,22 @@ pub async fn search_logs(
             })
             .collect();
 
-        let summary = SearchResultSummary::new(
-            results_count,
-            keyword_stats,
-            duration,
-            was_truncated, // 标记是否因达到限制而截断
-        );
-
         // 将结果插入缓存(仅在未截断且未取消时缓存)
         if !was_truncated && !cancellation_token.is_cancelled() {
             cache_manager.lock().insert_sync(cache_key, all_results);
         }
 
         if !timed_out_for_search.load(Ordering::SeqCst) {
-            let _ = app_handle.emit("search-summary", &summary);
+            let _ = app_handle.emit("search-summary", &SearchResultSummary::new(
+                results_count,
+                keyword_stats,
+                duration,
+                was_truncated,
+            ));
             let _ = app_handle.emit("search-complete", results_count);
         }
 
-        // 清理取消令牌
-        {
-            let mut tokens = cancellation_tokens.lock();
-            tokens.remove(&search_id_clone);
-        }
+        remove_cancellation_token(&cancellation_tokens, &search_id_clone);
     });
 
     // 添加超时控制，等待搜索任务完成

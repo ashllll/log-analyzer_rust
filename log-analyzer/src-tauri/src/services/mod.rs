@@ -3,7 +3,11 @@ pub mod query_executor;
 pub mod query_planner;
 pub mod query_validator;
 pub mod regex_engine;
+pub mod search_events;
+pub mod search_filters;
+pub mod search_pipeline;
 pub mod search_statistics;
+pub mod search_strategies;
 pub mod traits;
 
 #[cfg(test)]
@@ -20,8 +24,8 @@ pub use file_watcher::{
 pub use query_executor::{MatchDetail, QueryExecutor};
 pub use query_planner::{ExecutionPlan, QueryPlannerAdapter};
 pub use regex_engine::{
-    AhoCorasickEngine, AutomataEngine, EngineError, EngineInfo, EngineMatches, EngineType,
-    MatchResult, RegexEngine, StandardEngine,
+    AhoCorasickEngine, EngineError, EngineInfo, EngineMatches, EngineType, MatchResult,
+    RegexEngine, StandardEngine,
 };
 pub use search_statistics::calculate_keyword_statistics;
 pub use traits::{

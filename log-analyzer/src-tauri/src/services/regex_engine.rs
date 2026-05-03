@@ -2,15 +2,14 @@
 //!
 //! 混合引擎架构，根据模式类型自动选择最佳匹配算法：
 //! - **AhoCorasickEngine**: 简单关键词搜索，O(n) 线性复杂度
-//! - **AutomataEngine**: 复杂正则，DFA 加速
-//! - **StandardEngine**: 需要前瞻/后瞻时使用
+//! - **StandardEngine**: 复杂正则/需要前瞻后瞻
 //!
 //! # 性能特点
 //!
 //! | 引擎 | 单模式 | 多模式 | 前瞻/后瞻 | Streaming |
 //! |------|--------|--------|-----------|-----------|
 //! | AhoCorasick | O(n) | O(n) | 不支持 | 支持 |
-//! | Automata | O(n) | O(n) | 不支持 | 原生支持 |
+//! | Standard | O(n) | O(n) | 不支持 | 原生支持 |
 //! | Standard | 可变 | 可变 | 支持 | 受限 |
 
 use std::fmt;
@@ -50,7 +49,6 @@ impl EngineInfo {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EngineType {
     AhoCorasick,
-    Automata,
     Standard,
     Memchr,
     Fancy,
@@ -60,7 +58,6 @@ impl fmt::Display for EngineType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             EngineType::AhoCorasick => write!(f, "AhoCorasick"),
-            EngineType::Automata => write!(f, "Automata"),
             EngineType::Standard => write!(f, "Standard"),
             EngineType::Memchr => write!(f, "Memchr"),
             EngineType::Fancy => write!(f, "Fancy"),
@@ -71,7 +68,6 @@ impl fmt::Display for EngineType {
 #[derive(Clone)]
 pub enum RegexEngine {
     AhoCorasick(AhoCorasickEngine),
-    Automata(AutomataEngine),
     Standard(StandardEngine),
     Memchr(MemchrEngine),
     Fancy(FancyEngine),
@@ -83,10 +79,6 @@ impl fmt::Debug for RegexEngine {
             RegexEngine::AhoCorasick(e) => f
                 .debug_struct("AhoCorasick")
                 .field("pattern_count", &e.pattern_count())
-                .finish(),
-            RegexEngine::Automata(e) => f
-                .debug_struct("Automata")
-                .field("pattern", &e.pattern())
                 .finish(),
             RegexEngine::Standard(e) => f
                 .debug_struct("Standard")
@@ -108,7 +100,6 @@ impl RegexEngine {
     pub fn engine_type(&self) -> EngineType {
         match self {
             RegexEngine::AhoCorasick(_) => EngineType::AhoCorasick,
-            RegexEngine::Automata(_) => EngineType::Automata,
             RegexEngine::Standard(_) => EngineType::Standard,
             RegexEngine::Memchr(_) => EngineType::Memchr,
             RegexEngine::Fancy(_) => EngineType::Fancy,
@@ -129,13 +120,9 @@ impl RegexEngine {
             return FancyEngine::new(pattern).map(RegexEngine::Fancy);
         }
 
-        // 2. 如果标记为正则表达式，检查复杂度
-        if is_regex {
-            // 复杂正则使用 AutomataEngine（与 StandardEngine 均基于 regex crate，
-            // 保留为独立变体以便未来做 DFA 预编译等特殊化优化）
-            if !is_simple_keyword(pattern) {
-                return AutomataEngine::new(pattern).map(RegexEngine::Automata);
-            }
+        // 2. 如果标记为正则表达式且非简单关键词，使用 StandardEngine
+        if is_regex && !is_simple_keyword(pattern) {
+            return StandardEngine::new(pattern).map(RegexEngine::Standard);
         }
 
         // 3. 多模式匹配 (| 分隔) 使用 Aho-Corasick
@@ -182,7 +169,6 @@ impl RegexEngine {
     pub fn find_iter<'a>(&'a self, text: &'a str) -> EngineMatches<'a> {
         match self {
             RegexEngine::AhoCorasick(e) => EngineMatches::AhoCorasick(e.find_iter(text)),
-            RegexEngine::Automata(e) => EngineMatches::Automata(e.find_iter(text)),
             RegexEngine::Standard(e) => EngineMatches::Standard(e.find_iter(text)),
             RegexEngine::Memchr(e) => EngineMatches::Memchr(e.find_iter(text)),
             RegexEngine::Fancy(e) => EngineMatches::Fancy(e.find_iter(text)),
@@ -192,7 +178,6 @@ impl RegexEngine {
     pub fn is_match(&self, text: &str) -> bool {
         match self {
             RegexEngine::AhoCorasick(e) => e.is_match(text),
-            RegexEngine::Automata(e) => e.is_match(text),
             RegexEngine::Standard(e) => e.is_match(text),
             RegexEngine::Memchr(e) => e.is_match(text),
             RegexEngine::Fancy(e) => e.is_match(text),
@@ -314,58 +299,6 @@ impl<'a> Iterator for AhoCorasickMatches<'a> {
 }
 
 #[derive(Clone)]
-pub struct AutomataEngine {
-    regex: Regex,
-    pattern: String,
-}
-
-impl AutomataEngine {
-    pub fn new(pattern: &str) -> Result<Self, EngineError> {
-        if pattern.trim().is_empty() {
-            return Err(EngineError::CompilationError("Empty pattern".to_string()));
-        }
-
-        let regex =
-            Regex::new(pattern).map_err(|e| EngineError::CompilationError(e.to_string()))?;
-
-        Ok(Self {
-            regex,
-            pattern: pattern.to_string(),
-        })
-    }
-
-    pub fn pattern(&self) -> &str {
-        &self.pattern
-    }
-
-    pub fn find_iter<'a>(&'a self, text: &'a str) -> AutomataMatches<'a> {
-        AutomataMatches {
-            matches: self.regex.find_iter(text),
-        }
-    }
-
-    pub fn is_match(&self, text: &str) -> bool {
-        self.regex.is_match(text)
-    }
-}
-
-pub struct AutomataMatches<'a> {
-    matches: regex::Matches<'a, 'a>,
-}
-
-impl<'a> Iterator for AutomataMatches<'a> {
-    type Item = MatchResult;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.matches.next().map(|mat| MatchResult {
-            start: mat.start(),
-            end: mat.end(),
-            pattern: String::new(),
-        })
-    }
-}
-
-#[derive(Clone)]
 pub struct StandardEngine {
     regex: Regex,
     pattern: String,
@@ -469,7 +402,7 @@ impl<'a> Iterator for MemchrMatches<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let remaining = &self.text[self.offset..];
-        let pos = memchr::memmem::find(remaining, &self.needle)?;
+        let pos = memchr::memmem::find(remaining, self.needle)?;
         let start = self.offset + pos;
         let end = start + self.needle.len();
         // 避免空匹配导致死循环（memchr 不会出现，防御性编程）
@@ -602,7 +535,6 @@ impl MatchResult {
 
 pub enum EngineMatches<'a> {
     AhoCorasick(AhoCorasickMatches<'a>),
-    Automata(AutomataMatches<'a>),
     Standard(StandardMatches<'a>),
     Memchr(MemchrMatches<'a>),
     Fancy(FancyMatches<'a>),
@@ -614,7 +546,6 @@ impl<'a> Iterator for EngineMatches<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         match self {
             EngineMatches::AhoCorasick(m) => m.next(),
-            EngineMatches::Automata(m) => m.next(),
             EngineMatches::Standard(m) => m.next(),
             EngineMatches::Memchr(m) => m.next(),
             EngineMatches::Fancy(m) => m.next(),
@@ -721,8 +652,8 @@ mod tests {
     }
 
     #[test]
-    fn test_automata_engine() {
-        let engine = AutomataEngine::new(r"\d{4}-\d{2}-\d{2}").unwrap();
+    fn test_standard_engine_complex() {
+        let engine = StandardEngine::new(r"\d{4}-\d{2}-\d{2}").unwrap();
         let text = "Dates: 2024-01-30, 2025-02-28";
         let matches: Vec<_> = engine.find_iter(text).collect();
         assert_eq!(matches.len(), 2);
@@ -827,12 +758,12 @@ mod tests {
 
     #[test]
     fn test_engine_selection_complex_regex() {
-        // 复杂正则使用 AutomataEngine（与 StandardEngine 均基于 regex crate）
+        // 复杂正则使用 StandardEngine
         let engine = RegexEngine::new(r"\d{4}-\d{2}-\d{2}", true).unwrap();
-        assert!(matches!(engine, RegexEngine::Automata(_)));
+        assert!(matches!(engine, RegexEngine::Standard(_)));
 
         let engine = RegexEngine::new(r"[A-Z]\w+", true).unwrap();
-        assert!(matches!(engine, RegexEngine::Automata(_)));
+        assert!(matches!(engine, RegexEngine::Standard(_)));
     }
 
     #[test]

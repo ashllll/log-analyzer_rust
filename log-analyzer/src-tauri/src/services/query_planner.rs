@@ -344,9 +344,8 @@ impl ExecutionPlan {
         match engine.engine_type() {
             EngineType::Memchr => 0,      // SIMD 子串搜索，最快
             EngineType::AhoCorasick => 1, // 多模式自动机，次快
-            EngineType::Automata => 2,
-            EngineType::Standard => 3,
-            EngineType::Fancy => 4, // 回溯引擎，最慢
+            EngineType::Standard => 2,    // regex DFA
+            EngineType::Fancy => 3,       // 回溯引擎，最慢
         }
     }
 
@@ -897,8 +896,8 @@ mod tests {
         let engine = RegexEngine::new(pattern, true).unwrap();
 
         assert!(
-            matches!(engine, RegexEngine::Automata(_)),
-            "Complex regex should use AutomataEngine"
+            matches!(engine, RegexEngine::Standard(_)),
+            "Complex regex should use StandardEngine"
         );
         assert!(engine.is_match("2024-01-30"));
     }
