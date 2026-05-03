@@ -165,8 +165,8 @@ use tracing::{error, info, warn};
 
 use crate::commands::import::{ensure_workspace_runtime_state, import_folder};
 use crate::models::AppState;
-use crate::utils::workspace_paths::resolve_workspace_dir;
 use crate::utils::validation::validate_workspace_id;
+use crate::utils::workspace_paths::resolve_workspace_dir;
 
 #[derive(Debug, serde::Deserialize)]
 struct StoredWorkspaceConfig {

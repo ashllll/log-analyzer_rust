@@ -16,9 +16,7 @@ use la_core::error::CommandError;
 use la_core::models::{LogEntry, SearchQuery};
 use la_storage::{ContentAddressableStorage, MetadataStore};
 
-use crate::services::search_filters::{
-    search_single_file_with_details, CompiledSearchFilters,
-};
+use crate::services::search_filters::{search_single_file_with_details, CompiledSearchFilters};
 use crate::services::QueryExecutor;
 
 /// 搜索策略 trait
@@ -55,7 +53,9 @@ impl SearchStrategy for TantivySearchStrategy {
 
         // 从 CompiledSearchFilters 提取过滤条件
         let time_range = filters.time_start.and_then(|start| {
-            filters.time_end.map(|end| (start.and_utc().timestamp(), end.and_utc().timestamp()))
+            filters
+                .time_end
+                .map(|end| (start.and_utc().timestamp(), end.and_utc().timestamp()))
         });
         let levels = filters.levels.as_ref();
         let file_pattern = filters.file_pattern.as_deref();
@@ -70,16 +70,23 @@ impl SearchStrategy for TantivySearchStrategy {
             Ok(q) => q,
             Err(e) => {
                 warn!(error = %e, "Failed to build Tantivy query");
-                return Err(CommandError::new("QUERY_ERROR", format!("Tantivy query build failed: {}", e)));
+                return Err(CommandError::new(
+                    "QUERY_ERROR",
+                    format!("Tantivy query build failed: {}", e),
+                ));
             }
         };
 
-        match self.engine_manager.search_with_query(
-            query,
-            Some(max_results),
-            Some(std::time::Duration::from_millis(500)),
-            Some(cancellation_token),
-        ).await {
+        match self
+            .engine_manager
+            .search_with_query(
+                query,
+                Some(max_results),
+                Some(std::time::Duration::from_millis(500)),
+                Some(cancellation_token),
+            )
+            .await
+        {
             Ok(results) => {
                 info!(
                     query = %tantivy_query_str,
@@ -92,11 +99,17 @@ impl SearchStrategy for TantivySearchStrategy {
             }
             Err(la_search::SearchError::Timeout(_)) => {
                 warn!("Tantivy search timed out");
-                Err(CommandError::new("TIMEOUT_ERROR", "Tantivy search timed out"))
+                Err(CommandError::new(
+                    "TIMEOUT_ERROR",
+                    "Tantivy search timed out",
+                ))
             }
             Err(e) => {
                 warn!(error = %e, "Tantivy search failed");
-                Err(CommandError::new("SEARCH_ERROR", format!("Tantivy search failed: {}", e)))
+                Err(CommandError::new(
+                    "SEARCH_ERROR",
+                    format!("Tantivy search failed: {}", e),
+                ))
             }
         }
     }
@@ -235,11 +248,12 @@ impl CasSearchStrategy {
             Ok(Err(e)) => Err(e),
             Err(e) => {
                 error!(error = %e, "Search task panicked");
-                Err(CommandError::new(
-                    "INTERNAL_ERROR",
-                    format!("Search task panicked: {}", e),
+                Err(
+                    CommandError::new("INTERNAL_ERROR", format!("Search task panicked: {}", e))
+                        .with_help(
+                            "This is an unexpected error. Try simplifying your search query",
+                        ),
                 )
-                .with_help("This is an unexpected error. Try simplifying your search query"))
             }
         }
     }
@@ -275,7 +289,8 @@ impl SearchStrategy for CasSearchStrategy {
             }
         };
 
-        self.scan_files(query, filters, max_results, files, cancellation_token).await
+        self.scan_files(query, filters, max_results, files, cancellation_token)
+            .await
     }
 }
 
@@ -315,7 +330,13 @@ impl SearchStrategy for HybridSearchStrategy {
         // Phase 1: Tantivy 快速搜索（已带过滤条件）
         let tantivy_results = self
             .tantivy
-            .execute(query, workspace_id, filters, max_results, cancellation_token.clone())
+            .execute(
+                query,
+                workspace_id,
+                filters,
+                max_results,
+                cancellation_token.clone(),
+            )
             .await?;
 
         if cancellation_token.is_cancelled() {
@@ -333,10 +354,8 @@ impl SearchStrategy for HybridSearchStrategy {
         }
 
         // 提取 Tantivy 已覆盖的文件路径
-        let tantivy_files: std::collections::HashSet<String> = tantivy_results
-            .iter()
-            .map(|e| e.file.to_string())
-            .collect();
+        let tantivy_files: std::collections::HashSet<String> =
+            tantivy_results.iter().map(|e| e.file.to_string()).collect();
 
         info!(
             tantivy_hits = tantivy_results.len(),
@@ -394,8 +413,10 @@ impl SearchStrategy for HybridSearchStrategy {
 
         // Phase 4: 合并去重
         let mut results = tantivy_results;
-        let existing_keys: std::collections::HashSet<(Arc<str>, usize, Arc<str>)> =
-            results.iter().map(|e| (e.file.clone(), e.line, e.content.clone())).collect();
+        let existing_keys: std::collections::HashSet<(Arc<str>, usize, Arc<str>)> = results
+            .iter()
+            .map(|e| (e.file.clone(), e.line, e.content.clone()))
+            .collect();
 
         let mut cas_added = 0usize;
         for entry in cas_entries {

@@ -171,7 +171,6 @@ pub struct SearchEngineManager {
     stats: Arc<RwLock<SearchStats>>,
     boolean_processor: BooleanQueryProcessor,
     highlighting_engine: HighlightingEngine,
-
 }
 
 #[derive(Debug, Default)]
@@ -361,7 +360,11 @@ impl SearchEngineManager {
         let timeout_duration = timeout_duration.unwrap_or(self.config.default_timeout);
         let token = token.unwrap_or_default();
 
-        debug!(limit = limit, timeout_ms = timeout_duration.as_millis(), "Starting filtered Tantivy search");
+        debug!(
+            limit = limit,
+            timeout_ms = timeout_duration.as_millis(),
+            "Starting filtered Tantivy search"
+        );
 
         let search_future = self.execute_search(query, limit, Some(token.clone()));
 
@@ -397,7 +400,7 @@ impl SearchEngineManager {
     }
 
     /// 构建包含内容查询和过滤条件的完整 Tantivy BooleanQuery
-    /// 
+    ///
     /// # Arguments
     /// - `content_query_str` — 用户输入的原始查询字符串（如 "error | timeout"）
     /// - `time_range` — 可选的时间范围过滤 (start_timestamp, end_timestamp)，Unix 秒
@@ -411,25 +414,21 @@ impl SearchEngineManager {
         file_pattern: Option<&str>,
     ) -> SearchResult<Box<dyn Query>> {
         use tantivy::schema::IndexRecordOption;
-        
+
         // 1. 解析内容查询
         let content_query = self.parse_query(content_query_str)?;
-        
-        let mut clauses: Vec<(Occur, Box<dyn Query>)> = vec![
-            (Occur::Must, content_query)
-        ];
-        
+
+        let mut clauses: Vec<(Occur, Box<dyn Query>)> = vec![(Occur::Must, content_query)];
+
         // 2. 时间范围过滤 → RangeQuery on schema.timestamp (i64 fast field)
         if let Some((start, end)) = time_range {
             let start_term = Term::from_field_i64(self.schema.timestamp, start);
             let end_term = Term::from_field_i64(self.schema.timestamp, end);
-            let range_query = RangeQuery::new(
-                Bound::Included(start_term),
-                Bound::Included(end_term),
-            );
+            let range_query =
+                RangeQuery::new(Bound::Included(start_term), Bound::Included(end_term));
             clauses.push((Occur::Must, Box::new(range_query)));
         }
-        
+
         // 3. 日志级别过滤 → 多个 TermQuery 用 BooleanQuery::or 组合
         if let Some(levels) = levels {
             if !levels.is_empty() {
@@ -437,7 +436,11 @@ impl SearchEngineManager {
                     .iter()
                     .map(|lvl| {
                         let term = Term::from_field_text(self.schema.level, lvl);
-                        (Occur::Should, Box::new(TermQuery::new(term, IndexRecordOption::Basic)) as Box<dyn Query>)
+                        (
+                            Occur::Should,
+                            Box::new(TermQuery::new(term, IndexRecordOption::Basic))
+                                as Box<dyn Query>,
+                        )
                     })
                     .collect();
                 if !level_clauses.is_empty() {
@@ -445,18 +448,20 @@ impl SearchEngineManager {
                 }
             }
         }
-        
+
         // 4. 文件路径过滤 → RegexQuery on schema.file_path
         if let Some(pattern) = file_pattern {
             if !pattern.is_empty() {
                 // 将 GLOB 模式转换为正则：* → .*，? → .
                 let regex_pattern = glob_to_regex(pattern);
                 let regex_query = RegexQuery::from_pattern(&regex_pattern, self.schema.file_path)
-                    .map_err(|e| SearchError::QueryError(format!("Invalid file pattern: {}", e)))?;
+                    .map_err(|e| {
+                    SearchError::QueryError(format!("Invalid file pattern: {}", e))
+                })?;
                 clauses.push((Occur::Must, Box::new(regex_query)));
             }
         }
-        
+
         Ok(Box::new(BooleanQuery::new(clauses)))
     }
 

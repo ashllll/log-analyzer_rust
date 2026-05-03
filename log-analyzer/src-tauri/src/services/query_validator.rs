@@ -618,7 +618,10 @@ mod tests {
             },
         };
 
-        assert!(QueryValidator::validate(&query).is_ok(), "Safe look-around should be accepted");
+        assert!(
+            QueryValidator::validate(&query).is_ok(),
+            "Safe look-around should be accepted"
+        );
     }
 
     /// ReDoS protection: overlapping alternation should be rejected
@@ -650,6 +653,9 @@ mod tests {
         };
 
         let result = QueryValidator::validate(&query);
-        assert!(result.is_err(), "Overlapping alternation should be rejected");
+        assert!(
+            result.is_err(),
+            "Overlapping alternation should be rejected"
+        );
     }
 }

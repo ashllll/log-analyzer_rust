@@ -7,10 +7,7 @@ use la_archive::internal::metadata_db::MetadataDB;
 /// 3. Path shortening warnings
 /// 4. Depth limit warnings
 /// 5. Security event warnings
-use la_archive::{
-    ExtractionEngine, ExtractionPolicy, PathConfig, PathManager,
-    SecurityDetector,
-};
+use la_archive::{ExtractionEngine, ExtractionPolicy, PathConfig, PathManager, SecurityDetector};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tempfile::TempDir;

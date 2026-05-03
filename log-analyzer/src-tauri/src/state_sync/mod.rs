@@ -192,5 +192,3 @@ impl StateSync {
         history.iter().rev().take(limit).cloned().collect()
     }
 }
-
-

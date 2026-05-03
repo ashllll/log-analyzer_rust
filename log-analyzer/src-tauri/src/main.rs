@@ -247,7 +247,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             for store in stores {
                                 store.close().await;
                             }
-                            let engines: Vec<_> = search_engine_managers.lock().values().cloned().collect();
+                            let engines: Vec<_> =
+                                search_engine_managers.lock().values().cloned().collect();
                             for mgr in engines {
                                 let _ = tokio::time::timeout(
                                     std::time::Duration::from_secs(3),

@@ -193,9 +193,9 @@ async fn test_integrity_verification_detects_missing_files() {
         mime_type: None,
         parent_archive_id: None,
         depth_level: 0,
-            min_timestamp: None,
-            max_timestamp: None,
-            level_mask: None,
+        min_timestamp: None,
+        max_timestamp: None,
+        level_mask: None,
     };
 
     metadata_store.insert_file(&file_metadata).await.unwrap();
@@ -243,9 +243,9 @@ async fn test_integrity_verification_detects_corruption() {
         mime_type: None,
         parent_archive_id: None,
         depth_level: 0,
-            min_timestamp: None,
-            max_timestamp: None,
-            level_mask: None,
+        min_timestamp: None,
+        max_timestamp: None,
+        level_mask: None,
     };
 
     metadata_store.insert_file(&file_metadata).await.unwrap();
@@ -304,9 +304,9 @@ async fn test_integrity_verification_passes_for_valid_workspace() {
             mime_type: None,
             parent_archive_id: None,
             depth_level: 0,
-                min_timestamp: None,
-                max_timestamp: None,
-                level_mask: None,
+            min_timestamp: None,
+            max_timestamp: None,
+            level_mask: None,
         };
 
         metadata_store.insert_file(&file_metadata).await.unwrap();
@@ -359,9 +359,9 @@ async fn test_verify_after_import() {
         mime_type: None,
         parent_archive_id: None,
         depth_level: 0,
-            min_timestamp: None,
-            max_timestamp: None,
-            level_mask: None,
+        min_timestamp: None,
+        max_timestamp: None,
+        level_mask: None,
     };
 
     metadata_store.insert_file(&file_metadata).await.unwrap();
@@ -473,9 +473,9 @@ async fn test_import_calls_integrity_verification() {
             mime_type: None,
             parent_archive_id: None,
             depth_level: 0,
-                min_timestamp: None,
-                max_timestamp: None,
-                level_mask: None,
+            min_timestamp: None,
+            max_timestamp: None,
+            level_mask: None,
         };
 
         metadata_store.insert_file(&file_metadata).await.unwrap();
@@ -534,9 +534,9 @@ async fn test_verification_detects_missing_objects() {
         mime_type: None,
         parent_archive_id: None,
         depth_level: 0,
-            min_timestamp: None,
-            max_timestamp: None,
-            level_mask: None,
+        min_timestamp: None,
+        max_timestamp: None,
+        level_mask: None,
     };
 
     metadata_store.insert_file(&file_metadata).await.unwrap();
@@ -584,9 +584,9 @@ async fn test_verification_detects_corruption() {
         mime_type: None,
         parent_archive_id: None,
         depth_level: 0,
-            min_timestamp: None,
-            max_timestamp: None,
-            level_mask: None,
+        min_timestamp: None,
+        max_timestamp: None,
+        level_mask: None,
     };
 
     metadata_store.insert_file(&file_metadata).await.unwrap();
@@ -640,9 +640,9 @@ async fn test_transaction_rollback_on_failure() {
         mime_type: None,
         parent_archive_id: None,
         depth_level: 0,
-            min_timestamp: None,
-            max_timestamp: None,
-            level_mask: None,
+        min_timestamp: None,
+        max_timestamp: None,
+        level_mask: None,
     };
 
     let id1 = MetadataStore::insert_file_tx(&mut tx, &file1)
@@ -661,9 +661,9 @@ async fn test_transaction_rollback_on_failure() {
         mime_type: None,
         parent_archive_id: None,
         depth_level: 0,
-            min_timestamp: None,
-            max_timestamp: None,
-            level_mask: None,
+        min_timestamp: None,
+        max_timestamp: None,
+        level_mask: None,
     };
 
     let id2 = MetadataStore::insert_file_tx(&mut tx, &file2)
@@ -718,9 +718,9 @@ async fn test_transaction_commit_on_success() {
             mime_type: None,
             parent_archive_id: None,
             depth_level: 0,
-                min_timestamp: None,
-                max_timestamp: None,
-                level_mask: None,
+            min_timestamp: None,
+            max_timestamp: None,
+            level_mask: None,
         },
         FileMetadata {
             id: 0,
@@ -732,9 +732,9 @@ async fn test_transaction_commit_on_success() {
             mime_type: None,
             parent_archive_id: None,
             depth_level: 0,
-                min_timestamp: None,
-                max_timestamp: None,
-                level_mask: None,
+            min_timestamp: None,
+            max_timestamp: None,
+            level_mask: None,
         },
         FileMetadata {
             id: 0,
@@ -746,9 +746,9 @@ async fn test_transaction_commit_on_success() {
             mime_type: None,
             parent_archive_id: None,
             depth_level: 0,
-                min_timestamp: None,
-                max_timestamp: None,
-                level_mask: None,
+            min_timestamp: None,
+            max_timestamp: None,
+            level_mask: None,
         },
     ];
 
@@ -827,9 +827,9 @@ async fn test_transaction_mixed_operations() {
             mime_type: None,
             parent_archive_id: Some(archive_id),
             depth_level: 1,
-                min_timestamp: None,
-                max_timestamp: None,
-                level_mask: None,
+            min_timestamp: None,
+            max_timestamp: None,
+            level_mask: None,
         },
         FileMetadata {
             id: 0,
@@ -841,9 +841,9 @@ async fn test_transaction_mixed_operations() {
             mime_type: None,
             parent_archive_id: Some(archive_id),
             depth_level: 1,
-                min_timestamp: None,
-                max_timestamp: None,
-                level_mask: None,
+            min_timestamp: None,
+            max_timestamp: None,
+            level_mask: None,
         },
     ];
 

@@ -281,9 +281,9 @@ mod tests {
             mime_type: None,
             parent_archive_id: None,
             depth_level: 0,
-                min_timestamp: None,
-                max_timestamp: None,
-                level_mask: None,
+            min_timestamp: None,
+            max_timestamp: None,
+            level_mask: None,
         };
 
         // Verify integrity
@@ -307,9 +307,9 @@ mod tests {
             mime_type: None,
             parent_archive_id: None,
             depth_level: 0,
-                min_timestamp: None,
-                max_timestamp: None,
-                level_mask: None,
+            min_timestamp: None,
+            max_timestamp: None,
+            level_mask: None,
         };
 
         // Verify integrity
@@ -353,9 +353,9 @@ mod tests {
             mime_type: None,
             parent_archive_id: None,
             depth_level: 0,
-                min_timestamp: None,
-                max_timestamp: None,
-                level_mask: None,
+            min_timestamp: None,
+            max_timestamp: None,
+            level_mask: None,
         };
         metadata_store.insert_file(&file_metadata).await.unwrap();
 

@@ -16,9 +16,7 @@ use la_search::DiskResultStore;
 use crate::commands::import::ensure_workspace_runtime_state;
 use crate::models::AppState;
 use crate::services::search_events::SearchEventBus;
-use crate::services::search_filters::{
-    compile_filters, resolve_search_query, SearchRuntimeConfig,
-};
+use crate::services::search_filters::{compile_filters, resolve_search_query, SearchRuntimeConfig};
 use crate::services::search_statistics::calculate_keyword_statistics;
 use crate::services::search_strategies::{
     CasSearchStrategy, HybridSearchStrategy, SearchStrategy, TantivySearchStrategy,
@@ -71,11 +69,8 @@ impl SearchPipeline {
         )?;
 
         // 解析工作区ID
-        let workspace_id = resolve_workspace_id(
-            request.workspace_id,
-            &state.workspace_dirs,
-            &event_bus,
-        )?;
+        let workspace_id =
+            resolve_workspace_id(request.workspace_id, &state.workspace_dirs, &event_bus)?;
 
         let search_id = uuid::Uuid::new_v4().to_string();
 
@@ -275,7 +270,13 @@ impl SearchPipeline {
         let start = std::time::Instant::now();
         let result = tokio::time::timeout(
             std::time::Duration::from_secs(search_timeout_secs),
-            strategy.execute(query, workspace_id, filters, max_results, cancellation_token.clone()),
+            strategy.execute(
+                query,
+                workspace_id,
+                filters,
+                max_results,
+                cancellation_token.clone(),
+            ),
         )
         .await;
 

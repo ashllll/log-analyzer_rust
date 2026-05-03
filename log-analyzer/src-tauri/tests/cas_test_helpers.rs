@@ -189,9 +189,9 @@ pub async fn populate_cas_workspace(
             mime_type: Some("text/plain".to_string()),
             parent_archive_id: None,
             depth_level: 0,
-                min_timestamp: None,
-                max_timestamp: None,
-                level_mask: None,
+            min_timestamp: None,
+            max_timestamp: None,
+            level_mask: None,
         };
 
         // Insert into metadata store
@@ -244,9 +244,9 @@ async fn create_nested_archive_structure(
             mime_type: Some("text/plain".to_string()),
             parent_archive_id: None,
             depth_level: depth as i32,
-                min_timestamp: None,
-                max_timestamp: None,
-                level_mask: None,
+            min_timestamp: None,
+            max_timestamp: None,
+            level_mask: None,
         };
 
         workspace.metadata.insert_file(&file_meta).await?;
@@ -271,9 +271,9 @@ async fn create_nested_archive_structure(
             mime_type: Some("text/plain".to_string()),
             parent_archive_id: None,
             depth_level: (depth - 1) as i32,
-                min_timestamp: None,
-                max_timestamp: None,
-                level_mask: None,
+            min_timestamp: None,
+            max_timestamp: None,
+            level_mask: None,
         };
 
         workspace.metadata.insert_file(&file_meta).await?;
@@ -626,9 +626,9 @@ mod tests {
             mime_type: Some("text/plain".to_string()),
             parent_archive_id: None,
             depth_level: 0,
-                min_timestamp: None,
-                max_timestamp: None,
-                level_mask: None,
+            min_timestamp: None,
+            max_timestamp: None,
+            level_mask: None,
         };
 
         workspace.metadata.insert_file(&file_meta).await.unwrap();

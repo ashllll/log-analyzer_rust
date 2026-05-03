@@ -37,9 +37,9 @@ mod tests {
             mime_type: Some("text/plain".to_string()),
             parent_archive_id: None,
             depth_level: 0,
-                min_timestamp: None,
-                max_timestamp: None,
-                level_mask: None,
+            min_timestamp: None,
+            max_timestamp: None,
+            level_mask: None,
         };
 
         let file_id = metadata.insert_file(&file_meta).await.unwrap();
@@ -84,9 +84,9 @@ mod tests {
             mime_type: None,
             parent_archive_id: None,
             depth_level: 0,
-                min_timestamp: None,
-                max_timestamp: None,
-                level_mask: None,
+            min_timestamp: None,
+            max_timestamp: None,
+            level_mask: None,
         };
 
         // Insert first file
@@ -103,9 +103,9 @@ mod tests {
             mime_type: None,
             parent_archive_id: None,
             depth_level: 0,
-                min_timestamp: None,
-                max_timestamp: None,
-                level_mask: None,
+            min_timestamp: None,
+            max_timestamp: None,
+            level_mask: None,
         };
 
         // CAS 去重设计：相同哈希的文件应该成功插入（返回已存在记录的 ID）
@@ -164,9 +164,9 @@ mod tests {
                 mime_type: None,
                 parent_archive_id: None,
                 depth_level: 0,
-                    min_timestamp: None,
-                    max_timestamp: None,
-                    level_mask: None,
+                min_timestamp: None,
+                max_timestamp: None,
+                level_mask: None,
             });
         }
 
@@ -211,9 +211,9 @@ mod tests {
                 mime_type: None,
                 parent_archive_id: None,
                 depth_level: 0,
-                    min_timestamp: None,
-                    max_timestamp: None,
-                    level_mask: None,
+                min_timestamp: None,
+                max_timestamp: None,
+                level_mask: None,
             };
             metadata.insert_file(&file_meta).await.unwrap();
         }
@@ -245,9 +245,9 @@ mod tests {
             mime_type: None,
             parent_archive_id: None,
             depth_level: 0,
-                min_timestamp: None,
-                max_timestamp: None,
-                level_mask: None,
+            min_timestamp: None,
+            max_timestamp: None,
+            level_mask: None,
         };
 
         metadata.insert_file(&file_meta).await.unwrap();
@@ -285,9 +285,9 @@ mod tests {
             mime_type: None,
             parent_archive_id: None,
             depth_level: 0,
-                min_timestamp: None,
-                max_timestamp: None,
-                level_mask: None,
+            min_timestamp: None,
+            max_timestamp: None,
+            level_mask: None,
         };
 
         metadata.insert_file(&file_meta).await.unwrap();
@@ -324,9 +324,9 @@ mod tests {
                 mime_type: None,
                 parent_archive_id: None,
                 depth_level: i,
-                    min_timestamp: None,
-                    max_timestamp: None,
-                    level_mask: None,
+                min_timestamp: None,
+                max_timestamp: None,
+                level_mask: None,
             };
 
             metadata.insert_file(&file_meta).await.unwrap();

@@ -50,7 +50,6 @@ pub struct BinarySearchRequest {
     pub filters: Option<SearchFilters>,
 }
 
-
 use crate::services::file_watcher::TimestampParser;
 use crate::services::{calculate_keyword_statistics, parse_metadata, ExecutionPlan, QueryExecutor};
 use crate::utils::encoding::decode_log_content;
@@ -329,12 +328,8 @@ fn emit_search_complete(
     duration_ms: u64,
     was_truncated: bool,
 ) {
-    let summary = SearchResultSummary::new(
-        results_count,
-        keyword_stats,
-        duration_ms,
-        was_truncated,
-    );
+    let summary =
+        SearchResultSummary::new(results_count, keyword_stats, duration_ms, was_truncated);
 
     let _ = app_handle.emit("search-start", ());
     let _ = app_handle.emit("search-progress", results_count);
@@ -355,7 +350,9 @@ fn cache_search_results(
 
 /// 清理搜索取消令牌
 fn remove_cancellation_token(
-    cancellation_tokens: &Arc<Mutex<std::collections::HashMap<String, tokio_util::sync::CancellationToken>>>,
+    cancellation_tokens: &Arc<
+        Mutex<std::collections::HashMap<String, tokio_util::sync::CancellationToken>>,
+    >,
     search_id: &str,
 ) {
     let mut tokens = cancellation_tokens.lock();
@@ -1174,12 +1171,10 @@ pub async fn search_logs(
         }
 
         if !timed_out_for_search.load(Ordering::SeqCst) {
-            let _ = app_handle.emit("search-summary", &SearchResultSummary::new(
-                results_count,
-                keyword_stats,
-                duration,
-                was_truncated,
-            ));
+            let _ = app_handle.emit(
+                "search-summary",
+                &SearchResultSummary::new(results_count, keyword_stats, duration, was_truncated),
+            );
             let _ = app_handle.emit("search-complete", results_count);
         }
 

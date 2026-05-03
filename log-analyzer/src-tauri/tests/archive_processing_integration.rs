@@ -127,9 +127,9 @@ async fn test_single_archive_extraction() {
                 mime_type: Some("text/plain".to_string()),
                 parent_archive_id: None,
                 depth_level: 1,
-                    min_timestamp: None,
-                    max_timestamp: None,
-                    level_mask: None,
+                min_timestamp: None,
+                max_timestamp: None,
+                level_mask: None,
             };
 
             metadata.insert_file(&file_meta).await.unwrap();
@@ -232,9 +232,9 @@ async fn test_nested_archive_2_levels() {
                     mime_type: Some("text/plain".to_string()),
                     parent_archive_id: None,
                     depth_level: 1,
-                        min_timestamp: None,
-                        max_timestamp: None,
-                        level_mask: None,
+                    min_timestamp: None,
+                    max_timestamp: None,
+                    level_mask: None,
                 });
             }
         }
@@ -261,9 +261,9 @@ async fn test_nested_archive_2_levels() {
                 mime_type: Some("text/plain".to_string()),
                 parent_archive_id: None,
                 depth_level: 2,
-                    min_timestamp: None,
-                    max_timestamp: None,
-                    level_mask: None,
+                min_timestamp: None,
+                max_timestamp: None,
+                level_mask: None,
             });
         }
     }
@@ -364,9 +364,9 @@ async fn test_nested_archive_3_levels() {
         mime_type: Some("text/plain".to_string()),
         parent_archive_id: None,
         depth_level: 3,
-            min_timestamp: None,
-            max_timestamp: None,
-            level_mask: None,
+        min_timestamp: None,
+        max_timestamp: None,
+        level_mask: None,
     };
 
     metadata.insert_file(&file_meta).await.unwrap();
@@ -467,9 +467,9 @@ async fn test_deeply_nested_archive_5_levels() {
         mime_type: Some("text/plain".to_string()),
         parent_archive_id: None,
         depth_level: 5,
-            min_timestamp: None,
-            max_timestamp: None,
-            level_mask: None,
+        min_timestamp: None,
+        max_timestamp: None,
+        level_mask: None,
     };
 
     metadata.insert_file(&file_meta).await.unwrap();
@@ -553,9 +553,9 @@ async fn test_path_length_handling() {
         mime_type: Some("text/plain".to_string()),
         parent_archive_id: None,
         depth_level: 1,
-            min_timestamp: None,
-            max_timestamp: None,
-            level_mask: None,
+        min_timestamp: None,
+        max_timestamp: None,
+        level_mask: None,
     };
 
     // Should succeed despite long path
@@ -665,9 +665,9 @@ async fn test_mixed_nested_and_regular_files() {
                     mime_type: Some("text/plain".to_string()),
                     parent_archive_id: None,
                     depth_level: 1,
-                        min_timestamp: None,
-                        max_timestamp: None,
-                        level_mask: None,
+                    min_timestamp: None,
+                    max_timestamp: None,
+                    level_mask: None,
                 };
 
                 metadata.insert_file(&file_meta).await.unwrap();
@@ -715,9 +715,9 @@ async fn test_mixed_nested_and_regular_files() {
                     mime_type: Some("text/plain".to_string()),
                     parent_archive_id: None,
                     depth_level: 2,
-                        min_timestamp: None,
-                        max_timestamp: None,
-                        level_mask: None,
+                    min_timestamp: None,
+                    max_timestamp: None,
+                    level_mask: None,
                 };
 
                 metadata.insert_file(&file_meta).await.unwrap();

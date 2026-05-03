@@ -320,7 +320,11 @@ fn compute_file_stats(content: &[u8]) -> (Option<i64>, Option<i64>, Option<u8>) 
     (
         min_ts,
         max_ts,
-        if has_any_level { Some(level_mask) } else { None },
+        if has_any_level {
+            Some(level_mask)
+        } else {
+            None
+        },
     )
 }
 
