@@ -1,6 +1,6 @@
 [package]
 name = "la-core"
-version = "1.2.61"
+version = "1.2.62"
 edition = "2021"
 
 [dependencies]
