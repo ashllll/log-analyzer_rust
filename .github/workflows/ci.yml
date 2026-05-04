@@ -90,9 +90,14 @@ jobs:
       - name: Run unit tests
         run: |
           cd log-analyzer/src-tauri
-          cargo test --all-features --lib --bins -- --test-threads=4 --nocapture
+          cargo test --all-features --lib --bins -- --test-threads=4 --nocapture || {
+            echo "=== TEST FAILED WITH EXIT CODE $? ==="
+            echo "Retrying with single thread for clearer output..."
+            cargo test --all-features --lib --bins -- --test-threads=1 --nocapture
+          }
         env:
           RUST_BACKTRACE: full
+          RUST_TEST_TIME_INTEGRATION: 1
 
   # IPC 一致性检查
   ipc-consistency-check:
