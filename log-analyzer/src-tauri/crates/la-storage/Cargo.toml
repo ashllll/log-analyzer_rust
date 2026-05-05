@@ -1,6 +1,6 @@
 [package]
 name = "la-storage"
-version = "1.2.62"
+version = "1.2.63"
 edition = "2021"
 
 [dependencies]

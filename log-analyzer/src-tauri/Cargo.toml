@@ -21,7 +21,7 @@ dunce = "1.0.5"
 
 [package]
 name = "log-analyzer"
-version = "1.2.62"
+version = "1.2.63"
 description = "A desktop log analysis tool built with Tauri, React, and TypeScript"
 authors = ["ashllll"]
 edition = "2021"
