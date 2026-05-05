@@ -49,3 +49,6 @@ COMMIT_MESSAGE.txt
 !CHANGELOG.md
 !docs/**/*.md
 !.kiro/**/*.md
+nul
+tauri-dev.log
+fix_metadata_store2.py
