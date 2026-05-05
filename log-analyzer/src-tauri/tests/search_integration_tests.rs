@@ -11,6 +11,7 @@
 //!
 //! **Validates: Requirements 1.4**
 
+use la_core::storage_types::AnalysisStatus;
 use log_analyzer::storage::{ContentAddressableStorage, FileMetadata, MetadataStore};
 use std::fs;
 use std::io::Write;
@@ -368,6 +369,7 @@ async fn test_search_cas_stored_files() {
             min_timestamp: None,
             max_timestamp: None,
             level_mask: None,
+            analysis_status: AnalysisStatus::Pending,
         };
 
         metadata.insert_file(&file_meta).await.unwrap();
@@ -456,6 +458,7 @@ async fn test_search_nested_archives() {
             min_timestamp: None,
             max_timestamp: None,
             level_mask: None,
+            analysis_status: AnalysisStatus::Pending,
         };
         metadata.insert_file(&file_meta).await.unwrap();
     }
@@ -490,6 +493,7 @@ async fn test_search_nested_archives() {
                     min_timestamp: None,
                     max_timestamp: None,
                     level_mask: None,
+                    analysis_status: AnalysisStatus::Pending,
                 };
                 metadata.insert_file(&file_meta).await.unwrap();
             }
@@ -570,6 +574,7 @@ async fn test_search_performance_with_cas() {
             min_timestamp: None,
             max_timestamp: None,
             level_mask: None,
+            analysis_status: AnalysisStatus::Pending,
         };
 
         metadata.insert_file(&file_meta).await.unwrap();
@@ -644,6 +649,7 @@ async fn test_search_with_deduplication() {
         min_timestamp: None,
         max_timestamp: None,
         level_mask: None,
+        analysis_status: AnalysisStatus::Pending,
     };
 
     metadata.insert_file(&file_meta).await.unwrap();
@@ -693,6 +699,7 @@ async fn test_search_with_missing_cas_objects() {
         min_timestamp: None,
         max_timestamp: None,
         level_mask: None,
+        analysis_status: AnalysisStatus::Pending,
     };
     metadata.insert_file(&file_meta).await.unwrap();
 
@@ -711,6 +718,7 @@ async fn test_search_with_missing_cas_objects() {
         min_timestamp: None,
         max_timestamp: None,
         level_mask: None,
+        analysis_status: AnalysisStatus::Pending,
     };
     metadata.insert_file(&fake_file_meta).await.unwrap();
 
@@ -772,6 +780,7 @@ async fn test_search_large_files_in_cas() {
         min_timestamp: None,
         max_timestamp: None,
         level_mask: None,
+        analysis_status: AnalysisStatus::Pending,
     };
     metadata.insert_file(&file_meta).await.unwrap();
 
@@ -821,6 +830,7 @@ async fn test_search_empty_files_in_cas() {
         min_timestamp: None,
         max_timestamp: None,
         level_mask: None,
+        analysis_status: AnalysisStatus::Pending,
     };
     metadata.insert_file(&file_meta).await.unwrap();
 
@@ -858,6 +868,7 @@ async fn test_concurrent_search_on_cas() {
             min_timestamp: None,
             max_timestamp: None,
             level_mask: None,
+            analysis_status: AnalysisStatus::Pending,
         };
         metadata.insert_file(&file_meta).await.unwrap();
     }

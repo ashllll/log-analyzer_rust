@@ -3,19 +3,27 @@
 //! 提供统一的接口处理各种压缩格式，支持递归解压嵌套压缩包。
 
 pub mod archive_handler;
+#[cfg(feature = "enhanced-extraction")]
 pub mod checkpoint_manager;
+#[cfg(feature = "enhanced-extraction")]
 pub mod extraction_context;
+#[cfg(feature = "enhanced-extraction")]
 pub mod extraction_engine;
+#[cfg(feature = "enhanced-extraction")]
 pub mod extraction_orchestrator;
 pub mod gz_handler;
 pub mod internal;
+#[cfg(feature = "enhanced-extraction")]
 pub mod path_manager;
 pub mod processor;
+#[cfg(feature = "enhanced-extraction")]
 pub mod public_api;
 pub mod rar_handler;
+#[cfg(feature = "enhanced-extraction")]
 pub mod security_detector;
 pub mod sevenz_handler;
 mod symlink_guard;
+pub mod stats;
 pub mod tar_handler;
 pub mod zip_handler;
 
@@ -23,18 +31,25 @@ pub mod zip_handler;
 pub use archive_handler::{
     ArchiveEntryInfo, ArchiveHandler, ExtractionSummary, StreamingArchiveHandler,
 };
+#[cfg(feature = "enhanced-extraction")]
 pub use checkpoint_manager::{Checkpoint, CheckpointConfig, CheckpointManager};
+#[cfg(feature = "enhanced-extraction")]
 pub use extraction_context::{ExtractionContext, ExtractionItem, ExtractionStack};
+#[cfg(feature = "enhanced-extraction")]
 pub use extraction_engine::{ExtractionEngine, ExtractionPolicy};
+#[cfg(feature = "enhanced-extraction")]
 pub use extraction_orchestrator::ExtractionOrchestrator;
 pub use gz_handler::GzHandler;
+#[cfg(feature = "enhanced-extraction")]
 pub use path_manager::{PathConfig, PathManager};
 #[allow(unused_imports)]
 #[allow(deprecated)]
 pub use processor::process_path_recursive_with_metadata;
 pub use processor::{process_path_with_cas, CasProcessingContext};
+#[cfg(feature = "enhanced-extraction")]
 pub use public_api::{extract_archive_async, extract_archive_sync, ExtractionResult};
 pub use rar_handler::RarHandler;
+#[cfg(feature = "enhanced-extraction")]
 pub use security_detector::{SecurityDetector, SecurityPolicy};
 pub use sevenz_handler::SevenZHandler;
 pub use tar_handler::TarHandler;

@@ -10,7 +10,7 @@ use la_core::error::{AppError, Result};
 use la_core::models::log_entry::LogEntry;
 use once_cell::sync::Lazy;
 use regex::Regex;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
@@ -234,7 +234,8 @@ pub fn read_file_from_offset(path: &Path, offset: u64) -> Result<(Vec<String>, u
 ///
 /// - **时间戳**：使用改进的时间戳解析器
 /// - **日志级别**：按优先级匹配 ERROR > WARN > INFO > DEBUG（默认）
-pub fn parse_metadata(line: &str) -> (String, String) {
+///   返回小写静态字符串（"error" / "warn" / "info" / "debug"），零分配
+pub fn parse_metadata(line: &str) -> (String, &'static str) {
     // 使用正则边界匹配，避免误匹配如 "ErrorCode" 等子串
     // \b 确保匹配完整单词，优先级由正则顺序决定：ERROR > WARN > INFO > DEBUG
     static LOG_LEVEL_REGEX: Lazy<Regex> = Lazy::new(|| {
@@ -242,10 +243,16 @@ pub fn parse_metadata(line: &str) -> (String, String) {
             .expect("LOG_LEVEL_REGEX is a valid static regex pattern")
     });
 
-    let level = LOG_LEVEL_REGEX
+    // 将正则匹配结果映射为静态字符串（仅 4 种可能，零分配）
+    let level: &'static str = LOG_LEVEL_REGEX
         .find(line)
-        .map(|m| m.as_str())
-        .unwrap_or("DEBUG");
+        .map(|m| match m.as_str() {
+            "ERROR" => "error",
+            "WARN" => "warn",
+            "INFO" => "info",
+            _ => "debug",
+        })
+        .unwrap_or("debug");
 
     // 使用改进的时间戳解析器
     let timestamp = TimestampParser::parse_timestamp(line).unwrap_or_else(|| {
@@ -253,7 +260,7 @@ pub fn parse_metadata(line: &str) -> (String, String) {
         String::new()
     });
 
-    (timestamp, level.to_string())
+    (timestamp, level)
 }
 
 /// 解析日志行并创建 LogEntry
@@ -322,6 +329,7 @@ pub fn parse_log_lines(
 /// - 通过 Tauri 事件系统发送新日志到前端（事件名：`new-logs`）
 /// - 持久化新日志条目到 Tantivy 索引（通过 SearchEngineManager）
 /// - 提交索引变更（commit）
+/// - P1-2: 同时写入 CAS 和更新 MetadataStore，修复数据一致性鸿沟
 pub fn append_to_workspace_index(
     workspace_id: &str,
     new_entries: &[LogEntry],
@@ -347,12 +355,8 @@ pub fn append_to_workspace_index(
     }
 
     // 持久化到 Tantivy 索引
-    // 获取工作区的 SearchEngineManager
     let managers = state.search_engine_managers.lock();
     if let Some(manager) = managers.get(workspace_id) {
-        // L1 Fix: Use batch add_documents instead of per-document add_document.
-        // This acquires the IndexWriter lock once for the entire batch instead
-        // of N times, reducing lock contention and I/O overhead.
         if let Err(e) = manager.add_documents(new_entries) {
             tracing::warn!(
                 error = %e,
@@ -362,7 +366,6 @@ pub fn append_to_workspace_index(
             );
         }
 
-        // 提交索引变更
         if let Err(e) = manager.commit() {
             tracing::warn!(
                 error = %e,
@@ -381,6 +384,89 @@ pub fn append_to_workspace_index(
             workspace_id = %workspace_id,
             "SearchEngineManager not found for workspace, entries not persisted to index"
         );
+    }
+    // 必须在此 drop managers 锁，避免后续 CAS 写入持锁期间死锁
+    drop(managers);
+
+    // P1-2: 将监听捕获的增量内容同步写入 CAS 和 MetadataStore
+    {
+        let cas_map = state.cas_instances.lock();
+        let meta_map = state.metadata_stores.lock();
+        if let (Some(cas), Some(metadata_store)) =
+            (cas_map.get(workspace_id), meta_map.get(workspace_id))
+        {
+            // 收集唯一源文件路径，避免重复写入
+            let mut seen_sources = HashSet::new();
+            for entry in new_entries {
+                if seen_sources.insert(entry.real_path.as_ref()) {
+                    let source_path = std::path::Path::new(entry.real_path.as_ref());
+                    if source_path.is_file() {
+                        // 读取完整文件内容
+                        match std::fs::read(source_path) {
+                            Ok(content) => {
+                                // 写入 CAS（自动去重）
+                                // file_watcher 线程为 std::thread，需通过
+                                // tokio runtime handle 调用 async CAS 写入
+                                let cas_result = tokio::runtime::Handle::current()
+                                    .block_on(cas.store_content(&content));
+                                match cas_result {
+                                    Ok(hash) => {
+                                        let file_size = content.len() as i64;
+                                        let file_name = source_path
+                                            .file_name()
+                                            .map(|n| n.to_string_lossy().to_string())
+                                            .unwrap_or_else(|| entry.real_path.to_string());
+                                        // 使用虚拟路径（相对于工作区根目录）
+                                        let virtual_path = entry.file.to_string();
+                                        // 更新或插入文件元数据
+                                        let metadata = la_storage::FileMetadata {
+                                            id: 0,
+                                            sha256_hash: hash,
+                                            virtual_path,
+                                            original_name: file_name,
+                                            size: file_size,
+                                            modified_time: 0,
+                                            mime_type: None,
+                                            parent_archive_id: None,
+                                            depth_level: 0,
+                                            min_timestamp: None,
+                                            max_timestamp: None,
+                                            level_mask: None,
+                                            analysis_status: la_core::storage_types::AnalysisStatus::Pending,
+                                        };
+                                        // INSERT OR IGNORE: 如果已存在则不重复插入
+                                        let store = Arc::clone(metadata_store);
+                                        tokio::task::spawn(async move {
+                                            if let Err(e) = store.insert_file(&metadata).await {
+                                                tracing::warn!(
+                                                    virtual_path = %metadata.virtual_path,
+                                                    error = %e,
+                                                    "Failed to insert watcher file metadata"
+                                                );
+                                            }
+                                        });
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!(
+                                            source = %entry.real_path,
+                                            error = %e,
+                                            "Failed to store watcher file content in CAS"
+                                        );
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    source = %entry.real_path,
+                                    error = %e,
+                                    "Failed to read watcher file for CAS storage"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     Ok(())
@@ -442,6 +528,7 @@ pub fn get_file_metadata(path: &Path) -> Result<crate::storage::FileMetadata> {
         min_timestamp: None,
         max_timestamp: None,
         level_mask: None,
+        analysis_status: la_core::storage_types::AnalysisStatus::Pending,
     })
 }
 

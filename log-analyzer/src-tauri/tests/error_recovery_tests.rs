@@ -6,6 +6,7 @@
 //! **Validates: Requirements 8.1, 8.4**
 
 use la_archive::checkpoint_manager::{Checkpoint, CheckpointConfig, CheckpointManager};
+use la_core::storage_types::AnalysisStatus;
 use log_analyzer::storage::{
     verify_after_import, verify_workspace_integrity, ContentAddressableStorage, FileMetadata,
     MetadataStore,
@@ -196,6 +197,7 @@ async fn test_integrity_verification_detects_missing_files() {
         min_timestamp: None,
         max_timestamp: None,
         level_mask: None,
+        analysis_status: AnalysisStatus::Pending,
     };
 
     metadata_store.insert_file(&file_metadata).await.unwrap();
@@ -246,6 +248,7 @@ async fn test_integrity_verification_detects_corruption() {
         min_timestamp: None,
         max_timestamp: None,
         level_mask: None,
+        analysis_status: AnalysisStatus::Pending,
     };
 
     metadata_store.insert_file(&file_metadata).await.unwrap();
@@ -307,6 +310,7 @@ async fn test_integrity_verification_passes_for_valid_workspace() {
             min_timestamp: None,
             max_timestamp: None,
             level_mask: None,
+            analysis_status: AnalysisStatus::Pending,
         };
 
         metadata_store.insert_file(&file_metadata).await.unwrap();
@@ -362,6 +366,7 @@ async fn test_verify_after_import() {
         min_timestamp: None,
         max_timestamp: None,
         level_mask: None,
+        analysis_status: AnalysisStatus::Pending,
     };
 
     metadata_store.insert_file(&file_metadata).await.unwrap();
@@ -476,6 +481,7 @@ async fn test_import_calls_integrity_verification() {
             min_timestamp: None,
             max_timestamp: None,
             level_mask: None,
+            analysis_status: AnalysisStatus::Pending,
         };
 
         metadata_store.insert_file(&file_metadata).await.unwrap();
@@ -537,6 +543,7 @@ async fn test_verification_detects_missing_objects() {
         min_timestamp: None,
         max_timestamp: None,
         level_mask: None,
+        analysis_status: AnalysisStatus::Pending,
     };
 
     metadata_store.insert_file(&file_metadata).await.unwrap();
@@ -587,6 +594,7 @@ async fn test_verification_detects_corruption() {
         min_timestamp: None,
         max_timestamp: None,
         level_mask: None,
+        analysis_status: AnalysisStatus::Pending,
     };
 
     metadata_store.insert_file(&file_metadata).await.unwrap();
@@ -643,6 +651,7 @@ async fn test_transaction_rollback_on_failure() {
         min_timestamp: None,
         max_timestamp: None,
         level_mask: None,
+        analysis_status: AnalysisStatus::Pending,
     };
 
     let id1 = MetadataStore::insert_file_tx(&mut tx, &file1)
@@ -664,6 +673,7 @@ async fn test_transaction_rollback_on_failure() {
         min_timestamp: None,
         max_timestamp: None,
         level_mask: None,
+        analysis_status: AnalysisStatus::Pending,
     };
 
     let id2 = MetadataStore::insert_file_tx(&mut tx, &file2)
@@ -721,6 +731,7 @@ async fn test_transaction_commit_on_success() {
             min_timestamp: None,
             max_timestamp: None,
             level_mask: None,
+            analysis_status: AnalysisStatus::Pending,
         },
         FileMetadata {
             id: 0,
@@ -735,6 +746,7 @@ async fn test_transaction_commit_on_success() {
             min_timestamp: None,
             max_timestamp: None,
             level_mask: None,
+            analysis_status: AnalysisStatus::Pending,
         },
         FileMetadata {
             id: 0,
@@ -749,6 +761,7 @@ async fn test_transaction_commit_on_success() {
             min_timestamp: None,
             max_timestamp: None,
             level_mask: None,
+            analysis_status: AnalysisStatus::Pending,
         },
     ];
 
@@ -830,6 +843,7 @@ async fn test_transaction_mixed_operations() {
             min_timestamp: None,
             max_timestamp: None,
             level_mask: None,
+            analysis_status: AnalysisStatus::Pending,
         },
         FileMetadata {
             id: 0,
@@ -844,6 +858,7 @@ async fn test_transaction_mixed_operations() {
             min_timestamp: None,
             max_timestamp: None,
             level_mask: None,
+            analysis_status: AnalysisStatus::Pending,
         },
     ];
 
@@ -953,6 +968,7 @@ mod property_tests {
                                 min_timestamp: None,
                                 max_timestamp: None,
                                 level_mask: None,
+                                analysis_status: AnalysisStatus::Pending,
                         };
 
                         // Try to insert metadata (this simulates a partial failure)
@@ -976,6 +992,7 @@ mod property_tests {
                                         min_timestamp: None,
                                         max_timestamp: None,
                                         level_mask: None,
+                                        analysis_status: AnalysisStatus::Pending,
                                 };
 
                                 if metadata_store.insert_file(&file_metadata).await.is_ok() {
@@ -1116,6 +1133,7 @@ mod property_tests {
                                 min_timestamp: None,
                                 max_timestamp: None,
                                 level_mask: None,
+                                analysis_status: AnalysisStatus::Pending,
                         };
 
                         if (metadata_store.insert_file(&file_metadata).await).is_ok() {
@@ -1138,6 +1156,7 @@ mod property_tests {
                                         min_timestamp: None,
                                         max_timestamp: None,
                                         level_mask: None,
+                                        analysis_status: AnalysisStatus::Pending,
                                 };
 
                                 if metadata_store.insert_file(&file_metadata).await.is_ok() {

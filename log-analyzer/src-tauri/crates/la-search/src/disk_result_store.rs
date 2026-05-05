@@ -158,26 +158,34 @@ impl DiskResultStore {
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "搜索会话不存在"))?
             .clone();
 
+        // 锁外预序列化 JSON，减少临界区序列化时间（chunk=2000 时 ~500KB-2MB 临时内存）
+        let serialized: Vec<Vec<u8>> = entries
+            .iter()
+            .map(|entry| {
+                let mut json = serde_json::to_vec(entry)
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
+                json.push(b'\n'); // 预追加换行符，减少锁内写入次数
+                Ok(json)
+            })
+            .collect::<io::Result<Vec<_>>>()?;
+
+        let entry_count = serialized.len();
+
         let mut writer_guard = session.writer.lock();
         let writer = writer_guard
             .as_mut()
             .ok_or_else(|| io::Error::other("会话已完成，无法继续写入"))?;
 
-        for entry in entries {
+        for json_bytes in &serialized {
             // 写入当前字节偏移到索引文件（8 字节小端序）
             writer
                 .index_writer
                 .write_all(&writer.current_byte_offset.to_le_bytes())?;
-
-            // 序列化 LogEntry 为 JSON 并写入数据文件（追加换行符）
-            let json = serde_json::to_string(entry)
-                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
-            writer.data_writer.write_all(json.as_bytes())?;
-            writer.data_writer.write_all(b"\n")?;
-
-            writer.current_byte_offset += json.len() as u64 + 1;
-            session.total_count.fetch_add(1, Ordering::Relaxed);
+            writer.data_writer.write_all(json_bytes)?;
+            writer.current_byte_offset += json_bytes.len() as u64;
         }
+        // 单次原子操作更新计数，减少锁内原子竞争
+        session.total_count.fetch_add(entry_count, Ordering::Relaxed);
 
         // 每批刷新缓冲区，确保读线程能读到最新数据
         writer.data_writer.flush()?;

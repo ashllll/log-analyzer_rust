@@ -9,6 +9,7 @@
 //! **Validates: Requirements 4.1, 4.4**
 
 use la_archive::ArchiveManager;
+use la_core::storage_types::AnalysisStatus;
 use log_analyzer::storage::{ContentAddressableStorage, FileMetadata, MetadataStore};
 use std::fs;
 use std::io::Write;
@@ -130,6 +131,7 @@ async fn test_single_archive_extraction() {
                 min_timestamp: None,
                 max_timestamp: None,
                 level_mask: None,
+                analysis_status: AnalysisStatus::Pending,
             };
 
             metadata.insert_file(&file_meta).await.unwrap();
@@ -235,6 +237,7 @@ async fn test_nested_archive_2_levels() {
                     min_timestamp: None,
                     max_timestamp: None,
                     level_mask: None,
+                    analysis_status: AnalysisStatus::Pending,
                 });
             }
         }
@@ -264,6 +267,7 @@ async fn test_nested_archive_2_levels() {
                 min_timestamp: None,
                 max_timestamp: None,
                 level_mask: None,
+                analysis_status: AnalysisStatus::Pending,
             });
         }
     }
@@ -367,6 +371,7 @@ async fn test_nested_archive_3_levels() {
         min_timestamp: None,
         max_timestamp: None,
         level_mask: None,
+        analysis_status: AnalysisStatus::Pending,
     };
 
     metadata.insert_file(&file_meta).await.unwrap();
@@ -470,6 +475,7 @@ async fn test_deeply_nested_archive_5_levels() {
         min_timestamp: None,
         max_timestamp: None,
         level_mask: None,
+        analysis_status: AnalysisStatus::Pending,
     };
 
     metadata.insert_file(&file_meta).await.unwrap();
@@ -556,6 +562,7 @@ async fn test_path_length_handling() {
         min_timestamp: None,
         max_timestamp: None,
         level_mask: None,
+        analysis_status: AnalysisStatus::Pending,
     };
 
     // Should succeed despite long path
@@ -668,6 +675,7 @@ async fn test_mixed_nested_and_regular_files() {
                     min_timestamp: None,
                     max_timestamp: None,
                     level_mask: None,
+                    analysis_status: AnalysisStatus::Pending,
                 };
 
                 metadata.insert_file(&file_meta).await.unwrap();
@@ -718,6 +726,7 @@ async fn test_mixed_nested_and_regular_files() {
                     min_timestamp: None,
                     max_timestamp: None,
                     level_mask: None,
+                    analysis_status: AnalysisStatus::Pending,
                 };
 
                 metadata.insert_file(&file_meta).await.unwrap();
@@ -1155,6 +1164,7 @@ mod property_tests {
                             min_timestamp: None,
                             max_timestamp: None,
                             level_mask: None,
+                            analysis_status: AnalysisStatus::Pending,
                     };
 
                     // Skip if hash already exists (deduplication)

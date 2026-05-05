@@ -264,8 +264,9 @@ pub struct ExecutionPlan {
     pub term_count: usize,
     pub terms: Vec<PlanTerm>,
     pub fast_or_engine: Option<Arc<RegexEngine>>,
-    /// term_id 到 engine 的 HashMap 映射，用于 O(1) 查找
-    engine_map: std::collections::HashMap<String, Arc<RegexEngine>>,
+    /// term_id 到 engine 的 BTreeMap 映射，用于少量键（<20）的快速查找，
+    /// 比 HashMap 的 SipHash 开销更低（search query term 数通常 ≤ 10）
+    engine_map: std::collections::BTreeMap<String, Arc<RegexEngine>>,
     execution_order: Vec<String>,
 }
 
@@ -287,8 +288,8 @@ impl ExecutionPlan {
         terms: Vec<PlanTerm>,
         fast_or_engine: Option<Arc<RegexEngine>>,
     ) -> Self {
-        // 构建 term_id 到 engine 的 HashMap，实现 O(1) 查找
-        let engine_map: std::collections::HashMap<String, Arc<RegexEngine>> = engines
+        // 构建 term_id 到 engine 的 BTreeMap，小键集场景比 HashMap 更高效（无哈希开销）
+        let engine_map: std::collections::BTreeMap<String, Arc<RegexEngine>> = engines
             .iter()
             .map(|e| (e.term_id.clone(), Arc::clone(&e.engine)))
             .collect();

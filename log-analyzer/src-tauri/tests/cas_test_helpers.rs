@@ -6,6 +6,7 @@
 //!
 //! **Validates: Requirements 4.1, 4.2**
 
+use la_core::storage_types::AnalysisStatus;
 use log_analyzer::storage::{ContentAddressableStorage, FileMetadata, MetadataStore};
 use std::fs;
 use std::io::Write;
@@ -192,6 +193,7 @@ pub async fn populate_cas_workspace(
             min_timestamp: None,
             max_timestamp: None,
             level_mask: None,
+            analysis_status: AnalysisStatus::Pending,
         };
 
         // Insert into metadata store
@@ -247,6 +249,7 @@ async fn create_nested_archive_structure(
             min_timestamp: None,
             max_timestamp: None,
             level_mask: None,
+            analysis_status: AnalysisStatus::Pending,
         };
 
         workspace.metadata.insert_file(&file_meta).await?;
@@ -274,6 +277,7 @@ async fn create_nested_archive_structure(
             min_timestamp: None,
             max_timestamp: None,
             level_mask: None,
+            analysis_status: AnalysisStatus::Pending,
         };
 
         workspace.metadata.insert_file(&file_meta).await?;
@@ -629,6 +633,7 @@ mod tests {
             min_timestamp: None,
             max_timestamp: None,
             level_mask: None,
+            analysis_status: AnalysisStatus::Pending,
         };
 
         workspace.metadata.insert_file(&file_meta).await.unwrap();

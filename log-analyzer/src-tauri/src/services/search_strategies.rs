@@ -363,11 +363,11 @@ impl SearchStrategy for HybridSearchStrategy {
             "混合搜索：Tantivy 候选提取完成"
         );
 
-        // Phase 2: 获取所有文件，筛选出 Tantivy 未覆盖的文件
-        let all_files = match self.cas.metadata_store.get_all_files().await {
+        // Phase 2: 获取所有已就绪文件，筛选出 Tantivy 未覆盖的文件
+        let all_files = match self.cas.metadata_store.get_ready_files().await {
             Ok(files) => files,
             Err(e) => {
-                error!(error = %e, "Failed to get all files for hybrid search");
+                error!(error = %e, "Failed to get ready files for hybrid search");
                 return Err(CommandError::new(
                     "DATABASE_ERROR",
                     format!("Internal error occurred while accessing workspace: {}", e),

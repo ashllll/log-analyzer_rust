@@ -15,7 +15,6 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::fs;
-use tokio::sync::Semaphore;
 use tracing::{debug, info, warn};
 
 /// Extraction policy configuration
@@ -264,8 +263,6 @@ pub struct ExtractionEngine {
     policy: ExtractionPolicy,
     /// Path mapping cache for fast lookups (LRU with 10,000 entries)
     path_cache: Arc<Cache<String, PathBuf>>,
-    /// Semaphore for parallel file extraction
-    parallel_semaphore: Arc<Semaphore>,
 }
 
 impl ExtractionEngine {
@@ -292,11 +289,9 @@ impl ExtractionEngine {
         policy.validate()?;
 
         info!(
-            "Initializing ExtractionEngine with max_depth={}, max_file_size={}, buffer_size={}, dir_batch_size={}, max_parallel_files={}",
-            policy.max_depth, policy.max_file_size, policy.buffer_size, policy.dir_batch_size, policy.max_parallel_files
+            "Initializing ExtractionEngine with max_depth={}, max_file_size={}, buffer_size={}, dir_batch_size={}",
+            policy.max_depth, policy.max_file_size, policy.buffer_size, policy.dir_batch_size
         );
-
-        let parallel_semaphore = Arc::new(Semaphore::new(policy.max_parallel_files));
 
         // 创建 LRU 缓存，最多存储 10,000 条路径映射
         let path_cache = Arc::new(Cache::new(10_000));
@@ -306,7 +301,6 @@ impl ExtractionEngine {
             security_detector,
             policy,
             path_cache,
-            parallel_semaphore,
         })
     }
 
@@ -929,91 +923,6 @@ impl ExtractionEngine {
         Ok(created_count)
     }
 
-    /// Extract multiple files in parallel within a single archive
-    ///
-    /// Uses a semaphore to limit concurrent extractions to `max_parallel_files`
-    /// (default: 4) to balance performance and resource usage.
-    ///
-    /// # Arguments
-    ///
-    /// * `file_tasks` - List of file extraction tasks
-    ///
-    /// # Returns
-    ///
-    /// List of extracted file paths
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if any extraction fails
-    pub async fn extract_files_parallel(
-        &self,
-        file_tasks: Vec<(PathBuf, PathBuf, u64)>, // (source, target, expected_size)
-    ) -> Result<Vec<PathBuf>> {
-        if file_tasks.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        debug!(
-            "Extracting {} files in parallel (max concurrent: {})",
-            file_tasks.len(),
-            self.policy.max_parallel_files
-        );
-
-        let mut handles = Vec::new();
-
-        for (_source, target, _expected_size) in file_tasks {
-            let semaphore = self.parallel_semaphore.clone();
-            let _buffer_size = self.policy.buffer_size;
-            let _max_file_size = self.policy.max_file_size;
-
-            let handle = tokio::spawn(async move {
-                // Acquire semaphore permit
-                let _permit = semaphore.acquire().await.map_err(|e| {
-                    AppError::archive_error(format!("Failed to acquire semaphore: {}", e), None)
-                })?;
-
-                // Simulate file extraction (in real implementation, would read from archive)
-                // For now, just create the target file
-                if let Some(parent) = target.parent() {
-                    fs::create_dir_all(parent).await.map_err(|e| {
-                        AppError::archive_error(
-                            format!("Failed to create parent directory: {}", e),
-                            Some(parent.to_path_buf()),
-                        )
-                    })?;
-                }
-
-                // Create empty file (placeholder for actual extraction)
-                fs::File::create(&target).await.map_err(|e| {
-                    AppError::archive_error(
-                        format!("Failed to create file: {}", e),
-                        Some(target.clone()),
-                    )
-                })?;
-
-                debug!("Extracted file: {:?}", target);
-                Ok::<PathBuf, AppError>(target)
-            });
-
-            handles.push(handle);
-        }
-
-        // Wait for all tasks to complete
-        let mut extracted_files = Vec::new();
-        for handle in handles {
-            let result = handle
-                .await
-                .map_err(|e| AppError::archive_error(format!("Task join error: {}", e), None))??;
-            extracted_files.push(result);
-        }
-
-        debug!(
-            "Parallel extraction completed: {} files",
-            extracted_files.len()
-        );
-        Ok(extracted_files)
-    }
-
     /// Clear the path cache
     ///
     /// Useful for testing or when memory needs to be reclaimed
@@ -1219,54 +1128,5 @@ mod tests {
         // Should only create once due to deduplication
         assert_eq!(created, 1);
         assert!(test_dir.exists());
-    }
-
-    #[tokio::test]
-    async fn test_extract_files_parallel() {
-        let engine = create_test_engine().await;
-        let temp_dir = tempfile::tempdir().unwrap();
-
-        // Create test file tasks
-        let tasks: Vec<(PathBuf, PathBuf, u64)> = (0..10)
-            .map(|i| {
-                let source = temp_dir.path().join(format!("source_{}.txt", i));
-                let target = temp_dir.path().join(format!("target_{}.txt", i));
-                (source, target, 1024)
-            })
-            .collect();
-
-        let extracted = engine.extract_files_parallel(tasks).await.unwrap();
-        assert_eq!(extracted.len(), 10);
-
-        // Verify files were created
-        for file in &extracted {
-            assert!(file.exists());
-        }
-    }
-
-    #[tokio::test]
-    async fn test_extract_files_parallel_empty() {
-        let engine = create_test_engine().await;
-        let extracted = engine.extract_files_parallel(vec![]).await.unwrap();
-        assert_eq!(extracted.len(), 0);
-    }
-
-    #[tokio::test]
-    async fn test_parallel_extraction_respects_semaphore() {
-        let engine = create_test_engine().await;
-        let temp_dir = tempfile::tempdir().unwrap();
-
-        // Create more tasks than max_parallel_files
-        let tasks: Vec<(PathBuf, PathBuf, u64)> = (0..20)
-            .map(|i| {
-                let source = temp_dir.path().join(format!("source_{}.txt", i));
-                let target = temp_dir.path().join(format!("target_{}.txt", i));
-                (source, target, 1024)
-            })
-            .collect();
-
-        // Should complete without error, respecting semaphore limit
-        let extracted = engine.extract_files_parallel(tasks).await.unwrap();
-        assert_eq!(extracted.len(), 20);
     }
 }

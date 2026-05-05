@@ -284,6 +284,7 @@ mod tests {
             min_timestamp: None,
             max_timestamp: None,
             level_mask: None,
+            analysis_status: la_core::storage_types::AnalysisStatus::Ready,
         };
 
         // Verify integrity
@@ -310,6 +311,7 @@ mod tests {
             min_timestamp: None,
             max_timestamp: None,
             level_mask: None,
+            analysis_status: la_core::storage_types::AnalysisStatus::Ready,
         };
 
         // Verify integrity
@@ -356,6 +358,7 @@ mod tests {
             min_timestamp: None,
             max_timestamp: None,
             level_mask: None,
+            analysis_status: la_core::storage_types::AnalysisStatus::Ready,
         };
         metadata_store.insert_file(&file_metadata).await.unwrap();
 

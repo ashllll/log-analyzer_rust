@@ -1,6 +1,7 @@
 // Archive integration tests
 
 use la_archive::ArchiveManager;
+use la_core::storage_types::AnalysisStatus;
 use log_analyzer::storage::{ContentAddressableStorage, FileMetadata, MetadataStore};
 use std::fs;
 use std::io::Write;
@@ -99,6 +100,7 @@ async fn extract_and_index_archive(
                 min_timestamp: None,
                 max_timestamp: None,
                 level_mask: None,
+                analysis_status: AnalysisStatus::Pending,
             };
 
             metadata.insert_file(&metadata_entry).await.unwrap();

@@ -16,7 +16,7 @@ use std::fmt;
 use std::sync::Arc;
 
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder};
-use regex::Regex;
+use regex::{Regex, RegexBuilder};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -185,10 +185,12 @@ impl RegexEngine {
     }
 }
 
+// ========== AhoCorasickEngine ==========
+
 #[derive(Clone)]
 pub struct AhoCorasickEngine {
     ac: Arc<AhoCorasick>,
-    patterns: Vec<String>,
+    patterns: Vec<Arc<str>>,
 }
 
 impl AhoCorasickEngine {
@@ -216,7 +218,7 @@ impl AhoCorasickEngine {
 
         Ok(Self {
             ac: Arc::new(ac),
-            patterns: patterns.iter().map(|s| s.to_string()).collect(),
+            patterns: patterns.iter().map(|s| Arc::from(*s)).collect(),
         })
     }
 
@@ -225,7 +227,7 @@ impl AhoCorasickEngine {
     }
 
     pub fn pattern(&self) -> &str {
-        self.patterns.first().map(|s| s.as_str()).unwrap_or("")
+        self.patterns.first().map(|s| s.as_ref()).unwrap_or("")
     }
 
     pub fn find_iter<'a>(&'a self, text: &'a str) -> AhoCorasickMatches<'a> {
@@ -246,13 +248,13 @@ pub struct AhoCorasickMatches<'a> {
     ac: Arc<AhoCorasick>,
     text: &'a str,
     offset: usize,
-    patterns: Vec<String>,
+    patterns: Vec<Arc<str>>,
     overlapping: bool,
     overlap_state: Option<aho_corasick::automaton::OverlappingState>,
 }
 
 impl<'a> AhoCorasickMatches<'a> {
-    fn new(ac: Arc<AhoCorasick>, text: &'a str, patterns: Vec<String>, overlapping: bool) -> Self {
+    fn new(ac: Arc<AhoCorasick>, text: &'a str, patterns: Vec<Arc<str>>, overlapping: bool) -> Self {
         let overlap_state = if overlapping {
             Some(aho_corasick::automaton::OverlappingState::start())
         } else {
@@ -298,10 +300,12 @@ impl<'a> Iterator for AhoCorasickMatches<'a> {
     }
 }
 
+// ========== StandardEngine ==========
+
 #[derive(Clone)]
 pub struct StandardEngine {
     regex: Regex,
-    pattern: String,
+    pattern: Arc<str>,
 }
 
 impl StandardEngine {
@@ -310,12 +314,23 @@ impl StandardEngine {
             return Err(EngineError::CompilationError("Empty pattern".to_string()));
         }
 
-        let regex =
-            Regex::new(pattern).map_err(|e| EngineError::CompilationError(e.to_string()))?;
+        // 日志场景中 95%+ 的模式为纯 ASCII（时间戳、IP、错误码、关键词）
+        // unicode(false) 可显著加速 ASCII 字符类（\w \d \s）的匹配
+        // 但某些 ASCII 模式（含 . 如 error.*timeout）会导致 ". 可匹配无效 UTF-8" 错误，
+        // 此时回退到默认的 unicode=true 行为
+        let regex = if pattern.is_ascii() {
+            RegexBuilder::new(pattern)
+                .unicode(false)
+                .build()
+                .or_else(|_| Regex::new(pattern))
+                .map_err(|e| EngineError::CompilationError(e.to_string()))?
+        } else {
+            Regex::new(pattern).map_err(|e| EngineError::CompilationError(e.to_string()))?
+        };
 
         Ok(Self {
             regex,
-            pattern: pattern.to_string(),
+            pattern: Arc::from(pattern),
         })
     }
 
@@ -326,7 +341,7 @@ impl StandardEngine {
     pub fn find_iter<'a>(&'a self, text: &'a str) -> StandardMatches<'a> {
         StandardMatches {
             matches: self.regex.find_iter(text),
-            pattern: self.pattern.clone(),
+            pattern: Arc::clone(&self.pattern),
         }
     }
 
@@ -337,7 +352,7 @@ impl StandardEngine {
 
 pub struct StandardMatches<'a> {
     matches: regex::Matches<'a, 'a>,
-    pattern: String,
+    pattern: Arc<str>,
 }
 
 impl<'a> Iterator for StandardMatches<'a> {
@@ -347,7 +362,7 @@ impl<'a> Iterator for StandardMatches<'a> {
         self.matches.next().map(|mat| MatchResult {
             start: mat.start(),
             end: mat.end(),
-            pattern: self.pattern.clone(),
+            pattern: Arc::clone(&self.pattern),
         })
     }
 }
@@ -356,7 +371,7 @@ impl<'a> Iterator for StandardMatches<'a> {
 
 #[derive(Clone)]
 pub struct MemchrEngine {
-    pattern: String,
+    pattern: Arc<str>,
     needle: Vec<u8>,
 }
 
@@ -366,7 +381,7 @@ impl MemchrEngine {
             return Err(EngineError::CompilationError("Empty pattern".to_string()));
         }
         Ok(Self {
-            pattern: pattern.to_string(),
+            pattern: Arc::from(pattern),
             needle: pattern.as_bytes().to_vec(),
         })
     }
@@ -380,7 +395,7 @@ impl MemchrEngine {
             needle: self.needle.as_slice(),
             text: text.as_bytes(),
             offset: 0,
-            pattern: self.pattern.clone(),
+            pattern: Arc::clone(&self.pattern),
         }
     }
 
@@ -394,7 +409,7 @@ pub struct MemchrMatches<'a> {
     needle: &'a [u8],
     text: &'a [u8],
     offset: usize,
-    pattern: String,
+    pattern: Arc<str>,
 }
 
 impl<'a> Iterator for MemchrMatches<'a> {
@@ -414,7 +429,7 @@ impl<'a> Iterator for MemchrMatches<'a> {
         Some(MatchResult {
             start,
             end,
-            pattern: self.pattern.clone(),
+            pattern: Arc::clone(&self.pattern),
         })
     }
 }
@@ -424,7 +439,7 @@ impl<'a> Iterator for MemchrMatches<'a> {
 #[derive(Clone)]
 pub struct FancyEngine {
     regex: fancy_regex::Regex,
-    pattern: String,
+    pattern: Arc<str>,
 }
 
 impl FancyEngine {
@@ -436,7 +451,7 @@ impl FancyEngine {
             .map_err(|e| EngineError::CompilationError(e.to_string()))?;
         Ok(Self {
             regex,
-            pattern: pattern.to_string(),
+            pattern: Arc::from(pattern),
         })
     }
 
@@ -449,7 +464,7 @@ impl FancyEngine {
             regex: &self.regex,
             text,
             offset: 0,
-            pattern: self.pattern.clone(),
+            pattern: Arc::clone(&self.pattern),
             error: None,
         }
     }
@@ -463,7 +478,7 @@ pub struct FancyMatches<'a> {
     regex: &'a fancy_regex::Regex,
     text: &'a str,
     offset: usize,
-    pattern: String,
+    pattern: Arc<str>,
     error: Option<String>,
 }
 
@@ -497,7 +512,7 @@ impl<'a> Iterator for FancyMatches<'a> {
                 Some(MatchResult {
                     start,
                     end,
-                    pattern: self.pattern.clone(),
+                    pattern: Arc::clone(&self.pattern),
                 })
             }
             Ok(None) => None,
@@ -516,7 +531,7 @@ impl<'a> Iterator for FancyMatches<'a> {
 pub struct MatchResult {
     pub start: usize,
     pub end: usize,
-    pub pattern: String,
+    pub pattern: Arc<str>,
 }
 
 impl MatchResult {

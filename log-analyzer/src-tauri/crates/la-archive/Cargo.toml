@@ -66,8 +66,9 @@ dunce.workspace = true
 windows-sys = { version = "0.52", features = ["Win32_Storage_FileSystem", "Win32_Foundation"] }
 
 [features]
-default = ["rar-support"]
+default = ["rar-support", "enhanced-extraction"]
 rar-support = ["dep:unrar"]
+enhanced-extraction = []
 
 [dev-dependencies]
 proptest = { version = "1.4", default-features = false, features = ["std"] }

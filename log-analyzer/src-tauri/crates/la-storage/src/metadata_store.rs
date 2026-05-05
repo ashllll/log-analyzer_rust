@@ -28,7 +28,15 @@ use tracing::{debug, info};
 
 // 从 la-core 重新导出共享类型，保持本模块的公开 API 不变
 // 同时也供本模块内部使用
-pub use la_core::storage_types::{ArchiveMetadata, FileMetadata};
+pub use la_core::storage_types::{AnalysisStatus, ArchiveMetadata, FileMetadata};
+
+/// 从数据库行解析 analysis_status 字段
+fn parse_analysis_status(row: &sqlx::sqlite::SqliteRow) -> AnalysisStatus {
+    row.try_get::<String, _>("analysis_status")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(AnalysisStatus::Pending)
+}
 
 /// Index state for tracking indexing progress
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -126,6 +134,9 @@ impl MetadataStore {
         // Schema migration: add file stats columns for v2
         Self::migrate_schema_v2(&pool).await?;
 
+        // Schema migration: add analysis_status column for v3 (incremental analysis)
+        Self::migrate_schema_v3(&pool).await?;
+
         Ok(Self { pool })
     }
 
@@ -154,6 +165,32 @@ impl MetadataStore {
             let sql = format!("ALTER TABLE files ADD COLUMN {} {}", col, typ);
             let _ = sqlx::query(&sql).execute(pool).await;
         }
+        Ok(())
+    }
+
+    /// Schema migration v3: add analysis_status column for incremental analysis
+    ///
+    /// 新增 analysis_status 字段，支持文件级增量分析状态跟踪：
+    /// - PENDING: 刚插入元数据，CAS 可能未完成
+    /// - ANALYZING: CAS 完成，正在计算统计
+    /// - READY: 完全可搜索
+    /// - FAILED: 分析失败
+    async fn migrate_schema_v3(pool: &SqlitePool) -> Result<()> {
+        let sql = "ALTER TABLE files ADD COLUMN analysis_status TEXT NOT NULL DEFAULT 'PENDING'";
+        let _ = sqlx::query(sql).execute(pool).await;
+
+        // 为已有数据（已有统计信息的文件）标记为 READY
+        let _ = sqlx::query(
+            "UPDATE files SET analysis_status = 'READY' WHERE min_timestamp IS NOT NULL OR max_timestamp IS NOT NULL OR level_mask IS NOT NULL"
+        )
+        .execute(pool)
+        .await;
+
+        // 创建索引加速状态过滤查询
+        let _ = sqlx::query("CREATE INDEX IF NOT EXISTS idx_files_status ON files(analysis_status)")
+            .execute(pool)
+            .await;
+
         Ok(())
     }
 
@@ -397,8 +434,8 @@ impl MetadataStore {
             INSERT OR IGNORE INTO files (
                 sha256_hash, virtual_path, original_name, size,
                 modified_time, mime_type, parent_archive_id, depth_level, created_at,
-                min_timestamp, max_timestamp, level_mask
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                min_timestamp, max_timestamp, level_mask, analysis_status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&metadata.sha256_hash)
@@ -413,6 +450,7 @@ impl MetadataStore {
         .bind(metadata.min_timestamp)
         .bind(metadata.max_timestamp)
         .bind(metadata.level_mask.map(|m| m as i64))
+        .bind(metadata.analysis_status.as_str())
         .execute(&mut *tx)
         .await
         .map_err(|e| AppError::database_error(format!("Failed to insert file: {}", e)))?;
@@ -516,6 +554,7 @@ impl MetadataStore {
             min_timestamp: r.try_get("min_timestamp").ok(),
             max_timestamp: r.try_get("max_timestamp").ok(),
             level_mask: r.try_get("level_mask").ok(),
+            analysis_status: parse_analysis_status(&r),
         }))
     }
 
@@ -540,6 +579,7 @@ impl MetadataStore {
             min_timestamp: r.try_get("min_timestamp").ok(),
             max_timestamp: r.try_get("max_timestamp").ok(),
             level_mask: r.try_get("level_mask").ok(),
+            analysis_status: parse_analysis_status(&r),
         }))
     }
 
@@ -614,6 +654,7 @@ impl MetadataStore {
                 min_timestamp: r.try_get("min_timestamp").ok(),
                 max_timestamp: r.try_get("max_timestamp").ok(),
                 level_mask: r.try_get("level_mask").ok(),
+                analysis_status: parse_analysis_status(&r),
             })
             .collect())
     }
@@ -640,6 +681,7 @@ impl MetadataStore {
                 min_timestamp: r.try_get("min_timestamp").ok(),
                 max_timestamp: r.try_get("max_timestamp").ok(),
                 level_mask: r.try_get("level_mask").ok(),
+                analysis_status: parse_analysis_status(&r),
             })
             .collect())
     }
@@ -723,8 +765,62 @@ impl MetadataStore {
         Ok(())
     }
 
+    /// 原子更新文件为 READY 状态（含统计信息）
+    ///
+    /// 用于增量分析：文件完成 CAS 存储和统计计算后，
+    /// 一次性更新统计字段和 analysis_status，保证原子性。
+    pub async fn update_file_ready(
+        &self,
+        virtual_path: &str,
+        min_timestamp: Option<i64>,
+        max_timestamp: Option<i64>,
+        level_mask: Option<u8>,
+    ) -> Result<()> {
+        sqlx::query(
+            "UPDATE files SET min_timestamp = ?, max_timestamp = ?, level_mask = ?, analysis_status = 'READY' WHERE virtual_path = ?"
+        )
+        .bind(min_timestamp)
+        .bind(max_timestamp)
+        .bind(level_mask.map(|m| m as i64))
+        .bind(virtual_path)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| AppError::database_error(format!("Failed to mark file ready: {}", e)))?;
+        Ok(())
+    }
+
+    /// 获取所有已分析完成的文件（用于增量搜索）
+    ///
+    /// 只返回 analysis_status = 'READY' 的文件，确保搜索不会读到不完整状态。
+    pub async fn get_ready_files(&self) -> Result<Vec<FileMetadata>> {
+        let rows = sqlx::query("SELECT * FROM files WHERE analysis_status = 'READY' ORDER BY virtual_path")
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| AppError::database_error(format!("Failed to query ready files: {}", e)))?;
+
+        Ok(rows
+            .into_iter()
+            .map(|r: sqlx::sqlite::SqliteRow| FileMetadata {
+                id: r.get("id"),
+                sha256_hash: r.get("sha256_hash"),
+                virtual_path: r.get("virtual_path"),
+                original_name: r.get("original_name"),
+                size: r.get("size"),
+                modified_time: r.get("modified_time"),
+                mime_type: r.get("mime_type"),
+                parent_archive_id: r.get("parent_archive_id"),
+                depth_level: r.get("depth_level"),
+                min_timestamp: r.try_get("min_timestamp").ok(),
+                max_timestamp: r.try_get("max_timestamp").ok(),
+                level_mask: r.try_get("level_mask").ok(),
+                analysis_status: parse_analysis_status(&r),
+            })
+            .collect())
+    }
+
     /// Get files with pruning filters (time range + level mask + file pattern)
     ///
+    /// 只返回 analysis_status = 'READY' 的文件，支持增量分析场景。
     /// Files that have NULL stats are always included (conservative pruning).
     pub async fn get_files_with_pruning(
         &self,
@@ -733,7 +829,7 @@ impl MetadataStore {
         level_mask: Option<u8>,
         file_pattern: Option<&str>,
     ) -> Result<Vec<FileMetadata>> {
-        let mut sql = String::from("SELECT * FROM files WHERE 1=1");
+        let mut sql = String::from("SELECT * FROM files WHERE analysis_status = 'READY'");
 
         if let (Some(_start), Some(_end)) = (time_start, time_end) {
             sql.push_str(" AND (min_timestamp IS NULL OR max_timestamp IS NULL OR (min_timestamp <= ? AND max_timestamp >= ?))");
@@ -790,6 +886,7 @@ impl MetadataStore {
                 min_timestamp: r.try_get("min_timestamp").ok(),
                 max_timestamp: r.try_get("max_timestamp").ok(),
                 level_mask: r.try_get("level_mask").ok(),
+                analysis_status: parse_analysis_status(&r),
             })
             .collect())
     }
@@ -824,6 +921,7 @@ impl MetadataStore {
                 min_timestamp: r.try_get("min_timestamp").ok(),
                 max_timestamp: r.try_get("max_timestamp").ok(),
                 level_mask: r.try_get("level_mask").ok(),
+                analysis_status: parse_analysis_status(&r),
             })
             .collect())
     }
@@ -864,8 +962,8 @@ impl MetadataStore {
                 INSERT OR IGNORE INTO files (
                     sha256_hash, virtual_path, original_name, size,
                     modified_time, mime_type, parent_archive_id, depth_level, created_at,
-                    min_timestamp, max_timestamp, level_mask
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    min_timestamp, max_timestamp, level_mask, analysis_status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 "#,
             )
             .bind(&metadata.sha256_hash)
@@ -880,6 +978,7 @@ impl MetadataStore {
             .bind(metadata.min_timestamp)
             .bind(metadata.max_timestamp)
             .bind(metadata.level_mask.map(|m| m as i64))
+            .bind(metadata.analysis_status.as_str())
             .execute(&mut *tx)
             .await
             .map_err(|e| AppError::database_error(format!("Failed to insert file: {}", e)))?;
@@ -988,12 +1087,12 @@ impl MetadataStore {
 
         // Build batch INSERT statement with RETURNING clause
         let mut query = String::from(
-            "INSERT OR IGNORE INTO files (sha256_hash, virtual_path, original_name, size, modified_time, mime_type, parent_archive_id, depth_level, created_at, min_timestamp, max_timestamp, level_mask) VALUES ",
+            "INSERT OR IGNORE INTO files (sha256_hash, virtual_path, original_name, size, modified_time, mime_type, parent_archive_id, depth_level, created_at, min_timestamp, max_timestamp, level_mask, analysis_status) VALUES ",
         );
 
         let mut placeholders = Vec::with_capacity(files.len());
         for _ in &files {
-            placeholders.push("(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)".to_string());
+            placeholders.push("(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)".to_string());
         }
         query.push_str(&placeholders.join(", "));
         query.push_str(" RETURNING id");
@@ -1015,7 +1114,8 @@ impl MetadataStore {
                 .bind(now)
                 .bind(metadata.min_timestamp)
                 .bind(metadata.max_timestamp)
-                .bind(metadata.level_mask.map(|m| m as i64));
+                .bind(metadata.level_mask.map(|m| m as i64))
+                .bind(metadata.analysis_status.as_str());
         }
 
         // Execute and fetch all IDs
@@ -1165,8 +1265,8 @@ impl MetadataStore {
             INSERT OR IGNORE INTO files (
                 sha256_hash, virtual_path, original_name, size,
                 modified_time, mime_type, parent_archive_id, depth_level, created_at,
-                min_timestamp, max_timestamp, level_mask
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                min_timestamp, max_timestamp, level_mask, analysis_status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&metadata.sha256_hash)
@@ -1181,6 +1281,7 @@ impl MetadataStore {
         .bind(metadata.min_timestamp)
         .bind(metadata.max_timestamp)
         .bind(metadata.level_mask.map(|m| m as i64))
+        .bind(metadata.analysis_status.as_str())
         .execute(&mut **tx)
         .await
         .map_err(|e| {
@@ -1661,6 +1762,7 @@ mod tests {
             min_timestamp: None,
             max_timestamp: None,
             level_mask: None,
+            analysis_status: AnalysisStatus::Pending,
         };
 
         let id = store.insert_file(&metadata).await.unwrap();
@@ -1693,6 +1795,7 @@ mod tests {
             min_timestamp: None,
             max_timestamp: None,
             level_mask: None,
+            analysis_status: AnalysisStatus::Pending,
         };
         store.insert_file(&metadata).await.unwrap();
 
@@ -1735,6 +1838,7 @@ mod tests {
             min_timestamp: None,
             max_timestamp: None,
             level_mask: None,
+            analysis_status: AnalysisStatus::Pending,
         };
         let id = store.insert_file(&file).await.unwrap();
         assert!(
@@ -1774,6 +1878,7 @@ mod tests {
             min_timestamp: None,
             max_timestamp: None,
             level_mask: None,
+            analysis_status: AnalysisStatus::Pending,
         };
 
         let id = store.insert_file(&metadata).await.unwrap();
@@ -1814,6 +1919,7 @@ mod tests {
             min_timestamp: None,
             max_timestamp: None,
             level_mask: None,
+            analysis_status: AnalysisStatus::Pending,
         };
 
         store.insert_file(&metadata).await.unwrap();
@@ -1905,6 +2011,7 @@ mod tests {
             min_timestamp: None,
             max_timestamp: None,
             level_mask: None,
+            analysis_status: AnalysisStatus::Pending,
         };
 
         let file2 = FileMetadata {
@@ -1920,6 +2027,7 @@ mod tests {
             min_timestamp: None,
             max_timestamp: None,
             level_mask: None,
+            analysis_status: AnalysisStatus::Pending,
         };
 
         store.insert_file(&file1).await.unwrap();
@@ -1977,6 +2085,7 @@ mod tests {
             min_timestamp: None,
             max_timestamp: None,
             level_mask: None,
+            analysis_status: AnalysisStatus::Pending,
         };
         store.insert_file(&deep_file).await.unwrap();
 
@@ -2018,6 +2127,7 @@ mod tests {
                 min_timestamp: None,
                 max_timestamp: None,
                 level_mask: None,
+                analysis_status: AnalysisStatus::Pending,
             };
             store.insert_file(&file).await.unwrap();
         }
@@ -2064,6 +2174,7 @@ mod tests {
                 min_timestamp: None,
                 max_timestamp: None,
                 level_mask: None,
+                analysis_status: AnalysisStatus::Pending,
             },
             FileMetadata {
                 id: 0,
@@ -2078,6 +2189,7 @@ mod tests {
                 min_timestamp: None,
                 max_timestamp: None,
                 level_mask: None,
+                analysis_status: AnalysisStatus::Pending,
             },
             FileMetadata {
                 id: 0,
@@ -2092,6 +2204,7 @@ mod tests {
                 min_timestamp: None,
                 max_timestamp: None,
                 level_mask: None,
+                analysis_status: AnalysisStatus::Pending,
             },
         ];
 
@@ -2126,6 +2239,7 @@ mod tests {
                 min_timestamp: None,
                 max_timestamp: None,
                 level_mask: None,
+                analysis_status: AnalysisStatus::Pending,
             };
             store.insert_file(&file).await.unwrap();
         }
@@ -2208,6 +2322,7 @@ mod tests {
             min_timestamp: None,
             max_timestamp: None,
             level_mask: None,
+            analysis_status: AnalysisStatus::Pending,
         };
         store.insert_file(&file).await.unwrap();
 
@@ -2262,6 +2377,7 @@ mod tests {
                 min_timestamp: None,
                 max_timestamp: None,
                 level_mask: None,
+                analysis_status: AnalysisStatus::Pending,
             };
             store.insert_file(&file).await.unwrap();
         }
@@ -2302,6 +2418,7 @@ mod tests {
                 min_timestamp: None,
                 max_timestamp: None,
                 level_mask: None,
+                analysis_status: AnalysisStatus::Pending,
             };
             store.insert_file(&file).await.unwrap();
         }
@@ -2337,6 +2454,7 @@ mod tests {
             min_timestamp: None,
             max_timestamp: None,
             level_mask: None,
+            analysis_status: AnalysisStatus::Pending,
         };
 
         store.insert_file(&file1).await.unwrap();
@@ -2355,6 +2473,7 @@ mod tests {
             min_timestamp: None,
             max_timestamp: None,
             level_mask: None,
+            analysis_status: AnalysisStatus::Pending,
         };
 
         // CAS 去重设计：相同哈希应该成功插入（返回已存在记录的 ID）
@@ -2711,6 +2830,7 @@ mod tests {
                             min_timestamp: None,
                             max_timestamp: None,
                             level_mask: None,
+                            analysis_status: AnalysisStatus::Pending,
                         }
                     },
                 )

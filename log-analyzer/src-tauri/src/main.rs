@@ -8,8 +8,8 @@
 
 // 导入 log_analyzer 库的模块
 use log_analyzer::commands::{
-    async_search::*, config::*, export::*, import::*, log_config::*, search::*, state_sync::*,
-    validation::*, virtual_tree::*, watch::*, workspace::*,
+    async_search::*, config::*, export::*, import::*, search::*, state_sync::*, validation::*,
+    virtual_tree::*, watch::*, workspace::*,
 };
 use log_analyzer::models::{AppState, CacheState, SearchState, WorkspaceState};
 use log_analyzer::task_manager::TaskManager;
@@ -166,60 +166,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             save_search_config,
             get_task_manager_config,
             save_task_manager_config,
-            // ===== 日志配置管理 =====
-            get_current_log_config,
-            set_log_level,
-            set_module_level,
-            reset_log_configuration,
-            get_recommended_production_config,
-            get_recommended_debug_config,
-            load_log_config,
-            save_log_config,
-            get_available_log_levels,
-            apply_log_preset,
             // ===== 工作区管理 =====
             load_workspace,
             refresh_workspace,
             delete_workspace,
             cancel_task,
             get_workspace_status,
-            create_workspace,
             get_workspace_time_range,
             // ===== 文件监听 =====
             start_watch,
             stop_watch,
             // ===== 虚拟文件树 =====
             read_file_by_hash,
-            get_virtual_file_tree,
             // ===== 日志搜索 =====
             search_logs,
             cancel_search,
-            // ===== 流式搜索分页 (VirtualSearchManager) =====
             fetch_search_page,
-            register_search_session,
-            get_search_session_info,
-            get_search_total_count,
-            remove_search_session,
-            cleanup_expired_search_sessions,
-            get_virtual_search_stats,
             // ===== 导入 =====
             import_folder,
             check_rar_support,
-            // ===== 状态同步 =====
-            init_state_sync,
             // ===== 导出 =====
             export_results,
-            // ===== 数据验证 =====
-            validate_workspace_config_cmd,
-            validate_search_query_cmd,
-            validate_archive_config_cmd,
-            batch_validate_workspace_configs,
-            validate_workspace_id_format,
-            validate_path_security,
             // ===== 异步搜索 =====
             async_search_logs,
             cancel_async_search,
             get_active_searches_count,
+            // ===== 状态同步 =====
+            init_state_sync,
+            // ===== 验证 =====
+            validate_workspace_id_format,
+            validate_path_security,
+            validate_workspace_config_cmd,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -247,8 +247,8 @@ pub struct CompiledSearchFilters {
 #[derive(Debug, Clone)]
 pub struct ParsedLineMetadata {
     pub timestamp: String,
-    pub level: String,
-    pub level_normalized: String,
+    pub level: &'static str,
+    pub level_normalized: &'static str,
     pub datetime: Option<chrono::NaiveDateTime>,
     pub level_mask: u8,
 }
@@ -313,7 +313,7 @@ pub fn level_to_mask(level: &str) -> u8 {
 impl ParsedLineMetadata {
     pub fn parse(line: &str, needs_datetime: bool) -> Self {
         let (timestamp, level) = parse_metadata(line);
-        let level_normalized = level.to_ascii_lowercase();
+        // level 已是已知的静态小写字符串，level_normalized 与之相同（零分配）
         let datetime = if needs_datetime {
             TimestampParser::parse_naive_datetime(&timestamp)
         } else {
@@ -323,9 +323,9 @@ impl ParsedLineMetadata {
         Self {
             timestamp,
             level,
-            level_normalized: level_normalized.clone(),
+            level_normalized: level,
             datetime,
-            level_mask: level_to_mask(&level_normalized),
+            level_mask: level_to_mask(level),
         }
     }
 }
@@ -442,10 +442,17 @@ impl CompiledSearchFilters {
 
     #[cfg(test)]
     pub fn matches_line_metadata(&self, timestamp: &str, level: &str) -> bool {
+        // 将动态 level 参数映射为静态字符串（与 parse_metadata 一致）
+        let static_level: &'static str = match level.trim().to_ascii_lowercase().as_str() {
+            "error" => "error",
+            "warn" | "warning" => "warn",
+            "info" => "info",
+            _ => "debug",
+        };
         let metadata = ParsedLineMetadata {
             timestamp: timestamp.to_string(),
-            level: level.to_string(),
-            level_normalized: level.to_ascii_lowercase(),
+            level: static_level,
+            level_normalized: static_level,
             datetime: if self.has_time_filter() {
                 TimestampParser::parse_naive_datetime(timestamp)
             } else {
@@ -459,7 +466,7 @@ impl CompiledSearchFilters {
 
     pub fn matches_parsed_line_metadata(&self, metadata: &ParsedLineMetadata) -> bool {
         if let Some(levels) = &self.levels {
-            if !levels.contains(&metadata.level_normalized) {
+            if !levels.contains(metadata.level_normalized) {
                 return false;
             }
         }
@@ -580,7 +587,7 @@ pub fn search_lines_direct<'a, I>(
 where
     I: IntoIterator<Item = (usize, Cow<'a, str>)>,
 {
-    let mut results = Vec::new();
+    let mut results = Vec::with_capacity(64);
 
     for (index, line) in lines {
         let line_ref = line.as_ref();

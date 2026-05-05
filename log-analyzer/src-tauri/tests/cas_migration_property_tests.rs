@@ -422,6 +422,7 @@ fn test_comprehensive_legacy_code_scan() {
 /// entry in MetadataStore. This ensures the integrity of the CAS architecture.
 #[cfg(test)]
 mod cas_storage_consistency_tests {
+    use la_core::storage_types::AnalysisStatus;
     use log_analyzer::storage::{ContentAddressableStorage, FileMetadata, MetadataStore};
     use proptest::prelude::*;
     use sha2::{Digest, Sha256};
@@ -485,6 +486,7 @@ mod cas_storage_consistency_tests {
                             min_timestamp: None,
                             max_timestamp: None,
                             level_mask: None,
+                            analysis_status: AnalysisStatus::Pending,
                     };
 
                     // Insert into metadata store
@@ -689,6 +691,7 @@ mod cas_storage_consistency_tests {
                         min_timestamp: None,
                         max_timestamp: None,
                         level_mask: None,
+                        analysis_status: AnalysisStatus::Pending,
                 };
 
                 metadata_store.insert_file(&file_meta).await.unwrap();
@@ -744,6 +747,7 @@ mod cas_storage_consistency_tests {
 /// the CAS architecture.
 #[cfg(test)]
 mod search_uses_cas_tests {
+    use la_core::storage_types::AnalysisStatus;
     use log_analyzer::storage::{ContentAddressableStorage, FileMetadata, MetadataStore};
     use proptest::prelude::*;
     use tempfile::TempDir;
@@ -811,6 +815,7 @@ mod search_uses_cas_tests {
                             min_timestamp: None,
                             max_timestamp: None,
                             level_mask: None,
+                            analysis_status: AnalysisStatus::Pending,
                     };
 
                     metadata_store.insert_file(&file_meta).await.unwrap();
@@ -901,6 +906,7 @@ mod search_uses_cas_tests {
                         min_timestamp: None,
                         max_timestamp: None,
                         level_mask: None,
+                        analysis_status: AnalysisStatus::Pending,
                 };
 
                 metadata_store.insert_file(&file_meta).await.unwrap();
@@ -1003,6 +1009,7 @@ mod search_uses_cas_tests {
                             min_timestamp: None,
                             max_timestamp: None,
                             level_mask: None,
+                            analysis_status: AnalysisStatus::Pending,
                     };
 
                     metadata_store.insert_file(&file_meta).await.unwrap();
@@ -1105,6 +1112,7 @@ mod search_uses_cas_tests {
                             min_timestamp: None,
                             max_timestamp: None,
                             level_mask: None,
+                            analysis_status: AnalysisStatus::Pending,
                     };
 
                     metadata_store.insert_file(&file_meta).await.unwrap();
@@ -1198,6 +1206,7 @@ mod search_uses_cas_tests {
                         min_timestamp: None,
                         max_timestamp: None,
                         level_mask: None,
+                        analysis_status: AnalysisStatus::Pending,
                 };
 
                 metadata_store.insert_file(&file_meta).await.unwrap();

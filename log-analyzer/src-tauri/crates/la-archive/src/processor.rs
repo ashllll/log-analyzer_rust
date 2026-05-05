@@ -8,10 +8,13 @@
 //! - 错误处理和进度报告
 
 use crate::archive_handler::StreamingArchiveHandler;
+#[cfg(feature = "enhanced-extraction")]
 use crate::checkpoint_manager::{Checkpoint, CheckpointManager};
+#[cfg(feature = "enhanced-extraction")]
 use crate::extraction_engine::ExtractionPolicy;
 use crate::internal::file_type_filter::FileTypeFilter;
 use crate::internal::get_file_metadata;
+#[cfg(feature = "enhanced-extraction")]
 use crate::public_api::extract_archive_async;
 use crate::zip_handler::StreamingZipHandler;
 use crate::ArchiveManager;
@@ -34,6 +37,7 @@ use walkdir::WalkDir;
 /// 1. 环境变量 USE_ENHANCED_EXTRACTION（用于测试和临时覆盖）
 /// 2. 配置文件中的 use_enhanced_extraction 标志
 /// 3. 默认为 false（使用旧系统）以保持向后兼容性
+#[cfg(feature = "enhanced-extraction")]
 fn is_enhanced_extraction_enabled() -> bool {
     // 首先检查环境变量（最高优先级）
     if let Ok(env_value) = std::env::var("USE_ENHANCED_EXTRACTION") {
@@ -45,6 +49,13 @@ fn is_enhanced_extraction_enabled() -> bool {
     false
 }
 
+/// 增强提取功能未编译时，始终使用旧系统
+#[cfg(not(feature = "enhanced-extraction"))]
+fn is_enhanced_extraction_enabled() -> bool {
+    false
+}
+
+#[cfg(feature = "enhanced-extraction")]
 fn extraction_policy_from_archive_config(config: &ArchiveConfig) -> ExtractionPolicy {
     ExtractionPolicy {
         max_depth: config.max_extraction_depth,
@@ -707,7 +718,9 @@ pub struct CasProcessingContext {
     pub workspace_dir: PathBuf,
     pub cas: Arc<ContentAddressableStorage>,
     pub metadata_store: Arc<MetadataStore>,
+    #[cfg(feature = "enhanced-extraction")]
     pub checkpoint_manager: Option<Arc<Mutex<CheckpointManager>>>,
+    #[cfg(feature = "enhanced-extraction")]
     pub checkpoint: Option<Arc<Mutex<Checkpoint>>>,
     pub files_since_checkpoint: Arc<Mutex<usize>>,
     pub bytes_since_checkpoint: Arc<Mutex<u64>>,
@@ -724,7 +737,9 @@ impl CasProcessingContext {
             workspace_dir,
             cas,
             metadata_store,
+            #[cfg(feature = "enhanced-extraction")]
             checkpoint_manager: None,
+            #[cfg(feature = "enhanced-extraction")]
             checkpoint: None,
             files_since_checkpoint: Arc::new(Mutex::new(0)),
             bytes_since_checkpoint: Arc::new(Mutex::new(0)),
@@ -732,6 +747,7 @@ impl CasProcessingContext {
     }
 
     /// Enable checkpoint support
+    #[cfg(feature = "enhanced-extraction")]
     pub fn with_checkpoints(
         mut self,
         checkpoint_manager: Arc<Mutex<CheckpointManager>>,
@@ -743,6 +759,7 @@ impl CasProcessingContext {
     }
 
     /// Update checkpoint if needed
+    #[cfg(feature = "enhanced-extraction")]
     async fn maybe_save_checkpoint(&self) -> Result<()> {
         if let (Some(manager), Some(checkpoint)) = (&self.checkpoint_manager, &self.checkpoint) {
             let files = *self.files_since_checkpoint.lock().await;
@@ -764,6 +781,12 @@ impl CasProcessingContext {
                 );
             }
         }
+        Ok(())
+    }
+
+    /// No-op when enhanced-extraction is disabled
+    #[cfg(not(feature = "enhanced-extraction"))]
+    async fn maybe_save_checkpoint(&self) -> Result<()> {
         Ok(())
     }
 
@@ -1066,6 +1089,7 @@ pub async fn process_path_with_cas_and_checkpoints(
         min_timestamp: None,
         max_timestamp: None,
         level_mask: None,
+        analysis_status: la_core::storage_types::AnalysisStatus::Pending,
     };
 
     // Insert into metadata store
@@ -1087,6 +1111,43 @@ pub async fn process_path_with_cas_and_checkpoints(
         depth = depth_level,
         "Stored file in CAS and metadata"
     );
+
+    // 增量分析：立即计算文件统计并标记为 READY
+    // 使用 spawn_blocking 避免阻塞异步运行时
+    let cas = Arc::clone(&context.cas);
+    let metadata_store = Arc::clone(&context.metadata_store);
+    let virtual_path_for_stats = normalize_path_separator(virtual_path);
+    tokio::task::spawn(async move {
+        match cas.read_content(&hash).await {
+            Ok(content) => {
+                let (min_ts, max_ts, level_mask) =
+                    crate::stats::compute_file_stats(&content);
+                if let Err(e) = metadata_store
+                    .update_file_ready(&virtual_path_for_stats, min_ts, max_ts, level_mask)
+                    .await
+                {
+                    tracing::warn!(
+                        virtual_path = %virtual_path_for_stats,
+                        error = %e,
+                        "Failed to update file ready status"
+                    );
+                } else {
+                    tracing::debug!(
+                        virtual_path = %virtual_path_for_stats,
+                        "File marked as READY for incremental search"
+                    );
+                }
+            }
+            Err(e) => {
+                tracing::warn!(
+                    virtual_path = %virtual_path_for_stats,
+                    hash = %hash,
+                    error = %e,
+                    "Failed to read CAS content for incremental stats computation"
+                );
+            }
+        }
+    });
 
     Ok(())
 }
@@ -1258,7 +1319,12 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
                         }
 
                         let entry_path_str = entry.path.to_str().unwrap_or("");
-                        let new_virtual = format!("{}/{}", virtual_path, entry_path_str);
+                        // 修复虚拟路径重复：部分 ZIP 条目路径以归档名开头，需去除
+                        let trimmed_entry = entry_path_str
+                            .strip_prefix(&format!("{}/", file_name))
+                            .or_else(|| entry_path_str.strip_prefix(file_name.as_str()))
+                            .unwrap_or(entry_path_str);
+                        let new_virtual = format!("{}/{}", virtual_path, trimmed_entry);
 
                         match streaming_handler
                             .stream_entry_to_cas(archive_path, entry_path_str, &context.cas)
@@ -1277,7 +1343,7 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
 
                                 let file_metadata = FileMetadata {
                                     id: 0,
-                                    sha256_hash: hash,
+                                    sha256_hash: hash.clone(),
                                     virtual_path: normalize_path_separator(&new_virtual),
                                     original_name: entry
                                         .path
@@ -1293,6 +1359,7 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
                                     min_timestamp: None,
                                     max_timestamp: None,
                                     level_mask: None,
+                                    analysis_status: la_core::storage_types::AnalysisStatus::Pending,
                                 };
                                 if let Err(e) =
                                     context.metadata_store.insert_file(&file_metadata).await
@@ -1301,6 +1368,28 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
                                     all_success = false;
                                     break;
                                 }
+
+                                // 增量分析：对 ZIP 流式解压的文件也立即计算统计
+                                let cas = Arc::clone(&context.cas);
+                                let metadata_store = Arc::clone(&context.metadata_store);
+                                let vp = normalize_path_separator(&new_virtual);
+                                tokio::task::spawn(async move {
+                                    match cas.read_content(&hash).await {
+                                        Ok(content) => {
+                                            let (min_ts, max_ts, level_mask) =
+                                                crate::stats::compute_file_stats(&content);
+                                            if let Err(e) = metadata_store
+                                                .update_file_ready(&vp, min_ts, max_ts, level_mask)
+                                                .await
+                                            {
+                                                tracing::warn!(virtual_path = %vp, error = %e, "Failed to update streamed file ready status");
+                                            }
+                                        }
+                                        Err(e) => {
+                                            tracing::warn!(virtual_path = %vp, hash = %hash, error = %e, "Failed to read streamed CAS content for stats");
+                                        }
+                                    }
+                                });
                             }
                             Err(e) => {
                                 warn!(error = %e, path = %new_virtual, "Failed to stream entry to CAS");
@@ -1349,6 +1438,7 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
 
     // Extract archive
     let archive_manager = ArchiveManager::with_config(archive_config.clone());
+    #[cfg(feature = "enhanced-extraction")]
     let extracted_files = if is_enhanced_extraction_enabled() {
         let policy = extraction_policy_from_archive_config(&archive_config);
         match extract_archive_async(archive_path, &extract_dir, workspace_id, Some(policy)).await {
@@ -1365,6 +1455,8 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
                     .metadata_store
                     .update_archive_status(archive_id, "failed")
                     .await?;
+                // 清理失败解压的临时目录
+                let _ = fs::remove_dir_all(&extract_dir).await;
                 return Err(AppError::archive_error(
                     format!("Enhanced extraction failed: {}", e),
                     Some(archive_path.to_path_buf()),
@@ -1389,11 +1481,39 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
                     .metadata_store
                     .update_archive_status(archive_id, "failed")
                     .await?;
+                // 清理失败解压的临时目录
+                let _ = fs::remove_dir_all(&extract_dir).await;
                 return Err(AppError::archive_error(
                     format!("Legacy extraction failed: {}", e),
                     Some(archive_path.to_path_buf()),
                 ));
             }
+        }
+    };
+    #[cfg(not(feature = "enhanced-extraction"))]
+    let extracted_files = match archive_manager
+        .extract_archive(archive_path, &extract_dir)
+        .await
+    {
+        Ok(summary) => {
+            info!(
+                files = summary.files_extracted,
+                bytes = summary.total_size,
+                "Legacy extraction completed"
+            );
+            summary.extracted_files
+        }
+        Err(e) => {
+            context
+                .metadata_store
+                .update_archive_status(archive_id, "failed")
+                .await?;
+            // 清理失败解压的临时目录
+            let _ = fs::remove_dir_all(&extract_dir).await;
+            return Err(AppError::archive_error(
+                format!("Legacy extraction failed: {}", e),
+                Some(archive_path.to_path_buf()),
+            ));
         }
     };
 
@@ -1491,7 +1611,7 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
                 .unwrap_or(0);
             let nested_metadata = FileMetadata {
                 id: 0,
-                sha256_hash: hash,
+                sha256_hash: hash.clone(),
                 virtual_path: normalize_path_separator(&new_virtual),
                 original_name: file_name.clone(),
                 size: file_size,
@@ -1502,8 +1622,31 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
                 min_timestamp: None,
                 max_timestamp: None,
                 level_mask: None,
+                analysis_status: la_core::storage_types::AnalysisStatus::Pending,
             };
             context.metadata_store.insert_file(&nested_metadata).await?;
+
+            // 增量分析：深层嵌套压缩包也计算统计
+            let cas = Arc::clone(&context.cas);
+            let metadata_store = Arc::clone(&context.metadata_store);
+            let vp = normalize_path_separator(&new_virtual);
+            tokio::task::spawn(async move {
+                match cas.read_content(&hash).await {
+                    Ok(content) => {
+                        let (min_ts, max_ts, level_mask) =
+                            crate::stats::compute_file_stats(&content);
+                        if let Err(e) = metadata_store
+                            .update_file_ready(&vp, min_ts, max_ts, level_mask)
+                            .await
+                        {
+                            tracing::warn!(virtual_path = %vp, error = %e, "Failed to update nested archive ready status");
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(virtual_path = %vp, hash = %hash, error = %e, "Failed to read nested archive CAS content for stats");
+                    }
+                }
+            });
             continue;
         }
 
@@ -1684,6 +1827,7 @@ async fn extract_and_process_archive(
     })?;
 
     // 检查是否使用增强提取系统
+    #[cfg(feature = "enhanced-extraction")]
     let extracted_files = if is_enhanced_extraction_enabled() {
         // 使用增强提取系统
         info!(
@@ -1739,6 +1883,38 @@ async fn extract_and_process_archive(
             }
         }
     } else {
+        // 使用旧的 ArchiveManager
+        info!(
+            file = %file_name,
+            "Using legacy extraction system"
+        );
+
+        let summary = archive_manager
+            .extract_archive(archive_path, &extract_dir)
+            .await
+            .map_err(|e| {
+                AppError::archive_error(
+                    format!("Failed to extract {}: {}", file_name, e),
+                    Some(archive_path.to_path_buf()),
+                )
+            })?;
+
+        // 报告提取结果
+        info!(
+            files = summary.files_extracted,
+            archive = %file_name,
+            bytes = summary.total_size,
+            "Legacy extraction completed"
+        );
+
+        if summary.has_errors() {
+            warn!(errors = ?summary.errors, "Extraction errors");
+        }
+
+        summary.extracted_files
+    };
+    #[cfg(not(feature = "enhanced-extraction"))]
+    let extracted_files = {
         // 使用旧的 ArchiveManager
         info!(
             file = %file_name,

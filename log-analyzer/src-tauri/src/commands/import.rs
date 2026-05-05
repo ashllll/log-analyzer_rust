@@ -170,6 +170,18 @@ async fn rebuild_workspace_search_index(
     cas: Arc<crate::storage::ContentAddressableStorage>,
     search_manager: Arc<crate::search_engine::SearchEngineManager>,
 ) -> Result<usize, String> {
+    // P1-1: 仅在索引为空时执行全量重建（首次导入）。
+    // 后续导入的新文件通过 CAS 回退路径搜索，避免每次 O(n) 全量 I/O。
+    let index_empty = match search_manager.get_time_range() {
+        Ok((_, _, count)) => count == 0,
+        Err(_) => true, // 索引查询失败视为空
+    };
+
+    if !index_empty {
+        tracing::info!("Skipping index rebuild: Tantivy index already has documents");
+        return Ok(0);
+    }
+
     let files = metadata_store
         .get_all_files()
         .await
@@ -279,11 +291,11 @@ fn compute_file_stats(content: &[u8]) -> (Option<i64>, Option<i64>, Option<u8>) 
         let (timestamp_str, level) = parse_metadata(line);
         if !level.is_empty() {
             has_any_level = true;
-            let mask_bit = match level.as_str() {
-                "DEBUG" => 1u8 << 0,
-                "INFO" => 1u8 << 1,
-                "WARN" => 1u8 << 2,
-                "ERROR" => 1u8 << 3,
+            let mask_bit = match level {
+                "debug" => 1u8 << 0,
+                "info" => 1u8 << 1,
+                "warn" => 1u8 << 2,
+                "error" => 1u8 << 3,
                 _ => 0,
             };
             level_mask |= mask_bit;
@@ -511,23 +523,25 @@ pub async fn import_folder(
         return Err(format!("Failed to process path: {}", e));
     }
 
-    // 计算并存储文件级统计信息（时间范围、级别掩码），用于搜索剪枝
+    // 增量分析：文件级统计计算已在 processor.rs 中逐文件完成，
+    // 此处保留一个后台任务，用于处理导入中断后残留的 PENDING 文件
+    // 以及压缩包解压路径中可能遗漏的文件。
     {
         let metadata_store = metadata_store.clone();
         let cas = Arc::clone(&cas);
         let workspace_id = workspace_id_clone.clone();
         tokio::task::spawn(async move {
+            // 延迟 5 秒执行，让逐文件分析先完成，避免重复计算
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+
             match metadata_store.get_all_files().await {
                 Ok(files) => {
                     let mut updated = 0usize;
                     let mut failed = 0usize;
 
                     for file in files {
-                        // 跳过已有统计信息的文件
-                        if file.min_timestamp.is_some()
-                            || file.max_timestamp.is_some()
-                            || file.level_mask.is_some()
-                        {
+                        // 只处理仍处于 PENDING 状态的文件
+                        if file.analysis_status == la_core::storage_types::AnalysisStatus::Ready {
                             continue;
                         }
 
@@ -535,7 +549,7 @@ pub async fn import_folder(
                             Ok(content) => {
                                 let (min_ts, max_ts, level_mask) = compute_file_stats(&content);
                                 if let Err(e) = metadata_store
-                                    .update_file_stats(
+                                    .update_file_ready(
                                         &file.virtual_path,
                                         min_ts,
                                         max_ts,
@@ -546,7 +560,7 @@ pub async fn import_folder(
                                     tracing::warn!(
                                         virtual_path = %file.virtual_path,
                                         error = %e,
-                                        "Failed to update file stats"
+                                        "Failed to update file ready status in fallback"
                                     );
                                     failed += 1;
                                 } else {
@@ -558,25 +572,27 @@ pub async fn import_folder(
                                     virtual_path = %file.virtual_path,
                                     hash = %file.sha256_hash,
                                     error = %e,
-                                    "Failed to read file content for stats computation"
+                                    "Failed to read file content for fallback stats computation"
                                 );
                                 failed += 1;
                             }
                         }
                     }
 
-                    tracing::info!(
-                        workspace_id = %workspace_id,
-                        stats_updated = updated,
-                        stats_failed = failed,
-                        "File stats computation completed"
-                    );
+                    if updated > 0 || failed > 0 {
+                        tracing::info!(
+                            workspace_id = %workspace_id,
+                            stats_updated = updated,
+                            stats_failed = failed,
+                            "Fallback file stats computation completed"
+                        );
+                    }
                 }
                 Err(e) => {
                     tracing::warn!(
                         workspace_id = %workspace_id,
                         error = %e,
-                        "Failed to get files for stats computation"
+                        "Failed to get files for fallback stats computation"
                     );
                 }
             }

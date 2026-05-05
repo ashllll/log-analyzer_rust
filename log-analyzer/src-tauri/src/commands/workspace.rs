@@ -276,7 +276,7 @@ fn is_cas_workspace(workspace_id: &str, app: &AppHandle) -> Result<bool, String>
 /// # 错误处理
 ///
 /// 单步失败不中断流程,记录日志并继续清理其他资源。
-fn cleanup_workspace_resources(
+async fn cleanup_workspace_resources(
     workspace_id: &str,
     state: &AppState,
     app: &AppHandle,
@@ -292,6 +292,36 @@ fn cleanup_workspace_resources(
     let io_err = |e: std::io::Error, path: &std::path::Path| -> String {
         AppError::io_error(e.to_string(), Some(path.to_path_buf())).to_string()
     };
+
+    // 辅助函数：带重试的文件删除（处理 Windows 临时文件锁定）
+    async fn remove_file_with_retry(path: &std::path::Path) -> Result<(), std::io::Error> {
+        for attempt in 0..3 {
+            match std::fs::remove_file(path) {
+                Ok(()) => return Ok(()),
+                Err(_e) if attempt < 2 => {
+                    tokio::time::sleep(std::time::Duration::from_millis(100 * (attempt + 1))).await;
+                    let _ = std::fs::remove_file(path);
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(())
+    }
+
+    // 辅助函数：带重试的目录删除（处理 Windows 临时文件锁定）
+    async fn remove_dir_with_retry(path: &std::path::Path) -> Result<(), std::io::Error> {
+        for attempt in 0..3 {
+            match std::fs::remove_dir_all(path) {
+                Ok(()) => return Ok(()),
+                Err(_e) if attempt < 2 => {
+                    tokio::time::sleep(std::time::Duration::from_millis(100 * (attempt + 1))).await;
+                    let _ = std::fs::remove_dir_all(path);
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(())
+    }
 
     // ===== 步骤1: 停止文件监听器 =====
     info!(
@@ -341,18 +371,26 @@ fn cleanup_workspace_resources(
     // ===== 步骤3: 清除工作区运行态资源 =====
     info!("Step 3: Removing workspace runtime resources");
 
-    // 重要：先调用 SearchEngineManager::close() 确保 Tantivy IndexWriter 完成 commit
-    // 这样可以释放内存映射文件句柄，避免目录删除失败
-    // 注意：在锁外调用 block_on，避免死锁风险
+    // 重要：先关闭 MetadataStore 和 SearchEngineManager，释放文件句柄
+    // 然后再从内存状态中移除，避免 Windows 上文件被占用导致删除失败
+    let store = {
+        let mut stores = state.metadata_stores.lock();
+        stores.remove(workspace_id)
+    };
+    if let Some(store) = store {
+        store.close().await;
+        info!(
+            workspace_id = %workspace_id,
+            "MetadataStore closed"
+        );
+    }
+
     let manager = {
-        let search_managers = state.search_engine_managers.lock();
-        search_managers.get(workspace_id).cloned()
+        let mut search_managers = state.search_engine_managers.lock();
+        search_managers.remove(workspace_id)
     };
     if let Some(manager) = manager {
-        // 使用 block_on 运行异步 close 方法
-        // SearchEngineManager::close() 是 async 的，需要运行时执行
-        // close() 方法内部处理错误（记录日志），不返回 Result
-        tokio::runtime::Handle::current().block_on(manager.close());
+        manager.close().await;
         info!(
             workspace_id = %workspace_id,
             "SearchEngineManager::close() completed"
@@ -361,8 +399,6 @@ fn cleanup_workspace_resources(
 
     state.workspace_dirs.lock().remove(workspace_id);
     state.cas_instances.lock().remove(workspace_id);
-    state.metadata_stores.lock().remove(workspace_id);
-    state.search_engine_managers.lock().remove(workspace_id);
     info!("Step 3 completed: Workspace runtime resources removed");
 
     // ===== 步骤4: 清理旧的索引文件（如果存在）=====
@@ -460,15 +496,12 @@ fn cleanup_workspace_resources(
 
                     let metadata_db = workspace_dir.join("metadata.db");
                     if metadata_db.exists() {
-                        match fs::remove_file(&metadata_db) {
-                            Ok(_) => {
-                                info!(path = %metadata_db.display(), "Deleted SQLite database");
-                            }
-                            Err(e) => {
-                                let error = io_err(e, &metadata_db);
-                                error!(error = %error);
-                                errors.push(error);
-                            }
+                        if let Err(e) = remove_file_with_retry(&metadata_db).await {
+                            let error = io_err(e, &metadata_db);
+                            error!(error = %error);
+                            errors.push(error);
+                        } else {
+                            info!(path = %metadata_db.display(), "Deleted SQLite database");
                         }
                     }
 
@@ -476,7 +509,7 @@ fn cleanup_workspace_resources(
                         let journal_file =
                             workspace_dir.join(format!("metadata.db{}", journal_ext));
                         if journal_file.exists() {
-                            if let Err(e) = fs::remove_file(&journal_file) {
+                            if let Err(e) = remove_file_with_retry(&journal_file).await {
                                 warn!(
                                     path = %journal_file.display(),
                                     error = %e,
@@ -488,15 +521,12 @@ fn cleanup_workspace_resources(
 
                     let objects_dir = workspace_dir.join("objects");
                     if objects_dir.exists() {
-                        match fs::remove_dir_all(&objects_dir) {
-                            Ok(_) => {
-                                info!(path = %objects_dir.display(), "Deleted CAS objects directory");
-                            }
-                            Err(e) => {
-                                let error = io_err(e, &objects_dir);
-                                error!(error = %error);
-                                errors.push(error);
-                            }
+                        if let Err(e) = remove_dir_with_retry(&objects_dir).await {
+                            let error = io_err(e, &objects_dir);
+                            error!(error = %error);
+                            errors.push(error);
+                        } else {
+                            info!(path = %objects_dir.display(), "Deleted CAS objects directory");
                         }
                     }
                 }
@@ -505,7 +535,7 @@ fn cleanup_workspace_resources(
             }
 
             if workspace_dir.exists() {
-                if let Err(e) = std::fs::remove_dir_all(&workspace_dir) {
+                if let Err(e) = remove_dir_with_retry(&workspace_dir).await {
                     let error = format!(
                         "Failed to delete workspace directory {}: {}",
                         workspace_dir.display(),
@@ -622,7 +652,7 @@ pub async fn delete_workspace(
     validate_workspace_id(&workspaceId)?;
 
     // 执行清理
-    cleanup_workspace_resources(&workspaceId, &state, &app)?;
+    cleanup_workspace_resources(&workspaceId, &state, &app).await?;
 
     // 失效该工作区的缓存（仅目标工作区，不影响其他工作区）
     {
@@ -774,14 +804,13 @@ pub async fn get_workspace_status(
 
     let file_count: i64 = metadata_store.count_files().await.unwrap_or(0);
 
-    // 计算目录大小
-    let total_size = walkdir::WalkDir::new(&workspace_dir)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter_map(|e| e.metadata().ok())
-        .filter(|m| m.is_file())
-        .map(|m| m.len())
-        .sum::<u64>();
+    // 用 SQL 聚合查询替代目录遍历，O(1) 而非 O(n)
+    let total_size: u64 = metadata_store
+        .sum_file_sizes()
+        .await
+        .unwrap_or(0)
+        .try_into()
+        .unwrap_or(0);
 
     let size_mb = total_size / (1024 * 1024);
     let size_str = if size_mb >= 1024 {

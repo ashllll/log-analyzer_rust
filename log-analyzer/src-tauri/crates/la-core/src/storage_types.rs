@@ -2,6 +2,40 @@
 
 use serde::{Deserialize, Serialize};
 
+/// 文件分析状态
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AnalysisStatus {
+    Pending,
+    Analyzing,
+    Ready,
+    Failed,
+}
+
+impl AnalysisStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            AnalysisStatus::Pending => "PENDING",
+            AnalysisStatus::Analyzing => "ANALYZING",
+            AnalysisStatus::Ready => "READY",
+            AnalysisStatus::Failed => "FAILED",
+        }
+    }
+}
+
+impl std::str::FromStr for AnalysisStatus {
+    type Err = String;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "PENDING" => Ok(AnalysisStatus::Pending),
+            "ANALYZING" => Ok(AnalysisStatus::Analyzing),
+            "READY" => Ok(AnalysisStatus::Ready),
+            "FAILED" => Ok(AnalysisStatus::Failed),
+            _ => Err(format!("Unknown analysis status: {}", s)),
+        }
+    }
+}
+
 /// 文件元数据
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileMetadata {
@@ -17,6 +51,7 @@ pub struct FileMetadata {
     pub min_timestamp: Option<i64>,
     pub max_timestamp: Option<i64>,
     pub level_mask: Option<u8>,
+    pub analysis_status: AnalysisStatus,
 }
 
 /// Archive metadata for nested tracking

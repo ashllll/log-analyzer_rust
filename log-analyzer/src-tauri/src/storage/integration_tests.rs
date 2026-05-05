@@ -5,6 +5,7 @@
 
 #[cfg(test)]
 mod tests {
+    use la_core::storage_types::AnalysisStatus;
     use la_storage::{ContentAddressableStorage, FileMetadata, MetadataStore};
     use tempfile::TempDir;
 
@@ -40,6 +41,7 @@ mod tests {
             min_timestamp: None,
             max_timestamp: None,
             level_mask: None,
+            analysis_status: AnalysisStatus::Pending,
         };
 
         let file_id = metadata.insert_file(&file_meta).await.unwrap();
@@ -87,6 +89,7 @@ mod tests {
             min_timestamp: None,
             max_timestamp: None,
             level_mask: None,
+            analysis_status: AnalysisStatus::Pending,
         };
 
         // Insert first file
@@ -106,6 +109,7 @@ mod tests {
             min_timestamp: None,
             max_timestamp: None,
             level_mask: None,
+            analysis_status: AnalysisStatus::Pending,
         };
 
         // CAS 去重设计：相同哈希的文件应该成功插入（返回已存在记录的 ID）
@@ -167,6 +171,7 @@ mod tests {
                 min_timestamp: None,
                 max_timestamp: None,
                 level_mask: None,
+                analysis_status: AnalysisStatus::Pending,
             });
         }
 
@@ -214,6 +219,7 @@ mod tests {
                 min_timestamp: None,
                 max_timestamp: None,
                 level_mask: None,
+                analysis_status: AnalysisStatus::Pending,
             };
             metadata.insert_file(&file_meta).await.unwrap();
         }
@@ -248,6 +254,7 @@ mod tests {
             min_timestamp: None,
             max_timestamp: None,
             level_mask: None,
+            analysis_status: AnalysisStatus::Pending,
         };
 
         metadata.insert_file(&file_meta).await.unwrap();
@@ -288,6 +295,7 @@ mod tests {
             min_timestamp: None,
             max_timestamp: None,
             level_mask: None,
+            analysis_status: AnalysisStatus::Pending,
         };
 
         metadata.insert_file(&file_meta).await.unwrap();
@@ -327,6 +335,7 @@ mod tests {
                 min_timestamp: None,
                 max_timestamp: None,
                 level_mask: None,
+                analysis_status: AnalysisStatus::Pending,
             };
 
             metadata.insert_file(&file_meta).await.unwrap();

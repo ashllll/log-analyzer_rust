@@ -3,10 +3,11 @@
 //! 包含从主 crate 复制的纯逻辑模块，避免循环依赖。
 
 pub mod file_type_filter;
+#[cfg(feature = "enhanced-extraction")]
 pub mod metadata_db;
 
 use la_core::error::{AppError, Result};
-use la_core::storage_types::FileMetadata;
+use la_core::storage_types::{AnalysisStatus, FileMetadata};
 use std::path::Path;
 
 /// 从文件路径提取元数据（纯函数，无外部依赖）
@@ -43,5 +44,6 @@ pub fn get_file_metadata(path: &Path) -> Result<FileMetadata> {
         min_timestamp: None,
         max_timestamp: None,
         level_mask: None,
+        analysis_status: AnalysisStatus::Pending,
     })
 }
