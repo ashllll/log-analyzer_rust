@@ -185,7 +185,9 @@ impl DiskResultStore {
             writer.current_byte_offset += json_bytes.len() as u64;
         }
         // 单次原子操作更新计数，减少锁内原子竞争
-        session.total_count.fetch_add(entry_count, Ordering::Relaxed);
+        session
+            .total_count
+            .fetch_add(entry_count, Ordering::Relaxed);
 
         // 每批刷新缓冲区，确保读线程能读到最新数据
         writer.data_writer.flush()?;

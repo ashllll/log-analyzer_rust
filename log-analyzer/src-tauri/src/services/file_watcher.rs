@@ -432,7 +432,8 @@ pub fn append_to_workspace_index(
                                             min_timestamp: None,
                                             max_timestamp: None,
                                             level_mask: None,
-                                            analysis_status: la_core::storage_types::AnalysisStatus::Pending,
+                                            analysis_status:
+                                                la_core::storage_types::AnalysisStatus::Pending,
                                         };
                                         // INSERT OR IGNORE: 如果已存在则不重复插入
                                         let store = Arc::clone(metadata_store);

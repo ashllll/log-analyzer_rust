@@ -254,7 +254,12 @@ pub struct AhoCorasickMatches<'a> {
 }
 
 impl<'a> AhoCorasickMatches<'a> {
-    fn new(ac: Arc<AhoCorasick>, text: &'a str, patterns: Vec<Arc<str>>, overlapping: bool) -> Self {
+    fn new(
+        ac: Arc<AhoCorasick>,
+        text: &'a str,
+        patterns: Vec<Arc<str>>,
+        overlapping: bool,
+    ) -> Self {
         let overlap_state = if overlapping {
             Some(aho_corasick::automaton::OverlappingState::start())
         } else {

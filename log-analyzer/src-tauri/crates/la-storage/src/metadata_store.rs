@@ -187,9 +187,10 @@ impl MetadataStore {
         .await;
 
         // 创建索引加速状态过滤查询
-        let _ = sqlx::query("CREATE INDEX IF NOT EXISTS idx_files_status ON files(analysis_status)")
-            .execute(pool)
-            .await;
+        let _ =
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_files_status ON files(analysis_status)")
+                .execute(pool)
+                .await;
 
         Ok(())
     }
@@ -793,10 +794,12 @@ impl MetadataStore {
     ///
     /// 只返回 analysis_status = 'READY' 的文件，确保搜索不会读到不完整状态。
     pub async fn get_ready_files(&self) -> Result<Vec<FileMetadata>> {
-        let rows = sqlx::query("SELECT * FROM files WHERE analysis_status = 'READY' ORDER BY virtual_path")
-            .fetch_all(&self.pool)
-            .await
-            .map_err(|e| AppError::database_error(format!("Failed to query ready files: {}", e)))?;
+        let rows = sqlx::query(
+            "SELECT * FROM files WHERE analysis_status = 'READY' ORDER BY virtual_path",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| AppError::database_error(format!("Failed to query ready files: {}", e)))?;
 
         Ok(rows
             .into_iter()
