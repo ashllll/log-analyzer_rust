@@ -1,12 +1,10 @@
-import { queryKeys, configQuery, virtualFileTreeQuery } from '../queries';
+import { queryKeys, configQuery } from '../queries';
 
 const mockLoadConfig = jest.fn();
-const mockGetVirtualFileTree = jest.fn();
 
 jest.mock('../api', () => ({
   api: {
     loadConfig: () => mockLoadConfig(),
-    getVirtualFileTree: (id: string) => mockGetVirtualFileTree(id),
   },
 }));
 
@@ -29,13 +27,6 @@ describe('queryKeys', () => {
 
   it('tasks key 应为稳定引用', () => {
     expect(queryKeys.tasks).toEqual(['tasks']);
-  });
-
-  it('virtualFileTree key 应包含传入的 workspaceId', () => {
-    expect(queryKeys.virtualFileTree('ws-2')).toEqual([
-      'virtualFileTree',
-      'ws-2',
-    ]);
   });
 
   it('cacheConfig key 应为稳定引用', () => {
@@ -70,33 +61,5 @@ describe('configQuery', () => {
     const result = await configQuery.queryFn();
     expect(mockLoadConfig).toHaveBeenCalledTimes(1);
     expect(result).toEqual(mockConfig);
-  });
-});
-
-describe('virtualFileTreeQuery', () => {
-  it('非空 workspaceId 时应启用查询', () => {
-    const query = virtualFileTreeQuery('ws-1');
-    expect(query.enabled).toBe(true);
-    expect(query.queryKey).toEqual(['virtualFileTree', 'ws-1']);
-  });
-
-  it('空 workspaceId 时应禁用查询', () => {
-    const query = virtualFileTreeQuery('');
-    expect(query.enabled).toBe(false);
-  });
-
-  it('应具有正确的 staleTime 和 gcTime', () => {
-    const query = virtualFileTreeQuery('ws-1');
-    expect(query.staleTime).toBe(30_000);
-    expect(query.gcTime).toBe(300_000);
-  });
-
-  it('queryFn 应调用 api.getVirtualFileTree 并传入 workspaceId', async () => {
-    const mockTree = [{ id: 'node-1', name: 'root' }];
-    mockGetVirtualFileTree.mockResolvedValue(mockTree);
-    const query = virtualFileTreeQuery('ws-1');
-    const result = await query.queryFn();
-    expect(mockGetVirtualFileTree).toHaveBeenCalledWith('ws-1');
-    expect(result).toEqual(mockTree);
   });
 });

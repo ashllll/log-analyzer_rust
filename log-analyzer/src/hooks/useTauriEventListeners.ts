@@ -103,9 +103,29 @@ export const useTauriEventListeners = () => {
         toast(`导入提示: ${event.payload}`);
       });
 
+      // 监听文件就绪批量事件（增量分析进度）
+      interface FilesReadyBatchPayload {
+        workspace_id: string;
+        ready_count: number;
+        total_count: number;
+      }
+      const filesReadyBatchUnlisten = await listen<FilesReadyBatchPayload>('files-ready-batch', (event) => {
+        const { workspace_id, ready_count, total_count } = event.payload;
+        logger.debug(
+          { workspace_id, ready_count, total_count },
+          '[TauriEventListeners] Received files-ready-batch from Tauri'
+        );
+
+        updateWorkspace(workspace_id, {
+          status: 'PARTIAL',
+          ready_files: ready_count,
+          files: total_count,
+        });
+      });
+
       return () => {
         // 逐个 try-catch，防止第一个 unlisten 抛出时后续监听器泄漏
-        [taskUpdateUnlisten, taskRemovedUnlisten, importCompleteUnlisten, importErrorUnlisten, importWarningUnlisten]
+        [taskUpdateUnlisten, taskRemovedUnlisten, importCompleteUnlisten, importErrorUnlisten, importWarningUnlisten, filesReadyBatchUnlisten]
           .forEach((unlisten) => {
             try { unlisten(); } catch { /* 静默处理，Tauri unlisten 不应抛出 */ }
           });

@@ -2,7 +2,6 @@
  * 统一 API 层
  *
  * 封装所有 Tauri 命令调用，提供类型安全的接口和统一的错误处理。
- * 同时整合空值安全调用（原 nullSafeApi）和查询 API（原 queryApi）。
  *
  * @module api
  */
@@ -16,7 +15,6 @@ import type { SearchQuery } from '../types/search';
 import {
   RarSupportInfoSchema,
   FileFilterConfigSchema,
-  VirtualTreeNodeSchema,
   WorkspaceLoadResponseSchema,
   WorkspaceStatusResponseSchema,
   WorkspaceTimeRangeSchema,
@@ -24,7 +22,6 @@ import {
   SearchIdSchema,
   type RarSupportInfo,
   type FileFilterConfig,
-  type VirtualTreeNode,
   type WorkspaceStatusResponseValidated,
 } from '../types/api-responses';
 
@@ -627,74 +624,6 @@ class LogAnalyzerApi {
     }
   }
 
-  /**
-   * 获取虚拟文件树
-   *
-   * @param workspaceId - 工作区 ID
-   * @returns 文件树节点数组
-   */
-  async getVirtualFileTree(workspaceId: string): Promise<VirtualTreeNode[]> {
-    try {
-      const result = await invoke('get_virtual_file_tree', { workspaceId });
-      return z.array(VirtualTreeNodeSchema).parse(result);
-    } catch (error) {
-      throw createApiError('get_virtual_file_tree', error);
-    }
-  }
-
-  // ========================================================================
-  // 结构化查询（原 queryApi）
-  // ========================================================================
-
-  /**
-   * 执行结构化查询（带超时控制 + 空值保护）
-   *
-   * @param query - 搜索查询结构
-   * @param logs - 待查询的日志行
-   * @returns 匹配的日志行
-   */
-  async executeStructuredQuery(query: SearchQuery, logs: string[]): Promise<string[]> {
-    try {
-      if (isEmptyArray(logs)) {
-        logger.warn('executeStructuredQuery: logs 数组为空');
-        return [];
-      }
-
-      const result = await safeInvoke<string[]>('execute_structured_query', {
-        query,
-        logs
-      }, { timeoutMs: 30000 });
-
-      return Array.isArray(result) ? result : [];
-    } catch (error: unknown) {
-      console.error('Failed to execute query:', error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new Error(`查询执行失败: ${errorMessage}`);
-    }
-  }
-
-  /**
-   * 验证查询（带超时控制 + 空值保护）
-   *
-   * @param query - 搜索查询结构
-   * @returns 查询是否有效
-   */
-  async validateQuery(query: SearchQuery): Promise<boolean> {
-    try {
-      if (!query || typeof query !== 'object') {
-        logger.warn('validateQuery: 无效的 query 参数');
-        return false;
-      }
-
-      return await safeInvoke<boolean>('validate_query', { query }, {
-        timeoutMs: 5000,
-        fallback: false
-      });
-    } catch (error: unknown) {
-      console.error('Failed to validate query:', error);
-      return false;
-    }
-  }
 }
 
 // ============================================================================
@@ -720,23 +649,6 @@ class LogAnalyzerApi {
  * ```
  */
 export const api = new LogAnalyzerApi();
-
-// ============================================================================
-// 查询 API 便捷对象（向后兼容）
-// ============================================================================
-
-/**
- * 查询 API 便捷对象
- *
- * @example
- * import { queryApi } from '@/services/api';
- * const results = await queryApi.execute(query, logs);
- * const valid = await queryApi.validate(query);
- */
-export const queryApi = {
-  execute: (query: SearchQuery, logs: string[]) => api.executeStructuredQuery(query, logs),
-  validate: (query: SearchQuery) => api.validateQuery(query),
-};
 
 // ============================================================================
 // 文件内容响应类型（原 fileApi）
