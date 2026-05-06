@@ -238,7 +238,7 @@ cargo test -q
 | [IPC API 概览](./docs/architecture/API.md) | Tauri 命令与事件接口说明 |
 | [CAS 存储架构](./docs/architecture/CAS_ARCHITECTURE.md) | 内容寻址存储与元数据设计 |
 | [模块架构](./docs/architecture/modules/MODULE_ARCHITECTURE.md) | 各模块职责边界与调用关系 |
-| [搜索优化审核](./docs/search-optimization-review.md) | 搜索性能边界条件与优化记录 |
+
 
 ## 补充说明
 

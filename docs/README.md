@@ -26,8 +26,6 @@
 |------|------|
 | [CONTRIB.md](./CONTRIB.md) | 开发环境（含平台前置依赖）、构建命令、提交流程、CI 说明 |
 | [RUNBOOK.md](./RUNBOOK.md) | 构建运行、故障排查、常见问题、回滚建议、发布前核对 |
-| [search-optimization-review.md](./search-optimization-review.md) | 搜索性能边界条件审核、已落地优化项、验证结果 |
-
 ### 架构
 
 | 文档 | 说明 |
@@ -35,8 +33,6 @@
 | [architecture/API.md](./architecture/API.md) | 所有 IPC 命令与后端推送事件的详细接口说明 |
 | [architecture/CAS_ARCHITECTURE.md](./architecture/CAS_ARCHITECTURE.md) | CAS 对象存储设计、SQLite 元数据表结构、导入/搜索数据流、GC 机制 |
 | [architecture/modules/MODULE_ARCHITECTURE.md](./architecture/modules/MODULE_ARCHITECTURE.md) | 各模块（la-core / la-storage / la-search / la-archive / commands / services 等）的详细设计 |
-| [architecture/modules/README.md](./architecture/modules/README.md) | 模块架构文档入口 |
-
 ### 仓库级文档
 
 | 文档 | 说明 |
