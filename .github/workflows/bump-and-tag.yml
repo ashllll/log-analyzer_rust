@@ -24,6 +24,7 @@ jobs:
       !contains(github.event.workflow_run.head_commit.message, '[skip ci]')
     permissions:
       contents: write
+      actions: write
 
     steps:
       - name: Checkout repository
