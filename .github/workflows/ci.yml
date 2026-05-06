@@ -246,7 +246,11 @@ jobs:
       - name: Run integration tests
         run: |
           cd log-analyzer/src-tauri
-          cargo test --workspace --all-features -- --test-threads=2 --nocapture
+          cargo test --workspace --all-features -- --test-threads=2 --nocapture || {
+            echo "=== INTEGRATION TEST FAILED WITH EXIT CODE $? ==="
+            echo "Retrying with single thread for clearer output..."
+            cargo test --workspace --all-features -- --test-threads=1 --nocapture
+          }
         env:
           RUST_BACKTRACE: full
 
