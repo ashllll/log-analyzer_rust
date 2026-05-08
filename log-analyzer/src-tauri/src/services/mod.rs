@@ -29,6 +29,6 @@ pub use regex_engine::{
 };
 pub use search_statistics::calculate_keyword_statistics;
 pub use traits::{
-    ContentStorage, MetadataStorage, PlanResult, QueryExecutor as QueryExecutorTrait, QueryPlanning,
-    QueryValidation, ValidationResult,
+    ContentStorage, MetadataStorage, PlanResult, QueryExecutor as QueryExecutorTrait,
+    QueryPlanning, QueryValidation, ValidationResult,
 };

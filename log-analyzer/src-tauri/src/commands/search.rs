@@ -50,7 +50,9 @@ pub struct BinarySearchRequest {
 }
 
 use crate::services::file_watcher::TimestampParser;
-use crate::services::{calculate_keyword_statistics, parse_metadata, ExecutionPlan, QueryPlanBuilder};
+use crate::services::{
+    calculate_keyword_statistics, parse_metadata, ExecutionPlan, QueryPlanBuilder,
+};
 use crate::utils::encoding::decode_log_content;
 use crate::utils::workspace_paths::resolve_workspace_dir;
 
@@ -277,76 +279,6 @@ fn compute_query_version(query: &str) -> u64 {
     let mut hasher = DefaultHasher::new();
     query.hash(&mut hasher);
     hasher.finish()
-}
-
-/// 将搜索结果写入 DiskResultStore，统一 Tantivy 和 CAS 路径的写入逻辑
-fn write_results_to_disk(
-    disk_store: &crate::search_engine::disk_result_store::DiskResultStore,
-    search_id: &str,
-    entries: &[LogEntry],
-    context: &str,
-) {
-    if !disk_store.has_session(search_id) {
-        if let Err(e) = disk_store.create_session(search_id) {
-            warn!(error = %e, "{}: 无法创建磁盘搜索会话", context);
-            return;
-        }
-    }
-    for chunk in entries.chunks(2000) {
-        if let Err(e) = disk_store.append_entries(search_id, chunk) {
-            warn!(error = %e, "{}: 磁盘写入失败", context);
-            break;
-        }
-    }
-    if let Err(e) = disk_store.complete_session(search_id) {
-        warn!(error = %e, "{}: 完成磁盘会话失败", context);
-    }
-}
-
-/// 计算关键词统计信息
-fn compute_keyword_stats(
-    entries: &[LogEntry],
-    raw_terms: &[String],
-) -> Vec<la_core::models::search_statistics::KeywordStatistics> {
-    raw_terms
-        .iter()
-        .map(|term| {
-            let count = entries.iter().filter(|e| e.content.contains(term)).count();
-            la_core::models::search_statistics::KeywordStatistics::new(
-                term.clone(),
-                count,
-                entries.len(),
-            )
-        })
-        .collect()
-}
-
-/// 发送搜索完成事件（search-start / progress / summary / complete）
-fn emit_search_complete(
-    app_handle: &AppHandle,
-    results_count: usize,
-    keyword_stats: Vec<la_core::models::search_statistics::KeywordStatistics>,
-    duration_ms: u64,
-    was_truncated: bool,
-) {
-    let summary =
-        SearchResultSummary::new(results_count, keyword_stats, duration_ms, was_truncated);
-
-    let _ = app_handle.emit("search-start", ());
-    let _ = app_handle.emit("search-progress", results_count);
-    let _ = app_handle.emit("search-summary", &summary);
-    let _ = app_handle.emit("search-complete", results_count);
-}
-
-/// 缓存搜索结果（限制大小避免内存爆炸）
-fn cache_search_results(
-    cache_manager: &Arc<Mutex<crate::utils::cache_manager::CacheManager>>,
-    cache_key: SearchCacheKey,
-    entries: Vec<LogEntry>,
-) {
-    if entries.len() < 100_000 {
-        cache_manager.lock().insert_sync(cache_key, entries);
-    }
 }
 
 /// 清理搜索取消令牌
@@ -1213,14 +1145,7 @@ where
             global_offset,
         )
     } else {
-        search_lines_direct(
-            lines,
-            virtual_path,
-            real_path,
-            builder,
-            plan,
-            global_offset,
-        )
+        search_lines_direct(lines, virtual_path, real_path, builder, plan, global_offset)
     }
 }
 

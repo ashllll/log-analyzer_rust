@@ -208,7 +208,9 @@ impl MetadataStore {
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_files_status ON files(analysis_status)")
             .execute(pool)
             .await
-            .map_err(|e| AppError::database_error(format!("Failed to create status index: {}", e)))?;
+            .map_err(|e| {
+                AppError::database_error(format!("Failed to create status index: {}", e))
+            })?;
 
         Ok(())
     }

@@ -565,14 +565,7 @@ where
             global_offset,
         )
     } else {
-        search_lines_direct(
-            lines,
-            virtual_path,
-            real_path,
-            builder,
-            plan,
-            global_offset,
-        )
+        search_lines_direct(lines, virtual_path, real_path, builder, plan, global_offset)
     }
 }
 
