@@ -7,7 +7,6 @@
 //! - 实时文件监听
 //! - 配置管理
 
-pub mod async_search;
 pub mod config;
 pub mod export;
 pub mod import;

@@ -5,9 +5,9 @@ pub mod query_validator;
 pub mod regex_engine;
 pub mod search_events;
 pub mod search_filters;
-pub mod search_pipeline;
+// pub mod search_pipeline; // 未在主链路中使用
 pub mod search_statistics;
-pub mod search_strategies;
+// pub mod search_strategies; // 未在主链路中使用
 pub mod traits;
 
 #[cfg(test)]
@@ -21,7 +21,7 @@ pub use file_watcher::{
     append_to_workspace_index, get_file_metadata, parse_log_lines, parse_metadata,
     read_file_from_offset,
 };
-pub use query_executor::{MatchDetail, QueryExecutor};
+pub use query_executor::{MatchDetail, QueryPlanBuilder};
 pub use query_planner::{ExecutionPlan, QueryPlannerAdapter};
 pub use regex_engine::{
     AhoCorasickEngine, EngineError, EngineInfo, EngineMatches, EngineType, MatchResult,
@@ -29,6 +29,6 @@ pub use regex_engine::{
 };
 pub use search_statistics::calculate_keyword_statistics;
 pub use traits::{
-    ContentStorage, MetadataStorage, PlanResult, QueryExecutor as QueryExecutorTrait,
-    QueryPlanning, QueryValidation, ValidationResult,
+    ContentStorage, MetadataStorage, PlanResult, QueryExecutor as QueryExecutorTrait, QueryPlanning,
+    QueryValidation, ValidationResult,
 };

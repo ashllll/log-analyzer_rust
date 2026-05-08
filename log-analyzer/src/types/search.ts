@@ -69,14 +69,8 @@ export interface TimeRange {
   end?: string;
 }
 
-/**
- * 搜索过滤器
- */
-export interface SearchFilters {
-  levels?: string[];
-  timeRange?: TimeRange;
-  filePattern?: string;
-}
+// SearchFilters 已统一至 types/common.ts 的 FilterOptions，此处不再重复定义。
+// 如需使用搜索过滤器类型，请从 types/common.ts 导入 FilterOptions。
 
 /**
  * 完整搜索查询
@@ -92,7 +86,7 @@ export interface SearchQuery {
   globalOperator: QueryOperator;
   
   /** 高级过滤器 */
-  filters?: SearchFilters;
+  filters?: import('../types/common').FilterOptions;
   
   /** 元数据 */
   metadata: QueryMetadata;

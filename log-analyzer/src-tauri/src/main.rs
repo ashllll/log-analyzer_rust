@@ -8,14 +8,12 @@
 
 // 导入 log_analyzer 库的模块
 use log_analyzer::commands::{
-    async_search::*, config::*, export::*, import::*, search::*, state_sync::*, validation::*,
+    config::*, export::*, import::*, search::*, state_sync::*, validation::*,
     virtual_tree::*, watch::*, workspace::*,
 };
 use log_analyzer::models::{AppState, CacheState, SearchState, WorkspaceState};
 use log_analyzer::task_manager::TaskManager;
-use log_analyzer::utils::cache_manager::{
-    CacheConfig as RuntimeCacheConfig, CacheManager, CacheThresholds,
-};
+use log_analyzer::utils::cache_manager::CacheManager;
 use moka::sync::Cache;
 use std::{sync::Arc, time::Duration};
 use tauri::Manager;
@@ -35,30 +33,13 @@ fn load_app_config(app: &tauri::AppHandle) -> Option<la_core::models::config::Ap
 fn build_runtime_cache_manager(
     cache_config: &la_core::models::config::CacheConfig,
 ) -> CacheManager {
-    let runtime_config = RuntimeCacheConfig {
-        max_capacity: cache_config.max_cache_capacity as u64,
-        ttl: Duration::from_secs(cache_config.cache_ttl_seconds),
-        tti: Duration::from_secs(cache_config.cache_tti_seconds),
-        compression_threshold: cache_config.compression_threshold as usize,
-        enable_compression: cache_config.compression_enabled,
-        access_pattern_window: cache_config.access_window_size,
-        preload_threshold: cache_config.preload_threshold as u32,
-    };
-
-    let thresholds = CacheThresholds {
-        min_hit_rate: cache_config.min_hit_rate_threshold,
-        max_avg_access_time_ms: cache_config.max_avg_access_time_ms,
-        max_avg_load_time_ms: cache_config.max_avg_load_time_ms,
-        max_eviction_rate_per_minute: cache_config.max_eviction_rate_per_min,
-    };
-
     let sync_cache = Cache::builder()
-        .max_capacity(runtime_config.max_capacity)
-        .time_to_live(runtime_config.ttl)
-        .time_to_idle(runtime_config.tti)
+        .max_capacity(cache_config.max_cache_capacity as u64)
+        .time_to_live(Duration::from_secs(cache_config.cache_ttl_seconds))
+        .time_to_idle(Duration::from_secs(cache_config.cache_tti_seconds))
         .build();
 
-    CacheManager::with_thresholds(Arc::new(sync_cache), runtime_config, thresholds)
+    CacheManager::new(Arc::new(sync_cache))
 }
 
 #[tokio::main]
@@ -187,10 +168,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             check_rar_support,
             // ===== 导出 =====
             export_results,
-            // ===== 异步搜索 =====
-            async_search_logs,
-            cancel_async_search,
-            get_active_searches_count,
             // ===== 状态同步 =====
             init_state_sync,
             // ===== 验证 =====
@@ -237,7 +214,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             if let Some(tm) = tm_opt {
                                 let _ = tokio::time::timeout(
                                     std::time::Duration::from_secs(5),
-                                    tm.shutdown_async(),
+                                    tm.shutdown(),
                                 )
                                 .await;
                             }

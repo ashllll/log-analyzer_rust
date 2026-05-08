@@ -5,7 +5,7 @@ use crate::state_sync::StateSync;
 use crate::task_manager::TaskManager;
 use crate::utils::async_resource_manager::AsyncResourceError;
 use crate::utils::async_resource_manager::AsyncResourceManager;
-use crate::utils::cache_manager::{CacheError, CacheManager};
+use crate::utils::cache_manager::CacheManager;
 use la_search::DiskResultStore;
 use la_search::SearchEngineManager;
 use la_search::VirtualSearchManager;
@@ -148,155 +148,11 @@ impl AppState {
 // CacheManager 访问方法 - 封装 mutex 锁，提供线程安全的访问接口
 // ============================================================================
 
-use crate::utils::cache_manager::{
-    AccessPatternStats, CacheDashboardData, CacheHealthCheck, CacheMetricsSnapshot,
-    CachePerformanceReport, CacheStatistics, CompressionStats, L2CacheConfig,
-};
-
 impl AppState {
-    /// 获取缓存统计信息
-    pub fn get_cache_statistics(&self) -> CacheStatistics {
+    /// 清理工作区缓存
+    pub fn invalidate_workspace_cache(&self, workspace_id: &str) -> usize {
         let cache = self.cache_manager.lock();
-        cache.get_cache_statistics()
-    }
-
-    /// 获取异步缓存统计信息
-    ///
-    /// 注意：此方法直接使用 CacheManager 的同步方法获取统计信息，
-    /// 避免在持锁期间调用 block_on，消除死锁风险
-    pub fn get_async_cache_statistics(&self) -> CacheStatistics {
-        // 缩小锁作用域：获取统计信息后立即释放锁
-        let cache = self.cache_manager.lock();
-        cache.get_cache_statistics()
-    }
-
-    /// 清理工作区缓存（同步版本）
-    pub fn invalidate_workspace_cache(&self, workspace_id: &str) -> Result<usize, String> {
-        let cache = self.cache_manager.lock();
-        cache
-            .invalidate_workspace_cache(workspace_id)
-            .map_err(|e: CacheError| e.to_string())
-    }
-
-    /// 清理工作区缓存（异步版本，用于 Tauri command 等异步上下文）
-    pub async fn invalidate_workspace_cache_async(
-        &self,
-        workspace_id: &str,
-    ) -> Result<usize, String> {
-        // 缩小锁作用域：克隆 CacheManager 后立即释放锁
-        let cache = {
-            let guard = self.cache_manager.lock();
-            guard.clone()
-        };
-        cache
-            .invalidate_workspace_cache_async(workspace_id)
-            .await
-            .map_err(|e: CacheError| e.to_string())
-    }
-
-    /// 清理过期缓存条目
-    pub fn cleanup_expired_entries(&self) -> Result<(), String> {
-        let cache = self.cache_manager.lock();
-        cache
-            .cleanup_expired_entries()
-            .map_err(|e: CacheError| e.to_string())
-    }
-
-    /// 清理异步缓存条目
-    ///
-    /// 注意：此方法先克隆 CacheManager，释放锁后再调用异步操作，避免死锁风险
-    pub fn cleanup_expired_entries_async(&self) -> Result<(), String> {
-        // 缩小锁作用域：克隆 CacheManager 后立即释放锁
-        let cache = {
-            let guard = self.cache_manager.lock();
-            // CacheManager 内部使用 Arc，克隆是廉价的
-            guard.clone()
-        };
-        let result = tauri::async_runtime::block_on(cache.cleanup_expired_entries_async());
-        result.map_err(|e: CacheError| e.to_string())
-    }
-
-    /// 获取缓存性能指标
-    pub fn get_cache_performance_metrics(&self) -> CacheMetricsSnapshot {
-        let cache = self.cache_manager.lock();
-        cache.get_performance_metrics()
-    }
-
-    /// 获取缓存容量配置
-    pub fn get_cache_capacity(&self) -> u64 {
-        let cache = self.cache_manager.lock();
-        cache.get_max_capacity()
-    }
-
-    /// 生成缓存性能报告
-    pub fn get_cache_performance_report(&self) -> CachePerformanceReport {
-        let cache = self.cache_manager.lock();
-        cache.generate_performance_report()
-    }
-
-    /// 执行缓存健康检查
-    ///
-    /// 注意：此方法先克隆 CacheManager，释放锁后再调用异步操作，避免死锁风险
-    pub fn cache_health_check(&self) -> CacheHealthCheck {
-        // 缩小锁作用域：克隆 CacheManager 后立即释放锁
-        let cache = {
-            let guard = self.cache_manager.lock();
-            guard.clone()
-        };
-        tauri::async_runtime::block_on(cache.health_check())
-    }
-
-    /// 获取访问模式统计
-    pub fn get_access_pattern_stats(&self) -> AccessPatternStats {
-        let cache = self.cache_manager.lock();
-        cache.get_access_pattern_stats()
-    }
-
-    /// 获取压缩统计信息
-    pub fn get_compression_stats(&self) -> CompressionStats {
-        let cache = self.cache_manager.lock();
-        cache.get_compression_stats()
-    }
-
-    /// 获取 L2 缓存配置
-    pub fn get_l2_cache_config(&self) -> L2CacheConfig {
-        let cache = self.cache_manager.lock();
-        cache.get_l2_config()
-    }
-
-    /// 智能缓存驱逐
-    ///
-    /// 注意：此方法先克隆 CacheManager，释放锁后再调用异步操作，避免死锁风险
-    pub fn intelligent_cache_eviction(
-        &self,
-        target_reduction_percent: f64,
-    ) -> Result<usize, String> {
-        // 缩小锁作用域：克隆 CacheManager 后立即释放锁
-        let cache = {
-            let guard = self.cache_manager.lock();
-            guard.clone()
-        };
-        let result =
-            tauri::async_runtime::block_on(cache.intelligent_eviction(target_reduction_percent));
-        result.map_err(|e: CacheError| e.to_string())
-    }
-
-    /// 重置缓存性能指标
-    pub fn reset_cache_metrics(&self) {
-        let cache = self.cache_manager.lock();
-        cache.reset_metrics();
-    }
-
-    /// 重置访问模式追踪器
-    pub fn reset_access_tracker(&self) {
-        let cache = self.cache_manager.lock();
-        cache.reset_access_tracker();
-    }
-
-    /// 获取缓存仪表板数据
-    pub fn get_cache_dashboard_data(&self) -> CacheDashboardData {
-        let cache = self.cache_manager.lock();
-        cache.get_dashboard_data()
+        cache.invalidate_workspace_cache(workspace_id)
     }
 }
 

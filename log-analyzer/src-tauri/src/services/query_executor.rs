@@ -4,15 +4,16 @@ use crate::services::regex_engine::RegexEngine;
 use la_core::error::Result;
 use la_core::models::search::*;
 use moka::sync::Cache;
-use sha2::{Digest, Sha256};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 /// 辅助函数：哈希 QueryOperator
-fn hash_query_operator(op: &QueryOperator, hasher: &mut Sha256) {
+fn hash_query_operator(op: &QueryOperator, hasher: &mut DefaultHasher) {
     match op {
-        QueryOperator::And => hasher.update([0u8]),
-        QueryOperator::Or => hasher.update([1u8]),
-        QueryOperator::Not => hasher.update([2u8]),
+        QueryOperator::And => 0u8.hash(hasher),
+        QueryOperator::Or => 1u8.hash(hasher),
+        QueryOperator::Not => 2u8.hash(hasher),
     }
 }
 
@@ -21,36 +22,23 @@ fn hash_query_operator(op: &QueryOperator, hasher: &mut Sha256) {
 /// 统一 QueryExecutor 和 GenericQueryExecutor 的缓存键生成逻辑，
 /// 确保等价的查询产生相同的缓存键。
 ///
-/// 使用 SHA-256 替代 DefaultHasher，确保跨 Rust 版本稳定。
-/// 哈希所有查询字段:
-/// - 查询 ID, 全局操作符
-/// - 过滤器 (时间范围, 日志级别, 文件模式)
-/// - 搜索项 (按 ID 排序后哈希所有字段)
-pub(crate) fn compute_query_cache_key(query: &SearchQuery) -> String {
-    let mut hasher = Sha256::new();
+/// 使用 DefaultHasher 替代 SHA-256，避免密码学安全哈希的额外开销。
+/// 缓存键不需要抗碰撞性，DefaultHasher 的性能更优。
+pub(crate) fn compute_query_cache_key(query: &SearchQuery) -> u64 {
+    let mut hasher = DefaultHasher::new();
 
     // 哈希查询 ID 和全局操作符
-    hasher.update(query.id.as_bytes());
+    query.id.hash(&mut hasher);
     hash_query_operator(&query.global_operator, &mut hasher);
 
     // 哈希过滤器（如果存在）
     if let Some(filters) = &query.filters {
         if let Some(time_range) = &filters.time_range {
-            if let Some(start) = &time_range.start {
-                hasher.update(start.as_bytes());
-            }
-            if let Some(end) = &time_range.end {
-                hasher.update(end.as_bytes());
-            }
+            time_range.start.hash(&mut hasher);
+            time_range.end.hash(&mut hasher);
         }
-        if let Some(levels) = &filters.levels {
-            for level in levels {
-                hasher.update(level.as_bytes());
-            }
-        }
-        if let Some(fp) = &filters.file_pattern {
-            hasher.update(fp.as_bytes());
-        }
+        filters.levels.hash(&mut hasher);
+        filters.file_pattern.hash(&mut hasher);
     }
 
     // 按 ID 排序以确保哈希一致性（无论术语顺序如何，等价查询产生相同哈希）
@@ -59,33 +47,26 @@ pub(crate) fn compute_query_cache_key(query: &SearchQuery) -> String {
 
     // 哈希每个搜索项的所有关键字段
     for term in &sorted_terms {
-        hasher.update(term.id.as_bytes());
-        hasher.update(term.value.as_bytes());
+        term.id.hash(&mut hasher);
+        term.value.hash(&mut hasher);
         hash_query_operator(&term.operator, &mut hasher);
-        hasher.update([term.source.clone() as u8]);
-        if let Some(pid) = &term.preset_group_id {
-            hasher.update(pid.as_bytes());
-        }
-        hasher.update([term.is_regex as u8]);
-        hasher.update(term.priority.to_le_bytes());
-        hasher.update([term.enabled as u8]);
-        hasher.update([term.case_sensitive as u8]);
+        term.source.hash(&mut hasher);
+        term.preset_group_id.hash(&mut hasher);
+        term.is_regex.hash(&mut hasher);
+        term.priority.hash(&mut hasher);
+        term.enabled.hash(&mut hasher);
+        term.case_sensitive.hash(&mut hasher);
     }
 
-    // 返回 16 进制哈希值作为缓存键（取前 8 字节 / 64 位）
-    format!(
-        "{:016x}",
-        u64::from_le_bytes(hasher.finalize()[..8].try_into().unwrap())
-    )
+    hasher.finish()
 }
 
 /**
- * 查询执行器
+ * 查询计划构建器
  *
- * 重构后的执行器，职责拆分为：
- * - QueryValidator: 验证查询
- * - QueryPlanner: 构建执行计划（使用混合引擎）
- * - QueryExecutor: 执行查询和结果匹配
+ * 职责：验证查询、构建执行计划、缓存计划、匹配文本行。
+ * 注意：名称原为 QueryExecutor，但实际不负责"执行"搜索扫描，
+ * 只负责构建计划和行级匹配，因此更名为 QueryPlanBuilder。
  *
  * 设计决策：使用混合引擎策略自动选择最佳匹配算法：
  * - AhoCorasick: 简单关键词搜索，O(n) 线性复杂度
@@ -93,15 +74,15 @@ pub(crate) fn compute_query_cache_key(query: &SearchQuery) -> String {
  *
  * 性能优化：使用 ExecutionPlan 缓存避免重复构建查询计划
  */
-pub struct QueryExecutor {
+pub struct QueryPlanBuilder {
     planner: QueryPlanner,
     /// ExecutionPlan 缓存 (LRU策略)
-    plan_cache: Cache<String, Arc<ExecutionPlan>>,
+    plan_cache: Cache<u64, Arc<ExecutionPlan>>,
 }
 
-impl QueryExecutor {
+impl QueryPlanBuilder {
     /**
-     * 创建新的执行器
+     * 创建新的计划构建器
      *
      * # 参数
      * * `cache_size` - 引擎缓存大小
@@ -117,23 +98,23 @@ impl QueryExecutor {
     /**
      * 生成查询缓存键
      *
-     * 委托给公共函数 compute_query_cache_key，确保与 GenericQueryExecutor 一致性
+     * 委托给公共函数 compute_query_cache_key，确保与 GenericQueryPlanBuilder 一致性
      */
-    fn cache_key(query: &SearchQuery) -> String {
+    fn cache_key(query: &SearchQuery) -> u64 {
         compute_query_cache_key(query)
     }
 
     /**
-     * 执行查询
+     * 构建查询计划
      *
      * # 参数
      * * `query` - 搜索查询
      *
      * # 返回
      * * `Ok(ExecutionPlan)` - 执行计划
-     * * `Err(AppError)` - 执行失败
+     * * `Err(AppError)` - 构建失败
      */
-    pub fn execute(&mut self, query: &SearchQuery) -> Result<ExecutionPlan> {
+    pub fn build(&mut self, query: &SearchQuery) -> Result<ExecutionPlan> {
         QueryValidator::validate(query)?;
 
         // 检查缓存
@@ -408,57 +389,57 @@ mod tests {
 
     #[test]
     fn test_matches_line_and_mixed_case_sensitivity() {
-        let mut executor = QueryExecutor::new(10);
+        let mut builder = QueryPlanBuilder::new(10);
         let query = build_query(
             vec![build_term("t1", "Error", QueryOperator::And, false)],
             QueryOperator::And,
         );
-        let plan = executor.execute(&query).unwrap();
+        let plan = builder.build(&query).unwrap();
 
         assert!(
-            executor.matches_line(&plan, "error: something failed"),
+            builder.matches_line(&plan, "error: something failed"),
             "Should match lowercase error"
         );
         assert!(
-            executor.matches_line(&plan, "ERROR: something failed"),
+            builder.matches_line(&plan, "ERROR: something failed"),
             "Should match uppercase ERROR"
         );
         assert!(
-            executor.matches_line(&plan, "Error: something failed"),
+            builder.matches_line(&plan, "Error: something failed"),
             "Should match mixed case Error"
         );
     }
 
     #[test]
     fn test_matches_line_with_case_sensitive() {
-        let mut executor = QueryExecutor::new(10);
+        let mut builder = QueryPlanBuilder::new(10);
         let query = build_query(
             vec![build_term("t1", "Error", QueryOperator::And, true)],
             QueryOperator::And,
         );
-        let plan = executor.execute(&query).unwrap();
+        let plan = builder.build(&query).unwrap();
 
-        assert!(executor.matches_line(&plan, "Error: something"));
-        assert!(!executor.matches_line(&plan, "error: something"));
-        assert!(!executor.matches_line(&plan, "ERROR: something"));
+        assert!(builder.matches_line(&plan, "Error: something"));
+        assert!(!builder.matches_line(&plan, "error: something"));
+        assert!(!builder.matches_line(&plan, "ERROR: something"));
     }
 
     #[test]
     fn test_matches_line_not_operator() {
-        let mut executor = QueryExecutor::new(10);
+        let mut builder = QueryPlanBuilder::new(10);
         let query = build_query(
             vec![build_term("t1", "debug", QueryOperator::Not, false)],
             QueryOperator::Not,
         );
-        let plan = executor.execute(&query).unwrap();
+        let plan = builder.build(&query).unwrap();
 
-        assert!(!executor.matches_line(&plan, "debug: starting")); // Should NOT match
-        assert!(executor.matches_line(&plan, "info: running")); // Should match
+        assert!(!builder.matches_line(&plan, "debug: starting")); // Should NOT match
+        assert!(builder.matches_line(&plan, "info: running")); // Should match
     }
 
     #[test]
     fn test_matches_line_or_operator() {
-        let mut executor = QueryExecutor::new(10);
+        let mut builder = QueryPlanBuilder::new(10);
         let query = build_query(
             vec![
                 build_term("t1", "Error", QueryOperator::Or, false),
@@ -466,22 +447,22 @@ mod tests {
             ],
             QueryOperator::Or,
         );
-        let plan = executor.execute(&query).unwrap();
+        let plan = builder.build(&query).unwrap();
 
-        assert!(executor.matches_line(&plan, "error: something"));
-        assert!(executor.matches_line(&plan, "warning: something"));
-        assert!(executor.matches_line(&plan, "Error: something"));
-        assert!(!executor.matches_line(&plan, "info: something"));
+        assert!(builder.matches_line(&plan, "error: something"));
+        assert!(builder.matches_line(&plan, "warning: something"));
+        assert!(builder.matches_line(&plan, "Error: something"));
+        assert!(!builder.matches_line(&plan, "info: something"));
     }
 
     #[test]
     fn test_filter_lines() {
-        let mut executor = QueryExecutor::new(10);
+        let mut builder = QueryPlanBuilder::new(10);
         let query = build_query(
             vec![build_term("t1", "error", QueryOperator::And, false)],
             QueryOperator::And,
         );
-        let plan = executor.execute(&query).unwrap();
+        let plan = builder.build(&query).unwrap();
 
         let lines = vec![
             "error: first".to_string(),
@@ -489,13 +470,13 @@ mod tests {
             "error: third".to_string(),
         ];
 
-        let filtered = executor.filter_lines(&plan, &lines);
+        let filtered = builder.filter_lines(&plan, &lines);
         assert_eq!(filtered.len(), 2);
     }
 
     #[test]
     fn test_match_with_details() {
-        let mut executor = QueryExecutor::new(10);
+        let mut builder = QueryPlanBuilder::new(10);
         let query = build_query(
             vec![
                 build_term("t1", "Error", QueryOperator::And, false),
@@ -503,9 +484,9 @@ mod tests {
             ],
             QueryOperator::And,
         );
-        let plan = executor.execute(&query).unwrap();
+        let plan = builder.build(&query).unwrap();
 
-        let details = executor.match_with_details(&plan, "Error: operation failed");
+        let details = builder.match_with_details(&plan, "Error: operation failed");
         assert!(details.is_some());
         let details = details.unwrap();
         assert!(!details.is_empty());
@@ -513,7 +494,7 @@ mod tests {
 
     #[test]
     fn test_match_with_details_all_keywords() {
-        let mut executor = QueryExecutor::new(10);
+        let mut builder = QueryPlanBuilder::new(10);
         let query = build_query(
             vec![
                 build_term("t1", "error", QueryOperator::And, false),
@@ -522,10 +503,10 @@ mod tests {
             ],
             QueryOperator::And,
         );
-        let plan = executor.execute(&query).unwrap();
+        let plan = builder.build(&query).unwrap();
 
         let line = "error: timeout occurred, warning: system overloaded";
-        let details = executor.match_with_details(&plan, line);
+        let details = builder.match_with_details(&plan, line);
 
         assert!(details.is_some());
         let details = details.unwrap();
@@ -534,7 +515,7 @@ mod tests {
 
     #[test]
     fn test_match_with_details_repeated_keywords() {
-        let mut executor = QueryExecutor::new(10);
+        let mut builder = QueryPlanBuilder::new(10);
         let query = build_query(
             vec![
                 build_term("t1", "error", QueryOperator::And, false),
@@ -542,10 +523,10 @@ mod tests {
             ],
             QueryOperator::And,
         );
-        let plan = executor.execute(&query).unwrap();
+        let plan = builder.build(&query).unwrap();
 
         let line = "error error error";
-        let details = executor.match_with_details(&plan, line);
+        let details = builder.match_with_details(&plan, line);
 
         assert!(details.is_some());
         let details = details.unwrap();
@@ -558,7 +539,7 @@ mod tests {
 
     #[test]
     fn test_match_with_details_aho_corasiick_multi_keyword() {
-        let mut executor = QueryExecutor::new(10);
+        let mut builder = QueryPlanBuilder::new(10);
         let query = build_query(
             vec![build_term(
                 "t1",
@@ -568,10 +549,10 @@ mod tests {
             )],
             QueryOperator::And,
         );
-        let plan = executor.execute(&query).unwrap();
+        let plan = builder.build(&query).unwrap();
 
         let line = "error found, warning issued, info logged";
-        let details = executor.match_with_details(&plan, line);
+        let details = builder.match_with_details(&plan, line);
 
         assert!(details.is_some());
         let details = details.unwrap();

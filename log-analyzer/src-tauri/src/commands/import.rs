@@ -689,14 +689,12 @@ pub async fn import_folder(
                         let guard = state.cache_manager.lock();
                         guard.clone()
                     };
-                    if let Err(e) = cache
-                        .invalidate_workspace_cache_async(&workspace_id_clone)
-                        .await
-                    {
-                        tracing::warn!(
+                    let count = cache.invalidate_workspace_cache(&workspace_id_clone);
+                    if count > 0 {
+                        tracing::info!(
                             workspace_id = %workspace_id_clone,
-                            error = %e,
-                            "Failed to invalidate workspace cache after import"
+                            count = count,
+                            "Workspace cache invalidated after import"
                         );
                     }
                 }

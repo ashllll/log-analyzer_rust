@@ -19,7 +19,7 @@ use la_core::models::{LogEntry, SearchFilters, SearchQuery};
 use regex::Regex;
 
 use crate::services::file_watcher::TimestampParser;
-use crate::services::{parse_metadata, ExecutionPlan, QueryExecutor};
+use crate::services::{parse_metadata, ExecutionPlan, QueryPlanBuilder};
 use crate::utils::encoding::decode_log_content;
 
 pub const SEARCH_SEGMENT_LINE_COUNT: usize = 256;
@@ -546,7 +546,7 @@ pub fn search_lines_with_details<'a, I>(
     lines: I,
     virtual_path: &str,
     real_path: &str,
-    executor: &QueryExecutor,
+    builder: &QueryPlanBuilder,
     plan: &ExecutionPlan,
     filters: &CompiledSearchFilters,
     global_offset: usize,
@@ -559,7 +559,7 @@ where
             lines,
             virtual_path,
             real_path,
-            executor,
+            builder,
             plan,
             filters,
             global_offset,
@@ -569,7 +569,7 @@ where
             lines,
             virtual_path,
             real_path,
-            executor,
+            builder,
             plan,
             global_offset,
         )
@@ -580,7 +580,7 @@ pub fn search_lines_direct<'a, I>(
     lines: I,
     virtual_path: &str,
     real_path: &str,
-    executor: &QueryExecutor,
+    builder: &QueryPlanBuilder,
     plan: &ExecutionPlan,
     global_offset: usize,
 ) -> Vec<LogEntry>
@@ -591,7 +591,7 @@ where
 
     for (index, line) in lines {
         let line_ref = line.as_ref();
-        let Some(match_details) = executor.match_with_details(plan, line_ref) else {
+        let Some(match_details) = builder.match_with_details(plan, line_ref) else {
             continue;
         };
 
@@ -614,7 +614,7 @@ pub fn search_lines_with_segment_pruning<'a, I>(
     lines: I,
     virtual_path: &str,
     real_path: &str,
-    executor: &QueryExecutor,
+    builder: &QueryPlanBuilder,
     plan: &ExecutionPlan,
     filters: &CompiledSearchFilters,
     global_offset: usize,
@@ -643,7 +643,7 @@ where
                 &mut results,
                 virtual_path,
                 real_path,
-                executor,
+                builder,
                 plan,
                 filters,
                 global_offset,
@@ -658,7 +658,7 @@ where
             &mut results,
             virtual_path,
             real_path,
-            executor,
+            builder,
             plan,
             filters,
             global_offset,
@@ -675,7 +675,7 @@ pub fn flush_search_segment(
     results: &mut Vec<LogEntry>,
     virtual_path: &str,
     real_path: &str,
-    executor: &QueryExecutor,
+    builder: &QueryPlanBuilder,
     plan: &ExecutionPlan,
     filters: &CompiledSearchFilters,
     global_offset: usize,
@@ -690,7 +690,7 @@ pub fn flush_search_segment(
                 continue;
             }
 
-            let Some(match_details) = executor.match_with_details(plan, candidate.line.as_ref())
+            let Some(match_details) = builder.match_with_details(plan, candidate.line.as_ref())
             else {
                 continue;
             };
@@ -749,7 +749,7 @@ pub fn search_single_file_with_details(
     file_identifier: &str,
     virtual_path: &str,
     cas_opt: Option<&crate::storage::ContentAddressableStorage>,
-    executor: &QueryExecutor,
+    builder: &QueryPlanBuilder,
     plan: &ExecutionPlan,
     filters: &CompiledSearchFilters,
     global_offset: usize,
@@ -795,7 +795,7 @@ pub fn search_single_file_with_details(
                                     .map(|(index, line)| (index, Cow::Borrowed(line))),
                                 virtual_path,
                                 file_identifier,
-                                executor,
+                                builder,
                                 plan,
                                 filters,
                                 global_offset,
@@ -819,7 +819,7 @@ pub fn search_single_file_with_details(
                                     .map(|(index, line)| (index, Cow::Borrowed(line))),
                                 virtual_path,
                                 file_identifier,
-                                executor,
+                                builder,
                                 plan,
                                 filters,
                                 global_offset,
@@ -892,7 +892,7 @@ pub fn search_single_file_with_details(
                 .map(|(index, line)| (index, Cow::Borrowed(line))),
             virtual_path,
             file_identifier,
-            executor,
+            builder,
             plan,
             filters,
             global_offset,
@@ -944,7 +944,7 @@ pub fn search_single_file_with_details(
                         }),
                     virtual_path,
                     real_path,
-                    executor,
+                    builder,
                     plan,
                     filters,
                     global_offset,

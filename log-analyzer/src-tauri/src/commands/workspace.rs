@@ -660,8 +660,9 @@ pub async fn delete_workspace(
             let guard = state.cache_manager.lock();
             guard.clone()
         };
-        if let Err(e) = cache.invalidate_workspace_cache_async(&workspaceId).await {
-            warn!(error = %e, "工作区缓存失效失败");
+        let count = cache.invalidate_workspace_cache(&workspaceId);
+        if count > 0 {
+            info!(workspace_id = %workspaceId, count = count, "工作区缓存已失效");
         }
     }
     info!(

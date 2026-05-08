@@ -115,6 +115,15 @@ impl RegexEngine {
     /// 4. **单简单关键词 (case-sensitive)**: 使用 MemchrEngine（SIMD 加速）
     /// 5. **其他**: 使用 StandardEngine
     pub fn new(pattern: &str, is_regex: bool) -> Result<Self, EngineError> {
+        Self::new_with_case(pattern, is_regex, false)
+    }
+
+    /// 带大小写不敏感标志的构造方法，供 query_planner 使用
+    pub fn new_with_case(
+        pattern: &str,
+        is_regex: bool,
+        case_insensitive: bool,
+    ) -> Result<Self, EngineError> {
         // 1. 检测是否需要前瞻/后瞻（使用 FancyEngine）
         if needs_lookaround(pattern) {
             return FancyEngine::new(pattern).map(RegexEngine::Fancy);
@@ -127,42 +136,22 @@ impl RegexEngine {
 
         // 3. 多模式匹配 (| 分隔) 使用 Aho-Corasick
         if is_multi_keyword(pattern) {
-            return AhoCorasickEngine::new(pattern).map(RegexEngine::AhoCorasick);
-        }
-
-        // 4. 简单关键词 (case-sensitive) 使用 Memchr（SIMD 加速）
-        if is_simple_keyword(pattern) && !pattern.starts_with("(?i:") {
-            return MemchrEngine::new(pattern).map(RegexEngine::Memchr);
-        }
-
-        // 5. 默认使用 StandardEngine（包含 (?i:...) 等 case-insensitive 模式）
-        StandardEngine::new(pattern).map(RegexEngine::Standard)
-    }
-
-    /// 带大小写不敏感标志的构造方法，供 query_planner 使用
-    pub fn new_with_case(
-        pattern: &str,
-        is_regex: bool,
-        case_insensitive: bool,
-    ) -> Result<Self, EngineError> {
-        if needs_lookaround(pattern) {
-            return FancyEngine::new(pattern).map(RegexEngine::Fancy);
-        }
-        if is_regex && !is_simple_keyword(pattern) {
-            return StandardEngine::new(pattern).map(RegexEngine::Standard);
-        }
-        if is_multi_keyword(pattern) {
             return AhoCorasickEngine::new_with_ci(pattern, case_insensitive)
                 .map(RegexEngine::AhoCorasick);
         }
+
+        // 4. 简单关键词 (case-sensitive) 使用 Memchr（SIMD 加速）
         if !case_insensitive && is_simple_keyword(pattern) {
             return MemchrEngine::new(pattern).map(RegexEngine::Memchr);
         }
+
+        // 5. case-insensitive 简单关键词：使用 AhoCorasick 的 ascii_case_insensitive
+        // 替代 StandardEngine (?i:) 包装以获得更好性能
         if case_insensitive && is_simple_keyword(pattern) {
-            // Case-insensitive simple keyword: use AhoCorasick with ascii_case_insensitive
-            // instead of StandardEngine (?i:) wrapper for better performance.
             return AhoCorasickEngine::new_with_ci(pattern, true).map(RegexEngine::AhoCorasick);
         }
+
+        // 6. 默认使用 StandardEngine（包含 (?i:...) 等 case-insensitive 模式）
         StandardEngine::new(pattern).map(RegexEngine::Standard)
     }
 

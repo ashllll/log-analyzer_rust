@@ -6,7 +6,6 @@
 //! 为保持与 JavaScript camelCase 惯例一致，Tauri 命令参数使用 camelCase 命名。
 
 use parking_lot::Mutex;
-use sha2::{Digest, Sha256};
 use std::{
     borrow::Cow,
     collections::HashSet,
@@ -51,7 +50,7 @@ pub struct BinarySearchRequest {
 }
 
 use crate::services::file_watcher::TimestampParser;
-use crate::services::{calculate_keyword_statistics, parse_metadata, ExecutionPlan, QueryExecutor};
+use crate::services::{calculate_keyword_statistics, parse_metadata, ExecutionPlan, QueryPlanBuilder};
 use crate::utils::encoding::decode_log_content;
 use crate::utils::workspace_paths::resolve_workspace_dir;
 
@@ -270,12 +269,14 @@ fn log_cache_statistics(total_searches: &Arc<Mutex<u64>>, cache_hits: &Arc<Mutex
 
 /// 计算查询内容的哈希版本号（用于缓存键区分）
 ///
-/// 使用 SHA-256 哈希算法生成查询的版本标识符，确保不同查询内容
-/// 使用不同的缓存键，避免缓存污染。
-fn compute_query_version(query: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(query.as_bytes());
-    format!("{:x}", hasher.finalize())
+/// 使用 std::collections::hash_map::DefaultHasher 生成查询的版本标识符，
+/// 避免 SHA-256 的密码学安全开销。缓存键不需要抗碰撞性。
+fn compute_query_version(query: &str) -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut hasher = DefaultHasher::new();
+    query.hash(&mut hasher);
+    hasher.finish()
 }
 
 /// 将搜索结果写入 DiskResultStore，统一 Tantivy 和 CAS 路径的写入逻辑
@@ -762,7 +763,7 @@ pub async fn search_logs(
         filters.file_pattern.clone(),
         false, // 全局 case_sensitive 占位（per-term 大小写敏感已包含在 query.terms 中，此维度暂保留以维持缓存键类型兼容）
         max_results,
-        query_version, // 使用 SHA-256 哈希作为版本号
+        query_version.to_string(), // 使用 DefaultHasher 哈希作为版本号
     );
 
     {
@@ -842,7 +843,7 @@ pub async fn search_logs(
         }
     };
 
-    let (cas, metadata_store, search_engine_manager) =
+    let (cas, metadata_store, _search_engine_manager) =
         ensure_workspace_runtime_state(&app_handle, &state, &workspace_id, &workspace_dir)
             .await
             .map_err(|e| {
@@ -852,63 +853,6 @@ pub async fn search_logs(
                 )
                 .with_help("Try reloading the workspace before searching again")
             })?;
-
-    // ========== Tantivy 优先路径 ==========
-    // 如果索引非空，优先使用 Tantivy 查询（亚秒级 vs CAS 扫描的秒级）
-    let tantivy_has_docs = match search_engine_manager.get_time_range() {
-        Ok((_, _, total_count)) => total_count > 0,
-        Err(_) => false,
-    };
-
-    if tantivy_has_docs {
-        let tantivy_query = raw_terms.join(" OR ");
-        let tantivy_start = std::time::Instant::now();
-
-        match search_engine_manager
-            .search_with_timeout(
-                &tantivy_query,
-                Some(max_results),
-                Some(std::time::Duration::from_millis(500)),
-                Some(cancellation_token.clone()),
-            )
-            .await
-        {
-            Ok(tantivy_results) => {
-                info!(
-                    query = %tantivy_query,
-                    hits = tantivy_results.entries.len(),
-                    total = tantivy_results.total_count,
-                    ms = tantivy_start.elapsed().as_millis(),
-                    "Tantivy search succeeded"
-                );
-
-                let entries = tantivy_results.entries;
-                let results_count = entries.len();
-
-                write_results_to_disk(&disk_result_store, &search_id, &entries, "Tantivy");
-
-                let keyword_stats = compute_keyword_stats(&entries, &raw_terms);
-                emit_search_complete(
-                    &app_handle,
-                    results_count,
-                    keyword_stats,
-                    tantivy_start.elapsed().as_millis() as u64,
-                    false,
-                );
-
-                cache_search_results(&cache_manager, cache_key, entries);
-                remove_cancellation_token(&cancellation_tokens, &search_id);
-
-                return Ok(search_id);
-            }
-            Err(crate::search_engine::SearchError::Timeout(_)) => {
-                warn!("Tantivy search timed out, falling back to CAS scan");
-            }
-            Err(e) => {
-                warn!(error = %e, "Tantivy search failed, falling back to CAS scan");
-            }
-        }
-    }
 
     // Get all files from MetadataStore BEFORE spawn_blocking
     let files = match metadata_store.get_all_files().await {
@@ -958,8 +902,8 @@ pub async fn search_logs(
     let handle = tokio::task::spawn_blocking(move || {
         let start_time = std::time::Instant::now();
 
-        let mut executor = QueryExecutor::new(regex_cache_size);
-        let plan = match executor.execute(&structured_query) {
+        let mut builder = QueryPlanBuilder::new(regex_cache_size);
+        let plan = match builder.build(&structured_query) {
             Ok(p) => p,
             Err(e) => {
                 let _ = app_handle.emit("search-error", format!("Query execution error: {}", e));
@@ -1070,7 +1014,7 @@ pub async fn search_logs(
                         &file_identifier,
                         &file_metadata.virtual_path,
                         Some(&*cas), // Pass CAS instance for hash-based access
-                        &executor,
+                        &builder,
                         &plan,
                         &compiled_filters_for_search,
                         total_processed + idx * 10000,
@@ -1250,7 +1194,7 @@ fn search_lines_with_details<'a, I>(
     lines: I,
     virtual_path: &str,
     real_path: &str,
-    executor: &QueryExecutor,
+    builder: &QueryPlanBuilder,
     plan: &ExecutionPlan,
     filters: &CompiledSearchFilters,
     global_offset: usize,
@@ -1263,7 +1207,7 @@ where
             lines,
             virtual_path,
             real_path,
-            executor,
+            builder,
             plan,
             filters,
             global_offset,
@@ -1273,7 +1217,7 @@ where
             lines,
             virtual_path,
             real_path,
-            executor,
+            builder,
             plan,
             global_offset,
         )
@@ -1284,7 +1228,7 @@ fn search_lines_direct<'a, I>(
     lines: I,
     virtual_path: &str,
     real_path: &str,
-    executor: &QueryExecutor,
+    builder: &QueryPlanBuilder,
     plan: &ExecutionPlan,
     global_offset: usize,
 ) -> Vec<LogEntry>
@@ -1295,7 +1239,7 @@ where
 
     for (index, line) in lines {
         let line_ref = line.as_ref();
-        let Some(match_details) = executor.match_with_details(plan, line_ref) else {
+        let Some(match_details) = builder.match_with_details(plan, line_ref) else {
             continue;
         };
 
@@ -1318,7 +1262,7 @@ fn search_lines_with_segment_pruning<'a, I>(
     lines: I,
     virtual_path: &str,
     real_path: &str,
-    executor: &QueryExecutor,
+    builder: &QueryPlanBuilder,
     plan: &ExecutionPlan,
     filters: &CompiledSearchFilters,
     global_offset: usize,
@@ -1347,7 +1291,7 @@ where
                 &mut results,
                 virtual_path,
                 real_path,
-                executor,
+                builder,
                 plan,
                 filters,
                 global_offset,
@@ -1362,7 +1306,7 @@ where
             &mut results,
             virtual_path,
             real_path,
-            executor,
+            builder,
             plan,
             filters,
             global_offset,
@@ -1379,7 +1323,7 @@ fn flush_search_segment(
     results: &mut Vec<LogEntry>,
     virtual_path: &str,
     real_path: &str,
-    executor: &QueryExecutor,
+    builder: &QueryPlanBuilder,
     plan: &ExecutionPlan,
     filters: &CompiledSearchFilters,
     global_offset: usize,
@@ -1394,7 +1338,7 @@ fn flush_search_segment(
                 continue;
             }
 
-            let Some(match_details) = executor.match_with_details(plan, candidate.line.as_ref())
+            let Some(match_details) = builder.match_with_details(plan, candidate.line.as_ref())
             else {
                 continue;
             };
@@ -1470,7 +1414,7 @@ fn search_single_file_with_details(
     file_identifier: &str,
     virtual_path: &str,
     cas_opt: Option<&crate::storage::ContentAddressableStorage>,
-    executor: &QueryExecutor,
+    builder: &QueryPlanBuilder,
     plan: &ExecutionPlan,
     filters: &CompiledSearchFilters,
     global_offset: usize,
@@ -1523,7 +1467,7 @@ fn search_single_file_with_details(
                                     .map(|(index, line)| (index, Cow::Borrowed(line))),
                                 virtual_path,
                                 file_identifier,
-                                executor,
+                                builder,
                                 plan,
                                 filters,
                                 global_offset,
@@ -1548,7 +1492,7 @@ fn search_single_file_with_details(
                                     .map(|(index, line)| (index, Cow::Borrowed(line))),
                                 virtual_path,
                                 file_identifier,
-                                executor,
+                                builder,
                                 plan,
                                 filters,
                                 global_offset,
@@ -1623,7 +1567,7 @@ fn search_single_file_with_details(
                 .map(|(index, line)| (index, Cow::Borrowed(line))),
             virtual_path,
             file_identifier,
-            executor,
+            builder,
             plan,
             filters,
             global_offset,
@@ -1676,7 +1620,7 @@ fn search_single_file_with_details(
                         }),
                     virtual_path,
                     real_path,
-                    executor,
+                    builder,
                     plan,
                     filters,
                     global_offset,
@@ -1954,8 +1898,8 @@ mod tests {
         }
     }
 
-    fn build_executor_and_plan(query: &str) -> (QueryExecutor, ExecutionPlan) {
-        let mut executor = QueryExecutor::new(64);
+    fn build_builder_and_plan(query: &str) -> (QueryPlanBuilder, ExecutionPlan) {
+        let mut builder = QueryPlanBuilder::new(64);
         let terms = split_query_by_pipe(query)
             .into_iter()
             .enumerate()
@@ -1983,12 +1927,12 @@ mod tests {
                 label: None,
             },
         };
-        let plan = executor.execute(&query).unwrap();
-        (executor, plan)
+        let plan = builder.build(&query).unwrap();
+        (builder, plan)
     }
 
-    fn build_not_executor_and_plan(query: &str) -> (QueryExecutor, ExecutionPlan) {
-        let mut executor = QueryExecutor::new(64);
+    fn build_not_builder_and_plan(query: &str) -> (QueryPlanBuilder, ExecutionPlan) {
+        let mut builder = QueryPlanBuilder::new(64);
         let query = SearchQuery {
             id: "test_not_query".to_string(),
             terms: vec![SearchTerm {
@@ -2011,8 +1955,8 @@ mod tests {
                 label: None,
             },
         };
-        let plan = executor.execute(&query).unwrap();
-        (executor, plan)
+        let plan = builder.build(&query).unwrap();
+        (builder, plan)
     }
 
     #[test]
@@ -2126,7 +2070,7 @@ mod tests {
             None,
         );
         let compiled = CompiledSearchFilters::compile(&filters).unwrap();
-        let (executor, plan) = build_executor_and_plan("panic");
+        let (builder, plan) = build_builder_and_plan("panic");
         let content = "2024-01-15 09:30:00 ERROR panic before window\n\
 2024-01-15 10:15:00 INFO panic wrong level\n\
 2024-01-15 10:30:00 ERROR panic in window\n";
@@ -2138,7 +2082,7 @@ mod tests {
                 .map(|(index, line)| (index, Cow::Borrowed(line))),
             "logs/app.log",
             "cas://hash",
-            &executor,
+            &builder,
             &plan,
             &compiled,
             0,
@@ -2153,7 +2097,7 @@ mod tests {
     fn segment_pruning_skips_segments_without_matching_levels() {
         let filters = build_filters(None, None, &["ERROR"], None);
         let compiled = CompiledSearchFilters::compile(&filters).unwrap();
-        let (executor, plan) = build_executor_and_plan("keyword");
+        let (builder, plan) = build_builder_and_plan("keyword");
         let content = "2024-01-15 10:00:00 INFO keyword info only\n\
 2024-01-15 10:01:00 INFO keyword still info\n";
 
@@ -2164,7 +2108,7 @@ mod tests {
                 .map(|(index, line)| (index, Cow::Borrowed(line))),
             "logs/app.log",
             "cas://hash",
-            &executor,
+            &builder,
             &plan,
             &compiled,
             0,
@@ -2177,7 +2121,7 @@ mod tests {
     fn search_lines_with_details_keeps_not_matches_without_highlights() {
         let compiled = CompiledSearchFilters::compile(&build_filters(None, None, &[], None))
             .expect("Filters should compile");
-        let (executor, plan) = build_not_executor_and_plan("debug");
+        let (builder, plan) = build_not_builder_and_plan("debug");
         let content = "2024-01-15 10:00:00 INFO service healthy\n\
 2024-01-15 10:01:00 DEBUG should be excluded\n";
 
@@ -2188,7 +2132,7 @@ mod tests {
                 .map(|(index, line)| (index, Cow::Borrowed(line))),
             "logs/app.log",
             "cas://hash",
-            &executor,
+            &builder,
             &plan,
             &compiled,
             0,

@@ -20,7 +20,6 @@ export interface SearchControlsProps {
   onFilterPaletteClose: () => void;
   isSearching: boolean;
   disabled: boolean;
-  searchInputRef: React.RefObject<HTMLInputElement | null>;
   keywordGroups: KeywordGroup[];
   activeTerms: string[];
   onToggleRule: (regex: string) => void;
@@ -36,7 +35,6 @@ export const SearchControls: React.FC<SearchControlsProps> = ({
   onFilterPaletteClose,
   isSearching,
   disabled,
-  searchInputRef,
   keywordGroups,
   activeTerms,
   onToggleRule,
@@ -50,7 +48,6 @@ export const SearchControls: React.FC<SearchControlsProps> = ({
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-text-dim" size={16} aria-hidden="true" />
         <Input
           id="search-input"
-          ref={searchInputRef}
           value={query}
           onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
             // 规范化输入：移除 | 前后的空格

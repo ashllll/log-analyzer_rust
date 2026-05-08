@@ -94,7 +94,7 @@ impl SearchPipeline {
             filters.file_pattern.clone(),
             false,
             max_results,
-            query_version,
+            query_version.to_string(),
         );
 
         // 1. 检查缓存
@@ -310,11 +310,12 @@ impl SearchPipeline {
 // 辅助函数
 // ============================================================================
 
-fn compute_query_version(query: &str) -> String {
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(query.as_bytes());
-    format!("{:x}", hasher.finalize())
+fn compute_query_version(query: &str) -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut hasher = DefaultHasher::new();
+    query.hash(&mut hasher);
+    hasher.finish()
 }
 
 fn resolve_workspace_id(

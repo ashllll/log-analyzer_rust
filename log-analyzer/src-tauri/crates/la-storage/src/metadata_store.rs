@@ -163,7 +163,16 @@ impl MetadataStore {
             ("level_mask", "INTEGER"),
         ] {
             let sql = format!("ALTER TABLE files ADD COLUMN {} {}", col, typ);
-            let _ = sqlx::query(&sql).execute(pool).await;
+            if let Err(e) = sqlx::query(&sql).execute(pool).await {
+                // 忽略"列已存在"错误 (SQLite error code 1, message contains "duplicate column")
+                let msg = e.to_string().to_lowercase();
+                if !msg.contains("duplicate column") {
+                    return Err(AppError::database_error(format!(
+                        "Failed to add column {}: {}",
+                        col, e
+                    )));
+                }
+            }
         }
         Ok(())
     }
@@ -177,20 +186,29 @@ impl MetadataStore {
     /// - FAILED: 分析失败
     async fn migrate_schema_v3(pool: &SqlitePool) -> Result<()> {
         let sql = "ALTER TABLE files ADD COLUMN analysis_status TEXT NOT NULL DEFAULT 'PENDING'";
-        let _ = sqlx::query(sql).execute(pool).await;
+        if let Err(e) = sqlx::query(sql).execute(pool).await {
+            let msg = e.to_string().to_lowercase();
+            if !msg.contains("duplicate column") {
+                return Err(AppError::database_error(format!(
+                    "Failed to add analysis_status column: {}",
+                    e
+                )));
+            }
+        }
 
         // 为已有数据（已有统计信息的文件）标记为 READY
-        let _ = sqlx::query(
+        sqlx::query(
             "UPDATE files SET analysis_status = 'READY' WHERE min_timestamp IS NOT NULL OR max_timestamp IS NOT NULL OR level_mask IS NOT NULL"
         )
         .execute(pool)
-        .await;
+        .await
+        .map_err(|e| AppError::database_error(format!("Failed to update analysis_status: {}", e)))?;
 
         // 创建索引加速状态过滤查询
-        let _ =
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_files_status ON files(analysis_status)")
-                .execute(pool)
-                .await;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_files_status ON files(analysis_status)")
+            .execute(pool)
+            .await
+            .map_err(|e| AppError::database_error(format!("Failed to create status index: {}", e)))?;
 
         Ok(())
     }

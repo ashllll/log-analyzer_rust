@@ -10,7 +10,7 @@ import { invoke, type InvokeArgs } from '@tauri-apps/api/core';
 import { z } from 'zod';
 import { createApiError } from './errors';
 import { logger } from '../utils/logger';
-import type { KeywordGroup, Workspace } from '../types/common';
+import type { FilterOptions, KeywordGroup, Workspace } from '../types/common';
 import type { SearchQuery } from '../types/search';
 import {
   RarSupportInfoSchema,
@@ -142,7 +142,7 @@ export async function safeInvoke<T>(
 
 /**
  * 空值安全的列表 API 调用
- * 确保返回空数组而不是 null
+ * 确保返回空数组而不是 null，错误会记录到日志但不会抛出
  */
 export async function safeInvokeList<T>(
   command: string,
@@ -151,14 +151,15 @@ export async function safeInvokeList<T>(
   try {
     const result = await safeInvoke<T[]>(command, args, { fallback: [] });
     return Array.isArray(result) ? result : [];
-  } catch {
+  } catch (error) {
+    logger.warn(`safeInvokeList 失败: ${command}`, { error: String(error) });
     return [];
   }
 }
 
 /**
  * 空值安全的单值 API 调用
- * 确保返回对象而不是 null
+ * 确保返回对象而不是 null，错误会记录到日志但不会抛出
  */
 export async function safeInvokeObject<T extends object>(
   command: string,
@@ -168,7 +169,8 @@ export async function safeInvokeObject<T extends object>(
   try {
     const result = await safeInvoke<T>(command, args, { fallback: defaultValue });
     return result && typeof result === 'object' ? result : defaultValue;
-  } catch {
+  } catch (error) {
+    logger.warn(`safeInvokeObject 失败: ${command}`, { error: String(error) });
     return defaultValue;
   }
 }
@@ -195,28 +197,10 @@ export interface SearchParams {
   structuredQuery?: SearchQuery;
   workspaceId?: string;
   maxResults?: number;
-  filters?: SearchFilters;
+  filters?: FilterOptions;
 }
 
-/**
- * 异步搜索参数
- */
-export interface AsyncSearchParams {
-  query: string;
-  structuredQuery?: SearchQuery;
-  workspaceId?: string;
-  maxResults?: number;
-  timeoutSeconds?: number;
-}
-
-/**
- * 搜索过滤器
- */
-export interface SearchFilters {
-  levels?: string[];
-  timeRange?: { start?: string; end?: string };
-  filePattern?: string;
-}
+// SearchFilters 统一使用 types/common.ts 中的 FilterOptions
 
 /**
  * 导出结果条目
@@ -275,6 +259,26 @@ export interface AppConfig {
  */
 class LogAnalyzerApi {
   // ========================================================================
+  // 内部辅助方法
+  // ========================================================================
+
+  /**
+   * 统一包装 IPC 调用，自动处理错误转换
+   */
+  private async invokeWithErrorHandling<T>(
+    command: string,
+    args: InvokeArgs,
+    parser: (raw: unknown) => T
+  ): Promise<T> {
+    try {
+      const raw = await invoke(command, args);
+      return parser(raw);
+    } catch (error) {
+      throw createApiError(command, error);
+    }
+  }
+
+  // ========================================================================
   // 工作区操作
   // ========================================================================
 
@@ -285,12 +289,11 @@ class LogAnalyzerApi {
    * @returns 工作区加载响应
    */
   async loadWorkspace(workspaceId: string): Promise<WorkspaceLoadResponse> {
-    try {
-      const raw = await invoke('load_workspace', { workspaceId });
-      return WorkspaceLoadResponseSchema.parse(raw) as WorkspaceLoadResponse;
-    } catch (error) {
-      throw createApiError('load_workspace', error);
-    }
+    return this.invokeWithErrorHandling(
+      'load_workspace',
+      { workspaceId },
+      (raw) => WorkspaceLoadResponseSchema.parse(raw) as WorkspaceLoadResponse
+    );
   }
 
   /**
@@ -301,20 +304,19 @@ class LogAnalyzerApi {
    * @returns 工作区 ID
    */
   async refreshWorkspace(workspaceId: string, path?: string): Promise<string> {
-    try {
-      const resolvedPath = path && path.trim().length > 0
-        ? path
-        : (await this.loadConfig()).workspaces.find((workspace) => workspace.id === workspaceId)?.path;
+    const resolvedPath = path && path.trim().length > 0
+      ? path
+      : (await this.loadConfig()).workspaces.find((workspace) => workspace.id === workspaceId)?.path;
 
-      const args = resolvedPath && resolvedPath.trim().length > 0
-        ? { workspaceId, path: resolvedPath }
-        : { workspaceId };
+    const args = resolvedPath && resolvedPath.trim().length > 0
+      ? { workspaceId, path: resolvedPath }
+      : { workspaceId };
 
-      const result = await invoke('refresh_workspace', args as InvokeArgs);
-      return SearchIdSchema.parse(result);
-    } catch (error) {
-      throw createApiError('refresh_workspace', error);
-    }
+    return this.invokeWithErrorHandling(
+      'refresh_workspace',
+      args as InvokeArgs,
+      (raw) => SearchIdSchema.parse(raw)
+    );
   }
 
   /**
@@ -323,11 +325,11 @@ class LogAnalyzerApi {
    * @param workspaceId - 工作区 ID
    */
   async deleteWorkspace(workspaceId: string): Promise<void> {
-    try {
-      await invoke('delete_workspace', { workspaceId });
-    } catch (error) {
-      throw createApiError('delete_workspace', error);
-    }
+    return this.invokeWithErrorHandling(
+      'delete_workspace',
+      { workspaceId },
+      () => undefined
+    );
   }
 
   /**
@@ -337,12 +339,11 @@ class LogAnalyzerApi {
    * @returns 工作区状态响应
    */
   async getWorkspaceStatus(workspaceId: string): Promise<WorkspaceStatusResponse> {
-    try {
-      const result = await invoke('get_workspace_status', { workspaceId });
-      return WorkspaceStatusResponseSchema.parse(result);
-    } catch (error) {
-      throw createApiError('get_workspace_status', error);
-    }
+    return this.invokeWithErrorHandling(
+      'get_workspace_status',
+      { workspaceId },
+      (raw) => WorkspaceStatusResponseSchema.parse(raw)
+    );
   }
 
   /**
@@ -353,12 +354,11 @@ class LogAnalyzerApi {
    * @returns 工作区 ID
    */
   async createWorkspace(name: string, path: string): Promise<string> {
-    try {
-      const raw = await invoke('create_workspace', { name, path });
-      return z.string().parse(raw);
-    } catch (error) {
-      throw createApiError('create_workspace', error);
-    }
+    return this.invokeWithErrorHandling(
+      'create_workspace',
+      { name, path },
+      (raw) => z.string().parse(raw)
+    );
   }
 
   /**
@@ -372,12 +372,11 @@ class LogAnalyzerApi {
     maxTimestamp: string | null;
     totalLogs: number;
   }> {
-    try {
-      const result = await invoke('get_workspace_time_range', { workspaceId });
-      return WorkspaceTimeRangeSchema.parse(result);
-    } catch (error) {
-      throw createApiError('get_workspace_time_range', error);
-    }
+    return this.invokeWithErrorHandling(
+      'get_workspace_time_range',
+      { workspaceId },
+      (raw) => WorkspaceTimeRangeSchema.parse(raw)
+    );
   }
 
   // ========================================================================
@@ -391,13 +390,11 @@ class LogAnalyzerApi {
    * @returns 搜索 ID
    */
   async searchLogs(params: SearchParams): Promise<string> {
-    try {
-      const result = await invoke('search_logs', params as unknown as InvokeArgs);
-      // 使用 Zod 验证返回的搜索 ID
-      return SearchIdSchema.parse(result);
-    } catch (error) {
-      throw createApiError('search_logs', error);
-    }
+    return this.invokeWithErrorHandling(
+      'search_logs',
+      params as unknown as InvokeArgs,
+      (raw) => SearchIdSchema.parse(raw)
+    );
   }
 
   /**
@@ -406,45 +403,16 @@ class LogAnalyzerApi {
    * @param searchId - 搜索 ID
    */
   async cancelSearch(searchId: string): Promise<void> {
-    try {
-      await invoke('cancel_search', { searchId });
-    } catch (error) {
-      throw createApiError('cancel_search', error);
-    }
-  }
-
-  /**
-   * 异步搜索日志
-   *
-   * @param params - 搜索参数
-   * @returns 搜索 ID
-   */
-  async asyncSearchLogs(params: AsyncSearchParams): Promise<string> {
-    try {
-      const result = await invoke('async_search_logs', params as unknown as InvokeArgs);
-      // 使用 Zod 验证返回的搜索 ID
-      return SearchIdSchema.parse(result);
-    } catch (error) {
-      throw createApiError('async_search_logs', error);
-    }
-  }
-
-  /**
-   * 取消异步搜索
-   *
-   * @param searchId - 搜索 ID
-   */
-  async cancelAsyncSearch(searchId: string): Promise<void> {
-    try {
-      await invoke('cancel_async_search', { searchId });
-    } catch (error) {
-      throw createApiError('cancel_async_search', error);
-    }
+    return this.invokeWithErrorHandling(
+      'cancel_search',
+      { searchId },
+      () => undefined
+    );
   }
 
   // ========================================================================
   // 导入操作
-  // ========================================================================
+  // =====================================================================
 
   /**
    * 导入文件夹
@@ -454,12 +422,11 @@ class LogAnalyzerApi {
    * @returns 任务 ID
    */
   async importFolder(path: string, workspaceId: string): Promise<string> {
-    try {
-      const raw = await invoke('import_folder', { path, workspaceId });
-      return z.string().parse(raw);
-    } catch (error) {
-      throw createApiError('import_folder', error);
-    }
+    return this.invokeWithErrorHandling(
+      'import_folder',
+      { path, workspaceId },
+      (raw) => z.string().parse(raw)
+    );
   }
 
   /**
@@ -468,12 +435,11 @@ class LogAnalyzerApi {
    * @returns RAR 支持信息
    */
   async checkRarSupport(): Promise<RarSupportInfo> {
-    try {
-      const result = await invoke('check_rar_support');
-      return RarSupportInfoSchema.parse(result);
-    } catch (error) {
-      throw createApiError('check_rar_support', error);
-    }
+    return this.invokeWithErrorHandling(
+      'check_rar_support',
+      {},
+      (raw) => RarSupportInfoSchema.parse(raw)
+    );
   }
 
   // ========================================================================
@@ -486,11 +452,11 @@ class LogAnalyzerApi {
    * @param params - 监听参数
    */
   async startWatch(params: WatchParams): Promise<void> {
-    try {
-      await invoke('start_watch', params as unknown as InvokeArgs);
-    } catch (error) {
-      throw createApiError('start_watch', error);
-    }
+    return this.invokeWithErrorHandling(
+      'start_watch',
+      params as unknown as InvokeArgs,
+      () => undefined
+    );
   }
 
   /**
@@ -499,11 +465,11 @@ class LogAnalyzerApi {
    * @param workspaceId - 工作区 ID
    */
   async stopWatch(workspaceId: string): Promise<void> {
-    try {
-      await invoke('stop_watch', { workspaceId });
-    } catch (error) {
-      throw createApiError('stop_watch', error);
-    }
+    return this.invokeWithErrorHandling(
+      'stop_watch',
+      { workspaceId },
+      () => undefined
+    );
   }
 
   // ========================================================================
@@ -516,11 +482,11 @@ class LogAnalyzerApi {
    * @param taskId - 任务 ID
    */
   async cancelTask(taskId: string): Promise<void> {
-    try {
-      await invoke('cancel_task', { taskId });
-    } catch (error) {
-      throw createApiError('cancel_task', error);
-    }
+    return this.invokeWithErrorHandling(
+      'cancel_task',
+      { taskId },
+      () => undefined
+    );
   }
 
   // ========================================================================
@@ -533,11 +499,11 @@ class LogAnalyzerApi {
    * @param config - 应用配置
    */
   async saveConfig(config: AppConfig): Promise<void> {
-    try {
-      await invoke('save_config', { config });
-    } catch (error) {
-      throw createApiError('save_config', error);
-    }
+    return this.invokeWithErrorHandling(
+      'save_config',
+      { config },
+      () => undefined
+    );
   }
 
   /**
@@ -546,12 +512,11 @@ class LogAnalyzerApi {
    * @returns 应用配置
    */
   async loadConfig(): Promise<AppConfig> {
-    try {
-      const raw = await invoke('load_config');
-      return AppConfigSchema.parse(raw) as AppConfig;
-    } catch (error) {
-      throw createApiError('load_config', error);
-    }
+    return this.invokeWithErrorHandling(
+      'load_config',
+      {},
+      (raw) => AppConfigSchema.parse(raw) as AppConfig
+    );
   }
 
   /**
@@ -560,12 +525,11 @@ class LogAnalyzerApi {
    * @returns 文件过滤器配置
    */
   async getFileFilterConfig(): Promise<FileFilterConfig> {
-    try {
-      const result = await invoke('get_file_filter_config');
-      return FileFilterConfigSchema.parse(result);
-    } catch (error) {
-      throw createApiError('get_file_filter_config', error);
-    }
+    return this.invokeWithErrorHandling(
+      'get_file_filter_config',
+      {},
+      (raw) => FileFilterConfigSchema.parse(raw)
+    );
   }
 
   /**
@@ -574,14 +538,12 @@ class LogAnalyzerApi {
    * @param filterConfig - 过滤器配置
    */
   async saveFileFilterConfig(filterConfig: FileFilterConfig): Promise<FileFilterConfig> {
-    try {
-      // 验证输入参数
-      const validatedConfig = FileFilterConfigSchema.parse(filterConfig);
-      await invoke('save_file_filter_config', { filter_config: validatedConfig });
-      return validatedConfig;
-    } catch (error) {
-      throw createApiError('save_file_filter_config', error);
-    }
+    const validatedConfig = FileFilterConfigSchema.parse(filterConfig);
+    return this.invokeWithErrorHandling(
+      'save_file_filter_config',
+      { filter_config: validatedConfig },
+      () => validatedConfig
+    );
   }
 
   // ========================================================================
@@ -595,11 +557,11 @@ class LogAnalyzerApi {
    * @returns 导出文件路径
    */
   async exportResults(params: ExportParams): Promise<string> {
-    try {
-      return await invoke('export_results', params as unknown as InvokeArgs);
-    } catch (error) {
-      throw createApiError('export_results', error);
-    }
+    return this.invokeWithErrorHandling(
+      'export_results',
+      params as unknown as InvokeArgs,
+      (raw) => raw as string
+    );
   }
 
   // ========================================================================
@@ -617,11 +579,11 @@ class LogAnalyzerApi {
     hash: string;
     maxLength?: number;
   }): Promise<string> {
-    try {
-      return await invoke('read_file_by_hash', params);
-    } catch (error) {
-      throw createApiError('read_file_by_hash', error);
-    }
+    return this.invokeWithErrorHandling(
+      'read_file_by_hash',
+      params,
+      (raw) => raw as string
+    );
   }
 
 }
@@ -699,7 +661,7 @@ export async function readFileByHash(
     return response;
   } catch (error) {
     logger.error('Failed to read file by hash:', error);
-    throw new Error(`Failed to read file: ${error}`);
+    throw createApiError('read_file_by_hash', error);
   }
 }
 

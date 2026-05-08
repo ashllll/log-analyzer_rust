@@ -641,168 +641,36 @@ impl TaskManager {
         !self.sender.is_closed()
     }
 
-    /// 停止任务管理器（同步版本）
+    /// 停止任务管理器
     ///
-    /// # 注意
-    /// 此方法使用 `std::thread::sleep`，会阻塞当前线程。
-    /// 在异步上下文中，请优先使用 `shutdown_async()`。
-    ///
-    /// 同步版本通过 oneshot 确认排空完成，但无法在 sync 上下文中 await receiver；
-    /// 排空通知仅作为尽力而为的机制。
-    pub fn shutdown(&self) -> Result<(), TaskManagerError> {
-        info!("Shutting down TaskManager (synchronous)");
+    /// 使用 `tokio::sync::oneshot` 通道等待 Actor 确认排空完成。
+    /// 带有 7 秒超时保护。
+    pub async fn shutdown(&self) -> Result<(), TaskManagerError> {
+        info!("Shutting down TaskManager");
+        let (done_tx, done_rx) = tokio::sync::oneshot::channel();
+        self.sender
+            .send(ActorMessage::Shutdown { done_tx })
+            .await
+            .map_err(|e| TaskManagerError::ShutdownFailed(e.to_string()))?;
 
-        // 尝试优雅关闭，带重试机制
-        let max_retries = 50; // 5秒 (50次 * 100ms)
-        let mut retries = 0;
-
-        loop {
-            let (done_tx, _done_rx) = tokio::sync::oneshot::channel();
-            match self.sender.try_send(ActorMessage::Shutdown { done_tx }) {
-                Ok(()) => {
-                    info!("Shutdown message sent successfully");
-                    break;
-                }
-                Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
-                    // 通道已满，等待后重试
-                    retries += 1;
-                    if retries >= max_retries {
-                        warn!(
-                            retries = retries,
-                            "Task channel full, cannot send shutdown message, forcing shutdown"
-                        );
-                        return Err(TaskManagerError::ShutdownFailed("Channel full".to_string()));
-                    }
-                    // Use block_in_place to avoid starving the Tokio runtime if called
-                    // from within an async context (e.g., an async Drop)
-                    tokio::task::block_in_place(|| {
-                        std::thread::sleep(std::time::Duration::from_millis(100));
-                    });
-                }
-                Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
-                    // 通道已关闭
-                    retries += 1;
-                    if retries >= max_retries {
-                        error!(
-                            retries = retries,
-                            "Failed to send shutdown message after {} retries, forcing shutdown",
-                            max_retries
-                        );
-                        return Err(TaskManagerError::ShutdownFailed(
-                            "Channel closed".to_string(),
-                        ));
-                    }
-
-                    if retries % 10 == 0 {
-                        warn!(
-                            retries = retries,
-                            "Actor channel closed, retrying shutdown..."
-                        );
-                    }
-                    // Use block_in_place to avoid starving the Tokio runtime if called
-                    // from within an async context
-                    tokio::task::block_in_place(|| {
-                        std::thread::sleep(std::time::Duration::from_millis(100));
-                    });
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    /// 停止任务管理器（异步版本）
-    ///
-    /// # 特性
-    /// - 使用 `tokio::sync::oneshot` 通道等待 Actor 确认排空完成
-    /// - 不会阻塞异步运行时
-    /// - 带有 10 秒超时保护（5秒发送 + 5秒排空）
-    pub async fn shutdown_async(&self) -> Result<(), TaskManagerError> {
-        info!("Shutting down TaskManager (asynchronous)");
-
-        // M1 Fix: Use oneshot channel for exact drain completion notification
-        // instead of blind 1-second sleep. The actor sends on this channel
-        // after it has finished processing all pending messages.
-        let (done_tx, mut done_rx) = tokio::sync::oneshot::channel();
-
-        let max_retries = 50; // 5秒 (50次 * 100ms)
-        let mut retries = 0;
-        let mut done_tx = Some(done_tx);
-
-        loop {
-            let tx = done_tx.take().expect("done_tx already consumed");
-            match self
-                .sender
-                .send(ActorMessage::Shutdown { done_tx: tx })
-                .await
-            {
-                Ok(()) => {
-                    info!("Shutdown message sent successfully");
-                    break;
-                }
-                Err(e) => {
-                    retries += 1;
-                    if retries >= max_retries {
-                        error!(
-                            error = %e,
-                            retries = retries,
-                            "Failed to send shutdown message after {} retries, forcing shutdown",
-                            max_retries
-                        );
-                        return Err(TaskManagerError::ShutdownFailed(e.to_string()));
-                    }
-
-                    if retries % 10 == 0 {
-                        warn!(
-                            error = %e,
-                            retries = retries,
-                            "Actor channel closed, retrying shutdown..."
-                        );
-                    }
-
-                    // Create a new oneshot channel for the next retry attempt
-                    let (new_tx, new_rx) = tokio::sync::oneshot::channel();
-                    done_tx = Some(new_tx);
-                    done_rx = new_rx;
-                    tokio::time::sleep(Duration::from_millis(100)).await;
-                }
-            }
-        }
-
-        // M1 Fix: Wait for actor to confirm drain completion via oneshot channel
-        // The actor's drain loop timeout is 5 seconds, so we add 2 seconds buffer
         const DRAIN_TIMEOUT: Duration = Duration::from_secs(7);
-
         match tokio::time::timeout(DRAIN_TIMEOUT, done_rx).await {
             Ok(Ok(())) => {
-                info!("TaskManager shutdown completed (actor confirmed drain)");
+                info!("TaskManager shutdown completed");
                 Ok(())
             }
             Ok(Err(_)) => {
-                // The oneshot sender was dropped without sending — actor may have panicked
                 warn!("TaskManager actor dropped shutdown notification channel");
-                Ok(()) // Still treat as "stopped" since the actor is gone
+                Ok(())
             }
             Err(_) => {
-                error!(
-                    "TaskManager actor drain timed out after {} seconds",
-                    DRAIN_TIMEOUT.as_secs()
-                );
-                Ok(()) // Timeout is acceptable — the actor will be dropped anyway
+                error!("TaskManager actor drain timed out");
+                Ok(())
             }
         }
     }
 }
 
-// 老王备注：移除 Drop trait 中的 shutdown 调用
 // TaskManager 是单例，应该在应用生命周期内一直存在
 // Clone 的句柄被 drop 时不应该关闭整个 actor
 // 只有显式调用 shutdown() 或应用退出时才应该关闭
-//
-// impl Drop for TaskManager {
-//     fn drop(&mut self) {
-//         if let Err(e) = self.shutdown() {
-//             error!(error = %e, "Error during TaskManager shutdown");
-//         }
-//     }
-// }

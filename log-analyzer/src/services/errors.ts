@@ -681,11 +681,26 @@ export function getFullErrorMessage(error: unknown): string {
 /**
  * 错误处理装饰器
  *
- * 自动捕获错误并转换为 ApiError
+ * 自动捕获错误并转换为 ApiError，统一包装异步函数的错误处理逻辑。
  *
- * @param command - 命令名称
+ * @param command - 命令名称，用于错误上下文标识
  * @param fn - 要执行的异步函数
- * @returns 包装后的函数
+ * @returns 包装后的函数，调用时会自动将任何抛出的异常转换为 ApiError
+ *
+ * @example
+ * ```typescript
+ * const safeLoadWorkspace = withErrorHandler('load_workspace', async (id: string) => {
+ *   return await api.loadWorkspace(id);
+ * });
+ *
+ * try {
+ *   await safeLoadWorkspace('workspace-123');
+ * } catch (error) {
+ *   if (error instanceof ApiError) {
+ *     console.error(error.getUserMessage());
+ *   }
+ * }
+ * ```
  */
 export function withErrorHandler<T extends (...args: unknown[]) => Promise<unknown>>(
   command: string,

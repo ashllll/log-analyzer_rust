@@ -6,18 +6,7 @@ import { logger } from '../utils/logger';
 import { api, type SearchParams, type ExportParams } from '../services/api';
 import { getFullErrorMessage } from '../services/errors';
 import { useToast } from './useToast';
-
-// ============================================================================
-// Query Keys
-// ============================================================================
-
-export const queryKeys = {
-  config: ['config'] as const,
-  workspaces: ['workspaces'] as const,
-  workspace: (id: string) => ['workspace', id] as const,
-  keywordGroups: ['keywordGroups'] as const,
-  tasks: ['tasks'] as const,
-} as const;
+import { queryKeys } from '../services/queries';
 
 // ============================================================================
 // Configuration Queries

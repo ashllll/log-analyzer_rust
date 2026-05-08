@@ -56,7 +56,7 @@ use walkdir::WalkDir;
 /// 这些 unsafe 操作是调用 libc 系统调用所必需的，已通过输入验证和错误处理确保安全。
 #[cfg(target_os = "linux")]
 #[allow(clippy::unnecessary_cast)]
-async fn get_available_space(path: &Path) -> u64 {
+fn get_available_space(path: &Path) -> u64 {
     use libc::statvfs;
     use std::ffi::CString;
 
@@ -92,7 +92,7 @@ async fn get_available_space(path: &Path) -> u64 {
 /// - 所有错误都被妥善处理
 #[cfg(target_os = "macos")]
 #[allow(clippy::unnecessary_cast)]
-async fn get_available_space(path: &Path) -> u64 {
+fn get_available_space(path: &Path) -> u64 {
     use libc::statvfs;
     use std::ffi::CString;
 
@@ -128,7 +128,7 @@ async fn get_available_space(path: &Path) -> u64 {
 /// 这些 unsafe 操作是调用 Windows API 所必需的，已通过输入验证确保安全。
 #[cfg(target_os = "windows")]
 #[allow(clippy::unnecessary_cast)]
-async fn get_available_space(path: &Path) -> u64 {
+fn get_available_space(path: &Path) -> u64 {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
 
@@ -157,7 +157,7 @@ async fn get_available_space(path: &Path) -> u64 {
 
 // Fallback for other platforms
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-async fn get_available_space(_path: &Path) -> u64 {
+fn get_available_space(_path: &Path) -> u64 {
     0 // Unknown, skip check
 }
 
@@ -191,15 +191,12 @@ fn is_valid_content_hash(hash: &str) -> bool {
 /// even if errors occur or early returns happen.
 struct TempFileGuard {
     path: PathBuf,
-    // Use tokio runtime handle for async cleanup in drop
-    rt_handle: Option<tokio::runtime::Handle>,
 }
 
 impl TempFileGuard {
     /// Create a new temp file guard
     fn new(path: PathBuf) -> Self {
-        let rt_handle = tokio::runtime::Handle::try_current().ok();
-        Self { path, rt_handle }
+        Self { path }
     }
 
     /// Get the path to the temporary file
@@ -218,30 +215,14 @@ impl TempFileGuard {
 impl Drop for TempFileGuard {
     fn drop(&mut self) {
         if !self.path.as_os_str().is_empty() {
-            // Try to delete the file
-            if let Some(ref handle) = self.rt_handle {
-                // We're in an async context, use blocking operation
-                let path = self.path.clone();
-                handle.spawn(async move {
-                    if let Err(e) = tokio::fs::remove_file(&path).await {
-                        tracing::warn!(
-                            path = %path.display(),
-                            error = %e,
-                            "Failed to clean up temporary file"
-                        );
-                    } else {
-                        tracing::debug!(path = %path.display(), "Cleaned up temporary file");
-                    }
-                });
+            if let Err(e) = std::fs::remove_file(&self.path) {
+                tracing::warn!(
+                    path = %self.path.display(),
+                    error = %e,
+                    "Failed to clean up temporary file"
+                );
             } else {
-                // No runtime available, try synchronous deletion
-                if let Err(e) = std::fs::remove_file(&self.path) {
-                    tracing::warn!(
-                        path = %self.path.display(),
-                        error = %e,
-                        "Failed to clean up temporary file (sync)"
-                    );
-                }
+                tracing::debug!(path = %self.path.display(), "Cleaned up temporary file");
             }
         }
     }
@@ -1267,7 +1248,12 @@ impl ContentAddressableStorage {
         let required_space = file_size.checked_mul(3).ok_or_else(|| {
             AppError::validation_error("File too large for disk space check".to_string())
         })?;
-        let available_space = get_available_space(&self.workspace_dir).await;
+        let available_space = tokio::task::spawn_blocking({
+            let workspace_dir = self.workspace_dir.clone();
+            move || get_available_space(&workspace_dir)
+        })
+        .await
+        .unwrap_or(0);
 
         // 如果无法获取可用空间（返回0），跳过检查但记录警告
         if available_space == 0 {
