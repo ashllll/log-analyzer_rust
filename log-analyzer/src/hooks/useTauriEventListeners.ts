@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import { listen } from '@tauri-apps/api/event';
 import { useWorkspaceStore } from '../stores/workspaceStore';
@@ -22,6 +22,37 @@ import { logger } from '../utils/logger';
 export const useTauriEventListeners = () => {
   const updateWorkspace = useWorkspaceStore((state) => state.updateWorkspace);
   const updateTask = useTaskStore((state) => state.updateTask);
+
+  // 防抖相关 refs（files-ready-batch 高频触发时合并更新）
+  const pendingWorkspaceUpdate = useRef<{
+    workspace_id: string;
+    ready_count: number;
+    total_count: number;
+  } | null>(null);
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const debouncedUpdateWorkspace = useCallback((
+    workspace_id: string,
+    ready_count: number,
+    total_count: number,
+  ) => {
+    pendingWorkspaceUpdate.current = { workspace_id, ready_count, total_count };
+
+    if (debounceTimer.current) {
+      clearTimeout(debounceTimer.current);
+    }
+
+    debounceTimer.current = setTimeout(() => {
+      if (pendingWorkspaceUpdate.current) {
+        updateWorkspace(pendingWorkspaceUpdate.current.workspace_id, {
+          status: 'PARTIAL',
+          ready_files: pendingWorkspaceUpdate.current.ready_count,
+          files: pendingWorkspaceUpdate.current.total_count,
+        });
+        pendingWorkspaceUpdate.current = null;
+      }
+    }, 100);
+  }, [updateWorkspace]);
 
   // 使用 ref 存储 Tauri 清理函数，确保在组件卸载时同步调用
   const tauriCleanupRef = useRef<(() => void) | null>(null);
@@ -116,11 +147,7 @@ export const useTauriEventListeners = () => {
           '[TauriEventListeners] Received files-ready-batch from Tauri'
         );
 
-        updateWorkspace(workspace_id, {
-          status: 'PARTIAL',
-          ready_files: ready_count,
-          files: total_count,
-        });
+        debouncedUpdateWorkspace(workspace_id, ready_count, total_count);
       });
 
       return () => {
@@ -149,11 +176,17 @@ export const useTauriEventListeners = () => {
     return () => {
       isMounted = false;
 
+      // 清理防抖定时器
+      if (debounceTimer.current) {
+        clearTimeout(debounceTimer.current);
+        debounceTimer.current = null;
+      }
+
       // 清理Tauri监听（同步调用，避免 Promise 时序问题）
       if (tauriCleanupRef.current) {
         tauriCleanupRef.current();
         tauriCleanupRef.current = null;
       }
     };
-  }, [updateWorkspace, updateTask]);
+  }, [updateWorkspace, updateTask, debouncedUpdateWorkspace]);
 };

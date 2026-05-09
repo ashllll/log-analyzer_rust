@@ -834,6 +834,18 @@ pub async fn search_logs(
     let handle = tokio::task::spawn_blocking(move || {
         let start_time = std::time::Instant::now();
 
+        // 创建自定义 Rayon 线程池，限制并行度以避免与 tokio 阻塞线程池竞争
+        let pool = match rayon::ThreadPoolBuilder::new()
+            .num_threads(4)
+            .build() {
+            Ok(p) => p,
+            Err(e) => {
+                let _ = app_handle.emit("search-error", format!("Failed to create search thread pool: {}", e));
+                disk_store_spawn.remove_session(&search_id_clone);
+                return;
+            }
+        };
+
         let mut builder = QueryPlanBuilder::new(regex_cache_size);
         let plan = match builder.build(&structured_query) {
             Ok(p) => p,
@@ -931,7 +943,9 @@ pub async fn search_logs(
             let mut batch_results: Vec<LogEntry> = Vec::new();
 
             // 并行处理当前批次 (Requirements 2.3: 使用 CAS 读取内容)
-            let batch: Vec<_> = file_batch
+            // 使用自定义线程池隔离，避免与 tokio 阻塞线程池竞争
+            let batch: Vec<_> = pool.install(|| {
+                file_batch
                 .par_iter()
                 .enumerate()
                 .map(|(idx, file_metadata)| {
@@ -952,7 +966,8 @@ pub async fn search_logs(
                         total_processed + idx * 10000,
                     )
                 })
-                .collect();
+                .collect()
+            });
 
             // 如果批次处理过程中取消了，直接退出
             if cancellation_token.is_cancelled() {

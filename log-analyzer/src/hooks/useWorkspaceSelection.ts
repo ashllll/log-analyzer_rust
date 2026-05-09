@@ -1,4 +1,5 @@
 import { useCallback, useTransition } from 'react';
+import { useShallow } from 'zustand/shallow';
 import { useAppStore } from '../stores/appStore';
 import { useWorkspaceStore, type Workspace } from '../stores/workspaceStore';
 import { logger } from '../utils/logger';
@@ -22,7 +23,7 @@ export const useWorkspaceSelection = (): UseWorkspaceSelectionReturn => {
   const { showToast: addToast } = useToast();
   const setActiveWorkspace = useAppStore((state) => state.setActiveWorkspace);
   const activeWorkspaceId = useAppStore((state) => state.activeWorkspaceId);
-  const workspaces = useWorkspaceStore((state) => state.workspaces);
+  const workspaces = useWorkspaceStore(useShallow((state) => state.workspaces));
 
   const [isPending, startTransition] = useTransition();
 

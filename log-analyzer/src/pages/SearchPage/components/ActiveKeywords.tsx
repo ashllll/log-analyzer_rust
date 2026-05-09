@@ -2,7 +2,7 @@
  * 激活关键词展示组件
  * 展示当前搜索查询中的关键词，支持单个删除
  */
-import React from 'react';
+import React, { memo } from 'react';
 import { Hash, X } from 'lucide-react';
 
 export interface ActiveKeywordsProps {
@@ -10,7 +10,7 @@ export interface ActiveKeywordsProps {
   onRemoveTerm: (term: string) => void;
 }
 
-export const ActiveKeywords: React.FC<ActiveKeywordsProps> = ({
+export const ActiveKeywords: React.FC<ActiveKeywordsProps> = memo(({
   activeTerms,
   onRemoveTerm,
 }) => {
@@ -40,4 +40,6 @@ export const ActiveKeywords: React.FC<ActiveKeywordsProps> = ({
       }) : <span className="text-[10px] text-text-dim italic">None</span>}
     </div>
   );
-};
+});
+
+ActiveKeywords.displayName = 'ActiveKeywords';

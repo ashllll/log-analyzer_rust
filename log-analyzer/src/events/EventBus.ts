@@ -52,7 +52,7 @@ interface ProcessedEvent {
  */
 class IdempotencyManager {
   private processed = new Map<string, ProcessedEvent>();
-  private maxSize = 100;
+  private maxSize = 1000;
 
   /**
    * 检查事件是否已处理
@@ -90,19 +90,23 @@ class IdempotencyManager {
 
   /**
    * 标记事件已处理
+   * 使用 Map 插入顺序实现 O(1) LRU 淘汰
    */
   markProcessed(taskId: string, version: number): void {
+    // 删除后重新插入，更新 LRU 顺序
+    this.processed.delete(taskId);
     this.processed.set(taskId, {
       taskId,
       version,
       timestamp: Date.now(),
     });
 
-    // LRU 淘汰
+    // O(1) LRU 淘汰：利用 Map 的插入顺序，淘汰最旧的条目
     if (this.processed.size > this.maxSize) {
-      const oldest = Array.from(this.processed.entries())
-        .sort((a, b) => a[1].timestamp - b[1].timestamp)[0];
-      this.processed.delete(oldest[0]);
+      const firstKey = this.processed.keys().next().value;
+      if (firstKey) {
+        this.processed.delete(firstKey);
+      }
     }
   }
 

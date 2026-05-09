@@ -10,14 +10,13 @@ import { logger } from '../utils/logger';
  * EventBus 订阅 Hook
  *
  * 负责注册应用层 EventBus 事件处理器：
- * - task-update: 任务状态更新（去重添加、工作区状态联动、toast 通知）
+ * - task-update: 任务状态更新（upsert 合并操作、工作区状态联动、toast 通知）
  * - task-removed: 任务自动清理
  *
  */
 export const useEventBusSubscriptions = () => {
   const updateWorkspace = useWorkspaceStore((state) => state.updateWorkspace);
-  const addTaskIfNotExists = useTaskStore((state) => state.addTaskIfNotExists);
-  const updateTask = useTaskStore((state) => state.updateTask);
+  const upsertTask = useTaskStore((state) => state.upsertTask);
   const deleteTask = useTaskStore((state) => state.deleteTask);
 
   useEffect(() => {
@@ -37,9 +36,8 @@ export const useEventBusSubscriptions = () => {
 
         logger.debug({ task }, '[EventBusSubscriptions] Processing task update');
 
-        // 使用去重添加
-        addTaskIfNotExists(task);
-        updateTask(task.id, task);
+        // 使用 upsert 合并添加/更新为单次操作
+        upsertTask(task);
 
         // 更新工作区状态并发送 toast 通知
         if (task.workspaceId) {
@@ -68,5 +66,5 @@ export const useEventBusSubscriptions = () => {
       unsubscribeTaskUpdate();
       unsubscribeTaskRemoved();
     };
-  }, [addTaskIfNotExists, updateTask, deleteTask, updateWorkspace]);
+  }, [upsertTask, deleteTask, updateWorkspace]);
 };

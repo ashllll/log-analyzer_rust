@@ -2,7 +2,7 @@
  * 搜索控制组件
  * 包含搜索输入框、过滤器按钮、导出按钮、搜索按钮
  */
-import React from 'react';
+import React, { memo } from 'react';
 import { Search, Download, Filter, ChevronDown, Loader2 } from 'lucide-react';
 import { Button, Input } from '../../../components/ui';
 import { FilterPalette } from '../../../components/modals';
@@ -25,7 +25,7 @@ export interface SearchControlsProps {
   onToggleRule: (regex: string) => void;
 }
 
-export const SearchControls: React.FC<SearchControlsProps> = ({
+export const SearchControls: React.FC<SearchControlsProps> = memo(({
   query,
   onQueryChange,
   onSearch,
@@ -114,4 +114,6 @@ export const SearchControls: React.FC<SearchControlsProps> = ({
       </Button>
     </div>
   );
-};
+});
+
+SearchControls.displayName = 'SearchControls';

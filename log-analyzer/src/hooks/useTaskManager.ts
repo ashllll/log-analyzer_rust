@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { useShallow } from 'zustand/shallow';
 import { useTaskStore } from '../stores/taskStore';
 import { api } from '../services/api';
 import { getFullErrorMessage } from '../services/errors';
@@ -11,7 +12,7 @@ import { useToast } from './useToast';
  */
 export const useTaskManager = () => {
   const { showToast: addToast } = useToast();
-  const tasks = useTaskStore((state) => state.tasks);
+  const tasks = useTaskStore(useShallow((state) => state.tasks));
   const tasksLoading = useTaskStore((state) => state.loading);
   const tasksError = useTaskStore((state) => state.error);
   const deleteTaskAction = useTaskStore((state) => state.deleteTask);

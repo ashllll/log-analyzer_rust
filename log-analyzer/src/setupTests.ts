@@ -4,6 +4,10 @@
 import '@testing-library/jest-dom';
 import React from 'react';
 import { TextEncoder, TextDecoder } from 'util';
+import { enableMapSet } from 'immer';
+
+// 启用 Immer 的 Map/Set 支持（taskStore 使用 Map 索引）
+enableMapSet();
 
 // Mock import.meta for Vite environment variables
 Object.defineProperty(globalThis, 'import', {

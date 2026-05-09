@@ -166,6 +166,10 @@ export function useInfiniteSearch({
     staleTime,
     gcTime: 5 * 60 * 1000, // 5分钟，与 staleTime 保持一致避免过时数据占用内存
 
+    // 禁用不必要的自动重新获取（日志搜索结果不会自动变化）
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+
     // 错误重试策略
     retry: (failureCount, error) => {
       // 如果是会话不存在错误，不重试

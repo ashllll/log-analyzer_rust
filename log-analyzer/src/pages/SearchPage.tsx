@@ -5,6 +5,7 @@ import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useWorkspaceSelection } from '../hooks/useWorkspaceSelection';
 import { useKeywordStore } from '../stores/keywordStore';
 import { useAppStore } from '../stores/appStore';
+import { useShallow } from 'zustand/shallow';
 import { useToast } from '../hooks/useToast';
 import { useConfig } from '../hooks/useConfig';
 import { useInfiniteSearch } from '../hooks/useInfiniteSearch';
@@ -35,7 +36,7 @@ const SearchPage: React.FC = () => {
   const { showToast: addToast } = useToast();
   const { searchConfig, loadSearchConfig } = useConfig();
   const { activeWorkspace } = useWorkspaceSelection();
-  const keywordGroups = useKeywordStore((state) => state.keywordGroups);
+  const keywordGroups = useKeywordStore(useShallow((state) => state.keywordGroups));
   const workspaceLoading = useWorkspaceStore((state) => state.loading);
   const isInitialized = useAppStore((state) => state.isInitialized);
 

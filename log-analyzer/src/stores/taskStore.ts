@@ -26,14 +26,16 @@ export type { Task } from './types';
 interface TaskState {
   // State
   tasks: Task[];
+  taskMap: Map<string, Task>; // 按 ID 索引，O(1) 查找
   loading: boolean;
   error: string | null;
-  
+
   // Actions
   setTasks: (tasks: Task[]) => void;
   addTask: (task: Task) => void;
   addTaskIfNotExists: (task: Task) => void; // 带去重的添加
   updateTask: (id: string, updates: Partial<Task>) => void;
+  upsertTask: (task: Partial<Task>) => void; // 存在则更新，不存在则添加
   deleteTask: (id: string) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
@@ -94,43 +96,63 @@ export const useTaskStore = create<TaskState>()(
       immer((set) => ({
         // Initial State
         tasks: [],
+        taskMap: new Map(),
         loading: false,
         error: null,
-        
+
         // Actions
         setTasks: (tasks) => set((state) => {
           // 空值安全：过滤无效的任务
           state.tasks = sanitizeTaskList(tasks);
+          state.taskMap = new Map(state.tasks.map(t => [t.id, t]));
         }),
-        
+
         addTask: (task) => set((state) => {
           // 空值安全：验证任务对象
           const safeTask = createSafeTask(task);
-          if (safeTask) {
+          if (safeTask && !state.taskMap.has(safeTask.id)) {
             state.tasks.push(safeTask);
+            state.taskMap.set(safeTask.id, safeTask);
           }
         }),
-        
+
         // 带去重的添加 - 防止重复创建任务
         addTaskIfNotExists: (task) => set((state) => {
-          const exists = state.tasks.some(t => t.id === task.id);
-          if (!exists) {
-            const safeTask = createSafeTask(task);
-            if (safeTask) {
-              state.tasks.push(safeTask);
-            }
+          const safeTask = createSafeTask(task);
+          if (safeTask && !state.taskMap.has(safeTask.id)) {
+            state.tasks.push(safeTask);
+            state.taskMap.set(safeTask.id, safeTask);
           }
         }),
-        
+
         updateTask: (id, updates) => set((state) => {
           const index = state.tasks.findIndex(t => t.id === id);
           if (index !== -1) {
             Object.assign(state.tasks[index], updates);
+            state.taskMap.set(id, state.tasks[index]);
           }
         }),
-        
+
+        // 存在则更新，不存在则添加（合并 addTaskIfNotExists + updateTask）
+        upsertTask: (task) => set((state) => {
+          const safeTask = createSafeTask(task);
+          if (!safeTask) return;
+
+          const index = state.tasks.findIndex(t => t.id === safeTask.id);
+          if (index !== -1) {
+            Object.assign(state.tasks[index], safeTask);
+            state.taskMap.set(safeTask.id, state.tasks[index]);
+          } else {
+            state.tasks.push(safeTask);
+            state.taskMap.set(safeTask.id, safeTask);
+          }
+        }),
+
         deleteTask: (id) => set((state) => {
-          state.tasks = state.tasks.filter(t => t.id !== id);
+          if (state.taskMap.has(id)) {
+            state.taskMap.delete(id);
+            state.tasks = state.tasks.filter(t => t.id !== id);
+          }
         }),
         
         setLoading: (loading) => set((state) => {

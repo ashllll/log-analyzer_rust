@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { useShallow } from 'zustand/shallow';
 import { useKeywordStore, KeywordGroup } from '../stores/keywordStore';
 import { useToast } from './useToast';
 
@@ -8,7 +9,7 @@ import { useToast } from './useToast';
  */
 export const useKeywordManager = () => {
   const { showToast: addToast } = useToast();
-  const keywordGroups = useKeywordStore((state) => state.keywordGroups);
+  const keywordGroups = useKeywordStore(useShallow((state) => state.keywordGroups));
   const keywordsLoading = useKeywordStore((state) => state.loading);
   const keywordsError = useKeywordStore((state) => state.error);
   const addKeywordGroupAction = useKeywordStore((state) => state.addKeywordGroup);

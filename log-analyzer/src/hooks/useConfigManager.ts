@@ -1,4 +1,5 @@
 import { useEffect, useCallback, useRef } from 'react';
+import { useShallow } from 'zustand/shallow';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useKeywordStore } from '../stores/keywordStore';
 import { useConfigMutation } from './useServerQueries';
@@ -29,8 +30,8 @@ export const computeConfigFingerprint = (
  * Hook for managing configuration with debounced saving using React patterns
  */
 export const useConfigManager = () => {
-  const keywordGroups = useKeywordStore((state) => state.keywordGroups);
-  const workspaces = useWorkspaceStore((state) => state.workspaces);
+  const keywordGroups = useKeywordStore(useShallow((state) => state.keywordGroups));
+  const workspaces = useWorkspaceStore(useShallow((state) => state.workspaces));
   const { mutate: saveConfigMutate, isPending, error, isSuccess } = useConfigMutation();
 
   // Track last saved fingerprint to avoid duplicate saves

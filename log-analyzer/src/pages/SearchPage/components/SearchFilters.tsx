@@ -2,7 +2,7 @@
  * 搜索过滤器组件
  * 包含 Level 过滤按钮组、Time Range 输入、File Pattern 输入
  */
-import React from 'react';
+import React, { memo } from 'react';
 import { Dispatch, SetStateAction } from 'react';
 import { RotateCcw } from 'lucide-react';
 import { Button, Input } from '../../../components/ui';
@@ -15,7 +15,7 @@ export interface SearchFiltersProps {
   onReset: () => void;
 }
 
-export const SearchFilters: React.FC<SearchFiltersProps> = ({
+export const SearchFilters: React.FC<SearchFiltersProps> = memo(({
   filterOptions,
   onFilterOptionsChange,
   onReset,
@@ -123,4 +123,6 @@ export const SearchFilters: React.FC<SearchFiltersProps> = ({
       </div>
     </>
   );
-};
+});
+
+SearchFilters.displayName = 'SearchFilters';

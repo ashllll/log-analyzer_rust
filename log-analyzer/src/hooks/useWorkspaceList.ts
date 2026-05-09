@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { useShallow } from 'zustand/shallow';
 import { useWorkspaceStore, type Workspace } from '../stores/workspaceStore';
 import { logger } from '../utils/logger';
 import { api } from '../services/api';
@@ -15,7 +16,7 @@ export interface UseWorkspaceListReturn {
  * 提供工作区列表访问和刷新功能
  */
 export const useWorkspaceList = (): UseWorkspaceListReturn => {
-  const workspaces = useWorkspaceStore((state) => state.workspaces);
+  const workspaces = useWorkspaceStore(useShallow((state) => state.workspaces));
   const loading = useWorkspaceStore((state) => state.loading);
   const error = useWorkspaceStore((state) => state.error);
   const setWorkspaces = useWorkspaceStore((state) => state.setWorkspaces);
