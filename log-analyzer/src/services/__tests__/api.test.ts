@@ -52,7 +52,7 @@ describe('api.refreshWorkspace', () => {
 
     await expect(api.refreshWorkspace('workspace-1')).resolves.toBe('550e8400-e29b-41d4-a716-446655440001');
 
-    expect(mockInvoke).toHaveBeenNthCalledWith(1, 'load_config');
+    expect(mockInvoke).toHaveBeenNthCalledWith(1, 'load_config', {});
     expect(mockInvoke).toHaveBeenNthCalledWith(2, 'refresh_workspace', {
       workspaceId: 'workspace-1',
       path: '/logs/from-config',
