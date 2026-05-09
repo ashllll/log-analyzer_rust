@@ -1,7 +1,7 @@
 {
   "name": "log-analyzer",
   "private": true,
-  "version": "1.2.64",
+  "version": "1.2.65",
   "description": "A desktop log analysis tool built with Tauri, React, and TypeScript",
   "author": {
     "name": "ashllll",
@@ -72,7 +72,6 @@
     "eslint": "^9.39.1",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.0.1",
-
     "globals": "^16.5.0",
     "husky": "^9.1.7",
     "identity-obj-proxy": "^3.0.0",
