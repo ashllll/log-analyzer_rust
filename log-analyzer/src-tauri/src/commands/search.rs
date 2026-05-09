@@ -835,12 +835,13 @@ pub async fn search_logs(
         let start_time = std::time::Instant::now();
 
         // 创建自定义 Rayon 线程池，限制并行度以避免与 tokio 阻塞线程池竞争
-        let pool = match rayon::ThreadPoolBuilder::new()
-            .num_threads(4)
-            .build() {
+        let pool = match rayon::ThreadPoolBuilder::new().num_threads(4).build() {
             Ok(p) => p,
             Err(e) => {
-                let _ = app_handle.emit("search-error", format!("Failed to create search thread pool: {}", e));
+                let _ = app_handle.emit(
+                    "search-error",
+                    format!("Failed to create search thread pool: {}", e),
+                );
                 disk_store_spawn.remove_session(&search_id_clone);
                 return;
             }
@@ -946,27 +947,27 @@ pub async fn search_logs(
             // 使用自定义线程池隔离，避免与 tokio 阻塞线程池竞争
             let batch: Vec<_> = pool.install(|| {
                 file_batch
-                .par_iter()
-                .enumerate()
-                .map(|(idx, file_metadata)| {
-                    // 如果已经取消，尽早退出单个文件的搜索（虽然是同步的，但检查可以减少无效工作）
-                    if cancellation_token.is_cancelled() {
-                        return Vec::new();
-                    }
+                    .par_iter()
+                    .enumerate()
+                    .map(|(idx, file_metadata)| {
+                        // 如果已经取消，尽早退出单个文件的搜索（虽然是同步的，但检查可以减少无效工作）
+                        if cancellation_token.is_cancelled() {
+                            return Vec::new();
+                        }
 
-                    // Use CAS-based access with hash
-                    let file_identifier = format!("cas://{}", file_metadata.sha256_hash);
-                    search_single_file_with_details(
-                        &file_identifier,
-                        &file_metadata.virtual_path,
-                        Some(&*cas), // Pass CAS instance for hash-based access
-                        &builder,
-                        &plan,
-                        &compiled_filters_for_search,
-                        total_processed + idx * 10000,
-                    )
-                })
-                .collect()
+                        // Use CAS-based access with hash
+                        let file_identifier = format!("cas://{}", file_metadata.sha256_hash);
+                        search_single_file_with_details(
+                            &file_identifier,
+                            &file_metadata.virtual_path,
+                            Some(&*cas), // Pass CAS instance for hash-based access
+                            &builder,
+                            &plan,
+                            &compiled_filters_for_search,
+                            total_processed + idx * 10000,
+                        )
+                    })
+                    .collect()
             });
 
             // 如果批次处理过程中取消了，直接退出
