@@ -118,7 +118,7 @@ describe.skip('E2E: Workspace Management Workflow', () => {
       });
 
       // Mock import_folder responses (current implementation uses import_folder)
-      mockInvoke.mockImplementation((command: string, _args?: any) => {
+      mockInvoke.mockImplementation((command: string, _args?: unknown) => {
         switch (command) {
           case 'load_config':
             return Promise.resolve({ workspaces: [], keyword_groups: [] });
@@ -209,7 +209,7 @@ describe.skip('E2E: Workspace Management Workflow', () => {
         },
       ];
 
-      mockInvoke.mockImplementation((command: string, _args?: any) => {
+      mockInvoke.mockImplementation((command: string, _args?: unknown) => {
         switch (command) {
           case 'load_config':
             return Promise.resolve({ workspaces: mockWorkspaces, keyword_groups: [] });
