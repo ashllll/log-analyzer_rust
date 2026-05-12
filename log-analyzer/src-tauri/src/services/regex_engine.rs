@@ -624,9 +624,59 @@ pub fn needs_lookaround(pattern: &str) -> bool {
         || pattern.contains("(?<!")
 }
 
+/// 检测正则元字符，与前端 looksLikeRegexPattern 保持一致
+///
+/// 前端 REGEX_META_CHARS = /[()[\]{}+*?|^\\]/
+/// 排除 `.` 和 `$` 以减少日志路径/URL/变量名的误报
+const REGEX_META_CHARS: &[char] = &['(', ')', '[', ']', '{', '}', '+', '*', '?', '|', '^', '\\'];
+
+/// 检测模式是否包含正则元字符（与前端 `looksLikeRegexPattern` 一致）
+///
+/// 用于后端正则模式自动检测，确保前后端行为一致。
+/// 排除 `.` (日志路径、IP、URL) 和 `$` (金额、Shell 变量)。
+pub fn looks_like_regex_pattern(pattern: &str) -> bool {
+    let trimmed = pattern.trim();
+    !trimmed.is_empty() && trimmed.contains(REGEX_META_CHARS)
+}
+
 /// 检测是否包含 Aho-Corasick 友好的模式（多关键词）
+///
+/// 使用括号深度感知逻辑，正确区分分隔符 `|` 和字符类内的 `|`，
+/// 避免将 `[a|b]` 误判为多关键词模式。
 pub fn is_multi_keyword(pattern: &str) -> bool {
-    pattern.contains('|')
+    let mut depth: i32 = 0;
+    let mut escaped = false;
+
+    for ch in pattern.chars() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+
+        if ch == '(' || ch == '[' || ch == '{' {
+            depth += 1;
+            continue;
+        }
+
+        if ch == ')' || ch == ']' || ch == '}' {
+            if depth > 0 {
+                depth -= 1;
+            }
+            continue;
+        }
+
+        // 只在顶层（非括号内）的 | 才视为关键词分隔符
+        if ch == '|' && depth == 0 {
+            return true;
+        }
+    }
+
+    false
 }
 
 #[cfg(test)]
@@ -773,6 +823,64 @@ mod tests {
 
         let engine = RegexEngine::new(r"[A-Z]\w+", true).unwrap();
         assert!(matches!(engine, RegexEngine::Standard(_)));
+    }
+
+    // ========== looks_like_regex_pattern tests ==========
+
+    #[test]
+    fn test_looks_like_regex_pattern() {
+        // 不含元字符的纯文本
+        assert!(!looks_like_regex_pattern("error"));
+        assert!(!looks_like_regex_pattern("error_code"));
+        assert!(!looks_like_regex_pattern("test123"));
+        assert!(!looks_like_regex_pattern(""));
+        assert!(!looks_like_regex_pattern("   "));
+
+        // 含正则元字符
+        assert!(looks_like_regex_pattern(r"\d+"));
+        assert!(looks_like_regex_pattern("error.*timeout"));
+        assert!(looks_like_regex_pattern("(error|warning)"));
+        assert!(looks_like_regex_pattern("[A-Z]+"));
+        assert!(looks_like_regex_pattern("error?"));
+        assert!(looks_like_regex_pattern("file{3}"));
+        assert!(looks_like_regex_pattern("^start"));
+        assert!(looks_like_regex_pattern("end\\b"));
+
+        // . 和 $ 被排除（避免日志路径和变量名误报）
+        assert!(!looks_like_regex_pattern("file.log"));
+        assert!(!looks_like_regex_pattern("$PATH"));
+    }
+
+    // ========== is_multi_keyword bracket-aware tests ==========
+
+    #[test]
+    fn test_is_multi_keyword_simple() {
+        // 顶层 | 分隔
+        assert!(is_multi_keyword("error|warning|info"));
+        assert!(is_multi_keyword("a|b"));
+        // 无 | 的单关键词
+        assert!(!is_multi_keyword("error"));
+        assert!(!is_multi_keyword(""));
+    }
+
+    #[test]
+    fn test_is_multi_keyword_bracket_aware() {
+        // 字符类内的 | 不是分隔符
+        assert!(!is_multi_keyword("[a|b]"));
+        assert!(!is_multi_keyword("[error|warn]"));
+        // 分组内的 | 在括号中 (depth > 0)，不是顶层分隔符
+        // 此时应回退到 StandardEngine 处理，避免 Aho-Corasick 错误拆分为 "(error" 和 "warning)"
+        assert!(!is_multi_keyword("(a|b)"));
+    }
+
+    #[test]
+    fn test_is_multi_keyword_mixed() {
+        // 顶层 | 与字符类内 | 混合 → 存在顶层 |，返回 true
+        // 注意：AhoCorasickEngine::new_with_ci 内部仍会按所有 | 拆分，
+        // 但至少不会把纯字符类模式误判为多关键词
+        assert!(is_multi_keyword("error|warning|[a|b]"));
+        // 转义后的 | 不是分隔符
+        assert!(!is_multi_keyword(r"a\|b"));
     }
 
     #[test]

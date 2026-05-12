@@ -19,7 +19,7 @@ use la_core::models::{LogEntry, SearchFilters, SearchQuery};
 use regex::Regex;
 
 use crate::services::file_watcher::TimestampParser;
-use crate::services::{parse_metadata, ExecutionPlan, QueryPlanBuilder};
+use crate::services::{looks_like_regex_pattern, parse_metadata, ExecutionPlan, QueryPlanBuilder};
 use crate::utils::encoding::decode_log_content;
 
 pub const SEARCH_SEGMENT_LINE_COUNT: usize = 256;
@@ -151,7 +151,7 @@ pub fn build_structured_search_query(
             operator: QueryOperator::Or,
             source: TermSource::User,
             preset_group_id: None,
-            is_regex: false,
+            is_regex: looks_like_regex_pattern(value),
             priority: 1,
             enabled: true,
             case_sensitive,
@@ -199,7 +199,6 @@ pub fn resolve_search_query(
         }
 
         structured_query.id = query_id.to_string();
-        structured_query.filters = None;
         structured_query.metadata = QueryMetadata {
             created_at: 0,
             last_modified: 0,

@@ -24,8 +24,8 @@ pub use file_watcher::{
 pub use query_executor::{MatchDetail, QueryPlanBuilder};
 pub use query_planner::{ExecutionPlan, QueryPlannerAdapter};
 pub use regex_engine::{
-    AhoCorasickEngine, EngineError, EngineInfo, EngineMatches, EngineType, MatchResult,
-    RegexEngine, StandardEngine,
+    looks_like_regex_pattern, AhoCorasickEngine, EngineError, EngineInfo, EngineMatches,
+    EngineType, MatchResult, RegexEngine, StandardEngine,
 };
 pub use search_statistics::calculate_keyword_statistics;
 pub use traits::{
