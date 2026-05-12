@@ -68,7 +68,7 @@ export const TaskUpdateEventSchema = z.object({
   workspace_id: z.string().optional(),
 
   // 版本控制
-  version: z.number().int().positive().default(1),
+  version: z.number().int().min(0).default(0),
 
   // 时间戳
   timestamp: z.number().int().positive().optional(),
@@ -81,11 +81,39 @@ export type TaskUpdateEvent = z.infer<typeof TaskUpdateEventSchema>;
  */
 export const TaskRemovedEventSchema = z.object({
   task_id: z.string().min(1, "task_id is required"),
-  version: z.number().int().positive().optional(),
+  version: z.number().int().min(0).optional(),
   timestamp: z.number().int().positive().optional(),
 });
 
 export type TaskRemovedEvent = z.infer<typeof TaskRemovedEventSchema>;
+
+/**
+ * workspace-event 事件
+ *
+ * 统一工作区状态变更事件，替代 App.tsx 中直接监听 Tauri 事件的分裂脑问题
+ */
+export const WorkspaceEventSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('StatusChanged'),
+    workspace_id: z.string().min(1, "workspace_id is required"),
+    status: z.enum(['Completed', 'Cancelled', 'Processing', 'Error']),
+    message: z.string().optional(),
+    timestamp: z.number().int().positive().optional(),
+  }),
+  z.object({
+    type: z.literal('Created'),
+    workspace_id: z.string().min(1, "workspace_id is required"),
+    name: z.string().optional(),
+    timestamp: z.number().int().positive().optional(),
+  }),
+  z.object({
+    type: z.literal('Deleted'),
+    workspace_id: z.string().min(1, "workspace_id is required"),
+    timestamp: z.number().int().positive().optional(),
+  }),
+]);
+
+export type WorkspaceEvent = z.infer<typeof WorkspaceEventSchema>;
 
 // ============================================================================
 // 错误类型

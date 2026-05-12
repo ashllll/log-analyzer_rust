@@ -10,7 +10,7 @@ import { invoke, type InvokeArgs } from '@tauri-apps/api/core';
 import { z } from 'zod';
 import { createApiError } from './errors';
 import { logger } from '../utils/logger';
-import type { FilterOptions, KeywordGroup, Workspace } from '../types/common';
+import type { FilterOptions } from '../types/common';
 import type { SearchQuery } from '../types/search';
 import {
   RarSupportInfoSchema,
@@ -23,6 +23,7 @@ import {
   type RarSupportInfo,
   type FileFilterConfig,
   type WorkspaceStatusResponseValidated,
+  type AppConfigValidated as AppConfig,
 } from '../types/api-responses';
 
 // ============================================================================
@@ -82,6 +83,9 @@ export type ApiArgs = Record<string, unknown>;
 
 /**
  * 带超时的 IPC 调用包装器
+ *
+ * 使用 Promise.race + AbortController 模式实现超时控制，
+ * 避免手动 setTimeout 的内存泄漏和清理问题。
  */
 export async function invokeWithTimeout<T>(
   command: string,
@@ -90,23 +94,24 @@ export async function invokeWithTimeout<T>(
 ): Promise<T> {
   const sanitizedArgs = sanitizeArgs(args);
 
-  return new Promise<T>((resolve, reject) => {
-    const timeoutId = setTimeout(() => {
-      reject(new Error(`操作超时（${timeoutMs}ms）: ${command}`));
-    }, timeoutMs);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    controller.abort();
+  }, timeoutMs);
 
-    invoke<T>(command, sanitizedArgs)
-      .then((result) => {
-        clearTimeout(timeoutId);
-        logger.debug('IPC 调用成功:', { command, hasResult: !!result });
-        resolve(result);
-      })
-      .catch((error) => {
-        clearTimeout(timeoutId);
-        logger.error('IPC 调用失败:', { command, error });
-        reject(error);
-      });
-  });
+  try {
+    const result = await invoke<T>(command, sanitizedArgs);
+    logger.debug('IPC 调用成功:', { command, hasResult: !!result });
+    return result;
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(`操作超时（${timeoutMs}ms）: ${command}`);
+    }
+    logger.error('IPC 调用失败:', { command, error });
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 /**
@@ -142,19 +147,14 @@ export async function safeInvoke<T>(
 
 /**
  * 空值安全的列表 API 调用
- * 确保返回空数组而不是 null，错误会记录到日志但不会抛出
+ * 确保返回数组类型，错误会传播给调用者（不再静默吞没）
  */
 export async function safeInvokeList<T>(
   command: string,
   args: ApiArgs = {}
 ): Promise<T[]> {
-  try {
-    const result = await safeInvoke<T[]>(command, args, { fallback: [] });
-    return Array.isArray(result) ? result : [];
-  } catch (error) {
-    logger.warn(`safeInvokeList 失败: ${command}`, { error: String(error) });
-    return [];
-  }
+  const result = await safeInvoke<T[]>(command, args, { fallback: [] });
+  return Array.isArray(result) ? result : [];
 }
 
 /**
@@ -230,22 +230,6 @@ export interface ExportParams {
 export interface WatchParams {
   workspaceId: string;
   autoSearch?: boolean;
-}
-
-/**
- * 应用配置
- */
-export interface AppConfig {
-  keyword_groups: KeywordGroup[];
-  workspaces: Workspace[];
-  file_filter: {
-    enabled: boolean;
-    binary_detection_enabled: boolean;
-    mode: 'whitelist' | 'blacklist';
-    filename_patterns: string[];
-    allowed_extensions: string[];
-    forbidden_extensions: string[];
-  };
 }
 
 // ============================================================================

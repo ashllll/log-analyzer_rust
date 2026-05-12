@@ -24,13 +24,25 @@
 //! pub async fn load_workspace(
 //!     workspaceId: String,  // 对应前端 invoke('load_workspace', { workspaceId })
 //!     // ...
-//! ) -> Result<WorkspaceLoadResponse, String>
+//! ) -> Result<WorkspaceLoadResponse, CommandError>
 //! ```
 //!
 //! 对应的前端调用：
 //! ```typescript
 //! await invoke('load_workspace', { workspaceId: 'workspace-123' });
 //! ```
+
+use std::{fs, path::Path, sync::Arc};
+
+use la_core::error::{AppError, CommandError};
+use la_core::models::config::AppConfigLoader;
+use tauri::{command, AppHandle, Manager, State};
+use tracing::{error, info, warn};
+
+use crate::commands::import::{ensure_workspace_runtime_state, import_folder};
+use crate::models::AppState;
+use crate::utils::validation::validate_workspace_id;
+use crate::utils::workspace_paths::resolve_workspace_dir;
 
 /// Workspace load response
 #[derive(Debug, Clone, serde::Serialize)]
@@ -54,35 +66,42 @@ pub struct WorkspaceLoadResponse {
 #[command]
 pub async fn load_workspace(
     app: AppHandle,
-    #[allow(non_snake_case)] workspaceId: String, // 对应前端 invoke('load_workspace', { workspaceId })
+    #[allow(non_snake_case)] workspaceId: String,
     state: State<'_, AppState>,
-) -> Result<WorkspaceLoadResponse, String> {
-    validate_workspace_id(&workspaceId)?;
+) -> Result<WorkspaceLoadResponse, CommandError> {
+    validate_workspace_id(&workspaceId)
+        .map_err(|e| CommandError::new("VALIDATION_ERROR", e).with_help("Workspace ID format is invalid"))?;
 
-    let workspace_dir = resolve_workspace_dir(&app, &workspaceId)?;
+    let workspace_dir = resolve_workspace_dir(&app, &workspaceId)
+        .map_err(|e| CommandError::new("NOT_FOUND", e).with_help("The workspace may have been deleted"))?;
 
     // Check if workspace exists and is CAS format
     if !workspace_dir.exists() {
-        return Err(format!("Workspace not found: {}", workspaceId));
+        return Err(
+            CommandError::new("NOT_FOUND", "Workspace not found")
+                .with_help("The workspace may have been deleted or moved. Try re-importing")
+        );
     }
 
     let metadata_db = workspace_dir.join("metadata.db");
     let objects_dir = workspace_dir.join("objects");
 
     if !metadata_db.exists() || !objects_dir.exists() {
-        return Err(format!(
-            "Workspace {} is not in CAS format. Please create a new workspace.",
-            workspaceId
-        ));
+        return Err(
+            CommandError::new("FORMAT_ERROR", "Workspace is not in CAS format")
+                .with_help("Please create a new workspace with the current version")
+        );
     }
 
     let (_, metadata_store, _) =
-        ensure_workspace_runtime_state(&app, &state, &workspaceId, &workspace_dir).await?;
+        ensure_workspace_runtime_state(&app, &state, &workspaceId, &workspace_dir)
+            .await
+            .map_err(|e| CommandError::new("RUNTIME_ERROR", format!("Failed to initialize workspace: {}", e)))?;
 
     let file_count = metadata_store
         .count_files()
         .await
-        .map_err(|e| format!("Failed to count files: {}", e))? as usize;
+        .map_err(|e| CommandError::new("DATABASE_ERROR", format!("Failed to count files: {}", e)))? as usize;
 
     // Broadcast workspace loaded event
     let state_sync_opt: Option<crate::state_sync::StateSync> = {
@@ -119,7 +138,7 @@ pub async fn refresh_workspace(
     #[allow(non_snake_case)] workspaceId: String,
     path: Option<String>,
     state: State<'_, AppState>,
-) -> Result<String, String> {
+) -> Result<String, CommandError> {
     let path = resolve_refresh_source_path(&app, &workspaceId, path)?;
 
     info!(
@@ -130,15 +149,20 @@ pub async fn refresh_workspace(
 
     let source_path = Path::new(&path);
     if !source_path.exists() {
-        return Err(format!("Path does not exist: {}", path));
+        return Err(
+            CommandError::new("NOT_FOUND", "Source path does not exist")
+                .with_help("The source folder may have been moved or deleted")
+        );
     }
 
-    let workspace_dir = resolve_workspace_dir(&app, &workspaceId)?;
+    let workspace_dir = resolve_workspace_dir(&app, &workspaceId)
+        .map_err(|e| CommandError::new("NOT_FOUND", e))?;
 
     // Check if workspace exists and is CAS format
     if !workspace_dir.exists() {
         info!("Workspace not found, performing fresh import");
-        return import_folder(app, path, workspaceId, state).await;
+        return import_folder(app, path, workspaceId, state).await
+            .map_err(|e| CommandError::new("IMPORT_ERROR", e));
     }
 
     let metadata_db = workspace_dir.join("metadata.db");
@@ -146,7 +170,8 @@ pub async fn refresh_workspace(
 
     if !metadata_db.exists() || !objects_dir.exists() {
         info!("Workspace is not CAS format, performing fresh import");
-        return import_folder(app, path, workspaceId, state).await;
+        return import_folder(app, path, workspaceId, state).await
+            .map_err(|e| CommandError::new("IMPORT_ERROR", e));
     }
 
     // For CAS workspaces, refresh is equivalent to re-import
@@ -154,19 +179,8 @@ pub async fn refresh_workspace(
     info!("CAS workspace detected, re-importing for refresh");
 
     import_folder(app, path, workspaceId, state).await
+        .map_err(|e| CommandError::new("IMPORT_ERROR", e))
 }
-
-use std::{fs, path::Path, sync::Arc};
-
-use la_core::error::AppError;
-use la_core::models::config::AppConfigLoader;
-use tauri::{command, AppHandle, Manager, State};
-use tracing::{error, info, warn};
-
-use crate::commands::import::{ensure_workspace_runtime_state, import_folder};
-use crate::models::AppState;
-use crate::utils::validation::validate_workspace_id;
-use crate::utils::workspace_paths::resolve_workspace_dir;
 
 #[derive(Debug, serde::Deserialize)]
 struct StoredWorkspaceConfig {
@@ -178,7 +192,7 @@ fn resolve_refresh_source_path(
     app: &AppHandle,
     workspace_id: &str,
     path: Option<String>,
-) -> Result<String, String> {
+) -> Result<String, CommandError> {
     if let Some(path) = path.filter(|value| !value.trim().is_empty()) {
         return Ok(path);
     }
@@ -186,22 +200,22 @@ fn resolve_refresh_source_path(
     let config_path = app
         .path()
         .app_config_dir()
-        .map_err(|e: tauri::Error| e.to_string())?
+        .map_err(|e: tauri::Error| CommandError::new("CONFIG_ERROR", e.to_string()))?
         .join("config.json");
 
     if config_path.exists() {
         let loader = AppConfigLoader::load(Some(config_path.clone())).map_err(|e| {
-            format!(
-                "Failed to load config while resolving workspace path: {}",
-                e
+            CommandError::new(
+                "CONFIG_ERROR",
+                format!("Failed to load config while resolving workspace path: {}", e),
             )
         })?;
 
         let workspaces: Vec<StoredWorkspaceConfig> =
             serde_json::from_value(loader.get_config().workspaces.clone()).map_err(|e| {
-                format!(
-                    "Failed to parse stored workspaces while resolving workspace path: {}",
-                    e
+                CommandError::new(
+                    "CONFIG_ERROR",
+                    format!("Failed to parse stored workspaces while resolving workspace path: {}", e),
                 )
             })?;
 
@@ -220,28 +234,18 @@ fn resolve_refresh_source_path(
         }
     }
 
-    Err(format!(
-        "Workspace source path missing for {}. Please refresh the workspace list or re-import it.",
-        workspace_id
-    ))
+    Err(
+        CommandError::new("CONFIG_ERROR", "Workspace source path missing")
+            .with_help("Please refresh the workspace list or re-import it")
+    )
 }
 
 /// 判断工作区是否使用CAS存储
 ///
 /// 检查工作区目录下是否存在CAS相关文件（metadata.db或objects目录）
-///
-/// # 参数
-///
-/// - `workspace_id` - 工作区ID
-/// - `app` - Tauri应用句柄
-///
-/// # 返回值
-///
-/// - `Ok(true)` - 工作区使用CAS存储
-/// - `Ok(false)` - 工作区使用传统存储
-/// - `Err(String)` - 获取应用目录失败
-fn is_cas_workspace(workspace_id: &str, app: &AppHandle) -> Result<bool, String> {
-    let workspace_dir = resolve_workspace_dir(app, workspace_id)?;
+fn is_cas_workspace(workspace_id: &str, app: &AppHandle) -> Result<bool, CommandError> {
+    let workspace_dir = resolve_workspace_dir(app, workspace_id)
+        .map_err(|e| CommandError::new("NOT_FOUND", e))?;
 
     // Check for metadata.db or objects directory
     let metadata_db = workspace_dir.join("metadata.db");
@@ -262,17 +266,6 @@ fn is_cas_workspace(workspace_id: &str, app: &AppHandle) -> Result<bool, String>
 /// 4. 删除旧的索引文件(向后兼容)
 /// 5. 删除解压目录(包括CAS数据)
 ///
-/// # 参数
-///
-/// - `workspace_id` - 工作区ID
-/// - `state` - 全局状态引用
-/// - `app` - Tauri应用句柄
-///
-/// # 返回值
-///
-/// - `Ok(())` - 清理成功
-/// - `Err(String)` - 清理失败,返回错误信息
-///
 /// # 错误处理
 ///
 /// 单步失败不中断流程,记录日志并继续清理其他资源。
@@ -280,7 +273,7 @@ async fn cleanup_workspace_resources(
     workspace_id: &str,
     state: &AppState,
     app: &AppHandle,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     info!(
         workspace_id = %workspace_id,
         "Starting resource cleanup for workspace"
@@ -408,7 +401,7 @@ async fn cleanup_workspace_resources(
     let index_dir = app
         .path()
         .app_data_dir()
-        .map_err(|e| format!("Failed to get app data dir: {}", e))?
+        .map_err(|e| CommandError::new("IO_ERROR", format!("Failed to get app data dir: {}", e)))?
         .join("indices");
 
     // 尝试删除压缩版本和未压缩版本(兼容性)
@@ -594,10 +587,11 @@ async fn cleanup_workspace_resources(
             "Critical error: workspace directory still exists after cleanup"
         );
         // 工作区目录未删除，这是严重错误，必须返回错误
-        Err(format!(
-            "工作区目录删除失败: {}. 请关闭所有可能打开文件的程序后重试。",
-            error_summary
-        ))
+        Err(
+            CommandError::new("CLEANUP_ERROR", "Workspace directory deletion failed")
+                .with_help("Please close all programs that may have files open and retry")
+                .with_details(serde_json::json!({ "details": error_summary }))
+        )
     } else {
         let error_summary = errors.join("; ");
         warn!(
@@ -614,42 +608,20 @@ async fn cleanup_workspace_resources(
 /// 删除工作区命令
 ///
 /// Tauri命令接口,用于删除工作区及其所有相关资源。
-///
-/// # 参数
-///
-/// - `workspaceId` - 工作区ID(需符合验证规则)
-/// - `state` - 全局状态
-/// - `app` - Tauri应用句柄
-///
-/// # 返回值
-///
-/// - `Ok(())` - 删除成功
-/// - `Err(String)` - 删除失败,返回错误信息
-///
-/// # 错误码
-///
-/// - "Workspace ID cannot be empty" - 工作区ID为空
-/// - "Workspace ID contains invalid characters" - 工作区ID包含非法字符
-/// - 其他错误信息由cleanup_workspace_resources返回
-///
-/// # 示例(前端调用)
-///
-/// ```typescript
-/// await invoke('delete_workspace', { workspaceId: 'workspace-123' });
-/// ```
 #[command]
 pub async fn delete_workspace(
     #[allow(non_snake_case)] workspaceId: String,
     state: State<'_, AppState>,
     app: AppHandle,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     info!(
         workspace_id = %workspaceId,
         "Delete workspace command called"
     );
 
     // 参数验证
-    validate_workspace_id(&workspaceId)?;
+    validate_workspace_id(&workspaceId)
+        .map_err(|e| CommandError::new("VALIDATION_ERROR", e))?;
 
     // 执行清理
     cleanup_workspace_resources(&workspaceId, &state, &app).await?;
@@ -701,21 +673,11 @@ pub async fn delete_workspace(
 /// 取消任务命令
 ///
 /// 将任务状态设置为 Stopped
-///
-/// # 参数
-///
-/// - `taskId` - 任务ID
-/// - `state` - 全局状态
-///
-/// # 返回值
-///
-/// - `Ok(())` - 取消成功
-/// - `Err(String)` - 取消失败
 #[command]
 pub async fn cancel_task(
     #[allow(non_snake_case)] taskId: String,
     state: State<'_, AppState>,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     info!(
         task_id = %taskId,
         "Cancel task command called"
@@ -725,12 +687,12 @@ pub async fn cancel_task(
         .task_manager
         .lock()
         .as_ref()
-        .ok_or_else(|| "Task manager not initialized".to_string())?
+        .ok_or_else(|| CommandError::new("NOT_INITIALIZED", "Task manager not initialized"))?
         .clone();
 
     let task_manager: crate::task_manager::TaskManager = task_manager;
     // 更新任务状态为 Stopped
-    let _: Result<Option<crate::task_manager::TaskInfo>, String> = task_manager
+    let _ = task_manager
         .update_task_async(
             &taskId,
             0, // progress 保持不变
@@ -738,7 +700,7 @@ pub async fn cancel_task(
             crate::task_manager::TaskStatus::Stopped,
         )
         .await
-        .map_err(|e| format!("Failed to cancel task: {}", e));
+        .map_err(|e| CommandError::new("TASK_ERROR", format!("Failed to cancel task: {}", e)));
 
     info!(
         task_id = %taskId,
@@ -761,30 +723,24 @@ pub struct WorkspaceStatusResponse {
 /// 获取工作区状态命令
 ///
 /// 返回工作区的详细信息
-///
-/// # 参数
-///
-/// - `workspaceId` - 工作区ID
-/// - `app` - Tauri应用句柄
-/// - `state` - 全局状态
-///
-/// # 返回值
-///
-/// - `Ok(WorkspaceStatusResponse)` - 工作区状态信息
-/// - `Err(String)` - 获取失败
 #[command]
 pub async fn get_workspace_status(
     #[allow(non_snake_case)] workspaceId: String,
     app: AppHandle,
     state: State<'_, AppState>,
-) -> Result<WorkspaceStatusResponse, String> {
-    validate_workspace_id(&workspaceId)?;
+) -> Result<WorkspaceStatusResponse, CommandError> {
+    validate_workspace_id(&workspaceId)
+        .map_err(|e| CommandError::new("VALIDATION_ERROR", e))?;
 
-    let workspace_dir = resolve_workspace_dir(&app, &workspaceId)?;
+    let workspace_dir = resolve_workspace_dir(&app, &workspaceId)
+        .map_err(|e| CommandError::new("NOT_FOUND", e))?;
 
     // 检查工作区是否存在
     if !workspace_dir.exists() {
-        return Err(format!("Workspace not found: {}", workspaceId));
+        return Err(
+            CommandError::new("NOT_FOUND", "Workspace not found")
+                .with_help("The workspace may have been deleted")
+        );
     }
 
     // 检查是否为 CAS 格式
@@ -794,14 +750,16 @@ pub async fn get_workspace_status(
     let is_cas = metadata_db.exists() && objects_dir.exists();
 
     if !is_cas {
-        return Err(format!(
-            "Workspace {} is not in CAS format. Please create a new workspace.",
-            workspaceId
-        ));
+        return Err(
+            CommandError::new("FORMAT_ERROR", "Workspace is not in CAS format")
+                .with_help("Please create a new workspace")
+        );
     }
 
     let (_, metadata_store, _) =
-        ensure_workspace_runtime_state(&app, &state, &workspaceId, &workspace_dir).await?;
+        ensure_workspace_runtime_state(&app, &state, &workspaceId, &workspace_dir)
+            .await
+            .map_err(|e| CommandError::new("RUNTIME_ERROR", format!("Failed to initialize workspace: {}", e)))?;
 
     let file_count: i64 = metadata_store.count_files().await.unwrap_or(0);
 
@@ -832,33 +790,26 @@ pub async fn get_workspace_status(
 /// 获取工作区日志时间范围
 ///
 /// 从 Tantivy 索引中查询最早和最晚的日志时间戳
-///
-/// # 参数
-///
-/// - `workspaceId` - 工作区ID
-/// - `state` - 全局状态
-///
-/// # 返回值
-///
-/// - `Ok(WorkspaceTimeRange)` - 时间范围信息
-/// - `Err(String)` - 获取失败
 #[command]
 pub async fn get_workspace_time_range(
     app: AppHandle,
     #[allow(non_snake_case)] workspaceId: String,
     state: State<'_, AppState>,
-) -> Result<la_core::models::search::WorkspaceTimeRange, String> {
+) -> Result<la_core::models::search::WorkspaceTimeRange, CommandError> {
     use chrono::DateTime;
     use la_core::models::search::WorkspaceTimeRange;
 
-    let workspace_dir = resolve_workspace_dir(&app, &workspaceId)?;
+    let workspace_dir = resolve_workspace_dir(&app, &workspaceId)
+        .map_err(|e| CommandError::new("NOT_FOUND", e))?;
     let (_, _, manager) =
-        ensure_workspace_runtime_state(&app, &state, &workspaceId, &workspace_dir).await?;
+        ensure_workspace_runtime_state(&app, &state, &workspaceId, &workspace_dir)
+            .await
+            .map_err(|e| CommandError::new("RUNTIME_ERROR", format!("Failed to initialize workspace: {}", e)))?;
 
     let manager: Arc<crate::search_engine::SearchEngineManager> = manager;
     let (min_ts, max_ts, total_logs) = manager
         .get_time_range()
-        .map_err(|e| format!("Failed to get time range from index: {}", e))?;
+        .map_err(|e| CommandError::new("SEARCH_ERROR", format!("Failed to get time range from index: {}", e)))?;
 
     // Convert timestamps to ISO 8601 format
     let min_timestamp = if min_ts > 0 {
@@ -889,25 +840,13 @@ pub async fn get_workspace_time_range(
 /// 创建工作区命令（import_folder 的语义化别名）
 ///
 /// 提供更符合用户预期的命令名来创建工作区
-///
-/// # 参数
-///
-/// - `name` - 工作区名称
-/// - `path` - 文件夹路径
-/// - `app` - Tauri应用句柄
-/// - `state` - 全局状态
-///
-/// # 返回值
-///
-/// - `Ok(String)` - 返回任务ID
-/// - `Err(String)` - 创建失败
 #[command]
 pub async fn create_workspace(
     name: String,
     path: String,
     app: AppHandle,
     state: State<'_, AppState>,
-) -> Result<String, String> {
+) -> Result<String, CommandError> {
     info!(
         name = %name,
         path = %path,
@@ -917,15 +856,20 @@ pub async fn create_workspace(
     // 验证路径存在
     let path_obj = std::path::Path::new(&path);
     if !path_obj.exists() {
-        return Err(format!("Path does not exist: {}", path));
+        return Err(
+            CommandError::new("NOT_FOUND", "Path does not exist")
+                .with_help("Please select a valid folder")
+        );
     }
 
     // 生成 workspace ID（使用名称作为基础，转换为合法 ID）
     let workspace_id = format!("ws-{}", name.to_lowercase().replace([' ', '/', '\\'], "-"));
 
     // 验证生成的 workspace ID 合法性
-    validate_workspace_id(&workspace_id)?;
+    validate_workspace_id(&workspace_id)
+        .map_err(|e| CommandError::new("VALIDATION_ERROR", e))?;
 
     // 调用 import_folder 逻辑
     import_folder(app, path, workspace_id, state).await
+        .map_err(|e| CommandError::new("IMPORT_ERROR", e))
 }

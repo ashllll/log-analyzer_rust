@@ -20,7 +20,12 @@
 
 import { z } from 'zod';
 import { logger } from '../utils/logger';
-import { TaskUpdateEventSchema, TaskRemovedEventSchema, EventValidationError } from './types';
+import {
+  TaskUpdateEventSchema,
+  TaskRemovedEventSchema,
+  WorkspaceEventSchema,
+  EventValidationError,
+} from './types';
 import type { TaskUpdateEvent } from './types';
 
 // ============================================================================
@@ -56,8 +61,24 @@ class IdempotencyManager {
 
   /**
    * 检查事件是否已处理
+   *
+   * 边界条件处理：
+   * - version === undefined: 事件无版本号，跳过幂等性检查（允许处理）
+   * - version < 0: 非法版本号，视为未处理（让验证层拒绝）
+   * - version === 0: 合法版本号，正常比较
+   * - 版本环绕：当 processed.version - version > VERSION_RESET_GAP 时，视为环绕重置
    */
-  isProcessed(taskId: string, version: number): boolean {
+  isProcessed(taskId: string, version: number | undefined): boolean {
+    // 无版本号的事件跳过幂等性检查（由调用方决定是否处理）
+    if (version === undefined) {
+      return false;
+    }
+
+    // 拒绝非法版本号（负数），但让验证层处理错误
+    if (version < 0) {
+      return false;
+    }
+
     const processed = this.processed.get(taskId);
     if (!processed) return false;
 
@@ -72,7 +93,9 @@ class IdempotencyManager {
     // 若两者差值超过阈值，说明发生了版本重置，应清除幂等性记录允许新版本通过
     if (processed.version > version) {
       const VERSION_RESET_GAP = 1_000_000;
-      if (processed.version - version > VERSION_RESET_GAP) {
+      // 使用 Math.abs 处理双向差值，防止溢出
+      const diff = Math.abs(processed.version - version);
+      if (diff > VERSION_RESET_GAP) {
         // 版本发生了环绕重置，清除旧记录并允许新版本事件通过
         this.processed.delete(taskId);
         return false;
@@ -217,7 +240,10 @@ class EventBus {
    * @param eventType - 事件类型
    * @param rawData - 原始事件数据
    */
-  async processEvent(eventType: 'task-update' | 'task-removed', rawData: unknown): Promise<void> {
+  async processEvent(
+    eventType: 'task-update' | 'task-removed' | 'workspace-event',
+    rawData: unknown
+  ): Promise<void> {
     this.metrics.totalEvents++;
     this.metrics.lastEventTime = Date.now();
 
@@ -234,7 +260,8 @@ class EventBus {
         const event = validatedEvent as TaskUpdateEvent;
 
         // 严格模式：拒绝无 version 字段的事件（非 TaskManager 发送）
-        if (event.version == null) {
+        // 使用 === undefined 明确区分 "未定义" 和 "值为0"
+        if (event.version === undefined) {
           if (this.config.enableLogging) {
             logger.warn(
               {
@@ -272,7 +299,7 @@ class EventBus {
       await this.dispatchEvent(eventType, validatedEvent);
 
     } catch (err: unknown) {
-      // 老王备注：验证错误单独统计，其他错误算处理错误
+      // 验证错误单独统计，其他错误算处理错误
       const isValidationError = (err as Error)?.name === 'EventValidationError';
 
       if (isValidationError) {
@@ -290,7 +317,7 @@ class EventBus {
         'Event processing failed'
       );
 
-      // 老王备注：验证错误应该抛出，让调用者能感知到
+      // 验证错误应该抛出，让调用者能感知到
       if (isValidationError) {
         throw err;
       }
@@ -312,6 +339,8 @@ class EventBus {
           return TaskUpdateEventSchema.parse(rawData);
         case 'task-removed':
           return TaskRemovedEventSchema.parse(rawData);
+        case 'workspace-event':
+          return WorkspaceEventSchema.parse(rawData);
         default:
           logger.warn({ eventType }, 'Unknown event type');
           return rawData;

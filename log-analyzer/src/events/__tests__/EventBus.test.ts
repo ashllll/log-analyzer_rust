@@ -568,7 +568,7 @@ describe('EventBus', () => {
       };
 
       await testEventBus.processEvent('task-update', event);
-      expect(receivedVersion).toBe(1);
+      expect(receivedVersion).toBe(0);
     });
   });
 });

@@ -99,17 +99,16 @@ impl SearchPipeline {
 
         // 1. 检查缓存
         if let Some(cached_results) = self.cache.get_sync(&cache_key) {
-            *state.cache_hits.lock() += 1;
-            *state.total_searches.lock() += 1;
             {
-                let total = *state.total_searches.lock();
-                let hits = *state.cache_hits.lock();
-                let hit_rate = if total > 0 {
-                    (hits as f64 / total as f64) * 100.0
+                let mut metrics = state.search_metrics.lock();
+                metrics.cache_hits += 1;
+                metrics.total_searches += 1;
+                let hit_rate = if metrics.total_searches > 0 {
+                    (metrics.cache_hits as f64 / metrics.total_searches as f64) * 100.0
                 } else {
                     0.0
                 };
-                info!(total = total, hits = hits, hit_rate = hit_rate, "缓存统计");
+                info!(total = metrics.total_searches, hits = metrics.cache_hits, hit_rate = hit_rate, "缓存统计");
             }
 
             event_bus.emit_start(&search_id);
@@ -126,7 +125,10 @@ impl SearchPipeline {
             return Ok(search_id);
         }
 
-        *state.total_searches.lock() += 1;
+        {
+            let mut metrics = state.search_metrics.lock();
+            metrics.total_searches += 1;
+        }
 
         // 2. 获取工作区目录与运行时状态
         let workspace_dir = resolve_workspace_dir_path(
@@ -183,7 +185,7 @@ impl SearchPipeline {
         // 6. 关键词统计与事件发送
         let raw_term_refs: Vec<&str> = raw_terms.iter().map(String::as_str).collect();
         let keyword_stats = calculate_keyword_statistics(&entries, &raw_term_refs);
-        let duration_ms = state.last_search_duration.lock().as_millis() as u64;
+        let duration_ms = state.search_metrics.lock().last_search_duration.as_millis() as u64;
         let was_truncated = entries.len() >= max_results;
         let summary =
             SearchResultSummary::new(entries.len(), keyword_stats, duration_ms, was_truncated);
@@ -283,7 +285,7 @@ impl SearchPipeline {
         match result {
             Ok(Ok(entries)) => {
                 let duration = start.elapsed();
-                *state.last_search_duration.lock() = duration;
+                state.search_metrics.lock().last_search_duration = duration;
                 Ok(entries)
             }
             Ok(Err(e)) => {

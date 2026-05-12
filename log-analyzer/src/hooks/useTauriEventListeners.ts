@@ -150,9 +150,19 @@ export const useTauriEventListeners = () => {
         debouncedUpdateWorkspace(workspace_id, ready_count, total_count);
       });
 
+      // 监听工作区事件（统一桥接到 EventBus，解决分裂脑问题）
+      const workspaceEventUnlisten = await listen<unknown>('workspace-event', (event) => {
+        logger.debug({ payload: event.payload }, '[TauriEventListeners] Received workspace-event from Tauri');
+
+        // 桥接到 EventBus 处理（Schema 验证、统一分发）
+        eventBus.processEvent('workspace-event', event.payload).catch((error) => {
+          logger.error({ error }, '[TauriEventListeners] Failed to process workspace-event');
+        });
+      });
+
       return () => {
         // 逐个 try-catch，防止第一个 unlisten 抛出时后续监听器泄漏
-        [taskUpdateUnlisten, taskRemovedUnlisten, importCompleteUnlisten, importErrorUnlisten, importWarningUnlisten, filesReadyBatchUnlisten]
+        [taskUpdateUnlisten, taskRemovedUnlisten, importCompleteUnlisten, importErrorUnlisten, importWarningUnlisten, filesReadyBatchUnlisten, workspaceEventUnlisten]
           .forEach((unlisten) => {
             try { unlisten(); } catch { /* 静默处理，Tauri unlisten 不应抛出 */ }
           });

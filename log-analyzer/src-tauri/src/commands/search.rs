@@ -19,7 +19,9 @@ use tracing::{debug, error, info, trace, warn};
 
 use crate::commands::import::ensure_workspace_runtime_state;
 use crate::models::AppState;
+use crate::models::state::SearchMetrics;
 use la_core::error::{AppError, CommandError};
+use la_storage::ContentAddressableStorage;
 use la_core::models::config::AppConfigLoader;
 use la_core::models::search::{QueryMetadata, QueryOperator, SearchTerm, TermSource};
 use la_core::models::search_statistics::SearchResultSummary;
@@ -253,17 +255,16 @@ pub(crate) fn resolve_search_query(
 }
 
 /// 计算并打印缓存统计信息
-fn log_cache_statistics(total_searches: &Arc<Mutex<u64>>, cache_hits: &Arc<Mutex<u64>>) {
-    let total = total_searches.lock();
-    let hits = cache_hits.lock();
-    let hit_rate = if *total > 0 {
-        (*hits as f64 / *total as f64) * 100.0
+fn log_cache_statistics(search_metrics: &Arc<Mutex<SearchMetrics>>) {
+    let metrics = search_metrics.lock();
+    let hit_rate = if metrics.total_searches > 0 {
+        (metrics.cache_hits as f64 / metrics.total_searches as f64) * 100.0
     } else {
         0.0
     };
     info!(
-        total = *total,
-        hits = *hits,
+        total = metrics.total_searches,
+        hits = metrics.cache_hits,
         hit_rate = hit_rate,
         "Cache statistics"
     );
@@ -588,15 +589,8 @@ impl CompiledSearchFilters {
 }
 
 #[command]
-pub async fn search_logs(
-    app: AppHandle,
-    query: String,
-    #[allow(non_snake_case)] structuredQuery: Option<SearchQuery>,
-    #[allow(non_snake_case)] workspaceId: Option<String>,
-    #[allow(non_snake_case)] maxResults: Option<usize>,
-    filters: Option<SearchFilters>,
-    state: State<'_, AppState>,
-) -> Result<String, CommandError> {
+/// 验证搜索参数
+fn validate_search_params(query: &str) -> Result<(), CommandError> {
     if query.is_empty() {
         return Err(
             CommandError::new("VALIDATION_ERROR", "Search query cannot be empty")
@@ -610,79 +604,364 @@ pub async fn search_logs(
         )
         .with_help("Try reducing the number of search terms"));
     }
+    Ok(())
+}
+
+/// 解析工作区ID，未提供时使用第一个可用工作区
+fn resolve_workspace_id(
+    workspace_id_arg: Option<String>,
+    workspace_dirs: &Arc<Mutex<std::collections::BTreeMap<String, std::path::PathBuf>>>,
+) -> Result<String, CommandError> {
+    if let Some(id) = workspace_id_arg {
+        return Ok(id);
+    }
+
+    let dirs = workspace_dirs.lock();
+    if let Some(first_id) = dirs.keys().next() {
+        debug!(
+            workspace_id = %first_id,
+            available_workspaces = ?dirs.keys().collect::<Vec<_>>(),
+            "Using first available workspace as default"
+        );
+        Ok(first_id.clone())
+    } else {
+        Err(
+            CommandError::new("NOT_FOUND", "No workspaces available")
+                .with_help("Please create a workspace first using the import feature")
+        )
+    }
+}
+
+/// 尝试从缓存获取搜索结果
+#[allow(clippy::too_many_arguments)]
+fn try_get_cached_results(
+    cache_key: &SearchCacheKey,
+    cache_manager: &Arc<Mutex<crate::utils::cache_manager::CacheManager>>,
+    search_metrics: &Arc<Mutex<SearchMetrics>>,
+    disk_store: &Arc<crate::search_engine::disk_result_store::DiskResultStore>,
+    app_handle: &AppHandle,
+    search_id: &str,
+    raw_terms: &[String],
+    cancellation_tokens: &Arc<Mutex<std::collections::HashMap<String, tokio_util::sync::CancellationToken>>>,
+) -> Option<usize> {
+    let cache = cache_manager.lock();
+    let cached_results = cache.get_sync(cache_key)?;
+
+    {
+        let mut metrics = search_metrics.lock();
+        metrics.cache_hits += 1;
+        metrics.total_searches += 1;
+    }
+
+    log_cache_statistics(search_metrics);
+
+    let _ = app_handle.emit("search-start", ());
+
+    if let Err(e) = disk_store.create_session(search_id) {
+        warn!(error = %e, "缓存命中：无法创建磁盘搜索会话");
+    } else {
+        for chunk in cached_results.chunks(2000) {
+            if let Err(e) = disk_store.append_entries(search_id, chunk) {
+                warn!(error = %e, "缓存命中：磁盘写入失败");
+                break;
+            }
+        }
+        if let Err(e) = disk_store.complete_session(search_id) {
+            warn!(error = %e, "缓存命中：完成磁盘会话失败");
+        }
+    }
+
+    let _ = app_handle.emit("search-progress", cached_results.len());
+
+    let raw_term_refs: Vec<&str> = raw_terms.iter().map(String::as_str).collect();
+    let keyword_stats = calculate_keyword_statistics(&cached_results, &raw_term_refs);
+    let summary = SearchResultSummary::new(cached_results.len(), keyword_stats, 0, false);
+
+    let _ = app_handle.emit("search-summary", &summary);
+    let _ = app_handle.emit("search-complete", cached_results.len());
+
+    {
+        let mut tokens = cancellation_tokens.lock();
+        tokens.remove(search_id);
+    }
+
+    Some(cached_results.len())
+}
+
+/// 在 spawn_blocking 中执行实际的文件搜索
+#[allow(clippy::too_many_arguments)]
+fn execute_file_search(
+    app_handle: AppHandle,
+    search_id: String,
+    files_for_search: Vec<la_storage::FileMetadata>,
+    cas: Arc<ContentAddressableStorage>,
+    structured_query: SearchQuery,
+    compiled_filters: CompiledSearchFilters,
+    max_results: usize,
+    regex_cache_size: usize,
+    raw_terms: Vec<String>,
+    cache_key: SearchCacheKey,
+    cache_manager: Arc<Mutex<crate::utils::cache_manager::CacheManager>>,
+    search_metrics: Arc<Mutex<SearchMetrics>>,
+    disk_store: Arc<crate::search_engine::disk_result_store::DiskResultStore>,
+    cancellation_token: tokio_util::sync::CancellationToken,
+    cancellation_token_map: Arc<Mutex<std::collections::HashMap<String, tokio_util::sync::CancellationToken>>>,
+) {
+    let start_time = std::time::Instant::now();
+
+    let pool = match rayon::ThreadPoolBuilder::new().num_threads(4).build() {
+        Ok(p) => p,
+        Err(e) => {
+            let _ = app_handle.emit("search-error", format!("Failed to create search thread pool: {}", e));
+            disk_store.remove_session(&search_id);
+            return;
+        }
+    };
+
+    let mut builder = QueryPlanBuilder::new(regex_cache_size);
+    let plan = match builder.build(&structured_query) {
+        Ok(p) => p,
+        Err(e) => {
+            let _ = app_handle.emit("search-error", format!("Query execution error: {}", e));
+            disk_store.remove_session(&search_id);
+            return;
+        }
+    };
+
+    debug!(
+        total_files = files_for_search.len(),
+        "Starting search across files using CAS"
+    );
+
+    let batch_size = 2000;
+    let mut total_processed = 0;
+    let mut results_count = 0;
+    let mut keyword_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut was_truncated = false;
+    let mut all_results: Vec<LogEntry> = Vec::new();
+    const MAX_CACHE_SIZE: usize = 100_000;
+
+    let timed_out = Arc::new(AtomicBool::new(false));
+    let timed_out_for_search = Arc::clone(&timed_out);
+
+    let flush_batch = |batch: &mut Vec<LogEntry>, progress_count: usize| {
+        if batch.is_empty() {
+            return;
+        }
+
+        if cancellation_token.is_cancelled() {
+            batch.clear();
+            return;
+        }
+
+        const MAX_RETRIES: usize = 3;
+        let mut last_err = None;
+        for _ in 0..MAX_RETRIES {
+            match disk_store.append_entries(&search_id, batch) {
+                Ok(_) => {
+                    batch.clear();
+                    if !timed_out_for_search.load(Ordering::SeqCst) {
+                        let _ = app_handle.emit("search-progress", progress_count);
+                    }
+                    return;
+                }
+                Err(e) => {
+                    last_err = Some(e);
+                }
+            }
+        }
+        if let Some(e) = last_err {
+            error!(error = %e, retries = MAX_RETRIES, "磁盘写入搜索结果批次失败，丢弃批次以避免重复数据");
+        }
+        batch.clear();
+    };
+
+    let _ = app_handle.emit("search-start", "Starting search...");
+
+    'outer: for file_batch in files_for_search.chunks(10) {
+        if cancellation_token.is_cancelled() {
+            if !timed_out_for_search.load(Ordering::SeqCst) {
+                let _ = app_handle.emit("search-cancelled", search_id.clone());
+            }
+            {
+                let mut tokens = cancellation_token_map.lock();
+                tokens.remove(&search_id);
+            }
+            disk_store.remove_session(&search_id);
+            return;
+        }
+
+        if results_count >= max_results {
+            was_truncated = true;
+            break 'outer;
+        }
+
+        let mut batch_results: Vec<LogEntry> = Vec::new();
+
+        let batch: Vec<_> = pool.install(|| {
+            file_batch
+                .par_iter()
+                .enumerate()
+                .map(|(idx, file_metadata)| {
+                    if cancellation_token.is_cancelled() {
+                        return Vec::new();
+                    }
+
+                    let file_identifier = format!("cas://{}", file_metadata.sha256_hash);
+                    search_single_file_with_details(
+                        &file_identifier,
+                        &file_metadata.virtual_path,
+                        Some(&*cas),
+                        &builder,
+                        &plan,
+                        &compiled_filters,
+                        total_processed + idx * 10000,
+                    )
+                })
+                .collect()
+        });
+
+        if cancellation_token.is_cancelled() {
+            continue 'outer;
+        }
+
+        for file_results in batch {
+            if cancellation_token.is_cancelled() {
+                batch_results.clear();
+                continue 'outer;
+            }
+
+            for mut entry in file_results {
+                if cancellation_token.is_cancelled() {
+                    batch_results.clear();
+                    continue 'outer;
+                }
+
+                if results_count >= max_results {
+                    flush_batch(&mut batch_results, results_count);
+                    was_truncated = true;
+                    break 'outer;
+                }
+
+                entry.id = results_count;
+
+                if let Some(ref keywords) = entry.matched_keywords {
+                    for kw in keywords {
+                        *keyword_counts.entry(kw.clone()).or_insert(0) += 1;
+                    }
+                }
+
+                if all_results.len() < MAX_CACHE_SIZE {
+                    all_results.push(entry.clone());
+                } else if all_results.len() == MAX_CACHE_SIZE {
+                    tracing::warn!("Cache size limit reached ({}), additional results will not be cached", MAX_CACHE_SIZE);
+                }
+                batch_results.push(entry);
+                results_count += 1;
+
+                if batch_results.len() >= batch_size {
+                    flush_batch(&mut batch_results, results_count);
+                }
+            }
+        }
+
+        flush_batch(&mut batch_results, results_count);
+        total_processed += file_batch.len();
+    }
+
+    if cancellation_token.is_cancelled() {
+        {
+            let mut tokens = cancellation_token_map.lock();
+            tokens.remove(&search_id);
+        }
+        disk_store.remove_session(&search_id);
+        return;
+    }
+
+    if let Err(e) = disk_store.complete_session(&search_id) {
+        warn!(error = %e, "完成磁盘搜索会话失败");
+    }
+
+    let duration = start_time.elapsed().as_millis() as u64;
+    {
+        let mut metrics = search_metrics.lock();
+        metrics.last_search_duration = std::time::Duration::from_millis(duration);
+    }
+
+    let keyword_stats: Vec<la_core::models::search_statistics::KeywordStatistics> = raw_terms
+        .iter()
+        .map(|term| {
+            let count = keyword_counts.get(term).copied().unwrap_or(0);
+            la_core::models::search_statistics::KeywordStatistics::new(
+                term.clone(),
+                count,
+                results_count,
+            )
+        })
+        .collect();
+
+    if !was_truncated && !cancellation_token.is_cancelled() {
+        cache_manager.lock().insert_sync(cache_key, all_results);
+    }
+
+    if !timed_out_for_search.load(Ordering::SeqCst) {
+        let _ = app_handle.emit(
+            "search-summary",
+            &SearchResultSummary::new(results_count, keyword_stats, duration, was_truncated),
+        );
+        let _ = app_handle.emit("search-complete", results_count);
+    }
+
+    remove_cancellation_token(&cancellation_token_map, &search_id);
+}
+
+#[command]
+pub async fn search_logs(
+    app: AppHandle,
+    query: String,
+    #[allow(non_snake_case)] structuredQuery: Option<SearchQuery>,
+    #[allow(non_snake_case)] workspaceId: Option<String>,
+    #[allow(non_snake_case)] maxResults: Option<usize>,
+    filters: Option<SearchFilters>,
+    state: State<'_, AppState>,
+) -> Result<String, CommandError> {
+    // Step 1: 参数验证
+    validate_search_params(&query)?;
 
     let runtime_config = load_search_runtime_config(&app);
-
     let app_handle = app.clone();
-    let workspace_dirs: Arc<Mutex<std::collections::BTreeMap<String, std::path::PathBuf>>> =
-        Arc::clone(&state.workspace_dirs);
-    let cache_manager: Arc<Mutex<crate::utils::cache_manager::CacheManager>> =
-        Arc::clone(&state.cache_manager);
-    let total_searches: Arc<Mutex<u64>> = Arc::clone(&state.total_searches);
-    let cache_hits: Arc<Mutex<u64>> = Arc::clone(&state.cache_hits);
-    let last_search_duration: Arc<Mutex<std::time::Duration>> =
-        Arc::clone(&state.last_search_duration);
-    let cancellation_tokens: Arc<
-        Mutex<std::collections::HashMap<String, tokio_util::sync::CancellationToken>>,
-    > = Arc::clone(&state.search_cancellation_tokens);
-    // 磁盘搜索结果存储：新架构的核心，替代 search-results IPC 事件
-    let disk_result_store: Arc<crate::search_engine::disk_result_store::DiskResultStore> =
-        state.disk_result_store.read().clone();
+    let workspace_dirs = Arc::clone(&state.workspace_dirs);
+    let cache_manager = Arc::clone(&state.cache_manager);
+    let search_metrics = Arc::clone(&state.search_metrics);
+    let cancellation_tokens = Arc::clone(&state.search_cancellation_tokens);
+    let disk_result_store = state.disk_result_store.read().clone();
 
-    let max_results = maxResults
-        .unwrap_or(runtime_config.default_max_results)
-        .min(100_000);
+    let max_results = maxResults.unwrap_or(runtime_config.default_max_results).min(100_000);
     let filters = filters.unwrap_or_default();
     let compiled_filters = CompiledSearchFilters::compile(&filters)?;
     let case_sensitive = runtime_config.case_sensitive;
     let search_timeout_secs = runtime_config.timeout_seconds;
     let regex_cache_size = runtime_config.regex_cache_size.max(1);
+
     let (raw_terms, structured_query) =
         resolve_search_query(&query, structuredQuery, case_sensitive, "search_logs_query")?;
 
-    // 修复工作区ID处理：当没有提供workspaceId时，使用第一个可用的工作区而不是硬编码的"default"
-    let workspace_id = if let Some(ref id) = workspaceId {
-        id.clone()
-    } else {
-        // 当没有提供工作区ID时，获取第一个可用的工作区
-        let dirs = workspace_dirs.lock();
-        if let Some(first_workspace_id) = dirs.keys().next() {
-            debug!(
-                workspace_id = %first_workspace_id,
-                available_workspaces = ?dirs.keys().collect::<Vec<_>>(),
-                "Using first available workspace as default"
-            );
-            first_workspace_id.clone()
-        } else {
-            // 如果没有可用的工作区，返回明确的错误
-            let _ = app.emit(
-                "search-error",
-                "No workspaces available. Please create a workspace first.",
-            );
-            return Err(CommandError::new("NOT_FOUND", "No workspaces available")
-                .with_help("Please create a workspace first using the import feature"));
-        }
-    };
+    // Step 2: 解析工作区ID
+    let workspace_id = resolve_workspace_id(workspaceId, &workspace_dirs)?;
 
-    // 生成唯一的搜索ID
+    // Step 3: 生成搜索ID和取消令牌
     let search_id = uuid::Uuid::new_v4().to_string();
-
-    // 创建取消令牌
     let cancellation_token = tokio_util::sync::CancellationToken::new();
     {
         let mut tokens = cancellation_tokens.lock();
         if let Some(old_token) = tokens.get(&search_id) {
-            tracing::warn!(
-                search_id = %search_id,
-                "Search ID already exists in cancellation tokens, cancelling old token"
-            );
+            tracing::warn!(search_id = %search_id, "Cancelling old search token");
             old_token.cancel();
         }
         tokens.insert(search_id.clone(), cancellation_token.clone());
     }
 
-    // 缓存键：基于查询参数生成，使用查询内容的哈希作为版本号
-    // 使用 SHA-256 哈希确保不同查询使用不同缓存键，避免缓存污染
+    // Step 4: 构建缓存键并检查缓存
     let query_version = compute_query_version(
         &serde_json::to_string(&structured_query).unwrap_or_else(|_| query.clone()),
     );
@@ -693,70 +972,30 @@ pub async fn search_logs(
         filters.time_end.clone(),
         filters.levels.clone(),
         filters.file_pattern.clone(),
-        false, // 全局 case_sensitive 占位（per-term 大小写敏感已包含在 query.terms 中，此维度暂保留以维持缓存键类型兼容）
+        false,
         max_results,
-        query_version.to_string(), // 使用 DefaultHasher 哈希作为版本号
+        query_version.to_string(),
     );
 
-    {
-        // 使用 CacheManager 的同步 get 方法
-        let cache = state.cache_manager.lock();
-        let cache_result = cache.get_sync(&cache_key);
-
-        if let Some(cached_results) = cache_result {
-            {
-                let mut hits = cache_hits.lock();
-                *hits += 1;
-            }
-            {
-                let mut searches = total_searches.lock();
-                *searches += 1;
-            }
-
-            // 记录缓存统计
-            log_cache_statistics(&total_searches, &cache_hits);
-
-            // 缓存命中时也需发送 search-start，使前端清空旧结果、重置滚动位置
-            let _ = app_handle.emit("search-start", ());
-
-            // 将缓存结果写入磁盘（新架构：不通过 IPC 发送原始数据，前端按需分页读取）
-            if let Err(e) = disk_result_store.create_session(&search_id) {
-                warn!(error = %e, "缓存命中：无法创建磁盘搜索会话");
-            } else {
-                for chunk in cached_results.chunks(2000) {
-                    let chunk: &[la_core::models::LogEntry] = chunk;
-                    if let Err(e) = disk_result_store.append_entries(&search_id, chunk) {
-                        warn!(error = %e, "缓存命中：磁盘写入失败");
-                        break;
-                    }
-                }
-                if let Err(e) = disk_result_store.complete_session(&search_id) {
-                    warn!(error = %e, "缓存命中：完成磁盘会话失败");
-                }
-            }
-            // 仅发送实时计数事件，前端通过 fetch_search_page 按需读取实际数据
-            let _ = app_handle.emit("search-progress", cached_results.len());
-
-            let raw_term_refs: Vec<&str> = raw_terms.iter().map(String::as_str).collect();
-            let keyword_stats = calculate_keyword_statistics(&cached_results, &raw_term_refs);
-            let summary = SearchResultSummary::new(cached_results.len(), keyword_stats, 0, false);
-
-            let _ = app_handle.emit("search-summary", &summary);
-            let _ = app_handle.emit("search-complete", cached_results.len());
-            // 缓存命中路径：清理之前创建的 cancellation token（缓存路径无需保留）
-            {
-                let mut tokens = cancellation_tokens.lock();
-                tokens.remove(&search_id);
-            }
-            return Ok(search_id);
-        }
+    if let Some(_count) = try_get_cached_results(
+        &cache_key,
+        &cache_manager,
+        &search_metrics,
+        &disk_result_store,
+        &app_handle,
+        &search_id,
+        &raw_terms,
+        &cancellation_tokens,
+    ) {
+        return Ok(search_id);
     }
 
     {
-        let mut searches = total_searches.lock();
-        *searches += 1;
+        let mut metrics = search_metrics.lock();
+        metrics.total_searches += 1;
     }
 
+    // Step 5: 解析工作区目录
     let workspace_dir = {
         let existing = {
             let dirs = workspace_dirs.lock();
@@ -768,327 +1007,74 @@ pub async fn search_logs(
         } else {
             resolve_workspace_dir(&app_handle, &workspace_id).map_err(|e| {
                 let _ = app_handle.emit("search-error", &e);
-                CommandError::new("NOT_FOUND", e).with_help(
-                    "The workspace may have been deleted. Try refreshing the workspace list",
-                )
+                CommandError::new("NOT_FOUND", e)
+                    .with_help("The workspace may have been deleted. Try refreshing the workspace list")
             })?
         }
     };
 
+    // Step 6: 获取工作区运行时状态
     let (cas, metadata_store, _search_engine_manager) =
         ensure_workspace_runtime_state(&app_handle, &state, &workspace_id, &workspace_dir)
             .await
-            .map_err(|e| {
-                CommandError::new(
-                    "DATABASE_ERROR",
-                    format!("Failed to initialize workspace runtime state: {}", e),
-                )
-                .with_help("Try reloading the workspace before searching again")
-            })?;
+            .map_err(|e| CommandError::new("DATABASE_ERROR", format!("Failed to initialize workspace: {}", e))
+                .with_help("Try reloading the workspace before searching again"))?;
 
-    // Get all files from MetadataStore BEFORE spawn_blocking
-    let files = match metadata_store.get_all_files().await {
-        Ok(result) => result,
-        Err(e) => {
-            error!(
-                workspace_id = %workspace_id,
-                error = %e,
-                "Failed to get files from metadata store"
-            );
-            let _ = app_handle.emit(
-                "search-error",
-                format!(
-                    "Internal error occurred while accessing workspace: {}",
-                    workspace_id
-                ),
-            );
-            return Err(CommandError::new("DATABASE_ERROR", format!("Internal error occurred while accessing workspace: {}", workspace_id))
-                .with_help("The workspace database may be corrupted. Try refreshing or reimporting the workspace"));
-        }
-    };
+    // Step 7: 获取文件列表
+    let files = metadata_store.get_all_files().await.map_err(|e| {
+        error!(workspace_id = %workspace_id, error = %e, "Failed to get files from metadata store");
+        CommandError::new("DATABASE_ERROR", "Failed to access workspace files")
+            .with_help("The workspace database may be corrupted. Try refreshing or reimporting")
+    })?;
 
-    let search_id_clone = search_id.clone();
     let files_for_search: Vec<_> = files
         .into_iter()
         .filter(|file| compiled_filters.matches_file(&file.virtual_path, None))
         .collect();
 
-    // 创建磁盘搜索会话（仅在非缓存命中路径下创建，缓存命中路径已创建）
+    // Step 8: 创建磁盘搜索会话
     if !disk_result_store.has_session(&search_id) {
         if let Err(e) = disk_result_store.create_session(&search_id) {
             warn!(error = %e, search_id = %search_id, "无法创建磁盘搜索会话，分页读取功能将不可用");
         }
     }
-    let disk_store_spawn = Arc::clone(&disk_result_store);
-    let compiled_filters_for_search = compiled_filters.clone();
 
-    // 为超时处理克隆必要的变量
+    // Step 9: 执行搜索（spawn_blocking）
     let app_handle_for_timeout = app_handle.clone();
     let cancellation_token_for_timeout = cancellation_token.clone();
     let cancellation_tokens_for_timeout = Arc::clone(&cancellation_tokens);
     let disk_store_for_timeout = Arc::clone(&disk_result_store);
     let timed_out = Arc::new(AtomicBool::new(false));
     let timed_out_for_timeout = Arc::clone(&timed_out);
-    let timed_out_for_search = Arc::clone(&timed_out);
 
+    let search_id_for_blocking = search_id.clone();
     let handle = tokio::task::spawn_blocking(move || {
-        let start_time = std::time::Instant::now();
-
-        // 创建自定义 Rayon 线程池，限制并行度以避免与 tokio 阻塞线程池竞争
-        let pool = match rayon::ThreadPoolBuilder::new().num_threads(4).build() {
-            Ok(p) => p,
-            Err(e) => {
-                let _ = app_handle.emit(
-                    "search-error",
-                    format!("Failed to create search thread pool: {}", e),
-                );
-                disk_store_spawn.remove_session(&search_id_clone);
-                return;
-            }
-        };
-
-        let mut builder = QueryPlanBuilder::new(regex_cache_size);
-        let plan = match builder.build(&structured_query) {
-            Ok(p) => p,
-            Err(e) => {
-                let _ = app_handle.emit("search-error", format!("Query execution error: {}", e));
-                disk_store_spawn.remove_session(&search_id_clone);
-                return;
-            }
-        };
-
-        // Note: workspace_dir, metadata_store, cas, and files are now obtained
-        // BEFORE spawn_blocking to avoid nested runtime blocking issues
-
-        debug!(
-            total_files = files_for_search.len(),
-            workspace_id = %workspace_id,
-            "Starting search across files using CAS"
+        execute_file_search(
+            app_handle,
+            search_id_for_blocking,
+            files_for_search,
+            cas,
+            structured_query,
+            compiled_filters,
+            max_results,
+            regex_cache_size,
+            raw_terms,
+            cache_key,
+            cache_manager,
+            search_metrics,
+            disk_result_store,
+            cancellation_token,
+            cancellation_tokens,
         );
-
-        // 流式处理：分批发送结果，避免内存峰值
-        // 优化：batch_size 从 500 增加到 2000，减少 IPC 调用次数 75%，提高吞吐量
-        let batch_size = 2000;
-        let mut total_processed = 0;
-        let mut results_count = 0;
-        // 流式统计：使用HashMap增量统计关键词，避免累积所有结果
-        let mut keyword_counts: std::collections::HashMap<String, usize> =
-            std::collections::HashMap::new();
-        let mut was_truncated = false;
-        let mut all_results: Vec<LogEntry> = Vec::new(); // 用于缓存的完整结果集
-        const MAX_CACHE_SIZE: usize = 100_000; // 限制缓存中的结果数量
-
-        let flush_batch = |batch: &mut Vec<LogEntry>, progress_count: usize| {
-            if batch.is_empty() {
-                return;
-            }
-
-            if cancellation_token.is_cancelled() {
-                batch.clear();
-                return;
-            }
-
-            // 修复：限制重试次数为 3 次，超过后丢弃批次，避免无限重试和重复数据
-            const MAX_RETRIES: usize = 3;
-            let mut last_err = None;
-            for _ in 0..MAX_RETRIES {
-                match disk_store_spawn.append_entries(&search_id_clone, batch) {
-                    Ok(_) => {
-                        batch.clear();
-                        if !timed_out_for_search.load(Ordering::SeqCst) {
-                            let _ = app_handle.emit("search-progress", progress_count);
-                        }
-                        return;
-                    }
-                    Err(e) => {
-                        last_err = Some(e);
-                    }
-                }
-            }
-            if let Some(e) = last_err {
-                error!(
-                    error = %e,
-                    retries = MAX_RETRIES,
-                    "磁盘写入搜索结果批次失败，丢弃批次以避免重复数据"
-                );
-            }
-            batch.clear(); // 丢弃批次，防止下次 flush 重复输出
-        };
-
-        // 先发送开始事件
-        let _ = app_handle.emit("search-start", "Starting search...");
-
-        'outer: for file_batch in files_for_search.chunks(10) {
-            // 检查取消状态
-            if cancellation_token.is_cancelled() {
-                if !timed_out_for_search.load(Ordering::SeqCst) {
-                    let _ = app_handle.emit("search-cancelled", search_id_clone.clone());
-                }
-                // 清理取消令牌
-                {
-                    let mut tokens = cancellation_tokens.lock();
-                    tokens.remove(&search_id_clone);
-                }
-                // 清理磁盘会话（.ndjson 和 .idx 文件），避免文件泄漏和会话槽位占用
-                disk_store_spawn.remove_session(&search_id_clone);
-                return;
-            }
-
-            // 检查是否已达到max_results限制
-            if results_count >= max_results {
-                was_truncated = true;
-                break 'outer;
-            }
-
-            // 每批处理10个文件
-            let mut batch_results: Vec<LogEntry> = Vec::new();
-
-            // 并行处理当前批次 (Requirements 2.3: 使用 CAS 读取内容)
-            // 使用自定义线程池隔离，避免与 tokio 阻塞线程池竞争
-            let batch: Vec<_> = pool.install(|| {
-                file_batch
-                    .par_iter()
-                    .enumerate()
-                    .map(|(idx, file_metadata)| {
-                        // 如果已经取消，尽早退出单个文件的搜索（虽然是同步的，但检查可以减少无效工作）
-                        if cancellation_token.is_cancelled() {
-                            return Vec::new();
-                        }
-
-                        // Use CAS-based access with hash
-                        let file_identifier = format!("cas://{}", file_metadata.sha256_hash);
-                        search_single_file_with_details(
-                            &file_identifier,
-                            &file_metadata.virtual_path,
-                            Some(&*cas), // Pass CAS instance for hash-based access
-                            &builder,
-                            &plan,
-                            &compiled_filters_for_search,
-                            total_processed + idx * 10000,
-                        )
-                    })
-                    .collect()
-            });
-
-            // 如果批次处理过程中取消了，直接退出
-            if cancellation_token.is_cancelled() {
-                continue 'outer; // 下次循环首部会处理取消逻辑
-            }
-
-            // 收集当前批次的结果
-            for file_results in batch {
-                if cancellation_token.is_cancelled() {
-                    batch_results.clear();
-                    continue 'outer;
-                }
-
-                for mut entry in file_results {
-                    if cancellation_token.is_cancelled() {
-                        batch_results.clear();
-                        continue 'outer;
-                    }
-
-                    // 检查是否已达到max_results限制
-                    if results_count >= max_results {
-                        flush_batch(&mut batch_results, results_count);
-                        was_truncated = true;
-                        break 'outer;
-                    }
-
-                    entry.id = results_count;
-
-                    // 流式统计：增量更新关键词计数
-                    if let Some(ref keywords) = entry.matched_keywords {
-                        for kw in keywords {
-                            *keyword_counts.entry(kw.clone()).or_insert(0) += 1;
-                        }
-                    }
-
-                    // 保存到完整结果集用于缓存（限制大小）
-                    if all_results.len() < MAX_CACHE_SIZE {
-                        all_results.push(entry.clone());
-                    } else if all_results.len() == MAX_CACHE_SIZE {
-                        // 首次达到限制时记录警告
-                        tracing::warn!(
-                            "Cache size limit reached ({}), additional results will not be cached",
-                            MAX_CACHE_SIZE
-                        );
-                    }
-                    batch_results.push(entry);
-                    results_count += 1;
-
-                    // 批次满时写入磁盘并发送实时计数（不再发送原始数据到前端）
-                    if batch_results.len() >= batch_size {
-                        flush_batch(&mut batch_results, results_count);
-                    }
-                }
-            }
-
-            // 将当前文件批次尚未发送的结果立即写盘，避免下一轮截断时丢失尾批次。
-            flush_batch(&mut batch_results, results_count);
-
-            total_processed += file_batch.len();
-        }
-
-        if cancellation_token.is_cancelled() {
-            {
-                let mut tokens = cancellation_tokens.lock();
-                tokens.remove(&search_id_clone);
-            }
-            disk_store_spawn.remove_session(&search_id_clone);
-            return;
-        }
-
-        // 完成磁盘会话，确保所有写入对读者可见
-        if let Err(e) = disk_store_spawn.complete_session(&search_id_clone) {
-            warn!(error = %e, "完成磁盘搜索会话失败");
-        }
-
-        // 计算搜索统计信息
-        let duration = start_time.elapsed().as_millis() as u64;
-        {
-            let mut last_duration = last_search_duration.lock();
-            *last_duration = std::time::Duration::from_millis(duration);
-        }
-
-        // 使用流式统计结果构建关键词统计
-        let keyword_stats: Vec<la_core::models::search_statistics::KeywordStatistics> = raw_terms
-            .iter()
-            .map(|term| {
-                let count = keyword_counts.get(term).copied().unwrap_or(0);
-                la_core::models::search_statistics::KeywordStatistics::new(
-                    term.clone(),
-                    count,
-                    results_count,
-                )
-            })
-            .collect();
-
-        // 将结果插入缓存(仅在未截断且未取消时缓存)
-        if !was_truncated && !cancellation_token.is_cancelled() {
-            cache_manager.lock().insert_sync(cache_key, all_results);
-        }
-
-        if !timed_out_for_search.load(Ordering::SeqCst) {
-            let _ = app_handle.emit(
-                "search-summary",
-                &SearchResultSummary::new(results_count, keyword_stats, duration, was_truncated),
-            );
-            let _ = app_handle.emit("search-complete", results_count);
-        }
-
-        remove_cancellation_token(&cancellation_tokens, &search_id_clone);
     });
 
-    // 添加超时控制，等待搜索任务完成
+    // Step 10: 超时控制
     match tokio::time::timeout(std::time::Duration::from_secs(search_timeout_secs), handle).await {
         Ok(Ok(())) => Ok(search_id),
         Ok(Err(e)) => {
             error!(error = %e, search_id = %search_id, "Search task panicked");
-            Err(
-                CommandError::new("INTERNAL_ERROR", format!("Search task panicked: {}", e))
-                    .with_help("This is an unexpected error. Try simplifying your search query"),
-            )
+            Err(CommandError::new("INTERNAL_ERROR", format!("Search task panicked: {}", e))
+                .with_help("This is an unexpected error. Try simplifying your search query"))
         }
         Err(_) => {
             warn!(search_id = %search_id, "Search timed out after {} seconds", search_timeout_secs);
@@ -1098,15 +1084,10 @@ pub async fn search_logs(
                 let mut tokens = cancellation_tokens_for_timeout.lock();
                 tokens.remove(&search_id);
             }
-            // 清理磁盘会话，避免文件泄漏和会话槽位占用
             disk_store_for_timeout.remove_session(&search_id);
-            // 发送超时事件
             let _ = app_handle_for_timeout.emit("search-timeout", &search_id);
-            Err(CommandError::new(
-                "TIMEOUT_ERROR",
-                format!("Search timed out after {} seconds", search_timeout_secs),
-            )
-            .with_help("Try using more specific search terms to reduce processing time"))
+            Err(CommandError::new("TIMEOUT_ERROR", format!("Search timed out after {} seconds", search_timeout_secs))
+                .with_help("Try using more specific search terms to reduce processing time"))
         }
     }
 }

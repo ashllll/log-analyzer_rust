@@ -16,6 +16,14 @@ use parking_lot::Mutex;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
+/// 搜索指标 - 合并相关计数器以减少锁竞争
+#[derive(Debug, Default)]
+pub struct SearchMetrics {
+    pub total_searches: u64,
+    pub cache_hits: u64,
+    pub last_search_duration: std::time::Duration,
+}
+
 /// 应用状态 - 使用 parking_lot::Mutex 实现高效同步锁
 ///
 /// # 锁策略
@@ -31,6 +39,10 @@ use std::sync::Arc;
 /// - 使用 `.lock()` 获取锁守卫
 /// - 锁守卫不能跨 `.await` 传递，需要时先克隆数据
 /// - 遵循 "lock → clone → unlock → await" 模式
+///
+/// # 搜索指标优化
+/// 将 total_searches、cache_hits、last_search_duration 合并为 SearchMetrics 结构体，
+/// 使用单个 Mutex 保护，减少锁竞争和缓存行伪共享。
 pub struct AppState {
     /// 工作区目录映射
     pub workspace_dirs: Arc<Mutex<BTreeMap<String, std::path::PathBuf>>>,
@@ -39,9 +51,8 @@ pub struct AppState {
     pub task_manager: Arc<Mutex<Option<TaskManager>>>,
     pub search_cancellation_tokens:
         Arc<Mutex<HashMap<String, tokio_util::sync::CancellationToken>>>,
-    pub total_searches: Arc<Mutex<u64>>,
-    pub cache_hits: Arc<Mutex<u64>>,
-    pub last_search_duration: Arc<Mutex<std::time::Duration>>,
+    /// 搜索指标（合并 total_searches + cache_hits + last_search_duration）
+    pub search_metrics: Arc<Mutex<SearchMetrics>>,
     pub watchers: Arc<Mutex<HashMap<String, WatcherState>>>,
     pub cache_manager: Arc<Mutex<CacheManager>>,
     pub state_sync: Arc<Mutex<Option<StateSync>>>,
@@ -68,9 +79,8 @@ impl Default for AppState {
             metadata_stores: Arc::new(Mutex::new(HashMap::new())),
             task_manager: Arc::new(Mutex::new(None)),
             search_cancellation_tokens: Arc::new(Mutex::new(HashMap::new())),
-            total_searches: Arc::new(Mutex::new(0)),
-            cache_hits: Arc::new(Mutex::new(0)),
-            last_search_duration: Arc::new(Mutex::new(std::time::Duration::from_secs(0))),
+            // 合并搜索指标为单个结构体，减少锁竞争
+            search_metrics: Arc::new(Mutex::new(SearchMetrics::default())),
             watchers: Arc::new(Mutex::new(HashMap::new())),
             cache_manager: Arc::new(Mutex::new(cache_manager)),
             state_sync: Arc::new(Mutex::new(None)),

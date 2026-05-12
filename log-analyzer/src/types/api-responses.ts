@@ -379,7 +379,7 @@ const WorkspaceSchema = z.object({
   id: z.string(),
   name: z.string(),
   path: z.string(),
-  status: z.enum(['READY', 'OFFLINE', 'PROCESSING', 'ERROR']),
+  status: z.enum(['READY', 'OFFLINE', 'PROCESSING', 'ERROR', 'PARTIAL']),
   size: z.string(),
   files: z.number(),
   watching: z.boolean().optional(),

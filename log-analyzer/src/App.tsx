@@ -5,7 +5,6 @@ import {
   Zap, FileText, CheckCircle2, RefreshCw
 } from "lucide-react";
 import { ErrorBoundary } from 'react-error-boundary';
-import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { Toaster } from 'react-hot-toast';
 import { MemoryRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
@@ -22,7 +21,6 @@ import { queryClient } from './lib/queryClient';
 import { AppStoreProvider } from './components/AppStoreProvider';
 import { useAppStore } from './stores/appStore';
 import { useWorkspaceSelection } from './hooks/useWorkspaceSelection';
-import { useWorkspaceList } from './hooks/useWorkspaceList';
 import { useToast } from './hooks/useToast';
 
 // 导入UI组件
@@ -84,7 +82,6 @@ function AppContent() {
   const { showToast: addToast } = useToast();
 
   const { workspaces } = useWorkspaceSelection();
-  const { refreshWorkspaces } = useWorkspaceList();
 
   const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId) || null;
 
@@ -106,9 +103,8 @@ function AppContent() {
     { icon: Layers, label: t('nav.tasks'), page: "tasks", testId: "nav-tasks" },
   ], [t]);
 
-  // 初始化状态同步并监听工作区事件
+  // 初始化状态同步
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
     let isMounted = true;
 
     const setupStateSync = async () => {
@@ -117,34 +113,8 @@ function AppContent() {
         await invoke('init_state_sync');
         if (!isMounted) return;
 
-        // 监听工作区事件
-        unlisten = await listen('workspace-event', (event: { payload: { type: string; status?: { status: string } } }) => {
-          const { status } = event.payload;
-
-          // 根据事件类型更新UI
-          if (event.payload.type === 'StatusChanged') {
-            // 显示Toast通知
-            const toastType = status?.status === 'Cancelled' ? 'error' : 'success';
-            const toastMessage = status?.status === 'Cancelled'
-              ? 'Workspace deleted'
-              : status?.status === 'Completed'
-                ? 'Workspace updated'
-                : 'Workspace status changed';
-
-            addToast(toastType, toastMessage);
-
-            // 刷新工作区列表
-            refreshWorkspaces();
-          }
-        });
-
-        if (!isMounted) {
-          unlisten?.();
-          return;
-        }
-
         if (import.meta.env.DEV) {
-          console.log('[StateSync] Event listener registered');
+          console.log('[StateSync] State sync initialized');
         }
       } catch (error) {
         if (!isMounted) return;
@@ -157,14 +127,10 @@ function AppContent() {
 
     setupStateSync();
 
-    // 清理函数
     return () => {
       isMounted = false;
-      if (unlisten) {
-        unlisten();
-      }
     };
-  }, [addToast, refreshWorkspaces]);
+  }, [addToast]);
 
   // 显示初始化加载状态
   if (!isInitialized) {

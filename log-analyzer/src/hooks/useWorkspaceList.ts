@@ -16,17 +16,24 @@ export interface UseWorkspaceListReturn {
  * 提供工作区列表访问和刷新功能
  */
 export const useWorkspaceList = (): UseWorkspaceListReturn => {
-  const workspaces = useWorkspaceStore(useShallow((state) => state.workspaces));
-  const loading = useWorkspaceStore((state) => state.loading);
-  const error = useWorkspaceStore((state) => state.error);
-  const setWorkspaces = useWorkspaceStore((state) => state.setWorkspaces);
+  // 合并多个 store 选择器为一次调用，避免多次订阅
+  const { workspaces, loading, error, setWorkspaces } = useWorkspaceStore(
+    useShallow((state) => ({
+      workspaces: state.workspaces,
+      loading: state.loading,
+      error: state.error,
+      setWorkspaces: state.setWorkspaces,
+    }))
+  );
 
   const refreshWorkspaces = useCallback(async () => {
     try {
       if (import.meta.env.DEV) logger.debug('refreshWorkspaces called');
       const config = await api.loadConfig();
+      // api.loadConfig() 已通过 AppConfigSchema 进行 Zod 验证，
+      // config.workspaces 类型为 Workspace[]，无需类型断言
       if (config.workspaces) {
-        setWorkspaces(config.workspaces as Workspace[]);
+        setWorkspaces(config.workspaces);
       }
       if (import.meta.env.DEV) logger.debug('Workspaces refreshed from backend');
     } catch (err) {

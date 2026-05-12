@@ -187,46 +187,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 disk_store.cleanup_all();
 
                 // 2. 清理异步组件（MetadataStore / SearchEngineManager / TaskManager）
+                // 修复：使用 tokio::task::block_in_place 而非创建新线程+临时 runtime
                 let metadata_stores = Arc::clone(&state.metadata_stores);
                 let search_engine_managers = Arc::clone(&state.search_engine_managers);
                 let task_manager = Arc::clone(&state.task_manager);
 
-                let handle = std::thread::spawn(move || {
-                    let rt = tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build();
-                    match rt {
-                        Ok(rt) => rt.block_on(async {
-                            let stores: Vec<_> = metadata_stores.lock().values().cloned().collect();
-                            for store in stores {
-                                store.close().await;
-                            }
-                            let engines: Vec<_> =
-                                search_engine_managers.lock().values().cloned().collect();
-                            for mgr in engines {
-                                let _ = tokio::time::timeout(
-                                    std::time::Duration::from_secs(3),
-                                    mgr.close(),
-                                )
-                                .await;
-                            }
-                            let tm_opt = task_manager.lock().take();
-                            if let Some(tm) = tm_opt {
-                                let _ = tokio::time::timeout(
-                                    std::time::Duration::from_secs(5),
-                                    tm.shutdown(),
-                                )
-                                .await;
-                            }
-                        }),
-                        Err(e) => {
-                            tracing::error!(error = %e, "创建清理用 tokio runtime 失败");
+                // block_in_place 允许在 async 上下文中执行阻塞操作，
+                // 使用已有的 tokio runtime 而非创建新的
+                tokio::task::block_in_place(|| {
+                    let rt = tokio::runtime::Handle::current();
+                    rt.block_on(async {
+                        let stores: Vec<_> = metadata_stores.lock().values().cloned().collect();
+                        for store in stores {
+                            store.close().await;
                         }
-                    }
+                        let engines: Vec<_> =
+                            search_engine_managers.lock().values().cloned().collect();
+                        for mgr in engines {
+                            let _ = tokio::time::timeout(
+                                std::time::Duration::from_secs(3),
+                                mgr.close(),
+                            )
+                            .await;
+                        }
+                        let tm_opt = task_manager.lock().take();
+                        if let Some(tm) = tm_opt {
+                            let _ = tokio::time::timeout(
+                                std::time::Duration::from_secs(5),
+                                tm.shutdown(),
+                            )
+                            .await;
+                        }
+                    });
                 });
-                if let Err(e) = handle.join() {
-                    tracing::error!(error = ?e, "应用退出清理线程 panic");
-                }
 
                 info!("应用退出清理完成");
             }
