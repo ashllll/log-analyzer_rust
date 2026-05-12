@@ -383,6 +383,7 @@ const WorkspaceSchema = z.object({
   size: z.string(),
   files: z.number(),
   watching: z.boolean().optional(),
+  ready_files: z.number().optional(),
 });
 
 /**
@@ -398,3 +399,9 @@ export const AppConfigSchema = z.object({
  * 应用配置类型（Zod 验证后）
  */
 export type AppConfigValidated = z.infer<typeof AppConfigSchema>;
+
+// 导出子类型，供 stores/types.ts 统一使用
+export type KeywordPattern = z.infer<typeof KeywordPatternSchema>;
+export type ColorKey = z.infer<typeof ColorKeySchema>;
+export type KeywordGroup = z.infer<typeof KeywordGroupSchema>;
+export type Workspace = z.infer<typeof WorkspaceSchema>;

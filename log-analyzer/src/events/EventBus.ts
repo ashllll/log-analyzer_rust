@@ -1,21 +1,19 @@
 /**
- * 企业级事件总线
+ * 任务事件总线 (TaskEventBus)
+ *
+ * 专注处理任务生命周期相关事件，提供 Schema 验证和幂等性保证。
+ * 不处理 import-complete/import-error/files-ready-batch 等简单通知事件，
+ * 那些事件由 useTauriEventListeners 直接处理，避免不必要的验证开销。
  *
  * 职责：
  * 1. 事件验证（Zod Schema）
- * 2. 幂等性保证（版本号）
+ * 2. 幂等性保证（版本号，仅 task-update）
  * 3. 事件分发
- * 4. 错误处理
- * 5. 可观测性（日志、指标）
  *
- * 设计模式：
- * - 单例模式
- * - 观察者模式
- * - 依赖倒置（依赖注入）
- *
- * @module events/EventBus
- * @author Claude (老王)
- * @created 2025-12-27
+ * 处理的事件类型：
+ * - task-update: 任务状态更新（带版本号幂等性检查）
+ * - task-removed: 任务移除通知
+ * - workspace-event: 工作区状态变更
  */
 
 import { z } from 'zod';
@@ -66,7 +64,9 @@ class IdempotencyManager {
    * - version === undefined: 事件无版本号，跳过幂等性检查（允许处理）
    * - version < 0: 非法版本号，视为未处理（让验证层拒绝）
    * - version === 0: 合法版本号，正常比较
-   * - 版本环绕：当 processed.version - version > VERSION_RESET_GAP 时，视为环绕重置
+   *
+   * 注意：后端 version 从 1 开始递增，使用 u64 存储，实际运行中不可能达到上限，
+   * 因此不需要处理版本号环绕重置的复杂逻辑。
    */
   isProcessed(taskId: string, version: number | undefined): boolean {
     // 无版本号的事件跳过幂等性检查（由调用方决定是否处理）
@@ -88,21 +88,11 @@ class IdempotencyManager {
       return true;
     }
 
-    // 如果新版本小于已处理版本，跳过（防止旧事件延迟到达）
-    // 但需排除版本号环绕重置的场景：后端版本接近 u64::MAX 时会重置为 1
-    // 若两者差值超过阈值，说明发生了版本重置，应清除幂等性记录允许新版本通过
+    // 如果新版本小于已处理版本，视为旧事件延迟到达，跳过处理
     if (processed.version > version) {
-      const VERSION_RESET_GAP = 1_000_000;
-      // 使用 Math.abs 处理双向差值，防止溢出
-      const diff = Math.abs(processed.version - version);
-      if (diff > VERSION_RESET_GAP) {
-        // 版本发生了环绕重置，清除旧记录并允许新版本事件通过
-        this.processed.delete(taskId);
-        return false;
-      }
-      console.warn(
-        `[IdempotencyManager] Skipping stale event with older version: ` +
-        `taskId=${taskId}, processedVersion=${processed.version}, incomingVersion=${version}`
+      logger.warn(
+        { taskId, processedVersion: processed.version, incomingVersion: version },
+        'Skipping stale event with older version'
       );
       return true;
     }
@@ -152,8 +142,8 @@ class IdempotencyManager {
 // 事件总线实现
 // ============================================================================
 
-class EventBus {
-  private static instance: EventBus;
+class TaskEventBus {
+  private static instance: TaskEventBus;
 
   private config: Required<EventBusConfig>;
   private idempotencyManager: IdempotencyManager;
@@ -178,15 +168,15 @@ class EventBus {
 
     if (this.config.enableLogging) {
       logger.setLevel(this.config.logLevel);
-      logger.info({ component: 'EventBus' }, 'EventBus initialized');
+      logger.info({ component: 'TaskEventBus' }, 'TaskEventBus initialized');
     }
   }
 
-  static getInstance(config?: EventBusConfig): EventBus {
-    if (!EventBus.instance) {
-      EventBus.instance = new EventBus(config);
+  static getInstance(config?: EventBusConfig): TaskEventBus {
+    if (!TaskEventBus.instance) {
+      TaskEventBus.instance = new TaskEventBus(config);
     }
-    return EventBus.instance;
+    return TaskEventBus.instance;
   }
 
   // ========================================================================
@@ -427,30 +417,26 @@ class EventBus {
     };
 
     if (this.config.enableLogging) {
-      logger.info({ component: 'EventBus' }, 'Metrics reset');
+      logger.info({ component: 'TaskEventBus' }, 'Metrics reset');
     }
   }
 
-  /**
-   * 清理幂等性缓存
-   */
+  /** 清理幂等性缓存 */
   clearCache(): void {
     this.idempotencyManager.clear();
 
     if (this.config.enableLogging) {
-      logger.info({ component: 'EventBus' }, 'Idempotency cache cleared');
+      logger.info({ component: 'TaskEventBus' }, 'Idempotency cache cleared');
     }
   }
 
-  /**
-   * 更新配置
-   */
+  /** 更新配置 */
   updateConfig(config: Partial<EventBusConfig>): void {
     this.config = { ...this.config, ...config };
 
     if (this.config.enableLogging) {
       logger.setLevel(this.config.logLevel);
-      logger.info({ component: 'EventBus', newConfig: config }, 'Config updated');
+      logger.info({ component: 'TaskEventBus', newConfig: config }, 'Config updated');
     }
   }
 }
@@ -459,12 +445,8 @@ class EventBus {
 // 单例导出
 // ============================================================================
 
-/**
- * 全局EventBus实例
- */
-export const eventBus = EventBus.getInstance();
+/** 全局 TaskEventBus 实例 */
+export const eventBus = TaskEventBus.getInstance();
 
-/**
- * EventBus类（供测试使用）
- */
-export { EventBus };
+/** TaskEventBus 类（供测试使用） */
+export { TaskEventBus as EventBus };

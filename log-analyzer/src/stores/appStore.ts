@@ -12,15 +12,19 @@ import { immer } from 'zustand/middleware/immer';
 // Types
 // ============================================================================
 
+export type InitPhase = 'idle' | 'loading' | 'ready' | 'error';
+
 export interface AppState {
   // State
   activeWorkspaceId: string | null;
   isInitialized: boolean;
   initializationError: string | null;
+  initPhase: InitPhase;
 
   // Actions
   setActiveWorkspace: (id: string | null) => void;
   setInitialized: (initialized: boolean, error?: string | null) => void;
+  setInitPhase: (phase: InitPhase) => void;
 }
 
 // ============================================================================
@@ -36,6 +40,7 @@ export const useAppStore = create<AppState>()(
           activeWorkspaceId: null,
           isInitialized: false,
           initializationError: null,
+          initPhase: 'idle',
 
           // Actions
           setActiveWorkspace: (id) => set((state) => {
@@ -45,6 +50,10 @@ export const useAppStore = create<AppState>()(
           setInitialized: (initialized, error = null) => set((state) => {
             state.isInitialized = initialized;
             state.initializationError = error;
+          }),
+
+          setInitPhase: (phase) => set((state) => {
+            state.initPhase = phase;
           }),
         }))
       ),

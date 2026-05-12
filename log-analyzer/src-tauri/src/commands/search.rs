@@ -1,9 +1,48 @@
 //! 搜索命令实现
 //! 包含日志搜索及缓存逻辑，附带关键词统计与结果批量推送
 //!
+//! # 架构说明
+//!
+//! 搜索命令已按单一职责原则拆分为三个协作单元：
+//! - `SearchOrchestrator`: 参数验证、配置加载、流程编排（本模块命令层）
+//! - `SearchCacheService`: 缓存键构建、缓存查询、结果存储（cache_manager + disk_result_store）
+//! - `SearchExecutionEngine`: 并行文件搜索、批次处理、统计计算（execute_file_search）
+//!
 //! # 前后端集成规范
 //!
 //! 为保持与 JavaScript camelCase 惯例一致，Tauri 命令参数使用 camelCase 命名。
+//!
+//! # 搜索结果存储弃用路线图 (TODO-P1-5)
+//!
+//! 当前搜索结果存在三重存储，造成数据冗余和维护复杂性：
+//! 1. `all_results: Vec<LogEntry>` — 搜索执行期间的临时内存缓冲
+//! 2. `cache_manager: CacheManager` — L1 内存缓存（moka::Cache）
+//! 3. `disk_result_store: DiskResultStore` — L2 磁盘分页缓存
+//!
+//! ## 问题
+//! - `all_results` 在搜索完成后完整复制到 `cache_manager`，峰值内存翻倍
+//! - `disk_result_store` 独立维护分页索引，与 `cache_manager` 无联动失效机制
+//! - 缓存键计算逻辑分散在 `build_cache_key` 和 `CacheManager` 两处
+//!
+//! ## 目标架构（单一层级存储）
+//! ```
+//! 搜索执行 → all_results (流式处理，不累积全部结果)
+//!     ↓
+//! DiskResultStore (唯一持久缓存，按搜索会话分页)
+//!     ↓
+//! 前端分页读取 (get_search_result_page)
+//! ```
+//!
+//! ## 迁移步骤
+//! 1. [ ] 移除 `cache_manager` 中的搜索结果缓存，保留配置/元数据缓存用途
+//! 2. [ ] `execute_file_search` 改为流式写入 `DiskResultStore`，不再返回 Vec
+//! 3. [ ] `try_get_cached_results` 改为检查 `DiskResultStore` 会话存在性
+//! 4. [ ] 删除 `all_results` 本地缓冲和 `MAX_CACHE_SIZE` 限制
+//! 5. [ ] 统一缓存键：`DiskResultStore` 使用搜索会话 ID 替代复合键
+//!
+//! ## 兼容性
+//! - `get_search_result_page` 命令接口保持不变
+//! - `search_logs` 返回的 `total_count` 从 `all_results.len()` 改为 `disk_store.total_entries()`
 
 use parking_lot::Mutex;
 use std::{
@@ -31,6 +70,161 @@ use regex::Regex;
 
 // MessagePack 序列化支持
 use serde::{Deserialize, Serialize};
+
+// ============================================================================
+// 搜索流程辅助函数
+// ============================================================================
+
+/// 构建搜索缓存键
+fn build_cache_key(
+    query: &str,
+    workspace_id: &str,
+    filters: &SearchFilters,
+    max_results: usize,
+    structured_query: &SearchQuery,
+) -> SearchCacheKey {
+    let query_version = compute_query_version(
+        &serde_json::to_string(structured_query).unwrap_or_else(|_| query.to_string()),
+    );
+    (
+        query.to_string(),
+        workspace_id.to_string(),
+        filters.time_start.clone(),
+        filters.time_end.clone(),
+        filters.levels.clone(),
+        filters.file_pattern.clone(),
+        false,
+        max_results,
+        query_version.to_string(),
+    )
+}
+
+/// 准备搜索：解析工作区目录、获取运行时状态、获取文件列表、创建磁盘会话
+async fn prepare_search_environment(
+    app_handle: &AppHandle,
+    state: &AppState,
+    workspace_id: &str,
+    workspace_dirs: &Arc<Mutex<std::collections::BTreeMap<String, std::path::PathBuf>>>,
+    compiled_filters: &CompiledSearchFilters,
+    disk_result_store: &Arc<crate::search_engine::disk_result_store::DiskResultStore>,
+    search_id: &str,
+) -> Result<(Vec<la_storage::FileMetadata>, Arc<ContentAddressableStorage>), CommandError> {
+    // 解析工作区目录
+    let workspace_dir = {
+        let existing = {
+            let dirs = workspace_dirs.lock();
+            dirs.get(workspace_id).cloned()
+        };
+
+        if let Some(dir) = existing {
+            dir
+        } else {
+            resolve_workspace_dir(app_handle, workspace_id).map_err(|e| {
+                let _ = app_handle.emit("search-error", &e);
+                CommandError::new("NOT_FOUND", e)
+                    .with_help("The workspace may have been deleted. Try refreshing the workspace list")
+            })?
+        }
+    };
+
+    // 获取工作区运行时状态
+    let (cas, metadata_store, _) =
+        ensure_workspace_runtime_state(app_handle, state, workspace_id, &workspace_dir)
+            .await
+            .map_err(|e| CommandError::new("DATABASE_ERROR", format!("Failed to initialize workspace: {}", e))
+                .with_help("Try reloading the workspace before searching again"))?;
+
+    // 获取文件列表
+    let files = metadata_store.get_all_files().await.map_err(|e| {
+        error!(workspace_id = %workspace_id, error = %e, "Failed to get files from metadata store");
+        CommandError::new("DATABASE_ERROR", "Failed to access workspace files")
+            .with_help("The workspace database may be corrupted. Try refreshing or reimporting")
+    })?;
+
+    let files_for_search: Vec<_> = files
+        .into_iter()
+        .filter(|file| compiled_filters.matches_file(&file.virtual_path, None))
+        .collect();
+
+    // 创建磁盘搜索会话
+    if !disk_result_store.has_session(search_id) {
+        if let Err(e) = disk_result_store.create_session(search_id) {
+            warn!(error = %e, search_id = %search_id, "无法创建磁盘搜索会话，分页读取功能将不可用");
+        }
+    }
+
+    Ok((files_for_search, cas))
+}
+
+/// 执行搜索并处理超时
+async fn run_search_with_timeout(
+    app_handle: AppHandle,
+    search_id: String,
+    files_for_search: Vec<la_storage::FileMetadata>,
+    cas: Arc<ContentAddressableStorage>,
+    structured_query: SearchQuery,
+    compiled_filters: CompiledSearchFilters,
+    max_results: usize,
+    regex_cache_size: usize,
+    raw_terms: Vec<String>,
+    cache_key: SearchCacheKey,
+    cache_manager: Arc<Mutex<crate::utils::cache_manager::CacheManager>>,
+    search_metrics: Arc<Mutex<SearchMetrics>>,
+    disk_result_store: Arc<crate::search_engine::disk_result_store::DiskResultStore>,
+    cancellation_token: tokio_util::sync::CancellationToken,
+    cancellation_tokens: Arc<Mutex<std::collections::HashMap<String, tokio_util::sync::CancellationToken>>>,
+    search_timeout_secs: u64,
+) -> Result<String, CommandError> {
+    let app_handle_for_timeout = app_handle.clone();
+    let cancellation_token_for_timeout = cancellation_token.clone();
+    let cancellation_tokens_for_timeout = Arc::clone(&cancellation_tokens);
+    let disk_store_for_timeout = Arc::clone(&disk_result_store);
+    let timed_out = Arc::new(AtomicBool::new(false));
+    let timed_out_for_timeout = Arc::clone(&timed_out);
+
+    let search_id_for_blocking = search_id.clone();
+    let handle = tokio::task::spawn_blocking(move || {
+        execute_file_search(
+            app_handle,
+            search_id_for_blocking,
+            files_for_search,
+            cas,
+            structured_query,
+            compiled_filters,
+            max_results,
+            regex_cache_size,
+            raw_terms,
+            cache_key,
+            cache_manager,
+            search_metrics,
+            disk_result_store,
+            cancellation_token,
+            cancellation_tokens,
+        );
+    });
+
+    match tokio::time::timeout(std::time::Duration::from_secs(search_timeout_secs), handle).await {
+        Ok(Ok(())) => Ok(search_id),
+        Ok(Err(e)) => {
+            error!(error = %e, search_id = %search_id, "Search task panicked");
+            Err(CommandError::new("INTERNAL_ERROR", format!("Search task panicked: {}", e))
+                .with_help("This is an unexpected error. Try simplifying your search query"))
+        }
+        Err(_) => {
+            warn!(search_id = %search_id, "Search timed out after {} seconds", search_timeout_secs);
+            timed_out_for_timeout.store(true, Ordering::SeqCst);
+            cancellation_token_for_timeout.cancel();
+            {
+                let mut tokens = cancellation_tokens_for_timeout.lock();
+                tokens.remove(&search_id);
+            }
+            disk_store_for_timeout.remove_session(&search_id);
+            let _ = app_handle_for_timeout.emit("search-timeout", &search_id);
+            Err(CommandError::new("TIMEOUT_ERROR", format!("Search timed out after {} seconds", search_timeout_secs))
+                .with_help("Try using more specific search terms to reduce processing time"))
+        }
+    }
+}
 
 /// 二进制搜索结果结构（用于 MessagePack 传输）
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -961,23 +1155,9 @@ pub async fn search_logs(
         tokens.insert(search_id.clone(), cancellation_token.clone());
     }
 
-    // Step 4: 构建缓存键并检查缓存
-    let query_version = compute_query_version(
-        &serde_json::to_string(&structured_query).unwrap_or_else(|_| query.clone()),
-    );
-    let cache_key: SearchCacheKey = (
-        query.clone(),
-        workspace_id.clone(),
-        filters.time_start.clone(),
-        filters.time_end.clone(),
-        filters.levels.clone(),
-        filters.file_pattern.clone(),
-        false,
-        max_results,
-        query_version.to_string(),
-    );
-
-    if let Some(_count) = try_get_cached_results(
+    // Step 4: 缓存检查
+    let cache_key = build_cache_key(&query, &workspace_id, &filters, max_results, &structured_query);
+    if try_get_cached_results(
         &cache_key,
         &cache_manager,
         &search_metrics,
@@ -986,7 +1166,7 @@ pub async fn search_logs(
         &search_id,
         &raw_terms,
         &cancellation_tokens,
-    ) {
+    ).is_some() {
         return Ok(search_id);
     }
 
@@ -995,101 +1175,36 @@ pub async fn search_logs(
         metrics.total_searches += 1;
     }
 
-    // Step 5: 解析工作区目录
-    let workspace_dir = {
-        let existing = {
-            let dirs = workspace_dirs.lock();
-            dirs.get(&workspace_id).cloned()
-        };
+    // Step 5-8: 获取文件列表并创建磁盘会话
+    let (files_for_search, cas) = prepare_search_environment(
+        &app_handle,
+        &state,
+        &workspace_id,
+        &workspace_dirs,
+        &compiled_filters,
+        &disk_result_store,
+        &search_id,
+    ).await?;
 
-        if let Some(dir) = existing {
-            dir
-        } else {
-            resolve_workspace_dir(&app_handle, &workspace_id).map_err(|e| {
-                let _ = app_handle.emit("search-error", &e);
-                CommandError::new("NOT_FOUND", e)
-                    .with_help("The workspace may have been deleted. Try refreshing the workspace list")
-            })?
-        }
-    };
-
-    // Step 6: 获取工作区运行时状态
-    let (cas, metadata_store, _search_engine_manager) =
-        ensure_workspace_runtime_state(&app_handle, &state, &workspace_id, &workspace_dir)
-            .await
-            .map_err(|e| CommandError::new("DATABASE_ERROR", format!("Failed to initialize workspace: {}", e))
-                .with_help("Try reloading the workspace before searching again"))?;
-
-    // Step 7: 获取文件列表
-    let files = metadata_store.get_all_files().await.map_err(|e| {
-        error!(workspace_id = %workspace_id, error = %e, "Failed to get files from metadata store");
-        CommandError::new("DATABASE_ERROR", "Failed to access workspace files")
-            .with_help("The workspace database may be corrupted. Try refreshing or reimporting")
-    })?;
-
-    let files_for_search: Vec<_> = files
-        .into_iter()
-        .filter(|file| compiled_filters.matches_file(&file.virtual_path, None))
-        .collect();
-
-    // Step 8: 创建磁盘搜索会话
-    if !disk_result_store.has_session(&search_id) {
-        if let Err(e) = disk_result_store.create_session(&search_id) {
-            warn!(error = %e, search_id = %search_id, "无法创建磁盘搜索会话，分页读取功能将不可用");
-        }
-    }
-
-    // Step 9: 执行搜索（spawn_blocking）
-    let app_handle_for_timeout = app_handle.clone();
-    let cancellation_token_for_timeout = cancellation_token.clone();
-    let cancellation_tokens_for_timeout = Arc::clone(&cancellation_tokens);
-    let disk_store_for_timeout = Arc::clone(&disk_result_store);
-    let timed_out = Arc::new(AtomicBool::new(false));
-    let timed_out_for_timeout = Arc::clone(&timed_out);
-
-    let search_id_for_blocking = search_id.clone();
-    let handle = tokio::task::spawn_blocking(move || {
-        execute_file_search(
-            app_handle,
-            search_id_for_blocking,
-            files_for_search,
-            cas,
-            structured_query,
-            compiled_filters,
-            max_results,
-            regex_cache_size,
-            raw_terms,
-            cache_key,
-            cache_manager,
-            search_metrics,
-            disk_result_store,
-            cancellation_token,
-            cancellation_tokens,
-        );
-    });
-
-    // Step 10: 超时控制
-    match tokio::time::timeout(std::time::Duration::from_secs(search_timeout_secs), handle).await {
-        Ok(Ok(())) => Ok(search_id),
-        Ok(Err(e)) => {
-            error!(error = %e, search_id = %search_id, "Search task panicked");
-            Err(CommandError::new("INTERNAL_ERROR", format!("Search task panicked: {}", e))
-                .with_help("This is an unexpected error. Try simplifying your search query"))
-        }
-        Err(_) => {
-            warn!(search_id = %search_id, "Search timed out after {} seconds", search_timeout_secs);
-            timed_out_for_timeout.store(true, Ordering::SeqCst);
-            cancellation_token_for_timeout.cancel();
-            {
-                let mut tokens = cancellation_tokens_for_timeout.lock();
-                tokens.remove(&search_id);
-            }
-            disk_store_for_timeout.remove_session(&search_id);
-            let _ = app_handle_for_timeout.emit("search-timeout", &search_id);
-            Err(CommandError::new("TIMEOUT_ERROR", format!("Search timed out after {} seconds", search_timeout_secs))
-                .with_help("Try using more specific search terms to reduce processing time"))
-        }
-    }
+    // Step 9-10: 执行搜索（spawn_blocking + 超时控制）
+    run_search_with_timeout(
+        app_handle,
+        search_id.clone(),
+        files_for_search,
+        cas,
+        structured_query,
+        compiled_filters,
+        max_results,
+        regex_cache_size,
+        raw_terms,
+        cache_key,
+        cache_manager,
+        search_metrics,
+        disk_result_store,
+        cancellation_token,
+        cancellation_tokens,
+        search_timeout_secs,
+    ).await
 }
 
 /// 取消正在进行的搜索

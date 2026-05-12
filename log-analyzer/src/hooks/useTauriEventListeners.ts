@@ -10,12 +10,16 @@ import { logger } from '../utils/logger';
 /**
  * Tauri 原生事件监听 Hook
  *
- * 负责将 Tauri 后端 IPC 事件桥接到应用层 EventBus：
- * - task-update → eventBus.processEvent('task-update')
- * - task-removed → eventBus.processEvent('task-removed')
- * - import-complete → 直接更新 task/workspace 状态
- * - import-error → toast 错误提示
- * - import-warning → toast 警告提示
+ * 职责分工：
+ * - 需要 Schema 验证 / 幂等性检查的事件 → 桥接到 TaskEventBus
+ *   - task-update → eventBus.processEvent('task-update')
+ *   - task-removed → eventBus.processEvent('task-removed')
+ *   - workspace-event → eventBus.processEvent('workspace-event')
+ * - 简单通知事件 → 直接处理（避免不必要的验证开销）
+ *   - import-complete → 直接更新 task/workspace 状态
+ *   - import-error → toast 错误提示
+ *   - import-warning → toast 警告提示
+ *   - files-ready-batch → 防抖更新 workspace 进度
  *
  * 使用 tauriCleanupRef 确保异步注册完成后同步清理。
  */

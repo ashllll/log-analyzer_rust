@@ -18,11 +18,14 @@ export const useConfigInitializer = () => {
   const setWorkspaces = useWorkspaceStore((state) => state.setWorkspaces);
   const setKeywordGroups = useKeywordStore((state) => state.setKeywordGroups);
   const setInitialized = useAppStore((state) => state.setInitialized);
+  const setInitPhase = useAppStore((state) => state.setInitPhase);
 
   useEffect(() => {
     let isMounted = true;
 
     const loadConfig = async () => {
+      setInitPhase('loading');
+
       try {
         const config = await api.loadConfig();
         if (!isMounted) return;
@@ -32,6 +35,7 @@ export const useConfigInitializer = () => {
           Array.isArray(config.keyword_groups) ? (config.keyword_groups as KeywordGroup[]) : []
         );
 
+        setInitPhase('ready');
         setInitialized(true);
       } catch (error) {
         if (!isMounted) return;
@@ -49,6 +53,7 @@ export const useConfigInitializer = () => {
         setWorkspaces([defaultWorkspace]);
         setKeywordGroups([]);
         addToast('error', '加载配置失败，使用默认工作区');
+        setInitPhase('error');
         setInitialized(true); // 关键：即使失败也标记为已初始化
       }
     };
@@ -64,5 +69,5 @@ export const useConfigInitializer = () => {
       isMounted = false;
       window.clearTimeout(timer);
     };
-  }, [addToast, setWorkspaces, setKeywordGroups, setInitialized]);
+  }, [addToast, setWorkspaces, setKeywordGroups, setInitialized, setInitPhase]);
 };

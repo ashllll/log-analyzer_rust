@@ -65,9 +65,9 @@ export function sanitizeArgs(args: Record<string, unknown>): Record<string, unkn
       });
     } else if (typeof value === 'object' && value !== null) {
       const sanitizedNested = sanitizeArgs(value as Record<string, unknown>);
-      if (Object.keys(sanitizedNested).length > 0) {
-        sanitized[key] = sanitizedNested;
-      }
+      // 始终保留对象，即使所有字段都是 null/undefined
+      // 避免后端将 "filter 已设置为空" 误解为 "无 filter"
+      sanitized[key] = sanitizedNested;
     } else {
       sanitized[key] = value;
     }
@@ -84,8 +84,9 @@ export type ApiArgs = Record<string, unknown>;
 /**
  * 带超时的 IPC 调用包装器
  *
- * 使用 Promise.race + AbortController 模式实现超时控制，
- * 避免手动 setTimeout 的内存泄漏和清理问题。
+ * 注意：Tauri v2 的 invoke 不支持 AbortController 取消，
+ * 超时后底层请求仍会继续执行。此包装器仅用于前端超时检测，
+ * 避免 UI 无限等待。如需真正取消，需在 Rust 端实现取消机制。
  */
 export async function invokeWithTimeout<T>(
   command: string,
@@ -94,9 +95,9 @@ export async function invokeWithTimeout<T>(
 ): Promise<T> {
   const sanitizedArgs = sanitizeArgs(args);
 
-  const controller = new AbortController();
+  let isTimedOut = false;
   const timeoutId = setTimeout(() => {
-    controller.abort();
+    isTimedOut = true;
   }, timeoutMs);
 
   try {
@@ -104,7 +105,7 @@ export async function invokeWithTimeout<T>(
     logger.debug('IPC 调用成功:', { command, hasResult: !!result });
     return result;
   } catch (error) {
-    if (controller.signal.aborted) {
+    if (isTimedOut) {
       throw new Error(`操作超时（${timeoutMs}ms）: ${command}`);
     }
     logger.error('IPC 调用失败:', { command, error });
@@ -147,32 +148,27 @@ export async function safeInvoke<T>(
 
 /**
  * 空值安全的列表 API 调用
- * 确保返回数组类型，错误会传播给调用者（不再静默吞没）
+ * 确保返回数组类型，错误会向上传播给调用者处理
  */
 export async function safeInvokeList<T>(
   command: string,
   args: ApiArgs = {}
 ): Promise<T[]> {
-  const result = await safeInvoke<T[]>(command, args, { fallback: [] });
+  const result = await safeInvoke<T[]>(command, args);
   return Array.isArray(result) ? result : [];
 }
 
 /**
  * 空值安全的单值 API 调用
- * 确保返回对象而不是 null，错误会记录到日志但不会抛出
+ * 确保返回对象而不是 null，错误会向上传播给调用者处理
  */
 export async function safeInvokeObject<T extends object>(
   command: string,
   args: ApiArgs = {},
   defaultValue: T
 ): Promise<T> {
-  try {
-    const result = await safeInvoke<T>(command, args, { fallback: defaultValue });
-    return result && typeof result === 'object' ? result : defaultValue;
-  } catch (error) {
-    logger.warn(`safeInvokeObject 失败: ${command}`, { error: String(error) });
-    return defaultValue;
-  }
+  const result = await safeInvoke<T>(command, args);
+  return result && typeof result === 'object' ? result : defaultValue;
 }
 
 // ============================================================================

@@ -8,6 +8,7 @@
 //! - 监控体系建立 ✅
 
 // 核心模块
+pub mod adapters;
 pub mod commands;
 pub mod models;
 pub mod utils;

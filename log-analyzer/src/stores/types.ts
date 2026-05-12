@@ -1,12 +1,12 @@
 /**
  * Store 类型定义
  *
- * 所有 Store 共享的类型定义，集中管理以避免循环依赖。
+ * 统一从 Zod Schema 导出类型，避免手写 interface 与运行时验证不同步。
  * 这个文件是 pure type definitions，不包含任何实现逻辑。
  */
 
 // ============================================================================
-// Toast 类型
+// Toast 类型（前端专用，无对应后端 Schema）
 // ============================================================================
 
 export type ToastType = 'success' | 'error' | 'info';
@@ -18,24 +18,26 @@ export interface Toast {
 }
 
 // ============================================================================
-// Workspace 类型
+// Workspace / Keyword 类型（从 Zod Schema 导出）
 // ============================================================================
 
-export interface Workspace {
-  id: string;
-  name: string;
-  path: string;
-  status: 'READY' | 'OFFLINE' | 'PROCESSING' | 'ERROR' | 'PARTIAL';
-  size: string;
-  files: number;
-  ready_files?: number;
-  watching?: boolean;
-}
+export type {
+  Workspace,
+  KeywordGroup,
+  KeywordPattern,
+  ColorKey,
+} from '../types/api-responses';
 
 // ============================================================================
-// Task 类型
+// Task 类型（从 events/types.ts Zod Schema 导出）
 // ============================================================================
 
+export type { TaskStatus, TaskType } from '../events/types';
+
+/**
+ * Task 类型 - 基于 TaskUpdateEventSchema 的字段，前端 store 使用
+ * 注意：completedAt 是前端计算字段，不在事件 Schema 中
+ */
 export interface Task {
   id: string;
   type: string;
@@ -45,23 +47,4 @@ export interface Task {
   status: 'RUNNING' | 'COMPLETED' | 'FAILED' | 'STOPPED';
   workspaceId?: string;
   completedAt?: number;
-}
-
-// ============================================================================
-// Keyword 类型
-// ============================================================================
-
-export type ColorKey = 'blue' | 'green' | 'red' | 'orange' | 'purple';
-
-export interface KeywordPattern {
-  regex: string;
-  comment: string;
-}
-
-export interface KeywordGroup {
-  id: string;
-  name: string;
-  color: ColorKey;
-  patterns: KeywordPattern[];
-  enabled: boolean;
 }

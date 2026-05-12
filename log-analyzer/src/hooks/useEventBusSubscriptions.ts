@@ -1,9 +1,9 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useTaskStore } from '../stores/taskStore';
 import { eventBus } from '../events/EventBus';
-import { api } from '../services/api';
+import { useWorkspaceList } from './useWorkspaceList';
 import type { TaskUpdateEvent, TaskRemovedEvent, WorkspaceEvent } from '../events/types';
 import { logger } from '../utils/logger';
 
@@ -18,21 +18,11 @@ import { logger } from '../utils/logger';
  */
 export const useEventBusSubscriptions = () => {
   const updateWorkspace = useWorkspaceStore((state) => state.updateWorkspace);
-  const setWorkspaces = useWorkspaceStore((state) => state.setWorkspaces);
   const upsertTask = useTaskStore((state) => state.upsertTask);
   const deleteTask = useTaskStore((state) => state.deleteTask);
 
-  // 统一刷新工作区列表的方法
-  const refreshWorkspaces = useCallback(async () => {
-    try {
-      const config = await api.loadConfig();
-      if (config.workspaces) {
-        setWorkspaces(config.workspaces);
-      }
-    } catch (err) {
-      logger.error('Failed to refresh workspaces from event:', err);
-    }
-  }, [setWorkspaces]);
+  // 复用 useWorkspaceList 的 refreshWorkspaces，避免重复定义和全量加载
+  const { refreshWorkspaces } = useWorkspaceList();
 
   useEffect(() => {
     // 注册任务更新事件处理器
