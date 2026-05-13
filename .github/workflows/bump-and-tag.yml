@@ -1,5 +1,8 @@
 name: Bump Version and Tag
 
+permissions:
+  contents: read
+
 on:
   workflow_run:
     workflows: ["CI/CD Pipeline"]
@@ -28,7 +31,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -57,7 +60,7 @@ jobs:
 
       - name: Setup Node.js
         if: steps.base.outputs.skip != 'true'
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
 
