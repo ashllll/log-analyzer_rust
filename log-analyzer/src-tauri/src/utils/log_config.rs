@@ -111,10 +111,6 @@ impl Default for LogConfig {
                     module: "log_analyzer::search_engine".to_string(),
                     level: LogLevel::Info,
                 },
-                ModuleLogConfig {
-                    module: "log_analyzer::cache_manager".to_string(),
-                    level: LogLevel::Info,
-                },
             ],
             enable_file_log: false,
             file_log_path: None,
@@ -311,10 +307,6 @@ pub fn get_production_log_config() -> LogConfig {
             },
             ModuleLogConfig {
                 module: "log_analyzer::search_engine".to_string(),
-                level: LogLevel::Warn,
-            },
-            ModuleLogConfig {
-                module: "log_analyzer::cache_manager".to_string(),
                 level: LogLevel::Warn,
             },
             // 关键路径保持 Info

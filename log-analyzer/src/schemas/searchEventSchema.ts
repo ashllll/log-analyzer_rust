@@ -6,6 +6,11 @@
  */
 
 import { z } from 'zod';
+import { SearchResultSummarySchema } from '../pages/SearchPage/types/search-schemas';
+
+export const SearchIdEventSchema = z.object({
+  search_id: z.string(),
+});
 
 /**
  * search-progress 事件
@@ -15,7 +20,6 @@ import { z } from 'zod';
 export const SearchProgressEventSchema = z.object({
   search_id: z.string(),
   count: z.number(),
-  disk_write_offset: z.number().optional(),
 });
 
 /**
@@ -26,6 +30,11 @@ export const SearchProgressEventSchema = z.object({
 export const SearchCompleteEventSchema = z.object({
   search_id: z.string(),
   total_count: z.number(),
+});
+
+export const SearchSummaryEventSchema = z.object({
+  search_id: z.string(),
+  summary: SearchResultSummarySchema,
 });
 
 /**
@@ -40,4 +49,6 @@ export const SearchErrorEventSchema = z.object({
 
 export type SearchProgressEvent = z.infer<typeof SearchProgressEventSchema>;
 export type SearchCompleteEvent = z.infer<typeof SearchCompleteEventSchema>;
+export type SearchSummaryEvent = z.infer<typeof SearchSummaryEventSchema>;
 export type SearchErrorEvent = z.infer<typeof SearchErrorEventSchema>;
+export type SearchIdEvent = z.infer<typeof SearchIdEventSchema>;

@@ -4,11 +4,9 @@
 
 pub mod async_resource_manager;
 pub mod cache;
-pub mod cache_manager;
 pub mod cancellation_manager;
 pub mod command_validation;
 pub mod encoding;
-pub mod legacy_detection;
 pub mod log_config;
 pub mod path;
 pub mod resource_tracker;
@@ -21,12 +19,7 @@ mod resource_management_property_tests;
 
 // 重新导出常用工具函数
 pub use async_resource_manager::{AsyncResourceManager, OperationType};
-pub use cache_manager::CacheManager;
 pub use cancellation_manager::{run_with_cancellation, CancellableOperation, CancellationManager};
-pub use legacy_detection::{
-    check_workspace_legacy_format, generate_legacy_message, scan_legacy_workspaces,
-    LegacyFormatType, LegacyWorkspaceInfo,
-};
 pub use log_config::{
     get_debug_log_config, get_log_config, get_production_log_config, load_log_config_from_file,
     reset_log_config, save_log_config_to_file, set_global_log_level, set_module_log_level,

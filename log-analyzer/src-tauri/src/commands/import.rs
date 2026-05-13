@@ -682,22 +682,6 @@ pub async fn import_folder(
                     file_count = file_count,
                     "Import completed successfully with integrity verification"
                 );
-
-                // 导入成功后清除该工作区的搜索缓存，避免旧缓存返回过时结果
-                {
-                    let cache = {
-                        let guard = state.cache_manager.lock();
-                        guard.clone()
-                    };
-                    let count = cache.invalidate_workspace_cache(&workspace_id_clone);
-                    if count > 0 {
-                        tracing::info!(
-                            workspace_id = %workspace_id_clone,
-                            count = count,
-                            "Workspace cache invalidated after import"
-                        );
-                    }
-                }
             } else {
                 tracing::warn!(
                     workspace_id = %workspace_id_clone,

@@ -28,22 +28,30 @@ export function useSearchEvents({
   onRefetch,
   onScrollToTop,
 }: UseSearchEventsOptions): void {
+  const isCurrentSearch = useCallback(
+    (searchId: string) => searchId === currentSearchId,
+    [currentSearchId]
+  );
+
   const handleProgress = useCallback(
-    (count: number) => {
+    (searchId: string, count: number) => {
+      if (!isCurrentSearch(searchId)) return;
       onProgress(count);
     },
-    [onProgress]
+    [isCurrentSearch, onProgress]
   );
 
   const handleSummary = useCallback(
-    (summary: SearchResultSummary) => {
+    (searchId: string, summary: SearchResultSummary) => {
+      if (!isCurrentSearch(searchId)) return;
       onSummary(summary);
     },
-    [onSummary]
+    [isCurrentSearch, onSummary]
   );
 
   const handleComplete = useCallback(
-    (count: number) => {
+    (searchId: string, count: number) => {
+      if (!isCurrentSearch(searchId)) return;
       onComplete(count);
       onRefetch().catch((error) => {
         logger.error('Refetch search page after completion failed:', error);
@@ -52,26 +60,28 @@ export function useSearchEvents({
         onScrollToTop();
       }, 50);
     },
-    [onComplete, onRefetch, onScrollToTop]
+    [isCurrentSearch, onComplete, onRefetch, onScrollToTop]
   );
 
   const handleError = useCallback(
-    (errorMsg: string) => {
+    (searchId: string, errorMsg: string) => {
+      if (!isCurrentSearch(searchId)) return;
       onError(errorMsg);
     },
-    [onError]
+    [isCurrentSearch, onError]
   );
 
-  const handleStart = useCallback(() => {
+  const handleStart = useCallback((searchId: string) => {
+    if (!isCurrentSearch(searchId)) return;
     onStart();
-  }, [onStart]);
+  }, [isCurrentSearch, onStart]);
 
   const handleCancelled = useCallback(
     (searchId: string) => {
-      if (searchId !== currentSearchId) return;
+      if (!isCurrentSearch(searchId)) return;
       onError('搜索已取消');
     },
-    [currentSearchId, onError]
+    [isCurrentSearch, onError]
   );
 
   useSearchListeners({
@@ -81,5 +91,6 @@ export function useSearchEvents({
     onError: handleError,
     onStart: handleStart,
     onCancelled: handleCancelled,
+    onTimeout: handleCancelled,
   });
 }

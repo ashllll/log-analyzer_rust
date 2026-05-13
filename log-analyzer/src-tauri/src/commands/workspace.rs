@@ -637,22 +637,6 @@ pub async fn delete_workspace(
     // 执行清理
     cleanup_workspace_resources(&workspaceId, &state, &app).await?;
 
-    // 失效该工作区的缓存（仅目标工作区，不影响其他工作区）
-    {
-        let cache = {
-            let guard = state.cache_manager.lock();
-            guard.clone()
-        };
-        let count = cache.invalidate_workspace_cache(&workspaceId);
-        if count > 0 {
-            info!(workspace_id = %workspaceId, count = count, "工作区缓存已失效");
-        }
-    }
-    info!(
-        workspace_id = %workspaceId,
-        "Successfully invalidated cache for workspace"
-    );
-
     // 广播工作区删除事件
     // 注意：先克隆 state_sync，释放锁后再 await，避免跨 await 点持有锁
     let state_sync_opt: Option<crate::state_sync::StateSync> = {

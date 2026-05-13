@@ -17,7 +17,6 @@ export const queryKeys = {
   workspace: (id: string) => ['workspace', id] as const,
   keywordGroups: ['keywordGroups'] as const,
   tasks: ['tasks'] as const,
-  cacheConfig: ['cacheConfig'] as const,
   searchConfig: ['searchConfig'] as const,
   taskManagerConfig: ['taskManagerConfig'] as const,
 } as const;

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { save } from '@tauri-apps/plugin-dialog';
 import { useWorkspaceStore } from '../stores/workspaceStore';
@@ -80,6 +80,7 @@ const SearchPage: React.FC = () => {
   const [liveCount, setLiveCount] = useState(0);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [isFilterPaletteOpen, setIsFilterPaletteOpen] = useState(false);
+  const lastProgressRefetchAt = useRef(0);
 
   // 无限搜索
   const {
@@ -165,7 +166,13 @@ const SearchPage: React.FC = () => {
     }, [dispatchSearchExec, parentRef]),
     onProgress: useCallback((count: number) => {
       setLiveCount(count);
-    }, []),
+      const now = Date.now();
+      if (now - lastProgressRefetchAt.current < 300) return;
+      lastProgressRefetchAt.current = now;
+      refetchSearchPages().catch((error) => {
+        logger.error('Refetch search page after progress failed:', error);
+      });
+    }, [refetchSearchPages]),
     onSummary: useCallback((summary) => {
       dispatchSearchExec({ type: 'SUMMARY', summary, keywordColors: ['#3B82F6', '#8B5CF6', '#22C55E', '#F59E0B', '#EC4899', '#06B6D4'] });
     }, [dispatchSearchExec]),

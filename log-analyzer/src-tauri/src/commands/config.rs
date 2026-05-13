@@ -12,8 +12,7 @@ use la_core::error::AppError;
 use tauri::{command, AppHandle, Manager};
 
 use la_core::models::config::{
-    AppConfig, AppConfigLoader, CacheConfig, ConfigValidator, FileFilterConfig, SearchConfig,
-    TaskManagerConfig,
+    AppConfig, AppConfigLoader, ConfigValidator, FileFilterConfig, SearchConfig, TaskManagerConfig,
 };
 
 /// 加载配置（使用新的 ConfigLoader 系统）
@@ -136,36 +135,6 @@ pub async fn save_file_filter_config(
 
     let mut config = load_config(app.clone()).await?;
     config.file_filter = filter_config;
-    save_config(app, config).await?;
-    Ok(())
-}
-
-// ============ 缓存配置命令 ============
-
-/// 获取缓存配置
-#[command]
-pub async fn get_cache_config(app: AppHandle) -> Result<CacheConfig, String> {
-    let config = load_config(app).await?;
-    Ok(config.cache)
-}
-
-/// 保存缓存配置
-#[command]
-pub async fn save_cache_config(app: AppHandle, cache_config: CacheConfig) -> Result<(), String> {
-    // 验证配置
-    let validation = cache_config.validate();
-    if !validation.is_valid {
-        let error_msg = validation
-            .errors
-            .iter()
-            .map(|e| format!("{}: {}", e.field, e.message))
-            .collect::<Vec<_>>()
-            .join("; ");
-        return Err(format!("缓存配置验证失败: {}", error_msg));
-    }
-
-    let mut config = load_config(app.clone()).await?;
-    config.cache = cache_config;
     save_config(app, config).await?;
     Ok(())
 }

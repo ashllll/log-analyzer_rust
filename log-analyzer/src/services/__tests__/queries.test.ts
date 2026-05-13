@@ -29,10 +29,6 @@ describe('queryKeys', () => {
     expect(queryKeys.tasks).toEqual(['tasks']);
   });
 
-  it('cacheConfig key 应为稳定引用', () => {
-    expect(queryKeys.cacheConfig).toEqual(['cacheConfig']);
-  });
-
   it('searchConfig key 应为稳定引用', () => {
     expect(queryKeys.searchConfig).toEqual(['searchConfig']);
   });

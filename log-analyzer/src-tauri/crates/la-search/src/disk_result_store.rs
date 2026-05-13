@@ -247,9 +247,10 @@ impl DiskResultStore {
                 entries: vec![],
                 total_count: total,
                 is_complete,
-                // 搜索未完成时可能还会写入更多条目
-                has_more: !is_complete,
-                next_offset: if !is_complete { Some(offset) } else { None },
+                // 不能返回相同 next_offset，否则前端无限查询会重复请求空页。
+                // 搜索进行中时由 progress/complete 事件触发 refetch。
+                has_more: false,
+                next_offset: None,
             });
         }
 
@@ -490,7 +491,14 @@ mod tests {
         assert_eq!(page.entries.len(), 30);
         assert_eq!(page.total_count, 50);
         assert!(!page.is_complete);
-        assert!(page.has_more); // 搜索还在进行中
+        assert!(page.has_more);
+
+        let empty_tail = store.read_page("live-session", 50, 30).unwrap();
+        assert!(empty_tail.entries.is_empty());
+        assert_eq!(empty_tail.total_count, 50);
+        assert!(!empty_tail.is_complete);
+        assert!(!empty_tail.has_more);
+        assert_eq!(empty_tail.next_offset, None);
 
         // 再写入 50 条并完成
         let batch2: Vec<LogEntry> = (50..100).map(|i| make_entry(i, "data")).collect();

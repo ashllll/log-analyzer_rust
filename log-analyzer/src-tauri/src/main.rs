@@ -13,9 +13,7 @@ use log_analyzer::commands::{
 };
 use log_analyzer::models::AppState;
 use log_analyzer::task_manager::TaskManager;
-use log_analyzer::utils::cache_manager::CacheManager;
-use moka::sync::Cache;
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 use tauri::Manager;
 use tracing::info;
 
@@ -28,18 +26,6 @@ fn load_app_config(app: &tauri::AppHandle) -> Option<la_core::models::config::Ap
     la_core::models::config::AppConfigLoader::load(Some(config_path))
         .ok()
         .map(|loader| loader.get_config().clone())
-}
-
-fn build_runtime_cache_manager(
-    cache_config: &la_core::models::config::CacheConfig,
-) -> CacheManager {
-    let sync_cache = Cache::builder()
-        .max_capacity(cache_config.max_cache_capacity as u64)
-        .time_to_live(Duration::from_secs(cache_config.cache_ttl_seconds))
-        .time_to_idle(Duration::from_secs(cache_config.cache_tti_seconds))
-        .build();
-
-    CacheManager::new(Arc::new(sync_cache))
 }
 
 #[tokio::main]
@@ -58,7 +44,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 EnvFilter::new("debug")
                     .add_directive("log_analyzer::task_manager=info".parse().unwrap())
                     .add_directive("log_analyzer::search_engine=info".parse().unwrap())
-                    .add_directive("log_analyzer::cache_manager=info".parse().unwrap())
             }
             #[cfg(not(debug_assertions))]
             {
@@ -66,7 +51,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 EnvFilter::new("info")
                     .add_directive("log_analyzer::task_manager=warn".parse().unwrap())
                     .add_directive("log_analyzer::search_engine=warn".parse().unwrap())
-                    .add_directive("log_analyzer::cache_manager=warn".parse().unwrap())
                     .add_directive("log_analyzer::commands=info".parse().unwrap())
             }
         });
@@ -96,13 +80,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             let app_state: tauri::State<'_, AppState> = app.state();
             let app_config = load_app_config(app.app_handle());
-
-            if let Some(config) = app_config.as_ref() {
-                let cache_manager = build_runtime_cache_manager(&config.cache);
-                let mut cache_guard = app_state.cache_manager.lock();
-                *cache_guard = cache_manager;
-                info!("✅ 已从配置文件加载运行时缓存参数");
-            }
 
             let task_manager_config = app_config
                 .as_ref()
@@ -138,8 +115,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             save_config,
             get_file_filter_config,
             save_file_filter_config,
-            get_cache_config,
-            save_cache_config,
             get_search_config,
             save_search_config,
             get_task_manager_config,

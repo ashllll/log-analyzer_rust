@@ -15,18 +15,25 @@ import { useEffect, useRef } from 'react';
 import { logger } from '../utils/logger';
 import { listen } from '@tauri-apps/api/event';
 import type { SearchResultSummary } from '../types/search';
+import {
+  SearchCompleteEventSchema,
+  SearchErrorEventSchema,
+  SearchIdEventSchema,
+  SearchProgressEventSchema,
+  SearchSummaryEventSchema,
+} from '../schemas/searchEventSchema';
 
 export interface SearchListenerHandlers {
   /** 收到搜索进度更新（磁盘写入计数），前端据此调整虚拟列表大小 */
-  onProgress?: (count: number) => void;
+  onProgress?: (searchId: string, count: number) => void;
   /** 收到搜索汇总统计 */
-  onSummary: (summary: SearchResultSummary) => void;
+  onSummary: (searchId: string, summary: SearchResultSummary) => void;
   /** 搜索完成，payload 为总结果数 */
-  onComplete: (count: number) => void;
+  onComplete: (searchId: string, count: number) => void;
   /** 搜索出错，payload 为错误信息字符串 */
-  onError: (errorMsg: string) => void;
+  onError: (searchId: string, errorMsg: string) => void;
   /** 新搜索开始（在后端开始发送结果之前触发） */
-  onStart: () => void;
+  onStart: (searchId: string) => void;
   /** 搜索取消，payload 为 searchId */
   onCancelled?: (searchId: string) => void;
   /** 搜索超时，payload 为 searchId */
@@ -65,28 +72,39 @@ export function useSearchListeners(
           timeoutUnlisten,
         ] = await Promise.all([
           listen<number>('search-progress', (e) => {
-            const count = typeof e.payload === 'number' ? e.payload : 0;
-            handlersRef.current.onProgress?.(count);
+            const result = SearchProgressEventSchema.safeParse(e.payload);
+            if (!result.success) return;
+            handlersRef.current.onProgress?.(result.data.search_id, result.data.count);
           }),
           listen<SearchResultSummary>('search-summary', (e) => {
-            if (!e.payload) return;
-            handlersRef.current.onSummary(e.payload);
+            const result = SearchSummaryEventSchema.safeParse(e.payload);
+            if (!result.success) return;
+            handlersRef.current.onSummary(result.data.search_id, result.data.summary);
           }),
           listen<number>('search-complete', (e) => {
-            const count = typeof e.payload === 'number' ? e.payload : 0;
-            handlersRef.current.onComplete(count);
+            const result = SearchCompleteEventSchema.safeParse(e.payload);
+            if (!result.success) return;
+            handlersRef.current.onComplete(result.data.search_id, result.data.total_count);
           }),
           listen<string>('search-error', (e) => {
-            handlersRef.current.onError(String(e.payload));
+            const result = SearchErrorEventSchema.safeParse(e.payload);
+            if (!result.success) return;
+            handlersRef.current.onError(result.data.search_id, result.data.error);
           }),
-          listen('search-start', () => {
-            handlersRef.current.onStart();
+          listen('search-start', (e) => {
+            const result = SearchIdEventSchema.safeParse(e.payload);
+            if (!result.success) return;
+            handlersRef.current.onStart(result.data.search_id);
           }),
-          listen<string>('search-cancelled', (e) => {
-            handlersRef.current.onCancelled?.(String(e.payload));
+          listen('search-cancelled', (e) => {
+            const result = SearchIdEventSchema.safeParse(e.payload);
+            if (!result.success) return;
+            handlersRef.current.onCancelled?.(result.data.search_id);
           }),
-          listen<string>('search-timeout', (e) => {
-            handlersRef.current.onTimeout?.(String(e.payload));
+          listen('search-timeout', (e) => {
+            const result = SearchIdEventSchema.safeParse(e.payload);
+            if (!result.success) return;
+            handlersRef.current.onTimeout?.(result.data.search_id);
           }),
         ]);
 

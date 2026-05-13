@@ -5,12 +5,10 @@ use crate::state_sync::StateSync;
 use crate::task_manager::TaskManager;
 use crate::utils::async_resource_manager::AsyncResourceError;
 use crate::utils::async_resource_manager::AsyncResourceManager;
-use crate::utils::cache_manager::CacheManager;
 use la_search::DiskResultStore;
 use la_search::SearchEngineManager;
 use la_storage::ContentAddressableStorage;
 use la_storage::MetadataStore;
-use moka::sync::Cache;
 use parking_lot::Mutex;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
@@ -53,7 +51,6 @@ pub struct AppState {
     /// 搜索指标（合并 total_searches + cache_hits + last_search_duration）
     pub search_metrics: Arc<Mutex<SearchMetrics>>,
     pub watchers: Arc<Mutex<HashMap<String, WatcherState>>>,
-    pub cache_manager: Arc<Mutex<CacheManager>>,
     pub state_sync: Arc<Mutex<Option<StateSync>>>,
     pub async_resource_manager: Arc<AsyncResourceManager>,
     pub search_engine_managers: Arc<Mutex<HashMap<String, Arc<SearchEngineManager>>>>,
@@ -64,12 +61,6 @@ pub struct AppState {
 
 impl Default for AppState {
     fn default() -> Self {
-        // 创建同步缓存 (L1 cache)
-        let sync_cache = Cache::builder().max_capacity(1000).build();
-
-        // 使用 CacheManager 包装缓存
-        let cache_manager = CacheManager::new(Arc::new(sync_cache));
-
         Self {
             // C-H1 优化: BTreeMap 保证迭代顺序确定性
             workspace_dirs: Arc::new(Mutex::new(BTreeMap::new())),
@@ -80,7 +71,6 @@ impl Default for AppState {
             // 合并搜索指标为单个结构体，减少锁竞争
             search_metrics: Arc::new(Mutex::new(SearchMetrics::default())),
             watchers: Arc::new(Mutex::new(HashMap::new())),
-            cache_manager: Arc::new(Mutex::new(cache_manager)),
             state_sync: Arc::new(Mutex::new(None)),
             async_resource_manager: Arc::new(AsyncResourceManager::new()),
             search_engine_managers: Arc::new(Mutex::new(HashMap::new())),
@@ -148,18 +138,6 @@ impl AppState {
     pub fn set_workspace_dir(&self, workspace_id: String, path: std::path::PathBuf) {
         let mut dirs = self.workspace_dirs.lock();
         dirs.insert(workspace_id, path);
-    }
-}
-
-// ============================================================================
-// CacheManager 访问方法 - 封装 mutex 锁，提供线程安全的访问接口
-// ============================================================================
-
-impl AppState {
-    /// 清理工作区缓存
-    pub fn invalidate_workspace_cache(&self, workspace_id: &str) -> usize {
-        let cache = self.cache_manager.lock();
-        cache.invalidate_workspace_cache(workspace_id)
     }
 }
 

@@ -22,6 +22,5 @@ pub use processing_report::{
     ErrorCategory, ErrorSeverity, ProcessingError, ProcessingReport, ProcessingReportSummary,
     ProcessingStatistics, ProcessingStatus,
 };
-pub use search::SearchCacheKey;
 pub use search::*;
 pub use search_statistics::{KeywordStatistics, SearchResultSummary};

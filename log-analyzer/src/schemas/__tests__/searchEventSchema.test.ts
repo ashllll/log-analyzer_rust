@@ -2,17 +2,18 @@ import {
   SearchProgressEventSchema,
   SearchCompleteEventSchema,
   SearchErrorEventSchema,
+  SearchIdEventSchema,
+  SearchSummaryEventSchema,
 } from '../searchEventSchema';
 
 describe('SearchProgressEventSchema', () => {
-  it('应正确解析包含可选 disk_write_offset 的有效进度事件', () => {
-    const data = { search_id: 'test-123', count: 42, disk_write_offset: 1024 };
+  it('应正确解析有效进度事件', () => {
+    const data = { search_id: 'test-123', count: 42 };
     const result = SearchProgressEventSchema.safeParse(data);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.search_id).toBe('test-123');
       expect(result.data.count).toBe(42);
-      expect(result.data.disk_write_offset).toBe(1024);
     }
   });
 
@@ -23,7 +24,6 @@ describe('SearchProgressEventSchema', () => {
     if (result.success) {
       expect(result.data.search_id).toBe('test-456');
       expect(result.data.count).toBe(0);
-      expect(result.data.disk_write_offset).toBeUndefined();
     }
   });
 
@@ -46,6 +46,33 @@ describe('SearchProgressEventSchema', () => {
     if (result.success) {
       expect(result.data.count).toBe(-1);
     }
+  });
+});
+
+describe('SearchSummaryEventSchema', () => {
+  it('应正确解析带 search_id 的摘要事件', () => {
+    const data = {
+      search_id: 'summary-123',
+      summary: {
+        totalMatches: 10,
+        keywordStats: [{ keyword: 'error', matchCount: 10, matchPercentage: 100 }],
+        searchDurationMs: 25,
+        truncated: false,
+      },
+    };
+    const result = SearchSummaryEventSchema.safeParse(data);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.search_id).toBe('summary-123');
+      expect(result.data.summary.totalMatches).toBe(10);
+    }
+  });
+});
+
+describe('SearchIdEventSchema', () => {
+  it('应正确解析仅包含 search_id 的终端事件', () => {
+    const result = SearchIdEventSchema.safeParse({ search_id: 'search-1' });
+    expect(result.success).toBe(true);
   });
 });
 

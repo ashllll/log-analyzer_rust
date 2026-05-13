@@ -48,28 +48,32 @@ describe('useSearchListeners', () => {
       expect(listeners.has('search-timeout')).toBe(true);
     });
 
-    listeners.get('search-progress')?.({ payload: 12 });
+    listeners.get('search-progress')?.({ payload: { search_id: 'search-1', count: 12 } });
     listeners.get('search-summary')?.({
       payload: {
-        totalMatches: 12,
-        keywordStats: [{ keyword: 'error', matchCount: 12, matchPercentage: 100 }],
-        searchDurationMs: 25,
-        truncated: false,
+        search_id: 'search-1',
+        summary: {
+          totalMatches: 12,
+          keywordStats: [{ keyword: 'error', matchCount: 12, matchPercentage: 100 }],
+          searchDurationMs: 25,
+          truncated: false,
+        },
       },
     });
-    listeners.get('search-complete')?.({ payload: 12 });
-    listeners.get('search-error')?.({ payload: 'boom' });
-    listeners.get('search-start')?.({ payload: null });
-    listeners.get('search-cancelled')?.({ payload: 'search-1' });
-    listeners.get('search-timeout')?.({ payload: 'search-2' });
+    listeners.get('search-complete')?.({ payload: { search_id: 'search-1', total_count: 12 } });
+    listeners.get('search-error')?.({ payload: { search_id: 'search-1', error: 'boom' } });
+    listeners.get('search-start')?.({ payload: { search_id: 'search-1' } });
+    listeners.get('search-cancelled')?.({ payload: { search_id: 'search-1' } });
+    listeners.get('search-timeout')?.({ payload: { search_id: 'search-2' } });
 
-    expect(onProgress).toHaveBeenCalledWith(12);
+    expect(onProgress).toHaveBeenCalledWith('search-1', 12);
     expect(onSummary).toHaveBeenCalledWith(
+      'search-1',
       expect.objectContaining({ totalMatches: 12 }),
     );
-    expect(onComplete).toHaveBeenCalledWith(12);
-    expect(onError).toHaveBeenCalledWith('boom');
-    expect(onStart).toHaveBeenCalled();
+    expect(onComplete).toHaveBeenCalledWith('search-1', 12);
+    expect(onError).toHaveBeenCalledWith('search-1', 'boom');
+    expect(onStart).toHaveBeenCalledWith('search-1');
     expect(onCancelled).toHaveBeenCalledWith('search-1');
     expect(onTimeout).toHaveBeenCalledWith('search-2');
   });

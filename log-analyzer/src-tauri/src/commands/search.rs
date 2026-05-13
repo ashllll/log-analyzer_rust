@@ -15,7 +15,6 @@
 //! # 搜索结果存储弃用路线图 (TODO-P1-5)
 //!
 //! 当前主搜索结果统一写入 `disk_result_store: DiskResultStore`，由前端分页读取。
-//! `cache_manager: CacheManager` 保留给配置/元数据缓存，不承载主搜索结果副本。
 //!
 //! ## 问题
 //! - 稳定查询指纹与前端搜索会话 ID 的职责边界仍需统一
@@ -30,7 +29,7 @@
 //! ```
 //!
 //! ## 迁移步骤
-//! 1. [x] 移除主搜索入口对 `cache_manager` 的搜索结果缓存写入，保留配置/元数据缓存用途
+//! 1. [x] 移除主搜索入口对旧搜索结果缓存的写入
 //! 2. [ ] `execute_file_search` 改为流式写入 `DiskResultStore`，不再返回 Vec
 //! 3. [x] 移除主搜索入口的 `try_get_cached_results` 旁路，统一由 `DiskResultStore` 承载当前分页会话
 //! 4. [x] 删除主搜索入口的 `all_results` 本地缓冲和 `MAX_CACHE_SIZE` 限制
@@ -71,6 +70,54 @@ use serde::{Deserialize, Serialize};
 // 搜索流程辅助函数
 // ============================================================================
 
+#[derive(Debug, Clone, Serialize)]
+struct SearchIdEvent {
+    search_id: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct SearchProgressEvent {
+    search_id: String,
+    count: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct SearchSummaryEvent {
+    search_id: String,
+    summary: SearchResultSummary,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct SearchCompleteEvent {
+    search_id: String,
+    total_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct SearchErrorEvent {
+    search_id: String,
+    error: String,
+}
+
+fn emit_search_id_event(app_handle: &AppHandle, event_name: &str, search_id: &str) {
+    let _ = app_handle.emit(
+        event_name,
+        SearchIdEvent {
+            search_id: search_id.to_string(),
+        },
+    );
+}
+
+fn emit_search_error(app_handle: &AppHandle, search_id: &str, error: impl Into<String>) {
+    let _ = app_handle.emit(
+        "search-error",
+        SearchErrorEvent {
+            search_id: search_id.to_string(),
+            error: error.into(),
+        },
+    );
+}
+
 /// 准备搜索：解析工作区目录、获取运行时状态、获取文件列表、创建磁盘会话
 async fn prepare_search_environment(
     app_handle: &AppHandle,
@@ -98,7 +145,7 @@ async fn prepare_search_environment(
             dir
         } else {
             resolve_workspace_dir(app_handle, workspace_id).map_err(|e| {
-                let _ = app_handle.emit("search-error", &e);
+                emit_search_error(app_handle, search_id, &e);
                 CommandError::new("NOT_FOUND", e).with_help(
                     "The workspace may have been deleted. Try refreshing the workspace list",
                 )
@@ -133,7 +180,17 @@ async fn prepare_search_environment(
     // 创建磁盘搜索会话
     if !disk_result_store.has_session(search_id) {
         if let Err(e) = disk_result_store.create_session(search_id) {
+            emit_search_error(
+                app_handle,
+                search_id,
+                format!("Failed to create search session: {e}"),
+            );
             warn!(error = %e, search_id = %search_id, "无法创建磁盘搜索会话，分页读取功能将不可用");
+            return Err(CommandError::new(
+                "IO_ERROR",
+                format!("Failed to create search session: {e}"),
+            )
+            .with_help("Check that the application data directory is writable"));
         }
     }
 
@@ -221,7 +278,7 @@ async fn run_search_with_timeout(request: SearchExecutionRequest) -> Result<Stri
                 tokens.remove(&search_id);
             }
             disk_store_for_timeout.remove_session(&search_id);
-            let _ = app_handle_for_timeout.emit("search-timeout", &search_id);
+            emit_search_id_event(&app_handle_for_timeout, "search-timeout", &search_id);
             Err(CommandError::new(
                 "TIMEOUT_ERROR",
                 format!("Search timed out after {} seconds", search_timeout_secs),
@@ -293,7 +350,7 @@ pub(crate) fn load_search_runtime_config(app: &AppHandle) -> SearchRuntimeConfig
             SearchRuntimeConfig {
                 default_max_results: config.search.max_results,
                 timeout_seconds: config.search.timeout_seconds,
-                regex_cache_size: config.cache.regex_cache_size.max(1),
+                regex_cache_size: config.search.regex_cache_size.max(1),
                 case_sensitive: config.search.case_sensitive,
             }
         })
@@ -822,8 +879,9 @@ fn execute_file_search(
     let pool = match rayon::ThreadPoolBuilder::new().num_threads(4).build() {
         Ok(p) => p,
         Err(e) => {
-            let _ = app_handle.emit(
-                "search-error",
+            emit_search_error(
+                &app_handle,
+                &search_id,
                 format!("Failed to create search thread pool: {}", e),
             );
             disk_store.remove_session(&search_id);
@@ -835,7 +893,11 @@ fn execute_file_search(
     let plan = match builder.build(&structured_query) {
         Ok(p) => p,
         Err(e) => {
-            let _ = app_handle.emit("search-error", format!("Query execution error: {}", e));
+            emit_search_error(
+                &app_handle,
+                &search_id,
+                format!("Query execution error: {}", e),
+            );
             disk_store.remove_session(&search_id);
             return;
         }
@@ -873,7 +935,13 @@ fn execute_file_search(
                 Ok(_) => {
                     batch.clear();
                     if !timed_out_for_search.load(Ordering::SeqCst) {
-                        let _ = app_handle.emit("search-progress", progress_count);
+                        let _ = app_handle.emit(
+                            "search-progress",
+                            SearchProgressEvent {
+                                search_id: search_id.clone(),
+                                count: progress_count,
+                            },
+                        );
                     }
                     return;
                 }
@@ -888,12 +956,12 @@ fn execute_file_search(
         batch.clear();
     };
 
-    let _ = app_handle.emit("search-start", "Starting search...");
+    emit_search_id_event(&app_handle, "search-start", &search_id);
 
     'outer: for file_batch in files_for_search.chunks(10) {
         if cancellation_token.is_cancelled() {
             if !timed_out_for_search.load(Ordering::SeqCst) {
-                let _ = app_handle.emit("search-cancelled", search_id.clone());
+                emit_search_id_event(&app_handle, "search-cancelled", &search_id);
             }
             {
                 let mut tokens = cancellation_token_map.lock();
@@ -1010,9 +1078,23 @@ fn execute_file_search(
     if !timed_out_for_search.load(Ordering::SeqCst) {
         let _ = app_handle.emit(
             "search-summary",
-            &SearchResultSummary::new(results_count, keyword_stats, duration, was_truncated),
+            SearchSummaryEvent {
+                search_id: search_id.clone(),
+                summary: SearchResultSummary::new(
+                    results_count,
+                    keyword_stats,
+                    duration,
+                    was_truncated,
+                ),
+            },
         );
-        let _ = app_handle.emit("search-complete", results_count);
+        let _ = app_handle.emit(
+            "search-complete",
+            SearchCompleteEvent {
+                search_id: search_id.clone(),
+                total_count: results_count,
+            },
+        );
     }
 
     remove_cancellation_token(&cancellation_token_map, &search_id);
@@ -1082,24 +1164,34 @@ pub async fn search_logs(
     )
     .await?;
 
-    // Step 9-10: 执行搜索（spawn_blocking + 超时控制）
-    run_search_with_timeout(SearchExecutionRequest {
-        app_handle,
-        search_id: search_id.clone(),
-        files_for_search,
-        cas,
-        structured_query,
-        compiled_filters,
-        max_results,
-        regex_cache_size,
-        raw_terms,
-        search_metrics,
-        disk_result_store,
-        cancellation_token,
-        cancellation_tokens,
-        search_timeout_secs,
-    })
-    .await
+    let background_search_id = search_id.clone();
+    tokio::spawn(async move {
+        let result = run_search_with_timeout(SearchExecutionRequest {
+            app_handle: app_handle.clone(),
+            search_id: background_search_id.clone(),
+            files_for_search,
+            cas,
+            structured_query,
+            compiled_filters,
+            max_results,
+            regex_cache_size,
+            raw_terms,
+            search_metrics,
+            disk_result_store,
+            cancellation_token,
+            cancellation_tokens,
+            search_timeout_secs,
+        })
+        .await;
+
+        if let Err(error) = result {
+            if error.code != "TIMEOUT_ERROR" {
+                emit_search_error(&app_handle, &background_search_id, error.message);
+            }
+        }
+    });
+
+    Ok(search_id)
 }
 
 /// 取消正在进行的搜索

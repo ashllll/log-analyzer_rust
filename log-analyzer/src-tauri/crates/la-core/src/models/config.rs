@@ -662,6 +662,9 @@ pub struct SearchConfig {
 
     #[serde(default = "default_true")]
     pub regex_enabled: bool,
+
+    #[serde(default = "default_1000_usize")]
+    pub regex_cache_size: usize,
 }
 
 fn default_10_u64() -> u64 {
@@ -677,6 +680,7 @@ impl Default for SearchConfig {
             fuzzy_search_enabled: true,
             case_sensitive: false,
             regex_enabled: true,
+            regex_cache_size: 1000,
         }
     }
 }
@@ -705,6 +709,10 @@ impl ConfigValidator for SearchConfig {
             result.add_error(err.field, err.message, err.code);
         }
 
+        if let Some(err) = validate_range("regex_cache_size", self.regex_cache_size, 1, 100000) {
+            result.add_error(err.field, err.message, err.code);
+        }
+
         result
     }
 
@@ -721,6 +729,10 @@ impl ConfigValidator for SearchConfig {
         }
 
         if self.max_concurrent_searches == 0 || self.max_concurrent_searches > 100 {
+            modified = true;
+        }
+
+        if self.regex_cache_size == 0 || self.regex_cache_size > 100000 {
             modified = true;
         }
 
@@ -1446,6 +1458,10 @@ pub struct ArchiveConfig {
 fn default_100mb() -> u64 {
     100 * 1024 * 1024
 }
+
+fn default_300_u64() -> u64 {
+    300
+}
 fn default_1gb() -> u64 {
     1024 * 1024 * 1024
 }
@@ -1605,170 +1621,6 @@ impl ConfigValidator for ArchiveConfig {
         }
 
         if self.max_compression_ratio < 1.0 || self.max_compression_ratio > 10000.0 {
-            modified = true;
-        }
-
-        (result, !modified)
-    }
-}
-
-// ============ 缓存配置 ============
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct CacheConfig {
-    #[serde(default = "default_1000_usize")]
-    pub regex_cache_size: usize,
-
-    #[serde(default = "default_100_usize")]
-    pub autocomplete_limit: usize,
-
-    #[serde(default = "default_100_usize")]
-    pub max_cache_capacity: usize,
-
-    #[serde(default = "default_300_u64")]
-    pub cache_ttl_seconds: u64,
-
-    #[serde(default = "default_60_u64_cache")]
-    pub cache_tti_seconds: u64,
-
-    #[serde(default = "default_10kb")]
-    pub compression_threshold: u64,
-
-    #[serde(default = "default_true")]
-    pub compression_enabled: bool,
-
-    #[serde(default = "default_1000_usize")]
-    pub access_window_size: usize,
-
-    #[serde(default = "default_5_usize")]
-    pub preload_threshold: usize,
-
-    #[serde(default = "default_0_7_f64")]
-    pub min_hit_rate_threshold: f64,
-
-    #[serde(default = "default_10_0_f64")]
-    pub max_avg_access_time_ms: f64,
-
-    #[serde(default = "default_100_0_f64")]
-    pub max_avg_load_time_ms: f64,
-
-    #[serde(default = "default_10_0_f64")]
-    pub max_eviction_rate_per_min: f64,
-}
-
-fn default_300_u64() -> u64 {
-    300
-}
-fn default_60_u64_cache() -> u64 {
-    60
-}
-fn default_10kb() -> u64 {
-    10 * 1024
-}
-fn default_0_7_f64() -> f64 {
-    0.7
-}
-fn default_10_0_f64() -> f64 {
-    10.0
-}
-
-impl Default for CacheConfig {
-    fn default() -> Self {
-        Self {
-            regex_cache_size: 1000,
-            autocomplete_limit: 100,
-            max_cache_capacity: 100,
-            cache_ttl_seconds: 300,
-            cache_tti_seconds: 60,
-            compression_threshold: 10 * 1024,
-            compression_enabled: true,
-            access_window_size: 1000,
-            preload_threshold: 5,
-            min_hit_rate_threshold: 0.7,
-            max_avg_access_time_ms: 10.0,
-            max_avg_load_time_ms: 100.0,
-            max_eviction_rate_per_min: 10.0,
-        }
-    }
-}
-
-impl ConfigValidator for CacheConfig {
-    fn validate(&self) -> ValidationResult {
-        let mut result = ValidationResult::new();
-
-        // 验证缓存大小
-        if let Some(err) = validate_range("regex_cache_size", self.regex_cache_size, 1, 100000) {
-            result.add_error(err.field, err.message, err.code);
-        }
-
-        if let Some(err) = validate_range("max_cache_capacity", self.max_cache_capacity, 1, 10000) {
-            result.add_error(err.field, err.message, err.code);
-        }
-
-        // 验证自动完成限制
-        if let Some(err) = validate_range("autocomplete_limit", self.autocomplete_limit, 1, 10000) {
-            result.add_error(err.field, err.message, err.code);
-        }
-
-        // 验证 TTL
-        if let Some(err) = validate_range("cache_ttl_seconds", self.cache_ttl_seconds, 1, 86400 * 7)
-        {
-            result.add_error(err.field, err.message, err.code);
-        }
-
-        if let Some(err) = validate_range("cache_tti_seconds", self.cache_tti_seconds, 1, 86400) {
-            result.add_error(err.field, err.message, err.code);
-        }
-
-        // 验证压缩阈值
-        if let Some(err) = validate_range(
-            "compression_threshold",
-            self.compression_threshold,
-            1,
-            100 * 1024 * 1024,
-        ) {
-            result.add_error(err.field, err.message, err.code);
-        }
-
-        // 验证命中率阈值
-        if let Some(err) = validate_range(
-            "min_hit_rate_threshold",
-            self.min_hit_rate_threshold,
-            0.0,
-            1.0,
-        ) {
-            result.add_error(err.field, err.message, err.code);
-        }
-
-        // 验证访问时间
-        if self.max_avg_access_time_ms <= 0.0 {
-            result.add_error("max_avg_access_time_ms", "必须大于 0", "invalid_value");
-        }
-
-        if self.max_avg_load_time_ms <= 0.0 {
-            result.add_error("max_avg_load_time_ms", "必须大于 0", "invalid_value");
-        }
-
-        if self.max_eviction_rate_per_min < 0.0 {
-            result.add_error("max_eviction_rate_per_min", "不能为负数", "invalid_value");
-        }
-
-        result
-    }
-
-    fn validate_with_defaults(&self) -> (ValidationResult, bool) {
-        let result = self.validate();
-        let mut modified = false;
-
-        if self.regex_cache_size == 0 || self.regex_cache_size > 100000 {
-            modified = true;
-        }
-
-        if self.max_cache_capacity == 0 || self.max_cache_capacity > 10000 {
-            modified = true;
-        }
-
-        if self.min_hit_rate_threshold < 0.0 || self.min_hit_rate_threshold > 1.0 {
             modified = true;
         }
 
@@ -2553,9 +2405,6 @@ pub struct AppConfig {
     pub archive_processing: ArchiveProcessingConfig,
 
     #[serde(default)]
-    pub cache: CacheConfig,
-
-    #[serde(default)]
     pub task_manager: TaskManagerConfig,
 
     #[serde(default)]
@@ -2581,7 +2430,6 @@ impl Default for AppConfig {
             security: SecurityConfig::default(),
             archive: ArchiveConfig::default(),
             archive_processing: ArchiveProcessingConfig::default(),
-            cache: CacheConfig::default(),
             task_manager: TaskManagerConfig::default(),
             database: DatabaseConfig::default(),
             rate_limit: RateLimitConfig::default(),
@@ -2603,7 +2451,6 @@ impl ConfigValidator for AppConfig {
         result.merge(self.security.validate());
         result.merge(self.archive.validate());
         result.merge(self.archive_processing.validate());
-        result.merge(self.cache.validate());
         result.merge(self.task_manager.validate());
         result.merge(self.database.validate());
         result.merge(self.rate_limit.validate());
@@ -2628,7 +2475,6 @@ impl ConfigValidator for AppConfig {
                 "archive_processing",
                 self.archive_processing.validate_with_defaults(),
             ),
-            ("cache", self.cache.validate_with_defaults()),
             ("task_manager", self.task_manager.validate_with_defaults()),
             ("database", self.database.validate_with_defaults()),
             ("rate_limit", self.rate_limit.validate_with_defaults()),
@@ -2747,10 +2593,6 @@ impl ConfigLoader {
 
     pub fn get_search_config(&self) -> &SearchConfig {
         &self.config.search
-    }
-
-    pub fn get_cache_config(&self) -> &CacheConfig {
-        &self.config.cache
     }
 
     pub fn get_task_manager_config(&self) -> &TaskManagerConfig {
@@ -2965,25 +2807,6 @@ mod tests {
     fn test_archive_config_invalid_compression_ratio() {
         let config = ArchiveConfig {
             max_compression_ratio: 0.5,
-            ..Default::default()
-        };
-        let result = config.validate();
-        assert!(!result.is_valid);
-    }
-
-    // ============ CacheConfig 验证测试 ============
-
-    #[test]
-    fn test_cache_config_valid() {
-        let config = CacheConfig::default();
-        let result = config.validate();
-        assert!(result.is_valid);
-    }
-
-    #[test]
-    fn test_cache_config_invalid_hit_rate() {
-        let config = CacheConfig {
-            min_hit_rate_threshold: 1.5,
             ..Default::default()
         };
         let result = config.validate();

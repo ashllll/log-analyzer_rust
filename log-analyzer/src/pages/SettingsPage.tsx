@@ -7,7 +7,7 @@ import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { FormField } from '../components/ui/FormField';
 import { useToast } from '../hooks/useToast';
-import { useConfig, type CacheConfig, type SearchConfig, type TaskManagerConfig } from '../hooks/useConfig';
+import { useConfig, type SearchConfig, type TaskManagerConfig } from '../hooks/useConfig';
 
 interface ExtractionPolicy {
   extraction: {
@@ -64,17 +64,14 @@ export function SettingsPage() {
   const [policyErrors, setPolicyErrors] = useState<Record<string, string>>({});
 
   // Local state for configurations
-  const [localCacheConfig, setLocalCacheConfig] = useState<CacheConfig | null>(null);
   const [localSearchConfig, setLocalSearchConfig] = useState<SearchConfig | null>(null);
   const [localTaskConfig, setLocalTaskConfig] = useState<TaskManagerConfig | null>(null);
 
   // Use config hook for system configurations
   const {
-    cacheConfig,
     searchConfig,
     taskManagerConfig,
     loadAllConfigs,
-    saveCacheConfig,
     saveSearchConfig,
     saveTaskManagerConfig,
     isLoading: configLoading,
@@ -82,7 +79,7 @@ export function SettingsPage() {
   } = useConfig();
 
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'extraction' | 'cache' | 'search' | 'task'>('extraction');
+  const [activeTab, setActiveTab] = useState<'extraction' | 'search' | 'task'>('extraction');
 
   // Load configurations and sync local state
   useEffect(() => {
@@ -98,10 +95,6 @@ export function SettingsPage() {
   }, [loadAllConfigs, showToast, t]);
 
   // Sync local state when configs change
-  useEffect(() => {
-    if (cacheConfig) setLocalCacheConfig({ ...cacheConfig });
-  }, [cacheConfig]);
-
   useEffect(() => {
     if (searchConfig) setLocalSearchConfig({ ...searchConfig });
   }, [searchConfig]);
@@ -125,22 +118,13 @@ export function SettingsPage() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const validateCacheConfig = (): boolean => {
-    if (!localCacheConfig) return false;
-    return (
-      localCacheConfig.max_cache_capacity > 0 &&
-      localCacheConfig.cache_ttl_seconds > 0 &&
-      localCacheConfig.regex_cache_size > 0 &&
-      localCacheConfig.compression_threshold > 0
-    );
-  };
-
   const validateSearchConfig = (config: SearchConfig | null): boolean => {
     if (!config) return false;
     return (
       config.max_results > 0 &&
       config.timeout_seconds > 0 &&
-      config.max_concurrent_searches > 0
+      config.max_concurrent_searches > 0 &&
+      config.regex_cache_size > 0
     );
   };
 
@@ -165,15 +149,6 @@ export function SettingsPage() {
             return;
           }
           showToast('success', t('settings.save_success'));
-          break;
-        case 'cache':
-          if (localCacheConfig && validateCacheConfig()) {
-            await saveCacheConfig(localCacheConfig);
-            showToast('success', t('settings.cache.save_success'));
-          } else {
-            showToast('error', t('settings.cache.invalid'));
-            return;
-          }
           break;
         case 'search':
           if (localSearchConfig && validateSearchConfig(localSearchConfig)) {
@@ -239,16 +214,6 @@ export function SettingsPage() {
           }`}
         >
           {t('settings.tabs.extraction')}
-        </button>
-        <button
-          onClick={() => setActiveTab('cache')}
-          className={`px-6 py-2 font-medium text-sm transition-colors ${
-            activeTab === 'cache'
-              ? 'text-primary border-b-2 border-primary'
-              : 'text-text-muted hover:text-text-main'
-          }`}
-        >
-          {t('settings.tabs.cache')}
         </button>
         <button
           onClick={() => setActiveTab('search')}
@@ -408,90 +373,6 @@ export function SettingsPage() {
         </div>
       )}
 
-      {activeTab === 'cache' && localCacheConfig && (
-        <Card className="p-6">
-          <h2 className="text-xl font-semibold mb-4 text-text-main">{t('settings.cache.title')}</h2>
-          <div className="space-y-4">
-            <FormField label="最大缓存容量">
-              <Input
-                type="number"
-                value={localCacheConfig.max_cache_capacity}
-                onChange={(e) =>
-                  setLocalCacheConfig({
-                    ...localCacheConfig,
-                    max_cache_capacity: parseInt(e.target.value, 10) || 100,
-                  })
-                }
-                min={1}
-              />
-              <span className="text-xs text-text-dim mt-1">控制搜索结果缓存的条目上限。</span>
-            </FormField>
-
-            <FormField label="缓存 TTL（秒）">
-              <Input
-                type="number"
-                value={localCacheConfig.cache_ttl_seconds}
-                onChange={(e) =>
-                  setLocalCacheConfig({
-                    ...localCacheConfig,
-                    cache_ttl_seconds: parseInt(e.target.value, 10) || 300,
-                  })
-                }
-                min={1}
-              />
-              <span className="text-xs text-text-dim mt-1">缓存条目最长保留时间。</span>
-            </FormField>
-
-            <FormField label="正则缓存大小">
-              <Input
-                type="number"
-                value={localCacheConfig.regex_cache_size}
-                onChange={(e) =>
-                  setLocalCacheConfig({
-                    ...localCacheConfig,
-                    regex_cache_size: parseInt(e.target.value, 10) || 1000,
-                  })
-                }
-                min={1}
-              />
-              <span className="text-xs text-text-dim mt-1">决定查询执行器可复用的正则表达式缓存容量。</span>
-            </FormField>
-
-            <FormField label="压缩阈值（字节）">
-              <Input
-                type="number"
-                value={localCacheConfig.compression_threshold}
-                onChange={(e) =>
-                  setLocalCacheConfig({
-                    ...localCacheConfig,
-                    compression_threshold: parseInt(e.target.value, 10) || 10240,
-                  })
-                }
-                min={1}
-              />
-              <span className="text-xs text-text-dim mt-1">超过该大小的缓存内容会进入压缩判定。</span>
-            </FormField>
-
-            <FormField label="启用压缩">
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={localCacheConfig.compression_enabled}
-                  onChange={(e) =>
-                    setLocalCacheConfig({
-                      ...localCacheConfig,
-                      compression_enabled: e.target.checked,
-                    })
-                  }
-                  className="w-4 h-4 rounded border-border-base text-primary focus:ring-primary/50"
-                />
-                <span className="text-sm text-text-muted">关闭后会减少 CPU 开销，但会增加缓存占用。</span>
-              </div>
-            </FormField>
-          </div>
-        </Card>
-      )}
-
       {activeTab === 'search' && localSearchConfig && (
         <Card className="p-6">
           <h2 className="text-xl font-semibold mb-4 text-text-main">{t('settings.search_config.title')}</h2>
@@ -573,6 +454,21 @@ export function SettingsPage() {
                 />
                 <span className="text-sm text-text-muted">保留正则搜索能力；关闭后仅允许普通文本匹配。</span>
               </div>
+            </FormField>
+
+            <FormField label="正则缓存大小">
+              <Input
+                type="number"
+                value={localSearchConfig.regex_cache_size}
+                onChange={(e) =>
+                  setLocalSearchConfig({
+                    ...localSearchConfig,
+                    regex_cache_size: parseInt(e.target.value, 10) || 1000,
+                  })
+                }
+                min={1}
+              />
+              <span className="text-xs text-text-dim mt-1">查询执行器可复用的正则表达式缓存容量。</span>
             </FormField>
 
             <FormField label="启用模糊搜索">
