@@ -6,6 +6,14 @@ import React from 'react';
 import { TextEncoder, TextDecoder } from 'util';
 import { enableMapSet } from 'immer';
 
+type JestGlobal = typeof globalThis & {
+  TextEncoder?: typeof TextEncoder;
+  TextDecoder?: typeof TextDecoder;
+  React?: typeof React;
+  __TAURI__?: typeof mockTauri;
+  ResizeObserver?: typeof ResizeObserver;
+};
+
 // 启用 Immer 的 Map/Set 支持（taskStore 使用 Map 索引）
 enableMapSet();
 
@@ -25,18 +33,20 @@ Object.defineProperty(globalThis, 'import', {
 
 // Polyfill TextEncoder/TextDecoder for react-router-dom
 // This is needed because Node.js test environment doesn't have these globals
-if (typeof global.TextEncoder === 'undefined') {
-  global.TextEncoder = TextEncoder as any;
+const jestGlobal = globalThis as JestGlobal;
+
+if (typeof jestGlobal.TextEncoder === 'undefined') {
+  jestGlobal.TextEncoder = TextEncoder;
 }
-if (typeof global.TextDecoder === 'undefined') {
-  global.TextDecoder = TextDecoder as any;
+if (typeof jestGlobal.TextDecoder === 'undefined') {
+  jestGlobal.TextDecoder = TextDecoder;
 }
 
 // Initialize i18n for tests - must be before any components that use translation
 import './i18n';
 
 // Make React available globally for tests
-(global as any).React = React;
+jestGlobal.React = React;
 
 // Mock react-error-boundary
 jest.mock('react-error-boundary', () => ({
@@ -63,11 +73,15 @@ const mockTauri = {
 
 // Set up global mocks
 if (typeof global !== 'undefined') {
-  (global as any).__TAURI__ = mockTauri;
+  jestGlobal.__TAURI__ = mockTauri;
 }
 
 if (typeof window !== 'undefined') {
-  (window as any).__TAURI_IPC__ = jest.fn();
+  Object.defineProperty(window, '__TAURI_IPC__', {
+    configurable: true,
+    writable: true,
+    value: jest.fn(),
+  });
 }
 
 // Suppress console errors in tests

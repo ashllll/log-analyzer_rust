@@ -115,8 +115,6 @@ pub fn reject_extracted_symlink(path: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[cfg(unix)]
     #[test]
     fn rejects_existing_symlink_in_parent_chain() {
@@ -130,7 +128,7 @@ mod tests {
         std::os::unix::fs::symlink(&real, &link).unwrap();
 
         let candidate = link.join("nested.txt");
-        let error = ensure_no_symlink_components(&root, &candidate).unwrap_err();
+        let error = super::ensure_no_symlink_components(&root, &candidate).unwrap_err();
 
         assert!(error.to_string().contains("symbolic link"));
     }
@@ -145,7 +143,7 @@ mod tests {
         std::fs::write(&target, "content").unwrap();
         std::os::unix::fs::symlink(&target, &linked).unwrap();
 
-        let error = reject_extracted_symlink(&linked).unwrap_err();
+        let error = super::reject_extracted_symlink(&linked).unwrap_err();
 
         assert!(error.to_string().contains("symbolic link"));
         assert!(!linked.exists());

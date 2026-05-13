@@ -1,11 +1,11 @@
 //! 搜索命令实现
-//! 包含日志搜索及缓存逻辑，附带关键词统计与结果批量推送
+//! 包含日志搜索、磁盘分页结果存储、关键词统计与结果批量推送
 //!
 //! # 架构说明
 //!
 //! 搜索命令已按单一职责原则拆分为三个协作单元：
 //! - `SearchOrchestrator`: 参数验证、配置加载、流程编排（本模块命令层）
-//! - `SearchCacheService`: 缓存键构建、缓存查询、结果存储（cache_manager + disk_result_store）
+//! - `SearchResultStore`: 结果批量写入与分页读取（disk_result_store）
 //! - `SearchExecutionEngine`: 并行文件搜索、批次处理、统计计算（execute_file_search）
 //!
 //! # 前后端集成规范
@@ -14,19 +14,16 @@
 //!
 //! # 搜索结果存储弃用路线图 (TODO-P1-5)
 //!
-//! 当前搜索结果存在三重存储，造成数据冗余和维护复杂性：
-//! 1. `all_results: Vec<LogEntry>` — 搜索执行期间的临时内存缓冲
-//! 2. `cache_manager: CacheManager` — L1 内存缓存（moka::Cache）
-//! 3. `disk_result_store: DiskResultStore` — L2 磁盘分页缓存
+//! 当前主搜索结果统一写入 `disk_result_store: DiskResultStore`，由前端分页读取。
+//! `cache_manager: CacheManager` 保留给配置/元数据缓存和旧搜索管线，不再承载主搜索结果副本。
 //!
 //! ## 问题
-//! - `all_results` 在搜索完成后完整复制到 `cache_manager`，峰值内存翻倍
-//! - `disk_result_store` 独立维护分页索引，与 `cache_manager` 无联动失效机制
-//! - 缓存键计算逻辑分散在 `build_cache_key` 和 `CacheManager` 两处
+//! - 旧搜索管线仍有独立缓存路径，后续需要单独评估是否保留
+//! - 稳定查询指纹与前端搜索会话 ID 的职责边界仍需统一
 //!
 //! ## 目标架构（单一层级存储）
 //! ```
-//! 搜索执行 → all_results (流式处理，不累积全部结果)
+//! 搜索执行 → 批量结果缓冲
 //!     ↓
 //! DiskResultStore (唯一持久缓存，按搜索会话分页)
 //!     ↓
@@ -34,15 +31,15 @@
 //! ```
 //!
 //! ## 迁移步骤
-//! 1. [ ] 移除 `cache_manager` 中的搜索结果缓存，保留配置/元数据缓存用途
+//! 1. [x] 移除主搜索入口对 `cache_manager` 的搜索结果缓存写入，保留配置/元数据缓存用途
 //! 2. [ ] `execute_file_search` 改为流式写入 `DiskResultStore`，不再返回 Vec
-//! 3. [ ] `try_get_cached_results` 改为检查 `DiskResultStore` 会话存在性
-//! 4. [ ] 删除 `all_results` 本地缓冲和 `MAX_CACHE_SIZE` 限制
-//! 5. [ ] 统一缓存键：`DiskResultStore` 使用搜索会话 ID 替代复合键
+//! 3. [x] 移除主搜索入口的 `try_get_cached_results` 旁路，统一由 `DiskResultStore` 承载当前分页会话
+//! 4. [x] 删除主搜索入口的 `all_results` 本地缓冲和 `MAX_CACHE_SIZE` 限制
+//! 5. [ ] 统一缓存键：明确稳定查询指纹与前端搜索会话 ID 的职责边界
 //!
 //! ## 兼容性
 //! - `get_search_result_page` 命令接口保持不变
-//! - `search_logs` 返回的 `total_count` 从 `all_results.len()` 改为 `disk_store.total_entries()`
+//! - `search_logs` 的完成事件仍返回当前搜索会话累计的 `results_count`
 
 use parking_lot::Mutex;
 use std::{
@@ -64,7 +61,7 @@ use la_storage::ContentAddressableStorage;
 use la_core::models::config::AppConfigLoader;
 use la_core::models::search::{QueryMetadata, QueryOperator, SearchTerm, TermSource};
 use la_core::models::search_statistics::SearchResultSummary;
-use la_core::models::{LogEntry, SearchCacheKey, SearchFilters, SearchQuery};
+use la_core::models::{LogEntry, SearchFilters, SearchQuery};
 use rayon::prelude::*;
 use regex::Regex;
 
@@ -74,30 +71,6 @@ use serde::{Deserialize, Serialize};
 // ============================================================================
 // 搜索流程辅助函数
 // ============================================================================
-
-/// 构建搜索缓存键
-fn build_cache_key(
-    query: &str,
-    workspace_id: &str,
-    filters: &SearchFilters,
-    max_results: usize,
-    structured_query: &SearchQuery,
-) -> SearchCacheKey {
-    let query_version = compute_query_version(
-        &serde_json::to_string(structured_query).unwrap_or_else(|_| query.to_string()),
-    );
-    (
-        query.to_string(),
-        workspace_id.to_string(),
-        filters.time_start.clone(),
-        filters.time_end.clone(),
-        filters.levels.clone(),
-        filters.file_pattern.clone(),
-        false,
-        max_results,
-        query_version.to_string(),
-    )
-}
 
 /// 准备搜索：解析工作区目录、获取运行时状态、获取文件列表、创建磁盘会话
 async fn prepare_search_environment(
@@ -167,8 +140,6 @@ async fn run_search_with_timeout(
     max_results: usize,
     regex_cache_size: usize,
     raw_terms: Vec<String>,
-    cache_key: SearchCacheKey,
-    cache_manager: Arc<Mutex<crate::utils::cache_manager::CacheManager>>,
     search_metrics: Arc<Mutex<SearchMetrics>>,
     disk_result_store: Arc<crate::search_engine::disk_result_store::DiskResultStore>,
     cancellation_token: tokio_util::sync::CancellationToken,
@@ -194,8 +165,6 @@ async fn run_search_with_timeout(
             max_results,
             regex_cache_size,
             raw_terms,
-            cache_key,
-            cache_manager,
             search_metrics,
             disk_result_store,
             cancellation_token,
@@ -247,8 +216,7 @@ pub struct BinarySearchRequest {
 
 use crate::services::file_watcher::TimestampParser;
 use crate::services::{
-    calculate_keyword_statistics, looks_like_regex_pattern, parse_metadata, ExecutionPlan,
-    QueryPlanBuilder,
+    looks_like_regex_pattern, parse_metadata, ExecutionPlan, QueryPlanBuilder,
 };
 use crate::utils::encoding::decode_log_content;
 use crate::utils::workspace_paths::resolve_workspace_dir;
@@ -446,34 +414,6 @@ pub(crate) fn resolve_search_query(
     }
 
     build_structured_search_query(query, case_sensitive, query_id)
-}
-
-/// 计算并打印缓存统计信息
-fn log_cache_statistics(search_metrics: &Arc<Mutex<SearchMetrics>>) {
-    let metrics = search_metrics.lock();
-    let hit_rate = if metrics.total_searches > 0 {
-        (metrics.cache_hits as f64 / metrics.total_searches as f64) * 100.0
-    } else {
-        0.0
-    };
-    info!(
-        total = metrics.total_searches,
-        hits = metrics.cache_hits,
-        hit_rate = hit_rate,
-        "Cache statistics"
-    );
-}
-
-/// 计算查询内容的哈希版本号（用于缓存键区分）
-///
-/// 使用 std::collections::hash_map::DefaultHasher 生成查询的版本标识符，
-/// 避免 SHA-256 的密码学安全开销。缓存键不需要抗碰撞性。
-fn compute_query_version(query: &str) -> u64 {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    let mut hasher = DefaultHasher::new();
-    query.hash(&mut hasher);
-    hasher.finish()
 }
 
 /// 清理搜索取消令牌
@@ -826,62 +766,6 @@ fn resolve_workspace_id(
     }
 }
 
-/// 尝试从缓存获取搜索结果
-#[allow(clippy::too_many_arguments)]
-fn try_get_cached_results(
-    cache_key: &SearchCacheKey,
-    cache_manager: &Arc<Mutex<crate::utils::cache_manager::CacheManager>>,
-    search_metrics: &Arc<Mutex<SearchMetrics>>,
-    disk_store: &Arc<crate::search_engine::disk_result_store::DiskResultStore>,
-    app_handle: &AppHandle,
-    search_id: &str,
-    raw_terms: &[String],
-    cancellation_tokens: &Arc<Mutex<std::collections::HashMap<String, tokio_util::sync::CancellationToken>>>,
-) -> Option<usize> {
-    let cache = cache_manager.lock();
-    let cached_results = cache.get_sync(cache_key)?;
-
-    {
-        let mut metrics = search_metrics.lock();
-        metrics.cache_hits += 1;
-        metrics.total_searches += 1;
-    }
-
-    log_cache_statistics(search_metrics);
-
-    let _ = app_handle.emit("search-start", ());
-
-    if let Err(e) = disk_store.create_session(search_id) {
-        warn!(error = %e, "缓存命中：无法创建磁盘搜索会话");
-    } else {
-        for chunk in cached_results.chunks(2000) {
-            if let Err(e) = disk_store.append_entries(search_id, chunk) {
-                warn!(error = %e, "缓存命中：磁盘写入失败");
-                break;
-            }
-        }
-        if let Err(e) = disk_store.complete_session(search_id) {
-            warn!(error = %e, "缓存命中：完成磁盘会话失败");
-        }
-    }
-
-    let _ = app_handle.emit("search-progress", cached_results.len());
-
-    let raw_term_refs: Vec<&str> = raw_terms.iter().map(String::as_str).collect();
-    let keyword_stats = calculate_keyword_statistics(&cached_results, &raw_term_refs);
-    let summary = SearchResultSummary::new(cached_results.len(), keyword_stats, 0, false);
-
-    let _ = app_handle.emit("search-summary", &summary);
-    let _ = app_handle.emit("search-complete", cached_results.len());
-
-    {
-        let mut tokens = cancellation_tokens.lock();
-        tokens.remove(search_id);
-    }
-
-    Some(cached_results.len())
-}
-
 /// 在 spawn_blocking 中执行实际的文件搜索
 #[allow(clippy::too_many_arguments)]
 fn execute_file_search(
@@ -894,8 +778,6 @@ fn execute_file_search(
     max_results: usize,
     regex_cache_size: usize,
     raw_terms: Vec<String>,
-    cache_key: SearchCacheKey,
-    cache_manager: Arc<Mutex<crate::utils::cache_manager::CacheManager>>,
     search_metrics: Arc<Mutex<SearchMetrics>>,
     disk_store: Arc<crate::search_engine::disk_result_store::DiskResultStore>,
     cancellation_token: tokio_util::sync::CancellationToken,
@@ -932,8 +814,6 @@ fn execute_file_search(
     let mut results_count = 0;
     let mut keyword_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
     let mut was_truncated = false;
-    let mut all_results: Vec<LogEntry> = Vec::new();
-    const MAX_CACHE_SIZE: usize = 100_000;
 
     let timed_out = Arc::new(AtomicBool::new(false));
     let timed_out_for_search = Arc::clone(&timed_out);
@@ -1045,11 +925,6 @@ fn execute_file_search(
                     }
                 }
 
-                if all_results.len() < MAX_CACHE_SIZE {
-                    all_results.push(entry.clone());
-                } else if all_results.len() == MAX_CACHE_SIZE {
-                    tracing::warn!("Cache size limit reached ({}), additional results will not be cached", MAX_CACHE_SIZE);
-                }
                 batch_results.push(entry);
                 results_count += 1;
 
@@ -1094,10 +969,6 @@ fn execute_file_search(
         })
         .collect();
 
-    if !was_truncated && !cancellation_token.is_cancelled() {
-        cache_manager.lock().insert_sync(cache_key, all_results);
-    }
-
     if !timed_out_for_search.load(Ordering::SeqCst) {
         let _ = app_handle.emit(
             "search-summary",
@@ -1125,7 +996,6 @@ pub async fn search_logs(
     let runtime_config = load_search_runtime_config(&app);
     let app_handle = app.clone();
     let workspace_dirs = Arc::clone(&state.workspace_dirs);
-    let cache_manager = Arc::clone(&state.cache_manager);
     let search_metrics = Arc::clone(&state.search_metrics);
     let cancellation_tokens = Arc::clone(&state.search_cancellation_tokens);
     let disk_result_store = state.disk_result_store.read().clone();
@@ -1155,21 +1025,6 @@ pub async fn search_logs(
         tokens.insert(search_id.clone(), cancellation_token.clone());
     }
 
-    // Step 4: 缓存检查
-    let cache_key = build_cache_key(&query, &workspace_id, &filters, max_results, &structured_query);
-    if try_get_cached_results(
-        &cache_key,
-        &cache_manager,
-        &search_metrics,
-        &disk_result_store,
-        &app_handle,
-        &search_id,
-        &raw_terms,
-        &cancellation_tokens,
-    ).is_some() {
-        return Ok(search_id);
-    }
-
     {
         let mut metrics = search_metrics.lock();
         metrics.total_searches += 1;
@@ -1197,8 +1052,6 @@ pub async fn search_logs(
         max_results,
         regex_cache_size,
         raw_terms,
-        cache_key,
-        cache_manager,
         search_metrics,
         disk_result_store,
         cancellation_token,

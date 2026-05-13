@@ -28,7 +28,6 @@ jest.mock('../../utils/logger', () => ({
 }));
 
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
 
 describe('useInfiniteSearch', () => {
   beforeEach(() => {

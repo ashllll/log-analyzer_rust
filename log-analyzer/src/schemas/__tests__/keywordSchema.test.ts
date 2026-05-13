@@ -1,5 +1,4 @@
 import {
-  keywordGroupSchema,
   validateRegexPattern,
   validateKeywordGroup,
   formatValidationErrors,
@@ -84,7 +83,7 @@ describe('validateKeywordGroup', () => {
   it('应拒绝非法颜色值', () => {
     const data = {
       name: 'Valid Name',
-      color: 'yellow' as any,
+      color: 'yellow',
       patterns: [{ regex: 'test', comment: '' }],
     };
     const result = validateKeywordGroup(data);
@@ -200,7 +199,7 @@ describe('formatValidationErrors', () => {
   it('应提取 color 字段错误', () => {
     const result = validateKeywordGroup({
       name: 'Test',
-      color: 'invalid' as any,
+      color: 'invalid',
       patterns: [{ regex: 'test', comment: '' }],
     });
     const errors = formatValidationErrors(result);

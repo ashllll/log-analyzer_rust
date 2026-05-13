@@ -47,6 +47,29 @@ interface ErrorLogEntry {
   type: 'error' | 'unhandled_rejection' | 'global_error';
 }
 
+interface ErrorReportContext {
+  source: ErrorLogEntry['type'];
+  componentStack?: string;
+}
+
+export interface ErrorReporter {
+  captureException(error: unknown, context: ErrorReportContext): void;
+}
+
+let errorReporter: ErrorReporter | undefined;
+
+export function configureErrorReporter(reporter: ErrorReporter | undefined): void {
+  errorReporter = reporter;
+}
+
+function reportError(error: unknown, context: ErrorReportContext): void {
+  try {
+    errorReporter?.captureException(error, context);
+  } catch (e) {
+    console.warn('[ErrorBoundary] Failed to report error:', e);
+  }
+}
+
 /**
  * 错误日志存储配置
  */
@@ -291,11 +314,10 @@ export class AppErrorBoundary extends Component<
       console.error('[ErrorBoundary]', JSON.stringify(errorLog, null, 2));
     }
 
-    // TODO: 集成远程错误追踪服务（如 Sentry）
-    // 生产环境可以考虑：
-    // if (process.env.NODE_ENV === 'production') {
-    //   Sentry.captureException(error, { extra: { errorInfo } });
-    // }
+    reportError(error, {
+      source: 'error',
+      componentStack: errorInfo.componentStack || undefined,
+    });
   }
 
   handleReset = () => {
@@ -569,10 +591,7 @@ export function initGlobalErrorHandlers(): (() => void) | undefined {
       }
     }
 
-    // TODO: 集成远程错误追踪服务（如 Sentry）
-    // if (process.env.NODE_ENV === 'production') {
-    //   Sentry.captureException(reason);
-    // }
+    reportError(reason, { source: 'unhandled_rejection' });
   };
 
   // 全局错误处理
@@ -608,10 +627,7 @@ export function initGlobalErrorHandlers(): (() => void) | undefined {
       }
     }
 
-    // TODO: 集成远程错误追踪服务（如 Sentry）
-    // if (process.env.NODE_ENV === 'production') {
-    //   Sentry.captureException(error);
-    // }
+    reportError(error, { source: 'global_error' });
   };
 
   window.addEventListener('unhandledrejection', handleUnhandledRejection);

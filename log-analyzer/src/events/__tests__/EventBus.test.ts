@@ -20,7 +20,7 @@ jest.mock('../../utils/logger', () => ({
     debug: jest.fn(),
     info: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn((...args: any[]) => {
+    error: jest.fn((...args: unknown[]) => {
       // 老王备注：确保mock logger不吞掉错误
       console.log('[Mock Logger Error]', ...args);
     }),
@@ -30,7 +30,7 @@ jest.mock('../../utils/logger', () => ({
 }));
 
 import { EventBus, eventBus } from '../EventBus';
-import { EventValidationError } from '../types';
+import { EventValidationError, type TaskUpdateEvent } from '../types';
 
 describe('EventBus', () => {
   let testEventBus: EventBus;
@@ -553,7 +553,7 @@ describe('EventBus', () => {
 
     it('应该使用默认version为1', async () => {
       let receivedVersion = 0;
-      testEventBus.on('task-update', (event: any) => {
+      testEventBus.on('task-update', (event: TaskUpdateEvent) => {
         receivedVersion = event.version;
       });
 
