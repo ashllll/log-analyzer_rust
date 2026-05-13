@@ -344,6 +344,5 @@ verify_workspace(cas, metadata)
 
 ## 相关文档
 
-- [IPC API 概览](./API.md)
-- [模块架构详解](./modules/MODULE_ARCHITECTURE.md)
-
+- [项目总览](../../README.md)
+- [文档索引](../README.md)

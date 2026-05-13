@@ -8,7 +8,6 @@ use crate::utils::async_resource_manager::AsyncResourceManager;
 use crate::utils::cache_manager::CacheManager;
 use la_search::DiskResultStore;
 use la_search::SearchEngineManager;
-use la_search::VirtualSearchManager;
 use la_storage::ContentAddressableStorage;
 use la_storage::MetadataStore;
 use moka::sync::Cache;
@@ -58,7 +57,6 @@ pub struct AppState {
     pub state_sync: Arc<Mutex<Option<StateSync>>>,
     pub async_resource_manager: Arc<AsyncResourceManager>,
     pub search_engine_managers: Arc<Mutex<HashMap<String, Arc<SearchEngineManager>>>>,
-    pub virtual_search_manager: Arc<VirtualSearchManager>,
     /// M4 Fix: Wrapped in RwLock to allow replacement with app_data_dir path
     /// during setup(). Read-heavy access pattern — read lock is shared.
     pub disk_result_store: parking_lot::RwLock<Arc<DiskResultStore>>,
@@ -86,7 +84,6 @@ impl Default for AppState {
             state_sync: Arc::new(Mutex::new(None)),
             async_resource_manager: Arc::new(AsyncResourceManager::new()),
             search_engine_managers: Arc::new(Mutex::new(HashMap::new())),
-            virtual_search_manager: Arc::new(VirtualSearchManager::new(100)),
             disk_result_store: parking_lot::RwLock::new(Arc::new({
                 // M4 Fix: Default uses temp_dir as fallback; setup() stage replaces
                 // with app-specific data directory via init_disk_result_store_at()

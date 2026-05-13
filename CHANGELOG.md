@@ -56,7 +56,6 @@ Rust 后端:
   - `async_search.rs`: `std::mem::take` 替代 `.clone()` 消除 2000 条批次深拷贝
   - `virtual_tree.rs`: `String::from_utf8` 消耗 Vec<u8> 避免完整内容克隆
   - `query.rs`: `into_iter()` 替代 `iter()` 消费所有权，避免逐条 clone
-  - `virtual_search_manager.rs`: `truncate` 原地截断替代 `into_iter().take().collect()`
   - `metadata_db.rs`: 移动 `format!` 出循环体 + 移除不必要的 `forward_key.clone()`
 - **锁与原子操作优化**:
   - `metrics_state.rs`: `Mutex<Duration>` → `AtomicU64` 无锁计数器，消除搜索热路径锁竞争

@@ -5,7 +5,6 @@ pub mod disk_result_store;
 pub mod highlighting_engine;
 pub mod manager;
 pub mod schema;
-pub mod virtual_search_manager;
 
 // 重新导出核心类型
 pub use boolean_query_processor::BooleanQueryProcessor;
@@ -13,7 +12,6 @@ pub use disk_result_store::{DiskResultStore, SearchPageResult};
 pub use highlighting_engine::{HighlightingConfig, HighlightingEngine, HighlightingStats};
 pub use manager::{parse_log_timestamp_to_unix, SearchEngineManager};
 pub use schema::LogSchema;
-pub use virtual_search_manager::{VirtualSearchManager, VirtualSearchStats};
 
 use thiserror::Error;
 

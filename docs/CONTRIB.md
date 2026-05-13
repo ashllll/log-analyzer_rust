@@ -177,7 +177,7 @@ cargo test -q search
 - 修改搜索命令的参数或返回值时，必须同步更新：
   - `src/services/api.ts`
   - 对应前端页面组件
-  - `docs/architecture/API.md`
+  - 涉及架构行为时同步更新 `README.md` 或 `docs/architecture/CAS_ARCHITECTURE.md`
 
 ---
 

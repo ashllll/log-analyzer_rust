@@ -11,7 +11,7 @@ use log_analyzer::commands::{
     config::*, export::*, import::*, search::*, state_sync::*, validation::*, virtual_tree::*,
     watch::*, workspace::*,
 };
-use log_analyzer::models::{AppState, CacheState, SearchState, WorkspaceState};
+use log_analyzer::models::AppState;
 use log_analyzer::task_manager::TaskManager;
 use log_analyzer::utils::cache_manager::CacheManager;
 use moka::sync::Cache;
@@ -90,9 +90,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .plugin(tauri_plugin_opener::init())
         // 管理应用状态 - 领域驱动拆分后的独立状态
         .manage(AppState::default())
-        .manage(WorkspaceState::default())
-        .manage(SearchState::default())
-        .manage(CacheState::default())
         // 初始化后设置 TaskManager
         .setup(|app| {
             use log_analyzer::models::AppState;

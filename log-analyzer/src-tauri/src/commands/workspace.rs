@@ -69,18 +69,18 @@ pub async fn load_workspace(
     #[allow(non_snake_case)] workspaceId: String,
     state: State<'_, AppState>,
 ) -> Result<WorkspaceLoadResponse, CommandError> {
-    validate_workspace_id(&workspaceId)
-        .map_err(|e| CommandError::new("VALIDATION_ERROR", e).with_help("Workspace ID format is invalid"))?;
+    validate_workspace_id(&workspaceId).map_err(|e| {
+        CommandError::new("VALIDATION_ERROR", e).with_help("Workspace ID format is invalid")
+    })?;
 
-    let workspace_dir = resolve_workspace_dir(&app, &workspaceId)
-        .map_err(|e| CommandError::new("NOT_FOUND", e).with_help("The workspace may have been deleted"))?;
+    let workspace_dir = resolve_workspace_dir(&app, &workspaceId).map_err(|e| {
+        CommandError::new("NOT_FOUND", e).with_help("The workspace may have been deleted")
+    })?;
 
     // Check if workspace exists and is CAS format
     if !workspace_dir.exists() {
-        return Err(
-            CommandError::new("NOT_FOUND", "Workspace not found")
-                .with_help("The workspace may have been deleted or moved. Try re-importing")
-        );
+        return Err(CommandError::new("NOT_FOUND", "Workspace not found")
+            .with_help("The workspace may have been deleted or moved. Try re-importing"));
     }
 
     let metadata_db = workspace_dir.join("metadata.db");
@@ -89,19 +89,24 @@ pub async fn load_workspace(
     if !metadata_db.exists() || !objects_dir.exists() {
         return Err(
             CommandError::new("FORMAT_ERROR", "Workspace is not in CAS format")
-                .with_help("Please create a new workspace with the current version")
+                .with_help("Please create a new workspace with the current version"),
         );
     }
 
     let (_, metadata_store, _) =
         ensure_workspace_runtime_state(&app, &state, &workspaceId, &workspace_dir)
             .await
-            .map_err(|e| CommandError::new("RUNTIME_ERROR", format!("Failed to initialize workspace: {}", e)))?;
+            .map_err(|e| {
+                CommandError::new(
+                    "RUNTIME_ERROR",
+                    format!("Failed to initialize workspace: {}", e),
+                )
+            })?;
 
-    let file_count = metadata_store
-        .count_files()
-        .await
-        .map_err(|e| CommandError::new("DATABASE_ERROR", format!("Failed to count files: {}", e)))? as usize;
+    let file_count =
+        metadata_store.count_files().await.map_err(|e| {
+            CommandError::new("DATABASE_ERROR", format!("Failed to count files: {}", e))
+        })? as usize;
 
     // Broadcast workspace loaded event
     let state_sync_opt: Option<crate::state_sync::StateSync> = {
@@ -149,19 +154,18 @@ pub async fn refresh_workspace(
 
     let source_path = Path::new(&path);
     if !source_path.exists() {
-        return Err(
-            CommandError::new("NOT_FOUND", "Source path does not exist")
-                .with_help("The source folder may have been moved or deleted")
-        );
+        return Err(CommandError::new("NOT_FOUND", "Source path does not exist")
+            .with_help("The source folder may have been moved or deleted"));
     }
 
-    let workspace_dir = resolve_workspace_dir(&app, &workspaceId)
-        .map_err(|e| CommandError::new("NOT_FOUND", e))?;
+    let workspace_dir =
+        resolve_workspace_dir(&app, &workspaceId).map_err(|e| CommandError::new("NOT_FOUND", e))?;
 
     // Check if workspace exists and is CAS format
     if !workspace_dir.exists() {
         info!("Workspace not found, performing fresh import");
-        return import_folder(app, path, workspaceId, state).await
+        return import_folder(app, path, workspaceId, state)
+            .await
             .map_err(|e| CommandError::new("IMPORT_ERROR", e));
     }
 
@@ -170,7 +174,8 @@ pub async fn refresh_workspace(
 
     if !metadata_db.exists() || !objects_dir.exists() {
         info!("Workspace is not CAS format, performing fresh import");
-        return import_folder(app, path, workspaceId, state).await
+        return import_folder(app, path, workspaceId, state)
+            .await
             .map_err(|e| CommandError::new("IMPORT_ERROR", e));
     }
 
@@ -178,7 +183,8 @@ pub async fn refresh_workspace(
     // CAS handles deduplication automatically, so re-importing is safe and simple
     info!("CAS workspace detected, re-importing for refresh");
 
-    import_folder(app, path, workspaceId, state).await
+    import_folder(app, path, workspaceId, state)
+        .await
         .map_err(|e| CommandError::new("IMPORT_ERROR", e))
 }
 
@@ -207,7 +213,10 @@ fn resolve_refresh_source_path(
         let loader = AppConfigLoader::load(Some(config_path.clone())).map_err(|e| {
             CommandError::new(
                 "CONFIG_ERROR",
-                format!("Failed to load config while resolving workspace path: {}", e),
+                format!(
+                    "Failed to load config while resolving workspace path: {}",
+                    e
+                ),
             )
         })?;
 
@@ -215,7 +224,10 @@ fn resolve_refresh_source_path(
             serde_json::from_value(loader.get_config().workspaces.clone()).map_err(|e| {
                 CommandError::new(
                     "CONFIG_ERROR",
-                    format!("Failed to parse stored workspaces while resolving workspace path: {}", e),
+                    format!(
+                        "Failed to parse stored workspaces while resolving workspace path: {}",
+                        e
+                    ),
                 )
             })?;
 
@@ -236,7 +248,7 @@ fn resolve_refresh_source_path(
 
     Err(
         CommandError::new("CONFIG_ERROR", "Workspace source path missing")
-            .with_help("Please refresh the workspace list or re-import it")
+            .with_help("Please refresh the workspace list or re-import it"),
     )
 }
 
@@ -244,8 +256,8 @@ fn resolve_refresh_source_path(
 ///
 /// 检查工作区目录下是否存在CAS相关文件（metadata.db或objects目录）
 fn is_cas_workspace(workspace_id: &str, app: &AppHandle) -> Result<bool, CommandError> {
-    let workspace_dir = resolve_workspace_dir(app, workspace_id)
-        .map_err(|e| CommandError::new("NOT_FOUND", e))?;
+    let workspace_dir =
+        resolve_workspace_dir(app, workspace_id).map_err(|e| CommandError::new("NOT_FOUND", e))?;
 
     // Check for metadata.db or objects directory
     let metadata_db = workspace_dir.join("metadata.db");
@@ -590,7 +602,7 @@ async fn cleanup_workspace_resources(
         Err(
             CommandError::new("CLEANUP_ERROR", "Workspace directory deletion failed")
                 .with_help("Please close all programs that may have files open and retry")
-                .with_details(serde_json::json!({ "details": error_summary }))
+                .with_details(serde_json::json!({ "details": error_summary })),
         )
     } else {
         let error_summary = errors.join("; ");
@@ -620,8 +632,7 @@ pub async fn delete_workspace(
     );
 
     // 参数验证
-    validate_workspace_id(&workspaceId)
-        .map_err(|e| CommandError::new("VALIDATION_ERROR", e))?;
+    validate_workspace_id(&workspaceId).map_err(|e| CommandError::new("VALIDATION_ERROR", e))?;
 
     // 执行清理
     cleanup_workspace_resources(&workspaceId, &state, &app).await?;
@@ -729,18 +740,15 @@ pub async fn get_workspace_status(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<WorkspaceStatusResponse, CommandError> {
-    validate_workspace_id(&workspaceId)
-        .map_err(|e| CommandError::new("VALIDATION_ERROR", e))?;
+    validate_workspace_id(&workspaceId).map_err(|e| CommandError::new("VALIDATION_ERROR", e))?;
 
-    let workspace_dir = resolve_workspace_dir(&app, &workspaceId)
-        .map_err(|e| CommandError::new("NOT_FOUND", e))?;
+    let workspace_dir =
+        resolve_workspace_dir(&app, &workspaceId).map_err(|e| CommandError::new("NOT_FOUND", e))?;
 
     // 检查工作区是否存在
     if !workspace_dir.exists() {
-        return Err(
-            CommandError::new("NOT_FOUND", "Workspace not found")
-                .with_help("The workspace may have been deleted")
-        );
+        return Err(CommandError::new("NOT_FOUND", "Workspace not found")
+            .with_help("The workspace may have been deleted"));
     }
 
     // 检查是否为 CAS 格式
@@ -752,14 +760,19 @@ pub async fn get_workspace_status(
     if !is_cas {
         return Err(
             CommandError::new("FORMAT_ERROR", "Workspace is not in CAS format")
-                .with_help("Please create a new workspace")
+                .with_help("Please create a new workspace"),
         );
     }
 
     let (_, metadata_store, _) =
         ensure_workspace_runtime_state(&app, &state, &workspaceId, &workspace_dir)
             .await
-            .map_err(|e| CommandError::new("RUNTIME_ERROR", format!("Failed to initialize workspace: {}", e)))?;
+            .map_err(|e| {
+                CommandError::new(
+                    "RUNTIME_ERROR",
+                    format!("Failed to initialize workspace: {}", e),
+                )
+            })?;
 
     let file_count: i64 = metadata_store.count_files().await.unwrap_or(0);
 
@@ -799,17 +812,25 @@ pub async fn get_workspace_time_range(
     use chrono::DateTime;
     use la_core::models::search::WorkspaceTimeRange;
 
-    let workspace_dir = resolve_workspace_dir(&app, &workspaceId)
-        .map_err(|e| CommandError::new("NOT_FOUND", e))?;
+    let workspace_dir =
+        resolve_workspace_dir(&app, &workspaceId).map_err(|e| CommandError::new("NOT_FOUND", e))?;
     let (_, _, manager) =
         ensure_workspace_runtime_state(&app, &state, &workspaceId, &workspace_dir)
             .await
-            .map_err(|e| CommandError::new("RUNTIME_ERROR", format!("Failed to initialize workspace: {}", e)))?;
+            .map_err(|e| {
+                CommandError::new(
+                    "RUNTIME_ERROR",
+                    format!("Failed to initialize workspace: {}", e),
+                )
+            })?;
 
     let manager: Arc<crate::search_engine::SearchEngineManager> = manager;
-    let (min_ts, max_ts, total_logs) = manager
-        .get_time_range()
-        .map_err(|e| CommandError::new("SEARCH_ERROR", format!("Failed to get time range from index: {}", e)))?;
+    let (min_ts, max_ts, total_logs) = manager.get_time_range().map_err(|e| {
+        CommandError::new(
+            "SEARCH_ERROR",
+            format!("Failed to get time range from index: {}", e),
+        )
+    })?;
 
     // Convert timestamps to ISO 8601 format
     let min_timestamp = if min_ts > 0 {
@@ -856,20 +877,18 @@ pub async fn create_workspace(
     // 验证路径存在
     let path_obj = std::path::Path::new(&path);
     if !path_obj.exists() {
-        return Err(
-            CommandError::new("NOT_FOUND", "Path does not exist")
-                .with_help("Please select a valid folder")
-        );
+        return Err(CommandError::new("NOT_FOUND", "Path does not exist")
+            .with_help("Please select a valid folder"));
     }
 
     // 生成 workspace ID（使用名称作为基础，转换为合法 ID）
     let workspace_id = format!("ws-{}", name.to_lowercase().replace([' ', '/', '\\'], "-"));
 
     // 验证生成的 workspace ID 合法性
-    validate_workspace_id(&workspace_id)
-        .map_err(|e| CommandError::new("VALIDATION_ERROR", e))?;
+    validate_workspace_id(&workspace_id).map_err(|e| CommandError::new("VALIDATION_ERROR", e))?;
 
     // 调用 import_folder 逻辑
-    import_folder(app, path, workspace_id, state).await
+    import_folder(app, path, workspace_id, state)
+        .await
         .map_err(|e| CommandError::new("IMPORT_ERROR", e))
 }

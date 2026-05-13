@@ -3,11 +3,6 @@ pub mod query_executor;
 pub mod query_planner;
 pub mod query_validator;
 pub mod regex_engine;
-pub mod search_events;
-pub mod search_filters;
-// pub mod search_pipeline; // 未在主链路中使用
-pub mod search_statistics;
-// pub mod search_strategies; // 未在主链路中使用
 pub mod traits;
 
 #[cfg(test)]
@@ -27,7 +22,6 @@ pub use regex_engine::{
     looks_like_regex_pattern, AhoCorasickEngine, EngineError, EngineInfo, EngineMatches,
     EngineType, MatchResult, RegexEngine, StandardEngine,
 };
-pub use search_statistics::calculate_keyword_statistics;
 pub use traits::{
     ContentStorage, MetadataStorage, PlanResult, QueryExecutor as QueryExecutorTrait,
     QueryPlanning, QueryValidation, ValidationResult,

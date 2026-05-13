@@ -12,9 +12,7 @@
 
 1. [项目总览](../README.md) — 技术栈、主要能力、仓库结构、核心搜索链路
 2. [贡献指南](./CONTRIB.md) — 开发环境搭建、提交流程、测试约定
-3. [IPC API 概览](./architecture/API.md) — 40+ Tauri 命令与事件接口说明
-4. [模块架构详解](./architecture/modules/MODULE_ARCHITECTURE.md) — 各层模块职责、数据结构、调用关系
-5. [CAS 存储架构](./architecture/CAS_ARCHITECTURE.md) — 内容寻址存储、SQLite 元数据、导入/搜索数据流
+3. [CAS 存储架构](./architecture/CAS_ARCHITECTURE.md) — 内容寻址存储、SQLite 元数据、导入/搜索数据流
 
 ---
 
@@ -30,9 +28,7 @@
 
 | 文档 | 说明 |
 |------|------|
-| [architecture/API.md](./architecture/API.md) | 所有 IPC 命令与后端推送事件的详细接口说明 |
 | [architecture/CAS_ARCHITECTURE.md](./architecture/CAS_ARCHITECTURE.md) | CAS 对象存储设计、SQLite 元数据表结构、导入/搜索数据流、GC 机制 |
-| [architecture/modules/MODULE_ARCHITECTURE.md](./architecture/modules/MODULE_ARCHITECTURE.md) | 各模块（la-core / la-storage / la-search / la-archive / commands / services 等）的详细设计 |
 ### 仓库级文档
 
 | 文档 | 说明 |

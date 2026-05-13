@@ -6,7 +6,6 @@
 // 重新导出 la-search crate 的所有公共类型
 pub use la_search::{
     DiskResultStore, LogSchema, SearchEngineManager, SearchError, SearchPageResult, SearchResult,
-    VirtualSearchManager, VirtualSearchStats,
 };
 
 pub mod disk_result_store {
@@ -22,10 +21,4 @@ pub mod manager {
 
 pub mod schema {
     pub use la_search::schema::LogSchema;
-}
-
-pub mod virtual_search_manager {
-    pub use la_search::virtual_search_manager::{
-        SearchSession, VirtualSearchManager, VirtualSearchStats,
-    };
 }

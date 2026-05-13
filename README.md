@@ -235,9 +235,7 @@ cargo test -q
 | [贡献指南](./docs/CONTRIB.md) | 开发环境、提交流程、测试约定 |
 | [运行手册](./docs/RUNBOOK.md) | 构建、排障、回滚指南 |
 | [发布流程](./RELEASE_PROCESS.md) | 版本发布步骤与校验要求 |
-| [IPC API 概览](./docs/architecture/API.md) | Tauri 命令与事件接口说明 |
 | [CAS 存储架构](./docs/architecture/CAS_ARCHITECTURE.md) | 内容寻址存储与元数据设计 |
-| [模块架构](./docs/architecture/modules/MODULE_ARCHITECTURE.md) | 各模块职责边界与调用关系 |
 
 
 ## 补充说明

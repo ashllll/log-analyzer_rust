@@ -15,10 +15,9 @@
 //! # 搜索结果存储弃用路线图 (TODO-P1-5)
 //!
 //! 当前主搜索结果统一写入 `disk_result_store: DiskResultStore`，由前端分页读取。
-//! `cache_manager: CacheManager` 保留给配置/元数据缓存和旧搜索管线，不再承载主搜索结果副本。
+//! `cache_manager: CacheManager` 保留给配置/元数据缓存，不承载主搜索结果副本。
 //!
 //! ## 问题
-//! - 旧搜索管线仍有独立缓存路径，后续需要单独评估是否保留
 //! - 稳定查询指纹与前端搜索会话 ID 的职责边界仍需统一
 //!
 //! ## 目标架构（单一层级存储）
@@ -51,17 +50,17 @@ use std::{
     },
 };
 use tauri::{command, AppHandle, Emitter, Manager, State};
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, trace, warn};
 
 use crate::commands::import::ensure_workspace_runtime_state;
-use crate::models::AppState;
 use crate::models::state::SearchMetrics;
+use crate::models::AppState;
 use la_core::error::{AppError, CommandError};
-use la_storage::ContentAddressableStorage;
 use la_core::models::config::AppConfigLoader;
 use la_core::models::search::{QueryMetadata, QueryOperator, SearchTerm, TermSource};
 use la_core::models::search_statistics::SearchResultSummary;
 use la_core::models::{LogEntry, SearchFilters, SearchQuery};
+use la_storage::ContentAddressableStorage;
 use rayon::prelude::*;
 use regex::Regex;
 
@@ -81,7 +80,13 @@ async fn prepare_search_environment(
     compiled_filters: &CompiledSearchFilters,
     disk_result_store: &Arc<crate::search_engine::disk_result_store::DiskResultStore>,
     search_id: &str,
-) -> Result<(Vec<la_storage::FileMetadata>, Arc<ContentAddressableStorage>), CommandError> {
+) -> Result<
+    (
+        Vec<la_storage::FileMetadata>,
+        Arc<ContentAddressableStorage>,
+    ),
+    CommandError,
+> {
     // 解析工作区目录
     let workspace_dir = {
         let existing = {
@@ -94,8 +99,9 @@ async fn prepare_search_environment(
         } else {
             resolve_workspace_dir(app_handle, workspace_id).map_err(|e| {
                 let _ = app_handle.emit("search-error", &e);
-                CommandError::new("NOT_FOUND", e)
-                    .with_help("The workspace may have been deleted. Try refreshing the workspace list")
+                CommandError::new("NOT_FOUND", e).with_help(
+                    "The workspace may have been deleted. Try refreshing the workspace list",
+                )
             })?
         }
     };
@@ -104,8 +110,13 @@ async fn prepare_search_environment(
     let (cas, metadata_store, _) =
         ensure_workspace_runtime_state(app_handle, state, workspace_id, &workspace_dir)
             .await
-            .map_err(|e| CommandError::new("DATABASE_ERROR", format!("Failed to initialize workspace: {}", e))
-                .with_help("Try reloading the workspace before searching again"))?;
+            .map_err(|e| {
+                CommandError::new(
+                    "DATABASE_ERROR",
+                    format!("Failed to initialize workspace: {}", e),
+                )
+                .with_help("Try reloading the workspace before searching again")
+            })?;
 
     // 获取文件列表
     let files = metadata_store.get_all_files().await.map_err(|e| {
@@ -129,8 +140,7 @@ async fn prepare_search_environment(
     Ok((files_for_search, cas))
 }
 
-/// 执行搜索并处理超时
-async fn run_search_with_timeout(
+struct SearchExecutionRequest {
     app_handle: AppHandle,
     search_id: String,
     files_for_search: Vec<la_storage::FileMetadata>,
@@ -143,9 +153,30 @@ async fn run_search_with_timeout(
     search_metrics: Arc<Mutex<SearchMetrics>>,
     disk_result_store: Arc<crate::search_engine::disk_result_store::DiskResultStore>,
     cancellation_token: tokio_util::sync::CancellationToken,
-    cancellation_tokens: Arc<Mutex<std::collections::HashMap<String, tokio_util::sync::CancellationToken>>>,
+    cancellation_tokens:
+        Arc<Mutex<std::collections::HashMap<String, tokio_util::sync::CancellationToken>>>,
     search_timeout_secs: u64,
-) -> Result<String, CommandError> {
+}
+
+/// 执行搜索并处理超时
+async fn run_search_with_timeout(request: SearchExecutionRequest) -> Result<String, CommandError> {
+    let SearchExecutionRequest {
+        app_handle,
+        search_id,
+        files_for_search,
+        cas,
+        structured_query,
+        compiled_filters,
+        max_results,
+        regex_cache_size,
+        raw_terms,
+        search_metrics,
+        disk_result_store,
+        cancellation_token,
+        cancellation_tokens,
+        search_timeout_secs,
+    } = request;
+
     let app_handle_for_timeout = app_handle.clone();
     let cancellation_token_for_timeout = cancellation_token.clone();
     let cancellation_tokens_for_timeout = Arc::clone(&cancellation_tokens);
@@ -176,8 +207,10 @@ async fn run_search_with_timeout(
         Ok(Ok(())) => Ok(search_id),
         Ok(Err(e)) => {
             error!(error = %e, search_id = %search_id, "Search task panicked");
-            Err(CommandError::new("INTERNAL_ERROR", format!("Search task panicked: {}", e))
-                .with_help("This is an unexpected error. Try simplifying your search query"))
+            Err(
+                CommandError::new("INTERNAL_ERROR", format!("Search task panicked: {}", e))
+                    .with_help("This is an unexpected error. Try simplifying your search query"),
+            )
         }
         Err(_) => {
             warn!(search_id = %search_id, "Search timed out after {} seconds", search_timeout_secs);
@@ -189,8 +222,11 @@ async fn run_search_with_timeout(
             }
             disk_store_for_timeout.remove_session(&search_id);
             let _ = app_handle_for_timeout.emit("search-timeout", &search_id);
-            Err(CommandError::new("TIMEOUT_ERROR", format!("Search timed out after {} seconds", search_timeout_secs))
-                .with_help("Try using more specific search terms to reduce processing time"))
+            Err(CommandError::new(
+                "TIMEOUT_ERROR",
+                format!("Search timed out after {} seconds", search_timeout_secs),
+            )
+            .with_help("Try using more specific search terms to reduce processing time"))
         }
     }
 }
@@ -215,9 +251,7 @@ pub struct BinarySearchRequest {
 }
 
 use crate::services::file_watcher::TimestampParser;
-use crate::services::{
-    looks_like_regex_pattern, parse_metadata, ExecutionPlan, QueryPlanBuilder,
-};
+use crate::services::{looks_like_regex_pattern, parse_metadata, ExecutionPlan, QueryPlanBuilder};
 use crate::utils::encoding::decode_log_content;
 use crate::utils::workspace_paths::resolve_workspace_dir;
 
@@ -759,10 +793,8 @@ fn resolve_workspace_id(
         );
         Ok(first_id.clone())
     } else {
-        Err(
-            CommandError::new("NOT_FOUND", "No workspaces available")
-                .with_help("Please create a workspace first using the import feature")
-        )
+        Err(CommandError::new("NOT_FOUND", "No workspaces available")
+            .with_help("Please create a workspace first using the import feature"))
     }
 }
 
@@ -781,14 +813,19 @@ fn execute_file_search(
     search_metrics: Arc<Mutex<SearchMetrics>>,
     disk_store: Arc<crate::search_engine::disk_result_store::DiskResultStore>,
     cancellation_token: tokio_util::sync::CancellationToken,
-    cancellation_token_map: Arc<Mutex<std::collections::HashMap<String, tokio_util::sync::CancellationToken>>>,
+    cancellation_token_map: Arc<
+        Mutex<std::collections::HashMap<String, tokio_util::sync::CancellationToken>>,
+    >,
 ) {
     let start_time = std::time::Instant::now();
 
     let pool = match rayon::ThreadPoolBuilder::new().num_threads(4).build() {
         Ok(p) => p,
         Err(e) => {
-            let _ = app_handle.emit("search-error", format!("Failed to create search thread pool: {}", e));
+            let _ = app_handle.emit(
+                "search-error",
+                format!("Failed to create search thread pool: {}", e),
+            );
             disk_store.remove_session(&search_id);
             return;
         }
@@ -812,7 +849,8 @@ fn execute_file_search(
     let batch_size = 2000;
     let mut total_processed = 0;
     let mut results_count = 0;
-    let mut keyword_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut keyword_counts: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
     let mut was_truncated = false;
 
     let timed_out = Arc::new(AtomicBool::new(false));
@@ -1000,7 +1038,9 @@ pub async fn search_logs(
     let cancellation_tokens = Arc::clone(&state.search_cancellation_tokens);
     let disk_result_store = state.disk_result_store.read().clone();
 
-    let max_results = maxResults.unwrap_or(runtime_config.default_max_results).min(100_000);
+    let max_results = maxResults
+        .unwrap_or(runtime_config.default_max_results)
+        .min(100_000);
     let filters = filters.unwrap_or_default();
     let compiled_filters = CompiledSearchFilters::compile(&filters)?;
     let case_sensitive = runtime_config.case_sensitive;
@@ -1039,12 +1079,13 @@ pub async fn search_logs(
         &compiled_filters,
         &disk_result_store,
         &search_id,
-    ).await?;
+    )
+    .await?;
 
     // Step 9-10: 执行搜索（spawn_blocking + 超时控制）
-    run_search_with_timeout(
+    run_search_with_timeout(SearchExecutionRequest {
         app_handle,
-        search_id.clone(),
+        search_id: search_id.clone(),
         files_for_search,
         cas,
         structured_query,
@@ -1057,7 +1098,8 @@ pub async fn search_logs(
         cancellation_token,
         cancellation_tokens,
         search_timeout_secs,
-    ).await
+    })
+    .await
 }
 
 /// 取消正在进行的搜索
@@ -1543,10 +1585,10 @@ fn search_single_file_with_details(
 
 /// 获取搜索结果的指定分页
 ///
-/// 优先从磁盘结果缓存读取分页；VirtualSearchManager 仅作为兼容降级路径。
+/// 从 DiskResultStore 磁盘结果缓存读取分页。
 ///
 /// # 参数
-/// - `state`: 应用状态，包含 VirtualSearchManager
+/// - `state`: 应用状态，包含 DiskResultStore
 /// - `search_id`: 搜索会话 ID
 /// - `offset`: 起始偏移量
 /// - `limit`: 返回条目数限制
@@ -1560,15 +1602,12 @@ pub async fn fetch_search_page(
     offset: usize,
     limit: usize,
 ) -> Result<crate::search_engine::disk_result_store::SearchPageResult, CommandError> {
-    use la_search::SearchPageResult;
-
     // 限制每页最大数量，防止内存问题
     let limit = limit.min(10000);
 
     let disk_store_arc = state.disk_result_store.read();
     let disk_store = &*disk_store_arc;
 
-    // 优先从磁盘存储读取（新架构：Notepad++ 式磁盘直写，前端按需分页）
     if disk_store.has_session(&searchId) {
         let result: crate::search_engine::disk_result_store::SearchPageResult = disk_store
             .read_page(&searchId, offset, limit)
@@ -1593,180 +1632,11 @@ pub async fn fetch_search_page(
         return Ok(result);
     }
 
-    // 降级：从 VirtualSearchManager 内存缓存读取（向后兼容旧架构）
-    let manager = &state.virtual_search_manager;
-    if manager.has_session(&searchId) {
-        let results = manager.get_range(&searchId, offset, limit);
-        let total = manager.get_total_count(&searchId);
-        let next_offset = if offset + results.len() < total {
-            Some(offset + results.len())
-        } else {
-            None
-        };
-        debug!(
-            search_id = %searchId,
-            offset = offset,
-            returned = results.len(),
-            "从 VirtualSearchManager 降级读取搜索分页"
-        );
-        return Ok(SearchPageResult {
-            entries: results,
-            total_count: total,
-            is_complete: true,
-            has_more: next_offset.is_some(),
-            next_offset,
-        });
-    }
-
     Err(CommandError::new(
         "NOT_FOUND",
         format!("Search session '{}' not found or expired", searchId),
     )
     .with_help("The search results may have been cleared. Try running the search again"))
-}
-
-/// 注册搜索会话到 VirtualSearchManager
-///
-/// 用于将搜索结果缓存到 VirtualSearchManager，供后续分页查询使用。
-/// 通常在完成搜索后调用，将完整结果存入管理器。
-///
-/// # 参数
-/// - `state`: 应用状态
-/// - `search_id`: 搜索会话 ID
-/// - `query`: 搜索查询字符串
-/// - `entries`: 搜索结果条目列表
-///
-/// # 返回
-/// 注册的 search_id
-#[command]
-pub async fn register_search_session(
-    state: State<'_, AppState>,
-    #[allow(non_snake_case)] searchId: String,
-    query: String,
-    entries: Vec<LogEntry>,
-) -> Result<String, CommandError> {
-    let manager = &state.virtual_search_manager;
-
-    let registered_id = manager.register_session(searchId, query, entries);
-
-    info!(
-        search_id = %registered_id,
-        "Search session registered in VirtualSearchManager"
-    );
-
-    Ok(registered_id)
-}
-
-/// 获取搜索会话信息
-///
-/// # 参数
-/// - `state`: 应用状态
-/// - `search_id`: 搜索会话 ID
-///
-/// # 返回
-/// 会话信息，包括总条目数、创建时间等
-#[command]
-pub async fn get_search_session_info(
-    state: State<'_, AppState>,
-    #[allow(non_snake_case)] searchId: String,
-) -> Result<Option<serde_json::Value>, CommandError> {
-    let manager = &state.virtual_search_manager;
-
-    if let Some(session) = manager.get_session_info(&searchId) {
-        Ok(Some(serde_json::json!({
-            "searchId": session.search_id,
-            "query": session.query,
-            "total_count": session.total_count,
-            "created_at": session.created_at.elapsed().as_secs(),
-        })))
-    } else {
-        Ok(None)
-    }
-}
-
-/// 获取搜索会话总条目数
-///
-/// # 参数
-/// - `state`: 应用状态
-/// - `search_id`: 搜索会话 ID
-///
-/// # 返回
-/// 总条目数，如果会话不存在返回 0
-#[command]
-pub async fn get_search_total_count(
-    state: State<'_, AppState>,
-    #[allow(non_snake_case)] searchId: String,
-) -> Result<usize, CommandError> {
-    // 新架构：优先从 DiskResultStore 读取
-    if let Some(status) = state.disk_result_store.read().get_status(&searchId) {
-        return Ok(status.0);
-    }
-    // 降级：从 VirtualSearchManager 读取
-    Ok(state.virtual_search_manager.get_total_count(&searchId))
-}
-
-/// 移除搜索会话
-///
-/// 清理不再需要的搜索会话，释放内存。
-///
-/// # 参数
-/// - `state`: 应用状态
-/// - `search_id`: 搜索会话 ID
-///
-/// # 返回
-/// 是否成功移除
-#[command]
-pub async fn remove_search_session(
-    state: State<'_, AppState>,
-    #[allow(non_snake_case)] searchId: String,
-) -> Result<bool, CommandError> {
-    let manager = &state.virtual_search_manager;
-    Ok(manager.remove_session(&searchId))
-}
-
-/// 清理过期的搜索会话
-///
-/// # 参数
-/// - `state`: 应用状态
-/// - `max_age_secs`: 最大存活时间（秒），默认 3600
-///
-/// # 返回
-/// 清理的会话数量
-#[command]
-pub async fn cleanup_expired_search_sessions(
-    state: State<'_, AppState>,
-    _max_age_secs: Option<u64>,
-) -> Result<usize, CommandError> {
-    let manager = &state.virtual_search_manager;
-
-    // 注意：VirtualSearchManager 内部有 TTL 机制
-    // 这里调用 cleanup_expired_sessions 清理过期会话
-    // _max_age_secs 保留用于 API 兼容性，实际使用 VirtualSearchManager 内部配置的 TTL
-    let cleaned = manager.cleanup_expired_sessions();
-
-    info!(cleaned = cleaned, "Expired search sessions cleaned up");
-
-    Ok(cleaned)
-}
-
-/// 获取 VirtualSearchManager 统计信息
-///
-/// # 返回
-/// 活跃会话数、总缓存条目数等统计信息
-#[command]
-pub async fn get_virtual_search_stats(
-    state: State<'_, AppState>,
-) -> Result<serde_json::Value, CommandError> {
-    let manager = &state.virtual_search_manager;
-    let stats = manager.get_statistics();
-
-    Ok(serde_json::json!({
-        "active_sessions": stats.active_sessions,
-        "total_cached_entries": stats.total_cached_entries,
-        "max_sessions": stats.max_sessions,
-        "max_entries_per_session": stats.max_entries_per_session,
-        "session_ttl_seconds": stats.session_ttl_seconds,
-    }))
 }
 
 #[cfg(test)]
