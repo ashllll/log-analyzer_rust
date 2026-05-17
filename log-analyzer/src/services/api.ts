@@ -156,6 +156,8 @@ export type WatchParams = WatchParamsValidated;
  * 提供所有 Tauri 命令的类型安全封装
  */
 class LogAnalyzerApi {
+  private configWriteQueue: Promise<void> = Promise.resolve();
+
   // ========================================================================
   // 内部辅助方法
   // ========================================================================
@@ -174,6 +176,31 @@ class LogAnalyzerApi {
     } catch (error) {
       throw createApiError(command, error);
     }
+  }
+
+  private enqueueConfigWrite<T>(operation: () => Promise<T>): Promise<T> {
+    const run = this.configWriteQueue.then(operation, operation);
+    this.configWriteQueue = run.then(
+      () => undefined,
+      () => undefined
+    );
+    return run;
+  }
+
+  private async loadConfigRaw(): Promise<AppConfig> {
+    return this.invokeWithErrorHandling(
+      'load_config',
+      {},
+      (raw) => AppConfigSchema.parse(raw)
+    );
+  }
+
+  private async saveConfigRaw(config: AppConfig): Promise<void> {
+    return this.invokeWithErrorHandling(
+      'save_config',
+      { config },
+      () => undefined
+    );
   }
 
   // ========================================================================
@@ -399,11 +426,18 @@ class LogAnalyzerApi {
    * @param config - 应用配置
    */
   async saveConfig(config: AppConfig): Promise<void> {
-    return this.invokeWithErrorHandling(
-      'save_config',
-      { config },
-      () => undefined
-    );
+    return this.enqueueConfigWrite(() => this.saveConfigRaw(config));
+  }
+
+  async saveWorkspaceConfig(config: Pick<AppConfig, 'keyword_groups' | 'workspaces'>): Promise<void> {
+    return this.enqueueConfigWrite(async () => {
+      const currentConfig = await this.loadConfigRaw();
+      await this.saveConfigRaw({
+        ...currentConfig,
+        keyword_groups: config.keyword_groups,
+        workspaces: config.workspaces,
+      });
+    });
   }
 
   /**
@@ -412,11 +446,7 @@ class LogAnalyzerApi {
    * @returns 应用配置
    */
   async loadConfig(): Promise<AppConfig> {
-    return this.invokeWithErrorHandling(
-      'load_config',
-      {},
-      (raw) => AppConfigSchema.parse(raw)
-    );
+    return this.loadConfigRaw();
   }
 
   async getSearchConfig(): Promise<SearchConfig> {
@@ -429,10 +459,12 @@ class LogAnalyzerApi {
 
   async saveSearchConfig(searchConfig: SearchConfig): Promise<void> {
     const validatedConfig = SearchConfigSchema.parse(searchConfig);
-    return this.invokeWithErrorHandling(
-      'save_search_config',
-      { searchConfig: validatedConfig },
-      () => undefined
+    return this.enqueueConfigWrite(() =>
+      this.invokeWithErrorHandling(
+        'save_search_config',
+        { searchConfig: validatedConfig },
+        () => undefined
+      )
     );
   }
 
@@ -446,10 +478,12 @@ class LogAnalyzerApi {
 
   async saveTaskManagerConfig(taskManagerConfig: TaskManagerConfig): Promise<void> {
     const validatedConfig = TaskManagerConfigSchema.parse(taskManagerConfig);
-    return this.invokeWithErrorHandling(
-      'save_task_manager_config',
-      { taskManagerConfig: validatedConfig },
-      () => undefined
+    return this.enqueueConfigWrite(() =>
+      this.invokeWithErrorHandling(
+        'save_task_manager_config',
+        { taskManagerConfig: validatedConfig },
+        () => undefined
+      )
     );
   }
 
@@ -473,10 +507,12 @@ class LogAnalyzerApi {
    */
   async saveFileFilterConfig(filterConfig: FileFilterConfig): Promise<FileFilterConfig> {
     const validatedConfig = FileFilterConfigSchema.parse(filterConfig);
-    return this.invokeWithErrorHandling(
-      'save_file_filter_config',
-      { filter_config: validatedConfig },
-      () => validatedConfig
+    return this.enqueueConfigWrite(() =>
+      this.invokeWithErrorHandling(
+        'save_file_filter_config',
+        { filter_config: validatedConfig },
+        () => validatedConfig
+      )
     );
   }
 

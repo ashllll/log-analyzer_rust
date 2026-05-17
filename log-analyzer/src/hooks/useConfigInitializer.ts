@@ -17,27 +17,28 @@ export const useConfigInitializer = () => {
   const { showToast: addToast } = useToast();
   const setWorkspaces = useWorkspaceStore((state) => state.setWorkspaces);
   const setKeywordGroups = useKeywordStore((state) => state.setKeywordGroups);
+  const initPhase = useAppStore((state) => state.initPhase);
   const setInitPhase = useAppStore((state) => state.setInitPhase);
   const didHandleErrorRef = useRef(false);
   const query = useConfigQuery();
 
   useEffect(() => {
-    if (query.isLoading || query.isFetching) {
+    if (initPhase === 'idle' && query.isPending) {
       setInitPhase('loading');
     }
-  }, [query.isFetching, query.isLoading, setInitPhase]);
+  }, [initPhase, query.isPending, setInitPhase]);
 
   useEffect(() => {
-    if (!query.isSuccess) {
+    if (!query.isSuccess || initPhase === 'ready') {
       return;
     }
 
     didHandleErrorRef.current = false;
     setInitPhase('ready');
-  }, [query.isSuccess, setInitPhase]);
+  }, [initPhase, query.isSuccess, setInitPhase]);
 
   useEffect(() => {
-    if (!query.isError || didHandleErrorRef.current) {
+    if (!query.isError || initPhase === 'ready' || didHandleErrorRef.current) {
       return;
     }
 
@@ -59,6 +60,7 @@ export const useConfigInitializer = () => {
     setInitPhase('error');
   }, [
     addToast,
+    initPhase,
     query.error,
     query.isError,
     setWorkspaces,

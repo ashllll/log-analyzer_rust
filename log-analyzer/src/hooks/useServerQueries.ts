@@ -55,15 +55,11 @@ export const useConfigMutation = () => {
   return useMutation({
     mutationFn: async (config: { keyword_groups: KeywordGroup[]; workspaces: Workspace[] }) => {
       logger.debug('[MUTATION] Saving configuration');
-      const currentConfig = await api.loadConfig();
-      const fullConfig = {
-        ...currentConfig,
-        keyword_groups: config.keyword_groups,
-        workspaces: config.workspaces,
-        file_filter: currentConfig.file_filter,
-      };
-      await api.saveConfig(fullConfig);
+      await api.saveWorkspaceConfig(config);
       return config;
+    },
+    scope: {
+      id: 'config-write',
     },
     onSuccess: () => {
       // Invalidate and refetch config
@@ -111,9 +107,9 @@ export const useLoadWorkspaceMutation = () => {
  * Import folder/file as workspace
  */
 export const useImportFolderMutation = () => {
-  const queryClient = useQueryClient();
   const { showToast: addToast } = useToast();
   const addWorkspace = useWorkspaceStore((state) => state.addWorkspace);
+  const deleteWorkspace = useWorkspaceStore((state) => state.deleteWorkspace);
   const setActiveWorkspace = useAppStore((state) => state.setActiveWorkspace);
 
   return useMutation({
@@ -124,6 +120,7 @@ export const useImportFolderMutation = () => {
     },
     onMutate: async ({ path, workspaceId }) => {
       // Optimistic update: add workspace immediately
+      const previousActiveWorkspaceId = useAppStore.getState().activeWorkspaceId;
       const fileName = path.split(/[/\\]/).pop() || "New";
       const newWorkspace: Workspace = {
         id: workspaceId,
@@ -137,24 +134,21 @@ export const useImportFolderMutation = () => {
       addWorkspace(newWorkspace);
       setActiveWorkspace(workspaceId);
 
-      return { newWorkspace };
+      return { newWorkspace, previousActiveWorkspaceId };
     },
     onSuccess: ({ taskId }) => {
       logger.debug('[MUTATION] Import started successfully:', taskId);
-      addToast('info', 'Import started');
-
-      // Invalidate config query to refetch the canonical workspace list
-      queryClient.invalidateQueries({ queryKey: queryKeys.config });
+      addToast('info', '导入已开始');
     },
     onError: (error, { workspaceId }, context) => {
       logger.error('[MUTATION] Failed to import folder:', error);
-      addToast('error', `Import failed: ${getFullErrorMessage(error)}`);
+      addToast('error', `导入失败: ${getFullErrorMessage(error)}`);
 
       // Rollback optimistic update
       if (context?.newWorkspace) {
-        const deleteWorkspace = useWorkspaceStore.getState().deleteWorkspace;
         deleteWorkspace(workspaceId);
       }
+      setActiveWorkspace(context?.previousActiveWorkspaceId ?? null);
     },
     retry: 1,
     retryDelay: 1000,

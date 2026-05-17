@@ -13,7 +13,16 @@ import type { KeywordGroup } from '../types/common';
  */
 export const computeConfigFingerprint = (
   keywordGroups: KeywordGroup[],
-  workspaces: { id: string; status: string }[],
+  workspaces: {
+    id: string;
+    name?: string;
+    path?: string;
+    status: string;
+    size?: string;
+    files?: number;
+    watching?: boolean;
+    ready_files?: number;
+  }[],
 ): string => {
   return JSON.stringify({
     keywords: keywordGroups.map((g) => ({
@@ -23,7 +32,16 @@ export const computeConfigFingerprint = (
       enabled: g.enabled,
       patterns: g.patterns.map((p) => p.regex),
     })),
-    workspaces: workspaces.map((w) => ({ id: w.id, status: w.status })),
+    workspaces: workspaces.map((w) => ({
+      id: w.id,
+      name: w.name,
+      path: w.path,
+      status: w.status,
+      size: w.size,
+      files: w.files,
+      watching: w.watching,
+      ready_files: w.ready_files,
+    })),
   });
 };
 

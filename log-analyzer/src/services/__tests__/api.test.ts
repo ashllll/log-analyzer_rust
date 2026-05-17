@@ -8,6 +8,30 @@ jest.useFakeTimers();
 
 const mockInvoke = require('@tauri-apps/api/core').invoke as jest.Mock;
 
+const makeFullConfig = (overrides: Record<string, unknown> = {}) => ({
+  keyword_groups: [],
+  workspaces: [],
+  file_filter: {
+    enabled: false,
+    binary_detection_enabled: true,
+    mode: 'blacklist' as const,
+    filename_patterns: [],
+    allowed_extensions: [],
+    forbidden_extensions: [],
+  },
+  ...overrides,
+});
+
+const makeSearchConfig = () => ({
+  max_results: 1000,
+  timeout_seconds: 10,
+  max_concurrent_searches: 10,
+  fuzzy_search_enabled: true,
+  case_sensitive: false,
+  regex_enabled: true,
+  regex_cache_size: 1000,
+});
+
 describe('api.refreshWorkspace', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -35,6 +59,96 @@ describe('api.refreshWorkspace', () => {
     expect(mockInvoke).toHaveBeenCalledWith('refresh_workspace', {
       workspaceId: 'workspace-1',
     });
+  });
+});
+
+describe('api.saveWorkspaceConfig', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockInvoke.mockReset();
+  });
+
+  it('should merge workspace fields into the latest persisted config', async () => {
+    const latestConfig = makeFullConfig({
+      search: makeSearchConfig(),
+      task_manager: {
+        max_concurrent_tasks: 10,
+        completed_task_ttl: 300,
+        failed_task_ttl: 1800,
+        cleanup_interval: 60,
+        operation_timeout: 30,
+      },
+    });
+    const workspacePatch = {
+      keyword_groups: [],
+      workspaces: [
+        {
+          id: 'ws-1',
+          name: 'Workspace',
+          path: '/logs',
+          status: 'READY' as const,
+          size: '1 MB',
+          files: 1,
+          watching: true,
+        },
+      ],
+    };
+
+    mockInvoke
+      .mockResolvedValueOnce(latestConfig)
+      .mockResolvedValueOnce(undefined);
+
+    await api.saveWorkspaceConfig(workspacePatch);
+
+    expect(mockInvoke).toHaveBeenNthCalledWith(1, 'load_config', {});
+    expect(mockInvoke).toHaveBeenNthCalledWith(2, 'save_config', {
+      config: {
+        ...latestConfig,
+        ...workspacePatch,
+      },
+    });
+  });
+
+  it('should serialize config writes across config APIs', async () => {
+    let releaseFirstSave!: () => void;
+    const firstSave = new Promise<void>((resolve) => {
+      releaseFirstSave = resolve;
+    });
+    const commands: string[] = [];
+
+    mockInvoke.mockImplementation((command: string) => {
+      commands.push(command);
+
+      if (command === 'load_config') {
+        return Promise.resolve(makeFullConfig());
+      }
+      if (command === 'save_config') {
+        return firstSave;
+      }
+      if (command === 'save_search_config') {
+        return Promise.resolve(undefined);
+      }
+
+      return Promise.resolve(undefined);
+    });
+
+    const workspaceWrite = api.saveWorkspaceConfig({
+      keyword_groups: [],
+      workspaces: [],
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const searchWrite = api.saveSearchConfig(makeSearchConfig());
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(commands).toEqual(['load_config', 'save_config']);
+
+    releaseFirstSave();
+    await Promise.all([workspaceWrite, searchWrite]);
+
+    expect(commands).toEqual(['load_config', 'save_config', 'save_search_config']);
   });
 });
 

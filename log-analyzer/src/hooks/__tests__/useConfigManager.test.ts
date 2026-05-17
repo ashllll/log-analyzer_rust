@@ -77,6 +77,23 @@ describe('computeConfigFingerprint', () => {
     expect(after).not.toBe(before);
   });
 
+  it('detects change when a workspace watch state changes', () => {
+    const workspace = {
+      id: 'ws-1',
+      name: 'Workspace',
+      path: '/logs',
+      status: 'READY',
+      size: '1 MB',
+      files: 10,
+      watching: false,
+    };
+
+    const before = computeConfigFingerprint([], [workspace]);
+    const after = computeConfigFingerprint([], [{ ...workspace, watching: true }]);
+
+    expect(after).not.toBe(before);
+  });
+
   it('produces the same fingerprint when nothing changed', () => {
     const fp1 = computeConfigFingerprint([baseGroup], []);
     const fp2 = computeConfigFingerprint([baseGroup], []);
