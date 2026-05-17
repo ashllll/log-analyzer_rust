@@ -156,7 +156,7 @@ class TaskEventBus {
     lastEventTime: 0,
   };
 
-  private constructor(config: EventBusConfig = {}) {
+  constructor(config: EventBusConfig = {}) {
     this.config = {
       enableValidation: config.enableValidation ?? true,
       enableIdempotency: config.enableIdempotency ?? true,

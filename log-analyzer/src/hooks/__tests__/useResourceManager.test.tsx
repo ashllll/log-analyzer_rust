@@ -106,18 +106,18 @@ describe('Resource Manager Integration Tests', () => {
 
     it('should manage AbortControllers with automatic cleanup', () => {
       const { result, unmount } = renderHook(() => useResourceManager());
-      let controller: AbortController;
+      let controller: AbortController | undefined;
 
       act(() => {
         controller = result.current.createAbortController();
       });
 
-      expect(controller.signal.aborted).toBe(false);
+      expect(controller?.signal.aborted).toBe(false);
 
       // Unmount should abort the controller
       unmount();
 
-      expect(controller.signal.aborted).toBe(true);
+      expect(controller?.signal.aborted).toBe(true);
     });
 
     it('should handle manual cleanup of resources', () => {

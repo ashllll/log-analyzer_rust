@@ -48,7 +48,7 @@ describe.skip('E2E: CAS Migration - Import Workflow', () => {
       mockDialogOpen.mockResolvedValue('/test/logs/folder');
       
       // Mock import process
-      mockInvoke.mockImplementation((command: string, _args?: unknown) => {
+      mockInvoke.mockImplementation((command: string, args?: { workspaceId?: string; hash?: string }) => {
         switch (command) {
           case 'get_workspaces':
             return Promise.resolve([]);
@@ -138,7 +138,7 @@ describe.skip('E2E: CAS Migration - Import Workflow', () => {
       // Mock archive selection
       mockDialogOpen.mockResolvedValue('/test/logs/archive.zip');
       
-      mockInvoke.mockImplementation((command: string, _args?: unknown) => {
+      mockInvoke.mockImplementation((command: string, args?: { workspaceId?: string; hash?: string }) => {
         switch (command) {
           case 'get_workspaces':
             return Promise.resolve([]);
@@ -234,7 +234,7 @@ describe.skip('E2E: CAS Migration - Import Workflow', () => {
       
       mockDialogOpen.mockResolvedValue('/test/nested.zip');
       
-      mockInvoke.mockImplementation((command: string, _args?: unknown) => {
+      mockInvoke.mockImplementation((command: string, args?: { workspaceId?: string; hash?: string }) => {
         switch (command) {
           case 'get_workspaces':
             return Promise.resolve([]);
@@ -380,7 +380,7 @@ describe.skip('E2E: CAS Migration - Search Workflow', () => {
         },
       ];
 
-      mockInvoke.mockImplementation((command: string, _args?: unknown) => {
+      mockInvoke.mockImplementation((command: string, args?: { workspaceId?: string; hash?: string }) => {
         switch (command) {
           case 'get_workspaces':
             return Promise.resolve(mockWorkspaces);
@@ -488,7 +488,7 @@ describe.skip('E2E: CAS Migration - Search Workflow', () => {
         },
       ];
 
-      mockInvoke.mockImplementation((command: string, _args?: unknown) => {
+      mockInvoke.mockImplementation((command: string, args?: { useFTS?: boolean }) => {
         switch (command) {
           case 'get_workspaces':
             return Promise.resolve(mockWorkspaces);
@@ -711,7 +711,7 @@ describe.skip('E2E: CAS Migration - Workspace Management', () => {
       ];
 
       let deleteCalled = false;
-      mockInvoke.mockImplementation((command: string, args?: unknown) => {
+      mockInvoke.mockImplementation((command: string, args?: { workspaceId?: string }) => {
         switch (command) {
           case 'get_workspaces':
             return Promise.resolve(mockWorkspaces);

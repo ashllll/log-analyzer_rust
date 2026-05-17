@@ -1,11 +1,10 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-// @ts-expect-error process is a nodejs global
 const tauriDevHost = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
-export default defineConfig(async () => ({
+export default defineConfig(() => ({
   plugins: [react()],
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
@@ -26,6 +25,12 @@ export default defineConfig(async () => ({
   
   // 4. Build optimization - code splitting and asset optimization
   build: {
+    // HI-33: Explicitly disable source maps for production security
+    sourcemap: false,
+    // HI-33: Use esbuild for minification (bundled with Vite, no extra deps)
+    minify: 'esbuild' as const,
+    // HI-33: Target modern browsers for smaller bundles
+    target: 'es2022',
     rollupOptions: {
       output: {
         manualChunks: {

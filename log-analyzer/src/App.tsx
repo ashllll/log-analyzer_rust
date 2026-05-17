@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useLocation } from 'react-router-dom';
 import { ErrorBoundary } from 'react-error-boundary';
 import { Toaster } from 'react-hot-toast';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useNavigate } from 'react-router-dom';
 
 // 初始化 i18n
 import './i18n';
@@ -103,6 +103,21 @@ function AppContent() {
   );
 }
 
+// FIX(CR-12): Wrapper that injects navigate into PageErrorFallback for MemoryRouter compatibility
+function PageErrorFallbackWithNavigate({ error, resetErrorBoundary }: { error: unknown; resetErrorBoundary: () => void }) {
+  const navigate = useNavigate();
+  return (
+    <PageErrorFallback
+      error={error}
+      resetErrorBoundary={resetErrorBoundary}
+      onGoHome={() => {
+        resetErrorBoundary();
+        navigate('/workspaces');
+      }}
+    />
+  );
+}
+
 // --- Main App (Wrapped with Provider) ---
 export default function App() {
   // 初始化全局错误处理器
@@ -120,7 +135,7 @@ export default function App() {
   }, []);
 
   return (
-    <ErrorBoundary FallbackComponent={PageErrorFallback}>
+    <ErrorBoundary FallbackComponent={PageErrorFallbackWithNavigate}>
       <QueryClientProvider client={queryClient}>
         <MemoryRouter>
           <AppStoreProvider>

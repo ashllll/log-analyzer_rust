@@ -1,10 +1,16 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "file-dialog",
-  "description": "文件对话框权限 - 打开文件夹与保存结果",
+  "description": "文件对话框权限 - 打开文件夹与保存结果（限制在用户工作区目录）",
   "windows": ["main"],
   "permissions": [
-    "dialog:allow-open",
-    "dialog:allow-save"
+    {
+      "identifier": "dialog:allow-open",
+      "allow": [{ "path": "$HOME/*" }, { "path": "$DESKTOP/*" }]
+    },
+    {
+      "identifier": "dialog:allow-save",
+      "allow": [{ "path": "$HOME/*" }, { "path": "$DESKTOP/*" }]
+    }
   ]
 }

@@ -70,8 +70,9 @@ export const useErrorManagement = () => {
       recoverable?: boolean;
     }
   ) => {
-    const errorMessage = typeof error === 'string' ? error : error.message;
-    const errorStack = typeof error === 'string' ? undefined : error.stack;
+    // FIX(HI-13): 防御性提取 message，防止 null/undefined/number 时崩溃
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
 
     const errorInfo: ErrorInfo = {
       id: `error_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,

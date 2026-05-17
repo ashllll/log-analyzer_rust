@@ -19,13 +19,8 @@
 //! 为保持与 JavaScript camelCase 惯例一致，Tauri 命令参数使用 camelCase 命名。
 //! 这确保了前后端接口的一致性，避免了参数名转换带来的混乱。
 //!
-//! ```ignore
-//! #[allow(non_snake_case)]
-//! pub async fn load_workspace(
-//!     workspaceId: String,  // 对应前端 invoke('load_workspace', { workspaceId })
-//!     // ...
-//! ) -> Result<WorkspaceLoadResponse, CommandError>
-//! ```
+//! Tauri command 默认使用 camelCase 参数映射，因此 Rust 侧使用 snake_case，
+//! 前端仍通过 `{ workspaceId }` 传参。
 //!
 //! 对应的前端调用：
 //! ```typescript
@@ -43,6 +38,7 @@ use crate::commands::import::{ensure_workspace_runtime_state, import_folder};
 use crate::models::AppState;
 use crate::utils::validation::validate_workspace_id;
 use crate::utils::workspace_paths::resolve_workspace_dir;
+use uuid::Uuid;
 
 /// Workspace load response
 #[derive(Debug, Clone, serde::Serialize)]
@@ -66,14 +62,14 @@ pub struct WorkspaceLoadResponse {
 #[command]
 pub async fn load_workspace(
     app: AppHandle,
-    #[allow(non_snake_case)] workspaceId: String,
+    workspace_id: String,
     state: State<'_, AppState>,
 ) -> Result<WorkspaceLoadResponse, CommandError> {
-    validate_workspace_id(&workspaceId).map_err(|e| {
+    validate_workspace_id(&workspace_id).map_err(|e| {
         CommandError::new("VALIDATION_ERROR", e).with_help("Workspace ID format is invalid")
     })?;
 
-    let workspace_dir = resolve_workspace_dir(&app, &workspaceId).map_err(|e| {
+    let workspace_dir = resolve_workspace_dir(&app, &workspace_id).map_err(|e| {
         CommandError::new("NOT_FOUND", e).with_help("The workspace may have been deleted")
     })?;
 
@@ -94,7 +90,7 @@ pub async fn load_workspace(
     }
 
     let (_, metadata_store, _) =
-        ensure_workspace_runtime_state(&app, &state, &workspaceId, &workspace_dir)
+        ensure_workspace_runtime_state(&app, &state, &workspace_id, &workspace_dir)
             .await
             .map_err(|e| {
                 CommandError::new(
@@ -118,8 +114,8 @@ pub async fn load_workspace(
         use std::time::Duration;
         let state_sync: crate::state_sync::StateSync = state_sync;
         let _ = state_sync
-            .broadcast_workspace_event(WorkspaceEvent::StatusChanged {
-                workspace_id: workspaceId.clone(),
+                .broadcast_workspace_event(WorkspaceEvent::StatusChanged {
+                workspace_id: workspace_id.clone(),
                 status: WorkspaceStatus::Completed {
                     duration: Duration::from_secs(0),
                 },
@@ -140,14 +136,14 @@ pub async fn load_workspace(
 #[command]
 pub async fn refresh_workspace(
     app: AppHandle,
-    #[allow(non_snake_case)] workspaceId: String,
+    workspace_id: String,
     path: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<String, CommandError> {
-    let path = resolve_refresh_source_path(&app, &workspaceId, path)?;
+    let path = resolve_refresh_source_path(&app, &workspace_id, path)?;
 
     info!(
-        workspace_id = %workspaceId,
+        workspace_id = %workspace_id,
         path = %path,
         "Refresh requested for workspace"
     );
@@ -159,12 +155,12 @@ pub async fn refresh_workspace(
     }
 
     let workspace_dir =
-        resolve_workspace_dir(&app, &workspaceId).map_err(|e| CommandError::new("NOT_FOUND", e))?;
+        resolve_workspace_dir(&app, &workspace_id).map_err(|e| CommandError::new("NOT_FOUND", e))?;
 
     // Check if workspace exists and is CAS format
     if !workspace_dir.exists() {
         info!("Workspace not found, performing fresh import");
-        return import_folder(app, path, workspaceId, state)
+        return import_folder(app, path, workspace_id, state)
             .await
             .map_err(|e| CommandError::new("IMPORT_ERROR", e));
     }
@@ -174,7 +170,7 @@ pub async fn refresh_workspace(
 
     if !metadata_db.exists() || !objects_dir.exists() {
         info!("Workspace is not CAS format, performing fresh import");
-        return import_folder(app, path, workspaceId, state)
+        return import_folder(app, path, workspace_id, state)
             .await
             .map_err(|e| CommandError::new("IMPORT_ERROR", e));
     }
@@ -183,7 +179,7 @@ pub async fn refresh_workspace(
     // CAS handles deduplication automatically, so re-importing is safe and simple
     info!("CAS workspace detected, re-importing for refresh");
 
-    import_folder(app, path, workspaceId, state)
+    import_folder(app, path, workspace_id, state)
         .await
         .map_err(|e| CommandError::new("IMPORT_ERROR", e))
 }
@@ -191,7 +187,37 @@ pub async fn refresh_workspace(
 #[derive(Debug, serde::Deserialize)]
 struct StoredWorkspaceConfig {
     id: String,
+    name: Option<String>,
     path: Option<String>,
+}
+
+fn load_stored_workspaces(
+    app: &AppHandle,
+    action: &str,
+) -> Result<Vec<StoredWorkspaceConfig>, CommandError> {
+    let config_path = app
+        .path()
+        .app_config_dir()
+        .map_err(|e: tauri::Error| CommandError::new("CONFIG_ERROR", e.to_string()))?
+        .join("config.json");
+
+    if !config_path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let loader = AppConfigLoader::load(Some(config_path.clone())).map_err(|e| {
+        CommandError::new(
+            "CONFIG_ERROR",
+            format!("Failed to load config while {}: {}", action, e),
+        )
+    })?;
+
+    serde_json::from_value(loader.get_config().workspaces.clone()).map_err(|e| {
+        CommandError::new(
+            "CONFIG_ERROR",
+            format!("Failed to parse stored workspaces while {}: {}", action, e),
+        )
+    })
 }
 
 fn resolve_refresh_source_path(
@@ -200,56 +226,71 @@ fn resolve_refresh_source_path(
     path: Option<String>,
 ) -> Result<String, CommandError> {
     if let Some(path) = path.filter(|value| !value.trim().is_empty()) {
+        // FIX(HI-05): 验证用户传入的路径，防止路径遍历攻击
+        crate::utils::validation::prevent_path_traversal(&path)
+            .map_err(|e| CommandError::new("VALIDATION_ERROR", e))?;
         return Ok(path);
     }
 
-    let config_path = app
-        .path()
-        .app_config_dir()
-        .map_err(|e: tauri::Error| CommandError::new("CONFIG_ERROR", e.to_string()))?
-        .join("config.json");
-
-    if config_path.exists() {
-        let loader = AppConfigLoader::load(Some(config_path.clone())).map_err(|e| {
-            CommandError::new(
-                "CONFIG_ERROR",
-                format!(
-                    "Failed to load config while resolving workspace path: {}",
-                    e
-                ),
-            )
-        })?;
-
-        let workspaces: Vec<StoredWorkspaceConfig> =
-            serde_json::from_value(loader.get_config().workspaces.clone()).map_err(|e| {
-                CommandError::new(
-                    "CONFIG_ERROR",
-                    format!(
-                        "Failed to parse stored workspaces while resolving workspace path: {}",
-                        e
-                    ),
-                )
-            })?;
-
-        if let Some(path) = workspaces
-            .into_iter()
-            .find(|workspace| workspace.id == workspace_id)
-            .and_then(|workspace| workspace.path)
-            .filter(|value| !value.trim().is_empty())
-        {
-            info!(
-                workspace_id = %workspace_id,
-                path = %path,
-                "Resolved workspace source path from saved config"
-            );
-            return Ok(path);
-        }
+    if let Some(path) = load_stored_workspaces(app, "resolving workspace path")?
+        .into_iter()
+        .find(|workspace| workspace.id == workspace_id)
+        .and_then(|workspace| workspace.path)
+        .filter(|value| !value.trim().is_empty())
+    {
+        info!(
+            workspace_id = %workspace_id,
+            path = %path,
+            "Resolved workspace source path from saved config"
+        );
+        return Ok(path);
     }
 
     Err(
         CommandError::new("CONFIG_ERROR", "Workspace source path missing")
             .with_help("Please refresh the workspace list or re-import it"),
     )
+}
+
+fn resolve_workspace_display_name(app: &AppHandle, workspace_id: &str) -> Option<String> {
+    load_stored_workspaces(app, "resolving workspace display name")
+        .ok()?
+        .into_iter()
+        .find(|workspace| workspace.id == workspace_id)
+        .and_then(|workspace| workspace.name)
+        .filter(|name| !name.trim().is_empty())
+}
+
+fn build_workspace_id(name: &str) -> String {
+    let mut slug = name
+        .trim()
+        .to_lowercase()
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>();
+
+    while slug.contains("--") {
+        slug = slug.replace("--", "-");
+    }
+
+    let slug = slug.trim_matches('-');
+    let slug = if slug.is_empty() { "workspace" } else { slug };
+    let suffix = Uuid::new_v4().to_string();
+    let suffix = &suffix[..8];
+    let max_slug_len = 50usize.saturating_sub("ws-".len() + "-".len() + suffix.len());
+    let mut slug = slug.chars().take(max_slug_len).collect::<String>();
+    slug = slug.trim_matches('-').to_string();
+    if slug.is_empty() {
+        slug = "workspace".to_string();
+    }
+
+    format!("ws-{}-{}", slug, suffix)
 }
 
 /// 判断工作区是否使用CAS存储
@@ -300,32 +341,38 @@ async fn cleanup_workspace_resources(
 
     // 辅助函数：带重试的文件删除（处理 Windows 临时文件锁定）
     async fn remove_file_with_retry(path: &std::path::Path) -> Result<(), std::io::Error> {
-        for attempt in 0..3 {
+        const MAX_ATTEMPTS: usize = 3;
+        for attempt in 0..MAX_ATTEMPTS {
             match std::fs::remove_file(path) {
                 Ok(()) => return Ok(()),
-                Err(_e) if attempt < 2 => {
-                    tokio::time::sleep(std::time::Duration::from_millis(100 * (attempt + 1))).await;
-                    let _ = std::fs::remove_file(path);
+                Err(_) if attempt + 1 < MAX_ATTEMPTS => {
+                    tokio::time::sleep(std::time::Duration::from_millis(
+                        100 * (attempt as u64 + 1),
+                    ))
+                    .await;
                 }
                 Err(e) => return Err(e),
             }
         }
-        Ok(())
+        unreachable!("remove_file_with_retry loop must return")
     }
 
     // 辅助函数：带重试的目录删除（处理 Windows 临时文件锁定）
     async fn remove_dir_with_retry(path: &std::path::Path) -> Result<(), std::io::Error> {
-        for attempt in 0..3 {
+        const MAX_ATTEMPTS: usize = 3;
+        for attempt in 0..MAX_ATTEMPTS {
             match std::fs::remove_dir_all(path) {
                 Ok(()) => return Ok(()),
-                Err(_e) if attempt < 2 => {
-                    tokio::time::sleep(std::time::Duration::from_millis(100 * (attempt + 1))).await;
-                    let _ = std::fs::remove_dir_all(path);
+                Err(_) if attempt + 1 < MAX_ATTEMPTS => {
+                    tokio::time::sleep(std::time::Duration::from_millis(
+                        100 * (attempt as u64 + 1),
+                    ))
+                    .await;
                 }
                 Err(e) => return Err(e),
             }
         }
-        Ok(())
+        unreachable!("remove_dir_with_retry loop must return")
     }
 
     // ===== 步骤1: 停止文件监听器 =====
@@ -622,20 +669,20 @@ async fn cleanup_workspace_resources(
 /// Tauri命令接口,用于删除工作区及其所有相关资源。
 #[command]
 pub async fn delete_workspace(
-    #[allow(non_snake_case)] workspaceId: String,
+    workspace_id: String,
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<(), CommandError> {
     info!(
-        workspace_id = %workspaceId,
+        workspace_id = %workspace_id,
         "Delete workspace command called"
     );
 
     // 参数验证
-    validate_workspace_id(&workspaceId).map_err(|e| CommandError::new("VALIDATION_ERROR", e))?;
+    validate_workspace_id(&workspace_id).map_err(|e| CommandError::new("VALIDATION_ERROR", e))?;
 
     // 执行清理
-    cleanup_workspace_resources(&workspaceId, &state, &app).await?;
+    cleanup_workspace_resources(&workspace_id, &state, &app).await?;
 
     // 广播工作区删除事件
     // 注意：先克隆 state_sync，释放锁后再 await，避免跨 await 点持有锁
@@ -649,7 +696,7 @@ pub async fn delete_workspace(
         let state_sync: crate::state_sync::StateSync = state_sync;
         let _ = state_sync
             .broadcast_workspace_event(WorkspaceEvent::StatusChanged {
-                workspace_id: workspaceId.clone(),
+                workspace_id: workspace_id.clone(),
                 status: WorkspaceStatus::Cancelled {
                     cancelled_at: SystemTime::now(),
                 },
@@ -658,7 +705,7 @@ pub async fn delete_workspace(
     }
 
     info!(
-        workspace_id = %workspaceId,
+        workspace_id = %workspace_id,
         "Delete workspace command completed"
     );
 
@@ -670,11 +717,11 @@ pub async fn delete_workspace(
 /// 将任务状态设置为 Stopped
 #[command]
 pub async fn cancel_task(
-    #[allow(non_snake_case)] taskId: String,
+    task_id: String,
     state: State<'_, AppState>,
 ) -> Result<(), CommandError> {
     info!(
-        task_id = %taskId,
+        task_id = %task_id,
         "Cancel task command called"
     );
 
@@ -686,19 +733,19 @@ pub async fn cancel_task(
         .clone();
 
     let task_manager: crate::task_manager::TaskManager = task_manager;
-    // 更新任务状态为 Stopped
-    let _ = task_manager
+    // FIX(HI-03): 使用 ? 传播错误，避免静默丢弃
+    task_manager
         .update_task_async(
-            &taskId,
+            &task_id,
             0, // progress 保持不变
             "Task cancelled by user".to_string(),
             crate::task_manager::TaskStatus::Stopped,
         )
         .await
-        .map_err(|e| CommandError::new("TASK_ERROR", format!("Failed to cancel task: {}", e)));
+        .map_err(|e| CommandError::new("TASK_ERROR", format!("Failed to cancel task: {}", e)))?;
 
     info!(
-        task_id = %taskId,
+        task_id = %task_id,
         "Task cancelled successfully"
     );
 
@@ -720,14 +767,14 @@ pub struct WorkspaceStatusResponse {
 /// 返回工作区的详细信息
 #[command]
 pub async fn get_workspace_status(
-    #[allow(non_snake_case)] workspaceId: String,
+    workspace_id: String,
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<WorkspaceStatusResponse, CommandError> {
-    validate_workspace_id(&workspaceId).map_err(|e| CommandError::new("VALIDATION_ERROR", e))?;
+    validate_workspace_id(&workspace_id).map_err(|e| CommandError::new("VALIDATION_ERROR", e))?;
 
     let workspace_dir =
-        resolve_workspace_dir(&app, &workspaceId).map_err(|e| CommandError::new("NOT_FOUND", e))?;
+        resolve_workspace_dir(&app, &workspace_id).map_err(|e| CommandError::new("NOT_FOUND", e))?;
 
     // 检查工作区是否存在
     if !workspace_dir.exists() {
@@ -749,7 +796,7 @@ pub async fn get_workspace_status(
     }
 
     let (_, metadata_store, _) =
-        ensure_workspace_runtime_state(&app, &state, &workspaceId, &workspace_dir)
+        ensure_workspace_runtime_state(&app, &state, &workspace_id, &workspace_dir)
             .await
             .map_err(|e| {
                 CommandError::new(
@@ -776,8 +823,9 @@ pub async fn get_workspace_status(
     };
 
     Ok(WorkspaceStatusResponse {
-        id: workspaceId.clone(),
-        name: workspaceId,
+        id: workspace_id.clone(),
+        name: resolve_workspace_display_name(&app, &workspace_id)
+            .unwrap_or_else(|| workspace_id.clone()),
         status: "READY".to_string(),
         size: size_str,
         files: file_count as usize,
@@ -790,16 +838,16 @@ pub async fn get_workspace_status(
 #[command]
 pub async fn get_workspace_time_range(
     app: AppHandle,
-    #[allow(non_snake_case)] workspaceId: String,
+    workspace_id: String,
     state: State<'_, AppState>,
 ) -> Result<la_core::models::search::WorkspaceTimeRange, CommandError> {
     use chrono::DateTime;
     use la_core::models::search::WorkspaceTimeRange;
 
     let workspace_dir =
-        resolve_workspace_dir(&app, &workspaceId).map_err(|e| CommandError::new("NOT_FOUND", e))?;
+        resolve_workspace_dir(&app, &workspace_id).map_err(|e| CommandError::new("NOT_FOUND", e))?;
     let (_, _, manager) =
-        ensure_workspace_runtime_state(&app, &state, &workspaceId, &workspace_dir)
+        ensure_workspace_runtime_state(&app, &state, &workspace_id, &workspace_dir)
             .await
             .map_err(|e| {
                 CommandError::new(
@@ -858,21 +906,23 @@ pub async fn create_workspace(
         "Create workspace command called"
     );
 
-    // 验证路径存在
-    let path_obj = std::path::Path::new(&path);
-    if !path_obj.exists() {
-        return Err(CommandError::new("NOT_FOUND", "Path does not exist")
-            .with_help("Please select a valid folder"));
-    }
+    // 验证并规范化导入源路径，避免在 import_folder 前使用未经校验的输入
+    let canonical_path = crate::utils::validation::validate_import_source_path(&path, "path")
+        .map_err(|e| CommandError::new("VALIDATION_ERROR", e))?;
 
-    // 生成 workspace ID（使用名称作为基础，转换为合法 ID）
-    let workspace_id = format!("ws-{}", name.to_lowercase().replace([' ', '/', '\\'], "-"));
+    // 生成带随机后缀的 workspace ID，避免同名工作区覆盖
+    let workspace_id = build_workspace_id(&name);
 
     // 验证生成的 workspace ID 合法性
     validate_workspace_id(&workspace_id).map_err(|e| CommandError::new("VALIDATION_ERROR", e))?;
 
     // 调用 import_folder 逻辑
-    import_folder(app, path, workspace_id, state)
+    import_folder(
+        app,
+        canonical_path.to_string_lossy().into_owned(),
+        workspace_id,
+        state,
+    )
         .await
         .map_err(|e| CommandError::new("IMPORT_ERROR", e))
 }

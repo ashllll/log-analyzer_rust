@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Filter, CheckCircle2 } from 'lucide-react';
 import { cn } from '../../utils/classNames';
 import { COLOR_STYLES } from '../../constants/colors';
@@ -10,12 +10,27 @@ import type { KeywordGroup, ColorKey } from '../../types/common';
  * 显示关键词组并支持快速切换规则
  */
 const FilterPalette: React.FC<FilterPaletteProps> = ({
+  id,
   isOpen,
   onClose,
   groups,
   activeTerms,
   onToggleRule
 }) => {
+  // FIX(HI-23): Escape key to close
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   // Only show enabled keyword groups
@@ -35,7 +50,13 @@ const FilterPalette: React.FC<FilterPaletteProps> = ({
       ></div>
 
       {/* 面板内容 */}
-      <div className="absolute top-full right-0 mt-2 w-[600px] max-h-[60vh] overflow-y-auto bg-bg-popover border border-border-base rounded-lg shadow-2xl z-50 p-4 grid gap-6 animate-in fade-in zoom-in-95 duration-100 origin-top-right ring-1 ring-white/10">
+      {/* FIX(HI-23): role="dialog" and id for aria-controls */}
+      <div
+        id={id}
+        role="dialog"
+        aria-modal="true"
+        className="absolute top-full right-0 mt-2 w-[600px] max-h-[60vh] overflow-y-auto bg-bg-popover border border-border-base rounded-lg shadow-2xl z-50 p-4 grid gap-6 animate-in fade-in zoom-in-95 duration-100 origin-top-right ring-1 ring-white/10"
+      >
         {/* 标题 */}
         <div className="flex justify-between items-center pb-2 border-b border-white/10">
           <h3 className="text-sm font-bold text-text-main flex items-center gap-2">

@@ -7,7 +7,6 @@
 //! - 收集元数据（增量索引）
 //! - 错误处理和进度报告
 
-use crate::archive_handler::StreamingArchiveHandler;
 #[cfg(feature = "enhanced-extraction")]
 use crate::checkpoint_manager::{Checkpoint, CheckpointManager};
 #[cfg(feature = "enhanced-extraction")]
@@ -16,7 +15,6 @@ use crate::internal::file_type_filter::FileTypeFilter;
 use crate::internal::get_file_metadata;
 #[cfg(feature = "enhanced-extraction")]
 use crate::public_api::extract_archive_async;
-use crate::zip_handler::StreamingZipHandler;
 use crate::ArchiveManager;
 use la_core::error::{AppError, Result};
 use la_core::models::config::{ArchiveConfig, FileFilterConfig};
@@ -1295,128 +1293,7 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
         "Inserted archive metadata"
     );
 
-    // ========== 流式 ZIP 快捷路径：无嵌套时跳过临时目录 ==========
-    if archive_type == "zip" && !is_at_max_depth {
-        let streaming_handler = StreamingZipHandler;
-        match streaming_handler.list_entries(archive_path).await {
-            Ok(entries) => {
-                let has_nested_archive = entries
-                    .iter()
-                    .any(|e| !e.is_directory && is_archive_file(&e.path));
-
-                if !has_nested_archive {
-                    info!(
-                        archive_id = archive_id,
-                        entries = entries.len(),
-                        "Using streaming ZIP processing (no temp directory)"
-                    );
-
-                    let mut all_success = true;
-                    for entry in entries {
-                        if entry.is_directory {
-                            continue;
-                        }
-
-                        let entry_path_str = entry.path.to_str().unwrap_or("");
-                        // 修复虚拟路径重复：部分 ZIP 条目路径以归档名开头，需去除
-                        let trimmed_entry = entry_path_str
-                            .strip_prefix(&format!("{}/", file_name))
-                            .or_else(|| entry_path_str.strip_prefix(file_name.as_str()))
-                            .unwrap_or(entry_path_str);
-                        let new_virtual = format!("{}/{}", virtual_path, trimmed_entry);
-
-                        match streaming_handler
-                            .stream_entry_to_cas(archive_path, entry_path_str, &context.cas)
-                            .await
-                        {
-                            Ok(hash) => {
-                                let mime_type =
-                                    entry.path.extension().and_then(|ext| ext.to_str()).map(
-                                        |ext| match ext.to_lowercase().as_str() {
-                                            "log" | "txt" | "md" => "text/plain".to_string(),
-                                            "json" => "application/json".to_string(),
-                                            "xml" => "application/xml".to_string(),
-                                            _ => "application/octet-stream".to_string(),
-                                        },
-                                    );
-
-                                let file_metadata = FileMetadata {
-                                    id: 0,
-                                    sha256_hash: hash.clone(),
-                                    virtual_path: normalize_path_separator(&new_virtual),
-                                    original_name: entry
-                                        .path
-                                        .file_name()
-                                        .unwrap_or_default()
-                                        .to_string_lossy()
-                                        .to_string(),
-                                    size: entry.size as i64,
-                                    modified_time: 0,
-                                    mime_type,
-                                    parent_archive_id: Some(archive_id),
-                                    depth_level,
-                                    min_timestamp: None,
-                                    max_timestamp: None,
-                                    level_mask: None,
-                                    analysis_status:
-                                        la_core::storage_types::AnalysisStatus::Pending,
-                                };
-                                if let Err(e) =
-                                    context.metadata_store.insert_file(&file_metadata).await
-                                {
-                                    warn!(error = %e, path = %new_virtual, "Failed to insert streamed file metadata");
-                                    all_success = false;
-                                    break;
-                                }
-
-                                // 增量分析：对 ZIP 流式解压的文件也立即计算统计
-                                let cas = Arc::clone(&context.cas);
-                                let metadata_store = Arc::clone(&context.metadata_store);
-                                let vp = normalize_path_separator(&new_virtual);
-                                tokio::task::spawn(async move {
-                                    match cas.read_content(&hash).await {
-                                        Ok(content) => {
-                                            let (min_ts, max_ts, level_mask) =
-                                                crate::stats::compute_file_stats(&content);
-                                            if let Err(e) = metadata_store
-                                                .update_file_ready(&vp, min_ts, max_ts, level_mask)
-                                                .await
-                                            {
-                                                tracing::warn!(virtual_path = %vp, error = %e, "Failed to update streamed file ready status");
-                                            }
-                                        }
-                                        Err(e) => {
-                                            tracing::warn!(virtual_path = %vp, hash = %hash, error = %e, "Failed to read streamed CAS content for stats");
-                                        }
-                                    }
-                                });
-                            }
-                            Err(e) => {
-                                warn!(error = %e, path = %new_virtual, "Failed to stream entry to CAS");
-                                all_success = false;
-                                break;
-                            }
-                        }
-                    }
-
-                    if all_success {
-                        context
-                            .metadata_store
-                            .update_archive_status(archive_id, "completed")
-                            .await?;
-                        info!(
-                            archive_id = archive_id,
-                            "Streaming ZIP processing completed"
-                        );
-                        return Ok(());
-                    }
-                }
-            }
-            Err(e) => {
-                warn!(error = %e, "Failed to list ZIP entries for streaming, falling back");
-            }
-        }
-    }
+    // CR-15: async_zip streaming path removed; all ZIP processing now uses sync zip via spawn_blocking
 
     // Create extraction directory
     let timestamp = std::time::SystemTime::now()

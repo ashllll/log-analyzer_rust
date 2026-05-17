@@ -205,14 +205,6 @@ const SearchPage: React.FC = () => {
     });
   }, [loadSearchConfig]);
 
-  // 搜索触发器变化时执行搜索
-  useEffect(() => {
-    if (searchTrigger > 0 && activeWorkspace) {
-      handleSearch();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchTrigger, activeWorkspace]);
-
   // 执行搜索
   const handleSearch = useCallback(async () => {
     if (!activeWorkspace) {
@@ -278,6 +270,17 @@ const SearchPage: React.FC = () => {
     setCurrentQuery,
     parentRef,
   ]);
+
+  // FIX(CR-11): useRef to hold latest handleSearch, avoiding stale closure
+  const handleSearchRef = useRef(handleSearch);
+  handleSearchRef.current = handleSearch;
+
+  // 搜索触发器变化时执行搜索
+  useEffect(() => {
+    if (searchTrigger > 0 && activeWorkspace) {
+      handleSearchRef.current();
+    }
+  }, [searchTrigger, activeWorkspace]);
 
   // 导出搜索结果
   const handleExport = useCallback(async (format: 'csv' | 'json') => {

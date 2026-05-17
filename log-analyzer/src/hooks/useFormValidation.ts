@@ -123,7 +123,8 @@ export function useFormValidation() {
     } catch (error) {
       return {
         isValid: false,
-        errorMessage: `验证失败：${error}`,
+        // FIX(HI-14): 避免 error 对象直接拼接导致 [object Object]
+        errorMessage: `验证失败：${error instanceof Error ? error.message : String(error)}`
       };
     } finally {
       setIsValidating(false);
@@ -206,7 +207,8 @@ export function useFormValidation() {
       } catch (error) {
         return {
           isValid: false,
-          errorMessage: `验证失败：${error}`,
+          // FIX(HI-14): 避免 error 对象直接拼接导致 [object Object]
+        errorMessage: `验证失败：${error instanceof Error ? error.message : String(error)}`
         };
       } finally {
         setIsValidating(false);

@@ -128,8 +128,8 @@ export class EventValidationError extends Error {
     public errors: z.ZodError<unknown>,
     public rawData: unknown
   ) {
-    // 老王备注：防御性检查，避免errors为undefined
-    const zodErrors = (errors as { issues?: Array<{ path: (string | number)[]; message: string }> }).issues || [];
+    // FIX(HI-15): z.ZodError 的 issues 是正式属性，移除不必要的 as 断言
+    const zodErrors = errors.issues || [];
     const errorSummary = zodErrors.length > 0
       ? zodErrors.map((e) => `${e.path.join('.')}: ${e.message}`).join('; ')
       : 'Unknown validation error';

@@ -257,6 +257,7 @@ interface AppErrorBoundaryState {
 
 interface AppErrorBoundaryProps {
   children: React.ReactNode;
+  onNavigateHome?: () => void;
 }
 
 export class AppErrorBoundary extends Component<
@@ -352,8 +353,11 @@ export class AppErrorBoundary extends Component<
           onRetry: this.handleRetry,
           onGoHome: () => {
             this.handleReset();
-            // 导航到首页
-            window.location.hash = '/workspaces';
+            if (this.props.onNavigateHome) {
+              this.props.onNavigateHome();
+            } else {
+              window.location.hash = '/workspaces';
+            }
           }
         };
       } else {
@@ -365,7 +369,11 @@ export class AppErrorBoundary extends Component<
           onRetry: this.handleRetry,
           onGoHome: () => {
             this.handleReset();
-            window.location.hash = '/workspaces';
+            if (this.props.onNavigateHome) {
+              this.props.onNavigateHome();
+            } else {
+              window.location.hash = '/workspaces';
+            }
           }
         };
       }
@@ -498,7 +506,7 @@ export class PageErrorBoundary extends Component<
  *
  * 用于整个页面的错误边界，提供完整的错误信息显示和恢复选项
  */
-export function PageErrorFallback({ error, resetErrorBoundary }: { error: unknown; resetErrorBoundary: () => void }) {
+export function PageErrorFallback({ error, resetErrorBoundary, onGoHome }: { error: unknown; resetErrorBoundary: () => void; onGoHome?: () => void }) {
   // 安全处理未知错误类型
   const errorObj = error instanceof Error ? error : new Error(String(error));
   const apiError = createApiError('page', errorObj);
@@ -513,10 +521,10 @@ export function PageErrorFallback({ error, resetErrorBoundary }: { error: unknow
         code={apiError.code as ErrorCode}
         canRetry={isRetryableError(apiError)}
         onRetry={resetErrorBoundary}
-        onGoHome={() => {
+        onGoHome={onGoHome ?? (() => {
           resetErrorBoundary();
           window.location.hash = '/workspaces';
-        }}
+        })}
       />
     </div>
   );

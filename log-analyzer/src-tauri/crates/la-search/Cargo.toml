@@ -9,7 +9,7 @@ la-core = { path = "../la-core" }
 tantivy = { version = "0.24", features = ["mmap"] }
 aho-corasick = "1.1"
 regex.workspace = true
-rayon = "1.8"
+rayon = "~1.12"  # HI-34: lock to minor version
 tokio.workspace = true
 tokio-util = { version = "0.7", features = ["rt"] }
 serde.workspace = true
@@ -22,10 +22,10 @@ lru = "0.16"
 futures = "0.3"
 tempfile.workspace = true
 chrono.workspace = true
-thiserror = "2"
+thiserror = "~2.0"  # HI-34: lock to minor version
 sha2 = "0.10"
 
-dashmap = "6"
+dashmap = "~6.1"  # HI-34: lock to minor version
 num_cpus = "1.16"
 once_cell = "1.20"
 

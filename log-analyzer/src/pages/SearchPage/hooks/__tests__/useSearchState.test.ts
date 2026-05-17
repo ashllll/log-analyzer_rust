@@ -4,7 +4,7 @@
  */
 
 import { renderHook, act } from '@testing-library/react';
-import { useSearchState, searchExecReducer, searchExecInitial, SearchExecState } from '../useSearchState';
+import { useSearchState, searchExecReducer, searchExecInitial, SearchExecState, SearchExecAction } from '../useSearchState';
 
 // Mock keywordColors for tests
 const mockKeywordColors = ['#3B82F6', '#8B5CF6', '#22C55E', '#F59E0B', '#EC4899', '#06B6D4'];
@@ -168,8 +168,7 @@ describe('useSearchState', () => {
         keywordStats: [],
       };
 
-      // @ts-expect-error - testing with invalid action type
-      const action = { type: 'UNKNOWN' as const };
+      const action = { type: 'UNKNOWN' as const } as unknown as SearchExecAction;
       const newState = searchExecReducer(currentState, action);
 
       // Without a default case, reducer returns undefined

@@ -41,12 +41,12 @@ pub(crate) fn compute_query_cache_key(query: &SearchQuery) -> u64 {
         filters.file_pattern.hash(&mut hasher);
     }
 
-    // 按 ID 排序以确保哈希一致性（无论术语顺序如何，等价查询产生相同哈希）
-    let mut sorted_terms = query.terms.clone();
-    sorted_terms.sort_by(|a, b| a.id.cmp(&b.id));
+    // 按 ID 排序以确保哈希一致性；只排序引用，避免克隆完整查询项
+    let mut sorted_terms: Vec<_> = query.terms.iter().collect();
+    sorted_terms.sort_unstable_by(|a, b| a.id.cmp(&b.id));
 
     // 哈希每个搜索项的所有关键字段
-    for term in &sorted_terms {
+    for term in sorted_terms {
         term.id.hash(&mut hasher);
         term.value.hash(&mut hasher);
         hash_query_operator(&term.operator, &mut hasher);

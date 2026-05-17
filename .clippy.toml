@@ -3,10 +3,10 @@
 # Note: Lint levels (warn/deny/allow) are controlled via command-line flags
 #       or crate-level attributes, not in this file.
 
-# Allow unwrap/expect in test code
-allow-unwrap-in-tests = true
-allow-expect-in-tests = true
-allow-panic-in-tests = true
+# ME-55: Disallow unwrap/expect/panic in tests to improve error handling hygiene
+allow-unwrap-in-tests = false
+allow-expect-in-tests = false
+allow-panic-in-tests = false
 
 # Complexity thresholds
 cognitive-complexity-threshold = 25

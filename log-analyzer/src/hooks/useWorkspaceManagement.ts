@@ -18,7 +18,9 @@ export interface UseWorkspaceManagementReturn {
  */
 export const useWorkspaceManagement = (): UseWorkspaceManagementReturn => {
   const { showToast: addToast } = useToast();
+  const activeWorkspaceId = useAppStore((state) => state.activeWorkspaceId);
   const setActiveWorkspace = useAppStore((state) => state.setActiveWorkspace);
+  const workspaces = useWorkspaceStore((state) => state.workspaces);
   const deleteWorkspace = useWorkspaceStore((state) => state.deleteWorkspace);
 
   const [isLoading, setIsLoading] = useState(false);
@@ -34,10 +36,8 @@ export const useWorkspaceManagement = (): UseWorkspaceManagementReturn => {
 
       deleteWorkspace(id);
 
-      // 从 store 读取最新快照（deleteWorkspace 已更新 store，旧闭包快照不可靠）
-      const currentActiveId = useAppStore.getState().activeWorkspaceId;
-      if (currentActiveId === id) {
-        const remaining = useWorkspaceStore.getState().workspaces;
+      if (activeWorkspaceId === id) {
+        const remaining = workspaces.filter((workspace) => workspace.id !== id);
         setActiveWorkspace(remaining.length > 0 ? remaining[0].id : null);
       }
 
@@ -48,7 +48,7 @@ export const useWorkspaceManagement = (): UseWorkspaceManagementReturn => {
     } finally {
       setIsLoading(false);
     }
-  }, [addToast, deleteWorkspace, setActiveWorkspace]);
+  }, [activeWorkspaceId, addToast, deleteWorkspace, setActiveWorkspace, workspaces]);
 
   const refreshWorkspace = useCallback(async (workspace: Workspace) => {
     if (import.meta.env.DEV) logger.debug('refreshWorkspace called for workspace:', workspace.id);

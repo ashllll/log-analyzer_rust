@@ -2,7 +2,7 @@
 // 支持多平台构建和自动化部署
 
 pipeline {
-    agent any
+    agent { label 'trusted-docker || rust-builder' }  // HI-32: Restrict to trusted build nodes
 
     // 环境变量
     environment {
@@ -75,7 +75,7 @@ pipeline {
                     agent {
                         docker {
                             image 'rust:1.75'
-                            args '-v /var/run/docker.sock:/var/run/docker.sock'
+                            // HI-31: Removed Docker socket mount to prevent container escape
                         }
                     }
                     steps {
@@ -116,7 +116,7 @@ pipeline {
                     agent {
                         docker {
                             image 'rust:1.75'
-                            args '-v /var/run/docker.sock:/var/run/docker.sock'
+                            // HI-31: Removed Docker socket mount to prevent container escape
                         }
                     }
                     when {
@@ -136,7 +136,7 @@ pipeline {
                     agent {
                         docker {
                             image 'rust:1.75'
-                            args '-v /var/run/docker.sock:/var/run/docker.sock'
+                            // HI-31: Removed Docker socket mount to prevent container escape
                         }
                     }
                     when {
@@ -145,7 +145,7 @@ pipeline {
                     steps {
                         sh '''
                             cd log-analyzer/src-tauri
-                            cargo clippy --all-features --all-targets
+                            cargo clippy --all-features --all-targets -- -D warnings  # ME-59: Treat warnings as errors
                             echo "Rust Clippy 检查通过"
                         '''
                     }
@@ -180,7 +180,7 @@ pipeline {
                     agent {
                         docker {
                             image 'rust:1.75'
-                            args '-v /var/run/docker.sock:/var/run/docker.sock'
+                            // HI-31: Removed Docker socket mount to prevent container escape
                         }
                     }
                     when {
@@ -221,7 +221,7 @@ pipeline {
                     agent {
                         docker {
                             image 'rust:1.75'
-                            args '-v /var/run/docker.sock:/var/run/docker.sock'
+                            // HI-31: Removed Docker socket mount to prevent container escape
                         }
                     }
                     when {
@@ -251,7 +251,7 @@ pipeline {
             agent {
                 docker {
                     image 'rust:1.75'
-                    args '-v /var/run/docker.sock:/var/run/docker.sock'
+                    // HI-31: Removed Docker socket mount to prevent container escape
                 }
             }
             when {
@@ -274,7 +274,7 @@ pipeline {
                     agent {
                         docker {
                             image 'rust:1.75'
-                            args '-v /var/run/docker.sock:/var/run/docker.sock'
+                            // HI-31: Removed Docker socket mount to prevent container escape
                         }
                     }
                     when {
@@ -295,7 +295,7 @@ pipeline {
                     agent {
                         docker {
                             image 'rust:1.75'
-                            args '-v /var/run/docker.sock:/var/run/docker.sock'
+                            // HI-31: Removed Docker socket mount to prevent container escape
                         }
                     }
                     when {
@@ -340,7 +340,7 @@ pipeline {
                     agent {
                         docker {
                             image 'rust:1.75'
-                            args '-v /var/run/docker.sock:/var/run/docker.sock'
+                            // HI-31: Removed Docker socket mount to prevent container escape
                         }
                     }
                     when {
@@ -411,7 +411,7 @@ pipeline {
             agent {
                 docker {
                     image 'rust:1.75'
-                    args '-v /var/run/docker.sock:/var/run/docker.sock'
+                    // HI-31: Removed Docker socket mount to prevent container escape
                 }
             }
             steps {
@@ -498,8 +498,8 @@ pipeline {
         cleanup {
             script {
                 echo "=== 清理构建环境 ==="
-                // 清理 Docker 镜像
-                sh 'docker system prune -f'
+                // ME-58: Removed aggressive docker system prune -f to avoid interfering with other builds
+                // Use docker image prune -f --filter "label=your-project" for scoped cleanup
                 // 清理 npm 缓存
                 sh 'npm cache clean --force || true'
             }

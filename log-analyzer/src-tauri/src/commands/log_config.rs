@@ -2,13 +2,39 @@
 //!
 //! 提供运行时调整日志级别的 Tauri 命令接口
 
-use tauri::command;
+use tauri::{command, AppHandle, Manager};
 
 use crate::utils::log_config::{
     get_debug_log_config, get_log_config, get_production_log_config, load_log_config_from_file,
     reset_log_config, save_log_config_to_file, set_global_log_level, set_module_log_level,
     LogConfig, LogLevel,
 };
+
+/// FIX(CR-03): 将用户传入的路径解析为应用配置目录下的安全路径
+fn resolve_log_config_path(app: &AppHandle, path: &str) -> Result<std::path::PathBuf, String> {
+    let safe_name = crate::utils::validation::prevent_path_traversal(path)
+        .map_err(|e| format!("配置路径不安全: {}", e))?;
+    let path_obj = std::path::Path::new(&safe_name);
+
+    // 拒绝绝对路径
+    for component in path_obj.components() {
+        match component {
+            std::path::Component::Normal(_) | std::path::Component::CurDir => {}
+            std::path::Component::RootDir | std::path::Component::Prefix(_) => {
+                return Err("配置路径必须是相对路径".to_string());
+            }
+            std::path::Component::ParentDir => {
+                return Err("配置路径包含非法路径遍历".to_string());
+            }
+        }
+    }
+
+    let config_dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| format!("无法获取应用配置目录: {}", e))?;
+    Ok(config_dir.join(path_obj))
+}
 
 /// 获取当前日志配置
 #[command]
@@ -68,9 +94,9 @@ pub async fn get_recommended_debug_config() -> Result<LogConfig, String> {
 /// # 参数
 /// - `path`: 配置文件路径
 #[command]
-pub async fn load_log_config(path: String) -> Result<LogConfig, String> {
-    let path = std::path::Path::new(&path);
-    load_log_config_from_file(path)
+pub async fn load_log_config(app: AppHandle, path: String) -> Result<LogConfig, String> {
+    let final_path = resolve_log_config_path(&app, &path)?;
+    load_log_config_from_file(&final_path)
 }
 
 /// 保存日志配置到文件
@@ -79,9 +105,9 @@ pub async fn load_log_config(path: String) -> Result<LogConfig, String> {
 /// - `path`: 配置文件路径
 /// - `config`: 要保存的配置
 #[command]
-pub async fn save_log_config(path: String, config: LogConfig) -> Result<(), String> {
-    let path = std::path::Path::new(&path);
-    save_log_config_to_file(path, &config)
+pub async fn save_log_config(app: AppHandle, path: String, config: LogConfig) -> Result<(), String> {
+    let final_path = resolve_log_config_path(&app, &path)?;
+    save_log_config_to_file(&final_path, &config)
 }
 
 /// 获取所有支持的日志级别

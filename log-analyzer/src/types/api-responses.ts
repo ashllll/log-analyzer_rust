@@ -98,7 +98,8 @@ export const VirtualTreeNodeSchema: z.ZodType<VirtualTreeNode> = z.union([
 /**
  * 工作区状态 Schema
  */
-export const WorkspaceStatusSchema = z.enum(['READY', 'PROCESSING', 'OFFLINE', 'ERROR']);
+// FIX(HI-17): 补充缺失的 'PARTIAL'，与 WorkspaceSchema.status 保持一致
+export const WorkspaceStatusSchema = z.enum(['READY', 'PROCESSING', 'OFFLINE', 'ERROR', 'PARTIAL']);
 
 /**
  * 工作区状态枚举类型
@@ -379,7 +380,7 @@ const WorkspaceSchema = z.object({
   id: z.string(),
   name: z.string(),
   path: z.string(),
-  status: z.enum(['READY', 'OFFLINE', 'PROCESSING', 'ERROR', 'PARTIAL']),
+  status: WorkspaceStatusSchema,
   size: z.string(),
   files: z.number(),
   watching: z.boolean().optional(),

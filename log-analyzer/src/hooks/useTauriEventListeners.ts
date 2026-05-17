@@ -108,20 +108,30 @@ export const useTauriEventListeners = () => {
           workspaceId = payload.workspace_id ?? null;
         }
 
+        // FIX(HI-19): 增加幂等性检查，避免 import-complete 与 task-update/workspace-event 重复修改 store
         if (taskId) {
-          updateTask(taskId, { status: 'COMPLETED', progress: 100 });
+          const currentTask = useTaskStore.getState().tasks.find((t) => t.id === taskId);
+          if (!currentTask || currentTask.status !== 'COMPLETED') {
+            updateTask(taskId, { status: 'COMPLETED', progress: 100 });
+          }
         }
 
         if (workspaceId) {
-          logger.debug('[TauriEventListeners] import-complete with workspace_id, updating status to READY:', workspaceId);
-          updateWorkspace(workspaceId, { status: 'READY' });
+          const currentWs = useWorkspaceStore.getState().workspaces.find((w) => w.id === workspaceId);
+          if (!currentWs || currentWs.status !== 'READY') {
+            logger.debug('[TauriEventListeners] import-complete with workspace_id, updating status to READY:', workspaceId);
+            updateWorkspace(workspaceId, { status: 'READY' });
+          }
         } else if (taskId) {
           // 回退方案：从任务中查找 workspace_id
           const taskStore = useTaskStore.getState();
           const task = taskStore.tasks.find((t) => t.id === taskId);
           if (task?.workspaceId) {
-            logger.debug('[TauriEventListeners] import-complete fallback, updating workspace status to READY:', task.workspaceId);
-            updateWorkspace(task.workspaceId, { status: 'READY' });
+            const currentWs = useWorkspaceStore.getState().workspaces.find((w) => w.id === task.workspaceId);
+            if (!currentWs || currentWs.status !== 'READY') {
+              logger.debug('[TauriEventListeners] import-complete fallback, updating workspace status to READY:', task.workspaceId);
+              updateWorkspace(task.workspaceId, { status: 'READY' });
+            }
           }
         }
       });

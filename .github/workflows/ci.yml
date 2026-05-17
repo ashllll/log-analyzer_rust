@@ -93,13 +93,9 @@ jobs:
       - name: Run unit tests
         run: |
           cd log-analyzer/src-tauri
-          cargo test --all-features --lib --bins -- --test-threads=4 --nocapture || {
-            echo "=== TEST FAILED WITH EXIT CODE $? ==="
-            echo "Retrying with single thread for clearer output..."
-            cargo test --all-features --lib --bins -- --test-threads=1 --nocapture
-          }
+          cargo test --all-features --lib --bins -- --test-threads=4 --nocapture
         env:
-          RUST_BACKTRACE: full
+          RUST_BACKTRACE: 1  # HI-38: Use '1' instead of 'full' to avoid leaking absolute paths/usernames
           RUST_TEST_TIME_INTEGRATION: 1
 
   # IPC 一致性检查
@@ -249,13 +245,9 @@ jobs:
       - name: Run integration tests
         run: |
           cd log-analyzer/src-tauri
-          cargo test --workspace --all-features -- --test-threads=2 --nocapture || {
-            echo "=== INTEGRATION TEST FAILED WITH EXIT CODE $? ==="
-            echo "Retrying with single thread for clearer output..."
-            cargo test --workspace --all-features -- --test-threads=1 --nocapture
-          }
+          cargo test --workspace --all-features -- --test-threads=2 --nocapture
         env:
-          RUST_BACKTRACE: full
+          RUST_BACKTRACE: 1  # HI-38: Use '1' instead of 'full' to avoid leaking absolute paths/usernames
 
   release-automation-dry-run:
     name: Release Automation Dry Run

@@ -197,14 +197,14 @@ security:audit:
   script:
     - cargo install cargo-audit
     - cd log-analyzer/src-tauri
-    - cargo audit --json > audit-report.json || true
+    - cargo audit --deny warnings --json > audit-report.json  # HI-36: Fail on vulnerabilities instead of masking with || true
   artifacts:
     paths:
       - log-analyzer/src-tauri/audit-report.json
     expire_in: 1 week
   tags:
     - docker
-  allow_failure: true
+  # HI-36: Removed allow_failure so audit failures block the pipeline
 
 # Job: 安全扫描 - 依赖检查
 security:deps:
@@ -250,7 +250,7 @@ build:linux:
 # Job: 构建 macOS (需要 macOS runner)
 build:macos:
   stage: build
-  image: macos:latest
+  # ME-57: Removed non-standard macos:latest image; macOS builds rely on shell executor runners
   dependencies:
     - install:rust
     - install:frontend
@@ -339,7 +339,7 @@ release:gitlab:
     - echo "创建 GitLab Release"
     - |
       curl --request POST \
-        --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+        --header "PRIVATE-TOKEN: $CI_JOB_TOKEN" \
         --data "name=Release $CI_COMMIT_TAG" \
         --data "tag_name=$CI_COMMIT_TAG" \
         --data "description=Log Analyzer Release $CI_COMMIT_TAG" \

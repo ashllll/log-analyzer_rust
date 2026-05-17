@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '../stores/appStore';
 import { useWorkspaceStore, type Workspace } from '../stores/workspaceStore';
@@ -19,26 +20,31 @@ export const useConfigQuery = () => {
   const setWorkspaces = useWorkspaceStore((state) => state.setWorkspaces);
   const setKeywordGroups = useKeywordStore((state) => state.setKeywordGroups);
 
-  return useQuery({
+  const query = useQuery({
     queryKey: queryKeys.config,
     queryFn: async () => {
       logger.debug('[QUERY] Loading configuration');
       const config = await api.loadConfig();
-
-      // Update zustand store with loaded data
-      if (config.workspaces) {
-        setWorkspaces(config.workspaces);
-      }
-      if (config.keyword_groups) {
-        setKeywordGroups(config.keyword_groups);
-      }
-
       return config;
     },
     staleTime: 5 * 60 * 1000, // 5 minutes
     retry: 3,
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
   });
+
+  // FIX(CR-10): 将 store 副作用从 queryFn 移到 useEffect，保持 queryFn 纯净
+  useEffect(() => {
+    if (query.data) {
+      if (query.data.workspaces) {
+        setWorkspaces(query.data.workspaces);
+      }
+      if (query.data.keyword_groups) {
+        setKeywordGroups(query.data.keyword_groups);
+      }
+    }
+  }, [query.data, setWorkspaces, setKeywordGroups]);
+
+  return query;
 };
 
 /**

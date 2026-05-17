@@ -377,7 +377,7 @@ export function SettingsPage() {
         <Card className="p-6">
           <h2 className="text-xl font-semibold mb-4 text-text-main">{t('settings.search_config.title')}</h2>
           <div className="space-y-4">
-            <FormField label="默认最大结果数">
+            <FormField label={t('settings.search_config.max_results')}>
               <Input
                 type="number"
                 value={localSearchConfig.max_results}
@@ -389,10 +389,10 @@ export function SettingsPage() {
                 }
                 min={1}
               />
-              <span className="text-xs text-text-dim mt-1">未显式指定时，搜索命令默认返回的最大结果数。</span>
+              <span className="text-xs text-text-dim mt-1">{t('settings.search_config.max_results_hint')}</span>
             </FormField>
 
-            <FormField label="搜索超时（秒）">
+            <FormField label={t('settings.search_config.timeout_seconds')}>
               <Input
                 type="number"
                 value={localSearchConfig.timeout_seconds}
@@ -404,10 +404,10 @@ export function SettingsPage() {
                 }
                 min={1}
               />
-              <span className="text-xs text-text-dim mt-1">同步搜索超过该时间会返回超时错误。</span>
+              <span className="text-xs text-text-dim mt-1">{t('settings.search_config.timeout_seconds_hint')}</span>
             </FormField>
 
-            <FormField label="最大并发搜索数">
+            <FormField label={t('settings.search_config.max_concurrent_searches')}>
               <Input
                 type="number"
                 value={localSearchConfig.max_concurrent_searches}
@@ -419,10 +419,10 @@ export function SettingsPage() {
                 }
                 min={1}
               />
-              <span className="text-xs text-text-dim mt-1">限制后台同时执行的搜索任务数。</span>
+              <span className="text-xs text-text-dim mt-1">{t('settings.search_config.max_concurrent_searches_hint')}</span>
             </FormField>
 
-            <FormField label="区分大小写">
+            <FormField label={t('settings.search_config.case_sensitive')}>
               <div className="flex items-center gap-2">
                 <input
                   type="checkbox"
@@ -435,11 +435,11 @@ export function SettingsPage() {
                   }
                   className="w-4 h-4 rounded border-border-base text-primary focus:ring-primary/50"
                 />
-                <span className="text-sm text-text-muted">启用后，默认搜索会按大小写精确匹配。</span>
+                <span className="text-sm text-text-muted">{t('settings.search_config.case_sensitive_hint')}</span>
               </div>
             </FormField>
 
-            <FormField label="启用正则搜索">
+            <FormField label={t('settings.search_config.regex_enabled')}>
               <div className="flex items-center gap-2">
                 <input
                   type="checkbox"
@@ -452,11 +452,11 @@ export function SettingsPage() {
                   }
                   className="w-4 h-4 rounded border-border-base text-primary focus:ring-primary/50"
                 />
-                <span className="text-sm text-text-muted">保留正则搜索能力；关闭后仅允许普通文本匹配。</span>
+                <span className="text-sm text-text-muted">{t('settings.search_config.regex_enabled_hint')}</span>
               </div>
             </FormField>
 
-            <FormField label="正则缓存大小">
+            <FormField label={t('settings.search_config.regex_cache_size')}>
               <Input
                 type="number"
                 value={localSearchConfig.regex_cache_size}
@@ -468,10 +468,10 @@ export function SettingsPage() {
                 }
                 min={1}
               />
-              <span className="text-xs text-text-dim mt-1">查询执行器可复用的正则表达式缓存容量。</span>
+              <span className="text-xs text-text-dim mt-1">{t('settings.search_config.regex_cache_size_hint')}</span>
             </FormField>
 
-            <FormField label="启用模糊搜索">
+            <FormField label={t('settings.search_config.fuzzy_search_enabled')}>
               <div className="flex items-center gap-2">
                 <input
                   type="checkbox"
@@ -484,7 +484,7 @@ export function SettingsPage() {
                   }
                   className="w-4 h-4 rounded border-border-base text-primary focus:ring-primary/50"
                 />
-                <span className="text-sm text-text-muted">保留模糊匹配配置，供后续搜索策略扩展使用。</span>
+                <span className="text-sm text-text-muted">{t('settings.search_config.fuzzy_search_enabled_hint')}</span>
               </div>
             </FormField>
           </div>
@@ -495,7 +495,7 @@ export function SettingsPage() {
         <Card className="p-6">
           <h2 className="text-xl font-semibold mb-4 text-text-main">{t('settings.task_manager.title')}</h2>
           <div className="space-y-4">
-            <FormField label="最大并发任务数">
+            <FormField label={t('settings.task_manager.max_concurrent_tasks')}>
               <Input
                 type="number"
                 value={localTaskConfig.max_concurrent_tasks}
@@ -507,10 +507,10 @@ export function SettingsPage() {
                 }
                 min={1}
               />
-              <span className="text-xs text-text-dim mt-1">任务管理器允许同时运行的任务数量。</span>
+              <span className="text-xs text-text-dim mt-1">{t('settings.task_manager.max_concurrent_tasks_hint')}</span>
             </FormField>
 
-            <FormField label="任务超时（秒）">
+            <FormField label={t('settings.task_manager.operation_timeout')}>
               <Input
                 type="number"
                 value={localTaskConfig.operation_timeout}
@@ -522,10 +522,10 @@ export function SettingsPage() {
                 }
                 min={1}
               />
-              <span className="text-xs text-text-dim mt-1">单个后台操作的超时时间。</span>
+              <span className="text-xs text-text-dim mt-1">{t('settings.task_manager.operation_timeout_hint')}</span>
             </FormField>
 
-            <FormField label="完成任务保留时长（秒）">
+            <FormField label={t('settings.task_manager.completed_task_ttl')}>
               <Input
                 type="number"
                 value={localTaskConfig.completed_task_ttl}
@@ -537,10 +537,10 @@ export function SettingsPage() {
                 }
                 min={1}
               />
-              <span className="text-xs text-text-dim mt-1">已完成任务在状态列表中的保留时间。</span>
+              <span className="text-xs text-text-dim mt-1">{t('settings.task_manager.completed_task_ttl_hint')}</span>
             </FormField>
 
-            <FormField label="失败任务保留时长（秒）">
+            <FormField label={t('settings.task_manager.failed_task_ttl')}>
               <Input
                 type="number"
                 value={localTaskConfig.failed_task_ttl}
@@ -552,10 +552,10 @@ export function SettingsPage() {
                 }
                 min={1}
               />
-              <span className="text-xs text-text-dim mt-1">失败任务会保留更久，便于排查问题。</span>
+              <span className="text-xs text-text-dim mt-1">{t('settings.task_manager.failed_task_ttl_hint')}</span>
             </FormField>
 
-            <FormField label="清理间隔（秒）">
+            <FormField label={t('settings.task_manager.cleanup_interval')}>
               <Input
                 type="number"
                 value={localTaskConfig.cleanup_interval}
@@ -567,7 +567,7 @@ export function SettingsPage() {
                 }
                 min={1}
               />
-              <span className="text-xs text-text-dim mt-1">后台任务清理器的轮询间隔。</span>
+              <span className="text-xs text-text-dim mt-1">{t('settings.task_manager.cleanup_interval_hint')}</span>
             </FormField>
           </div>
         </Card>

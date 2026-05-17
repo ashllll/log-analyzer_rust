@@ -27,7 +27,7 @@ jobs:
       !contains(github.event.workflow_run.head_commit.message, '[skip ci]')
     permissions:
       contents: write
-      actions: write
+      # ME-48: Removed actions: write to follow principle of least privilege
 
     steps:
       - name: Checkout repository

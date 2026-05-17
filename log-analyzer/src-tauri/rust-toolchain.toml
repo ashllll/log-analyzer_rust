@@ -1,3 +1,4 @@
 [toolchain]
-channel = "stable"
+# ME-54: Pinned to specific stable version for reproducible builds
+channel = "1.85"
 components = ["rustfmt", "clippy"]

@@ -43,9 +43,13 @@ export default [
       'react-hooks/exhaustive-deps': 'warn',
       
       // General
-      'no-console': 'off', // Allow console for debugging
+      'no-console': 'warn', // ME-51: Changed from off to warn to reduce production console leakage
       'no-unused-vars': 'off',
       'no-undef': 'off', // TypeScript handles this
+      // ME-51: Added basic security rules
+      'no-eval': 'error',
+      'no-implied-eval': 'error',
+      'no-new-func': 'error'
     },
     settings: {
       react: {

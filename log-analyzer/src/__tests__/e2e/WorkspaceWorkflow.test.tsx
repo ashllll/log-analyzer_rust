@@ -338,7 +338,7 @@ describe.skip('E2E: Workspace Management Workflow', () => {
       // Trigger task update event
       if (mockListen.mock.calls.length > 0) {
         const taskUpdateCall = mockListen.mock.calls.find(
-          call => call[0] === 'task-update'
+          (call: [string, unknown]) => call[0] === 'task-update'
         );
         if (taskUpdateCall) {
           const handler = taskUpdateCall[1];
@@ -364,7 +364,7 @@ describe.skip('E2E: Workspace Management Workflow', () => {
 
       if (mockListen.mock.calls.length > 0) {
         const taskUpdateCall = mockListen.mock.calls.find(
-          call => call[0] === 'task-update'
+          (call: [string, unknown]) => call[0] === 'task-update'
         );
         if (taskUpdateCall) {
           const handler = taskUpdateCall[1];

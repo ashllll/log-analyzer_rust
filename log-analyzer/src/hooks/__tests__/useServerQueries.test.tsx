@@ -66,8 +66,6 @@ describe('Server Queries Integration Tests', () => {
   beforeEach(() => {
     // Reset all store states (Zustand stores)
     useAppStore.setState({
-      page: 'workspaces',
-      toasts: [],
       activeWorkspaceId: null,
     });
 
@@ -308,8 +306,10 @@ describe('Server Queries Integration Tests', () => {
         expect(mockInvoke).toHaveBeenCalledTimes(2);
       });
 
-      // Store should be updated with new data
-      expect(useWorkspaceStore.getState().workspaces[0].id).toBe('workspace-2');
+      // Store should be updated with new data (useEffect 在 render 后异步执行)
+      await waitFor(() => {
+        expect(useWorkspaceStore.getState().workspaces[0].id).toBe('workspace-2');
+      });
     });
   });
 });

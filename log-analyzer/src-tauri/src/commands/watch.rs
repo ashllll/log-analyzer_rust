@@ -80,6 +80,9 @@ pub async fn start_watch(
     let watchers_arc: Arc<parking_lot::Mutex<HashMap<String, WatcherState>>> =
         Arc::clone(&state.watchers);
 
+    // FIX(HI-04): 捕获当前 Tokio runtime handle，传给 watcher thread 中的 CAS 写入
+    let runtime_handle = tokio::runtime::Handle::current();
+
     let handle = thread::spawn(move || {
         for res in rx {
             match res {
@@ -194,6 +197,7 @@ pub async fn start_watch(
                                             &new_entries,
                                             &app_handle,
                                             &state,
+                                            &runtime_handle,
                                         );
                                     }
 

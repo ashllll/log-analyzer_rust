@@ -24,9 +24,15 @@ fn is_retryable_error(error: &str) -> bool {
         .any(|e| error.to_lowercase().contains(e))
 }
 
-/// 文件操作重试辅助函数
+/// 文件操作重试辅助函数（同步版本）
 ///
 /// 使用 `retry` crate 实现指数退避重试，支持自定义重试次数和延迟时间。
+///
+/// # 警告
+///
+/// 此函数在重试间隔中使用 `std::thread::sleep()`，会阻塞当前线程。
+/// **请勿在 async/Tokio 运行时上下文中调用**，否则会阻塞 async 执行器的工作线程。
+/// 在异步上下文中请使用 [`retry_file_operation_async`]。
 ///
 /// # 参数
 ///
@@ -116,6 +122,11 @@ where
 ///
 /// 适用于简单的重试场景，使用默认的延迟参数。
 ///
+/// # 警告
+///
+/// 与 [`retry_file_operation`] 相同，此函数使用 `std::thread::sleep()`。
+/// 在异步上下文中请使用 [`retry_simple_async`]。
+///
 /// # 参数
 ///
 /// - `operation` - 要执行的操作闭包
@@ -134,6 +145,100 @@ where
         5000, // 5s 最大延迟
         operation_name,
     )
+}
+
+/// 异步文件操作重试辅助函数
+///
+/// FIX(HI-07): 提供 async 版本，内部使用 `tokio::time::sleep` 替代 `std::thread::sleep`，
+/// 避免阻塞 Tokio 执行器的工作线程。
+///
+/// # 参数
+///
+/// - `operation` - 要执行的异步操作闭包，返回 `Result<T, E>`
+/// - `max_retries` - 最大重试次数
+/// - `base_delay_ms` - 基础延迟时间（毫秒）
+/// - `max_delay_ms` - 最大延迟时间（毫秒）
+/// - `operation_name` - 操作名称（用于日志输出）
+pub async fn retry_file_operation_async<T, E, F, Fut>(
+    operation: F,
+    max_retries: usize,
+    base_delay_ms: u64,
+    max_delay_ms: u64,
+    operation_name: &str,
+) -> Result<T, E>
+where
+    F: Fn() -> Fut,
+    Fut: std::future::Future<Output = Result<T, E>>,
+    E: std::fmt::Display + Clone,
+{
+    let mut attempt = 0;
+
+    loop {
+        match operation().await {
+            Ok(result) => {
+                if attempt > 0 {
+                    tracing::info!(
+                        operation = %operation_name,
+                        retries = attempt,
+                        "Async operation succeeded after retries"
+                    );
+                }
+                return Ok(result);
+            }
+            Err(e) => {
+                if !is_retryable_error(&e.to_string()) || attempt >= max_retries {
+                    error!(
+                        operation = %operation_name,
+                        attempts = attempt + 1,
+                        error = %e,
+                        "Async operation failed after all attempts"
+                    );
+                    return Err(e);
+                }
+
+                let exp_delay =
+                    std::cmp::min(base_delay_ms * (2_u64.pow(attempt as u32)), max_delay_ms);
+
+                tracing::warn!(
+                    operation = %operation_name,
+                    attempt = attempt + 1,
+                    delay_ms = exp_delay,
+                    error = %e,
+                    "Async operation failed, retrying"
+                );
+
+                tokio::time::sleep(Duration::from_millis(exp_delay)).await;
+                attempt += 1;
+            }
+        }
+    }
+}
+
+/// 简化的异步重试函数（默认参数）
+///
+/// 适用于简单的异步重试场景，使用默认的延迟参数。
+///
+/// # 参数
+///
+/// - `operation` - 要执行的异步操作闭包
+/// - `operation_name` - 操作名称
+pub async fn retry_simple_async<T, E, F, Fut>(
+    operation: F,
+    operation_name: &str,
+) -> Result<T, E>
+where
+    F: Fn() -> Fut,
+    Fut: std::future::Future<Output = Result<T, E>>,
+    E: std::fmt::Display + Clone,
+{
+    retry_file_operation_async(
+        operation,
+        3,    // 3 次重试
+        100,  // 100ms 基础延迟
+        5000, // 5s 最大延迟
+        operation_name,
+    )
+    .await
 }
 
 #[cfg(test)]

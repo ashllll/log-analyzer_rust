@@ -18,7 +18,7 @@ use crate::services::parse_log_lines;
 use crate::task_manager::TaskManager;
 use crate::utils::encoding::decode_log_content;
 use crate::utils::workspace_paths::preferred_workspace_dir;
-use crate::utils::{canonicalize_path, validate_path_param, validate_workspace_id};
+use crate::utils::{canonicalize_path, validate_workspace_id};
 use la_core::error::AppError;
 use la_core::models::config::AppConfigLoader;
 use la_storage::{verify_after_import, MetadataStore};
@@ -291,14 +291,8 @@ fn compute_file_stats(content: &[u8]) -> (Option<i64>, Option<i64>, Option<u8>) 
         let (timestamp_str, level) = parse_metadata(line);
         if !level.is_empty() {
             has_any_level = true;
-            let mask_bit = match level {
-                "debug" => 1u8 << 0,
-                "info" => 1u8 << 1,
-                "warn" => 1u8 << 2,
-                "error" => 1u8 << 3,
-                _ => 0,
-            };
-            level_mask |= mask_bit;
+            // FIX(CR-01): 使用 commands::mod.rs 中统一的标准定义
+            level_mask |= crate::commands::level_to_mask(level);
         }
         if !timestamp_str.is_empty() {
             if let Some(ts) = la_search::parse_log_timestamp_to_unix(&timestamp_str) {
@@ -344,23 +338,18 @@ fn compute_file_stats(content: &[u8]) -> (Option<i64>, Option<i64>, Option<u8>) 
 pub async fn import_folder(
     app: AppHandle,
     path: String,
-    #[allow(non_snake_case)] workspaceId: String,
+    workspace_id: String,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
-    validate_path_param(&path, "path")?;
-    validate_workspace_id(&workspaceId)?;
+    validate_workspace_id(&workspace_id)?;
 
     let app_handle = app.clone();
     let task_id = Uuid::new_v4().to_string();
     let task_id_clone = task_id.clone();
-    let workspace_id_clone = workspaceId.clone();
+    let workspace_id_clone = workspace_id.clone();
 
-    let source_path = Path::new(&path);
-    if !source_path.exists() {
-        return Err(format!("Path does not exist: {}", path));
-    }
-
-    let canonical_path = match canonicalize_path(source_path) {
+    let validated_path = crate::utils::validation::validate_import_source_path(&path, "path")?;
+    let canonical_path = match canonicalize_path(&validated_path) {
         Ok(path) => path,
         Err(e) => {
             let error_msg = format!("Path canonicalization failed: {}", e);
@@ -370,7 +359,7 @@ pub async fn import_folder(
         }
     };
 
-    let workspace_dir = preferred_workspace_dir(&app, &workspaceId)?;
+    let workspace_dir = preferred_workspace_dir(&app, &workspace_id)?;
 
     fs::create_dir_all(&workspace_dir).map_err(|e| {
         AppError::io_error(
@@ -395,7 +384,7 @@ pub async fn import_folder(
             task_id.clone(),
             "Import".to_string(),
             target_name.clone(),
-            Some(workspaceId.clone()),
+            Some(workspace_id.clone()),
         )
         .await
         .map_err(|e| format!("Failed to create task: {}", e))?

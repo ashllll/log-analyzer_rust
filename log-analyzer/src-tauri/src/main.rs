@@ -155,8 +155,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let state = app_handle.state::<AppState>();
 
                 // 1. 清理 DiskResultStore（先执行，释放文件句柄）
-                let disk_store = state.disk_result_store.read().clone();
-                disk_store.cleanup_all();
+                // FIX(CR-06): disk_result_store may be None if initialization failed
+                let disk_store_opt = state.disk_result_store.read().clone();
+                if let Some(disk_store) = disk_store_opt {
+                    disk_store.cleanup_all();
+                }
 
                 // 2. 清理异步组件（MetadataStore / SearchEngineManager / TaskManager）
                 // 修复：使用 tokio::task::block_in_place 而非创建新线程+临时 runtime

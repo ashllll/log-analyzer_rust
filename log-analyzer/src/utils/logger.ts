@@ -32,10 +32,10 @@ export enum LogLevelEnum {
  * Logger类
  */
 class LoggerImpl {
-  // 使用 process.env 兼容所有环境（Jest/Vite）
+  // 生产安全默认值：Tauri 打包环境中 process 可能不存在，此时不能默认为开发模式。
   private isDev = typeof process !== 'undefined'
     ? process.env.NODE_ENV !== 'production'
-    : true; // 默认开发模式
+    : false;
 
   private logLevel: LogLevel = 'info';
 
@@ -100,10 +100,13 @@ class LoggerImpl {
 
   info(messageOrContext: string | LogContext, ...args: unknown[]): void {
     if (typeof messageOrContext === 'string') {
+      // FIX(CR-07): 字符串分支添加日志级别守卫
+      if (!this.shouldLog('info')) return;
       // 兼容原有API
       console.log(`[${LogLevelEnum.INFO}] ${messageOrContext}`, ...args);
     } else {
       // 新的结构化API
+      if (!this.shouldLog('info')) return;
       console.log(this.format('info', messageOrContext as LogContext));
     }
   }
@@ -116,10 +119,13 @@ class LoggerImpl {
 
   warn(messageOrContext: string | LogContext, ...args: unknown[]): void {
     if (typeof messageOrContext === 'string') {
+      // FIX(CR-07): 字符串分支添加日志级别守卫
+      if (!this.shouldLog('warn')) return;
       // 兼容原有API
       console.warn(`[WARN] ${messageOrContext}`, ...args);
     } else {
       // 新的结构化API
+      if (!this.shouldLog('warn')) return;
       console.warn(this.format('warn', messageOrContext as LogContext));
     }
   }
@@ -132,10 +138,13 @@ class LoggerImpl {
 
   error(messageOrContext: string | LogContext, ...args: unknown[]): void {
     if (typeof messageOrContext === 'string') {
+      // FIX(CR-07): 字符串分支添加日志级别守卫
+      if (!this.shouldLog('error')) return;
       // 兼容原有API
       console.error(`[${LogLevelEnum.ERROR}] ${messageOrContext}`, ...args);
     } else {
       // 新的结构化API
+      if (!this.shouldLog('error')) return;
       console.error(this.format('error', messageOrContext as LogContext));
     }
   }

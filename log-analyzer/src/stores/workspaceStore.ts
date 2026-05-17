@@ -55,7 +55,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           updateWorkspace: (id, updates) => set((state) => {
             const index = state.workspaces.findIndex(w => w.id === id);
             if (index !== -1) {
-              Object.assign(state.workspaces[index], updates);
+              state.workspaces[index] = { ...state.workspaces[index], ...updates };
             }
           }),
 
@@ -84,4 +84,3 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     { name: 'workspace-store' }
   )
 );
-

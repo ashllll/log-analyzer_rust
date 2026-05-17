@@ -188,8 +188,8 @@ describe('Type Safety Tests', () => {
       expect(useWorkspaceStore.getState().workspaces[0].id).toBe('test-1');
       
       // 测试 updateWorkspace
-      store.updateWorkspace('test-1', { status: 'SCANNING' });
-      expect(useWorkspaceStore.getState().workspaces[0].status).toBe('SCANNING');
+      store.updateWorkspace('test-1', { status: 'PROCESSING' });
+      expect(useWorkspaceStore.getState().workspaces[0].status).toBe('PROCESSING');
       
       // 测试 deleteWorkspace
       store.deleteWorkspace('test-1');

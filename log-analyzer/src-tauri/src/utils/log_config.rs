@@ -10,6 +10,9 @@ use std::str::FromStr;
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::reload::Handle;
 
+// FIX(CR-04): SubscriberExt needed for .with(reload_layer)
+use tracing_subscriber::layer::SubscriberExt;
+
 /// 日志级别配置
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -120,7 +123,8 @@ impl Default for LogConfig {
 }
 
 /// 日志级别重载句柄类型
-pub type ReloadHandle = Handle<LevelFilter, tracing_subscriber::Registry>;
+// FIX(CR-04): Reload EnvFilter (not LevelFilter) to support per-module level changes
+pub type ReloadHandle = Handle<tracing_subscriber::EnvFilter, tracing_subscriber::Registry>;
 
 /// 全局日志配置状态
 static LOG_CONFIG: Lazy<RwLock<LogConfig>> = Lazy::new(|| RwLock::new(LogConfig::default()));
@@ -152,17 +156,25 @@ pub fn init_logging(config: Option<LogConfig>) {
     // 构建过滤器
     let filter = build_env_filter(&config);
 
-    // 初始化订阅器
-    let subscriber = tracing_subscriber::fmt()
-        .with_env_filter(filter)
-        .with_target(true)
-        .with_thread_ids(false)
-        .with_thread_names(false)
-        .with_file(false)
-        .with_line_number(false)
-        .finish();
+    // FIX(CR-04): Create reloadable layer and capture the handle
+    let (reload_layer, handle) = tracing_subscriber::reload::Layer::new(filter);
+
+    // 初始化订阅器 (Registry-based so the handle type matches ReloadHandle)
+    let subscriber = tracing_subscriber::registry()
+        .with(reload_layer)
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_target(true)
+                .with_thread_ids(false)
+                .with_thread_names(false)
+                .with_file(false)
+                .with_line_number(false),
+        );
 
     tracing::subscriber::set_global_default(subscriber).expect("Failed to set global subscriber");
+
+    // FIX(CR-04): Store the reload handle so set_global_log_level / reset_log_config actually work
+    *RELOAD_HANDLE.write() = Some(handle);
 
     tracing::info!("日志系统初始化完成，默认级别: {:?}", config.default_level);
 }
@@ -200,10 +212,11 @@ pub fn set_global_log_level(level: LogLevel) -> Result<(), String> {
         config.default_level = level;
     }
 
-    // 尝试通过重载句柄更新（如果可用）
+    // FIX(CR-04): Rebuild the full EnvFilter and reload it
     if let Some(handle) = RELOAD_HANDLE.read().as_ref() {
+        let new_filter = build_env_filter(&get_log_config());
         handle
-            .reload(level.to_level_filter())
+            .reload(new_filter)
             .map_err(|e| format!("Failed to reload log level: {}", e))?;
     }
 
@@ -222,16 +235,24 @@ pub fn get_log_config() -> LogConfig {
 /// - `module`: 模块名称（如 "log_analyzer::task_manager"）
 /// - `level`: 日志级别
 pub fn set_module_log_level(module: &str, level: LogLevel) {
-    let mut config = LOG_CONFIG.write();
+    {
+        let mut config = LOG_CONFIG.write();
 
-    // 查找并更新或添加模块配置
-    if let Some(existing) = config.modules.iter_mut().find(|m| m.module == module) {
-        existing.level = level;
-    } else {
-        config.modules.push(ModuleLogConfig {
-            module: module.to_string(),
-            level,
-        });
+        // 查找并更新或添加模块配置
+        if let Some(existing) = config.modules.iter_mut().find(|m| m.module == module) {
+            existing.level = level;
+        } else {
+            config.modules.push(ModuleLogConfig {
+                module: module.to_string(),
+                level,
+            });
+        }
+    }
+
+    // FIX(CR-04): Also reload the filter so module level changes take effect immediately
+    if let Some(handle) = RELOAD_HANDLE.read().as_ref() {
+        let new_filter = build_env_filter(&get_log_config());
+        let _ = handle.reload(new_filter);
     }
 
     tracing::info!("模块 {} 的日志级别已设置为 {:?}", module, level);
@@ -242,9 +263,10 @@ pub fn reset_log_config() {
     let default_config = LogConfig::default();
     *LOG_CONFIG.write() = default_config.clone();
 
-    // 尝试更新运行时日志级别
+    // FIX(CR-04): Rebuild the full EnvFilter and reload it
     if let Some(handle) = RELOAD_HANDLE.read().as_ref() {
-        let _ = handle.reload(default_config.default_level.to_level_filter());
+        let new_filter = build_env_filter(&default_config);
+        let _ = handle.reload(new_filter);
     }
 
     tracing::info!("日志配置已重置为默认值");

@@ -39,6 +39,10 @@ const FileFilterSettings: React.FC<FileFilterSettingsProps> = ({
 
   // AbortController ref 用于管理异步操作的取消
   const abortControllerRef = useRef<AbortController | null>(null);
+  // FIX(HI-22): Refs for focus management
+  const modalRef = useRef<HTMLDivElement>(null);
+  const firstFocusableRef = useRef<HTMLButtonElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
 
   // ESC 键关闭模态框
   useEffect(() => {
@@ -53,6 +57,52 @@ const FileFilterSettings: React.FC<FileFilterSettingsProps> = ({
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
+
+  // FIX(HI-22): Focus trap and auto-focus
+  useEffect(() => {
+    if (!isOpen) return;
+
+    // Save previous focus
+    previousFocusRef.current = document.activeElement as HTMLElement;
+
+    // Auto-focus first focusable element after a short delay for animation
+    const timer = setTimeout(() => {
+      firstFocusableRef.current?.focus();
+    }, 50);
+
+    const handleTab = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab' || !modalRef.current) return;
+
+      const focusableElements = modalRef.current.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusableElements.length === 0) return;
+
+      const first = focusableElements[0];
+      const last = focusableElements[focusableElements.length - 1];
+
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleTab);
+
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('keydown', handleTab);
+      // Restore focus on close
+      previousFocusRef.current?.focus();
+    };
+  }, [isOpen]);
 
   // 当模态框打开时，加载当前配置（使用 AbortController 防止竞态条件）
   useEffect(() => {
@@ -192,7 +242,9 @@ const FileFilterSettings: React.FC<FileFilterSettingsProps> = ({
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm"
       onClick={onClose}
     >
+      {/* FIX(HI-22): ref for focus trap */}
       <div
+        ref={modalRef}
         className="w-[700px] bg-bg-card border border-border-base rounded-lg shadow-2xl flex flex-col max-h-[85vh] animate-in fade-in zoom-in-95 duration-200"
         onClick={e => e.stopPropagation()}
       >
@@ -201,7 +253,14 @@ const FileFilterSettings: React.FC<FileFilterSettingsProps> = ({
           <h2 className="text-lg font-bold text-text-main">
             {t('file_filter.title')}
           </h2>
-          <Button variant="icon" icon={X} onClick={onClose} aria-label={t('file_filter.close')} />
+          {/* FIX(HI-22): ref for first focusable element */}
+          <Button
+            ref={firstFocusableRef}
+            variant="icon"
+            icon={X}
+            onClick={onClose}
+            aria-label={t('file_filter.close')}
+          />
         </div>
 
         {/* 表单内容 */}

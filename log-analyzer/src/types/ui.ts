@@ -54,6 +54,7 @@ export interface HybridLogRendererProps {
 
 // 过滤面板属性
 export interface FilterPaletteProps {
+  id?: string;
   isOpen: boolean;
   onClose: () => void;
   groups: KeywordGroup[];

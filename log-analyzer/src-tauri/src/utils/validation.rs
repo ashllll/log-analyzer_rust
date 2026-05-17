@@ -114,6 +114,34 @@ fn url_decode(input: &str) -> String {
 
     while let Some(c) = chars.next() {
         if c == '%' {
+            if matches!(chars.peek(), Some('u' | 'U')) {
+                let prefix = chars.next().unwrap_or('u');
+                let mut hex = String::with_capacity(4);
+                for _ in 0..4 {
+                    if let Some(h) = chars.next() {
+                        hex.push(h);
+                    } else {
+                        bytes.push(b'%');
+                        bytes.push(prefix as u8);
+                        bytes.extend_from_slice(hex.as_bytes());
+                        return String::from_utf8_lossy(&bytes).into_owned();
+                    }
+                }
+
+                if let Ok(code_point) = u32::from_str_radix(&hex, 16) {
+                    if let Some(decoded) = char::from_u32(code_point) {
+                        let mut buf = [0u8; 4];
+                        bytes.extend_from_slice(decoded.encode_utf8(&mut buf).as_bytes());
+                        continue;
+                    }
+                }
+
+                bytes.push(b'%');
+                bytes.push(prefix as u8);
+                bytes.extend_from_slice(hex.as_bytes());
+                continue;
+            }
+
             let hex1 = chars.next();
             let hex2 = chars.next();
 
@@ -149,25 +177,43 @@ fn url_decode(input: &str) -> String {
     String::from_utf8_lossy(&bytes).into_owned()
 }
 
-/// 路径规范化和安全验证
+/// 路径规范化和安全验证（Base Directory Jail 模式）
 ///
-/// 将路径转换为规范形式并验证安全性
-pub fn canonicalize_and_validate(path: &str) -> Result<std::path::PathBuf, String> {
-    // 防止路径遍历
+/// 将路径转换为规范形式并验证安全性。采用 Base Directory Jail 模式：
+/// 1. 先规范化基础目录
+/// 2. 在基础目录内拼接目标路径
+/// 3. 规范化目标路径（解析符号链接和相对路径）
+/// 4. 验证目标路径仍以基础目录为前缀，防止符号链接逃逸
+///
+/// # FIX(CR-05)
+/// 此前的实现直接调用 `dunce::canonicalize()` 解析符号链接，
+/// 导致目标路径可能通过符号链接逃逸出预期目录。
+/// 现在强制要求提供 `base_dir`，并在规范化后做前缀校验。
+pub fn canonicalize_and_validate(path: &str, base_dir: &str) -> Result<std::path::PathBuf, String> {
+    // 防止路径遍历（原始输入）
     let safe_path = prevent_path_traversal(path)?;
 
-    // 转换为 PathBuf
-    let path_buf = std::path::PathBuf::from(&safe_path);
+    // 规范化基础目录
+    let canonical_base = dunce::canonicalize(base_dir)
+        .map_err(|e| format!("Failed to canonicalize base directory: {}", e))?;
 
-    // 规范化路径（解析符号链接和相对路径）
-    let canonical = dunce::canonicalize(&path_buf)
+    // 在基础目录内拼接目标路径（禁止直接拼接未经规范化的绝对路径）
+    let target_path = canonical_base.join(&safe_path);
+
+    // 规范化目标路径（解析符号链接和相对路径）
+    let canonical_target = dunce::canonicalize(&target_path)
         .map_err(|e| format!("Failed to canonicalize path: {}", e))?;
 
-    // 验证规范化后的路径不包含危险模式
-    let canonical_str = canonical.to_string_lossy();
+    // FIX(CR-05): 验证规范化后的路径仍在基础目录内，防止符号链接逃逸
+    if !canonical_target.starts_with(&canonical_base) {
+        return Err("Path escapes base directory after canonicalization".to_string());
+    }
+
+    // 再次验证规范化后的路径不包含危险模式
+    let canonical_str = canonical_target.to_string_lossy();
     prevent_path_traversal(&canonical_str)?;
 
-    Ok(canonical)
+    Ok(canonical_target)
 }
 
 /// 清理文件名
@@ -311,6 +357,7 @@ mod tests {
 
         // 混合编码攻击
         assert!(prevent_path_traversal("%2e.%2f/etc/passwd").is_err());
+        assert!(prevent_path_traversal("%u002e%u002e/%u002e%u002e/etc").is_err());
     }
 
     #[test]
@@ -327,6 +374,8 @@ mod tests {
         assert_eq!(url_decode("%2e%2e"), "..");
         assert_eq!(url_decode("%2e%2e%2f"), "../");
         assert_eq!(url_decode("%252e%252e"), "%2e%2e");
+        assert_eq!(url_decode("%u4E2D%u6587"), "中文");
+        assert_eq!(url_decode("%u002e%u002e"), "..");
 
         // 无编码的字符串保持不变
         assert_eq!(url_decode("normal/path"), "normal/path");
@@ -339,6 +388,7 @@ mod tests {
         // 无效的十六进制保留原样
         assert_eq!(url_decode("path%GG"), "path%GG");
         assert_eq!(url_decode("path%2G"), "path%2G");
+        assert_eq!(url_decode("path%u00GG"), "path%u00GG");
     }
 
     #[test]
@@ -408,12 +458,15 @@ mod tests {
 
     #[test]
     fn test_canonicalize_and_validate() {
+        let temp_dir = std::env::temp_dir();
+        let base = temp_dir.to_string_lossy();
+
         // 测试当前目录（应该成功）
-        let result = canonicalize_and_validate(".");
+        let result = canonicalize_and_validate(".", &base);
         assert!(result.is_ok());
 
         // 测试路径遍历（应该失败）
-        let result = canonicalize_and_validate("../../../etc/passwd");
+        let result = canonicalize_and_validate("../../../etc/passwd", &base);
         assert!(result.is_err());
     }
 }
@@ -436,6 +489,69 @@ pub fn validate_path_param(path: &str, param_name: &str) -> Result<std::path::Pa
         .map_err(|e| format!("Failed to canonicalize {}: {}", param_name, e))?;
 
     Ok(canonical)
+}
+
+/// 验证导入源路径。
+///
+/// 导入源允许用户选择普通日志目录，但拒绝文件系统根目录和常见系统敏感目录。
+/// 这避免恶意 IPC 调用把整块系统目录作为工作区导入源。
+pub fn validate_import_source_path(
+    path: &str,
+    param_name: &str,
+) -> Result<std::path::PathBuf, String> {
+    let canonical = validate_path_param(path, param_name)?;
+
+    if !canonical.exists() {
+        return Err(format!("{} does not exist", param_name));
+    }
+    if !canonical.is_dir() {
+        return Err(format!("{} must be a directory", param_name));
+    }
+    if is_filesystem_root(&canonical) || is_sensitive_system_path(&canonical) {
+        return Err(format!(
+            "{} points to a protected system location: {}",
+            param_name,
+            canonical.display()
+        ));
+    }
+
+    Ok(canonical)
+}
+
+fn is_filesystem_root(path: &std::path::Path) -> bool {
+    path.parent().is_none()
+}
+
+fn is_sensitive_system_path(path: &std::path::Path) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        let protected_roots = [
+            std::env::var_os("WINDIR").map(std::path::PathBuf::from),
+            std::env::var_os("SystemRoot").map(std::path::PathBuf::from),
+            std::env::var_os("ProgramFiles").map(std::path::PathBuf::from),
+            std::env::var_os("ProgramFiles(x86)").map(std::path::PathBuf::from),
+            std::env::var_os("ProgramData").map(std::path::PathBuf::from),
+        ];
+
+        return protected_roots
+            .into_iter()
+            .flatten()
+            .filter_map(|root| dunce::canonicalize(root).ok())
+            .any(|root| path == root || path.starts_with(&root));
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        const PROTECTED_ROOTS: &[&str] = &[
+            "/bin", "/boot", "/dev", "/etc", "/lib", "/lib64", "/proc", "/root", "/run",
+            "/sbin", "/sys", "/usr/bin", "/usr/sbin",
+        ];
+
+        PROTECTED_ROOTS.iter().any(|root| {
+            let root = std::path::Path::new(root);
+            path == root || path.starts_with(root)
+        })
+    }
 }
 
 // 包含属性测试模块

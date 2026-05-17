@@ -62,15 +62,8 @@ export function useSearchListeners(
 
     const setup = async () => {
       try {
-        const [
-          progressUnlisten,
-          summaryUnlisten,
-          completeUnlisten,
-          errorUnlisten,
-          startUnlisten,
-          cancelledUnlisten,
-          timeoutUnlisten,
-        ] = await Promise.all([
+        // FIX(CR-08): 使用 Promise.allSettled 避免短路导致 unlisten 泄漏
+        const results = await Promise.allSettled([
           listen<number>('search-progress', (e) => {
             const result = SearchProgressEventSchema.safeParse(e.payload);
             if (!result.success) return;
@@ -108,30 +101,31 @@ export function useSearchListeners(
           }),
         ]);
 
+        const eventNames = [
+          'search-progress',
+          'search-summary',
+          'search-complete',
+          'search-error',
+          'search-start',
+          'search-cancelled',
+          'search-timeout',
+        ];
+
+        const successfulUnlisteners: Array<() => void> = [];
+        results.forEach((result, index) => {
+          if (result.status === 'fulfilled') {
+            successfulUnlisteners.push(result.value);
+          } else if (!abortController.signal.aborted) {
+            logger.error(`useSearchListeners: 注册 ${eventNames[index]} 监听器失败`, result.reason);
+          }
+        });
+
         if (abortController.signal.aborted) {
-          [
-            progressUnlisten,
-            summaryUnlisten,
-            completeUnlisten,
-            errorUnlisten,
-            startUnlisten,
-            cancelledUnlisten,
-            timeoutUnlisten,
-          ].forEach(
-            (u) => u(),
-          );
+          successfulUnlisteners.forEach((u) => u());
           return;
         }
 
-        unlisteners.push(
-          progressUnlisten,
-          summaryUnlisten,
-          completeUnlisten,
-          errorUnlisten,
-          startUnlisten,
-          cancelledUnlisten,
-          timeoutUnlisten,
-        );
+        unlisteners.push(...successfulUnlisteners);
       } catch (err) {
         if (!abortController.signal.aborted) {
           logger.error('useSearchListeners: 注册监听器失败', err);

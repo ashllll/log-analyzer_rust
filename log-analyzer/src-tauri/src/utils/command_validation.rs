@@ -63,15 +63,31 @@ pub fn validate_path_param(path: &str, param_name: &str) -> Result<(), String> {
 
 /// 验证导出路径安全性
 ///
-/// 检查路径是否包含路径遍历模式
+/// FIX(HI-10): 复用 `prevent_path_traversal()` 进行全面的路径安全检查，
+/// 覆盖 Null 字节、URL 编码绕过、Unicode 规范化绕过等攻击向量。
+/// 同时限制只能使用相对路径，禁止绝对路径。
 pub fn validate_export_path(path: &str) -> Result<(), String> {
+    // 全面路径遍历检测（包含 URL 解码、Unicode NFC、null 字节、控制字符）
+    crate::utils::validation::prevent_path_traversal(path)?;
+
+    // 禁止绝对路径（导出只能使用相对路径）
     let path_obj = std::path::Path::new(path);
+    if path_obj.is_absolute() {
+        return Err("导出路径必须是相对路径".to_string());
+    }
+    // 额外拒绝以 / 或 \ 开头的路径（跨平台一致性，Windows 下 /path 被视为相对路径）
+    if path.starts_with('/') || path.starts_with('\\') {
+        return Err("导出路径必须是相对路径".to_string());
+    }
+
+    // 额外的 ParentDir 检查（防御深层路径遍历）
     if path_obj
         .components()
         .any(|c| c == std::path::Component::ParentDir)
     {
         return Err("导出路径包含非法路径遍历 (..)".to_string());
     }
+
     Ok(())
 }
 
@@ -185,13 +201,23 @@ mod tests {
 
     #[test]
     fn test_validate_export_path() {
-        // 有效路径
-        assert!(validate_export_path("/path/to/file").is_ok());
+        // 有效路径（相对路径）
         assert!(validate_export_path("file.txt").is_ok());
+        assert!(validate_export_path("path/to/file").is_ok());
+
+        // 绝对路径（禁止）
+        assert!(validate_export_path("/path/to/file").is_err());
+        assert!(validate_export_path("C:\\windows\\file.txt").is_err());
 
         // 包含路径遍历
         assert!(validate_export_path("../file.txt").is_err());
-        assert!(validate_export_path("/path/../file.txt").is_err());
+        assert!(validate_export_path("path/../file.txt").is_err());
+
+        // Null 字节注入
+        assert!(validate_export_path("file\0.txt").is_err());
+
+        // URL 编码绕过
+        assert!(validate_export_path("%2e%2e/file.txt").is_err());
     }
 
     #[test]

@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { X, Plus, Trash2, AlertCircle } from 'lucide-react';
 import { Button, Input } from '../ui';
 import { cn } from '../../utils/classNames';
@@ -12,15 +13,38 @@ import {
   type KeywordGroupFormData,
 } from '../../schemas';
 
+// FIX(HI-25): Internal pattern type with unique id for stable keys
+interface PatternItem extends KeywordPattern {
+  id: string;
+}
+
+function generatePatternId(): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return Date.now().toString(36) + Math.random().toString(36).slice(2);
+}
+
+function patternsToItems(patterns: KeywordPattern[]): PatternItem[] {
+  return patterns.map(p => ({ ...p, id: generatePatternId() }));
+}
+
+function itemsToPatterns(items: PatternItem[]): KeywordPattern[] {
+  return items.map(({ id: _id, ...p }) => p);
+}
+
 /**
  * 关键词配置模态框组件
  * 用于新建和编辑关键词组
  * 使用 Zod 进行类型安全的表单验证
  */
 const KeywordModal: React.FC<KeywordModalProps> = ({ isOpen, onClose, onSave, initialData }) => {
+  const { t } = useTranslation();
   const [name, setName] = useState(initialData?.name || "");
   const [color, setColor] = useState<ColorKey>(initialData?.color || "blue");
-  const [patterns, setPatterns] = useState<KeywordPattern[]>(initialData?.patterns || [{ regex: "", comment: "" }]);
+  const [patterns, setPatterns] = useState<PatternItem[]>(() =>
+    patternsToItems(initialData?.patterns || [{ regex: "", comment: "" }])
+  );
 
   // 验证状态
   const [errors, setErrors] = useState<{ name?: string; patterns?: string[] }>({});
@@ -28,17 +52,83 @@ const KeywordModal: React.FC<KeywordModalProps> = ({ isOpen, onClose, onSave, in
   // 每个 pattern 的实时正则语法错误
   const [regexErrors, setRegexErrors] = useState<(string | undefined)[]>([]);
 
+  // FIX(HI-21): Refs for accessibility
+  const modalRef = useRef<HTMLDivElement>(null);
+  const firstInputRef = useRef<HTMLInputElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+
   // 当模态框打开或初始数据变化时，重置表单
   useEffect(() => {
     if (isOpen) {
       setName(initialData?.name || "");
       setColor(initialData?.color || "blue");
-      setPatterns(initialData?.patterns || [{ regex: "", comment: "" }]);
+      setPatterns(patternsToItems(initialData?.patterns || [{ regex: "", comment: "" }]));
       setErrors({});
       setTouched({});
       setRegexErrors([]);
     }
   }, [isOpen, initialData]);
+
+  // FIX(HI-21): Escape key to close
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
+  // FIX(HI-21): Focus trap, auto-focus, and focus restoration
+  useEffect(() => {
+    if (!isOpen) return;
+
+    // Save previous focus
+    previousFocusRef.current = document.activeElement as HTMLElement;
+
+    // Auto-focus first input (Group Name) after a short delay for animation
+    const timer = setTimeout(() => {
+      firstInputRef.current?.focus();
+    }, 50);
+
+    // Focus trap
+    const handleTab = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab' || !modalRef.current) return;
+
+      const focusableElements = modalRef.current.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusableElements.length === 0) return;
+
+      const first = focusableElements[0];
+      const last = focusableElements[focusableElements.length - 1];
+
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleTab);
+
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('keydown', handleTab);
+      // Restore focus on close/unmount
+      previousFocusRef.current?.focus();
+    };
+  }, [isOpen]);
 
   /**
    * 验证表单
@@ -48,7 +138,7 @@ const KeywordModal: React.FC<KeywordModalProps> = ({ isOpen, onClose, onSave, in
     const formData: KeywordGroupFormData = {
       name,
       color,
-      patterns,
+      patterns: itemsToPatterns(patterns),
     };
 
     const result = validateKeywordGroup(formData);
@@ -87,17 +177,23 @@ const KeywordModal: React.FC<KeywordModalProps> = ({ isOpen, onClose, onSave, in
   /**
    * 处理模式变更
    */
-  const handlePatternChange = useCallback((index: number, field: 'regex' | 'comment', value: string) => {
-    const newPatterns = [...patterns];
-    newPatterns[index][field] = value;
-    setPatterns(newPatterns);
+  const handlePatternChange = useCallback((id: string, field: 'regex' | 'comment', value: string) => {
+    setPatterns(prev => {
+      const idx = prev.findIndex(p => p.id === id);
+      if (idx === -1) return prev;
+      const next = [...prev];
+      next[idx] = { ...next[idx], [field]: value };
+      return next;
+    });
 
     // regex 字段：实时验证正则语法
     if (field === 'regex') {
       const result = validateRegexPattern(value);
       setRegexErrors(prev => {
+        const idx = patterns.findIndex(p => p.id === id);
+        if (idx === -1) return prev;
         const next = [...prev];
-        next[index] = result.valid ? undefined : result.error;
+        next[idx] = result.valid ? undefined : result.error;
         return next;
       });
     }
@@ -127,7 +223,7 @@ const KeywordModal: React.FC<KeywordModalProps> = ({ isOpen, onClose, onSave, in
       return;
     }
 
-    const validPatterns = patterns.filter(p => p.regex.trim() !== "");
+    const validPatterns = itemsToPatterns(patterns.filter(p => p.regex.trim() !== ""));
     onSave({
       id: initialData?.id || Date.now().toString(),
       name: name.trim(),
@@ -145,14 +241,17 @@ const KeywordModal: React.FC<KeywordModalProps> = ({ isOpen, onClose, onSave, in
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm"
       onClick={onClose}
     >
+      {/* FIX(HI-21): ref for focus trap */}
       <div
+        ref={modalRef}
         className="w-[600px] bg-bg-card border border-border-base rounded-lg shadow-2xl flex flex-col max-h-[85vh] animate-in fade-in zoom-in-95 duration-200"
         onClick={e => e.stopPropagation()}
       >
         {/* 标题栏 */}
         <div className="px-6 py-4 border-b border-border-base flex justify-between items-center bg-bg-sidebar">
           <h2 className="text-lg font-bold text-text-main">
-            {initialData ? 'Edit Keyword Group' : 'New Keyword Group'}
+            {/* FIX(HI-28): translate title */}
+            {initialData ? t('keywords.modal.title_edit') : t('keywords.modal.title_new')}
           </h2>
           <Button variant="icon" icon={X} onClick={onClose} />
         </div>
@@ -163,13 +262,15 @@ const KeywordModal: React.FC<KeywordModalProps> = ({ isOpen, onClose, onSave, in
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-xs text-text-dim uppercase font-bold mb-1.5 block">
-                Group Name
+                {/* FIX(HI-28): translate label */}
+                {t('keywords.modal.group_name')}
               </label>
               <Input
+                ref={firstInputRef}
                 value={name}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleNameChange(e.target.value)}
                 onBlur={handleNameBlur}
-                placeholder="Name"
+                placeholder={t('keywords.modal.name_placeholder')}
                 className={cn(errors.name ? "border-red-500 focus:ring-red-500/50" : "")}
               />
               {errors.name && touched.name && (
@@ -181,7 +282,8 @@ const KeywordModal: React.FC<KeywordModalProps> = ({ isOpen, onClose, onSave, in
             </div>
             <div>
               <label className="text-xs text-text-dim uppercase font-bold mb-1.5 block">
-                Highlight Color
+                {/* FIX(HI-28): translate label */}
+                {t('keywords.modal.highlight_color')}
               </label>
               <div className="flex gap-2 h-9 items-center">
                 {(['blue', 'green', 'orange', 'red', 'purple'] as ColorKey[]).map((c) => (
@@ -207,18 +309,20 @@ const KeywordModal: React.FC<KeywordModalProps> = ({ isOpen, onClose, onSave, in
           <div>
             <div className="flex justify-between items-center mb-2">
               <label className="text-xs text-text-dim uppercase font-bold">
-                Patterns & Comments
+                {/* FIX(HI-28): translate label */}
+                {t('keywords.modal.patterns_title')}
               </label>
               <Button
                 variant="ghost"
                 className="h-6 text-xs"
                 icon={Plus}
                 onClick={() => {
-                  setPatterns([...patterns, { regex: "", comment: "" }]);
-                  setRegexErrors([...regexErrors, undefined]);
+                  setPatterns(prev => [...prev, { id: generatePatternId(), regex: "", comment: "" }]);
+                  setRegexErrors(prev => [...prev, undefined]);
                 }}
               >
-                Add
+                {/* FIX(HI-28): translate button */}
+                {t('keywords.modal.add_pattern')}
               </Button>
             </div>
             {errors.patterns && touched.patterns && errors.patterns.length > 0 && (
@@ -232,32 +336,31 @@ const KeywordModal: React.FC<KeywordModalProps> = ({ isOpen, onClose, onSave, in
               </div>
             )}
             <div className="space-y-2">
-              {patterns.map((p, i) => (
-                <div key={i} className="flex gap-2 items-center group">
+              {/* FIX(HI-25): use stable id as key instead of index */}
+              {patterns.map((p) => (
+                <div key={p.id} className="flex gap-2 items-center group">
                   <div className="flex-1">
                     <Input
                       value={p.regex}
-                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => handlePatternChange(i, 'regex', e.target.value)}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => handlePatternChange(p.id, 'regex', e.target.value)}
                       onBlur={handlePatternBlur}
-                      placeholder="RegEx"
+                      placeholder={t('keywords.modal.regex_placeholder')}
                       className={cn(
                         "font-mono text-xs",
-                        (errors.patterns?.[i] || regexErrors[i]) ? "border-red-500 focus:ring-red-500/50" : ""
+                        (errors.patterns?.[patterns.indexOf(p)] || regexErrors[patterns.indexOf(p)]) ? "border-red-500 focus:ring-red-500/50" : ""
                       )}
                     />
-                    {regexErrors[i] && (
-                      <p className="mt-1 text-xs text-red-500">{regexErrors[i]}</p>
+                    {regexErrors[patterns.indexOf(p)] && (
+                      <p className="mt-1 text-xs text-red-500">{regexErrors[patterns.indexOf(p)]}</p>
                     )}
                   </div>
                   <div className="flex-1">
                     <Input
                       value={p.comment}
                       onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                        const n = [...patterns];
-                        n[i].comment = e.target.value;
-                        setPatterns(n);
+                        handlePatternChange(p.id, 'comment', e.target.value);
                       }}
-                      placeholder="Comment"
+                      placeholder={t('keywords.modal.comment_placeholder')}
                       className="text-xs"
                     />
                   </div>
@@ -266,8 +369,9 @@ const KeywordModal: React.FC<KeywordModalProps> = ({ isOpen, onClose, onSave, in
                     icon={Trash2}
                     className="text-log-error opacity-0 group-hover:opacity-100 transition-opacity"
                     onClick={() => {
-                      setPatterns(patterns.filter((_, idx) => idx !== i));
-                      setRegexErrors(regexErrors.filter((_, idx) => idx !== i));
+                      const idx = patterns.findIndex(item => item.id === p.id);
+                      setPatterns(patterns.filter((_, i) => i !== idx));
+                      setRegexErrors(regexErrors.filter((_, i) => i !== idx));
                     }}
                   />
                 </div>
@@ -279,10 +383,12 @@ const KeywordModal: React.FC<KeywordModalProps> = ({ isOpen, onClose, onSave, in
         {/* 底部按钮 */}
         <div className="px-6 py-4 border-t border-border-base bg-bg-sidebar flex justify-end gap-3">
           <Button variant="secondary" onClick={onClose}>
-            Cancel
+            {/* FIX(HI-28): translate button */}
+            {t('keywords.modal.cancel')}
           </Button>
           <Button onClick={handleSave}>
-            Save Configuration
+            {/* FIX(HI-28): translate button */}
+            {t('keywords.modal.save')}
           </Button>
         </div>
       </div>

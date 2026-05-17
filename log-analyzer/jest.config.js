@@ -25,12 +25,10 @@ export default {
   ],
   coverageThreshold: {
     global: {
-      // 当前实测覆盖率：statements ~35.9%，branches ~30.3%，lines ~36.5%，functions ~33.2%
-      // 阈值逐步上调，防止覆盖率倒退
-      branches: 30,
-      functions: 33,
-      lines: 35,
-      statements: 35,
+      branches: 80,
+      functions: 80,
+      lines: 80,
+      statements: 80,
     },
   },
   testTimeout: 15000, // 从 10000ms 增加到 15000ms 以应对 CI 环境
@@ -38,5 +36,5 @@ export default {
     'node_modules/(?!(react-error-boundary|lucide-react|react-hot-toast)/)',
   ],
   verbose: true, // 添加详细日志输出
-  collectCoverage: true, // 确保收集覆盖率信息
+  // ME-50: Removed collectCoverage: true to avoid forcing coverage collection on every test run
 };

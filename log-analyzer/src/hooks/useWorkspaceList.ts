@@ -35,19 +35,17 @@ export const useWorkspaceList = (): UseWorkspaceListReturn => {
   const pendingRefresh = useRef<Promise<void> | null>(null);
 
   const refreshWorkspaces = useCallback(async () => {
+    // 如果已有进行中的刷新请求，复用同一个 Promise，避免并发全量加载
+    if (pendingRefresh.current) {
+      return pendingRefresh.current;
+    }
+
     // 防抖：如果距离上次刷新不足 REFRESH_DEBOUNCE_MS，跳过本次请求
     const now = Date.now();
     if (now - lastRefreshTime.current < REFRESH_DEBOUNCE_MS) {
       if (import.meta.env.DEV) logger.debug('refreshWorkspaces skipped (debounced)');
       return;
     }
-
-    // 如果已有进行中的刷新请求，等待其完成
-    if (pendingRefresh.current) {
-      return pendingRefresh.current;
-    }
-
-    lastRefreshTime.current = now;
 
     const refreshPromise = (async () => {
       try {
@@ -63,6 +61,7 @@ export const useWorkspaceList = (): UseWorkspaceListReturn => {
         logger.error('Failed to refresh workspaces:', err);
         throw err;
       } finally {
+        lastRefreshTime.current = Date.now();
         pendingRefresh.current = null;
       }
     })();

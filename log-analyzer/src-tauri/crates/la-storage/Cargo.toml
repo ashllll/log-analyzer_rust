@@ -15,7 +15,7 @@ futures = "0.3"
 moka = { version = "0.12", features = ["sync"] }
 sha2 = "0.10"
 walkdir.workspace = true
-dashmap = "6"
+dashmap = "~6.1"  # HI-34: lock to minor version
 
 # 数据库
 sqlx = { version = "0.8.1", features = ["runtime-tokio-rustls", "sqlite"] }

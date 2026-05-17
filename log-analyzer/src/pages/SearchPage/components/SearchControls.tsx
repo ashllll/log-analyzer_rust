@@ -67,6 +67,8 @@ export const SearchControls: React.FC<SearchControlsProps> = memo(({
           onClick={onFilterPaletteToggle}
           className="w-[140px] justify-between"
           aria-label="打开过滤器面板"
+          aria-expanded={isFilterPaletteOpen}
+          aria-controls="filter-palette"
         >
           {t('search.filters', '过滤器')}
           <ChevronDown
@@ -78,6 +80,7 @@ export const SearchControls: React.FC<SearchControlsProps> = memo(({
           />
         </Button>
         <FilterPalette
+          id="filter-palette"
           isOpen={isFilterPaletteOpen}
           onClose={onFilterPaletteClose}
           groups={keywordGroups}

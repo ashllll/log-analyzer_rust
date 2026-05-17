@@ -10,32 +10,52 @@ use std::io::{BufWriter, Write};
 use la_core::error::AppError;
 use la_core::models::LogEntry;
 use serde_json::json;
-use tauri::command;
+use tauri::{command, AppHandle, Manager};
 
 #[command]
 pub async fn export_results(
+    app: AppHandle,
     results: Vec<LogEntry>,
     format: String,
     #[allow(non_snake_case)] savePath: String,
 ) -> Result<String, String> {
-    // 验证导出路径不包含路径遍历（CMD-NEW-H3 修复）
+    // FIX(CR-02): 强制 savePath 为相对路径，拒绝绝对路径，并限制只能写入下载目录
     let save_path = std::path::Path::new(&savePath);
-    if save_path
-        .components()
-        .any(|c| c == std::path::Component::ParentDir)
-    {
-        return Err("导出路径包含非法路径遍历 (..)".to_string());
+
+    // 拒绝绝对路径（包括 RootDir、Prefix 等）
+    for component in save_path.components() {
+        match component {
+            std::path::Component::Normal(_) | std::path::Component::CurDir => {}
+            std::path::Component::RootDir | std::path::Component::Prefix(_) => {
+                return Err("导出路径必须是相对路径，不允许使用绝对路径".to_string());
+            }
+            std::path::Component::ParentDir => {
+                return Err("导出路径包含非法路径遍历 (..)".to_string());
+            }
+        }
     }
-    // 验证父目录存在且可写
-    if let Some(parent) = save_path.parent() {
-        if !parent.as_os_str().is_empty() && !parent.exists() {
-            return Err(format!("导出目录不存在: {}", parent.display()));
+
+    // 额外的路径遍历防护（覆盖 URL 编码等绕过手段）
+    let safe_path = crate::utils::validation::prevent_path_traversal(&savePath)
+        .map_err(|e| format!("导出路径不安全: {}", e))?;
+
+    let download_dir = app
+        .path()
+        .download_dir()
+        .map_err(|e| format!("无法获取下载目录: {}", e))?;
+    let final_path = download_dir.join(&safe_path);
+
+    // 验证最终路径没有通过符号链接等方式逃逸出下载目录
+    if let Ok(canonical_final) = dunce::canonicalize(&final_path) {
+        let canonical_download = dunce::canonicalize(&download_dir).unwrap_or(download_dir);
+        if !canonical_final.starts_with(&canonical_download) {
+            return Err("导出路径不允许超出下载目录范围".to_string());
         }
     }
 
     tokio::task::spawn_blocking(move || match format.as_str() {
-        "csv" => export_to_csv(&results, &savePath),
-        "json" => export_to_json(&results, &savePath),
+        "csv" => export_to_csv(&results, final_path.to_string_lossy().as_ref()),
+        "json" => export_to_json(&results, final_path.to_string_lossy().as_ref()),
         _ => Err(format!("Unsupported export format: {}", format)),
     })
     .await

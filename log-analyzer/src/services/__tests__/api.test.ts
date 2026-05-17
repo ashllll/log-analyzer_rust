@@ -8,28 +8,6 @@ jest.useFakeTimers();
 
 const mockInvoke = require('@tauri-apps/api/core').invoke as jest.Mock;
 
-const makeConfig = (workspacePath: string) => ({
-  keyword_groups: [],
-  workspaces: [
-    {
-      id: 'workspace-1',
-      name: 'Test Workspace',
-      path: workspacePath,
-      status: 'READY' as const,
-      size: '100MB',
-      files: 10,
-    },
-  ],
-  file_filter: {
-    enabled: false,
-    binary_detection_enabled: true,
-    mode: 'blacklist' as const,
-    filename_patterns: [],
-    allowed_extensions: [],
-    forbidden_extensions: [],
-  },
-});
-
 describe('api.refreshWorkspace', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -47,17 +25,15 @@ describe('api.refreshWorkspace', () => {
     });
   });
 
-  it('should load config and recover path when it is missing', async () => {
+  it('should let backend resolve the saved path when it is missing', async () => {
     mockInvoke
-      .mockResolvedValueOnce(makeConfig('/logs/from-config'))
       .mockResolvedValueOnce('550e8400-e29b-41d4-a716-446655440001');
 
     await expect(api.refreshWorkspace('workspace-1')).resolves.toBe('550e8400-e29b-41d4-a716-446655440001');
 
-    expect(mockInvoke).toHaveBeenNthCalledWith(1, 'load_config', {});
-    expect(mockInvoke).toHaveBeenNthCalledWith(2, 'refresh_workspace', {
+    expect(mockInvoke).toHaveBeenCalledTimes(1);
+    expect(mockInvoke).toHaveBeenCalledWith('refresh_workspace', {
       workspaceId: 'workspace-1',
-      path: '/logs/from-config',
     });
   });
 });
@@ -134,9 +110,9 @@ describe('sanitizeArgs', () => {
     expect(result).toEqual({ a: 1, d: 'str' });
   });
 
-  it('should preserve empty nested objects', () => {
+  it('should remove empty nested objects', () => {
     const result = sanitizeArgs({ filter: { enabled: null, mode: undefined } });
-    expect(result).toEqual({ filter: {} });
+    expect(result).toEqual({});
   });
 
   it('should recursively sanitize arrays of objects', () => {

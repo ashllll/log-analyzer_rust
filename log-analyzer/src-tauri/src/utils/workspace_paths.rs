@@ -10,10 +10,7 @@ pub fn preferred_workspace_dir(app: &AppHandle, workspace_id: &str) -> Result<Pa
         .app_data_dir()
         .map_err(|e| format!("Failed to get app data dir: {}", e))?;
 
-    Ok(preferred_workspace_dir_from_root(
-        &app_data_dir,
-        workspace_id,
-    ))
+    preferred_workspace_dir_from_root(&app_data_dir, workspace_id)
 }
 
 pub fn resolve_workspace_dir(app: &AppHandle, workspace_id: &str) -> Result<PathBuf, String> {
@@ -22,16 +19,24 @@ pub fn resolve_workspace_dir(app: &AppHandle, workspace_id: &str) -> Result<Path
         .app_data_dir()
         .map_err(|e| format!("Failed to get app data dir: {}", e))?;
 
-    Ok(resolve_workspace_dir_from_root(&app_data_dir, workspace_id))
+    resolve_workspace_dir_from_root(&app_data_dir, workspace_id)
 }
 
-fn preferred_workspace_dir_from_root(app_data_dir: &Path, workspace_id: &str) -> PathBuf {
-    app_data_dir
+/// FIX(HI-11): 拼接前验证 workspace_id，防止路径遍历
+fn preferred_workspace_dir_from_root(
+    app_data_dir: &Path,
+    workspace_id: &str,
+) -> Result<PathBuf, String> {
+    crate::utils::validation::validate_workspace_id(workspace_id)?;
+    Ok(app_data_dir
         .join(PRIMARY_WORKSPACE_DIR_NAME)
-        .join(workspace_id)
+        .join(workspace_id))
 }
 
-fn resolve_workspace_dir_from_root(app_data_dir: &Path, workspace_id: &str) -> PathBuf {
+fn resolve_workspace_dir_from_root(
+    app_data_dir: &Path,
+    workspace_id: &str,
+) -> Result<PathBuf, String> {
     preferred_workspace_dir_from_root(app_data_dir, workspace_id)
 }
 
@@ -48,7 +53,7 @@ mod tests {
             .join("ws-1");
         std::fs::create_dir_all(&current).unwrap();
 
-        let resolved = resolve_workspace_dir_from_root(temp_dir.path(), "ws-1");
+        let resolved = resolve_workspace_dir_from_root(temp_dir.path(), "ws-1").unwrap();
 
         assert_eq!(resolved, current);
     }
@@ -57,7 +62,7 @@ mod tests {
     fn returns_current_layout_when_workspace_not_created_yet() {
         let temp_dir = tempfile::tempdir().unwrap();
 
-        let resolved = resolve_workspace_dir_from_root(temp_dir.path(), "ws-1");
+        let resolved = resolve_workspace_dir_from_root(temp_dir.path(), "ws-1").unwrap();
 
         assert_eq!(
             resolved,
@@ -65,6 +70,17 @@ mod tests {
                 .path()
                 .join(PRIMARY_WORKSPACE_DIR_NAME)
                 .join("ws-1")
+        );
+    }
+
+    #[test]
+    fn rejects_path_traversal_in_workspace_id() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        assert!(
+            resolve_workspace_dir_from_root(temp_dir.path(), "../etc/passwd").is_err()
+        );
+        assert!(
+            resolve_workspace_dir_from_root(temp_dir.path(), "ws-1/../../secret").is_err()
         );
     }
 }

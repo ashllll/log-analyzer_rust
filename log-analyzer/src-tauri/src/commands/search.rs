@@ -213,6 +213,8 @@ struct SearchExecutionRequest {
     cancellation_tokens:
         Arc<Mutex<std::collections::HashMap<String, tokio_util::sync::CancellationToken>>>,
     search_timeout_secs: u64,
+    // FIX(HI-01): 复用 AppState 中缓存的 ThreadPool
+    search_thread_pool: Arc<rayon::ThreadPool>,
 }
 
 /// 执行搜索并处理超时
@@ -232,6 +234,7 @@ async fn run_search_with_timeout(request: SearchExecutionRequest) -> Result<Stri
         cancellation_token,
         cancellation_tokens,
         search_timeout_secs,
+        search_thread_pool,
     } = request;
 
     let app_handle_for_timeout = app_handle.clone();
@@ -257,6 +260,7 @@ async fn run_search_with_timeout(request: SearchExecutionRequest) -> Result<Stri
             disk_result_store,
             cancellation_token,
             cancellation_tokens,
+            search_thread_pool,
         );
     });
 
@@ -264,6 +268,12 @@ async fn run_search_with_timeout(request: SearchExecutionRequest) -> Result<Stri
         Ok(Ok(())) => Ok(search_id),
         Ok(Err(e)) => {
             error!(error = %e, search_id = %search_id, "Search task panicked");
+            // FIX(HI-09): 搜索线程 panic 时也需要清理 CancellationToken
+            {
+                let mut tokens = cancellation_tokens_for_timeout.lock();
+                tokens.remove(&search_id);
+            }
+            disk_store_for_timeout.remove_session(&search_id);
             Err(
                 CommandError::new("INTERNAL_ERROR", format!("Search task panicked: {}", e))
                     .with_help("This is an unexpected error. Try simplifying your search query"),
@@ -583,16 +593,6 @@ impl FilePatternMatcher {
     }
 }
 
-fn level_to_mask(level: &str) -> u8 {
-    match level.trim().to_ascii_lowercase().as_str() {
-        "error" => 1 << 0,
-        "warn" | "warning" => 1 << 1,
-        "info" => 1 << 2,
-        "debug" => 1 << 3,
-        _ => 0,
-    }
-}
-
 impl ParsedLineMetadata {
     fn parse(line: &str, needs_datetime: bool) -> Self {
         let (timestamp, level) = parse_metadata(line);
@@ -608,7 +608,7 @@ impl ParsedLineMetadata {
             level,
             level_normalized: level,
             datetime,
-            level_mask: level_to_mask(level),
+            level_mask: crate::commands::level_to_mask(level),
         }
     }
 }
@@ -651,7 +651,7 @@ impl CompiledSearchFilters {
         let level_mask = levels.as_ref().map(|levels| {
             levels
                 .iter()
-                .fold(0u8, |mask, level| mask | level_to_mask(level))
+                .fold(0u8, |mask, level| mask | crate::commands::level_to_mask(level))
         });
 
         let time_start = Self::parse_filter_datetime(filters.time_start.as_deref(), "start time")?;
@@ -731,7 +731,7 @@ impl CompiledSearchFilters {
             } else {
                 None
             },
-            level_mask: level_to_mask(level),
+            level_mask: crate::commands::level_to_mask(level),
         };
 
         self.matches_parsed_line_metadata(&metadata)
@@ -873,21 +873,10 @@ fn execute_file_search(
     cancellation_token_map: Arc<
         Mutex<std::collections::HashMap<String, tokio_util::sync::CancellationToken>>,
     >,
+    // FIX(HI-01): 使用 AppState 中缓存的 ThreadPool，避免每次搜索新建
+    search_thread_pool: Arc<rayon::ThreadPool>,
 ) {
     let start_time = std::time::Instant::now();
-
-    let pool = match rayon::ThreadPoolBuilder::new().num_threads(4).build() {
-        Ok(p) => p,
-        Err(e) => {
-            emit_search_error(
-                &app_handle,
-                &search_id,
-                format!("Failed to create search thread pool: {}", e),
-            );
-            disk_store.remove_session(&search_id);
-            return;
-        }
-    };
 
     let mut builder = QueryPlanBuilder::new(regex_cache_size);
     let plan = match builder.build(&structured_query) {
@@ -899,6 +888,8 @@ fn execute_file_search(
                 format!("Query execution error: {}", e),
             );
             disk_store.remove_session(&search_id);
+            // FIX(HI-09): 清理 CancellationToken，防止 HashMap 只增不减
+            remove_cancellation_token(&cancellation_token_map, &search_id);
             return;
         }
     };
@@ -918,14 +909,15 @@ fn execute_file_search(
     let timed_out = Arc::new(AtomicBool::new(false));
     let timed_out_for_search = Arc::clone(&timed_out);
 
-    let flush_batch = |batch: &mut Vec<LogEntry>, progress_count: usize| {
+    // FIX(HI-02): flush_batch 现在返回 bool，失败时 emit search-error 而不是静默丢弃
+    let flush_batch = |batch: &mut Vec<LogEntry>, progress_count: usize| -> bool {
         if batch.is_empty() {
-            return;
+            return true;
         }
 
         if cancellation_token.is_cancelled() {
             batch.clear();
-            return;
+            return true;
         }
 
         const MAX_RETRIES: usize = 3;
@@ -943,7 +935,7 @@ fn execute_file_search(
                             },
                         );
                     }
-                    return;
+                    return true;
                 }
                 Err(e) => {
                     last_err = Some(e);
@@ -951,12 +943,20 @@ fn execute_file_search(
             }
         }
         if let Some(e) = last_err {
-            error!(error = %e, retries = MAX_RETRIES, "磁盘写入搜索结果批次失败，丢弃批次以避免重复数据");
+            error!(error = %e, retries = MAX_RETRIES, "磁盘写入搜索结果批次失败");
+            emit_search_error(
+                &app_handle,
+                &search_id,
+                format!("Disk write failed after {} retries: {}", MAX_RETRIES, e),
+            );
         }
         batch.clear();
+        false
     };
 
     emit_search_id_event(&app_handle, "search-start", &search_id);
+
+    let mut disk_write_failed = false;
 
     'outer: for file_batch in files_for_search.chunks(10) {
         if cancellation_token.is_cancelled() {
@@ -978,7 +978,7 @@ fn execute_file_search(
 
         let mut batch_results: Vec<LogEntry> = Vec::new();
 
-        let batch: Vec<_> = pool.install(|| {
+        let batch: Vec<_> = search_thread_pool.install(|| {
             file_batch
                 .par_iter()
                 .enumerate()
@@ -1018,7 +1018,7 @@ fn execute_file_search(
                 }
 
                 if results_count >= max_results {
-                    flush_batch(&mut batch_results, results_count);
+                    let _ = flush_batch(&mut batch_results, results_count);
                     was_truncated = true;
                     break 'outer;
                 }
@@ -1035,13 +1035,33 @@ fn execute_file_search(
                 results_count += 1;
 
                 if batch_results.len() >= batch_size {
-                    flush_batch(&mut batch_results, results_count);
+                    if !flush_batch(&mut batch_results, results_count) {
+                        disk_write_failed = true;
+                        break 'outer;
+                    }
                 }
             }
         }
 
-        flush_batch(&mut batch_results, results_count);
+        if disk_write_failed {
+            break 'outer;
+        }
+        if !flush_batch(&mut batch_results, results_count) {
+            disk_write_failed = true;
+            break 'outer;
+        }
         total_processed += file_batch.len();
+    }
+
+    if disk_write_failed {
+        emit_search_error(
+            &app_handle,
+            &search_id,
+            "Disk write failed: search results may be incomplete",
+        );
+        disk_store.remove_session(&search_id);
+        remove_cancellation_token(&cancellation_token_map, &search_id);
+        return;
     }
 
     if cancellation_token.is_cancelled() {
@@ -1118,7 +1138,12 @@ pub async fn search_logs(
     let workspace_dirs = Arc::clone(&state.workspace_dirs);
     let search_metrics = Arc::clone(&state.search_metrics);
     let cancellation_tokens = Arc::clone(&state.search_cancellation_tokens);
-    let disk_result_store = state.disk_result_store.read().clone();
+    // FIX(CR-06): disk_result_store is Option<Arc<DiskResultStore>> to avoid panic in default()
+    let disk_result_store = state.disk_result_store.read().clone().ok_or_else(|| {
+        CommandError::new("NOT_INITIALIZED", "Disk result store not initialized")
+            .with_help("The application may still be initializing. Please try again")
+    })?;
+    let search_thread_pool = Arc::clone(&state.search_thread_pool);
 
     let max_results = maxResults
         .unwrap_or(runtime_config.default_max_results)
@@ -1181,6 +1206,8 @@ pub async fn search_logs(
             cancellation_token,
             cancellation_tokens,
             search_timeout_secs,
+            // FIX(HI-01): 从 AppState 复用已初始化的 ThreadPool
+            search_thread_pool,
         })
         .await;
 
@@ -1211,6 +1238,9 @@ pub async fn cancel_search(
 
     if let Some(token) = token {
         token.cancel();
+        // FIX(HI-09): 显式移除已取消的 token，防止 search_cancellation_tokens 只增不减
+        let mut tokens = cancellation_tokens.lock();
+        tokens.remove(&searchId);
         Ok(())
     } else {
         Err(CommandError::new(
@@ -1697,8 +1727,11 @@ pub async fn fetch_search_page(
     // 限制每页最大数量，防止内存问题
     let limit = limit.min(10000);
 
-    let disk_store_arc = state.disk_result_store.read();
-    let disk_store = &*disk_store_arc;
+    let disk_store_opt = state.disk_result_store.read();
+    let disk_store = disk_store_opt.as_ref().ok_or_else(|| {
+        CommandError::new("NOT_INITIALIZED", "Disk result store not initialized")
+            .with_help("The application may still be initializing. Please try again")
+    })?;
 
     if disk_store.has_session(&searchId) {
         let result: crate::search_engine::disk_result_store::SearchPageResult = disk_store

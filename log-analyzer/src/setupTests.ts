@@ -3,7 +3,7 @@
 
 import '@testing-library/jest-dom';
 import React from 'react';
-import { TextEncoder, TextDecoder } from 'util';
+import { TextEncoder as NodeTextEncoder, TextDecoder as NodeTextDecoder } from 'util';
 import { enableMapSet } from 'immer';
 
 type JestGlobal = typeof globalThis & {
@@ -36,10 +36,10 @@ Object.defineProperty(globalThis, 'import', {
 const jestGlobal = globalThis as JestGlobal;
 
 if (typeof jestGlobal.TextEncoder === 'undefined') {
-  jestGlobal.TextEncoder = TextEncoder;
+  jestGlobal.TextEncoder = NodeTextEncoder as unknown as typeof TextEncoder;
 }
 if (typeof jestGlobal.TextDecoder === 'undefined') {
-  jestGlobal.TextDecoder = TextDecoder;
+  jestGlobal.TextDecoder = NodeTextDecoder as unknown as typeof TextDecoder;
 }
 
 // Initialize i18n for tests - must be before any components that use translation

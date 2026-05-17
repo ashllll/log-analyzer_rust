@@ -15,8 +15,24 @@ interface NetworkError {
 /**
  * 类型守卫：检查是否为网络错误
  */
+// FIX(HI-18): 增加更严格的结构检查，避免任何带 request 属性的对象都被视为 NetworkError
 const isNetworkError = (error: unknown): error is NetworkError => {
-  return typeof error === 'object' && error !== null && ('response' in error || 'request' in error);
+  if (typeof error !== 'object' || error === null) return false;
+  const e = error as Record<string, unknown>;
+
+  if ('response' in e) {
+    const response = e.response;
+    if (typeof response === 'object' && response !== null && 'status' in response) {
+      return typeof (response as Record<string, unknown>).status === 'number';
+    }
+    return false;
+  }
+
+  if ('request' in e) {
+    return e.request !== null && typeof e.request === 'object';
+  }
+
+  return false;
 };
 
 /**

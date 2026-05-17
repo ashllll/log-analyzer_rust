@@ -442,6 +442,9 @@ where
 
     /// 启动后台清理任务
     pub fn start_cleanup_task(&self) {
+        // FIX(HI-08): 若已存在清理任务，先停止旧任务，防止多次调用导致任务泄漏
+        self.stop_cleanup_task();
+
         let cache = Arc::clone(&self.cache);
         let interval = self.scheduler.interval;
 

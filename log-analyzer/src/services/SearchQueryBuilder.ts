@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import {
   SearchQuery,
   SearchTerm,
@@ -9,6 +10,41 @@ import {
 } from '../types/search';
 import type { KeywordGroup } from '../types/common';
 import { looksLikeRegexPattern, splitQueryByPipe } from '../utils/searchPatterns';
+
+// FIX(HI-16): SearchQuery 运行时验证 Schema
+const SearchTermSchema = z.object({
+  id: z.string(),
+  value: z.string(),
+  operator: z.enum(['AND', 'OR', 'NOT']),
+  source: z.enum(['user', 'preset']),
+  presetGroupId: z.string().optional(),
+  isRegex: z.boolean(),
+  priority: z.number(),
+  enabled: z.boolean(),
+  caseSensitive: z.boolean(),
+});
+
+const QueryMetadataSchema = z.object({
+  createdAt: z.number(),
+  lastModified: z.number(),
+  executionCount: z.number(),
+  label: z.string().optional(),
+});
+
+const SearchQuerySchema = z.object({
+  id: z.string(),
+  terms: z.array(SearchTermSchema),
+  globalOperator: z.enum(['AND', 'OR', 'NOT']),
+  filters: z.object({
+    timeRange: z.object({
+      start: z.string().nullable(),
+      end: z.string().nullable(),
+    }),
+    levels: z.array(z.string()),
+    filePattern: z.string(),
+  }).optional(),
+  metadata: QueryMetadataSchema,
+});
 
 /**
  * 搜索查询构建器
@@ -94,8 +130,10 @@ export class SearchQueryBuilder {
    */
   static import(json: string): SearchQueryBuilder | null {
     try {
-      const query = JSON.parse(json) as SearchQuery;
-      return new SearchQueryBuilder(query);
+      const parsed = JSON.parse(json);
+      // FIX(HI-16): 使用 Zod Schema 进行运行时验证，避免 as 断言导致类型不安全
+      const query = SearchQuerySchema.parse(parsed);
+      return new SearchQueryBuilder(query as SearchQuery);
     } catch (e) {
       console.warn('SearchQueryBuilder.import: 无效的 JSON 配置，已忽略', e);
       return null;
@@ -154,9 +192,11 @@ export class SearchQueryBuilder {
    * 切换搜索项的启用/禁用状态
    */
   toggleTerm(termId: string): this {
-    const term = this.query.terms.find(t => t.id === termId);
-    if (term) {
-      term.enabled = !term.enabled;
+    // FIX(HI-20): 使用不可变更新替代直接突变
+    if (this.query.terms.some(t => t.id === termId)) {
+      this.query.terms = this.query.terms.map(t =>
+        t.id === termId ? { ...t, enabled: !t.enabled } : t
+      );
       this.updateMetadata();
     }
     return this;
@@ -166,9 +206,11 @@ export class SearchQueryBuilder {
    * 更新搜索项的值
    */
   updateTermValue(termId: string, newValue: string): this {
-    const term = this.query.terms.find(t => t.id === termId);
-    if (term) {
-      term.value = newValue;
+    // FIX(HI-20): 使用不可变更新替代直接突变
+    if (this.query.terms.some(t => t.id === termId)) {
+      this.query.terms = this.query.terms.map(t =>
+        t.id === termId ? { ...t, value: newValue } : t
+      );
       this.updateMetadata();
     }
     return this;

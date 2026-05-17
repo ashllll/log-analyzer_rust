@@ -55,7 +55,10 @@ describe('SearchQueryBuilder', () => {
       const keywordGroups = [
         {
           id: 'group1',
-          patterns: [{ regex: 'error' }]
+          name: 'Group 1',
+          color: 'red' as const,
+          patterns: [{ regex: 'error', comment: 'Error keyword' }],
+          enabled: true,
         }
       ];
       
@@ -71,7 +74,10 @@ describe('SearchQueryBuilder', () => {
       const keywordGroups = [
         {
           id: 'group1',
-          patterns: [{ regex: 'error.*timeout' }]
+          name: 'Group 1',
+          color: 'red' as const,
+          patterns: [{ regex: 'error.*timeout', comment: 'Timeout keyword' }],
+          enabled: true,
         }
       ];
 
@@ -360,9 +366,10 @@ describe('SearchQueryBuilder', () => {
       
       const exported = builder.export();
       const imported = SearchQueryBuilder.import(exported);
+      expect(imported).not.toBeNull();
       
-      expect(imported.getQuery().terms).toHaveLength(2);
-      expect(imported.toQueryString()).toBe(builder.toQueryString());
+      expect(imported!.getQuery().terms).toHaveLength(2);
+      expect(imported!.toQueryString()).toBe(builder.toQueryString());
     });
 
     it('should preserve all properties', () => {
@@ -376,7 +383,8 @@ describe('SearchQueryBuilder', () => {
       
       const exported = builder.export();
       const imported = SearchQueryBuilder.import(exported);
-      const term = imported.getQuery().terms[0];
+      expect(imported).not.toBeNull();
+      const term = imported!.getQuery().terms[0];
       
       expect(term.source).toBe('preset');
       expect(term.presetGroupId).toBe('group1');

@@ -62,6 +62,8 @@ pub enum OperationType {
 /// 异步资源管理器
 ///
 /// 管理异步操作中的资源，支持取消和超时
+// FIX(HI-06): Derive Clone so spawn_cancellable_task can capture a clone for cleanup
+#[derive(Clone)]
 pub struct AsyncResourceManager {
     /// 活跃的异步操作
     active_operations: Arc<AsyncMutex<HashMap<String, (CancellationToken, OperationInfo)>>>,
@@ -324,6 +326,15 @@ impl AsyncResourceManager {
         }
     }
 
+    /// 取消注册操作（任务完成后清理）
+    /// FIX(HI-06): 提供 unregister_operation 以便 spawn_cancellable_task 在完成后移除
+    pub async fn unregister_operation(&self, operation_id: &str) {
+        let mut operations = self.active_operations.lock().await;
+        if operations.remove(operation_id).is_some() {
+            debug!(operation_id = %operation_id, "Unregistered async operation");
+        }
+    }
+
     /// 创建可取消的异步任务
     pub async fn spawn_cancellable_task<F, T>(
         &self,
@@ -345,8 +356,13 @@ impl AsyncResourceManager {
             .register_operation(operation_id.clone(), operation_type, workspace_id)
             .await;
 
+        // FIX(HI-06): Clone manager so the spawned task can unregister itself on completion
+        let manager = self.clone();
+        let op_id_for_cleanup = operation_id.clone();
         let handle = tokio::spawn(async move {
             let result = task(token.clone()).await;
+            // FIX(HI-06): 无论成功或失败，任务完成后从 active_operations 中移除，防止内存泄漏
+            manager.unregister_operation(&op_id_for_cleanup).await;
             result
         });
 

@@ -288,7 +288,7 @@ describe('SearchControls', () => {
         id: 'group-1',
         name: 'Errors',
         color: 'red',
-        patterns: [{ regex: 'error' }],
+        patterns: [{ regex: 'error', comment: 'Error keyword' }],
         enabled: true,
       },
     ];

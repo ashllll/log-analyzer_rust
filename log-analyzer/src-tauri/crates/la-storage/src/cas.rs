@@ -928,7 +928,7 @@ impl ContentAddressableStorage {
     ///
     /// # Arguments
     ///
-    /// * `reader` - AsyncRead stream (e.g., from async_zip entry reader)
+    /// * `reader` - AsyncRead stream (e.g., from compressed file entry reader)
     ///
     /// # Returns
     ///

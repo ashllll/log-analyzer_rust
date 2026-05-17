@@ -183,9 +183,9 @@ describe('AppStore - State Management Integration Tests', () => {
       });
 
       // 模拟一系列状态变化
-      const statusSequence: Array<'OFFLINE' | 'PROCESSING' | 'READY' | 'SCANNING'> = [
+      const statusSequence: Array<'OFFLINE' | 'PROCESSING' | 'READY' | 'PARTIAL'> = [
         'PROCESSING',
-        'SCANNING',
+        'PARTIAL',
         'READY',
       ];
 

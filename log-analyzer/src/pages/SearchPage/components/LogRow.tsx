@@ -43,11 +43,22 @@ export const LogRow = memo<LogRowProps>(({
   const line = log.line ?? 0;
   const content = log.content ?? '';
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onClick();
+    }
+  };
+
   return (
     <div
       ref={measureElement}
       data-index={virtualIndex}
+      role="button"
+      tabIndex={0}
+      aria-selected={isActive}
       onClick={onClick}
+      onKeyDown={handleKeyDown}
       style={{
         transform: `translateY(${virtualStart}px)`,
         minHeight: `${virtualSize}px`,

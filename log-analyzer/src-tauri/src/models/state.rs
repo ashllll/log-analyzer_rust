@@ -56,7 +56,10 @@ pub struct AppState {
     pub search_engine_managers: Arc<Mutex<HashMap<String, Arc<SearchEngineManager>>>>,
     /// M4 Fix: Wrapped in RwLock to allow replacement with app_data_dir path
     /// during setup(). Read-heavy access pattern — read lock is shared.
-    pub disk_result_store: parking_lot::RwLock<Arc<DiskResultStore>>,
+    /// FIX(CR-06): Changed to Option to avoid panic in default() when DiskResultStore::new fails.
+    pub disk_result_store: parking_lot::RwLock<Option<Arc<DiskResultStore>>>,
+    /// FIX(HI-01): 缓存 rayon ThreadPool，避免每次搜索都新建线程池
+    pub search_thread_pool: Arc<rayon::ThreadPool>,
 }
 
 impl Default for AppState {
@@ -74,29 +77,17 @@ impl Default for AppState {
             state_sync: Arc::new(Mutex::new(None)),
             async_resource_manager: Arc::new(AsyncResourceManager::new()),
             search_engine_managers: Arc::new(Mutex::new(HashMap::new())),
-            disk_result_store: parking_lot::RwLock::new(Arc::new({
-                // M4 Fix: Default uses temp_dir as fallback; setup() stage replaces
-                // with app-specific data directory via init_disk_result_store_at()
-                let cache_dir = std::env::temp_dir().join("log-analyzer-search-cache");
-                DiskResultStore::new(cache_dir, 50).unwrap_or_else(|e| {
-                    tracing::warn!(error = %e, "无法创建搜索磁盘缓存，尝试降级路径");
-                    // 降级：尝试另一个临时目录，仍失败时记录错误并 panic（输出清晰诊断信息）
-                    DiskResultStore::new(std::env::temp_dir().join("la-sc-fallback"), 20)
-                        .unwrap_or_else(|e2| {
-                            tracing::error!(
-                                primary_error = %e,
-                                fallback_error = %e2,
-                                tmp_dir = ?std::env::temp_dir(),
-                                "所有搜索缓存目录均初始化失败，请检查临时目录权限或磁盘空间"
-                            );
-                            panic!(
-                                "无法初始化搜索缓存（主路径: {}, 降级路径: {}）。\
-                                 请确认临时目录可写且磁盘空间充足。",
-                                e, e2
-                            )
-                        })
-                })
-            })),
+            // FIX(CR-06): Initialize as None to avoid IO/panic in default().
+            // The actual DiskResultStore is created in setup() via init_disk_result_store_at().
+            disk_result_store: parking_lot::RwLock::new(None),
+            // FIX(HI-01): 在应用启动时初始化 ThreadPool，后续搜索复用
+            search_thread_pool: Arc::new({
+                let thread_count = num_cpus::get().max(2);
+                rayon::ThreadPoolBuilder::new()
+                    .num_threads(thread_count)
+                    .build()
+                    .expect("Failed to create search thread pool")
+            }),
         }
     }
 }
@@ -114,7 +105,7 @@ impl AppState {
         match DiskResultStore::new(cache_dir.clone(), 50) {
             Ok(store) => {
                 let mut guard = self.disk_result_store.write();
-                *guard = Arc::new(store);
+                *guard = Some(Arc::new(store));
                 tracing::info!(
                     path = %cache_dir.display(),
                     "DiskResultStore initialized at app data directory"
@@ -124,7 +115,7 @@ impl AppState {
                 tracing::warn!(
                     error = %e,
                     path = %cache_dir.display(),
-                    "Failed to create DiskResultStore at app data dir; keeping temp_dir fallback"
+                    "Failed to create DiskResultStore at app data dir; keeping fallback"
                 );
             }
         }

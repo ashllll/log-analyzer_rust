@@ -24,6 +24,7 @@ import {
   type FileFilterConfig,
   type WorkspaceStatusResponseValidated,
   type AppConfigValidated as AppConfig,
+  type LogEntry,
 } from '../types/api-responses';
 
 // ============================================================================
@@ -53,27 +54,38 @@ export function sanitizeArgs(args: Record<string, unknown>): Record<string, unkn
   const sanitized: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(args)) {
-    if (isEmpty(value)) {
+    const sanitizedValue = sanitizeValue(value);
+    if (sanitizedValue === undefined) {
       continue;
     }
-    if (Array.isArray(value)) {
-      sanitized[key] = value.map((item) => {
-        if (item && typeof item === 'object' && !Array.isArray(item)) {
-          return sanitizeArgs(item as Record<string, unknown>);
-        }
-        return item;
-      });
-    } else if (typeof value === 'object' && value !== null) {
-      const sanitizedNested = sanitizeArgs(value as Record<string, unknown>);
-      // 始终保留对象，即使所有字段都是 null/undefined
-      // 避免后端将 "filter 已设置为空" 误解为 "无 filter"
-      sanitized[key] = sanitizedNested;
-    } else {
-      sanitized[key] = value;
-    }
+    sanitized[key] = sanitizedValue;
   }
 
   return sanitized;
+}
+
+function sanitizeValue(value: unknown): unknown | undefined {
+  if (isEmpty(value)) {
+    return undefined;
+  }
+
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => {
+        if (item && typeof item === 'object') {
+          return sanitizeValue(item);
+        }
+        return item;
+      })
+      .filter((item) => item !== undefined);
+  }
+
+  if (typeof value === 'object') {
+    const sanitizedNested = sanitizeArgs(value as Record<string, unknown>);
+    return Object.keys(sanitizedNested).length > 0 ? sanitizedNested : undefined;
+  }
+
+  return value;
 }
 
 /**
@@ -84,9 +96,9 @@ export type ApiArgs = Record<string, unknown>;
 /**
  * 带超时的 IPC 调用包装器
  *
- * 注意：Tauri v2 的 invoke 不支持 AbortController 取消，
- * 超时后底层请求仍会继续执行。此包装器仅用于前端超时检测，
- * 避免 UI 无限等待。如需真正取消，需在 Rust 端实现取消机制。
+ * 注意：Tauri v2 的 invoke 不支持 AbortController 取消。
+ * 超时后前端会忽略后续结果，避免迟到响应继续触发日志或状态更新；
+ * 需要真正取消的长任务必须使用后端 cancellation token 命令。
  */
 export async function invokeWithTimeout<T>(
   command: string,
@@ -95,24 +107,29 @@ export async function invokeWithTimeout<T>(
 ): Promise<T> {
   const sanitizedArgs = sanitizeArgs(args);
 
-  let isTimedOut = false;
-  const timeoutId = setTimeout(() => {
-    isTimedOut = true;
-  }, timeoutMs);
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const timeoutId = setTimeout(() => {
+      settled = true;
+      reject(new Error(`操作超时（${timeoutMs}ms）: ${command}`));
+    }, timeoutMs);
 
-  try {
-    const result = await invoke<T>(command, sanitizedArgs);
-    logger.debug('IPC 调用成功:', { command, hasResult: !!result });
-    return result;
-  } catch (error) {
-    if (isTimedOut) {
-      throw new Error(`操作超时（${timeoutMs}ms）: ${command}`);
-    }
-    logger.error('IPC 调用失败:', { command, error });
-    throw error;
-  } finally {
-    clearTimeout(timeoutId);
-  }
+    invoke<T>(command, sanitizedArgs)
+      .then((result) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutId);
+        logger.debug('IPC 调用成功:', { command, hasResult: !!result });
+        resolve(result);
+      })
+      .catch((error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutId);
+        logger.error('IPC 调用失败:', { command, error });
+        reject(error);
+      });
+  });
 }
 
 /**
@@ -122,9 +139,9 @@ export async function invokeWithTimeout<T>(
 export async function safeInvoke<T>(
   command: string,
   args: ApiArgs = {},
-  options: { timeoutMs?: number; fallback?: T; onError?: (error: Error) => void } = {}
+  options: { timeoutMs?: number; fallback?: T; onErrorLog?: (error: Error) => void } = {}
 ): Promise<T> {
-  const { timeoutMs = 30000, fallback, onError } = options;
+  const { timeoutMs = 30000, fallback, onErrorLog } = options;
 
   try {
     const result = await invokeWithTimeout<T>(command, args, timeoutMs);
@@ -132,8 +149,8 @@ export async function safeInvoke<T>(
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
 
-    if (onError) {
-      onError(err);
+    if (onErrorLog) {
+      onErrorLog(err);
     } else {
       logger.warn(`API 调用失败，使用默认值: ${command}`, { error: err.message });
     }
@@ -201,15 +218,7 @@ export interface SearchParams {
 /**
  * 导出结果条目
  */
-export interface ExportResultEntry {
-  id?: number;
-  timestamp?: string;
-  level?: string;
-  content?: string;
-  file?: string;
-  line?: number;
-  [key: string]: unknown;
-}
+export type ExportResultEntry = LogEntry;
 
 /**
  * 导出参数
@@ -286,7 +295,7 @@ class LogAnalyzerApi {
   async refreshWorkspace(workspaceId: string, path?: string): Promise<string> {
     const resolvedPath = path && path.trim().length > 0
       ? path
-      : (await this.loadConfig()).workspaces.find((workspace) => workspace.id === workspaceId)?.path;
+      : undefined;
 
     const args = resolvedPath && resolvedPath.trim().length > 0
       ? { workspaceId, path: resolvedPath }
@@ -624,13 +633,13 @@ export async function readFileByHash(
 
     logger.debug('Reading file by hash:', { workspaceId, hash });
 
+    // FIX(HI-12): 移除 fallback，让 safeInvoke 抛出错误，使 catch 块可执行
     const response = await safeInvoke<FileContentResponse | null>(
       'read_file_by_hash',
       { workspaceId, hash },
       {
         timeoutMs: 10000,
-        fallback: null,
-        onError: (err) => logger.error('读取文件失败', { error: err.message })
+        onErrorLog: (err) => logger.error('读取文件失败', { error: err.message })
       }
     );
 

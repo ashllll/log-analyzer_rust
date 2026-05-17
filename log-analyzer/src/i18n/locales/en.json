@@ -57,7 +57,20 @@
     "import_folder": "Import Folder"
   },
   "keywords": {
-    "invalid_regex": "Invalid regular expression"
+    "invalid_regex": "Invalid regular expression",
+    "modal": {
+      "title_edit": "Edit Keyword Group",
+      "title_new": "New Keyword Group",
+      "group_name": "Group Name",
+      "name_placeholder": "Name",
+      "highlight_color": "Highlight Color",
+      "patterns_title": "Patterns & Comments",
+      "add_pattern": "Add",
+      "regex_placeholder": "RegEx",
+      "comment_placeholder": "Comment",
+      "cancel": "Cancel",
+      "save": "Save Configuration"
+    }
   },
   "settings": {
     "title": "Extraction Policy Settings",
@@ -99,7 +112,21 @@
       "search_timeout": "Search Timeout (seconds)",
       "search_timeout_hint": "Timeout for search operations (seconds)",
       "save_success": "Search settings saved",
-      "invalid": "Invalid search configuration"
+      "invalid": "Invalid search configuration",
+      "max_results": "Default Max Results",
+      "max_results_hint": "Maximum number of results returned when not explicitly specified.",
+      "timeout_seconds": "Search Timeout (seconds)",
+      "timeout_seconds_hint": "Synchronous search exceeding this time will return a timeout error.",
+      "max_concurrent_searches": "Max Concurrent Searches",
+      "max_concurrent_searches_hint": "Limit the number of search tasks executed simultaneously in the background.",
+      "case_sensitive": "Case Sensitive",
+      "case_sensitive_hint": "When enabled, default search will match with exact case.",
+      "regex_enabled": "Enable Regex Search",
+      "regex_enabled_hint": "Preserve regex search capability; when disabled, only plain text matching is allowed.",
+      "regex_cache_size": "Regex Cache Size",
+      "regex_cache_size_hint": "The capacity of the reusable regular expression cache for the query executor.",
+      "fuzzy_search_enabled": "Enable Fuzzy Search",
+      "fuzzy_search_enabled_hint": "Preserve fuzzy matching configuration for future search strategy extensions."
     },
     "task_manager": {
       "title": "Task Manager Configuration",
@@ -117,7 +144,15 @@
       "profiling": "Profiling",
       "profiling_hint": "Enable task performance profiling and monitoring",
       "save_success": "Task manager settings saved",
-      "invalid": "Invalid task manager configuration"
+      "invalid": "Invalid task manager configuration",
+      "operation_timeout": "Task Timeout (seconds)",
+      "operation_timeout_hint": "Timeout for a single background operation.",
+      "completed_task_ttl": "Completed Task Retention (seconds)",
+      "completed_task_ttl_hint": "Retention time for completed tasks in the status list.",
+      "failed_task_ttl": "Failed Task Retention (seconds)",
+      "failed_task_ttl_hint": "Failed tasks are retained longer for troubleshooting.",
+      "cleanup_interval": "Cleanup Interval (seconds)",
+      "cleanup_interval_hint": "Polling interval for the background task cleaner."
     },
     "extraction": {
       "title": "Extraction Settings",

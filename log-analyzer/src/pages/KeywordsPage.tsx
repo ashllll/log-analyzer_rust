@@ -135,7 +135,7 @@ const KeywordsPage: React.FC = () => {
                 <div className="px-6 py-3 bg-bg-card flex flex-wrap gap-2">
                   {group.patterns.map((p, i) => (
                     <div
-                      key={i}
+                      key={`${group.id}-${p.regex}-${i}`}
                       className="flex items-center bg-bg-main border border-border-base rounded px-2 py-1 text-xs"
                     >
                       <span className="font-mono text-text-main mr-2">{p.regex}</span>
