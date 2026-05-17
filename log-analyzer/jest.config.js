@@ -22,6 +22,7 @@ export default {
     '!src/**/*.d.ts',
     '!src/main.tsx',
     '!src/vite-env.d.ts',
+    '!src/__tests__/e2e/**',
   ],
   coverageThreshold: {
     global: {
