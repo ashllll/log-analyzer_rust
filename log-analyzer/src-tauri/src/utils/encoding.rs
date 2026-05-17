@@ -137,7 +137,8 @@ pub fn decode_log_content(bytes: &[u8]) -> (String, EncodingInfo) {
 
     // 统计无效字节占比
     let replacement_count = lossy_str.chars().filter(|&c| c == '\u{FFFD}').count();
-    let invalid_ratio = replacement_count as f64 / lossy_str.len().max(1) as f64;
+    // FIX(ME-17): 使用原始字节长度计算比例，而非解码后的字符数
+    let invalid_ratio = replacement_count as f64 / bytes.len().max(1) as f64;
 
     // 如果无效字节 >30%，可能是二进制文件或其他编码，尝试回退
     if invalid_ratio > 0.3 {

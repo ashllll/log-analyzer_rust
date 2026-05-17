@@ -533,18 +533,29 @@ fn is_sensitive_system_path(path: &std::path::Path) -> bool {
             std::env::var_os("ProgramData").map(std::path::PathBuf::from),
         ];
 
-        return protected_roots
+        protected_roots
             .into_iter()
             .flatten()
             .filter_map(|root| dunce::canonicalize(root).ok())
-            .any(|root| path == root || path.starts_with(&root));
+            .any(|root| path == root || path.starts_with(&root))
     }
 
     #[cfg(not(target_os = "windows"))]
     {
         const PROTECTED_ROOTS: &[&str] = &[
-            "/bin", "/boot", "/dev", "/etc", "/lib", "/lib64", "/proc", "/root", "/run",
-            "/sbin", "/sys", "/usr/bin", "/usr/sbin",
+            "/bin",
+            "/boot",
+            "/dev",
+            "/etc",
+            "/lib",
+            "/lib64",
+            "/proc",
+            "/root",
+            "/run",
+            "/sbin",
+            "/sys",
+            "/usr/bin",
+            "/usr/sbin",
         ];
 
         PROTECTED_ROOTS.iter().any(|root| {

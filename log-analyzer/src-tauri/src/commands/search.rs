@@ -20,7 +20,7 @@
 //! - 稳定查询指纹与前端搜索会话 ID 的职责边界仍需统一
 //!
 //! ## 目标架构（单一层级存储）
-//! ```
+//! ```text
 //! 搜索执行 → 批量结果缓冲
 //!     ↓
 //! DiskResultStore (唯一持久缓存，按搜索会话分页)
@@ -242,7 +242,7 @@ async fn run_search_with_timeout(request: SearchExecutionRequest) -> Result<Stri
     let cancellation_tokens_for_timeout = Arc::clone(&cancellation_tokens);
     let disk_store_for_timeout = Arc::clone(&disk_result_store);
     let timed_out = Arc::new(AtomicBool::new(false));
-    let timed_out_for_timeout = Arc::clone(&timed_out);
+    let timed_out_for_blocking = Arc::clone(&timed_out);
 
     let search_id_for_blocking = search_id.clone();
     let handle = tokio::task::spawn_blocking(move || {
@@ -261,6 +261,7 @@ async fn run_search_with_timeout(request: SearchExecutionRequest) -> Result<Stri
             cancellation_token,
             cancellation_tokens,
             search_thread_pool,
+            timed_out_for_blocking,
         );
     });
 
@@ -281,7 +282,7 @@ async fn run_search_with_timeout(request: SearchExecutionRequest) -> Result<Stri
         }
         Err(_) => {
             warn!(search_id = %search_id, "Search timed out after {} seconds", search_timeout_secs);
-            timed_out_for_timeout.store(true, Ordering::SeqCst);
+            timed_out.store(true, Ordering::SeqCst);
             cancellation_token_for_timeout.cancel();
             {
                 let mut tokens = cancellation_tokens_for_timeout.lock();
@@ -649,9 +650,9 @@ impl CompiledSearchFilters {
             .filter(|levels| !levels.is_empty())
         };
         let level_mask = levels.as_ref().map(|levels| {
-            levels
-                .iter()
-                .fold(0u8, |mask, level| mask | crate::commands::level_to_mask(level))
+            levels.iter().fold(0u8, |mask, level| {
+                mask | crate::commands::level_to_mask(level)
+            })
         });
 
         let time_start = Self::parse_filter_datetime(filters.time_start.as_deref(), "start time")?;
@@ -875,6 +876,8 @@ fn execute_file_search(
     >,
     // FIX(HI-01): 使用 AppState 中缓存的 ThreadPool，避免每次搜索新建
     search_thread_pool: Arc<rayon::ThreadPool>,
+    // FIX(ME-08): 共享超时标志，确保超时后 execute_file_search 能感知状态
+    timed_out: Arc<AtomicBool>,
 ) {
     let start_time = std::time::Instant::now();
 
@@ -906,7 +909,6 @@ fn execute_file_search(
         std::collections::HashMap::new();
     let mut was_truncated = false;
 
-    let timed_out = Arc::new(AtomicBool::new(false));
     let timed_out_for_search = Arc::clone(&timed_out);
 
     // FIX(HI-02): flush_batch 现在返回 bool，失败时 emit search-error 而不是静默丢弃
@@ -1034,11 +1036,11 @@ fn execute_file_search(
                 batch_results.push(entry);
                 results_count += 1;
 
-                if batch_results.len() >= batch_size {
-                    if !flush_batch(&mut batch_results, results_count) {
-                        disk_write_failed = true;
-                        break 'outer;
-                    }
+                if batch_results.len() >= batch_size
+                    && !flush_batch(&mut batch_results, results_count)
+                {
+                    disk_write_failed = true;
+                    break 'outer;
                 }
             }
         }

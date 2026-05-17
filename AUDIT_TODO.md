@@ -22,46 +22,46 @@
 ## 🔴 Critical (16项)
 
 ### Rust后端核心 (3项)
-- [ ] **CR-01** `import.rs:272-301` vs `search.rs:586-594` — `level_to_mask` 位定义完全相反，导致 segment pruning 跳过有效结果
-- [ ] **CR-02** `export.rs:21-28` — 路径遍历：允许绝对路径写入任意位置
-- [ ] **CR-03** `log_config.rs:71-85` — 路径遍历：`load_log_config`/`save_log_config` 直接使用用户传入路径
+- [x] **CR-01** `import.rs:272-301` vs `search.rs:586-594` — `level_to_mask` 位定义完全相反，导致 segment pruning 跳过有效结果
+- [x] **CR-02** `export.rs:21-28` — 路径遍历：允许绝对路径写入任意位置
+- [x] **CR-03** `log_config.rs:71-85` — 路径遍历：`load_log_config`/`save_log_config` 直接使用用户传入路径
 
 ### Rust基础设施 (3项)
-- [ ] **CR-04** `utils/log_config.rs:196-211` — `RELOAD_HANDLE` 全局变量从未写入，动态日志级别调整完全失效
-- [ ] **CR-05** `utils/validation.rs:155-171` — `canonicalize_and_validate` 解析符号链接后路径逃逸
-- [ ] **CR-06** `main.rs:76` / `models/state.rs` — `AppState::default()` 中 `DiskResultStore::new()` panic 导致应用无法启动
+- [x] **CR-04** `utils/log_config.rs:196-211` — `RELOAD_HANDLE` 全局变量从未写入，动态日志级别调整完全失效
+- [x] **CR-05** `utils/validation.rs:155-171` — `canonicalize_and_validate` 解析符号链接后路径逃逸
+- [x] **CR-06** `main.rs:76` / `models/state.rs` — `AppState::default()` 中 `DiskResultStore::new()` panic 导致应用无法启动
 
 ### 前端核心逻辑 (4项)
-- [ ] **CR-07** `src/utils/logger.ts:101-141` — `info()`/`warn()`/`error()` 字符串重载未检查日志级别
-- [ ] **CR-08** `src/hooks/useSearchListeners.ts:63-139` — `Promise.all` 短路导致 Tauri 监听器泄漏
-- [ ] **CR-09** `src/services/api.ts:91-116` — `invokeWithTimeout` 超时竞态掩盖真实错误
-- [ ] **CR-10** `src/hooks/useServerQueries.ts:22-42` — `queryFn` 中直接执行 Zustand store 副作用
+- [x] **CR-07** `src/utils/logger.ts:101-141` — `info()`/`warn()`/`error()` 字符串重载未检查日志级别
+- [x] **CR-08** `src/hooks/useSearchListeners.ts:63-139` — `Promise.all` 短路导致 Tauri 监听器泄漏
+- [x] **CR-09** `src/services/api.ts:91-116` — `invokeWithTimeout` 超时竞态掩盖真实错误
+- [x] **CR-10** `src/hooks/useServerQueries.ts:22-42` — `queryFn` 中直接执行 Zustand store 副作用
 
 ### 前端UI (2项)
-- [ ] **CR-11** `src/pages/SearchPage.tsx:209-214` — `useEffect` 依赖禁用 ESLint，`handleSearch` stale closure
-- [ ] **CR-12** `src/App.tsx:123` + `ErrorBoundary.tsx:356,518` — `MemoryRouter` 与 `window.location.hash` 不匹配，错误恢复失效
+- [x] **CR-11** `src/pages/SearchPage.tsx:209-214` — `useEffect` 依赖禁用 ESLint，`handleSearch` stale closure
+- [x] **CR-12** `src/App.tsx:123` + `ErrorBoundary.tsx:356,518` — `MemoryRouter` 与 `window.location.hash` 不匹配，错误恢复失效
 
 ### 配置与CI/CD (4项)
-- [ ] **CR-13** `Cargo.toml` / `la-archive/Cargo.toml` — `zip = "2.2"` 受 CVE-2025-29787 影响
-- [ ] **CR-14** `Cargo.toml` — `bytes = "1.0"` 受 RUSTSEC-2026-0007 影响
-- [ ] **CR-15** `Cargo.toml` / `la-archive/Cargo.toml` — `async_zip = "0.0.18"` 已废弃停止维护
-- [ ] **CR-16** `Cargo.toml` — `sentry = "0.48"` 主 crate 未发布，会导致构建失败
+- [x] **CR-13** `Cargo.toml` / `la-archive/Cargo.toml` — `zip = "2.2"` 受 CVE-2025-29787 影响
+- [x] **CR-14** `Cargo.toml` — `bytes = "1.0"` 受 RUSTSEC-2026-0007 影响
+- [x] **CR-15** `Cargo.toml` / `la-archive/Cargo.toml` — `async_zip = "0.0.18"` 已废弃停止维护
+- [x] **CR-16** `Cargo.toml` — `sentry = "0.48"` 主 crate 未发布，会导致构建失败
 
 ---
 
 ## 🟠 High (38项)
 
 ### Rust后端核心 (5项)
-- [ ] **HI-01** `search.rs:879` — 每次搜索新建 `rayon::ThreadPool`
-- [ ] **HI-02** `search.rs:921` — 磁盘写入失败静默清空批次，数据丢失
-- [ ] **HI-03** `workspace.rs:688` — `cancel_task` 错误被丢弃，始终返回 `Ok(())`
+- [x] **HI-01** `search.rs:879` — 每次搜索新建 `rayon::ThreadPool`
+- [x] **HI-02** `search.rs:921` — 磁盘写入失败静默清空批次，数据丢失
+- [x] **HI-03** `workspace.rs:688` — `cancel_task` 错误被丢弃，始终返回 `Ok(())`
 - [ ] **HI-04** `file_watcher.rs:410` — 同步线程中 `tokio::Handle::current().block_on()`
 - [ ] **HI-05** `workspace.rs:197` — `resolve_refresh_source_path` 未验证用户传入 `path`
 
 ### Rust基础设施 (6项)
 - [ ] **HI-06** `utils/async_resource_manager.rs:327` — 已完成操作未从 `active_operations` 移除，内存泄漏
 - [ ] **HI-07** `utils/retry.rs:95` — 同步函数使用 `std::thread::sleep()` 阻塞异步线程
-- [ ] **HI-08** `utils/cache.rs:443` — `start_cleanup_task()` 可被多次调用，旧任务泄漏
+- [x] **HI-08** `utils/cache.rs:443` — `start_cleanup_task()` 可被多次调用，旧任务泄漏
 - [ ] **HI-09** `models/state.rs:70` — 搜索完成后未清理 `CancellationToken`，内存泄漏
 - [ ] **HI-10** `utils/command_validation.rs:67` — 路径验证未覆盖 Null 字节/绝对路径/编码绕过
 - [ ] **HI-11** `utils/workspace_paths.rs:28` — `workspace_id` 未验证直接拼接路径
@@ -111,7 +111,7 @@
 - [ ] **ME-05** `commands/import.rs:109` — `ensure_workspace_runtime_state` Check-Then-Act 竞态
 - [ ] **ME-06** `services/file_watcher.rs:392` — 监听到修改时读取完整文件内容重新写入 CAS
 - [ ] **ME-07** `services/traits.rs:46` — `build_execution_plan` 默认实现返回空计划
-- [ ] **ME-08** `commands/search.rs:1008` — 超时后仍可能 emit `search-progress`
+- [x] **ME-08** `commands/search.rs:1008` — 超时后仍可能 emit `search-progress`
 - [ ] **ME-09** `services/file_watcher.rs:357` — 跨函数锁获取顺序不一致
 - [ ] **ME-10** `commands/search.rs:366` — `split_query_by_pipe` 对未闭合括号不报错
 
@@ -122,7 +122,7 @@
 - [ ] **ME-14** `task_manager/mod.rs:234` — Actor 内同步调用 `app.emit` 可能阻塞
 - [ ] **ME-15** `task_manager/mod.rs:561` — `TaskManager::new()` 返回 Result 但无失败分支
 - [ ] **ME-16** `utils/async_resource_manager.rs:216` — `graceful_shutdown()` 忙等待循环
-- [ ] **ME-17** `utils/encoding.rs:107` — `invalid_ratio` 使用字符数而非字节数计算
+- [x] **ME-17** `utils/encoding.rs:107` — `invalid_ratio` 使用字符数而非字节数计算
 - [ ] **ME-18** `utils/log_config.rs:146` — `set_global_default` 使用 `expect` 可能 panic
 - [ ] **ME-19** `utils/validation.rs:111` — `url_decode` 输入为 `&str` 限制原始二进制处理
 - [ ] **ME-20** `utils/async_resource_manager.rs:161` — `cancel_workspace_operations` 循环内重复 `to_string()`
