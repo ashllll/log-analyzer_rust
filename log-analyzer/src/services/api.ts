@@ -10,8 +10,6 @@ import { invoke, type InvokeArgs } from '@tauri-apps/api/core';
 import { z } from 'zod';
 import { createApiError } from './errors';
 import { logger } from '../utils/logger';
-import type { FilterOptions } from '../types/common';
-import type { SearchQuery } from '../types/search';
 import {
   RarSupportInfoSchema,
   FileFilterConfigSchema,
@@ -20,11 +18,21 @@ import {
   WorkspaceTimeRangeSchema,
   AppConfigSchema,
   SearchIdSchema,
+  SearchParamsSchema,
+  ExportParamsSchema,
+  WatchParamsSchema,
+  SearchConfigSchema,
+  TaskManagerConfigSchema,
   type RarSupportInfo,
   type FileFilterConfig,
+  type WorkspaceLoadResponseValidated,
   type WorkspaceStatusResponseValidated,
+  type SearchParamsValidated,
+  type ExportParamsValidated,
+  type WatchParamsValidated,
+  type SearchConfigValidated,
+  type TaskManagerConfigValidated,
   type AppConfigValidated as AppConfig,
-  type LogEntry,
 } from '../types/api-responses';
 
 // ============================================================================
@@ -36,14 +44,6 @@ import {
  */
 export function isEmpty<T>(value: T | null | undefined): value is null | undefined {
   return value === null || value === undefined;
-}
-
-export function isEmptyString(value: string | null | undefined): boolean {
-  return value === null || value === undefined || value === '';
-}
-
-export function isEmptyArray<T>(value: T[] | null | undefined): boolean {
-  return value === null || value === undefined || value.length === 0;
 }
 
 /**
@@ -132,110 +132,19 @@ export async function invokeWithTimeout<T>(
   });
 }
 
-/**
- * 空值安全的 API 调用
- * 包装 invokeWithTimeout，提供更友好的错误处理
- */
-export async function safeInvoke<T>(
-  command: string,
-  args: ApiArgs = {},
-  options: { timeoutMs?: number; fallback?: T; onErrorLog?: (error: Error) => void } = {}
-): Promise<T> {
-  const { timeoutMs = 30000, fallback, onErrorLog } = options;
-
-  try {
-    const result = await invokeWithTimeout<T>(command, args, timeoutMs);
-    return result;
-  } catch (error) {
-    const err = error instanceof Error ? error : new Error(String(error));
-
-    if (onErrorLog) {
-      onErrorLog(err);
-    } else {
-      logger.warn(`API 调用失败，使用默认值: ${command}`, { error: err.message });
-    }
-
-    if (fallback !== undefined) {
-      return fallback;
-    }
-
-    throw err;
-  }
-}
-
-/**
- * 空值安全的列表 API 调用
- * 确保返回数组类型，错误会向上传播给调用者处理
- */
-export async function safeInvokeList<T>(
-  command: string,
-  args: ApiArgs = {}
-): Promise<T[]> {
-  const result = await safeInvoke<T[]>(command, args);
-  return Array.isArray(result) ? result : [];
-}
-
-/**
- * 空值安全的单值 API 调用
- * 确保返回对象而不是 null，错误会向上传播给调用者处理
- */
-export async function safeInvokeObject<T extends object>(
-  command: string,
-  args: ApiArgs = {},
-  defaultValue: T
-): Promise<T> {
-  const result = await safeInvoke<T>(command, args);
-  return result && typeof result === 'object' ? result : defaultValue;
-}
-
 // ============================================================================
 // 类型定义
 // ============================================================================
 
-/**
- * 工作区加载响应
- */
-export interface WorkspaceLoadResponse {
-  success: boolean;
-  fileCount: number;
-}
-
-export type WorkspaceStatusResponse = WorkspaceStatusResponseValidated;
-
-/**
- * 搜索参数
- */
-export interface SearchParams {
-  query: string;
-  structuredQuery?: SearchQuery;
-  workspaceId?: string;
-  maxResults?: number;
-  filters?: FilterOptions;
-}
+export type SearchParams = SearchParamsValidated;
+export type SearchConfig = SearchConfigValidated;
+export type TaskManagerConfig = TaskManagerConfigValidated;
 
 // SearchFilters 统一使用 types/common.ts 中的 FilterOptions
 
-/**
- * 导出结果条目
- */
-export type ExportResultEntry = LogEntry;
+export type ExportParams = ExportParamsValidated;
 
-/**
- * 导出参数
- */
-export interface ExportParams {
-  results: ExportResultEntry[];
-  format: 'csv' | 'json';
-  savePath: string;
-}
-
-/**
- * 文件监听参数
- */
-export interface WatchParams {
-  workspaceId: string;
-  autoSearch?: boolean;
-}
+export type WatchParams = WatchParamsValidated;
 
 // ============================================================================
 // 统一 API 类
@@ -277,11 +186,11 @@ class LogAnalyzerApi {
    * @param workspaceId - 工作区 ID
    * @returns 工作区加载响应
    */
-  async loadWorkspace(workspaceId: string): Promise<WorkspaceLoadResponse> {
+  async loadWorkspace(workspaceId: string): Promise<WorkspaceLoadResponseValidated> {
     return this.invokeWithErrorHandling(
       'load_workspace',
       { workspaceId },
-      (raw) => WorkspaceLoadResponseSchema.parse(raw) as WorkspaceLoadResponse
+      (raw) => WorkspaceLoadResponseSchema.parse(raw)
     );
   }
 
@@ -327,7 +236,7 @@ class LogAnalyzerApi {
    * @param workspaceId - 工作区 ID
    * @returns 工作区状态响应
    */
-  async getWorkspaceStatus(workspaceId: string): Promise<WorkspaceStatusResponse> {
+  async getWorkspaceStatus(workspaceId: string): Promise<WorkspaceStatusResponseValidated> {
     return this.invokeWithErrorHandling(
       'get_workspace_status',
       { workspaceId },
@@ -379,9 +288,10 @@ class LogAnalyzerApi {
    * @returns 搜索 ID
    */
   async searchLogs(params: SearchParams): Promise<string> {
+    const validatedParams = SearchParamsSchema.parse(params);
     return this.invokeWithErrorHandling(
       'search_logs',
-      params as unknown as InvokeArgs,
+      validatedParams as unknown as InvokeArgs,
       (raw) => SearchIdSchema.parse(raw)
     );
   }
@@ -441,9 +351,10 @@ class LogAnalyzerApi {
    * @param params - 监听参数
    */
   async startWatch(params: WatchParams): Promise<void> {
+    const validatedParams = WatchParamsSchema.parse(params);
     return this.invokeWithErrorHandling(
       'start_watch',
-      params as unknown as InvokeArgs,
+      validatedParams as unknown as InvokeArgs,
       () => undefined
     );
   }
@@ -504,7 +415,41 @@ class LogAnalyzerApi {
     return this.invokeWithErrorHandling(
       'load_config',
       {},
-      (raw) => AppConfigSchema.parse(raw) as AppConfig
+      (raw) => AppConfigSchema.parse(raw)
+    );
+  }
+
+  async getSearchConfig(): Promise<SearchConfig> {
+    return this.invokeWithErrorHandling(
+      'get_search_config',
+      {},
+      (raw) => SearchConfigSchema.parse(raw)
+    );
+  }
+
+  async saveSearchConfig(searchConfig: SearchConfig): Promise<void> {
+    const validatedConfig = SearchConfigSchema.parse(searchConfig);
+    return this.invokeWithErrorHandling(
+      'save_search_config',
+      { searchConfig: validatedConfig },
+      () => undefined
+    );
+  }
+
+  async getTaskManagerConfig(): Promise<TaskManagerConfig> {
+    return this.invokeWithErrorHandling(
+      'get_task_manager_config',
+      {},
+      (raw) => TaskManagerConfigSchema.parse(raw)
+    );
+  }
+
+  async saveTaskManagerConfig(taskManagerConfig: TaskManagerConfig): Promise<void> {
+    const validatedConfig = TaskManagerConfigSchema.parse(taskManagerConfig);
+    return this.invokeWithErrorHandling(
+      'save_task_manager_config',
+      { taskManagerConfig: validatedConfig },
+      () => undefined
     );
   }
 
@@ -546,9 +491,10 @@ class LogAnalyzerApi {
    * @returns 导出文件路径
    */
   async exportResults(params: ExportParams): Promise<string> {
+    const validatedParams = ExportParamsSchema.parse(params);
     return this.invokeWithErrorHandling(
       'export_results',
-      params as unknown as InvokeArgs,
+      validatedParams as unknown as InvokeArgs,
       (raw) => raw as string
     );
   }
@@ -600,63 +546,3 @@ class LogAnalyzerApi {
  * ```
  */
 export const api = new LogAnalyzerApi();
-
-// ============================================================================
-// 文件内容响应类型（原 fileApi）
-// ============================================================================
-
-/**
- * 文件内容响应
- */
-export interface FileContentResponse {
-  content: string;
-  hash: string;
-  size: number;
-}
-
-/**
- * 空值安全的文件读取（增强版）
- */
-export async function readFileByHash(
-  workspaceId: string,
-  hash: string
-): Promise<FileContentResponse | null> {
-  try {
-    if (isEmptyString(workspaceId)) {
-      logger.warn('readFileByHash: workspaceId 为空');
-      return null;
-    }
-    if (isEmptyString(hash)) {
-      logger.warn('readFileByHash: hash 为空');
-      return null;
-    }
-
-    logger.debug('Reading file by hash:', { workspaceId, hash });
-
-    // FIX(HI-12): 移除 fallback，让 safeInvoke 抛出错误，使 catch 块可执行
-    const response = await safeInvoke<FileContentResponse | null>(
-      'read_file_by_hash',
-      { workspaceId, hash },
-      {
-        timeoutMs: 10000,
-        onErrorLog: (err) => logger.error('读取文件失败', { error: err.message })
-      }
-    );
-
-    if (response) {
-      logger.debug('Successfully read file:', { hash, size: response.size });
-    }
-
-    return response;
-  } catch (error) {
-    logger.error('Failed to read file by hash:', error);
-    throw createApiError('read_file_by_hash', error);
-  }
-}
-
-/**
- * 文件 API 便捷对象
- */
-export const fileApi = {
-  readByHash: readFileByHash
-};

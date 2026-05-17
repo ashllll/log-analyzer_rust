@@ -7,36 +7,14 @@
  */
 
 import { useState, useCallback } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { createApiError } from '../services/errors';
+import { api, type SearchConfig, type TaskManagerConfig } from '../services/api';
+import { getFullErrorMessage } from '../services/errors';
 
 // ============================================================================
 // 类型定义
 // ============================================================================
 
-/**
- * 搜索配置
- */
-export interface SearchConfig {
-  max_results: number;
-  timeout_seconds: number;
-  max_concurrent_searches: number;
-  fuzzy_search_enabled: boolean;
-  case_sensitive: boolean;
-  regex_enabled: boolean;
-  regex_cache_size: number;
-}
-
-/**
- * 任务管理器配置
- */
-export interface TaskManagerConfig {
-  max_concurrent_tasks: number;
-  completed_task_ttl: number;
-  failed_task_ttl: number;
-  cleanup_interval: number;
-  operation_timeout: number;
-}
+export type { SearchConfig, TaskManagerConfig } from '../services/api';
 
 /**
  * 所有配置
@@ -54,15 +32,6 @@ export interface AllConfigs {
  * 配置管理 Hook
  *
  * 提供配置的加载、保存和验证功能
- *
- * @example
- * ```typescript
- * const {
- *   searchConfig, taskManagerConfig,
- *   loadAllConfigs, saveSearchConfig,
- *   isLoading, error
- * } = useConfig();
- * ```
  */
 export function useConfig() {
   const [isLoading, setIsLoading] = useState(false);
@@ -84,13 +53,12 @@ export function useConfig() {
     setError(null);
 
     try {
-      const config = await invoke<SearchConfig>('get_search_config');
+      const config = await api.getSearchConfig();
       setSearchConfig(config);
       return config;
     } catch (err) {
-      const apiError = createApiError('get_search_config', err);
-      setError(apiError.getUserMessage());
-      throw apiError;
+      setError(getFullErrorMessage(err));
+      throw err;
     } finally {
       setIsLoading(false);
     }
@@ -104,13 +72,12 @@ export function useConfig() {
     setError(null);
 
     try {
-      const config = await invoke<TaskManagerConfig>('get_task_manager_config');
+      const config = await api.getTaskManagerConfig();
       setTaskManagerConfig(config);
       return config;
     } catch (err) {
-      const apiError = createApiError('get_task_manager_config', err);
-      setError(apiError.getUserMessage());
-      throw apiError;
+      setError(getFullErrorMessage(err));
+      throw err;
     } finally {
       setIsLoading(false);
     }
@@ -125,8 +92,8 @@ export function useConfig() {
 
     try {
       const [search, taskManager] = await Promise.all([
-        invoke<SearchConfig>('get_search_config'),
-        invoke<TaskManagerConfig>('get_task_manager_config'),
+        api.getSearchConfig(),
+        api.getTaskManagerConfig(),
       ]);
 
       setSearchConfig(search);
@@ -134,9 +101,8 @@ export function useConfig() {
 
       return { search, task_manager: taskManager };
     } catch (err) {
-      const apiError = createApiError('load_configs', err);
-      setError(apiError.getUserMessage());
-      throw apiError;
+      setError(getFullErrorMessage(err));
+      throw err;
     } finally {
       setIsLoading(false);
     }
@@ -154,12 +120,11 @@ export function useConfig() {
     setError(null);
 
     try {
-      await invoke('save_search_config', { searchConfig: config });
+      await api.saveSearchConfig(config);
       setSearchConfig(config);
     } catch (err) {
-      const apiError = createApiError('save_search_config', err);
-      setError(apiError.getUserMessage());
-      throw apiError;
+      setError(getFullErrorMessage(err));
+      throw err;
     } finally {
       setIsLoading(false);
     }
@@ -173,12 +138,11 @@ export function useConfig() {
     setError(null);
 
     try {
-      await invoke('save_task_manager_config', { taskManagerConfig: config });
+      await api.saveTaskManagerConfig(config);
       setTaskManagerConfig(config);
     } catch (err) {
-      const apiError = createApiError('save_task_manager_config', err);
-      setError(apiError.getUserMessage());
-      throw apiError;
+      setError(getFullErrorMessage(err));
+      throw err;
     } finally {
       setIsLoading(false);
     }
@@ -193,16 +157,15 @@ export function useConfig() {
 
     try {
       await Promise.all([
-        invoke('save_search_config', { searchConfig: configs.search }),
-        invoke('save_task_manager_config', { taskManagerConfig: configs.task_manager }),
+        api.saveSearchConfig(configs.search),
+        api.saveTaskManagerConfig(configs.task_manager),
       ]);
 
       setSearchConfig(configs.search);
       setTaskManagerConfig(configs.task_manager);
     } catch (err) {
-      const apiError = createApiError('save_configs', err);
-      setError(apiError.getUserMessage());
-      throw apiError;
+      setError(getFullErrorMessage(err));
+      throw err;
     } finally {
       setIsLoading(false);
     }

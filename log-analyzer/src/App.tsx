@@ -48,8 +48,7 @@ function AppContent() {
   const location = useLocation();
   const currentPage = location.pathname.slice(1) || 'workspaces';
 
-  const isInitialized = useAppStore((state) => state.isInitialized);
-  const initializationError = useAppStore((state) => state.initializationError);
+  const initPhase = useAppStore((state) => state.initPhase);
   const { workspaces } = useWorkspaceSelection();
   const activeWorkspaceId = useAppStore((state) => state.activeWorkspaceId);
 
@@ -59,19 +58,12 @@ function AppContent() {
   useBackendSync();
 
   // 显示初始化加载状态
-  if (!isInitialized) {
+  if (initPhase === 'idle' || initPhase === 'loading') {
     return (
       <div className="flex h-screen items-center justify-center bg-bg-main text-text-main">
         <div className="text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4" />
-          {initializationError ? (
-            <div>
-              <p className="text-status-error mb-2">Initialization failed</p>
-              <p className="text-sm text-text-muted">{initializationError}</p>
-            </div>
-          ) : (
-            <p className="text-text-muted text-sm">Loading application...</p>
-          )}
+          <p className="text-text-muted text-sm">Loading application...</p>
         </div>
       </div>
     );

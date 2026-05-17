@@ -1,9 +1,9 @@
 import { useEffect, useRef, useCallback } from 'react';
-import toast from 'react-hot-toast';
 import { listen } from '@tauri-apps/api/event';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useTaskStore } from '../stores/taskStore';
 import { eventBus } from '../events/EventBus';
+import { useToast } from './useToast';
 import type { TaskUpdateEvent, TaskRemovedEvent } from '../events/types';
 import { logger } from '../utils/logger';
 
@@ -26,6 +26,7 @@ import { logger } from '../utils/logger';
 export const useTauriEventListeners = () => {
   const updateWorkspace = useWorkspaceStore((state) => state.updateWorkspace);
   const updateTask = useTaskStore((state) => state.updateTask);
+  const { showToast } = useToast();
 
   // 防抖相关 refs（files-ready-batch 高频触发时合并更新）
   const pendingWorkspaceUpdate = useRef<{
@@ -139,13 +140,13 @@ export const useTauriEventListeners = () => {
       // 监听导入错误事件（从Tauri后端）
       const importErrorUnlisten = await listen<string>('import-error', (event) => {
         logger.error({ payload: event.payload }, '[TauriEventListeners] Received import-error from Tauri');
-        toast.error(`导入失败: ${event.payload}`);
+        showToast('error', `导入失败: ${event.payload}`);
       });
 
       // 监听导入警告事件（从Tauri后端）
       const importWarningUnlisten = await listen<string>('import-warning', (event) => {
         logger.warn({ payload: event.payload }, '[TauriEventListeners] Received import-warning from Tauri');
-        toast(`导入提示: ${event.payload}`);
+        showToast('info', `导入提示: ${event.payload}`);
       });
 
       // 监听文件就绪批量事件（增量分析进度）
@@ -212,5 +213,5 @@ export const useTauriEventListeners = () => {
         tauriCleanupRef.current = null;
       }
     };
-  }, [updateWorkspace, updateTask, debouncedUpdateWorkspace]);
+  }, [updateWorkspace, updateTask, debouncedUpdateWorkspace, showToast]);
 };

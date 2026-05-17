@@ -25,6 +25,7 @@ interface WorkspaceState {
   addWorkspace: (workspace: Workspace) => void;
   updateWorkspace: (id: string, updates: Partial<Workspace>) => void;
   deleteWorkspace: (id: string) => void;
+  deleteWorkspaceAndResolveActive: (id: string, activeWorkspaceId: string | null) => string | null;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
 }
@@ -62,6 +63,20 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           deleteWorkspace: (id) => set((state) => {
             state.workspaces = state.workspaces.filter(w => w.id !== id);
           }),
+
+          deleteWorkspaceAndResolveActive: (id, activeWorkspaceId) => {
+            let nextActiveWorkspaceId = activeWorkspaceId;
+
+            set((state) => {
+              const remaining = state.workspaces.filter(w => w.id !== id);
+              if (activeWorkspaceId === id) {
+                nextActiveWorkspaceId = remaining.length > 0 ? remaining[0].id : null;
+              }
+              state.workspaces = remaining;
+            });
+
+            return nextActiveWorkspaceId;
+          },
 
           setLoading: (loading) => set((state) => {
             state.loading = loading;

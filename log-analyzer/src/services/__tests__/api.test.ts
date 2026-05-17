@@ -1,4 +1,4 @@
-import { api, sanitizeArgs, invokeWithTimeout, safeInvokeList, safeInvokeObject } from '../api';
+import { api, sanitizeArgs, invokeWithTimeout } from '../api';
 
 jest.mock('@tauri-apps/api/core', () => ({
   invoke: jest.fn(),
@@ -157,53 +157,5 @@ describe('invokeWithTimeout', () => {
   it('should propagate original error when not timed out', async () => {
     mockInvoke.mockRejectedValueOnce(new Error('backend error'));
     await expect(invokeWithTimeout('fail_cmd', {})).rejects.toThrow('backend error');
-  });
-});
-
-describe('safeInvokeList', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-    mockInvoke.mockReset();
-  });
-
-  it('should return array on success', async () => {
-    mockInvoke.mockResolvedValueOnce([1, 2, 3]);
-    const result = await safeInvokeList('list_cmd', {});
-    expect(result).toEqual([1, 2, 3]);
-  });
-
-  it('should return empty array for non-array response', async () => {
-    mockInvoke.mockResolvedValueOnce({ not: 'array' });
-    const result = await safeInvokeList('list_cmd', {});
-    expect(result).toEqual([]);
-  });
-
-  it('should propagate errors', async () => {
-    mockInvoke.mockRejectedValueOnce(new Error('network error'));
-    await expect(safeInvokeList('list_cmd', {})).rejects.toThrow('network error');
-  });
-});
-
-describe('safeInvokeObject', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-    mockInvoke.mockReset();
-  });
-
-  it('should return object on success', async () => {
-    mockInvoke.mockResolvedValueOnce({ id: '1' });
-    const result = await safeInvokeObject('obj_cmd', {}, { id: 'default' });
-    expect(result).toEqual({ id: '1' });
-  });
-
-  it('should return default for null response', async () => {
-    mockInvoke.mockResolvedValueOnce(null);
-    const result = await safeInvokeObject('obj_cmd', {}, { id: 'default' });
-    expect(result).toEqual({ id: 'default' });
-  });
-
-  it('should propagate errors', async () => {
-    mockInvoke.mockRejectedValueOnce(new Error('server error'));
-    await expect(safeInvokeObject('obj_cmd', {}, { id: 'default' })).rejects.toThrow('server error');
   });
 });

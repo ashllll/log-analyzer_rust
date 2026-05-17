@@ -7,7 +7,7 @@ import { logger } from '../utils/logger';
 import { api, type SearchParams, type ExportParams } from '../services/api';
 import { getFullErrorMessage } from '../services/errors';
 import { useToast } from './useToast';
-import { queryKeys } from '../services/queries';
+import { configQuery, queryKeys } from '../services/queries';
 
 // ============================================================================
 // Configuration Queries
@@ -21,13 +21,11 @@ export const useConfigQuery = () => {
   const setKeywordGroups = useKeywordStore((state) => state.setKeywordGroups);
 
   const query = useQuery({
-    queryKey: queryKeys.config,
+    ...configQuery,
     queryFn: async () => {
       logger.debug('[QUERY] Loading configuration');
-      const config = await api.loadConfig();
-      return config;
+      return configQuery.queryFn();
     },
-    staleTime: 5 * 60 * 1000, // 5 minutes
     retry: 3,
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
   });
@@ -57,17 +55,12 @@ export const useConfigMutation = () => {
   return useMutation({
     mutationFn: async (config: { keyword_groups: KeywordGroup[]; workspaces: Workspace[] }) => {
       logger.debug('[MUTATION] Saving configuration');
+      const currentConfig = await api.loadConfig();
       const fullConfig = {
+        ...currentConfig,
         keyword_groups: config.keyword_groups,
         workspaces: config.workspaces,
-        file_filter: {
-          enabled: false,
-          binary_detection_enabled: true,
-          mode: 'blacklist' as const,
-          filename_patterns: [],
-          allowed_extensions: [],
-          forbidden_extensions: []
-        }
+        file_filter: currentConfig.file_filter,
       };
       await api.saveConfig(fullConfig);
       return config;
@@ -150,8 +143,8 @@ export const useImportFolderMutation = () => {
       logger.debug('[MUTATION] Import started successfully:', taskId);
       addToast('info', 'Import started');
 
-      // Invalidate workspaces query to refetch
-      queryClient.invalidateQueries({ queryKey: queryKeys.workspaces });
+      // Invalidate config query to refetch the canonical workspace list
+      queryClient.invalidateQueries({ queryKey: queryKeys.config });
     },
     onError: (error, { workspaceId }, context) => {
       logger.error('[MUTATION] Failed to import folder:', error);
@@ -203,7 +196,9 @@ export const useRefreshWorkspaceMutation = () => {
 export const useDeleteWorkspaceMutation = () => {
   const queryClient = useQueryClient();
   const { showToast: addToast } = useToast();
-  const deleteWorkspace = useWorkspaceStore((state) => state.deleteWorkspace);
+  const deleteWorkspaceAndResolveActive = useWorkspaceStore(
+    (state) => state.deleteWorkspaceAndResolveActive
+  );
   const setActiveWorkspace = useAppStore((state) => state.setActiveWorkspace);
 
   return useMutation({
@@ -215,26 +210,15 @@ export const useDeleteWorkspaceMutation = () => {
     onSuccess: (workspaceId) => {
       logger.debug('[MUTATION] Workspace deleted successfully:', workspaceId);
 
-      // Update zustand store
-      deleteWorkspace(workspaceId);
-
-      // Read latest state via getState() to avoid stale closure
-      const { workspaces } = useWorkspaceStore.getState();
+      // Read latest active workspace via getState() to avoid stale mutation closure
       const currentActiveId = useAppStore.getState().activeWorkspaceId;
-
-      if (currentActiveId === workspaceId) {
-        const remainingWorkspaces = workspaces.filter((w: Workspace) => w.id !== workspaceId);
-        if (remainingWorkspaces.length > 0) {
-          setActiveWorkspace(remainingWorkspaces[0].id);
-        } else {
-          setActiveWorkspace(null);
-        }
-      }
+      const nextActiveWorkspaceId = deleteWorkspaceAndResolveActive(workspaceId, currentActiveId);
+      setActiveWorkspace(nextActiveWorkspaceId);
 
       addToast('success', 'Workspace deleted');
 
       // Invalidate queries
-      queryClient.invalidateQueries({ queryKey: queryKeys.workspaces });
+      queryClient.invalidateQueries({ queryKey: queryKeys.config });
       queryClient.removeQueries({ queryKey: queryKeys.workspace(workspaceId) });
     },
     onError: (error) => {

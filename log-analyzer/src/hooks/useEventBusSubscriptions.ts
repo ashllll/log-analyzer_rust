@@ -1,9 +1,9 @@
 import { useEffect } from 'react';
-import toast from 'react-hot-toast';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useTaskStore } from '../stores/taskStore';
 import { eventBus } from '../events/EventBus';
 import { useWorkspaceList } from './useWorkspaceList';
+import { useToast } from './useToast';
 import type { TaskUpdateEvent, TaskRemovedEvent, WorkspaceEvent } from '../events/types';
 import { logger } from '../utils/logger';
 
@@ -20,6 +20,7 @@ export const useEventBusSubscriptions = () => {
   const updateWorkspace = useWorkspaceStore((state) => state.updateWorkspace);
   const upsertTask = useTaskStore((state) => state.upsertTask);
   const deleteTask = useTaskStore((state) => state.deleteTask);
+  const { showToast } = useToast();
 
   // 复用 useWorkspaceList 的 refreshWorkspaces，避免重复定义和全量加载
   const { refreshWorkspaces } = useWorkspaceList();
@@ -48,7 +49,7 @@ export const useEventBusSubscriptions = () => {
         if (task.workspaceId) {
           if (task.status === 'COMPLETED') {
             updateWorkspace(task.workspaceId, { status: 'READY' });
-            toast.success('导入完成');
+            showToast('success', '导入完成');
           } else if (task.status === 'RUNNING') {
             updateWorkspace(task.workspaceId, { status: 'PROCESSING' });
           } else if (task.status === 'FAILED') {
@@ -82,19 +83,19 @@ export const useEventBusSubscriptions = () => {
                 ? 'Workspace updated'
                 : event.message ?? 'Workspace status changed';
 
-            toast[toastType](toastMessage);
+            showToast(toastType, toastMessage);
 
             // 刷新工作区列表以同步最新状态
             refreshWorkspaces();
             break;
           }
           case 'Created': {
-            toast.success(event.name ? `Workspace "${event.name}" created` : 'Workspace created');
+            showToast('success', event.name ? `Workspace "${event.name}" created` : 'Workspace created');
             refreshWorkspaces();
             break;
           }
           case 'Deleted': {
-            toast.success('Workspace deleted');
+            showToast('success', 'Workspace deleted');
             refreshWorkspaces();
             break;
           }
@@ -107,5 +108,5 @@ export const useEventBusSubscriptions = () => {
       unsubscribeTaskRemoved();
       unsubscribeWorkspaceEvent();
     };
-  }, [upsertTask, deleteTask, updateWorkspace, refreshWorkspaces]);
+  }, [upsertTask, deleteTask, updateWorkspace, refreshWorkspaces, showToast]);
 };

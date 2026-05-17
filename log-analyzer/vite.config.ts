@@ -44,8 +44,6 @@ export default defineConfig(() => ({
           'vendor-state': ['zustand', 'immer'],
           // Internationalization
           'vendor-i18n': ['react-i18next', 'i18next'],
-          // Charts (if used)
-          'vendor-charts': ['recharts'],
         },
       },
     },

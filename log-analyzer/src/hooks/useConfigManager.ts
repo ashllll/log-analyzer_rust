@@ -1,10 +1,9 @@
-import { useEffect, useCallback, useRef } from 'react';
+import { useEffect, useCallback, useMemo, useRef } from 'react';
 import { useShallow } from 'zustand/shallow';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useKeywordStore } from '../stores/keywordStore';
 import { useAppStore } from '../stores/appStore';
 import { useConfigMutation } from './useServerQueries';
-import { api } from '../services/api';
 import { logger } from '../utils/logger';
 import type { KeywordGroup } from '../types/common';
 
@@ -44,6 +43,10 @@ export const useConfigManager = () => {
   // Use ref for mutate to avoid unstable configMutation reference in deps
   const mutateRef = useRef(saveConfigMutate);
   mutateRef.current = saveConfigMutate;
+  const configFingerprint = useMemo(
+    () => computeConfigFingerprint(keywordGroups, workspaces),
+    [keywordGroups, workspaces]
+  );
 
   // Stable save function — only depends on data, not on mutation object
   const saveConfig = useCallback(() => {
@@ -51,9 +54,6 @@ export const useConfigManager = () => {
     if (keywordGroups.length === 0 && workspaces.length === 0) {
       return;
     }
-
-    // Generate config fingerprint to avoid unnecessary saves
-    const configFingerprint = computeConfigFingerprint(keywordGroups, workspaces);
 
     // Skip if config hasn't changed
     if (configFingerprint === lastFingerprintRef.current) {
@@ -70,12 +70,19 @@ export const useConfigManager = () => {
     });
 
     logger.debug('[CONFIG_MANAGER] Configuration saved with fingerprint:', configFingerprint);
-  }, [keywordGroups, workspaces]);
+  }, [configFingerprint, keywordGroups, workspaces]);
 
   // Watch for changes and trigger debounced save
   // 仅在初始化完成后才启用自动保存，避免加载阶段的无意义请求
+  // configFingerprint 仅在首次设置基线时读取，无需加入 deps
   useEffect(() => {
     if (initPhase !== 'ready') {
+      return;
+    }
+
+    // 设置基线指纹，避免初始化后对已加载配置做无意义保存
+    if (!lastFingerprintRef.current) {
+      lastFingerprintRef.current = configFingerprint;
       return;
     }
 
@@ -95,40 +102,8 @@ export const useConfigManager = () => {
         clearTimeout(saveTimeoutRef.current);
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saveConfig, initPhase]);
-
-  // 配置一致性校验：保存成功后重新加载并比对指纹
-  useEffect(() => {
-    if (!isSuccess || initPhase !== 'ready') {
-      return;
-    }
-
-    const verifyConsistency = async () => {
-      try {
-        const diskConfig = await api.loadConfig();
-        const diskFingerprint = computeConfigFingerprint(
-          diskConfig.keyword_groups as KeywordGroup[],
-          diskConfig.workspaces as { id: string; status: string }[]
-        );
-        const memoryFingerprint = computeConfigFingerprint(keywordGroups, workspaces);
-
-        if (diskFingerprint !== memoryFingerprint) {
-          logger.warn(
-            { diskFingerprint, memoryFingerprint },
-            '[CONFIG_MANAGER] 配置一致性校验失败：内存与磁盘数据不匹配'
-          );
-        } else {
-          logger.debug('[CONFIG_MANAGER] 配置一致性校验通过');
-        }
-      } catch (error) {
-        logger.error({ error }, '[CONFIG_MANAGER] 配置一致性校验出错');
-      }
-    };
-
-    // 延迟校验，确保后端写入完成
-    const verifyTimer = setTimeout(verifyConsistency, 500);
-    return () => clearTimeout(verifyTimer);
-  }, [isSuccess, initPhase, keywordGroups, workspaces]);
 
   return {
     isLoading: isPending,

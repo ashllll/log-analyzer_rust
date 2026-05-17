@@ -287,6 +287,97 @@ export const LogEntrySchema = z.object({
 export type LogEntry = z.infer<typeof LogEntrySchema>;
 
 // ============================================================================
+// API 请求参数
+// ============================================================================
+
+export const FilterOptionsSchema = z.object({
+  timeRange: z.object({
+    start: z.string().nullable(),
+    end: z.string().nullable(),
+  }),
+  levels: z.array(z.string()),
+  filePattern: z.string(),
+});
+
+const QueryOperatorSchema = z.enum(['AND', 'OR', 'NOT']);
+
+const SearchTermSchema = z.object({
+  id: z.string(),
+  value: z.string(),
+  operator: QueryOperatorSchema,
+  source: z.enum(['user', 'preset']),
+  presetGroupId: z.string().optional(),
+  isRegex: z.boolean(),
+  priority: z.number(),
+  enabled: z.boolean(),
+  caseSensitive: z.boolean(),
+});
+
+const SearchQuerySchema = z.object({
+  id: z.string(),
+  terms: z.array(SearchTermSchema),
+  globalOperator: QueryOperatorSchema,
+  filters: FilterOptionsSchema.optional(),
+  metadata: z.object({
+    createdAt: z.number(),
+    lastModified: z.number(),
+    executionCount: z.number(),
+    label: z.string().optional(),
+  }),
+});
+
+export const SearchParamsSchema = z.object({
+  query: z.string(),
+  structuredQuery: SearchQuerySchema.optional(),
+  workspaceId: z.string().optional(),
+  maxResults: z.number().int().positive().optional(),
+  filters: FilterOptionsSchema.optional(),
+});
+
+export type SearchParamsValidated = z.infer<typeof SearchParamsSchema>;
+
+export const ExportParamsSchema = z.object({
+  results: z.array(LogEntrySchema),
+  format: z.enum(['csv', 'json']),
+  savePath: z.string().min(1),
+});
+
+export type ExportParamsValidated = z.infer<typeof ExportParamsSchema>;
+
+export const WatchParamsSchema = z.object({
+  workspaceId: z.string().min(1),
+  autoSearch: z.boolean().optional(),
+});
+
+export type WatchParamsValidated = z.infer<typeof WatchParamsSchema>;
+
+// ============================================================================
+// 配置片段
+// ============================================================================
+
+export const SearchConfigSchema = z.object({
+  max_results: z.number().int().min(1).max(1_000_000),
+  timeout_seconds: z.number().int().min(1).max(3600),
+  max_concurrent_searches: z.number().int().min(1).max(100),
+  fuzzy_search_enabled: z.boolean(),
+  case_sensitive: z.boolean(),
+  regex_enabled: z.boolean(),
+  regex_cache_size: z.number().int().min(1).max(100_000),
+});
+
+export type SearchConfigValidated = z.infer<typeof SearchConfigSchema>;
+
+export const TaskManagerConfigSchema = z.object({
+  max_concurrent_tasks: z.number().int().min(1).max(1000),
+  completed_task_ttl: z.number().int().min(1).max(86400 * 7),
+  failed_task_ttl: z.number().int().min(1).max(86400 * 30),
+  cleanup_interval: z.number().int().min(1).max(3600),
+  operation_timeout: z.number().int().min(1).max(3600),
+});
+
+export type TaskManagerConfigValidated = z.infer<typeof TaskManagerConfigSchema>;
+
+// ============================================================================
 // 工作区加载响应
 // ============================================================================
 
@@ -343,7 +434,7 @@ export type WorkspaceTimeRangeValidated = z.infer<typeof WorkspaceTimeRangeSchem
 const AppConfigFileFilterSchema = z.object({
   enabled: z.boolean(),
   binary_detection_enabled: z.boolean(),
-  mode: z.enum(['whitelist', 'blacklist']),
+  mode: z.nativeEnum(FilterMode),
   filename_patterns: z.array(z.string()),
   allowed_extensions: z.array(z.string()),
   forbidden_extensions: z.array(z.string()),
@@ -394,7 +485,9 @@ export const AppConfigSchema = z.object({
   keyword_groups: z.array(KeywordGroupSchema),
   workspaces: z.array(WorkspaceSchema),
   file_filter: AppConfigFileFilterSchema,
-});
+  search: SearchConfigSchema.optional(),
+  task_manager: TaskManagerConfigSchema.optional(),
+}).passthrough();
 
 /**
  * 应用配置类型（Zod 验证后）

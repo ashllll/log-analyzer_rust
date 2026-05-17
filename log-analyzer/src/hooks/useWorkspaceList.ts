@@ -1,8 +1,9 @@
 import { useCallback, useRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useShallow } from 'zustand/shallow';
 import { useWorkspaceStore, type Workspace } from '../stores/workspaceStore';
 import { logger } from '../utils/logger';
-import { api } from '../services/api';
+import { queryKeys } from '../services/queries';
 
 export interface UseWorkspaceListReturn {
   workspaces: Workspace[];
@@ -21,13 +22,15 @@ const REFRESH_DEBOUNCE_MS = 500;
  * 优化：添加防抖机制，避免频繁事件触发导致全量配置重复加载
  */
 export const useWorkspaceList = (): UseWorkspaceListReturn => {
+  const queryClient = useQueryClient();
   // 合并多个 store 选择器为一次调用，避免多次订阅
-  const { workspaces, loading, error, setWorkspaces } = useWorkspaceStore(
+  const { workspaces, loading, error, setLoading, setError } = useWorkspaceStore(
     useShallow((state) => ({
       workspaces: state.workspaces,
       loading: state.loading,
       error: state.error,
-      setWorkspaces: state.setWorkspaces,
+      setLoading: state.setLoading,
+      setError: state.setError,
     }))
   );
 
@@ -49,18 +52,18 @@ export const useWorkspaceList = (): UseWorkspaceListReturn => {
 
     const refreshPromise = (async () => {
       try {
+        setLoading(true);
+        setError(null);
         if (import.meta.env.DEV) logger.debug('refreshWorkspaces called');
-        const config = await api.loadConfig();
-        // api.loadConfig() 已通过 AppConfigSchema 进行 Zod 验证，
-        // config.workspaces 类型为 Workspace[]，无需类型断言
-        if (config.workspaces) {
-          setWorkspaces(config.workspaces);
-        }
-        if (import.meta.env.DEV) logger.debug('Workspaces refreshed from backend');
+        await queryClient.invalidateQueries({ queryKey: queryKeys.config });
+        if (import.meta.env.DEV) logger.debug('Workspaces refresh requested via config query');
       } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        setError(message);
         logger.error('Failed to refresh workspaces:', err);
         throw err;
       } finally {
+        setLoading(false);
         lastRefreshTime.current = Date.now();
         pendingRefresh.current = null;
       }
@@ -68,7 +71,7 @@ export const useWorkspaceList = (): UseWorkspaceListReturn => {
 
     pendingRefresh.current = refreshPromise;
     return refreshPromise;
-  }, [setWorkspaces]);
+  }, [queryClient, setError, setLoading]);
 
   return {
     workspaces,

@@ -48,7 +48,7 @@ describe.skip('E2E: CAS Migration - Import Workflow', () => {
       mockDialogOpen.mockResolvedValue('/test/logs/folder');
       
       // Mock import process
-      mockInvoke.mockImplementation((command: string, args?: { workspaceId?: string; hash?: string }) => {
+      mockInvoke.mockImplementation((command: string, _args?: { workspaceId?: string; hash?: string }) => {
         switch (command) {
           case 'get_workspaces':
             return Promise.resolve([]);
@@ -138,7 +138,7 @@ describe.skip('E2E: CAS Migration - Import Workflow', () => {
       // Mock archive selection
       mockDialogOpen.mockResolvedValue('/test/logs/archive.zip');
       
-      mockInvoke.mockImplementation((command: string, args?: { workspaceId?: string; hash?: string }) => {
+      mockInvoke.mockImplementation((command: string, _args?: { workspaceId?: string; hash?: string }) => {
         switch (command) {
           case 'get_workspaces':
             return Promise.resolve([]);
@@ -234,7 +234,7 @@ describe.skip('E2E: CAS Migration - Import Workflow', () => {
       
       mockDialogOpen.mockResolvedValue('/test/nested.zip');
       
-      mockInvoke.mockImplementation((command: string, args?: { workspaceId?: string; hash?: string }) => {
+      mockInvoke.mockImplementation((command: string, _args?: { workspaceId?: string; hash?: string }) => {
         switch (command) {
           case 'get_workspaces':
             return Promise.resolve([]);

@@ -1,10 +1,10 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useKeywordStore } from '../stores/keywordStore';
 import { useAppStore } from '../stores/appStore';
 import { useToast } from './useToast';
-import { api } from '../services/api';
-import type { Workspace, KeywordGroup } from '../types/common';
+import { useConfigQuery } from './useServerQueries';
+import type { Workspace } from '../types/common';
 import { logger } from '../utils/logger';
 
 /**
@@ -17,57 +17,52 @@ export const useConfigInitializer = () => {
   const { showToast: addToast } = useToast();
   const setWorkspaces = useWorkspaceStore((state) => state.setWorkspaces);
   const setKeywordGroups = useKeywordStore((state) => state.setKeywordGroups);
-  const setInitialized = useAppStore((state) => state.setInitialized);
   const setInitPhase = useAppStore((state) => state.setInitPhase);
+  const didHandleErrorRef = useRef(false);
+  const query = useConfigQuery();
 
   useEffect(() => {
-    let isMounted = true;
-
-    const loadConfig = async () => {
+    if (query.isLoading || query.isFetching) {
       setInitPhase('loading');
+    }
+  }, [query.isFetching, query.isLoading, setInitPhase]);
 
-      try {
-        const config = await api.loadConfig();
-        if (!isMounted) return;
+  useEffect(() => {
+    if (!query.isSuccess) {
+      return;
+    }
 
-        setWorkspaces(Array.isArray(config.workspaces) ? (config.workspaces as Workspace[]) : []);
-        setKeywordGroups(
-          Array.isArray(config.keyword_groups) ? (config.keyword_groups as KeywordGroup[]) : []
-        );
+    didHandleErrorRef.current = false;
+    setInitPhase('ready');
+  }, [query.isSuccess, setInitPhase]);
 
-        setInitPhase('ready');
-        setInitialized(true);
-      } catch (error) {
-        if (!isMounted) return;
-        logger.error({ error }, 'Failed to load config');
-        // 配置加载失败时提供默认工作区作为降级方案
-        const defaultWorkspace: Workspace = {
-          id: 'default-workspace',
-          name: '默认工作区',
-          path: '',
-          status: 'OFFLINE',
-          size: '0 B',
-          files: 0,
-          watching: false,
-        };
-        setWorkspaces([defaultWorkspace]);
-        setKeywordGroups([]);
-        addToast('error', '加载配置失败，使用默认工作区');
-        setInitPhase('error');
-        setInitialized(true); // 关键：即使失败也标记为已初始化
-      }
+  useEffect(() => {
+    if (!query.isError || didHandleErrorRef.current) {
+      return;
+    }
+
+    didHandleErrorRef.current = true;
+    logger.error({ error: query.error }, 'Failed to load config');
+    // 配置加载失败时提供默认工作区作为降级方案
+    const defaultWorkspace: Workspace = {
+      id: 'default-workspace',
+      name: '默认工作区',
+      path: '',
+      status: 'OFFLINE',
+      size: '0 B',
+      files: 0,
+      watching: false,
     };
-
-    // 延迟加载配置，避免阻塞首屏渲染。
-    // 不要用 ref 短路 effect；React StrictMode 会在开发态额外执行 setup+cleanup，
-    // ref 短路会导致第一次 timer 被 cleanup 清掉后，第二次 setup 不再重新初始化。
-    const timer = window.setTimeout(() => {
-      loadConfig();
-    }, 100);
-
-    return () => {
-      isMounted = false;
-      window.clearTimeout(timer);
-    };
-  }, [addToast, setWorkspaces, setKeywordGroups, setInitialized, setInitPhase]);
+    setWorkspaces([defaultWorkspace]);
+    setKeywordGroups([]);
+    addToast('error', '加载配置失败，使用默认工作区');
+    setInitPhase('error');
+  }, [
+    addToast,
+    query.error,
+    query.isError,
+    setWorkspaces,
+    setKeywordGroups,
+    setInitPhase,
+  ]);
 };

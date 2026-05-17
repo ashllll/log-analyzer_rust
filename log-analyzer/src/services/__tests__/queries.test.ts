@@ -13,28 +13,8 @@ describe('queryKeys', () => {
     expect(queryKeys.config).toEqual(['config']);
   });
 
-  it('workspaces key 应为稳定引用', () => {
-    expect(queryKeys.workspaces).toEqual(['workspaces']);
-  });
-
   it('workspace key 应包含传入的 id', () => {
     expect(queryKeys.workspace('ws-1')).toEqual(['workspace', 'ws-1']);
-  });
-
-  it('keywordGroups key 应为稳定引用', () => {
-    expect(queryKeys.keywordGroups).toEqual(['keywordGroups']);
-  });
-
-  it('tasks key 应为稳定引用', () => {
-    expect(queryKeys.tasks).toEqual(['tasks']);
-  });
-
-  it('searchConfig key 应为稳定引用', () => {
-    expect(queryKeys.searchConfig).toEqual(['searchConfig']);
-  });
-
-  it('taskManagerConfig key 应为稳定引用', () => {
-    expect(queryKeys.taskManagerConfig).toEqual(['taskManagerConfig']);
   });
 });
 
@@ -44,7 +24,7 @@ describe('configQuery', () => {
   });
 
   it('应具有正确的 staleTime', () => {
-    expect(configQuery.staleTime).toBe(60_000);
+    expect(configQuery.staleTime).toBe(5 * 60_000);
   });
 
   it('应具有正确的 gcTime', () => {

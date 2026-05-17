@@ -13,12 +13,7 @@ import { api } from './api';
 
 export const queryKeys = {
   config: ['config'] as const,
-  workspaces: ['workspaces'] as const,
   workspace: (id: string) => ['workspace', id] as const,
-  keywordGroups: ['keywordGroups'] as const,
-  tasks: ['tasks'] as const,
-  searchConfig: ['searchConfig'] as const,
-  taskManagerConfig: ['taskManagerConfig'] as const,
 } as const;
 
 // ============================================================================
@@ -32,6 +27,6 @@ export const queryKeys = {
 export const configQuery = {
   queryKey: queryKeys.config,
   queryFn: () => api.loadConfig(),
-  staleTime: 60_000, // 1 分钟内视为新鲜，避免频繁请求
+  staleTime: 5 * 60_000, // 5 分钟内视为新鲜，避免频繁请求
   gcTime: 300_000,   // 5 分钟未使用则从缓存清除
 };

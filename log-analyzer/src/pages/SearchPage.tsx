@@ -38,7 +38,7 @@ const SearchPage: React.FC = () => {
   const { activeWorkspace } = useWorkspaceSelection();
   const keywordGroups = useKeywordStore(useShallow((state) => state.keywordGroups));
   const workspaceLoading = useWorkspaceStore((state) => state.loading);
-  const isInitialized = useAppStore((state) => state.isInitialized);
+  const isInitialized = useAppStore((state) => state.initPhase !== 'idle' && state.initPhase !== 'loading');
 
   const enabledKeywordGroups = useMemo(
     () => keywordGroups.filter((g) => g.enabled),
