@@ -65,8 +65,8 @@ export function configureErrorReporter(reporter: ErrorReporter | undefined): voi
 function reportError(error: unknown, context: ErrorReportContext): void {
   try {
     errorReporter?.captureException(error, context);
-  } catch (e) {
-    console.warn('[ErrorBoundary] Failed to report error:', e);
+  } catch {
+    // Silently ignore reporter failures to avoid infinite error loops
   }
 }
 
@@ -95,8 +95,8 @@ function getErrorLogs(): ErrorLogEntry[] {
       cutoffDate.setDate(cutoffDate.getDate() - ERROR_LOG_CONFIG.RETENTION_DAYS);
       return logs.filter(log => new Date(log.timestamp) > cutoffDate);
     }
-  } catch (e) {
-    console.warn('[ErrorBoundary] Failed to read error logs:', e);
+  } catch {
+    // localStorage 不可用或数据损坏，静默返回空数组
   }
   return [];
 }
@@ -111,8 +111,8 @@ function addErrorLog(entry: ErrorLogEntry): void {
     // 限制条目数量
     const trimmedLogs = logs.slice(0, ERROR_LOG_CONFIG.MAX_ENTRIES);
     localStorage.setItem(ERROR_LOG_CONFIG.STORAGE_KEY, JSON.stringify(trimmedLogs));
-  } catch (e) {
-    console.warn('[ErrorBoundary] Failed to write error log:', e);
+  } catch {
+    // localStorage 写入失败，静默忽略
   }
 }
 
@@ -122,8 +122,8 @@ function addErrorLog(entry: ErrorLogEntry): void {
 export function clearErrorLogs(): void {
   try {
     localStorage.removeItem(ERROR_LOG_CONFIG.STORAGE_KEY);
-  } catch (e) {
-    console.warn('[ErrorBoundary] Failed to clear error logs:', e);
+  } catch {
+    // localStorage 清除失败，静默忽略
   }
 }
 
@@ -282,9 +282,6 @@ export class AppErrorBoundary extends Component<
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('ErrorBoundary caught an error:', error);
-    console.error('ErrorInfo:', errorInfo);
-
     // 记录错误到错误追踪服务（如果可用）
     this.logErrorToService(error, errorInfo);
   }
@@ -310,9 +307,11 @@ export class AppErrorBoundary extends Component<
     // 持久化到 localStorage
     addErrorLog(errorLog);
 
-    // 控制台输出
+    // 开发模式下通过 logger 输出（避免直接 console）
     if (import.meta.env.DEV) {
-      console.error('[ErrorBoundary]', JSON.stringify(errorLog, null, 2));
+      import('../utils/logger').then(({ logger }) => {
+        logger.error('[ErrorBoundary]', JSON.stringify(errorLog, null, 2));
+      }).catch(() => { /* logger 加载失败时静默 */ });
     }
 
     reportError(error, {
@@ -576,8 +575,7 @@ export function initGlobalErrorHandlers(): (() => void) | undefined {
     // 持久化日志
     addErrorLog(errorLog);
 
-    // 控制台输出
-    console.error('[GlobalError] Unhandled Promise rejection:', reason);
+    // 错误已记录到 localStorage，无需额外控制台输出
 
     // 阻止默认的控制台错误
     event.preventDefault();
@@ -617,8 +615,7 @@ export function initGlobalErrorHandlers(): (() => void) | undefined {
     // 持久化日志
     addErrorLog(errorLog);
 
-    // 控制台输出
-    console.error('[GlobalError] Global error:', error);
+    // 错误已记录到 localStorage，无需额外控制台输出
 
     // Toast 通知（生产环境）
     if (import.meta.env.PROD) {
@@ -641,9 +638,7 @@ export function initGlobalErrorHandlers(): (() => void) | undefined {
   window.addEventListener('unhandledrejection', handleUnhandledRejection);
   window.addEventListener('error', handleError);
 
-  if (import.meta.env.DEV) {
-    console.log('[GlobalError] Global error handlers initialized');
-  }
+  // 全局错误处理器已初始化（开发模式下可通过 logger 确认）
 
   // 清理函数
   return () => {

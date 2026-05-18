@@ -57,10 +57,8 @@ export function useWorkspaceTimeRange({ activeWorkspaceId }: UseWorkspaceTimeRan
             },
           }));
         }
-      } catch (error) {
-        if (isMounted) {
-          console.warn('Failed to fetch workspace time range:', error);
-        }
+      } catch {
+        // 时间范围获取失败，静默处理（过滤器保持默认空值）
       }
     };
 

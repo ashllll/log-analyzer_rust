@@ -41,17 +41,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             #[cfg(debug_assertions)]
             {
                 // Debug 模式：启用 DEBUG 级别日志
-                EnvFilter::new("debug")
-                    .add_directive("log_analyzer::task_manager=info".parse().unwrap())
-                    .add_directive("log_analyzer::search_engine=info".parse().unwrap())
+                let mut f = EnvFilter::new("debug");
+                if let Ok(d) = "log_analyzer::task_manager=info".parse() {
+                    f = f.add_directive(d);
+                }
+                if let Ok(d) = "log_analyzer::search_engine=info".parse() {
+                    f = f.add_directive(d);
+                }
+                f
             }
             #[cfg(not(debug_assertions))]
             {
                 // Release 模式：启用 INFO 级别日志，高频模块使用 WARN
-                EnvFilter::new("info")
-                    .add_directive("log_analyzer::task_manager=warn".parse().unwrap())
-                    .add_directive("log_analyzer::search_engine=warn".parse().unwrap())
-                    .add_directive("log_analyzer::commands=info".parse().unwrap())
+                let mut f = EnvFilter::new("info");
+                if let Ok(d) = "log_analyzer::task_manager=warn".parse() {
+                    f = f.add_directive(d);
+                }
+                if let Ok(d) = "log_analyzer::search_engine=warn".parse() {
+                    f = f.add_directive(d);
+                }
+                if let Ok(d) = "log_analyzer::commands=info".parse() {
+                    f = f.add_directive(d);
+                }
+                f
             }
         });
 

@@ -50,8 +50,7 @@ export const useQueryErrorHandler = () => {
     operation?: string;
     showToUser?: boolean;
   }) => {
-    // Log the error for debugging
-    console.error('Query error:', error, context);
+    // 错误已传递给 handleNetworkError / reportError 处理，无需重复记录
 
     // Determine if this is a network error or other type
     if (isNetworkError(error)) {
@@ -77,7 +76,7 @@ export const useQueryErrorHandler = () => {
     variables?: unknown;
     showToUser?: boolean;
   }) => {
-    console.error('Mutation error:', error, context);
+    // 错误已传递给 handleNetworkError / reportError 处理，无需重复记录
 
     if (isNetworkError(error)) {
       return handleNetworkError(error, { operation: context?.operation });

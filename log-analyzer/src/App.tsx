@@ -115,9 +115,6 @@ export default function App() {
   // 初始化全局错误处理器
   useEffect(() => {
     const cleanup = initGlobalErrorHandlers();
-    if (import.meta.env.DEV) {
-      console.log('[App] Global error handlers initialized');
-    }
 
     return () => {
       if (cleanup) {

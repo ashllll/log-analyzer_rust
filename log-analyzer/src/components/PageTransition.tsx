@@ -51,9 +51,7 @@ export const PageTransition: React.FC<PageTransitionProps> = ({ pages, currentPa
     <ErrorBoundary
       FallbackComponent={CompactErrorFallback}
       onReset={() => {
-        if (import.meta.env.DEV) {
-          console.log('Error boundary reset, staying on page:', currentPage);
-        }
+        // Error boundary reset, staying on current page
       }}
       resetKeys={[currentPage]}
     >

@@ -87,7 +87,6 @@ export function SettingsPage() {
       try {
         await loadAllConfigs();
       } catch (error) {
-        console.error('Failed to load configurations:', error);
         showToast('error', t('settings.load_config_error', { error: String(error) }));
       }
     };

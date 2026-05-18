@@ -105,7 +105,11 @@ pub async fn load_log_config(app: AppHandle, path: String) -> Result<LogConfig, 
 /// - `path`: 配置文件路径
 /// - `config`: 要保存的配置
 #[command]
-pub async fn save_log_config(app: AppHandle, path: String, config: LogConfig) -> Result<(), String> {
+pub async fn save_log_config(
+    app: AppHandle,
+    path: String,
+    config: LogConfig,
+) -> Result<(), String> {
     let final_path = resolve_log_config_path(&app, &path)?;
     save_log_config_to_file(&final_path, &config)
 }

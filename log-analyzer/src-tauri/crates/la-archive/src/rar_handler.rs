@@ -77,6 +77,10 @@ impl ArchiveHandler for RarHandler {
                             archive = header
                                 .skip()
                                 .map_err(|e| AppError::archive_error(e.to_string(), None))?;
+                            summary.add_error(format!(
+                                "Skipped unsafe RAR entry {}",
+                                name
+                            ));
                             continue;
                         }
                         PathValidationResult::Valid(p) => std::path::PathBuf::from(p),
@@ -96,6 +100,10 @@ impl ArchiveHandler for RarHandler {
                         archive = header
                             .skip()
                             .map_err(|e| AppError::archive_error(e.to_string(), None))?;
+                        summary.add_error(format!(
+                            "Skipped RAR entry {} due to path traversal",
+                            name
+                        ));
                         continue;
                     }
                     let size = entry.unpacked_size;
@@ -134,6 +142,10 @@ impl ArchiveHandler for RarHandler {
                         archive = header
                             .skip()
                             .map_err(|e| AppError::archive_error(e.to_string(), None))?;
+                        summary.add_error(format!(
+                            "Skipped RAR entry {} due to size/count limit",
+                            name
+                        ));
                         continue;
                     }
 

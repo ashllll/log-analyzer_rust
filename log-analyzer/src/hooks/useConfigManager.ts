@@ -92,7 +92,6 @@ export const useConfigManager = () => {
 
   // Watch for changes and trigger debounced save
   // 仅在初始化完成后才启用自动保存，避免加载阶段的无意义请求
-  // configFingerprint 仅在首次设置基线时读取，无需加入 deps
   useEffect(() => {
     if (initPhase !== 'ready') {
       return;
@@ -120,8 +119,7 @@ export const useConfigManager = () => {
         clearTimeout(saveTimeoutRef.current);
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [saveConfig, initPhase]);
+  }, [saveConfig, initPhase, configFingerprint]);
 
   return {
     isLoading: isPending,

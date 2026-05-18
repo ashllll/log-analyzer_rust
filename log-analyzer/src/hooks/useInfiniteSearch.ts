@@ -124,24 +124,19 @@ export function useInfiniteSearch({
         };
       }
 
-      try {
-        // 调用后端 fetch_search_page 命令，返回包含完整元数据的 SearchPageResult
-        const backendResult = await invoke<BackendSearchPageResult>('fetch_search_page', {
-          searchId,
-          offset: pageParam,
-          limit: pageSize,
-        });
+      // 调用后端 fetch_search_page 命令，返回包含完整元数据的 SearchPageResult
+      const backendResult = await invoke<BackendSearchPageResult>('fetch_search_page', {
+        searchId,
+        offset: pageParam,
+        limit: pageSize,
+      });
 
-        return {
-          results: backendResult.entries,
-          nextOffset: backendResult.next_offset,
-          hasMore: backendResult.has_more,
-          totalCount: backendResult.total_count,
-        };
-      } catch (error) {
-        console.error('Failed to fetch search page:', error);
-        throw error;
-      }
+      return {
+        results: backendResult.entries,
+        nextOffset: backendResult.next_offset,
+        hasMore: backendResult.has_more,
+        totalCount: backendResult.total_count,
+      };
     },
 
     // 获取下一页参数

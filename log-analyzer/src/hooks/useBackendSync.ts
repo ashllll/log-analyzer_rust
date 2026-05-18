@@ -17,14 +17,8 @@ export function useBackendSync() {
         await invoke('init_state_sync');
         if (!isMounted) return;
 
-        if (import.meta.env.DEV) {
-          console.log('[StateSync] State sync initialized');
-        }
-      } catch (error) {
+      } catch {
         if (!isMounted) return;
-        if (import.meta.env.DEV) {
-          console.error('[StateSync] Failed to initialize:', error);
-        }
         showToast('error', 'Failed to initialize state sync');
       }
     };

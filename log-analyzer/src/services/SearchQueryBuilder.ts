@@ -134,8 +134,8 @@ export class SearchQueryBuilder {
       // FIX(HI-16): 使用 Zod Schema 进行运行时验证，避免 as 断言导致类型不安全
       const query = SearchQuerySchema.parse(parsed);
       return new SearchQueryBuilder(query as SearchQuery);
-    } catch (e) {
-      console.warn('SearchQueryBuilder.import: 无效的 JSON 配置，已忽略', e);
+    } catch {
+      // 无效的 JSON 配置，静默返回 null
       return null;
     }
   }

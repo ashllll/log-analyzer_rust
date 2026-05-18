@@ -222,10 +222,7 @@ where
 ///
 /// - `operation` - 要执行的异步操作闭包
 /// - `operation_name` - 操作名称
-pub async fn retry_simple_async<T, E, F, Fut>(
-    operation: F,
-    operation_name: &str,
-) -> Result<T, E>
+pub async fn retry_simple_async<T, E, F, Fut>(operation: F, operation_name: &str) -> Result<T, E>
 where
     F: Fn() -> Fut,
     Fut: std::future::Future<Output = Result<T, E>>,

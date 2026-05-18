@@ -126,7 +126,6 @@ const FileFilterSettings: React.FC<FileFilterSettingsProps> = ({
         }
       } catch (err) {
         if (!controller.signal.aborted) {
-          console.error('Failed to load file filter config:', err);
           setError(t('file_filter.load_error', { error: getFullErrorMessage(err) }));
         }
       } finally {
@@ -183,7 +182,6 @@ const FileFilterSettings: React.FC<FileFilterSettingsProps> = ({
       if (err instanceof Error && err.name === 'AbortError') {
         return;
       }
-      console.error('Failed to save file filter config:', err);
       setError(t('file_filter.save_error', { error: getFullErrorMessage(err) }));
     } finally {
       // 检查当前 controller 是否仍然有效（避免状态更新到已卸载组件）

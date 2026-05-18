@@ -437,7 +437,9 @@ pub fn append_to_workspace_index(
                                                 analysis_status:
                                                     la_core::storage_types::AnalysisStatus::Pending,
                                             };
-                                            if let Err(e) = metadata_store.insert_file(&metadata).await {
+                                            if let Err(e) =
+                                                metadata_store.insert_file(&metadata).await
+                                            {
                                                 tracing::warn!(
                                                     virtual_path = %metadata.virtual_path,
                                                     error = %e,

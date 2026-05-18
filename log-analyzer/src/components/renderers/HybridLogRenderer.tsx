@@ -127,9 +127,6 @@ const collectMatches = (text: string, patterns: HighlightPattern[]): HighlightMa
   });
 
   if (matches.length > GLOBAL_MAX_MATCHES) {
-    console.warn(
-      `[HybridLogRenderer] Match count exceeded ${GLOBAL_MAX_MATCHES} (${matches.length}), truncating to prevent performance issues.`
-    );
     matches.length = GLOBAL_MAX_MATCHES;
   }
 
@@ -298,7 +295,7 @@ const HybridLogRendererInner: React.FC<HybridLogRendererProps> = ({
   // 性能保护：每个关键词最多渲染 MAX_HIGHLIGHT_PER_KEYWORD 个高亮 span，
   // 超出后该关键词退化为纯文本，避免单行数千匹配导致 DOM 节点爆炸。
   // 不同关键词独立计数，不会相互影响。
-  const MAX_HIGHLIGHT_PER_KEYWORD = 30;
+  const MAX_HIGHLIGHT_PER_KEYWORD = 50;
 
   const renderHighlightedText = (textToRender: string, showEllipsis: { start?: boolean; end?: boolean } = {}) => {
     if (highlightPatterns.length === 0) {

@@ -193,7 +193,6 @@ const SearchPage: React.FC = () => {
   // 无限搜索错误处理
   useEffect(() => {
     if (infiniteSearchError) {
-      console.error('Infinite search error:', infiniteSearchError);
       addToast('error', `分页加载失败: ${infiniteSearchError.message}`);
     }
   }, [infiniteSearchError, addToast]);

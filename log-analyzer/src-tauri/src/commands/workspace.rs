@@ -114,7 +114,7 @@ pub async fn load_workspace(
         use std::time::Duration;
         let state_sync: crate::state_sync::StateSync = state_sync;
         let _ = state_sync
-                .broadcast_workspace_event(WorkspaceEvent::StatusChanged {
+            .broadcast_workspace_event(WorkspaceEvent::StatusChanged {
                 workspace_id: workspace_id.clone(),
                 status: WorkspaceStatus::Completed {
                     duration: Duration::from_secs(0),
@@ -154,8 +154,8 @@ pub async fn refresh_workspace(
             .with_help("The source folder may have been moved or deleted"));
     }
 
-    let workspace_dir =
-        resolve_workspace_dir(&app, &workspace_id).map_err(|e| CommandError::new("NOT_FOUND", e))?;
+    let workspace_dir = resolve_workspace_dir(&app, &workspace_id)
+        .map_err(|e| CommandError::new("NOT_FOUND", e))?;
 
     // Check if workspace exists and is CAS format
     if !workspace_dir.exists() {
@@ -716,10 +716,7 @@ pub async fn delete_workspace(
 ///
 /// 将任务状态设置为 Stopped
 #[command]
-pub async fn cancel_task(
-    task_id: String,
-    state: State<'_, AppState>,
-) -> Result<(), CommandError> {
+pub async fn cancel_task(task_id: String, state: State<'_, AppState>) -> Result<(), CommandError> {
     info!(
         task_id = %task_id,
         "Cancel task command called"
@@ -773,8 +770,8 @@ pub async fn get_workspace_status(
 ) -> Result<WorkspaceStatusResponse, CommandError> {
     validate_workspace_id(&workspace_id).map_err(|e| CommandError::new("VALIDATION_ERROR", e))?;
 
-    let workspace_dir =
-        resolve_workspace_dir(&app, &workspace_id).map_err(|e| CommandError::new("NOT_FOUND", e))?;
+    let workspace_dir = resolve_workspace_dir(&app, &workspace_id)
+        .map_err(|e| CommandError::new("NOT_FOUND", e))?;
 
     // 检查工作区是否存在
     if !workspace_dir.exists() {
@@ -844,8 +841,8 @@ pub async fn get_workspace_time_range(
     use chrono::DateTime;
     use la_core::models::search::WorkspaceTimeRange;
 
-    let workspace_dir =
-        resolve_workspace_dir(&app, &workspace_id).map_err(|e| CommandError::new("NOT_FOUND", e))?;
+    let workspace_dir = resolve_workspace_dir(&app, &workspace_id)
+        .map_err(|e| CommandError::new("NOT_FOUND", e))?;
     let (_, _, manager) =
         ensure_workspace_runtime_state(&app, &state, &workspace_id, &workspace_dir)
             .await
@@ -923,6 +920,6 @@ pub async fn create_workspace(
         workspace_id,
         state,
     )
-        .await
-        .map_err(|e| CommandError::new("IMPORT_ERROR", e))
+    .await
+    .map_err(|e| CommandError::new("IMPORT_ERROR", e))
 }

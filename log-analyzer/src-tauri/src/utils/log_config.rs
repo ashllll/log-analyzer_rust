@@ -160,18 +160,19 @@ pub fn init_logging(config: Option<LogConfig>) {
     let (reload_layer, handle) = tracing_subscriber::reload::Layer::new(filter);
 
     // 初始化订阅器 (Registry-based so the handle type matches ReloadHandle)
-    let subscriber = tracing_subscriber::registry()
-        .with(reload_layer)
-        .with(
-            tracing_subscriber::fmt::layer()
-                .with_target(true)
-                .with_thread_ids(false)
-                .with_thread_names(false)
-                .with_file(false)
-                .with_line_number(false),
-        );
+    let subscriber = tracing_subscriber::registry().with(reload_layer).with(
+        tracing_subscriber::fmt::layer()
+            .with_target(true)
+            .with_thread_ids(false)
+            .with_thread_names(false)
+            .with_file(false)
+            .with_line_number(false),
+    );
 
-    tracing::subscriber::set_global_default(subscriber).expect("Failed to set global subscriber");
+    if let Err(e) = tracing::subscriber::set_global_default(subscriber) {
+        eprintln!("Failed to set global subscriber: {}", e);
+        return;
+    }
 
     // FIX(CR-04): Store the reload handle so set_global_log_level / reset_log_config actually work
     *RELOAD_HANDLE.write() = Some(handle);
@@ -191,7 +192,9 @@ fn build_env_filter(config: &LogConfig) -> tracing_subscriber::EnvFilter {
             module_config.module,
             module_config.level.to_level_filter()
         );
-        filter = filter.add_directive(directive.parse().unwrap());
+        if let Ok(d) = directive.parse() {
+            filter = filter.add_directive(d);
+        }
     }
 
     filter

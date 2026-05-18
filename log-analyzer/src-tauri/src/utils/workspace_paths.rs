@@ -76,11 +76,7 @@ mod tests {
     #[test]
     fn rejects_path_traversal_in_workspace_id() {
         let temp_dir = tempfile::tempdir().unwrap();
-        assert!(
-            resolve_workspace_dir_from_root(temp_dir.path(), "../etc/passwd").is_err()
-        );
-        assert!(
-            resolve_workspace_dir_from_root(temp_dir.path(), "ws-1/../../secret").is_err()
-        );
+        assert!(resolve_workspace_dir_from_root(temp_dir.path(), "../etc/passwd").is_err());
+        assert!(resolve_workspace_dir_from_root(temp_dir.path(), "ws-1/../../secret").is_err());
     }
 }
