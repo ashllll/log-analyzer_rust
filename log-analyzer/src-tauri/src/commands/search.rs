@@ -165,17 +165,20 @@ async fn prepare_search_environment(
                 .with_help("Try reloading the workspace before searching again")
             })?;
 
-    // 获取文件列表
-    let files = metadata_store.get_all_files().await.map_err(|e| {
-        error!(workspace_id = %workspace_id, error = %e, "Failed to get files from metadata store");
-        CommandError::new("DATABASE_ERROR", "Failed to access workspace files")
-            .with_help("The workspace database may be corrupted. Try refreshing or reimporting")
-    })?;
-
-    let files_for_search: Vec<_> = files
-        .into_iter()
-        .filter(|file| compiled_filters.matches_file(&file.virtual_path, None))
-        .collect();
+    // 将时间、级别、文件模式尽量下推到 SQLite，避免把全量文件搬到内存后再过滤。
+    let files_for_search = metadata_store
+        .get_files_with_pruning(
+            compiled_filters.time_start.map(|dt| dt.and_utc().timestamp()),
+            compiled_filters.time_end.map(|dt| dt.and_utc().timestamp()),
+            compiled_filters.level_mask,
+            compiled_filters.database_file_pattern().as_deref(),
+        )
+        .await
+        .map_err(|e| {
+            error!(workspace_id = %workspace_id, error = %e, "Failed to get pruned files from metadata store");
+            CommandError::new("DATABASE_ERROR", "Failed to access workspace files")
+                .with_help("The workspace database may be corrupted. Try refreshing or reimporting")
+        })?;
 
     // 创建磁盘搜索会话
     if !disk_result_store.has_session(search_id) {
@@ -536,6 +539,7 @@ struct CompiledSearchFilters {
     time_start: Option<chrono::NaiveDateTime>,
     time_end: Option<chrono::NaiveDateTime>,
     file_matcher: Option<FilePatternMatcher>,
+    database_file_pattern: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -592,6 +596,20 @@ impl FilePatternMatcher {
             Self::Wildcard(regex) => regex.is_match(value),
         }
     }
+}
+
+fn escape_sqlite_glob_literal(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for ch in value.chars() {
+        match ch {
+            '*' => escaped.push_str("[*]"),
+            '?' => escaped.push_str("[?]"),
+            '[' => escaped.push_str("[[]"),
+            ']' => escaped.push_str("[]]"),
+            _ => escaped.push(ch),
+        }
+    }
+    escaped
 }
 
 impl ParsedLineMetadata {
@@ -675,6 +693,12 @@ impl CompiledSearchFilters {
             .filter(|pattern| !pattern.is_empty())
             .map(FilePatternMatcher::compile)
             .transpose()?;
+        let database_file_pattern = filters
+            .file_pattern
+            .as_deref()
+            .map(str::trim)
+            .filter(|pattern| !pattern.is_empty())
+            .map(Self::build_database_file_pattern);
 
         Ok(Self {
             levels,
@@ -682,7 +706,18 @@ impl CompiledSearchFilters {
             time_start,
             time_end,
             file_matcher,
+            database_file_pattern,
         })
+    }
+
+    fn build_database_file_pattern(pattern: &str) -> String {
+        if pattern.contains('*') || pattern.contains('?') {
+            escape_sqlite_glob_literal(pattern)
+                .replace("[*]", "*")
+                .replace("[?]", "?")
+        } else {
+            format!("*{}*", escape_sqlite_glob_literal(pattern))
+        }
     }
 
     fn parse_filter_datetime(
@@ -712,6 +747,10 @@ impl CompiledSearchFilters {
         };
 
         matcher.matches(virtual_path) || real_path.is_some_and(|path| matcher.matches(path))
+    }
+
+    fn database_file_pattern(&self) -> Option<String> {
+        self.database_file_pattern.clone()
     }
 
     #[cfg(test)]
@@ -940,6 +979,12 @@ fn execute_file_search(
                     return true;
                 }
                 Err(e) => {
+                    if timed_out_for_search.load(Ordering::SeqCst)
+                        || cancellation_token.is_cancelled()
+                    {
+                        batch.clear();
+                        return true;
+                    }
                     last_err = Some(e);
                 }
             }
@@ -1946,6 +1991,28 @@ mod tests {
 
         assert!(compiled.matches_file("prod/service-error.log", None));
         assert!(!compiled.matches_file("prod/service-info.log", None));
+    }
+
+    #[test]
+    fn database_file_pattern_wraps_plain_substrings_for_glob_pruning() {
+        let filters = build_filters(None, None, &[], Some("service-error"));
+        let compiled = CompiledSearchFilters::compile(&filters).unwrap();
+
+        assert_eq!(
+            compiled.database_file_pattern().as_deref(),
+            Some("*service-error*")
+        );
+    }
+
+    #[test]
+    fn database_file_pattern_preserves_wildcards_and_escapes_literals() {
+        let filters = build_filters(None, None, &[], Some("logs/[api]?/*.log"));
+        let compiled = CompiledSearchFilters::compile(&filters).unwrap();
+
+        assert_eq!(
+            compiled.database_file_pattern().as_deref(),
+            Some("logs/[[]api[]]?/*.log")
+        );
     }
 
     #[test]

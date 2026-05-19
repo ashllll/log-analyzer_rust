@@ -47,9 +47,10 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Install Rust toolchain
-        # dtolnay/rust-toolchain@stable (滚动标签，固定到最新已知 SHA)
+        # 显式固定到 src-tauri/rust-toolchain.toml 对应的 1.85，避免根目录 stable 与子目录 pinned toolchain 漂移
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
         with:
+          toolchain: 1.85.0
           targets: ${{ matrix.target }}
           components: rustfmt, clippy
 
@@ -180,6 +181,8 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+        with:
+          toolchain: 1.85.0
 
       - name: Rust Cache
         uses: swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
@@ -205,10 +208,10 @@ jobs:
           cd log-analyzer
           npm ci
 
-      - name: Build Tauri app (debug smoke)
+      - name: Build Tauri app (debug smoke, no bundle)
         run: |
           cd log-analyzer
-          npm run tauri build -- --debug
+          npm run tauri build -- --debug --no-bundle
 
   # 集成测试
   integration-test:
@@ -223,6 +226,8 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+        with:
+          toolchain: 1.85.0
 
       - name: Rust Cache
         uses: swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
