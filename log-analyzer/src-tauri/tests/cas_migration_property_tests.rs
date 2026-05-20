@@ -423,7 +423,7 @@ fn test_comprehensive_legacy_code_scan() {
 #[cfg(test)]
 mod cas_storage_consistency_tests {
     use la_core::storage_types::AnalysisStatus;
-    use log_analyzer::storage::{ContentAddressableStorage, FileMetadata, MetadataStore};
+    use la_storage::{ContentAddressableStorage, FileMetadata, MetadataStore};
     use proptest::prelude::*;
     use sha2::{Digest, Sha256};
     use tempfile::TempDir;
@@ -748,7 +748,7 @@ mod cas_storage_consistency_tests {
 #[cfg(test)]
 mod search_uses_cas_tests {
     use la_core::storage_types::AnalysisStatus;
-    use log_analyzer::storage::{ContentAddressableStorage, FileMetadata, MetadataStore};
+    use la_storage::{ContentAddressableStorage, FileMetadata, MetadataStore};
     use proptest::prelude::*;
     use tempfile::TempDir;
 

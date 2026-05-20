@@ -41,25 +41,29 @@ pub struct SearchMetrics {
 /// 将 total_searches、cache_hits、last_search_duration 合并为 SearchMetrics 结构体，
 /// 使用单个 Mutex 保护，减少锁竞争和缓存行伪共享。
 pub struct AppState {
+    // ── 工作区上下文 ──
     /// 工作区目录映射
     pub workspace_dirs: Arc<Mutex<BTreeMap<String, std::path::PathBuf>>>,
     pub cas_instances: Arc<Mutex<HashMap<String, Arc<ContentAddressableStorage>>>>,
     pub metadata_stores: Arc<Mutex<HashMap<String, Arc<MetadataStore>>>>,
-    pub task_manager: Arc<Mutex<Option<TaskManager>>>,
+    pub watchers: Arc<Mutex<HashMap<String, WatcherState>>>,
+
+    // ── 搜索上下文 ──
+    pub search_engine_managers: Arc<Mutex<HashMap<String, Arc<SearchEngineManager>>>>,
     pub search_cancellation_tokens:
         Arc<Mutex<HashMap<String, tokio_util::sync::CancellationToken>>>,
     /// 搜索指标（合并 total_searches + cache_hits + last_search_duration）
     pub search_metrics: Arc<Mutex<SearchMetrics>>,
-    pub watchers: Arc<Mutex<HashMap<String, WatcherState>>>,
-    pub state_sync: Arc<Mutex<Option<StateSync>>>,
-    pub async_resource_manager: Arc<AsyncResourceManager>,
-    pub search_engine_managers: Arc<Mutex<HashMap<String, Arc<SearchEngineManager>>>>,
-    /// M4 Fix: Wrapped in RwLock to allow replacement with app_data_dir path
-    /// during setup(). Read-heavy access pattern — read lock is shared.
-    /// FIX(CR-06): Changed to Option to avoid panic in default() when DiskResultStore::new fails.
+    /// M4 Fix: Wrapped in RwLock for app_data_dir path replacement during setup()
+    /// FIX(CR-06): Option to avoid panic in default() when DiskResultStore::new fails
     pub disk_result_store: parking_lot::RwLock<Option<Arc<DiskResultStore>>>,
     /// FIX(HI-01): 缓存 rayon ThreadPool，避免每次搜索都新建线程池
     pub search_thread_pool: Arc<rayon::ThreadPool>,
+
+    // ── 任务与同步上下文 ──
+    pub task_manager: Arc<Mutex<Option<TaskManager>>>,
+    pub state_sync: Arc<Mutex<Option<StateSync>>>,
+    pub async_resource_manager: Arc<AsyncResourceManager>,
 }
 
 impl Default for AppState {

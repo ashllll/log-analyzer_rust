@@ -47,12 +47,6 @@ fn is_enhanced_extraction_enabled() -> bool {
     false
 }
 
-/// 增强提取功能未编译时，始终使用旧系统
-#[cfg(not(feature = "enhanced-extraction"))]
-fn is_enhanced_extraction_enabled() -> bool {
-    false
-}
-
 #[cfg(feature = "enhanced-extraction")]
 fn extraction_policy_from_archive_config(config: &ArchiveConfig) -> ExtractionPolicy {
     ExtractionPolicy {
@@ -782,12 +776,6 @@ impl CasProcessingContext {
         Ok(())
     }
 
-    /// No-op when enhanced-extraction is disabled
-    #[cfg(not(feature = "enhanced-extraction"))]
-    async fn maybe_save_checkpoint(&self) -> Result<()> {
-        Ok(())
-    }
-
     /// Update checkpoint with new file
     async fn update_checkpoint(&self, file_path: PathBuf, file_size: u64) -> Result<()> {
         if let Some(checkpoint) = &self.checkpoint {
@@ -1367,32 +1355,6 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
             }
         }
     };
-    #[cfg(not(feature = "enhanced-extraction"))]
-    let extracted_files = match archive_manager
-        .extract_archive(archive_path, &extract_dir)
-        .await
-    {
-        Ok(summary) => {
-            info!(
-                files = summary.files_extracted,
-                bytes = summary.total_size,
-                "Legacy extraction completed"
-            );
-            summary.extracted_files
-        }
-        Err(e) => {
-            context
-                .metadata_store
-                .update_archive_status(archive_id, "failed")
-                .await?;
-            // 清理失败解压的临时目录
-            let _ = fs::remove_dir_all(&extract_dir).await;
-            return Err(AppError::archive_error(
-                format!("Legacy extraction failed: {}", e),
-                Some(archive_path.to_path_buf()),
-            ));
-        }
-    };
 
     // Update archive status to extracting
     context
@@ -1760,38 +1722,6 @@ async fn extract_and_process_archive(
             }
         }
     } else {
-        // 使用旧的 ArchiveManager
-        info!(
-            file = %file_name,
-            "Using legacy extraction system"
-        );
-
-        let summary = archive_manager
-            .extract_archive(archive_path, &extract_dir)
-            .await
-            .map_err(|e| {
-                AppError::archive_error(
-                    format!("Failed to extract {}: {}", file_name, e),
-                    Some(archive_path.to_path_buf()),
-                )
-            })?;
-
-        // 报告提取结果
-        info!(
-            files = summary.files_extracted,
-            archive = %file_name,
-            bytes = summary.total_size,
-            "Legacy extraction completed"
-        );
-
-        if summary.has_errors() {
-            warn!(errors = ?summary.errors, "Extraction errors");
-        }
-
-        summary.extracted_files
-    };
-    #[cfg(not(feature = "enhanced-extraction"))]
-    let extracted_files = {
         // 使用旧的 ArchiveManager
         info!(
             file = %file_name,

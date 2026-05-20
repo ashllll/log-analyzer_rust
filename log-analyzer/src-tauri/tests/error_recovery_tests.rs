@@ -7,7 +7,7 @@
 
 use la_archive::checkpoint_manager::{Checkpoint, CheckpointConfig, CheckpointManager};
 use la_core::storage_types::AnalysisStatus;
-use log_analyzer::storage::{
+use la_storage::{
     verify_after_import, verify_workspace_integrity, ContentAddressableStorage, FileMetadata,
     MetadataStore,
 };
@@ -803,7 +803,7 @@ async fn test_transaction_commit_on_success() {
 /// **Validates: Requirements 8.4 (Task 5 - Transaction support)**
 #[tokio::test]
 async fn test_transaction_mixed_operations() {
-    use log_analyzer::storage::ArchiveMetadata;
+    use la_storage::ArchiveMetadata;
 
     let temp_dir = TempDir::new().unwrap();
     let metadata_store = MetadataStore::new(temp_dir.path()).await.unwrap();

@@ -853,7 +853,7 @@ pub async fn get_workspace_time_range(
                 )
             })?;
 
-    let manager: Arc<crate::search_engine::SearchEngineManager> = manager;
+    let manager: Arc<la_search::SearchEngineManager> = manager;
     let (min_ts, max_ts, total_logs) = manager.get_time_range().map_err(|e| {
         CommandError::new(
             "SEARCH_ERROR",

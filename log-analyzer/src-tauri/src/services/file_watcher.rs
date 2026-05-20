@@ -499,7 +499,7 @@ pub fn append_to_workspace_index(
 /// # 使用场景
 ///
 /// - ✅ 已集成: `process_path_recursive_inner_with_metadata` 中收集普通文件元数据
-pub fn get_file_metadata(path: &Path) -> Result<crate::storage::FileMetadata> {
+pub fn get_file_metadata(path: &Path) -> Result<la_storage::FileMetadata> {
     use std::time::SystemTime;
 
     let metadata = path.metadata().map_err(AppError::Io)?;
@@ -513,7 +513,7 @@ pub fn get_file_metadata(path: &Path) -> Result<crate::storage::FileMetadata> {
         .try_into()
         .map_err(|_| AppError::validation_error("Timestamp overflow (Y2K38)".to_string()))?;
 
-    Ok(crate::storage::FileMetadata {
+    Ok(la_storage::FileMetadata {
         id: 0,                       // Will be auto-generated
         sha256_hash: String::new(),  // Will be filled by caller
         virtual_path: String::new(), // Will be filled by caller

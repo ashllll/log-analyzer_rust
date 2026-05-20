@@ -77,3 +77,14 @@ log_level = "info"
 
 # Enable security event logging
 log_security_events = true
+
+# ── Archive format handlers ──
+# Enable/disable specific archive format processors.
+# All formats are enabled by default.
+[handlers]
+zip = true
+tar = true
+gz = true
+sevenz = true
+# RAR support requires "rar-support" compile-time feature
+rar = true

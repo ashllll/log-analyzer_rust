@@ -231,21 +231,21 @@ pub async fn get_virtual_file_tree(
 
 /// Build hierarchical tree structure from flat data
 async fn build_tree_structure(
-    archives: &[crate::storage::ArchiveMetadata],
-    files: &[crate::storage::FileMetadata],
+    archives: &[la_storage::ArchiveMetadata],
+    files: &[la_storage::FileMetadata],
     _metadata_store: &MetadataStore,
 ) -> Result<Vec<VirtualTreeNode>, String> {
     let mut tree = Vec::new();
 
     // 预构建索引：parent_archive_id -> 子 archive/file 列表，O(n) → O(1) 查找
     use std::collections::HashMap;
-    let mut archive_children: HashMap<i64, Vec<&crate::storage::ArchiveMetadata>> = HashMap::new();
+    let mut archive_children: HashMap<i64, Vec<&la_storage::ArchiveMetadata>> = HashMap::new();
     for a in archives {
         if let Some(parent_id) = a.parent_archive_id {
             archive_children.entry(parent_id).or_default().push(a);
         }
     }
-    let mut file_children: HashMap<i64, Vec<&crate::storage::FileMetadata>> = HashMap::new();
+    let mut file_children: HashMap<i64, Vec<&la_storage::FileMetadata>> = HashMap::new();
     for f in files {
         if let Some(parent_id) = f.parent_archive_id {
             file_children.entry(parent_id).or_default().push(f);
@@ -286,9 +286,9 @@ async fn build_tree_structure(
 
 /// Build archive node with pre-built HashMap indexes, O(n) total instead of O(n²)
 fn build_archive_node_indexed<'a>(
-    archive: &'a crate::storage::ArchiveMetadata,
-    archive_children: &'a std::collections::HashMap<i64, Vec<&'a crate::storage::ArchiveMetadata>>,
-    file_children: &'a std::collections::HashMap<i64, Vec<&'a crate::storage::FileMetadata>>,
+    archive: &'a la_storage::ArchiveMetadata,
+    archive_children: &'a std::collections::HashMap<i64, Vec<&'a la_storage::ArchiveMetadata>>,
+    file_children: &'a std::collections::HashMap<i64, Vec<&'a la_storage::FileMetadata>>,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<VirtualTreeNode, String>> + Send + 'a>>
 {
     Box::pin(async move {
@@ -330,9 +330,9 @@ fn build_archive_node_indexed<'a>(
 #[allow(dead_code)]
 #[allow(clippy::only_used_in_recursion)]
 fn build_archive_node<'a>(
-    archive: &'a crate::storage::ArchiveMetadata,
-    all_archives: &'a [crate::storage::ArchiveMetadata],
-    all_files: &'a [crate::storage::FileMetadata],
+    archive: &'a la_storage::ArchiveMetadata,
+    all_archives: &'a [la_storage::ArchiveMetadata],
+    all_files: &'a [la_storage::FileMetadata],
     metadata_store: &'a MetadataStore,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<VirtualTreeNode, String>> + Send + 'a>>
 {

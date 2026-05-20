@@ -1,4 +1,6 @@
 // la-core: 共享类型、错误处理、纯数据模型
+// Clean Architecture layers
+pub mod domain;
 pub mod error;
 pub mod models;
 pub mod storage_types;

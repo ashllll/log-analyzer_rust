@@ -8,8 +8,8 @@
 
 // 导入 log_analyzer 库的模块
 use log_analyzer::commands::{
-    config::*, export::*, import::*, search::*, state_sync::*, validation::*, virtual_tree::*,
-    watch::*, workspace::*,
+    config::*, export::*, import::*, log_config::*, search::*, state_sync::*, validation::*,
+    virtual_tree::*, watch::*, workspace::*,
 };
 use log_analyzer::models::AppState;
 use log_analyzer::task_manager::TaskManager;
@@ -45,7 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Ok(d) = "log_analyzer::task_manager=info".parse() {
                     f = f.add_directive(d);
                 }
-                if let Ok(d) = "log_analyzer::search_engine=info".parse() {
+                if let Ok(d) = "la_search=info".parse() {
                     f = f.add_directive(d);
                 }
                 f
@@ -57,7 +57,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Ok(d) = "log_analyzer::task_manager=warn".parse() {
                     f = f.add_directive(d);
                 }
-                if let Ok(d) = "log_analyzer::search_engine=warn".parse() {
+                if let Ok(d) = "la_search=warn".parse() {
                     f = f.add_directive(d);
                 }
                 if let Ok(d) = "log_analyzer::commands=info".parse() {
@@ -154,10 +154,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             export_results,
             // ===== 状态同步 =====
             init_state_sync,
+            // ===== 日志配置 =====
+            get_current_log_config,
+            set_log_level,
+            set_module_level,
+            reset_log_configuration,
+            get_recommended_production_config,
+            get_recommended_debug_config,
+            load_log_config,
+            save_log_config,
+            get_available_log_levels,
+            apply_log_preset,
             // ===== 验证 =====
             validate_workspace_id_format,
             validate_path_security,
             validate_workspace_config_cmd,
+            validate_search_query_cmd,
+            validate_archive_config_cmd,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

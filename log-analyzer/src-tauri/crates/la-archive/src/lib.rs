@@ -1,6 +1,12 @@
 //! la-archive: ZIP/TAR/GZ/RAR/7Z 递归解压模块
 //!
 //! 提供统一的接口处理各种压缩格式，支持递归解压嵌套压缩包。
+//!
+//! # Feature Gates（已澄清）
+//!
+//! `enhanced-extraction`: 默认开启（见 Cargo.toml `default-features`）。
+//! 该 feature 控制核心提取引擎、安全检查、路径管理等模块的编译。
+//! 当前无禁用场景，保留仅用于将来的最小化构建评估。
 
 pub mod archive_handler;
 #[cfg(feature = "enhanced-extraction")]

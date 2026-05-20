@@ -7,16 +7,19 @@
 //! - 错误处理统一 ✅
 //! - 监控体系建立 ✅
 
+// Clean Architecture layers
+pub mod application;
+pub mod infrastructure;
+pub mod interfaces;
+
 // 核心模块
 pub mod adapters;
 pub mod commands;
 pub mod models;
 pub mod utils;
 
-// 存储和搜索模块
-pub mod search_engine;
+// 业务服务与引擎（直接使用 la_search / la_storage crate）
 pub mod services;
-pub mod storage;
 
 // 任务和状态管理
 pub mod state_sync;

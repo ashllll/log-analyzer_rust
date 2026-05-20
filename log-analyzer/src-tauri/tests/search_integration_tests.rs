@@ -12,7 +12,7 @@
 //! **Validates: Requirements 1.4**
 
 use la_core::storage_types::AnalysisStatus;
-use log_analyzer::storage::{ContentAddressableStorage, FileMetadata, MetadataStore};
+use la_storage::{ContentAddressableStorage, FileMetadata, MetadataStore};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};

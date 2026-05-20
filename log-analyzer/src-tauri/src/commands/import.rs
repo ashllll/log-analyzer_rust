@@ -77,7 +77,7 @@ pub(crate) fn ensure_search_engine_manager(
     state: &AppState,
     workspace_id: &str,
     workspace_dir: &Path,
-) -> Result<Arc<crate::search_engine::SearchEngineManager>, String> {
+) -> Result<Arc<la_search::SearchEngineManager>, String> {
     if let Some(manager) = state
         .search_engine_managers
         .lock()
@@ -90,7 +90,7 @@ pub(crate) fn ensure_search_engine_manager(
     let app_search_config = load_workspace_search_config(app);
     let index_path = workspace_dir.join(SEARCH_INDEX_DIR_NAME);
     let manager = Arc::new(
-        crate::search_engine::manager::SearchEngineManager::with_app_config(
+        la_search::SearchEngineManager::with_app_config(
             app_search_config,
             index_path,
             SEARCH_INDEX_WRITER_HEAP_BYTES,
@@ -113,9 +113,9 @@ pub(crate) async fn ensure_workspace_runtime_state(
     workspace_dir: &Path,
 ) -> Result<
     (
-        Arc<crate::storage::ContentAddressableStorage>,
+        Arc<la_storage::ContentAddressableStorage>,
         Arc<MetadataStore>,
-        Arc<crate::search_engine::SearchEngineManager>,
+        Arc<la_search::SearchEngineManager>,
     ),
     String,
 > {
@@ -124,7 +124,7 @@ pub(crate) async fn ensure_workspace_runtime_state(
         cas_instances
             .entry(workspace_id.to_string())
             .or_insert_with(|| {
-                Arc::new(crate::storage::ContentAddressableStorage::new(
+                Arc::new(la_storage::ContentAddressableStorage::new(
                     workspace_dir.to_path_buf(),
                 ))
             })
@@ -167,8 +167,8 @@ pub(crate) async fn ensure_workspace_runtime_state(
 
 async fn rebuild_workspace_search_index(
     metadata_store: Arc<MetadataStore>,
-    cas: Arc<crate::storage::ContentAddressableStorage>,
-    search_manager: Arc<crate::search_engine::SearchEngineManager>,
+    cas: Arc<la_storage::ContentAddressableStorage>,
+    search_manager: Arc<la_search::SearchEngineManager>,
 ) -> Result<usize, String> {
     // P1-1: 仅在索引为空时执行全量重建（首次导入）。
     // 后续导入的新文件通过 CAS 回退路径搜索，避免每次 O(n) 全量 I/O。

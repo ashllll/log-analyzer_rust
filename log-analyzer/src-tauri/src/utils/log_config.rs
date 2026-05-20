@@ -111,7 +111,7 @@ impl Default for LogConfig {
                     level: LogLevel::Info,
                 },
                 ModuleLogConfig {
-                    module: "log_analyzer::search_engine".to_string(),
+                    module: "la_search".to_string(),
                     level: LogLevel::Info,
                 },
             ],
@@ -331,7 +331,7 @@ pub fn get_production_log_config() -> LogConfig {
                 level: LogLevel::Warn,
             },
             ModuleLogConfig {
-                module: "log_analyzer::search_engine".to_string(),
+                module: "la_search".to_string(),
                 level: LogLevel::Warn,
             },
             // 关键路径保持 Info
@@ -358,7 +358,7 @@ pub fn get_debug_log_config() -> LogConfig {
                 level: LogLevel::Debug,
             },
             ModuleLogConfig {
-                module: "log_analyzer::search_engine".to_string(),
+                module: "la_search".to_string(),
                 level: LogLevel::Debug,
             },
         ],
