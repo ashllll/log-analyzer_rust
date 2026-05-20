@@ -5,8 +5,8 @@
 
 use std::sync::Arc;
 
-use la_core::domain::LogFileRepository;
 use la_core::domain::event::EventPublisher;
+use la_core::domain::LogFileRepository;
 use la_core::error::Result;
 use la_storage::ContentAddressableStorage;
 
@@ -35,12 +35,12 @@ where
     L: LogFileRepository,
     E: EventPublisher,
 {
-    pub fn new(
-        _log_files: Arc<L>,
-        events: Arc<E>,
-        cas: Arc<ContentAddressableStorage>,
-    ) -> Self {
-        Self { _log_files, events, cas }
+    pub fn new(_log_files: Arc<L>, events: Arc<E>, cas: Arc<ContentAddressableStorage>) -> Self {
+        Self {
+            _log_files,
+            events,
+            cas,
+        }
     }
 
     /// Execute an import from a folder path.
@@ -51,7 +51,7 @@ where
     pub async fn execute(&self, _path: &str, _workspace_id: &str) -> Result<ImportResult> {
         // TODO(p3): Extract core import logic from commands/import.rs
         // The import flow involves:
-        // 1. File discovery (walkdir)  
+        // 1. File discovery (walkdir)
         // 2. Archive extraction (ArchiveManager)
         // 3. CAS storage + dedup (ContentAddressableStorage)
         // 4. Metadata indexing (MetadataStore)

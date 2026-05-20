@@ -22,26 +22,24 @@ impl SearchResultRepository for DiskResultStoreRepo {
     }
 
     fn append_entries(&self, search_id: &str, entries: &[la_core::models::LogEntry]) -> Result<()> {
-        self.store.append_entries(search_id, entries).map(|_| ()).map_err(|e| {
-            la_core::error::AppError::io_error(
-                format!("Failed to append entries: {}", e),
-                None,
-            )
-        })
+        self.store
+            .append_entries(search_id, entries)
+            .map(|_| ())
+            .map_err(|e| {
+                la_core::error::AppError::io_error(format!("Failed to append entries: {}", e), None)
+            })
     }
 
-    fn read_page(
-        &self,
-        search_id: &str,
-        offset: usize,
-        limit: usize,
-    ) -> Result<SearchResultPage> {
-        let page = self.store.read_page(search_id, offset, limit).map_err(|e| {
-            la_core::error::AppError::io_error(
-                format!("Failed to read search page: {}", e),
-                None,
-            )
-        })?;
+    fn read_page(&self, search_id: &str, offset: usize, limit: usize) -> Result<SearchResultPage> {
+        let page = self
+            .store
+            .read_page(search_id, offset, limit)
+            .map_err(|e| {
+                la_core::error::AppError::io_error(
+                    format!("Failed to read search page: {}", e),
+                    None,
+                )
+            })?;
 
         Ok(SearchResultPage {
             entries: page.entries,
@@ -54,10 +52,7 @@ impl SearchResultRepository for DiskResultStoreRepo {
 
     fn complete_session(&self, search_id: &str) -> Result<()> {
         self.store.complete_session(search_id).map_err(|e| {
-            la_core::error::AppError::io_error(
-                format!("Failed to complete session: {}", e),
-                None,
-            )
+            la_core::error::AppError::io_error(format!("Failed to complete session: {}", e), None)
         })
     }
 

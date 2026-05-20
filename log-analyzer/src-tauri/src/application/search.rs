@@ -5,8 +5,8 @@
 
 use std::sync::Arc;
 
-use la_core::domain::{LogFileRepository, SearchResultRepository};
 use la_core::domain::event::EventPublisher;
+use la_core::domain::{LogFileRepository, SearchResultRepository};
 use la_core::error::Result;
 use la_core::models::{LogEntry, SearchFilters, SearchQuery};
 use la_storage::ContentAddressableStorage;
@@ -80,7 +80,9 @@ where
             .log_files
             .get_files_with_filters(
                 workspace_id,
-                compiled_filters.time_start.map(|dt| dt.and_utc().timestamp()),
+                compiled_filters
+                    .time_start
+                    .map(|dt| dt.and_utc().timestamp()),
                 compiled_filters.time_end.map(|dt| dt.and_utc().timestamp()),
                 compiled_filters.level_mask,
                 compiled_filters.database_file_pattern().as_deref(),
@@ -198,14 +200,7 @@ where
                         if cancellation_token.is_cancelled() {
                             return Vec::new();
                         }
-                        search_one_file(
-                            &cas,
-                            fm,
-                            &builder,
-                            &plan,
-                            filters,
-                            &log_files,
-                        )
+                        search_one_file(&cas, fm, &builder, &plan, filters, &log_files)
                     })
                     .collect()
             });

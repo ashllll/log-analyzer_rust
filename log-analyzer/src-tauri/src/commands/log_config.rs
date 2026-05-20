@@ -13,7 +13,10 @@ use crate::utils::log_config::{
 };
 
 /// FIX(CR-03): 将用户传入的路径解析为应用配置目录下的安全路径
-fn resolve_log_config_path(app: &AppHandle, path: &str) -> Result<std::path::PathBuf, CommandError> {
+fn resolve_log_config_path(
+    app: &AppHandle,
+    path: &str,
+) -> Result<std::path::PathBuf, CommandError> {
     let safe_name = crate::utils::validation::prevent_path_traversal(path)
         .map_err(|e| CommandError::new("CONFIG_PATH_UNSAFE", format!("配置路径不安全: {}", e)))?;
     let path_obj = std::path::Path::new(&safe_name);
@@ -37,13 +40,12 @@ fn resolve_log_config_path(app: &AppHandle, path: &str) -> Result<std::path::Pat
         }
     }
 
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| CommandError::new(
+    let config_dir = app.path().app_config_dir().map_err(|e| {
+        CommandError::new(
             "APP_CONFIG_DIR_UNAVAILABLE",
             format!("无法获取应用配置目录: {}", e),
-        ))?;
+        )
+    })?;
     Ok(config_dir.join(path_obj))
 }
 
@@ -60,14 +62,12 @@ pub async fn get_current_log_config() -> Result<LogConfig, CommandError> {
 #[command]
 pub async fn set_log_level(level: String) -> Result<(), CommandError> {
     let log_level = LogLevel::from_string(&level).ok_or_else(|| {
-        CommandError::new(
-            "INVALID_LOG_LEVEL",
-            format!("无效的日志级别: {}", level),
-        )
+        CommandError::new("INVALID_LOG_LEVEL", format!("无效的日志级别: {}", level))
     })?;
 
-    set_global_log_level(log_level)
-        .map_err(|e| CommandError::new("LOG_LEVEL_SET_FAILED", format!("设置日志级别失败: {}", e)))?;
+    set_global_log_level(log_level).map_err(|e| {
+        CommandError::new("LOG_LEVEL_SET_FAILED", format!("设置日志级别失败: {}", e))
+    })?;
 
     Ok(())
 }
@@ -80,10 +80,7 @@ pub async fn set_log_level(level: String) -> Result<(), CommandError> {
 #[command]
 pub async fn set_module_level(module: String, level: String) -> Result<(), CommandError> {
     let log_level = LogLevel::from_string(&level).ok_or_else(|| {
-        CommandError::new(
-            "INVALID_LOG_LEVEL",
-            format!("无效的日志级别: {}", level),
-        )
+        CommandError::new("INVALID_LOG_LEVEL", format!("无效的日志级别: {}", level))
     })?;
 
     set_module_log_level(&module, log_level);

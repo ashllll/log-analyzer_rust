@@ -44,9 +44,20 @@ pub(crate) struct SearchResultBatchEvent {
 }
 
 pub(crate) fn emit_search_id_event(app_handle: &AppHandle, event_name: &str, search_id: &str) {
-    let _ = app_handle.emit(event_name, SearchIdEvent { search_id: search_id.to_string() });
+    let _ = app_handle.emit(
+        event_name,
+        SearchIdEvent {
+            search_id: search_id.to_string(),
+        },
+    );
 }
 
 pub(crate) fn emit_search_error(app_handle: &AppHandle, search_id: &str, error: impl Into<String>) {
-    let _ = app_handle.emit("search-error", SearchErrorEvent { search_id: search_id.to_string(), error: error.into() });
+    let _ = app_handle.emit(
+        "search-error",
+        SearchErrorEvent {
+            search_id: search_id.to_string(),
+            error: error.into(),
+        },
+    );
 }

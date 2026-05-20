@@ -12,7 +12,10 @@ use crate::state_sync::StateSync;
 
 /// Initialize state synchronization (called once on app startup)
 #[command]
-pub async fn init_state_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), CommandError> {
+pub async fn init_state_sync(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), CommandError> {
     let mut sync_guard = state.state_sync.lock();
 
     if sync_guard.is_none() {
