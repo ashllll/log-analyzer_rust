@@ -75,10 +75,11 @@ jobs:
             libsoup-3.0-dev \
             libjavascriptcoregtk-4.1-dev
 
-      - name: Check code formatting
+      - name: Check code formatting (auto-fix + verify)
         run: |
           cd log-analyzer/src-tauri
-          cargo fmt -- --check
+          cargo fmt
+          git diff --exit-code || (echo "::error::Code formatting issues found. Run 'cargo fmt' locally to fix." && exit 1)
 
       - name: Fetch dependencies
         run: |
