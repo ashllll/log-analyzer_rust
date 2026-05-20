@@ -44,7 +44,7 @@ jobs:
     steps:
       - name: Checkout code
         # actions/checkout@v4.2.2
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
 
       - name: Install Rust toolchain
         # 显式固定到 src-tauri/rust-toolchain.toml 对应的 1.85，避免根目录 stable 与子目录 pinned toolchain 漂移
@@ -94,10 +94,18 @@ jobs:
       - name: Run unit tests
         run: |
           cd log-analyzer/src-tauri
-          cargo test --all-features --lib --bins -- --test-threads=4 --nocapture
+          cargo test --all-features --lib --bins -- --test-threads=4 --nocapture 2>&1 | tee test-output.log
         env:
           RUST_BACKTRACE: 1  # HI-38: Use '1' instead of 'full' to avoid leaking absolute paths/usernames
           RUST_TEST_TIME_INTEGRATION: 1
+
+      - name: Upload test logs
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rust-tests-${{ matrix.target }}
+          path: log-analyzer/src-tauri/test-output.log
+          retention-days: 7
 
   # IPC 一致性检查
   ipc-consistency-check:
@@ -107,10 +115,10 @@ jobs:
       contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
 
       - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: ${{ env.NODE_VERSION }}
 
@@ -125,10 +133,10 @@ jobs:
       contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
 
       - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
@@ -170,10 +178,10 @@ jobs:
       contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
 
       - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
@@ -222,7 +230,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
@@ -262,12 +270,12 @@ jobs:
       contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
         with:
           fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: ${{ env.NODE_VERSION }}
 
