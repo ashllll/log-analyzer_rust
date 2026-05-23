@@ -8,6 +8,10 @@
 // This module exists to establish the architectural pattern.
 pub mod config;
 pub mod import;
+pub mod log_config;
 pub mod search;
 pub mod state_sync;
+pub mod validation;
+pub mod virtual_tree;
 pub mod watch;
+pub mod workspace;

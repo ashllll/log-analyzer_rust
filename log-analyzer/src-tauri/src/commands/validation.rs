@@ -5,11 +5,10 @@
 use la_core::models::validated::{
     ValidatedArchiveConfig, ValidatedSearchQuery, ValidatedWorkspaceConfig, ValidationErrorReport,
 };
-use tauri::command;
+// command macro moved to interfaces/validation.rs
 use validator::Validate;
 
 /// 验证工作区配置
-#[command]
 pub async fn validate_workspace_config_cmd(
     config: ValidatedWorkspaceConfig,
 ) -> Result<ValidationErrorReport, String> {
@@ -23,7 +22,6 @@ pub async fn validate_workspace_config_cmd(
 }
 
 /// 验证搜索查询
-#[command]
 pub async fn validate_search_query_cmd(
     query: ValidatedSearchQuery,
 ) -> Result<ValidationErrorReport, String> {
@@ -37,7 +35,6 @@ pub async fn validate_search_query_cmd(
 }
 
 /// 验证归档配置（替代原来的 ValidatedImportConfig）
-#[command]
 pub async fn validate_archive_config_cmd(
     config: ValidatedArchiveConfig,
 ) -> Result<ValidationErrorReport, String> {
@@ -77,7 +74,6 @@ pub async fn validate_archive_config_cmd(
 }
 
 /// 批量验证工作区配置
-#[command]
 pub async fn batch_validate_workspace_configs(
     configs: Vec<ValidatedWorkspaceConfig>,
 ) -> Result<Vec<ValidationErrorReport>, String> {
@@ -96,7 +92,6 @@ pub async fn batch_validate_workspace_configs(
 }
 
 /// 验证工作区ID格式
-#[command]
 pub async fn validate_workspace_id_format(workspace_id: String) -> Result<bool, String> {
     use once_cell::sync::Lazy;
 
@@ -113,7 +108,6 @@ pub async fn validate_workspace_id_format(workspace_id: String) -> Result<bool, 
 }
 
 /// 验证文件路径安全性
-#[command]
 pub async fn validate_path_security(path: String) -> Result<ValidationErrorReport, String> {
     use std::path::Path;
 

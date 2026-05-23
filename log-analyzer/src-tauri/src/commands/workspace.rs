@@ -31,7 +31,7 @@ use std::{fs, path::Path, sync::Arc};
 
 use la_core::error::{AppError, CommandError};
 use la_core::models::config::AppConfigLoader;
-use tauri::{command, AppHandle, Manager, State};
+use tauri::{AppHandle, Manager, State};
 use tracing::{error, info, warn};
 
 use crate::commands::import::{ensure_workspace_runtime_state, import_folder_impl};
@@ -59,7 +59,6 @@ pub struct WorkspaceLoadResponse {
 /// # 前后端集成规范
 /// 为保持与 JavaScript camelCase 惯例一致，Tauri 命令参数使用 camelCase 命名，
 /// 与前端 invoke('load_workspace', { workspaceId }) 调用保持一致
-#[command]
 pub async fn load_workspace(
     app: AppHandle,
     workspace_id: String,
@@ -133,7 +132,6 @@ pub async fn load_workspace(
 ///
 /// 注意：CAS架构下，刷新操作等同于重新导入
 /// 因为CAS自动处理去重，重新导入是最简单可靠的方式
-#[command]
 pub async fn refresh_workspace(
     app: AppHandle,
     workspace_id: String,
@@ -667,7 +665,6 @@ async fn cleanup_workspace_resources(
 /// 删除工作区命令
 ///
 /// Tauri命令接口,用于删除工作区及其所有相关资源。
-#[command]
 pub async fn delete_workspace(
     workspace_id: String,
     state: State<'_, AppState>,
@@ -715,7 +712,6 @@ pub async fn delete_workspace(
 /// 取消任务命令
 ///
 /// 将任务状态设置为 Stopped
-#[command]
 pub async fn cancel_task(task_id: String, state: State<'_, AppState>) -> Result<(), CommandError> {
     info!(
         task_id = %task_id,
@@ -762,7 +758,6 @@ pub struct WorkspaceStatusResponse {
 /// 获取工作区状态命令
 ///
 /// 返回工作区的详细信息
-#[command]
 pub async fn get_workspace_status(
     workspace_id: String,
     app: AppHandle,
@@ -832,7 +827,6 @@ pub async fn get_workspace_status(
 /// 获取工作区日志时间范围
 ///
 /// 从 Tantivy 索引中查询最早和最晚的日志时间戳
-#[command]
 pub async fn get_workspace_time_range(
     app: AppHandle,
     workspace_id: String,
@@ -890,7 +884,6 @@ pub async fn get_workspace_time_range(
 /// 创建工作区命令（import_folder 的语义化别名）
 ///
 /// 提供更符合用户预期的命令名来创建工作区
-#[command]
 pub async fn create_workspace(
     name: String,
     path: String,

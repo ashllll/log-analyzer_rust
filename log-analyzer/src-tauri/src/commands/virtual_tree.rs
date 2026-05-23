@@ -18,7 +18,7 @@
 
 use la_storage::{ContentAddressableStorage, MetadataStore};
 use serde::{Deserialize, Serialize};
-use tauri::{command, AppHandle};
+use tauri::AppHandle;
 use tracing::{debug, error, info};
 
 use crate::utils::validation::validate_workspace_id;
@@ -75,7 +75,6 @@ fn validate_file_hash(hash: &str) -> Result<(), String> {
 ///   hash: 'a3f2e1d4c5b6a7...'
 /// });
 /// ```
-#[command]
 pub async fn read_file_by_hash(
     app: AppHandle,
     #[allow(non_snake_case)] workspaceId: String,
@@ -186,7 +185,6 @@ pub enum VirtualTreeNode {
 ///   workspaceId: 'workspace_123'
 /// });
 /// ```
-#[command]
 pub async fn get_virtual_file_tree(
     app: AppHandle,
     #[allow(non_snake_case)] workspaceId: String,
