@@ -6,3 +6,8 @@
 
 // For now, commands remain in commands/ and will migrate here gradually.
 // This module exists to establish the architectural pattern.
+pub mod config;
+pub mod import;
+pub mod search;
+pub mod state_sync;
+pub mod watch;

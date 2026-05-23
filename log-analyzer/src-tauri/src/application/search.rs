@@ -6,52 +6,48 @@
 use std::sync::Arc;
 
 use la_core::domain::event::EventPublisher;
-use la_core::domain::{LogFileRepository, SearchResultRepository};
+use la_core::domain::{LogFileRepository, LogSearcher, SearchResultRepository};
 use la_core::error::Result;
 use la_core::models::{LogEntry, SearchFilters, SearchQuery};
-use la_storage::ContentAddressableStorage;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use crate::commands::search::filters::CompiledSearchFilters;
-use crate::commands::search::filters::ParsedLineMetadata;
-use crate::services::{ExecutionPlan, QueryPlanBuilder};
 use crate::utils::encoding::decode_log_content;
 
 /// The application use case for executing a log search.
-pub struct SearchUseCase<L, R, E>
+pub struct SearchUseCase<L, R, E, S>
 where
     L: LogFileRepository + 'static,
     R: SearchResultRepository + 'static,
     E: EventPublisher + 'static,
+    S: LogSearcher + 'static,
 {
     log_files: Arc<L>,
     results: Arc<R>,
     events: Arc<E>,
-    cas: Arc<ContentAddressableStorage>,
-    regex_cache_size: usize,
+    searcher: Arc<S>,
     thread_pool: Arc<rayon::ThreadPool>,
 }
 
-impl<L, R, E> SearchUseCase<L, R, E>
+impl<L, R, E, S> SearchUseCase<L, R, E, S>
 where
     L: LogFileRepository,
     R: SearchResultRepository,
     E: EventPublisher,
+    S: LogSearcher,
 {
     pub fn new(
         log_files: Arc<L>,
         results: Arc<R>,
         events: Arc<E>,
-        cas: Arc<ContentAddressableStorage>,
-        regex_cache_size: usize,
+        searcher: Arc<S>,
         thread_pool: Arc<rayon::ThreadPool>,
     ) -> Self {
         Self {
             log_files,
             results,
             events,
-            cas,
-            regex_cache_size,
+            searcher,
             thread_pool,
         }
     }
@@ -99,12 +95,11 @@ where
         let log_files = Arc::clone(&self.log_files);
         let results = Arc::clone(&self.results);
         let events = Arc::clone(&self.events);
-        let cas = Arc::clone(&self.cas);
+        let searcher = Arc::clone(&self.searcher);
         let thread_pool = Arc::clone(&self.thread_pool);
-        let regex_cache_size = self.regex_cache_size;
         let sid = search_id.clone();
         let query_owned = query.clone();
-        let filters_owned = compiled_filters.clone();
+        let filters_owned = filters.clone();
         let files_owned = files.clone();
         let raw_terms_owned = raw_terms.clone();
 
@@ -113,14 +108,13 @@ where
                 log_files,
                 results,
                 events,
-                cas,
+                searcher,
                 &sid,
                 &query_owned,
                 &raw_terms_owned,
                 &filters_owned,
                 &files_owned,
                 max_results,
-                regex_cache_size,
                 thread_pool,
                 cancellation_token,
             );
@@ -134,23 +128,21 @@ where
         log_files: Arc<L>,
         results: Arc<R>,
         events: Arc<E>,
-        cas: Arc<ContentAddressableStorage>,
+        searcher: Arc<S>,
         search_id: &str,
         query: &SearchQuery,
         _raw_terms: &[String],
-        filters: &CompiledSearchFilters,
+        filters: &SearchFilters,
         files: &[la_core::storage_types::FileMetadata],
         max_results: usize,
-        regex_cache_size: usize,
         thread_pool: Arc<rayon::ThreadPool>,
         cancellation_token: tokio_util::sync::CancellationToken,
     ) {
         use std::sync::atomic::{AtomicBool, Ordering};
 
         let start = std::time::Instant::now();
-        let mut builder = QueryPlanBuilder::new(regex_cache_size);
 
-        let plan = match builder.build(query) {
+        let plan = match searcher.build_plan(query) {
             Ok(p) => p,
             Err(e) => {
                 let rt = tokio::runtime::Runtime::new().unwrap();
@@ -200,7 +192,7 @@ where
                         if cancellation_token.is_cancelled() {
                             return Vec::new();
                         }
-                        search_one_file(&cas, fm, &builder, &plan, filters, &log_files)
+                        search_one_file(&log_files, &searcher, fm, &plan, filters)
                     })
                     .collect()
             });
@@ -244,59 +236,23 @@ where
 }
 
 /// Search a single file using CAS content.
-fn search_one_file<L: LogFileRepository>(
-    cas: &ContentAddressableStorage,
+fn search_one_file<L: LogFileRepository, S: LogSearcher>(
+    log_files: &Arc<L>,
+    searcher: &Arc<S>,
     fm: &la_core::storage_types::FileMetadata,
-    builder: &QueryPlanBuilder,
-    plan: &ExecutionPlan,
-    filters: &CompiledSearchFilters,
-    _log_files: &Arc<L>,
+    plan: &la_core::domain::ExecutionPlan,
+    filters: &SearchFilters,
 ) -> Vec<LogEntry> {
-    // Filter compilation returns CommandError, map to AppError
     let hash = &fm.sha256_hash;
-    if !filters.matches_file(&fm.virtual_path, None) {
-        return Vec::new();
-    }
-
-    let content = match cas.read_content_sync(hash) {
+    let content = match log_files.read_content_sync(hash) {
         Ok(bytes) => bytes,
         Err(_) => return Vec::new(),
     };
 
     let (text, _) = decode_log_content(&content);
-
-    let mut results = Vec::new();
-    for (idx, line) in text.lines().enumerate() {
-        let metadata = ParsedLineMetadata::parse(line, filters.has_time_filter());
-        if !filters.matches_parsed_line_metadata(&metadata) {
-            continue;
-        }
-
-        if let Some(details) = builder.match_with_details(plan, line) {
-            let keywords: Vec<String> = details
-                .iter()
-                .map(|d| d.term_value.clone())
-                .collect::<std::collections::HashSet<_>>()
-                .into_iter()
-                .collect();
-
-            results.push(LogEntry {
-                id: 0, // Will be assigned by the outer loop
-                timestamp: metadata.timestamp.into(),
-                level: metadata.level.into(),
-                file: fm.virtual_path.clone().into(),
-                real_path: format!("cas://{}", hash).into(),
-                line: idx + 1,
-                content: line.to_string().into(),
-                tags: vec![],
-                match_details: Some(details),
-                matched_keywords: if keywords.is_empty() {
-                    None
-                } else {
-                    Some(keywords)
-                },
-            });
-        }
+    let mut entries = searcher.match_content(&text, &fm.virtual_path, plan, filters, 0);
+    for entry in &mut entries {
+        entry.real_path = format!("cas://{}", hash).into();
     }
-    results
+    entries
 }

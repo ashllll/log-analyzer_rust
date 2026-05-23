@@ -9,7 +9,7 @@
 use std::fs;
 
 use la_core::error::AppError;
-use tauri::{command, AppHandle, Manager};
+use tauri::{AppHandle, Manager};
 
 use la_core::models::config::{
     AppConfig, AppConfigLoader, ConfigValidator, FileFilterConfig, SearchConfig, TaskManagerConfig,
@@ -59,7 +59,6 @@ fn load_config_internal(app: &AppHandle) -> Result<AppConfig, String> {
 /// 保存配置
 ///
 /// 保存前会进行验证，确保配置有效性
-#[command]
 pub async fn save_config(app: AppHandle, config: AppConfig) -> Result<(), String> {
     // 先验证配置
     let validation = config.validate();
@@ -101,7 +100,6 @@ pub async fn save_config(app: AppHandle, config: AppConfig) -> Result<(), String
 /// 加载配置
 ///
 /// 返回当前配置，配置会自动验证
-#[command]
 pub async fn load_config(app: AppHandle) -> Result<AppConfig, String> {
     tokio::task::spawn_blocking(move || load_config_internal(&app))
         .await
@@ -109,14 +107,12 @@ pub async fn load_config(app: AppHandle) -> Result<AppConfig, String> {
 }
 
 /// 获取文件过滤配置
-#[command]
 pub async fn get_file_filter_config(app: AppHandle) -> Result<FileFilterConfig, String> {
     let config = load_config(app).await?;
     Ok(config.file_filter)
 }
 
 /// 保存文件过滤配置
-#[command]
 pub async fn save_file_filter_config(
     app: AppHandle,
     filter_config: FileFilterConfig,
@@ -142,14 +138,12 @@ pub async fn save_file_filter_config(
 // ============ 搜索配置命令 ============
 
 /// 获取搜索配置
-#[command]
 pub async fn get_search_config(app: AppHandle) -> Result<SearchConfig, String> {
     let config = load_config(app).await?;
     Ok(config.search)
 }
 
 /// 保存搜索配置
-#[command]
 pub async fn save_search_config(app: AppHandle, search_config: SearchConfig) -> Result<(), String> {
     // 验证配置
     let validation = search_config.validate();
@@ -172,14 +166,12 @@ pub async fn save_search_config(app: AppHandle, search_config: SearchConfig) -> 
 // ============ 任务管理器配置命令 ============
 
 /// 获取任务管理器配置
-#[command]
 pub async fn get_task_manager_config(app: AppHandle) -> Result<TaskManagerConfig, String> {
     let config = load_config(app).await?;
     Ok(config.task_manager)
 }
 
 /// 保存任务管理器配置
-#[command]
 pub async fn save_task_manager_config(
     app: AppHandle,
     task_manager_config: TaskManagerConfig,

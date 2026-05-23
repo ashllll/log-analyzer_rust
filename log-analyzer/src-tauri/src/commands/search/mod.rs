@@ -332,8 +332,7 @@ async fn run_search_with_timeout(req: SearchExecutionRequest) -> Result<String, 
 // Tauri 命令
 // ============================================================================
 
-#[command]
-pub async fn search_logs(
+pub async fn search_logs_impl(
     app: AppHandle,
     query: String,
     #[allow(non_snake_case)] structuredQuery: Option<SearchQuery>,

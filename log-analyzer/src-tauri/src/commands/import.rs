@@ -334,8 +334,7 @@ fn compute_file_stats(content: &[u8]) -> (Option<i64>, Option<i64>, Option<u8>) 
     )
 }
 
-#[command]
-pub async fn import_folder(
+pub async fn import_folder_impl(
     app: AppHandle,
     path: String,
     workspace_id: String,

@@ -5,14 +5,13 @@
 //! 为保持与 JavaScript camelCase 惯例一致，Tauri 命令参数使用 camelCase 命名。
 
 use la_core::error::CommandError;
-use tauri::{command, AppHandle, State};
+use tauri::{AppHandle, State};
 
 use crate::models::AppState;
 use crate::state_sync::StateSync;
 
 /// Initialize state synchronization (called once on app startup)
-#[command]
-pub async fn init_state_sync(
+pub async fn init_state_sync_impl(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), CommandError> {

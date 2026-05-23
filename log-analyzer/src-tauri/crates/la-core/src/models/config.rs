@@ -2618,4 +2618,3 @@ pub use super::config::ConfigLoader as AppConfigLoader;
 #[cfg(test)]
 #[path = "config/tests.rs"]
 mod tests;
-

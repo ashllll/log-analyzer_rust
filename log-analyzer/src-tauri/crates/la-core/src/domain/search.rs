@@ -19,6 +19,8 @@ pub struct MatchDetail {
 /// A compiled and optimized execution plan for a search query.
 #[derive(Debug, Clone)]
 pub struct ExecutionPlan {
+    /// Opaque plan identifier owned by the infrastructure searcher.
+    pub id: u64,
     /// Number of engines in this plan.
     pub engine_count: usize,
     /// Estimated steps (for debugging / logging).

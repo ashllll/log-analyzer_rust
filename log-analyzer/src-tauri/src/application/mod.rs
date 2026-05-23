@@ -12,16 +12,19 @@
 //!   let ctx = ApplicationContext::from_app_state(&state);
 //!   ctx.search().execute(workspace_id, query, raw_terms, filters, max_results, search_id, token).await
 //!   ```
-//! - `ImportUseCase`, `ExportUseCase`, `WorkspaceUseCase` — to be implemented following
-//!   the same pattern.
+//! - `ImportUseCase` — to be implemented following the same pattern.
 
+pub mod config;
 pub mod export;
 pub mod import;
 pub mod search;
+pub mod workspace;
 
+pub use config::ConfigUseCase;
 pub use export::ExportUseCase;
 pub use import::ImportUseCase;
 pub use search::SearchUseCase;
+pub use workspace::WorkspaceUseCase;
 
 #[cfg(test)]
 mod tests {
@@ -119,10 +122,7 @@ mod tests {
                 entries: std::sync::Mutex::new(vec![]),
             }),
             Arc::new(StubEvents),
-            Arc::new(la_storage::ContentAddressableStorage::new(
-                std::env::temp_dir().join("test_cas"),
-            )),
-            100,
+            Arc::new(crate::infrastructure::QueryEngineLogSearcher::new(100)),
             Arc::new(
                 rayon::ThreadPoolBuilder::new()
                     .num_threads(1)

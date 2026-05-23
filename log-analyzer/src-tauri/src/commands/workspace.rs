@@ -34,7 +34,7 @@ use la_core::models::config::AppConfigLoader;
 use tauri::{command, AppHandle, Manager, State};
 use tracing::{error, info, warn};
 
-use crate::commands::import::{ensure_workspace_runtime_state, import_folder};
+use crate::commands::import::{ensure_workspace_runtime_state, import_folder_impl};
 use crate::models::AppState;
 use crate::utils::validation::validate_workspace_id;
 use crate::utils::workspace_paths::resolve_workspace_dir;
@@ -160,7 +160,7 @@ pub async fn refresh_workspace(
     // Check if workspace exists and is CAS format
     if !workspace_dir.exists() {
         info!("Workspace not found, performing fresh import");
-        return import_folder(app, path, workspace_id, state)
+        return import_folder_impl(app, path, workspace_id, state)
             .await
             .map_err(|e| CommandError::new("IMPORT_ERROR", e));
     }
@@ -170,7 +170,7 @@ pub async fn refresh_workspace(
 
     if !metadata_db.exists() || !objects_dir.exists() {
         info!("Workspace is not CAS format, performing fresh import");
-        return import_folder(app, path, workspace_id, state)
+        return import_folder_impl(app, path, workspace_id, state)
             .await
             .map_err(|e| CommandError::new("IMPORT_ERROR", e));
     }
@@ -179,7 +179,7 @@ pub async fn refresh_workspace(
     // CAS handles deduplication automatically, so re-importing is safe and simple
     info!("CAS workspace detected, re-importing for refresh");
 
-    import_folder(app, path, workspace_id, state)
+    import_folder_impl(app, path, workspace_id, state)
         .await
         .map_err(|e| CommandError::new("IMPORT_ERROR", e))
 }
@@ -914,7 +914,7 @@ pub async fn create_workspace(
     validate_workspace_id(&workspace_id).map_err(|e| CommandError::new("VALIDATION_ERROR", e))?;
 
     // 调用 import_folder 逻辑
-    import_folder(
+    import_folder_impl(
         app,
         canonical_path.to_string_lossy().into_owned(),
         workspace_id,

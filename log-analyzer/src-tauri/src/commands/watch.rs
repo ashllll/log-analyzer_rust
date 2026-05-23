@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::thread;
 
 use notify::{recommended_watcher, Event, EventKind, RecursiveMode, Watcher};
-use tauri::{command, AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tracing::error;
 
 use crate::models::AppState;
@@ -19,8 +19,7 @@ use crate::services::{append_to_workspace_index, parse_log_lines, read_file_from
 use crate::utils::{validate_path_param, validate_workspace_id};
 use la_core::models::log_entry::FileChangeEvent;
 
-#[command]
-pub async fn start_watch(
+pub async fn start_watch_impl(
     app: AppHandle,
     #[allow(non_snake_case)] workspaceId: String,
     path: String,
@@ -256,8 +255,7 @@ pub async fn start_watch(
     Ok(())
 }
 
-#[command]
-pub async fn stop_watch(
+pub async fn stop_watch_impl(
     #[allow(non_snake_case)] workspaceId: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
