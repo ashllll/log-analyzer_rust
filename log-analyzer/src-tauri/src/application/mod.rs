@@ -114,6 +114,15 @@ mod tests {
         async fn emit_search_error(&self, _id: &str, _e: &str) {}
         async fn emit_search_cancelled(&self, _id: &str) {}
         async fn emit_search_timeout(&self, _id: &str) {}
+        async fn emit_file_changed(
+            &self,
+            _workspace_id: &str,
+            _event_type: &str,
+            _file_path: &str,
+            _timestamp: i64,
+        ) {
+        }
+        async fn emit_new_logs(&self, _workspace_id: &str, _entries_json: &str) {}
     }
 
     #[tokio::test]

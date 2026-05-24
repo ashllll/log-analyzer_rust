@@ -1,0 +1,41 @@
+# cargo-tarpaulin 覆盖率配置
+# 使用: cargo tarpaulin --config src-tauri/tarpaulin.toml
+# 或: cargo tarpaulin --manifest-path src-tauri/Cargo.toml --out Html --out Xml
+
+[default]
+# 排除集成测试（二进制 crate）
+exclude-files = [
+    "src/main.rs",
+    "tests/*",
+    "crates/*/tests/*",
+]
+
+# 覆盖率阈值
+fail-under = 40
+
+# 输出格式
+out = ["Html", "Xml", "Lcov"]
+
+# 超时时间（秒）
+timeout = "600"
+
+# 运行单元测试
+run-types = ["Tests"]
+
+# 排除无关代码
+ignore-tests = false
+
+# 包含文档测试
+doc = false
+
+# 详细输出
+verbose = false
+
+# 功能标志
+features = ""
+
+# 跳过特定 crate
+skip-clean = false
+
+# 目标目录
+target-dir = "target/tarpaulin"

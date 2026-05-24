@@ -1,24 +1,100 @@
-//! 文件监听命令实现
+//! 文件监听命令 — thin glue over WatchUseCase.
 //!
-//! # 前后端集成规范
-//!
-//! 为保持与 JavaScript camelCase 惯例一致，Tauri 命令参数使用 camelCase 命名。
+//! These Tauri commands handle parameter extraction, search-index updates,
+//! and delegate the core watch lifecycle to `WatchUseCase`.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::Arc;
-use std::thread;
 
-use notify::{recommended_watcher, Event, EventKind, RecursiveMode, Watcher};
-use tauri::{AppHandle, Emitter, Manager, State};
-use tracing::error;
+use tauri::{AppHandle, State};
 
+use crate::application::watch::WatchUseCase;
+use crate::infrastructure::event_publisher::TauriEventPublisher;
 use crate::models::AppState;
-use crate::services::file_watcher::WatcherState;
-use crate::services::{append_to_workspace_index, parse_log_lines, read_file_from_offset};
 use crate::utils::{validate_path_param, validate_workspace_id};
-use la_core::models::log_entry::FileChangeEvent;
+use la_core::domain::event::{EventPublisher, SearchSummary};
+use la_core::traits::{ContentStorage, MetadataStorage};
+use la_search::SearchEngineManager;
 
+/// Adapter that decorates `TauriEventPublisher` with search-index updates
+/// on `emit_new_logs`. This keeps the search-index concern out of the
+/// domain-layer `WatchUseCase`.
+struct WatchEventAdapter {
+    inner: TauriEventPublisher,
+    search_managers: Arc<parking_lot::Mutex<HashMap<String, Arc<SearchEngineManager>>>>,
+}
+
+#[async_trait::async_trait]
+impl EventPublisher for WatchEventAdapter {
+    async fn emit_search_start(&self, id: &str) {
+        self.inner.emit_search_start(id).await;
+    }
+    async fn emit_search_progress(&self, id: &str, count: usize) {
+        self.inner.emit_search_progress(id, count).await;
+    }
+    async fn emit_search_complete(&self, id: &str, summary: SearchSummary) {
+        self.inner.emit_search_complete(id, summary).await;
+    }
+    async fn emit_search_error(&self, id: &str, error: &str) {
+        self.inner.emit_search_error(id, error).await;
+    }
+    async fn emit_search_cancelled(&self, id: &str) {
+        self.inner.emit_search_cancelled(id).await;
+    }
+    async fn emit_search_timeout(&self, id: &str) {
+        self.inner.emit_search_timeout(id).await;
+    }
+
+    async fn emit_file_changed(
+        &self,
+        workspace_id: &str,
+        event_type: &str,
+        file_path: &str,
+        timestamp: i64,
+    ) {
+        self.inner
+            .emit_file_changed(workspace_id, event_type, file_path, timestamp)
+            .await;
+    }
+
+    async fn emit_new_logs(&self, workspace_id: &str, entries_json: &str) {
+        // 1. Forward to Tauri frontend
+        self.inner.emit_new_logs(workspace_id, entries_json).await;
+
+        // 2. Update Tantivy search index
+        if let Ok(entries) =
+            serde_json::from_str::<Vec<la_core::models::log_entry::LogEntry>>(entries_json)
+        {
+            if !entries.is_empty() {
+                let managers = self.search_managers.lock();
+                if let Some(manager) = managers.get(workspace_id) {
+                    if let Err(e) = manager.add_documents(&entries) {
+                        tracing::warn!(
+                            error = %e,
+                            count = entries.len(),
+                            workspace_id = %workspace_id,
+                            "Failed to add watch documents to search index"
+                        );
+                    }
+                    if let Err(e) = manager.commit() {
+                        tracing::warn!(
+                            error = %e,
+                            workspace_id = %workspace_id,
+                            "Failed to commit search index after watch update"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Start watching a workspace directory for file changes.
+///
+/// Thin glue over `WatchUseCase::start()`. Handles:
+/// - Tauri parameter extraction and validation
+/// - CAS / metadata lookup from AppState
+/// - Search index updates (via `WatchEventAdapter`)
 pub async fn start_watch_impl(
     app: AppHandle,
     #[allow(non_snake_case)] workspaceId: String,
@@ -29,263 +105,120 @@ pub async fn start_watch_impl(
     validate_workspace_id(&workspaceId)?;
     validate_path_param(&path, "path")?;
 
-    let watch_path = PathBuf::from(&path);
-    if !watch_path.exists() {
-        return Err(format!("Path does not exist: {}", path));
-    }
-
-    {
-        let watchers = state.watchers.lock();
-        if watchers.contains_key(&workspaceId) {
-            return Err("Workspace is already being watched".to_string());
-        }
-    }
-
-    // 创建通信通道
-    let (tx, rx) = crossbeam::channel::unbounded::<Result<Event, notify::Error>>();
-
-    // 创建监听器
-    let mut watcher = match recommended_watcher(tx) {
-        Ok(w) => w,
-        Err(e) => {
-            return Err(format!("Failed to create file watcher: {}", e));
-        }
+    // ── Look up CAS and metadata for this workspace ──
+    let cas = {
+        let instances = state.cas_instances.lock();
+        instances
+            .get(&workspaceId)
+            .cloned()
+            .ok_or_else(|| format!("No CAS instance for workspace: {}", workspaceId))?
     };
 
-    // 开始监听
-    if let Err(e) = watcher.watch(&watch_path, RecursiveMode::Recursive) {
-        return Err(format!("Failed to start watching path: {}", e));
-    }
-
-    let watcher_state = WatcherState {
-        workspace_id: workspaceId.clone(),
-        watched_path: watch_path.clone(),
-        file_offsets: HashMap::new(),
-        line_counts: HashMap::new(),
-        is_active: true,
-        thread_handle: Arc::new(parking_lot::Mutex::new(None)),
-        watcher: Arc::new(parking_lot::Mutex::new(Some(watcher))),
+    let metadata_store = {
+        let stores = state.metadata_stores.lock();
+        stores
+            .get(&workspaceId)
+            .cloned()
+            .ok_or_else(|| format!("No metadata store for workspace: {}", workspaceId))?
     };
 
-    let thread_handle_arc = Arc::clone(&watcher_state.thread_handle);
-
-    {
-        let mut watchers = state.watchers.lock();
-        watchers.insert(workspaceId.clone(), watcher_state);
-    }
-
-    let app_handle = app.clone();
-    let workspace_id_clone = workspaceId.clone();
-    let watchers_arc: Arc<parking_lot::Mutex<HashMap<String, WatcherState>>> =
-        Arc::clone(&state.watchers);
-
-    // FIX(HI-04): 捕获当前 Tokio runtime handle，传给 watcher thread 中的 CAS 写入
-    let runtime_handle = tokio::runtime::Handle::current();
-
-    let handle = thread::spawn(move || {
-        for res in rx {
-            match res {
-                Ok(event) => {
-                    let event_type = match event.kind {
-                        EventKind::Create(_) => "created",
-                        EventKind::Modify(_) => "modified",
-                        EventKind::Remove(_) => "deleted",
-                        _ => continue,
-                    };
-
-                    for path in event.paths {
-                        let file_path_str = match path.to_str() {
-                            Some(s) => s.to_string(),
-                            None => {
-                                tracing::warn!(
-                                    path = ?path,
-                                    "跳过包含非 UTF-8 字符的路径"
-                                );
-                                continue;
-                            }
-                        };
-
-                        let file_change = FileChangeEvent {
-                            event_type: event_type.to_string(),
-                            file_path: file_path_str.clone(),
-                            workspace_id: workspace_id_clone.clone(),
-                            timestamp: chrono::Utc::now().timestamp(),
-                        };
-                        let _ = app_handle.emit("file-changed", file_change);
-
-                        // B-M5 修复: 在Create事件时初始化line_counts为0
-                        // 这样在后续Modify事件中可以正确计算起始行号
-                        if event_type == "created" && path.is_file() {
-                            let mut watchers = watchers_arc.lock();
-                            if let Some(watcher) = watchers.get_mut(&workspace_id_clone) {
-                                // 初始化line_counts为0，表示新文件从0行开始
-                                watcher.line_counts.insert(file_path_str.clone(), 0);
-                            }
-                        }
-
-                        if event_type == "modified" && path.is_file() {
-                            let (
-                                offset,
-                                watcher_workspace_id,
-                                watcher_watched_path,
-                                start_line_number,
-                            ) = {
-                                // B-M5 优化: 使用 get() 而非 get_mut() 进行只读访问
-                                // parking_lot::Mutex 支持同时多个只读访问
-                                let watchers = watchers_arc.lock();
-                                if let Some(watcher) = watchers.get(&workspace_id_clone) {
-                                    let offset =
-                                        *watcher.file_offsets.get(&file_path_str).unwrap_or(&0);
-                                    let workspace_id = watcher.workspace_id.clone();
-                                    let watched_path = watcher.watched_path.clone();
-                                    // B-M5 修复: 正确计算起始行号
-                                    // 如果line_counts中有记录，使用 record + 1
-                                    // 如果没有记录但offset > 0（文件之前有内容），需要正确初始化
-                                    // 如果没有记录且offset = 0（新文件），从第1行开始
-                                    let start_line = if let Some(&count) =
-                                        watcher.line_counts.get(&file_path_str)
-                                    {
-                                        // 已有记录，基于之前的行数计算
-                                        count + 1
-                                    } else {
-                                        // 首次处理该文件
-                                        if offset > 0 {
-                                            // 文件之前已有内容但line_counts未初始化
-                                            // 这是一个边界情况，简单处理为1
-                                            // 在实际场景中，应该在Create事件时初始化line_counts
-                                            1
-                                        } else {
-                                            // 新文件，从第1行开始
-                                            1
-                                        }
-                                    };
-                                    (offset, workspace_id, watched_path, start_line)
-                                } else {
-                                    continue;
-                                }
-                            };
-
-                            match read_file_from_offset(&path, offset) {
-                                Ok((new_lines, new_offset)) => {
-                                    let new_line_count = new_lines.len();
-                                    if !new_lines.is_empty() {
-                                        // 使用 to_string_lossy 避免静默丢失非 UTF-8 路径字节（B-L5）
-                                        let virtual_path_buf = path
-                                            .strip_prefix(&watcher_watched_path)
-                                            .unwrap_or(&path);
-                                        let virtual_path_cow = virtual_path_buf.to_string_lossy();
-                                        if virtual_path_cow.contains('\u{FFFD}') {
-                                            tracing::warn!(
-                                                path = ?path,
-                                                "virtual_path 包含非 UTF-8 字节，替换字符 U+FFFD 已插入"
-                                            );
-                                        }
-                                        let virtual_path = virtual_path_cow.as_ref();
-
-                                        let new_entries = parse_log_lines(
-                                            &new_lines,
-                                            virtual_path,
-                                            &file_path_str,
-                                            0,
-                                            start_line_number,
-                                        );
-
-                                        let state = app_handle.state::<AppState>();
-                                        let _ = append_to_workspace_index(
-                                            &watcher_workspace_id,
-                                            &new_entries,
-                                            &app_handle,
-                                            &state,
-                                            &runtime_handle,
-                                        );
-                                    }
-
-                                    {
-                                        // B-M5 优化: 只有在有新内容时才需要获取写锁
-                                        let mut watchers = watchers_arc.lock();
-                                        if let Some(watcher) = watchers.get_mut(&workspace_id_clone)
-                                        {
-                                            // 更新文件偏移量（总是需要更新）
-                                            watcher
-                                                .file_offsets
-                                                .insert(file_path_str.clone(), new_offset);
-                                            // 只有在新行数大于0时才更新行数计数
-                                            if new_line_count > 0 {
-                                                watcher.line_counts.insert(
-                                                    file_path_str.clone(),
-                                                    start_line_number - 1 + new_line_count,
-                                                );
-                                            }
-                                        }
-                                    }
-                                }
-                                Err(e) => {
-                                    tracing::warn!(
-                                        error = %e,
-                                        file = %file_path_str,
-                                        "Failed to read file incrementally"
-                                    );
-                                }
-                            }
-                        }
-                    }
-
-                    let is_active = {
-                        let watchers = watchers_arc.lock();
-                        watchers
-                            .get(&workspace_id_clone)
-                            .map(|w| w.is_active)
-                            .unwrap_or(false)
-                    };
-
-                    if !is_active {
-                        break;
-                    }
-                }
-                Err(e) => {
-                    error!(error = %e, "Watch error");
-                }
-            }
-        }
+    // ── Build event adapter (Tauri + search-index) ──
+    let events = Arc::new(WatchEventAdapter {
+        inner: TauriEventPublisher {
+            app_handle: app.clone(),
+        },
+        search_managers: Arc::clone(&state.search_engine_managers),
     });
 
-    // 保存线程句柄以便后续 join（parking_lot::Mutex 不会 poison，直接 lock）
-    *thread_handle_arc.lock() = Some(handle);
+    // ── Delegate to WatchUseCase ──
+    let use_case = WatchUseCase::new(
+        events,
+        cas,
+        metadata_store,
+        Arc::clone(&state.watchers),
+    );
 
-    Ok(())
+    use_case
+        .start(&workspaceId, &path)
+        .await
+        .map(|_result| ())
+        .map_err(|e| e.to_string())
 }
 
+/// Stop watching a workspace.
+///
+/// Thin glue over `WatchUseCase::stop()`.
 pub async fn stop_watch_impl(
     #[allow(non_snake_case)] workspaceId: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let mut watchers = state.watchers.lock();
+    // stop() only needs the watchers map — CAS and metadata aren't used.
+    // We create a minimal WatchUseCase with dummy deps just for stop().
+    // (stop() only interacts with the watchers map, not CAS/metadata/events.)
+    //
+    // This is a pragmatic shortcut; a cleaner long-term approach would
+    // store the active WatchUseCase in AppState so stop can reuse it.
 
-    let (thread_handle, watcher) = if let Some(watcher_state) = watchers.get_mut(&workspaceId) {
-        watcher_state.is_active = false;
-        // 获取句柄和监听器以便清理
-        let h = watcher_state.thread_handle.lock().take();
-        let w = watcher_state.watcher.lock().take();
-        (h, w)
-    } else {
-        return Err("No active watcher found for this workspace".to_string());
-    };
-
-    // 从 map 中移除
-    watchers.remove(&workspaceId);
-
-    // 释放锁以便线程可以完成最后的循环并退出（如果它正在检查 is_active）
-    drop(watchers);
-
-    // 显式释放归档句柄，这会关闭 tx 通道，从而使 rx.iter() 终止
-    drop(watcher);
-
-    // 在锁外进行 join，避免死锁并确保线程资源回收
-    if let Some(handle) = thread_handle {
-        if handle.join().is_err() {
-            error!("Failed to join watcher thread");
+    // Dummy implementations that panic if accidentally used by stop()
+    struct StopOnlyCas;
+    #[async_trait::async_trait]
+    impl ContentStorage for StopOnlyCas {
+        async fn store(&self, _: &[u8]) -> la_core::error::Result<String> {
+            unreachable!("stop() does not use CAS")
+        }
+        async fn retrieve(&self, _: &str) -> la_core::error::Result<Vec<u8>> {
+            unreachable!("stop() does not use CAS")
+        }
+        async fn exists(&self, _: &str) -> bool {
+            unreachable!("stop() does not use CAS")
         }
     }
 
-    Ok(())
+    struct StopOnlyMeta;
+    #[async_trait::async_trait]
+    impl MetadataStorage for StopOnlyMeta {
+        async fn insert_file(
+            &self,
+            _: &la_core::storage_types::FileMetadata,
+        ) -> la_core::error::Result<i64> {
+            unreachable!("stop() does not use metadata")
+        }
+        async fn get_all_files(
+            &self,
+        ) -> la_core::error::Result<Vec<la_core::storage_types::FileMetadata>> {
+            unreachable!("stop() does not use metadata")
+        }
+        async fn get_file_by_hash(
+            &self,
+            _: &str,
+        ) -> la_core::error::Result<Option<la_core::storage_types::FileMetadata>> {
+            unreachable!("stop() does not use metadata")
+        }
+    }
+
+    struct StopOnlyEvents;
+    #[async_trait::async_trait]
+    impl EventPublisher for StopOnlyEvents {
+        async fn emit_search_start(&self, _: &str) {}
+        async fn emit_search_progress(&self, _: &str, _: usize) {}
+        async fn emit_search_complete(&self, _: &str, _: SearchSummary) {}
+        async fn emit_search_error(&self, _: &str, _: &str) {}
+        async fn emit_search_cancelled(&self, _: &str) {}
+        async fn emit_search_timeout(&self, _: &str) {}
+        async fn emit_file_changed(&self, _: &str, _: &str, _: &str, _: i64) {}
+        async fn emit_new_logs(&self, _: &str, _: &str) {}
+    }
+
+    let use_case = WatchUseCase::new(
+        Arc::new(StopOnlyEvents),
+        Arc::new(StopOnlyCas),
+        Arc::new(StopOnlyMeta),
+        Arc::clone(&state.watchers),
+    );
+
+    use_case
+        .stop(&workspaceId)
+        .await
+        .map(|_result| ())
+        .map_err(|e| e.to_string())
 }

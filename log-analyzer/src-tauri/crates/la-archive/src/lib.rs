@@ -79,6 +79,7 @@ impl ArchiveManager {
     }
 
     pub fn with_config(config: ArchiveConfig) -> Self {
+        // Build handler list with full set enabled by default
         let handlers: Vec<Box<dyn ArchiveHandler>> = vec![
             Box::new(TarHandler),
             Box::new(GzHandler),
@@ -86,6 +87,40 @@ impl ArchiveManager {
             Box::new(RarHandler),
             Box::new(SevenZHandler),
         ];
+
+        Self {
+            handlers,
+            max_file_size: config.max_file_size,
+            max_total_size: config.max_total_size,
+            max_file_count: config.max_file_count,
+        }
+    }
+
+    /// Build with handler toggles from `HandlersConfig`.
+    ///
+    /// Only handlers whose corresponding toggle is `true` are registered.
+    /// This allows runtime control over which archive formats are supported.
+    pub fn with_handlers_config(
+        config: ArchiveConfig,
+        handlers_cfg: &la_core::models::extraction_policy::HandlersConfig,
+    ) -> Self {
+        let mut handlers: Vec<Box<dyn ArchiveHandler>> = Vec::with_capacity(5);
+
+        if handlers_cfg.tar {
+            handlers.push(Box::new(TarHandler));
+        }
+        if handlers_cfg.gz {
+            handlers.push(Box::new(GzHandler));
+        }
+        if handlers_cfg.zip {
+            handlers.push(Box::new(ZipHandler));
+        }
+        if handlers_cfg.rar {
+            handlers.push(Box::new(RarHandler));
+        }
+        if handlers_cfg.sevenz {
+            handlers.push(Box::new(SevenZHandler));
+        }
 
         Self {
             handlers,

@@ -2,6 +2,45 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::Duration;
 
+/// Archive format handler toggles.
+///
+/// Each field controls whether a specific archive format handler is
+/// registered at runtime. All formats default to enabled.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HandlersConfig {
+    /// Enable ZIP handler
+    #[serde(default = "default_true")]
+    pub zip: bool,
+    /// Enable TAR handler
+    #[serde(default = "default_true")]
+    pub tar: bool,
+    /// Enable GZ handler
+    #[serde(default = "default_true")]
+    pub gz: bool,
+    /// Enable 7Z handler
+    #[serde(default = "default_true")]
+    pub sevenz: bool,
+    /// Enable RAR handler (requires compile-time `rar-support` feature)
+    #[serde(default = "default_true")]
+    pub rar: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for HandlersConfig {
+    fn default() -> Self {
+        Self {
+            zip: true,
+            tar: true,
+            gz: true,
+            sevenz: true,
+            rar: true,
+        }
+    }
+}
+
 /// Complete extraction policy configuration loaded from TOML
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExtractionPolicy {
@@ -10,6 +49,9 @@ pub struct ExtractionPolicy {
     pub paths: PathsConfig,
     pub performance: PerformanceConfig,
     pub audit: AuditConfig,
+    /// Archive format handler toggles
+    #[serde(default)]
+    pub handlers: HandlersConfig,
 }
 
 /// Extraction operation parameters
@@ -137,6 +179,7 @@ impl Default for ExtractionPolicy {
                 log_level: "info".to_string(),
                 log_security_events: true,
             },
+            handlers: HandlersConfig::default(),
         }
     }
 }
@@ -341,10 +384,22 @@ mod tests {
             log_format = "json"
             log_level = "info"
             log_security_events = true
+
+            [handlers]
+            zip = true
+            tar = true
+            gz = true
+            sevenz = true
+            rar = false
         "#;
 
         let policy = ExtractionPolicy::from_toml_str(toml_str).unwrap();
         assert_eq!(policy.extraction.max_depth, 15);
+        assert!(policy.handlers.zip);
+        assert!(policy.handlers.tar);
+        assert!(policy.handlers.gz);
+        assert!(policy.handlers.sevenz);
+        assert!(!policy.handlers.rar);
         assert!(policy.validate().is_ok());
     }
 }

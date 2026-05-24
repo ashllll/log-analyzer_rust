@@ -12,7 +12,7 @@ pub mod validated;
 
 // 重新导出核心类型
 pub use config::{AppConfig, ConfigLoader, FileFilterConfig, FilterMode};
-pub use extraction_policy::ExtractionPolicy;
+pub use extraction_policy::{ExtractionPolicy, HandlersConfig};
 pub use filters::{PerformanceMetrics, SearchFilters};
 pub use import_decision::{FileTypeInfo, ImportDecision, ImportDecisionDetails, RejectionReason};
 pub use log_entry::{FileChangeEvent, LogEntry, TaskProgress};

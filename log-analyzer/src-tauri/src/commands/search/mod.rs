@@ -124,7 +124,7 @@ pub(crate) fn remove_cancellation_token(
     tokens.lock().remove(search_id);
 }
 
-fn validate_search_params(query: &str) -> Result<(), CommandError> {
+pub(crate) fn validate_search_params(query: &str) -> Result<(), CommandError> {
     if query.is_empty() {
         return Err(
             CommandError::new("VALIDATION_ERROR", "Search query cannot be empty")
@@ -141,7 +141,7 @@ fn validate_search_params(query: &str) -> Result<(), CommandError> {
     Ok(())
 }
 
-fn resolve_workspace_id(
+pub(crate) fn resolve_workspace_id(
     id_arg: Option<String>,
     dirs: &Arc<Mutex<std::collections::BTreeMap<String, std::path::PathBuf>>>,
 ) -> Result<String, CommandError> {

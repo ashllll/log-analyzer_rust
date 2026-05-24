@@ -16,6 +16,8 @@ pub struct SearchSummary {
 /// Publisher for application events consumed by the frontend.
 #[async_trait]
 pub trait EventPublisher: Send + Sync {
+    // ── Search events ──
+
     /// Emitted when a new search starts.
     async fn emit_search_start(&self, search_id: &str);
 
@@ -33,4 +35,18 @@ pub trait EventPublisher: Send + Sync {
 
     /// Emitted when a search times out.
     async fn emit_search_timeout(&self, search_id: &str);
+
+    // ── File watch events ──
+
+    /// Emitted when a file system change is detected during watch.
+    async fn emit_file_changed(
+        &self,
+        workspace_id: &str,
+        event_type: &str,
+        file_path: &str,
+        timestamp: i64,
+    );
+
+    /// Emitted when new log entries are parsed from watched files.
+    async fn emit_new_logs(&self, workspace_id: &str, entries_json: &str);
 }
