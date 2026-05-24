@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useToast } from './useToast';
+import { logger } from '../utils/logger';
 
 /**
  * 后端状态同步 Hook
@@ -17,7 +18,8 @@ export function useBackendSync() {
         await invoke('init_state_sync');
         if (!isMounted) return;
 
-      } catch {
+      } catch (err) {
+        logger.error({ err }, 'Failed to initialize state sync');
         if (!isMounted) return;
         showToast('error', 'Failed to initialize state sync');
       }

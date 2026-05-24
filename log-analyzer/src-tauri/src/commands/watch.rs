@@ -131,12 +131,7 @@ pub async fn start_watch_impl(
     });
 
     // ── Delegate to WatchUseCase ──
-    let use_case = WatchUseCase::new(
-        events,
-        cas,
-        metadata_store,
-        Arc::clone(&state.watchers),
-    );
+    let use_case = WatchUseCase::new(events, cas, metadata_store, Arc::clone(&state.watchers));
 
     use_case
         .start(&workspaceId, &path)

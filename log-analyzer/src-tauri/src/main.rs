@@ -138,6 +138,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             get_task_manager_config,
             save_task_manager_config,
             // ===== 工作区管理 =====
+            create_workspace,
             load_workspace,
             refresh_workspace,
             delete_workspace,

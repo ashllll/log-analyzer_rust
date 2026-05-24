@@ -97,10 +97,6 @@ impl Default for AppState {
 }
 
 impl AppState {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     /// M4 Fix: Replace the default temp_dir DiskResultStore with one rooted at
     /// a persistent application data directory. Call this from setup() once the
     /// app_data_dir is available.

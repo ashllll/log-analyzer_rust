@@ -89,21 +89,36 @@ export enum ErrorCategory {
 // ============================================================================
 
 const ERROR_CODE_CATEGORIES: Record<string, ErrorCategory> = {
+  // 用户输入/操作错误
   [ErrorCode.VALIDATION_ERROR]: ErrorCategory.USER,
   [ErrorCode.PATTERN_ERROR]: ErrorCategory.USER,
   [ErrorCode.INVALID_PATH]: ErrorCategory.USER,
   [ErrorCode.SECURITY_ERROR]: ErrorCategory.USER,
+  [ErrorCode.NOT_FOUND]: ErrorCategory.USER,
+  [ErrorCode.QUERY_EXECUTION_ERROR]: ErrorCategory.USER,
+  [ErrorCode.PARSE_ERROR]: ErrorCategory.USER,
 
+  // 文件系统错误
   [ErrorCode.IO_ERROR]: ErrorCategory.FILESYSTEM,
   [ErrorCode.ENCODING_ERROR]: ErrorCategory.FILESYSTEM,
   [ErrorCode.FILE_WATCHER_ERROR]: ErrorCategory.FILESYSTEM,
 
+  // 网络错误
   [ErrorCode.NETWORK_ERROR]: ErrorCategory.NETWORK,
 
+  // 系统/内部错误
+  [ErrorCode.SEARCH_ERROR]: ErrorCategory.SYSTEM,
+  [ErrorCode.ARCHIVE_ERROR]: ErrorCategory.SYSTEM,
+  [ErrorCode.INDEX_ERROR]: ErrorCategory.SYSTEM,
   [ErrorCode.DATABASE_ERROR]: ErrorCategory.SYSTEM,
+  [ErrorCode.CONFIG_ERROR]: ErrorCategory.SYSTEM,
   [ErrorCode.CONCURRENCY_ERROR]: ErrorCategory.SYSTEM,
   [ErrorCode.RESOURCE_CLEANUP_ERROR]: ErrorCategory.SYSTEM,
   [ErrorCode.INTERNAL_ERROR]: ErrorCategory.SYSTEM,
+  [ErrorCode.TIMEOUT_ERROR]: ErrorCategory.SYSTEM,
+
+  // 兜底
+  [ErrorCode.UNKNOWN]: ErrorCategory.UNKNOWN,
 };
 
 // ============================================================================

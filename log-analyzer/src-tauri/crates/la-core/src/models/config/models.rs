@@ -1757,6 +1757,8 @@ pub struct FrontendConfig {
     pub retry_exponential_backoff_limit_ms: u64,
 
     // WebSocket配置
+    // NOTE: 当前为纯 Tauri 桌面应用，使用 Tauri Events 进行前后端通信，
+    // 无需 WebSocket。以下字段保留以兼容已有配置文件，暂不生效。
     #[serde(default = "default_ws_url")]
     pub websocket_url: String,
 

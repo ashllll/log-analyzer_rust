@@ -36,10 +36,7 @@ pub async fn delete_workspace(
 }
 
 #[tauri::command]
-pub async fn cancel_task(
-    task_id: String,
-    state: State<'_, AppState>,
-) -> Result<(), CommandError> {
+pub async fn cancel_task(task_id: String, state: State<'_, AppState>) -> Result<(), CommandError> {
     crate::commands::workspace::cancel_task(task_id, state).await
 }
 

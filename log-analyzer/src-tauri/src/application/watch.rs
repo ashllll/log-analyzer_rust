@@ -113,9 +113,11 @@ where
             AppError::io_error(format!("Failed to create file watcher: {}", e), None)
         })?;
 
-        watcher.watch(&watch_path, RecursiveMode::Recursive).map_err(|e| {
-            AppError::io_error(format!("Failed to start watching path: {}", e), None)
-        })?;
+        watcher
+            .watch(&watch_path, RecursiveMode::Recursive)
+            .map_err(|e| {
+                AppError::io_error(format!("Failed to start watching path: {}", e), None)
+            })?;
 
         // ── 4. Create WatcherState ──
         let watcher_state = WatcherState {
@@ -192,13 +194,12 @@ where
                                 let (offset, start_line_number, watcher_watched_path) = {
                                     let watchers = watchers_arc.lock();
                                     if let Some(w) = watchers.get(&workspace_id_clone) {
-                                        let offset = *w.file_offsets.get(&file_path_str).unwrap_or(&0);
+                                        let offset =
+                                            *w.file_offsets.get(&file_path_str).unwrap_or(&0);
                                         let start_line = if let Some(&count) =
                                             w.line_counts.get(&file_path_str)
                                         {
                                             count + 1
-                                        } else if offset > 0 {
-                                            1
                                         } else {
                                             1
                                         };
@@ -228,13 +229,9 @@ where
                                             // Emit new-logs via domain trait
                                             let events2 = events.clone();
                                             let ws2 = workspace_id_clone.clone();
-                                            if let Ok(json) =
-                                                serde_json::to_string(&new_entries)
-                                            {
+                                            if let Ok(json) = serde_json::to_string(&new_entries) {
                                                 runtime_handle.spawn(async move {
-                                                    events2
-                                                        .emit_new_logs(&ws2, &json)
-                                                        .await;
+                                                    events2.emit_new_logs(&ws2, &json).await;
                                                 });
                                             }
 
@@ -311,9 +308,7 @@ where
                                         // Update offsets
                                         {
                                             let mut watchers = watchers_arc.lock();
-                                            if let Some(w) =
-                                                watchers.get_mut(&workspace_id_clone)
-                                            {
+                                            if let Some(w) = watchers.get_mut(&workspace_id_clone) {
                                                 w.file_offsets
                                                     .insert(file_path_str.clone(), new_offset);
                                                 if new_line_count > 0 {
@@ -428,11 +423,7 @@ mod tests {
             *self.last_event.lock() = format!("search_start:{}", id);
         }
         async fn emit_search_progress(&self, _id: &str, _c: usize) {}
-        async fn emit_search_complete(
-            &self,
-            _id: &str,
-            _s: la_core::domain::event::SearchSummary,
-        ) {
+        async fn emit_search_complete(&self, _id: &str, _s: la_core::domain::event::SearchSummary) {
         }
         async fn emit_search_error(&self, _id: &str, _e: &str) {}
         async fn emit_search_cancelled(&self, _id: &str) {}
@@ -465,7 +456,10 @@ mod tests {
     struct StubMetadata;
     #[async_trait]
     impl MetadataStorage for StubMetadata {
-        async fn insert_file(&self, _metadata: &la_core::storage_types::FileMetadata) -> Result<i64> {
+        async fn insert_file(
+            &self,
+            _metadata: &la_core::storage_types::FileMetadata,
+        ) -> Result<i64> {
             Ok(1)
         }
         async fn get_all_files(&self) -> Result<Vec<la_core::storage_types::FileMetadata>> {

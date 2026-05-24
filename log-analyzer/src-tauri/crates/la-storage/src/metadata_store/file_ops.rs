@@ -549,7 +549,6 @@ pub(crate) async fn clear_all_files(pool: &SqlitePool) -> Result<()> {
 }
 
 /// --- Transaction helpers ---
-
 /// Begin a transaction.
 pub(crate) async fn begin_transaction(
     pool: &SqlitePool,

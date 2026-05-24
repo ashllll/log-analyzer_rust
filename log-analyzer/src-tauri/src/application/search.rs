@@ -145,8 +145,8 @@ where
         let plan = match searcher.build_plan(query) {
             Ok(p) => p,
             Err(e) => {
-                let rt = tokio::runtime::Runtime::new().unwrap();
-                rt.block_on(events.emit_search_error(search_id, &e.to_string()));
+                tokio::runtime::Handle::current()
+                    .block_on(events.emit_search_error(search_id, &e.to_string()));
                 results.remove_session(search_id);
                 return;
             }
@@ -164,14 +164,14 @@ where
                 return true;
             }
             if let Err(e) = results.append_entries(search_id, batch) {
-                let rt = tokio::runtime::Runtime::new().unwrap();
-                rt.block_on(events.emit_search_error(search_id, &e.to_string()));
+                tokio::runtime::Handle::current()
+                    .block_on(events.emit_search_error(search_id, &e.to_string()));
                 return false;
             }
             batch.clear();
             if !timed_out_clone.load(Ordering::SeqCst) {
-                let rt = tokio::runtime::Runtime::new().unwrap();
-                rt.block_on(events.emit_search_progress(search_id, count));
+                tokio::runtime::Handle::current()
+                    .block_on(events.emit_search_progress(search_id, count));
             }
             true
         };
@@ -222,8 +222,7 @@ where
         let duration = start.elapsed().as_millis() as u64;
 
         if !timed_out.load(Ordering::SeqCst) {
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(events.emit_search_complete(
+            tokio::runtime::Handle::current().block_on(events.emit_search_complete(
                 search_id,
                 la_core::domain::event::SearchSummary {
                     total_count: results_count,

@@ -92,10 +92,7 @@ where
         task_id: &str,
     ) -> Result<ImportResult> {
         let source = Path::new(path);
-        let target_name = source
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or(path);
+        let target_name = source.file_name().and_then(|n| n.to_str()).unwrap_or(path);
 
         // 1. Create task
         let handle = self
@@ -161,9 +158,7 @@ where
 mod tests {
     use super::*;
     use async_trait::async_trait;
-    use la_core::domain::{
-        ArchiveEntry, ExtractionPolicy, ExtractionSummary, TaskHandle,
-    };
+    use la_core::domain::{ArchiveEntry, ExtractionPolicy, ExtractionSummary, TaskHandle};
     use std::sync::Mutex;
 
     fn tempdir() -> tempfile::TempDir {
@@ -202,11 +197,7 @@ mod tests {
             *self.last_event.lock().unwrap() = format!("start:{id}");
         }
         async fn emit_search_progress(&self, _id: &str, _c: usize) {}
-        async fn emit_search_complete(
-            &self,
-            _id: &str,
-            _s: la_core::domain::event::SearchSummary,
-        ) {
+        async fn emit_search_complete(&self, _id: &str, _s: la_core::domain::event::SearchSummary) {
         }
         async fn emit_search_error(&self, id: &str, error: &str) {
             *self.last_event.lock().unwrap() = format!("error:{id}:{error}");
@@ -236,8 +227,14 @@ mod tests {
         }
         fn list_contents(&self, _source: &Path) -> Result<Vec<ArchiveEntry>> {
             Ok(vec![
-                ArchiveEntry { path: "a.log".into(), size_bytes: 512 },
-                ArchiveEntry { path: "b.log".into(), size_bytes: 512 },
+                ArchiveEntry {
+                    path: "a.log".into(),
+                    size_bytes: 512,
+                },
+                ArchiveEntry {
+                    path: "b.log".into(),
+                    size_bytes: 512,
+                },
             ])
         }
         fn supported_formats(&self) -> Vec<String> {
@@ -260,23 +257,40 @@ mod tests {
             target: &str,
             _workspace_id: Option<&str>,
         ) -> Result<TaskHandle> {
-            self.events.lock().unwrap().push(format!("create:{id}:{task_type}:{target}"));
+            self.events
+                .lock()
+                .unwrap()
+                .push(format!("create:{id}:{task_type}:{target}"));
             Ok(TaskHandle::new(id))
         }
         async fn update(&self, handle: &TaskHandle, progress: u8, message: &str) -> Result<()> {
-            self.events.lock().unwrap().push(format!("update:{}:{}:{}", handle.id(), progress, message));
+            self.events.lock().unwrap().push(format!(
+                "update:{}:{}:{}",
+                handle.id(),
+                progress,
+                message
+            ));
             Ok(())
         }
         async fn complete(&self, handle: &TaskHandle) -> Result<()> {
-            self.events.lock().unwrap().push(format!("complete:{}", handle.id()));
+            self.events
+                .lock()
+                .unwrap()
+                .push(format!("complete:{}", handle.id()));
             Ok(())
         }
         async fn fail(&self, handle: &TaskHandle, error: &str) -> Result<()> {
-            self.events.lock().unwrap().push(format!("fail:{}:{}", handle.id(), error));
+            self.events
+                .lock()
+                .unwrap()
+                .push(format!("fail:{}:{}", handle.id(), error));
             Ok(())
         }
         async fn cancel(&self, handle: &TaskHandle) -> Result<()> {
-            self.events.lock().unwrap().push(format!("cancel:{}", handle.id()));
+            self.events
+                .lock()
+                .unwrap()
+                .push(format!("cancel:{}", handle.id()));
             Ok(())
         }
     }
@@ -287,13 +301,22 @@ mod tests {
     async fn test_import_success_flow() {
         let use_case = ImportUseCase::new(
             Arc::new(MockLogFileRepo),
-            Arc::new(MockEvents { last_event: Mutex::new(String::new()) }),
+            Arc::new(MockEvents {
+                last_event: Mutex::new(String::new()),
+            }),
             Arc::new(MockArchiveExtractor),
-            Arc::new(MockTaskScheduler { events: Mutex::new(vec![]) }),
-            Arc::new(ContentAddressableStorage::new(tempdir().path().to_path_buf())),
+            Arc::new(MockTaskScheduler {
+                events: Mutex::new(vec![]),
+            }),
+            Arc::new(ContentAddressableStorage::new(
+                tempdir().path().to_path_buf(),
+            )),
         );
 
-        let result = use_case.execute("/fake/path.zip", "ws-1", "task-1").await.unwrap();
+        let result = use_case
+            .execute("/fake/path.zip", "ws-1", "task-1")
+            .await
+            .unwrap();
         assert_eq!(result.workspace_id, "ws-1");
         assert_eq!(result.files_imported, 2);
         assert_eq!(result.total_bytes, 1024);
@@ -301,19 +324,30 @@ mod tests {
 
     #[tokio::test]
     async fn test_import_task_lifecycle_events() {
-        let scheduler = Arc::new(MockTaskScheduler { events: Mutex::new(vec![]) });
+        let scheduler = Arc::new(MockTaskScheduler {
+            events: Mutex::new(vec![]),
+        });
         let use_case = ImportUseCase::new(
             Arc::new(MockLogFileRepo),
-            Arc::new(MockEvents { last_event: Mutex::new(String::new()) }),
+            Arc::new(MockEvents {
+                last_event: Mutex::new(String::new()),
+            }),
             Arc::new(MockArchiveExtractor),
             scheduler.clone(),
-            Arc::new(ContentAddressableStorage::new(tempdir().path().to_path_buf())),
+            Arc::new(ContentAddressableStorage::new(
+                tempdir().path().to_path_buf(),
+            )),
         );
 
-        use_case.execute("/fake/path.zip", "ws-1", "task-lifecycle").await.unwrap();
+        use_case
+            .execute("/fake/path.zip", "ws-1", "task-lifecycle")
+            .await
+            .unwrap();
 
         let events = scheduler.events.lock().unwrap();
-        assert!(events.iter().any(|e| e.starts_with("create:task-lifecycle")));
+        assert!(events
+            .iter()
+            .any(|e| e.starts_with("create:task-lifecycle")));
         assert!(events.iter().any(|e| e.contains("Scanning")));
         assert!(events.iter().any(|e| e.contains("Extracting")));
         assert!(events.iter().any(|e| e == "complete:task-lifecycle"));
@@ -330,19 +364,29 @@ mod tests {
             fn list_contents(&self, _s: &Path) -> Result<Vec<ArchiveEntry>> {
                 unreachable!()
             }
-            fn supported_formats(&self) -> Vec<String> { vec![] }
+            fn supported_formats(&self) -> Vec<String> {
+                vec![]
+            }
             fn validate(&self, _path: &Path, _policy: &ExtractionPolicy) -> Result<()> {
-                Err(la_core::error::AppError::validation_error("unsupported format"))
+                Err(la_core::error::AppError::validation_error(
+                    "unsupported format",
+                ))
             }
         }
 
-        let scheduler = Arc::new(MockTaskScheduler { events: Mutex::new(vec![]) });
+        let scheduler = Arc::new(MockTaskScheduler {
+            events: Mutex::new(vec![]),
+        });
         let use_case = ImportUseCase::new(
             Arc::new(MockLogFileRepo),
-            Arc::new(MockEvents { last_event: Mutex::new(String::new()) }),
+            Arc::new(MockEvents {
+                last_event: Mutex::new(String::new()),
+            }),
             Arc::new(FailingValidator),
             scheduler.clone(),
-            Arc::new(ContentAddressableStorage::new(tempdir().path().to_path_buf())),
+            Arc::new(ContentAddressableStorage::new(
+                tempdir().path().to_path_buf(),
+            )),
         );
 
         let result = use_case.execute("/bad.xyz", "ws-1", "task-fail").await;

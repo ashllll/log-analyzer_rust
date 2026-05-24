@@ -30,10 +30,7 @@ impl ArchiveManagerAdapter {
     /// Only handlers enabled in `handlers_cfg` are registered in the
     /// underlying `ArchiveManager`. This allows runtime control over
     /// which archive formats are supported (ZIP/TAR/GZ/7Z/RAR).
-    pub fn with_handlers_config(
-        config: ArchiveConfig,
-        handlers_cfg: &HandlersConfig,
-    ) -> Self {
+    pub fn with_handlers_config(config: ArchiveConfig, handlers_cfg: &HandlersConfig) -> Self {
         let manager = Arc::new(ArchiveManager::with_handlers_config(config, handlers_cfg));
         Self { manager }
     }
@@ -105,9 +102,9 @@ impl ArchiveExtractor for ArchiveManagerAdapter {
             .extension()
             .map(|ext| {
                 let ext_str = ext.to_string_lossy().to_lowercase();
-                supported.iter().any(|s| {
-                    s == &ext_str || path.to_string_lossy().to_lowercase().ends_with(s)
-                })
+                supported
+                    .iter()
+                    .any(|s| s == &ext_str || path.to_string_lossy().to_lowercase().ends_with(s))
             })
             .unwrap_or(false);
 
@@ -129,9 +126,7 @@ impl ArchiveExtractor for ArchiveManagerAdapter {
             )));
         }
         if policy.max_file_size == 0 {
-            return Err(AppError::validation_error(
-                "max_file_size must be positive",
-            ));
+            return Err(AppError::validation_error("max_file_size must be positive"));
         }
         if policy.max_total_size == 0 {
             return Err(AppError::validation_error(
@@ -161,10 +156,7 @@ mod tests {
 
         let result = adapter.validate(path, &policy);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("does not exist"));
+        assert!(result.unwrap_err().to_string().contains("does not exist"));
     }
 
     #[test]

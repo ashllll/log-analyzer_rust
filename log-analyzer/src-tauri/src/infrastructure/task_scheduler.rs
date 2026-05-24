@@ -70,12 +70,7 @@ impl TaskScheduler for TaskManagerAdapter {
 
     async fn complete(&self, handle: &TaskHandle) -> Result<()> {
         self.manager
-            .update_task_async(
-                handle.id(),
-                100,
-                "Done".to_string(),
-                TaskStatus::Completed,
-            )
+            .update_task_async(handle.id(), 100, "Done".to_string(), TaskStatus::Completed)
             .await
             .map_err(map_error)?;
 
@@ -98,12 +93,7 @@ impl TaskScheduler for TaskManagerAdapter {
 
     async fn cancel(&self, handle: &TaskHandle) -> Result<()> {
         self.manager
-            .update_task_async(
-                handle.id(),
-                0,
-                "Cancelled".to_string(),
-                TaskStatus::Stopped,
-            )
+            .update_task_async(handle.id(), 0, "Cancelled".to_string(), TaskStatus::Stopped)
             .await
             .map_err(map_error)?;
 

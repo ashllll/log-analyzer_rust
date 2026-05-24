@@ -17,7 +17,11 @@ const path = require('path');
 // 配置
 // ============================================================================
 const CONFIG = {
-  backendDir: path.join(__dirname, '..', 'log-analyzer', 'src-tauri', 'src', 'commands'),
+  // #[tauri::command] 函数定义在 interfaces/ 目录，commands/ 目录存放业务逻辑
+  backendDirs: [
+    path.join(__dirname, '..', 'log-analyzer', 'src-tauri', 'src', 'commands'),
+    path.join(__dirname, '..', 'log-analyzer', 'src-tauri', 'src', 'interfaces'),
+  ],
   frontendDir: path.join(__dirname, '..', 'log-analyzer', 'src'),
   // 忽略的文件/目录模式
   ignorePatterns: [
@@ -53,7 +57,8 @@ function toCamelCase(str) {
 /**
  * 递归读取目录下所有匹配扩展名的文件
  */
-function walkDir(dir, extensions, result = []) {
+function walkDir(dir, extensions, result) {
+  if (!result) result = [];
   if (!fs.existsSync(dir)) return result;
 
   const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -175,7 +180,10 @@ function main() {
   // --------------------------------------------------------------------------
   // 1. 提取后端命令
   // --------------------------------------------------------------------------
-  const backendFiles = walkDir(CONFIG.backendDir, ['.rs']);
+  const backendFiles = [];
+  for (const dir of CONFIG.backendDirs) {
+    walkDir(dir, ['.rs'], backendFiles);
+  }
   const backendCommands = new Map(); // name -> { file, params: Set }
 
   for (const file of backendFiles) {

@@ -53,12 +53,8 @@ pub async fn search_logs(
     // ── 4. Resolve params ──
     let mr = maxResults.unwrap_or(rc.default_max_results).min(100_000);
     let f = filters.unwrap_or_default();
-    let (raw_terms, sq) = resolve_search_query(
-        &query,
-        structuredQuery,
-        rc.case_sensitive,
-        "search_logs",
-    )?;
+    let (raw_terms, sq) =
+        resolve_search_query(&query, structuredQuery, rc.case_sensitive, "search_logs")?;
     let ws_id = resolve_workspace_id(workspaceId, &wd)?;
 
     // ── 5. Ensure workspace runtime state (CAS + MetadataStore) ──
@@ -81,19 +77,14 @@ pub async fn search_logs(
         cas: cas.clone(),
     });
     let results: Arc<DiskResultStoreRepo> = Arc::new(DiskResultStoreRepo { store: ds.clone() });
-    let events: Arc<TauriEventPublisher> =
-        Arc::new(TauriEventPublisher { app_handle: app.clone() });
+    let events: Arc<TauriEventPublisher> = Arc::new(TauriEventPublisher {
+        app_handle: app.clone(),
+    });
     let searcher: Arc<QueryEngineLogSearcher> =
         Arc::new(QueryEngineLogSearcher::new(rc.regex_cache_size.max(1)));
 
     // ── 7. Build SearchUseCase ──
-    let use_case = Arc::new(SearchUseCase::new(
-        log_files,
-        results,
-        events,
-        searcher,
-        tp,
-    ));
+    let use_case = Arc::new(SearchUseCase::new(log_files, results, events, searcher, tp));
 
     // ── 8. Cancellation token ──
     let sid = uuid::Uuid::new_v4().to_string();
