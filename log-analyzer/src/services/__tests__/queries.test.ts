@@ -1,12 +1,18 @@
-import { queryKeys, configQuery } from '../queries';
-
 const mockLoadConfig = jest.fn();
 
-jest.mock('../api', () => ({
-  api: {
-    loadConfig: () => mockLoadConfig(),
-  },
-}));
+// queryKeys 和 configQuery 是纯静态定义，直接导入真实值
+import { queryKeys, configQuery } from '../api';
+
+jest.mock('../api', () => {
+  const actual = jest.requireActual('../api');
+  return {
+    api: {
+      loadConfig: () => mockLoadConfig(),
+    },
+    queryKeys: actual.queryKeys,
+    configQuery: { ...actual.configQuery, queryFn: () => mockLoadConfig() },
+  };
+});
 
 describe('queryKeys', () => {
   it('config key 应为稳定引用', () => {

@@ -50,6 +50,7 @@ fn resolve_log_config_path(
 }
 
 /// 获取当前日志配置
+#[tauri::command]
 pub async fn get_current_log_config() -> Result<LogConfig, CommandError> {
     Ok(get_log_config())
 }
@@ -58,6 +59,7 @@ pub async fn get_current_log_config() -> Result<LogConfig, CommandError> {
 ///
 /// # 参数
 /// - `level`: 日志级别字符串 (trace, debug, info, warn, error)
+#[tauri::command]
 pub async fn set_log_level(level: String) -> Result<(), CommandError> {
     let log_level = LogLevel::from_string(&level).ok_or_else(|| {
         CommandError::new("INVALID_LOG_LEVEL", format!("无效的日志级别: {}", level))
@@ -75,6 +77,7 @@ pub async fn set_log_level(level: String) -> Result<(), CommandError> {
 /// # 参数
 /// - `module`: 模块名称（如 "log_analyzer::task_manager"）
 /// - `level`: 日志级别字符串
+#[tauri::command]
 pub async fn set_module_level(module: String, level: String) -> Result<(), CommandError> {
     let log_level = LogLevel::from_string(&level).ok_or_else(|| {
         CommandError::new("INVALID_LOG_LEVEL", format!("无效的日志级别: {}", level))
@@ -85,17 +88,20 @@ pub async fn set_module_level(module: String, level: String) -> Result<(), Comma
 }
 
 /// 重置日志配置为默认值
+#[tauri::command]
 pub async fn reset_log_configuration() -> Result<(), CommandError> {
     reset_log_config();
     Ok(())
 }
 
 /// 获取生产环境推荐配置
+#[tauri::command]
 pub async fn get_recommended_production_config() -> Result<LogConfig, CommandError> {
     Ok(get_production_log_config())
 }
 
 /// 获取调试模式配置
+#[tauri::command]
 pub async fn get_recommended_debug_config() -> Result<LogConfig, CommandError> {
     Ok(get_debug_log_config())
 }
@@ -104,6 +110,7 @@ pub async fn get_recommended_debug_config() -> Result<LogConfig, CommandError> {
 ///
 /// # 参数
 /// - `path`: 配置文件路径
+#[tauri::command]
 pub async fn load_log_config(app: AppHandle, path: String) -> Result<LogConfig, CommandError> {
     let final_path = resolve_log_config_path(&app, &path)?;
     load_log_config_from_file(&final_path)
@@ -115,6 +122,7 @@ pub async fn load_log_config(app: AppHandle, path: String) -> Result<LogConfig, 
 /// # 参数
 /// - `path`: 配置文件路径
 /// - `config`: 要保存的配置
+#[tauri::command]
 pub async fn save_log_config(
     app: AppHandle,
     path: String,
@@ -126,6 +134,7 @@ pub async fn save_log_config(
 }
 
 /// 获取所有支持的日志级别
+#[tauri::command]
 pub async fn get_available_log_levels() -> Result<Vec<String>, CommandError> {
     Ok(vec![
         "trace".to_string(),
@@ -140,6 +149,7 @@ pub async fn get_available_log_levels() -> Result<Vec<String>, CommandError> {
 ///
 /// # 参数
 /// - `preset`: 预设名称 ("production", "debug", "default")
+#[tauri::command]
 pub async fn apply_log_preset(preset: String) -> Result<LogConfig, CommandError> {
     let config = match preset.as_str() {
         "production" => {

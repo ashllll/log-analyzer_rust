@@ -24,21 +24,8 @@ pub(crate) struct ParsedLineMetadata {
     pub(crate) level: &'static str,
     pub(crate) level_normalized: &'static str,
     pub(crate) datetime: Option<chrono::NaiveDateTime>,
+    #[allow(dead_code)]
     pub(crate) level_mask: u8,
-}
-
-#[derive(Debug, Clone, Default)]
-pub(crate) struct SearchSegmentSummary {
-    pub(crate) min_datetime: Option<chrono::NaiveDateTime>,
-    pub(crate) max_datetime: Option<chrono::NaiveDateTime>,
-    pub(crate) level_mask: u8,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct SearchLineCandidate<'a> {
-    pub(crate) index: usize,
-    pub(crate) line: std::borrow::Cow<'a, str>,
-    pub(crate) metadata: ParsedLineMetadata,
 }
 
 #[derive(Debug, Clone)]
@@ -79,15 +66,6 @@ impl ParsedLineMetadata {
     }
 }
 
-impl SearchSegmentSummary {
-    pub(crate) fn record(&mut self, m: &ParsedLineMetadata) {
-        self.level_mask |= m.level_mask;
-        if let Some(dt) = m.datetime {
-            self.min_datetime = Some(self.min_datetime.map_or(dt, |c| c.min(dt)));
-            self.max_datetime = Some(self.max_datetime.map_or(dt, |c| c.max(dt)));
-        }
-    }
-}
 
 impl FilePatternMatcher {
     pub(crate) fn compile(raw: &str) -> Result<Self, CommandError> {
@@ -221,35 +199,5 @@ impl CompiledSearchFilters {
     }
     pub(crate) fn has_time_filter(&self) -> bool {
         self.time_start.is_some() || self.time_end.is_some()
-    }
-    pub(crate) fn needs_segment_pruning(&self) -> bool {
-        self.levels.is_some() || self.has_time_filter()
-    }
-    #[allow(clippy::if_same_then_else)]
-    pub(crate) fn segment_may_match(&self, s: &SearchSegmentSummary) -> bool {
-        if let Some(lv) = &self.levels {
-            if self.level_mask.unwrap_or(0) == 0 && !lv.is_empty() {
-                return false;
-            } else if s.level_mask & self.level_mask.unwrap_or(0) == 0 {
-                return false;
-            }
-        }
-        if !self.has_time_filter() {
-            return true;
-        }
-        let (Some(mn), Some(mx)) = (s.min_datetime, s.max_datetime) else {
-            return true;
-        };
-        if let Some(st) = self.time_start {
-            if mx < st {
-                return false;
-            }
-        }
-        if let Some(ed) = self.time_end {
-            if mn > ed {
-                return false;
-            }
-        }
-        true
     }
 }

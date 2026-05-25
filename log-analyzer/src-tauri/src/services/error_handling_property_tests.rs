@@ -59,9 +59,9 @@ mod tests {
             // 应该返回 Err
             prop_assert!(result.is_err());
 
-            // 错误应该可以被转换为 eyre::Report
+            // 错误应该可以被转换为标准错误类型
             if let Err(e) = result {
-                let _report: eyre::Report = e.into();
+                let _report: Box<dyn std::error::Error> = e.into();
                 // 转换成功即可
             }
         });

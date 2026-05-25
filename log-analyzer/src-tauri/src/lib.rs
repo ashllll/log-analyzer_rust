@@ -7,10 +7,9 @@
 //! - 错误处理统一 ✅
 //! - 监控体系建立 ✅
 
-// Clean Architecture layers
+// Clean Architecture layers — interfaces/ was collapsed into commands/ (2026-05)
 pub mod application;
 pub mod infrastructure;
-pub mod interfaces;
 
 // 核心模块
 pub mod adapters;

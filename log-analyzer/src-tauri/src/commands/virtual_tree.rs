@@ -75,6 +75,7 @@ fn validate_file_hash(hash: &str) -> Result<(), String> {
 ///   hash: 'a3f2e1d4c5b6a7...'
 /// });
 /// ```
+#[tauri::command]
 pub async fn read_file_by_hash(
     app: AppHandle,
     #[allow(non_snake_case)] workspaceId: String,
@@ -185,6 +186,7 @@ pub enum VirtualTreeNode {
 ///   workspaceId: 'workspace_123'
 /// });
 /// ```
+#[tauri::command]
 pub async fn get_virtual_file_tree(
     app: AppHandle,
     #[allow(non_snake_case)] workspaceId: String,

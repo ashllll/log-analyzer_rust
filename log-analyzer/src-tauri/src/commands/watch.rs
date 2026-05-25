@@ -95,7 +95,8 @@ impl EventPublisher for WatchEventAdapter {
 /// - Tauri parameter extraction and validation
 /// - CAS / metadata lookup from AppState
 /// - Search index updates (via `WatchEventAdapter`)
-pub async fn start_watch_impl(
+#[tauri::command]
+pub async fn start_watch(
     app: AppHandle,
     #[allow(non_snake_case)] workspaceId: String,
     path: String,
@@ -143,7 +144,8 @@ pub async fn start_watch_impl(
 /// Stop watching a workspace.
 ///
 /// Thin glue over `WatchUseCase::stop()`.
-pub async fn stop_watch_impl(
+#[tauri::command]
+pub async fn stop_watch(
     #[allow(non_snake_case)] workspaceId: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {

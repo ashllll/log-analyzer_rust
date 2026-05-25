@@ -70,8 +70,6 @@ once_cell = "1.20"
 tracing.workspace = true
 
 # Phase 1: Industry-Standard Error Handling & Logging
-eyre = "0.6"
-color-eyre = "0.6"
 miette = { version = "~7.6", features = ["fancy"] }  # HI-34: lock to minor version
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-appender = "0.2"

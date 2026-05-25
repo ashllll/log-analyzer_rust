@@ -11,7 +11,8 @@ use crate::models::AppState;
 use crate::state_sync::StateSync;
 
 /// Initialize state synchronization (called once on app startup)
-pub async fn init_state_sync_impl(
+#[tauri::command]
+pub async fn init_state_sync(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), CommandError> {

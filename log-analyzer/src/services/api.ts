@@ -560,6 +560,30 @@ class LogAnalyzerApi {
 }
 
 // ============================================================================
+// React Query 选项工厂（原 queries.ts，并入 api.ts 简化目录结构）
+// ============================================================================
+
+/**
+ * React Query 键常量
+ */
+export const queryKeys = {
+  config: ['config'] as const,
+  workspace: (id: string) => ['workspace', id] as const,
+} as const;
+
+/**
+ * 应用配置查询选项（后端命令: load_config）
+ *
+ * 5 分钟内视为新鲜，避免频繁请求；5 分钟未使用则从缓存清除。
+ */
+export const configQuery = {
+  queryKey: queryKeys.config,
+  queryFn: () => api.loadConfig(),
+  staleTime: 5 * 60_000,
+  gcTime: 300_000,
+};
+
+// ============================================================================
 // 导出单例
 // ============================================================================
 

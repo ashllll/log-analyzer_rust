@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useShallow } from 'zustand/shallow';
 import { useWorkspaceStore, type Workspace } from '../stores/workspaceStore';
 import { logger } from '../utils/logger';
-import { queryKeys } from '../services/queries';
+import { queryKeys } from '../services/api';
 
 export interface UseWorkspaceListReturn {
   workspaces: Workspace[];
