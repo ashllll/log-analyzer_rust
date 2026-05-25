@@ -6,6 +6,9 @@
 .codegraph/
 AGENTS.md
 
+# Reasonix
+.reasonix/
+
 # macOS
 .DS_Store
 # Dependencies
