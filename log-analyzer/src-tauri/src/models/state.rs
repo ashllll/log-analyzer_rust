@@ -1,16 +1,14 @@
 //! 应用状态管理 - 使用 parking_lot::Mutex 实现高效同步锁
 
+use crate::application::workspace_service::WorkspaceServiceRef;
 use crate::services::file_watcher::WatcherState;
 use crate::state_sync::StateSync;
 use crate::task_manager::TaskManager;
 use crate::utils::async_resource_manager::AsyncResourceError;
 use crate::utils::async_resource_manager::AsyncResourceManager;
 use la_search::DiskResultStore;
-use la_search::SearchEngineManager;
-use la_storage::ContentAddressableStorage;
-use la_storage::MetadataStore;
 use parking_lot::Mutex;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 /// 搜索指标 - 合并相关计数器以减少锁竞争
@@ -41,15 +39,13 @@ pub struct SearchMetrics {
 /// 将 total_searches、cache_hits、last_search_duration 合并为 SearchMetrics 结构体，
 /// 使用单个 Mutex 保护，减少锁竞争和缓存行伪共享。
 pub struct AppState {
-    // ── 工作区上下文 ──
-    /// 工作区目录映射
-    pub workspace_dirs: Arc<Mutex<BTreeMap<String, std::path::PathBuf>>>,
-    pub cas_instances: Arc<Mutex<HashMap<String, Arc<ContentAddressableStorage>>>>,
-    pub metadata_stores: Arc<Mutex<HashMap<String, Arc<MetadataStore>>>>,
+    // ── 工作区服务（预组装服务） ──
+    pub workspace_services: Arc<Mutex<HashMap<String, WorkspaceServiceRef>>>,
+
+    /// 文件监听器状态（运行时状态，不属于预组装服务）
     pub watchers: Arc<Mutex<HashMap<String, WatcherState>>>,
 
     // ── 搜索上下文 ──
-    pub search_engine_managers: Arc<Mutex<HashMap<String, Arc<SearchEngineManager>>>>,
     pub search_cancellation_tokens:
         Arc<Mutex<HashMap<String, tokio_util::sync::CancellationToken>>>,
     /// 搜索指标（合并 total_searches + cache_hits + last_search_duration）
@@ -69,18 +65,14 @@ pub struct AppState {
 impl Default for AppState {
     fn default() -> Self {
         Self {
-            // C-H1 优化: BTreeMap 保证迭代顺序确定性
-            workspace_dirs: Arc::new(Mutex::new(BTreeMap::new())),
-            cas_instances: Arc::new(Mutex::new(HashMap::new())),
-            metadata_stores: Arc::new(Mutex::new(HashMap::new())),
+            workspace_services: Arc::new(Mutex::new(HashMap::new())),
+            watchers: Arc::new(Mutex::new(HashMap::new())),
             task_manager: Arc::new(Mutex::new(None)),
             search_cancellation_tokens: Arc::new(Mutex::new(HashMap::new())),
             // 合并搜索指标为单个结构体，减少锁竞争
             search_metrics: Arc::new(Mutex::new(SearchMetrics::default())),
-            watchers: Arc::new(Mutex::new(HashMap::new())),
             state_sync: Arc::new(Mutex::new(None)),
             async_resource_manager: Arc::new(AsyncResourceManager::new()),
-            search_engine_managers: Arc::new(Mutex::new(HashMap::new())),
             // FIX(CR-06): Initialize as None to avoid IO/panic in default().
             // The actual DiskResultStore is created in setup() via init_disk_result_store_at().
             disk_result_store: parking_lot::RwLock::new(None),
@@ -121,14 +113,30 @@ impl AppState {
         }
     }
 
-    pub fn get_workspace_dir(&self, workspace_id: &str) -> Option<std::path::PathBuf> {
-        let dirs = self.workspace_dirs.lock();
-        dirs.get(workspace_id).cloned()
+    // ── WorkspaceService 管理 ──
+
+    /// 获取已注册的工作区服务。
+    pub fn get_workspace_service(&self, workspace_id: &str) -> Option<WorkspaceServiceRef> {
+        self.workspace_services.lock().get(workspace_id).cloned()
     }
 
-    pub fn set_workspace_dir(&self, workspace_id: String, path: std::path::PathBuf) {
-        let mut dirs = self.workspace_dirs.lock();
-        dirs.insert(workspace_id, path);
+    /// 注册工作区服务。
+    ///
+    /// 由导入命令在导入完成后调用，将预组装的 WorkspaceServiceImpl 存入。
+    pub fn set_workspace_service(
+        &self,
+        workspace_id: String,
+        service: WorkspaceServiceRef,
+    ) {
+        self.workspace_services.lock().insert(workspace_id, service);
+    }
+
+    /// 移除工作区服务。
+    ///
+    /// 由删除工作区命令调用，清理所有相关资源。
+    pub fn remove_workspace_service(&self, workspace_id: &str) {
+        self.workspace_services.lock().remove(workspace_id);
+        self.watchers.lock().remove(workspace_id);
     }
 }
 

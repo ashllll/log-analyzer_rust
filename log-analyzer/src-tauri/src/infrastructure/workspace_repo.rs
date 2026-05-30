@@ -1,44 +1,33 @@
-//! WorkspaceRepository adapter backed by AppState runtime maps.
+//! WorkspaceRepository adapter backed by AppState workspace_services.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use parking_lot::Mutex;
 
+use crate::application::workspace_service::WorkspaceServiceRef;
+use crate::services::file_watcher::WatcherState;
 use la_core::domain::{WorkspaceInfo, WorkspaceRepository, WorkspaceStatus};
 use la_core::error::{AppError, Result};
-use la_search::SearchEngineManager;
-use la_storage::{ContentAddressableStorage, MetadataStore};
-
-use crate::services::file_watcher::WatcherState;
 
 /// Runtime workspace repository.
 ///
 /// This adapter keeps the application layer independent from AppState while
-/// still using the current in-memory workspace registry.
+/// using the unified workspace_services registry (P6 cleanup).
 pub struct RuntimeWorkspaceRepository {
-    workspace_dirs: Arc<Mutex<BTreeMap<String, PathBuf>>>,
-    metadata_stores: Arc<Mutex<HashMap<String, Arc<MetadataStore>>>>,
-    cas_instances: Arc<Mutex<HashMap<String, Arc<ContentAddressableStorage>>>>,
-    search_engine_managers: Arc<Mutex<HashMap<String, Arc<SearchEngineManager>>>>,
+    workspace_services: Arc<Mutex<HashMap<String, WorkspaceServiceRef>>>,
     watchers: Arc<Mutex<HashMap<String, WatcherState>>>,
 }
 
 impl RuntimeWorkspaceRepository {
     pub fn new(
-        workspace_dirs: Arc<Mutex<BTreeMap<String, PathBuf>>>,
-        metadata_stores: Arc<Mutex<HashMap<String, Arc<MetadataStore>>>>,
-        cas_instances: Arc<Mutex<HashMap<String, Arc<ContentAddressableStorage>>>>,
-        search_engine_managers: Arc<Mutex<HashMap<String, Arc<SearchEngineManager>>>>,
+        workspace_services: Arc<Mutex<HashMap<String, WorkspaceServiceRef>>>,
         watchers: Arc<Mutex<HashMap<String, WatcherState>>>,
     ) -> Self {
         Self {
-            workspace_dirs,
-            metadata_stores,
-            cas_instances,
-            search_engine_managers,
+            workspace_services,
             watchers,
         }
     }
@@ -50,9 +39,14 @@ impl RuntimeWorkspaceRepository {
             WorkspaceStatus::Ready
         };
 
-        let store = { self.metadata_stores.lock().get(id).cloned() };
-        let file_count = if let Some(store) = store {
-            store.count_files().await.unwrap_or(0).max(0) as usize
+        let service_clone = { self.workspace_services.lock().get(id).cloned() };
+        let file_count = if let Some(service) = service_clone {
+            service
+                .metadata_store()
+                .count_files()
+                .await
+                .unwrap_or(0)
+                .max(0) as usize
         } else {
             0
         };
@@ -83,18 +77,25 @@ impl RuntimeWorkspaceRepository {
 #[async_trait]
 impl WorkspaceRepository for RuntimeWorkspaceRepository {
     async fn list_workspaces(&self) -> Result<Vec<WorkspaceInfo>> {
-        let dirs = { self.workspace_dirs.lock().clone() };
-        let mut workspaces = Vec::with_capacity(dirs.len());
-        for (id, path) in dirs {
-            workspaces.push(self.build_info(&id, path).await?);
+        let services = { self.workspace_services.lock().clone() };
+        let mut workspaces = Vec::with_capacity(services.len());
+        for (id, service) in services {
+            workspaces.push(
+                self.build_info(&id, service.workspace_dir().clone())
+                    .await?,
+            );
         }
         Ok(workspaces)
     }
 
     async fn get_workspace(&self, id: &str) -> Result<Option<WorkspaceInfo>> {
-        let path = { self.workspace_dirs.lock().get(id).cloned() };
-        match path {
-            Some(path) => self.build_info(id, path).await.map(Some),
+        let service = { self.workspace_services.lock().get(id).cloned() };
+        match service {
+            Some(svc) => {
+                self.build_info(id, svc.workspace_dir().clone())
+                    .await
+                    .map(Some)
+            }
             None => Ok(None),
         }
     }
@@ -102,18 +103,15 @@ impl WorkspaceRepository for RuntimeWorkspaceRepository {
     async fn delete_workspace(&self, id: &str) -> Result<()> {
         self.stop_watcher(id);
 
-        let store = { self.metadata_stores.lock().remove(id) };
-        if let Some(store) = store {
-            store.close().await;
-        }
-
-        let manager = { self.search_engine_managers.lock().remove(id) };
-        if let Some(manager) = manager {
-            manager.close().await;
-        }
-
-        self.cas_instances.lock().remove(id);
-        let workspace_dir = { self.workspace_dirs.lock().remove(id) };
+        let workspace_dir = {
+            let service = self.workspace_services.lock().remove(id);
+            let dir = service.as_ref().map(|s| s.workspace_dir().clone());
+            if let Some(svc) = service {
+                svc.metadata_store().close().await;
+                svc.search_engine().close().await;
+            }
+            dir
+        };
 
         if let Some(workspace_dir) = workspace_dir {
             if workspace_dir.exists() {

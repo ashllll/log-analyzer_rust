@@ -188,9 +188,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
 
                 // 2. 清理异步组件（MetadataStore / SearchEngineManager / TaskManager）
-                // 修复：使用 tokio::task::block_in_place 而非创建新线程+临时 runtime
-                let metadata_stores = Arc::clone(&state.metadata_stores);
-                let search_engine_managers = Arc::clone(&state.search_engine_managers);
+                // P6 迁移：从 workspace_services 统一获取资源并关闭
+                let workspace_services = Arc::clone(&state.workspace_services);
                 let task_manager = Arc::clone(&state.task_manager);
 
                 // block_in_place 允许在 async 上下文中执行阻塞操作，
@@ -198,16 +197,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 tokio::task::block_in_place(|| {
                     let rt = tokio::runtime::Handle::current();
                     rt.block_on(async {
-                        let stores: Vec<_> = metadata_stores.lock().values().cloned().collect();
-                        for store in stores {
-                            store.close().await;
-                        }
-                        let engines: Vec<_> =
-                            search_engine_managers.lock().values().cloned().collect();
-                        for mgr in engines {
+                        let services: Vec<_> =
+                            workspace_services.lock().values().cloned().collect();
+                        for svc in services {
+                            svc.metadata_store().close().await;
                             let _ = tokio::time::timeout(
                                 std::time::Duration::from_secs(3),
-                                mgr.close(),
+                                svc.search_engine().close(),
                             )
                             .await;
                         }

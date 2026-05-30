@@ -3,12 +3,12 @@
 //! These Tauri commands handle parameter extraction, search-index updates,
 //! and delegate the core watch lifecycle to `WatchUseCase`.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use tauri::{AppHandle, State};
 
 use crate::application::watch::WatchUseCase;
+use crate::application::workspace_service::WorkspaceServiceRef;
 use crate::infrastructure::event_publisher::TauriEventPublisher;
 use crate::models::AppState;
 use crate::utils::{validate_path_param, validate_workspace_id};
@@ -21,7 +21,7 @@ use la_search::SearchEngineManager;
 /// domain-layer `WatchUseCase`.
 struct WatchEventAdapter {
     inner: TauriEventPublisher,
-    search_managers: Arc<parking_lot::Mutex<HashMap<String, Arc<SearchEngineManager>>>>,
+    search_manager: Arc<SearchEngineManager>,
 }
 
 #[async_trait::async_trait]
@@ -61,28 +61,25 @@ impl EventPublisher for WatchEventAdapter {
         // 1. Forward to Tauri frontend
         self.inner.emit_new_logs(workspace_id, entries_json).await;
 
-        // 2. Update Tantivy search index
+        // 2. Update Tantivy search index (using per-workspace search_manager)
         if let Ok(entries) =
             serde_json::from_str::<Vec<la_core::models::log_entry::LogEntry>>(entries_json)
         {
             if !entries.is_empty() {
-                let managers = self.search_managers.lock();
-                if let Some(manager) = managers.get(workspace_id) {
-                    if let Err(e) = manager.add_documents(&entries) {
-                        tracing::warn!(
-                            error = %e,
-                            count = entries.len(),
-                            workspace_id = %workspace_id,
-                            "Failed to add watch documents to search index"
-                        );
-                    }
-                    if let Err(e) = manager.commit() {
-                        tracing::warn!(
-                            error = %e,
-                            workspace_id = %workspace_id,
-                            "Failed to commit search index after watch update"
-                        );
-                    }
+                if let Err(e) = self.search_manager.add_documents(&entries) {
+                    tracing::warn!(
+                        error = %e,
+                        count = entries.len(),
+                        workspace_id = %workspace_id,
+                        "Failed to add watch documents to search index"
+                    );
+                }
+                if let Err(e) = self.search_manager.commit() {
+                    tracing::warn!(
+                        error = %e,
+                        workspace_id = %workspace_id,
+                        "Failed to commit search index after watch update"
+                    );
                 }
             }
         }
@@ -106,29 +103,26 @@ pub async fn start_watch(
     validate_workspace_id(&workspaceId)?;
     validate_path_param(&path, "path")?;
 
-    // ── Look up CAS and metadata for this workspace ──
-    let cas = {
-        let instances = state.cas_instances.lock();
-        instances
-            .get(&workspaceId)
-            .cloned()
-            .ok_or_else(|| format!("No CAS instance for workspace: {}", workspaceId))?
-    };
+    // ── Look up workspace service (pure lookup, no fallback) ──
+    let workspace: WorkspaceServiceRef = state
+        .get_workspace_service(&workspaceId)
+        .ok_or_else(|| {
+            format!(
+                "Workspace {} not found. Please import or reload the workspace.",
+                workspaceId
+            )
+        })?;
 
-    let metadata_store = {
-        let stores = state.metadata_stores.lock();
-        stores
-            .get(&workspaceId)
-            .cloned()
-            .ok_or_else(|| format!("No metadata store for workspace: {}", workspaceId))?
-    };
+    let cas = Arc::clone(workspace.cas());
+    let metadata_store = Arc::clone(workspace.metadata_store());
+    let search_manager = Arc::clone(workspace.search_engine());
 
     // ── Build event adapter (Tauri + search-index) ──
     let events = Arc::new(WatchEventAdapter {
         inner: TauriEventPublisher {
             app_handle: app.clone(),
         },
-        search_managers: Arc::clone(&state.search_engine_managers),
+        search_manager,
     });
 
     // ── Delegate to WatchUseCase ──

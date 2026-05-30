@@ -356,114 +356,113 @@ pub fn append_to_workspace_index(
         );
     }
 
-    // 持久化到 Tantivy 索引
-    let managers = state.search_engine_managers.lock();
-    if let Some(manager) = managers.get(workspace_id) {
-        if let Err(e) = manager.add_documents(new_entries) {
+    // 从 WorkspaceService 获取依赖（P3 迁移：替代直接操作 AppState HashMap）
+    let service = match state.get_workspace_service(workspace_id) {
+        Some(svc) => svc,
+        None => {
             tracing::warn!(
-                error = %e,
-                count = new_entries.len(),
                 workspace_id = %workspace_id,
-                "Failed to add documents to index in batch"
+                "Workspace service not found, skipping index append"
             );
+            return Ok(());
         }
+    };
 
-        if let Err(e) = manager.commit() {
-            tracing::warn!(
-                error = %e,
-                workspace_id = %workspace_id,
-                "Failed to commit index changes"
-            );
-        } else {
-            debug!(
-                workspace_id = %workspace_id,
-                count = new_entries.len(),
-                "Successfully persisted new entries to Tantivy index"
-            );
-        }
-    } else {
+    // 持久化到 Tantivy 索引
+    let search_manager = service.search_engine();
+    if let Err(e) = search_manager.add_documents(new_entries) {
         tracing::warn!(
+            error = %e,
+            count = new_entries.len(),
             workspace_id = %workspace_id,
-            "SearchEngineManager not found for workspace, entries not persisted to index"
+            "Failed to add documents to index in batch"
         );
     }
-    // 必须在此 drop managers 锁，避免后续 CAS 写入持锁期间死锁
-    drop(managers);
+
+    if let Err(e) = search_manager.commit() {
+        tracing::warn!(
+            error = %e,
+            workspace_id = %workspace_id,
+            "Failed to commit index changes"
+        );
+    } else {
+        debug!(
+            workspace_id = %workspace_id,
+            count = new_entries.len(),
+            "Successfully persisted new entries to Tantivy index"
+        );
+    }
 
     // P1-2: 将监听捕获的增量内容同步写入 CAS 和 MetadataStore
     {
-        let cas_map = state.cas_instances.lock();
-        let meta_map = state.metadata_stores.lock();
-        if let (Some(cas), Some(metadata_store)) =
-            (cas_map.get(workspace_id), meta_map.get(workspace_id))
-        {
-            // 收集唯一源文件路径，避免重复写入
-            let mut seen_sources = HashSet::new();
-            for entry in new_entries {
-                if seen_sources.insert(entry.real_path.as_ref()) {
-                    let source_path = std::path::Path::new(entry.real_path.as_ref());
-                    if source_path.is_file() {
-                        // 读取完整文件内容
-                        match std::fs::read(source_path) {
-                            Ok(content) => {
-                                // FIX(HI-04): 避免在同步线程中 block_on，
-                                // 改用 spawn 将 CAS 写入和 metadata 更新发送到 Tokio 异步任务处理
-                                let cas = Arc::clone(cas);
-                                let metadata_store = Arc::clone(metadata_store);
-                                let source_path = source_path.to_path_buf();
-                                let real_path = entry.real_path.to_string();
-                                let virtual_path = entry.file.to_string();
-                                runtime_handle.spawn(async move {
-                                    match cas.store_content(&content).await {
-                                        Ok(hash) => {
-                                            let file_size = content.len() as i64;
-                                            let file_name = source_path
-                                                .file_name()
-                                                .map(|n| n.to_string_lossy().to_string())
-                                                .unwrap_or_else(|| real_path.clone());
-                                            let metadata = la_storage::FileMetadata {
-                                                id: 0,
-                                                sha256_hash: hash,
-                                                virtual_path,
-                                                original_name: file_name,
-                                                size: file_size,
-                                                modified_time: 0,
-                                                mime_type: None,
-                                                parent_archive_id: None,
-                                                depth_level: 0,
-                                                min_timestamp: None,
-                                                max_timestamp: None,
-                                                level_mask: None,
-                                                analysis_status:
-                                                    la_core::storage_types::AnalysisStatus::Pending,
-                                            };
-                                            if let Err(e) =
-                                                metadata_store.insert_file(&metadata).await
-                                            {
-                                                tracing::warn!(
-                                                    virtual_path = %metadata.virtual_path,
-                                                    error = %e,
-                                                    "Failed to insert watcher file metadata"
-                                                );
-                                            }
-                                        }
-                                        Err(e) => {
+        let cas = service.cas();
+        let metadata_store = service.metadata_store();
+        // 收集唯一源文件路径，避免重复写入
+        let mut seen_sources = HashSet::new();
+        for entry in new_entries {
+            if seen_sources.insert(entry.real_path.as_ref()) {
+                let source_path = std::path::Path::new(entry.real_path.as_ref());
+                if source_path.is_file() {
+                    // 读取完整文件内容
+                    match std::fs::read(source_path) {
+                        Ok(content) => {
+                            // FIX(HI-04): 避免在同步线程中 block_on，
+                            // 改用 spawn 将 CAS 写入和 metadata 更新发送到 Tokio 异步任务处理
+                            let cas = Arc::clone(cas);
+                            let metadata_store = Arc::clone(metadata_store);
+                            let source_path = source_path.to_path_buf();
+                            let real_path = entry.real_path.to_string();
+                            let virtual_path = entry.file.to_string();
+                            runtime_handle.spawn(async move {
+                                match cas.store_content(&content).await {
+                                    Ok(hash) => {
+                                        let file_size = content.len() as i64;
+                                        let file_name = source_path
+                                            .file_name()
+                                            .map(|n| n.to_string_lossy().to_string())
+                                            .unwrap_or_else(|| real_path.clone());
+                                        let metadata = la_storage::FileMetadata {
+                                            id: 0,
+                                            sha256_hash: hash,
+                                            virtual_path,
+                                            original_name: file_name,
+                                            size: file_size,
+                                            modified_time: 0,
+                                            mime_type: None,
+                                            parent_archive_id: None,
+                                            depth_level: 0,
+                                            min_timestamp: None,
+                                            max_timestamp: None,
+                                            level_mask: None,
+                                            analysis_status:
+                                                la_core::storage_types::AnalysisStatus::Pending,
+                                        };
+                                        if let Err(e) =
+                                            metadata_store.insert_file(&metadata).await
+                                        {
                                             tracing::warn!(
-                                                source = %real_path,
+                                                virtual_path = %metadata.virtual_path,
                                                 error = %e,
-                                                "Failed to store watcher file content in CAS"
+                                                "Failed to insert watcher file metadata"
                                             );
                                         }
                                     }
-                                });
-                            }
-                            Err(e) => {
-                                tracing::warn!(
-                                    source = %entry.real_path,
-                                    error = %e,
-                                    "Failed to read watcher file for CAS storage"
-                                );
-                            }
+                                    Err(e) => {
+                                        tracing::warn!(
+                                            source = %real_path,
+                                            error = %e,
+                                            "Failed to store watcher file content in CAS"
+                                        );
+                                    }
+                                }
+                            });
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                source = %entry.real_path,
+                                error = %e,
+                                "Failed to read watcher file for CAS storage"
+                            );
                         }
                     }
                 }

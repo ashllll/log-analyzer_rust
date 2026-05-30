@@ -20,6 +20,7 @@ pub mod import;
 pub mod search;
 pub mod watch;
 pub mod workspace;
+pub mod workspace_service;
 
 pub use config::ConfigUseCase;
 pub use export::ExportUseCase;
@@ -27,6 +28,10 @@ pub use import::ImportUseCase;
 pub use search::SearchUseCase;
 pub use watch::WatchUseCase;
 pub use workspace::WorkspaceUseCase;
+pub use workspace_service::{
+    ImportOptions, ImportService, SearchService, WatchService, WorkspaceService,
+    WorkspaceServiceRef,
+};
 
 #[cfg(test)]
 mod tests {

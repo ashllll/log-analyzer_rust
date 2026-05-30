@@ -2,6 +2,12 @@
 //!
 //! Encapsulates the search flow using domain traits, keeping the Tauri
 //! command handler thin.
+//!
+//! # P7 去泛型
+//!
+//! 原设计使用泛型参数 `<L, R, E, S>` 以支持理论上的多种实现替换。
+//! 实践中始终只有一套生产实现，泛型参数增加了认知负担和编译时间。
+//! P7 改为 trait 对象，保持测试可 mock 的同时简化类型系统。
 
 use std::sync::Arc;
 
@@ -15,32 +21,23 @@ use crate::commands::search::filters::CompiledSearchFilters;
 use crate::utils::encoding::decode_log_content;
 
 /// The application use case for executing a log search.
-pub struct SearchUseCase<L, R, E, S>
-where
-    L: LogFileRepository + 'static,
-    R: SearchResultRepository + 'static,
-    E: EventPublisher + 'static,
-    S: LogSearcher + 'static,
-{
-    log_files: Arc<L>,
-    results: Arc<R>,
-    events: Arc<E>,
-    searcher: Arc<S>,
+///
+/// P7: 去泛型，使用 trait 对象。所有依赖通过 `Arc<dyn Trait>` 注入，
+/// 支持运行时替换实现（主要用于测试 mock）。
+pub struct SearchUseCase {
+    log_files: Arc<dyn LogFileRepository>,
+    results: Arc<dyn SearchResultRepository>,
+    events: Arc<dyn EventPublisher>,
+    searcher: Arc<dyn LogSearcher>,
     thread_pool: Arc<rayon::ThreadPool>,
 }
 
-impl<L, R, E, S> SearchUseCase<L, R, E, S>
-where
-    L: LogFileRepository,
-    R: SearchResultRepository,
-    E: EventPublisher,
-    S: LogSearcher,
-{
+impl SearchUseCase {
     pub fn new(
-        log_files: Arc<L>,
-        results: Arc<R>,
-        events: Arc<E>,
-        searcher: Arc<S>,
+        log_files: Arc<dyn LogFileRepository>,
+        results: Arc<dyn SearchResultRepository>,
+        events: Arc<dyn EventPublisher>,
+        searcher: Arc<dyn LogSearcher>,
         thread_pool: Arc<rayon::ThreadPool>,
     ) -> Self {
         Self {
@@ -125,10 +122,10 @@ where
 
     #[allow(clippy::too_many_arguments)]
     fn execute_blocking(
-        log_files: Arc<L>,
-        results: Arc<R>,
-        events: Arc<E>,
-        searcher: Arc<S>,
+        log_files: Arc<dyn LogFileRepository>,
+        results: Arc<dyn SearchResultRepository>,
+        events: Arc<dyn EventPublisher>,
+        searcher: Arc<dyn LogSearcher>,
         search_id: &str,
         query: &SearchQuery,
         _raw_terms: &[String],
@@ -235,9 +232,9 @@ where
 }
 
 /// Search a single file using CAS content.
-fn search_one_file<L: LogFileRepository, S: LogSearcher>(
-    log_files: &Arc<L>,
-    searcher: &Arc<S>,
+fn search_one_file(
+    log_files: &Arc<dyn LogFileRepository>,
+    searcher: &Arc<dyn LogSearcher>,
     fm: &la_core::storage_types::FileMetadata,
     plan: &la_core::domain::ExecutionPlan,
     filters: &SearchFilters,

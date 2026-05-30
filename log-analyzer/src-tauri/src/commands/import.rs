@@ -12,6 +12,7 @@ use tauri::{command, AppHandle, Emitter, Manager, State};
 use tracing::error;
 use uuid::Uuid;
 
+use crate::infrastructure::{TauriEventPublisher, WorkspaceServiceImpl};
 use crate::models::AppState;
 use crate::services::file_watcher::parse_metadata;
 use crate::services::parse_log_lines;
@@ -78,13 +79,9 @@ pub(crate) fn ensure_search_engine_manager(
     workspace_id: &str,
     workspace_dir: &Path,
 ) -> Result<Arc<la_search::SearchEngineManager>, String> {
-    if let Some(manager) = state
-        .search_engine_managers
-        .lock()
-        .get(workspace_id)
-        .cloned()
-    {
-        return Ok(manager);
+    // P4 迁移：优先从 workspace_services 获取
+    if let Some(service) = state.get_workspace_service(workspace_id) {
+        return Ok(Arc::clone(service.search_engine()));
     }
 
     let app_search_config = load_workspace_search_config(app);
@@ -97,11 +94,6 @@ pub(crate) fn ensure_search_engine_manager(
         )
         .map_err(|e| format!("Failed to initialize search engine: {}", e))?,
     );
-
-    state
-        .search_engine_managers
-        .lock()
-        .insert(workspace_id.to_string(), Arc::clone(&manager));
 
     Ok(manager)
 }
@@ -119,48 +111,50 @@ pub(crate) async fn ensure_workspace_runtime_state(
     ),
     String,
 > {
-    let cas = {
-        let mut cas_instances = state.cas_instances.lock();
-        cas_instances
-            .entry(workspace_id.to_string())
-            .or_insert_with(|| {
-                Arc::new(la_storage::ContentAddressableStorage::new(
-                    workspace_dir.to_path_buf(),
-                ))
-            })
-            .clone()
-    };
+    // P4 迁移：优先从 workspace_services 获取已预组装的服务
+    if let Some(service) = state.get_workspace_service(workspace_id) {
+        return Ok((
+            Arc::clone(service.cas()),
+            Arc::clone(service.metadata_store()),
+            Arc::clone(service.search_engine()),
+        ));
+    }
 
-    let metadata_store = {
-        let existing = {
-            let metadata_stores = state.metadata_stores.lock();
-            metadata_stores.get(workspace_id).cloned()
-        };
+    // 创建各运行时组件
+    let cas = Arc::new(la_storage::ContentAddressableStorage::new(
+        workspace_dir.to_path_buf(),
+    ));
 
-        if let Some(store) = existing {
-            store
-        } else {
-            let store = Arc::new(
-                MetadataStore::new(workspace_dir)
-                    .await
-                    .map_err(|e| format!("Failed to open metadata store: {}", e))?,
-            );
-
-            state
-                .metadata_stores
-                .lock()
-                .insert(workspace_id.to_string(), Arc::clone(&store));
-
-            store
-        }
-    };
-
-    state
-        .workspace_dirs
-        .lock()
-        .insert(workspace_id.to_string(), workspace_dir.to_path_buf());
+    let metadata_store = Arc::new(
+        MetadataStore::new(workspace_dir)
+            .await
+            .map_err(|e| format!("Failed to open metadata store: {}", e))?,
+    );
 
     let search_manager = ensure_search_engine_manager(app, state, workspace_id, workspace_dir)?;
+
+    // 组装 WorkspaceServiceImpl 并存入 workspace_services（替代分散的旧 HashMap）
+    let disk_result_store = state.disk_result_store.read().clone().ok_or_else(|| {
+        "Disk result store not initialized".to_string()
+    })?;
+    let thread_pool = Arc::clone(&state.search_thread_pool);
+
+    let regex_cache_size = load_workspace_search_config(app).regex_cache_size.max(1);
+    let service = Arc::new(WorkspaceServiceImpl::new(
+        workspace_id.to_string(),
+        workspace_dir.to_path_buf(),
+        Arc::clone(&cas),
+        Arc::clone(&metadata_store),
+        Arc::clone(&search_manager),
+        disk_result_store,
+        Arc::new(TauriEventPublisher {
+            app_handle: app.clone(),
+        }),
+        thread_pool,
+        regex_cache_size,
+    ));
+
+    state.set_workspace_service(workspace_id.to_string(), service);
 
     Ok((cas, metadata_store, search_manager))
 }
@@ -455,17 +449,8 @@ pub async fn import_folder(
     {
         error!(error = %e, "Failed to process path");
 
-        // 清理导入失败前已插入的内存状态，防止孤儿条目
-        state.cas_instances.lock().remove(&workspace_id_clone);
-        state.metadata_stores.lock().remove(&workspace_id_clone);
-        state
-            .search_engine_managers
-            .lock()
-            .remove(&workspace_id_clone);
-        {
-            let mut dirs = state.workspace_dirs.lock();
-            dirs.remove(&workspace_id_clone);
-        }
+        // P4 迁移：统一清理（workspace_services 替代分散的旧 HashMap）
+        state.remove_workspace_service(&workspace_id_clone);
         // 删除磁盘上不完整的工作区目录
         if workspace_dir.exists() {
             if let Err(rm_err) = std::fs::remove_dir_all(&workspace_dir) {
@@ -764,6 +749,38 @@ pub async fn import_folder(
                 let _ = app_handle.emit("import-warning", &error_msg);
             }
         }
+    }
+
+    // ── 架构重构：导入成功后预创建 WorkspaceService ──
+    // P4 渐进式迁移：将工作区的运行时依赖组装为 WorkspaceService，
+    // 存入 AppState.workspace_services，供后续搜索/监听命令直接使用。
+    {
+        let disk_result_store = state.disk_result_store.read().clone().ok_or_else(|| {
+            "Disk result store not initialized".to_string()
+        })?;
+        let thread_pool = Arc::clone(&state.search_thread_pool);
+        let regex_cache_size = load_workspace_search_config(&app_handle).regex_cache_size.max(1);
+        let event_publisher = Arc::new(TauriEventPublisher {
+            app_handle: app_handle.clone(),
+        });
+
+        let service = Arc::new(WorkspaceServiceImpl::new(
+            workspace_id_clone.clone(),
+            workspace_dir.clone(),
+            cas,
+            metadata_store,
+            search_manager,
+            disk_result_store,
+            event_publisher,
+            thread_pool,
+            regex_cache_size,
+        ));
+
+        state.set_workspace_service(workspace_id_clone.clone(), service);
+        tracing::info!(
+            workspace_id = %workspace_id_clone,
+            "WorkspaceService pre-created after import"
+        );
     }
 
     let _ = app_handle.emit("import-complete", task_id_clone);

@@ -423,34 +423,14 @@ async fn cleanup_workspace_resources(
     // ===== 步骤3: 清除工作区运行态资源 =====
     info!("Step 3: Removing workspace runtime resources");
 
-    // 重要：先关闭 MetadataStore 和 SearchEngineManager，释放文件句柄
-    // 然后再从内存状态中移除，避免 Windows 上文件被占用导致删除失败
-    let store = {
-        let mut stores = state.metadata_stores.lock();
-        stores.remove(workspace_id)
-    };
-    if let Some(store) = store {
-        store.close().await;
-        info!(
-            workspace_id = %workspace_id,
-            "MetadataStore closed"
-        );
+    // P4 迁移：先关闭资源，再统一清理（workspace_services 替代分散的旧 HashMap）
+    if let Some(service) = state.get_workspace_service(workspace_id) {
+        service.metadata_store().close().await;
+        info!(workspace_id = %workspace_id, "MetadataStore closed");
+        service.search_engine().close().await;
+        info!(workspace_id = %workspace_id, "SearchEngineManager::close() completed");
     }
-
-    let manager = {
-        let mut search_managers = state.search_engine_managers.lock();
-        search_managers.remove(workspace_id)
-    };
-    if let Some(manager) = manager {
-        manager.close().await;
-        info!(
-            workspace_id = %workspace_id,
-            "SearchEngineManager::close() completed"
-        );
-    }
-
-    state.workspace_dirs.lock().remove(workspace_id);
-    state.cas_instances.lock().remove(workspace_id);
+    state.remove_workspace_service(workspace_id);
     info!("Step 3 completed: Workspace runtime resources removed");
 
     // ===== 步骤4: 清理旧的索引文件（如果存在）=====
