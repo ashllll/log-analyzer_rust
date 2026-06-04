@@ -6,6 +6,8 @@ pub mod log_file_repo;
 pub mod result_store;
 pub mod searcher;
 pub mod task_scheduler;
+pub mod watcher_runner;
+pub mod workspace_service_factory;
 pub mod workspace_service_impl;
 
 pub use archive_extractor::ArchiveManagerAdapter;

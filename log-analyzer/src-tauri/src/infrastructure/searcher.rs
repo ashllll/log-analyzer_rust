@@ -9,7 +9,7 @@ use la_core::domain::{ExecutionPlan as DomainExecutionPlan, LogSearcher};
 use la_core::error::Result;
 use la_core::models::{LogEntry, SearchFilters, SearchQuery};
 
-use crate::commands::search::filters::{CompiledSearchFilters, ParsedLineMetadata};
+use crate::application::search_filters::{CompiledSearchFilters, ParsedLineMetadata};
 use crate::services::{ExecutionPlan as ServiceExecutionPlan, QueryPlanBuilder};
 
 /// Domain LogSearcher implementation using the production regex/query engine.

@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Log Analyzer — 架构审查报告</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    body { font-family: 'Inter', system-ui, sans-serif; }
+    .badge-strong { @apply bg-red-100 text-red-800 border-red-200; }
+    .badge-worth { @apply bg-amber-100 text-amber-800 border-amber-200; }
+    .badge-spec { @apply bg-slate-100 text-slate-700 border-slate-200; }
+    .card { @apply bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden; }
+    .card-header { @apply px-6 py-4 bg-slate-50 border-b border-slate-200; }
+    .card-body { @apply px-6 py-5; }
+    .before-after { @apply grid grid-cols-2 gap-4; }
+    .before-box { @apply bg-red-50 border border-red-200 rounded-lg p-4; }
+    .after-box { @apply bg-emerald-50 border border-emerald-200 rounded-lg p-4; }
+    .file-tag { @apply inline-block px-2 py-0.5 bg-slate-100 text-slate-600 text-xs rounded font-mono; }
+    .depth-bar { @apply h-2 rounded-full bg-slate-200 overflow-hidden; }
+    .depth-fill { @apply h-full rounded-full; }
+    .metric { @apply text-center; }
+    .metric-value { @apply text-2xl font-bold; }
+    .metric-label { @apply text-xs text-slate-500 uppercase tracking-wider; }
+  </style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+  <!-- Header -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+    <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div>
+        <h1 class="text-xl font-bold text-slate-900">Log Analyzer — 架构审查报告</h1>
+        <p class="text-sm text-slate-500 mt-0.5">基于 Clean Architecture + 深度模块分析 · 6 个候选</p>
+      </div>
+      <div class="flex gap-2">
+        <span class="px-3 py-1 bg-red-100 text-red-700 text-xs font-medium rounded-full border border-red-200">2 Strong</span>
+        <span class="px-3 py-1 bg-amber-100 text-amber-700 text-xs font-medium rounded-full border border-amber-200">3 Worth exploring</span>
+        <span class="px-3 py-1 bg-slate-100 text-slate-600 text-xs font-medium rounded-full border border-slate-200">1 Speculative</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-6xl mx-auto px-6 py-8 space-y-6">
+
+    <!-- Summary Metrics -->
+    <div class="grid grid-cols-4 gap-4">
+      <div class="bg-white rounded-xl border border-slate-200 p-4">
+        <div class="metric">
+          <div class="metric-value text-slate-800">6</div>
+          <div class="metric-label">候选</div>
+        </div>
+      </div>
+      <div class="bg-white rounded-xl border border-slate-200 p-4">
+        <div class="metric">
+          <div class="metric-value text-red-600">2</div>
+          <div class="metric-label">Strong</div>
+        </div>
+      </div>
+      <div class="bg-white rounded-xl border border-slate-200 p-4">
+        <div class="metric">
+          <div class="metric-value text-amber-600">3</div>
+          <div class="metric-label">Worth exploring</div>
+        </div>
+      </div>
+      <div class="bg-white rounded-xl border border-slate-200 p-4">
+        <div class="metric">
+          <div class="metric-value text-emerald-600">~40</div>
+          <div class="metric-label">涉及文件</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Top Recommendation -->
+    <div class="bg-gradient-to-r from-red-50 to-amber-50 rounded-xl border border-red-200 p-6">
+      <div class="flex items-start gap-4">
+        <div class="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center flex-shrink-0">
+          <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>
+        </div>
+        <div class="flex-1">
+          <h2 class="text-lg font-bold text-slate-900">首要推荐：拆分 AppState God Object</h2>
+          <p class="text-sm text-slate-600 mt-1">
+            AppState 是当前最大的架构摩擦源。它混合了 9 个不相关领域的运行时状态，每次新增功能都迫使修改者理解全部字段的交互关系。
+            将其按领域拆分为独立的上下文（WorkspaceContext / SearchContext / TaskContext），能立即降低认知负担，
+            并让 WorkspaceService 迁移（候选 #2）有清晰的落地位置。
+          </p>
+          <div class="flex gap-2 mt-3">
+            <span class="file-tag">models/state.rs</span>
+            <span class="file-tag">main.rs</span>
+            <span class="file-tag">commands/*.rs</span>
+          </div>
+        </div>
+        <span class="px-3 py-1 bg-red-100 text-red-700 text-xs font-bold rounded-full border border-red-200">STRONG</span>
+      </div>
+    </div>
+
+    <!-- Candidate 1: AppState -->
+    <div class="card">
+      <div class="card-header flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <span class="text-lg font-mono font-bold text-slate-400">#1</span>
+          <h3 class="font-bold text-slate-900">AppState — God Object</h3>
+        </div>
+        <span class="px-3 py-1 bg-red-100 text-red-700 text-xs font-bold rounded-full border border-red-200">STRONG</span>
+      </div>
+      <div class="card-body space-y-4">
+        <div class="flex gap-2 flex-wrap">
+          <span class="file-tag">models/state.rs</span>
+          <span class="file-tag">main.rs</span>
+          <span class="file-tag">commands/*.rs</span>
+          <span class="file-tag">application/*.rs</span>
+        </div>
+
+        <div class="grid grid-cols-3 gap-4 text-sm">
+          <div class="bg-slate-50 rounded-lg p-3">
+            <div class="text-xs font-semibold text-slate-500 uppercase mb-2">接口复杂度</div>
+            <div class="depth-bar"><div class="depth-fill bg-red-500" style="width: 90%"></div></div>
+            <div class="text-right text-xs text-slate-400 mt-1">9 个领域字段 + 15+ 方法</div>
+          </div>
+          <div class="bg-slate-50 rounded-lg p-3">
+            <div class="text-xs font-semibold text-slate-500 uppercase mb-2">认知负担</div>
+            <div class="depth-bar"><div class="depth-fill bg-red-500" style="width: 85%"></div></div>
+            <div class="text-right text-xs text-slate-400 mt-1">修改任一功能需理解全部</div>
+          </div>
+          <div class="bg-slate-50 rounded-lg p-3">
+            <div class="text-xs font-semibold text-slate-500 uppercase mb-2">测试难度</div>
+            <div class="depth-bar"><div class="depth-fill bg-red-500" style="width: 80%"></div></div>
+            <div class="text-right text-xs text-slate-400 mt-1">必须构造完整 AppState</div>
+          </div>
+        </div>
+
+        <div>
+          <h4 class="font-semibold text-slate-800 text-sm mb-2">问题</h4>
+          <p class="text-sm text-slate-600">
+            AppState 同时持有：workspace_services、watchers、search_cancellation_tokens、search_metrics、
+            disk_result_store、search_thread_pool、task_manager、state_sync、async_resource_manager。
+            这些属于 5 个完全不同的领域（Workspace、Search、Task、Sync、Resource），却被迫塞进一个结构体。
+            <strong>删除测试</strong>：删除 AppState 不会集中复杂度，而是迫使每个调用者自己组装所需依赖 → 这是一个浅层的胶水层，不是深模块。
+          </p>
+        </div>
+
+        <div class="before-after">
+          <div class="before-box">
+            <div class="text-xs font-bold text-red-700 uppercase mb-2">Before</div>
+            <pre class="text-xs text-slate-700 overflow-x-auto"><code>pub struct AppState {
+    workspace_services: Arc<Mutex<HashMap<...,
+    watchers: Arc<Mutex<HashMap<...,
+    search_cancellation_tokens: Arc<Mutex<HashMap<...,
+    search_metrics: Arc<Mutex<SearchMetrics>>,
+    disk_result_store: RwLock<Option<Arc<...,
+    search_thread_pool: Arc<rayon::ThreadPool>,
+    task_manager: Arc<Mutex<Option<...,
+    state_sync: Arc<Mutex<Option<...,
+    async_resource_manager: Arc<AsyncResourceManager>,
+}</code></pre>
+          </div>
+          <div class="after-box">
+            <div class="text-xs font-bold text-emerald-700 uppercase mb-2">After</div>
+            <pre class="text-xs text-slate-700 overflow-x-auto"><code>pub struct AppState {
+    workspaces: WorkspaceContext,
+    search: SearchContext,
+    tasks: TaskContext,
+}
+
+pub struct WorkspaceContext {
+    services: HashMap<String, WorkspaceServiceRef>,
+    watchers: HashMap<String, WatcherState>,
+}
+
+pub struct SearchContext {
+    metrics: SearchMetrics,
+    disk_store: DiskResultStoreRef,
+    thread_pool: Arc<rayon::ThreadPool>,
+}</code></pre>
+          </div>
+        </div>
+
+        <div>
+          <h4 class="font-semibold text-slate-800 text-sm mb-2">收益</h4>
+          <ul class="text-sm text-slate-600 space-y-1 list-disc list-inside">
+            <li><strong>Locality</strong>：Workspace 相关修改只触及 WorkspaceContext，不污染 SearchContext</li>
+            <li><strong>测试</strong>：测试搜索逻辑只需构造 SearchContext（5 个字段），而非完整 AppState（15+ 字段）</li>
+            <li><strong>Leverage</strong>：每个上下文的接口从"所有字段"缩小到"该领域需要的字段"</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Candidate 2: WorkspaceService Migration -->
+    <div class="card">
+      <div class="card-header flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <span class="text-lg font-mono font-bold text-slate-400">#2</span>
+          <h3 class="font-bold text-slate-900">WorkspaceService 迁移 — 半途而废</h3>
+        </div>
+        <span class="px-3 py-1 bg-red-100 text-red-700 text-xs font-bold rounded-full border border-red-200">STRONG</span>
+      </div>
+      <div class="card-body space-y-4">
+        <div class="flex gap-2 flex-wrap">
+          <span class="file-tag">application/workspace_service.rs</span>
+          <span class="file-tag">infrastructure/workspace_service_impl.rs</span>
+          <span class="file-tag">commands/import.rs</span>
+          <span class="file-tag">commands/watch.rs</span>
+        </div>
+
+        <div>
+          <h4 class="font-semibold text-slate-800 text-sm mb-2">问题</h4>
+          <p class="text-sm text-slate-600">
+            WorkspaceService trait 定义了 3 个服务接口（SearchService / ImportService / WatchService），
+            但只有 SearchService 有实现。ImportService 和 WatchService 是 <code>todo!()</code> 占位。
+            更严重的是，WorkspaceService trait 暴露了 <code>cas()</code>、<code>metadata_store()</code>、<code>search_engine()</code>
+            三个内部依赖 getter（标注为"P5 渐进式，待清理"），这让调用者直接绕过服务接口访问底层存储。
+          </p>
+          <p class="text-sm text-slate-600 mt-2">
+            结果：命令层和 WorkspaceServiceImpl 之间形成了<strong>"一半新一半旧"的混合状态</strong>。
+            导入命令仍然直接操作 CAS 和 MetadataStore，而不是通过 WorkspaceService。
+            这违背了"预组装服务"的设计初衷——调用者仍需了解底层依赖。
+          </p>
+        </div>
+
+        <div class="before-after">
+          <div class="before-box">
+            <div class="text-xs font-bold text-red-700 uppercase mb-2">Before</div>
+            <pre class="text-xs text-slate-700 overflow-x-auto"><code>// commands/import.rs
+let cas = ContentAddressableStorage::new(...);
+let metadata = MetadataStore::new(...);
+// 直接操作底层存储，不经过 WorkspaceService
+
+trait WorkspaceService {
+    fn cas(&self) -> &Arc<ContentAddressableStorage>; // P5 待清理
+    fn metadata_store(&self) -> &Arc<MetadataStore>; // P5 待清理
+}</code></pre>
+          </div>
+          <div class="after-box">
+            <div class="text-xs font-bold text-emerald-700 uppercase mb-2">After</div>
+            <pre class="text-xs text-slate-700 overflow-x-auto"><code>// WorkspaceService trait 移除内部 getter
+trait WorkspaceService: SearchService + ImportService + WatchService {
+    fn workspace_id(&self) -> &str;
+}
+
+// commands/import.rs
+let ws = app.get_workspace_service(id)?;
+ws.import_file(path, options).await?; // 通过接口</code></pre>
+          </div>
+        </div>
+
+        <div>
+          <h4 class="font-semibold text-slate-800 text-sm mb-2">收益</h4>
+          <ul class="text-sm text-slate-600 space-y-1 list-disc list-inside">
+            <li><strong>Seam 完整性</strong>：WorkspaceService 成为真正的 seam，调用者只需知道接口</li>
+            <li><strong>Locality</strong>：导入逻辑集中在 ImportService 实现中，不在命令层分散</li>
+            <li><strong>测试</strong>：可以 mock WorkspaceService 来测试命令层，无需构造真实 CAS/MetadataStore</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Candidate 3: SearchUseCase execute_blocking -->
+    <div class="card">
+      <div class="card-header flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <span class="text-lg font-mono font-bold text-slate-400">#3</span>
+          <h3 class="font-bold text-slate-900">SearchUseCase::execute_blocking — 闭包地狱</h3>
+        </div>
+        <span class="px-3 py-1 bg-amber-100 text-amber-700 text-xs font-bold rounded-full border border-amber-200">WORTH EXPLORING</span>
+      </div>
+      <div class="card-body space-y-4">
+        <div class="flex gap-2 flex-wrap">
+          <span class="file-tag">application/search.rs</span>
+          <span class="file-tag">infrastructure/searcher.rs</span>
+        </div>
+
+        <div>
+          <h4 class="font-semibold text-slate-800 text-sm mb-2">问题</h4>
+          <p class="text-sm text-slate-600">
+            <code>execute_blocking</code> 有 10+ 个参数，内部进行了 7 次 <code>Arc::clone</code> 和大量 move。
+            最严重的问题：在 <code>spawn_blocking</code> 的同步上下文中使用
+            <code>tokio::runtime::Handle::current().block_on(events.emit_...())</code>
+            来发射事件——这是在阻塞线程池中进行异步阻塞调用，形成双重阻塞。
+          </p>
+          <p class="text-sm text-slate-600 mt-2">
+            批处理 flush 逻辑（batch_size、results_count、was_truncated、timed_out）全部内联在一个函数中，
+            无法独立测试。取消检测、超时检测、max_results 截断逻辑交错在一起，阅读者需要同时跟踪 4 个状态变量。
+          </p>
+        </div>
+
+        <div class="before-after">
+          <div class="before-box">
+            <div class="text-xs font-bold text-red-700 uppercase mb-2">Before</div>
+            <pre class="text-xs text-slate-700 overflow-x-auto"><code>fn execute_blocking(
+    log_files, results, events, searcher, // 4 Arc
+    search_id, query, terms, filters, files,
+    max_results, thread_pool, token,      // +3
+) {
+    // 7x Arc::clone
+    // tokio::Handle::current().block_on(events.emit_...)
+    // 内联批处理 + 取消 + 超时 + 截断逻辑
+}</code></pre>
+          </div>
+          <div class="after-box">
+            <div class="text-xs font-bold text-emerald-700 uppercase mb-2">After</div>
+            <pre class="text-xs text-slate-700 overflow-x-auto"><code>struct SearchOrchestrator { ... }
+
+impl SearchOrchestrator {
+    fn run(&self, ctx: SearchContext) -> SearchOutcome {
+        let results = self.search_files(ctx.files)?;
+        self.result_writer.write_in_batches(results)?;
+        SearchOutcome { count, duration, truncated }
+    }
+}
+
+// 事件发射通过 bounded channel，不 block_on
+</code></pre>
+          </div>
+        </div>
+
+        <div>
+          <h4 class="font-semibold text-slate-800 text-sm mb-2">收益</h4>
+          <ul class="text-sm text-slate-600 space-y-1 list-disc list-inside">
+            <li><strong>移除 block_on 反模式</strong>：使用 bounded channel 或事件队列在 spawn_blocking 和 async 上下文间传递事件</li>
+            <li><strong>可测试的批处理</strong>：ResultWriter 成为独立模块，可单独测试分页、超时、截断逻辑</li>
+            <li><strong>Locality</strong>：取消/超时/截断策略集中在 Orchestrator 中，不再散落在闭包里</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Candidate 4: commands/search/mod.rs -->
+    <div class="card">
+      <div class="card-header flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <span class="text-lg font-mono font-bold text-slate-400">#4</span>
+          <h3 class="font-bold text-slate-900">commands/search/mod.rs — 职责混合</h3>
+        </div>
+        <span class="px-3 py-1 bg-amber-100 text-amber-700 text-xs font-bold rounded-full border border-amber-200">WORTH EXPLORING</span>
+      </div>
+      <div class="card-body space-y-4">
+        <div class="flex gap-2 flex-wrap">
+          <span class="file-tag">commands/search/mod.rs</span>
+          <span class="file-tag">commands/search/query.rs</span>
+          <span class="file-tag">commands/search/filters.rs</span>
+        </div>
+
+        <div>
+          <h4 class="font-semibold text-slate-800 text-sm mb-2">问题</h4>
+          <p class="text-sm text-slate-600">
+            这个 250+ 行的文件同时承担：参数验证（<code>validate_search_params</code>）、
+            运行时配置加载（<code>load_search_runtime_config</code> — 直接读取文件系统）、
+            workspace ID 解析（<code>resolve_workspace_id</code>）、取消令牌生命周期管理、
+            SearchUseCase 调用协调，以及 3 个 Serde 类型定义（<code>BinarySearchResult</code>、
+            <code>BinarySearchRequest</code>、<code>SearchRuntimeConfig</code>）。
+          </p>
+          <p class="text-sm text-slate-600 mt-2">
+            <code>load_search_runtime_config</code> 直接读取 <code>config.json</code>，没有通过
+            <code>AppConfigProvider</code> trait — 违反了"Domain Trait 模式"的设计决策。
+            这意味着测试时无法注入 mock 配置，必须操作真实文件系统。
+          </p>
+        </div>
+
+        <div class="before-after">
+          <div class="before-box">
+            <div class="text-xs font-bold text-red-700 uppercase mb-2">Before</div>
+            <pre class="text-xs text-slate-700 overflow-x-auto"><code>// commands/search/mod.rs (250+ lines)
+fn validate_search_params(...)      // 验证
+fn load_search_runtime_config(...)  // 直接读文件
+fn resolve_workspace_id(...)        // workspace 解析
+fn cancel_search(...)               // 取消命令
+fn fetch_search_page(...)           // 分页命令
+fn search_logs(...)                 // 搜索命令
+// + 3 个 struct 定义</code></pre>
+          </div>
+          <div class="after-box">
+            <div class="text-xs font-bold text-emerald-700 uppercase mb-2">After</div>
+            <pre class="text-xs text-slate-700 overflow-x-auto"><code>// commands/search/mod.rs (仅命令入口)
+#[command] pub async fn search_logs(...) -> Result<...>
+
+// 配置加载移至 infrastructure/
+fn load_search_runtime_config(
+    provider: &dyn AppConfigProvider  // 通过 trait
+) -> SearchRuntimeConfig
+
+// 参数解析提取到独立模块
+// commands/search/params.rs</code></pre>
+          </div>
+        </div>
+
+        <div>
+          <h4 class="font-semibold text-slate-800 text-sm mb-2">收益</h4>
+          <ul class="text-sm text-slate-600 space-y-1 list-disc list-inside">
+            <li><strong>接口一致性</strong>：配置加载通过 AppConfigProvider trait，支持 mock 注入</li>
+            <li><strong>Locality</strong>：验证逻辑集中在 validation 模块，不再和命令入口混在一起</li>
+            <li><strong>测试</strong>：搜索命令测试可以用内存配置，不需要读写真实文件</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Candidate 5: QueryEngineLogSearcher -->
+    <div class="card">
+      <div class="card-header flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <span class="text-lg font-mono font-bold text-slate-400">#5</span>
+          <h3 class="font-bold text-slate-900">QueryEngineLogSearcher — 隐式状态耦合</h3>
+        </div>
+        <span class="px-3 py-1 bg-amber-100 text-amber-700 text-xs font-bold rounded-full border border-amber-200">WORTH EXPLORING</span>
+      </div>
+      <div class="card-body space-y-4">
+        <div class="flex gap-2 flex-wrap">
+          <span class="file-tag">infrastructure/searcher.rs</span>
+          <span class="file-tag">services/query_planner.rs</span>
+          <span class="file-tag">services/query_executor.rs</span>
+        </div>
+
+        <div>
+          <h4 class="font-semibold text-slate-800 text-sm mb-2">问题</h4>
+          <p class="text-sm text-slate-600">
+            <code>build_plan</code> 将 plan 存入 <code>self.plans: Mutex<HashMap<u64, ServiceExecutionPlan>></code>，
+            <code>match_content</code> 再通过 u64 key 取出来。这个 HashMap<strong>只增不减</strong>——每次不同查询都会新增条目，没有清理机制，形成事实上的内存泄漏。
+          </p>
+          <p class="text-sm text-slate-600 mt-2">
+            更严重的是，<code>match_content</code> 中<strong>重复编译</strong> <code>CompiledSearchFilters</code>：
+            SearchUseCase::execute 已经编译过一次 filters 并传给 get_files_with_filters，
+            但 QueryEngineLogSearcher::match_content 又重新编译了一次。
+            两层过滤（CompiledSearchFilters 在 SearchUseCase 和 QueryEngineLogSearcher 中各出现一次）
+            让调用者不清楚过滤到底发生在哪一层。
+          </p>
+        </div>
+
+        <div class="before-after">
+          <div class="before-box">
+            <div class="text-xs font-bold text-red-700 uppercase mb-2">Before</div>
+            <pre class="text-xs text-slate-700 overflow-x-auto"><code>impl LogSearcher for QueryEngineLogSearcher {
+    fn build_plan(&self, query) -> DomainExecutionPlan {
+        let plan = self.builder.build(query)?;
+        let id = hash(query);
+        self.plans.lock().insert(id, plan); // 只增不减！
+        DomainExecutionPlan { id, ... }
+    }
+
+    fn match_content(&self, ..., plan: &DomainExecutionPlan, ...) {
+        let compiled = CompiledSearchFilters::compile(filters)?; // 重复编译
+        // 再次过滤
+    }
+}</code></pre>
+          </div>
+          <div class="after-box">
+            <div class="text-xs font-bold text-emerald-700 uppercase mb-2">After</div>
+            <pre class="text-xs text-slate-700 overflow-x-auto"><code>impl LogSearcher for QueryEngineLogSearcher {
+    fn build_plan(&self, query) -> (DomainExecutionPlan, ServicePlan) {
+        let service_plan = self.builder.build(query)?;
+        let domain_plan = DomainExecutionPlan::from(&service_plan);
+        (domain_plan, service_plan) // 显式返回，不隐式存储
+    }
+
+    fn match_content(&self, ..., plan: &ServicePlan,
+                    compiled_filters: &CompiledFilters) {
+        // 使用调用者传入的已编译 filters
+    }
+}</code></pre>
+          </div>
+        </div>
+
+        <div>
+          <h4 class="font-semibold text-slate-800 text-sm mb-2">收益</h4>
+          <ul class="text-sm text-slate-600 space-y-1 list-disc list-inside">
+            <li><strong>消除内存泄漏</strong>：plans HashMap 不再需要，每次查询的 plan 随调用栈释放</li>
+            <li><strong>消除重复编译</strong>：CompiledSearchFilters 编译一次，传递给 match_content</li>
+            <li><strong>明确职责</strong>：过滤发生在 SearchUseCase 层，match_content 只做匹配</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Candidate 6: Frontend hooks -->
+    <div class="card">
+      <div class="card-header flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <span class="text-lg font-mono font-bold text-slate-400">#6</span>
+          <h3 class="font-bold text-slate-900">前端 Hooks — 过度拆分</h3>
+        </div>
+        <span class="px-3 py-1 bg-slate-100 text-slate-600 text-xs font-bold rounded-full border border-slate-200">SPECULATIVE</span>
+      </div>
+      <div class="card-body space-y-4">
+        <div class="flex gap-2 flex-wrap">
+          <span class="file-tag">src/hooks/*.ts</span>
+          <span class="file-tag">src/pages/SearchPage/hooks/*.ts</span>
+          <span class="file-tag">src/services/api.ts</span>
+        </div>
+
+        <div>
+          <h4 class="font-semibold text-slate-800 text-sm mb-2">问题</h4>
+          <p class="text-sm text-slate-600">
+            全局有 20+ 个 hooks，SearchPage 单独就有 7 个（useSearchState, useSearchQuery, useSearchPagination,
+            useSearchEvents, useVirtualScroll, useWorkspaceTimeRange）。
+            但很多 hooks 只被<strong>一个组件使用</strong>，没有复用价值。
+            useInfiniteSearch、useSearchListeners、useServerQueries 之间存在职责重叠——
+            都在处理搜索相关的状态和事件，却分散在三个文件中。
+          </p>
+          <p class="text-sm text-slate-600 mt-2">
+            api.ts 中的 <code>LogAnalyzerApi</code> 类封装了所有后端调用，但每个方法都是一个 thin wrapper。
+            这个 600+ 行的类本可以用一个泛型辅助函数大幅缩减。
+          </p>
+        </div>
+
+        <div class="before-after">
+          <div class="before-box">
+            <div class="text-xs font-bold text-red-700 uppercase mb-2">Before</div>
+            <pre class="text-xs text-slate-700 overflow-x-auto"><code>// SearchPage 使用 7 个 hooks
+const state = useSearchState();
+const query = useSearchQuery();
+const pagination = useSearchPagination();
+const events = useSearchEvents();
+const scroll = useVirtualScroll();
+const timeRange = useWorkspaceTimeRange();
+// + useInfiniteSearch 在父级</code></pre>
+          </div>
+          <div class="after-box">
+            <div class="text-xs font-bold text-emerald-700 uppercase mb-2">After</div>
+            <pre class="text-xs text-slate-700 overflow-x-auto"><code>// 合并为 SearchPage 专用 hook
+const search = useSearchPage({ workspaceId, query });
+// search.state, search.pagination, search.scroll, ...
+
+// 或按"关注点"而非"功能"拆分：
+// useSearchData (数据获取)
+// useSearchUI (UI 状态)</code></pre>
+          </div>
+        </div>
+
+        <div>
+          <h4 class="font-semibold text-slate-800 text-sm mb-2">收益</h4>
+          <ul class="text-sm text-slate-600 space-y-1 list-disc list-inside">
+            <li><strong>减少文件跳转</strong>：理解搜索页状态管理不需要打开 7 个文件</li>
+            <li><strong>减少隐式耦合</strong>： hooks 间的隐式依赖（通过 Zustand store）更可控</li>
+            <li><strong>Leverage</strong>：按"页面级"或"关注点"拆分，比按"功能原子"拆分更能反映业务意图</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Dependency Map -->
+    <div class="card">
+      <div class="card-header">
+        <h3 class="font-bold text-slate-900">模块依赖关系图</h3>
+      </div>
+      <div class="card-body">
+        <div class="mermaid">
+graph TB
+    subgraph Frontend["前端 (React)"]
+        SP[SearchPage]
+        Hooks["20+ Hooks"]
+        API[api.ts]
+        Stores["Zustand Stores"]
+    end
+
+    subgraph Commands["命令层"]
+        CMD[commands/search/mod.rs]
+        IMP[commands/import.rs]
+        WAT[commands/watch.rs]
+    end
+
+    subgraph AppState["AppState (God Object)"]
+        AS[models/state.rs]
+        WS[workspace_services]
+        ST[search_thread_pool]
+        TM[task_manager]
+        ARM[async_resource_manager]
+    end
+
+    subgraph UseCases["用例层"]
+        SUC[SearchUseCase]
+        IUC[ImportUseCase]
+        WUC[WatchUseCase]
+    end
+
+    subgraph Services["服务层"]
+        QEL[QueryEngineLogSearcher]
+        QE[query_executor]
+        QP[query_planner]
+    end
+
+    subgraph WorkspaceService["WorkspaceService (半成品)"]
+        WST[trait 定义]
+        WSI[WorkspaceServiceImpl]
+        SS[SearchService ✓]
+        IS[ImportService ✗ todo!]
+        WS2[WatchService ✗ todo!]
+    end
+
+    SP --> Hooks
+    Hooks --> API
+    API --> CMD
+    CMD --> AS
+    CMD --> SUC
+    CMD --> WSI
+    AS --> WS
+    AS --> ST
+    AS --> TM
+    AS --> ARM
+    SUC --> QEL
+    QEL --> QE
+    QEL --> QP
+    WSI --> SS
+    WSI --> IS
+    WSI --> WS2
+    IMP -.->|绕过| AS
+    WAT -.->|绕过| AS
+        </div>
+      </div>
+    </div>
+
+    <!-- Action Priority -->
+    <div class="card">
+      <div class="card-header">
+        <h3 class="font-bold text-slate-900">推荐处理顺序</h3>
+      </div>
+      <div class="card-body">
+        <div class="space-y-3">
+          <div class="flex items-center gap-3 p-3 bg-red-50 rounded-lg border border-red-200">
+            <span class="w-8 h-8 bg-red-200 rounded-full flex items-center justify-center text-red-700 font-bold text-sm">1</span>
+            <div>
+              <div class="font-semibold text-slate-800">拆分 AppState</div>
+              <div class="text-sm text-slate-600">为 WorkspaceService 迁移提供上下文锚点</div>
+            </div>
+          </div>
+          <div class="flex items-center gap-3 p-3 bg-red-50 rounded-lg border border-red-200">
+            <span class="w-8 h-8 bg-red-200 rounded-full flex items-center justify-center text-red-700 font-bold text-sm">2</span>
+            <div>
+              <div class="font-semibold text-slate-800">完成 WorkspaceService 迁移</div>
+              <div class="text-sm text-slate-600">实现 ImportService + WatchService，移除内部 getter</div>
+            </div>
+          </div>
+          <div class="flex items-center gap-3 p-3 bg-amber-50 rounded-lg border border-amber-200">
+            <span class="w-8 h-8 bg-amber-200 rounded-full flex items-center justify-center text-amber-700 font-bold text-sm">3</span>
+            <div>
+              <div class="font-semibold text-slate-800">重构 SearchUseCase::execute_blocking</div>
+              <div class="text-sm text-slate-600">移除 block_on，提取 ResultWriter</div>
+            </div>
+          </div>
+          <div class="flex items-center gap-3 p-3 bg-amber-50 rounded-lg border border-amber-200">
+            <span class="w-8 h-8 bg-amber-200 rounded-full flex items-center justify-center text-amber-700 font-bold text-sm">4</span>
+            <div>
+              <div class="font-semibold text-slate-800">解耦 commands/search/mod.rs</div>
+              <div class="text-sm text-slate-600">配置加载走 AppConfigProvider trait</div>
+            </div>
+          </div>
+          <div class="flex items-center gap-3 p-3 bg-amber-50 rounded-lg border border-amber-200">
+            <span class="w-8 h-8 bg-amber-200 rounded-full flex items-center justify-center text-amber-700 font-bold text-sm">5</span>
+            <div>
+              <div class="font-semibold text-slate-800">修复 QueryEngineLogSearcher</div>
+              <div class="text-sm text-slate-600">消除 plans HashMap 泄漏，移除重复 filter 编译</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <footer class="max-w-6xl mx-auto px-6 py-6 text-center text-xs text-slate-400">
+    Log Analyzer 架构审查 · 生成于 2026-06-04 · 基于 improve-codebase-architecture skill
+  </footer>
+
+  <script>
+    mermaid.initialize({ startOnLoad: true, theme: 'base' });
+  </script>
+</body>
+</html>

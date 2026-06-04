@@ -18,7 +18,7 @@
 use async_trait::async_trait;
 use parking_lot::Mutex;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::thread;
 use tokio_util::sync::CancellationToken;
@@ -27,11 +27,11 @@ use la_core::domain::event::EventPublisher;
 // use la_core::domain::SearchResultRepository; // 不需要直接导入，SearchUseCase 内部使用
 use la_core::error::{AppError, Result};
 use la_core::models::{SearchFilters, SearchQuery};
-use la_core::traits::{AppConfigProvider, ContentStorage, MetadataStorage};
+use la_core::traits::AppConfigProvider;
 use la_core::utils::parse_metadata;
 
-use notify::{recommended_watcher, Event, EventKind, RecursiveMode, Watcher};
-use tracing::{error, warn};
+use notify::{recommended_watcher, Event, RecursiveMode, Watcher};
+use tracing::error;
 
 use la_archive::processor::process_path_with_cas;
 use std::time::Duration;
@@ -43,7 +43,8 @@ use crate::application::SearchUseCase;
 use crate::infrastructure::{
     CasLogFileRepository, DiskResultStoreRepo, QueryEngineLogSearcher,
 };
-use crate::services::file_watcher::{self, WatcherState};
+use crate::infrastructure::watcher_runner::WatcherRunner;
+use crate::services::file_watcher::WatcherState;
 use crate::utils::encoding::decode_log_content;
 
 // ============================================================================
@@ -668,244 +669,16 @@ impl WatchService for WorkspaceServiceImpl {
         // ── 5. Store in self ──
         *self.watcher_state.lock() = Some(watcher_state);
 
-        // ── 6. Clone Arcs for background thread ──
-        let events = Arc::clone(&self.event_publisher);
-        let cas: Arc<dyn ContentStorage> = self.cas.clone();
-        let metadata: Arc<dyn MetadataStorage> = self.metadata_store.clone();
-        let search_engine = Arc::clone(&self.search_engine);
-        let watcher_state_arc = Arc::clone(&self.watcher_state);
-        let workspace_id_clone = self.workspace_id.clone();
-        let runtime_handle = tokio::runtime::Handle::current();
-
-        // ── 7. Spawn background thread ──
-        let handle = thread::spawn(move || {
-            for res in rx {
-                match res {
-                    Ok(event) => {
-                        let event_type = match event.kind {
-                            EventKind::Create(_) => "created",
-                            EventKind::Modify(_) => "modified",
-                            EventKind::Remove(_) => "deleted",
-                            _ => continue,
-                        };
-
-                        for path in event.paths {
-                            let file_path_str = match path.to_str() {
-                                Some(s) => s.to_string(),
-                                None => {
-                                    warn!(path = ?path, "Skipping path with non-UTF-8 chars");
-                                    continue;
-                                }
-                            };
-
-                            let timestamp = chrono::Utc::now().timestamp();
-
-                            // Emit file-changed event via domain trait
-                            let events_clone = events.clone();
-                            let ws = workspace_id_clone.clone();
-                            let fp = file_path_str.clone();
-                            let et = event_type.to_string();
-                            runtime_handle.spawn(async move {
-                                events_clone
-                                    .emit_file_changed(&ws, &et, &fp, timestamp)
-                                    .await;
-                            });
-
-                            // On Create: init line_counts
-                            if event_type == "created" && path.is_file() {
-                                let mut guard = watcher_state_arc.lock();
-                                if let Some(ref mut w) = *guard {
-                                    w.line_counts.insert(file_path_str.clone(), 0);
-                                }
-                            }
-
-                            // On Modify: read new content, parse, store
-                            if event_type == "modified" && path.is_file() {
-                                let (offset, start_line_number, watch_path_inner) = {
-                                    let guard = watcher_state_arc.lock();
-                                    if let Some(ref w) = *guard {
-                                        let offset =
-                                            *w.file_offsets.get(&file_path_str).unwrap_or(&0);
-                                        let start_line = if let Some(&count) =
-                                            w.line_counts.get(&file_path_str)
-                                        {
-                                            count + 1
-                                        } else {
-                                            1
-                                        };
-                                        (offset, start_line, w.watched_path.clone())
-                                    } else {
-                                        continue;
-                                    }
-                                };
-
-                                match file_watcher::read_file_from_offset(&path, offset) {
-                                    Ok((new_lines, new_offset)) => {
-                                        let new_line_count = new_lines.len();
-                                        if !new_lines.is_empty() {
-                                            let virtual_path_buf = path
-                                                .strip_prefix(&watch_path_inner)
-                                                .unwrap_or(&path);
-                                            let virtual_path =
-                                                virtual_path_buf.to_string_lossy();
-
-                                            let new_entries = file_watcher::parse_log_lines(
-                                                &new_lines,
-                                                &virtual_path,
-                                                &file_path_str,
-                                                0,
-                                                start_line_number,
-                                            );
-
-                                            // Emit new-logs via domain trait (async)
-                                            let events2 = events.clone();
-                                            let ws2 = workspace_id_clone.clone();
-                                            if let Ok(json) =
-                                                serde_json::to_string(&new_entries)
-                                            {
-                                                runtime_handle.spawn(async move {
-                                                    events2.emit_new_logs(&ws2, &json).await;
-                                                });
-                                            }
-
-                                            // Update Tantivy search index (sync, direct access)
-                                            if !new_entries.is_empty() {
-                                                if let Err(e) = search_engine
-                                                    .add_documents(&new_entries)
-                                                {
-                                                    warn!(
-                                                        error = %e,
-                                                        count = new_entries.len(),
-                                                        workspace_id = %workspace_id_clone,
-                                                        "Failed to add watch documents to search index"
-                                                    );
-                                                }
-                                                if let Err(e) = search_engine.commit() {
-                                                    warn!(
-                                                        error = %e,
-                                                        workspace_id = %workspace_id_clone,
-                                                        "Failed to commit search index after watch update"
-                                                    );
-                                                }
-                                            }
-
-                                            // Store content in CAS + update metadata (async)
-                                            let cas2 = Arc::clone(&cas);
-                                            let meta2 = Arc::clone(&metadata);
-                                            let fp3 = file_path_str.clone();
-                                            let vp3 = virtual_path.to_string();
-                                            runtime_handle.spawn(async move {
-                                                // Read full file content for CAS storage
-                                                match tokio::fs::read(&fp3).await {
-                                                    Ok(content) => {
-                                                        match cas2.store(&content).await {
-                                                            Ok(hash) => {
-                                                                let file_size =
-                                                                    content.len() as i64;
-                                                                let file_name = Path::new(&fp3)
-                                                                    .file_name()
-                                                                    .map(|n| {
-                                                                        n.to_string_lossy()
-                                                                            .to_string()
-                                                                    })
-                                                                    .unwrap_or_else(|| {
-                                                                        fp3.clone()
-                                                                    });
-                                                                let file_meta =
-                                                                    la_core::storage_types::FileMetadata {
-                                                                        id: 0,
-                                                                        sha256_hash: hash,
-                                                                        virtual_path: vp3,
-                                                                        original_name: file_name,
-                                                                        size: file_size,
-                                                                        modified_time: 0,
-                                                                        mime_type: None,
-                                                                        parent_archive_id: None,
-                                                                        depth_level: 0,
-                                                                        min_timestamp: None,
-                                                                        max_timestamp: None,
-                                                                        level_mask: None,
-                                                                        analysis_status:
-                                                                            la_core::storage_types::AnalysisStatus::Pending,
-                                                                    };
-                                                                if let Err(e) =
-                                                                    meta2.insert_file(&file_meta).await
-                                                                {
-                                                                    warn!(
-                                                                        error = %e,
-                                                                        file = %fp3,
-                                                                        "Failed to insert watcher file metadata"
-                                                                    );
-                                                                }
-                                                            }
-                                                            Err(e) => {
-                                                                warn!(
-                                                                    error = %e,
-                                                                    file = %fp3,
-                                                                    "Failed to store watcher file content in CAS"
-                                                                );
-                                                            }
-                                                        }
-                                                    }
-                                                    Err(e) => {
-                                                        warn!(
-                                                            error = %e,
-                                                            file = %fp3,
-                                                            "Failed to read watcher file for CAS storage"
-                                                        );
-                                                    }
-                                                }
-                                            });
-                                        }
-
-                                        // Update offsets and line counts
-                                        {
-                                            let mut guard = watcher_state_arc.lock();
-                                            if let Some(ref mut w) = *guard {
-                                                w.file_offsets.insert(
-                                                    file_path_str.clone(),
-                                                    new_offset,
-                                                );
-                                                if new_line_count > 0 {
-                                                    w.line_counts.insert(
-                                                        file_path_str.clone(),
-                                                        start_line_number - 1 + new_line_count,
-                                                    );
-                                                }
-                                            }
-                                        }
-                                    }
-                                    Err(e) => {
-                                        warn!(
-                                            error = %e,
-                                            file = %file_path_str,
-                                            "Failed to read file incrementally"
-                                        );
-                                    }
-                                }
-                            }
-                        }
-
-                        // Check is_active to decide whether to exit the event loop
-                        let is_active = {
-                            let guard = watcher_state_arc.lock();
-                            guard.as_ref().map(|w| w.is_active).unwrap_or(false)
-                        };
-
-                        if !is_active {
-                            break;
-                        }
-                    }
-                    Err(e) => {
-                        error!(
-                            error = %e,
-                            workspace_id = %workspace_id_clone,
-                            "Watch error"
-                        );
-                    }
-                }
-            }
-        });
+        // ── 6. Spawn background thread via WatcherRunner (P7) ──
+        let runner = WatcherRunner::new(
+            Arc::clone(&self.event_publisher),
+            self.cas.clone(),
+            self.metadata_store.clone(),
+            Arc::clone(&self.search_engine),
+            Arc::clone(&self.watcher_state),
+            self.workspace_id.clone(),
+        );
+        let handle = thread::spawn(move || runner.run(rx));
 
         // ── 8. Store thread handle for later join ──
         *thread_handle_arc.lock() = Some(handle);

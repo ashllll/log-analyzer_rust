@@ -1,4 +1,8 @@
 //! 搜索过滤器类型与匹配逻辑
+//!
+//! P7：从 commands/search/filters.rs 提升到 application/ 层，
+//! 修复依赖方向（application + infrastructure 不应依赖 commands）。
+//! commands/search/filters.rs 保留为 re-export 以保持向后兼容。
 
 use la_core::utils::{level_to_mask, parse_metadata, TimestampParser};
 use la_core::error::CommandError;

@@ -34,7 +34,8 @@ use la_core::models::config::AppConfigLoader;
 use tauri::{AppHandle, Manager, State};
 use tracing::{error, info, warn};
 
-use crate::commands::import::{get_or_create_workspace_service, import_folder};
+use crate::commands::import::import_folder;
+use crate::infrastructure::workspace_service_factory::get_or_create_workspace_service;
 use crate::models::AppState;
 use crate::utils::validation::validate_workspace_id;
 use crate::utils::workspace_paths::resolve_workspace_dir;

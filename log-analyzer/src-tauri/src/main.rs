@@ -183,22 +183,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 // 2. 清理异步组件（MetadataStore / SearchEngineManager / TaskManager）
                 let services = state.all_workspace_services();
-                let task_manager = state.task_manager_arc();
 
-                // block_in_place 允许在 async 上下文中执行阻塞操作，
-                // 使用已有的 tokio runtime 而非创建新的
+                // P8: 并行关闭所有工作区服务（JoinSet，最坏 8s 而非 N×8s）
                 tokio::task::block_in_place(|| {
                     let rt = tokio::runtime::Handle::current();
                     rt.block_on(async {
+                        let mut set = tokio::task::JoinSet::new();
                         for svc in services {
-                            svc.metadata_store().close().await;
-                            let _ = tokio::time::timeout(
-                                std::time::Duration::from_secs(3),
-                                svc.search_engine().close(),
-                            )
-                            .await;
+                            set.spawn(async move {
+                                svc.metadata_store().close().await;
+                                let _ = tokio::time::timeout(
+                                    std::time::Duration::from_secs(3),
+                                    svc.search_engine().close(),
+                                )
+                                .await;
+                            });
                         }
-                        let tm_opt = task_manager.lock().take();
+                        let _ = tokio::time::timeout(
+                            std::time::Duration::from_secs(8),
+                            async { while let Some(res) = set.join_next().await { let _ = res; } },
+                        )
+                        .await;
+                        let tm_opt = state.take_task_manager();
                         if let Some(tm) = tm_opt {
                             let _ = tokio::time::timeout(
                                 std::time::Duration::from_secs(5),

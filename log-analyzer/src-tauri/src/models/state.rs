@@ -140,11 +140,6 @@ impl AppState {
         self.tasks.get_task_manager_clone()
     }
 
-    /// 暴露 task_manager Arc 引用（供退出清理闭包使用）。
-    pub fn task_manager_arc(&self) -> Arc<Mutex<Option<TaskManager>>> {
-        self.tasks.task_manager_arc()
-    }
-
     pub async fn register_async_operation(
         &self,
         operation_id: String,

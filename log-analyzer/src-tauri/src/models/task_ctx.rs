@@ -53,13 +53,6 @@ impl TaskContext {
         self.task_manager.lock().clone()
     }
 
-    /// 获取 task_manager Mutex Arc 引用。
-    ///
-    /// 供需要将 task_manager 传入闭包的场景使用。
-    pub fn task_manager_arc(&self) -> Arc<Mutex<Option<TaskManager>>> {
-        Arc::clone(&self.task_manager)
-    }
-
     // ── AsyncResourceManager 委托 ──
 
     /// 注册一个异步操作。

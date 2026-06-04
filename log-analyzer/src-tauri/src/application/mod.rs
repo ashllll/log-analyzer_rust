@@ -9,6 +9,8 @@
 pub mod config;
 pub mod export;
 pub mod search;
+pub mod search_executor;
+pub mod search_filters;
 pub mod workspace_service;
 
 pub use config::ConfigUseCase;

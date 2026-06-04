@@ -54,14 +54,6 @@ impl WorkspaceContext {
         self.services.lock().values().cloned().collect()
     }
 
-    /// 获取 services Map 内部 Arc 引用（供 resolve_workspace_id 使用）。
-    ///
-    /// 设计让步：某些命令需要遍历所有工作区 ID。待所有命令完全迁移到
-    /// WorkspaceService 后可移除此方法。
-    pub fn services_arc(&self) -> Arc<Mutex<HashMap<String, WorkspaceServiceRef>>> {
-        Arc::clone(&self.services)
-    }
-
     /// 获取所有已注册的工作区 ID。
     pub fn workspace_ids(&self) -> Vec<String> {
         self.services.lock().keys().cloned().collect()

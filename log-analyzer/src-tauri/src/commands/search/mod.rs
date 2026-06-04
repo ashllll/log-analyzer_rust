@@ -1,12 +1,11 @@
 //! 搜索命令实现 — Clean Architecture 路径（SearchUseCase）
 //!
 //! # 架构
-//! - `events`: 事件类型与 emit 函数
 //! - `query`: 查询解析
-//! - `filters`: 过滤器类型与匹配逻辑
 //! - `mod.rs` (本文件): Tauri 命令入口，所有搜索委托给 SearchUseCase
+//!
+//! filters 已提升到 `application/search_filters.rs`（P7 层级修复）
 
-pub(crate) mod filters;
 pub(crate) mod query;
 
 use serde::{Deserialize, Serialize};
@@ -131,9 +130,8 @@ pub(crate) fn resolve_workspace_id(
     if let Some(id) = id_arg {
         return Ok(id);
     }
-    let services = state.workspaces.services_arc();
-    let services = services.lock();
-    if let Some(first) = services.keys().next() {
+    let ids = state.workspaces.workspace_ids();
+    if let Some(first) = ids.first() {
         Ok(first.clone())
     } else {
         Err(CommandError::new("NOT_FOUND", "No workspaces available")

@@ -10,26 +10,24 @@
 //!
 //! 为保持与 JavaScript camelCase 惯例一致，Tauri 命令参数使用 camelCase 命名。
 
-use std::{fs, path::Path, sync::Arc};
+use std::{fs, sync::Arc};
 
 use serde::Serialize;
-use tauri::{command, AppHandle, Emitter, Manager, State};
+use tauri::{command, AppHandle, Emitter, State};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::adapters::tauri_config::TauriAppConfigProvider;
-use crate::application::workspace_service::{ImportOptions, WorkspaceServiceRef};
-use crate::infrastructure::{TauriEventPublisher, WorkspaceServiceImpl};
+use crate::application::workspace_service::ImportOptions;
+use crate::infrastructure::workspace_service_factory::{
+    get_or_create_workspace_service,
+};
 use crate::models::AppState;
 use crate::task_manager::{TaskManager, TaskStatus};
 use crate::utils::workspace_paths::preferred_workspace_dir;
 use crate::utils::{canonicalize_path, validate_workspace_id};
 use la_core::error::AppError;
-use la_core::models::config::AppConfigLoader;
-use la_storage::{verify_after_import, ContentAddressableStorage, MetadataStore};
-
-const SEARCH_INDEX_DIR_NAME: &str = "search_index";
-const SEARCH_INDEX_WRITER_HEAP_BYTES: usize = 50_000_000;
+use la_storage::verify_after_import;
 
 // ============================================================================
 // 共享工具函数
@@ -60,49 +58,6 @@ fn get_rar_support_info() -> RarSupportInfo {
             reason: Some("RAR support is not compiled into this build".to_string()),
         }
     }
-}
-
-pub(crate) fn load_workspace_search_config(
-    app: &AppHandle,
-) -> la_core::models::config::SearchConfig {
-    let config_path = match app.path().app_config_dir() {
-        Ok(dir) => dir.join("config.json"),
-        Err(_) => return Default::default(),
-    };
-
-    if !config_path.exists() {
-        return Default::default();
-    }
-
-    AppConfigLoader::load(Some(config_path))
-        .ok()
-        .map(|loader| loader.get_search_config().clone())
-        .unwrap_or_default()
-}
-
-pub(crate) fn ensure_search_engine_manager(
-    app: &AppHandle,
-    state: &AppState,
-    workspace_id: &str,
-    workspace_dir: &Path,
-) -> Result<Arc<la_search::SearchEngineManager>, String> {
-    // P4 迁移：优先从 workspace_services 获取已预组装的服务
-    if let Some(service) = state.get_workspace_service(workspace_id) {
-        return Ok(Arc::clone(service.search_engine()));
-    }
-
-    let app_search_config = load_workspace_search_config(app);
-    let index_path = workspace_dir.join(SEARCH_INDEX_DIR_NAME);
-    let manager = Arc::new(
-        la_search::SearchEngineManager::with_app_config(
-            app_search_config,
-            index_path,
-            SEARCH_INDEX_WRITER_HEAP_BYTES,
-        )
-        .map_err(|e| format!("Failed to initialize search engine: {e}"))?,
-    );
-
-    Ok(manager)
 }
 
 // ============================================================================
@@ -294,66 +249,6 @@ pub async fn import_folder(
 pub async fn check_rar_support() -> Result<serde_json::Value, String> {
     serde_json::to_value(get_rar_support_info())
         .map_err(|error| format!("Failed to serialize RAR support info: {error}"))
-}
-
-// ============================================================================
-// 命令层辅助函数
-// ============================================================================
-
-/// 获取或创建工作区服务实例。
-///
-/// 如果服务已存在于 AppState 中则直接返回，否则创建新实例并存储。
-/// P6：提升为 pub(crate)，供 workspace.rs 的 load_workspace / get_workspace_status 使用。
-pub(crate) async fn get_or_create_workspace_service(
-    app: &AppHandle,
-    state: &AppState,
-    workspace_id: &str,
-    workspace_dir: &Path,
-) -> Result<WorkspaceServiceRef, String> {
-    // 优先返回已存在的服务
-    if let Some(service) = state.get_workspace_service(workspace_id) {
-        return Ok(service);
-    }
-
-    // 创建各运行时组件
-    let cas = Arc::new(ContentAddressableStorage::new(workspace_dir.to_path_buf()));
-
-    let metadata_store = Arc::new(
-        MetadataStore::new(workspace_dir)
-            .await
-            .map_err(|e| format!("Failed to open metadata store: {e}"))?,
-    );
-
-    let search_manager =
-        ensure_search_engine_manager(app, state, workspace_id, workspace_dir)?;
-
-    let disk_result_store = state
-        .get_disk_result_store()
-        .ok_or("Disk result store not initialized")?;
-    let thread_pool = state.get_search_thread_pool();
-    let regex_cache_size = load_workspace_search_config(app).regex_cache_size.max(1);
-
-    let service = Arc::new(WorkspaceServiceImpl::new(
-        workspace_id.to_string(),
-        workspace_dir.to_path_buf(),
-        cas,
-        metadata_store,
-        search_manager,
-        disk_result_store,
-        Arc::new(TauriEventPublisher {
-            app_handle: app.clone(),
-        }),
-        thread_pool,
-        regex_cache_size,
-    ));
-
-    state.set_workspace_service(workspace_id.to_string(), service.clone() as WorkspaceServiceRef);
-    tracing::info!(
-        workspace_id = %workspace_id,
-        "WorkspaceService created and registered"
-    );
-
-    Ok(service as WorkspaceServiceRef)
 }
 
 /// 更新任务进度并处理错误。
