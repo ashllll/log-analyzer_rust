@@ -1,5 +1,10 @@
 //! 导入相关命令实现
-//! 包含工作区导入与 RAR 支持检查
+//!
+//! # P4 重构
+//!
+//! `import_folder` 已精简：核心导入逻辑下沉到 `WorkspaceServiceImpl::import_file`。
+//! 命令层仅负责 TaskManager 生命周期、完整性验证（verify_after_import）
+//! 和 Tantivy 段合并。
 //!
 //! # 前后端集成规范
 //!
@@ -9,24 +14,26 @@ use std::{fs, path::Path, sync::Arc};
 
 use serde::Serialize;
 use tauri::{command, AppHandle, Emitter, Manager, State};
-use tracing::error;
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
+use crate::adapters::tauri_config::TauriAppConfigProvider;
+use crate::application::workspace_service::{ImportOptions, WorkspaceServiceRef};
 use crate::infrastructure::{TauriEventPublisher, WorkspaceServiceImpl};
 use crate::models::AppState;
-use crate::services::file_watcher::parse_metadata;
-use crate::services::parse_log_lines;
-use crate::task_manager::TaskManager;
-use crate::utils::encoding::decode_log_content;
+use crate::task_manager::{TaskManager, TaskStatus};
 use crate::utils::workspace_paths::preferred_workspace_dir;
 use crate::utils::{canonicalize_path, validate_workspace_id};
 use la_core::error::AppError;
 use la_core::models::config::AppConfigLoader;
-use la_storage::{verify_after_import, MetadataStore};
+use la_storage::{verify_after_import, ContentAddressableStorage, MetadataStore};
 
 const SEARCH_INDEX_DIR_NAME: &str = "search_index";
 const SEARCH_INDEX_WRITER_HEAP_BYTES: usize = 50_000_000;
-const SEARCH_INDEX_COMMIT_EVERY_FILES: usize = 25;
+
+// ============================================================================
+// 共享工具函数
+// ============================================================================
 
 #[derive(Debug, Clone, Serialize)]
 struct RarSupportInfo {
@@ -79,7 +86,7 @@ pub(crate) fn ensure_search_engine_manager(
     workspace_id: &str,
     workspace_dir: &Path,
 ) -> Result<Arc<la_search::SearchEngineManager>, String> {
-    // P4 迁移：优先从 workspace_services 获取
+    // P4 迁移：优先从 workspace_services 获取已预组装的服务
     if let Some(service) = state.get_workspace_service(workspace_id) {
         return Ok(Arc::clone(service.search_engine()));
     }
@@ -92,241 +99,15 @@ pub(crate) fn ensure_search_engine_manager(
             index_path,
             SEARCH_INDEX_WRITER_HEAP_BYTES,
         )
-        .map_err(|e| format!("Failed to initialize search engine: {}", e))?,
+        .map_err(|e| format!("Failed to initialize search engine: {e}"))?,
     );
 
     Ok(manager)
 }
 
-pub(crate) async fn ensure_workspace_runtime_state(
-    app: &AppHandle,
-    state: &AppState,
-    workspace_id: &str,
-    workspace_dir: &Path,
-) -> Result<
-    (
-        Arc<la_storage::ContentAddressableStorage>,
-        Arc<MetadataStore>,
-        Arc<la_search::SearchEngineManager>,
-    ),
-    String,
-> {
-    // P4 迁移：优先从 workspace_services 获取已预组装的服务
-    if let Some(service) = state.get_workspace_service(workspace_id) {
-        return Ok((
-            Arc::clone(service.cas()),
-            Arc::clone(service.metadata_store()),
-            Arc::clone(service.search_engine()),
-        ));
-    }
-
-    // 创建各运行时组件
-    let cas = Arc::new(la_storage::ContentAddressableStorage::new(
-        workspace_dir.to_path_buf(),
-    ));
-
-    let metadata_store = Arc::new(
-        MetadataStore::new(workspace_dir)
-            .await
-            .map_err(|e| format!("Failed to open metadata store: {}", e))?,
-    );
-
-    let search_manager = ensure_search_engine_manager(app, state, workspace_id, workspace_dir)?;
-
-    // 组装 WorkspaceServiceImpl 并存入 workspace_services（替代分散的旧 HashMap）
-    let disk_result_store = state.disk_result_store.read().clone().ok_or_else(|| {
-        "Disk result store not initialized".to_string()
-    })?;
-    let thread_pool = Arc::clone(&state.search_thread_pool);
-
-    let regex_cache_size = load_workspace_search_config(app).regex_cache_size.max(1);
-    let service = Arc::new(WorkspaceServiceImpl::new(
-        workspace_id.to_string(),
-        workspace_dir.to_path_buf(),
-        Arc::clone(&cas),
-        Arc::clone(&metadata_store),
-        Arc::clone(&search_manager),
-        disk_result_store,
-        Arc::new(TauriEventPublisher {
-            app_handle: app.clone(),
-        }),
-        thread_pool,
-        regex_cache_size,
-    ));
-
-    state.set_workspace_service(workspace_id.to_string(), service);
-
-    Ok((cas, metadata_store, search_manager))
-}
-
-async fn rebuild_workspace_search_index(
-    metadata_store: Arc<MetadataStore>,
-    cas: Arc<la_storage::ContentAddressableStorage>,
-    search_manager: Arc<la_search::SearchEngineManager>,
-) -> Result<usize, String> {
-    // P1-1: 仅在索引为空时执行全量重建（首次导入）。
-    // 后续导入的新文件通过 CAS 回退路径搜索，避免每次 O(n) 全量 I/O。
-    let index_empty = match search_manager.get_time_range() {
-        Ok((_, _, count)) => count == 0,
-        Err(_) => true, // 索引查询失败视为空
-    };
-
-    if !index_empty {
-        tracing::info!("Skipping index rebuild: Tantivy index already has documents");
-        return Ok(0);
-    }
-
-    let files = metadata_store
-        .get_all_files()
-        .await
-        .map_err(|e| format!("Failed to enumerate imported files for indexing: {}", e))?;
-
-    tokio::task::spawn_blocking(move || -> Result<usize, String> {
-        search_manager
-            .clear_index()
-            .map_err(|e| format!("Failed to clear search index before rebuild: {}", e))?;
-
-        let mut indexed_lines = 0usize;
-
-        for (file_index, file) in files.into_iter().enumerate() {
-            let content = cas.read_content_sync(&file.sha256_hash).map_err(|e| {
-                format!(
-                    "Failed to read CAS content for {}: {}",
-                    file.virtual_path, e
-                )
-            })?;
-            let (content_str, _) = decode_log_content(&content);
-            let real_path = format!("cas://{}", file.sha256_hash);
-
-            let mut line_buffer = Vec::with_capacity(1024);
-            let mut start_line_number = 1usize;
-
-            for line in content_str.lines() {
-                line_buffer.push(line.to_string());
-
-                if line_buffer.len() >= 1024 {
-                    let entries = parse_log_lines(
-                        &line_buffer,
-                        &file.virtual_path,
-                        &real_path,
-                        indexed_lines,
-                        start_line_number,
-                    );
-                    for entry in &entries {
-                        search_manager
-                            .add_document(entry)
-                            .map_err(|e| format!("Failed to add indexed document: {}", e))?;
-                    }
-                    indexed_lines += entries.len();
-                    start_line_number += line_buffer.len();
-                    line_buffer.clear();
-                }
-            }
-
-            if !line_buffer.is_empty() {
-                let entries = parse_log_lines(
-                    &line_buffer,
-                    &file.virtual_path,
-                    &real_path,
-                    indexed_lines,
-                    start_line_number,
-                );
-                for entry in &entries {
-                    search_manager
-                        .add_document(entry)
-                        .map_err(|e| format!("Failed to add indexed document: {}", e))?;
-                }
-                indexed_lines += entries.len();
-            }
-
-            if (file_index + 1) % SEARCH_INDEX_COMMIT_EVERY_FILES == 0 {
-                search_manager
-                    .commit()
-                    .map_err(|e| format!("Failed to commit rebuilt search index: {}", e))?;
-            }
-        }
-
-        search_manager
-            .commit()
-            .map_err(|e| format!("Failed to finalize rebuilt search index: {}", e))?;
-
-        Ok(indexed_lines)
-    })
-    .await
-    .map_err(|e| format!("Search index rebuild task panicked: {}", e))?
-}
-
-/// 解析日志文件内容，计算时间范围和级别掩码
-///
-/// # Arguments
-/// * `content` — 文件原始内容（字节）
-///
-/// # Returns
-/// `(min_timestamp, max_timestamp, level_mask)`
-fn compute_file_stats(content: &[u8]) -> (Option<i64>, Option<i64>, Option<u8>) {
-    let text = match std::str::from_utf8(content) {
-        Ok(s) => s,
-        Err(_) => return (None, None, None),
-    };
-
-    // 大文件优化：超过 10MB 只解析前 1000 行和后 1000 行
-    const MAX_FULL_PARSE_BYTES: usize = 10 * 1024 * 1024;
-    const MAX_LINES_SAMPLE: usize = 1000;
-
-    let mut min_ts: Option<i64> = None;
-    let mut max_ts: Option<i64> = None;
-    let mut level_mask: u8 = 0;
-    let mut has_any_level = false;
-
-    let mut process_line = |line: &str| {
-        if line.is_empty() {
-            return;
-        }
-        let (timestamp_str, level) = parse_metadata(line);
-        if !level.is_empty() {
-            has_any_level = true;
-            // FIX(CR-01): 使用 commands::mod.rs 中统一的标准定义
-            level_mask |= crate::commands::level_to_mask(level);
-        }
-        if !timestamp_str.is_empty() {
-            if let Some(ts) = la_search::parse_log_timestamp_to_unix(&timestamp_str) {
-                min_ts = Some(min_ts.map_or(ts, |m| m.min(ts)));
-                max_ts = Some(max_ts.map_or(ts, |m| m.max(ts)));
-            }
-        }
-    };
-
-    if text.len() > MAX_FULL_PARSE_BYTES {
-        let all_lines: Vec<&str> = text.lines().collect();
-        let total = all_lines.len();
-        if total > MAX_LINES_SAMPLE * 2 {
-            for line in &all_lines[..MAX_LINES_SAMPLE] {
-                process_line(line);
-            }
-            for line in &all_lines[total - MAX_LINES_SAMPLE..] {
-                process_line(line);
-            }
-        } else {
-            for line in &all_lines {
-                process_line(line);
-            }
-        }
-    } else {
-        for line in text.lines() {
-            process_line(line);
-        }
-    }
-
-    (
-        min_ts,
-        max_ts,
-        if has_any_level {
-            Some(level_mask)
-        } else {
-            None
-        },
-    )
-}
+// ============================================================================
+// 简化版 import_folder 命令
+// ============================================================================
 
 #[tauri::command]
 pub async fn import_folder(
@@ -337,24 +118,16 @@ pub async fn import_folder(
 ) -> Result<String, String> {
     validate_workspace_id(&workspace_id)?;
 
-    let app_handle = app.clone();
-    let task_id = Uuid::new_v4().to_string();
-    let task_id_clone = task_id.clone();
-    let workspace_id_clone = workspace_id.clone();
-
-    let validated_path = crate::utils::validation::validate_import_source_path(&path, "path")?;
-    let canonical_path = match canonicalize_path(&validated_path) {
-        Ok(path) => path,
-        Err(e) => {
-            let error_msg = format!("Path canonicalization failed: {}", e);
-            tracing::warn!("{}", error_msg);
-            let _ = app_handle.emit("import-error", &error_msg);
-            return Err(error_msg);
-        }
-    };
+    let validated_path =
+        crate::utils::validation::validate_import_source_path(&path, "path")?;
+    let canonical_path = canonicalize_path(&validated_path).map_err(|e| {
+        let msg = format!("Path canonicalization failed: {e}");
+        warn!("{msg}");
+        let _ = app.emit("import-error", &msg);
+        msg
+    })?;
 
     let workspace_dir = preferred_workspace_dir(&app, &workspace_id)?;
-
     fs::create_dir_all(&workspace_dir).map_err(|e| {
         AppError::io_error(
             format!("Failed to create workspace dir: {e}"),
@@ -363,428 +136,156 @@ pub async fn import_folder(
         .to_string()
     })?;
 
-    // 使用 TaskManager 创建任务
     let target_name = canonical_path
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or(&path)
         .to_string();
 
-    // Extract task_manager before await
-    let task_manager: Option<TaskManager> = state.task_manager.lock().clone();
-    let _task = if let Some(task_manager) = task_manager.as_ref() {
-        let tm: &TaskManager = task_manager;
-        tm.create_task_async(
-            task_id.clone(),
-            "Import".to_string(),
-            target_name.clone(),
-            Some(workspace_id.clone()),
-        )
-        .await
-        .map_err(|e| format!("Failed to create task: {}", e))?
-    } else {
-        return Err("Task manager not initialized".to_string());
-    };
-
-    // 老王备注：TaskManager.CreateTask 已经自动发送了 task-update 事件，不需要重复发送
-    // 直接在当前异步上下文中执行，避免创建新的 runtime
-    let source_path = Path::new(&path);
-    let root_name = source_path
-        .file_name()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .to_string();
-
-    // 更新任务进度
-    // 老王备注：TaskManager.UpdateTask 会自动发送 task-update 事件，不需要重复发送
-    let task_manager_clone: Option<TaskManager> = {
-        let guard = state.task_manager.lock();
-        guard.as_ref().cloned()
-    };
-
-    if let Some(ref task_manager) = task_manager_clone {
-        let task_manager: &TaskManager = task_manager;
-        if let Err(e) = task_manager
-            .update_task_async(
-                &task_id_clone,
-                10,
-                "Scanning...".to_string(),
-                crate::task_manager::TaskStatus::Running,
-            )
-            .await
-        {
-            let error_msg = format!("Failed to update task progress: {}", e);
-            tracing::warn!(task_id = %task_id_clone, error = %e, "{}", error_msg);
-            // 发送错误事件给前端
-            let _ = app_handle.emit("import-error", &error_msg);
-        }
-    }
-
-    let (cas, metadata_store, search_manager) =
-        ensure_workspace_runtime_state(&app_handle, &state, &workspace_id_clone, &workspace_dir)
-            .await
-            .inspect_err(|e| {
-                let _ = app_handle.emit("import-error", &e);
-            })?;
-
-    // Process the path using CAS architecture
-    use crate::commands::TauriAppConfigProvider;
-    use la_archive::processor::process_path_with_cas;
-
-    let provider = TauriAppConfigProvider(app_handle.clone());
-
-    if let Err(e) = process_path_with_cas(
-        source_path,
-        &root_name,
-        &workspace_dir,
-        &cas,
-        metadata_store.clone(),
-        &provider,
-        &task_id_clone,
-        &workspace_id_clone,
-        None, // parent_archive_id
-        0,    // depth_level
+    // ── TaskManager 任务创建 ──
+    let task_id = Uuid::new_v4().to_string();
+    let task_manager = state
+        .get_task_manager_clone()
+        .ok_or("Task manager not initialized")?;
+    let tm: &TaskManager = &task_manager;
+    tm.create_task_async(
+        task_id.clone(),
+        "Import".to_string(),
+        target_name,
+        Some(workspace_id.clone()),
     )
     .await
+    .map_err(|e| format!("Failed to create task: {e}"))?;
+
+    // ── 获取或创建 WorkspaceService ──
+    let service = get_or_create_workspace_service(
+        &app,
+        &state,
+        &workspace_id,
+        &workspace_dir,
+    )
+    .await
+    .map_err(|e| {
+        let _ = app.emit("import-error", &e);
+        e
+    })?;
+
+    // ── 更新任务进度 ──
+    update_task(
+        tm,
+        &task_id,
+        10,
+        "Scanning...",
+        TaskStatus::Running,
+        &app,
+    )
+    .await;
+
+    // ── 调用 ImportService ──
+    let config_provider = TauriAppConfigProvider(app.clone());
+    let cancel_token = tokio_util::sync::CancellationToken::new();
+
+    let _import_result = match service
+        .import_file(
+            &canonical_path,
+            ImportOptions::default(),
+            &config_provider,
+            &task_id,
+            cancel_token,
+        )
+        .await
     {
-        error!(error = %e, "Failed to process path");
-
-        // P4 迁移：统一清理（workspace_services 替代分散的旧 HashMap）
-        state.remove_workspace_service(&workspace_id_clone);
-        // 删除磁盘上不完整的工作区目录
-        if workspace_dir.exists() {
-            if let Err(rm_err) = std::fs::remove_dir_all(&workspace_dir) {
-                let error_msg = format!("Failed to cleanup workspace directory: {}", rm_err);
-                tracing::warn!(path = ?workspace_dir, error = %rm_err, "{}", error_msg);
-                // 发送错误事件给前端
-                let _ = app_handle.emit("import-error", &error_msg);
-            }
-        }
-
-        // Update task with error
-        let task_manager_clone: Option<TaskManager> = {
-            let guard = state.task_manager.lock();
-            guard.as_ref().cloned()
-        };
-
-        if let Some(ref task_manager) = task_manager_clone {
-            let task_manager: &TaskManager = task_manager;
-            // 添加完整的错误处理和降级方案
-            if let Err(update_err) = task_manager
-                .update_task_async(
-                    &task_id_clone,
-                    0,
-                    format!("Error: {}", e),
-                    crate::task_manager::TaskStatus::Failed,
-                )
-                .await
-            {
-                let error_msg = format!(
-                    "Failed to update task status to Failed: {}. Task may be in inconsistent state.",
-                    update_err
-                );
-                tracing::error!(
-                    task_id = %task_id_clone,
-                    error = %update_err,
-                    "{}",
-                    error_msg
-                );
-                // 发送错误事件给前端
-                let _ = app_handle.emit("import-error", &error_msg);
-            }
-        }
-
-        return Err(format!("Failed to process path: {}", e));
-    }
-
-    // 增量分析：文件级统计计算已在 processor.rs 中逐文件完成，
-    // 此处保留一个后台任务，用于处理导入中断后残留的 PENDING 文件
-    // 以及压缩包解压路径中可能遗漏的文件。
-    {
-        let metadata_store = metadata_store.clone();
-        let cas = Arc::clone(&cas);
-        let workspace_id = workspace_id_clone.clone();
-        tokio::task::spawn(async move {
-            // 延迟 5 秒执行，让逐文件分析先完成，避免重复计算
-            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-
-            match metadata_store.get_all_files().await {
-                Ok(files) => {
-                    let mut updated = 0usize;
-                    let mut failed = 0usize;
-
-                    for file in files {
-                        // 只处理仍处于 PENDING 状态的文件
-                        if file.analysis_status == la_core::storage_types::AnalysisStatus::Ready {
-                            continue;
-                        }
-
-                        match cas.read_content(&file.sha256_hash).await {
-                            Ok(content) => {
-                                let (min_ts, max_ts, level_mask) = compute_file_stats(&content);
-                                if let Err(e) = metadata_store
-                                    .update_file_ready(
-                                        &file.virtual_path,
-                                        min_ts,
-                                        max_ts,
-                                        level_mask,
-                                    )
-                                    .await
-                                {
-                                    tracing::warn!(
-                                        virtual_path = %file.virtual_path,
-                                        error = %e,
-                                        "Failed to update file ready status in fallback"
-                                    );
-                                    failed += 1;
-                                } else {
-                                    updated += 1;
-                                }
-                            }
-                            Err(e) => {
-                                tracing::warn!(
-                                    virtual_path = %file.virtual_path,
-                                    hash = %file.sha256_hash,
-                                    error = %e,
-                                    "Failed to read file content for fallback stats computation"
-                                );
-                                failed += 1;
-                            }
-                        }
-                    }
-
-                    if updated > 0 || failed > 0 {
-                        tracing::info!(
-                            workspace_id = %workspace_id,
-                            stats_updated = updated,
-                            stats_failed = failed,
-                            "Fallback file stats computation completed"
-                        );
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        workspace_id = %workspace_id,
-                        error = %e,
-                        "Failed to get files for fallback stats computation"
-                    );
+        Ok(result) => result,
+        Err(e) => {
+            error!(error = %e, "Failed to import file");
+            state.remove_workspace_service(&workspace_id);
+            if workspace_dir.exists() {
+                if let Err(rm_err) = std::fs::remove_dir_all(&workspace_dir) {
+                    warn!(path = ?workspace_dir, error = %rm_err, "Failed to cleanup workspace");
+                    let _ = app
+                        .emit("import-error", &format!("Cleanup failed: {rm_err}"));
                 }
             }
-        });
-    }
-
-    if let Some(ref task_manager) = task_manager_clone {
-        let task_manager: &TaskManager = task_manager;
-        if let Err(e) = task_manager
-            .update_task_async(
-                &task_id_clone,
-                97,
-                "Building search index...".to_string(),
-                crate::task_manager::TaskStatus::Running,
-            )
-            .await
-        {
-            let error_msg = format!("Failed to update task progress during index build: {}", e);
-            tracing::warn!(task_id = %task_id_clone, error = %e, "{}", error_msg);
-            let _ = app_handle.emit("import-error", &error_msg);
+            let msg = format!("Failed to import: {e}");
+            update_task(tm, &task_id, 0, &msg, TaskStatus::Failed, &app)
+                .await;
+            return Err(msg);
         }
-    }
-
-    // Tantivy 索引重建：改为后台异步执行，不阻塞导入完成。
-    // 主搜索链路（search_logs）不走 Tantivy，但 get_time_range 依赖它，
-    // 因此保留索引但不在关键路径上重建。
-    let _rebuild_handle = {
-        let metadata_store = metadata_store.clone();
-        let cas = Arc::clone(&cas);
-        let search_manager = Arc::clone(&search_manager);
-        let workspace_id = workspace_id_clone.clone();
-        tokio::task::spawn(async move {
-            if let Err(e) =
-                rebuild_workspace_search_index(metadata_store, cas, search_manager).await
-            {
-                tracing::warn!(
-                    workspace_id = %workspace_id,
-                    error = %e,
-                    "Background Tantivy index rebuild failed; get_time_range may be stale"
-                );
-            } else {
-                tracing::info!(
-                    workspace_id = %workspace_id,
-                    "Background Tantivy index rebuild completed"
-                );
-            }
-        })
     };
 
-    // Verify integrity after import (Task 5.2)
-    // This generates a validation report to ensure all imported files are accessible
-    // and have valid hashes in the CAS
-    // 老王备注：TaskManager.UpdateTask 会自动发送 task-update 事件，不需要重复发送
-    let task_manager_clone: Option<TaskManager> = {
-        let guard = state.task_manager.lock();
-        guard.as_ref().cloned()
-    };
-
-    if let Some(ref task_manager) = task_manager_clone {
-        let task_manager: &TaskManager = task_manager;
-        if let Err(e) = task_manager
-            .update_task_async(
-                &task_id_clone,
-                95,
-                "Verifying integrity...".to_string(),
-                crate::task_manager::TaskStatus::Running,
-            )
-            .await
-        {
-            let error_msg = format!("Failed to update task progress during verification: {}", e);
-            tracing::warn!(task_id = %task_id_clone, error = %e, "{}", error_msg);
-            // 发送错误事件给前端
-            let _ = app_handle.emit("import-error", &error_msg);
-        }
-    }
+    // ── 完整性验证（保留在命令层）──
+    update_task(
+        tm,
+        &task_id,
+        95,
+        "Verifying integrity...",
+        TaskStatus::Running,
+        &app,
+    )
+    .await;
 
     match verify_after_import(&workspace_dir).await {
         Ok(report) => {
             if report.is_valid() {
-                // Get file count from MetadataStore for logging
-                let file_count = metadata_store.count_files().await.unwrap_or(0);
-
-                tracing::info!(
-                    workspace_id = %workspace_id_clone,
+                info!(
+                    workspace_id = %workspace_id,
                     total_files = report.total_files,
                     valid_files = report.valid_files,
-                    file_count = file_count,
-                    "Import completed successfully with integrity verification"
+                    "Import completed with integrity verification"
                 );
             } else {
-                tracing::warn!(
-                    workspace_id = %workspace_id_clone,
+                warn!(
+                    workspace_id = %workspace_id,
                     total_files = report.total_files,
                     valid_files = report.valid_files,
-                    invalid_files = report.invalid_files.len(),
-                    missing_objects = report.missing_objects.len(),
-                    corrupted_objects = report.corrupted_objects.len(),
+                    invalid = report.invalid_files.len(),
+                    missing = report.missing_objects.len(),
+                    corrupted = report.corrupted_objects.len(),
                     "Integrity verification found issues"
                 );
-
-                // Emit validation report to frontend
-                let _ = app_handle.emit(
+                let _ = app.emit(
                     "validation-report",
                     serde_json::json!({
-                        "workspace_id": workspace_id_clone,
+                        "workspace_id": workspace_id,
                         "report": report,
                     }),
                 );
             }
         }
         Err(e) => {
-            let error_msg = format!("Failed to verify integrity after import: {}", e);
-            tracing::error!(
-                workspace_id = %workspace_id_clone,
+            let msg = format!("Failed to verify integrity: {e}");
+            error!(workspace_id = %workspace_id, error = %e, "{msg}");
+            let _ = app.emit("import-error", &msg);
+        }
+    }
+
+    // ── 完成 ──
+    update_task(
+        tm,
+        &task_id,
+        100,
+        "Done",
+        TaskStatus::Completed,
+        &app,
+    )
+    .await;
+
+    // ── Tantivy segment 合并（后台执行）──
+    let search_engine = Arc::clone(service.search_engine());
+    let ws_id = workspace_id.clone();
+    tokio::spawn(async move {
+        info!(workspace_id = %ws_id, "Starting Tantivy segment merge");
+        if let Err(e) = search_engine.commit_and_wait_merge().await {
+            warn!(
+                workspace_id = %ws_id,
                 error = %e,
-                "{}",
-                error_msg
+                "Tantivy segment merge warning (non-critical)"
             );
-            // 发送错误事件给前端
-            let _ = app_handle.emit("import-error", &error_msg);
+            // Non-fatal; frontend 通过事件获知
         }
-    }
+    });
 
-    // 导入完成，使用 TaskManager 更新任务状态
-    // 老王备注：TaskManager.UpdateTask 会自动发送 task-update 事件，不需要重复发送
-    let task_manager_clone: Option<TaskManager> = {
-        let guard = state.task_manager.lock();
-        guard.as_ref().cloned()
-    };
-
-    if let Some(ref task_manager) = task_manager_clone {
-        let task_manager: &TaskManager = task_manager;
-        // 添加完整的错误处理和降级方案
-        if let Err(e) = task_manager
-            .update_task_async(
-                &task_id_clone,
-                100,
-                "Done".to_string(),
-                crate::task_manager::TaskStatus::Completed,
-            )
-            .await
-        {
-            let error_msg = format!(
-                "Failed to update task status to Completed: {}. Task may be in inconsistent state.",
-                e
-            );
-            tracing::error!(
-                task_id = %task_id_clone,
-                error = %e,
-                "{}",
-                error_msg
-            );
-            // 发送错误事件给前端
-            let _ = app_handle.emit("import-error", &error_msg);
-        }
-    }
-
-    // 导入完成后尝试触发 Tantivy segment 合并
-    // 如果该工作区已有 SearchEngineManager，则等待后台 segment 合并完成
-    // 这可以减少段数量，提升后续搜索性能
-    {
-        let search_engine_opt = Some(Arc::clone(&search_manager));
-        if let Some(search_manager) = search_engine_opt {
-            tracing::info!(
-                workspace_id = %workspace_id_clone,
-                "导入完成，开始等待 Tantivy segment 合并"
-            );
-            if let Err(e) = search_manager.commit_and_wait_merge().await {
-                let error_msg = format!(
-                    "Tantivy segment merge warning (non-critical): {}. Import completed successfully.",
-                    e
-                );
-                tracing::warn!(
-                    workspace_id = %workspace_id_clone,
-                    error = %e,
-                    "{}",
-                    error_msg
-                );
-                // 发送警告事件给前端（非致命错误）
-                let _ = app_handle.emit("import-warning", &error_msg);
-            }
-        }
-    }
-
-    // ── 架构重构：导入成功后预创建 WorkspaceService ──
-    // P4 渐进式迁移：将工作区的运行时依赖组装为 WorkspaceService，
-    // 存入 AppState.workspace_services，供后续搜索/监听命令直接使用。
-    {
-        let disk_result_store = state.disk_result_store.read().clone().ok_or_else(|| {
-            "Disk result store not initialized".to_string()
-        })?;
-        let thread_pool = Arc::clone(&state.search_thread_pool);
-        let regex_cache_size = load_workspace_search_config(&app_handle).regex_cache_size.max(1);
-        let event_publisher = Arc::new(TauriEventPublisher {
-            app_handle: app_handle.clone(),
-        });
-
-        let service = Arc::new(WorkspaceServiceImpl::new(
-            workspace_id_clone.clone(),
-            workspace_dir.clone(),
-            cas,
-            metadata_store,
-            search_manager,
-            disk_result_store,
-            event_publisher,
-            thread_pool,
-            regex_cache_size,
-        ));
-
-        state.set_workspace_service(workspace_id_clone.clone(), service);
-        tracing::info!(
-            workspace_id = %workspace_id_clone,
-            "WorkspaceService pre-created after import"
-        );
-    }
-
-    let _ = app_handle.emit("import-complete", task_id_clone);
-
+    let _ = app.emit("import-complete", &task_id);
     Ok(task_id)
 }
 
@@ -792,8 +293,94 @@ pub async fn import_folder(
 #[command]
 pub async fn check_rar_support() -> Result<serde_json::Value, String> {
     serde_json::to_value(get_rar_support_info())
-        .map_err(|error| format!("Failed to serialize RAR support info: {}", error))
+        .map_err(|error| format!("Failed to serialize RAR support info: {error}"))
 }
+
+// ============================================================================
+// 命令层辅助函数
+// ============================================================================
+
+/// 获取或创建工作区服务实例。
+///
+/// 如果服务已存在于 AppState 中则直接返回，否则创建新实例并存储。
+/// P6：提升为 pub(crate)，供 workspace.rs 的 load_workspace / get_workspace_status 使用。
+pub(crate) async fn get_or_create_workspace_service(
+    app: &AppHandle,
+    state: &AppState,
+    workspace_id: &str,
+    workspace_dir: &Path,
+) -> Result<WorkspaceServiceRef, String> {
+    // 优先返回已存在的服务
+    if let Some(service) = state.get_workspace_service(workspace_id) {
+        return Ok(service);
+    }
+
+    // 创建各运行时组件
+    let cas = Arc::new(ContentAddressableStorage::new(workspace_dir.to_path_buf()));
+
+    let metadata_store = Arc::new(
+        MetadataStore::new(workspace_dir)
+            .await
+            .map_err(|e| format!("Failed to open metadata store: {e}"))?,
+    );
+
+    let search_manager =
+        ensure_search_engine_manager(app, state, workspace_id, workspace_dir)?;
+
+    let disk_result_store = state
+        .get_disk_result_store()
+        .ok_or("Disk result store not initialized")?;
+    let thread_pool = state.get_search_thread_pool();
+    let regex_cache_size = load_workspace_search_config(app).regex_cache_size.max(1);
+
+    let service = Arc::new(WorkspaceServiceImpl::new(
+        workspace_id.to_string(),
+        workspace_dir.to_path_buf(),
+        cas,
+        metadata_store,
+        search_manager,
+        disk_result_store,
+        Arc::new(TauriEventPublisher {
+            app_handle: app.clone(),
+        }),
+        thread_pool,
+        regex_cache_size,
+    ));
+
+    state.set_workspace_service(workspace_id.to_string(), service.clone() as WorkspaceServiceRef);
+    tracing::info!(
+        workspace_id = %workspace_id,
+        "WorkspaceService created and registered"
+    );
+
+    Ok(service as WorkspaceServiceRef)
+}
+
+/// 更新任务进度并处理错误。
+async fn update_task(
+    task_manager: &TaskManager,
+    task_id: &str,
+    progress: u8,
+    message: &str,
+    status: TaskStatus,
+    app: &AppHandle,
+) {
+    if let Err(e) = task_manager
+        .update_task_async(task_id, progress, message.to_string(), status)
+        .await
+    {
+        warn!(
+            task_id = %task_id,
+            error = %e,
+            "Failed to update task progress"
+        );
+        let _ = app.emit("import-error", &format!("Task update failed: {e}"));
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
 
 #[cfg(test)]
 mod tests {

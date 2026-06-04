@@ -13,7 +13,6 @@ use log_analyzer::commands::{
 };
 use log_analyzer::models::AppState;
 use log_analyzer::task_manager::TaskManager;
-use std::sync::Arc;
 use tauri::Manager;
 use tracing::info;
 
@@ -106,8 +105,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let task_manager = TaskManager::new(app.handle().clone(), task_manager_config)?;
 
             // 设置到 AppState
-            let mut state_guard = app_state.task_manager.lock();
-            *state_guard = Some(task_manager);
+            app_state.init_task_manager(task_manager);
 
             info!("✅ TaskManager 初始化成功");
 
@@ -181,24 +179,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let state = app_handle.state::<AppState>();
 
                 // 1. 清理 DiskResultStore（先执行，释放文件句柄）
-                // FIX(CR-06): disk_result_store may be None if initialization failed
-                let disk_store_opt = state.disk_result_store.read().clone();
-                if let Some(disk_store) = disk_store_opt {
-                    disk_store.cleanup_all();
-                }
+                state.cleanup_disk_result_store();
 
                 // 2. 清理异步组件（MetadataStore / SearchEngineManager / TaskManager）
-                // P6 迁移：从 workspace_services 统一获取资源并关闭
-                let workspace_services = Arc::clone(&state.workspace_services);
-                let task_manager = Arc::clone(&state.task_manager);
+                let services = state.all_workspace_services();
+                let task_manager = state.task_manager_arc();
 
                 // block_in_place 允许在 async 上下文中执行阻塞操作，
                 // 使用已有的 tokio runtime 而非创建新的
                 tokio::task::block_in_place(|| {
                     let rt = tokio::runtime::Handle::current();
                     rt.block_on(async {
-                        let services: Vec<_> =
-                            workspace_services.lock().values().cloned().collect();
                         for svc in services {
                             svc.metadata_store().close().await;
                             let _ = tokio::time::timeout(

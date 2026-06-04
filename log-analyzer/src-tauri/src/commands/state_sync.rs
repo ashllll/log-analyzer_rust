@@ -16,7 +16,8 @@ pub async fn init_state_sync(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), CommandError> {
-    let mut sync_guard = state.state_sync.lock();
+    let sync_arc = state.state_sync_arc();
+    let mut sync_guard = sync_arc.lock();
 
     if sync_guard.is_none() {
         let state_sync = StateSync::new(app);

@@ -135,46 +135,48 @@ impl SearchUseCase {
         thread_pool: Arc<rayon::ThreadPool>,
         cancellation_token: tokio_util::sync::CancellationToken,
     ) {
-        use std::sync::atomic::{AtomicBool, Ordering};
-
         let start = std::time::Instant::now();
 
+        // ── Build execution plan ──
         let plan = match searcher.build_plan(query) {
             Ok(p) => p,
             Err(e) => {
-                tokio::runtime::Handle::current()
-                    .block_on(events.emit_search_error(search_id, &e.to_string()));
+                let events = events.clone();
+                let sid = search_id.to_string();
+                let msg = e.to_string();
+                tokio::spawn(async move { events.emit_search_error(&sid, &msg).await });
                 results.remove_session(search_id);
                 return;
             }
         };
 
+        // ── Search loop ──
         let batch_size = 2000;
         let mut results_count = 0;
         let mut was_truncated = false;
-        let timed_out = Arc::new(AtomicBool::new(false));
-        let timed_out_clone = Arc::clone(&timed_out);
-
         let mut batch: Vec<LogEntry> = Vec::new();
+
+        // Flush helper: persist batch to disk, emit progress via spawn (no block_on)
         let flush = |batch: &mut Vec<LogEntry>, count: usize| -> bool {
             if batch.is_empty() {
                 return true;
             }
             if let Err(e) = results.append_entries(search_id, batch) {
-                tokio::runtime::Handle::current()
-                    .block_on(events.emit_search_error(search_id, &e.to_string()));
+                let events = events.clone();
+                let sid = search_id.to_string();
+                let msg = e.to_string();
+                tokio::spawn(async move { events.emit_search_error(&sid, &msg).await });
                 return false;
             }
             batch.clear();
-            if !timed_out_clone.load(Ordering::SeqCst) {
-                tokio::runtime::Handle::current()
-                    .block_on(events.emit_search_progress(search_id, count));
-            }
+            let events = events.clone();
+            let sid = search_id.to_string();
+            tokio::spawn(async move { events.emit_search_progress(&sid, count).await });
             true
         };
 
         'outer: for file_batch in files.chunks(10) {
-            if cancellation_token.is_cancelled() || timed_out.load(Ordering::SeqCst) {
+            if cancellation_token.is_cancelled() {
                 break;
             }
             if results_count >= max_results {
@@ -218,16 +220,20 @@ impl SearchUseCase {
         let _ = results.complete_session(search_id);
         let duration = start.elapsed().as_millis() as u64;
 
-        if !timed_out.load(Ordering::SeqCst) {
-            tokio::runtime::Handle::current().block_on(events.emit_search_complete(
-                search_id,
-                la_core::domain::event::SearchSummary {
-                    total_count: results_count,
-                    duration_ms: duration,
-                    was_truncated,
-                },
-            ));
-        }
+        let events = events.clone();
+        let sid = search_id.to_string();
+        tokio::spawn(async move {
+            events
+                .emit_search_complete(
+                    &sid,
+                    la_core::domain::event::SearchSummary {
+                        total_count: results_count,
+                        duration_ms: duration,
+                        was_truncated,
+                    },
+                )
+                .await;
+        });
     }
 }
 

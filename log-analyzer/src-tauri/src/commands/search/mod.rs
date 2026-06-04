@@ -9,8 +9,6 @@
 pub(crate) mod filters;
 pub(crate) mod query;
 
-use std::sync::Arc;
-
 use serde::{Deserialize, Serialize};
 use tauri::{command, AppHandle, Manager, State};
 use tokio_util::sync::CancellationToken;
@@ -51,8 +49,6 @@ pub struct BinarySearchRequest {
 #[derive(Debug, Clone)]
 pub(crate) struct SearchRuntimeConfig {
     pub(crate) default_max_results: usize,
-    pub(crate) timeout_seconds: u64,
-    pub(crate) regex_cache_size: usize,
     pub(crate) case_sensitive: bool,
 }
 
@@ -60,8 +56,6 @@ impl Default for SearchRuntimeConfig {
     fn default() -> Self {
         Self {
             default_max_results: 100_000,
-            timeout_seconds: 10,
-            regex_cache_size: 1000,
             case_sensitive: false,
         }
     }
@@ -81,8 +75,6 @@ pub(crate) fn load_search_runtime_config(app: &AppHandle) -> SearchRuntimeConfig
             let c = loader.get_config();
             SearchRuntimeConfig {
                 default_max_results: c.search.max_results,
-                timeout_seconds: c.search.timeout_seconds,
-                regex_cache_size: c.search.regex_cache_size.max(1),
                 case_sensitive: c.search.case_sensitive,
             }
         })
@@ -139,7 +131,8 @@ pub(crate) fn resolve_workspace_id(
     if let Some(id) = id_arg {
         return Ok(id);
     }
-    let services = state.workspace_services.lock();
+    let services = state.workspaces.services_arc();
+    let services = services.lock();
     if let Some(first) = services.keys().next() {
         Ok(first.clone())
     } else {
@@ -157,18 +150,24 @@ pub async fn cancel_search(
     #[allow(non_snake_case)] searchId: String,
     state: State<'_, AppState>,
 ) -> Result<(), CommandError> {
-    let cts = Arc::clone(&state.search_cancellation_tokens);
-    let token = { cts.lock().get(&searchId).cloned() };
-    if let Some(t) = token {
+    // Try command-layer token first (backward compat)
+    if let Some(t) = state.get_search_cancellation_token(&searchId) {
         t.cancel();
-        cts.lock().remove(&searchId);
-        Ok(())
-    } else {
-        Err(
-            CommandError::new("NOT_FOUND", format!("Search {} not found", searchId))
-                .with_help("Search may have already finished"),
-        )
+        state.remove_search_cancellation_token(&searchId);
+        return Ok(());
     }
+
+    // Try all workspace services (new path — service内部管理 search sessions)
+    for svc in state.all_workspace_services() {
+        if svc.cancel_search(&searchId).await.is_ok() {
+            return Ok(());
+        }
+    }
+
+    Err(
+        CommandError::new("NOT_FOUND", format!("Search {} not found", searchId))
+            .with_help("Search may have already finished"),
+    )
 }
 
 #[command]
@@ -178,14 +177,10 @@ pub async fn fetch_search_page(
     offset: usize,
     limit: usize,
 ) -> Result<la_search::SearchPageResult, CommandError> {
-    let limit = limit.min(10000);
-    let ds_opt = state.disk_result_store.read();
-    let ds = ds_opt.as_ref().ok_or_else(|| {
-        CommandError::new("NOT_INITIALIZED", "Disk result store not initialized")
-            .with_help("App may be initializing")
-    })?;
-    if ds.has_session(&searchId) {
-        return ds.read_page(&searchId, offset, limit).map_err(|e| {
+    // P3 迁移：DiskResultStore 全局共享，任意 workspace service 皆可服务
+    let services = state.all_workspace_services();
+    if let Some(svc) = services.first() {
+        return svc.fetch_search_page(&searchId, offset, limit).await.map_err(|e| {
             CommandError::from(AppError::io_error(
                 format!("Failed to read page: {e}"),
                 None,
@@ -194,8 +189,8 @@ pub async fn fetch_search_page(
         });
     }
     Err(
-        CommandError::new("NOT_FOUND", format!("Session '{}' not found", searchId))
-            .with_help("Results may have been cleared. Try searching again"),
+        CommandError::new("NOT_FOUND", "No workspace available")
+            .with_help("Import a workspace first"),
     )
 }
 
@@ -221,7 +216,7 @@ pub async fn search_logs(
     let rc = load_search_runtime_config(&app);
 
     // ── 3. Cancellation tokens (still needed for search session management) ──
-    let cts = Arc::clone(&state.search_cancellation_tokens);
+    let cts = state.cancellation_tokens_arc();
 
     // ── 4. Resolve params ──
     let mr = maxResults.unwrap_or(rc.default_max_results).min(100_000);

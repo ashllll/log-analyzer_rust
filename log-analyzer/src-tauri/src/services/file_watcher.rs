@@ -2,14 +2,12 @@
 //!
 //! 提供实时文件监听和增量读取功能，支持：
 //! - 从指定偏移量读取文件新增内容
-//! - 日志行解析（提取时间戳和日志级别）
+//! - 日志行解析（委托给 la_core::utils）
 //! - 增量索引更新
 //! - 实时事件推送到前端
 
 use la_core::error::{AppError, Result};
 use la_core::models::log_entry::LogEntry;
-use once_cell::sync::Lazy;
-use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -35,104 +33,9 @@ pub struct WatcherState {
 }
 use tracing::{debug, warn};
 
-/// 时间戳解析器
-pub struct TimestampParser;
-
-impl TimestampParser {
-    /// 支持的时间戳格式
-    const FORMATS: &'static [&'static str] = &[
-        "%Y-%m-%dT%H:%M:%S%.f", // ISO 8601 with fractional seconds
-        "%Y-%m-%dT%H:%M:%S",    // ISO 8601
-        "%Y-%m-%d %H:%M:%S%.f", // Common format with fractional seconds
-        "%Y-%m-%d %H:%M:%S",    // Common format
-        "%d/%m/%Y %H:%M:%S%.f", // European format with fractional seconds
-        "%d/%m/%Y %H:%M:%S",    // European format
-        "%m/%d/%Y %H:%M:%S%.f", // US format with fractional seconds
-        "%m/%d/%Y %H:%M:%S",    // US format
-        "%Y/%m/%d %H:%M:%S%.f", // Asian format with fractional seconds
-        "%Y/%m/%d %H:%M:%S",    // Asian format
-        "%d-%m-%Y %H:%M:%S",    // Additional formats
-        "%m-%d-%Y %H:%M:%S",
-        "%Y%m%d %H:%M:%S",
-        "%b %d %H:%M:%S",    // Syslog format
-        "%d/%b/%Y:%H:%M:%S", // Apache format
-    ];
-
-    /// 过滤器输入额外支持的时间格式
-    ///
-    /// 前端 `datetime-local` 默认会提交不带时区的 `YYYY-MM-DDTHH:MM`，
-    /// 搜索过滤器需要额外支持这类边界输入。
-    const FILTER_FORMATS: &'static [&'static str] = &[
-        "%Y-%m-%dT%H:%M",
-        "%Y-%m-%dT%H:%M:%S",
-        "%Y-%m-%dT%H:%M:%S%.f",
-        "%Y-%m-%d %H:%M",
-    ];
-
-    /// 将时间字符串解析为 `NaiveDateTime`
-    ///
-    /// 同时用于：
-    /// - 日志内容中的时间戳
-    /// - 搜索过滤器中的开始/结束时间
-    pub fn parse_naive_datetime(value: &str) -> Option<chrono::NaiveDateTime> {
-        let trimmed = value.trim();
-        if trimmed.is_empty() {
-            return None;
-        }
-
-        for format in Self::FORMATS
-            .iter()
-            .chain(Self::FILTER_FORMATS.iter())
-            .copied()
-        {
-            if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(trimmed, format) {
-                return Some(dt);
-            }
-        }
-
-        chrono::DateTime::parse_from_rfc3339(trimmed)
-            .ok()
-            .map(|dt| dt.naive_utc())
-    }
-
-    /// 解析时间戳
-    pub fn parse_timestamp(line: &str) -> Option<String> {
-        use once_cell::sync::Lazy;
-        use regex::Regex;
-
-        // 使用 OnceCell 或直接在这里处理 Result，避免 unwrap
-        static TIMESTAMP_PATTERNS: Lazy<Vec<(Regex, usize)>> = Lazy::new(|| {
-            let patterns = [
-                (r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}", 23), // ISO 8601 with ms
-                (r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", 19),        // ISO 8601
-                (r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}", 23), // Common with ms
-                (r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", 19),        // Common
-                (r"\d{2}/\d{2}/\d{4} \d{2}:\d{2}:\d{2}\.\d{3}", 23), // US with ms
-                (r"\d{2}/\d{2}/\d{4} \d{2}:\d{2}:\d{2}", 19),        // US
-                (r"\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}\.\d{3}", 23), // Asian with ms
-                (r"\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}", 19),        // Asian
-            ];
-
-            patterns
-                .iter()
-                .filter_map(|(pat, len)| Regex::new(pat).ok().map(|r| (r, *len)))
-                .collect()
-        });
-
-        for (pattern, _length) in TIMESTAMP_PATTERNS.iter() {
-            if let Some(mat) = pattern.find(line) {
-                let timestamp_str = mat.as_str();
-
-                // 验证时间戳格式
-                if Self::parse_naive_datetime(timestamp_str).is_some() {
-                    return Some(timestamp_str.to_string());
-                }
-            }
-        }
-
-        None
-    }
-}
+// TimestampParser / parse_metadata / parse_log_lines 已提取至 la_core::utils
+// 保留 re-export 以保持向后兼容
+pub use la_core::utils::{parse_log_lines, parse_metadata, TimestampParser};
 
 /// 从指定偏移量读取文件新增内容（支持增量读取）
 ///
@@ -218,96 +121,6 @@ pub fn read_file_from_offset(path: &Path, offset: u64) -> Result<(Vec<String>, u
     );
 
     Ok((lines, file_size))
-}
-
-/// 解析日志行元数据（时间戳和日志级别）
-///
-/// # Arguments
-///
-/// * `line` - 日志行内容
-///
-/// # Returns
-///
-/// 返回元组：(时间戳, 日志级别)
-///
-/// # 提取规则
-///
-/// - **时间戳**：使用改进的时间戳解析器
-/// - **日志级别**：按优先级匹配 ERROR > WARN > INFO > DEBUG（默认）
-///   返回小写静态字符串（"error" / "warn" / "info" / "debug"），零分配
-pub fn parse_metadata(line: &str) -> (String, &'static str) {
-    // 使用正则边界匹配，避免误匹配如 "ErrorCode" 等子串
-    // \b 确保匹配完整单词，优先级由正则顺序决定：ERROR > WARN > INFO > DEBUG
-    static LOG_LEVEL_REGEX: Lazy<Regex> = Lazy::new(|| {
-        Regex::new(r"\b(ERROR|WARN|INFO|DEBUG)\b")
-            .expect("LOG_LEVEL_REGEX is a valid static regex pattern")
-    });
-
-    // 将正则匹配结果映射为静态字符串（仅 4 种可能，零分配）
-    let level: &'static str = LOG_LEVEL_REGEX
-        .find(line)
-        .map(|m| match m.as_str() {
-            "ERROR" => "error",
-            "WARN" => "warn",
-            "INFO" => "info",
-            _ => "debug",
-        })
-        .unwrap_or("debug");
-
-    // 使用改进的时间戳解析器
-    let timestamp = TimestampParser::parse_timestamp(line).unwrap_or_else(|| {
-        debug!(line = %line, "No timestamp found in line");
-        String::new()
-    });
-
-    (timestamp, level)
-}
-
-/// 解析日志行并创建 LogEntry
-///
-/// # Arguments
-///
-/// * `lines` - 日志行列表
-/// * `file_path` - 文件虚拟路径（用于显示）
-/// * `real_path` - 实际文件路径
-/// * `start_id` - 起始 ID（递增）
-/// * `start_line_number` - 起始行号
-///
-/// # Returns
-///
-/// 返回解析后的 LogEntry 列表
-///
-/// # 说明
-///
-/// - 每个日志行生成一个 LogEntry
-/// - 无搜索情境下，match_details 字段为 None
-/// - ID 和行号自动递增
-pub fn parse_log_lines(
-    lines: &[String],
-    file_path: &str,
-    real_path: &str,
-    start_id: usize,
-    start_line_number: usize,
-) -> Vec<LogEntry> {
-    lines
-        .iter()
-        .enumerate()
-        .map(|(i, line)| {
-            let (timestamp, level) = parse_metadata(line);
-            LogEntry {
-                id: start_id + i,
-                timestamp: timestamp.into(),
-                level: level.into(),
-                file: file_path.to_string().into(),
-                real_path: real_path.to_string().into(),
-                line: start_line_number + i,
-                content: line.clone().into(),
-                tags: vec![],
-                match_details: None,    // 无搜索情境下不包含匹配详情
-                matched_keywords: None, // 无搜索情境下不包含匹配关键词
-            }
-        })
-        .collect()
 }
 
 /// 将新日志条目添加到工作区索引（增量更新）

@@ -34,7 +34,7 @@ use la_core::models::config::AppConfigLoader;
 use tauri::{AppHandle, Manager, State};
 use tracing::{error, info, warn};
 
-use crate::commands::import::{ensure_workspace_runtime_state, import_folder};
+use crate::commands::import::{get_or_create_workspace_service, import_folder};
 use crate::models::AppState;
 use crate::utils::validation::validate_workspace_id;
 use crate::utils::workspace_paths::resolve_workspace_dir;
@@ -89,8 +89,9 @@ pub async fn load_workspace(
         );
     }
 
-    let (_, metadata_store, _) =
-        ensure_workspace_runtime_state(&app, &state, &workspace_id, &workspace_dir)
+    // P6 迁移：通过共享 helper 创建/获取服务，避免内部重复创建 WorkspaceServiceImpl
+    let service =
+        get_or_create_workspace_service(&app, &state, &workspace_id, &workspace_dir)
             .await
             .map_err(|e| {
                 CommandError::new(
@@ -99,16 +100,16 @@ pub async fn load_workspace(
                 )
             })?;
 
-    let file_count =
-        metadata_store.count_files().await.map_err(|e| {
+    let file_count = service
+        .metadata_store()
+        .count_files()
+        .await
+        .map_err(|e| {
             CommandError::new("DATABASE_ERROR", format!("Failed to count files: {}", e))
         })? as usize;
 
     // Broadcast workspace loaded event
-    let state_sync_opt: Option<crate::state_sync::StateSync> = {
-        let guard = state.state_sync.lock();
-        guard.as_ref().cloned()
-    };
+    let state_sync_opt = state.get_state_sync();
     if let Some(state_sync) = state_sync_opt {
         use crate::state_sync::models::{WorkspaceEvent, WorkspaceStatus};
         use std::time::Duration;
@@ -376,43 +377,22 @@ async fn cleanup_workspace_resources(
     }
 
     // ===== 步骤1: 停止文件监听器 =====
+    // P5 迁移：watcher 状态内嵌于 WorkspaceServiceImpl，通过 service.stop_watch() 清理
     info!(
         workspace_id = %workspace_id,
         "Step 1: Stopping file watcher"
     );
-    {
-        let mut watchers = state.watchers.lock();
-        if let Some(mut watcher_state) = watchers.remove(workspace_id) {
-            // 设置标志使监听线程自然退出
-            watcher_state.is_active = false;
-
-            // 获取句柄和监听器以便正确清理（参考 stop_watch 的实现）
-            let thread_handle = watcher_state.thread_handle.lock().take();
-            let watcher = watcher_state.watcher.lock().take();
-
-            // 释放锁后，显式释放 watcher（会关闭 notify 的通道）
-            drop(watcher);
-
-            // 等待监听线程结束
-            if let Some(handle) = thread_handle {
-                if handle.join().is_err() {
-                    error!(
-                        workspace_id = %workspace_id,
-                        "Failed to join watcher thread"
-                    );
-                }
-            }
-
-            info!(
-                workspace_id = %workspace_id,
-                "File watcher stopped"
-            );
-        } else {
-            info!(
-                workspace_id = %workspace_id,
-                "No active watcher found"
-            );
-        }
+    if let Some(service) = state.get_workspace_service(workspace_id) {
+        let _ = service.stop_watch().await; // watcher 可能未激活，忽略错误
+        info!(
+            workspace_id = %workspace_id,
+            "File watcher stopped via service"
+        );
+    } else {
+        info!(
+            workspace_id = %workspace_id,
+            "No workspace service found, skipping watcher stop"
+        );
     }
 
     // ===== 步骤2: 清除搜索缓存 =====
@@ -666,10 +646,7 @@ pub async fn delete_workspace(
 
     // 广播工作区删除事件
     // 注意：先克隆 state_sync，释放锁后再 await，避免跨 await 点持有锁
-    let state_sync_opt: Option<crate::state_sync::StateSync> = {
-        let guard = state.state_sync.lock();
-        guard.as_ref().cloned()
-    };
+    let state_sync_opt = state.get_state_sync();
     if let Some(state_sync) = state_sync_opt {
         use crate::state_sync::models::{WorkspaceEvent, WorkspaceStatus};
         use std::time::SystemTime;
@@ -702,14 +679,9 @@ pub async fn cancel_task(task_id: String, state: State<'_, AppState>) -> Result<
         "Cancel task command called"
     );
 
-    let task_manager: crate::task_manager::TaskManager = state
-        .task_manager
-        .lock()
-        .as_ref()
-        .ok_or_else(|| CommandError::new("NOT_INITIALIZED", "Task manager not initialized"))?
-        .clone();
-
-    let task_manager: crate::task_manager::TaskManager = task_manager;
+    let task_manager = state
+        .get_task_manager_clone()
+        .ok_or_else(|| CommandError::new("NOT_INITIALIZED", "Task manager not initialized"))?;
     // FIX(HI-03): 使用 ? 传播错误，避免静默丢弃
     task_manager
         .update_task_async(
@@ -772,8 +744,9 @@ pub async fn get_workspace_status(
         );
     }
 
-    let (_, metadata_store, _) =
-        ensure_workspace_runtime_state(&app, &state, &workspace_id, &workspace_dir)
+    // P6 迁移：通过共享 helper 创建/获取服务
+    let service =
+        get_or_create_workspace_service(&app, &state, &workspace_id, &workspace_dir)
             .await
             .map_err(|e| {
                 CommandError::new(
@@ -782,10 +755,11 @@ pub async fn get_workspace_status(
                 )
             })?;
 
-    let file_count: i64 = metadata_store.count_files().await.unwrap_or(0);
+    let file_count: i64 = service.metadata_store().count_files().await.unwrap_or(0);
 
     // 用 SQL 聚合查询替代目录遍历，O(1) 而非 O(n)
-    let total_size: u64 = metadata_store
+    let total_size: u64 = service
+        .metadata_store()
         .sum_file_sizes()
         .await
         .unwrap_or(0)
@@ -814,26 +788,18 @@ pub async fn get_workspace_status(
 /// 从 Tantivy 索引中查询最早和最晚的日志时间戳
 #[tauri::command]
 pub async fn get_workspace_time_range(
-    app: AppHandle,
+    _app: AppHandle,
     workspace_id: String,
     state: State<'_, AppState>,
 ) -> Result<la_core::models::search::WorkspaceTimeRange, CommandError> {
     use chrono::DateTime;
     use la_core::models::search::WorkspaceTimeRange;
 
-    let workspace_dir = resolve_workspace_dir(&app, &workspace_id)
-        .map_err(|e| CommandError::new("NOT_FOUND", e))?;
-    let (_, _, manager) =
-        ensure_workspace_runtime_state(&app, &state, &workspace_id, &workspace_dir)
-            .await
-            .map_err(|e| {
-                CommandError::new(
-                    "RUNTIME_ERROR",
-                    format!("Failed to initialize workspace: {}", e),
-                )
-            })?;
-
-    let manager: Arc<la_search::SearchEngineManager> = manager;
+    let service = state.get_workspace_service(&workspace_id).ok_or_else(|| {
+        CommandError::new("NOT_FOUND", "Workspace not loaded")
+            .with_help("Reload the workspace first")
+    })?;
+    let manager: Arc<la_search::SearchEngineManager> = Arc::clone(service.search_engine());
     let (min_ts, max_ts, total_logs) = manager.get_time_range().map_err(|e| {
         CommandError::new(
             "SEARCH_ERROR",

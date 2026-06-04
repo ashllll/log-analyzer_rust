@@ -26,13 +26,16 @@ All commands run from within `log-analyzer/` unless otherwise noted.
 ```bash
 cd log-analyzer
 npm install                     # Install dependencies
-npm run dev                     # Vite dev server (frontend-only)
+npm run dev                     # Vite dev server (frontend-only, port 3000)
 npm run build                   # TypeScript compile + Vite production build
 npm run lint                    # ESLint check
 npm run lint:fix                # ESLint auto-fix
 npm run type-check              # tsc --noEmit
+npm run type-check:test         # Type check test config
 npm test                        # Jest unit tests
 npm test -- --testPathPattern=<pattern>  # Run specific test file
+npm run test:watch              # Jest watch mode
+npm run validate:ci             # Full local CI check (calls scripts/validate-ci.sh)
 ```
 
 ### Rust Backend
@@ -41,10 +44,13 @@ npm test -- --testPathPattern=<pattern>  # Run specific test file
 cd log-analyzer/src-tauri
 cargo fmt -- --check            # Format check
 cargo clippy --all-features --all-targets -- -D warnings  # Lint
-cargo test --workspace          # All workspace tests
-cargo test -p la-core           # Tests for a specific crate
-cargo test --all-features       # With all features (including rar)
+cargo test -q                   # All workspace tests (quiet output)
+cargo test -q <pattern>         # Run tests matching name pattern
+cargo test -q -p la-core        # Tests for a specific crate
+cargo test -q --all-features    # With all features (including rar)
+cargo test -q -- --nocapture    # Show println! output
 cargo check --workspace         # Fast compile check (no codegen)
+cargo check --all-features      # Fast check with all features
 cargo tarpaulin --config tarpaulin.toml --out Html --output-dir coverage  # Code coverage
 ```
 
@@ -63,7 +69,7 @@ npm run tauri build -- --debug --no-bundle  # Debug smoke build
 # Full local CI check (from repo root):
 bash scripts/validate-ci.sh
 
-# IPC consistency check:
+# IPC consistency check (frontend types ↔ backend commands):
 bash scripts/check_ipc_consistency.sh
 
 # Release preparation check:
@@ -110,6 +116,32 @@ All defined in `la-core/src/domain/mod.rs`, implemented by `infrastructure/`:
 
 Separate `la-core/src/traits.rs` defines: `QueryValidation`, `ContentStorage`, `MetadataStorage`, `AppConfigProvider`.
 
+## Search Main Path (Critical for Search Modifications)
+
+Before modifying search code, confirm you are on the **actual UI main path**, not a secondary or预留 capability:
+
+```text
+SearchPage.tsx
+→ api.searchLogs(query, filters)
+→ commands/search.rs: search_logs()
+  → param validation (empty query + length check)
+  → WorkspaceService::search()  ← P3 Clean Architecture path
+    → SearchUseCase::execute() (spawn_blocking on Rayon pool)
+      → CasLogFileRepository → MetadataStore::get_all_files() + CAS::retrieve()
+      → QueryEngineLogSearcher (regex / Aho-Corasick / memchr)
+      → DiskResultStoreRepo → DiskResultStore::write_results()
+  → returns search_id (UUID)
+→ cancel_search(searchId) / fetch_search_page(searchId, offset, limit)
+  → WorkspaceService::cancel_search() / fetch_search_page()
+```
+
+**Constraints:**
+- UI search uses `|` for OR multi-keyword queries (e.g. `timeout|retry|circuit breaker`)
+- `execute_structured_query` is a **separate command**, not the UI main path
+- Tantivy index is built during import, but the main UI search still scans CAS files
+- `FilterEngine` / `TimePartitionedIndex` are reserved capabilities, not the main search executor
+- `DiskResultStore` is a **global shared resource** (one instance across all workspaces)
+
 ## Key Design Decisions
 
 1. **Tauri Events for IPC** — No WebSocket; desktop-only app uses Tauri's built-in event system
@@ -138,6 +170,49 @@ Before release, these three files must have matching versions:
 ## Offline-First
 
 This project is designed for fully offline local use. All dependencies must be vendorable. No runtime network calls except optional error reporting (Sentry, feature-gated).
+
+## Application Data Directories
+
+Workspace data (CAS + `metadata.db`) is stored per-platform under `{app_data_dir}/workspaces/{workspace_id}/`:
+
+| Platform | Path |
+|---|---|
+| Windows | `%APPDATA%\io.github.ashllll.log-analyzer\` |
+| macOS | `~/Library/Application Support/io.github.ashllll.log-analyzer/` |
+| Linux | `~/.local/share/io.github.ashllll.log-analyzer/` |
+
+Global config is loaded from `{config_dir}/config.json` at startup. Delete this file to reset to defaults.
+
+**Workspace recovery:** After app restart, in-memory runtime state is cleared. Workspaces must be loaded via `load_workspace` or re-imported before `search_logs` can function (P3 migration — service must be pre-created, no lazy fallback). If recovery fails, check that `metadata.db` passes `PRAGMA integrity_check;` and `objects/` directory has CAS files.
+
+## Archive Extraction Policy
+
+Extraction behavior is controlled by `src-tauri/config/extraction_policy.toml` (copied from `.example` template, already in `.gitignore`):
+
+| Section | Key | Description |
+|---|---|---|
+| `[extraction]` | `max_depth` | Max nested archive depth (1–20, default 10) |
+| `[extraction]` | `max_file_size` | Per-file size limit (bytes) |
+| `[extraction]` | `max_total_size` | Per-archive total size limit |
+| `[security]` | `enable_zip_bomb_detection` | Zip bomb detection (default true) |
+| `[security]` | `compression_ratio_threshold` | Compression ratio threshold (default 100.0) |
+| `[paths]` | `enable_long_paths` | Windows long path support |
+
+Changes require app restart to take effect.
+
+## Commit & Review Conventions
+
+**Commit format** (Conventional Commits): `type(scope): description`
+
+Common types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `perf`, `ci`
+
+**Review checklist** (from `CONTRIB.md`):
+- Are you modifying the actual main path, not unused reserved code?
+- Any new I/O overhead, lock contention, or cache boundary issues?
+- Are frontend/backend field names consistent (especially `LogEntry` fields)?
+- Does new async code have cancellation support (`CancellationToken`)?
+- Are docs still accurate?
+- Do tests cover edge cases (empty query, invalid time filter format, etc.)?
 
 ---
 

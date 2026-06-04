@@ -18,18 +18,20 @@
 //! - [ ] P1: SearchService 实现
 //! - [ ] P2: AppState 集成
 //! - [ ] P3: search_logs 命令迁移
-//! - [ ] P4: ImportService 实现
-//! - [ ] P5: WatchService 实现
-//! - [ ] P6: 清理旧 HashMap
+//! - [x] P4: ImportService 实现
+//! - [x] P5: WatchService 实现（watcher 状态移入 WorkspaceServiceImpl）
+//! - [ ] P6: 清理旧 HashMap / 移除内部 getter 方法
 
 use async_trait::async_trait;
 use la_core::error::Result;
 use la_core::models::{SearchFilters, SearchQuery};
+use la_core::traits::AppConfigProvider;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
-// P5 渐进式：暴露内部依赖给 WatchUseCase 使用
+// 保留 re-exports 以保持向后兼容（workspace_repo、cleanup_workspace_resources 等引用）
 pub use la_storage::ContentAddressableStorage;
 pub use la_search::SearchEngineManager;
 
@@ -79,27 +81,63 @@ pub trait SearchService: Send + Sync {
         offset: usize,
         limit: usize,
     ) -> Result<la_search::SearchPageResult>;
+
+    /// 取消正在执行的搜索。
+    ///
+    /// 取消指定 search_id 的搜索会话（如果存在）。
+    async fn cancel_search(&self, search_id: &str) -> Result<()>;
 }
 
 // ============================================================================
 // ImportService — 工作区导入能力
 // ============================================================================
 
-/// 工作区导入服务接口（占位，P4 实现）。
+/// 工作区导入服务接口。
+///
+/// 封装了单个工作区的全部导入能力，包括：
+/// - 调用 process_path_with_cas 处理文件/压缩包
+/// - 回退文件统计（处理 PENDING 文件）
+/// - 重建搜索索引
+///
+/// 命令层负责 TaskManager 任务生命周期、完整性验证和 Tantivy 段合并。
 #[async_trait]
 pub trait ImportService: Send + Sync {
     /// 导入日志文件到工作区。
+    ///
+    /// # 参数
+    /// - `source_path`: 要导入的文件或目录路径
+    /// - `options`: 导入选项（extract_archives, skip_existing）
+    /// - `config_provider`: 应用配置提供者（解耦 Tauri AppHandle）
+    /// - `task_id`: 任务 ID（由命令层 TaskManager 创建，用于进度关联）
+    /// - `cancellation_token`: 取消令牌（由命令层创建和管理生命周期）
+    ///
+    /// # 返回
+    /// `ImportResult` 包含根名称和已导入文件数。
     async fn import_file(
         &self,
         source_path: &std::path::Path,
         options: ImportOptions,
-    ) -> Result<String>;
+        config_provider: &dyn AppConfigProvider,
+        task_id: &str,
+        cancellation_token: CancellationToken,
+    ) -> Result<ImportResult>;
 }
 
-/// 导入选项（临时定义，P4 时从现有代码提取）。
-#[derive(Debug, Clone, Default)]
+/// 导入返回结果。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImportResult {
+    /// 导入根名称（文件名或目录名）
+    pub root_name: String,
+    /// 已导入的文件数
+    pub files_imported: usize,
+}
+
+/// 导入选项。
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ImportOptions {
+    /// 是否解压缩包
     pub extract_archives: bool,
+    /// 是否跳过已存在的文件
     pub skip_existing: bool,
 }
 
@@ -107,11 +145,17 @@ pub struct ImportOptions {
 // WatchService — 工作区文件监听能力
 // ============================================================================
 
-/// 工作区文件监听服务接口（占位，P5 实现）。
+/// 工作区文件监听服务接口。
+///
+/// 每个 WorkspaceServiceImpl 实例管理自己的 watcher 状态（Option<WatcherState>），
+/// 不再依赖 AppState 的全局 HashMap。watch 命令变为薄层委托。
 #[async_trait]
 pub trait WatchService: Send + Sync {
     /// 启动文件监听。
-    async fn start_watch(&self) -> Result<()>;
+    ///
+    /// # 参数
+    /// - `watch_path`: 要监听的文件系统路径（文件或目录）
+    async fn start_watch(&self, watch_path: &str) -> Result<()>;
 
     /// 停止文件监听。
     async fn stop_watch(&self) -> Result<()>;
@@ -143,16 +187,13 @@ pub trait WorkspaceService: SearchService + ImportService + WatchService + Send 
     /// 获取工作区目录路径。
     fn workspace_dir(&self) -> &PathBuf;
 
-    /// 获取 CAS 实例（供 WatchUseCase 等使用）。
-    /// P5 渐进式：暴露内部依赖，待 WatchService 完整实现后可移除。
+    /// 获取 CAS 实例（供 workspace_repo、cleanup 等使用）。
     fn cas(&self) -> &Arc<la_storage::ContentAddressableStorage>;
 
-    /// 获取 MetadataStore 实例（供 WatchUseCase 等使用）。
-    /// P5 渐进式：暴露内部依赖，待 WatchService 完整实现后可移除。
+    /// 获取 MetadataStore 实例（供 workspace_repo、cleanup 等使用）。
     fn metadata_store(&self) -> &Arc<la_storage::MetadataStore>;
 
-    /// 获取 SearchEngineManager 实例（供 WatchEventAdapter 使用）。
-    /// P5 渐进式：暴露内部依赖，待 WatchService 完整实现后可移除。
+    /// 获取 SearchEngineManager 实例（供 workspace_repo、cleanup 等使用）。
     fn search_engine(&self) -> &Arc<la_search::SearchEngineManager>;
 }
 

@@ -13,27 +13,38 @@
 //!
 //! - [x] SearchService（search / cancel_search / fetch_search_page）
 //! - [ ] ImportService（占位，P4 实现）
-//! - [ ] WatchService（占位，P5 实现）
+//! - [x] WatchService（P5 完整实现，watcher 状态内嵌于实例中）
 
 use async_trait::async_trait;
 use parking_lot::Mutex;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::thread;
 use tokio_util::sync::CancellationToken;
 
 use la_core::domain::event::EventPublisher;
 // use la_core::domain::SearchResultRepository; // 不需要直接导入，SearchUseCase 内部使用
 use la_core::error::{AppError, Result};
 use la_core::models::{SearchFilters, SearchQuery};
+use la_core::traits::{AppConfigProvider, ContentStorage, MetadataStorage};
+use la_core::utils::parse_metadata;
+
+use notify::{recommended_watcher, Event, EventKind, RecursiveMode, Watcher};
+use tracing::{error, warn};
+
+use la_archive::processor::process_path_with_cas;
+use std::time::Duration;
 
 use crate::application::workspace_service::{
-    ImportOptions, ImportService, SearchService, WatchService, WorkspaceService,
+    ImportOptions, ImportResult, ImportService, SearchService, WatchService, WorkspaceService,
 };
 use crate::application::SearchUseCase;
 use crate::infrastructure::{
     CasLogFileRepository, DiskResultStoreRepo, QueryEngineLogSearcher,
 };
+use crate::services::file_watcher::{self, WatcherState};
+use crate::utils::encoding::decode_log_content;
 
 // ============================================================================
 // WorkspaceServiceImpl
@@ -63,6 +74,8 @@ pub struct WorkspaceServiceImpl {
     searcher: Arc<QueryEngineLogSearcher>,
     /// 活跃的搜索会话 —— search_id → CancellationToken
     search_sessions: Arc<Mutex<HashMap<String, CancellationToken>>>,
+    /// 文件监听器状态（P5：从 AppState::watchers 移入实例）
+    watcher_state: Arc<Mutex<Option<WatcherState>>>,
 }
 
 impl WorkspaceServiceImpl {
@@ -81,7 +94,7 @@ impl WorkspaceServiceImpl {
     ///
     /// # 注意
     /// CAS、MetadataStore、SearchEngineManager 应在调用前已初始化。
-    /// 导入命令的 `ensure_workspace_runtime_state` 函数负责创建这些组件。
+    /// 导入命令的 `get_or_create_workspace_service` 函数负责创建这些组件。
     pub fn new(
         workspace_id: String,
         workspace_dir: PathBuf,
@@ -104,6 +117,7 @@ impl WorkspaceServiceImpl {
             thread_pool,
             searcher: Arc::new(QueryEngineLogSearcher::new(regex_cache_size)),
             search_sessions: Arc::new(Mutex::new(HashMap::new())),
+            watcher_state: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -236,42 +250,702 @@ impl SearchService for WorkspaceServiceImpl {
                 )
             })
     }
+
+    async fn cancel_search(&self, search_id: &str) -> Result<()> {
+        let token = {
+            let sessions = self.search_sessions.lock();
+            sessions.get(search_id).cloned()
+        };
+        match token {
+            Some(t) => {
+                t.cancel();
+                Ok(())
+            }
+            None => Err(AppError::not_found(format!(
+                "Search session '{}' not found",
+                search_id
+            ))),
+        }
+    }
 }
 
 // ============================================================================
-// ImportService 实现（占位）
+// ImportService 实现
+// ============================================================================
+
+/// Tantivy 索引每 N 个文件提交一次，平衡 I/O 与内存使用。
+const SEARCH_INDEX_COMMIT_EVERY_FILES: usize = 25;
+/// 回退统计延迟（秒），等待逐文件分析先完成。
+const FALLBACK_STATS_DELAY_SECS: u64 = 5;
+
+// ============================================================================
+// 辅助函数
+// ============================================================================
+
+/// 解析日志文件内容，计算时间范围和级别掩码。
+///
+/// 从 `commands/import.rs` 移动至此，供 ImportService 内部使用。
+///
+/// # Arguments
+/// * `content` — 文件原始内容（字节）
+///
+/// # Returns
+/// `(min_timestamp, max_timestamp, level_mask)`
+pub(super) fn compute_file_stats(content: &[u8]) -> (Option<i64>, Option<i64>, Option<u8>) {
+    let text = match std::str::from_utf8(content) {
+        Ok(s) => s,
+        Err(_) => return (None, None, None),
+    };
+
+    // 大文件优化：超过 10MB 只解析前 1000 行和后 1000 行
+    const MAX_FULL_PARSE_BYTES: usize = 10 * 1024 * 1024;
+    const MAX_LINES_SAMPLE: usize = 1000;
+
+    let mut min_ts: Option<i64> = None;
+    let mut max_ts: Option<i64> = None;
+    let mut level_mask: u8 = 0;
+    let mut has_any_level = false;
+
+    let mut process_line = |line: &str| {
+        if line.is_empty() {
+            return;
+        }
+        let (timestamp_str, level) = parse_metadata(line);
+        if !level.is_empty() {
+            has_any_level = true;
+            level_mask |= la_core::utils::level_to_mask(level);
+        }
+        if !timestamp_str.is_empty() {
+            if let Some(ts) = la_search::parse_log_timestamp_to_unix(&timestamp_str) {
+                min_ts = Some(min_ts.map_or(ts, |m| m.min(ts)));
+                max_ts = Some(max_ts.map_or(ts, |m| m.max(ts)));
+            }
+        }
+    };
+
+    if text.len() > MAX_FULL_PARSE_BYTES {
+        let all_lines: Vec<&str> = text.lines().collect();
+        let total = all_lines.len();
+        if total > MAX_LINES_SAMPLE * 2 {
+            for line in &all_lines[..MAX_LINES_SAMPLE] {
+                process_line(line);
+            }
+            for line in &all_lines[total - MAX_LINES_SAMPLE..] {
+                process_line(line);
+            }
+        } else {
+            for line in &all_lines {
+                process_line(line);
+            }
+        }
+    } else {
+        for line in text.lines() {
+            process_line(line);
+        }
+    }
+
+    (
+        min_ts,
+        max_ts,
+        if has_any_level {
+            Some(level_mask)
+        } else {
+            None
+        },
+    )
+}
+
+/// 重建搜索索引内部实现。
+///
+/// 仅在索引为空时执行全量重建（首次导入）。
+/// 后续导入的新文件通过 CAS 回退路径搜索，避免每次 O(n) 全量 I/O。
+async fn rebuild_search_index_inner(
+    metadata_store: Arc<la_storage::MetadataStore>,
+    cas: Arc<la_storage::ContentAddressableStorage>,
+    search_manager: Arc<la_search::SearchEngineManager>,
+) -> std::result::Result<usize, String> {
+    let index_empty = match search_manager.get_time_range() {
+        Ok((_, _, count)) => count == 0,
+        Err(_) => true,
+    };
+
+    if !index_empty {
+        tracing::info!("Skipping index rebuild: Tantivy index already has documents");
+        return Ok(0);
+    }
+
+    let files = metadata_store
+        .get_all_files()
+        .await
+        .map_err(|e| format!("Failed to enumerate imported files for indexing: {e}"))?;
+
+    tokio::task::spawn_blocking(move || -> std::result::Result<usize, String> {
+        search_manager
+            .clear_index()
+            .map_err(|e| format!("Failed to clear search index before rebuild: {e}"))?;
+
+        let mut indexed_lines = 0usize;
+
+        for (file_index, file) in files.into_iter().enumerate() {
+            let content = cas.read_content_sync(&file.sha256_hash).map_err(|e| {
+                format!("Failed to read CAS content for {}: {e}", file.virtual_path)
+            })?;
+            let (content_str, _) = decode_log_content(&content);
+            let real_path = format!("cas://{}", file.sha256_hash);
+
+            let mut line_buffer = Vec::with_capacity(1024);
+            let mut start_line_number = 1usize;
+
+            for line in content_str.lines() {
+                line_buffer.push(line.to_string());
+
+                if line_buffer.len() >= 1024 {
+                    let entries = la_core::utils::parse_log_lines(
+                        &line_buffer,
+                        &file.virtual_path,
+                        &real_path,
+                        indexed_lines,
+                        start_line_number,
+                    );
+                    for entry in &entries {
+                        search_manager
+                            .add_document(entry)
+                            .map_err(|e| format!("Failed to add indexed document: {e}"))?;
+                    }
+                    indexed_lines += entries.len();
+                    start_line_number += line_buffer.len();
+                    line_buffer.clear();
+                }
+            }
+
+            if !line_buffer.is_empty() {
+                let entries = la_core::utils::parse_log_lines(
+                    &line_buffer,
+                    &file.virtual_path,
+                    &real_path,
+                    indexed_lines,
+                    start_line_number,
+                );
+                for entry in &entries {
+                    search_manager
+                        .add_document(entry)
+                        .map_err(|e| format!("Failed to add indexed document: {e}"))?;
+                }
+                indexed_lines += entries.len();
+            }
+
+            if (file_index + 1) % SEARCH_INDEX_COMMIT_EVERY_FILES == 0 {
+                search_manager
+                    .commit()
+                    .map_err(|e| format!("Failed to commit rebuilt search index: {e}"))?;
+            }
+        }
+
+        search_manager
+            .commit()
+            .map_err(|e| format!("Failed to finalize rebuilt search index: {e}"))?;
+
+        Ok(indexed_lines)
+    })
+    .await
+    .map_err(|e| format!("Search index rebuild task panicked: {e}"))?
+}
+
+// ============================================================================
+// ImportService trait 实现
 // ============================================================================
 
 #[async_trait]
 impl ImportService for WorkspaceServiceImpl {
     async fn import_file(
         &self,
-        _source_path: &std::path::Path,
+        source_path: &std::path::Path,
         _options: ImportOptions,
-    ) -> Result<String> {
-        // P4: 将 commands/import.rs 中的导入逻辑下沉到这里
-        todo!("ImportService::import_file — 待 P4 实现")
+        config_provider: &dyn AppConfigProvider,
+        task_id: &str,
+        cancellation_token: CancellationToken,
+    ) -> la_core::error::Result<ImportResult> {
+        let root_name = source_path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+
+        // ── 1. 核心导入：调用 la_archive::processor::process_path_with_cas ──
+        process_path_with_cas(
+            source_path,
+            &root_name,
+            &self.workspace_dir,
+            &self.cas,
+            self.metadata_store.clone(),
+            config_provider,
+            task_id,
+            &self.workspace_id,
+            None, // parent_archive_id
+            0,    // depth_level
+        )
+        .await
+        .map_err(|e| {
+            AppError::archive_error(
+                format!("Import failed: {e}"),
+                Some(source_path.to_path_buf()),
+            )
+        })?;
+
+        // ── 2. 回退文件统计（处理 PENDING 文件，后台执行）──
+        let metadata_store = self.metadata_store.clone();
+        let cas = Arc::clone(&self.cas);
+        let workspace_id = self.workspace_id.clone();
+        let ct = cancellation_token.clone();
+        tokio::spawn(async move {
+            if ct.is_cancelled() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_secs(FALLBACK_STATS_DELAY_SECS)).await;
+            if ct.is_cancelled() {
+                return;
+            }
+
+            match metadata_store.get_all_files().await {
+                Ok(files) => {
+                    let mut updated = 0usize;
+                    let mut failed = 0usize;
+
+                    for file in files {
+                        if file.analysis_status
+                            == la_core::storage_types::AnalysisStatus::Ready
+                        {
+                            continue;
+                        }
+
+                        match cas.read_content(&file.sha256_hash).await {
+                            Ok(content) => {
+                                let (min_ts, max_ts, level_mask) =
+                                    compute_file_stats(&content);
+                                if let Err(e) = metadata_store
+                                    .update_file_ready(
+                                        &file.virtual_path,
+                                        min_ts,
+                                        max_ts,
+                                        level_mask,
+                                    )
+                                    .await
+                                {
+                                    tracing::warn!(
+                                        virtual_path = %file.virtual_path,
+                                        error = %e,
+                                        "Failed to update file ready status in fallback"
+                                    );
+                                    failed += 1;
+                                } else {
+                                    updated += 1;
+                                }
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    virtual_path = %file.virtual_path,
+                                    hash = %file.sha256_hash,
+                                    error = %e,
+                                    "Failed to read file content for fallback stats"
+                                );
+                                failed += 1;
+                            }
+                        }
+                    }
+
+                    if updated > 0 || failed > 0 {
+                        tracing::info!(
+                            workspace_id = %workspace_id,
+                            stats_updated = updated,
+                            stats_failed = failed,
+                            "Fallback file stats computation completed"
+                        );
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        workspace_id = %workspace_id,
+                        error = %e,
+                        "Failed to get files for fallback stats computation"
+                    );
+                }
+            }
+        });
+
+        // ── 3. 重建搜索索引（仅首次导入，后台执行）──
+        let metadata_store = self.metadata_store.clone();
+        let cas = Arc::clone(&self.cas);
+        let search_engine = Arc::clone(&self.search_engine);
+        let workspace_id_bg = self.workspace_id.clone();
+        let ct_bg = cancellation_token.clone();
+        tokio::spawn(async move {
+            if ct_bg.is_cancelled() {
+                return;
+            }
+            if let Err(e) =
+                rebuild_search_index_inner(metadata_store, cas, search_engine).await
+            {
+                tracing::warn!(
+                    workspace_id = %workspace_id_bg,
+                    error = %e,
+                    "Background Tantivy index rebuild failed; get_time_range may be stale"
+                );
+            } else {
+                tracing::info!(
+                    workspace_id = %workspace_id_bg,
+                    "Background Tantivy index rebuild completed"
+                );
+            }
+        });
+
+        // ── 4. 统计已导入文件数 ──
+        let files_imported = self
+            .metadata_store
+            .count_files()
+            .await
+            .unwrap_or(0) as usize;
+
+        Ok(ImportResult {
+            root_name,
+            files_imported,
+        })
     }
 }
 
 // ============================================================================
-// WatchService 实现（占位）
+// WatchService 实现（P5 完整实现）
 // ============================================================================
 
 #[async_trait]
 impl WatchService for WorkspaceServiceImpl {
-    async fn start_watch(&self) -> Result<()> {
-        // P5: 将 commands/watch.rs 中的监听逻辑下沉到这里
-        todo!("WatchService::start_watch — 待 P5 实现")
+    async fn start_watch(&self, watch_path: &str) -> Result<()> {
+        // ── 1. Validate ──
+        let watch_path_buf = PathBuf::from(watch_path);
+        if !watch_path_buf.exists() {
+            return Err(AppError::validation_error(format!(
+                "Path does not exist: {}",
+                watch_path
+            )));
+        }
+
+        // ── 2. Check not already watching ──
+        {
+            let state = self.watcher_state.lock();
+            if state.as_ref().map(|w| w.is_active).unwrap_or(false) {
+                return Err(AppError::validation_error(
+                    "Workspace is already being watched".to_string(),
+                ));
+            }
+        }
+
+        // ── 3. Create notify watcher ──
+        let (tx, rx) =
+            crossbeam::channel::unbounded::<std::result::Result<Event, notify::Error>>();
+
+        let mut watcher = recommended_watcher(tx).map_err(|e| {
+            AppError::io_error(format!("Failed to create file watcher: {}", e), None)
+        })?;
+
+        watcher
+            .watch(&watch_path_buf, RecursiveMode::Recursive)
+            .map_err(|e| {
+                AppError::io_error(format!("Failed to start watching path: {}", e), None)
+            })?;
+
+        // ── 4. Create WatcherState ──
+        let watcher_state = WatcherState {
+            workspace_id: self.workspace_id.clone(),
+            watched_path: watch_path_buf.clone(),
+            file_offsets: HashMap::new(),
+            line_counts: HashMap::new(),
+            is_active: true,
+            thread_handle: Arc::new(parking_lot::Mutex::new(None)),
+            watcher: Arc::new(parking_lot::Mutex::new(Some(watcher))),
+        };
+
+        let thread_handle_arc = Arc::clone(&watcher_state.thread_handle);
+
+        // ── 5. Store in self ──
+        *self.watcher_state.lock() = Some(watcher_state);
+
+        // ── 6. Clone Arcs for background thread ──
+        let events = Arc::clone(&self.event_publisher);
+        let cas: Arc<dyn ContentStorage> = self.cas.clone();
+        let metadata: Arc<dyn MetadataStorage> = self.metadata_store.clone();
+        let search_engine = Arc::clone(&self.search_engine);
+        let watcher_state_arc = Arc::clone(&self.watcher_state);
+        let workspace_id_clone = self.workspace_id.clone();
+        let runtime_handle = tokio::runtime::Handle::current();
+
+        // ── 7. Spawn background thread ──
+        let handle = thread::spawn(move || {
+            for res in rx {
+                match res {
+                    Ok(event) => {
+                        let event_type = match event.kind {
+                            EventKind::Create(_) => "created",
+                            EventKind::Modify(_) => "modified",
+                            EventKind::Remove(_) => "deleted",
+                            _ => continue,
+                        };
+
+                        for path in event.paths {
+                            let file_path_str = match path.to_str() {
+                                Some(s) => s.to_string(),
+                                None => {
+                                    warn!(path = ?path, "Skipping path with non-UTF-8 chars");
+                                    continue;
+                                }
+                            };
+
+                            let timestamp = chrono::Utc::now().timestamp();
+
+                            // Emit file-changed event via domain trait
+                            let events_clone = events.clone();
+                            let ws = workspace_id_clone.clone();
+                            let fp = file_path_str.clone();
+                            let et = event_type.to_string();
+                            runtime_handle.spawn(async move {
+                                events_clone
+                                    .emit_file_changed(&ws, &et, &fp, timestamp)
+                                    .await;
+                            });
+
+                            // On Create: init line_counts
+                            if event_type == "created" && path.is_file() {
+                                let mut guard = watcher_state_arc.lock();
+                                if let Some(ref mut w) = *guard {
+                                    w.line_counts.insert(file_path_str.clone(), 0);
+                                }
+                            }
+
+                            // On Modify: read new content, parse, store
+                            if event_type == "modified" && path.is_file() {
+                                let (offset, start_line_number, watch_path_inner) = {
+                                    let guard = watcher_state_arc.lock();
+                                    if let Some(ref w) = *guard {
+                                        let offset =
+                                            *w.file_offsets.get(&file_path_str).unwrap_or(&0);
+                                        let start_line = if let Some(&count) =
+                                            w.line_counts.get(&file_path_str)
+                                        {
+                                            count + 1
+                                        } else {
+                                            1
+                                        };
+                                        (offset, start_line, w.watched_path.clone())
+                                    } else {
+                                        continue;
+                                    }
+                                };
+
+                                match file_watcher::read_file_from_offset(&path, offset) {
+                                    Ok((new_lines, new_offset)) => {
+                                        let new_line_count = new_lines.len();
+                                        if !new_lines.is_empty() {
+                                            let virtual_path_buf = path
+                                                .strip_prefix(&watch_path_inner)
+                                                .unwrap_or(&path);
+                                            let virtual_path =
+                                                virtual_path_buf.to_string_lossy();
+
+                                            let new_entries = file_watcher::parse_log_lines(
+                                                &new_lines,
+                                                &virtual_path,
+                                                &file_path_str,
+                                                0,
+                                                start_line_number,
+                                            );
+
+                                            // Emit new-logs via domain trait (async)
+                                            let events2 = events.clone();
+                                            let ws2 = workspace_id_clone.clone();
+                                            if let Ok(json) =
+                                                serde_json::to_string(&new_entries)
+                                            {
+                                                runtime_handle.spawn(async move {
+                                                    events2.emit_new_logs(&ws2, &json).await;
+                                                });
+                                            }
+
+                                            // Update Tantivy search index (sync, direct access)
+                                            if !new_entries.is_empty() {
+                                                if let Err(e) = search_engine
+                                                    .add_documents(&new_entries)
+                                                {
+                                                    warn!(
+                                                        error = %e,
+                                                        count = new_entries.len(),
+                                                        workspace_id = %workspace_id_clone,
+                                                        "Failed to add watch documents to search index"
+                                                    );
+                                                }
+                                                if let Err(e) = search_engine.commit() {
+                                                    warn!(
+                                                        error = %e,
+                                                        workspace_id = %workspace_id_clone,
+                                                        "Failed to commit search index after watch update"
+                                                    );
+                                                }
+                                            }
+
+                                            // Store content in CAS + update metadata (async)
+                                            let cas2 = Arc::clone(&cas);
+                                            let meta2 = Arc::clone(&metadata);
+                                            let fp3 = file_path_str.clone();
+                                            let vp3 = virtual_path.to_string();
+                                            runtime_handle.spawn(async move {
+                                                // Read full file content for CAS storage
+                                                match tokio::fs::read(&fp3).await {
+                                                    Ok(content) => {
+                                                        match cas2.store(&content).await {
+                                                            Ok(hash) => {
+                                                                let file_size =
+                                                                    content.len() as i64;
+                                                                let file_name = Path::new(&fp3)
+                                                                    .file_name()
+                                                                    .map(|n| {
+                                                                        n.to_string_lossy()
+                                                                            .to_string()
+                                                                    })
+                                                                    .unwrap_or_else(|| {
+                                                                        fp3.clone()
+                                                                    });
+                                                                let file_meta =
+                                                                    la_core::storage_types::FileMetadata {
+                                                                        id: 0,
+                                                                        sha256_hash: hash,
+                                                                        virtual_path: vp3,
+                                                                        original_name: file_name,
+                                                                        size: file_size,
+                                                                        modified_time: 0,
+                                                                        mime_type: None,
+                                                                        parent_archive_id: None,
+                                                                        depth_level: 0,
+                                                                        min_timestamp: None,
+                                                                        max_timestamp: None,
+                                                                        level_mask: None,
+                                                                        analysis_status:
+                                                                            la_core::storage_types::AnalysisStatus::Pending,
+                                                                    };
+                                                                if let Err(e) =
+                                                                    meta2.insert_file(&file_meta).await
+                                                                {
+                                                                    warn!(
+                                                                        error = %e,
+                                                                        file = %fp3,
+                                                                        "Failed to insert watcher file metadata"
+                                                                    );
+                                                                }
+                                                            }
+                                                            Err(e) => {
+                                                                warn!(
+                                                                    error = %e,
+                                                                    file = %fp3,
+                                                                    "Failed to store watcher file content in CAS"
+                                                                );
+                                                            }
+                                                        }
+                                                    }
+                                                    Err(e) => {
+                                                        warn!(
+                                                            error = %e,
+                                                            file = %fp3,
+                                                            "Failed to read watcher file for CAS storage"
+                                                        );
+                                                    }
+                                                }
+                                            });
+                                        }
+
+                                        // Update offsets and line counts
+                                        {
+                                            let mut guard = watcher_state_arc.lock();
+                                            if let Some(ref mut w) = *guard {
+                                                w.file_offsets.insert(
+                                                    file_path_str.clone(),
+                                                    new_offset,
+                                                );
+                                                if new_line_count > 0 {
+                                                    w.line_counts.insert(
+                                                        file_path_str.clone(),
+                                                        start_line_number - 1 + new_line_count,
+                                                    );
+                                                }
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        warn!(
+                                            error = %e,
+                                            file = %file_path_str,
+                                            "Failed to read file incrementally"
+                                        );
+                                    }
+                                }
+                            }
+                        }
+
+                        // Check is_active to decide whether to exit the event loop
+                        let is_active = {
+                            let guard = watcher_state_arc.lock();
+                            guard.as_ref().map(|w| w.is_active).unwrap_or(false)
+                        };
+
+                        if !is_active {
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        error!(
+                            error = %e,
+                            workspace_id = %workspace_id_clone,
+                            "Watch error"
+                        );
+                    }
+                }
+            }
+        });
+
+        // ── 8. Store thread handle for later join ──
+        *thread_handle_arc.lock() = Some(handle);
+
+        Ok(())
     }
 
     async fn stop_watch(&self) -> Result<()> {
-        // P5: 将 commands/watch.rs 中的停止监听逻辑下沉到这里
-        todo!("WatchService::stop_watch — 待 P5 实现")
+        let mut state = self.watcher_state.lock();
+
+        let Some(ref mut ws) = *state else {
+            return Err(AppError::validation_error(
+                "No active watcher found for this workspace".to_string(),
+            ));
+        };
+
+        // Set inactive flag so the background thread exits
+        ws.is_active = false;
+        let thread_handle = ws.thread_handle.lock().take();
+        let watcher_opt = ws.watcher.lock().take();
+
+        // Remove from state
+        *state = None;
+        drop(state);
+
+        // Drop the watcher — this closes the tx channel, causing rx iteration to end
+        drop(watcher_opt);
+
+        // Join the background thread outside the lock to avoid deadlock
+        if let Some(handle) = thread_handle {
+            if handle.join().is_err() {
+                error!("Failed to join watcher thread");
+            }
+        }
+
+        Ok(())
     }
 
     async fn is_watching(&self) -> Result<bool> {
-        // P5: 查询监听状态
-        todo!("WatchService::is_watching — 待 P5 实现")
+        let guard = self.watcher_state.lock();
+        Ok(guard.as_ref().map(|w| w.is_active).unwrap_or(false))
     }
 }

@@ -1,35 +1,21 @@
-//! Application layer — use cases that orchestrate domain logic.
+//! Application layer — use cases + service traits.
 //!
-//! Each use case depends on domain traits (not concrete types) and
-//! coordinates the flow between repositories, searchers, and publishers.
+//! # Architecture
 //!
-//! # Migration status
-//!
-//! - `SearchUseCase` — architectural template established, ready for migration.
-//!   Currently not wired into Tauri commands (existing search_logs still works).
-//!   To migrate: replace `commands/search.rs:search_logs` body with:
-//!   ```ignore
-//!   let ctx = ApplicationContext::from_app_state(&state);
-//!   ctx.search().execute(workspace_id, query, raw_terms, filters, max_results, search_id, token).await
-//!   ```
-//! - `ImportUseCase` — to be implemented following the same pattern.
+//! - **Use cases** (config/export/search): domain-trait-based orchestrators
+//! - **WorkspaceService** trait family: per-workspace service composition (SearchService, ImportService, WatchService)
+//! - Dead use cases removed in P6: ImportUseCase (replaced by ImportService), WorkspaceUseCase + RuntimeWorkspaceRepository (never wired)
 
 pub mod config;
 pub mod export;
-pub mod import;
 pub mod search;
-pub mod watch;
-pub mod workspace;
 pub mod workspace_service;
 
 pub use config::ConfigUseCase;
 pub use export::ExportUseCase;
-pub use import::ImportUseCase;
 pub use search::SearchUseCase;
-pub use watch::WatchUseCase;
-pub use workspace::WorkspaceUseCase;
 pub use workspace_service::{
-    ImportOptions, ImportService, SearchService, WatchService, WorkspaceService,
+    ImportOptions, ImportResult, ImportService, SearchService, WatchService, WorkspaceService,
     WorkspaceServiceRef,
 };
 

@@ -42,7 +42,13 @@ impl LogSearcher for QueryEngineLogSearcher {
             engine_count: service_plan.engines.len(),
             steps: service_plan.execution_term_ids().to_vec(),
         };
-        self.plans.lock().insert(id, service_plan);
+        let mut plans = self.plans.lock();
+        // FIX(CR-02): 限界 256 条，防止只增不减导致的内存泄漏。
+        // 不同查询生成不同 plan ID，旧 plan 不会被主动清理。
+        if plans.len() >= 256 {
+            plans.clear();
+        }
+        plans.insert(id, service_plan);
         Ok(plan)
     }
 
