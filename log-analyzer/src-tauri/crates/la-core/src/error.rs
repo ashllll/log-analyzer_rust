@@ -243,38 +243,8 @@ impl AppError {
         }
     }
 
-    /**
-     * 为错误添加上下文信息
-     */
-    pub fn with_context(self, context: impl Into<String>) -> Self {
-        let context = context.into();
-        match self {
-            AppError::Search {
-                category,
-                _message,
-                _source,
-            } => AppError::Search {
-                category,
-                _message: format!("{}: {}", context, _message),
-                _source,
-            },
-            AppError::Archive {
-                category,
-                _message,
-                _path,
-            } => AppError::Archive {
-                category,
-                _message: format!("{}: {}", context, _message),
-                _path,
-            },
-            other => other,
-        }
-    }
-
     // ========================================================================
-    // Convenience constructors — default to ErrorCategory::InternalError.
-    // Use the `_with_category` variants when a more specific category is
-    // warranted at the call site.
+    // Convenience constructors
     // ========================================================================
 
     /// 创建搜索错误
@@ -295,19 +265,6 @@ impl AppError {
         }
     }
 
-    /// 创建归档错误（显式分类）
-    pub fn archive_error_with(
-        message: impl Into<String>,
-        path: Option<PathBuf>,
-        category: ErrorCategory,
-    ) -> Self {
-        AppError::Archive {
-            category,
-            _message: message.into(),
-            _path: path,
-        }
-    }
-
     /// 创建验证错误
     pub fn validation_error(message: impl Into<String>) -> Self {
         AppError::Validation {
@@ -316,7 +273,7 @@ impl AppError {
         }
     }
 
-    /// 创建验证错误（显式分类）
+    /// 创建验证错误（显式分类）— 少数调用点需要特定 category
     pub fn validation_error_with(
         message: impl Into<String>,
         category: ErrorCategory,
@@ -327,21 +284,11 @@ impl AppError {
         }
     }
 
+
     /// 创建安全问题错误
     pub fn security_error(message: impl Into<String>) -> Self {
         AppError::Security {
             category: ErrorCategory::ZipBombDetected,
-            message: message.into(),
-        }
-    }
-
-    /// 创建安全问题错误（显式分类）
-    pub fn security_error_with(
-        message: impl Into<String>,
-        category: ErrorCategory,
-    ) -> Self {
-        AppError::Security {
-            category,
             message: message.into(),
         }
     }
@@ -354,14 +301,6 @@ impl AppError {
         }
     }
 
-    /// 创建未找到错误（显式分类）
-    pub fn not_found_with(message: impl Into<String>, category: ErrorCategory) -> Self {
-        AppError::NotFound {
-            category,
-            message: message.into(),
-        }
-    }
-
     /// 创建无效路径错误
     pub fn invalid_path(message: impl Into<String>) -> Self {
         AppError::InvalidPath {
@@ -370,16 +309,6 @@ impl AppError {
         }
     }
 
-    /// 创建无效路径错误（显式分类）
-    pub fn invalid_path_with(
-        message: impl Into<String>,
-        category: ErrorCategory,
-    ) -> Self {
-        AppError::InvalidPath {
-            category,
-            message: message.into(),
-        }
-    }
 
     /// 创建编码错误
     pub fn encoding_error(message: impl Into<String>) -> Self {
@@ -389,16 +318,6 @@ impl AppError {
         }
     }
 
-    /// 创建编码错误（显式分类）
-    pub fn encoding_error_with(
-        message: impl Into<String>,
-        category: ErrorCategory,
-    ) -> Self {
-        AppError::Encoding {
-            category,
-            message: message.into(),
-        }
-    }
 
     /// 创建查询执行错误
     pub fn query_execution_error(message: impl Into<String>) -> Self {
@@ -408,16 +327,6 @@ impl AppError {
         }
     }
 
-    /// 创建查询执行错误（显式分类）
-    pub fn query_execution_error_with(
-        message: impl Into<String>,
-        category: ErrorCategory,
-    ) -> Self {
-        AppError::QueryExecution {
-            category,
-            message: message.into(),
-        }
-    }
 
     /// 创建文件监控错误
     pub fn file_watcher_error(message: impl Into<String>) -> Self {
@@ -427,16 +336,6 @@ impl AppError {
         }
     }
 
-    /// 创建文件监控错误（显式分类）
-    pub fn file_watcher_error_with(
-        message: impl Into<String>,
-        category: ErrorCategory,
-    ) -> Self {
-        AppError::FileWatcher {
-            category,
-            message: message.into(),
-        }
-    }
 
     /// 创建索引错误
     pub fn index_error(message: impl Into<String>) -> Self {
@@ -446,16 +345,6 @@ impl AppError {
         }
     }
 
-    /// 创建索引错误（显式分类）
-    pub fn index_error_with(
-        message: impl Into<String>,
-        category: ErrorCategory,
-    ) -> Self {
-        AppError::IndexError {
-            category,
-            message: message.into(),
-        }
-    }
 
     /// 创建模式错误
     pub fn pattern_error(message: impl Into<String>) -> Self {
@@ -465,16 +354,6 @@ impl AppError {
         }
     }
 
-    /// 创建模式错误（显式分类）
-    pub fn pattern_error_with(
-        message: impl Into<String>,
-        category: ErrorCategory,
-    ) -> Self {
-        AppError::PatternError {
-            category,
-            message: message.into(),
-        }
-    }
 
     /// 创建数据库错误
     pub fn database_error(message: impl Into<String>) -> Self {
@@ -484,16 +363,6 @@ impl AppError {
         }
     }
 
-    /// 创建数据库错误（显式分类）
-    pub fn database_error_with(
-        message: impl Into<String>,
-        category: ErrorCategory,
-    ) -> Self {
-        AppError::DatabaseError {
-            category,
-            message: message.into(),
-        }
-    }
 
     /// 创建配置错误
     pub fn config_error(message: impl Into<String>) -> Self {
@@ -503,16 +372,6 @@ impl AppError {
         }
     }
 
-    /// 创建配置错误（显式分类）
-    pub fn config_error_with(
-        message: impl Into<String>,
-        category: ErrorCategory,
-    ) -> Self {
-        AppError::Config {
-            category,
-            message: message.into(),
-        }
-    }
 
     /// 创建网络错误
     pub fn network_error(message: impl Into<String>) -> Self {
@@ -522,16 +381,6 @@ impl AppError {
         }
     }
 
-    /// 创建网络错误（显式分类）
-    pub fn network_error_with(
-        message: impl Into<String>,
-        category: ErrorCategory,
-    ) -> Self {
-        AppError::Network {
-            category,
-            message: message.into(),
-        }
-    }
 
     /// 创建内部错误
     pub fn internal_error(message: impl Into<String>) -> Self {
@@ -541,16 +390,6 @@ impl AppError {
         }
     }
 
-    /// 创建内部错误（显式分类）
-    pub fn internal_error_with(
-        message: impl Into<String>,
-        category: ErrorCategory,
-    ) -> Self {
-        AppError::Internal {
-            category,
-            message: message.into(),
-        }
-    }
 
     /// 创建资源清理错误
     pub fn resource_cleanup_error(message: impl Into<String>) -> Self {
@@ -560,16 +399,6 @@ impl AppError {
         }
     }
 
-    /// 创建资源清理错误（显式分类）
-    pub fn resource_cleanup_error_with(
-        message: impl Into<String>,
-        category: ErrorCategory,
-    ) -> Self {
-        AppError::ResourceCleanup {
-            category,
-            message: message.into(),
-        }
-    }
 
     /// 创建并发错误
     pub fn concurrency_error(message: impl Into<String>) -> Self {
@@ -579,16 +408,6 @@ impl AppError {
         }
     }
 
-    /// 创建并发错误（显式分类）
-    pub fn concurrency_error_with(
-        message: impl Into<String>,
-        category: ErrorCategory,
-    ) -> Self {
-        AppError::Concurrency {
-            category,
-            message: message.into(),
-        }
-    }
 
     /// 创建解析错误
     pub fn parse_error(message: impl Into<String>) -> Self {
@@ -598,16 +417,6 @@ impl AppError {
         }
     }
 
-    /// 创建解析错误（显式分类）
-    pub fn parse_error_with(
-        message: impl Into<String>,
-        category: ErrorCategory,
-    ) -> Self {
-        AppError::Parse {
-            category,
-            message: message.into(),
-        }
-    }
 
     /// 创建超时错误
     pub fn timeout_error(message: impl Into<String>) -> Self {
@@ -617,16 +426,6 @@ impl AppError {
         }
     }
 
-    /// 创建超时错误（显式分类）
-    pub fn timeout_error_with(
-        message: impl Into<String>,
-        category: ErrorCategory,
-    ) -> Self {
-        AppError::Timeout {
-            category,
-            message: message.into(),
-        }
-    }
 
     /// 创建详细的IO错误，自动脱敏路径信息
     ///
@@ -647,25 +446,6 @@ impl AppError {
         }
     }
 
-    /// 创建详细的IO错误（显式分类）
-    pub fn io_error_with(
-        message: impl Into<String>,
-        path: Option<PathBuf>,
-        category: ErrorCategory,
-    ) -> Self {
-        let message = message.into();
-        let sanitized_path = path.map(|p| {
-            p.file_name()
-                .map(PathBuf::from)
-                .unwrap_or_else(|| PathBuf::from("[REDACTED]"))
-        });
-
-        AppError::IoDetailed {
-            category,
-            message,
-            path: sanitized_path,
-        }
-    }
 }
 
 /**
@@ -843,27 +623,6 @@ mod tests {
 
         let error = AppError::validation_error("Invalid input");
         assert!(matches!(error, AppError::Validation { .. }));
-    }
-
-    #[test]
-    fn test_error_with_context() {
-        let error = AppError::search_error("Query failed");
-        let with_context = error.with_context("Validation");
-
-        if let AppError::Search { _message, .. } = with_context {
-            assert!(
-                _message.contains("Validation"),
-                "Expected context to contain 'Validation', got: {:?}",
-                _message
-            );
-            assert!(
-                _message.contains("Query failed"),
-                "Expected original error message to be preserved, got: {:?}",
-                _message
-            );
-        } else {
-            panic!("Expected Search error variant");
-        }
     }
 
     #[test]
