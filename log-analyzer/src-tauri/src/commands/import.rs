@@ -23,9 +23,9 @@ use crate::infrastructure::workspace_service_factory::{
     get_or_create_workspace_service,
 };
 use crate::models::AppState;
-use crate::task_manager::{TaskManager, TaskStatus};
 use crate::utils::workspace_paths::preferred_workspace_dir;
 use crate::utils::{canonicalize_path, validate_workspace_id};
+use la_core::domain::TaskHandle;
 use la_core::error::AppError;
 use la_storage::verify_after_import;
 
@@ -97,20 +97,16 @@ pub async fn import_folder(
         .unwrap_or(&path)
         .to_string();
 
-    // ── TaskManager 任务创建 ──
+    // ── TaskScheduler 任务创建（P11: 通过 domain trait 而非直接访问 TaskManager）──
     let task_id = Uuid::new_v4().to_string();
-    let task_manager = state
-        .get_task_manager_clone()
+    let scheduler = state
+        .get_task_scheduler()
         .ok_or("Task manager not initialized")?;
-    let tm: &TaskManager = &task_manager;
-    tm.create_task_async(
-        task_id.clone(),
-        "Import".to_string(),
-        target_name,
-        Some(workspace_id.clone()),
-    )
-    .await
-    .map_err(|e| format!("Failed to create task: {e}"))?;
+    let handle = TaskHandle::new(&task_id);
+    scheduler
+        .create(&task_id, "Import", &target_name, Some(&workspace_id))
+        .await
+        .map_err(|e| format!("Failed to create task: {e}"))?;
 
     // ── 获取或创建 WorkspaceService ──
     let service = get_or_create_workspace_service(
@@ -126,15 +122,7 @@ pub async fn import_folder(
     })?;
 
     // ── 更新任务进度 ──
-    update_task(
-        tm,
-        &task_id,
-        10,
-        "Scanning...",
-        TaskStatus::Running,
-        &app,
-    )
-    .await;
+    let _ = scheduler.update(&handle, 10, "Scanning...").await;
 
     // ── 调用 ImportService ──
     let config_provider = TauriAppConfigProvider(app.clone());
@@ -162,22 +150,15 @@ pub async fn import_folder(
                 }
             }
             let msg = format!("Failed to import: {e}");
-            update_task(tm, &task_id, 0, &msg, TaskStatus::Failed, &app)
-                .await;
+            let _ = scheduler.fail(&handle, &msg).await;
             return Err(msg);
         }
     };
 
     // ── 完整性验证（保留在命令层）──
-    update_task(
-        tm,
-        &task_id,
-        95,
-        "Verifying integrity...",
-        TaskStatus::Running,
-        &app,
-    )
-    .await;
+    let _ = scheduler
+        .update(&handle, 95, "Verifying integrity...")
+        .await;
 
     match verify_after_import(&workspace_dir).await {
         Ok(report) => {
@@ -215,15 +196,7 @@ pub async fn import_folder(
     }
 
     // ── 完成 ──
-    update_task(
-        tm,
-        &task_id,
-        100,
-        "Done",
-        TaskStatus::Completed,
-        &app,
-    )
-    .await;
+    let _ = scheduler.complete(&handle).await;
 
     // ── Tantivy segment 合并（后台执行）──
     let search_engine = Arc::clone(service.search_engine());
@@ -249,28 +222,6 @@ pub async fn import_folder(
 pub async fn check_rar_support() -> Result<serde_json::Value, String> {
     serde_json::to_value(get_rar_support_info())
         .map_err(|error| format!("Failed to serialize RAR support info: {error}"))
-}
-
-/// 更新任务进度并处理错误。
-async fn update_task(
-    task_manager: &TaskManager,
-    task_id: &str,
-    progress: u8,
-    message: &str,
-    status: TaskStatus,
-    app: &AppHandle,
-) {
-    if let Err(e) = task_manager
-        .update_task_async(task_id, progress, message.to_string(), status)
-        .await
-    {
-        warn!(
-            task_id = %task_id,
-            error = %e,
-            "Failed to update task progress"
-        );
-        let _ = app.emit("import-error", &format!("Task update failed: {e}"));
-    }
 }
 
 // ============================================================================

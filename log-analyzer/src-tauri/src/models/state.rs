@@ -22,9 +22,11 @@ use parking_lot::{Mutex, RwLock};
 use tokio_util::sync::CancellationToken;
 
 use crate::application::workspace_service::WorkspaceServiceRef;
+use crate::infrastructure::TaskManagerAdapter;
 use crate::state_sync::StateSync;
 use crate::task_manager::TaskManager;
 use crate::utils::async_resource_manager::{AsyncResourceError, AsyncResourceManager, OperationType};
+use la_core::domain::TaskScheduler;
 use la_search::DiskResultStore;
 
 // ============================================================================
@@ -184,6 +186,16 @@ impl AppState {
     /// 获取 TaskManager 的克隆（不清空，用于导入命令等需要引用但不移除的场景）。
     pub fn get_task_manager_clone(&self) -> Option<TaskManager> {
         self.task_manager.lock().clone()
+    }
+
+    /// P11: 获取 TaskScheduler trait 对象（推荐方式）。
+    ///
+    /// 包装 TaskManager 为 TaskManagerAdapter，通过 domain trait 暴露。
+    /// 命令层应优先使用此方法而非直接访问 TaskManager。
+    pub fn get_task_scheduler(&self) -> Option<Arc<dyn TaskScheduler>> {
+        self.task_manager.lock().as_ref().map(|tm| {
+            Arc::new(TaskManagerAdapter::new(Arc::new(tm.clone()))) as Arc<dyn TaskScheduler>
+        })
     }
 
     /// 注册一个异步操作。
