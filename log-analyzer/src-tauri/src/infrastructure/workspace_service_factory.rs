@@ -10,7 +10,7 @@ use tauri::{AppHandle, Manager};
 use tracing::info;
 
 use crate::application::workspace_service::WorkspaceServiceRef;
-use crate::infrastructure::{TauriEventPublisher, WorkspaceServiceImpl};
+use crate::infrastructure::{TauriEventPublisher, WorkspaceRepo, WorkspaceServiceImpl};
 use crate::models::AppState;
 use la_core::models::config::AppConfigLoader;
 use la_storage::{ContentAddressableStorage, MetadataStore};
@@ -112,13 +112,12 @@ pub(crate) async fn get_or_create_workspace_service(
     let thread_pool = state.get_search_thread_pool();
     let regex_cache_size = search_config.regex_cache_size.max(1);
 
+    let repo = WorkspaceRepo::new(cas, metadata_store, search_manager, disk_result_store);
+
     let service = Arc::new(WorkspaceServiceImpl::new(
         workspace_id.to_string(),
         workspace_dir.to_path_buf(),
-        cas,
-        metadata_store,
-        search_manager,
-        disk_result_store,
+        repo,
         Arc::new(TauriEventPublisher {
             app_handle: app.clone(),
         }),

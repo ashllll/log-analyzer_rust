@@ -41,7 +41,7 @@ use crate::application::workspace_service::{
 };
 use crate::application::SearchUseCase;
 use crate::infrastructure::{
-    CasLogFileRepository, DiskResultStoreRepo, QueryEngineLogSearcher,
+    CasLogFileRepository, DiskResultStoreRepo, QueryEngineLogSearcher, WorkspaceRepo,
 };
 use crate::infrastructure::watcher_runner::WatcherRunner;
 use crate::services::file_watcher::WatcherState;
@@ -65,10 +65,8 @@ use crate::utils::encoding::decode_log_content;
 pub struct WorkspaceServiceImpl {
     workspace_id: String,
     workspace_dir: PathBuf,
-    cas: Arc<la_storage::ContentAddressableStorage>,
-    metadata_store: Arc<la_storage::MetadataStore>,
-    search_engine: Arc<la_search::SearchEngineManager>,
-    disk_result_store: Arc<la_search::DiskResultStore>,
+    /// P9: 存储层聚合（cas + metadata_store + search_engine + disk_result_store）
+    repo: WorkspaceRepo,
     event_publisher: Arc<dyn EventPublisher>,
     thread_pool: Arc<rayon::ThreadPool>,
     /// FIX(P1-03): 缓存 QueryEngineLogSearcher，避免每次搜索都新建实例导致正则缓存失效
@@ -85,24 +83,14 @@ impl WorkspaceServiceImpl {
     /// # 参数
     /// - `workspace_id`: 工作区唯一标识
     /// - `workspace_dir`: 工作区目录路径
-    /// - `cas`: 已初始化的 CAS 实例
-    /// - `metadata_store`: 已初始化的 MetadataStore 实例
-    /// - `search_engine`: 已初始化的 SearchEngineManager 实例
-    /// - `disk_result_store`: 全局共享的 DiskResultStore
+    /// - `repo`: 预组装的存储层聚合（CAS + MetadataStore + SearchEngine + DiskResultStore）
     /// - `event_publisher`: 事件发射器 trait 对象
     /// - `thread_pool`: 全局共享的 Rayon 线程池
     /// - `regex_cache_size`: 正则缓存大小（传递给 QueryEngineLogSearcher）
-    ///
-    /// # 注意
-    /// CAS、MetadataStore、SearchEngineManager 应在调用前已初始化。
-    /// 导入命令的 `get_or_create_workspace_service` 函数负责创建这些组件。
     pub fn new(
         workspace_id: String,
         workspace_dir: PathBuf,
-        cas: Arc<la_storage::ContentAddressableStorage>,
-        metadata_store: Arc<la_storage::MetadataStore>,
-        search_engine: Arc<la_search::SearchEngineManager>,
-        disk_result_store: Arc<la_search::DiskResultStore>,
+        repo: WorkspaceRepo,
         event_publisher: Arc<dyn EventPublisher>,
         thread_pool: Arc<rayon::ThreadPool>,
         regex_cache_size: usize,
@@ -110,10 +98,7 @@ impl WorkspaceServiceImpl {
         Self {
             workspace_id,
             workspace_dir,
-            cas,
-            metadata_store,
-            search_engine,
-            disk_result_store,
+            repo,
             event_publisher,
             thread_pool,
             searcher: Arc::new(QueryEngineLogSearcher::new(regex_cache_size)),
@@ -138,15 +123,15 @@ impl WorkspaceService for WorkspaceServiceImpl {
     }
 
     fn cas(&self) -> &Arc<la_storage::ContentAddressableStorage> {
-        &self.cas
+        &self.repo.cas
     }
 
     fn metadata_store(&self) -> &Arc<la_storage::MetadataStore> {
-        &self.metadata_store
+        &self.repo.metadata_store
     }
 
     fn search_engine(&self) -> &Arc<la_search::SearchEngineManager> {
-        &self.search_engine
+        &self.repo.search_engine
     }
 }
 
@@ -176,11 +161,11 @@ impl SearchService for WorkspaceServiceImpl {
 
         // 3. 组装 SearchUseCase 的依赖
         let log_files = Arc::new(CasLogFileRepository {
-            metadata: self.metadata_store.clone(),
-            cas: self.cas.clone(),
+            metadata: self.repo.metadata_store.clone(),
+            cas: self.repo.cas.clone(),
         });
         let results = Arc::new(DiskResultStoreRepo {
-            store: self.disk_result_store.clone(),
+            store: self.repo.disk_result_store.clone(),
         });
         let searcher = Arc::clone(&self.searcher);
 
@@ -234,14 +219,14 @@ impl SearchService for WorkspaceServiceImpl {
     ) -> Result<la_search::SearchPageResult> {
         let limit = limit.min(10_000);
 
-        if !self.disk_result_store.has_session(search_id) {
+        if !self.repo.disk_result_store.has_session(search_id) {
             return Err(AppError::not_found(format!(
                 "Search session '{}' not found",
                 search_id
             )));
         }
 
-        self.disk_result_store
+        self.repo.disk_result_store
             .read_page(search_id, offset, limit)
             .map_err(|e| {
                 AppError::io_error(
@@ -476,8 +461,8 @@ impl ImportService for WorkspaceServiceImpl {
             source_path,
             &root_name,
             &self.workspace_dir,
-            &self.cas,
-            self.metadata_store.clone(),
+            &self.repo.cas,
+            self.repo.metadata_store.clone(),
             config_provider,
             task_id,
             &self.workspace_id,
@@ -493,8 +478,8 @@ impl ImportService for WorkspaceServiceImpl {
         })?;
 
         // ── 2. 回退文件统计（处理 PENDING 文件，后台执行）──
-        let metadata_store = self.metadata_store.clone();
-        let cas = Arc::clone(&self.cas);
+        let metadata_store = self.repo.metadata_store.clone();
+        let cas = Arc::clone(&self.repo.cas);
         let workspace_id = self.workspace_id.clone();
         let ct = cancellation_token.clone();
         tokio::spawn(async move {
@@ -573,9 +558,9 @@ impl ImportService for WorkspaceServiceImpl {
         });
 
         // ── 3. 重建搜索索引（仅首次导入，后台执行）──
-        let metadata_store = self.metadata_store.clone();
-        let cas = Arc::clone(&self.cas);
-        let search_engine = Arc::clone(&self.search_engine);
+        let metadata_store = self.repo.metadata_store.clone();
+        let cas = Arc::clone(&self.repo.cas);
+        let search_engine = Arc::clone(&self.repo.search_engine);
         let workspace_id_bg = self.workspace_id.clone();
         let ct_bg = cancellation_token.clone();
         tokio::spawn(async move {
@@ -599,7 +584,7 @@ impl ImportService for WorkspaceServiceImpl {
         });
 
         // ── 4. 统计已导入文件数 ──
-        let files_imported = self
+        let files_imported = self.repo
             .metadata_store
             .count_files()
             .await
@@ -671,9 +656,9 @@ impl WatchService for WorkspaceServiceImpl {
         // ── 6. Spawn background thread via WatcherRunner (P7) ──
         let runner = WatcherRunner::new(
             Arc::clone(&self.event_publisher),
-            self.cas.clone(),
-            self.metadata_store.clone(),
-            Arc::clone(&self.search_engine),
+            self.repo.cas.clone(),
+            self.repo.metadata_store.clone(),
+            Arc::clone(&self.repo.search_engine),
             Arc::clone(&self.watcher_state),
             self.workspace_id.clone(),
         );

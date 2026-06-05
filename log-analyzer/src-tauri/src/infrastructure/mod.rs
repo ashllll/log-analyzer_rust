@@ -7,6 +7,7 @@ pub mod result_store;
 pub mod searcher;
 pub mod task_scheduler;
 pub mod watcher_runner;
+pub mod workspace_repo;
 pub mod workspace_service_factory;
 pub mod workspace_service_impl;
 
@@ -16,4 +17,5 @@ pub use log_file_repo::CasLogFileRepository;
 pub use result_store::DiskResultStoreRepo;
 pub use searcher::QueryEngineLogSearcher;
 pub use task_scheduler::TaskManagerAdapter;
+pub use workspace_repo::WorkspaceRepo;
 pub use workspace_service_impl::WorkspaceServiceImpl;
