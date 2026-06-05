@@ -130,7 +130,7 @@ pub(crate) fn resolve_workspace_id(
     if let Some(id) = id_arg {
         return Ok(id);
     }
-    let ids = state.workspaces.workspace_ids();
+    let ids = state.workspace_ids();
     if let Some(first) = ids.first() {
         Ok(first.clone())
     } else {
