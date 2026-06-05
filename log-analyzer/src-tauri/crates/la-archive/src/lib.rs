@@ -43,9 +43,6 @@ pub use extraction_orchestrator::ExtractionOrchestrator;
 pub use gz_handler::GzHandler;
 #[cfg(feature = "enhanced-extraction")]
 pub use path_manager::{PathConfig, PathManager};
-#[allow(unused_imports)]
-#[allow(deprecated)]
-pub use processor::process_path_recursive_with_metadata;
 pub use processor::{process_path_with_cas, CasProcessingContext};
 #[cfg(feature = "enhanced-extraction")]
 pub use public_api::{extract_archive_async, extract_archive_sync, ExtractionResult};
