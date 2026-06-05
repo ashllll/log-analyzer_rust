@@ -1,4 +1,4 @@
 [toolchain]
 # ME-54: Pinned to specific stable version for reproducible builds
-channel = "1.85"
+channel = "1.88"
 components = ["rustfmt", "clippy"]

@@ -1,11 +1,10 @@
 //! LogSearcher adapter backed by the existing query planner/executor.
 //!
 //! P7: 消除 side-map (Mutex<HashMap<u64, ServiceExecutionPlan>>)。
-//! 真实 plan 现在嵌入 domain ExecutionPlan 的 opaque 字段中，
-//! 随 plan 引用传递——无需全局缓存，无静默失败窗口。
+//! 真实 plan 现在嵌入 domain ExecutionPlan 的 plan 字段中，
+//! 通过 MatchPlan trait 调用——无全局缓存，无 Any 向下转型，编译期类型安全。
 
 use std::collections::HashSet;
-use std::sync::Arc;
 
 use parking_lot::Mutex;
 
@@ -14,7 +13,7 @@ use la_core::error::Result;
 use la_core::models::{LogEntry, SearchFilters, SearchQuery};
 
 use crate::application::search_filters::{CompiledSearchFilters, ParsedLineMetadata};
-use crate::services::{ExecutionPlan as ServiceExecutionPlan, QueryPlanBuilder};
+use crate::services::QueryPlanBuilder;
 
 /// Domain LogSearcher implementation using the production regex/query engine.
 pub struct QueryEngineLogSearcher {
@@ -34,12 +33,12 @@ impl LogSearcher for QueryEngineLogSearcher {
         let service_plan = self.builder.lock().build(query)?;
         let engine_count = service_plan.engines.len();
         let steps = service_plan.execution_term_ids().to_vec();
-        // Embed the real plan directly in the opaque field — no side-map needed.
+        // Embed the real plan via MatchPlan trait — type-safe, no Any downcast.
         let plan = ExecutionPlan {
             id: 0, // deprecated; kept for API compatibility
             engine_count,
             steps,
-            opaque: Some(Arc::new(service_plan)),
+            plan: Some(std::sync::Arc::new(service_plan)),
         };
         Ok(plan)
     }
@@ -60,15 +59,11 @@ impl LogSearcher for QueryEngineLogSearcher {
             return Vec::new();
         }
 
-        // Extract the real plan from the opaque handle — O(1) downcast, no HashMap lookup.
-        let service_plan: &ServiceExecutionPlan = match plan.opaque.as_ref()
-            .and_then(|a| a.downcast_ref::<ServiceExecutionPlan>())
-        {
+        // Extract the compiled plan via the MatchPlan trait — no Mutex lock, no downcast.
+        let match_plan = match &plan.plan {
             Some(p) => p,
             None => return Vec::new(),
         };
-
-        let builder = self.builder.lock();
 
         let mut entries = Vec::new();
         for (index, line) in content.lines().enumerate() {
@@ -77,7 +72,7 @@ impl LogSearcher for QueryEngineLogSearcher {
                 continue;
             }
 
-            if let Some(details) = builder.match_with_details(service_plan, line) {
+            if let Some(details) = match_plan.match_line(line) {
                 let keywords = details
                     .iter()
                     .map(|detail| detail.term_value.clone())
@@ -94,7 +89,7 @@ impl LogSearcher for QueryEngineLogSearcher {
                     line: index + 1,
                     content: line.to_string().into(),
                     tags: vec![],
-                    match_details: Some(details),
+                    match_details: if details.is_empty() { None } else { Some(details) },
                     matched_keywords: if keywords.is_empty() {
                         None
                     } else {

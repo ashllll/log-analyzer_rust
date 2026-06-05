@@ -4,27 +4,32 @@
 //! It is intentionally synchronous — heavy search work runs in spawn_blocking
 //! at the use case level.
 
-use std::any::Any;
 use std::sync::Arc;
 
 use crate::error::Result;
+use crate::models::match_detail::MatchDetail;
 use crate::models::{LogEntry, SearchFilters, SearchQuery};
 
-/// Per-match detail for frontend highlighting.
-#[derive(Debug, Clone)]
-pub struct MatchDetail {
-    pub term_value: String,
-    pub byte_offset: usize,
-    pub char_offset: usize,
-    pub length: usize,
+/// A compiled plan that can match a single line of text.
+///
+/// Implementations carry compiled regex engines and matching strategy.
+/// The trait is deliberately narrow — one method — so the domain
+/// interface stays small while the implementation can be complex.
+pub trait MatchPlan: Send + Sync {
+    /// Match a single line and return highlight details.
+    ///
+    /// Returns `None` if the line does not match.
+    /// Returns `Some(vec![])` for strategies like `Not` where
+    /// the line passes but no terms need highlighting.
+    fn match_line(&self, line: &str) -> Option<Vec<MatchDetail>>;
 }
 
 /// A compiled and optimized execution plan for a search query.
 ///
-/// Carries an opaque handle to the adapter's internal plan data,
-/// eliminating the need for a side-map lookup in match_content.
-/// The adapter stores its real plan inside `opaque` at build time;
-/// match_content extracts it without any shared mutable state.
+/// Carries a typed handle to the adapter's internal plan data,
+/// eliminating both the side-map lookup and the fragile `Any` downcast.
+/// The adapter stores its real plan inside `plan` at build time;
+/// match_content calls `plan.match_line()` through the trait.
 #[derive(Clone)]
 pub struct ExecutionPlan {
     /// Opaque plan identifier (hash of the query, for debugging).
@@ -33,10 +38,9 @@ pub struct ExecutionPlan {
     pub engine_count: usize,
     /// Estimated steps (for debugging / logging).
     pub steps: Vec<String>,
-    /// Opaque handle to the adapter's compiled plan data.
-    /// Set by the adapter in build_plan(), read in match_content().
-    /// Eliminates the Mutex<HashMap<u64, ServicePlan>> side-map.
-    pub opaque: Option<Arc<dyn Any + Send + Sync>>,
+    /// Typed handle to the adapter's compiled plan.
+    /// Set by the adapter in build_plan(), used in match_content().
+    pub plan: Option<Arc<dyn MatchPlan>>,
 }
 
 impl std::fmt::Debug for ExecutionPlan {
@@ -45,7 +49,7 @@ impl std::fmt::Debug for ExecutionPlan {
             .field("id", &self.id)
             .field("engine_count", &self.engine_count)
             .field("steps", &self.steps)
-            .field("opaque", &self.opaque.as_ref().map(|_| "Some(..)"))
+            .field("plan", &self.plan.as_ref().map(|_| "Some(..)"))
             .finish()
     }
 }

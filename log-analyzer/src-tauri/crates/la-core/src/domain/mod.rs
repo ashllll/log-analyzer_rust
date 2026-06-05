@@ -23,6 +23,6 @@ pub use event::EventPublisher;
 pub use extract::{ArchiveEntry, ArchiveExtractor, ExtractionPolicy, ExtractionSummary};
 pub use log_file::LogFileRepository;
 pub use result_store::{SearchResultPage, SearchResultRepository};
-pub use search::{ExecutionPlan, LogSearcher, MatchDetail};
+pub use search::{ExecutionPlan, LogSearcher, MatchPlan};
 pub use task::{TaskHandle, TaskScheduler};
 pub use workspace::{WorkspaceInfo, WorkspaceRepository, WorkspaceStatus};

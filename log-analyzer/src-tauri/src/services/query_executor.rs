@@ -1,6 +1,5 @@
 use crate::services::query_planner::{ExecutionPlan, QueryPlanner};
 use crate::services::query_validator::QueryValidator;
-use crate::services::regex_engine::RegexEngine;
 use la_core::error::Result;
 use la_core::models::search::*;
 use moka::sync::Cache;
@@ -64,9 +63,9 @@ pub(crate) fn compute_query_cache_key(query: &SearchQuery) -> u64 {
 /**
  * 查询计划构建器
  *
- * 职责：验证查询、构建执行计划、缓存计划、匹配文本行。
- * 注意：名称原为 QueryExecutor，但实际不负责"执行"搜索扫描，
- * 只负责构建计划和行级匹配，因此更名为 QueryPlanBuilder。
+ * 职责：验证查询、构建执行计划、缓存计划。
+ * 匹配逻辑已移入 `ExecutionPlan` 自身（query_planner 模块），
+ * 调用方通过 `plan.matches_line()` / `plan.match_with_details()` 直接使用。
  *
  * 设计决策：使用混合引擎策略自动选择最佳匹配算法：
  * - AhoCorasick: 简单关键词搜索，O(n) 线性复杂度
@@ -132,221 +131,11 @@ impl QueryPlanBuilder {
 
         Ok(plan)
     }
-
-    /**
-     * 测试单行是否匹配（使用混合引擎）
-     *
-     * # 参数
-     * * `plan` - 执行计划
-     * * `line` - 要测试的文本行
-     *
-     * # 返回
-     * * `true` - 如果行匹配
-     * * `false` - 否则
-     */
-    pub fn matches_line(&self, plan: &ExecutionPlan, line: &str) -> bool {
-        match plan.strategy {
-            crate::services::query_planner::SearchStrategy::And => {
-                for term_id in plan.execution_term_ids() {
-                    let term_matches = if let Some(engine) = plan.get_engine_for_term(term_id) {
-                        Self::engine_is_match(&engine, line)
-                    } else {
-                        false
-                    };
-
-                    if !term_matches {
-                        return false;
-                    }
-                }
-                true
-            }
-            crate::services::query_planner::SearchStrategy::Or => {
-                if let Some(engine) = &plan.fast_or_engine {
-                    return Self::engine_is_match(engine.as_ref(), line);
-                }
-
-                for term_id in plan.execution_term_ids() {
-                    let term_matches = if let Some(engine) = plan.get_engine_for_term(term_id) {
-                        Self::engine_is_match(&engine, line)
-                    } else {
-                        false
-                    };
-
-                    if term_matches {
-                        return true;
-                    }
-                }
-                false
-            }
-            crate::services::query_planner::SearchStrategy::Not => {
-                for term_id in plan.execution_term_ids() {
-                    let term_matches = if let Some(engine) = plan.get_engine_for_term(term_id) {
-                        Self::engine_is_match(&engine, line)
-                    } else {
-                        false
-                    };
-
-                    if term_matches {
-                        return false;
-                    }
-                }
-                true
-            }
-        }
-    }
-
-    fn engine_is_match(engine: &RegexEngine, text: &str) -> bool {
-        engine.is_match(text)
-    }
-
-    /**
-     * 批量过滤日志行
-     *
-     * # 参数
-     * * `plan` - 执行计划
-     * * `lines` - 要过滤的文本行列表
-     *
-     * # 返回
-     * * 匹配的行列表
-     */
-    #[allow(dead_code)]
-    pub fn filter_lines<'a>(&self, plan: &ExecutionPlan, lines: &'a [String]) -> Vec<&'a String> {
-        lines
-            .iter()
-            .filter(|line| self.matches_line(plan, line))
-            .collect()
-    }
-
-    /**
-     * 匹配并返回详情（使用混合引擎）
-     *
-     * # 参数
-     * * `plan` - 执行计划
-     * * `line` - 要匹配的文本行
-     *
-     * # 返回
-     * * `Some(Vec<MatchDetail>)` - 所有匹配详情
-     * * `None` - 不匹配
-     */
-    pub fn match_with_details(&self, plan: &ExecutionPlan, line: &str) -> Option<Vec<MatchDetail>> {
-        if !self.matches_line(plan, line) {
-            return None;
-        }
-
-        let mut details = Vec::new();
-
-        match plan.strategy {
-            crate::services::query_planner::SearchStrategy::Or => {
-                // OR 策略：只要有一个 engine 找到匹配即可，与 matches_line 保持一致。
-                // 收集所有有匹配的 engine 的 details，而非要求所有 engine 都有结果。
-                for compiled in &plan.engines {
-                    let matches: Vec<_> = Self::engine_find_all(&compiled.engine, line);
-                    if !matches.is_empty() {
-                        for mat in matches {
-                            let term_value = plan
-                                .terms
-                                .iter()
-                                .find(|t| t.id == compiled.term_id)
-                                .map(|t| t.value.clone())
-                                .unwrap_or_else(|| {
-                                    // 使用 get() 避免多字节 UTF-8 字符边界处的 panic
-                                    line.get(mat.start..mat.end).unwrap_or_default().to_string()
-                                });
-
-                            details.push(MatchDetail {
-                                term_id: compiled.term_id.clone(),
-                                term_value,
-                                priority: compiled.priority,
-                                match_position: Some((
-                                    Self::byte_offset_to_char_index(line, mat.start),
-                                    Self::byte_offset_to_char_index(line, mat.end),
-                                )),
-                            });
-                        }
-                    }
-                }
-                // OR 策略下行已通过 matches_line 验证，即使 details 为空也返回 Some([])
-                details.sort_by_key(|d| std::cmp::Reverse(d.priority));
-                Some(details)
-            }
-            crate::services::query_planner::SearchStrategy::Not => {
-                // Not 策略语义：行通过匹配验证是因为"没有"任何排除关键词出现，
-                // 因此 details 为空是预期的正确语义（不存在需要高亮的匹配项）。
-                // 返回 Some(vec![]) 而非 None，表示该行确实通过了匹配验证，
-                // 只是 Not 操作符下的匹配结果不会产生高亮信息。
-                // 这与完全不匹配的情况（返回 None）不同，调用方可通过此区分：
-                //   - None: 行被排除（不匹配任何条件）
-                //   - Some([]): 行通过 Not 策略（没有匹配到排除关键词）
-                Some(vec![])
-            }
-            crate::services::query_planner::SearchStrategy::And => {
-                // And 策略：收集所有 engine 的 details。
-                for compiled in &plan.engines {
-                    for mat in Self::engine_find_all(&compiled.engine, line) {
-                        let term_value = plan
-                            .terms
-                            .iter()
-                            .find(|t| t.id == compiled.term_id)
-                            .map(|t| t.value.clone())
-                            .unwrap_or_else(|| {
-                                // 使用 get() 避免多字节 UTF-8 字符边界处的 panic
-                                line.get(mat.start..mat.end).unwrap_or_default().to_string()
-                            });
-
-                        details.push(MatchDetail {
-                            term_id: compiled.term_id.clone(),
-                            term_value,
-                            priority: compiled.priority,
-                            match_position: Some((
-                                Self::byte_offset_to_char_index(line, mat.start),
-                                Self::byte_offset_to_char_index(line, mat.end),
-                            )),
-                        });
-                    }
-                }
-                details.sort_by_key(|d| std::cmp::Reverse(d.priority));
-                if details.is_empty() {
-                    // And 策略下 details 为空意味着引擎实现与 matches_line 不一致，返回 None 是合理的防御。
-                    None
-                } else {
-                    Some(details)
-                }
-            }
-        }
-    }
-
-    /// 将 UTF-8 byte offset 转换为字符索引（char count），供前端 JavaScript 字符串切片使用。
-    ///
-    /// 原因：regex/aho-corasick 返回的 match start/end 是 UTF-8 byte offsets，
-    /// 而前端 `String.slice()` 使用 UTF-16 code unit indices。对于 ASCII 文本两者一致，
-    /// 但对于多字节 UTF-8 字符（如中文）会产生偏移。通过转换为 char count，
-    /// 确保前后端高亮位置精确对齐。
-    fn byte_offset_to_char_index(s: &str, byte_offset: usize) -> usize {
-        s[..byte_offset.min(s.len())].chars().count()
-    }
-
-    fn engine_find_all(
-        engine: &RegexEngine,
-        text: &str,
-    ) -> Vec<crate::services::regex_engine::MatchResult> {
-        engine.find_iter(text).collect()
-    }
 }
 
 // Re-export MatchDetail from la-core
 pub use la_core::models::match_detail::MatchDetail;
 
-/// 泛型查询执行器
-///
-/// 这个版本允许注入不同的验证器和规划器实现，实现依赖倒置原则。
-/// 通过使用泛型参数，可以在编译时确定具体实现，获得零成本抽象。
-///
-/// # 类型参数
-/// * `V` - 验证器类型，必须实现 `QueryValidation` trait
-/// * `P` - 规划器类型，必须实现 `QueryPlanning` trait
-///
-/// # 示例
-/// ```rust,ignore
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -397,15 +186,15 @@ mod tests {
         let plan = builder.build(&query).unwrap();
 
         assert!(
-            builder.matches_line(&plan, "error: something failed"),
+            plan.matches_line("error: something failed"),
             "Should match lowercase error"
         );
         assert!(
-            builder.matches_line(&plan, "ERROR: something failed"),
+            plan.matches_line("ERROR: something failed"),
             "Should match uppercase ERROR"
         );
         assert!(
-            builder.matches_line(&plan, "Error: something failed"),
+            plan.matches_line("Error: something failed"),
             "Should match mixed case Error"
         );
     }
@@ -419,9 +208,9 @@ mod tests {
         );
         let plan = builder.build(&query).unwrap();
 
-        assert!(builder.matches_line(&plan, "Error: something"));
-        assert!(!builder.matches_line(&plan, "error: something"));
-        assert!(!builder.matches_line(&plan, "ERROR: something"));
+        assert!(plan.matches_line("Error: something"));
+        assert!(!plan.matches_line("error: something"));
+        assert!(!plan.matches_line("ERROR: something"));
     }
 
     #[test]
@@ -433,8 +222,8 @@ mod tests {
         );
         let plan = builder.build(&query).unwrap();
 
-        assert!(!builder.matches_line(&plan, "debug: starting")); // Should NOT match
-        assert!(builder.matches_line(&plan, "info: running")); // Should match
+        assert!(!plan.matches_line("debug: starting")); // Should NOT match
+        assert!(plan.matches_line("info: running")); // Should match
     }
 
     #[test]
@@ -449,10 +238,10 @@ mod tests {
         );
         let plan = builder.build(&query).unwrap();
 
-        assert!(builder.matches_line(&plan, "error: something"));
-        assert!(builder.matches_line(&plan, "warning: something"));
-        assert!(builder.matches_line(&plan, "Error: something"));
-        assert!(!builder.matches_line(&plan, "info: something"));
+        assert!(plan.matches_line("error: something"));
+        assert!(plan.matches_line("warning: something"));
+        assert!(plan.matches_line("Error: something"));
+        assert!(!plan.matches_line("info: something"));
     }
 
     #[test]
@@ -470,7 +259,10 @@ mod tests {
             "error: third".to_string(),
         ];
 
-        let filtered = builder.filter_lines(&plan, &lines);
+        let filtered: Vec<&String> = lines
+            .iter()
+            .filter(|line| plan.matches_line(line))
+            .collect();
         assert_eq!(filtered.len(), 2);
     }
 
@@ -486,7 +278,7 @@ mod tests {
         );
         let plan = builder.build(&query).unwrap();
 
-        let details = builder.match_with_details(&plan, "Error: operation failed");
+        let details = plan.match_with_details("Error: operation failed");
         assert!(details.is_some());
         let details = details.unwrap();
         assert!(!details.is_empty());
@@ -506,7 +298,7 @@ mod tests {
         let plan = builder.build(&query).unwrap();
 
         let line = "error: timeout occurred, warning: system overloaded";
-        let details = builder.match_with_details(&plan, line);
+        let details = plan.match_with_details(line);
 
         assert!(details.is_some());
         let details = details.unwrap();
@@ -526,7 +318,7 @@ mod tests {
         let plan = builder.build(&query).unwrap();
 
         let line = "error error error";
-        let details = builder.match_with_details(&plan, line);
+        let details = plan.match_with_details(line);
 
         assert!(details.is_some());
         let details = details.unwrap();
@@ -552,7 +344,7 @@ mod tests {
         let plan = builder.build(&query).unwrap();
 
         let line = "error found, warning issued, info logged";
-        let details = builder.match_with_details(&plan, line);
+        let details = plan.match_with_details(line);
 
         assert!(details.is_some());
         let details = details.unwrap();

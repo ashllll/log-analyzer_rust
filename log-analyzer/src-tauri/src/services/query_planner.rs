@@ -1,5 +1,7 @@
-use crate::services::regex_engine::{EngineType, RegexEngine};
+use crate::services::regex_engine::{EngineType, MatchResult, RegexEngine};
+use la_core::domain::MatchPlan;
 use la_core::error::{AppError, Result};
+use la_core::models::match_detail::MatchDetail;
 use la_core::models::search::*;
 use moka::sync::Cache;
 use std::sync::Arc;
@@ -388,6 +390,154 @@ impl ExecutionPlan {
             })
         });
         self.execution_order = Self::build_execution_order(&self.engines, &self.terms);
+    }
+
+    // ── Matching methods (moved from QueryPlanBuilder) ──
+
+    /// Test whether a single line matches this plan.
+    pub fn matches_line(&self, line: &str) -> bool {
+        match self.strategy {
+            SearchStrategy::And => {
+                for term_id in self.execution_term_ids() {
+                    let term_matches = if let Some(engine) = self.get_engine_for_term(term_id) {
+                        Self::engine_is_match(&engine, line)
+                    } else {
+                        false
+                    };
+                    if !term_matches {
+                        return false;
+                    }
+                }
+                true
+            }
+            SearchStrategy::Or => {
+                if let Some(engine) = &self.fast_or_engine {
+                    return Self::engine_is_match(engine.as_ref(), line);
+                }
+                for term_id in self.execution_term_ids() {
+                    let term_matches = if let Some(engine) = self.get_engine_for_term(term_id) {
+                        Self::engine_is_match(&engine, line)
+                    } else {
+                        false
+                    };
+                    if term_matches {
+                        return true;
+                    }
+                }
+                false
+            }
+            SearchStrategy::Not => {
+                for term_id in self.execution_term_ids() {
+                    let term_matches = if let Some(engine) = self.get_engine_for_term(term_id) {
+                        Self::engine_is_match(&engine, line)
+                    } else {
+                        false
+                    };
+                    if term_matches {
+                        return false;
+                    }
+                }
+                true
+            }
+        }
+    }
+
+    fn engine_is_match(engine: &RegexEngine, text: &str) -> bool {
+        engine.is_match(text)
+    }
+
+    /// Match a line and return highlight details for all matched terms.
+    ///
+    /// Returns `None` if the line does not match.
+    /// Returns `Some(vec![])` for `Not` strategy (line passed, no terms to highlight).
+    pub fn match_with_details(&self, line: &str) -> Option<Vec<MatchDetail>> {
+        if !self.matches_line(line) {
+            return None;
+        }
+
+        let mut details = Vec::new();
+
+        match self.strategy {
+            SearchStrategy::Or => {
+                for compiled in &self.engines {
+                    let matches: Vec<_> = Self::engine_find_all(&compiled.engine, line);
+                    if !matches.is_empty() {
+                        for mat in matches {
+                            let term_value = self
+                                .terms
+                                .iter()
+                                .find(|t| t.id == compiled.term_id)
+                                .map(|t| t.value.clone())
+                                .unwrap_or_else(|| {
+                                    line.get(mat.start..mat.end).unwrap_or_default().to_string()
+                                });
+                            details.push(MatchDetail {
+                                term_id: compiled.term_id.clone(),
+                                term_value,
+                                priority: compiled.priority,
+                                match_position: Some((
+                                    Self::byte_offset_to_char_index(line, mat.start),
+                                    Self::byte_offset_to_char_index(line, mat.end),
+                                )),
+                            });
+                        }
+                    }
+                }
+                details.sort_by_key(|d| std::cmp::Reverse(d.priority));
+                Some(details)
+            }
+            SearchStrategy::Not => {
+                Some(vec![])
+            }
+            SearchStrategy::And => {
+                for compiled in &self.engines {
+                    for mat in Self::engine_find_all(&compiled.engine, line) {
+                        let term_value = self
+                            .terms
+                            .iter()
+                            .find(|t| t.id == compiled.term_id)
+                            .map(|t| t.value.clone())
+                            .unwrap_or_else(|| {
+                                line.get(mat.start..mat.end).unwrap_or_default().to_string()
+                            });
+                        details.push(MatchDetail {
+                            term_id: compiled.term_id.clone(),
+                            term_value,
+                            priority: compiled.priority,
+                            match_position: Some((
+                                Self::byte_offset_to_char_index(line, mat.start),
+                                Self::byte_offset_to_char_index(line, mat.end),
+                            )),
+                        });
+                    }
+                }
+                details.sort_by_key(|d| std::cmp::Reverse(d.priority));
+                if details.is_empty() {
+                    None
+                } else {
+                    Some(details)
+                }
+            }
+        }
+    }
+
+    /// Convert UTF-8 byte offset to char index for frontend JS string slicing.
+    fn byte_offset_to_char_index(s: &str, byte_offset: usize) -> usize {
+        s[..byte_offset.min(s.len())].chars().count()
+    }
+
+    fn engine_find_all(engine: &RegexEngine, text: &str) -> Vec<MatchResult> {
+        engine.find_iter(text).collect()
+    }
+}
+
+// ============================================================================
+// MatchPlan trait impl — enables type-safe plan passing across the domain seam
+// ============================================================================
+
+impl MatchPlan for ExecutionPlan {
+    fn match_line(&self, line: &str) -> Option<Vec<MatchDetail>> {
+        self.match_with_details(line)
     }
 }
 
