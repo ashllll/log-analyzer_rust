@@ -1,11 +1,9 @@
-//! Extraction Engine for Iterative Archive Processing
+//! Extraction Engine — iterative archive processing with stack-based traversal.
 //!
-//! This module implements the core extraction engine that processes archives
-//! using iterative depth-first traversal instead of recursion. It enforces
-//! depth limits, manages extraction state, and coordinates with security
-//! detection and path management components.
+//! This module contains the core extraction engine (iterative depth-first traversal),
+//! plus the extraction context/stack data structures that were previously in a
+//! separate extraction_context module (P10: merge tightly-coupled data structures).
 
-use crate::extraction_context::{ExtractionContext, ExtractionItem, ExtractionStack};
 use crate::path_manager::PathManager;
 use crate::security_detector::SecurityDetector;
 use la_core::error::{AppError, Result};
@@ -14,8 +12,174 @@ use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::fs;
 use tracing::{debug, info, warn};
+
+// ============================================================================
+// Extraction data structures (was extraction_context.rs)
+// ============================================================================
+
+/// Extraction context tracking state during archive processing
+#[derive(Debug, Clone)]
+pub struct ExtractionContext {
+    pub workspace_id: String,
+    pub current_depth: usize,
+    pub parent_archive: Option<PathBuf>,
+    pub accumulated_size: u64,
+    pub accumulated_files: usize,
+    pub start_time: Instant,
+    pub seen_hashes: HashSet<[u8; 32]>,
+}
+
+impl ExtractionContext {
+    pub fn new(workspace_id: String) -> Self {
+        Self {
+            workspace_id,
+            current_depth: 0,
+            parent_archive: None,
+            accumulated_size: 0,
+            accumulated_files: 0,
+            start_time: Instant::now(),
+            seen_hashes: HashSet::new(),
+        }
+    }
+
+    pub fn create_child(&self, parent_archive: PathBuf) -> Self {
+        Self {
+            workspace_id: self.workspace_id.clone(),
+            current_depth: self.current_depth + 1,
+            parent_archive: Some(parent_archive),
+            accumulated_size: self.accumulated_size,
+            accumulated_files: self.accumulated_files,
+            start_time: self.start_time,
+            seen_hashes: self.seen_hashes.clone(),
+        }
+    }
+
+    pub fn update_metrics(&mut self, bytes: u64, files: usize) {
+        self.accumulated_size = self.accumulated_size.saturating_add(bytes);
+        self.accumulated_files = self.accumulated_files.saturating_add(files);
+    }
+
+    pub fn elapsed(&self) -> std::time::Duration {
+        self.start_time.elapsed()
+    }
+
+    pub fn is_depth_limit_reached(&self, max_depth: usize) -> bool {
+        self.current_depth >= max_depth
+    }
+}
+
+/// Item in the extraction stack representing a pending archive to process.
+#[derive(Debug, Clone)]
+pub struct ExtractionItem {
+    pub archive_path: PathBuf,
+    pub target_dir: PathBuf,
+    pub depth: usize,
+    pub parent_context: ExtractionContext,
+    pub archive_hash: Option<[u8; 32]>,
+}
+
+impl ExtractionItem {
+    pub fn new(
+        archive_path: PathBuf,
+        target_dir: PathBuf,
+        depth: usize,
+        parent_context: ExtractionContext,
+    ) -> Self {
+        Self {
+            archive_path,
+            target_dir,
+            depth,
+            parent_context,
+            archive_hash: None,
+        }
+    }
+
+    pub fn with_hash(
+        archive_path: PathBuf,
+        target_dir: PathBuf,
+        depth: usize,
+        parent_context: ExtractionContext,
+        archive_hash: [u8; 32],
+    ) -> Self {
+        Self {
+            archive_path,
+            target_dir,
+            depth,
+            parent_context,
+            archive_hash: Some(archive_hash),
+        }
+    }
+}
+
+/// Stack for managing iterative depth-first traversal of nested archives.
+#[derive(Debug)]
+pub struct ExtractionStack {
+    items: Vec<ExtractionItem>,
+    max_size: usize,
+}
+
+impl ExtractionStack {
+    pub const DEFAULT_MAX_SIZE: usize = 1000;
+
+    pub fn new() -> Self {
+        Self {
+            items: Vec::new(),
+            max_size: Self::DEFAULT_MAX_SIZE,
+        }
+    }
+
+    pub fn with_max_size(max_size: usize) -> Self {
+        Self {
+            items: Vec::new(),
+            max_size,
+        }
+    }
+
+    pub fn push(&mut self, item: ExtractionItem) -> std::result::Result<(), String> {
+        if self.items.len() >= self.max_size {
+            return Err(format!(
+                "Stack size limit exceeded: {} items (max: {})",
+                self.items.len(),
+                self.max_size
+            ));
+        }
+        self.items.push(item);
+        Ok(())
+    }
+
+    pub fn pop(&mut self) -> Option<ExtractionItem> {
+        self.items.pop()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.items.len()
+    }
+
+    pub fn max_size(&self) -> usize {
+        self.max_size
+    }
+
+    pub fn clear(&mut self) {
+        self.items.clear();
+    }
+}
+
+impl Default for ExtractionStack {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ============================================================================
+// Extraction Engine
+// ============================================================================
 
 /// Extraction policy configuration
 #[derive(Debug, Clone)]

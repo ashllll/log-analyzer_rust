@@ -12,9 +12,7 @@ pub mod archive_handler;
 #[cfg(feature = "enhanced-extraction")]
 pub mod checkpoint_manager;
 #[cfg(feature = "enhanced-extraction")]
-pub mod extraction_context;
-#[cfg(feature = "enhanced-extraction")]
-pub mod extraction_engine;
+pub mod extraction_engine; // P10: extraction_context types merged into extraction_engine
 #[cfg(feature = "enhanced-extraction")]
 pub mod extraction_orchestrator;
 pub mod gz_handler;
@@ -38,9 +36,8 @@ pub use archive_handler::{ArchiveHandler, ExtractionSummary};
 #[cfg(feature = "enhanced-extraction")]
 pub use checkpoint_manager::{Checkpoint, CheckpointConfig, CheckpointManager};
 #[cfg(feature = "enhanced-extraction")]
-pub use extraction_context::{ExtractionContext, ExtractionItem, ExtractionStack};
 #[cfg(feature = "enhanced-extraction")]
-pub use extraction_engine::{ExtractionEngine, ExtractionPolicy};
+pub use extraction_engine::{ExtractionContext, ExtractionEngine, ExtractionItem, ExtractionPolicy, ExtractionStack};
 #[cfg(feature = "enhanced-extraction")]
 pub use extraction_orchestrator::ExtractionOrchestrator;
 pub use gz_handler::GzHandler;
