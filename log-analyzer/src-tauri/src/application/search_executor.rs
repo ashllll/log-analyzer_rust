@@ -17,14 +17,15 @@ use crate::utils::encoding::decode_log_content;
 ///
 /// 封装所有依赖，使 `run()` 方法零参数。
 pub(crate) struct SearchExecutor {
-    pub(crate) log_files: Arc<dyn LogFileRepository>,
+    log_files: Arc<dyn LogFileRepository>,
     pub(crate) results: Arc<dyn SearchResultRepository>,
     pub(crate) events: Arc<dyn EventPublisher>,
-    pub(crate) searcher: Arc<dyn LogSearcher>,
-    pub(crate) thread_pool: Arc<rayon::ThreadPool>,
-    pub(crate) batch_size: usize,
-    pub(crate) file_chunk_size: usize,
+    searcher: Arc<dyn LogSearcher>,
+    thread_pool: Arc<rayon::ThreadPool>,
 }
+
+const BATCH_SIZE: usize = 2000;
+const FILE_CHUNK_SIZE: usize = 10;
 
 /// 搜索执行结果。
 #[derive(Debug)]
@@ -48,8 +49,6 @@ impl SearchExecutor {
             events,
             searcher,
             thread_pool,
-            batch_size: 2000,
-            file_chunk_size: 10,
         }
     }
 
@@ -106,7 +105,7 @@ impl SearchExecutor {
             true
         };
 
-        'outer: for file_batch in files.chunks(self.file_chunk_size) {
+        'outer: for file_batch in files.chunks(FILE_CHUNK_SIZE) {
             if cancellation_token.is_cancelled() {
                 break;
             }
@@ -138,7 +137,7 @@ impl SearchExecutor {
                     }
                     batch.push(entry);
                     results_count += 1;
-                    if batch.len() >= self.batch_size && !flush(&mut batch, results_count) {
+                    if batch.len() >= BATCH_SIZE && !flush(&mut batch, results_count) {
                         break 'outer;
                     }
                 }

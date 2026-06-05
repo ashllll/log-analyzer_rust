@@ -46,10 +46,10 @@ where
                 .map(|error| format!("{}: {}", error.field, error.message))
                 .collect::<Vec<_>>()
                 .join("; ");
-            return Err(AppError::Config(format!("配置验证失败: {errors}")));
+            return Err(AppError::config_error(format!("配置验证失败: {errors}")));
         }
 
-        let config_dir = self.provider.config_dir().map_err(AppError::Config)?;
+        let config_dir = self.provider.config_dir().map_err(|e| AppError::config_error(e.to_string()))?;
         if !config_dir.exists() {
             fs::create_dir_all(&config_dir)
                 .map_err(|e| AppError::io_error(e.to_string(), Some(config_dir.clone())))?;
@@ -58,7 +58,7 @@ where
         let config_path = config_dir.join("config.json");
         let tmp_path = config_dir.join("config.json.tmp");
         let json = serde_json::to_string_pretty(config)
-            .map_err(|e| AppError::Config(format!("Failed to serialize config: {e}")))?;
+            .map_err(|e| AppError::config_error(format!("Failed to serialize config: {e}")))?;
 
         fs::write(&tmp_path, json)
             .map_err(|e| AppError::io_error(e.to_string(), Some(tmp_path.clone())))?;
@@ -71,7 +71,7 @@ where
         self.provider
             .config_dir()
             .map(|dir| dir.join("config.json"))
-            .map_err(AppError::Config)
+            .map_err(|e| AppError::config_error(e.to_string()))
     }
 }
 

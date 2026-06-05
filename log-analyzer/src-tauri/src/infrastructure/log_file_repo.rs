@@ -30,7 +30,7 @@ impl LogFileRepository for CasLogFileRepository {
             .get_files_with_pruning(time_start, time_end, level_mask, file_pattern)
             .await
             .map_err(|e| {
-                la_core::error::AppError::DatabaseError(format!(
+                la_core::error::AppError::database_error(format!(
                     "Failed to get files for workspace {}: {}",
                     workspace_id, e
                 ))

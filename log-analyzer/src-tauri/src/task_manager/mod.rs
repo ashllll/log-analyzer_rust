@@ -18,6 +18,7 @@
 use scopeguard::defer;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 use thiserror::Error;
@@ -132,6 +133,39 @@ impl TaskManagerConfig {
     }
 }
 
+// ── Event Publisher 抽象层 ──
+//
+// 将 Tauri 的 AppHandle::emit 抽象为 trait，使 TaskManagerActor 可脱离
+// Tauri 运行时进行单元测试（测试中注入空实现或断言实现即可）。
+
+/// 任务事件发射器 trait
+///
+/// 抽象 Tauri 的 `AppHandle::emit`，使 TaskManager 不再直接依赖 `tauri::AppHandle`。
+/// 生产环境由 `TauriEventEmitter` 实现；测试环境可注入 `MockEventEmitter`。
+pub trait TaskEventEmitter: Send + Sync {
+    /// 发送任务事件。返回 `Ok(())` 表示成功，`Err(String)` 包含错误描述。
+    fn emit(&self, event: &str, payload: serde_json::Value) -> Result<(), String>;
+}
+
+/// 基于 `tauri::AppHandle` 的 `TaskEventEmitter` 实现
+pub struct TauriEventEmitter {
+    app: AppHandle,
+}
+
+impl TauriEventEmitter {
+    pub fn new(app: AppHandle) -> Self {
+        Self { app }
+    }
+}
+
+impl TaskEventEmitter for TauriEventEmitter {
+    fn emit(&self, event: &str, payload: serde_json::Value) -> Result<(), String> {
+        self.app
+            .emit(event, payload)
+            .map_err(|e| e.to_string())
+    }
+}
+
 /// Actor 消息类型
 // Some variants are part of the Actor Model interface but not yet wired through
 // public async client methods (planned for future extension)
@@ -184,17 +218,17 @@ enum ActorMessage {
 struct TaskManagerActor {
     tasks: HashMap<String, TaskInfo>,
     config: TaskManagerConfig,
-    app: AppHandle,
+    event_publisher: Arc<dyn TaskEventEmitter>,
     /// M1 Fix: oneshot channel to notify caller when actor has finished draining
     shutdown_done_tx: Option<tokio::sync::oneshot::Sender<()>>,
 }
 
 impl TaskManagerActor {
-    fn new(app: AppHandle, config: TaskManagerConfig) -> Self {
+    fn new(event_publisher: Arc<dyn TaskEventEmitter>, config: TaskManagerConfig) -> Self {
         Self {
             tasks: HashMap::new(),
             config,
-            app,
+            event_publisher,
             shutdown_done_tx: None,
         }
     }
@@ -231,7 +265,7 @@ impl TaskManagerActor {
                 self.tasks.insert(id.clone(), task.clone());
 
                 // 老王备注：发送task-update事件给前端（业内成熟的事件驱动架构）
-                if let Err(e) = self.app.emit(
+                if let Err(e) = self.event_publisher.emit(
                     "task-update",
                     serde_json::json!({
                         "task_id": id,
@@ -317,14 +351,14 @@ impl TaskManagerActor {
                         "version": task.version,
                         "workspace_id": task.workspace_id,
                     });
-                    if let Err(e) = self.app.emit("task-update", payload.clone()) {
+                    if let Err(e) = self.event_publisher.emit("task-update", payload.clone()) {
                         // emit 失败时立即重试一次，防止终态更新（Completed/Failed/Stopped）永久丢失
                         warn!(
                             task_id = %id,
                             error = %e,
                             "Failed to emit task-update event, retrying once"
                         );
-                        if let Err(e2) = self.app.emit("task-update", payload) {
+                        if let Err(e2) = self.event_publisher.emit("task-update", payload) {
                             error!(
                                 task_id = %id,
                                 error = %e2,
@@ -467,7 +501,7 @@ impl TaskManagerActor {
                 );
 
                 // 发送任务移除事件
-                if let Err(e) = self.app.emit(
+                if let Err(e) = self.event_publisher.emit(
                     "task-removed",
                     serde_json::json!({
                         "task_id": id,
@@ -558,13 +592,19 @@ pub struct TaskManager {
 
 impl TaskManager {
     /// 创建新的任务管理器
-    pub fn new(app: AppHandle, config: TaskManagerConfig) -> Result<Self, TaskManagerError> {
+    ///
+    /// `event_publisher` 是 `TaskEventEmitter` trait 对象的 `Arc`，生产环境传入
+    /// `Arc::new(TauriEventEmitter::new(app))`，测试环境可注入 mock 实现。
+    pub fn new(
+        event_publisher: Arc<dyn TaskEventEmitter>,
+        config: TaskManagerConfig,
+    ) -> Result<Self, TaskManagerError> {
         info!("Initializing TaskManager");
 
         // C-H3 修复: 使用有界通道替代无界通道，实现背压控制，防止OOM
         const CHANNEL_CAPACITY: usize = 1000;
         let (sender, receiver) = mpsc::channel(CHANNEL_CAPACITY);
-        let actor = TaskManagerActor::new(app, config.clone());
+        let actor = TaskManagerActor::new(event_publisher, config.clone());
 
         // 使用 tauri::async_runtime 启动 Actor
         tauri::async_runtime::spawn(async move {

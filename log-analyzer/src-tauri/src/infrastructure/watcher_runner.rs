@@ -98,7 +98,7 @@ impl WatcherRunner {
             self.emit_file_changed(event_type, &file_path_str, timestamp);
 
             match event_type {
-                "created" => self.on_create(&path, &file_path_str),
+                "created" => self.on_create(&file_path_str),
                 "modified" => self.on_modify(&path, &file_path_str),
                 _ => {}
             }
@@ -115,7 +115,7 @@ impl WatcherRunner {
         });
     }
 
-    fn on_create(&self, _path: &Path, file_path_str: &str) {
+    fn on_create(&self, file_path_str: &str) {
         let mut guard = self.watcher_state.lock();
         if let Some(ref mut w) = *guard {
             w.line_counts.insert(file_path_str.to_string(), 0);

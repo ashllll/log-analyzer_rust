@@ -11,6 +11,7 @@ pub mod export;
 pub mod search;
 pub mod search_executor;
 pub mod search_filters;
+pub mod virtual_tree;
 pub mod workspace_service;
 
 pub use config::ConfigUseCase;
@@ -163,7 +164,6 @@ mod tests {
             .execute(
                 "ws1",
                 &query,
-                vec!["error".into()],
                 &Default::default(),
                 100,
                 "test-search".into(),

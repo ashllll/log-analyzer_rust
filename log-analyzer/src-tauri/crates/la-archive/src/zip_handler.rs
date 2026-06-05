@@ -172,7 +172,7 @@ impl ArchiveHandler for ZipHandler {
         .await
         .map_err(|e| {
             if e.is_panic() {
-                AppError::Internal(format!("ZIP handler panicked: {}", e))
+                AppError::internal_error(format!("ZIP handler panicked: {}", e))
             } else {
                 AppError::archive_error(e.to_string(), None)
             }

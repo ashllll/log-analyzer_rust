@@ -29,7 +29,7 @@ impl TaskManagerAdapter {
 
 /// Map `TaskManagerError` to a domain-level `AppError`.
 fn map_error(e: TaskManagerError) -> AppError {
-    AppError::Internal(format!("Task manager error: {e}"))
+    AppError::internal_error(format!("Task manager error: {e}"))
 }
 
 #[async_trait]

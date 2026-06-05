@@ -223,7 +223,7 @@ impl ArchiveHandler for RarHandler {
         .await
         .map_err(|e| {
             if e.is_panic() {
-                AppError::Internal(format!("RAR handler panicked: {}", e))
+                AppError::internal_error(format!("RAR handler panicked: {}", e))
             } else {
                 AppError::archive_error(e.to_string(), None)
             }

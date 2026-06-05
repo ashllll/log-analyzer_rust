@@ -215,6 +215,17 @@ impl CacheMonitor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
+
+    fn create_test_cas() -> (Arc<ContentAddressableStorage>, TempDir) {
+        let temp_dir = TempDir::new().unwrap();
+        let cas = Arc::new(ContentAddressableStorage::new(
+            temp_dir.path().to_path_buf(),
+        ));
+        (cas, temp_dir)
+    }
+
+    // ── Synchronous unit tests for value types ──
 
     #[test]
     fn test_cache_metrics_default() {
@@ -245,5 +256,110 @@ mod tests {
         assert_eq!(config.sample_size, 100);
         assert!(config.auto_fix);
         assert!(config.warn_on_stale);
+    }
+
+    // ── Async integration tests for CacheMonitor ──
+
+    #[tokio::test]
+    async fn test_create_cache_monitor_initial_state() {
+        let (cas, _temp_dir) = create_test_cas();
+        let monitor = CacheMonitor::new(cas, CacheMonitorConfig::default());
+
+        let metrics = monitor.metrics().await;
+        assert_eq!(metrics.total_lookups, 0);
+        assert_eq!(metrics.hits, 0);
+        assert_eq!(metrics.misses, 0);
+        assert_eq!(metrics.stale_entries, 0);
+        assert_eq!(metrics.inconsistencies_fixed, 0);
+        assert!(metrics.last_check.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_record_hit_and_miss_updates_metrics() {
+        let (cas, _temp_dir) = create_test_cas();
+        let monitor = CacheMonitor::new(cas, CacheMonitorConfig::default());
+
+        monitor.record_hit().await;
+        monitor.record_hit().await;
+        monitor.record_miss().await;
+
+        let metrics = monitor.metrics().await;
+        assert_eq!(metrics.total_lookups, 3);
+        assert_eq!(metrics.hits, 2);
+        assert_eq!(metrics.misses, 1);
+        assert!((metrics.hit_ratio() - 2.0 / 3.0).abs() < f64::EPSILON);
+        assert!((metrics.miss_ratio() - 1.0 / 3.0).abs() < f64::EPSILON);
+    }
+
+    #[tokio::test]
+    async fn test_check_consistency_valid_entry() {
+        let (cas, _temp_dir) = create_test_cas();
+        // Disable auto_fix and warnings so we can observe raw metrics
+        let config = CacheMonitorConfig {
+            auto_fix: false,
+            warn_on_stale: false,
+            ..Default::default()
+        };
+        let monitor = CacheMonitor::new(cas.clone(), config);
+
+        // Write a file to CAS to obtain a valid hash with a cache entry
+        let file_dir = TempDir::new().unwrap();
+        let file_path = file_dir.path().join("test.log");
+        tokio::fs::write(&file_path, b"consistency test content").await.unwrap();
+
+        let hash = cas.store_file_zero_copy(&file_path).await.unwrap();
+        assert_eq!(hash.len(), 64);
+
+        // Consistency check on a valid, existing entry should pass
+        let result = monitor.check_consistency(&hash).await.unwrap();
+        assert!(
+            result,
+            "Existing CAS entry should be reported as consistent"
+        );
+
+        let metrics = monitor.metrics().await;
+        assert_eq!(metrics.stale_entries, 0);
+    }
+
+    #[tokio::test]
+    async fn test_check_consistency_nonexistent_hash() {
+        let (cas, _temp_dir) = create_test_cas();
+        let monitor = CacheMonitor::new(cas, CacheMonitorConfig::default());
+
+        // A valid-format hex hash that has no corresponding CAS object on disk
+        let fake_hash = "a".repeat(64);
+
+        // Should not panic; returns true because the entry is simply absent,
+        // not stale (CAS::exists() self-corrects the cache on every lookup)
+        let result = monitor.check_consistency(&fake_hash).await.unwrap();
+        assert!(result);
+    }
+
+    #[tokio::test]
+    async fn test_record_stale_increments_counter() {
+        let (cas, _temp_dir) = create_test_cas();
+        let monitor = CacheMonitor::new(cas, CacheMonitorConfig::default());
+
+        monitor.record_stale().await;
+        monitor.record_stale().await;
+        monitor.record_stale().await;
+
+        let metrics = monitor.metrics().await;
+        assert_eq!(metrics.stale_entries, 3);
+    }
+
+    #[tokio::test]
+    async fn test_run_full_check_updates_last_check_timestamp() {
+        let (cas, _temp_dir) = create_test_cas();
+        let monitor = CacheMonitor::new(cas, CacheMonitorConfig::default());
+
+        let metrics_before = monitor.metrics().await;
+        assert!(metrics_before.last_check.is_none());
+
+        let fixed = monitor.run_full_check().await.unwrap();
+        assert_eq!(fixed, 0);
+
+        let metrics_after = monitor.metrics().await;
+        assert!(metrics_after.last_check.is_some());
     }
 }

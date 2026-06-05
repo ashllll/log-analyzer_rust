@@ -665,7 +665,7 @@ impl ExtractionEngine {
                 });
 
             let _ = fs::remove_dir_all(&item.target_dir).await;
-            return Err(AppError::Security(message));
+            return Err(AppError::security_error(message));
         }
 
         // Process extracted files

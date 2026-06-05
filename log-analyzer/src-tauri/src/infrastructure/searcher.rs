@@ -1,11 +1,15 @@
 //! LogSearcher adapter backed by the existing query planner/executor.
+//!
+//! P7: 消除 side-map (Mutex<HashMap<u64, ServiceExecutionPlan>>)。
+//! 真实 plan 现在嵌入 domain ExecutionPlan 的 opaque 字段中，
+//! 随 plan 引用传递——无需全局缓存，无静默失败窗口。
 
-use std::collections::{HashMap, HashSet};
-use std::hash::{Hash, Hasher};
+use std::collections::HashSet;
+use std::sync::Arc;
 
 use parking_lot::Mutex;
 
-use la_core::domain::{ExecutionPlan as DomainExecutionPlan, LogSearcher};
+use la_core::domain::{ExecutionPlan, LogSearcher};
 use la_core::error::Result;
 use la_core::models::{LogEntry, SearchFilters, SearchQuery};
 
@@ -15,40 +19,28 @@ use crate::services::{ExecutionPlan as ServiceExecutionPlan, QueryPlanBuilder};
 /// Domain LogSearcher implementation using the production regex/query engine.
 pub struct QueryEngineLogSearcher {
     builder: Mutex<QueryPlanBuilder>,
-    plans: Mutex<HashMap<u64, ServiceExecutionPlan>>,
 }
 
 impl QueryEngineLogSearcher {
     pub fn new(regex_cache_size: usize) -> Self {
         Self {
             builder: Mutex::new(QueryPlanBuilder::new(regex_cache_size.max(1))),
-            plans: Mutex::new(HashMap::new()),
         }
-    }
-
-    fn plan_id(query: &SearchQuery) -> u64 {
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        query.hash(&mut hasher);
-        hasher.finish()
     }
 }
 
 impl LogSearcher for QueryEngineLogSearcher {
-    fn build_plan(&self, query: &SearchQuery) -> Result<DomainExecutionPlan> {
-        let id = Self::plan_id(query);
+    fn build_plan(&self, query: &SearchQuery) -> Result<ExecutionPlan> {
         let service_plan = self.builder.lock().build(query)?;
-        let plan = DomainExecutionPlan {
-            id,
-            engine_count: service_plan.engines.len(),
-            steps: service_plan.execution_term_ids().to_vec(),
+        let engine_count = service_plan.engines.len();
+        let steps = service_plan.execution_term_ids().to_vec();
+        // Embed the real plan directly in the opaque field — no side-map needed.
+        let plan = ExecutionPlan {
+            id: 0, // deprecated; kept for API compatibility
+            engine_count,
+            steps,
+            opaque: Some(Arc::new(service_plan)),
         };
-        let mut plans = self.plans.lock();
-        // FIX(CR-02): 限界 256 条，防止只增不减导致的内存泄漏。
-        // 不同查询生成不同 plan ID，旧 plan 不会被主动清理。
-        if plans.len() >= 256 {
-            plans.clear();
-        }
-        plans.insert(id, service_plan);
         Ok(plan)
     }
 
@@ -56,7 +48,7 @@ impl LogSearcher for QueryEngineLogSearcher {
         &self,
         content: &str,
         virtual_path: &str,
-        plan: &DomainExecutionPlan,
+        plan: &ExecutionPlan,
         filters: &SearchFilters,
         global_offset: usize,
     ) -> Vec<LogEntry> {
@@ -68,13 +60,14 @@ impl LogSearcher for QueryEngineLogSearcher {
             return Vec::new();
         }
 
-        let service_plan = {
-            let plans = self.plans.lock();
-            plans.get(&plan.id).cloned()
+        // Extract the real plan from the opaque handle — O(1) downcast, no HashMap lookup.
+        let service_plan: &ServiceExecutionPlan = match plan.opaque.as_ref()
+            .and_then(|a| a.downcast_ref::<ServiceExecutionPlan>())
+        {
+            Some(p) => p,
+            None => return Vec::new(),
         };
-        let Some(service_plan) = service_plan else {
-            return Vec::new();
-        };
+
         let builder = self.builder.lock();
 
         let mut entries = Vec::new();
@@ -84,7 +77,7 @@ impl LogSearcher for QueryEngineLogSearcher {
                 continue;
             }
 
-            if let Some(details) = builder.match_with_details(&service_plan, line) {
+            if let Some(details) = builder.match_with_details(service_plan, line) {
                 let keywords = details
                     .iter()
                     .map(|detail| detail.term_value.clone())

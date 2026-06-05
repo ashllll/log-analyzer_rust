@@ -486,10 +486,12 @@ fn security_policy_from_extraction_policy(policy: &ExtractionPolicy) -> Security
 #[cfg(test)]
 mod tests {
     use super::*;
+    use la_core::ErrorCategory;
 
     #[test]
     fn test_error_code_conversion() {
-        let app_error = AppError::validation_error("path too long");
+        let app_error =
+            AppError::validation_error_with("path too long", ErrorCategory::PathTooLong);
         let extraction_error = ExtractionError::from(app_error);
 
         assert_eq!(extraction_error.error_code, ErrorCode::PathTooLong);
@@ -515,20 +517,56 @@ mod tests {
     fn test_error_code_mapping() {
         // Test all error code conversions
         let test_cases = vec![
-            ("path too long", ErrorCode::PathTooLong),
-            ("unsupported format", ErrorCode::UnsupportedFormat),
-            ("corrupted archive", ErrorCode::CorruptedArchive),
-            ("permission denied", ErrorCode::PermissionDenied),
-            ("zip bomb detected", ErrorCode::ZipBombDetected),
-            ("depth limit exceeded", ErrorCode::DepthLimitExceeded),
-            ("disk space exhausted", ErrorCode::DiskSpaceExhausted),
-            ("operation cancelled", ErrorCode::CancellationRequested),
-            ("invalid configuration", ErrorCode::InvalidConfiguration),
-            ("unknown error", ErrorCode::InternalError),
+            ("path too long", ErrorCategory::PathTooLong, ErrorCode::PathTooLong),
+            (
+                "unsupported format",
+                ErrorCategory::UnsupportedFormat,
+                ErrorCode::UnsupportedFormat,
+            ),
+            (
+                "corrupted archive",
+                ErrorCategory::CorruptedArchive,
+                ErrorCode::CorruptedArchive,
+            ),
+            (
+                "permission denied",
+                ErrorCategory::PermissionDenied,
+                ErrorCode::PermissionDenied,
+            ),
+            (
+                "zip bomb detected",
+                ErrorCategory::ZipBombDetected,
+                ErrorCode::ZipBombDetected,
+            ),
+            (
+                "depth limit exceeded",
+                ErrorCategory::DepthLimitExceeded,
+                ErrorCode::DepthLimitExceeded,
+            ),
+            (
+                "disk space exhausted",
+                ErrorCategory::DiskSpaceExhausted,
+                ErrorCode::DiskSpaceExhausted,
+            ),
+            (
+                "operation cancelled",
+                ErrorCategory::CancellationRequested,
+                ErrorCode::CancellationRequested,
+            ),
+            (
+                "invalid configuration",
+                ErrorCategory::InvalidConfiguration,
+                ErrorCode::InvalidConfiguration,
+            ),
+            (
+                "unknown error",
+                ErrorCategory::InternalError,
+                ErrorCode::InternalError,
+            ),
         ];
 
-        for (message, expected_code) in test_cases {
-            let app_error = AppError::validation_error(message);
+        for (message, category, expected_code) in test_cases {
+            let app_error = AppError::validation_error_with(message, category);
             let extraction_error = ExtractionError::from(app_error);
             assert_eq!(extraction_error.error_code, expected_code);
         }

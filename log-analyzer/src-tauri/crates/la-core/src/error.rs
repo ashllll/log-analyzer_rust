@@ -22,6 +22,7 @@ pub enum AppError {
         help("Try simplifying your search query or checking the workspace status")
     )]
     Search {
+        category: ErrorCategory,
         _message: String,
         #[source]
         _source: Option<Box<dyn std::error::Error + Send + Sync>>,
@@ -33,100 +34,154 @@ pub enum AppError {
         help("Ensure the archive file is not corrupted and is a supported format")
     )]
     Archive {
+        category: ErrorCategory,
         _message: String,
         _path: Option<PathBuf>,
     },
 
-    #[error("Validation error: {0}")]
+    #[error("Validation error: {message}")]
     #[diagnostic(
         code(app::validation_error),
         help("Check that your input meets the required format and constraints")
     )]
-    Validation(String),
+    Validation {
+        category: ErrorCategory,
+        message: String,
+    },
 
-    #[error("Security error: {0}")]
+    #[error("Security error: {message}")]
     #[diagnostic(code(app::security_error))]
-    Security(String),
+    Security {
+        category: ErrorCategory,
+        message: String,
+    },
 
-    #[error("Not found: {0}")]
+    #[error("Not found: {message}")]
     #[diagnostic(code(app::not_found))]
-    NotFound(String),
+    NotFound {
+        category: ErrorCategory,
+        message: String,
+    },
 
-    #[error("Invalid path: {0}")]
+    #[error("Invalid path: {message}")]
     #[diagnostic(
         code(app::invalid_path),
         help("Ensure the path is valid and accessible")
     )]
-    InvalidPath(String),
+    InvalidPath {
+        category: ErrorCategory,
+        message: String,
+    },
 
-    #[error("Encoding error: {0}")]
+    #[error("Encoding error: {message}")]
     #[diagnostic(code(app::encoding_error))]
-    Encoding(String),
+    Encoding {
+        category: ErrorCategory,
+        message: String,
+    },
 
-    #[error("Query execution error: {0}")]
+    #[error("Query execution error: {message}")]
     #[diagnostic(
         code(app::query_execution_error),
         help("Try simplifying your query or checking the syntax")
     )]
-    QueryExecution(String),
+    QueryExecution {
+        category: ErrorCategory,
+        message: String,
+    },
 
-    #[error("File watcher error: {0}")]
+    #[error("File watcher error: {message}")]
     #[diagnostic(code(app::file_watcher_error))]
-    FileWatcher(String),
+    FileWatcher {
+        category: ErrorCategory,
+        message: String,
+    },
 
-    #[error("Index error: {0}")]
+    #[error("Index error: {message}")]
     #[diagnostic(code(app::index_error))]
-    IndexError(String),
+    IndexError {
+        category: ErrorCategory,
+        message: String,
+    },
 
-    #[error("Pattern error: {0}")]
+    #[error("Pattern error: {message}")]
     #[diagnostic(code(app::pattern_error), help("Check your regex pattern syntax"))]
-    PatternError(String),
+    PatternError {
+        category: ErrorCategory,
+        message: String,
+    },
 
-    #[error("Database error: {0}")]
+    #[error("Database error: {message}")]
     #[diagnostic(
         code(app::database_error),
         help("Check database connection and schema integrity")
     )]
-    DatabaseError(String),
+    DatabaseError {
+        category: ErrorCategory,
+        message: String,
+    },
 
-    #[error("Configuration error: {0}")]
+    #[error("Configuration error: {message}")]
     #[diagnostic(code(app::config_error))]
-    Config(String),
+    Config {
+        category: ErrorCategory,
+        message: String,
+    },
 
-    #[error("Network error: {0}")]
+    #[error("Network error: {message}")]
     #[diagnostic(code(app::network_error))]
-    Network(String),
+    Network {
+        category: ErrorCategory,
+        message: String,
+    },
 
-    #[error("Internal error: {0}")]
+    #[error("Internal error: {message}")]
     #[diagnostic(code(app::internal_error))]
-    Internal(String),
+    Internal {
+        category: ErrorCategory,
+        message: String,
+    },
 
-    #[error("Resource cleanup error: {0}")]
+    #[error("Resource cleanup error: {message}")]
     #[diagnostic(code(app::resource_cleanup_error))]
-    ResourceCleanup(String),
+    ResourceCleanup {
+        category: ErrorCategory,
+        message: String,
+    },
 
-    #[error("Concurrency error: {0}")]
+    #[error("Concurrency error: {message}")]
     #[diagnostic(code(app::concurrency_error))]
-    Concurrency(String),
+    Concurrency {
+        category: ErrorCategory,
+        message: String,
+    },
 
-    #[error("Parse error: {0}")]
+    #[error("Parse error: {message}")]
     #[diagnostic(code(app::parse_error))]
-    Parse(String),
+    Parse {
+        category: ErrorCategory,
+        message: String,
+    },
 
-    #[error("Timeout error: {0}")]
+    #[error("Timeout error: {message}")]
     #[diagnostic(code(app::timeout_error))]
-    Timeout(String),
+    Timeout {
+        category: ErrorCategory,
+        message: String,
+    },
 
     #[error("IO error: {message}")]
     #[diagnostic(code(app::io_error_detailed))]
     IoDetailed {
+        category: ErrorCategory,
         message: String,
         path: Option<PathBuf>,
     },
 }
 
-/// M2 Fix: Structured error categories for programmatic matching
-/// Replaces fragile string-based error classification
+/// Structured error categories for programmatic matching.
+/// Replaces fragile string-based error classification with a stored field
+/// on each AppError variant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorCategory {
     /// Path exceeds operating system limits
@@ -152,82 +207,39 @@ pub enum ErrorCategory {
 }
 
 impl AppError {
-    /// M2 Fix: Classify this error into a structured category for programmatic handling.
+    /// Classify this error into a structured category for programmatic handling.
     ///
-    /// This replaces fragile string-matching on error messages (e.g. `contains("timeout")`).
-    /// Classification is based on the AppError variant and is independent of Display formatting.
+    /// Each variant stores its category at construction time. The Io variant
+    /// uses structured ErrorKind matching (no string-based heuristics).
     pub fn category(&self) -> ErrorCategory {
         use std::io::ErrorKind;
         match self {
+            // Io uses structured ErrorKind classification (no string matching)
             AppError::Io(e) => match e.kind() {
                 ErrorKind::PermissionDenied => ErrorCategory::PermissionDenied,
                 ErrorKind::OutOfMemory => ErrorCategory::DiskSpaceExhausted,
-                _ => {
-                    let msg = e.to_string();
-                    if msg.contains("path") && msg.contains("long") {
-                        ErrorCategory::PathTooLong
-                    } else {
-                        ErrorCategory::InternalError
-                    }
-                }
+                _ => ErrorCategory::InternalError,
             },
-            AppError::IoDetailed { .. } => ErrorCategory::InternalError,
-            AppError::Validation(msg) => {
-                let lower = msg.to_lowercase();
-                if lower.contains("unsupported") || lower.contains("format") {
-                    ErrorCategory::UnsupportedFormat
-                } else if lower.contains("corrupt") {
-                    ErrorCategory::CorruptedArchive
-                } else if lower.contains("permission") || lower.contains("denied") {
-                    ErrorCategory::PermissionDenied
-                } else if lower.contains("zip") || lower.contains("bomb") {
-                    ErrorCategory::ZipBombDetected
-                } else if lower.contains("depth") {
-                    ErrorCategory::DepthLimitExceeded
-                } else if lower.contains("disk")
-                    || (lower.contains("space") && !lower.contains("workspace"))
-                {
-                    ErrorCategory::DiskSpaceExhausted
-                } else if lower.contains("cancel") {
-                    ErrorCategory::CancellationRequested
-                } else if lower.contains("validation") || lower.contains("invalid") {
-                    ErrorCategory::InvalidConfiguration
-                } else if lower.contains("long") && lower.contains("path") {
-                    ErrorCategory::PathTooLong
-                } else {
-                    ErrorCategory::InternalError
-                }
-            }
-            AppError::Archive { _message, .. } => {
-                let msg = _message.to_lowercase();
-                if msg.contains("corrupt") {
-                    ErrorCategory::CorruptedArchive
-                } else if msg.contains("unsupported") || msg.contains("format") {
-                    ErrorCategory::UnsupportedFormat
-                } else if msg.contains("zip bomb") || msg.contains("compression") {
-                    ErrorCategory::ZipBombDetected
-                } else if msg.contains("depth") {
-                    ErrorCategory::DepthLimitExceeded
-                } else if msg.contains("disk") || msg.contains("space") {
-                    ErrorCategory::DiskSpaceExhausted
-                } else {
-                    ErrorCategory::InternalError
-                }
-            }
-            AppError::Security(_) => ErrorCategory::ZipBombDetected,
-            AppError::NotFound(_) => ErrorCategory::InternalError,
-            AppError::InvalidPath(msg) => {
-                if msg.to_lowercase().contains("long") {
-                    ErrorCategory::PathTooLong
-                } else {
-                    ErrorCategory::InternalError
-                }
-            }
-            AppError::Config(_) => ErrorCategory::InvalidConfiguration,
-            AppError::Internal(_) => ErrorCategory::InternalError,
-            AppError::Timeout(_) => ErrorCategory::InternalError,
-            // Default for all other variants
-            _ => ErrorCategory::InternalError,
+            AppError::Search { category, .. } => *category,
+            AppError::Archive { category, .. } => *category,
+            AppError::Validation { category, .. } => *category,
+            AppError::Security { category, .. } => *category,
+            AppError::NotFound { category, .. } => *category,
+            AppError::InvalidPath { category, .. } => *category,
+            AppError::Encoding { category, .. } => *category,
+            AppError::QueryExecution { category, .. } => *category,
+            AppError::FileWatcher { category, .. } => *category,
+            AppError::IndexError { category, .. } => *category,
+            AppError::PatternError { category, .. } => *category,
+            AppError::DatabaseError { category, .. } => *category,
+            AppError::Config { category, .. } => *category,
+            AppError::Network { category, .. } => *category,
+            AppError::Internal { category, .. } => *category,
+            AppError::ResourceCleanup { category, .. } => *category,
+            AppError::Concurrency { category, .. } => *category,
+            AppError::Parse { category, .. } => *category,
+            AppError::Timeout { category, .. } => *category,
+            AppError::IoDetailed { category, .. } => *category,
         }
     }
 
@@ -237,11 +249,21 @@ impl AppError {
     pub fn with_context(self, context: impl Into<String>) -> Self {
         let context = context.into();
         match self {
-            AppError::Search { _message, _source } => AppError::Search {
+            AppError::Search {
+                category,
+                _message,
+                _source,
+            } => AppError::Search {
+                category,
                 _message: format!("{}: {}", context, _message),
                 _source,
             },
-            AppError::Archive { _message, _path } => AppError::Archive {
+            AppError::Archive {
+                category,
+                _message,
+                _path,
+            } => AppError::Archive {
+                category,
                 _message: format!("{}: {}", context, _message),
                 _path,
             },
@@ -249,59 +271,366 @@ impl AppError {
         }
     }
 
-    /**
-     * 创建搜索错误
-     */
+    // ========================================================================
+    // Convenience constructors — default to ErrorCategory::InternalError.
+    // Use the `_with_category` variants when a more specific category is
+    // warranted at the call site.
+    // ========================================================================
+
+    /// 创建搜索错误
     pub fn search_error(message: impl Into<String>) -> Self {
         AppError::Search {
+            category: ErrorCategory::InternalError,
             _message: message.into(),
             _source: None,
         }
     }
 
-    /**
-     * 创建归档错误
-     */
+    /// 创建归档错误
     pub fn archive_error(message: impl Into<String>, path: Option<PathBuf>) -> Self {
         AppError::Archive {
+            category: ErrorCategory::InternalError,
             _message: message.into(),
             _path: path,
         }
     }
 
-    /**
-     * 创建验证错误
-     */
+    /// 创建归档错误（显式分类）
+    pub fn archive_error_with(
+        message: impl Into<String>,
+        path: Option<PathBuf>,
+        category: ErrorCategory,
+    ) -> Self {
+        AppError::Archive {
+            category,
+            _message: message.into(),
+            _path: path,
+        }
+    }
+
+    /// 创建验证错误
     pub fn validation_error(message: impl Into<String>) -> Self {
-        AppError::Validation(message.into())
+        AppError::Validation {
+            category: ErrorCategory::InternalError,
+            message: message.into(),
+        }
     }
 
-    /**
-     * 创建未找到错误
-     */
+    /// 创建验证错误（显式分类）
+    pub fn validation_error_with(
+        message: impl Into<String>,
+        category: ErrorCategory,
+    ) -> Self {
+        AppError::Validation {
+            category,
+            message: message.into(),
+        }
+    }
+
+    /// 创建安全问题错误
+    pub fn security_error(message: impl Into<String>) -> Self {
+        AppError::Security {
+            category: ErrorCategory::ZipBombDetected,
+            message: message.into(),
+        }
+    }
+
+    /// 创建安全问题错误（显式分类）
+    pub fn security_error_with(
+        message: impl Into<String>,
+        category: ErrorCategory,
+    ) -> Self {
+        AppError::Security {
+            category,
+            message: message.into(),
+        }
+    }
+
+    /// 创建未找到错误
     pub fn not_found(message: impl Into<String>) -> Self {
-        AppError::NotFound(message.into())
+        AppError::NotFound {
+            category: ErrorCategory::InternalError,
+            message: message.into(),
+        }
     }
 
-    /**
-     * 创建模式错误
-     */
+    /// 创建未找到错误（显式分类）
+    pub fn not_found_with(message: impl Into<String>, category: ErrorCategory) -> Self {
+        AppError::NotFound {
+            category,
+            message: message.into(),
+        }
+    }
+
+    /// 创建无效路径错误
+    pub fn invalid_path(message: impl Into<String>) -> Self {
+        AppError::InvalidPath {
+            category: ErrorCategory::InternalError,
+            message: message.into(),
+        }
+    }
+
+    /// 创建无效路径错误（显式分类）
+    pub fn invalid_path_with(
+        message: impl Into<String>,
+        category: ErrorCategory,
+    ) -> Self {
+        AppError::InvalidPath {
+            category,
+            message: message.into(),
+        }
+    }
+
+    /// 创建编码错误
+    pub fn encoding_error(message: impl Into<String>) -> Self {
+        AppError::Encoding {
+            category: ErrorCategory::InternalError,
+            message: message.into(),
+        }
+    }
+
+    /// 创建编码错误（显式分类）
+    pub fn encoding_error_with(
+        message: impl Into<String>,
+        category: ErrorCategory,
+    ) -> Self {
+        AppError::Encoding {
+            category,
+            message: message.into(),
+        }
+    }
+
+    /// 创建查询执行错误
+    pub fn query_execution_error(message: impl Into<String>) -> Self {
+        AppError::QueryExecution {
+            category: ErrorCategory::InternalError,
+            message: message.into(),
+        }
+    }
+
+    /// 创建查询执行错误（显式分类）
+    pub fn query_execution_error_with(
+        message: impl Into<String>,
+        category: ErrorCategory,
+    ) -> Self {
+        AppError::QueryExecution {
+            category,
+            message: message.into(),
+        }
+    }
+
+    /// 创建文件监控错误
+    pub fn file_watcher_error(message: impl Into<String>) -> Self {
+        AppError::FileWatcher {
+            category: ErrorCategory::InternalError,
+            message: message.into(),
+        }
+    }
+
+    /// 创建文件监控错误（显式分类）
+    pub fn file_watcher_error_with(
+        message: impl Into<String>,
+        category: ErrorCategory,
+    ) -> Self {
+        AppError::FileWatcher {
+            category,
+            message: message.into(),
+        }
+    }
+
+    /// 创建索引错误
+    pub fn index_error(message: impl Into<String>) -> Self {
+        AppError::IndexError {
+            category: ErrorCategory::InternalError,
+            message: message.into(),
+        }
+    }
+
+    /// 创建索引错误（显式分类）
+    pub fn index_error_with(
+        message: impl Into<String>,
+        category: ErrorCategory,
+    ) -> Self {
+        AppError::IndexError {
+            category,
+            message: message.into(),
+        }
+    }
+
+    /// 创建模式错误
     pub fn pattern_error(message: impl Into<String>) -> Self {
-        AppError::PatternError(message.into())
+        AppError::PatternError {
+            category: ErrorCategory::InternalError,
+            message: message.into(),
+        }
     }
 
-    /**
-     * 创建数据库错误
-     */
+    /// 创建模式错误（显式分类）
+    pub fn pattern_error_with(
+        message: impl Into<String>,
+        category: ErrorCategory,
+    ) -> Self {
+        AppError::PatternError {
+            category,
+            message: message.into(),
+        }
+    }
+
+    /// 创建数据库错误
     pub fn database_error(message: impl Into<String>) -> Self {
-        AppError::DatabaseError(message.into())
+        AppError::DatabaseError {
+            category: ErrorCategory::InternalError,
+            message: message.into(),
+        }
     }
 
-    /**
-     * 创建详细的IO错误，自动脱敏路径信息
-     *
-     * 安全考虑：只保留文件名，不暴露完整路径
-     */
+    /// 创建数据库错误（显式分类）
+    pub fn database_error_with(
+        message: impl Into<String>,
+        category: ErrorCategory,
+    ) -> Self {
+        AppError::DatabaseError {
+            category,
+            message: message.into(),
+        }
+    }
+
+    /// 创建配置错误
+    pub fn config_error(message: impl Into<String>) -> Self {
+        AppError::Config {
+            category: ErrorCategory::InvalidConfiguration,
+            message: message.into(),
+        }
+    }
+
+    /// 创建配置错误（显式分类）
+    pub fn config_error_with(
+        message: impl Into<String>,
+        category: ErrorCategory,
+    ) -> Self {
+        AppError::Config {
+            category,
+            message: message.into(),
+        }
+    }
+
+    /// 创建网络错误
+    pub fn network_error(message: impl Into<String>) -> Self {
+        AppError::Network {
+            category: ErrorCategory::InternalError,
+            message: message.into(),
+        }
+    }
+
+    /// 创建网络错误（显式分类）
+    pub fn network_error_with(
+        message: impl Into<String>,
+        category: ErrorCategory,
+    ) -> Self {
+        AppError::Network {
+            category,
+            message: message.into(),
+        }
+    }
+
+    /// 创建内部错误
+    pub fn internal_error(message: impl Into<String>) -> Self {
+        AppError::Internal {
+            category: ErrorCategory::InternalError,
+            message: message.into(),
+        }
+    }
+
+    /// 创建内部错误（显式分类）
+    pub fn internal_error_with(
+        message: impl Into<String>,
+        category: ErrorCategory,
+    ) -> Self {
+        AppError::Internal {
+            category,
+            message: message.into(),
+        }
+    }
+
+    /// 创建资源清理错误
+    pub fn resource_cleanup_error(message: impl Into<String>) -> Self {
+        AppError::ResourceCleanup {
+            category: ErrorCategory::InternalError,
+            message: message.into(),
+        }
+    }
+
+    /// 创建资源清理错误（显式分类）
+    pub fn resource_cleanup_error_with(
+        message: impl Into<String>,
+        category: ErrorCategory,
+    ) -> Self {
+        AppError::ResourceCleanup {
+            category,
+            message: message.into(),
+        }
+    }
+
+    /// 创建并发错误
+    pub fn concurrency_error(message: impl Into<String>) -> Self {
+        AppError::Concurrency {
+            category: ErrorCategory::InternalError,
+            message: message.into(),
+        }
+    }
+
+    /// 创建并发错误（显式分类）
+    pub fn concurrency_error_with(
+        message: impl Into<String>,
+        category: ErrorCategory,
+    ) -> Self {
+        AppError::Concurrency {
+            category,
+            message: message.into(),
+        }
+    }
+
+    /// 创建解析错误
+    pub fn parse_error(message: impl Into<String>) -> Self {
+        AppError::Parse {
+            category: ErrorCategory::InternalError,
+            message: message.into(),
+        }
+    }
+
+    /// 创建解析错误（显式分类）
+    pub fn parse_error_with(
+        message: impl Into<String>,
+        category: ErrorCategory,
+    ) -> Self {
+        AppError::Parse {
+            category,
+            message: message.into(),
+        }
+    }
+
+    /// 创建超时错误
+    pub fn timeout_error(message: impl Into<String>) -> Self {
+        AppError::Timeout {
+            category: ErrorCategory::InternalError,
+            message: message.into(),
+        }
+    }
+
+    /// 创建超时错误（显式分类）
+    pub fn timeout_error_with(
+        message: impl Into<String>,
+        category: ErrorCategory,
+    ) -> Self {
+        AppError::Timeout {
+            category,
+            message: message.into(),
+        }
+    }
+
+    /// 创建详细的IO错误，自动脱敏路径信息
+    ///
+    /// 安全考虑：只保留文件名，不暴露完整路径
     pub fn io_error(message: impl Into<String>, path: Option<PathBuf>) -> Self {
         let message = message.into();
         // 路径脱敏：只保留文件名，避免泄漏系统目录结构
@@ -312,6 +641,27 @@ impl AppError {
         });
 
         AppError::IoDetailed {
+            category: ErrorCategory::InternalError,
+            message,
+            path: sanitized_path,
+        }
+    }
+
+    /// 创建详细的IO错误（显式分类）
+    pub fn io_error_with(
+        message: impl Into<String>,
+        path: Option<PathBuf>,
+        category: ErrorCategory,
+    ) -> Self {
+        let message = message.into();
+        let sanitized_path = path.map(|p| {
+            p.file_name()
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("[REDACTED]"))
+        });
+
+        AppError::IoDetailed {
+            category,
             message,
             path: sanitized_path,
         }
@@ -428,23 +778,23 @@ impl AppError {
             AppError::Io(_) => "IO_ERROR".to_string(),
             AppError::Search { .. } => "SEARCH_ERROR".to_string(),
             AppError::Archive { .. } => "ARCHIVE_ERROR".to_string(),
-            AppError::Validation(_) => "VALIDATION_ERROR".to_string(),
-            AppError::Security(_) => "SECURITY_ERROR".to_string(),
-            AppError::NotFound(_) => "NOT_FOUND".to_string(),
-            AppError::InvalidPath(_) => "INVALID_PATH".to_string(),
-            AppError::Encoding(_) => "ENCODING_ERROR".to_string(),
-            AppError::QueryExecution(_) => "QUERY_EXECUTION_ERROR".to_string(),
-            AppError::FileWatcher(_) => "FILE_WATCHER_ERROR".to_string(),
-            AppError::IndexError(_) => "INDEX_ERROR".to_string(),
-            AppError::PatternError(_) => "PATTERN_ERROR".to_string(),
-            AppError::DatabaseError(_) => "DATABASE_ERROR".to_string(),
-            AppError::Config(_) => "CONFIG_ERROR".to_string(),
-            AppError::Network(_) => "NETWORK_ERROR".to_string(),
-            AppError::Internal(_) => "INTERNAL_ERROR".to_string(),
-            AppError::ResourceCleanup(_) => "RESOURCE_CLEANUP_ERROR".to_string(),
-            AppError::Concurrency(_) => "CONCURRENCY_ERROR".to_string(),
-            AppError::Parse(_) => "PARSE_ERROR".to_string(),
-            AppError::Timeout(_) => "TIMEOUT_ERROR".to_string(),
+            AppError::Validation { .. } => "VALIDATION_ERROR".to_string(),
+            AppError::Security { .. } => "SECURITY_ERROR".to_string(),
+            AppError::NotFound { .. } => "NOT_FOUND".to_string(),
+            AppError::InvalidPath { .. } => "INVALID_PATH".to_string(),
+            AppError::Encoding { .. } => "ENCODING_ERROR".to_string(),
+            AppError::QueryExecution { .. } => "QUERY_EXECUTION_ERROR".to_string(),
+            AppError::FileWatcher { .. } => "FILE_WATCHER_ERROR".to_string(),
+            AppError::IndexError { .. } => "INDEX_ERROR".to_string(),
+            AppError::PatternError { .. } => "PATTERN_ERROR".to_string(),
+            AppError::DatabaseError { .. } => "DATABASE_ERROR".to_string(),
+            AppError::Config { .. } => "CONFIG_ERROR".to_string(),
+            AppError::Network { .. } => "NETWORK_ERROR".to_string(),
+            AppError::Internal { .. } => "INTERNAL_ERROR".to_string(),
+            AppError::ResourceCleanup { .. } => "RESOURCE_CLEANUP_ERROR".to_string(),
+            AppError::Concurrency { .. } => "CONCURRENCY_ERROR".to_string(),
+            AppError::Parse { .. } => "PARSE_ERROR".to_string(),
+            AppError::Timeout { .. } => "TIMEOUT_ERROR".to_string(),
             AppError::IoDetailed { .. } => "IO_ERROR".to_string(),
         }
     }
@@ -458,15 +808,17 @@ impl AppError {
             AppError::Archive { .. } => {
                 Some("Ensure the archive file is not corrupted and is a supported format")
             }
-            AppError::Validation(_) => {
+            AppError::Validation { .. } => {
                 Some("Check that your input meets the required format and constraints")
             }
-            AppError::InvalidPath(_) => Some("Ensure the path is valid and accessible"),
-            AppError::QueryExecution(_) => {
+            AppError::InvalidPath { .. } => Some("Ensure the path is valid and accessible"),
+            AppError::QueryExecution { .. } => {
                 Some("Try simplifying your query or checking the syntax")
             }
-            AppError::DatabaseError(_) => Some("Check database connection and schema integrity"),
-            AppError::PatternError(_) => Some("Check your regex pattern syntax"),
+            AppError::DatabaseError { .. } => {
+                Some("Check database connection and schema integrity")
+            }
+            AppError::PatternError { .. } => Some("Check your regex pattern syntax"),
             _ => None,
         }
     }
@@ -490,7 +842,7 @@ mod tests {
         assert!(matches!(error, AppError::Search { .. }));
 
         let error = AppError::validation_error("Invalid input");
-        assert!(matches!(error, AppError::Validation(_)));
+        assert!(matches!(error, AppError::Validation { .. }));
     }
 
     #[test]
@@ -549,12 +901,47 @@ mod tests {
     }
 
     #[test]
+    fn test_error_category_is_stored() {
+        // Verify that the category is stored at construction time,
+        // not derived from display strings.
+        let err = AppError::validation_error_with(
+            "some random message without any keywords",
+            ErrorCategory::UnsupportedFormat,
+        );
+        assert_eq!(err.category(), ErrorCategory::UnsupportedFormat);
+
+        let err = AppError::validation_error("some random message without any keywords");
+        assert_eq!(err.category(), ErrorCategory::InternalError);
+
+        let err = AppError::config_error("bad config");
+        assert_eq!(err.category(), ErrorCategory::InvalidConfiguration);
+
+        let err = AppError::security_error("zip bomb detected");
+        assert_eq!(err.category(), ErrorCategory::ZipBombDetected);
+    }
+
+    #[test]
+    fn test_io_error_category_still_uses_errorkind() {
+        let io_err =
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "access denied");
+        let app_error: AppError = io_err.into();
+        assert_eq!(app_error.category(), ErrorCategory::PermissionDenied);
+
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
+        let app_error: AppError = io_err.into();
+        assert_eq!(app_error.category(), ErrorCategory::InternalError);
+    }
+
+    #[test]
     fn test_io_error_path_sanitization() {
         // 测试完整路径被脱敏为文件名
         let full_path = PathBuf::from("/home/user/secret/project/file.log");
         let error = AppError::io_error("File not found", Some(full_path));
 
-        if let AppError::IoDetailed { message, path } = error {
+        if let AppError::IoDetailed {
+            message, path, ..
+        } = error
+        {
             assert_eq!(message, "File not found");
             assert_eq!(path, Some(PathBuf::from("file.log")));
         } else {
@@ -581,7 +968,10 @@ mod tests {
         // 测试无路径情况
         let error = AppError::io_error("Generic error", None);
 
-        if let AppError::IoDetailed { message, path } = error {
+        if let AppError::IoDetailed {
+            message, path, ..
+        } = error
+        {
             assert_eq!(message, "Generic error");
             assert_eq!(path, None);
         } else {
@@ -620,8 +1010,8 @@ mod command_error_tests {
 
     #[test]
     fn test_command_error_with_help() {
-        let error =
-            CommandError::new("CUSTOM_ERROR", "Something went wrong").with_help("Try again later");
+        let error = CommandError::new("CUSTOM_ERROR", "Something went wrong")
+            .with_help("Try again later");
 
         assert_eq!(error.help, Some("Try again later".to_string()));
     }
@@ -629,8 +1019,8 @@ mod command_error_tests {
     #[test]
     fn test_command_error_with_details() {
         let details = serde_json::json!({"attempt": 3, "max_retries": 5});
-        let error =
-            CommandError::new("CUSTOM_ERROR", "Something went wrong").with_details(details.clone());
+        let error = CommandError::new("CUSTOM_ERROR", "Something went wrong")
+            .with_details(details.clone());
 
         assert_eq!(error.details, Some(details));
     }

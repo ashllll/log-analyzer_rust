@@ -159,7 +159,7 @@ impl SearchService for WorkspaceServiceImpl {
     async fn search(
         &self,
         query: SearchQuery,
-        raw_terms: Vec<String>,
+        _raw_terms: Vec<String>,
         filters: SearchFilters,
         max_results: usize,
         cancellation_token: CancellationToken,
@@ -204,7 +204,6 @@ impl SearchService for WorkspaceServiceImpl {
                 .execute(
                     &workspace_id,
                     &query,
-                    raw_terms,
                     &filters,
                     max_results,
                     search_id_clone.clone(),

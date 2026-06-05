@@ -267,7 +267,7 @@ mod tests {
         assert!(result.is_err(), "Expected validation error for empty query");
 
         let error = result.unwrap_err();
-        if let AppError::Validation(msg) = &error {
+        if let AppError::Validation { message: msg, .. } = &error {
             assert!(
                 msg.contains("empty"),
                 "Expected error message containing 'empty', got: {}",
@@ -300,7 +300,7 @@ mod tests {
         );
 
         let error = result.unwrap_err();
-        if let AppError::Validation(msg) = &error {
+        if let AppError::Validation { message: msg, .. } = &error {
             assert!(
                 msg.contains("No enabled terms"),
                 "Expected error message containing 'No enabled terms', got: {}",
@@ -345,7 +345,7 @@ mod tests {
         );
 
         let error = result.unwrap_err();
-        if let AppError::Validation(msg) = &error {
+        if let AppError::Validation { message: msg, .. } = &error {
             assert!(
                 msg.contains("empty value"),
                 "Expected error message containing 'empty value', got: {}",
@@ -381,7 +381,7 @@ mod tests {
         );
 
         let error = result.unwrap_err();
-        if let AppError::Validation(msg) = &error {
+        if let AppError::Validation { message: msg, .. } = &error {
             assert!(
                 msg.contains("too long"),
                 "Expected error message containing 'too long', got: {}",
@@ -426,7 +426,7 @@ mod tests {
         );
 
         let error = result.unwrap_err();
-        if let AppError::Validation(msg) = &error {
+        if let AppError::Validation { message: msg, .. } = &error {
             assert!(
                 msg.contains("invalid regex"),
                 "Expected error message containing 'invalid regex', got: {}",

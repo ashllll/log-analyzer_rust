@@ -158,7 +158,7 @@ impl ArchiveHandler for SevenZHandler {
         .await
         .map_err(|e| {
             if e.is_panic() {
-                AppError::Internal(format!("7z handler panicked: {}", e))
+                AppError::internal_error(format!("7z handler panicked: {}", e))
             } else {
                 AppError::archive_error(e.to_string(), None)
             }

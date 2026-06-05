@@ -48,21 +48,22 @@ pub(crate) fn load_workspace_search_config(
 /// 确保 SearchEngineManager 已初始化。
 ///
 /// 优先从已有的 workspace service 获取，否则新建。
-pub(crate) fn ensure_search_engine_manager(
-    app: &AppHandle,
+/// 接受预加载的 SearchConfig 以避免重复读取 config.json。
+pub(crate) fn ensure_search_engine_manager_with_config(
+    _app: &AppHandle,
     state: &AppState,
     workspace_id: &str,
     workspace_dir: &Path,
+    search_config: &la_core::models::config::SearchConfig,
 ) -> Result<Arc<la_search::SearchEngineManager>, String> {
     if let Some(service) = state.get_workspace_service(workspace_id) {
         return Ok(Arc::clone(service.search_engine()));
     }
 
-    let app_search_config = load_workspace_search_config(app);
     let index_path = workspace_dir.join(SEARCH_INDEX_DIR_NAME);
     let manager = Arc::new(
         la_search::SearchEngineManager::with_app_config(
-            app_search_config,
+            search_config.clone(),
             index_path,
             SEARCH_INDEX_WRITER_HEAP_BYTES,
         )
@@ -99,14 +100,17 @@ pub(crate) async fn get_or_create_workspace_service(
             .map_err(|e| format!("Failed to open metadata store: {e}"))?,
     );
 
-    let search_manager =
-        ensure_search_engine_manager(app, state, workspace_id, workspace_dir)?;
+    // 缓存配置避免重复读取 config.json（ensure_search_engine_manager 内部也读了一次）
+    let search_config = load_workspace_search_config(app);
+    let search_manager = ensure_search_engine_manager_with_config(
+        app, state, workspace_id, workspace_dir, &search_config,
+    )?;
 
     let disk_result_store = state
         .get_disk_result_store()
         .ok_or("Disk result store not initialized")?;
     let thread_pool = state.get_search_thread_pool();
-    let regex_cache_size = load_workspace_search_config(app).regex_cache_size.max(1);
+    let regex_cache_size = search_config.regex_cache_size.max(1);
 
     let service = Arc::new(WorkspaceServiceImpl::new(
         workspace_id.to_string(),

@@ -50,14 +50,13 @@ impl SearchUseCase {
         &self,
         workspace_id: &str,
         query: &la_core::models::SearchQuery,
-        _raw_terms: Vec<String>,
         filters: &la_core::models::SearchFilters,
         max_results: usize,
         search_id: String,
         cancellation_token: tokio_util::sync::CancellationToken,
     ) -> Result<()> {
         let compiled_filters = CompiledSearchFilters::compile(filters)
-            .map_err(|e| la_core::error::AppError::Validation(e.message))?;
+            .map_err(|e| la_core::error::AppError::validation_error(e.message))?;
 
         // 1. Get candidate files
         let files = self
@@ -89,8 +88,6 @@ impl SearchUseCase {
         let query_owned = query.clone();
         let filters_owned = filters.clone();
         let files_owned = files.clone();
-        let results = Arc::clone(&self.results);
-        let events = Arc::clone(&self.events);
 
         tokio::task::spawn_blocking(move || {
             let outcome = executor.run(
@@ -102,9 +99,9 @@ impl SearchUseCase {
                 cancellation_token,
             );
 
-            let _ = results.complete_session(&sid);
+            let _ = executor.results.complete_session(&sid);
             tokio::spawn(async move {
-                events
+                executor.events
                     .emit_search_complete(
                         &sid,
                         la_core::domain::event::SearchSummary {

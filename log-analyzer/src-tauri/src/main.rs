@@ -12,7 +12,8 @@ use log_analyzer::commands::{
     validation::*, virtual_tree::*, watch::*, workspace::*,
 };
 use log_analyzer::models::AppState;
-use log_analyzer::task_manager::TaskManager;
+use log_analyzer::task_manager::{TaskManager, TauriEventEmitter};
+use std::sync::Arc;
 use tauri::Manager;
 use tracing::info;
 
@@ -102,7 +103,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .unwrap_or_default();
 
             // 初始化 TaskManager
-            let task_manager = TaskManager::new(app.handle().clone(), task_manager_config)?;
+            let event_publisher = Arc::new(TauriEventEmitter::new(app.handle().clone()));
+            let task_manager = TaskManager::new(event_publisher, task_manager_config)?;
 
             // 设置到 AppState
             app_state.init_task_manager(task_manager);

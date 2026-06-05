@@ -34,11 +34,19 @@ use la_core::models::config::AppConfigLoader;
 use tauri::{AppHandle, Manager, State};
 use tracing::{error, info, warn};
 
+use crate::application::workspace_service::WorkspaceServiceRef;
 use crate::commands::import::import_folder;
 use crate::infrastructure::workspace_service_factory::get_or_create_workspace_service;
 use crate::models::AppState;
 use crate::utils::validation::validate_workspace_id;
 use crate::utils::workspace_paths::resolve_workspace_dir;
+
+/// 关闭工作区数据库连接（MetadataStore + SearchEngine）。
+/// 消除 workspace.rs 和 main.rs 之间的重复 close 模式。
+async fn close_workspace_databases(service: &WorkspaceServiceRef) {
+    service.metadata_store().close().await;
+    service.search_engine().close().await;
+}
 use uuid::Uuid;
 
 /// Workspace load response
@@ -406,10 +414,8 @@ async fn cleanup_workspace_resources(
 
     // P4 迁移：先关闭资源，再统一清理（workspace_services 替代分散的旧 HashMap）
     if let Some(service) = state.get_workspace_service(workspace_id) {
-        service.metadata_store().close().await;
-        info!(workspace_id = %workspace_id, "MetadataStore closed");
-        service.search_engine().close().await;
-        info!(workspace_id = %workspace_id, "SearchEngineManager::close() completed");
+        close_workspace_databases(&service).await;
+        info!(workspace_id = %workspace_id, "Databases closed");
     }
     state.remove_workspace_service(workspace_id);
     info!("Step 3 completed: Workspace runtime resources removed");

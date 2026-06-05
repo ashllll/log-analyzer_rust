@@ -1,5 +1,4 @@
 use crate::services::regex_engine::{EngineType, RegexEngine};
-use crate::services::traits::{PlanResult, QueryPlanning};
 use la_core::error::{AppError, Result};
 use la_core::models::search::*;
 use moka::sync::Cache;
@@ -410,55 +409,6 @@ pub struct CompiledEngine {
     pub engine: Arc<RegexEngine>,
     pub term_id: String,
     pub priority: u32,
-}
-
-/// Adapter struct for implementing QueryPlanning trait
-///
-/// This wrapper uses interior mutability to allow the trait's immutable
-/// `plan` method to work with the planner's mutable build_plan method.
-pub struct QueryPlannerAdapter {
-    inner: parking_lot::Mutex<QueryPlanner>,
-}
-
-impl QueryPlannerAdapter {
-    /// Create a new adapter with default capacity
-    pub fn new() -> Self {
-        Self {
-            inner: parking_lot::Mutex::new(QueryPlanner::with_default_capacity()),
-        }
-    }
-
-    /// Create a new adapter with specified cache capacity
-    pub fn with_capacity(max_capacity: usize) -> Self {
-        Self {
-            inner: parking_lot::Mutex::new(QueryPlanner::new(max_capacity)),
-        }
-    }
-}
-
-impl Default for QueryPlannerAdapter {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl QueryPlanning for QueryPlannerAdapter {
-    fn plan(&self, query: &SearchQuery) -> Result<PlanResult> {
-        let mut planner = self.inner.lock();
-        let plan = planner.build_plan(query)?;
-        let steps = plan
-            .terms
-            .iter()
-            .map(|t| format!("Search for '{}'", t.value))
-            .collect();
-        let cost = plan.term_count as u32 * 10; // Simple cost estimation
-        Ok(PlanResult::new(steps, cost))
-    }
-
-    fn build_execution_plan(&self, query: &SearchQuery) -> Result<ExecutionPlan> {
-        let mut planner = self.inner.lock();
-        planner.build_plan(query)
-    }
 }
 
 #[cfg(test)]
