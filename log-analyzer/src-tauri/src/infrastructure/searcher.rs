@@ -12,7 +12,7 @@ use la_core::domain::{ExecutionPlan, LogSearcher};
 use la_core::error::Result;
 use la_core::models::{LogEntry, SearchFilters, SearchQuery};
 
-use crate::application::search_filters::{CompiledSearchFilters, ParsedLineMetadata};
+use crate::services::search_filters::{CompiledSearchFilters, ParsedLineMetadata};
 use crate::services::QueryPlanBuilder;
 
 /// Domain LogSearcher implementation using the production regex/query engine.

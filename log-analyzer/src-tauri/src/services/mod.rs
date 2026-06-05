@@ -3,6 +3,7 @@ pub mod query_executor;
 pub mod query_planner;
 pub mod query_validator;
 pub mod regex_engine;
+pub mod search_filters;
 pub mod traits;
 
 #[cfg(test)]

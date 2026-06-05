@@ -13,7 +13,7 @@ use la_core::domain::{LogFileRepository, LogSearcher, SearchResultRepository};
 use la_core::error::Result;
 
 use crate::application::search_executor::SearchExecutor;
-use crate::application::search_filters::CompiledSearchFilters;
+use crate::services::search_filters::CompiledSearchFilters;
 
 /// The application use case for executing a log search.
 pub struct SearchUseCase {
