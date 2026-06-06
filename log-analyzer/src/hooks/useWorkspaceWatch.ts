@@ -1,48 +1,40 @@
-import { useCallback, useState } from 'react';
+import { useCallback } from 'react';
 import { useWorkspaceStore, type Workspace } from '../stores/workspaceStore';
 import { logger } from '../utils/logger';
 import { api } from '../services/api';
-import { getFullErrorMessage } from '../services/errors';
-import { useToast } from './useToast';
-
-export interface UseWorkspaceWatchReturn {
-  toggleWatch: (workspace: Workspace) => Promise<void>;
-  isLoading: boolean;
-}
+import { useAsyncAction } from './useAsyncAction';
 
 /**
- * 工作区监听Hook
- * 封装工作区文件监听切换操作
+ * 工作区文件监听Hook
+ * 封装文件监听启动/停止操作
  */
-export const useWorkspaceWatch = (): UseWorkspaceWatchReturn => {
-  const { showToast: addToast } = useToast();
+export const useWorkspaceWatch = () => {
+  const { execute, isLoading } = useAsyncAction();
   const updateWorkspace = useWorkspaceStore((state) => state.updateWorkspace);
 
-  const [isLoading, setIsLoading] = useState(false);
-
   const toggleWatch = useCallback(async (workspace: Workspace) => {
-    setIsLoading(true);
-
-    try {
-      if (workspace.watching) {
-        await api.stopWatch(workspace.id);
-        updateWorkspace(workspace.id, { watching: false });
-        addToast('info', '停止监听');
-      } else {
-        await api.startWatch({
-          workspaceId: workspace.id,
-          autoSearch: false
-        });
-        updateWorkspace(workspace.id, { watching: true });
-        addToast('info', '开始监听');
-      }
-    } catch (e) {
-      logger.error('toggleWatch error:', e);
-      addToast('error', `监听操作失败: ${getFullErrorMessage(e)}`);
-    } finally {
-      setIsLoading(false);
+    if (workspace.watching) {
+      await execute(
+        () => api.stopWatch(workspace.id),
+        {
+          successMessage: '停止监听',
+          errorPrefix: '停止监听失败',
+          onSuccess: () => updateWorkspace(workspace.id, { watching: false }),
+          onError: (e) => { logger.error('toggleWatch error:', e); },
+        },
+      );
+    } else {
+      await execute(
+        () => api.startWatch({ workspaceId: workspace.id, autoSearch: false }),
+        {
+          successMessage: '开始监听',
+          errorPrefix: '开始监听失败',
+          onSuccess: () => updateWorkspace(workspace.id, { watching: true }),
+          onError: (e) => { logger.error('toggleWatch error:', e); },
+        },
+      );
     }
-  }, [addToast, updateWorkspace]);
+  }, [execute, updateWorkspace]);
 
   return {
     toggleWatch,

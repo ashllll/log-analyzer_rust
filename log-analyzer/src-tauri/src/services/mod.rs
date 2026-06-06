@@ -4,7 +4,6 @@ pub mod query_planner;
 pub mod query_validator;
 pub mod regex_engine;
 pub mod search_filters;
-pub mod traits;
 
 #[cfg(test)]
 mod error_handling_property_tests;

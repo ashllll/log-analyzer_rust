@@ -1,8 +1,7 @@
-import { useCallback, useState } from 'react';
+import { useCallback } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { logger } from '../utils/logger';
-import { getFullErrorMessage } from '../services/errors';
-import { useToast } from './useToast';
+import { useAsyncAction } from './useAsyncAction';
 import { useImportFolderMutation } from './useServerQueries';
 
 export interface UseWorkspaceImportReturn {
@@ -17,10 +16,8 @@ export interface UseWorkspaceImportReturn {
  * 封装工作区导入相关操作
  */
 export const useWorkspaceImport = (): UseWorkspaceImportReturn => {
-  const { showToast: addToast } = useToast();
+  const { execute, isLoading: actionLoading } = useAsyncAction();
   const { mutateAsync: importWorkspace, isPending } = useImportFolderMutation();
-
-  const [isLoading, setIsLoading] = useState(false);
 
   const importPath = useCallback(async (pathStr: string) => {
     if (import.meta.env.DEV) logger.debug('importPath called with:', pathStr);
@@ -35,54 +32,49 @@ export const useWorkspaceImport = (): UseWorkspaceImportReturn => {
 
   const importFolder = useCallback(async () => {
     if (import.meta.env.DEV) logger.debug('importFolder called');
-    setIsLoading(true);
-    try {
-      const selected = await open({
-        directory: true,
-        multiple: false
-      });
 
-      if (import.meta.env.DEV) logger.debug('Selected folder:', selected);
-      if (!selected) return;
-
-      await importPath(selected as string);
-    } catch (e) {
-      logger.error('importFolder error:', e);
-      addToast('error', `导入失败: ${getFullErrorMessage(e)}`);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [addToast, importPath]);
+    await execute(
+      async () => {
+        const selected = await open({ directory: true, multiple: false });
+        if (import.meta.env.DEV) logger.debug('Selected folder:', selected);
+        if (!selected) return;
+        await importPath(selected as string);
+      },
+      {
+        errorPrefix: '导入失败',
+        onError: (e) => { logger.error('importFolder error:', e); },
+      },
+    );
+  }, [execute, importPath]);
 
   const importFile = useCallback(async () => {
     if (import.meta.env.DEV) logger.debug('importFile called');
-    setIsLoading(true);
-    try {
-      const selected = await open({
-        directory: false,
-        multiple: false,
-        filters: [{
-          name: 'Log Files & Archives',
-          extensions: ['log', 'txt', 'gz', 'zip', 'tar', 'tgz', 'rar', '*']
-        }]
-      });
 
-      if (import.meta.env.DEV) logger.debug('Selected file:', selected);
-      if (!selected) return;
-
-      await importPath(selected as string);
-    } catch (e) {
-      logger.error('importFile error:', e);
-      addToast('error', `导入失败: ${getFullErrorMessage(e)}`);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [addToast, importPath]);
+    await execute(
+      async () => {
+        const selected = await open({
+          directory: false,
+          multiple: false,
+          filters: [{
+            name: 'Log Files & Archives',
+            extensions: ['log', 'txt', 'gz', 'zip', 'tar', 'tgz', 'rar', '*']
+          }]
+        });
+        if (import.meta.env.DEV) logger.debug('Selected file:', selected);
+        if (!selected) return;
+        await importPath(selected as string);
+      },
+      {
+        errorPrefix: '导入失败',
+        onError: (e) => { logger.error('importFile error:', e); },
+      },
+    );
+  }, [execute, importPath]);
 
   return {
     importPath,
     importFolder,
     importFile,
-    isLoading: isLoading || isPending,
+    isLoading: actionLoading || isPending,
   };
 };

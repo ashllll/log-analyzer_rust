@@ -2,7 +2,7 @@ import { useCallback } from 'react';
 import { useShallow } from 'zustand/shallow';
 import { useTaskStore } from '../stores/taskStore';
 import { api } from '../services/api';
-import { getFullErrorMessage } from '../services/errors';
+import { useAsyncAction } from './useAsyncAction';
 import { useToast } from './useToast';
 
 /**
@@ -11,15 +11,16 @@ import { useToast } from './useToast';
  * 注意：任务事件监听已在 appStore 中处理
  */
 export const useTaskManager = () => {
-  const { showToast: addToast } = useToast();
   const tasks = useTaskStore(useShallow((state) => state.tasks));
   const tasksLoading = useTaskStore((state) => state.loading);
   const tasksError = useTaskStore((state) => state.error);
   const deleteTaskAction = useTaskStore((state) => state.deleteTask);
   const updateTaskAction = useTaskStore((state) => state.updateTask);
+  const { showToast: addToast } = useToast();
+  const { execute } = useAsyncAction();
 
   /**
-   * 删除任务
+   * 删除任务（同步）
    */
   const deleteTask = useCallback((id: string) => {
     deleteTaskAction(id);
@@ -30,15 +31,15 @@ export const useTaskManager = () => {
    * 取消任务
    */
   const cancelTask = useCallback(async (id: string) => {
-    try {
-      await api.cancelTask(id);
-      // 更新本地状态
-      updateTaskAction(id, { status: 'STOPPED' });
-      addToast('info', '任务已取消');
-    } catch (error) {
-      addToast('error', `取消任务失败: ${getFullErrorMessage(error)}`);
-    }
-  }, [addToast, updateTaskAction]);
+    await execute(
+      () => api.cancelTask(id),
+      {
+        successMessage: '任务已取消',
+        errorPrefix: '取消任务失败',
+        onSuccess: () => updateTaskAction(id, { status: 'STOPPED' }),
+      },
+    );
+  }, [execute, updateTaskAction]);
 
   return {
     tasks,

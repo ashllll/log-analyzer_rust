@@ -6,8 +6,7 @@ use la_core::error::CommandError;
 use la_core::models::LogEntry;
 use tauri::{command, AppHandle, Manager};
 
-use crate::application::ExportUseCase;
-use crate::infrastructure::event_publisher::TauriEventPublisher;
+use crate::application::{transform_csv, transform_json};
 
 #[command]
 pub async fn export_results(
@@ -56,14 +55,11 @@ pub async fn export_results(
     }
 
     let path_str = final_path.to_string_lossy().to_string();
-    let use_case = ExportUseCase::new(std::sync::Arc::new(TauriEventPublisher {
-        app_handle: app.clone(),
-    }));
 
     tokio::task::spawn_blocking(move || -> Result<String, CommandError> {
         match format.as_str() {
             "csv" => {
-                let csv = use_case.transform_csv(&results);
+                let csv = transform_csv(&results);
                 let mut f = std::fs::File::create(&path_str)
                     .map_err(|e| CommandError::new("IO_ERROR", e.to_string()))?;
                 std::io::Write::write_all(&mut f, &[0xEFu8, 0xBB, 0xBF])
@@ -73,7 +69,7 @@ pub async fn export_results(
                 Ok(path_str)
             }
             "json" => {
-                let json = use_case.transform_json(&results);
+                let json = transform_json(&results);
                 std::fs::write(&path_str, json)
                     .map_err(|e| CommandError::new("IO_ERROR", e.to_string()))?;
                 Ok(path_str)

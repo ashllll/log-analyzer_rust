@@ -10,33 +10,27 @@
 
 use tauri::{AppHandle, State};
 
-use crate::application::workspace_service::WorkspaceServiceRef;
 use crate::models::AppState;
-use crate::utils::{validate_path_param, validate_workspace_id};
+use crate::utils::validate_path_param;
 
 /// Start watching a workspace directory for file changes.
 ///
 /// Thin glue: validates parameters, looks up the workspace service, delegates.
 #[tauri::command]
 pub async fn start_watch(
-    _app: AppHandle,
+    app: AppHandle,
     #[allow(non_snake_case)] workspaceId: String,
     path: String,
     #[allow(non_snake_case)] _autoSearch: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    validate_workspace_id(&workspaceId)?;
     validate_path_param(&path, "path")?;
 
-    // ── Look up workspace service ──
-    let workspace: WorkspaceServiceRef = state
-        .get_workspace_service(&workspaceId)
-        .ok_or_else(|| {
-            format!(
-                "Workspace {} not found. Please import or reload the workspace.",
-                workspaceId
-            )
-        })?;
+    // ── Acquire workspace service (validates ID, resolves dir, checks CAS format) ──
+    let (workspace, _workspace_dir) =
+        crate::utils::workspace_guard::require_cas_workspace(&app, &state, &workspaceId)
+            .await
+            .map_err(|e| e.to_string())?;
 
     // ── Delegate to service (watcher state lives inside the instance) ──
     workspace
@@ -50,17 +44,15 @@ pub async fn start_watch(
 /// Thin glue: looks up the workspace service, delegates.
 #[tauri::command]
 pub async fn stop_watch(
+    app: AppHandle,
     #[allow(non_snake_case)] workspaceId: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let workspace: WorkspaceServiceRef = state
-        .get_workspace_service(&workspaceId)
-        .ok_or_else(|| {
-            format!(
-                "Workspace {} not found. Please import or reload the workspace.",
-                workspaceId
-            )
-        })?;
+    // ── Acquire workspace service ──
+    let (workspace, _workspace_dir) =
+        crate::utils::workspace_guard::require_cas_workspace(&app, &state, &workspaceId)
+            .await
+            .map_err(|e| e.to_string())?;
 
     workspace
         .stop_watch()

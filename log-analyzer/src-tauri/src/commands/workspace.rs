@@ -30,13 +30,11 @@
 use std::{fs, path::Path, sync::Arc};
 
 use la_core::error::{AppError, CommandError};
-use la_core::models::config::AppConfigLoader;
 use tauri::{AppHandle, Manager, State};
 use tracing::{error, info, warn};
 
 use crate::application::workspace_service::WorkspaceServiceRef;
 use crate::commands::import::import_folder;
-use crate::infrastructure::workspace_service_factory::get_or_create_workspace_service;
 use crate::models::AppState;
 use crate::utils::validation::validate_workspace_id;
 use crate::utils::workspace_paths::resolve_workspace_dir;
@@ -74,40 +72,9 @@ pub async fn load_workspace(
     workspace_id: String,
     state: State<'_, AppState>,
 ) -> Result<WorkspaceLoadResponse, CommandError> {
-    validate_workspace_id(&workspace_id).map_err(|e| {
-        CommandError::new("VALIDATION_ERROR", e).with_help("Workspace ID format is invalid")
-    })?;
-
-    let workspace_dir = resolve_workspace_dir(&app, &workspace_id).map_err(|e| {
-        CommandError::new("NOT_FOUND", e).with_help("The workspace may have been deleted")
-    })?;
-
-    // Check if workspace exists and is CAS format
-    if !workspace_dir.exists() {
-        return Err(CommandError::new("NOT_FOUND", "Workspace not found")
-            .with_help("The workspace may have been deleted or moved. Try re-importing"));
-    }
-
-    let metadata_db = workspace_dir.join("metadata.db");
-    let objects_dir = workspace_dir.join("objects");
-
-    if !metadata_db.exists() || !objects_dir.exists() {
-        return Err(
-            CommandError::new("FORMAT_ERROR", "Workspace is not in CAS format")
-                .with_help("Please create a new workspace with the current version"),
-        );
-    }
-
-    // P6 迁移：通过共享 helper 创建/获取服务，避免内部重复创建 WorkspaceServiceImpl
-    let service =
-        get_or_create_workspace_service(&app, &state, &workspace_id, &workspace_dir)
-            .await
-            .map_err(|e| {
-                CommandError::new(
-                    "RUNTIME_ERROR",
-                    format!("Failed to initialize workspace: {}", e),
-                )
-            })?;
+    // ── Acquire workspace service (validates ID, resolves dir, checks CAS, creates service) ──
+    let (service, _workspace_dir) =
+        crate::utils::workspace_guard::require_cas_workspace(&app, &state, &workspace_id).await?;
 
     let file_count = service
         .metadata_store()
@@ -205,29 +172,16 @@ fn load_stored_workspaces(
     app: &AppHandle,
     action: &str,
 ) -> Result<Vec<StoredWorkspaceConfig>, CommandError> {
-    let config_path = app
-        .path()
-        .app_config_dir()
-        .map_err(|e: tauri::Error| CommandError::new("CONFIG_ERROR", e.to_string()))?
-        .join("config.json");
-
-    if !config_path.exists() {
-        return Ok(Vec::new());
+    let config = crate::utils::load_app_config(app);
+    match config {
+        Some(c) => serde_json::from_value(c.workspaces).map_err(|e| {
+            CommandError::new(
+                "CONFIG_ERROR",
+                format!("Failed to parse stored workspaces while {}: {}", action, e),
+            )
+        }),
+        None => Ok(Vec::new()),
     }
-
-    let loader = AppConfigLoader::load(Some(config_path.clone())).map_err(|e| {
-        CommandError::new(
-            "CONFIG_ERROR",
-            format!("Failed to load config while {}: {}", action, e),
-        )
-    })?;
-
-    serde_json::from_value(loader.get_config().workspaces.clone()).map_err(|e| {
-        CommandError::new(
-            "CONFIG_ERROR",
-            format!("Failed to parse stored workspaces while {}: {}", action, e),
-        )
-    })
 }
 
 fn resolve_refresh_source_path(
@@ -727,40 +681,9 @@ pub async fn get_workspace_status(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<WorkspaceStatusResponse, CommandError> {
-    validate_workspace_id(&workspace_id).map_err(|e| CommandError::new("VALIDATION_ERROR", e))?;
-
-    let workspace_dir = resolve_workspace_dir(&app, &workspace_id)
-        .map_err(|e| CommandError::new("NOT_FOUND", e))?;
-
-    // 检查工作区是否存在
-    if !workspace_dir.exists() {
-        return Err(CommandError::new("NOT_FOUND", "Workspace not found")
-            .with_help("The workspace may have been deleted"));
-    }
-
-    // 检查是否为 CAS 格式
-    let metadata_db = workspace_dir.join("metadata.db");
-    let objects_dir = workspace_dir.join("objects");
-
-    let is_cas = metadata_db.exists() && objects_dir.exists();
-
-    if !is_cas {
-        return Err(
-            CommandError::new("FORMAT_ERROR", "Workspace is not in CAS format")
-                .with_help("Please create a new workspace"),
-        );
-    }
-
-    // P6 迁移：通过共享 helper 创建/获取服务
-    let service =
-        get_or_create_workspace_service(&app, &state, &workspace_id, &workspace_dir)
-            .await
-            .map_err(|e| {
-                CommandError::new(
-                    "RUNTIME_ERROR",
-                    format!("Failed to initialize workspace: {}", e),
-                )
-            })?;
+    // ── Acquire workspace service (validates ID, resolves dir, checks CAS, creates service) ──
+    let (service, _workspace_dir) =
+        crate::utils::workspace_guard::require_cas_workspace(&app, &state, &workspace_id).await?;
 
     let file_count: i64 = service.metadata_store().count_files().await.unwrap_or(0);
 
@@ -795,17 +718,16 @@ pub async fn get_workspace_status(
 /// 从 Tantivy 索引中查询最早和最晚的日志时间戳
 #[tauri::command]
 pub async fn get_workspace_time_range(
-    _app: AppHandle,
+    app: AppHandle,
     workspace_id: String,
     state: State<'_, AppState>,
 ) -> Result<la_core::models::search::WorkspaceTimeRange, CommandError> {
     use chrono::DateTime;
     use la_core::models::search::WorkspaceTimeRange;
 
-    let service = state.get_workspace_service(&workspace_id).ok_or_else(|| {
-        CommandError::new("NOT_FOUND", "Workspace not loaded")
-            .with_help("Reload the workspace first")
-    })?;
+    // ── Acquire workspace service ──
+    let (service, _workspace_dir) =
+        crate::utils::workspace_guard::require_cas_workspace(&app, &state, &workspace_id).await?;
     let manager: Arc<la_search::SearchEngineManager> = Arc::clone(service.search_engine());
     let (min_ts, max_ts, total_logs) = manager.get_time_range().map_err(|e| {
         CommandError::new(

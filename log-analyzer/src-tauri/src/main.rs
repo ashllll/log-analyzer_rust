@@ -13,20 +13,10 @@ use log_analyzer::commands::{
 };
 use log_analyzer::models::AppState;
 use log_analyzer::task_manager::{TaskManager, TauriEventEmitter};
+use log_analyzer::utils::load_app_config;
 use std::sync::Arc;
 use tauri::Manager;
 use tracing::info;
-
-fn load_app_config(app: &tauri::AppHandle) -> Option<la_core::models::config::AppConfig> {
-    let config_path = app.path().app_config_dir().ok()?.join("config.json");
-    if !config_path.exists() {
-        return None;
-    }
-
-    la_core::models::config::AppConfigLoader::load(Some(config_path))
-        .ok()
-        .map(|loader| loader.get_config().clone())
-}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

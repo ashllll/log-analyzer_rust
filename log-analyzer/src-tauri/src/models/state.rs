@@ -38,7 +38,6 @@ pub struct AppState {
     services: Arc<Mutex<HashMap<String, WorkspaceServiceRef>>>,
 
     // ── Search ──
-    cancellation_tokens: Arc<Mutex<HashMap<String, CancellationToken>>>,
     disk_result_store: RwLock<Option<Arc<DiskResultStore>>>,
     thread_pool: Arc<rayon::ThreadPool>,
 
@@ -56,7 +55,6 @@ impl Default for AppState {
             // Workspace
             services: Arc::new(Mutex::new(HashMap::new())),
             // Search
-            cancellation_tokens: Arc::new(Mutex::new(HashMap::new())),
             disk_result_store: RwLock::new(None),
             thread_pool: Arc::new(
                 rayon::ThreadPoolBuilder::new()
@@ -138,26 +136,6 @@ impl AppState {
     /// 获取共享的 Rayon 搜索线程池引用。
     pub fn get_search_thread_pool(&self) -> Arc<rayon::ThreadPool> {
         Arc::clone(&self.thread_pool)
-    }
-
-    /// 获取指定搜索的取消令牌。
-    pub fn get_search_cancellation_token(&self, search_id: &str) -> Option<CancellationToken> {
-        self.cancellation_tokens.lock().get(search_id).cloned()
-    }
-
-    /// 注册搜索的取消令牌。
-    pub fn insert_search_cancellation_token(&self, search_id: String, token: CancellationToken) {
-        self.cancellation_tokens.lock().insert(search_id, token);
-    }
-
-    /// 移除搜索的取消令牌。
-    pub fn remove_search_cancellation_token(&self, search_id: &str) -> Option<CancellationToken> {
-        self.cancellation_tokens.lock().remove(search_id)
-    }
-
-    /// 获取 cancellation_tokens Map 内部 Arc 引用（供 search_logs 命令在闭包中使用）。
-    pub fn cancellation_tokens_arc(&self) -> Arc<Mutex<HashMap<String, CancellationToken>>> {
-        Arc::clone(&self.cancellation_tokens)
     }
 
     /// 退出时清理所有搜索结果的磁盘缓存。

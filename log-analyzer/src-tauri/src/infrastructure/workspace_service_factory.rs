@@ -6,13 +6,12 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 use tracing::info;
 
 use crate::application::workspace_service::WorkspaceServiceRef;
 use crate::infrastructure::{TauriEventPublisher, WorkspaceRepo, WorkspaceServiceImpl};
 use crate::models::AppState;
-use la_core::models::config::AppConfigLoader;
 use la_storage::{ContentAddressableStorage, MetadataStore};
 
 const SEARCH_INDEX_DIR_NAME: &str = "search_index";
@@ -26,18 +25,8 @@ const SEARCH_INDEX_WRITER_HEAP_BYTES: usize = 50_000_000;
 pub(crate) fn load_workspace_search_config(
     app: &AppHandle,
 ) -> la_core::models::config::SearchConfig {
-    let config_path = match app.path().app_config_dir() {
-        Ok(dir) => dir.join("config.json"),
-        Err(_) => return Default::default(),
-    };
-
-    if !config_path.exists() {
-        return Default::default();
-    }
-
-    AppConfigLoader::load(Some(config_path))
-        .ok()
-        .map(|loader| loader.get_search_config().clone())
+    crate::utils::load_app_config(app)
+        .map(|c| c.search)
         .unwrap_or_default()
 }
 
@@ -50,7 +39,6 @@ pub(crate) fn load_workspace_search_config(
 /// 优先从已有的 workspace service 获取，否则新建。
 /// 接受预加载的 SearchConfig 以避免重复读取 config.json。
 pub(crate) fn ensure_search_engine_manager_with_config(
-    _app: &AppHandle,
     state: &AppState,
     workspace_id: &str,
     workspace_dir: &Path,
@@ -100,10 +88,10 @@ pub(crate) async fn get_or_create_workspace_service(
             .map_err(|e| format!("Failed to open metadata store: {e}"))?,
     );
 
-    // 缓存配置避免重复读取 config.json（ensure_search_engine_manager 内部也读了一次）
+    // 预加载配置以避免 ensure_search_engine_manager 重复读取 config.json
     let search_config = load_workspace_search_config(app);
     let search_manager = ensure_search_engine_manager_with_config(
-        app, state, workspace_id, workspace_dir, &search_config,
+        state, workspace_id, workspace_dir, &search_config,
     )?;
 
     let disk_result_store = state

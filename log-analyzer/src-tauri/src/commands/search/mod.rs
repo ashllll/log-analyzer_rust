@@ -1,19 +1,20 @@
-//! 搜索命令实现 — Clean Architecture 路径（SearchUseCase）
+//! 搜索命令实现 — Clean Architecture 路径（WorkspaceService）
 //!
 //! # 架构
 //! - `query`: 查询解析
-//! - `mod.rs` (本文件): Tauri 命令入口，所有搜索委托给 SearchUseCase
+//! - `mod.rs` (本文件): Tauri 命令入口，纯委托给 WorkspaceService
 //!
-//! filters 已提升到 `application/search_filters.rs`（P7 层级修复）
+//! P6 后：命令层不再持有 cancellation_tokens HashMap。
+//! 搜索取消通过 WorkspaceService::cancel_search() 路由，
+//! CancellationToken 生命周期由 WorkspaceServiceImpl 内部管理。
 
 pub(crate) mod query;
 
 use serde::{Deserialize, Serialize};
-use tauri::{command, AppHandle, Manager, State};
+use tauri::{command, AppHandle, State};
 use tokio_util::sync::CancellationToken;
 
 use la_core::error::{AppError, CommandError};
-use la_core::models::config::AppConfigLoader;
 use la_core::models::{LogEntry, SearchFilters, SearchQuery};
 
 use crate::application::workspace_service::WorkspaceServiceRef;
@@ -61,23 +62,14 @@ impl Default for SearchRuntimeConfig {
 }
 
 pub(crate) fn load_search_runtime_config(app: &AppHandle) -> SearchRuntimeConfig {
-    let config_path = match app.path().app_config_dir() {
-        Ok(dir) => dir.join("config.json"),
-        Err(_) => return SearchRuntimeConfig::default(),
-    };
-    if !config_path.exists() {
-        return SearchRuntimeConfig::default();
+    let config = crate::utils::load_app_config(app);
+    match config {
+        Some(c) => SearchRuntimeConfig {
+            default_max_results: c.search.max_results,
+            case_sensitive: c.search.case_sensitive,
+        },
+        None => SearchRuntimeConfig::default(),
     }
-    AppConfigLoader::load(Some(config_path))
-        .ok()
-        .map(|loader| {
-            let c = loader.get_config();
-            SearchRuntimeConfig {
-                default_max_results: c.search.max_results,
-                case_sensitive: c.search.case_sensitive,
-            }
-        })
-        .unwrap_or_default()
 }
 
 // ============================================================================
@@ -148,14 +140,8 @@ pub async fn cancel_search(
     #[allow(non_snake_case)] searchId: String,
     state: State<'_, AppState>,
 ) -> Result<(), CommandError> {
-    // Try command-layer token first (backward compat)
-    if let Some(t) = state.get_search_cancellation_token(&searchId) {
-        t.cancel();
-        state.remove_search_cancellation_token(&searchId);
-        return Ok(());
-    }
-
-    // Try all workspace services (new path — service内部管理 search sessions)
+    // Cancel via WorkspaceService — search sessions are managed internally by each service instance.
+    // (P6: removed global cancellation_tokens HashMap; cancel_search is purely delegated.)
     for svc in state.all_workspace_services() {
         if svc.cancel_search(&searchId).await.is_ok() {
             return Ok(());
@@ -213,29 +199,22 @@ pub async fn search_logs(
     // ── 2. Load config ──
     let rc = load_search_runtime_config(&app);
 
-    // ── 3. Cancellation tokens (still needed for search session management) ──
-    let cts = state.cancellation_tokens_arc();
-
-    // ── 4. Resolve params ──
+    // ── 3. Resolve params ──
     let mr = maxResults.unwrap_or(rc.default_max_results).min(100_000);
     let f = filters.unwrap_or_default();
     let (raw_terms, sq) =
         resolve_search_query(&query, structuredQuery, rc.case_sensitive, "search_logs")?;
     let ws_id = resolve_workspace_id(workspaceId, &state)?;
 
-    // ── 5. Get WorkspaceService (pure lookup — workspace must be pre-created at import time) ──
+    // ── 4. Get WorkspaceService (pure lookup — workspace must be pre-created at import time) ──
     let workspace = get_workspace_service_or_error(&state, &ws_id).await?;
 
-    // ── 7. Cancellation token (kept for compatibility with cancel_search) ──
-    let sid = uuid::Uuid::new_v4().to_string();
+    // ── 5. Execute search via WorkspaceService ──
+    // CancellationToken lifecycle is managed by WorkspaceServiceImpl internally;
+    // cancel_search goes through service.cancel_search() — no global HashMap needed.
     let token = CancellationToken::new();
-    {
-        cts.lock().insert(sid.clone(), token.clone());
-    }
-
-    // ── 8. Execute search via WorkspaceService (NEW ARCHITECTURE) ──
     let search_id = workspace
-        .search(sq, raw_terms, f, mr, token.clone())
+        .search(sq, raw_terms, f, mr, token)
         .await
         .map_err(|e| {
             CommandError::new("SEARCH_ERROR", format!("Failed to start search: {e}"))

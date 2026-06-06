@@ -15,12 +15,12 @@
 //! # 迁移状态
 //!
 //! - [x] P0: trait 定义
-//! - [ ] P1: SearchService 实现
-//! - [ ] P2: AppState 集成
-//! - [ ] P3: search_logs 命令迁移
+//! - [x] P1: SearchService 实现
+//! - [x] P2: AppState 集成（workspace services HashMap）
+//! - [x] P3: search_logs 命令迁移（取消令牌由 WorkspaceServiceImpl 内部管理）
 //! - [x] P4: ImportService 实现
 //! - [x] P5: WatchService 实现（watcher 状态移入 WorkspaceServiceImpl）
-//! - [ ] P6: 清理旧 HashMap / 移除内部 getter 方法
+//! - [x] P6: 清理旧 HashMap（移除全局 cancellation_tokens，仅保留 services HashMap）
 
 use async_trait::async_trait;
 use la_core::error::Result;

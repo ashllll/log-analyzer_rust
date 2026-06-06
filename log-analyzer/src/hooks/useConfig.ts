@@ -8,7 +8,7 @@
 
 import { useState, useCallback } from 'react';
 import { api, type SearchConfig, type TaskManagerConfig } from '../services/api';
-import { getFullErrorMessage } from '../services/errors';
+import { useAsyncAction } from './useAsyncAction';
 
 // ============================================================================
 // 类型定义
@@ -34,8 +34,7 @@ export interface AllConfigs {
  * 提供配置的加载、保存和验证功能
  */
 export function useConfig() {
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { execute, isLoading, error } = useAsyncAction();
 
   // 配置状态
   const [searchConfig, setSearchConfig] = useState<SearchConfig | null>(null);
@@ -45,139 +44,78 @@ export function useConfig() {
   // 加载配置
   // ========================================================================
 
-  /**
-   * 加载搜索配置
-   */
   const loadSearchConfig = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
+    return execute(
+      () => api.getSearchConfig(),
+      { rethrow: true, onSuccess: (c) => setSearchConfig(c) },
+    );
+  }, [execute]);
 
-    try {
-      const config = await api.getSearchConfig();
-      setSearchConfig(config);
-      return config;
-    } catch (err) {
-      setError(getFullErrorMessage(err));
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  /**
-   * 加载任务管理器配置
-   */
   const loadTaskManagerConfig = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
+    return execute(
+      () => api.getTaskManagerConfig(),
+      { rethrow: true, onSuccess: (c) => setTaskManagerConfig(c) },
+    );
+  }, [execute]);
 
-    try {
-      const config = await api.getTaskManagerConfig();
-      setTaskManagerConfig(config);
-      return config;
-    } catch (err) {
-      setError(getFullErrorMessage(err));
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  /**
-   * 加载所有配置
-   */
   const loadAllConfigs = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const [search, taskManager] = await Promise.all([
-        api.getSearchConfig(),
-        api.getTaskManagerConfig(),
-      ]);
-
-      setSearchConfig(search);
-      setTaskManagerConfig(taskManager);
-
-      return { search, task_manager: taskManager };
-    } catch (err) {
-      setError(getFullErrorMessage(err));
-      throw err;
-    } finally {
-      setIsLoading(false);
+    const result = await execute(
+      async () => {
+        const [search, taskManager] = await Promise.all([
+          api.getSearchConfig(),
+          api.getTaskManagerConfig(),
+        ]);
+        return { search, task_manager: taskManager } as AllConfigs;
+      },
+      { rethrow: true },
+    );
+    if (result) {
+      setSearchConfig(result.search);
+      setTaskManagerConfig(result.task_manager);
     }
-  }, []);
+    return result;
+  }, [execute]);
 
   // ========================================================================
   // 保存配置
   // ========================================================================
 
-  /**
-   * 保存搜索配置
-   */
   const saveSearchConfig = useCallback(async (config: SearchConfig) => {
-    setIsLoading(true);
-    setError(null);
+    return execute(
+      () => api.saveSearchConfig(config),
+      { rethrow: true, onSuccess: () => setSearchConfig(config) },
+    );
+  }, [execute]);
 
-    try {
-      await api.saveSearchConfig(config);
-      setSearchConfig(config);
-    } catch (err) {
-      setError(getFullErrorMessage(err));
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  /**
-   * 保存任务管理器配置
-   */
   const saveTaskManagerConfig = useCallback(async (config: TaskManagerConfig) => {
-    setIsLoading(true);
-    setError(null);
+    return execute(
+      () => api.saveTaskManagerConfig(config),
+      { rethrow: true, onSuccess: () => setTaskManagerConfig(config) },
+    );
+  }, [execute]);
 
-    try {
-      await api.saveTaskManagerConfig(config);
-      setTaskManagerConfig(config);
-    } catch (err) {
-      setError(getFullErrorMessage(err));
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  /**
-   * 保存所有配置
-   */
   const saveAllConfigs = useCallback(async (configs: AllConfigs) => {
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      await Promise.all([
-        api.saveSearchConfig(configs.search),
-        api.saveTaskManagerConfig(configs.task_manager),
-      ]);
-
-      setSearchConfig(configs.search);
-      setTaskManagerConfig(configs.task_manager);
-    } catch (err) {
-      setError(getFullErrorMessage(err));
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+    return execute(
+      async () => {
+        await Promise.all([
+          api.saveSearchConfig(configs.search),
+          api.saveTaskManagerConfig(configs.task_manager),
+        ]);
+      },
+      {
+        rethrow: true,
+        onSuccess: () => {
+          setSearchConfig(configs.search);
+          setTaskManagerConfig(configs.task_manager);
+        },
+      },
+    );
+  }, [execute]);
 
   // ========================================================================
   // 重置配置
   // ========================================================================
 
-  /**
-   * 重置为默认配置
-   */
   const resetToDefaults = useCallback(async () => {
     const defaults: AllConfigs = {
       search: {

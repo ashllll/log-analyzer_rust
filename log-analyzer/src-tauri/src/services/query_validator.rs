@@ -1,6 +1,6 @@
-use crate::services::traits::{QueryValidation, ValidationResult};
 use la_core::error::{AppError, Result};
 use la_core::models::search::*;
+use la_core::traits::{QueryValidation, ValidationResult};
 use regex::Regex;
 
 /**

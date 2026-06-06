@@ -12,7 +12,7 @@
 //! # 当前实现状态
 //!
 //! - [x] SearchService（search / cancel_search / fetch_search_page）
-//! - [ ] ImportService（占位，P4 实现）
+//! - [x] ImportService（P4 完整实现）
 //! - [x] WatchService（P5 完整实现，watcher 状态内嵌于实例中）
 
 use async_trait::async_trait;
