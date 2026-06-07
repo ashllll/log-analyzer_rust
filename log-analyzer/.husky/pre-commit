@@ -1,1 +1,4 @@
-npm test
+cd log-analyzer
+npx lint-staged
+npm run type-check
+npm run test
