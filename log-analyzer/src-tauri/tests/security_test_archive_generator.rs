@@ -327,9 +327,7 @@ mod tests {
             "Should be highly compressed"
         );
 
-        println!(
-            "Zip bomb: 10MB uncompressed -> {compressed_size} bytes compressed"
-        );
+        println!("Zip bomb: 10MB uncompressed -> {compressed_size} bytes compressed");
         println!(
             "Compression ratio: {:.2}:1",
             10.0 * 1024.0 * 1024.0 / compressed_size as f64
@@ -462,8 +460,6 @@ mod tests {
         let compressed_size = create_nested_zip_bomb(&output_path, 3, 5).unwrap();
 
         assert!(output_path.exists(), "Nested zip bomb should be created");
-        println!(
-            "Nested zip bomb (3 levels, 5MB each): {compressed_size} bytes compressed"
-        );
+        println!("Nested zip bomb (3 levels, 5MB each): {compressed_size} bytes compressed");
     }
 }

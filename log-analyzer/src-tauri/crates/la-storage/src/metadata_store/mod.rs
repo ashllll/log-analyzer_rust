@@ -67,9 +67,7 @@ impl MetadataStore {
             .max_lifetime(Duration::from_secs(1800))
             .connect(&db_url)
             .await
-            .map_err(|e| {
-                AppError::database_error(format!("Failed to connect to database: {e}"))
-            })?;
+            .map_err(|e| AppError::database_error(format!("Failed to connect to database: {e}")))?;
 
         for pragma in &[
             "PRAGMA journal_mode = WAL",

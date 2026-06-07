@@ -609,15 +609,12 @@ impl WatchService for WorkspaceServiceImpl {
         // ── 3. Create notify watcher ──
         let (tx, rx) = crossbeam::channel::unbounded::<std::result::Result<Event, notify::Error>>();
 
-        let mut watcher = recommended_watcher(tx).map_err(|e| {
-            AppError::io_error(format!("Failed to create file watcher: {e}"), None)
-        })?;
+        let mut watcher = recommended_watcher(tx)
+            .map_err(|e| AppError::io_error(format!("Failed to create file watcher: {e}"), None))?;
 
         watcher
             .watch(&watch_path_buf, RecursiveMode::Recursive)
-            .map_err(|e| {
-                AppError::io_error(format!("Failed to start watching path: {e}"), None)
-            })?;
+            .map_err(|e| AppError::io_error(format!("Failed to start watching path: {e}"), None))?;
 
         // ── 4. Create WatcherState ──
         let watcher_state = WatcherState {

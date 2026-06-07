@@ -476,8 +476,7 @@ async fn cleanup_workspace_resources(
                     }
 
                     for journal_ext in &["-wal", "-shm", "-journal"] {
-                        let journal_file =
-                            workspace_dir.join(format!("metadata.db{journal_ext}"));
+                        let journal_file = workspace_dir.join(format!("metadata.db{journal_ext}"));
                         if journal_file.exists() {
                             if let Err(e) = remove_file_with_retry(&journal_file).await {
                                 warn!(

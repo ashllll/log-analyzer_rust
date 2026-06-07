@@ -1058,12 +1058,8 @@ mod property_tests {
     fn file_metadata_strategy() -> impl Strategy<Value = FileMetadata> {
         (
             // sha256_hash: 64 hex characters
-            prop::collection::vec(0u8..=255, 32..=32).prop_map(|bytes| {
-                bytes
-                    .iter()
-                    .map(|b| format!("{b:02x}"))
-                    .collect::<String>()
-            }),
+            prop::collection::vec(0u8..=255, 32..=32)
+                .prop_map(|bytes| bytes.iter().map(|b| format!("{b:02x}")).collect::<String>()),
             // virtual_path: reasonable path string
             prop::string::string_regex("[a-zA-Z0-9_/.-]{1,200}").unwrap(),
             // original_name: file name

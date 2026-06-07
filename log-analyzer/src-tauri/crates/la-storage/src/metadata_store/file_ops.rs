@@ -121,9 +121,10 @@ pub(crate) async fn batch_check_hashes(
             query = query.bind(hash);
         }
 
-        let rows = query.fetch_all(pool).await.map_err(|e| {
-            AppError::database_error(format!("Failed to batch check hashes: {e}"))
-        })?;
+        let rows = query
+            .fetch_all(pool)
+            .await
+            .map_err(|e| AppError::database_error(format!("Failed to batch check hashes: {e}")))?;
 
         for row in rows {
             let hash: String = row.get("sha256_hash");
@@ -143,9 +144,7 @@ pub(crate) async fn get_archive_children(
         .bind(archive_id)
         .fetch_all(pool)
         .await
-        .map_err(|e| {
-            AppError::database_error(format!("Failed to query archive children: {e}"))
-        })?;
+        .map_err(|e| AppError::database_error(format!("Failed to query archive children: {e}")))?;
 
     Ok(rows
         .into_iter()
@@ -589,9 +588,7 @@ pub(crate) async fn insert_file_tx(
     .bind(metadata.analysis_status.as_str())
     .execute(&mut **tx)
     .await
-    .map_err(|e| {
-        AppError::database_error(format!("Failed to insert file in transaction: {e}"))
-    })?;
+    .map_err(|e| AppError::database_error(format!("Failed to insert file in transaction: {e}")))?;
 
     let id = sqlx::query_as::<_, (i64,)>("SELECT id FROM files WHERE sha256_hash = ? LIMIT 1")
         .bind(&metadata.sha256_hash)

@@ -407,10 +407,7 @@ async fn test_three_level_nesting() {
 
     // Verify the deepest file exists
     let deep_file = extract_dir.join("level1/level2/level3/deep.txt");
-    assert!(
-        deep_file.exists(),
-        "Deep file should exist: {deep_file:?}"
-    );
+    assert!(deep_file.exists(), "Deep file should exist: {deep_file:?}");
 
     let content = tokio::fs::read_to_string(&deep_file).await.unwrap();
     assert_eq!(content, "very deep content");

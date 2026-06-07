@@ -37,10 +37,7 @@ pub async fn export_results(
     let safe = crate::utils::validation::prevent_path_traversal(&savePath)
         .map_err(|e| CommandError::new("EXPORT_PATH_UNSAFE", format!("导出路径不安全: {e}")))?;
     let download_dir = app.path().download_dir().map_err(|e| {
-        CommandError::new(
-            "DOWNLOAD_DIR_UNAVAILABLE",
-            format!("无法获取下载目录: {e}"),
-        )
+        CommandError::new("DOWNLOAD_DIR_UNAVAILABLE", format!("无法获取下载目录: {e}"))
     })?;
     let final_path = download_dir.join(&safe);
 

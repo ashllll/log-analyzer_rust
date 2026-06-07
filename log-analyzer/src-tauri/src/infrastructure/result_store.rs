@@ -35,10 +35,7 @@ impl SearchResultRepository for DiskResultStoreRepo {
             .store
             .read_page(search_id, offset, limit)
             .map_err(|e| {
-                la_core::error::AppError::io_error(
-                    format!("Failed to read search page: {e}"),
-                    None,
-                )
+                la_core::error::AppError::io_error(format!("Failed to read search page: {e}"), None)
             })?;
 
         Ok(SearchResultPage {

@@ -21,9 +21,7 @@ pub fn validate_search_query(query: &str) -> Result<(), String> {
         return Err("搜索查询不能为空".to_string());
     }
     if query.len() > MAX_SEARCH_QUERY_LENGTH {
-        return Err(format!(
-            "搜索查询过长（最大{MAX_SEARCH_QUERY_LENGTH}字符）"
-        ));
+        return Err(format!("搜索查询过长（最大{MAX_SEARCH_QUERY_LENGTH}字符）"));
     }
     Ok(())
 }
@@ -36,9 +34,7 @@ pub fn validate_workspace_id(id: &str) -> Result<(), String> {
         return Err("工作区ID不能为空".to_string());
     }
     if id.len() > MAX_WORKSPACE_ID_LENGTH {
-        return Err(format!(
-            "工作区ID过长（最大{MAX_WORKSPACE_ID_LENGTH}字符）"
-        ));
+        return Err(format!("工作区ID过长（最大{MAX_WORKSPACE_ID_LENGTH}字符）"));
     }
     if !WORKSPACE_ID_REGEX.is_match(id) {
         return Err("工作区ID只能包含字母数字、连字符和下划线".to_string());
@@ -120,9 +116,7 @@ pub fn validate_range<T: PartialOrd + std::fmt::Display>(
 pub fn validate_log_level(level: &str) -> Result<(), String> {
     let valid_levels = ["trace", "debug", "info", "warn", "error"];
     if !valid_levels.contains(&level.to_lowercase().as_str()) {
-        return Err(format!(
-            "无效的日志级别，必须是以下之一: {valid_levels:?}"
-        ));
+        return Err(format!("无效的日志级别，必须是以下之一: {valid_levels:?}"));
     }
     Ok(())
 }

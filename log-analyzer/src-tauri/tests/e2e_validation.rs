@@ -43,10 +43,7 @@ fn test_task_status_serialization() {
         // 验证反序列化
         let json_str = json.unwrap();
         let deserialized: Result<TaskStatus, _> = serde_json::from_str(&json_str);
-        assert!(
-            deserialized.is_ok(),
-            "Status {status:?} should deserialize"
-        );
+        assert!(deserialized.is_ok(), "Status {status:?} should deserialize");
         assert_eq!(deserialized.unwrap(), status);
     }
 }

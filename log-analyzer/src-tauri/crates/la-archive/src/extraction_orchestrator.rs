@@ -233,9 +233,10 @@ impl ExtractionOrchestrator {
         workspace_id: &str,
     ) -> Result<ExtractionResult> {
         // Acquire semaphore permit
-        let _permit = self.concurrency_limiter.acquire().await.map_err(|e| {
-            AppError::archive_error(format!("Failed to acquire permit: {e}"), None)
-        })?;
+        let _permit =
+            self.concurrency_limiter.acquire().await.map_err(|e| {
+                AppError::archive_error(format!("Failed to acquire permit: {e}"), None)
+            })?;
 
         debug!(
             "Acquired extraction permit for {:?} (available: {})",

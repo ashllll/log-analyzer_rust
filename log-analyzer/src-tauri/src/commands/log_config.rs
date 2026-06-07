@@ -65,9 +65,8 @@ pub async fn set_log_level(level: String) -> Result<(), CommandError> {
         CommandError::new("INVALID_LOG_LEVEL", format!("无效的日志级别: {level}"))
     })?;
 
-    set_global_log_level(log_level).map_err(|e| {
-        CommandError::new("LOG_LEVEL_SET_FAILED", format!("设置日志级别失败: {e}"))
-    })?;
+    set_global_log_level(log_level)
+        .map_err(|e| CommandError::new("LOG_LEVEL_SET_FAILED", format!("设置日志级别失败: {e}")))?;
 
     Ok(())
 }

@@ -215,9 +215,7 @@ pub(crate) fn validate_log_level(level: &str) -> Option<FieldValidationError> {
     if !valid_levels.contains(&level.to_lowercase().as_str()) {
         return Some(FieldValidationError {
             field: "log_level".to_string(),
-            message: format!(
-                "无效的日志级别: {level}, 必须是以下之一: {valid_levels:?}"
-            ),
+            message: format!("无效的日志级别: {level}, 必须是以下之一: {valid_levels:?}"),
             code: "invalid_log_level".to_string(),
         });
     }

@@ -88,11 +88,7 @@ impl ConfigValidator for FileFilterConfig {
         // 验证禁止的扩展名
         for (i, ext) in self.forbidden_extensions.iter().enumerate() {
             if let Some(err) = validate_extension(ext) {
-                result.add_error(
-                    format!("forbidden_extensions[{i}]"),
-                    err.message,
-                    err.code,
-                );
+                result.add_error(format!("forbidden_extensions[{i}]"), err.message, err.code);
             }
         }
 

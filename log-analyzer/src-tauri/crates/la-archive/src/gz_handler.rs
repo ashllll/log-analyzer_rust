@@ -329,9 +329,7 @@ impl ArchiveHandler for GzHandler {
         // 安全检查：总大小限制
         if data_len > max_total_size {
             return Err(AppError::archive_error(
-                format!(
-                    "Extraction would exceed total size limit of {max_total_size} bytes"
-                ),
+                format!("Extraction would exceed total size limit of {max_total_size} bytes"),
                 Some(source.to_path_buf()),
             ));
         }
@@ -339,9 +337,7 @@ impl ArchiveHandler for GzHandler {
         // 安全检查：文件数量限制（GZ通常只包含一个文件）
         if max_file_count < 1 {
             return Err(AppError::archive_error(
-                format!(
-                    "Extraction would exceed file count limit of {max_file_count} files"
-                ),
+                format!("Extraction would exceed file count limit of {max_file_count} files"),
                 Some(source.to_path_buf()),
             ));
         }

@@ -158,9 +158,7 @@ pub(crate) async fn init_schema(pool: &SqlitePool) -> Result<()> {
     )
     .execute(pool)
     .await
-    .map_err(|e| {
-        AppError::database_error(format!("Failed to create indexed_files table: {e}"))
-    })?;
+    .map_err(|e| AppError::database_error(format!("Failed to create indexed_files table: {e}")))?;
 
     sqlx::query(
         "CREATE INDEX IF NOT EXISTS idx_indexed_files_workspace ON indexed_files(workspace_id)",
