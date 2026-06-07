@@ -300,7 +300,7 @@ pub type Result<T> = std::result::Result<T, ExtractionError>;
 fn runtime_creation_error(e: impl std::fmt::Display) -> ExtractionError {
     ExtractionError {
         error_code: ErrorCode::InternalError,
-        error_message: format!("Failed to create runtime: {}", e),
+        error_message: format!("Failed to create runtime: {e}"),
         failed_file_path: None,
         suggested_remediation: "Check system resources and try again".to_string(),
         context: HashMap::new(),
@@ -383,7 +383,7 @@ pub async fn extract_archive_async(
             .await
             .map_err(|e| ExtractionError {
                 error_code: ErrorCode::InternalError,
-                error_message: format!("Failed to initialize metadata database: {}", e),
+                error_message: format!("Failed to initialize metadata database: {e}"),
                 failed_file_path: None,
                 suggested_remediation: "Check system resources and try again".to_string(),
                 context: HashMap::new(),
@@ -508,7 +508,7 @@ mod tests {
             context: HashMap::new(),
         };
 
-        let display = format!("{}", error);
+        let display = format!("{error}");
         assert!(display.contains("ZipBombDetected"));
         assert!(display.contains("Suspicious compression ratio"));
     }
@@ -517,7 +517,11 @@ mod tests {
     fn test_error_code_mapping() {
         // Test all error code conversions
         let test_cases = vec![
-            ("path too long", ErrorCategory::PathTooLong, ErrorCode::PathTooLong),
+            (
+                "path too long",
+                ErrorCategory::PathTooLong,
+                ErrorCode::PathTooLong,
+            ),
             (
                 "unsupported format",
                 ErrorCategory::UnsupportedFormat,

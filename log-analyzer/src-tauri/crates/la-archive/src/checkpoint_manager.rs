@@ -164,7 +164,7 @@ impl CheckpointManager {
         );
 
         self.checkpoint_dir
-            .join(format!("{}{}", checkpoint_name, CHECKPOINT_EXTENSION))
+            .join(format!("{checkpoint_name}{CHECKPOINT_EXTENSION}"))
     }
 
     /// Create a stable hash of a path for uniqueness (SHA-256, cross-version compatible)
@@ -221,7 +221,7 @@ impl CheckpointManager {
         // Read checkpoint file
         let mut file = fs::File::open(&checkpoint_path).await.map_err(|e| {
             AppError::archive_error(
-                format!("Failed to open checkpoint file: {}", e),
+                format!("Failed to open checkpoint file: {e}"),
                 Some(checkpoint_path.clone()),
             )
         })?;
@@ -229,7 +229,7 @@ impl CheckpointManager {
         let mut contents = String::new();
         file.read_to_string(&mut contents).await.map_err(|e| {
             AppError::archive_error(
-                format!("Failed to read checkpoint file: {}", e),
+                format!("Failed to read checkpoint file: {e}"),
                 Some(checkpoint_path.clone()),
             )
         })?;
@@ -237,7 +237,7 @@ impl CheckpointManager {
         // Parse JSON
         let checkpoint: Checkpoint = serde_json::from_str(&contents).map_err(|e| {
             AppError::archive_error(
-                format!("Failed to parse checkpoint: {}", e),
+                format!("Failed to parse checkpoint: {e}"),
                 Some(checkpoint_path.clone()),
             )
         })?;
@@ -274,7 +274,7 @@ impl CheckpointManager {
             .await
             .map_err(|e| {
                 AppError::archive_error(
-                    format!("Failed to create checkpoint directory: {}", e),
+                    format!("Failed to create checkpoint directory: {e}"),
                     Some(self.checkpoint_dir.clone()),
                 )
             })?;
@@ -290,7 +290,7 @@ impl CheckpointManager {
         // Serialize to JSON
         let json = serde_json::to_string_pretty(checkpoint).map_err(|e| {
             AppError::archive_error(
-                format!("Failed to serialize checkpoint: {}", e),
+                format!("Failed to serialize checkpoint: {e}"),
                 Some(checkpoint_path.clone()),
             )
         })?;
@@ -299,21 +299,21 @@ impl CheckpointManager {
         let temp_path = checkpoint_path.with_extension("tmp");
         let mut file = fs::File::create(&temp_path).await.map_err(|e| {
             AppError::archive_error(
-                format!("Failed to create checkpoint file: {}", e),
+                format!("Failed to create checkpoint file: {e}"),
                 Some(temp_path.clone()),
             )
         })?;
 
         file.write_all(json.as_bytes()).await.map_err(|e| {
             AppError::archive_error(
-                format!("Failed to write checkpoint: {}", e),
+                format!("Failed to write checkpoint: {e}"),
                 Some(temp_path.clone()),
             )
         })?;
 
         file.flush().await.map_err(|e| {
             AppError::archive_error(
-                format!("Failed to flush checkpoint: {}", e),
+                format!("Failed to flush checkpoint: {e}"),
                 Some(temp_path.clone()),
             )
         })?;
@@ -323,7 +323,7 @@ impl CheckpointManager {
             .await
             .map_err(|e| {
                 AppError::archive_error(
-                    format!("Failed to rename checkpoint: {}", e),
+                    format!("Failed to rename checkpoint: {e}"),
                     Some(checkpoint_path.clone()),
                 )
             })?;
@@ -353,7 +353,7 @@ impl CheckpointManager {
             info!("Deleting checkpoint: {:?}", checkpoint_path);
             fs::remove_file(&checkpoint_path).await.map_err(|e| {
                 AppError::archive_error(
-                    format!("Failed to delete checkpoint: {}", e),
+                    format!("Failed to delete checkpoint: {e}"),
                     Some(checkpoint_path.clone()),
                 )
             })?;

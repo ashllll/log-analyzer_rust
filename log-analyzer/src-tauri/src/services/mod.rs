@@ -12,9 +12,7 @@ mod error_handling_property_tests;
 mod concurrency_property_tests;
 
 // 仅导出外部使用的类型（P7 修剪：移除 15+ 未使用的 re-export）
-pub use file_watcher::{
-    append_to_workspace_index, get_file_metadata, read_file_from_offset,
-};
+pub use file_watcher::{append_to_workspace_index, get_file_metadata, read_file_from_offset};
 // parse_log_lines, parse_metadata, TimestampParser: 已提取至 la_core::utils
 pub use la_core::utils::{parse_log_lines, parse_metadata, TimestampParser};
 // querier/searcher 类型：仅 export searcher.rs 需要的

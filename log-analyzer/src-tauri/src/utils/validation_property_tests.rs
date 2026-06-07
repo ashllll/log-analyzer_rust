@@ -37,7 +37,7 @@ mod property_tests {
             ],
             suffix in "[a-zA-Z0-9_/-]{0,20}"
         )| {
-            let dangerous_path = format!("{}{}{}", prefix, traversal_pattern, suffix);
+            let dangerous_path = format!("{prefix}{traversal_pattern}{suffix}");
 
             // 验证：包含路径遍历模式的路径应该被拒绝
             let result = prevent_path_traversal(&dangerous_path);
@@ -86,7 +86,7 @@ mod property_tests {
             prefix in "[a-zA-Z0-9_/-]{0,20}",
             suffix in "[a-zA-Z0-9_/-]{0,20}"
         )| {
-            let path_with_null = format!("{}\0{}", prefix, suffix);
+            let path_with_null = format!("{prefix}\0{suffix}");
 
             // 验证：包含 null 字节的路径应该被拒绝
             let result = prevent_path_traversal(&path_with_null);
@@ -135,7 +135,7 @@ mod property_tests {
             unsafe_char in "[^a-zA-Z0-9_-]",
             suffix in "[a-zA-Z0-9_-]{0,10}"
         )| {
-            let unsafe_id = format!("{}{}{}", prefix, unsafe_char, suffix);
+            let unsafe_id = format!("{prefix}{unsafe_char}{suffix}");
 
             // 跳过空 ID（已经被长度检查覆盖）
             if unsafe_id.trim().is_empty() {
@@ -217,7 +217,7 @@ mod property_tests {
             extension in prop::option::of("[a-z]{3}")
         )| {
             let filename = if let Some(ext) = extension {
-                format!("{}.{}", reserved, ext)
+                format!("{reserved}.{ext}")
             } else {
                 reserved.to_string()
             };

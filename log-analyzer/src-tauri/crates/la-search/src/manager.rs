@@ -456,7 +456,7 @@ impl SearchEngineManager {
                 let regex_pattern = glob_to_regex(pattern);
                 let regex_query = RegexQuery::from_pattern(&regex_pattern, self.schema.file_path)
                     .map_err(|e| {
-                    SearchError::QueryError(format!("Invalid file pattern: {}", e))
+                    SearchError::QueryError(format!("Invalid file pattern: {e}"))
                 })?;
                 clauses.push((Occur::Must, Box::new(regex_query)));
             }
@@ -580,7 +580,7 @@ impl SearchEngineManager {
 
         handle
             .await
-            .map_err(|e| SearchError::QueryError(format!("Search task panicked: {}", e)))?
+            .map_err(|e| SearchError::QueryError(format!("Search task panicked: {e}")))?
     }
 
     /// Convert Tantivy document to LogEntry（实例方法包装，供非 spawn_blocking 路径使用）
@@ -870,8 +870,7 @@ impl SearchEngineManager {
                 self.update_stats(query_time, true);
                 error!(keywords = ?keywords, error = %join_err, "spawn_blocking task failed");
                 return Err(SearchError::IndexError(format!(
-                    "Search task failed: {}",
-                    join_err
+                    "Search task failed: {join_err}"
                 )));
             }
             Err(_) => {
@@ -1225,7 +1224,7 @@ mod tests {
             }
             Err(e) => {
                 // Unexpected error type - this should not happen in normal circumstances
-                panic!("Unexpected error during empty index search: {}", e);
+                panic!("Unexpected error during empty index search: {e}");
             }
         }
     }

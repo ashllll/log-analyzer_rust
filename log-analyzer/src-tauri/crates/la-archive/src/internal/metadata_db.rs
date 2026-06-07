@@ -35,7 +35,7 @@ impl MetadataDB {
         workspace_id: &str,
         original_path: &str,
     ) -> Result<Option<String>> {
-        let key = format!("{}:{}", workspace_id, original_path);
+        let key = format!("{workspace_id}:{original_path}");
         Ok(self.mappings.get(&key).map(|v| v.value().clone()))
     }
 
@@ -45,7 +45,7 @@ impl MetadataDB {
         workspace_id: &str,
         short_path: &str,
     ) -> Result<Option<String>> {
-        let key = format!("{}:{}", workspace_id, short_path);
+        let key = format!("{workspace_id}:{short_path}");
         Ok(self.reverse_mappings.get(&key).map(|v| v.value().clone()))
     }
 
@@ -56,7 +56,7 @@ impl MetadataDB {
         short_path: &str,
         original_path: &str,
     ) -> Result<()> {
-        let forward_key = format!("{}:{}", workspace_id, original_path);
+        let forward_key = format!("{workspace_id}:{original_path}");
         self.mappings
             .insert(forward_key.clone(), short_path.to_string());
 
@@ -65,7 +65,7 @@ impl MetadataDB {
             .or_default()
             .push(forward_key);
 
-        let reverse_key = format!("{}:{}", workspace_id, short_path);
+        let reverse_key = format!("{workspace_id}:{short_path}");
         self.reverse_mappings
             .insert(reverse_key, original_path.to_string());
 
@@ -82,7 +82,7 @@ impl MetadataDB {
                 count += 1;
             }
 
-            let prefix = format!("{}:", workspace_id);
+            let prefix = format!("{workspace_id}:");
             let reverse_keys_to_remove: Vec<String> = self
                 .reverse_mappings
                 .iter()
@@ -106,7 +106,7 @@ impl MetadataDB {
         let mut mappings = Vec::new();
 
         if let Some(forward_keys) = self.workspace_keys.get(workspace_id) {
-            let prefix = format!("{}:", workspace_id);
+            let prefix = format!("{workspace_id}:");
             for key in forward_keys.iter() {
                 if let Some(short_path) = self.mappings.get(key) {
                     if let Some(original) = key.strip_prefix(&prefix) {

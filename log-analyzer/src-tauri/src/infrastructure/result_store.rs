@@ -15,7 +15,7 @@ impl SearchResultRepository for DiskResultStoreRepo {
     fn create_session(&self, search_id: &str) -> Result<()> {
         self.store.create_session(search_id).map_err(|e| {
             la_core::error::AppError::io_error(
-                format!("Failed to create search session: {}", e),
+                format!("Failed to create search session: {e}"),
                 None,
             )
         })
@@ -26,7 +26,7 @@ impl SearchResultRepository for DiskResultStoreRepo {
             .append_entries(search_id, entries)
             .map(|_| ())
             .map_err(|e| {
-                la_core::error::AppError::io_error(format!("Failed to append entries: {}", e), None)
+                la_core::error::AppError::io_error(format!("Failed to append entries: {e}"), None)
             })
     }
 
@@ -36,7 +36,7 @@ impl SearchResultRepository for DiskResultStoreRepo {
             .read_page(search_id, offset, limit)
             .map_err(|e| {
                 la_core::error::AppError::io_error(
-                    format!("Failed to read search page: {}", e),
+                    format!("Failed to read search page: {e}"),
                     None,
                 )
             })?;
@@ -52,7 +52,7 @@ impl SearchResultRepository for DiskResultStoreRepo {
 
     fn complete_session(&self, search_id: &str) -> Result<()> {
         self.store.complete_session(search_id).map_err(|e| {
-            la_core::error::AppError::io_error(format!("Failed to complete session: {}", e), None)
+            la_core::error::AppError::io_error(format!("Failed to complete session: {e}"), None)
         })
     }
 

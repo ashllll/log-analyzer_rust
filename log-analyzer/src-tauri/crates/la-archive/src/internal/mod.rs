@@ -22,7 +22,7 @@ pub fn get_file_metadata(path: &Path) -> Result<FileMetadata> {
 
     let modified_time: i64 = modified
         .duration_since(SystemTime::UNIX_EPOCH)
-        .map_err(|e| AppError::validation_error(format!("Invalid timestamp: {}", e)))?
+        .map_err(|e| AppError::validation_error(format!("Invalid timestamp: {e}")))?
         .as_secs()
         .try_into()
         .map_err(|_| AppError::validation_error("Timestamp overflow (Y2K38)".to_string()))?;

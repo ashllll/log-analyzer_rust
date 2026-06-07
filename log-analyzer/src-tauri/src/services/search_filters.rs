@@ -4,9 +4,9 @@
 //! 修复依赖方向（application + infrastructure 不应依赖 commands）。
 //! commands/search/filters.rs 保留为 re-export 以保持向后兼容。
 
-use la_core::utils::{level_to_mask, parse_metadata, TimestampParser};
 use la_core::error::CommandError;
 use la_core::models::SearchFilters;
+use la_core::utils::{level_to_mask, parse_metadata, TimestampParser};
 use regex::Regex;
 use std::collections::HashSet;
 
@@ -68,7 +68,6 @@ impl ParsedLineMetadata {
     }
 }
 
-
 impl FilePatternMatcher {
     pub(crate) fn compile(raw: &str) -> Result<Self, CommandError> {
         let t = raw.trim();
@@ -78,7 +77,7 @@ impl FilePatternMatcher {
             Ok(Self::Wildcard(Regex::new(&re).map_err(|e| {
                 CommandError::new(
                     "VALIDATION_ERROR",
-                    format!("Invalid file pattern '{}': {}", t, e),
+                    format!("Invalid file pattern '{t}': {e}"),
                 )
                 .with_help("Use '*.log' or 'service-error.log'")
             })?))
@@ -163,7 +162,7 @@ impl CompiledSearchFilters {
         };
         TimestampParser::parse_naive_datetime(v)
             .ok_or_else(|| {
-                CommandError::new("VALIDATION_ERROR", format!("Invalid {} '{}'", label, v))
+                CommandError::new("VALIDATION_ERROR", format!("Invalid {label} '{v}'"))
                     .with_help("Use '2024-01-15T10:30' or '2024-01-15 10:30:45'")
             })
             .map(Some)

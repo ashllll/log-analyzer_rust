@@ -8,8 +8,8 @@
 
 // 导入 log_analyzer 库的模块（所有命令均在 commands/ 层定义）
 use log_analyzer::commands::{
-    config::*, export::*, import::*, log_config::*, search::*, state_sync::*,
-    validation::*, virtual_tree::*, watch::*, workspace::*,
+    config::*, export::*, import::*, log_config::*, search::*, state_sync::*, validation::*,
+    virtual_tree::*, watch::*, workspace::*,
 };
 use log_analyzer::models::AppState;
 use log_analyzer::task_manager::{TaskManager, TauriEventEmitter};
@@ -191,10 +191,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 .await;
                             });
                         }
-                        let _ = tokio::time::timeout(
-                            std::time::Duration::from_secs(8),
-                            async { while let Some(res) = set.join_next().await { let _ = res; } },
-                        )
+                        let _ = tokio::time::timeout(std::time::Duration::from_secs(8), async {
+                            while let Some(res) = set.join_next().await {
+                                let _ = res;
+                            }
+                        })
                         .await;
                         let tm_opt = state.take_task_manager();
                         if let Some(tm) = tm_opt {

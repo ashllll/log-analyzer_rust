@@ -147,7 +147,7 @@ pub fn validate_and_sanitize_path(
     };
 
     if needs_prefix {
-        sanitized = format!("_{}", sanitized);
+        sanitized = format!("_{sanitized}");
     }
 
     // 检查长度并截断
@@ -220,8 +220,7 @@ pub fn validate_and_sanitize_archive_path(
             }
             PathValidationResult::Unsafe(reason) => {
                 return PathValidationResult::Unsafe(format!(
-                    "路径组件 '{}' 不安全: {}",
-                    component, reason
+                    "路径组件 '{component}' 不安全: {reason}"
                 ));
             }
         }
@@ -311,7 +310,7 @@ fn truncate_long_component(component: &str, max_len: usize) -> String {
     }
 
     // 组合结果
-    let result = format!("{}{}{}", truncated_name, hash_suffix, ext);
+    let result = format!("{truncated_name}{hash_suffix}{ext}");
 
     // 截断日志：通知运维/开发者文件名已被修改，方便追溯
     // 中文场景：每个汉字占 3 字节，85 汉字 = 255 字节触发此分支
@@ -342,7 +341,7 @@ fn truncate_long_component(component: &str, max_len: usize) -> String {
 pub fn check_path_depth(path: &Path, max_depth: usize) -> Result<(), String> {
     let depth = path.components().count();
     if depth > max_depth {
-        Err(format!("路径深度{}超过最大限制{}", depth, max_depth))
+        Err(format!("路径深度{depth}超过最大限制{max_depth}"))
     } else {
         Ok(())
     }
@@ -378,7 +377,7 @@ mod tests {
             PathValidationResult::RequiresSanitization(_, sanitized) => {
                 assert_eq!(sanitized, "file_name_.log");
             }
-            other => panic!("Expected RequiresSanitization, got: {:?}", other),
+            other => panic!("Expected RequiresSanitization, got: {other:?}"),
         }
     }
 
@@ -390,7 +389,7 @@ mod tests {
             PathValidationResult::RequiresSanitization(_, sanitized) => {
                 assert_eq!(sanitized, "_CON");
             }
-            other => panic!("Expected RequiresSanitization, got: {:?}", other),
+            other => panic!("Expected RequiresSanitization, got: {other:?}"),
         }
     }
 
@@ -402,7 +401,7 @@ mod tests {
             PathValidationResult::RequiresSanitization(_, sanitized) => {
                 assert_eq!(sanitized, "filename.log");
             }
-            other => panic!("Expected RequiresSanitization, got: {:?}", other),
+            other => panic!("Expected RequiresSanitization, got: {other:?}"),
         }
     }
 
@@ -438,7 +437,7 @@ mod tests {
         assert!(check_path_depth(shallow_path, 100).is_ok());
 
         let deep_path_str = (0..150)
-            .map(|i| format!("dir{}", i))
+            .map(|i| format!("dir{i}"))
             .collect::<Vec<_>>()
             .join("/");
         let deep_path = Path::new(&deep_path_str);
@@ -513,8 +512,7 @@ mod tests {
         assert!(result.len() <= 255, "截断后仍超限：{} 字节", result.len());
         assert!(
             result.ends_with(".log"),
-            "截断后扩展名应保留，实际为：{}",
-            result
+            "截断后扩展名应保留，实际为：{result}"
         );
     }
 
@@ -535,7 +533,7 @@ mod tests {
         let config = SecurityConfig::default();
         // 构造包含超长中文组件的归档内部路径
         let long_component = "中".repeat(90); // 270 字节，超限
-        let archive_path = format!("subdir/{}.log", long_component);
+        let archive_path = format!("subdir/{long_component}.log");
 
         let result = validate_and_sanitize_archive_path(&archive_path, &config);
 
@@ -560,7 +558,7 @@ mod tests {
                 }
             }
             PathValidationResult::Unsafe(reason) => {
-                panic!("含长中文文件名的路径不应被判为 Unsafe，原因：{}", reason);
+                panic!("含长中文文件名的路径不应被判为 Unsafe，原因：{reason}");
             }
         }
     }

@@ -379,8 +379,7 @@ impl SecurityDetector {
         if file_count > 10000 {
             warnings.push(SecurityWarning {
                 message: format!(
-                    "Archive contains {} files, which may indicate a decompression bomb",
-                    file_count
+                    "Archive contains {file_count} files, which may indicate a decompression bomb"
                 ),
                 file_path: Some(archive_path.to_path_buf()),
                 metrics: None,
@@ -398,7 +397,7 @@ impl SecurityDetector {
             if ratio > self.policy.max_compression_ratio * 0.8 {
                 // Warn at 80% of threshold
                 warnings.push(SecurityWarning {
-                    message: format!("File has very high compression ratio: {:.2}", ratio),
+                    message: format!("File has very high compression ratio: {ratio:.2}"),
                     file_path: Some(entry.path.clone()),
                     metrics: Some(CompressionMetrics {
                         compressed_size: entry.compressed_size,
@@ -606,7 +605,7 @@ mod tests {
         let detector = SecurityDetector::default();
         let entries: Vec<ArchiveEntry> = (0..15000)
             .map(|i| ArchiveEntry {
-                path: PathBuf::from(format!("file{}.txt", i)),
+                path: PathBuf::from(format!("file{i}.txt")),
                 compressed_size: 100,
                 uncompressed_size: 100,
                 is_directory: false,
@@ -905,7 +904,7 @@ mod property_tests {
                     let ratio_variation = 0.8 + (i as f64 / num_files as f64) * 0.4; // 0.8 to 1.2
                     let uncompressed = (compressed as f64 * avg_ratio * ratio_variation) as u64;
                     ArchiveEntry {
-                        path: PathBuf::from(format!("file{}.txt", i)),
+                        path: PathBuf::from(format!("file{i}.txt")),
                         compressed_size: compressed,
                         uncompressed_size: uncompressed,
                         is_directory: false,

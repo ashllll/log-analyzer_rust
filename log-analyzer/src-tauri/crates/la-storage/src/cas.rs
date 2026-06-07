@@ -323,7 +323,7 @@ impl ContentAddressableStorage {
 
         let file = fs::File::open(file_path).await.map_err(|e| {
             AppError::io_error(
-                format!("Failed to open file for hashing: {}", e),
+                format!("Failed to open file for hashing: {e}"),
                 Some(file_path.to_path_buf()),
             )
         })?;
@@ -335,7 +335,7 @@ impl ContentAddressableStorage {
         loop {
             let bytes_read = reader.read(&mut buffer).await.map_err(|e| {
                 AppError::io_error(
-                    format!("Failed to read file for hashing: {}", e),
+                    format!("Failed to read file for hashing: {e}"),
                     Some(file_path.to_path_buf()),
                 )
             })?;
@@ -413,7 +413,7 @@ impl ContentAddressableStorage {
         if let Some(parent) = object_path.parent() {
             fs::create_dir_all(parent).await.map_err(|e| {
                 AppError::io_error(
-                    format!("Failed to create object directory: {}", e),
+                    format!("Failed to create object directory: {e}"),
                     Some(parent.to_path_buf()),
                 )
             })?;
@@ -431,7 +431,7 @@ impl ContentAddressableStorage {
             // Open source file
             let mut src_file = fs::File::open(file_path).await.map_err(|e| {
                 AppError::io_error(
-                    format!("Failed to open source file: {}", e),
+                    format!("Failed to open source file: {e}"),
                     Some(file_path.to_path_buf()),
                 )
             })?;
@@ -460,7 +460,7 @@ impl ContentAddressableStorage {
                 }
                 Err(e) => {
                     return Err(AppError::io_error(
-                        format!("Failed to create target file: {}", e),
+                        format!("Failed to create target file: {e}"),
                         Some(object_path.clone()),
                     ));
                 }
@@ -473,7 +473,7 @@ impl ContentAddressableStorage {
             loop {
                 let bytes_read = src_file.read(&mut buffer).await.map_err(|e| {
                     AppError::io_error(
-                        format!("Failed to read from source file: {}", e),
+                        format!("Failed to read from source file: {e}"),
                         Some(file_path.to_path_buf()),
                     )
                 })?;
@@ -487,7 +487,7 @@ impl ContentAddressableStorage {
                     .await
                     .map_err(|e| {
                         AppError::io_error(
-                            format!("Failed to write to target file: {}", e),
+                            format!("Failed to write to target file: {e}"),
                             Some(object_path.clone()),
                         )
                     })?;
@@ -498,7 +498,7 @@ impl ContentAddressableStorage {
             // Flush to ensure all data is written
             dst_file.flush().await.map_err(|e| {
                 AppError::io_error(
-                    format!("Failed to flush target file: {}", e),
+                    format!("Failed to flush target file: {e}"),
                     Some(object_path.clone()),
                 )
             })?;
@@ -590,7 +590,7 @@ impl ContentAddressableStorage {
                 }
 
                 return Err(AppError::io_error(
-                    format!("File copy timeout after {} seconds", FILE_COPY_TIMEOUT),
+                    format!("File copy timeout after {FILE_COPY_TIMEOUT} seconds"),
                     Some(file_path.to_path_buf()),
                 ));
             }
@@ -598,7 +598,7 @@ impl ContentAddressableStorage {
 
         let metadata = fs::metadata(&object_path).await.map_err(|e| {
             AppError::io_error(
-                format!("Failed to read file metadata: {}", e),
+                format!("Failed to read file metadata: {e}"),
                 Some(object_path.clone()),
             )
         })?;
@@ -684,7 +684,7 @@ impl ContentAddressableStorage {
         if let Some(parent) = object_path.parent() {
             fs::create_dir_all(parent).await.map_err(|e| {
                 AppError::io_error(
-                    format!("Failed to create object directory: {}", e),
+                    format!("Failed to create object directory: {e}"),
                     Some(parent.to_path_buf()),
                 )
             })?;
@@ -704,14 +704,14 @@ impl ContentAddressableStorage {
                 // Successfully created new file, write content
                 file.write_all(content).await.map_err(|e| {
                     AppError::io_error(
-                        format!("Failed to write object file: {}", e),
+                        format!("Failed to write object file: {e}"),
                         Some(object_path.clone()),
                     )
                 })?;
 
                 file.flush().await.map_err(|e| {
                     AppError::io_error(
-                        format!("Failed to flush object file: {}", e),
+                        format!("Failed to flush object file: {e}"),
                         Some(object_path.clone()),
                     )
                 })?;
@@ -727,7 +727,7 @@ impl ContentAddressableStorage {
             }
             Err(e) => {
                 return Err(AppError::io_error(
-                    format!("Failed to create object file: {}", e),
+                    format!("Failed to create object file: {e}"),
                     Some(object_path.clone()),
                 ));
             }
@@ -819,8 +819,7 @@ impl ContentAddressableStorage {
     pub async fn read_content(&self, hash: &str) -> Result<Vec<u8>> {
         if !is_valid_content_hash(hash) {
             return Err(AppError::validation_error(format!(
-                "Invalid content hash format: {}",
-                hash
+                "Invalid content hash format: {hash}"
             )));
         }
 
@@ -836,7 +835,7 @@ impl ContentAddressableStorage {
 
         fs::read(&object_path).await.map_err(|e| {
             AppError::io_error(
-                format!("Failed to read object {}: {}", hash, e),
+                format!("Failed to read object {hash}: {e}"),
                 Some(object_path),
             )
         })
@@ -896,8 +895,7 @@ impl ContentAddressableStorage {
     pub fn read_content_sync(&self, hash: &str) -> Result<Vec<u8>> {
         if !is_valid_content_hash(hash) {
             return Err(AppError::validation_error(format!(
-                "Invalid content hash format: {}",
-                hash
+                "Invalid content hash format: {hash}"
             )));
         }
 
@@ -913,7 +911,7 @@ impl ContentAddressableStorage {
 
         std::fs::read(&object_path).map_err(|e| {
             AppError::io_error(
-                format!("Failed to read object {}: {}", hash, e),
+                format!("Failed to read object {hash}: {e}"),
                 Some(object_path),
             )
         })
@@ -946,7 +944,7 @@ impl ContentAddressableStorage {
         if let Some(parent) = tmp_path.parent() {
             fs::create_dir_all(parent).await.map_err(|e| {
                 AppError::io_error(
-                    format!("Failed to create temp directory: {}", e),
+                    format!("Failed to create temp directory: {e}"),
                     Some(parent.to_path_buf()),
                 )
             })?;
@@ -954,7 +952,7 @@ impl ContentAddressableStorage {
 
         let mut tmp_file = tokio::fs::File::create(&tmp_path).await.map_err(|e| {
             AppError::io_error(
-                format!("Failed to create temp file: {}", e),
+                format!("Failed to create temp file: {e}"),
                 Some(tmp_path.clone()),
             )
         })?;
@@ -966,14 +964,14 @@ impl ContentAddressableStorage {
             let n = reader
                 .read(&mut buf)
                 .await
-                .map_err(|e| AppError::io_error(format!("Stream read failed: {}", e), None))?;
+                .map_err(|e| AppError::io_error(format!("Stream read failed: {e}"), None))?;
             if n == 0 {
                 break;
             }
             hasher.update(&buf[..n]);
             tmp_file.write_all(&buf[..n]).await.map_err(|e| {
                 AppError::io_error(
-                    format!("Temp file write failed: {}", e),
+                    format!("Temp file write failed: {e}"),
                     Some(tmp_path.clone()),
                 )
             })?;
@@ -981,7 +979,7 @@ impl ContentAddressableStorage {
 
         tmp_file.flush().await.map_err(|e| {
             AppError::io_error(
-                format!("Temp file flush failed: {}", e),
+                format!("Temp file flush failed: {e}"),
                 Some(tmp_path.clone()),
             )
         })?;
@@ -992,7 +990,7 @@ impl ContentAddressableStorage {
         if let Some(parent) = object_path.parent() {
             fs::create_dir_all(parent).await.map_err(|e| {
                 AppError::io_error(
-                    format!("Failed to create object directory: {}", e),
+                    format!("Failed to create object directory: {e}"),
                     Some(parent.to_path_buf()),
                 )
             })?;
@@ -1011,7 +1009,7 @@ impl ContentAddressableStorage {
             Err(e) => {
                 fs::remove_file(&tmp_path).await.ok();
                 Err(AppError::io_error(
-                    format!("CAS rename failed: {}", e),
+                    format!("CAS rename failed: {e}"),
                     Some(object_path),
                 ))
             }
@@ -1034,8 +1032,7 @@ impl ContentAddressableStorage {
     pub fn read_content_mmap_sync(&self, hash: &str) -> Result<Mmap> {
         if !is_valid_content_hash(hash) {
             return Err(AppError::validation_error(format!(
-                "Invalid content hash format: {}",
-                hash
+                "Invalid content hash format: {hash}"
             )));
         }
 
@@ -1051,7 +1048,7 @@ impl ContentAddressableStorage {
 
         let file = std::fs::File::open(&object_path).map_err(|e| {
             AppError::io_error(
-                format!("Failed to open object {} for mmap: {}", hash, e),
+                format!("Failed to open object {hash} for mmap: {e}"),
                 Some(object_path.clone()),
             )
         })?;
@@ -1065,7 +1062,7 @@ impl ContentAddressableStorage {
         //   and the file is not modified after initial write
         let mmap = unsafe { Mmap::map(&file) }.map_err(|e| {
             AppError::io_error(
-                format!("Failed to mmap object {}: {}", hash, e),
+                format!("Failed to mmap object {hash}: {e}"),
                 Some(object_path),
             )
         })?;
@@ -1238,7 +1235,7 @@ impl ContentAddressableStorage {
         // 1. 获取文件大小
         let metadata = fs::metadata(file_path).await.map_err(|e| {
             AppError::io_error(
-                format!("Failed to get file metadata: {}", e),
+                format!("Failed to get file metadata: {e}"),
                 Some(file_path.to_path_buf()),
             )
         })?;
@@ -1264,8 +1261,7 @@ impl ContentAddressableStorage {
         } else if available_space < required_space {
             return Err(AppError::io_error(
                 format!(
-                    "Insufficient disk space: required {} bytes (3x file size), available {} bytes",
-                    required_space, available_space
+                    "Insufficient disk space: required {required_space} bytes (3x file size), available {available_space} bytes"
                 ),
                 Some(self.workspace_dir.clone()),
             ));
@@ -1319,7 +1315,7 @@ impl ContentAddressableStorage {
         // Open source file
         let mut src_file = fs::File::open(file_path).await.map_err(|e| {
             AppError::io_error(
-                format!("Failed to open source file: {}", e),
+                format!("Failed to open source file: {e}"),
                 Some(file_path.to_path_buf()),
             )
         })?;
@@ -1328,7 +1324,7 @@ impl ContentAddressableStorage {
         let temp_dir = self.workspace_dir.join("tmp");
         fs::create_dir_all(&temp_dir).await.map_err(|e| {
             AppError::io_error(
-                format!("Failed to create temp directory: {}", e),
+                format!("Failed to create temp directory: {e}"),
                 Some(temp_dir.clone()),
             )
         })?;
@@ -1340,7 +1336,7 @@ impl ContentAddressableStorage {
         // Create temp file with RAII guard for automatic cleanup (BUG-007 fix)
         let mut temp_file = fs::File::create(&temp_path).await.map_err(|e| {
             AppError::io_error(
-                format!("Failed to create temp file: {}", e),
+                format!("Failed to create temp file: {e}"),
                 Some(temp_path.clone()),
             )
         })?;
@@ -1357,7 +1353,7 @@ impl ContentAddressableStorage {
             loop {
                 let bytes_read = src_file.read(&mut buffer).await.map_err(|e| {
                     AppError::io_error(
-                        format!("Failed to read from source file: {}", e),
+                        format!("Failed to read from source file: {e}"),
                         Some(file_path.to_path_buf()),
                     )
                 })?;
@@ -1375,7 +1371,7 @@ impl ContentAddressableStorage {
                     .await
                     .map_err(|e| {
                         AppError::io_error(
-                            format!("Failed to write to temp file: {}", e),
+                            format!("Failed to write to temp file: {e}"),
                             Some(temp_path.clone()),
                         )
                     })?;
@@ -1386,7 +1382,7 @@ impl ContentAddressableStorage {
             // Flush temp file
             temp_file.flush().await.map_err(|e| {
                 AppError::io_error(
-                    format!("Failed to flush temp file: {}", e),
+                    format!("Failed to flush temp file: {e}"),
                     Some(temp_path.clone()),
                 )
             })?;
@@ -1394,7 +1390,7 @@ impl ContentAddressableStorage {
             // Sync to ensure data is written to disk
             temp_file.sync_all().await.map_err(|e| {
                 AppError::io_error(
-                    format!("Failed to sync temp file: {}", e),
+                    format!("Failed to sync temp file: {e}"),
                     Some(temp_path.clone()),
                 )
             })?;
@@ -1413,7 +1409,7 @@ impl ContentAddressableStorage {
             Err(_) => {
                 // Timeout occurred, temp file will be cleaned up by RAII guard (BUG-007 fix)
                 return Err(AppError::io_error(
-                    format!("File copy timeout after {} seconds", FILE_COPY_TIMEOUT),
+                    format!("File copy timeout after {FILE_COPY_TIMEOUT} seconds"),
                     Some(file_path.to_path_buf()),
                 ));
             }
@@ -1443,7 +1439,7 @@ impl ContentAddressableStorage {
         if let Some(parent) = object_path.parent() {
             fs::create_dir_all(parent).await.map_err(|e| {
                 AppError::io_error(
-                    format!("Failed to create object directory: {}", e),
+                    format!("Failed to create object directory: {e}"),
                     Some(parent.to_path_buf()),
                 )
             })?;
@@ -1478,7 +1474,7 @@ impl ContentAddressableStorage {
             Err(e) => {
                 // Temp file will be cleaned up by RAII guard (BUG-007 fix)
                 return Err(AppError::io_error(
-                    format!("Failed to check target file: {}", e),
+                    format!("Failed to check target file: {e}"),
                     Some(object_path.clone()),
                 ));
             }
@@ -1494,7 +1490,7 @@ impl ContentAddressableStorage {
             Err(e) => {
                 // Rename failed, temp file will be cleaned up by RAII guard (BUG-007 fix)
                 return Err(AppError::io_error(
-                    format!("Failed to rename temp file to target: {}", e),
+                    format!("Failed to rename temp file to target: {e}"),
                     Some(object_path.clone()),
                 ));
             }
@@ -1645,8 +1641,7 @@ mod tests {
         // Use platform-independent path checking
         assert!(
             path_str.contains("objects") && path_str.contains("a3"),
-            "Should use first 2 chars as directory, got: {}",
-            path_str
+            "Should use first 2 chars as directory, got: {path_str}"
         );
         assert!(
             path_str.ends_with("f2e1d4c5b6a7890123456789abcdef0123456789abcdef0123456789abcdef")

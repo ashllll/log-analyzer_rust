@@ -83,15 +83,10 @@ async fn get_workspace_service_or_error(
     state: &AppState,
     workspace_id: &str,
 ) -> Result<WorkspaceServiceRef, CommandError> {
-    state
-        .get_workspace_service(workspace_id)
-        .ok_or_else(|| {
-            CommandError::new(
-                "NOT_FOUND",
-                format!("Workspace {workspace_id} not found"),
-            )
+    state.get_workspace_service(workspace_id).ok_or_else(|| {
+        CommandError::new("NOT_FOUND", format!("Workspace {workspace_id} not found"))
             .with_help("Try reloading the workspace")
-        })
+    })
 }
 
 // ============================================================================
@@ -149,7 +144,7 @@ pub async fn cancel_search(
     }
 
     Err(
-        CommandError::new("NOT_FOUND", format!("Search {} not found", searchId))
+        CommandError::new("NOT_FOUND", format!("Search {searchId} not found"))
             .with_help("Search may have already finished"),
     )
 }
@@ -164,18 +159,19 @@ pub async fn fetch_search_page(
     // P3 迁移：DiskResultStore 全局共享，任意 workspace service 皆可服务
     let services = state.all_workspace_services();
     if let Some(svc) = services.first() {
-        return svc.fetch_search_page(&searchId, offset, limit).await.map_err(|e| {
-            CommandError::from(AppError::io_error(
-                format!("Failed to read page: {e}"),
-                None,
-            ))
-            .with_help("Results may have been cleared. Try searching again")
-        });
+        return svc
+            .fetch_search_page(&searchId, offset, limit)
+            .await
+            .map_err(|e| {
+                CommandError::from(AppError::io_error(
+                    format!("Failed to read page: {e}"),
+                    None,
+                ))
+                .with_help("Results may have been cleared. Try searching again")
+            });
     }
-    Err(
-        CommandError::new("NOT_FOUND", "No workspace available")
-            .with_help("Import a workspace first"),
-    )
+    Err(CommandError::new("NOT_FOUND", "No workspace available")
+        .with_help("Import a workspace first"))
 }
 
 // ============================================================================

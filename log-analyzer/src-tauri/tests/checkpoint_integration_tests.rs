@@ -99,8 +99,7 @@ async fn test_pause_and_resume_extraction() {
     for (file_path, _) in first_batch.iter().chain(second_batch.iter()) {
         assert!(
             resumed_checkpoint.is_file_extracted(file_path),
-            "File {:?} should be marked as extracted",
-            file_path
+            "File {file_path:?} should be marked as extracted"
         );
     }
 
@@ -290,7 +289,7 @@ async fn test_checkpoint_write_intervals() {
 
     // Simulate extracting files
     for i in 0..250 {
-        let file_path = PathBuf::from(format!("/test/output/file{}.txt", i));
+        let file_path = PathBuf::from(format!("/test/output/file{i}.txt"));
         let file_size = 1024u64;
 
         checkpoint.update_file(file_path, file_size);

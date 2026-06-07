@@ -132,8 +132,7 @@ fn validate_path_safety(path: &Path, base_dir: &Path) -> Result<()> {
                 // 检查是否包含路径遍历序列
                 if str.contains("..") || str.contains("/") || str.contains("\\") {
                     return Err(AppError::validation_error(format!(
-                        "Suspicious path component detected: {}",
-                        str
+                        "Suspicious path component detected: {str}"
                     )));
                 }
             }
@@ -188,24 +187,21 @@ fn validate_virtual_path(virtual_path: &str) -> Result<()> {
     // Check for path traversal sequences
     if virtual_path.contains("..") {
         return Err(AppError::validation_error(format!(
-            "Path traversal detected in virtual path: {}",
-            virtual_path
+            "Path traversal detected in virtual path: {virtual_path}"
         )));
     }
 
     // Check for absolute paths (virtual paths should be relative)
     if virtual_path.starts_with('/') || virtual_path.starts_with('\\') {
         return Err(AppError::validation_error(format!(
-            "Virtual path should be relative, not absolute: {}",
-            virtual_path
+            "Virtual path should be relative, not absolute: {virtual_path}"
         )));
     }
 
     // Check for Windows drive letters
     if virtual_path.len() >= 2 && virtual_path.chars().nth(1) == Some(':') {
         return Err(AppError::validation_error(format!(
-            "Virtual path should not contain drive letters: {}",
-            virtual_path
+            "Virtual path should not contain drive letters: {virtual_path}"
         )));
     }
 
@@ -220,7 +216,6 @@ fn validate_virtual_path(virtual_path: &str) -> Result<()> {
 
     Ok(())
 }
-
 
 // ========== NEW CAS-BASED PROCESSING FUNCTIONS ==========
 
@@ -455,7 +450,7 @@ pub async fn process_path_with_cas_and_checkpoints(
                     // 确定实际要处理的路径
                     let path_to_process = target_path.as_deref().unwrap_or_else(|| entry.path());
                     let entry_name = entry.file_name().to_string_lossy().to_string();
-                    let new_virtual = format!("{}/{}", virtual_path, entry_name);
+                    let new_virtual = format!("{virtual_path}/{entry_name}");
 
                     if let Err(e) = Box::pin(process_path_with_cas_and_checkpoints(
                         path_to_process,
@@ -815,7 +810,7 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
 
     fs::create_dir_all(&extract_dir).await.map_err(|e| {
         AppError::archive_error(
-            format!("Failed to create extraction directory: {}", e),
+            format!("Failed to create extraction directory: {e}"),
             Some(extract_dir.clone()),
         )
     })?;
@@ -842,7 +837,7 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
                 // 清理失败解压的临时目录
                 let _ = fs::remove_dir_all(&extract_dir).await;
                 return Err(AppError::archive_error(
-                    format!("Enhanced extraction failed: {}", e),
+                    format!("Enhanced extraction failed: {e}"),
                     Some(archive_path.to_path_buf()),
                 ));
             }
@@ -868,7 +863,7 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
                 // 清理失败解压的临时目录
                 let _ = fs::remove_dir_all(&extract_dir).await;
                 return Err(AppError::archive_error(
-                    format!("Legacy extraction failed: {}", e),
+                    format!("Legacy extraction failed: {e}"),
                     Some(archive_path.to_path_buf()),
                 ));
             }
@@ -1090,7 +1085,7 @@ fn is_archive_file(path: &Path) -> bool {
         // 检查复合扩展名如 .tar.gz
         if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
             let lower_name = name.to_lowercase();
-            if lower_name.ends_with(&format!(".{}", ext)) {
+            if lower_name.ends_with(&format!(".{ext}")) {
                 return true;
             }
         }
@@ -1099,22 +1094,22 @@ fn is_archive_file(path: &Path) -> bool {
     })
 }
 
-/// 提取压缩文件并递归处理内容 (Legacy HashMap-based version)
-///
-/// **Note**: This is the legacy implementation for backward compatibility.
-/// New code should use `extract_and_process_archive_with_cas` instead.
-///
-/// # 参数
-///
-/// - `archive_manager`: ArchiveManager 实例
-/// - `archive_path`: 压缩文件路径
-/// - `virtual_path`: 虚拟路径前缀
-/// - `target_root`: 解压目标根目录
-/// - `map`: 路径映射表
-/// - `provider`: 应用配置提供者（解耦 Tauri 依赖）
-/// - `task_id`: 任务 ID
-/// - `workspace_id`: 工作区 ID
-///
+// / 提取压缩文件并递归处理内容 (Legacy HashMap-based version)
+// /
+// / **Note**: This is the legacy implementation for backward compatibility.
+// / New code should use `extract_and_process_archive_with_cas` instead.
+// /
+// / # 参数
+// /
+// / - `archive_manager`: ArchiveManager 实例
+// / - `archive_path`: 压缩文件路径
+// / - `virtual_path`: 虚拟路径前缀
+// / - `target_root`: 解压目标根目录
+// / - `map`: 路径映射表
+// / - `provider`: 应用配置提供者（解耦 Tauri 依赖）
+// / - `task_id`: 任务 ID
+// / - `workspace_id`: 工作区 ID
+// /
 
 // ========== 防御性集成：文件过滤守卫函数 ==========
 

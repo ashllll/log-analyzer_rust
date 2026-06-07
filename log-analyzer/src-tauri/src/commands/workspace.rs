@@ -76,12 +76,9 @@ pub async fn load_workspace(
     let (service, _workspace_dir) =
         crate::utils::workspace_guard::require_cas_workspace(&app, &state, &workspace_id).await?;
 
-    let file_count = service
-        .metadata_store()
-        .count_files()
-        .await
-        .map_err(|e| {
-            CommandError::new("DATABASE_ERROR", format!("Failed to count files: {}", e))
+    let file_count =
+        service.metadata_store().count_files().await.map_err(|e| {
+            CommandError::new("DATABASE_ERROR", format!("Failed to count files: {e}"))
         })? as usize;
 
     // Broadcast workspace loaded event
@@ -177,7 +174,7 @@ fn load_stored_workspaces(
         Some(c) => serde_json::from_value(c.workspaces).map_err(|e| {
             CommandError::new(
                 "CONFIG_ERROR",
-                format!("Failed to parse stored workspaces while {}: {}", action, e),
+                format!("Failed to parse stored workspaces while {action}: {e}"),
             )
         }),
         None => Ok(Vec::new()),
@@ -254,7 +251,7 @@ fn build_workspace_id(name: &str) -> String {
         slug = "workspace".to_string();
     }
 
-    format!("ws-{}-{}", slug, suffix)
+    format!("ws-{slug}-{suffix}")
 }
 
 /// 判断工作区是否使用CAS存储
@@ -381,12 +378,12 @@ async fn cleanup_workspace_resources(
     let index_dir = app
         .path()
         .app_data_dir()
-        .map_err(|e| CommandError::new("IO_ERROR", format!("Failed to get app data dir: {}", e)))?
+        .map_err(|e| CommandError::new("IO_ERROR", format!("Failed to get app data dir: {e}")))?
         .join("indices");
 
     // 尝试删除压缩版本和未压缩版本(兼容性)
-    let compressed_index = index_dir.join(format!("{}.idx.gz", workspace_id));
-    let uncompressed_index = index_dir.join(format!("{}.idx", workspace_id));
+    let compressed_index = index_dir.join(format!("{workspace_id}.idx.gz"));
+    let uncompressed_index = index_dir.join(format!("{workspace_id}.idx"));
 
     let mut deleted_count = 0;
     let mut failed_count = 0;
@@ -480,7 +477,7 @@ async fn cleanup_workspace_resources(
 
                     for journal_ext in &["-wal", "-shm", "-journal"] {
                         let journal_file =
-                            workspace_dir.join(format!("metadata.db{}", journal_ext));
+                            workspace_dir.join(format!("metadata.db{journal_ext}"));
                         if journal_file.exists() {
                             if let Err(e) = remove_file_with_retry(&journal_file).await {
                                 warn!(
@@ -538,7 +535,7 @@ async fn cleanup_workspace_resources(
             info!("Step 5 skipped: Workspace directory does not exist");
         }
         Err(e) => {
-            let error = format!("Failed to resolve workspace directory: {}", e);
+            let error = format!("Failed to resolve workspace directory: {e}");
             warn!(error = %error, "Step 5 failed");
             errors.push(error);
         }
@@ -652,7 +649,7 @@ pub async fn cancel_task(task_id: String, state: State<'_, AppState>) -> Result<
             crate::task_manager::TaskStatus::Stopped,
         )
         .await
-        .map_err(|e| CommandError::new("TASK_ERROR", format!("Failed to cancel task: {}", e)))?;
+        .map_err(|e| CommandError::new("TASK_ERROR", format!("Failed to cancel task: {e}")))?;
 
     info!(
         task_id = %task_id,
@@ -700,7 +697,7 @@ pub async fn get_workspace_status(
     let size_str = if size_mb >= 1024 {
         format!("{:.1}GB", size_mb as f64 / 1024.0)
     } else {
-        format!("{}MB", size_mb)
+        format!("{size_mb}MB")
     };
 
     Ok(WorkspaceStatusResponse {
@@ -732,7 +729,7 @@ pub async fn get_workspace_time_range(
     let (min_ts, max_ts, total_logs) = manager.get_time_range().map_err(|e| {
         CommandError::new(
             "SEARCH_ERROR",
-            format!("Failed to get time range from index: {}", e),
+            format!("Failed to get time range from index: {e}"),
         )
     })?;
 

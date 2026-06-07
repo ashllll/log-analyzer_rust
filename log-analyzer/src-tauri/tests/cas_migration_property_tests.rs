@@ -73,7 +73,7 @@ fn test_no_path_map_references() {
     if !all_matches.is_empty() {
         eprintln!("\n❌ Found legacy path_map references in source code:");
         for (file, line_num, line) in &all_matches {
-            eprintln!("  {}:{}: {}", file, line_num, line);
+            eprintln!("  {file}:{line_num}: {line}");
         }
         panic!(
             "Found {} legacy path_map references in non-comment code",
@@ -123,7 +123,7 @@ fn test_no_index_store_references() {
     if !filtered_matches.is_empty() {
         eprintln!("\n❌ Found legacy index_store references in source code:");
         for (file, line_num, line) in &filtered_matches {
-            eprintln!("  {}:{}: {}", file, line_num, line);
+            eprintln!("  {file}:{line_num}: {line}");
         }
         panic!(
             "Found {} legacy index_store references in non-comment code",
@@ -168,7 +168,7 @@ fn test_no_migration_references() {
     if !filtered_matches.is_empty() {
         eprintln!("\n❌ Found legacy migration references in source code:");
         for (file, line_num, line) in &filtered_matches {
-            eprintln!("  {}:{}: {}", file, line_num, line);
+            eprintln!("  {file}:{line_num}: {line}");
         }
         panic!(
             "Found {} legacy migration references in non-comment code",
@@ -196,7 +196,7 @@ fn test_no_index_data_references() {
     if !index_data_matches.is_empty() {
         eprintln!("\n❌ Found legacy IndexData references in source code:");
         for (file, line_num, line) in &index_data_matches {
-            eprintln!("  {}:{}: {}", file, line_num, line);
+            eprintln!("  {file}:{line_num}: {line}");
         }
         panic!(
             "Found {} legacy IndexData references in non-comment code",
@@ -223,17 +223,15 @@ fn test_cas_architecture_present() {
 
     // Check for CAS-related files (now in la-storage crate)
     let cas_file = crates_dir.join("cas.rs");
-    let metadata_store_file = crates_dir.join("metadata_store.rs");
+    let metadata_store_dir = crates_dir.join("metadata_store");
 
     assert!(
         cas_file.exists(),
-        "CAS implementation file should exist: {:?}",
-        cas_file
+        "CAS implementation file should exist: {cas_file:?}"
     );
     assert!(
-        metadata_store_file.exists(),
-        "MetadataStore implementation file should exist: {:?}",
-        metadata_store_file
+        metadata_store_dir.is_dir(),
+        "MetadataStore directory should exist: {metadata_store_dir:?}"
     );
 
     // Verify CAS is being used in commands
@@ -298,7 +296,7 @@ fn test_no_legacy_files_exist() {
     if !existing_legacy_files.is_empty() {
         eprintln!("\n❌ Found legacy files that should have been removed:");
         for file in &existing_legacy_files {
-            eprintln!("  {}", file);
+            eprintln!("  {file}");
         }
         panic!(
             "Found {} legacy files that should have been removed",
@@ -333,19 +331,21 @@ fn test_metadata_db_uses_cas_schema() {
         }
     }
 
-    // Check metadata_store.rs for proper CAS schema (now in la-storage crate)
-    let metadata_store_file = Path::new("crates/la-storage/src/metadata_store.rs");
+    // Check metadata_store for proper CAS schema (now in la-storage crate)
+    // The schema definitions live in metadata_store/schema.rs; the mod.rs only
+    // declares submodules.
+    let metadata_store_schema = Path::new("crates/la-storage/src/metadata_store/schema.rs");
     assert!(
-        metadata_store_file.exists(),
-        "MetadataStore file should exist"
+        metadata_store_schema.exists(),
+        "MetadataStore schema file should exist"
     );
 
-    let content = fs::read_to_string(metadata_store_file).unwrap();
+    let content_schema = fs::read_to_string(metadata_store_schema).unwrap();
 
-    // Verify it uses CAS schema
+    // Verify it uses CAS schema (files + archives tables)
     assert!(
-        content.contains("files") && content.contains("archives"),
-        "MetadataStore should use 'files' and 'archives' tables"
+        content_schema.contains("files") && content_schema.contains("archives"),
+        "MetadataStore should use 'files' and 'archives' tables (found in schema.rs)"
     );
 
     println!("✅ Database schema uses CAS architecture");
@@ -397,9 +397,9 @@ fn test_comprehensive_legacy_code_scan() {
     if !all_violations.is_empty() {
         eprintln!("\n❌ Comprehensive legacy code scan found violations:");
         for (pattern, matches) in &all_violations {
-            eprintln!("\n  Pattern: {}", pattern);
+            eprintln!("\n  Pattern: {pattern}");
             for (file, line_num, line) in matches {
-                eprintln!("    {}:{}: {}", file, line_num, line);
+                eprintln!("    {file}:{line_num}: {line}");
             }
         }
         panic!(
@@ -476,8 +476,8 @@ mod cas_storage_consistency_tests {
                     let file_meta = FileMetadata {
                         id: 0,
                         sha256_hash: hash.clone(),
-                        virtual_path: format!("{}_{}", virtual_path, i), // Make unique
-                        original_name: format!("file_{}.log", i),
+                        virtual_path: format!("{virtual_path}_{i}"), // Make unique
+                        original_name: format!("file_{i}.log"),
                         size: content.len() as i64,
                         modified_time: chrono::Utc::now().timestamp(),
                         mime_type: Some("text/plain".to_string()),
@@ -792,10 +792,9 @@ mod search_uses_cas_tests {
 
                 for i in 0..file_count {
                     let content = format!(
-                        "2024-01-01 10:00:00 INFO Log entry {} containing {}\n\
-                         2024-01-01 10:01:00 ERROR Error message {}\n\
-                         2024-01-01 10:02:00 WARN Warning {}\n",
-                        i, query, i, i
+                        "2024-01-01 10:00:00 INFO Log entry {i} containing {query}\n\
+                         2024-01-01 10:01:00 ERROR Error message {i}\n\
+                         2024-01-01 10:02:00 WARN Warning {i}\n"
                     );
 
                     // Store in CAS
@@ -805,8 +804,8 @@ mod search_uses_cas_tests {
                     let file_meta = FileMetadata {
                         id: 0,
                         sha256_hash: hash.clone(),
-                        virtual_path: format!("logs/file_{}.log", i),
-                        original_name: format!("file_{}.log", i),
+                        virtual_path: format!("logs/file_{i}.log"),
+                        original_name: format!("file_{i}.log"),
                         size: content.len() as i64,
                         modified_time: chrono::Utc::now().timestamp(),
                         mime_type: Some("text/plain".to_string()),
@@ -990,8 +989,7 @@ mod search_uses_cas_tests {
 
                 for i in 0..file_count {
                     let content = format!(
-                        "2024-01-01 10:00:00 INFO Test log {} with {}\n",
-                        i, query
+                        "2024-01-01 10:00:00 INFO Test log {i} with {query}\n"
                     );
 
                     let hash = cas.store_content(content.as_bytes()).await.unwrap();
@@ -999,8 +997,8 @@ mod search_uses_cas_tests {
                     let file_meta = FileMetadata {
                         id: 0,
                         sha256_hash: hash.clone(),
-                        virtual_path: format!("logs/file_{}.log", i),
-                        original_name: format!("file_{}.log", i),
+                        virtual_path: format!("logs/file_{i}.log"),
+                        original_name: format!("file_{i}.log"),
                         size: content.len() as i64,
                         modified_time: chrono::Utc::now().timestamp(),
                         mime_type: Some("text/plain".to_string()),
@@ -1086,13 +1084,11 @@ mod search_uses_cas_tests {
                     let content = if contains_term {
                         expected_matches += 1;
                         format!(
-                            "2024-01-01 10:00:00 {} Message in file {}\n",
-                            search_term, i
+                            "2024-01-01 10:00:00 {search_term} Message in file {i}\n"
                         )
                     } else {
                         format!(
-                            "2024-01-01 10:00:00 INFO Regular message in file {}\n",
-                            i
+                            "2024-01-01 10:00:00 INFO Regular message in file {i}\n"
                         )
                     };
 
@@ -1102,8 +1098,8 @@ mod search_uses_cas_tests {
                     let file_meta = FileMetadata {
                         id: 0,
                         sha256_hash: hash,
-                        virtual_path: format!("logs/file_{}.log", i),
-                        original_name: format!("file_{}.log", i),
+                        virtual_path: format!("logs/file_{i}.log"),
+                        original_name: format!("file_{i}.log"),
                         size: content.len() as i64,
                         modified_time: chrono::Utc::now().timestamp(),
                         mime_type: Some("text/plain".to_string()),

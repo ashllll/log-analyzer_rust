@@ -56,7 +56,7 @@ impl fmt::Display for RejectionReason {
             RejectionReason::NestingDepthExceeded => write!(f, "Maximum nesting depth exceeded"),
             RejectionReason::FileTypeMismatch => write!(f, "File type does not match filter"),
             RejectionReason::LowReadability => write!(f, "Content readability score too low"),
-            RejectionReason::Other(msg) => write!(f, "{}", msg),
+            RejectionReason::Other(msg) => write!(f, "{msg}"),
         }
     }
 }

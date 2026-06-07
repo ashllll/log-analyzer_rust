@@ -204,7 +204,7 @@ impl ExtractionOrchestrator {
         in_flight_guard.finish_with(Arc::new(match &result {
             Ok(extraction_result) => Ok(extraction_result.clone()),
             Err(e) => Err(AppError::archive_error(
-                format!("{}", e),
+                format!("{e}"),
                 Some(archive_path_buf.clone()),
             )),
         }));
@@ -219,7 +219,7 @@ impl ExtractionOrchestrator {
         match shared_result.as_ref() {
             Ok(extraction_result) => Ok(extraction_result.clone()),
             Err(error) => Err(AppError::archive_error(
-                format!("{}", error),
+                format!("{error}"),
                 Some(archive_path.to_path_buf()),
             )),
         }
@@ -234,7 +234,7 @@ impl ExtractionOrchestrator {
     ) -> Result<ExtractionResult> {
         // Acquire semaphore permit
         let _permit = self.concurrency_limiter.acquire().await.map_err(|e| {
-            AppError::archive_error(format!("Failed to acquire permit: {}", e), None)
+            AppError::archive_error(format!("Failed to acquire permit: {e}"), None)
         })?;
 
         debug!(

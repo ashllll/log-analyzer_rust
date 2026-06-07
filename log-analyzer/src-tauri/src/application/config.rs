@@ -49,7 +49,10 @@ where
             return Err(AppError::config_error(format!("配置验证失败: {errors}")));
         }
 
-        let config_dir = self.provider.config_dir().map_err(|e| AppError::config_error(e.to_string()))?;
+        let config_dir = self
+            .provider
+            .config_dir()
+            .map_err(|e| AppError::config_error(e.to_string()))?;
         if !config_dir.exists() {
             fs::create_dir_all(&config_dir)
                 .map_err(|e| AppError::io_error(e.to_string(), Some(config_dir.clone())))?;

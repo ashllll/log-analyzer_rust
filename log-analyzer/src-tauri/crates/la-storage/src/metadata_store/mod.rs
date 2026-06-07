@@ -49,7 +49,7 @@ impl MetadataStore {
             .await
             .map_err(|e| {
                 AppError::io_error(
-                    format!("Failed to create workspace directory: {}", e),
+                    format!("Failed to create workspace directory: {e}"),
                     Some(workspace_dir.to_path_buf()),
                 )
             })?;
@@ -68,7 +68,7 @@ impl MetadataStore {
             .connect(&db_url)
             .await
             .map_err(|e| {
-                AppError::database_error(format!("Failed to connect to database: {}", e))
+                AppError::database_error(format!("Failed to connect to database: {e}"))
             })?;
 
         for pragma in &[
@@ -80,7 +80,7 @@ impl MetadataStore {
             "PRAGMA temp_store = MEMORY",
         ] {
             sqlx::query(pragma).execute(&pool).await.map_err(|e| {
-                AppError::database_error(format!("Failed to set PRAGMA '{}': {}", pragma, e))
+                AppError::database_error(format!("Failed to set PRAGMA '{pragma}': {e}"))
             })?;
         }
 
@@ -152,7 +152,14 @@ impl MetadataStore {
         max_timestamp: Option<i64>,
         level_mask: Option<u8>,
     ) -> Result<()> {
-        file_ops::update_file_stats(&self.pool, virtual_path, min_timestamp, max_timestamp, level_mask).await
+        file_ops::update_file_stats(
+            &self.pool,
+            virtual_path,
+            min_timestamp,
+            max_timestamp,
+            level_mask,
+        )
+        .await
     }
 
     pub async fn update_file_ready(
@@ -162,7 +169,14 @@ impl MetadataStore {
         max_timestamp: Option<i64>,
         level_mask: Option<u8>,
     ) -> Result<()> {
-        file_ops::update_file_ready(&self.pool, virtual_path, min_timestamp, max_timestamp, level_mask).await
+        file_ops::update_file_ready(
+            &self.pool,
+            virtual_path,
+            min_timestamp,
+            max_timestamp,
+            level_mask,
+        )
+        .await
     }
 
     pub async fn get_ready_files(&self) -> Result<Vec<FileMetadata>> {
@@ -176,7 +190,8 @@ impl MetadataStore {
         level_mask: Option<u8>,
         file_pattern: Option<&str>,
     ) -> Result<Vec<FileMetadata>> {
-        file_ops::get_files_with_pruning(&self.pool, time_start, time_end, level_mask, file_pattern).await
+        file_ops::get_files_with_pruning(&self.pool, time_start, time_end, level_mask, file_pattern)
+            .await
     }
 
     pub async fn search_files(&self, query: &str) -> Result<Vec<FileMetadata>> {

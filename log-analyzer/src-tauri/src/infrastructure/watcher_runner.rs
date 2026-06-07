@@ -127,8 +127,10 @@ impl WatcherRunner {
             let guard = self.watcher_state.lock();
             if let Some(ref w) = *guard {
                 let offset = *w.file_offsets.get(file_path_str).unwrap_or(&0);
-                let start_line =
-                    w.line_counts.get(file_path_str).map_or(1, |&count| count + 1);
+                let start_line = w
+                    .line_counts
+                    .get(file_path_str)
+                    .map_or(1, |&count| count + 1);
                 (offset, start_line, w.watched_path.clone())
             } else {
                 return;
@@ -149,7 +151,11 @@ impl WatcherRunner {
                     .to_string();
 
                 let new_entries = file_watcher::parse_log_lines(
-                    &new_lines, &virtual_path, file_path_str, 0, start_line_number,
+                    &new_lines,
+                    &virtual_path,
+                    file_path_str,
+                    0,
+                    start_line_number,
                 );
 
                 // Emit new-logs
@@ -253,8 +259,10 @@ impl WatcherRunner {
         if let Some(ref mut w) = *guard {
             w.file_offsets.insert(file_path.to_string(), new_offset);
             if new_line_count > 0 {
-                w.line_counts
-                    .insert(file_path.to_string(), start_line_number - 1 + new_line_count);
+                w.line_counts.insert(
+                    file_path.to_string(),
+                    start_line_number - 1 + new_line_count,
+                );
             }
         }
     }

@@ -253,11 +253,9 @@ mod tests {
         );
         let plan = builder.build(&query).unwrap();
 
-        let lines = vec![
-            "error: first".to_string(),
+        let lines = ["error: first".to_string(),
             "info: second".to_string(),
-            "error: third".to_string(),
-        ];
+            "error: third".to_string()];
 
         let filtered: Vec<&String> = lines
             .iter()

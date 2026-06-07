@@ -79,7 +79,7 @@ pub fn prevent_path_traversal(path: &str) -> Result<String, String> {
         if normalized.to_lowercase().contains(pattern)
             || decoded_normalized.to_lowercase().contains(pattern)
         {
-            return Err(format!("Path traversal pattern detected: {}", pattern));
+            return Err(format!("Path traversal pattern detected: {pattern}"));
         }
     }
 
@@ -146,7 +146,7 @@ fn url_decode(input: &str) -> String {
             let hex2 = chars.next();
 
             if let (Some(h1), Some(h2)) = (hex1, hex2) {
-                let hex_str = format!("{}{}", h1, h2);
+                let hex_str = format!("{h1}{h2}");
                 if let Ok(byte) = u8::from_str_radix(&hex_str, 16) {
                     bytes.push(byte);
                 } else {
@@ -195,14 +195,14 @@ pub fn canonicalize_and_validate(path: &str, base_dir: &str) -> Result<std::path
 
     // 规范化基础目录
     let canonical_base = dunce::canonicalize(base_dir)
-        .map_err(|e| format!("Failed to canonicalize base directory: {}", e))?;
+        .map_err(|e| format!("Failed to canonicalize base directory: {e}"))?;
 
     // 在基础目录内拼接目标路径（禁止直接拼接未经规范化的绝对路径）
     let target_path = canonical_base.join(&safe_path);
 
     // 规范化目标路径（解析符号链接和相对路径）
     let canonical_target = dunce::canonicalize(&target_path)
-        .map_err(|e| format!("Failed to canonicalize path: {}", e))?;
+        .map_err(|e| format!("Failed to canonicalize path: {e}"))?;
 
     // FIX(CR-05): 验证规范化后的路径仍在基础目录内，防止符号链接逃逸
     if !canonical_target.starts_with(&canonical_base) {
@@ -261,7 +261,7 @@ pub fn sanitize_file_name_strict(name: &str) -> Result<String, String> {
     let name_without_ext = name_upper.split('.').next().unwrap_or("");
 
     if reserved_names.contains(&name_without_ext) {
-        return Err(format!("Reserved filename: {}", name_without_ext));
+        return Err(format!("Reserved filename: {name_without_ext}"));
     }
 
     Ok(sanitized)
@@ -286,12 +286,12 @@ pub fn sanitize_file_names_batch(names: &[String]) -> Result<Vec<String>, String
             if parts.len() == 2 {
                 sanitized = format!("{}_{}.{}", parts[1], counter, parts[0]);
             } else {
-                sanitized = format!("{}_{}", original_sanitized, counter);
+                sanitized = format!("{original_sanitized}_{counter}");
             }
             counter += 1;
 
             if counter > 1000 {
-                return Err(format!("Too many duplicate filenames at index {}", index));
+                return Err(format!("Too many duplicate filenames at index {index}"));
             }
         }
 
@@ -479,14 +479,14 @@ pub fn validate_path_param(path: &str, param_name: &str) -> Result<std::path::Pa
     crate::utils::command_validation::validate_path_param(path, param_name)?;
 
     // 验证路径安全性
-    validate_safe_path(path).map_err(|e| format!("Invalid {}: {:?}", param_name, e))?;
+    validate_safe_path(path).map_err(|e| format!("Invalid {param_name}: {e:?}"))?;
 
     // 转换为 PathBuf
     let path_buf = std::path::PathBuf::from(path);
 
     // 规范化路径
     let canonical = dunce::canonicalize(&path_buf)
-        .map_err(|e| format!("Failed to canonicalize {}: {}", param_name, e))?;
+        .map_err(|e| format!("Failed to canonicalize {param_name}: {e}"))?;
 
     Ok(canonical)
 }
@@ -502,10 +502,10 @@ pub fn validate_import_source_path(
     let canonical = validate_path_param(path, param_name)?;
 
     if !canonical.exists() {
-        return Err(format!("{} does not exist", param_name));
+        return Err(format!("{param_name} does not exist"));
     }
     if !canonical.is_dir() {
-        return Err(format!("{} must be a directory", param_name));
+        return Err(format!("{param_name} must be a directory"));
     }
     if is_filesystem_root(&canonical) || is_sensitive_system_path(&canonical) {
         return Err(format!(

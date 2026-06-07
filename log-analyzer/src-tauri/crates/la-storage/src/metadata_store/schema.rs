@@ -31,7 +31,7 @@ pub(crate) async fn init_schema(pool: &SqlitePool) -> Result<()> {
     )
     .execute(pool)
     .await
-    .map_err(|e| AppError::database_error(format!("Failed to create files table: {}", e)))?;
+    .map_err(|e| AppError::database_error(format!("Failed to create files table: {e}")))?;
 
     // Create archives table
     sqlx::query(
@@ -52,7 +52,7 @@ pub(crate) async fn init_schema(pool: &SqlitePool) -> Result<()> {
     )
     .execute(pool)
     .await
-    .map_err(|e| AppError::database_error(format!("Failed to create archives table: {}", e)))?;
+    .map_err(|e| AppError::database_error(format!("Failed to create archives table: {e}")))?;
 
     // Create indexes
     let indexes = [
@@ -70,9 +70,10 @@ pub(crate) async fn init_schema(pool: &SqlitePool) -> Result<()> {
     ];
 
     for idx_sql in &indexes {
-        sqlx::query(idx_sql).execute(pool).await.map_err(|e| {
-            AppError::database_error(format!("Failed to create index: {}", e))
-        })?;
+        sqlx::query(idx_sql)
+            .execute(pool)
+            .await
+            .map_err(|e| AppError::database_error(format!("Failed to create index: {e}")))?;
     }
 
     // Create FTS5 virtual table for full-text search
@@ -88,7 +89,7 @@ pub(crate) async fn init_schema(pool: &SqlitePool) -> Result<()> {
     )
     .execute(pool)
     .await
-    .map_err(|e| AppError::database_error(format!("Failed to create FTS table: {}", e)))?;
+    .map_err(|e| AppError::database_error(format!("Failed to create FTS table: {e}")))?;
 
     // Create triggers to keep FTS index in sync
     let fts_triggers = [
@@ -123,7 +124,7 @@ pub(crate) async fn init_schema(pool: &SqlitePool) -> Result<()> {
 
     for (name, sql) in &fts_triggers {
         sqlx::query(sql).execute(pool).await.map_err(|e| {
-            AppError::database_error(format!("Failed to create FTS trigger '{}': {}", name, e))
+            AppError::database_error(format!("Failed to create FTS trigger '{name}': {e}"))
         })?;
     }
 
@@ -139,7 +140,7 @@ pub(crate) async fn init_schema(pool: &SqlitePool) -> Result<()> {
     )
     .execute(pool)
     .await
-    .map_err(|e| AppError::database_error(format!("Failed to create index_state table: {}", e)))?;
+    .map_err(|e| AppError::database_error(format!("Failed to create index_state table: {e}")))?;
 
     // Create indexed_files table
     sqlx::query(
@@ -158,7 +159,7 @@ pub(crate) async fn init_schema(pool: &SqlitePool) -> Result<()> {
     .execute(pool)
     .await
     .map_err(|e| {
-        AppError::database_error(format!("Failed to create indexed_files table: {}", e))
+        AppError::database_error(format!("Failed to create indexed_files table: {e}"))
     })?;
 
     sqlx::query(
@@ -166,7 +167,7 @@ pub(crate) async fn init_schema(pool: &SqlitePool) -> Result<()> {
     )
     .execute(pool)
     .await
-    .map_err(|e| AppError::database_error(format!("Failed to create index: {}", e)))?;
+    .map_err(|e| AppError::database_error(format!("Failed to create index: {e}")))?;
 
     info!("Database schema initialized successfully");
     Ok(())
@@ -178,13 +179,12 @@ pub(crate) async fn migrate_schema_v2(pool: &SqlitePool) -> Result<()> {
         ("max_timestamp", "INTEGER"),
         ("level_mask", "INTEGER"),
     ] {
-        let sql = format!("ALTER TABLE files ADD COLUMN {} {}", col, typ);
+        let sql = format!("ALTER TABLE files ADD COLUMN {col} {typ}");
         if let Err(e) = sqlx::query(&sql).execute(pool).await {
             let msg = e.to_string().to_lowercase();
             if !msg.contains("duplicate column") {
                 return Err(AppError::database_error(format!(
-                    "Failed to add column {}: {}",
-                    col, e
+                    "Failed to add column {col}: {e}"
                 )));
             }
         }
@@ -198,8 +198,7 @@ pub(crate) async fn migrate_schema_v3(pool: &SqlitePool) -> Result<()> {
         let msg = e.to_string().to_lowercase();
         if !msg.contains("duplicate column") {
             return Err(AppError::database_error(format!(
-                "Failed to add analysis_status column: {}",
-                e
+                "Failed to add analysis_status column: {e}"
             )));
         }
     }
@@ -210,13 +209,13 @@ pub(crate) async fn migrate_schema_v3(pool: &SqlitePool) -> Result<()> {
     )
     .execute(pool)
     .await
-    .map_err(|e| AppError::database_error(format!("Failed to update analysis_status: {}", e)))?;
+    .map_err(|e| AppError::database_error(format!("Failed to update analysis_status: {e}")))?;
 
     // Create index for status-filtered queries
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_files_status ON files(analysis_status)")
         .execute(pool)
         .await
-        .map_err(|e| AppError::database_error(format!("Failed to create status index: {}", e)))?;
+        .map_err(|e| AppError::database_error(format!("Failed to create status index: {e}")))?;
 
     Ok(())
 }

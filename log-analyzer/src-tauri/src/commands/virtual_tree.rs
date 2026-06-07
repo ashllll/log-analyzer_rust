@@ -61,17 +61,17 @@ pub async fn read_file_by_hash(
 
     if !cas.exists(&hash) {
         error!(hash = %hash, "File not found in CAS");
-        return Err(format!("File not found: {}", hash));
+        return Err(format!("File not found: {hash}"));
     }
 
     let content_bytes = cas
         .read_content(&hash)
         .await
-        .map_err(|e| format!("Failed to read file: {}", e))?;
+        .map_err(|e| format!("Failed to read file: {e}"))?;
 
     let size = content_bytes.len();
     let content = String::from_utf8(content_bytes)
-        .map_err(|e| format!("File content is not valid UTF-8: {}", e))?;
+        .map_err(|e| format!("File content is not valid UTF-8: {e}"))?;
 
     debug!(
         hash = %hash,
@@ -113,12 +113,12 @@ pub async fn get_virtual_file_tree(
     let archives = metadata_store
         .get_all_archives()
         .await
-        .map_err(|e| format!("Failed to get archives: {}", e))?;
+        .map_err(|e| format!("Failed to get archives: {e}"))?;
 
     let all_files = metadata_store
         .get_all_files()
         .await
-        .map_err(|e| format!("Failed to get files: {}", e))?;
+        .map_err(|e| format!("Failed to get files: {e}"))?;
 
     // Build tree structure
     let tree = build_tree_structure(&archives, &all_files, metadata_store.as_ref()).await?;

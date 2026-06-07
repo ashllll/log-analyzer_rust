@@ -40,10 +40,10 @@ use crate::application::workspace_service::{
     ImportOptions, ImportResult, ImportService, SearchService, WatchService, WorkspaceService,
 };
 use crate::application::SearchUseCase;
+use crate::infrastructure::watcher_runner::WatcherRunner;
 use crate::infrastructure::{
     CasLogFileRepository, DiskResultStoreRepo, QueryEngineLogSearcher, WorkspaceRepo,
 };
-use crate::infrastructure::watcher_runner::WatcherRunner;
 use crate::services::file_watcher::WatcherState;
 use crate::utils::encoding::decode_log_content;
 
@@ -106,7 +106,6 @@ impl WorkspaceServiceImpl {
             watcher_state: Arc::new(Mutex::new(None)),
         }
     }
-
 }
 
 // ============================================================================
@@ -221,19 +220,14 @@ impl SearchService for WorkspaceServiceImpl {
 
         if !self.repo.disk_result_store().has_session(search_id) {
             return Err(AppError::not_found(format!(
-                "Search session '{}' not found",
-                search_id
+                "Search session '{search_id}' not found"
             )));
         }
 
-        self.repo.disk_result_store()
+        self.repo
+            .disk_result_store()
             .read_page(search_id, offset, limit)
-            .map_err(|e| {
-                AppError::io_error(
-                    format!("Failed to read search page: {e}"),
-                    None,
-                )
-            })
+            .map_err(|e| AppError::io_error(format!("Failed to read search page: {e}"), None))
     }
 
     async fn cancel_search(&self, search_id: &str) -> Result<()> {
@@ -247,8 +241,7 @@ impl SearchService for WorkspaceServiceImpl {
                 Ok(())
             }
             None => Err(AppError::not_found(format!(
-                "Search session '{}' not found",
-                search_id
+                "Search session '{search_id}' not found"
             ))),
         }
     }
@@ -461,7 +454,7 @@ impl ImportService for WorkspaceServiceImpl {
             source_path,
             &root_name,
             &self.workspace_dir,
-            &self.repo.cas(),
+            self.repo.cas(),
             self.repo.metadata_store().clone(),
             config_provider,
             task_id,
@@ -479,7 +472,7 @@ impl ImportService for WorkspaceServiceImpl {
 
         // ── 2. 回退文件统计（处理 PENDING 文件，后台执行）──
         let metadata_store = self.repo.metadata_store().clone();
-        let cas = Arc::clone(&self.repo.cas());
+        let cas = Arc::clone(self.repo.cas());
         let workspace_id = self.workspace_id.clone();
         let ct = cancellation_token.clone();
         tokio::spawn(async move {
@@ -497,16 +490,13 @@ impl ImportService for WorkspaceServiceImpl {
                     let mut failed = 0usize;
 
                     for file in files {
-                        if file.analysis_status
-                            == la_core::storage_types::AnalysisStatus::Ready
-                        {
+                        if file.analysis_status == la_core::storage_types::AnalysisStatus::Ready {
                             continue;
                         }
 
                         match cas.read_content(&file.sha256_hash).await {
                             Ok(content) => {
-                                let (min_ts, max_ts, level_mask) =
-                                    compute_file_stats(&content);
+                                let (min_ts, max_ts, level_mask) = compute_file_stats(&content);
                                 if let Err(e) = metadata_store
                                     .update_file_ready(
                                         &file.virtual_path,
@@ -559,17 +549,15 @@ impl ImportService for WorkspaceServiceImpl {
 
         // ── 3. 重建搜索索引（仅首次导入，后台执行）──
         let metadata_store = self.repo.metadata_store().clone();
-        let cas = Arc::clone(&self.repo.cas());
-        let search_engine = Arc::clone(&self.repo.search_engine());
+        let cas = Arc::clone(self.repo.cas());
+        let search_engine = Arc::clone(self.repo.search_engine());
         let workspace_id_bg = self.workspace_id.clone();
         let ct_bg = cancellation_token.clone();
         tokio::spawn(async move {
             if ct_bg.is_cancelled() {
                 return;
             }
-            if let Err(e) =
-                rebuild_search_index_inner(metadata_store, cas, search_engine).await
-            {
+            if let Err(e) = rebuild_search_index_inner(metadata_store, cas, search_engine).await {
                 tracing::warn!(
                     workspace_id = %workspace_id_bg,
                     error = %e,
@@ -584,11 +572,7 @@ impl ImportService for WorkspaceServiceImpl {
         });
 
         // ── 4. 统计已导入文件数 ──
-        let files_imported = self.repo
-            .metadata_store()
-            .count_files()
-            .await
-            .unwrap_or(0) as usize;
+        let files_imported = self.repo.metadata_store().count_files().await.unwrap_or(0) as usize;
 
         Ok(ImportResult {
             root_name,
@@ -608,8 +592,7 @@ impl WatchService for WorkspaceServiceImpl {
         let watch_path_buf = PathBuf::from(watch_path);
         if !watch_path_buf.exists() {
             return Err(AppError::validation_error(format!(
-                "Path does not exist: {}",
-                watch_path
+                "Path does not exist: {watch_path}"
             )));
         }
 
@@ -624,17 +607,16 @@ impl WatchService for WorkspaceServiceImpl {
         }
 
         // ── 3. Create notify watcher ──
-        let (tx, rx) =
-            crossbeam::channel::unbounded::<std::result::Result<Event, notify::Error>>();
+        let (tx, rx) = crossbeam::channel::unbounded::<std::result::Result<Event, notify::Error>>();
 
         let mut watcher = recommended_watcher(tx).map_err(|e| {
-            AppError::io_error(format!("Failed to create file watcher: {}", e), None)
+            AppError::io_error(format!("Failed to create file watcher: {e}"), None)
         })?;
 
         watcher
             .watch(&watch_path_buf, RecursiveMode::Recursive)
             .map_err(|e| {
-                AppError::io_error(format!("Failed to start watching path: {}", e), None)
+                AppError::io_error(format!("Failed to start watching path: {e}"), None)
             })?;
 
         // ── 4. Create WatcherState ──
@@ -658,7 +640,7 @@ impl WatchService for WorkspaceServiceImpl {
             Arc::clone(&self.event_publisher),
             self.repo.cas().clone(),
             self.repo.metadata_store().clone(),
-            Arc::clone(&self.repo.search_engine()),
+            Arc::clone(self.repo.search_engine()),
             Arc::clone(&self.watcher_state),
             self.workspace_id.clone(),
         );

@@ -191,7 +191,7 @@ impl ValidationErrorReport {
                     e.message
                         .as_ref()
                         .map(|m| m.to_string())
-                        .unwrap_or_else(|| format!("Validation failed for field: {}", field))
+                        .unwrap_or_else(|| format!("Validation failed for field: {field}"))
                 })
                 .collect();
 
@@ -210,7 +210,7 @@ impl ValidationErrorReport {
         let mut messages = Vec::new();
         for (field, errors) in &self.errors {
             for error in errors {
-                messages.push(format!("{}: {}", field, error));
+                messages.push(format!("{field}: {error}"));
             }
         }
         messages.join("; ")

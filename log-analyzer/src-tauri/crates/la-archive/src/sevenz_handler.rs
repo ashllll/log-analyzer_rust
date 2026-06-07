@@ -44,7 +44,7 @@ impl ArchiveHandler for SevenZHandler {
             let mut reader = SevenZReader::open(&source_path, sevenz_rust::Password::empty())
                 .map_err(|e| {
                     AppError::archive_error(
-                        format!("Failed to open 7z: {}", e),
+                        format!("Failed to open 7z: {e}"),
                         Some(source_path.clone()),
                     )
                 })?;
@@ -158,7 +158,7 @@ impl ArchiveHandler for SevenZHandler {
         .await
         .map_err(|e| {
             if e.is_panic() {
-                AppError::internal_error(format!("7z handler panicked: {}", e))
+                AppError::internal_error(format!("7z handler panicked: {e}"))
             } else {
                 AppError::archive_error(e.to_string(), None)
             }

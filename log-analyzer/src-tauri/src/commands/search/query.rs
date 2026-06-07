@@ -74,7 +74,7 @@ pub(crate) fn build_structured_search_query(
         .iter()
         .enumerate()
         .map(|(i, v)| SearchTerm {
-            id: format!("term_{}", i),
+            id: format!("term_{i}"),
             value: v.clone(),
             operator: QueryOperator::Or,
             source: TermSource::User,

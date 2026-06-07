@@ -2,9 +2,9 @@
 //!
 //! 支持多层配置加载：默认值 -> 配置文件 -> 环境变量。
 
-use std::path::PathBuf;
 use super::models::*;
 use super::validator::{ConfigError, ConfigValidator, ValidationResult};
+use std::path::PathBuf;
 
 // ============ 配置加载器 ============
 
@@ -124,4 +124,3 @@ impl ConfigLoader {
         &self.config.frontend
     }
 }
-

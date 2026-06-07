@@ -43,7 +43,7 @@ impl StateSync {
                     return Ok(());
                 }
                 Err(e) => {
-                    let msg = format!("Failed to emit event: {}", e);
+                    let msg = format!("Failed to emit event: {e}");
                     last_error = Some(msg.clone());
                     if attempt + 1 < MAX_RETRIES {
                         tracing::warn!(

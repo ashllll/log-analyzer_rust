@@ -777,8 +777,7 @@ mod tests {
 
         assert!(
             avg < std::time::Duration::from_millis(2),
-            "escape_html should process ~35KB text in < 2ms (debug build), actual: {:?}",
-            avg
+            "escape_html should process ~35KB text in < 2ms (debug build), actual: {avg:?}"
         );
     }
 }

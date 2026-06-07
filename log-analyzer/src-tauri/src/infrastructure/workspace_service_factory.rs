@@ -91,7 +91,10 @@ pub(crate) async fn get_or_create_workspace_service(
     // 预加载配置以避免 ensure_search_engine_manager 重复读取 config.json
     let search_config = load_workspace_search_config(app);
     let search_manager = ensure_search_engine_manager_with_config(
-        state, workspace_id, workspace_dir, &search_config,
+        state,
+        workspace_id,
+        workspace_dir,
+        &search_config,
     )?;
 
     let disk_result_store = state
@@ -113,7 +116,10 @@ pub(crate) async fn get_or_create_workspace_service(
         regex_cache_size,
     ));
 
-    state.set_workspace_service(workspace_id.to_string(), service.clone() as WorkspaceServiceRef);
+    state.set_workspace_service(
+        workspace_id.to_string(),
+        service.clone() as WorkspaceServiceRef,
+    );
     info!(
         workspace_id = %workspace_id,
         "WorkspaceService created and registered"

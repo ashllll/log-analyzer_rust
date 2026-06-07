@@ -31,8 +31,7 @@ impl LogFileRepository for CasLogFileRepository {
             .await
             .map_err(|e| {
                 la_core::error::AppError::database_error(format!(
-                    "Failed to get files for workspace {}: {}",
-                    workspace_id, e
+                    "Failed to get files for workspace {workspace_id}: {e}"
                 ))
             })
     }
@@ -40,7 +39,7 @@ impl LogFileRepository for CasLogFileRepository {
     fn read_content_sync(&self, hash: &str) -> Result<Vec<u8>> {
         self.cas.read_content_sync(hash).map_err(|e| {
             la_core::error::AppError::io_error(
-                format!("Failed to read CAS content for hash {}: {}", hash, e),
+                format!("Failed to read CAS content for hash {hash}: {e}"),
                 None,
             )
         })

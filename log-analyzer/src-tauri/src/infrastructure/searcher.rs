@@ -89,7 +89,11 @@ impl LogSearcher for QueryEngineLogSearcher {
                     line: index + 1,
                     content: line.to_string().into(),
                     tags: vec![],
-                    match_details: if details.is_empty() { None } else { Some(details) },
+                    match_details: if details.is_empty() {
+                        None
+                    } else {
+                        Some(details)
+                    },
                     matched_keywords: if keywords.is_empty() {
                         None
                     } else {

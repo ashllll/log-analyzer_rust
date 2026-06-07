@@ -324,7 +324,7 @@ impl ExtractionResult {
     pub fn formatted_speed(&self) -> String {
         let mb_per_sec = self.speed_mb_per_sec();
         if mb_per_sec >= 1.0 {
-            format!("{:.1} MB/s", mb_per_sec)
+            format!("{mb_per_sec:.1} MB/s")
         } else {
             format!("{:.1} KB/s", self.speed_kb_per_sec())
         }
@@ -351,10 +351,10 @@ impl ExtractionResult {
     pub fn formatted_total_size(&self) -> String {
         let mb = self.total_bytes as f64 / (1024.0 * 1024.0);
         if mb >= 1.0 {
-            format!("{:.1} MB", mb)
+            format!("{mb:.1} MB")
         } else {
             let kb = self.total_bytes as f64 / 1024.0;
-            format!("{:.0} KB", kb)
+            format!("{kb:.0} KB")
         }
     }
 }
@@ -670,8 +670,7 @@ impl ExtractionEngine {
                     if shortenings > 0 {
                         result.warnings.push(ExtractionWarning {
                             message: format!(
-                                "Applied {} path shortening(s) due to long paths",
-                                shortenings
+                                "Applied {shortenings} path shortening(s) due to long paths"
                             ),
                             file_path: Some(item.archive_path.clone()),
                             category: WarningCategory::PathShortened,
@@ -695,7 +694,7 @@ impl ExtractionEngine {
                     };
 
                     result.warnings.push(ExtractionWarning {
-                        message: format!("Failed to extract archive: {}", e),
+                        message: format!("Failed to extract archive: {e}"),
                         file_path: Some(item.archive_path.clone()),
                         category,
                     });
@@ -767,7 +766,7 @@ impl ExtractionEngine {
         // Ensure target directory exists
         fs::create_dir_all(&item.target_dir).await.map_err(|e| {
             AppError::archive_error(
-                format!("Failed to create target directory: {}", e),
+                format!("Failed to create target directory: {e}"),
                 Some(item.target_dir.clone()),
             )
         })?;
@@ -805,7 +804,7 @@ impl ExtractionEngine {
             .await
             .map_err(|e| {
                 AppError::archive_error(
-                    format!("Failed to extract archive: {}", e),
+                    format!("Failed to extract archive: {e}"),
                     Some(item.archive_path.clone()),
                 )
             })?;
@@ -884,7 +883,7 @@ impl ExtractionEngine {
                 // Add to stack for processing
                 stack.push(nested_item).map_err(|e| {
                     AppError::archive_error(
-                        format!("Failed to add nested archive to stack: {}", e),
+                        format!("Failed to add nested archive to stack: {e}"),
                         Some(file_path.to_path_buf()),
                     )
                 })?;
@@ -1066,7 +1065,7 @@ impl ExtractionEngine {
                 let task = tokio::spawn(async move {
                     fs::create_dir_all(&dir).await.map_err(|e| {
                         AppError::archive_error(
-                            format!("Failed to create directory: {}", e),
+                            format!("Failed to create directory: {e}"),
                             Some(dir.clone()),
                         )
                     })
@@ -1077,7 +1076,7 @@ impl ExtractionEngine {
             // Wait for batch to complete
             for task in tasks {
                 task.await.map_err(|e| {
-                    AppError::archive_error(format!("Task join error: {}", e), None)
+                    AppError::archive_error(format!("Task join error: {e}"), None)
                 })??;
                 created_count += 1;
             }
@@ -1110,7 +1109,7 @@ impl ExtractionEngine {
             use std::io::Read;
             let mut file = std::fs::File::open(&path_buf).map_err(|e| {
                 AppError::archive_error(
-                    format!("Failed to open file for hashing: {}", e),
+                    format!("Failed to open file for hashing: {e}"),
                     Some(path_buf.clone()),
                 )
             })?;
@@ -1119,7 +1118,7 @@ impl ExtractionEngine {
             loop {
                 let n = file.read(&mut buffer).map_err(|e| {
                     AppError::archive_error(
-                        format!("Failed to read file for hashing: {}", e),
+                        format!("Failed to read file for hashing: {e}"),
                         Some(path_buf.clone()),
                     )
                 })?;
@@ -1132,7 +1131,7 @@ impl ExtractionEngine {
         })
         .await
         .map_err(|e| {
-            AppError::archive_error(format!("Hash task panicked: {}", e), Some(path_for_err))
+            AppError::archive_error(format!("Hash task panicked: {e}"), Some(path_for_err))
         })?;
         hash
     }
@@ -1259,7 +1258,7 @@ mod tests {
 
         // Create test directories
         let dirs: Vec<PathBuf> = (0..25)
-            .map(|i| temp_dir.path().join(format!("dir_{}", i)))
+            .map(|i| temp_dir.path().join(format!("dir_{i}")))
             .collect();
 
         let created = engine.create_directories_batched(&dirs).await.unwrap();

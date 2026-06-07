@@ -132,7 +132,7 @@ pub fn create_path_traversal_archive(output_path: &Path) -> io::Result<()> {
 
     for (i, path) in malicious_paths.iter().enumerate() {
         zip.start_file(*path, options)?;
-        zip.write_all(format!("Malicious content {}", i).as_bytes())?;
+        zip.write_all(format!("Malicious content {i}").as_bytes())?;
     }
 
     // Add some legitimate files too
@@ -177,7 +177,7 @@ pub fn create_many_files_archive(
 
         // Print progress every 10000 files
         if i > 0 && i % 10000 == 0 {
-            println!("Created {} files...", i);
+            println!("Created {i} files...");
         }
     }
 
@@ -236,10 +236,10 @@ pub fn create_special_chars_archive(output_path: &Path) -> io::Result<()> {
         // Try to add the file, but skip if it fails (some chars may be invalid)
         match zip.start_file(*filename, options) {
             Ok(_) => {
-                zip.write_all(format!("Content {}", i).as_bytes())?;
+                zip.write_all(format!("Content {i}").as_bytes())?;
             }
             Err(e) => {
-                eprintln!("Skipping invalid filename '{}': {}", filename, e);
+                eprintln!("Skipping invalid filename '{filename}': {e}");
             }
         }
     }
@@ -271,7 +271,7 @@ pub fn create_long_filename_archive(output_path: &Path, filename_length: usize) 
         let filename = format!("{}{:03}.txt", "a".repeat(base_length), i);
 
         zip.start_file(filename, options)?;
-        zip.write_all(format!("Content {}", i).as_bytes())?;
+        zip.write_all(format!("Content {i}").as_bytes())?;
     }
 
     zip.finish()?;
@@ -298,7 +298,7 @@ pub fn create_deep_directory_archive(output_path: &Path, depth: usize) -> io::Re
     // Create a deeply nested path
     let mut path = String::new();
     for i in 0..depth {
-        path.push_str(&format!("level{}/", i));
+        path.push_str(&format!("level{i}/"));
     }
     path.push_str("deep_file.txt");
 
@@ -328,8 +328,7 @@ mod tests {
         );
 
         println!(
-            "Zip bomb: 10MB uncompressed -> {} bytes compressed",
-            compressed_size
+            "Zip bomb: 10MB uncompressed -> {compressed_size} bytes compressed"
         );
         println!(
             "Compression ratio: {:.2}:1",
@@ -464,8 +463,7 @@ mod tests {
 
         assert!(output_path.exists(), "Nested zip bomb should be created");
         println!(
-            "Nested zip bomb (3 levels, 5MB each): {} bytes compressed",
-            compressed_size
+            "Nested zip bomb (3 levels, 5MB each): {compressed_size} bytes compressed"
         );
     }
 }

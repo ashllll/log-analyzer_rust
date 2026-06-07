@@ -35,11 +35,11 @@ pub async fn export_results(
     }
 
     let safe = crate::utils::validation::prevent_path_traversal(&savePath)
-        .map_err(|e| CommandError::new("EXPORT_PATH_UNSAFE", format!("导出路径不安全: {}", e)))?;
+        .map_err(|e| CommandError::new("EXPORT_PATH_UNSAFE", format!("导出路径不安全: {e}")))?;
     let download_dir = app.path().download_dir().map_err(|e| {
         CommandError::new(
             "DOWNLOAD_DIR_UNAVAILABLE",
-            format!("无法获取下载目录: {}", e),
+            format!("无法获取下载目录: {e}"),
         )
     })?;
     let final_path = download_dir.join(&safe);
@@ -76,10 +76,10 @@ pub async fn export_results(
             }
             _ => Err(CommandError::new(
                 "UNSUPPORTED_EXPORT_FORMAT",
-                format!("Unsupported format: {}", format),
+                format!("Unsupported format: {format}"),
             )),
         }
     })
     .await
-    .map_err(|e| CommandError::new("EXPORT_PANICKED", format!("Export panicked: {}", e)))?
+    .map_err(|e| CommandError::new("EXPORT_PANICKED", format!("Export panicked: {e}")))?
 }

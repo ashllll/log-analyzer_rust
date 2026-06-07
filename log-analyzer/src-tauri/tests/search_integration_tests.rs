@@ -240,7 +240,7 @@ fn test_search_with_large_file() {
     // Create a large file with many lines
     let mut content = String::new();
     for i in 0..10000 {
-        content.push_str(&format!("Line {}: ", i));
+        content.push_str(&format!("Line {i}: "));
         if i % 100 == 0 {
             content.push_str("ERROR: Test error\n");
         } else {
@@ -285,8 +285,8 @@ fn test_search_continues_after_file_error() {
         .map(|i| {
             create_test_file(
                 &temp_dir,
-                &format!("file{}.log", i),
-                &format!("ERROR: Error {}", i),
+                &format!("file{i}.log"),
+                &format!("ERROR: Error {i}"),
             )
         })
         .collect();
@@ -359,7 +359,7 @@ async fn test_search_cas_stored_files() {
         let file_meta = FileMetadata {
             id: 0,
             sha256_hash: hash.clone(),
-            virtual_path: format!("logs/{}", filename),
+            virtual_path: format!("logs/{filename}"),
             original_name: filename.to_string(),
             size: content.len() as i64,
             modified_time: 0,
@@ -483,7 +483,7 @@ async fn test_search_nested_archives() {
                 let file_meta = FileMetadata {
                     id: 0,
                     sha256_hash: hash,
-                    virtual_path: format!("outer.zip/inner.zip/{}", filename),
+                    virtual_path: format!("outer.zip/inner.zip/{filename}"),
                     original_name: filename.to_string(),
                     size: content.len() as i64,
                     modified_time: 0,
@@ -550,11 +550,11 @@ async fn test_search_performance_with_cas() {
         let mut content = Vec::new();
         for j in 0..lines_per_file {
             let line = if j % 10 == 0 {
-                format!("ERROR: Error message {} in file {}\n", j, i)
+                format!("ERROR: Error message {j} in file {i}\n")
             } else if j % 5 == 0 {
-                format!("WARN: Warning message {} in file {}\n", j, i)
+                format!("WARN: Warning message {j} in file {i}\n")
             } else {
-                format!("INFO: Info message {} in file {}\n", j, i)
+                format!("INFO: Info message {j} in file {i}\n")
             };
             content.extend_from_slice(line.as_bytes());
         }
@@ -564,8 +564,8 @@ async fn test_search_performance_with_cas() {
         let file_meta = FileMetadata {
             id: 0,
             sha256_hash: hash,
-            virtual_path: format!("logs/file_{}.log", i),
-            original_name: format!("file_{}.log", i),
+            virtual_path: format!("logs/file_{i}.log"),
+            original_name: format!("file_{i}.log"),
             size: content.len() as i64,
             modified_time: 0,
             mime_type: Some("text/plain".to_string()),
@@ -606,8 +606,7 @@ async fn test_search_performance_with_cas() {
     // This is a reasonable expectation for CAS-based search
     assert!(
         duration.as_millis() < 1000,
-        "Search should complete in less than 1 second, took {:?}",
-        duration
+        "Search should complete in less than 1 second, took {duration:?}"
     );
 
     println!(
@@ -758,9 +757,9 @@ async fn test_search_large_files_in_cas() {
     let mut content = Vec::new();
     for i in 0..10000 {
         let line = if i % 100 == 0 {
-            format!("ERROR: Error at line {}\n", i)
+            format!("ERROR: Error at line {i}\n")
         } else {
-            format!("INFO: Log line {}\n", i)
+            format!("INFO: Log line {i}\n")
         };
         content.extend_from_slice(line.as_bytes());
     }
@@ -795,8 +794,7 @@ async fn test_search_large_files_in_cas() {
     // Performance check: searching a 1MB file should be fast
     assert!(
         duration.as_millis() < 500,
-        "Large file search should complete in less than 500ms, took {:?}",
-        duration
+        "Large file search should complete in less than 500ms, took {duration:?}"
     );
 
     println!(
@@ -852,14 +850,14 @@ async fn test_concurrent_search_on_cas() {
 
     // Create multiple files
     for i in 0..10 {
-        let content = format!("ERROR: Error in file {}\nINFO: Info in file {}\n", i, i);
+        let content = format!("ERROR: Error in file {i}\nINFO: Info in file {i}\n");
         let hash = cas.store_content(content.as_bytes()).await.unwrap();
 
         let file_meta = FileMetadata {
             id: 0,
             sha256_hash: hash,
-            virtual_path: format!("logs/file_{}.log", i),
-            original_name: format!("file_{}.log", i),
+            virtual_path: format!("logs/file_{i}.log"),
+            original_name: format!("file_{i}.log"),
             size: content.len() as i64,
             modified_time: 0,
             mime_type: Some("text/plain".to_string()),

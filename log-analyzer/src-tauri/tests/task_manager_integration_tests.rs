@@ -76,7 +76,7 @@ fn test_config_clone() {
 #[rstest]
 fn test_config_debug() {
     let config = TaskManagerConfig::default();
-    let debug_str = format!("{:?}", config);
+    let debug_str = format!("{config:?}");
 
     assert!(debug_str.contains("TaskManagerConfig"));
     assert!(debug_str.contains("completed_task_ttl"));

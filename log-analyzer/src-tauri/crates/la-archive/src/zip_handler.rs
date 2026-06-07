@@ -81,7 +81,7 @@ impl ArchiveHandler for ZipHandler {
                     .map(|mode| mode & 0o170000 == 0o120000)
                     .unwrap_or(false);
                 if is_symlink {
-                    let msg = format!("ZIP 条目为符号链接已跳过: {}", name);
+                    let msg = format!("ZIP 条目为符号链接已跳过: {name}");
                     warn!("{}", msg);
                     summary.errors.push(msg);
                     continue;
@@ -172,7 +172,7 @@ impl ArchiveHandler for ZipHandler {
         .await
         .map_err(|e| {
             if e.is_panic() {
-                AppError::internal_error(format!("ZIP handler panicked: {}", e))
+                AppError::internal_error(format!("ZIP handler panicked: {e}"))
             } else {
                 AppError::archive_error(e.to_string(), None)
             }
@@ -527,8 +527,8 @@ mod tests {
         let mut files = Vec::new();
         for i in 0..100 {
             files.push((
-                format!("file{:03}.txt", i),
-                format!("Content of file {}", i).into_bytes(),
+                format!("file{i:03}.txt"),
+                format!("Content of file {i}").into_bytes(),
             ));
         }
 
@@ -554,10 +554,10 @@ mod tests {
 
         // 验证部分文件
         for i in [0, 50, 99] {
-            let file_path = output_dir.join(format!("file{:03}.txt", i));
+            let file_path = output_dir.join(format!("file{i:03}.txt"));
             assert!(file_path.exists());
             let content = std::fs::read_to_string(file_path).unwrap();
-            assert_eq!(content, format!("Content of file {}", i));
+            assert_eq!(content, format!("Content of file {i}"));
         }
     }
 }

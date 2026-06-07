@@ -141,7 +141,7 @@ impl PathManager {
         }
 
         // Check cache first
-        let cache_key = format!("{}:{}", workspace_id, path_str);
+        let cache_key = format!("{workspace_id}:{path_str}");
         if let Some(cached) = self.shortening_cache.get(&cache_key) {
             debug!("Using cached shortened path for {}", path_str);
             return Ok(PathBuf::from(cached.value()));
@@ -154,7 +154,7 @@ impl PathManager {
             .await
             .map_err(|e| {
                 la_core::error::AppError::archive_error(
-                    format!("Database error: {}", e),
+                    format!("Database error: {e}"),
                     Some(full_path.to_path_buf()),
                 )
             })?
@@ -179,7 +179,7 @@ impl PathManager {
             .await
             .map_err(|e| {
                 la_core::error::AppError::archive_error(
-                    format!("Failed to store path mapping: {}", e),
+                    format!("Failed to store path mapping: {e}"),
                     Some(full_path.to_path_buf()),
                 )
             })?;
@@ -205,7 +205,7 @@ impl PathManager {
         let short_str = short_path.to_string_lossy();
 
         // Check cache first
-        let cache_key = format!("{}:{}", workspace_id, short_str);
+        let cache_key = format!("{workspace_id}:{short_str}");
         if let Some(cached) = self.shortening_cache.get(&cache_key) {
             return Ok(PathBuf::from(cached.value()));
         }
@@ -217,14 +217,13 @@ impl PathManager {
             .await
             .map_err(|e| {
                 la_core::error::AppError::archive_error(
-                    format!("Database error: {}", e),
+                    format!("Database error: {e}"),
                     Some(short_path.to_path_buf()),
                 )
             })?
             .ok_or_else(|| {
                 la_core::error::AppError::not_found(format!(
-                    "No mapping found for shortened path: {}",
-                    short_str
+                    "No mapping found for shortened path: {short_str}"
                 ))
             })?;
 
@@ -289,7 +288,7 @@ impl PathManager {
                 let result = hasher.finalize();
 
                 // Convert to hex and truncate to configured length
-                let hex = format!("{:x}", result);
+                let hex = format!("{result:x}");
                 hex.chars().take(self.config.hash_length).collect()
             }
         }
@@ -330,7 +329,7 @@ impl PathManager {
 
         // Hash the name part
         let hashed = self.hash_path_component(&name);
-        let shortened_component = format!("{}{}", hashed, ext);
+        let shortened_component = format!("{hashed}{ext}");
 
         // Rebuild path with shortened component
         let mut new_components = components.clone();
@@ -369,7 +368,7 @@ impl PathManager {
 
         // Try adding counter suffix
         for counter in 1..=999 {
-            let new_name = format!("{}_{:03}{}", name, counter, ext);
+            let new_name = format!("{name}_{counter:03}{ext}");
             let mut new_path = path.clone();
             new_path.set_file_name(new_name);
 
@@ -503,7 +502,7 @@ mod tests {
 
         // Long path should get prefix
         let long_component = "a".repeat(300);
-        let long_path = PathBuf::from(format!("C:\\{}", long_component));
+        let long_path = PathBuf::from(format!("C:\\{long_component}"));
         let result = manager.apply_long_path_prefix(&long_path);
         assert!(result.to_string_lossy().starts_with(r"\\?\"));
     }

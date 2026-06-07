@@ -59,9 +59,14 @@ pub async fn require_cas_workspace(
     }
 
     // 5. Get or create the WorkspaceService
-    let service = get_or_create_workspace_service(app, state, workspace_id, &workspace_dir).await.map_err(
-        |e| CommandError::new("RUNTIME_ERROR", format!("Failed to initialize workspace: {e}")),
-    )?;
+    let service = get_or_create_workspace_service(app, state, workspace_id, &workspace_dir)
+        .await
+        .map_err(|e| {
+            CommandError::new(
+                "RUNTIME_ERROR",
+                format!("Failed to initialize workspace: {e}"),
+            )
+        })?;
 
     Ok((service, workspace_dir))
 }

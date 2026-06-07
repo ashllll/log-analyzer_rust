@@ -57,7 +57,7 @@ impl ArchiveHandler for RarHandler {
                 .open_for_processing()
                 .map_err(|e| {
                     AppError::archive_error(
-                        format!("Failed to open RAR: {}", e),
+                        format!("Failed to open RAR: {e}"),
                         Some(source_path.clone()),
                     )
                 })?;
@@ -78,8 +78,7 @@ impl ArchiveHandler for RarHandler {
                                 .skip()
                                 .map_err(|e| AppError::archive_error(e.to_string(), None))?;
                             summary.add_error(format!(
-                                "Skipped unsafe RAR entry {}",
-                                name
+                                "Skipped unsafe RAR entry {name}"
                             ));
                             continue;
                         }
@@ -101,8 +100,7 @@ impl ArchiveHandler for RarHandler {
                             .skip()
                             .map_err(|e| AppError::archive_error(e.to_string(), None))?;
                         summary.add_error(format!(
-                            "Skipped RAR entry {} due to path traversal",
-                            name
+                            "Skipped RAR entry {name} due to path traversal"
                         ));
                         continue;
                     }
@@ -120,8 +118,7 @@ impl ArchiveHandler for RarHandler {
                             "RAR 目录条目目标路径包含符号链接，跳过此条目"
                         );
                         summary.add_error(format!(
-                            "Skipped RAR entry {} because extraction path traverses a symbolic link",
-                            name
+                            "Skipped RAR entry {name} because extraction path traverses a symbolic link"
                         ));
                         archive = header
                             .skip()
@@ -143,8 +140,7 @@ impl ArchiveHandler for RarHandler {
                             .skip()
                             .map_err(|e| AppError::archive_error(e.to_string(), None))?;
                         summary.add_error(format!(
-                            "Skipped RAR entry {} due to size/count limit",
-                            name
+                            "Skipped RAR entry {name} due to size/count limit"
                         ));
                         continue;
                     }
@@ -171,8 +167,7 @@ impl ArchiveHandler for RarHandler {
                                     "RAR 条目被提取为符号链接，已删除并跳过"
                                 );
                                 summary.add_error(format!(
-                                    "Removed extracted symbolic link entry {}",
-                                    name
+                                    "Removed extracted symbolic link entry {name}"
                                 ));
                                 continue;
                             }
@@ -187,8 +182,7 @@ impl ArchiveHandler for RarHandler {
                                         );
                                         let _ = std::fs::remove_file(&out_path);
                                         summary.add_error(format!(
-                                            "Removed RAR entry {} due to path traversal (TOCTOU)",
-                                            name
+                                            "Removed RAR entry {name} due to path traversal (TOCTOU)"
                                         ));
                                         continue;
                                     }
@@ -198,7 +192,7 @@ impl ArchiveHandler for RarHandler {
                         }
                         Err(e) => {
                             let error_message =
-                                format!("Failed to extract RAR entry {}: {}", name, e);
+                                format!("Failed to extract RAR entry {name}: {e}");
                             warn!(
                                 path = ?out_path,
                                 error = %e,
@@ -223,7 +217,7 @@ impl ArchiveHandler for RarHandler {
         .await
         .map_err(|e| {
             if e.is_panic() {
-                AppError::internal_error(format!("RAR handler panicked: {}", e))
+                AppError::internal_error(format!("RAR handler panicked: {e}"))
             } else {
                 AppError::archive_error(e.to_string(), None)
             }

@@ -122,7 +122,7 @@ impl GzHandler {
         // Ensure target directory exists
         fs::create_dir_all(target_dir).await.map_err(|e| {
             AppError::archive_error(
-                format!("Failed to create target directory: {}", e),
+                format!("Failed to create target directory: {e}"),
                 Some(target_dir.to_path_buf()),
             )
         })?;
@@ -130,7 +130,7 @@ impl GzHandler {
         // Open source file for streaming
         let file = fs::File::open(source).await.map_err(|e| {
             AppError::archive_error(
-                format!("Failed to open GZ file: {}", e),
+                format!("Failed to open GZ file: {e}"),
                 Some(source.to_path_buf()),
             )
         })?;
@@ -165,7 +165,7 @@ impl GzHandler {
         // Create output file with buffered writer
         let output_file = fs::File::create(&output_path).await.map_err(|e| {
             AppError::archive_error(
-                format!("Failed to create output file: {}", e),
+                format!("Failed to create output file: {e}"),
                 Some(output_path.clone()),
             )
         })?;
@@ -180,7 +180,7 @@ impl GzHandler {
         loop {
             let bytes_read = decoder.read(&mut buffer).await.map_err(|e| {
                 AppError::archive_error(
-                    format!("Failed to decompress gzip stream: {}", e),
+                    format!("Failed to decompress gzip stream: {e}"),
                     Some(source.to_path_buf()),
                 )
             })?;
@@ -237,7 +237,7 @@ impl GzHandler {
             // Write decompressed data
             writer.write_all(&buffer[..bytes_read]).await.map_err(|e| {
                 AppError::archive_error(
-                    format!("Failed to write decompressed data: {}", e),
+                    format!("Failed to write decompressed data: {e}"),
                     Some(output_path.clone()),
                 )
             })?;
@@ -246,7 +246,7 @@ impl GzHandler {
         // Flush remaining data
         writer.flush().await.map_err(|e| {
             AppError::archive_error(
-                format!("Failed to flush output file: {}", e),
+                format!("Failed to flush output file: {e}"),
                 Some(output_path.clone()),
             )
         })?;
@@ -297,7 +297,7 @@ impl ArchiveHandler for GzHandler {
         // 确保目标目录存在
         fs::create_dir_all(target_dir).await.map_err(|e| {
             AppError::archive_error(
-                format!("Failed to create target directory: {}", e),
+                format!("Failed to create target directory: {e}"),
                 Some(target_dir.to_path_buf()),
             )
         })?;
@@ -305,7 +305,7 @@ impl ArchiveHandler for GzHandler {
         // 读取压缩文件
         let compressed_data = fs::read(source).await.map_err(|e| {
             AppError::archive_error(
-                format!("Failed to read GZ file: {}", e),
+                format!("Failed to read GZ file: {e}"),
                 Some(source.to_path_buf()),
             )
         })?;
@@ -330,8 +330,7 @@ impl ArchiveHandler for GzHandler {
         if data_len > max_total_size {
             return Err(AppError::archive_error(
                 format!(
-                    "Extraction would exceed total size limit of {} bytes",
-                    max_total_size
+                    "Extraction would exceed total size limit of {max_total_size} bytes"
                 ),
                 Some(source.to_path_buf()),
             ));
@@ -341,8 +340,7 @@ impl ArchiveHandler for GzHandler {
         if max_file_count < 1 {
             return Err(AppError::archive_error(
                 format!(
-                    "Extraction would exceed file count limit of {} files",
-                    max_file_count
+                    "Extraction would exceed file count limit of {max_file_count} files"
                 ),
                 Some(source.to_path_buf()),
             ));
@@ -371,7 +369,7 @@ impl ArchiveHandler for GzHandler {
             .await
             .map_err(|e| {
                 AppError::archive_error(
-                    format!("Failed to write decompressed file: {}", e),
+                    format!("Failed to write decompressed file: {e}"),
                     Some(output_path.clone()),
                 )
             })?;
@@ -423,7 +421,7 @@ fn decompress_gzip(data: &[u8]) -> Result<Vec<u8>> {
 
     decoder
         .read_to_end(&mut decompressed)
-        .map_err(|e| AppError::archive_error(format!("Failed to decompress gzip: {}", e), None))?;
+        .map_err(|e| AppError::archive_error(format!("Failed to decompress gzip: {e}"), None))?;
 
     Ok(decompressed)
 }
@@ -727,8 +725,7 @@ mod tests {
         let expected_file = output_dir.join("passwd");
         assert!(
             expected_file.exists(),
-            "Extracted file should be at {:?}, not inside a traversal path",
-            expected_file
+            "Extracted file should be at {expected_file:?}, not inside a traversal path"
         );
         // Ensure no path traversal occurred
         assert!(

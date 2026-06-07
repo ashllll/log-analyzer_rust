@@ -121,7 +121,7 @@ async fn test_single_archive_extraction() {
             let file_meta = FileMetadata {
                 id: 0,
                 sha256_hash: hash.clone(),
-                virtual_path: format!("logs.zip/{}", file_name),
+                virtual_path: format!("logs.zip/{file_name}"),
                 original_name: file_name.to_string(),
                 size: content.len() as i64,
                 modified_time: 0,
@@ -227,7 +227,7 @@ async fn test_nested_archive_2_levels() {
                 all_files.push(FileMetadata {
                     id: 0,
                     sha256_hash: hash,
-                    virtual_path: format!("outer.zip/{}", file_name),
+                    virtual_path: format!("outer.zip/{file_name}"),
                     original_name: file_name.to_string(),
                     size: content.len() as i64,
                     modified_time: 0,
@@ -257,7 +257,7 @@ async fn test_nested_archive_2_levels() {
             all_files.push(FileMetadata {
                 id: 0,
                 sha256_hash: hash,
-                virtual_path: format!("outer.zip/inner.zip/{}", file_name),
+                virtual_path: format!("outer.zip/inner.zip/{file_name}"),
                 original_name: file_name.to_string(),
                 size: content.len() as i64,
                 modified_time: 0,
@@ -430,8 +430,7 @@ async fn test_deeply_nested_archive_5_levels() {
 
         assert!(
             summary.files_extracted >= 1,
-            "Level {} should extract files",
-            level
+            "Level {level} should extract files"
         );
 
         // Find the next nested archive
@@ -543,7 +542,7 @@ async fn test_path_length_handling() {
     let hash = cas.store_content(&content).await.unwrap();
 
     // Create a very long virtual path
-    let long_virtual_path = format!("long_names.zip/{}", long_filename);
+    let long_virtual_path = format!("long_names.zip/{long_filename}");
     assert!(
         long_virtual_path.len() > 200,
         "Virtual path should be very long"
@@ -665,7 +664,7 @@ async fn test_mixed_nested_and_regular_files() {
                 let file_meta = FileMetadata {
                     id: 0,
                     sha256_hash: hash,
-                    virtual_path: format!("mixed.zip/{}", file_name),
+                    virtual_path: format!("mixed.zip/{file_name}"),
                     original_name: file_name.to_string(),
                     size: content.len() as i64,
                     modified_time: 0,
@@ -716,7 +715,7 @@ async fn test_mixed_nested_and_regular_files() {
                 let file_meta = FileMetadata {
                     id: 0,
                     sha256_hash: hash,
-                    virtual_path: format!("mixed.zip/inner.zip/{}", file_name),
+                    virtual_path: format!("mixed.zip/inner.zip/{file_name}"),
                     original_name: file_name.to_string(),
                     size: content.len() as i64,
                     modified_time: 0,
@@ -1017,14 +1016,14 @@ mod property_tests {
         // Create leaf files at the deepest level
         let mut leaf_file_data = Vec::new();
         for i in 0..files_per_level {
-            let filename = format!("leaf_{}.log", i);
-            let content = format!("content at depth {}", depth).into_bytes();
+            let filename = format!("leaf_{i}.log");
+            let content = format!("content at depth {depth}").into_bytes();
             leaf_file_data.push((filename.clone(), content));
 
             // Build expected virtual path
             let mut virtual_path = String::new();
             for level in (0..depth).rev() {
-                virtual_path.push_str(&format!("level{}.zip/", level));
+                virtual_path.push_str(&format!("level{level}.zip/"));
             }
             virtual_path.push_str(&filename);
             expected_files.insert(virtual_path);
@@ -1043,7 +1042,7 @@ mod property_tests {
         for level in 1..depth {
             let level_zip = create_nested_zip(
                 temp_dir,
-                &format!("level{}.zip", level),
+                &format!("level{level}.zip"),
                 current_archives.clone(),
             );
             current_archives = vec![level_zip];
@@ -1149,7 +1148,7 @@ mod property_tests {
                     let hash = cas.store_content(&content).await.unwrap();
 
                     let file_name = leaf_file.file_name().unwrap().to_str().unwrap();
-                    let virtual_path = format!("test_archive/nested/{}_{}", idx, file_name);
+                    let virtual_path = format!("test_archive/nested/{idx}_{file_name}");
 
                     let file_meta = FileMetadata {
                         id: 0,

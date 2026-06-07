@@ -28,7 +28,7 @@ pub fn canonicalize_path(path: &Path) -> Result<PathBuf, String> {
     #[cfg(target_os = "windows")]
     {
         // Windows: 使用 dunce 去除 UNC 前缀 \\?\，并处理长路径
-        dunce::canonicalize(path).map_err(|e| format!("Path canonicalization failed: {}", e))
+        dunce::canonicalize(path).map_err(|e| format!("Path canonicalization failed: {e}"))
     }
     #[cfg(not(target_os = "windows"))]
     {
@@ -65,7 +65,7 @@ pub fn remove_readonly(path: &Path) -> Result<(), String> {
                     let mut perms = metadata.permissions();
                     perms.set_readonly(false);
                     fs::set_permissions(path, perms)
-                        .map_err(|e| format!("Failed to remove readonly: {}", e))?;
+                        .map_err(|e| format!("Failed to remove readonly: {e}"))?;
                 }
             }
             Ok(())
@@ -226,8 +226,7 @@ mod tests {
         let result_str = result.to_string_lossy();
         assert!(
             !result_str.starts_with(r"\\?\"),
-            "短路径不应追加 UNC 前缀，实际：{}",
-            result_str
+            "短路径不应追加 UNC 前缀，实际：{result_str}"
         );
     }
 
@@ -241,8 +240,7 @@ mod tests {
         assert_eq!(
             result_str.matches(r"\\?\").count(),
             1,
-            "不应出现双重 UNC 前缀，实际：{}",
-            result_str
+            "不应出现双重 UNC 前缀，实际：{result_str}"
         );
     }
 
@@ -253,8 +251,7 @@ mod tests {
         // 构造一个超过 260 字节的路径
         let long_segment = "a".repeat(50);
         let path_str = format!(
-            r"C:\Users\user\{}\{}\{}\{}\{}\{}",
-            long_segment, long_segment, long_segment, long_segment, long_segment, long_segment
+            r"C:\Users\user\{long_segment}\{long_segment}\{long_segment}\{long_segment}\{long_segment}\{long_segment}"
         );
         assert!(path_str.len() > 260, "前置条件：路径应超过 260 字节");
 
@@ -264,8 +261,7 @@ mod tests {
 
         assert!(
             result_str.starts_with(r"\\?\"),
-            "超过 260 字节的路径应追加 UNC 前缀，实际：{}",
-            result_str
+            "超过 260 字节的路径应追加 UNC 前缀，实际：{result_str}"
         );
     }
 

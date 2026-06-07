@@ -85,8 +85,7 @@ async fn test_checkpoint_save_and_resume() {
     for (file_path, _) in &files {
         assert!(
             loaded_checkpoint.is_file_extracted(file_path),
-            "File {:?} should be marked as extracted",
-            file_path
+            "File {file_path:?} should be marked as extracted"
         );
     }
 
@@ -954,7 +953,7 @@ mod property_tests {
                 for (i, (name, content)) in file_names.iter().zip(file_contents.iter()).enumerate() {
                     if i == failure_index {
                         // Simulate a failure by creating metadata without storing in CAS
-                        let fake_hash = format!("fake_hash_{}", i);
+                        let fake_hash = format!("fake_hash_{i}");
                         let file_metadata = FileMetadata {
                             id: 0,
                             sha256_hash: fake_hash.clone(),
@@ -1001,7 +1000,7 @@ mod property_tests {
                             }
                             Err(e) => {
                                 // Unexpected error, but we should still continue
-                                eprintln!("Unexpected error storing file {}: {}", name, e);
+                                eprintln!("Unexpected error storing file {name}: {e}");
                             }
                         }
                     }
@@ -1119,7 +1118,7 @@ mod property_tests {
                 for (i, (name, content)) in file_names.iter().zip(file_contents.iter()).enumerate() {
                     if i < failure_count {
                         // Simulate a failure
-                        let fake_hash = format!("fake_hash_{}", i);
+                        let fake_hash = format!("fake_hash_{i}");
                         let file_metadata = FileMetadata {
                             id: 0,
                             sha256_hash: fake_hash.clone(),
@@ -1164,7 +1163,7 @@ mod property_tests {
                                 }
                             }
                             Err(e) => {
-                                eprintln!("Unexpected error storing file {}: {}", name, e);
+                                eprintln!("Unexpected error storing file {name}: {e}");
                             }
                         }
                     }

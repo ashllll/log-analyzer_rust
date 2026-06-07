@@ -63,7 +63,9 @@ impl SearchUseCase {
             .log_files
             .get_files_with_filters(
                 workspace_id,
-                compiled_filters.time_start.map(|dt| dt.and_utc().timestamp()),
+                compiled_filters
+                    .time_start
+                    .map(|dt| dt.and_utc().timestamp()),
                 compiled_filters.time_end.map(|dt| dt.and_utc().timestamp()),
                 compiled_filters.level_mask,
                 compiled_filters.database_file_pattern().as_deref(),
@@ -101,7 +103,8 @@ impl SearchUseCase {
 
             let _ = executor.results.complete_session(&sid);
             tokio::spawn(async move {
-                executor.events
+                executor
+                    .events
                     .emit_search_complete(
                         &sid,
                         la_core::domain::event::SearchSummary {

@@ -172,7 +172,7 @@ fn search_one_file(
     let (text, _) = decode_log_content(&content);
     let mut entries = searcher.match_content(&text, &fm.virtual_path, plan, filters, 0);
     for entry in &mut entries {
-        entry.real_path = format!("cas://{}", hash).into();
+        entry.real_path = format!("cas://{hash}").into();
     }
     entries
 }
@@ -186,7 +186,10 @@ mod tests {
     use super::*;
     use async_trait::async_trait;
     use la_core::domain::event::EventPublisher;
-    use la_core::domain::{ExecutionPlan, LogFileRepository, LogSearcher, MatchPlan, SearchResultPage, SearchResultRepository};
+    use la_core::domain::{
+        ExecutionPlan, LogFileRepository, LogSearcher, MatchPlan, SearchResultPage,
+        SearchResultRepository,
+    };
     use la_core::error::Result;
     use la_core::models::match_detail::MatchDetail;
     use la_core::models::{LogEntry, SearchFilters, SearchQuery};
@@ -206,7 +209,7 @@ mod tests {
             }
             let details: Vec<MatchDetail> = (0..self.matches_per_line)
                 .map(|i| MatchDetail {
-                    term_id: format!("t{}", i),
+                    term_id: format!("t{i}"),
                     term_value: line.to_string(),
                     priority: 1,
                     match_position: Some((0, line.len())),
@@ -378,7 +381,8 @@ mod tests {
         async fn emit_search_progress(&self, _id: &str, _c: usize) {
             *self.progress_count.lock().unwrap() += 1;
         }
-        async fn emit_search_complete(&self, _id: &str, _s: la_core::domain::event::SearchSummary) {}
+        async fn emit_search_complete(&self, _id: &str, _s: la_core::domain::event::SearchSummary) {
+        }
         async fn emit_search_error(&self, _id: &str, _e: &str) {
             *self.error_count.lock().unwrap() += 1;
         }
@@ -516,7 +520,7 @@ mod tests {
 
     #[tokio::test]
     async fn batch_flush_fires_at_boundary() {
-        let lines: Vec<String> = (0..2500).map(|i| format!("line {}", i)).collect();
+        let lines: Vec<String> = (0..2500).map(|i| format!("line {i}")).collect();
         let content = lines.join("\n");
         let (executor, results, events) = make_executor(&content, 1);
         let files = make_test_files();
@@ -540,8 +544,11 @@ mod tests {
         }
         // At least 2 flushes: one at 2000, plus the final flush
         let appends = *results.append_count.lock().unwrap();
-        assert!(appends >= 2, "Expected >= 2 flush calls, got {}", appends);
-        assert!(*events.progress_count.lock().unwrap() > 0, "Expected progress events to fire");
+        assert!(appends >= 2, "Expected >= 2 flush calls, got {appends}");
+        assert!(
+            *events.progress_count.lock().unwrap() > 0,
+            "Expected progress events to fire"
+        );
     }
 
     // ========================================================================
@@ -573,7 +580,7 @@ mod tests {
 
     #[test]
     fn cancellation_stops_search_early() {
-        let lines: Vec<String> = (0..500).map(|i| format!("line {}", i)).collect();
+        let lines: Vec<String> = (0..500).map(|i| format!("line {i}")).collect();
         let content = lines.join("\n");
         let (executor, results, _events) = make_executor(&content, 1);
         let files = make_test_files();

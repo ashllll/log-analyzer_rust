@@ -26,7 +26,7 @@ use proptest_strategies::{proptest_config, strategies};
 async fn simulate_async_task_operation(task_id: &str, operation: &str) -> Result<String, String> {
     // Simulate async operation without block_on
     tokio::time::sleep(tokio::time::Duration::from_micros(1)).await;
-    Ok(format!("{}:{}", task_id, operation))
+    Ok(format!("{task_id}:{operation}"))
 }
 
 /// Simulates the workspace deletion flow that should use async methods
@@ -89,7 +89,7 @@ proptest! {
 
             // Test 2: Multiple chained async operations
             let operations: Vec<String> = (0..operation_count)
-                .map(|i| format!("{}-{}", workspace_id, i))
+                .map(|i| format!("{workspace_id}-{i}"))
                 .collect();
             let chain_result = validate_async_chain(operations).await;
             prop_assert!(chain_result.is_ok(), "Chained async operations should succeed");
@@ -97,7 +97,7 @@ proptest! {
             // Test 3: Concurrent async operations
             let mut concurrent_results = Vec::new();
             for i in 0..operation_count {
-                let id = format!("{}-concurrent-{}", workspace_id, i);
+                let id = format!("{workspace_id}-concurrent-{i}");
                 let result = simulate_async_task_operation(&id, "concurrent").await;
                 concurrent_results.push(result);
             }
@@ -338,7 +338,7 @@ mod integration_tests {
     /// Test concurrent workspace deletions
     #[tokio::test]
     async fn test_concurrent_workspace_deletions() {
-        let workspace_ids: Vec<String> = (0..10).map(|i| format!("workspace-{}", i)).collect();
+        let workspace_ids: Vec<String> = (0..10).map(|i| format!("workspace-{i}")).collect();
 
         let futures: Vec<_> = workspace_ids
             .iter()
@@ -348,7 +348,7 @@ mod integration_tests {
         let results: Vec<Result<(), String>> = join_all(futures).await;
 
         for (i, result) in results.iter().enumerate() {
-            assert!(result.is_ok(), "Workspace {} deletion should succeed", i);
+            assert!(result.is_ok(), "Workspace {i} deletion should succeed");
         }
     }
 
@@ -362,7 +362,7 @@ mod integration_tests {
         // Run multiple async operations concurrently
         let futures: Vec<_> = (0..100)
             .map(|i| {
-                let id = format!("workspace-{}", i);
+                let id = format!("workspace-{i}");
                 async move { simulate_async_task_operation(&id, "test").await }
             })
             .collect();

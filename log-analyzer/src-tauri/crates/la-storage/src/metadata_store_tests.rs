@@ -386,7 +386,7 @@ async fn test_virtual_path_lookups() {
     for (i, path) in paths.iter().enumerate() {
         let file = FileMetadata {
             id: 0,
-            sha256_hash: format!("hash_{}", i),
+            sha256_hash: format!("hash_{i}"),
             virtual_path: path.to_string(),
             original_name: path.split('/').next_back().unwrap().to_string(),
             size: 100 * (i as i64 + 1),
@@ -498,9 +498,9 @@ async fn test_get_all_files() {
     for i in 0..5 {
         let file = FileMetadata {
             id: 0,
-            sha256_hash: format!("hash_{}", i),
-            virtual_path: format!("file_{}.log", i),
-            original_name: format!("file_{}.log", i),
+            sha256_hash: format!("hash_{i}"),
+            virtual_path: format!("file_{i}.log"),
+            original_name: format!("file_{i}.log"),
             size: 100,
             modified_time: 0,
             mime_type: None,
@@ -532,9 +532,9 @@ async fn test_get_all_archives() {
     for i in 0..3 {
         let archive = ArchiveMetadata {
             id: 0,
-            sha256_hash: format!("archive_hash_{}", i),
-            virtual_path: format!("archive_{}.zip", i),
-            original_name: format!("archive_{}.zip", i),
+            sha256_hash: format!("archive_hash_{i}"),
+            virtual_path: format!("archive_{i}.zip"),
+            original_name: format!("archive_{i}.zip"),
             archive_type: "zip".to_string(),
             parent_archive_id: None,
             depth_level: 0,
@@ -636,8 +636,8 @@ async fn test_fts_search() {
     for (name, _keyword) in files {
         let file = FileMetadata {
             id: 0,
-            sha256_hash: format!("hash_{}", name),
-            virtual_path: format!("logs/{}", name),
+            sha256_hash: format!("hash_{name}"),
+            virtual_path: format!("logs/{name}"),
             original_name: name.to_string(),
             size: 100,
             modified_time: 0,
@@ -677,8 +677,8 @@ async fn test_metrics_operations() {
     for (size, depth) in files {
         let file = FileMetadata {
             id: 0,
-            sha256_hash: format!("hash_{}_{}", size, depth),
-            virtual_path: format!("file_{}_{}.log", size, depth),
+            sha256_hash: format!("hash_{size}_{depth}"),
+            virtual_path: format!("file_{size}_{depth}.log"),
             original_name: "file.log".to_string(),
             size,
             modified_time: 0,
@@ -999,12 +999,12 @@ async fn test_clear_indexed_files_for_workspace() {
     // Insert multiple files
     for i in 1..=3 {
         let file = IndexedFile {
-            file_path: format!("/path/file{}.log", i),
+            file_path: format!("/path/file{i}.log"),
             workspace_id: workspace_id.to_string(),
             last_offset: i * 100,
             file_size: (i * 200) as i64,
             modified_time: (i * 1000) as i64,
-            hash: format!("hash{}", i),
+            hash: format!("hash{i}"),
         };
         store.save_indexed_file(&file).await.unwrap();
     }
@@ -1061,7 +1061,7 @@ mod property_tests {
             prop::collection::vec(0u8..=255, 32..=32).prop_map(|bytes| {
                 bytes
                     .iter()
-                    .map(|b| format!("{:02x}", b))
+                    .map(|b| format!("{b:02x}"))
                     .collect::<String>()
             }),
             // virtual_path: reasonable path string

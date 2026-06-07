@@ -183,8 +183,8 @@ pub async fn populate_cas_workspace(
         let file_meta = FileMetadata {
             id: 0, // Will be assigned by database
             sha256_hash: hash.clone(),
-            virtual_path: format!("logs/file_{}.log", i),
-            original_name: format!("file_{}.log", i),
+            virtual_path: format!("logs/file_{i}.log"),
+            original_name: format!("file_{i}.log"),
             size: content.len() as i64,
             modified_time: chrono::Utc::now().timestamp(),
             mime_type: Some("text/plain".to_string()),
@@ -239,7 +239,7 @@ async fn create_nested_archive_structure(
         let file_meta = FileMetadata {
             id: 0,
             sha256_hash: hash,
-            virtual_path: format!("archives/inner.zip/{}", filename),
+            virtual_path: format!("archives/inner.zip/{filename}"),
             original_name: filename.to_string(),
             size: content.len() as i64,
             modified_time: chrono::Utc::now().timestamp(),
@@ -440,7 +440,7 @@ pub async fn verify_cas_workspace(
             result.is_valid = false;
             result
                 .errors
-                .push(format!("Failed to get files from metadata: {}", e));
+                .push(format!("Failed to get files from metadata: {e}"));
             return Ok(result);
         }
     };

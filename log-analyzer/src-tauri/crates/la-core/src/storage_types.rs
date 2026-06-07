@@ -31,7 +31,7 @@ impl std::str::FromStr for AnalysisStatus {
             "ANALYZING" => Ok(AnalysisStatus::Analyzing),
             "READY" => Ok(AnalysisStatus::Ready),
             "FAILED" => Ok(AnalysisStatus::Failed),
-            _ => Err(format!("Unknown analysis status: {}", s)),
+            _ => Err(format!("Unknown analysis status: {s}")),
         }
     }
 }

@@ -2,8 +2,8 @@
 //!
 //! 定义所有配置结构体及其验证实现。
 
-use serde::{Deserialize, Serialize};
 use super::validator::*;
+use serde::{Deserialize, Serialize};
 
 // ============ 文件过滤模式 ============
 
@@ -81,7 +81,7 @@ impl ConfigValidator for FileFilterConfig {
         // 验证允许的扩展名
         for (i, ext) in self.allowed_extensions.iter().enumerate() {
             if let Some(err) = validate_extension(ext) {
-                result.add_error(format!("allowed_extensions[{}]", i), err.message, err.code);
+                result.add_error(format!("allowed_extensions[{i}]"), err.message, err.code);
             }
         }
 
@@ -89,7 +89,7 @@ impl ConfigValidator for FileFilterConfig {
         for (i, ext) in self.forbidden_extensions.iter().enumerate() {
             if let Some(err) = validate_extension(ext) {
                 result.add_error(
-                    format!("forbidden_extensions[{}]", i),
+                    format!("forbidden_extensions[{i}]"),
                     err.message,
                     err.code,
                 );
@@ -104,7 +104,7 @@ impl ConfigValidator for FileFilterConfig {
             }
             // 其他模式尝试作为正则验证
             if let Some(err) = validate_regex_pattern(pattern) {
-                result.add_error(format!("filename_patterns[{}]", i), err.message, err.code);
+                result.add_error(format!("filename_patterns[{i}]"), err.message, err.code);
             }
         }
 
@@ -119,8 +119,8 @@ impl ConfigValidator for FileFilterConfig {
         for (i, ext) in self.allowed_extensions.iter().enumerate() {
             if validate_extension(ext).is_some() {
                 result.add_error(
-                    format!("allowed_extensions[{}]", i),
-                    format!("扩展名 '{}' 无效，将被忽略", ext),
+                    format!("allowed_extensions[{i}]"),
+                    format!("扩展名 '{ext}' 无效，将被忽略"),
                     "invalid_extension".to_string(),
                 );
                 has_invalid = true;
@@ -130,8 +130,8 @@ impl ConfigValidator for FileFilterConfig {
         for (i, ext) in self.forbidden_extensions.iter().enumerate() {
             if validate_extension(ext).is_some() {
                 result.add_error(
-                    format!("forbidden_extensions[{}]", i),
-                    format!("扩展名 '{}' 无效，将被忽略", ext),
+                    format!("forbidden_extensions[{i}]"),
+                    format!("扩展名 '{ext}' 无效，将被忽略"),
                     "invalid_extension".to_string(),
                 );
                 has_invalid = true;
@@ -598,8 +598,8 @@ impl ConfigValidator for SecurityConfig {
                 // 如果不是通配符，验证是否为有效的 URL 格式
                 if !origin.starts_with("http://") && !origin.starts_with("https://") {
                     result.add_error(
-                        format!("allowed_origins[{}]", i),
-                        format!("来源 '{}' 必须以 http:// 或 https:// 开头", origin),
+                        format!("allowed_origins[{i}]"),
+                        format!("来源 '{origin}' 必须以 http:// 或 https:// 开头"),
                         "invalid_origin",
                     );
                 }
@@ -2187,4 +2187,3 @@ impl ConfigValidator for AppConfig {
         (result, all_valid)
     }
 }
-

@@ -89,7 +89,7 @@ impl ArchiveHandler for TarHandler {
         .await
         .map_err(|e| {
             if e.is_panic() {
-                AppError::internal_error(format!("TAR handler panicked: {}", e))
+                AppError::internal_error(format!("TAR handler panicked: {e}"))
             } else {
                 AppError::archive_error(e.to_string(), None)
             }
@@ -155,7 +155,7 @@ impl TarHandler {
             if entry.header().entry_type().is_symlink()
                 || entry.header().entry_type() == tar::EntryType::Link
             {
-                let msg = format!("TAR 条目包含符号链接或硬链接，已跳过: {}", path_str);
+                let msg = format!("TAR 条目包含符号链接或硬链接，已跳过: {path_str}");
                 warn!("{}", msg);
                 summary.errors.push(msg);
                 continue;
@@ -635,8 +635,8 @@ mod tests {
         let mut tar = tar::Builder::new(file);
 
         for i in 0..100 {
-            let name = format!("file{:03}.txt", i);
-            let content = format!("Content of file {}", i);
+            let name = format!("file{i:03}.txt");
+            let content = format!("Content of file {i}");
             let mut header = tar::Header::new_gnu();
             header.set_path(&name).unwrap();
             header.set_size(content.len() as u64);
@@ -657,10 +657,10 @@ mod tests {
 
         // 验证部分文件
         for i in [0, 50, 99] {
-            let file_path = output_dir.join(format!("file{:03}.txt", i));
+            let file_path = output_dir.join(format!("file{i:03}.txt"));
             assert!(file_path.exists());
             let content = std::fs::read_to_string(file_path).unwrap();
-            assert_eq!(content, format!("Content of file {}", i));
+            assert_eq!(content, format!("Content of file {i}"));
         }
     }
 

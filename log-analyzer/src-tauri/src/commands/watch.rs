@@ -54,8 +54,5 @@ pub async fn stop_watch(
             .await
             .map_err(|e| e.to_string())?;
 
-    workspace
-        .stop_watch()
-        .await
-        .map_err(|e| e.to_string())
+    workspace.stop_watch().await.map_err(|e| e.to_string())
 }

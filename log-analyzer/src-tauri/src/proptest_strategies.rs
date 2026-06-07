@@ -282,10 +282,7 @@ pub mod performance {
         let (result, duration) = measure_time(f);
         assert!(
             duration <= max_duration,
-            "{} took {:?}, expected <= {:?}",
-            operation_name,
-            duration,
-            max_duration
+            "{operation_name} took {duration:?}, expected <= {max_duration:?}"
         );
         result
     }

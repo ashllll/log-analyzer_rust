@@ -25,7 +25,7 @@ pub(crate) async fn save_index_state(pool: &SqlitePool, state: &IndexState) -> R
     .bind(state.index_version)
     .execute(pool)
     .await
-    .map_err(|e| AppError::database_error(format!("Failed to save index state: {}", e)))?;
+    .map_err(|e| AppError::database_error(format!("Failed to save index state: {e}")))?;
 
     debug!(
         workspace_id = %state.workspace_id,
@@ -47,7 +47,7 @@ pub(crate) async fn load_index_state(
             .bind(workspace_id)
             .fetch_optional(pool)
             .await
-            .map_err(|e| AppError::database_error(format!("Failed to load index state: {}", e)))?;
+            .map_err(|e| AppError::database_error(format!("Failed to load index state: {e}")))?;
 
     Ok(row.map(|r: sqlx::sqlite::SqliteRow| IndexState {
         workspace_id: r.get("workspace_id"),
@@ -76,13 +76,11 @@ pub(crate) async fn save_indexed_file(pool: &SqlitePool, file: &IndexedFile) -> 
             let error_msg = e.to_string();
             if error_msg.contains("constraint") || error_msg.contains("FOREIGN KEY") {
                 return Err(AppError::database_error(format!(
-                    "Foreign key constraint failed when ensuring workspace exists: {}. This may indicate database corruption.",
-                    e
+                    "Foreign key constraint failed when ensuring workspace exists: {e}. This may indicate database corruption."
                 )));
             }
             return Err(AppError::database_error(format!(
-                "Failed to ensure workspace exists: {}",
-                e
+                "Failed to ensure workspace exists: {e}"
             )));
         }
     }
@@ -132,8 +130,7 @@ pub(crate) async fn save_indexed_file(pool: &SqlitePool, file: &IndexedFile) -> 
                 )))
             } else {
                 Err(AppError::database_error(format!(
-                    "Failed to save indexed file: {}",
-                    e
+                    "Failed to save indexed file: {e}"
                 )))
             }
         }
@@ -151,7 +148,7 @@ pub(crate) async fn load_indexed_files(
     .bind(workspace_id)
     .fetch_all(pool)
     .await
-    .map_err(|e| AppError::database_error(format!("Failed to load indexed files: {}", e)))?;
+    .map_err(|e| AppError::database_error(format!("Failed to load indexed files: {e}")))?;
 
     Ok(rows
         .into_iter()
@@ -180,7 +177,7 @@ pub(crate) async fn load_indexed_file(
     .bind(file_path)
     .fetch_optional(pool)
     .await
-    .map_err(|e| AppError::database_error(format!("Failed to load indexed file: {}", e)))?;
+    .map_err(|e| AppError::database_error(format!("Failed to load indexed file: {e}")))?;
 
     Ok(row.map(|r: sqlx::sqlite::SqliteRow| IndexedFile {
         file_path: r.get("file_path"),
@@ -201,7 +198,7 @@ pub(crate) async fn delete_indexed_file(pool: &SqlitePool, file_path: &str) -> R
         .bind(file_path)
         .execute(pool)
         .await
-        .map_err(|e| AppError::database_error(format!("Failed to delete indexed file: {}", e)))?;
+        .map_err(|e| AppError::database_error(format!("Failed to delete indexed file: {e}")))?;
 
     debug!(
         file_path = %file_path,
@@ -218,7 +215,7 @@ pub(crate) async fn clear_indexed_files(pool: &SqlitePool, workspace_id: &str) -
         .bind(workspace_id)
         .execute(pool)
         .await
-        .map_err(|e| AppError::database_error(format!("Failed to clear indexed files: {}", e)))?;
+        .map_err(|e| AppError::database_error(format!("Failed to clear indexed files: {e}")))?;
 
     debug!(
         workspace_id = %workspace_id,

@@ -191,7 +191,7 @@ impl QueryPlanner {
         } else {
             RegexEngine::new_with_case(&combined_pattern, false, true)
         }
-        .map_err(|e| AppError::validation_error(format!("Engine error: {}", e)))?;
+        .map_err(|e| AppError::validation_error(format!("Engine error: {e}")))?;
 
         Ok(Some(Arc::new(engine)))
     }
@@ -247,7 +247,7 @@ impl QueryPlanner {
         } else {
             RegexEngine::new(&pattern, term.is_regex)
         }
-        .map_err(|e| AppError::validation_error(format!("Engine error: {}", e)))?;
+        .map_err(|e| AppError::validation_error(format!("Engine error: {e}")))?;
 
         let result = Arc::new(engine);
         self.engine_cache.insert(cache_key, Arc::clone(&result));
@@ -486,9 +486,7 @@ impl ExecutionPlan {
                 details.sort_by_key(|d| std::cmp::Reverse(d.priority));
                 Some(details)
             }
-            SearchStrategy::Not => {
-                Some(vec![])
-            }
+            SearchStrategy::Not => Some(vec![]),
             SearchStrategy::And => {
                 for compiled in &self.engines {
                     for mat in Self::engine_find_all(&compiled.engine, line) {
@@ -789,8 +787,7 @@ mod tests {
             assert_eq!(
                 QueryPlanner::should_use_word_boundary(&term),
                 expected,
-                "Failed for: {}",
-                value
+                "Failed for: {value}"
             );
         }
     }
@@ -821,8 +818,7 @@ mod tests {
             let term = create_test_term(value, QueryOperator::And);
             assert!(
                 !QueryPlanner::should_use_word_boundary(&term),
-                "Should not use word boundary for: {}",
-                value
+                "Should not use word boundary for: {value}"
             );
         }
     }

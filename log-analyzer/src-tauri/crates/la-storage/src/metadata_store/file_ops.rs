@@ -12,9 +12,10 @@ use super::types::{parse_analysis_status, MAX_BATCH_SIZE};
 
 /// Insert file metadata with CAS deduplication (within a transaction).
 pub(crate) async fn insert_file(pool: &SqlitePool, metadata: &FileMetadata) -> Result<i64> {
-    let mut tx = pool.begin().await.map_err(|e| {
-        AppError::database_error(format!("Failed to begin transaction: {}", e))
-    })?;
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| AppError::database_error(format!("Failed to begin transaction: {e}")))?;
 
     sqlx::query(
         r#"
@@ -40,18 +41,18 @@ pub(crate) async fn insert_file(pool: &SqlitePool, metadata: &FileMetadata) -> R
     .bind(metadata.analysis_status.as_str())
     .execute(&mut *tx)
     .await
-    .map_err(|e| AppError::database_error(format!("Failed to insert file: {}", e)))?;
+    .map_err(|e| AppError::database_error(format!("Failed to insert file: {e}")))?;
 
     let id = sqlx::query_as::<_, (i64,)>("SELECT id FROM files WHERE sha256_hash = ? LIMIT 1")
         .bind(&metadata.sha256_hash)
         .fetch_one(&mut *tx)
         .await
-        .map_err(|e| AppError::database_error(format!("Failed to fetch file ID: {}", e)))?
+        .map_err(|e| AppError::database_error(format!("Failed to fetch file ID: {e}")))?
         .0;
 
-    tx.commit().await.map_err(|e| {
-        AppError::database_error(format!("Failed to commit transaction: {}", e))
-    })?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::database_error(format!("Failed to commit transaction: {e}")))?;
 
     debug!(
         id = id,
@@ -72,7 +73,7 @@ pub(crate) async fn get_file_by_virtual_path(
         .bind(virtual_path)
         .fetch_optional(pool)
         .await
-        .map_err(|e| AppError::database_error(format!("Failed to query file: {}", e)))?;
+        .map_err(|e| AppError::database_error(format!("Failed to query file: {e}")))?;
 
     Ok(row.map(|r: sqlx::sqlite::SqliteRow| row_to_file_metadata(&r)))
 }
@@ -86,7 +87,7 @@ pub(crate) async fn get_file_by_hash(
         .bind(hash)
         .fetch_optional(pool)
         .await
-        .map_err(|e| AppError::database_error(format!("Failed to query file: {}", e)))?;
+        .map_err(|e| AppError::database_error(format!("Failed to query file: {e}")))?;
 
     Ok(row.map(|r: sqlx::sqlite::SqliteRow| row_to_file_metadata(&r)))
 }
@@ -121,7 +122,7 @@ pub(crate) async fn batch_check_hashes(
         }
 
         let rows = query.fetch_all(pool).await.map_err(|e| {
-            AppError::database_error(format!("Failed to batch check hashes: {}", e))
+            AppError::database_error(format!("Failed to batch check hashes: {e}"))
         })?;
 
         for row in rows {
@@ -142,7 +143,9 @@ pub(crate) async fn get_archive_children(
         .bind(archive_id)
         .fetch_all(pool)
         .await
-        .map_err(|e| AppError::database_error(format!("Failed to query archive children: {}", e)))?;
+        .map_err(|e| {
+            AppError::database_error(format!("Failed to query archive children: {e}"))
+        })?;
 
     Ok(rows
         .into_iter()
@@ -155,7 +158,7 @@ pub(crate) async fn get_all_files(pool: &SqlitePool) -> Result<Vec<FileMetadata>
     let rows = sqlx::query("SELECT * FROM files ORDER BY virtual_path")
         .fetch_all(pool)
         .await
-        .map_err(|e| AppError::database_error(format!("Failed to query all files: {}", e)))?;
+        .map_err(|e| AppError::database_error(format!("Failed to query all files: {e}")))?;
 
     Ok(rows
         .into_iter()
@@ -168,7 +171,7 @@ pub(crate) async fn count_files(pool: &SqlitePool) -> Result<i64> {
     let row = sqlx::query("SELECT COUNT(*) as count FROM files")
         .fetch_one(pool)
         .await
-        .map_err(|e| AppError::database_error(format!("Failed to count files: {}", e)))?;
+        .map_err(|e| AppError::database_error(format!("Failed to count files: {e}")))?;
 
     Ok(row.get("count"))
 }
@@ -178,7 +181,7 @@ pub(crate) async fn sum_file_sizes(pool: &SqlitePool) -> Result<i64> {
     let row = sqlx::query("SELECT COALESCE(SUM(size), 0) as total FROM files")
         .fetch_one(pool)
         .await
-        .map_err(|e| AppError::database_error(format!("Failed to sum file sizes: {}", e)))?;
+        .map_err(|e| AppError::database_error(format!("Failed to sum file sizes: {e}")))?;
 
     Ok(row.get("total"))
 }
@@ -188,7 +191,7 @@ pub(crate) async fn get_max_depth(pool: &SqlitePool) -> Result<i32> {
     let row = sqlx::query("SELECT COALESCE(MAX(depth_level), 0) as max_depth FROM files")
         .fetch_one(pool)
         .await
-        .map_err(|e| AppError::database_error(format!("Failed to get max depth: {}", e)))?;
+        .map_err(|e| AppError::database_error(format!("Failed to get max depth: {e}")))?;
 
     Ok(row.get("max_depth"))
 }
@@ -210,7 +213,7 @@ pub(crate) async fn update_file_stats(
     .bind(virtual_path)
     .execute(pool)
     .await
-    .map_err(|e| AppError::database_error(format!("Failed to update file stats: {}", e)))?;
+    .map_err(|e| AppError::database_error(format!("Failed to update file stats: {e}")))?;
     Ok(())
 }
 
@@ -231,18 +234,17 @@ pub(crate) async fn update_file_ready(
     .bind(virtual_path)
     .execute(pool)
     .await
-    .map_err(|e| AppError::database_error(format!("Failed to mark file ready: {}", e)))?;
+    .map_err(|e| AppError::database_error(format!("Failed to mark file ready: {e}")))?;
     Ok(())
 }
 
 /// Get all files with analysis_status = 'READY'.
 pub(crate) async fn get_ready_files(pool: &SqlitePool) -> Result<Vec<FileMetadata>> {
-    let rows = sqlx::query(
-        "SELECT * FROM files WHERE analysis_status = 'READY' ORDER BY virtual_path",
-    )
-    .fetch_all(pool)
-    .await
-    .map_err(|e| AppError::database_error(format!("Failed to query ready files: {}", e)))?;
+    let rows =
+        sqlx::query("SELECT * FROM files WHERE analysis_status = 'READY' ORDER BY virtual_path")
+            .fetch_all(pool)
+            .await
+            .map_err(|e| AppError::database_error(format!("Failed to query ready files: {e}")))?;
 
     Ok(rows
         .into_iter()
@@ -299,7 +301,7 @@ pub(crate) async fn get_files_with_pruning(
     }
 
     let rows = query.fetch_all(pool).await.map_err(|e| {
-        AppError::database_error(format!("Failed to query files with pruning: {}", e))
+        AppError::database_error(format!("Failed to query files with pruning: {e}"))
     })?;
 
     Ok(rows
@@ -309,10 +311,7 @@ pub(crate) async fn get_files_with_pruning(
 }
 
 /// Search files using FTS5.
-pub(crate) async fn search_files(
-    pool: &SqlitePool,
-    query: &str,
-) -> Result<Vec<FileMetadata>> {
+pub(crate) async fn search_files(pool: &SqlitePool, query: &str) -> Result<Vec<FileMetadata>> {
     let rows = sqlx::query(
         r#"
         SELECT f.* FROM files f
@@ -324,7 +323,7 @@ pub(crate) async fn search_files(
     .bind(query)
     .fetch_all(pool)
     .await
-    .map_err(|e| AppError::database_error(format!("Failed to search files: {}", e)))?;
+    .map_err(|e| AppError::database_error(format!("Failed to search files: {e}")))?;
 
     Ok(rows
         .into_iter()
@@ -345,9 +344,10 @@ pub(crate) async fn insert_files_batch(
         )));
     }
 
-    let mut tx = pool.begin().await.map_err(|e| {
-        AppError::database_error(format!("Failed to begin transaction: {}", e))
-    })?;
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| AppError::database_error(format!("Failed to begin transaction: {e}")))?;
 
     let mut ids = Vec::with_capacity(files.len());
 
@@ -376,22 +376,21 @@ pub(crate) async fn insert_files_batch(
         .bind(metadata.analysis_status.as_str())
         .execute(&mut *tx)
         .await
-        .map_err(|e| AppError::database_error(format!("Failed to insert file: {}", e)))?;
+        .map_err(|e| AppError::database_error(format!("Failed to insert file: {e}")))?;
 
-        let id =
-            sqlx::query_as::<_, (i64,)>("SELECT id FROM files WHERE sha256_hash = ? LIMIT 1")
-                .bind(&metadata.sha256_hash)
-                .fetch_one(&mut *tx)
-                .await
-                .map_err(|e| AppError::database_error(format!("Failed to fetch file ID: {}", e)))?
-                .0;
+        let id = sqlx::query_as::<_, (i64,)>("SELECT id FROM files WHERE sha256_hash = ? LIMIT 1")
+            .bind(&metadata.sha256_hash)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| AppError::database_error(format!("Failed to fetch file ID: {e}")))?
+            .0;
 
         ids.push(id);
     }
 
-    tx.commit().await.map_err(|e| {
-        AppError::database_error(format!("Failed to commit transaction: {}", e))
-    })?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::database_error(format!("Failed to commit transaction: {e}")))?;
 
     info!(
         count = ids.len(),
@@ -444,9 +443,10 @@ pub(crate) async fn insert_files_batch_optimized(
         return insert_files_batch(pool, files).await;
     }
 
-    let mut tx = pool.begin().await.map_err(|e| {
-        AppError::database_error(format!("Failed to begin transaction: {}", e))
-    })?;
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| AppError::database_error(format!("Failed to begin transaction: {e}")))?;
 
     let mut query = String::from(
         "INSERT OR IGNORE INTO files (sha256_hash, virtual_path, original_name, size, modified_time, mime_type, parent_archive_id, depth_level, created_at, min_timestamp, max_timestamp, level_mask, analysis_status) VALUES ",
@@ -479,15 +479,16 @@ pub(crate) async fn insert_files_batch_optimized(
             .bind(metadata.analysis_status.as_str());
     }
 
-    let rows = query_builder.fetch_all(&mut *tx).await.map_err(|e| {
-        AppError::database_error(format!("Failed to execute batch insert: {}", e))
-    })?;
+    let rows = query_builder
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(|e| AppError::database_error(format!("Failed to execute batch insert: {e}")))?;
 
     let ids: Vec<i64> = rows.iter().map(|row| row.get("id")).collect();
 
-    tx.commit().await.map_err(|e| {
-        AppError::database_error(format!("Failed to commit transaction: {}", e))
-    })?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::database_error(format!("Failed to commit transaction: {e}")))?;
 
     debug!(
         count = ids.len(),
@@ -515,14 +516,16 @@ pub(crate) async fn insert_files_batch_smart(
 
 /// Delete all files (for workspace cleanup).
 pub(crate) async fn clear_all_files(pool: &SqlitePool) -> Result<()> {
-    match sqlx::query("DELETE FROM files WHERE 1=1").execute(pool).await {
+    match sqlx::query("DELETE FROM files WHERE 1=1")
+        .execute(pool)
+        .await
+    {
         Ok(_) => {}
         Err(e) => {
             let err_str = e.to_string();
             if !err_str.contains("no such table") {
                 return Err(AppError::database_error(format!(
-                    "Failed to delete files: {}",
-                    e
+                    "Failed to delete files: {e}"
                 )));
             }
         }
@@ -537,8 +540,7 @@ pub(crate) async fn clear_all_files(pool: &SqlitePool) -> Result<()> {
             let err_str = e.to_string();
             if !err_str.contains("no such table") {
                 return Err(AppError::database_error(format!(
-                    "Failed to delete archives: {}",
-                    e
+                    "Failed to delete archives: {e}"
                 )));
             }
         }
@@ -555,7 +557,7 @@ pub(crate) async fn begin_transaction(
 ) -> Result<sqlx::Transaction<'static, sqlx::Sqlite>> {
     pool.begin()
         .await
-        .map_err(|e| AppError::database_error(format!("Failed to begin transaction: {}", e)))
+        .map_err(|e| AppError::database_error(format!("Failed to begin transaction: {e}")))
 }
 
 /// Insert file within a transaction.
@@ -587,14 +589,16 @@ pub(crate) async fn insert_file_tx(
     .bind(metadata.analysis_status.as_str())
     .execute(&mut **tx)
     .await
-    .map_err(|e| AppError::database_error(format!("Failed to insert file in transaction: {}", e)))?;
+    .map_err(|e| {
+        AppError::database_error(format!("Failed to insert file in transaction: {e}"))
+    })?;
 
     let id = sqlx::query_as::<_, (i64,)>("SELECT id FROM files WHERE sha256_hash = ? LIMIT 1")
         .bind(&metadata.sha256_hash)
         .fetch_one(&mut **tx)
         .await
         .map_err(|e| {
-            AppError::database_error(format!("Failed to fetch file ID in transaction: {}", e))
+            AppError::database_error(format!("Failed to fetch file ID in transaction: {e}"))
         })?
         .0;
 

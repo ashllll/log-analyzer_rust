@@ -513,7 +513,7 @@ impl<'a> Iterator for FancyMatches<'a> {
             Err(e) => {
                 // 回溯失败（如 catastrophic backtracking），记录错误并终止迭代
                 if self.error.is_none() {
-                    self.error = Some(format!("fancy-regex execution error: {}", e));
+                    self.error = Some(format!("fancy-regex execution error: {e}"));
                 }
                 None
             }

@@ -32,8 +32,8 @@ use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
 // 保留 re-exports 以保持向后兼容（workspace_repo、cleanup_workspace_resources 等引用）
-pub use la_storage::ContentAddressableStorage;
 pub use la_search::SearchEngineManager;
+pub use la_storage::ContentAddressableStorage;
 
 // ============================================================================
 // SearchService — 工作区搜索能力

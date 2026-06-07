@@ -211,7 +211,7 @@ fn test_long_path_handling() {
     // 创建一个长路径（但不超过系统限制）
     let mut long_path = temp_dir.path().to_path_buf();
     for i in 0..10 {
-        long_path = long_path.join(format!("directory_with_very_long_name_{}", i));
+        long_path = long_path.join(format!("directory_with_very_long_name_{i}"));
     }
 
     // 创建目录
@@ -250,7 +250,7 @@ fn test_encoding_cross_platform() {
         let bytes = s.as_bytes();
         // 解码回来
         let decoded = std::str::from_utf8(bytes).unwrap();
-        assert_eq!(s, decoded, "String should survive UTF-8 round-trip: {}", s);
+        assert_eq!(s, decoded, "String should survive UTF-8 round-trip: {s}");
     }
 }
 

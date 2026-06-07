@@ -74,7 +74,7 @@ async fn test_archive_level_error_handling() {
         }
         Err(e) => {
             // If it returns Err, that's also acceptable for non-existent files
-            println!("Extraction failed: {}", e);
+            println!("Extraction failed: {e}");
         }
     }
 }
@@ -114,11 +114,10 @@ async fn test_unsupported_format_error() {
         }
         Err(e) => {
             // If it returns Err, that's also acceptable
-            println!("Extraction failed as expected: {}", e);
+            println!("Extraction failed as expected: {e}");
             assert!(
                 e.to_string().contains("Unsupported") || e.to_string().contains("format"),
-                "Error message should mention unsupported format: {}",
-                e
+                "Error message should mention unsupported format: {e}"
             );
         }
     }
@@ -200,7 +199,7 @@ async fn test_security_event_warning() {
         }
         Err(e) => {
             // If it failed, it should be a security error
-            println!("Extraction failed as expected: {}", e);
+            println!("Extraction failed as expected: {e}");
         }
     }
 }
@@ -223,7 +222,7 @@ async fn test_warning_categories() {
 
     for category in categories {
         let warning = ExtractionWarning {
-            message: format!("Test warning for {:?}", category),
+            message: format!("Test warning for {category:?}"),
             file_path: Some(PathBuf::from("test.txt")),
             category,
         };
@@ -251,8 +250,8 @@ async fn test_continue_after_file_error() {
 
     // Add multiple files
     for i in 0..5 {
-        zip.start_file(format!("file{}.txt", i), options).unwrap();
-        std::io::Write::write_all(&mut zip, format!("content {}", i).as_bytes()).unwrap();
+        zip.start_file(format!("file{i}.txt"), options).unwrap();
+        std::io::Write::write_all(&mut zip, format!("content {i}").as_bytes()).unwrap();
     }
 
     zip.finish().unwrap();

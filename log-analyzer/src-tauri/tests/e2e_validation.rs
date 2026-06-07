@@ -38,15 +38,14 @@ fn test_task_status_serialization() {
     for status in statuses {
         // 验证序列化
         let json = serde_json::to_string(&status);
-        assert!(json.is_ok(), "Status {:?} should serialize", status);
+        assert!(json.is_ok(), "Status {status:?} should serialize");
 
         // 验证反序列化
         let json_str = json.unwrap();
         let deserialized: Result<TaskStatus, _> = serde_json::from_str(&json_str);
         assert!(
             deserialized.is_ok(),
-            "Status {:?} should deserialize",
-            status
+            "Status {status:?} should deserialize"
         );
         assert_eq!(deserialized.unwrap(), status);
     }
@@ -75,7 +74,7 @@ fn test_config_traits() {
     assert_eq!(config.completed_task_ttl, cloned.completed_task_ttl);
 
     // 测试调试输出
-    let debug_str = format!("{:?}", config);
+    let debug_str = format!("{config:?}");
     assert!(debug_str.contains("TaskManagerConfig"));
     assert!(debug_str.contains("completed_task_ttl"));
 }

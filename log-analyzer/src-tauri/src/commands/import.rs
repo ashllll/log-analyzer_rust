@@ -19,9 +19,7 @@ use uuid::Uuid;
 
 use crate::adapters::tauri_config::TauriAppConfigProvider;
 use crate::application::workspace_service::ImportOptions;
-use crate::infrastructure::workspace_service_factory::{
-    get_or_create_workspace_service,
-};
+use crate::infrastructure::workspace_service_factory::get_or_create_workspace_service;
 use crate::models::AppState;
 use crate::utils::workspace_paths::preferred_workspace_dir;
 use crate::utils::{canonicalize_path, validate_workspace_id};
@@ -73,8 +71,7 @@ pub async fn import_folder(
 ) -> Result<String, String> {
     validate_workspace_id(&workspace_id)?;
 
-    let validated_path =
-        crate::utils::validation::validate_import_source_path(&path, "path")?;
+    let validated_path = crate::utils::validation::validate_import_source_path(&path, "path")?;
     let canonical_path = canonicalize_path(&validated_path).map_err(|e| {
         let msg = format!("Path canonicalization failed: {e}");
         warn!("{msg}");
@@ -109,17 +106,11 @@ pub async fn import_folder(
         .map_err(|e| format!("Failed to create task: {e}"))?;
 
     // ── 获取或创建 WorkspaceService ──
-    let service = get_or_create_workspace_service(
-        &app,
-        &state,
-        &workspace_id,
-        &workspace_dir,
-    )
-    .await
-    .map_err(|e| {
-        let _ = app.emit("import-error", &e);
-        e
-    })?;
+    let service = get_or_create_workspace_service(&app, &state, &workspace_id, &workspace_dir)
+        .await
+        .inspect_err(|e| {
+            let _ = app.emit("import-error", e);
+        })?;
 
     // ── 更新任务进度 ──
     let _ = scheduler.update(&handle, 10, "Scanning...").await;
@@ -145,8 +136,7 @@ pub async fn import_folder(
             if workspace_dir.exists() {
                 if let Err(rm_err) = std::fs::remove_dir_all(&workspace_dir) {
                     warn!(path = ?workspace_dir, error = %rm_err, "Failed to cleanup workspace");
-                    let _ = app
-                        .emit("import-error", &format!("Cleanup failed: {rm_err}"));
+                    let _ = app.emit("import-error", &format!("Cleanup failed: {rm_err}"));
                 }
             }
             let msg = format!("Failed to import: {e}");

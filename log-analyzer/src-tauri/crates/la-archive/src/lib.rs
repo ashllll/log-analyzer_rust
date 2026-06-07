@@ -36,8 +36,9 @@ pub use archive_handler::{ArchiveHandler, ExtractionSummary};
 #[cfg(feature = "enhanced-extraction")]
 pub use checkpoint_manager::{Checkpoint, CheckpointConfig, CheckpointManager};
 #[cfg(feature = "enhanced-extraction")]
-#[cfg(feature = "enhanced-extraction")]
-pub use extraction_engine::{ExtractionContext, ExtractionEngine, ExtractionItem, ExtractionPolicy, ExtractionStack};
+pub use extraction_engine::{
+    ExtractionContext, ExtractionEngine, ExtractionItem, ExtractionPolicy, ExtractionStack,
+};
 #[cfg(feature = "enhanced-extraction")]
 pub use extraction_orchestrator::ExtractionOrchestrator;
 pub use gz_handler::GzHandler;

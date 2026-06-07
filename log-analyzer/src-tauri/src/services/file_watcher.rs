@@ -250,8 +250,7 @@ pub fn append_to_workspace_index(
                                             analysis_status:
                                                 la_core::storage_types::AnalysisStatus::Pending,
                                         };
-                                        if let Err(e) =
-                                            metadata_store.insert_file(&metadata).await
+                                        if let Err(e) = metadata_store.insert_file(&metadata).await
                                         {
                                             tracing::warn!(
                                                 virtual_path = %metadata.virtual_path,
@@ -320,7 +319,7 @@ pub fn get_file_metadata(path: &Path) -> Result<la_storage::FileMetadata> {
 
     let modified_time: i64 = modified
         .duration_since(SystemTime::UNIX_EPOCH)
-        .map_err(|e| AppError::validation_error(format!("Invalid timestamp: {}", e)))?
+        .map_err(|e| AppError::validation_error(format!("Invalid timestamp: {e}")))?
         .as_secs()
         .try_into()
         .map_err(|_| AppError::validation_error("Timestamp overflow (Y2K38)".to_string()))?;

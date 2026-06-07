@@ -7,9 +7,10 @@ use tracing::debug;
 
 /// Insert archive metadata with deduplication.
 pub(crate) async fn insert_archive(pool: &SqlitePool, metadata: &ArchiveMetadata) -> Result<i64> {
-    let mut tx = pool.begin().await.map_err(|e| {
-        AppError::database_error(format!("Failed to begin transaction: {}", e))
-    })?;
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| AppError::database_error(format!("Failed to begin transaction: {e}")))?;
 
     sqlx::query(
         r#"
@@ -29,19 +30,18 @@ pub(crate) async fn insert_archive(pool: &SqlitePool, metadata: &ArchiveMetadata
     .bind(chrono::Utc::now().timestamp())
     .execute(&mut *tx)
     .await
-    .map_err(|e| AppError::database_error(format!("Failed to insert archive: {}", e)))?;
+    .map_err(|e| AppError::database_error(format!("Failed to insert archive: {e}")))?;
 
-    let id =
-        sqlx::query_as::<_, (i64,)>("SELECT id FROM archives WHERE sha256_hash = ? LIMIT 1")
-            .bind(&metadata.sha256_hash)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(|e| AppError::database_error(format!("Failed to fetch archive ID: {}", e)))?
-            .0;
+    let id = sqlx::query_as::<_, (i64,)>("SELECT id FROM archives WHERE sha256_hash = ? LIMIT 1")
+        .bind(&metadata.sha256_hash)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| AppError::database_error(format!("Failed to fetch archive ID: {e}")))?
+        .0;
 
-    tx.commit().await.map_err(|e| {
-        AppError::database_error(format!("Failed to commit transaction: {}", e))
-    })?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::database_error(format!("Failed to commit transaction: {e}")))?;
 
     debug!(
         id = id,
@@ -58,7 +58,7 @@ pub(crate) async fn count_archives(pool: &SqlitePool) -> Result<i64> {
     let row = sqlx::query("SELECT COUNT(*) as count FROM archives")
         .fetch_one(pool)
         .await
-        .map_err(|e| AppError::database_error(format!("Failed to count archives: {}", e)))?;
+        .map_err(|e| AppError::database_error(format!("Failed to count archives: {e}")))?;
 
     Ok(row.get("count"))
 }
@@ -74,7 +74,7 @@ pub(crate) async fn update_archive_status(
         .bind(archive_id)
         .execute(pool)
         .await
-        .map_err(|e| AppError::database_error(format!("Failed to update archive status: {}", e)))?;
+        .map_err(|e| AppError::database_error(format!("Failed to update archive status: {e}")))?;
 
     debug!(archive_id = archive_id, status = %status, "Updated archive status");
     Ok(())
@@ -89,7 +89,7 @@ pub(crate) async fn get_archive_by_id(
         .bind(archive_id)
         .fetch_optional(pool)
         .await
-        .map_err(|e| AppError::database_error(format!("Failed to query archive: {}", e)))?;
+        .map_err(|e| AppError::database_error(format!("Failed to query archive: {e}")))?;
 
     Ok(row.map(|r: sqlx::sqlite::SqliteRow| ArchiveMetadata {
         id: r.get("id"),
@@ -108,7 +108,7 @@ pub(crate) async fn get_all_archives(pool: &SqlitePool) -> Result<Vec<ArchiveMet
     let rows = sqlx::query("SELECT * FROM archives ORDER BY virtual_path")
         .fetch_all(pool)
         .await
-        .map_err(|e| AppError::database_error(format!("Failed to query all archives: {}", e)))?;
+        .map_err(|e| AppError::database_error(format!("Failed to query all archives: {e}")))?;
 
     Ok(rows
         .into_iter()
@@ -149,21 +149,17 @@ pub(crate) async fn insert_archive_tx(
     .execute(&mut **tx)
     .await
     .map_err(|e| {
-        AppError::database_error(format!("Failed to insert archive in transaction: {}", e))
+        AppError::database_error(format!("Failed to insert archive in transaction: {e}"))
     })?;
 
-    let id =
-        sqlx::query_as::<_, (i64,)>("SELECT id FROM archives WHERE sha256_hash = ? LIMIT 1")
-            .bind(&metadata.sha256_hash)
-            .fetch_one(&mut **tx)
-            .await
-            .map_err(|e| {
-                AppError::database_error(format!(
-                    "Failed to fetch archive ID in transaction: {}",
-                    e
-                ))
-            })?
-            .0;
+    let id = sqlx::query_as::<_, (i64,)>("SELECT id FROM archives WHERE sha256_hash = ? LIMIT 1")
+        .bind(&metadata.sha256_hash)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| {
+            AppError::database_error(format!("Failed to fetch archive ID in transaction: {e}"))
+        })?
+        .0;
 
     debug!(
         id = id,

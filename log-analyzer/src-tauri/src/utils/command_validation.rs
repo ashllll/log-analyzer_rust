@@ -22,8 +22,7 @@ pub fn validate_search_query(query: &str) -> Result<(), String> {
     }
     if query.len() > MAX_SEARCH_QUERY_LENGTH {
         return Err(format!(
-            "搜索查询过长（最大{}字符）",
-            MAX_SEARCH_QUERY_LENGTH
+            "搜索查询过长（最大{MAX_SEARCH_QUERY_LENGTH}字符）"
         ));
     }
     Ok(())
@@ -38,8 +37,7 @@ pub fn validate_workspace_id(id: &str) -> Result<(), String> {
     }
     if id.len() > MAX_WORKSPACE_ID_LENGTH {
         return Err(format!(
-            "工作区ID过长（最大{}字符）",
-            MAX_WORKSPACE_ID_LENGTH
+            "工作区ID过长（最大{MAX_WORKSPACE_ID_LENGTH}字符）"
         ));
     }
     if !WORKSPACE_ID_REGEX.is_match(id) {
@@ -53,10 +51,10 @@ pub fn validate_workspace_id(id: &str) -> Result<(), String> {
 /// 检查路径是否为空、长度是否超限
 pub fn validate_path_param(path: &str, param_name: &str) -> Result<(), String> {
     if path.is_empty() {
-        return Err(format!("{}不能为空", param_name));
+        return Err(format!("{param_name}不能为空"));
     }
     if path.len() > MAX_PATH_LENGTH {
-        return Err(format!("{}过长（最大{}字符）", param_name, MAX_PATH_LENGTH));
+        return Err(format!("{param_name}过长（最大{MAX_PATH_LENGTH}字符）"));
     }
     Ok(())
 }
@@ -96,7 +94,7 @@ pub fn validate_export_path(path: &str) -> Result<(), String> {
 /// 检查端口是否在有效范围内（1-65535）
 pub fn validate_port(port: u64, field_name: &str) -> Result<(), String> {
     if port == 0 || port > 65535 {
-        return Err(format!("{}必须在 1-65535 之间", field_name));
+        return Err(format!("{field_name}必须在 1-65535 之间"));
     }
     Ok(())
 }
@@ -111,7 +109,7 @@ pub fn validate_range<T: PartialOrd + std::fmt::Display>(
     field_name: &str,
 ) -> Result<(), String> {
     if value < min || value > max {
-        return Err(format!("{}必须在 {}-{} 之间", field_name, min, max));
+        return Err(format!("{field_name}必须在 {min}-{max} 之间"));
     }
     Ok(())
 }
@@ -123,8 +121,7 @@ pub fn validate_log_level(level: &str) -> Result<(), String> {
     let valid_levels = ["trace", "debug", "info", "warn", "error"];
     if !valid_levels.contains(&level.to_lowercase().as_str()) {
         return Err(format!(
-            "无效的日志级别，必须是以下之一: {:?}",
-            valid_levels
+            "无效的日志级别，必须是以下之一: {valid_levels:?}"
         ));
     }
     Ok(())
@@ -145,7 +142,7 @@ pub fn validate_websocket_url(url: &str) -> Result<(), String> {
 /// 检查API密钥长度是否满足最小要求
 pub fn validate_api_key(key: &str, min_length: usize) -> Result<(), String> {
     if !key.is_empty() && key.len() < min_length {
-        return Err(format!("API密钥长度至少为 {} 个字符", min_length));
+        return Err(format!("API密钥长度至少为 {min_length} 个字符"));
     }
     Ok(())
 }

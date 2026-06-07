@@ -20,7 +20,7 @@ impl QueryValidation for QueryValidator {
     fn validate(&self, query: &SearchQuery) -> ValidationResult {
         match Self::validate(query) {
             Ok(()) => ValidationResult::valid(),
-            Err(e) => ValidationResult::error(format!("{}", e)),
+            Err(e) => ValidationResult::error(format!("{e}")),
         }
     }
 }
@@ -270,11 +270,10 @@ mod tests {
         if let AppError::Validation { message: msg, .. } = &error {
             assert!(
                 msg.contains("empty"),
-                "Expected error message containing 'empty', got: {}",
-                msg
+                "Expected error message containing 'empty', got: {msg}"
             );
         } else {
-            panic!("Expected Validation error, got: {:?}", error);
+            panic!("Expected Validation error, got: {error:?}");
         }
     }
 
@@ -303,11 +302,10 @@ mod tests {
         if let AppError::Validation { message: msg, .. } = &error {
             assert!(
                 msg.contains("No enabled terms"),
-                "Expected error message containing 'No enabled terms', got: {}",
-                msg
+                "Expected error message containing 'No enabled terms', got: {msg}"
             );
         } else {
-            panic!("Expected Validation error, got: {:?}", error);
+            panic!("Expected Validation error, got: {error:?}");
         }
     }
 
@@ -348,11 +346,10 @@ mod tests {
         if let AppError::Validation { message: msg, .. } = &error {
             assert!(
                 msg.contains("empty value"),
-                "Expected error message containing 'empty value', got: {}",
-                msg
+                "Expected error message containing 'empty value', got: {msg}"
             );
         } else {
-            panic!("Expected Validation error, got: {:?}", error);
+            panic!("Expected Validation error, got: {error:?}");
         }
     }
 
@@ -384,11 +381,10 @@ mod tests {
         if let AppError::Validation { message: msg, .. } = &error {
             assert!(
                 msg.contains("too long"),
-                "Expected error message containing 'too long', got: {}",
-                msg
+                "Expected error message containing 'too long', got: {msg}"
             );
         } else {
-            panic!("Expected Validation error, got: {:?}", error);
+            panic!("Expected Validation error, got: {error:?}");
         }
     }
 
@@ -429,11 +425,10 @@ mod tests {
         if let AppError::Validation { message: msg, .. } = &error {
             assert!(
                 msg.contains("invalid regex"),
-                "Expected error message containing 'invalid regex', got: {}",
-                msg
+                "Expected error message containing 'invalid regex', got: {msg}"
             );
         } else {
-            panic!("Expected Validation error, got: {:?}", error);
+            panic!("Expected Validation error, got: {error:?}");
         }
     }
 
@@ -585,8 +580,7 @@ mod tests {
         let error = result.unwrap_err();
         assert!(
             error.to_string().contains("nested quantifiers"),
-            "Error should mention nested quantifiers, got: {}",
-            error
+            "Error should mention nested quantifiers, got: {error}"
         );
     }
 

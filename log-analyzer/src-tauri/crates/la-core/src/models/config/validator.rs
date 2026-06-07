@@ -176,7 +176,7 @@ pub(crate) fn validate_range<T: PartialOrd + std::fmt::Display>(
     if value < min || value > max {
         return Some(FieldValidationError {
             field: field.to_string(),
-            message: format!("值必须在 {} 到 {} 之间, 实际为 {}", min, max, value),
+            message: format!("值必须在 {min} 到 {max} 之间, 实际为 {value}"),
             code: "out_of_range".to_string(),
         });
     }
@@ -185,7 +185,11 @@ pub(crate) fn validate_range<T: PartialOrd + std::fmt::Display>(
 
 /// 验证非空字符串
 #[allow(dead_code)]
-pub(crate) fn validate_non_empty(field: &str, value: &str, max_len: usize) -> Option<FieldValidationError> {
+pub(crate) fn validate_non_empty(
+    field: &str,
+    value: &str,
+    max_len: usize,
+) -> Option<FieldValidationError> {
     if value.is_empty() {
         return Some(FieldValidationError {
             field: field.to_string(),
@@ -197,7 +201,7 @@ pub(crate) fn validate_non_empty(field: &str, value: &str, max_len: usize) -> Op
     if value.len() > max_len {
         return Some(FieldValidationError {
             field: field.to_string(),
-            message: format!("值长度不能超过 {} 字符", max_len),
+            message: format!("值长度不能超过 {max_len} 字符"),
             code: "too_long".to_string(),
         });
     }
@@ -212,8 +216,7 @@ pub(crate) fn validate_log_level(level: &str) -> Option<FieldValidationError> {
         return Some(FieldValidationError {
             field: "log_level".to_string(),
             message: format!(
-                "无效的日志级别: {}, 必须是以下之一: {:?}",
-                level, valid_levels
+                "无效的日志级别: {level}, 必须是以下之一: {valid_levels:?}"
             ),
             code: "invalid_log_level".to_string(),
         });
@@ -295,9 +298,8 @@ pub(crate) fn validate_regex_pattern(pattern: &str) -> Option<FieldValidationErr
         Ok(_) => None,
         Err(e) => Some(FieldValidationError {
             field: "pattern".to_string(),
-            message: format!("无效的正则表达式: {}", e),
+            message: format!("无效的正则表达式: {e}"),
             code: "invalid_regex".to_string(),
         }),
     }
 }
-

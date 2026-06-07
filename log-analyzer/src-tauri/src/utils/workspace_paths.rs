@@ -8,7 +8,7 @@ pub fn preferred_workspace_dir(app: &AppHandle, workspace_id: &str) -> Result<Pa
     let app_data_dir = app
         .path()
         .app_data_dir()
-        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
+        .map_err(|e| format!("Failed to get app data dir: {e}"))?;
 
     preferred_workspace_dir_from_root(&app_data_dir, workspace_id)
 }
@@ -17,7 +17,7 @@ pub fn resolve_workspace_dir(app: &AppHandle, workspace_id: &str) -> Result<Path
     let app_data_dir = app
         .path()
         .app_data_dir()
-        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
+        .map_err(|e| format!("Failed to get app data dir: {e}"))?;
 
     resolve_workspace_dir_from_root(&app_data_dir, workspace_id)
 }

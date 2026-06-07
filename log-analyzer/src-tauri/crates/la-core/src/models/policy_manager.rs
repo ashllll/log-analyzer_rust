@@ -120,7 +120,7 @@ impl PolicyManager {
             .map_err(|e| {
                 error!("Failed to read config file: {}", e);
                 AppError::archive_error(
-                    format!("Failed to read config file: {}", e),
+                    format!("Failed to read config file: {e}"),
                     Some(self.config_path.clone()),
                 )
             })?;
@@ -128,7 +128,7 @@ impl PolicyManager {
         // Parse TOML
         let policy: ExtractionPolicy = toml::from_str(&content).map_err(|e| {
             error!("Failed to parse TOML config: {}", e);
-            AppError::validation_error(format!("Failed to parse TOML config: {}", e))
+            AppError::validation_error(format!("Failed to parse TOML config: {e}"))
         })?;
 
         // Validate policy
@@ -170,7 +170,7 @@ impl PolicyManager {
     pub fn validate_policy(&self, policy: &ExtractionPolicy) -> Result<()> {
         policy.validate().map_err(|e| {
             error!("Policy validation failed: {}", e);
-            AppError::validation_error(format!("Policy validation failed: {}", e))
+            AppError::validation_error(format!("Policy validation failed: {e}"))
         })
     }
 

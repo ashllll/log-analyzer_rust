@@ -274,16 +274,12 @@ impl AppError {
     }
 
     /// 创建验证错误（显式分类）— 少数调用点需要特定 category
-    pub fn validation_error_with(
-        message: impl Into<String>,
-        category: ErrorCategory,
-    ) -> Self {
+    pub fn validation_error_with(message: impl Into<String>, category: ErrorCategory) -> Self {
         AppError::Validation {
             category,
             message: message.into(),
         }
     }
-
 
     /// 创建安全问题错误
     pub fn security_error(message: impl Into<String>) -> Self {
@@ -309,7 +305,6 @@ impl AppError {
         }
     }
 
-
     /// 创建编码错误
     pub fn encoding_error(message: impl Into<String>) -> Self {
         AppError::Encoding {
@@ -317,7 +312,6 @@ impl AppError {
             message: message.into(),
         }
     }
-
 
     /// 创建查询执行错误
     pub fn query_execution_error(message: impl Into<String>) -> Self {
@@ -327,7 +321,6 @@ impl AppError {
         }
     }
 
-
     /// 创建文件监控错误
     pub fn file_watcher_error(message: impl Into<String>) -> Self {
         AppError::FileWatcher {
@@ -335,7 +328,6 @@ impl AppError {
             message: message.into(),
         }
     }
-
 
     /// 创建索引错误
     pub fn index_error(message: impl Into<String>) -> Self {
@@ -345,7 +337,6 @@ impl AppError {
         }
     }
 
-
     /// 创建模式错误
     pub fn pattern_error(message: impl Into<String>) -> Self {
         AppError::PatternError {
@@ -353,7 +344,6 @@ impl AppError {
             message: message.into(),
         }
     }
-
 
     /// 创建数据库错误
     pub fn database_error(message: impl Into<String>) -> Self {
@@ -363,7 +353,6 @@ impl AppError {
         }
     }
 
-
     /// 创建配置错误
     pub fn config_error(message: impl Into<String>) -> Self {
         AppError::Config {
@@ -371,7 +360,6 @@ impl AppError {
             message: message.into(),
         }
     }
-
 
     /// 创建网络错误
     pub fn network_error(message: impl Into<String>) -> Self {
@@ -381,7 +369,6 @@ impl AppError {
         }
     }
 
-
     /// 创建内部错误
     pub fn internal_error(message: impl Into<String>) -> Self {
         AppError::Internal {
@@ -389,7 +376,6 @@ impl AppError {
             message: message.into(),
         }
     }
-
 
     /// 创建资源清理错误
     pub fn resource_cleanup_error(message: impl Into<String>) -> Self {
@@ -399,7 +385,6 @@ impl AppError {
         }
     }
 
-
     /// 创建并发错误
     pub fn concurrency_error(message: impl Into<String>) -> Self {
         AppError::Concurrency {
@@ -407,7 +392,6 @@ impl AppError {
             message: message.into(),
         }
     }
-
 
     /// 创建解析错误
     pub fn parse_error(message: impl Into<String>) -> Self {
@@ -417,7 +401,6 @@ impl AppError {
         }
     }
 
-
     /// 创建超时错误
     pub fn timeout_error(message: impl Into<String>) -> Self {
         AppError::Timeout {
@@ -425,7 +408,6 @@ impl AppError {
             message: message.into(),
         }
     }
-
 
     /// 创建详细的IO错误，自动脱敏路径信息
     ///
@@ -445,7 +427,6 @@ impl AppError {
             path: sanitized_path,
         }
     }
-
 }
 
 /**
@@ -636,7 +617,7 @@ mod tests {
     #[test]
     fn test_error_display() {
         let error = AppError::search_error("Query failed");
-        let display = format!("{}", error);
+        let display = format!("{error}");
         assert!(display.contains("Search error"));
         assert!(display.contains("Query failed"));
     }
@@ -681,8 +662,7 @@ mod tests {
 
     #[test]
     fn test_io_error_category_still_uses_errorkind() {
-        let io_err =
-            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "access denied");
+        let io_err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "access denied");
         let app_error: AppError = io_err.into();
         assert_eq!(app_error.category(), ErrorCategory::PermissionDenied);
 
@@ -697,10 +677,7 @@ mod tests {
         let full_path = PathBuf::from("/home/user/secret/project/file.log");
         let error = AppError::io_error("File not found", Some(full_path));
 
-        if let AppError::IoDetailed {
-            message, path, ..
-        } = error
-        {
+        if let AppError::IoDetailed { message, path, .. } = error {
             assert_eq!(message, "File not found");
             assert_eq!(path, Some(PathBuf::from("file.log")));
         } else {
@@ -727,10 +704,7 @@ mod tests {
         // 测试无路径情况
         let error = AppError::io_error("Generic error", None);
 
-        if let AppError::IoDetailed {
-            message, path, ..
-        } = error
-        {
+        if let AppError::IoDetailed { message, path, .. } = error {
             assert_eq!(message, "Generic error");
             assert_eq!(path, None);
         } else {
@@ -769,8 +743,8 @@ mod command_error_tests {
 
     #[test]
     fn test_command_error_with_help() {
-        let error = CommandError::new("CUSTOM_ERROR", "Something went wrong")
-            .with_help("Try again later");
+        let error =
+            CommandError::new("CUSTOM_ERROR", "Something went wrong").with_help("Try again later");
 
         assert_eq!(error.help, Some("Try again later".to_string()));
     }
@@ -778,8 +752,8 @@ mod command_error_tests {
     #[test]
     fn test_command_error_with_details() {
         let details = serde_json::json!({"attempt": 3, "max_retries": 5});
-        let error = CommandError::new("CUSTOM_ERROR", "Something went wrong")
-            .with_details(details.clone());
+        let error =
+            CommandError::new("CUSTOM_ERROR", "Something went wrong").with_details(details.clone());
 
         assert_eq!(error.details, Some(details));
     }
@@ -787,7 +761,7 @@ mod command_error_tests {
     #[test]
     fn test_command_error_display() {
         let error = CommandError::new("TEST_ERROR", "Test message");
-        let display = format!("{}", error);
+        let display = format!("{error}");
 
         assert_eq!(display, "[TEST_ERROR] Test message");
     }

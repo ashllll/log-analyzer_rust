@@ -51,7 +51,7 @@ mod tests {
             // 生成不存在的文件路径
             filename in "[a-z]{5,10}\\.[a-z]{3}"
         )| {
-            let non_existent_path = PathBuf::from(format!("/tmp/nonexistent_{}", filename));
+            let non_existent_path = PathBuf::from(format!("/tmp/nonexistent_{filename}"));
 
             // 尝试读取不存在的文件
             let result = std::fs::read_to_string(&non_existent_path);
@@ -80,11 +80,11 @@ mod tests {
             // 生成各种无效的归档文件路径
             archive_name in "[a-z]{5,10}\\.(zip|tar|gz|rar)"
         )| {
-            let invalid_archive = PathBuf::from(format!("/tmp/invalid_{}", archive_name));
+            let invalid_archive = PathBuf::from(format!("/tmp/invalid_{archive_name}"));
 
             // 尝试处理不存在的归档文件
             // 注意：这里我们只是验证错误消息的格式，不实际调用归档处理器
-            let error_msg = format!("Failed to extract archive: {:?}", invalid_archive);
+            let error_msg = format!("Failed to extract archive: {invalid_archive:?}");
 
             // 错误消息应该包含文件路径
             prop_assert!(error_msg.contains(&archive_name));
@@ -111,7 +111,7 @@ mod tests {
             ]
         )| {
             // 创建错误消息
-            let error_msg = format!("Search error: {}", error_type);
+            let error_msg = format!("Search error: {error_type}");
 
             // 验证错误消息格式
             prop_assert!(error_msg.starts_with("Search error:"));

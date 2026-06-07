@@ -160,9 +160,7 @@ impl TauriEventEmitter {
 
 impl TaskEventEmitter for TauriEventEmitter {
     fn emit(&self, event: &str, payload: serde_json::Value) -> Result<(), String> {
-        self.app
-            .emit(event, payload)
-            .map_err(|e| e.to_string())
+        self.app.emit(event, payload).map_err(|e| e.to_string())
     }
 }
 

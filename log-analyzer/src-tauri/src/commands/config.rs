@@ -10,7 +10,7 @@ use std::sync::Arc;
 use tauri::AppHandle;
 
 use la_core::models::config::{
-    AppConfig, FileFilterConfig, SearchConfig, TaskManagerConfig, ConfigValidator,
+    AppConfig, ConfigValidator, FileFilterConfig, SearchConfig, TaskManagerConfig,
 };
 
 use crate::adapters::tauri_config::TauriAppConfigProvider;

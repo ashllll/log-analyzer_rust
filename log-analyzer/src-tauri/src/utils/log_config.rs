@@ -58,7 +58,7 @@ impl FromStr for LogLevel {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        LogLevel::from_string(s).ok_or_else(|| format!("Invalid log level: {}", s))
+        LogLevel::from_string(s).ok_or_else(|| format!("Invalid log level: {s}"))
     }
 }
 
@@ -170,7 +170,7 @@ pub fn init_logging(config: Option<LogConfig>) {
     );
 
     if let Err(e) = tracing::subscriber::set_global_default(subscriber) {
-        eprintln!("Failed to set global subscriber: {}", e);
+        eprintln!("Failed to set global subscriber: {e}");
         return;
     }
 
@@ -220,7 +220,7 @@ pub fn set_global_log_level(level: LogLevel) -> Result<(), String> {
         let new_filter = build_env_filter(&get_log_config());
         handle
             .reload(new_filter)
-            .map_err(|e| format!("Failed to reload log level: {}", e))?;
+            .map_err(|e| format!("Failed to reload log level: {e}"))?;
     }
 
     tracing::info!("日志级别已更新为: {:?}", level);
@@ -288,10 +288,10 @@ pub fn load_log_config_from_file(path: &std::path::Path) -> Result<LogConfig, St
         return Err(format!("配置文件不存在: {}", path.display()));
     }
 
-    let content = std::fs::read_to_string(path).map_err(|e| format!("读取配置文件失败: {}", e))?;
+    let content = std::fs::read_to_string(path).map_err(|e| format!("读取配置文件失败: {e}"))?;
 
     let config: LogConfig =
-        serde_json::from_str(&content).map_err(|e| format!("解析配置文件失败: {}", e))?;
+        serde_json::from_str(&content).map_err(|e| format!("解析配置文件失败: {e}"))?;
 
     Ok(config)
 }
@@ -307,9 +307,9 @@ pub fn load_log_config_from_file(path: &std::path::Path) -> Result<LogConfig, St
 /// - `Err(String)`: 保存失败
 pub fn save_log_config_to_file(path: &std::path::Path, config: &LogConfig) -> Result<(), String> {
     let content =
-        serde_json::to_string_pretty(config).map_err(|e| format!("序列化配置失败: {}", e))?;
+        serde_json::to_string_pretty(config).map_err(|e| format!("序列化配置失败: {e}"))?;
 
-    std::fs::write(path, content).map_err(|e| format!("写入配置文件失败: {}", e))?;
+    std::fs::write(path, content).map_err(|e| format!("写入配置文件失败: {e}"))?;
 
     Ok(())
 }

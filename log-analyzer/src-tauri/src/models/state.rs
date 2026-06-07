@@ -25,7 +25,9 @@ use crate::application::workspace_service::WorkspaceServiceRef;
 use crate::infrastructure::TaskManagerAdapter;
 use crate::state_sync::StateSync;
 use crate::task_manager::TaskManager;
-use crate::utils::async_resource_manager::{AsyncResourceError, AsyncResourceManager, OperationType};
+use crate::utils::async_resource_manager::{
+    AsyncResourceError, AsyncResourceManager, OperationType,
+};
 use la_core::domain::TaskScheduler;
 use la_search::DiskResultStore;
 

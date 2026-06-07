@@ -95,8 +95,7 @@ async fn test_detect_single_nested_archive() {
     let nested_file = extract_dir.join("inner/file.txt");
     assert!(
         nested_file.exists(),
-        "Nested file should exist: {:?}",
-        nested_file
+        "Nested file should exist: {nested_file:?}"
     );
 
     // Verify content
@@ -410,8 +409,7 @@ async fn test_three_level_nesting() {
     let deep_file = extract_dir.join("level1/level2/level3/deep.txt");
     assert!(
         deep_file.exists(),
-        "Deep file should exist: {:?}",
-        deep_file
+        "Deep file should exist: {deep_file:?}"
     );
 
     let content = tokio::fs::read_to_string(&deep_file).await.unwrap();
