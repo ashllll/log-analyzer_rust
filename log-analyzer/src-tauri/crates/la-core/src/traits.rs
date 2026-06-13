@@ -43,21 +43,6 @@ impl ValidationResult {
     }
 }
 
-/// 查询验证 trait
-///
-/// 实现者可以验证搜索查询的正确性和约束条件。
-/// 该 trait 是 object-safe 的，可用于依赖注入。
-pub trait QueryValidation: Send + Sync {
-    /// 验证搜索查询
-    ///
-    /// # Arguments
-    /// * `query` - 待验证的搜索查询
-    ///
-    /// # Returns
-    /// 包含验证状态和错误信息的 `ValidationResult`
-    fn validate(&self, query: &SearchQuery) -> ValidationResult;
-}
-
 /// 查询计划结果
 ///
 /// 计划的简化表示，具体计划细节由实现决定。

@@ -1,6 +1,5 @@
 pub mod file_watcher;
 pub mod query_planner;
-pub mod query_validator;
 pub mod regex_engine;
 pub mod search_filters;
 

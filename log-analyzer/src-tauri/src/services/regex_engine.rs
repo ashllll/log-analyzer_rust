@@ -126,6 +126,9 @@ impl RegexEngine {
     ) -> Result<Self, EngineError> {
         // 1. 检测是否需要前瞻/后瞻（使用 FancyEngine）
         if needs_lookaround(pattern) {
+            // ReDoS check: fancy-regex uses backtracking for look-around,
+            // reject patterns with nested quantifiers or overlapping alternation.
+            check_redos_risk(pattern)?;
             return FancyEngine::new(pattern).map(RegexEngine::Fancy);
         }
 
@@ -624,6 +627,68 @@ pub fn needs_lookaround(pattern: &str) -> bool {
         || pattern.contains("(?<!")
 }
 
+/// Check for ReDoS (Regular Expression Denial of Service) risk patterns.
+///
+/// fancy_regex uses a backtracking engine for look-around assertions,
+/// which can suffer from catastrophic backtracking with exponential runtime.
+fn check_redos_risk(pattern: &str) -> Result<(), EngineError> {
+    if has_nested_quantifiers(pattern) {
+        return Err(EngineError::CompilationError(
+            "Regex contains nested quantifiers (e.g., (a+)+) which may cause excessive backtracking".to_string(),
+        ));
+    }
+
+    if has_overlapping_alternation(pattern) {
+        return Err(EngineError::CompilationError(
+            "Regex contains overlapping alternation under quantifier which may cause excessive backtracking".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+/// Detect nested quantifiers like (X+)+, (X*)*, (X+)*, (X*)+
+fn has_nested_quantifiers(pattern: &str) -> bool {
+    let nested_pattern = Regex::new(r"\)[\+\*\?]|\}[\,\d]*[\+\*\?]").unwrap();
+    if !nested_pattern.is_match(pattern) {
+        return false;
+    }
+
+    let chars: Vec<char> = pattern.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == ')' {
+            if i + 1 < chars.len() && matches!(chars[i + 1], '+' | '*' | '{') {
+                let mut depth = 1;
+                let mut j = i as isize - 1;
+                while j >= 0 && depth > 0 {
+                    if chars[j as usize] == ')' {
+                        depth += 1;
+                    } else if chars[j as usize] == '(' {
+                        depth -= 1;
+                        if depth == 0 {
+                            let body = &chars[j as usize + 1..i];
+                            let body_str: String = body.iter().collect();
+                            if body_str.contains('+') || body_str.contains('*') {
+                                return true;
+                            }
+                        }
+                    }
+                    j -= 1;
+                }
+            }
+        }
+        i += 1;
+    }
+    false
+}
+
+/// Detect overlapping alternation patterns like (a|aa)+
+fn has_overlapping_alternation(pattern: &str) -> bool {
+    let alternation_re = Regex::new(r"\([^()]*\|[^()]*\)[\+\*]").unwrap();
+    alternation_re.is_match(pattern)
+}
+
 /// 检测正则元字符，与前端 looksLikeRegexPattern 保持一致
 ///
 /// 前端 REGEX_META_CHARS = /[()[\]{}+*?|^\\]/
@@ -700,6 +765,34 @@ mod tests {
         assert!(needs_lookaround(r"(?!test)"));
         assert!(!needs_lookaround(r"\d+"));
         assert!(!needs_lookaround("error"));
+    }
+
+    #[test]
+    fn test_redos_rejects_nested_quantifiers() {
+        let result = RegexEngine::new(r"(?=a)(a+)+b", true);
+        assert!(result.is_err(), "Nested quantifiers should be rejected");
+        let error = result.unwrap_err().to_string();
+        assert!(
+            error.contains("nested quantifiers"),
+            "Error should mention nested quantifiers, got: {error}"
+        );
+    }
+
+    #[test]
+    fn test_redos_rejects_overlapping_alternation() {
+        let result = RegexEngine::new(r"(?=x)(a|aa)+", true);
+        assert!(result.is_err(), "Overlapping alternation should be rejected");
+        let error = result.unwrap_err().to_string();
+        assert!(
+            error.contains("overlapping alternation"),
+            "Error should mention overlapping alternation, got: {error}"
+        );
+    }
+
+    #[test]
+    fn test_redos_accepts_safe_lookaround() {
+        let result = RegexEngine::new(r"(?<=error)\s+\d+", true);
+        assert!(result.is_ok(), "Safe look-around should be accepted");
     }
 
     #[test]

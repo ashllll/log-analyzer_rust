@@ -1,10 +1,10 @@
-use crate::services::query_validator::QueryValidator;
 use crate::services::regex_engine::{EngineType, MatchResult, RegexEngine};
 use la_core::domain::MatchPlan;
 use la_core::error::{AppError, Result};
 use la_core::models::match_detail::MatchDetail;
 use la_core::models::search::*;
 use moka::sync::Cache;
+use regex::Regex;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
@@ -142,7 +142,7 @@ impl QueryPlanner {
      * 验证查询，检查计划缓存，委托给 build_plan 构建实际计划。
      */
     pub fn build(&mut self, query: &SearchQuery) -> Result<ExecutionPlan> {
-        QueryValidator::validate(query)?;
+        self.validate_query(query)?;
 
         let cache_key = compute_query_cache_key(query);
         if let Some(cached_plan) = self.plan_cache.get(&cache_key) {
@@ -155,6 +155,105 @@ impl QueryPlanner {
         self.plan_cache.insert(cache_key, Arc::new(plan.clone()));
 
         Ok(plan)
+    }
+
+    /**
+     * 验证搜索查询
+     *
+     * 将原 QueryValidator::validate 的逻辑内联到 QueryPlanner，
+     * 使验证成为 build 的私有步骤，不暴露为独立操作。
+     */
+    fn validate_query(&self, query: &SearchQuery) -> Result<()> {
+        if query.terms.is_empty() {
+            return Err(AppError::validation_error("Query is empty"));
+        }
+
+        let enabled_terms: Vec<_> = query.terms.iter().filter(|t| t.enabled).collect();
+
+        if enabled_terms.is_empty() {
+            return Err(AppError::validation_error("No enabled terms"));
+        }
+
+        for term in &enabled_terms {
+            Self::validate_term(term)?;
+        }
+
+        Ok(())
+    }
+
+    fn validate_term(term: &SearchTerm) -> Result<()> {
+        if term.value.is_empty() {
+            return Err(AppError::validation_error(format!(
+                "Term {} has empty value",
+                term.id
+            )));
+        }
+
+        if term.value.chars().count() > 100 {
+            return Err(AppError::validation_error(format!(
+                "Term {} value is too long",
+                term.id
+            )));
+        }
+
+        if term.is_regex {
+            if Self::contains_backreference(&term.value) {
+                return Err(AppError::validation_error(format!(
+                    "Term {} uses regex syntax not supported by Rust regex: backreferences are not supported",
+                    term.id
+                )));
+            }
+
+            let has_lookaround = term.value.contains("(?=")
+                || term.value.contains("(?!")
+                || term.value.contains("(?<=")
+                || term.value.contains("(?<!");
+            if has_lookaround {
+                fancy_regex::Regex::new(&term.value).map_err(|e| {
+                    AppError::validation_error(format!(
+                        "Term {} has invalid regex: {}",
+                        term.id, e
+                    ))
+                })?;
+            } else {
+                Regex::new(&term.value).map_err(|e| {
+                    AppError::validation_error(format!(
+                        "Term {} has invalid regex: {}",
+                        term.id, e
+                    ))
+                })?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn contains_backreference(pattern: &str) -> bool {
+        let chars: Vec<char> = pattern.chars().collect();
+
+        for (index, ch) in chars.iter().enumerate() {
+            if *ch != '\\' {
+                continue;
+            }
+
+            let preceding_backslashes = chars[..=index]
+                .iter()
+                .rev()
+                .take_while(|candidate| **candidate == '\\')
+                .count();
+
+            if preceding_backslashes % 2 == 0 {
+                continue;
+            }
+
+            match chars.get(index + 1) {
+                Some(next) if *next >= '1' && *next <= '9' => return true,
+                Some('k') if matches!(chars.get(index + 2), Some('<') | Some('\'')) => return true,
+                _ => {}
+            }
+        }
+
+        pattern.contains("(?P=")
     }
 
     /**
@@ -652,7 +751,242 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_empty_query() {
+        let mut planner = QueryPlanner::new(100);
+        let query = SearchQuery {
+            id: "test".to_string(),
+            terms: vec![],
+            global_operator: QueryOperator::And,
+            filters: None,
+            metadata: QueryMetadata {
+                created_at: 0,
+                last_modified: 0,
+                execution_count: 0,
+                label: None,
+            },
+        };
+
+        let result = planner.build(&query);
+        assert!(result.is_err(), "Expected validation error for empty query");
+
+        let error = result.unwrap_err();
+        if let AppError::Validation { message: msg, .. } = &error {
+            assert!(
+                msg.contains("empty"),
+                "Expected error message containing 'empty', got: {msg}"
+            );
+        } else {
+            panic!("Expected Validation error, got: {error:?}");
+        }
+    }
+
+    #[test]
+    fn test_validate_no_enabled_terms() {
+        let mut planner = QueryPlanner::new(100);
+        let term = SearchTerm {
+            id: "test".to_string(),
+            value: "error".to_string(),
+            operator: QueryOperator::And,
+            source: TermSource::User,
+            preset_group_id: None,
+            is_regex: false,
+            priority: 1,
+            enabled: false,
+            case_sensitive: false,
+        };
+        let query = SearchQuery {
+            id: "test".to_string(),
+            terms: vec![term],
+            global_operator: QueryOperator::And,
+            filters: None,
+            metadata: QueryMetadata {
+                created_at: 0,
+                last_modified: 0,
+                execution_count: 0,
+                label: None,
+            },
+        };
+
+        let result = planner.build(&query);
+        assert!(result.is_err(), "Expected validation error for no enabled terms");
+
+        let error = result.unwrap_err();
+        if let AppError::Validation { message: msg, .. } = &error {
+            assert!(
+                msg.contains("No enabled terms"),
+                "Expected error message containing 'No enabled terms', got: {msg}"
+            );
+        } else {
+            panic!("Expected Validation error, got: {error:?}");
+        }
+    }
+
+    #[test]
     fn test_build_and_plan() {
+        let mut planner = QueryPlanner::new(100);
+        let query = SearchQuery {
+            id: "test".to_string(),
+            terms: vec![
+                create_test_term("error", QueryOperator::And),
+                create_test_term("timeout", QueryOperator::And),
+            ],
+            global_operator: QueryOperator::And,
+            filters: None,
+            metadata: QueryMetadata {
+                created_at: 0,
+                last_modified: 0,
+                execution_count: 0,
+                label: None,
+            },
+        };
+
+        let result = planner.build(&query);
+        assert!(result.is_ok(), "Expected build to succeed for valid query");
+    }
+
+    #[test]
+    fn test_validate_invalid_regex() {
+        let mut planner = QueryPlanner::new(100);
+        let term = SearchTerm {
+            id: "term1".to_string(),
+            value: "[invalid".to_string(),
+            operator: QueryOperator::And,
+            source: TermSource::User,
+            preset_group_id: None,
+            is_regex: true,
+            priority: 1,
+            enabled: true,
+            case_sensitive: false,
+        };
+        let query = SearchQuery {
+            id: "test".to_string(),
+            terms: vec![term],
+            global_operator: QueryOperator::And,
+            filters: None,
+            metadata: QueryMetadata {
+                created_at: 0,
+                last_modified: 0,
+                execution_count: 0,
+                label: None,
+            },
+        };
+
+        let result = planner.build(&query);
+        assert!(result.is_err(), "Expected validation error for invalid regex");
+
+        let error = result.unwrap_err();
+        if let AppError::Validation { message: msg, .. } = &error {
+            assert!(
+                msg.contains("invalid regex"),
+                "Expected error message containing 'invalid regex', got: {msg}"
+            );
+        } else {
+            panic!("Expected Validation error, got: {error:?}");
+        }
+    }
+
+    #[test]
+    fn test_validate_redos_rejects_nested_quantifiers() {
+        let mut planner = QueryPlanner::new(100);
+        let term = SearchTerm {
+            id: "term1".to_string(),
+            value: "(?=a)(a+)+b".to_string(),
+            operator: QueryOperator::And,
+            source: TermSource::User,
+            preset_group_id: None,
+            is_regex: true,
+            priority: 1,
+            enabled: true,
+            case_sensitive: false,
+        };
+        let query = SearchQuery {
+            id: "test".to_string(),
+            terms: vec![term],
+            global_operator: QueryOperator::And,
+            filters: None,
+            metadata: QueryMetadata {
+                created_at: 0,
+                last_modified: 0,
+                execution_count: 0,
+                label: None,
+            },
+        };
+
+        let result = planner.build(&query);
+        assert!(result.is_err(), "Nested quantifiers should be rejected");
+        let error = result.unwrap_err();
+        assert!(
+            error.to_string().contains("nested quantifiers"),
+            "Error should mention nested quantifiers, got: {error}"
+        );
+    }
+
+    #[test]
+    fn test_validate_redos_accepts_safe_lookaround() {
+        let mut planner = QueryPlanner::new(100);
+        let term = SearchTerm {
+            id: "term1".to_string(),
+            value: r"(?<=error)\s+\d+".to_string(),
+            operator: QueryOperator::And,
+            source: TermSource::User,
+            preset_group_id: None,
+            is_regex: true,
+            priority: 1,
+            enabled: true,
+            case_sensitive: false,
+        };
+        let query = SearchQuery {
+            id: "test".to_string(),
+            terms: vec![term],
+            global_operator: QueryOperator::And,
+            filters: None,
+            metadata: QueryMetadata {
+                created_at: 0,
+                last_modified: 0,
+                execution_count: 0,
+                label: None,
+            },
+        };
+
+        assert!(
+            planner.build(&query).is_ok(),
+            "Safe look-around should be accepted"
+        );
+    }
+
+    #[test]
+    fn test_validate_redos_rejects_overlapping_alternation() {
+        let mut planner = QueryPlanner::new(100);
+        let term = SearchTerm {
+            id: "term1".to_string(),
+            value: "(?=x)(a|aa)+".to_string(),
+            operator: QueryOperator::And,
+            source: TermSource::User,
+            preset_group_id: None,
+            is_regex: true,
+            priority: 1,
+            enabled: true,
+            case_sensitive: false,
+        };
+        let query = SearchQuery {
+            id: "test".to_string(),
+            terms: vec![term],
+            global_operator: QueryOperator::And,
+            filters: None,
+            metadata: QueryMetadata {
+                created_at: 0,
+                last_modified: 0,
+                execution_count: 0,
+                label: None,
+            },
+        };
+
+        let result = planner.build(&query);
+        assert!(result.is_err(), "Overlapping alternation should be rejected");
+    }
+
+    #[test]
+    fn test_build_plan_structure() {
         let mut planner = QueryPlanner::new(100);
         let query = SearchQuery {
             id: "test".to_string(),
