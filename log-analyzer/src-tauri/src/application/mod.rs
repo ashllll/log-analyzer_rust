@@ -9,7 +9,7 @@
 pub mod config;
 pub mod export;
 pub mod search;
-pub mod search_executor;
+pub mod search_batch;
 pub mod virtual_tree;
 pub mod workspace_service;
 
