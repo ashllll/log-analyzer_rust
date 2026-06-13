@@ -29,7 +29,7 @@ echo ""
 # ============================================================================
 # 1. 前端 Lint 检查
 # ============================================================================
-echo -e "${GREEN}[1/6] 运行 ESLint...${NC}"
+echo -e "${GREEN}[1/7] 运行 ESLint...${NC}"
 npm run lint
 echo -e "${GREEN}✅ ESLint 通过${NC}"
 echo ""
@@ -37,7 +37,7 @@ echo ""
 # ============================================================================
 # 2. TypeScript 类型检查
 # ============================================================================
-echo -e "${GREEN}[2/6] 运行 TypeScript 类型检查...${NC}"
+echo -e "${GREEN}[2/7] 运行 TypeScript 类型检查...${NC}"
 npm run type-check
 echo -e "${GREEN}✅ 类型检查通过${NC}"
 echo ""
@@ -45,7 +45,7 @@ echo ""
 # ============================================================================
 # 3. 前端测试
 # ============================================================================
-echo -e "${GREEN}[3/6] 运行前端测试...${NC}"
+echo -e "${GREEN}[3/7] 运行前端测试...${NC}"
 NODE_ENV=test npm test -- --testPathIgnorePatterns=e2e --verbose
 echo -e "${GREEN}✅ 前端测试通过${NC}"
 echo ""
@@ -53,7 +53,7 @@ echo ""
 # ============================================================================
 # 4. 前端构建
 # ============================================================================
-echo -e "${GREEN}[4/6] 构建前端...${NC}"
+echo -e "${GREEN}[4/7] 构建前端...${NC}"
 npm run build
 echo -e "${GREEN}✅ 前端构建成功${NC}"
 echo ""
@@ -61,7 +61,7 @@ echo ""
 # ============================================================================
 # 5. Rust 格式检查
 # ============================================================================
-echo -e "${GREEN}[5/6] 检查 Rust 代码格式...${NC}"
+echo -e "${GREEN}[5/7] 检查 Rust 代码格式...${NC}"
 cd src-tauri
 cargo fmt -- --check
 echo -e "${GREEN}✅ 代码格式检查通过${NC}"
@@ -70,9 +70,22 @@ echo ""
 # ============================================================================
 # 6. Rust Clippy 检查
 # ============================================================================
-echo -e "${GREEN}[6/6] 运行 Clippy...${NC}"
+echo -e "${GREEN}[6/7] 运行 Clippy...${NC}"
 cargo clippy --all-features --all-targets -- -D warnings
 echo -e "${GREEN}✅ Clippy 检查通过${NC}"
+echo ""
+
+# ============================================================================
+# 7. Rust 测试覆盖率 (可选，需安装 cargo-tarpaulin)
+# ============================================================================
+echo -e "${GREEN}[7/7] 测试覆盖率检查...${NC}"
+if command -v cargo-tarpaulin &> /dev/null; then
+  cargo tarpaulin --config tarpaulin.toml --out Html --output-dir coverage
+  echo -e "${GREEN}✅ 覆盖率报告已生成: coverage/tarpaulin-report.html${NC}"
+else
+  echo -e "${YELLOW}⚠️  cargo-tarpaulin 未安装，跳过覆盖率检查${NC}"
+  echo -e "${YELLOW}   安装命令: cargo install cargo-tarpaulin${NC}"
+fi
 echo ""
 
 # ============================================================================
@@ -81,7 +94,7 @@ echo ""
 read -p "是否运行 Rust 测试? (y/N) " -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
-  echo -e "${GREEN}[7/7] 运行 Rust 测试...${NC}"
+  echo -e "${GREEN}[extra] 运行 Rust 测试...${NC}"
   cargo test --all-features --verbose
   echo -e "${GREEN}✅ Rust 测试通过${NC}"
 fi

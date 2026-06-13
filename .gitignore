@@ -56,3 +56,4 @@ COMMIT_MESSAGE.txt
 nul
 tauri-dev.log
 fix_metadata_store2.py
+graphify-out/

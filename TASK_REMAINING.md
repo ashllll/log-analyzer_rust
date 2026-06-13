@@ -9,7 +9,7 @@
 ## 一、CI/CD
 
 - [x] **CI-01** `cargo fmt --check` CI 持续失败 — 已修复 Rust 格式差异，CI 恢复为严格 `cargo fmt -- --check`；补充 `.gitattributes` 约束 YAML/脚本 LF 行尾
-- [ ] **CI-02** 测试覆盖率追踪 — 未接入 codecov / cargo-tarpaulin
+- [x] **CI-02** 测试覆盖率追踪 — 已配置 cargo-tarpaulin + Codecov workflow；`tarpaulin.toml` 启用 `--all-features` 与 CI 测试对齐；`scripts/validate-ci.sh` 增加本地覆盖率检查（可选）
 
 ---
 
@@ -70,8 +70,8 @@
 | Adapter | 7 | 0 | 全部有实现 ✅ |
 | UseCase | 6 | 0 | UC-01~06 全部完成 ✅ |
 | 命令接入 (interfaces/) | 10 | 0 | 全部迁移至 interfaces/ |
-| CI | 2 | 0 | CI-01 修复；CI-02 已配置 tarpaulin + Codecov workflow |
+| CI | 2 | 0 | CI-01 修复；CI-02 已配置 tarpaulin + Codecov workflow ✅ |
 | 大文件拆分 | 2 | 0 | RF-01 + RF-02 全部完成 ✅ |
 | Phase 3 | 3 | 0 | P3-01/02/03 全部完成 ✅ |
 
-**建议优先级**：① AD-06/07 (ArchiveExtractor + TaskScheduler) → ② UC-02 (ImportUseCase) → ③ UC-01 (SearchUseCase) → ④ RF-02 (metadata_store 拆分) → ⑤ CI-02 (覆盖率)
+**建议优先级**：① AD-06/07 (ArchiveExtractor + TaskScheduler) → ② UC-02 (ImportUseCase) → ③ UC-01 (SearchUseCase) → ④ RF-02 (metadata_store 拆分)

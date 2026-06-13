@@ -1,40 +1,56 @@
 name: Performance Regression Detection
 
+permissions:
+  contents: read
+
 on:
   pull_request:
     branches: [main, develop]
   push:
     branches: [main]
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
+  NODE_VERSION: "22"
 
 jobs:
   benchmark:
     name: Run Workspace Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
         with:
           fetch-depth: 0
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
         with:
+          toolchain: 1.88.0
           components: rustfmt, clippy
 
       - name: Rust Cache
-        uses: swatinem/rust-cache@v2
+        uses: swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
         with:
           workspaces: log-analyzer/src-tauri -> target
           cache-all-crates: true
 
-      - name: Install system dependencies
+      - name: Install Tauri dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libjavascriptcoregtk-4.1-dev libsoup-3.0-dev
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev
 
       # 注意：基准测试文件已随 workspace 拆分迁移，当前运行完整 workspace 测试作为回归测试
       - name: Run workspace tests
@@ -43,7 +59,7 @@ jobs:
           cargo test --workspace --all-features --lib --bins -- --test-threads=4 | tee test-results.txt
 
       - name: Store test results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6f9cb5f3607
         with:
           name: workspace-test-results
           path: log-analyzer/src-tauri/test-results.txt
@@ -105,25 +121,40 @@ jobs:
 
   property-tests:
     name: Run Property-Based Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          fetch-depth: 0
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+        with:
+          toolchain: 1.88.0
+          components: rustfmt, clippy
 
       - name: Rust Cache
-        uses: swatinem/rust-cache@v2
+        uses: swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
         with:
           workspaces: log-analyzer/src-tauri -> target
           cache-all-crates: true
 
-      - name: Install system dependencies
+      - name: Install Tauri dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libjavascriptcoregtk-4.1-dev libsoup-3.0-dev
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev
 
       # 在 workspace 中运行属性测试
       - name: Run property tests
@@ -133,24 +164,26 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6f9cb5f3607
         with:
           name: property-test-results
           path: log-analyzer/src-tauri/property-test-results.txt
 
   frontend-tests:
     name: Run Frontend Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
-          node-version: '22'
-          cache: 'npm'
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
           cache-dependency-path: log-analyzer/package-lock.json
 
       - name: Install dependencies
@@ -162,21 +195,25 @@ jobs:
         run: npm test -- --testPathIgnorePatterns="e2e" --passWithNoTests --coverage
 
       - name: Upload coverage
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@e28ff129e5465c2c0dcc6a0032977ef9f9f83c9d
         with:
+          token: ${{ secrets.CODECOV_TOKEN }}
           files: log-analyzer/coverage/lcov.info
           flags: frontend
           name: frontend-coverage
+          fail_ci_if_error: false
 
   test-report:
     name: Generate Test Report
     needs: [benchmark, property-tests, frontend-tests]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: always()
+    permissions:
+      contents: read
 
     steps:
       - name: Download test results
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@95815c38cf2ff2164869cb1c72b48bcb65d49c2b
         with:
           name: workspace-test-results
 
@@ -190,7 +227,7 @@ jobs:
           echo "\`\`\`" >> test-report.md
 
       - name: Upload report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6f9cb5f3607
         with:
           name: workspace-test-report
           path: test-report.md

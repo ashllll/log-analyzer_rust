@@ -100,6 +100,16 @@ print_status "success" "Step 4: Security validation..."
 
 cd log-analyzer/src-tauri
 
+# Install cargo-audit and cargo-outdated if not present
+if ! command -v cargo-audit &> /dev/null; then
+    print_status "warning" "cargo-audit not found, installing..."
+    cargo install cargo-audit
+fi
+if ! command -v cargo-outdated &> /dev/null; then
+    print_status "warning" "cargo-outdated not found, installing..."
+    cargo install cargo-outdated
+fi
+
 # Check for security advisories
 cargo audit || print_status "warning" "Security audit completed with warnings"
 
