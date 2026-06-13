@@ -1,15 +1,64 @@
+use crate::services::query_validator::QueryValidator;
 use crate::services::regex_engine::{EngineType, MatchResult, RegexEngine};
 use la_core::domain::MatchPlan;
 use la_core::error::{AppError, Result};
 use la_core::models::match_detail::MatchDetail;
 use la_core::models::search::*;
 use moka::sync::Cache;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
+
+/// 辅助函数：哈希 QueryOperator
+fn hash_query_operator(op: &QueryOperator, hasher: &mut DefaultHasher) {
+    match op {
+        QueryOperator::And => 0u8.hash(hasher),
+        QueryOperator::Or => 1u8.hash(hasher),
+        QueryOperator::Not => 2u8.hash(hasher),
+    }
+}
+
+/// 计算查询缓存键
+///
+/// 统一缓存键生成逻辑，确保等价的查询产生相同的缓存键。
+pub(crate) fn compute_query_cache_key(query: &SearchQuery) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    query.id.hash(&mut hasher);
+    hash_query_operator(&query.global_operator, &mut hasher);
+
+    if let Some(filters) = &query.filters {
+        if let Some(time_range) = &filters.time_range {
+            time_range.start.hash(&mut hasher);
+            time_range.end.hash(&mut hasher);
+        }
+        filters.levels.hash(&mut hasher);
+        filters.file_pattern.hash(&mut hasher);
+    }
+
+    let mut sorted_terms: Vec<_> = query.terms.iter().collect();
+    sorted_terms.sort_unstable_by(|a, b| a.id.cmp(&b.id));
+
+    for term in sorted_terms {
+        term.id.hash(&mut hasher);
+        term.value.hash(&mut hasher);
+        hash_query_operator(&term.operator, &mut hasher);
+        term.source.hash(&mut hasher);
+        term.preset_group_id.hash(&mut hasher);
+        term.is_regex.hash(&mut hasher);
+        term.priority.hash(&mut hasher);
+        term.enabled.hash(&mut hasher);
+        term.case_sensitive.hash(&mut hasher);
+    }
+
+    hasher.finish()
+}
 
 /**
  * 查询计划构建器
  *
- * 负责构建搜索查询的执行计划
+ * 负责构建搜索查询的执行计划。包含两层缓存：
+ * - engine_cache: RegexEngine 编译缓存
+ * - plan_cache: ExecutionPlan 缓存
  *
  * 设计决策：使用混合引擎策略自动选择最佳匹配算法：
  * - AhoCorasick: 简单关键词搜索，O(n) 线性复杂度
@@ -22,6 +71,7 @@ use std::sync::Arc;
  */
 pub struct QueryPlanner {
     engine_cache: Cache<String, Arc<RegexEngine>>,
+    plan_cache: Cache<u64, Arc<ExecutionPlan>>,
 }
 
 impl QueryPlanner {
@@ -72,6 +122,7 @@ impl QueryPlanner {
     pub fn new(max_capacity: usize) -> Self {
         Self {
             engine_cache: Cache::new(max_capacity as u64),
+            plan_cache: Cache::new(1000),
         }
     }
 
@@ -81,7 +132,29 @@ impl QueryPlanner {
     pub fn with_default_capacity() -> Self {
         Self {
             engine_cache: Cache::new(1000),
+            plan_cache: Cache::new(1000),
         }
+    }
+
+    /**
+     * 构建查询计划（含验证和缓存）
+     *
+     * 验证查询，检查计划缓存，委托给 build_plan 构建实际计划。
+     */
+    pub fn build(&mut self, query: &SearchQuery) -> Result<ExecutionPlan> {
+        QueryValidator::validate(query)?;
+
+        let cache_key = compute_query_cache_key(query);
+        if let Some(cached_plan) = self.plan_cache.get(&cache_key) {
+            return Ok((*cached_plan).clone());
+        }
+
+        let mut plan = self.build_plan(query)?;
+        plan.sort_by_priority();
+
+        self.plan_cache.insert(cache_key, Arc::new(plan.clone()));
+
+        Ok(plan)
     }
 
     /**

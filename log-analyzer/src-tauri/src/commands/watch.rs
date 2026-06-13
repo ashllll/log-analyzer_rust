@@ -11,7 +11,7 @@
 use tauri::{AppHandle, State};
 
 use crate::models::AppState;
-use crate::utils::validate_path_param;
+use crate::utils::validation::validate_path_param;
 
 /// Start watching a workspace directory for file changes.
 ///

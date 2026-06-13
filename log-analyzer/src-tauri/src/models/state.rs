@@ -19,15 +19,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use parking_lot::{Mutex, RwLock};
-use tokio_util::sync::CancellationToken;
 
 use crate::application::workspace_service::WorkspaceServiceRef;
 use crate::infrastructure::TaskManagerAdapter;
 use crate::state_sync::StateSync;
 use crate::task_manager::TaskManager;
-use crate::utils::async_resource_manager::{
-    AsyncResourceError, AsyncResourceManager, OperationType,
-};
 use la_core::domain::TaskScheduler;
 use la_search::DiskResultStore;
 
@@ -45,7 +41,6 @@ pub struct AppState {
 
     // ── Task ──
     task_manager: Arc<Mutex<Option<TaskManager>>>,
-    async_resource_manager: Arc<AsyncResourceManager>,
 
     // ── Sync ──
     state_sync: Arc<Mutex<Option<StateSync>>>,
@@ -66,7 +61,6 @@ impl Default for AppState {
             ),
             // Task
             task_manager: Arc::new(Mutex::new(None)),
-            async_resource_manager: Arc::new(AsyncResourceManager::new()),
             // Sync
             state_sync: Arc::new(Mutex::new(None)),
         }
@@ -176,31 +170,6 @@ impl AppState {
         self.task_manager.lock().as_ref().map(|tm| {
             Arc::new(TaskManagerAdapter::new(Arc::new(tm.clone()))) as Arc<dyn TaskScheduler>
         })
-    }
-
-    /// 注册一个异步操作。
-    pub async fn register_async_operation(
-        &self,
-        operation_id: String,
-        operation_type: OperationType,
-        workspace_id: Option<String>,
-    ) -> CancellationToken {
-        self.async_resource_manager
-            .register_operation(operation_id, operation_type, workspace_id)
-            .await
-    }
-
-    /// 取消指定操作。
-    pub async fn cancel_async_operation(&self, operation_id: &str) -> Result<(), String> {
-        self.async_resource_manager
-            .cancel_operation(operation_id)
-            .await
-            .map_err(|e: AsyncResourceError| e.to_string())
-    }
-
-    /// 获取活跃操作数量。
-    pub async fn get_active_operations_count(&self) -> usize {
-        self.async_resource_manager.active_operations_count().await
     }
 }
 

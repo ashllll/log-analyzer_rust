@@ -19,7 +19,8 @@ use tauri::AppHandle;
 use crate::application::workspace_service::WorkspaceServiceRef;
 use crate::infrastructure::workspace_service_factory::get_or_create_workspace_service;
 use crate::models::AppState;
-use crate::utils::{validate_workspace_id, workspace_paths::resolve_workspace_dir};
+use crate::utils::validation::validate_workspace_id;
+use crate::utils::workspace_paths::resolve_workspace_dir;
 use la_core::error::CommandError;
 
 /// Validate workspace ID, resolve directory, check CAS format, and acquire the service.

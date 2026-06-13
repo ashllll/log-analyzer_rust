@@ -13,24 +13,24 @@ use la_core::error::Result;
 use la_core::models::{LogEntry, SearchFilters, SearchQuery};
 
 use crate::services::search_filters::{CompiledSearchFilters, ParsedLineMetadata};
-use crate::services::QueryPlanBuilder;
+use crate::services::query_planner::QueryPlanner;
 
 /// Domain LogSearcher implementation using the production regex/query engine.
 pub struct QueryEngineLogSearcher {
-    builder: Mutex<QueryPlanBuilder>,
+    planner: Mutex<QueryPlanner>,
 }
 
 impl QueryEngineLogSearcher {
     pub fn new(regex_cache_size: usize) -> Self {
         Self {
-            builder: Mutex::new(QueryPlanBuilder::new(regex_cache_size.max(1))),
+            planner: Mutex::new(QueryPlanner::new(regex_cache_size.max(1))),
         }
     }
 }
 
 impl LogSearcher for QueryEngineLogSearcher {
     fn build_plan(&self, query: &SearchQuery) -> Result<ExecutionPlan> {
-        let service_plan = self.builder.lock().build(query)?;
+        let service_plan = self.planner.lock().build(query)?;
         let engine_count = service_plan.engines.len();
         let steps = service_plan.execution_term_ids().to_vec();
         // Embed the real plan via MatchPlan trait — type-safe, no Any downcast.
