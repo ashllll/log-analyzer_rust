@@ -21,7 +21,7 @@ fn hash_query_operator(op: &QueryOperator, hasher: &mut DefaultHasher) {
 /// 计算查询缓存键
 ///
 /// 统一缓存键生成逻辑，确保等价的查询产生相同的缓存键。
-pub(crate) fn compute_query_cache_key(query: &SearchQuery) -> u64 {
+pub fn compute_query_cache_key(query: &SearchQuery) -> u64 {
     let mut hasher = DefaultHasher::new();
     query.id.hash(&mut hasher);
     hash_query_operator(&query.global_operator, &mut hasher);
@@ -181,54 +181,60 @@ impl QueryPlanner {
         Ok(())
     }
 
-    fn validate_term(term: &SearchTerm) -> Result<()> {
-        if term.value.is_empty() {
-            return Err(AppError::validation_error(format!(
-                "Term {} has empty value",
-                term.id
-            )));
-        }
-
-        if term.value.chars().count() > 100 {
-            return Err(AppError::validation_error(format!(
-                "Term {} value is too long",
-                term.id
-            )));
-        }
-
-        if term.is_regex {
-            if Self::contains_backreference(&term.value) {
-                return Err(AppError::validation_error(format!(
-                    "Term {} uses regex syntax not supported by Rust regex: backreferences are not supported",
-                    term.id
-                )));
-            }
-
-            let has_lookaround = term.value.contains("(?=")
-                || term.value.contains("(?!")
-                || term.value.contains("(?<=")
-                || term.value.contains("(?<!");
-            if has_lookaround {
-                fancy_regex::Regex::new(&term.value).map_err(|e| {
-                    AppError::validation_error(format!(
-                        "Term {} has invalid regex: {}",
-                        term.id, e
-                    ))
-                })?;
-            } else {
-                Regex::new(&term.value).map_err(|e| {
-                    AppError::validation_error(format!(
-                        "Term {} has invalid regex: {}",
-                        term.id, e
-                    ))
-                })?;
-            }
-        }
-
-        Ok(())
+/// Validate a single search term.
+///
+/// Checks for empty value, excessive length (>100 chars), and regex syntax
+/// validity (backreferences, lookaround). Callable independently for
+/// frontend type-ahead pre-validation without importing QueryPlanner.
+pub fn validate_term(term: &SearchTerm) -> Result<()> {
+    if term.value.is_empty() {
+        return Err(AppError::validation_error(format!(
+            "Term {} has empty value",
+            term.id
+        )));
     }
 
-    fn contains_backreference(pattern: &str) -> bool {
+    if term.value.chars().count() > 100 {
+        return Err(AppError::validation_error(format!(
+            "Term {} value is too long",
+            term.id
+        )));
+    }
+
+    if term.is_regex {
+        if Self::contains_backreference(&term.value) {
+            return Err(AppError::validation_error(format!(
+                "Term {} uses regex syntax not supported by Rust regex: backreferences are not supported",
+                term.id
+            )));
+        }
+
+        let has_lookaround = term.value.contains("(?=")
+            || term.value.contains("(?!")
+            || term.value.contains("(?<=")
+            || term.value.contains("(?<!");
+        if has_lookaround {
+            fancy_regex::Regex::new(&term.value).map_err(|e| {
+                AppError::validation_error(format!(
+                    "Term {} has invalid regex: {}",
+                    term.id, e
+                ))
+            })?;
+        } else {
+            Regex::new(&term.value).map_err(|e| {
+                AppError::validation_error(format!(
+                    "Term {} has invalid regex: {}",
+                    term.id, e
+                ))
+            })?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Check if a regex pattern contains backreferences (e.g. \1, \2).
+pub fn contains_backreference(pattern: &str) -> bool {
         let chars: Vec<char> = pattern.chars().collect();
 
         for (index, ch) in chars.iter().enumerate() {

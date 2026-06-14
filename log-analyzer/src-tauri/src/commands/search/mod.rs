@@ -12,7 +12,6 @@ pub(crate) mod query;
 
 use serde::{Deserialize, Serialize};
 use tauri::{command, AppHandle, State};
-use tokio_util::sync::CancellationToken;
 
 use la_core::error::{AppError, CommandError};
 use la_core::models::{LogEntry, SearchFilters, SearchQuery};
@@ -208,9 +207,8 @@ pub async fn search_logs(
     // ── 5. Execute search via WorkspaceService ──
     // CancellationToken lifecycle is managed by WorkspaceServiceImpl internally;
     // cancel_search goes through service.cancel_search() — no global HashMap needed.
-    let token = CancellationToken::new();
     let search_id = workspace
-        .search(sq, raw_terms, f, mr, token)
+        .search(sq, raw_terms, f, mr)
         .await
         .map_err(|e| {
             CommandError::new("SEARCH_ERROR", format!("Failed to start search: {e}"))

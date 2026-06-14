@@ -37,7 +37,7 @@ use crate::application::workspace_service::WorkspaceServiceRef;
 use crate::commands::import::import_folder;
 use crate::models::AppState;
 use crate::utils::validation::validate_workspace_id;
-use crate::utils::workspace_paths::resolve_workspace_dir;
+use crate::utils::workspace_paths::{build_workspace_id, resolve_workspace_dir};
 
 /// 关闭工作区数据库连接（MetadataStore + SearchEngine）。
 /// 消除 workspace.rs 和 main.rs 之间的重复 close 模式。
@@ -45,7 +45,6 @@ async fn close_workspace_databases(service: &WorkspaceServiceRef) {
     service.metadata_store().close().await;
     service.search_engine().close().await;
 }
-use uuid::Uuid;
 
 /// Workspace load response
 #[derive(Debug, Clone, serde::Serialize)]
@@ -220,38 +219,6 @@ fn resolve_workspace_display_name(app: &AppHandle, workspace_id: &str) -> Option
         .find(|workspace| workspace.id == workspace_id)
         .and_then(|workspace| workspace.name)
         .filter(|name| !name.trim().is_empty())
-}
-
-fn build_workspace_id(name: &str) -> String {
-    let mut slug = name
-        .trim()
-        .to_lowercase()
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
-                c
-            } else {
-                '-'
-            }
-        })
-        .collect::<String>();
-
-    while slug.contains("--") {
-        slug = slug.replace("--", "-");
-    }
-
-    let slug = slug.trim_matches('-');
-    let slug = if slug.is_empty() { "workspace" } else { slug };
-    let suffix = Uuid::new_v4().to_string();
-    let suffix = &suffix[..8];
-    let max_slug_len = 50usize.saturating_sub("ws-".len() + "-".len() + suffix.len());
-    let mut slug = slug.chars().take(max_slug_len).collect::<String>();
-    slug = slug.trim_matches('-').to_string();
-    if slug.is_empty() {
-        slug = "workspace".to_string();
-    }
-
-    format!("ws-{slug}-{suffix}")
 }
 
 /// 判断工作区是否使用CAS存储

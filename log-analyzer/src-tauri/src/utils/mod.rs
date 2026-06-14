@@ -5,6 +5,7 @@
 pub mod app_config;
 pub mod encoding;
 pub mod log_config;
+pub mod log_stats;
 pub mod path;
 pub mod retry;
 pub mod validation;
@@ -19,3 +20,4 @@ pub use log_config::{
     LogConfig, LogLevel, ModuleLogConfig,
 };
 pub use path::{canonicalize_path, normalize_path_separator};
+pub use workspace_paths::build_workspace_id;

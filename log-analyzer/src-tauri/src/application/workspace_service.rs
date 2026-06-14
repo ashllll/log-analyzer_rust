@@ -59,7 +59,8 @@ pub trait SearchService: Send + Sync {
     /// - `raw_terms`: 原始搜索词（用于高亮显示）
     /// - `filters`: 搜索过滤器（时间范围、日志级别、文件路径等）
     /// - `max_results`: 最大结果数上限
-    /// - `cancellation_token`: 取消令牌（由命令层创建和管理生命周期）
+    ///
+    /// CancellationToken 由实现层内部创建和管理，外部通过 cancel_search() 取消。
     ///
     /// # 返回
     /// 搜索会话 ID，前端可用此 ID 获取结果和进度。
@@ -69,7 +70,6 @@ pub trait SearchService: Send + Sync {
         raw_terms: Vec<String>,
         filters: SearchFilters,
         max_results: usize,
-        cancellation_token: CancellationToken,
     ) -> Result<String>;
 
     /// 获取搜索结果分页。

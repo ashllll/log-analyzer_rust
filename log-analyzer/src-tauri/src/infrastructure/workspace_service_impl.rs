@@ -28,7 +28,6 @@ use la_core::domain::event::EventPublisher;
 use la_core::error::{AppError, Result};
 use la_core::models::{SearchFilters, SearchQuery};
 use la_core::traits::AppConfigProvider;
-use la_core::utils::parse_metadata;
 
 use notify::{recommended_watcher, Event, RecursiveMode, Watcher};
 use tracing::error;
@@ -146,12 +145,12 @@ impl SearchService for WorkspaceServiceImpl {
         _raw_terms: Vec<String>,
         filters: SearchFilters,
         max_results: usize,
-        cancellation_token: CancellationToken,
     ) -> Result<String> {
-        // 1. 生成搜索会话 ID
+        // 1. 生成搜索会话 ID 和 CancellationToken（实现层内部管理完整生命周期）
         let search_id = uuid::Uuid::new_v4().to_string();
+        let cancellation_token = CancellationToken::new();
 
-        // 2. 注册 CancellationToken 到会话表（供内部 cancel_search 使用）
+        // 2. 注册 CancellationToken 到会话表（供 cancel_search 使用）
         {
             self.search_sessions
                 .lock()
@@ -270,67 +269,7 @@ const FALLBACK_STATS_DELAY_SECS: u64 = 5;
 /// # Returns
 /// `(min_timestamp, max_timestamp, level_mask)`
 pub(super) fn compute_file_stats(content: &[u8]) -> (Option<i64>, Option<i64>, Option<u8>) {
-    let text = match std::str::from_utf8(content) {
-        Ok(s) => s,
-        Err(_) => return (None, None, None),
-    };
-
-    // 大文件优化：超过 10MB 只解析前 1000 行和后 1000 行
-    const MAX_FULL_PARSE_BYTES: usize = 10 * 1024 * 1024;
-    const MAX_LINES_SAMPLE: usize = 1000;
-
-    let mut min_ts: Option<i64> = None;
-    let mut max_ts: Option<i64> = None;
-    let mut level_mask: u8 = 0;
-    let mut has_any_level = false;
-
-    let mut process_line = |line: &str| {
-        if line.is_empty() {
-            return;
-        }
-        let (timestamp_str, level) = parse_metadata(line);
-        if !level.is_empty() {
-            has_any_level = true;
-            level_mask |= la_core::utils::level_to_mask(level);
-        }
-        if !timestamp_str.is_empty() {
-            if let Some(ts) = la_search::parse_log_timestamp_to_unix(&timestamp_str) {
-                min_ts = Some(min_ts.map_or(ts, |m| m.min(ts)));
-                max_ts = Some(max_ts.map_or(ts, |m| m.max(ts)));
-            }
-        }
-    };
-
-    if text.len() > MAX_FULL_PARSE_BYTES {
-        let all_lines: Vec<&str> = text.lines().collect();
-        let total = all_lines.len();
-        if total > MAX_LINES_SAMPLE * 2 {
-            for line in &all_lines[..MAX_LINES_SAMPLE] {
-                process_line(line);
-            }
-            for line in &all_lines[total - MAX_LINES_SAMPLE..] {
-                process_line(line);
-            }
-        } else {
-            for line in &all_lines {
-                process_line(line);
-            }
-        }
-    } else {
-        for line in text.lines() {
-            process_line(line);
-        }
-    }
-
-    (
-        min_ts,
-        max_ts,
-        if has_any_level {
-            Some(level_mask)
-        } else {
-            None
-        },
-    )
+    crate::utils::log_stats::compute_file_stats(content)
 }
 
 /// 重建搜索索引内部实现。

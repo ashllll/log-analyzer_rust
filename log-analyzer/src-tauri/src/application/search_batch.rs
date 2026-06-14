@@ -4,7 +4,6 @@
 //! truncate, or continue becomes testable pure logic without async or I/O.
 
 use la_core::models::LogEntry;
-use std::sync::Arc;
 
 /// Action returned by `SearchBatch::accumulate` after ingesting a chunk.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -104,6 +103,7 @@ impl SearchBatch {
 mod tests {
     use super::*;
     use la_core::models::LogEntry;
+    use std::sync::Arc;
 
     fn make_entry(id: usize) -> LogEntry {
         LogEntry {

@@ -4,6 +4,42 @@ use tauri::{AppHandle, Manager};
 
 pub const PRIMARY_WORKSPACE_DIR_NAME: &str = "workspaces";
 
+/// Generate a workspace ID from a human-readable name.
+///
+/// Slugifies the name (lowercase, special chars → '-'), appends a short UUID suffix,
+/// and enforces a max total length of 50 chars. Format: `ws-{slug}-{8-char-uuid}`.
+pub fn build_workspace_id(name: &str) -> String {
+    let mut slug = name
+        .trim()
+        .to_lowercase()
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>();
+
+    while slug.contains("--") {
+        slug = slug.replace("--", "-");
+    }
+
+    let slug = slug.trim_matches('-');
+    let slug = if slug.is_empty() { "workspace" } else { slug };
+    let suffix = uuid::Uuid::new_v4().to_string();
+    let suffix = &suffix[..8];
+    let max_slug_len = 50usize.saturating_sub("ws-".len() + "-".len() + suffix.len());
+    let mut slug = slug.chars().take(max_slug_len).collect::<String>();
+    slug = slug.trim_matches('-').to_string();
+    if slug.is_empty() {
+        slug = "workspace".to_string();
+    }
+
+    format!("ws-{slug}-{suffix}")
+}
+
 pub fn preferred_workspace_dir(app: &AppHandle, workspace_id: &str) -> Result<PathBuf, String> {
     let app_data_dir = app
         .path()
@@ -78,5 +114,37 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         assert!(resolve_workspace_dir_from_root(temp_dir.path(), "../etc/passwd").is_err());
         assert!(resolve_workspace_dir_from_root(temp_dir.path(), "ws-1/../../secret").is_err());
+    }
+
+    #[test]
+    fn build_workspace_id_slugifies_name() {
+        let id = build_workspace_id("My Project");
+        assert!(id.starts_with("ws-my-project-"));
+        // ID format: "ws-{slug}-{8-char-uuid}"
+        assert!(id.len() >= 21, "ID too short: {id}");
+        assert!(id.len() <= 50, "ID too long: {id}");
+    }
+
+    #[test]
+    fn build_workspace_id_handles_empty_name() {
+        let id = build_workspace_id("");
+        assert!(id.starts_with("ws-workspace-"));
+        assert!(id.len() >= 21, "ID too short: {id}");
+    }
+
+    #[test]
+    fn build_workspace_id_handles_special_chars() {
+        let id = build_workspace_id("Hello! World?");
+        // '!' → '-', '?' → '-', spaces → '-', then consecutive dashes collapsed
+        assert!(id.starts_with("ws-hello-world-") || id.starts_with("ws-hello--world-"));
+        assert!(!id.contains('!'));
+        assert!(!id.contains('?'));
+    }
+
+    #[test]
+    fn build_workspace_id_handles_very_long_name() {
+        let id = build_workspace_id("a very long workspace name that exceeds fifty characters total for the slug portion");
+        assert!(id.starts_with("ws-"));
+        assert!(id.len() <= 50, "ID should not exceed 50 chars: {id}");
     }
 }
