@@ -12,6 +12,7 @@
 
 pub mod event;
 pub mod extract;
+pub mod filter;
 pub mod log_file;
 pub mod result_store;
 pub mod search;
@@ -21,6 +22,7 @@ pub mod workspace;
 // Re-export all traits + types
 pub use event::EventPublisher;
 pub use extract::{ArchiveEntry, ArchiveExtractor, ExtractionPolicy, ExtractionSummary};
+pub use filter::{Filter, LineMetadata};
 pub use log_file::LogFileRepository;
 pub use result_store::{SearchResultPage, SearchResultRepository};
 pub use search::{ExecutionPlan, LogSearcher, MatchPlan};

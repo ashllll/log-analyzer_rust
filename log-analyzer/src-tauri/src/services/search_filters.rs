@@ -4,6 +4,7 @@
 //! 修复依赖方向（application + infrastructure 不应依赖 commands）。
 //! commands/search/filters.rs 保留为 re-export 以保持向后兼容。
 
+use la_core::domain::filter::{Filter, LineMetadata};
 use la_core::error::CommandError;
 use la_core::models::SearchFilters;
 use la_core::utils::{level_to_mask, parse_metadata, TimestampParser};
@@ -167,25 +168,40 @@ impl CompiledSearchFilters {
             })
             .map(Some)
     }
-    pub(crate) fn matches_file(&self, vpath: &str, rpath: Option<&str>) -> bool {
-        let Some(m) = &self.file_matcher else {
-            return true;
-        };
-        m.matches(vpath) || rpath.is_some_and(|p| m.matches(p))
+    pub(crate) fn has_time_filter(&self) -> bool {
+        self.time_start.is_some() || self.time_end.is_some()
     }
+
+    /// Return SQLite-compatible glob pattern for database-side file filtering.
     pub(crate) fn database_file_pattern(&self) -> Option<String> {
         self.database_file_pattern.clone()
     }
-    pub(crate) fn matches_parsed_line_metadata(&self, m: &ParsedLineMetadata) -> bool {
+}
+
+// ============================================================================
+// Filter trait impl
+// ============================================================================
+
+impl Filter for CompiledSearchFilters {
+    fn matches_file(&self, virtual_path: &str, real_path: Option<&str>) -> bool {
+        let Some(m) = &self.file_matcher else {
+            return true;
+        };
+        m.matches(virtual_path) || real_path.is_some_and(|p| m.matches(p))
+    }
+
+    fn matches_line(&self, metadata: &LineMetadata) -> bool {
         if let Some(lv) = &self.levels {
-            if !lv.contains(m.level_normalized) {
+            if !lv.contains(metadata.level_normalized) {
                 return false;
             }
         }
         if !self.has_time_filter() {
             return true;
         }
-        let Some(dt) = m.datetime else { return false };
+        let Some(dt) = metadata.datetime else {
+            return false;
+        };
         if let Some(s) = self.time_start {
             if dt < s {
                 return false;
@@ -198,7 +214,8 @@ impl CompiledSearchFilters {
         }
         true
     }
-    pub(crate) fn has_time_filter(&self) -> bool {
+
+    fn has_time_filter(&self) -> bool {
         self.time_start.is_some() || self.time_end.is_some()
     }
 }

@@ -8,6 +8,7 @@ use std::collections::HashSet;
 
 use parking_lot::Mutex;
 
+use la_core::domain::filter::{Filter, LineMetadata};
 use la_core::domain::{ExecutionPlan, LogSearcher};
 use la_core::error::Result;
 use la_core::models::{LogEntry, SearchFilters, SearchQuery};
@@ -33,9 +34,8 @@ impl LogSearcher for QueryEngineLogSearcher {
         let service_plan = self.planner.lock().build(query)?;
         let engine_count = service_plan.engines.len();
         let steps = service_plan.execution_term_ids().to_vec();
-        // Embed the real plan via MatchPlan trait — type-safe, no Any downcast.
         let plan = ExecutionPlan {
-            id: 0, // deprecated; kept for API compatibility
+            id: 0,
             engine_count,
             steps,
             plan: Some(std::sync::Arc::new(service_plan)),
@@ -51,24 +51,32 @@ impl LogSearcher for QueryEngineLogSearcher {
         filters: &SearchFilters,
         global_offset: usize,
     ) -> Vec<LogEntry> {
-        let compiled_filters = match CompiledSearchFilters::compile(filters) {
-            Ok(filters) => filters,
+        // Compile filters via the concrete adapter, then use the Filter trait.
+        let compiled: Box<dyn Filter> = match CompiledSearchFilters::compile(filters) {
+            Ok(f) => Box::new(f),
             Err(_) => return Vec::new(),
         };
-        if !compiled_filters.matches_file(virtual_path, None) {
+
+        if !compiled.matches_file(virtual_path, None) {
             return Vec::new();
         }
 
-        // Extract the compiled plan via the MatchPlan trait — no Mutex lock, no downcast.
         let match_plan = match &plan.plan {
             Some(p) => p,
             None => return Vec::new(),
         };
 
+        let has_time = compiled.has_time_filter();
         let mut entries = Vec::new();
         for (index, line) in content.lines().enumerate() {
-            let metadata = ParsedLineMetadata::parse(line, compiled_filters.has_time_filter());
-            if !compiled_filters.matches_parsed_line_metadata(&metadata) {
+            let metadata = ParsedLineMetadata::parse(line, has_time);
+            if !compiled.matches_line(&LineMetadata {
+                timestamp: metadata.timestamp.clone(),
+                level: metadata.level,
+                level_normalized: metadata.level_normalized,
+                datetime: metadata.datetime,
+                level_mask: metadata.level_mask,
+            }) {
                 continue;
             }
 
