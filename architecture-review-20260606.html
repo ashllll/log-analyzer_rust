@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Log Analyzer — 架构深化评审</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true,theme:'base',securityLevel:'loose'});</script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+  body { font-family: 'Inter', system-ui, sans-serif; background: #0f1117; color: #e1e4e8; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 12px; transition: border-color 0.2s; }
+  .card:hover { border-color: #58a6ff; }
+  .badge-strong { background: #238636; color: #fff; }
+  .badge-explore { background: #1f6feb; color: #fff; }
+  .badge-speculative { background: #6e7681; color: #fff; }
+  .mermaid-container { background: #0d1117; border-radius: 8px; padding: 12px; }
+  pre { background: #0d1117; border-radius: 6px; padding: 12px; overflow-x: auto; font-size: 13px; }
+  .gradient-header { background: linear-gradient(135deg, #1a1f35 0%, #0f1117 100%); }
+  hr { border-color: #30363d; }
+</style>
+</head>
+<body class="min-h-screen">
+
+<header class="gradient-header border-b border-gray-800 py-12 px-6">
+  <div class="max-w-5xl mx-auto">
+    <h1 class="text-3xl font-bold text-white mb-2">Log Analyzer — 架构深化评审</h1>
+    <p class="text-gray-400 text-lg">模块深度分析 · 5 个改进候选 · 2026-06-06</p>
+    <p class="text-gray-500 text-sm mt-3">
+      基于 <span class="text-blue-400">CONTEXT.md</span> 领域词汇 ·
+      采用 <span class="text-blue-400">深度 / 接缝 / 适配器 / 杠杆 / 局部性</span> 架构语言
+    </p>
+  </div>
+</header>
+
+<main class="max-w-5xl mx-auto px-6 py-10 space-y-10">
+
+<!-- Candidate 1: Complete WorkspaceService Migration -->
+<div class="card p-6">
+  <div class="flex items-start justify-between mb-4">
+    <div>
+      <span class="badge-strong text-xs font-semibold px-2.5 py-1 rounded-full">Strong</span>
+      <h2 class="text-xl font-semibold text-white mt-2">1. 完成 WorkspaceService 迁移</h2>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+    <div>
+      <p class="text-gray-400 text-xs uppercase tracking-wide mb-1">涉及文件</p>
+      <ul class="text-sm text-blue-300 space-y-0.5">
+        <li><code>application/workspace_service.rs</code> — trait 定义</li>
+        <li><code>infrastructure/workspace_service_impl.rs</code> — 实现</li>
+        <li><code>models/state.rs</code> — AppState 容器</li>
+        <li><code>commands/search/mod.rs</code> — 搜索命令</li>
+        <li><code>commands/import.rs</code> — 导入命令</li>
+      </ul>
+    </div>
+    <div class="md:col-span-2">
+      <p class="text-gray-400 text-xs uppercase tracking-wide mb-1">问题</p>
+      <p class="text-sm text-gray-300">
+        代码库正处于从「运行时 HashMap 服务定位器」向「预组装 WorkspaceService」模式的迁移中途。
+        <code class="text-yellow-400 bg-gray-800 px-1 rounded">workspace_service.rs:17-23</code> 的迁移状态注释标明
+        P1（SearchService 实现）、P2（AppState 集成）、P3（search_logs 迁移）、P6（清理旧 HashMap）均未完成。
+        当前 <strong>两套架构并存</strong>：部分路径走 WorkspaceService，部分仍直接访问 AppState 的原始 HashMap。
+      </p>
+    </div>
+  </div>
+
+  <div class="mb-5">
+    <p class="text-gray-400 text-xs uppercase tracking-wide mb-1">方案</p>
+    <p class="text-sm text-gray-300">
+      完成迁移。AppState 仅持有 <code>WorkspaceServiceRef</code> 实例——不再有原始的 cancellation_tokens HashMap，
+      不再暴露存储引用。所有命令统一通过 WorkspaceService 操作，每个 WorkspaceServiceImpl
+      拥有其工作区的完整运行时状态（CAS、MetadataStore、SearchEngine、DiskResultStore、搜索会话、监听器状态）。
+    </p>
+  </div>
+
+  <div class="mb-5">
+    <p class="text-gray-400 text-xs uppercase tracking-wide mb-2">架构对比</p>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div class="mermaid-container">
+        <p class="text-xs text-red-400 font-semibold mb-2">Before — 服务定位器模式（AppState）</p>
+        <div class="mermaid">
+graph TD
+    AS[AppState 服务定位器]
+    AS --> S[services: HashMap]
+    AS --> CT[cancellation_tokens: HashMap]
+    AS --> DRS[disk_result_store]
+    AS --> TP[thread_pool]
+    AS --> TM[task_manager]
+    CMD1[search_logs] --> AS
+    CMD2[import_folder] --> AS
+    CMD3[start_watch] --> AS
+    style AS fill:#8b0000,color:#fff
+        </div>
+      </div>
+      <div class="mermaid-container">
+        <p class="text-xs text-green-400 font-semibold mb-2">After — 预组装服务模式</p>
+        <div class="mermaid">
+graph TD
+    AS2[AppState]
+    AS2 --> WS[workspace_services: HashMap]
+    WS --> W1[WorkspaceServiceImpl A]
+    WS --> W2[WorkspaceServiceImpl B]
+    W1 --> CAS[CAS]
+    W1 --> MS[MetadataStore]
+    W1 --> SE[SearchEngine]
+    W1 --> DRS2[DiskResultStore]
+    W1 --> SS[SearchSessions]
+    W1 --> WATCH[WatcherState]
+    style AS2 fill:#1a5c1a,color:#fff
+    style W1 fill:#1f6feb,color:#fff
+    style W2 fill:#1f6feb,color:#fff
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <p class="text-gray-400 text-xs uppercase tracking-wide mb-1">收益</p>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+      <div class="bg-gray-800 rounded-lg p-3">
+        <p class="text-green-400 font-medium">杠杆</p>
+        <p class="text-gray-400">调用方通过一个 WorkspaceService 接口获取工作区全部能力，而非管理 5+ 个独立 Arc 引用</p>
+      </div>
+      <div class="bg-gray-800 rounded-lg p-3">
+        <p class="text-green-400 font-medium">局部性</p>
+        <p class="text-gray-400">一个工作区的运行时状态全部集中在 WorkspaceServiceImpl 内</p>
+      </div>
+      <div class="bg-gray-800 rounded-lg p-3">
+        <p class="text-green-400 font-medium">可测试性</p>
+        <p class="text-gray-400">Mock WorkspaceService trait 即可测试命令层，无需构造持有 6 个字段的 AppState</p>
+      </div>
+      <div class="bg-gray-800 rounded-lg p-3">
+        <p class="text-green-400 font-medium">AI 可导航性</p>
+        <p class="text-gray-400">单一架构模式，AI 无需在两条代码路径之间切换推理</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Candidate 2: Consolidate Query Pipeline Layers -->
+<div class="card p-6">
+  <div class="flex items-start justify-between mb-4">
+    <div>
+      <span class="badge-explore text-xs font-semibold px-2.5 py-1 rounded-full">Worth exploring</span>
+      <h2 class="text-xl font-semibold text-white mt-2">2. 合并查询流水线层</h2>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+    <div>
+      <p class="text-gray-400 text-xs uppercase tracking-wide mb-1">涉及文件</p>
+      <ul class="text-sm text-blue-300 space-y-0.5">
+        <li><code>services/query_validator.rs</code> — ~100行</li>
+        <li><code>services/query_planner.rs</code> — ~400行</li>
+        <li><code>services/query_executor.rs</code> — ~130行</li>
+        <li><code>infrastructure/searcher.rs</code> — 实际执行</li>
+      </ul>
+    </div>
+    <div class="md:col-span-2">
+      <p class="text-gray-400 text-xs uppercase tracking-wide mb-1">问题</p>
+      <p class="text-sm text-gray-300">
+        查询流水线有三个<strong>浅模块</strong>串行排列：
+        <code>QueryValidator</code>（一个静态方法 validate()）、
+        <code>QueryPlanner</code>（构建 ExecutionPlan）、
+        <code>QueryPlanBuilder</code>（在 Planner 外加一层 plan_cache，再委托给 Validator）。
+        <strong>删除测试</strong>：删除 QueryPlanBuilder，其缓存逻辑移到 Planner 内部——无复杂性扩散。
+        删除 QueryValidator，其验证逻辑移到 Planner 的 build_plan 开头——验证是规划的<strong>前置条件</strong>，本来就在同一调用链上。
+      </p>
+    </div>
+  </div>
+
+  <div class="mb-5">
+    <p class="text-gray-400 text-xs uppercase tracking-wide mb-1">方案</p>
+    <p class="text-sm text-gray-300">
+      将 QueryValidator 内联到 QueryPlanner（验证是规划的前置条件），将 QueryPlanBuilder 合并到 QueryPlanner（缓存是实现细节）。
+      结果：一个深模块 <code>QueryPlanner</code>，接口是 <code>build_plan(query) → ExecutionPlan</code>，
+      内部处理验证、引擎选择、缓存——调用方无需了解内部步骤。
+    </p>
+  </div>
+
+  <div class="mb-5">
+    <p class="text-gray-400 text-xs uppercase tracking-wide mb-2">调用流程对比</p>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div class="mermaid-container">
+        <p class="text-xs text-red-400 font-semibold mb-2">Before — 三层浅调用</p>
+        <div class="mermaid">
+sequenceDiagram
+    participant CMD as Command
+    participant PB as QueryPlanBuilder
+    participant QV as QueryValidator
+    participant QP as QueryPlanner
+    CMD->>PB: build(query)
+    PB->>QV: validate(query)
+    QV-->>PB: result
+    PB->>PB: cache check
+    PB->>QP: build_plan(query)
+    QP-->>PB: ExecutionPlan
+    PB-->>CMD: ExecutionPlan
+        </div>
+      </div>
+      <div class="mermaid-container">
+        <p class="text-xs text-green-400 font-semibold mb-2">After — 一个深模块</p>
+        <div class="mermaid">
+sequenceDiagram
+    participant CMD as Command
+    participant QP as QueryPlanner
+    CMD->>QP: build_plan(query)
+    QP->>QP: validate (inline)
+    QP->>QP: cache lookup
+    QP->>QP: engine select + compile
+    QP-->>CMD: ExecutionPlan
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <p class="text-gray-400 text-xs uppercase tracking-wide mb-1">收益</p>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+      <div class="bg-gray-800 rounded-lg p-3">
+        <p class="text-green-400 font-medium">深度</p>
+        <p class="text-gray-400">接口从 3 个模块 × 1-2 个公开方法变为 1 个模块 × 1 个方法，接口复杂度降低 ~70%</p>
+      </div>
+      <div class="bg-gray-800 rounded-lg p-3">
+        <p class="text-green-400 font-medium">局部性</p>
+        <p class="text-gray-400">修改查询构建逻辑时只需打开一个文件。验证规则的变更不再需要跨文件追踪</p>
+      </div>
+      <div class="bg-gray-800 rounded-lg p-3">
+        <p class="text-green-400 font-medium">接口即测试面</p>
+        <p class="text-gray-400">一个 build_plan 方法覆盖验证+规划+缓存，测试更集中</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Candidate 3: Deepen WorkspaceRepo -->
+<div class="card p-6">
+  <div class="flex items-start justify-between mb-4">
+    <div>
+      <span class="badge-explore text-xs font-semibold px-2.5 py-1 rounded-full">Worth exploring</span>
+      <h2 class="text-xl font-semibold text-white mt-2">3. 深化 WorkspaceRepo</h2>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+    <div>
+      <p class="text-gray-400 text-xs uppercase tracking-wide mb-1">涉及文件</p>
+      <ul class="text-sm text-blue-300 space-y-0.5">
+        <li><code>infrastructure/workspace_repo.rs</code> — ~50行</li>
+        <li><code>infrastructure/workspace_service_impl.rs</code> — 调用方</li>
+        <li><code>application/workspace_service.rs</code> — re-exports</li>
+      </ul>
+    </div>
+    <div class="md:col-span-2">
+      <p class="text-gray-400 text-xs uppercase tracking-wide mb-1">问题</p>
+      <p class="text-sm text-gray-300">
+        <strong>删除测试</strong>：删除 WorkspaceRepo，其唯一调用方 WorkspaceServiceImpl 改为直接持有 4 个 Arc 引用。
+        WorkspaceRepo 不添加任何行为——只有 4 个 getter 方法。没有复杂性集中——删除后复杂性<strong>不会</strong>扩散到 N 个调用方。
+        这是一个纯<strong>透传</strong>模块，接口和实现复杂度几乎相同。
+      </p>
+    </div>
+  </div>
+
+  <div class="mb-5">
+    <p class="text-gray-400 text-xs uppercase tracking-wide mb-1">方案</p>
+    <p class="text-sm text-gray-300">
+      给 WorkspaceRepo 注入行为：吸收工作区路径解析、元数据完整性校验、搜索结果会话管理。
+      接口不再是 4 个 getter，而是 <code>get_file_by_hash()</code>、<code>verify_integrity()</code>、
+      <code>manage_search_sessions()</code> 等有<strong>杠杆</strong>的方法。
+    </p>
+  </div>
+
+  <div class="mb-5">
+    <p class="text-gray-400 text-xs uppercase tracking-wide mb-2">结构对比</p>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div class="mermaid-container">
+        <p class="text-xs text-red-400 font-semibold mb-2">Before — 透传聚合器</p>
+        <div class="mermaid">
+classDiagram
+    class WorkspaceRepo {
+        -cas: Arc~CAS~
+        -metadata_store: Arc~MetadataStore~
+        -search_engine: Arc~SearchEngine~
+        -disk_result_store: Arc~DiskResultStore~
+        +cas() Arc~CAS~
+        +metadata_store() Arc
+        +search_engine() Arc
+        +disk_result_store() Arc
+    }
+    class WorkspaceServiceImpl {
+        -repo: WorkspaceRepo
+        +search()
+        +import_file()
+        +start_watch()
+    }
+    WorkspaceServiceImpl --> WorkspaceRepo : "4× getter"
+    note for WorkspaceRepo "zero behavior — passes Arcs through"
+        </div>
+      </div>
+      <div class="mermaid-container">
+        <p class="text-xs text-green-400 font-semibold mb-2">After — 有行为的仓库</p>
+        <div class="mermaid">
+classDiagram
+    class WorkspaceRepo {
+        -cas
+        -metadata_store
+        -search_engine
+        -disk_result_store
+        +get_file_by_hash(hash) FileMetadata
+        +verify_integrity() IntegrityReport
+        +session_manager() SessionManager
+        +import_files(path) ImportResult
+    }
+    class WorkspaceServiceImpl {
+        -repo: WorkspaceRepo
+        +search()
+        +import_file()
+        +start_watch()
+    }
+    WorkspaceServiceImpl --> WorkspaceRepo : "3-4 behavior methods"
+    note for WorkspaceRepo "owns workspace data logic"
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <p class="text-gray-400 text-xs uppercase tracking-wide mb-1">收益</p>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+      <div class="bg-gray-800 rounded-lg p-3">
+        <p class="text-green-400 font-medium">杠杆</p>
+        <p class="text-gray-400">调用方通过 WorkspaceRepo 完成工作区数据操作，而非自行组合 4 个底层存储引用</p>
+      </div>
+      <div class="bg-gray-800 rounded-lg p-3">
+        <p class="text-green-400 font-medium">接缝</p>
+        <p class="text-gray-400">如果工作区数据存储方式变更（SQLite → Tantivy），只需修改 WorkspaceRepo</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Candidate 4: Unify Domain Trait Locations -->
+<div class="card p-6">
+  <div class="flex items-start justify-between mb-4">
+    <div>
+      <span class="badge-speculative text-xs font-semibold px-2.5 py-1 rounded-full">Speculative</span>
+      <h2 class="text-xl font-semibold text-white mt-2">4. 统一领域 trait 位置</h2>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+    <div>
+      <p class="text-gray-400 text-xs uppercase tracking-wide mb-1">涉及文件</p>
+      <ul class="text-sm text-blue-300 space-y-0.5">
+        <li><code>crates/la-core/src/domain/</code> — 7 个 trait</li>
+        <li><code>crates/la-core/src/traits.rs</code> — 5 个 trait</li>
+        <li>所有 <code>use la_core::domain</code> 和 <code>use la_core::traits</code></li>
+      </ul>
+    </div>
+    <div class="md:col-span-2">
+      <p class="text-gray-400 text-xs uppercase tracking-wide mb-1">问题</p>
+      <p class="text-sm text-gray-300">
+        领域 trait 分散在两个位置：<code>la-core/src/domain/</code>（7 个 trait）
+        和 <code>la-core/src/traits.rs</code>（5 个 trait）。
+        这个分裂是<strong>任意的</strong>——<code>ContentStorage</code> 和 <code>MetadataStorage</code>
+        明显是领域抽象（CAS 存储、元数据索引），在 CONTEXT.md 中明确定义。
+        新贡献者（包括 AI）需要<strong>发现</strong>这个分裂——他们找到了 domain/ 后可能以为那就是全部。
+      </p>
+    </div>
+  </div>
+
+  <div class="mb-5">
+    <p class="text-gray-400 text-xs uppercase tracking-wide mb-1">方案</p>
+    <p class="text-sm text-gray-300">
+      将所有领域 trait 移入 <code>la-core/src/domain/</code>，按主题分子模块：
+      <code>storage.rs</code>（ContentStorage, MetadataStorage）、
+      <code>search.rs</code>（LogSearcher, LogFileRepository, SearchResultRepository）、
+      <code>event.rs</code>、<code>extract.rs</code>、<code>workspace.rs</code>、<code>task.rs</code>。
+      <code>AppConfigProvider</code> 移到 <code>config.rs</code>。删除 <code>traits.rs</code>。
+    </p>
+  </div>
+
+  <div class="mb-5">
+    <p class="text-gray-400 text-xs uppercase tracking-wide mb-2">组织对比</p>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div class="mermaid-container">
+        <p class="text-xs text-red-400 font-semibold mb-2">Before — 分裂的 trait</p>
+        <div class="mermaid">
+graph LR
+    subgraph "la-core/src/"
+        D[domain/] --> LS[LogSearcher等 7个trait]
+        T[traits.rs] --> QV[QueryValidation等 5个trait]
+    end
+    style D fill:#1f6feb,color:#fff
+    style T fill:#d73a49,color:#fff
+        </div>
+      </div>
+      <div class="mermaid-container">
+        <p class="text-xs text-green-400 font-semibold mb-2">After — 统一的 domain/</p>
+        <div class="mermaid">
+graph LR
+    subgraph "la-core/src/domain/"
+        S[storage.rs]
+        SE2[search.rs]
+        EV[event.rs]
+        EX[extract.rs]
+        WS2[workspace.rs]
+        TK[task.rs]
+    end
+    style S fill:#238636,color:#fff
+    style SE2 fill:#238636,color:#fff
+    style EV fill:#238636,color:#fff
+    style EX fill:#238636,color:#fff
+    style WS2 fill:#238636,color:#fff
+    style TK fill:#238636,color:#fff
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <p class="text-gray-400 text-xs uppercase tracking-wide mb-1">收益</p>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+      <div class="bg-gray-800 rounded-lg p-3">
+        <p class="text-green-400 font-medium">AI 可导航性</p>
+        <p class="text-gray-400">一个权威位置回答「这个代码库使用了哪些抽象」</p>
+      </div>
+      <div class="bg-gray-800 rounded-lg p-3">
+        <p class="text-green-400 font-medium">一致性</p>
+        <p class="text-gray-400">所有 trait 遵循相同的文件组织模式</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Candidate 5: Reduce LogSearcher Adapter Indirection -->
+<div class="card p-6">
+  <div class="flex items-start justify-between mb-4">
+    <div>
+      <span class="badge-speculative text-xs font-semibold px-2.5 py-1 rounded-full">Speculative</span>
+      <h2 class="text-xl font-semibold text-white mt-2">5. 减少 LogSearcher 适配器间接层</h2>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+    <div>
+      <p class="text-gray-400 text-xs uppercase tracking-wide mb-1">涉及文件</p>
+      <ul class="text-sm text-blue-300 space-y-0.5">
+        <li><code>crates/la-core/src/domain/</code> — LogSearcher trait</li>
+        <li><code>infrastructure/searcher.rs</code> — 唯一实现</li>
+        <li><code>application/search.rs</code> — SearchUseCase</li>
+      </ul>
+    </div>
+    <div class="md:col-span-2">
+      <p class="text-gray-400 text-xs uppercase tracking-wide mb-1">问题</p>
+      <p class="text-sm text-gray-300">
+        <strong>LogSearcher trait 只有一个适配器</strong>：<code>QueryEngineLogSearcher</code>。
+        一个适配器 = 假设的接缝。4 个方法签名精确镜像唯一实现。接口和实现的复杂度几乎相同——<strong>浅 trait</strong>。
+        增加了动态分发（Arc&lt;dyn LogSearcher&gt;）但未提供接缝的好处。
+      </p>
+    </div>
+  </div>
+
+  <div class="mb-5">
+    <p class="text-gray-400 text-xs uppercase tracking-wide mb-1">方案</p>
+    <p class="text-sm text-gray-300">
+      路径 A：找到第二个适配器（如 TantivyOnlySearcher），使接缝成为<strong>真实接缝</strong>。<br/>
+      路径 B：删除 trait，直接使用 <code>QueryEngineLogSearcher</code> 具体类型。
+    </p>
+  </div>
+
+  <div class="mb-5">
+    <p class="text-gray-400 text-xs uppercase tracking-wide mb-2">依赖图对比</p>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div class="mermaid-container">
+        <p class="text-xs text-red-400 font-semibold mb-2">Before — 假设的接缝</p>
+        <div class="mermaid">
+graph TD
+    SU[SearchUseCase] -->|Arc dyn| LS[LogSearcher trait]
+    LS -.->|impl| QE[QueryEngineLogSearcher]
+    style LS fill:#d73a49,color:#fff
+    note[一个适配器 = 假设的接缝]
+        </div>
+      </div>
+      <div class="mermaid-container">
+        <p class="text-xs text-green-400 font-semibold mb-2">After — 选择 B</p>
+        <div class="mermaid">
+graph TD
+    SU2[SearchUseCase] -->|Arc| QE2[QueryEngineLogSearcher]
+    style QE2 fill:#1f6feb,color:#fff
+    note2[更少的间接层，更简单的依赖图]
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <p class="text-gray-400 text-xs uppercase tracking-wide mb-1">收益</p>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+      <div class="bg-gray-800 rounded-lg p-3">
+        <p class="text-green-400 font-medium">简单性</p>
+        <p class="text-gray-400">减少一层动态分发，依赖图更扁平，代码导航更直接</p>
+      </div>
+      <div class="bg-gray-800 rounded-lg p-3">
+        <p class="text-green-400 font-medium">或：真实接缝</p>
+        <p class="text-gray-400">如果走路径 A，第二个适配器带来真正的可替换性</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Top Recommendation -->
+<div class="card p-6 border-blue-500">
+  <h2 class="text-xl font-semibold text-white mb-3">首选推荐</h2>
+  <div class="bg-blue-900 bg-opacity-20 border border-blue-500 rounded-lg p-5">
+    <p class="text-white font-semibold text-lg mb-2">#1 — 完成 WorkspaceService 迁移</p>
+    <p class="text-gray-300 text-sm leading-relaxed">
+      这是最紧迫的候选。两套架构并存直接影响每个新功能的实现路径选择。
+      <code>workspace_service.rs</code> 的迁移注释标明 4 个阶段未完成，技术债务正在积累。
+    </p>
+    <ul class="text-sm text-gray-300 mt-2 space-y-1 list-disc list-inside ml-2">
+      <li>AppState 简化为仅持有 WorkspaceServiceRef 映射</li>
+      <li>工作区运行时状态全部由 WorkspaceServiceImpl 拥有——局部性大幅提升</li>
+      <li>命令层测试只需 mock WorkspaceService trait</li>
+      <li>为候选 #2 和 #3 铺平道路</li>
+    </ul>
+    <p class="text-gray-400 text-xs mt-3">
+      预计影响：~5 文件、~200 行变更。风险：低——trait 已定义，实现已部分完成。本质上是完成已经开始的重构。
+    </p>
+  </div>
+
+  <div class="mt-5">
+    <p class="text-gray-400 text-xs uppercase tracking-wide mb-2">推荐执行顺序</p>
+    <div class="mermaid-container">
+      <div class="mermaid">
+graph LR
+    A["1. WorkspaceService<br/>迁移"] --> B["2. 合并查询<br/>流水线"]
+    A --> C["3. 深化<br/>WorkspaceRepo"]
+    B --> D["4. 统一<br/>trait 位置"]
+    C --> D
+    D --> E["5. 重新评估<br/>LogSearcher"]
+    style A fill:#238636,color:#fff
+    style B fill:#1f6feb,color:#fff
+    style C fill:#1f6feb,color:#fff
+    style D fill:#6e7681,color:#fff
+    style E fill:#6e7681,color:#fff
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Summary Table -->
+<div class="card p-6">
+  <h2 class="text-xl font-semibold text-white mb-4">评审摘要</h2>
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm text-left">
+      <thead class="text-gray-400 text-xs uppercase bg-gray-800">
+        <tr>
+          <th class="px-4 py-2 rounded-tl-lg">候选</th>
+          <th class="px-4 py-2">强度</th>
+          <th class="px-4 py-2">深度提升</th>
+          <th class="px-4 py-2">测试改善</th>
+          <th class="px-4 py-2">AI 导航性</th>
+          <th class="px-4 py-2 rounded-tr-lg">风险</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-800">
+        <tr class="hover:bg-gray-800">
+          <td class="px-4 py-3 text-white">1. WorkspaceService 迁移</td>
+          <td><span class="badge-strong text-xs px-2 py-0.5 rounded-full">Strong</span></td>
+          <td class="text-green-400">高</td>
+          <td class="text-green-400">高</td>
+          <td class="text-green-400">高</td>
+          <td class="text-gray-400">低</td>
+        </tr>
+        <tr class="hover:bg-gray-800">
+          <td class="px-4 py-3 text-white">2. 合并查询流水线</td>
+          <td><span class="badge-explore text-xs px-2 py-0.5 rounded-full">Explore</span></td>
+          <td class="text-green-400">中</td>
+          <td class="text-yellow-400">中</td>
+          <td class="text-green-400">中</td>
+          <td class="text-gray-400">低</td>
+        </tr>
+        <tr class="hover:bg-gray-800">
+          <td class="px-4 py-3 text-white">3. 深化 WorkspaceRepo</td>
+          <td><span class="badge-explore text-xs px-2 py-0.5 rounded-full">Explore</span></td>
+          <td class="text-green-400">中</td>
+          <td class="text-yellow-400">低</td>
+          <td class="text-yellow-400">中</td>
+          <td class="text-gray-400">中</td>
+        </tr>
+        <tr class="hover:bg-gray-800">
+          <td class="px-4 py-3 text-white">4. 统一 trait 位置</td>
+          <td><span class="badge-speculative text-xs px-2 py-0.5 rounded-full">Speculative</span></td>
+          <td class="text-yellow-400">低</td>
+          <td class="text-gray-500">—</td>
+          <td class="text-green-400">中</td>
+          <td class="text-gray-400">低</td>
+        </tr>
+        <tr class="hover:bg-gray-800">
+          <td class="px-4 py-3 text-white">5. LogSearcher 间接层</td>
+          <td><span class="badge-speculative text-xs px-2 py-0.5 rounded-full">Speculative</span></td>
+          <td class="text-yellow-400">低</td>
+          <td class="text-yellow-400">低</td>
+          <td class="text-yellow-400">低</td>
+          <td class="text-gray-400">中</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+</main>
+
+<footer class="max-w-5xl mx-auto px-6 pb-10 text-center text-gray-600 text-xs">
+  <p>Log Analyzer Architecture Review · 深度/接缝/适配器/杠杆/局部性 框架</p>
+  <p class="mt-1">未覆盖前端（React/TypeScript）层——本次评审聚焦 Rust 后端架构</p>
+</footer>
+
+</body>
+</html>

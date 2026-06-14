@@ -24,12 +24,13 @@ use std::thread;
 use tokio_util::sync::CancellationToken;
 
 use la_core::domain::event::EventPublisher;
+use crate::application::watch::{WatchEvent, WatchEventKind};
 // use la_core::domain::SearchResultRepository; // 不需要直接导入，SearchUseCase 内部使用
 use la_core::error::{AppError, Result};
 use la_core::models::{SearchFilters, SearchQuery};
 use la_core::traits::AppConfigProvider;
 
-use notify::{recommended_watcher, Event, RecursiveMode, Watcher};
+use notify::Watcher;
 use tracing::error;
 
 use la_archive::processor::process_path_with_cas;
@@ -545,15 +546,40 @@ impl WatchService for WorkspaceServiceImpl {
             }
         }
 
-        // ── 3. Create notify watcher ──
-        let (tx, rx) = crossbeam::channel::unbounded::<std::result::Result<Event, notify::Error>>();
+        // ── 3. Create notify watcher, convert to WatchEvent ──
+        let (tx, notify_rx) = crossbeam::channel::unbounded::<std::result::Result<notify::Event, notify::Error>>();
+        let (watch_tx, rx) = crossbeam::channel::unbounded::<WatchEvent>();
 
-        let mut watcher = recommended_watcher(tx)
+        let mut watcher = notify::recommended_watcher(tx)
             .map_err(|e| AppError::io_error(format!("Failed to create file watcher: {e}"), None))?;
 
         watcher
-            .watch(&watch_path_buf, RecursiveMode::Recursive)
+            .watch(&watch_path_buf, notify::RecursiveMode::Recursive)
             .map_err(|e| AppError::io_error(format!("Failed to start watching path: {e}"), None))?;
+
+        // Conversion thread: notify events → WatchEvent
+        std::thread::spawn(move || {
+            for res in notify_rx {
+                let event = match res {
+                    Ok(e) => {
+                        let kind = match e.kind {
+                            notify::EventKind::Create(_) => WatchEventKind::Create,
+                            notify::EventKind::Modify(_) => WatchEventKind::Modify,
+                            notify::EventKind::Remove(_) => WatchEventKind::Remove,
+                            _ => WatchEventKind::Other,
+                        };
+                        WatchEvent { kind, paths: e.paths }
+                    }
+                    Err(err) => {
+                        tracing::warn!(error = %err, "NotifyWatcher: event error, skipping");
+                        continue;
+                    }
+                };
+                if watch_tx.send(event).is_err() {
+                    break;
+                }
+            }
+        });
 
         // ── 4. Create WatcherState ──
         let watcher_state = WatcherState {

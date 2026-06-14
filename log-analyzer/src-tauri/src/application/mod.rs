@@ -11,6 +11,7 @@ pub mod export;
 pub mod search;
 pub mod search_batch;
 pub mod virtual_tree;
+pub mod watch;
 pub mod workspace_service;
 
 pub use config::ConfigUseCase;

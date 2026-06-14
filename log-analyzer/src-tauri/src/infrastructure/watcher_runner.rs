@@ -8,10 +8,10 @@ use std::sync::Arc;
 
 use la_core::domain::event::EventPublisher;
 use la_core::traits::{ContentStorage, MetadataStorage};
-use notify::event::{Event, EventKind};
 use tokio::runtime::Handle as TokioHandle;
 use tracing::warn;
 
+use crate::application::watch::{WatchEvent, WatchEventKind};
 use crate::services::file_watcher::{self, WatcherState};
 
 /// 文件监听后台运行器。
@@ -50,19 +50,10 @@ impl WatcherRunner {
     /// 运行事件循环——阻塞当前线程，直到 watcher 被 stop 或出错。
     pub(crate) fn run(
         self,
-        rx: crossbeam::channel::Receiver<std::result::Result<Event, notify::Error>>,
+        rx: crossbeam::channel::Receiver<WatchEvent>,
     ) {
-        for res in rx {
-            match res {
-                Ok(event) => self.handle_event(event),
-                Err(e) => {
-                    tracing::error!(
-                        error = %e,
-                        workspace_id = %self.workspace_id,
-                        "Watch error"
-                    );
-                }
-            }
+        for event in rx {
+            self.handle_event(&event);
 
             // Check is_active to exit
             let is_active = {
@@ -75,15 +66,15 @@ impl WatcherRunner {
         }
     }
 
-    fn handle_event(&self, event: Event) {
+    fn handle_event(&self, event: &WatchEvent) {
         let event_type = match event.kind {
-            EventKind::Create(_) => "created",
-            EventKind::Modify(_) => "modified",
-            EventKind::Remove(_) => "deleted",
-            _ => return,
+            WatchEventKind::Create => "created",
+            WatchEventKind::Modify => "modified",
+            WatchEventKind::Remove => "deleted",
+            WatchEventKind::Other => return,
         };
 
-        for path in event.paths {
+        for path in &event.paths {
             let file_path_str = match path.to_str() {
                 Some(s) => s.to_string(),
                 None => {

@@ -3,6 +3,7 @@
 pub mod archive_extractor;
 pub mod event_publisher;
 pub mod log_file_repo;
+pub mod notify_watcher;
 pub mod result_store;
 pub mod searcher;
 pub mod task_scheduler;
