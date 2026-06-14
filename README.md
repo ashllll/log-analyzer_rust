@@ -1,4 +1,4 @@
-# Log Analyzer
+﻿# Log Analyzer
 
 面向开发、测试与运维场景的本地桌面日志分析工具，技术栈为 `Rust + Tauri 2 + React 19 + TypeScript`。它的目标不是把日志“收上云”，而是让你直接在本地导入目录或归档包，完成搜索、筛选、归类和问题定位。
 
@@ -52,7 +52,7 @@ npm run tauri dev
 |------|---------|
 | Node.js | `>= 22.12.0` |
 | npm | `>= 10` |
-| Rust | `>= 1.70` |
+| Rust | `1.88` (pinned in `rust-toolchain.toml`) |
 | Tauri 前置依赖 | 见 [Tauri 2 官方文档](https://v2.tauri.app/start/prerequisites/) |
 
 ### 2. 导入日志源并创建工作区
@@ -132,55 +132,74 @@ npm run tauri dev
 
 ## 搜索规则与当前实现
 
-当前 UI 主搜索链路基于实际代码行为，走的是磁盘分页结果存储，不是旁路全文索引直接检索：
+当前 UI 主搜索链路基于 Clean Architecture，命令层委托给 `WorkspaceService`，由 `SearchUseCase` 编排：
 
 ```text
 SearchPage.tsx
 → api.searchLogs(query, filters)
-→ commands/search.rs: search_logs
-  → 内联参数校验（空查询 + 长度检查）
-  → MetadataStore::get_all_files() 获取候选文件
-  → 文件级 filePattern 早筛
-  → CAS::retrieve() 读取内容
-  → QueryExecutor（内部使用 RegexEngine / FancyEngine）逐行匹配
-    → OR 多关键词使用 Aho-Corasick 快速预检
-  → 时间 / 级别分段过滤
-  → DiskResultStore 写盘分页
-→ fetch_search_page(search_id, offset, limit)
+→ commands/search/mod.rs: search_logs()
+  → resolve_search_query()（query.rs — 解析 + 验证）
+  → WorkspaceService::search()（trait：SearchService）
+    → WorkspaceServiceImpl 内部创建 CancellationToken
+    → SearchUseCase::execute()（spawn_blocking on Rayon pool）
+      → CasLogFileRepository → MetadataStore::get_all_files() + CAS::retrieve()
+      → SearchBatch（BATCH_SIZE=2000, FILE_CHUNK_SIZE=10）
+      → QueryEngineLogSearcher（regex / Aho-Corasick / Memchr / Fancy）
+      → CompiledSearchFilters（时间范围、日志级别、文件路径）
+        → 实现 la_core::domain::Filter trait
+      → DiskResultStoreRepo → DiskResultStore::write_results()
+  → 返回 search_id（UUID）
+→ cancel_search(searchId) / fetch_search_page(searchId, offset, limit)
 ```
 
 当前主搜索的实际规则：
 
 - `|` 表示 OR 查询
-- 正则能力以 Rust `regex` 引擎支持的子集为准；包含 look-around 与 backreference 的模式自动通过 FancyEngine 处理
-- 搜索结果支持分页拉取，避免一次性把大结果集全部放进内存
-- 时间过滤与项目当前时间解析规则保持一致
-- 文件模式过滤支持通配符与兼容子串匹配
-
-归档递归解压的默认最大深度由 `archive.max_extraction_depth` 控制，当前默认值为 `10`。
+- 正则能力以 Rust `regex` 引擎支持的子集为准；look-around 模式自动通过 `FancyEngine` 处理
+- 查询验证器检测 ReDoS 模式（嵌套量词、重叠交替）
+- `SearchBatch` 控制批量刷新与截断，避免内存溢出
+- 搜索结果通过 `DiskResultStore` 分页写盘
+- 时间过滤与日志级别掩码通过 `CompiledSearchFilters` 统一处理
+- 文件模式过滤支持通配符 + SQLite GLOB（`LogFileRepository` 层）
 
 ## 主要能力
 
-- 本地日志搜索，支持多关键词查询
-- 搜索结果磁盘直写分页，适配大结果集
-- 按日志级别、时间范围、文件模式过滤
-- ZIP / TAR / GZ / 7Z 等归档导入与递归解压，RAR 支持取决于构建 feature，可通过 `check_rar_support` 查询
-- CAS 内容寻址存储去重
-- SQLite 元数据管理与虚拟路径映射
+- 本地日志搜索，支持 `|` 多关键词 OR 查询
+- 混合搜索引擎（Memchr / Aho-Corasick / Standard Regex / Fancy look-around）
+- 搜索结果磁盘分页，适配大结果集
+- 按日志级别、时间范围、文件模式组合过滤
+- `Filter` domain trait — 过滤器可独立测试和 mock
+- ZIP / TAR / GZ / 7Z 等归档导入与递归解压
+- CAS 内容寻址存储去重（SHA-256）
+- SQLite 元数据管理 + 虚拟路径映射
+- 文件监听与实时增量追踪（`FileTailer` + `WatcherRunner`）
 - 虚拟文件树浏览、文件内容导出
-- 文件监听与实时增量追踪
+- 结构化查询与关键词组管理
+- 验证 newtypes：`SafePath` / `WorkspaceId` / `QueryString`
 
 ## 仓库结构
 
 ```text
 log-analyzer_rust/
 ├── log-analyzer/                         # 前端与 Tauri 应用根目录
-│   ├── src/                              # React 前端
+│   ├── src/                              # React 前端（hooks / stores / pages）
 │   ├── src-tauri/                        # Rust 后端主 crate
+│   │   ├── src/
+│   │   │   ├── application/              # Use cases: search, watch, config, export
+│   │   │   ├── commands/                 # Tauri 命令（纯校验 + 委托）
+│   │   │   ├── infrastructure/           # Adapters: searcher, event_publisher, etc.
+│   │   │   ├── services/                 # Engines: query_planner, regex_engine
+│   │   │   ├── models/                   # AppState（typed registries）
+│   │   │   └── utils/                    # encoding, validation, newtypes
+│   │   └── crates/
+│   │       ├── la-core/                  # Domain traits + models
+│   │       ├── la-storage/               # CAS + SQLite
+│   │       ├── la-search/                # Query engine + result store
+│   │       └── la-archive/               # Archive extraction
 │   └── package.json
 ├── docs/                                 # 核心文档
 ├── scripts/                              # CI / 校验脚本
-├── .github/workflows/                    # CI/CD 流水线
+├── .github/workflows/                    # CI/CD 流水线（含 Dependabot）
 └── test_nested_archives/                 # 测试用嵌套归档夹具
 ```
 
@@ -241,7 +260,11 @@ cargo test -q
 ## 补充说明
 
 - 前端搜索入口：`log-analyzer/src/pages/SearchPage.tsx`
-- 后端搜索入口：`log-analyzer/src-tauri/src/commands/search.rs`
+- 后端搜索入口：`log-analyzer/src-tauri/src/commands/search/mod.rs`
+- 搜索用例编排：`log-analyzer/src-tauri/src/application/search.rs`
+- 查询引擎：`log-analyzer/src-tauri/src/services/regex_engine.rs`
+- 过滤器 trait：`log-analyzer/src-tauri/crates/la-core/src/domain/filter.rs`
+- 验证 newtypes：`log-analyzer/src-tauri/src/utils/validation/`
 - 结构化查询能力存在，但不是当前 UI 主搜索入口
 - 文档以“当前代码真实行为”为准，不把预留能力写成已落地主链路
 
