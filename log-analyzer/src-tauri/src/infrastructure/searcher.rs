@@ -12,8 +12,8 @@ use la_core::domain::{ExecutionPlan, LogSearcher};
 use la_core::error::Result;
 use la_core::models::{LogEntry, SearchFilters, SearchQuery};
 
-use crate::services::search_filters::{CompiledSearchFilters, ParsedLineMetadata};
 use crate::services::query_planner::QueryPlanner;
+use crate::services::search_filters::{CompiledSearchFilters, ParsedLineMetadata};
 
 /// Domain LogSearcher implementation using the production regex/query engine.
 pub struct QueryEngineLogSearcher {

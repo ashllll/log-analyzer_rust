@@ -18,10 +18,11 @@ impl NotifyWatcher {
     /// Create a new watcher for the given path.
     pub fn new(path: &std::path::Path) -> Result<Self, String> {
         let (tx, rx) = channel::unbounded();
-        let mut watcher = notify::recommended_watcher(move |res: std::result::Result<Event, notify::Error>| {
-            let _ = tx.send(res);
-        })
-        .map_err(|e| format!("Failed to create filesystem watcher: {e}"))?;
+        let mut watcher =
+            notify::recommended_watcher(move |res: std::result::Result<Event, notify::Error>| {
+                let _ = tx.send(res);
+            })
+            .map_err(|e| format!("Failed to create filesystem watcher: {e}"))?;
 
         watcher
             .watch(path, notify::RecursiveMode::Recursive)

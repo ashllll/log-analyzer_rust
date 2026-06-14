@@ -31,8 +31,5 @@ pub trait FileWatcher: Send + Sync {
     fn watch(
         &self,
         path: &std::path::Path,
-    ) -> Result<
-        crossbeam::channel::Receiver<WatchEvent>,
-        String,
-    >;
+    ) -> Result<crossbeam::channel::Receiver<WatchEvent>, String>;
 }

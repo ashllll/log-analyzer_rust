@@ -143,7 +143,9 @@ mod tests {
 
     #[test]
     fn build_workspace_id_handles_very_long_name() {
-        let id = build_workspace_id("a very long workspace name that exceeds fifty characters total for the slug portion");
+        let id = build_workspace_id(
+            "a very long workspace name that exceeds fifty characters total for the slug portion",
+        );
         assert!(id.starts_with("ws-"));
         assert!(id.len() <= 50, "ID should not exceed 50 chars: {id}");
     }

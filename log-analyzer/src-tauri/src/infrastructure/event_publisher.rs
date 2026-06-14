@@ -124,9 +124,7 @@ impl TauriEventPublisher {
                             max_retries = MAX_RETRIES,
                             "Emit failed, retrying..."
                         );
-                        tokio::time::sleep(std::time::Duration::from_millis(
-                            RETRY_DELAY_MS,
-                        )).await;
+                        tokio::time::sleep(std::time::Duration::from_millis(RETRY_DELAY_MS)).await;
                     }
                 }
             }

@@ -144,6 +144,7 @@ impl SearchUseCase {
     }
 
     /// 阻塞搜索循环 —— 在 spawn_blocking 中调用。
+    #[allow(clippy::too_many_arguments)]
     fn run_blocking(
         log_files: &Arc<dyn LogFileRepository>,
         results: &Arc<dyn SearchResultRepository>,
@@ -218,13 +219,17 @@ impl SearchUseCase {
                                 let events = events.clone();
                                 let sid = search_id.to_string();
                                 let msg = e.to_string();
-                                tokio::spawn(async move { events.emit_search_error(&sid, &msg).await });
+                                tokio::spawn(
+                                    async move { events.emit_search_error(&sid, &msg).await },
+                                );
                                 break 'outer;
                             }
                             let events = events.clone();
                             let sid = search_id.to_string();
                             let count = batch.total();
-                            tokio::spawn(async move { events.emit_search_progress(&sid, count).await });
+                            tokio::spawn(
+                                async move { events.emit_search_progress(&sid, count).await },
+                            );
                         }
                         was_truncated = true;
                         break 'outer;
@@ -484,11 +489,7 @@ mod tests {
     fn make_test_use_case(
         content: &str,
         matches_per_line: usize,
-    ) -> (
-        SearchUseCase,
-        Arc<CapturingResults>,
-        Arc<CapturingEvents>,
-    ) {
+    ) -> (SearchUseCase, Arc<CapturingResults>, Arc<CapturingEvents>) {
         let log_files: Arc<dyn LogFileRepository> = Arc::new(ContentStubLogFiles {
             content: content.as_bytes().to_vec(),
         });

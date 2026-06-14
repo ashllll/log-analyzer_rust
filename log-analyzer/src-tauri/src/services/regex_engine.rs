@@ -1,4 +1,4 @@
-﻿//! # 高性能正则表达式引擎
+//! # 高性能正则表达式引擎
 //!
 //! 混合引擎架构，根据模式类型自动选择最佳匹配算法：
 //! - **AhoCorasickEngine**: 简单关键词搜索，O(n) 线性复杂度
@@ -657,25 +657,26 @@ fn has_nested_quantifiers(pattern: &str) -> bool {
     let chars: Vec<char> = pattern.chars().collect();
     let mut i = 0;
     while i < chars.len() {
-        if chars[i] == ')' {
-            if i + 1 < chars.len() && matches!(chars[i + 1], '+' | '*' | '{') {
-                let mut depth = 1;
-                let mut j = i as isize - 1;
-                while j >= 0 && depth > 0 {
-                    if chars[j as usize] == ')' {
-                        depth += 1;
-                    } else if chars[j as usize] == '(' {
-                        depth -= 1;
-                        if depth == 0 {
-                            let body = &chars[j as usize + 1..i];
-                            let body_str: String = body.iter().collect();
-                            if body_str.contains('+') || body_str.contains('*') {
-                                return true;
-                            }
+        if chars[i] == ')'
+            && i + 1 < chars.len()
+            && matches!(chars[i + 1], '+' | '*' | '{')
+        {
+            let mut depth = 1;
+            let mut j = i as isize - 1;
+            while j >= 0 && depth > 0 {
+                if chars[j as usize] == ')' {
+                    depth += 1;
+                } else if chars[j as usize] == '(' {
+                    depth -= 1;
+                    if depth == 0 {
+                        let body = &chars[j as usize + 1..i];
+                        let body_str: String = body.iter().collect();
+                        if body_str.contains('+') || body_str.contains('*') {
+                            return true;
                         }
                     }
-                    j -= 1;
                 }
+                j -= 1;
             }
         }
         i += 1;
@@ -781,7 +782,10 @@ mod tests {
     #[test]
     fn test_redos_rejects_overlapping_alternation() {
         let result = RegexEngine::new(r"(?=x)(a|aa)+", true);
-        assert!(result.is_err(), "Overlapping alternation should be rejected");
+        assert!(
+            result.is_err(),
+            "Overlapping alternation should be rejected"
+        );
         let error = result.unwrap_err().to_string();
         assert!(
             error.contains("overlapping alternation"),

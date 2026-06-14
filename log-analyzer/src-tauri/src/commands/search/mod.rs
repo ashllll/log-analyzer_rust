@@ -207,13 +207,10 @@ pub async fn search_logs(
     // ── 5. Execute search via WorkspaceService ──
     // CancellationToken lifecycle is managed by WorkspaceServiceImpl internally;
     // cancel_search goes through service.cancel_search() — no global HashMap needed.
-    let search_id = workspace
-        .search(sq, raw_terms, f, mr)
-        .await
-        .map_err(|e| {
-            CommandError::new("SEARCH_ERROR", format!("Failed to start search: {e}"))
-                .with_help("Try again with a simpler query")
-        })?;
+    let search_id = workspace.search(sq, raw_terms, f, mr).await.map_err(|e| {
+        CommandError::new("SEARCH_ERROR", format!("Failed to start search: {e}"))
+            .with_help("Try again with a simpler query")
+    })?;
 
     Ok(search_id)
 }

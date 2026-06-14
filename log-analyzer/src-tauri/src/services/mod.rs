@@ -16,10 +16,12 @@ pub use la_core::utils::{parse_log_lines, parse_metadata, TimestampParser};
 // querier/searcher 类型
 pub use query_planner::ExecutionPlan;
 // query_planner: export standalone validation for frontend type-ahead
-pub use query_planner::QueryPlanner;
 pub use query_planner::compute_query_cache_key;
+pub use query_planner::QueryPlanner;
 // regex：仅 export commands/search/query.rs 需要的
 pub use regex_engine::looks_like_regex_pattern;
 // regex_engine types for independent use and testing
-pub use regex_engine::{RegexEngine, EngineType, EngineInfo, EngineError, MatchResult, EngineMatches};
+pub use regex_engine::{
+    EngineError, EngineInfo, EngineMatches, EngineType, MatchResult, RegexEngine,
+};
 // traits: 已从 la_core::traits 导入，此处移除重复 re-export

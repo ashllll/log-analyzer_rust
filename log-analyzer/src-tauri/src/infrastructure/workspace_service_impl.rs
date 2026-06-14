@@ -23,8 +23,8 @@ use std::sync::Arc;
 use std::thread;
 use tokio_util::sync::CancellationToken;
 
-use la_core::domain::event::EventPublisher;
 use crate::application::watch::{WatchEvent, WatchEventKind};
+use la_core::domain::event::EventPublisher;
 // use la_core::domain::SearchResultRepository; // 不需要直接导入，SearchUseCase 内部使用
 use la_core::error::{AppError, Result};
 use la_core::models::{SearchFilters, SearchQuery};
@@ -547,7 +547,8 @@ impl WatchService for WorkspaceServiceImpl {
         }
 
         // ── 3. Create notify watcher, convert to WatchEvent ──
-        let (tx, notify_rx) = crossbeam::channel::unbounded::<std::result::Result<notify::Event, notify::Error>>();
+        let (tx, notify_rx) =
+            crossbeam::channel::unbounded::<std::result::Result<notify::Event, notify::Error>>();
         let (watch_tx, rx) = crossbeam::channel::unbounded::<WatchEvent>();
 
         let mut watcher = notify::recommended_watcher(tx)
@@ -568,7 +569,10 @@ impl WatchService for WorkspaceServiceImpl {
                             notify::EventKind::Remove(_) => WatchEventKind::Remove,
                             _ => WatchEventKind::Other,
                         };
-                        WatchEvent { kind, paths: e.paths }
+                        WatchEvent {
+                            kind,
+                            paths: e.paths,
+                        }
                     }
                     Err(err) => {
                         tracing::warn!(error = %err, "NotifyWatcher: event error, skipping");

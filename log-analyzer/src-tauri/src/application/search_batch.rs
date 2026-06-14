@@ -187,7 +187,7 @@ mod tests {
     fn truncation_at_zero_remaining() {
         let mut batch = SearchBatch::new(10);
         batch.accumulate(make_entries(5), 5); // fill to max
-        // total=5, remaining=0, empty chunk
+                                              // total=5, remaining=0, empty chunk
         let action = batch.accumulate(vec![], 5);
         assert_eq!(action, BatchAction::Flush);
         assert_eq!(batch.take().len(), 5);

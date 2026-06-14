@@ -48,10 +48,7 @@ impl WatcherRunner {
     }
 
     /// 运行事件循环——阻塞当前线程，直到 watcher 被 stop 或出错。
-    pub(crate) fn run(
-        self,
-        rx: crossbeam::channel::Receiver<WatchEvent>,
-    ) {
+    pub(crate) fn run(self, rx: crossbeam::channel::Receiver<WatchEvent>) {
         for event in rx {
             self.handle_event(&event);
 
@@ -90,7 +87,7 @@ impl WatcherRunner {
 
             match event_type {
                 "created" => self.on_create(&file_path_str),
-                "modified" => self.on_modify(&path, &file_path_str),
+                "modified" => self.on_modify(path, &file_path_str),
                 _ => {}
             }
         }

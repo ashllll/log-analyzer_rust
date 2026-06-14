@@ -181,60 +181,54 @@ impl QueryPlanner {
         Ok(())
     }
 
-/// Validate a single search term.
-///
-/// Checks for empty value, excessive length (>100 chars), and regex syntax
-/// validity (backreferences, lookaround). Callable independently for
-/// frontend type-ahead pre-validation without importing QueryPlanner.
-pub fn validate_term(term: &SearchTerm) -> Result<()> {
-    if term.value.is_empty() {
-        return Err(AppError::validation_error(format!(
-            "Term {} has empty value",
-            term.id
-        )));
-    }
-
-    if term.value.chars().count() > 100 {
-        return Err(AppError::validation_error(format!(
-            "Term {} value is too long",
-            term.id
-        )));
-    }
-
-    if term.is_regex {
-        if Self::contains_backreference(&term.value) {
+    /// Validate a single search term.
+    ///
+    /// Checks for empty value, excessive length (>100 chars), and regex syntax
+    /// validity (backreferences, lookaround). Callable independently for
+    /// frontend type-ahead pre-validation without importing QueryPlanner.
+    pub fn validate_term(term: &SearchTerm) -> Result<()> {
+        if term.value.is_empty() {
             return Err(AppError::validation_error(format!(
-                "Term {} uses regex syntax not supported by Rust regex: backreferences are not supported",
+                "Term {} has empty value",
                 term.id
             )));
         }
 
-        let has_lookaround = term.value.contains("(?=")
-            || term.value.contains("(?!")
-            || term.value.contains("(?<=")
-            || term.value.contains("(?<!");
-        if has_lookaround {
-            fancy_regex::Regex::new(&term.value).map_err(|e| {
-                AppError::validation_error(format!(
-                    "Term {} has invalid regex: {}",
-                    term.id, e
-                ))
-            })?;
-        } else {
-            Regex::new(&term.value).map_err(|e| {
-                AppError::validation_error(format!(
-                    "Term {} has invalid regex: {}",
-                    term.id, e
-                ))
-            })?;
+        if term.value.chars().count() > 100 {
+            return Err(AppError::validation_error(format!(
+                "Term {} value is too long",
+                term.id
+            )));
         }
+
+        if term.is_regex {
+            if Self::contains_backreference(&term.value) {
+                return Err(AppError::validation_error(format!(
+                "Term {} uses regex syntax not supported by Rust regex: backreferences are not supported",
+                term.id
+            )));
+            }
+
+            let has_lookaround = term.value.contains("(?=")
+                || term.value.contains("(?!")
+                || term.value.contains("(?<=")
+                || term.value.contains("(?<!");
+            if has_lookaround {
+                fancy_regex::Regex::new(&term.value).map_err(|e| {
+                    AppError::validation_error(format!("Term {} has invalid regex: {}", term.id, e))
+                })?;
+            } else {
+                Regex::new(&term.value).map_err(|e| {
+                    AppError::validation_error(format!("Term {} has invalid regex: {}", term.id, e))
+                })?;
+            }
+        }
+
+        Ok(())
     }
 
-    Ok(())
-}
-
-/// Check if a regex pattern contains backreferences (e.g. \1, \2).
-pub fn contains_backreference(pattern: &str) -> bool {
+    /// Check if a regex pattern contains backreferences (e.g. \1, \2).
+    pub fn contains_backreference(pattern: &str) -> bool {
         let chars: Vec<char> = pattern.chars().collect();
 
         for (index, ch) in chars.iter().enumerate() {
@@ -814,7 +808,10 @@ mod tests {
         };
 
         let result = planner.build(&query);
-        assert!(result.is_err(), "Expected validation error for no enabled terms");
+        assert!(
+            result.is_err(),
+            "Expected validation error for no enabled terms"
+        );
 
         let error = result.unwrap_err();
         if let AppError::Validation { message: msg, .. } = &error {
@@ -878,7 +875,10 @@ mod tests {
         };
 
         let result = planner.build(&query);
-        assert!(result.is_err(), "Expected validation error for invalid regex");
+        assert!(
+            result.is_err(),
+            "Expected validation error for invalid regex"
+        );
 
         let error = result.unwrap_err();
         if let AppError::Validation { message: msg, .. } = &error {
@@ -988,7 +988,10 @@ mod tests {
         };
 
         let result = planner.build(&query);
-        assert!(result.is_err(), "Overlapping alternation should be rejected");
+        assert!(
+            result.is_err(),
+            "Overlapping alternation should be rejected"
+        );
     }
 
     #[test]
