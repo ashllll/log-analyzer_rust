@@ -11,7 +11,7 @@ Log Analyzer is a **Tauri 2.x desktop app** for large-scale log file import, sea
 | Layer | Technology |
 |---|---|
 | Desktop framework | Tauri 2.x (IPC via Tauri Events, not WebSocket) |
-| Backend language | Rust **1.85** (pinned in `rust-toolchain.toml`) |
+| Backend language | Rust **1.88** (pinned in `rust-toolchain.toml`) |
 | Frontend | React 19 + TypeScript 5.8 |
 | State management | Zustand 5 + TanStack React Query 5 |
 | Build tooling | Vite 7, ESLint 9, Jest 30 |
@@ -74,23 +74,28 @@ bash scripts/check_ipc_consistency.sh
 
 # Release preparation check:
 node scripts/prepare-release.mjs check
+
+# Release validation (version consistency, changelog, artifacts):
+bash scripts/validate-release.sh
 ```
 
 ## Architecture: Clean Architecture Layers
 
 ```
-interfaces/ (collapsed into commands/)  ← #[tauri::command] definitions
-commands/                               ← Parameter validation + delegate to use cases
-application/                            ← Use cases: search, import, watch, workspace, config, export
-infrastructure/                         ← Adapters implementing domain traits
-services/                               ← Engines: query_planner, query_executor, regex_engine, file_watcher, query_validator
+commands/                               ← #[tauri::command] definitions + param validation → delegate to use cases
+application/                            ← Use cases: search, search_batch, import, watch, workspace, config, export, virtual_tree
+infrastructure/                         ← Adapters implementing domain traits (searcher, result_store, log_file_repo, event_publisher, …)
+adapters/                               ← Thin adapter shims (e.g. TauriAppConfigProvider)
+services/                               ← Engines: query_planner, regex_engine, search_filters, file_watcher
 models/                                 ← AppState container
-utils/                                  ← encoding, validation, cache, retry, cancellation, paths, resource tracking
+utils/                                  ← encoding, validation, path, retry, app_config, log_config, workspace_guard, workspace_paths
 state_sync/                             ← Frontend-backend state synchronization models
 task_manager/                           ← Async task lifecycle: create → update → complete → cancel
 ```
 
 **Key rule**: Application (use cases) depends on domain traits. Infrastructure implements those traits. Tauri commands delegate to use cases. Traits are defined in `la-core` crate's `domain/` module — zero dependency on Tauri or filesystem.
+
+**P7 Refactor**: `search_executor.rs`, `query_executor.rs`, `query_validator.rs`, `async_resource_manager.rs`, `command_validation.rs` were deleted. Search loop folded back into `SearchUseCase`, batch logic extracted to `SearchBatch`. Query validation merged into `regex_engine`.
 
 ## Workspace Crates
 
@@ -114,7 +119,7 @@ All defined in `la-core/src/domain/mod.rs`, implemented by `infrastructure/`:
 - **`WorkspaceRepository`** — Workspace CRUD
 - **`TaskScheduler`** — Async task lifecycle management
 
-Separate `la-core/src/traits.rs` defines: `QueryValidation`, `ContentStorage`, `MetadataStorage`, `AppConfigProvider`.
+Separate `la-core/src/traits.rs` defines: `ContentStorage`, `MetadataStorage`, `QueryExecutor`, `AppConfigProvider`, plus `ValidationResult` and `PlanResult` structs.
 
 ## Search Main Path (Critical for Search Modifications)
 
@@ -123,12 +128,14 @@ Before modifying search code, confirm you are on the **actual UI main path**, no
 ```text
 SearchPage.tsx
 → api.searchLogs(query, filters)
-→ commands/search.rs: search_logs()
-  → param validation (empty query + length check)
+→ commands/search/mod.rs: search_logs()
+  → resolve_search_query() (commands/search/query.rs — parse + validate)
   → WorkspaceService::search()  ← P3 Clean Architecture path
     → SearchUseCase::execute() (spawn_blocking on Rayon pool)
       → CasLogFileRepository → MetadataStore::get_all_files() + CAS::retrieve()
+      → SearchBatch (BATCH_SIZE=2000, FILE_CHUNK_SIZE=10)
       → QueryEngineLogSearcher (regex / Aho-Corasick / memchr)
+      → CompiledSearchFilters (time range, log level mask, file path)
       → DiskResultStoreRepo → DiskResultStore::write_results()
   → returns search_id (UUID)
 → cancel_search(searchId) / fetch_search_page(searchId, offset, limit)
@@ -141,6 +148,7 @@ SearchPage.tsx
 - Tantivy index is built during import, but the main UI search still scans CAS files
 - `FilterEngine` / `TimePartitionedIndex` are reserved capabilities, not the main search executor
 - `DiskResultStore` is a **global shared resource** (one instance across all workspaces)
+- `SearchBatch` handles chunked decoding + matching; `SearchUseCase` drives the overall loop
 
 ## Key Design Decisions
 
@@ -149,7 +157,7 @@ SearchPage.tsx
 3. **`spawn_blocking` isolation** — Search/import run on Rayon thread pool, never block the Tauri event loop
 4. **DiskResultStore** — Search results paged to disk to avoid OOM on large result sets
 5. **ReDoS protection** — `regex_engine` validates queries for exponential backtracking before execution
-6. **Rust 1.85 pinned** — `rust-toolchain.toml` enforces reproducible builds
+6. **Rust 1.88 pinned** — `rust-toolchain.toml` enforces reproducible builds
 
 ## Cargo Features
 
