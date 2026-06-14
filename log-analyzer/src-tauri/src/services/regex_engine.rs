@@ -657,10 +657,7 @@ fn has_nested_quantifiers(pattern: &str) -> bool {
     let chars: Vec<char> = pattern.chars().collect();
     let mut i = 0;
     while i < chars.len() {
-        if chars[i] == ')'
-            && i + 1 < chars.len()
-            && matches!(chars[i + 1], '+' | '*' | '{')
-        {
+        if chars[i] == ')' && i + 1 < chars.len() && matches!(chars[i + 1], '+' | '*' | '{') {
             let mut depth = 1;
             let mut j = i as isize - 1;
             while j >= 0 && depth > 0 {
