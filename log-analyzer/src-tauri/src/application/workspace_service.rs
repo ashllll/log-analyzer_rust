@@ -180,6 +180,7 @@ pub trait WatchService: Send + Sync {
 /// 2. 实例存入 AppState.workspace_services HashMap
 /// 3. 后续命令通过 `AppState.get_workspace_service(id)` 获取并调用
 /// 4. 工作区删除时，从 HashMap 移除并释放资源
+#[async_trait]
 pub trait WorkspaceService: SearchService + ImportService + WatchService + Send + Sync {
     /// 获取工作区 ID。
     fn workspace_id(&self) -> &str;
@@ -195,6 +196,11 @@ pub trait WorkspaceService: SearchService + ImportService + WatchService + Send 
 
     /// 获取 SearchEngineManager 实例（供 workspace_repo、cleanup 等使用）。
     fn search_engine(&self) -> &Arc<la_search::SearchEngineManager>;
+
+    /// 关闭所有数据库连接（MetadataStore + SearchEngine）。
+    ///
+    /// 在 workspace 关闭/删除/应用退出时调用，确保 WAL checkpoint。
+    async fn close_databases(&self);
 }
 
 // ============================================================================

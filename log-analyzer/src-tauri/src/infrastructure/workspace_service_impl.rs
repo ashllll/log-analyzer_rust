@@ -112,6 +112,7 @@ impl WorkspaceServiceImpl {
 // WorkspaceService 实现
 // ============================================================================
 
+#[async_trait]
 impl WorkspaceService for WorkspaceServiceImpl {
     fn workspace_id(&self) -> &str {
         &self.workspace_id
@@ -131,6 +132,11 @@ impl WorkspaceService for WorkspaceServiceImpl {
 
     fn search_engine(&self) -> &Arc<la_search::SearchEngineManager> {
         self.repo.search_engine()
+    }
+
+    async fn close_databases(&self) {
+        self.repo.metadata_store().close().await;
+        self.repo.search_engine().close().await;
     }
 }
 

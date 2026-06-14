@@ -40,10 +40,9 @@ use crate::utils::validation::validate_workspace_id;
 use crate::utils::workspace_paths::{build_workspace_id, resolve_workspace_dir};
 
 /// 关闭工作区数据库连接（MetadataStore + SearchEngine）。
-/// 消除 workspace.rs 和 main.rs 之间的重复 close 模式。
+/// 委托给 WorkspaceService::close_databases()。
 async fn close_workspace_databases(service: &WorkspaceServiceRef) {
-    service.metadata_store().close().await;
-    service.search_engine().close().await;
+    service.close_databases().await;
 }
 
 /// Workspace load response
