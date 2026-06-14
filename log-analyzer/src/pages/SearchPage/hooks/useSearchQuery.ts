@@ -3,7 +3,7 @@
  * 封装查询字符串、结构化查询、自动保存/加载、防抖触发逻辑
  */
 import { useState, useEffect, useCallback } from 'react';
-import { SearchQueryBuilder } from '../../../services/SearchQueryBuilder';
+import { SearchQueryBuilder, parseQueryFromString } from '../../../services/SearchQueryBuilder';
 import { saveQuery, loadQuery, clearQuery } from '../../../services/queryStorage';
 import { splitQueryByPipe } from '../../../utils/searchPatterns';
 import type { SearchQuery } from '../../../types/search';
@@ -106,7 +106,7 @@ export function useSearchQuery(): UseSearchQueryReturn {
     (rawQuery: string, keywordGroups: KeywordGroup[], options: SearchParsingOptions): SearchQuery => {
       const baseQuery = currentQuery
         ? syncStructuredQueryWithSettings(currentQuery, options)
-        : SearchQueryBuilder.fromString(rawQuery, keywordGroups, options).getQuery();
+        : parseQueryFromString(rawQuery, keywordGroups, options);
 
       return {
         ...baseQuery,
@@ -146,15 +146,15 @@ export function useSearchQuery(): UseSearchQueryReturn {
       onError: (msg: string) => void
     ) => {
       const builder = currentQuery
-        ? (SearchQueryBuilder.import(JSON.stringify(currentQuery)) ??
-           SearchQueryBuilder.fromString(query, keywordGroups, options))
-        : SearchQueryBuilder.fromString(query, keywordGroups, options);
+        ? SearchQueryBuilder.import(JSON.stringify(currentQuery))
+        : null;
+      const b = builder ?? SearchQueryBuilder.fromString(query, keywordGroups, options);
 
-      const existing = builder.findTermByValue(ruleRegex);
+      const existing = b.findTermByValue(ruleRegex);
       if (existing) {
-        builder.toggleTerm(existing.id);
+        b.toggleTerm(existing.id);
       } else {
-        builder.addTerm(ruleRegex, {
+        b.addTerm(ruleRegex, {
           source: 'preset',
           isRegex: options.regexEnabled && /[.*+?^${}()|[\]\\]/.test(ruleRegex),
           operator: 'OR',
@@ -162,7 +162,7 @@ export function useSearchQuery(): UseSearchQueryReturn {
         });
       }
 
-      const validation = builder.validate();
+      const validation = b.validate();
       if (!validation.isValid) {
         const errors = validation.issues
           .filter((i) => i.severity === 'error')
@@ -172,9 +172,9 @@ export function useSearchQuery(): UseSearchQueryReturn {
         return;
       }
 
-      const newQuery = syncStructuredQueryWithSettings(builder.getQuery(), options);
+      const newQuery = syncStructuredQueryWithSettings(b.getQuery(), options);
       setCurrentQueryState(newQuery);
-      setQueryState(builder.toQueryString());
+      setQueryState(b.toQueryString());
     },
     [query, currentQuery]
   );

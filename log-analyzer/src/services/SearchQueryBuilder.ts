@@ -11,7 +11,76 @@ import {
 import type { KeywordGroup } from '../types/common';
 import { looksLikeRegexPattern, splitQueryByPipe } from '../utils/searchPatterns';
 
-// FIX(HI-16): SearchQuery 运行时验证 Schema
+// ── Standalone query-parsing (extracted from class for hook use) ──
+
+function generateId(): string {
+  return `query_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
+function generateTermId(): string {
+  return `term_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
+
+export interface ParseStringOptions {
+  caseSensitive?: boolean;
+  regexEnabled?: boolean;
+}
+
+/**
+ * Parse a raw query string (pipe-separated) into a SearchQuery.
+ *
+ * This standalone function replaces the `SearchQueryBuilder.fromString` static
+ * method for direct use by the `useSearchQuery` hook.
+ */
+export function parseQueryFromString(
+  queryString: string,
+  keywordGroups: KeywordGroup[] = [],
+  options?: ParseStringOptions,
+): SearchQuery {
+  const caseSensitive = options?.caseSensitive ?? false;
+  const regexEnabled = options?.regexEnabled ?? true;
+  const terms: SearchTerm[] = [];
+
+  if (queryString && queryString.trim().length > 0) {
+    const rawTerms = splitQueryByPipe(queryString);
+    rawTerms.forEach((value, idx) => {
+      let source: TermSource = 'user';
+      let presetGroupId: string | undefined;
+      for (const group of keywordGroups) {
+        if (group.patterns && group.patterns.some((p) => p.regex === value)) {
+          source = 'preset';
+          presetGroupId = group.id;
+          break;
+        }
+      }
+      terms.push({
+        id: generateTermId(),
+        value,
+        operator: 'OR' as QueryOperator,
+        source,
+        presetGroupId,
+        isRegex: regexEnabled && looksLikeRegexPattern(value),
+        priority: rawTerms.length - idx,
+        enabled: true,
+        caseSensitive,
+      });
+    });
+  }
+
+  return {
+    id: generateId(),
+    terms,
+    globalOperator: 'OR',
+    filters: undefined,
+    metadata: {
+      createdAt: Date.now(),
+      lastModified: Date.now(),
+      executionCount: 0,
+      label: undefined,
+    },
+  };
+}
+
+// ── FIX(HI-16): SearchQuery 运行时验证 Schema ──
 const SearchTermSchema = z.object({
   id: z.string(),
   value: z.string(),

@@ -1,6 +1,6 @@
 import type { KeywordGroup } from '../../../types/common';
 import type { SearchQuery, SearchTerm } from '../../../types/search';
-import { SearchQueryBuilder } from '../../../services/SearchQueryBuilder';
+import { parseQueryFromString } from '../../../services/SearchQueryBuilder';
 import { looksLikeRegexPattern, splitQueryByPipe } from '../../../utils/searchPatterns';
 
 export interface SearchParsingOptions {
@@ -28,7 +28,7 @@ export const buildStructuredQueryForSearch = (
 ): SearchQuery => {
   const baseQuery = currentQuery
     ? syncStructuredQueryWithSettings(currentQuery, options)
-    : SearchQueryBuilder.fromString(rawQuery, keywordGroups, options).getQuery();
+    : parseQueryFromString(rawQuery, keywordGroups, options);
 
   return {
     ...baseQuery,
