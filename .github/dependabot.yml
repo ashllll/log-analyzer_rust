@@ -1,0 +1,51 @@
+# Dependabot configuration for automated dependency updates
+# https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options
+
+version: 2
+updates:
+  # GitHub Actions — weekly security + version updates
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Shanghai"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "github-actions"
+
+  # Rust — cargo workspace
+  - package-ecosystem: "cargo"
+    directory: "log-analyzer/src-tauri/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Shanghai"
+    commit-message:
+      prefix: "build"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "rust"
+    open-pull-requests-limit: 10
+
+  # Frontend — npm
+  - package-ecosystem: "npm"
+    directory: "log-analyzer/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Shanghai"
+    commit-message:
+      prefix: "build"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "javascript"
+    open-pull-requests-limit: 10
