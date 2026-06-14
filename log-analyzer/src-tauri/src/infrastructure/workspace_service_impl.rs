@@ -20,7 +20,6 @@ use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::thread;
 use tokio_util::sync::CancellationToken;
 
 use crate::application::watch::{WatchEvent, WatchEventKind};
@@ -545,7 +544,7 @@ impl WatchService for WorkspaceServiceImpl {
         // ── 2. Check not already watching ──
         {
             let state = self.watcher_state.lock();
-            if state.as_ref().map(|w| w.is_active).unwrap_or(false) {
+            if state.is_some() {
                 return Err(AppError::validation_error(
                     "Workspace is already being watched".to_string(),
                 ));
@@ -591,35 +590,27 @@ impl WatchService for WorkspaceServiceImpl {
             }
         });
 
-        // ── 4. Create WatcherState ──
-        let watcher_state = WatcherState {
-            workspace_id: self.workspace_id.clone(),
-            watched_path: watch_path_buf.clone(),
-            file_offsets: HashMap::new(),
-            line_counts: HashMap::new(),
-            is_active: true,
-            thread_handle: Arc::new(parking_lot::Mutex::new(None)),
-            watcher: Arc::new(parking_lot::Mutex::new(Some(watcher))),
-        };
-
-        let thread_handle_arc = Arc::clone(&watcher_state.thread_handle);
-
-        // ── 5. Store in self ──
-        *self.watcher_state.lock() = Some(watcher_state);
-
-        // ── 6. Spawn background thread via WatcherRunner (P7) ──
+        // ── 4. Create WatcherRunner (owns FileTailer internally) ──
         let runner = WatcherRunner::new(
             Arc::clone(&self.event_publisher),
             self.repo.cas().clone(),
             self.repo.metadata_store().clone(),
             Arc::clone(self.repo.search_engine()),
-            Arc::clone(&self.watcher_state),
+            watch_path_buf,
             self.workspace_id.clone(),
         );
-        let handle = thread::spawn(move || runner.run(rx));
+        let handle = std::thread::spawn(move || runner.run(rx));
 
-        // ── 8. Store thread handle for later join ──
-        *thread_handle_arc.lock() = Some(handle);
+        // ── 5. Store state for later stop ──
+        *self.watcher_state.lock() = Some(WatcherState {
+            workspace_id: self.workspace_id.clone(),
+            watched_path: PathBuf::from(watch_path),
+            file_offsets: HashMap::new(),
+            line_counts: HashMap::new(),
+            is_active: true,
+            thread_handle: Arc::new(parking_lot::Mutex::new(Some(handle))),
+            watcher: Arc::new(parking_lot::Mutex::new(Some(watcher))),
+        });
 
         Ok(())
     }
