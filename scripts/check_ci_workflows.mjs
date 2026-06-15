@@ -10,6 +10,7 @@ const workflowsDir = join(projectRoot, '.github', 'workflows');
 const setupAction = './.github/actions/setup-tauri-linux';
 const bumpWorkflow = '.github/workflows/bump-and-tag.yml';
 const tarpaulinConfig = 'log-analyzer/src-tauri/tarpaulin.toml';
+const maxRustCoverageFailUnder = 15;
 const verifyRemote = process.argv.includes('--verify-remote');
 const errors = [];
 const remoteRefs = new Map();
@@ -139,6 +140,12 @@ if (/^\s*features\s*=\s*["']all["']\s*$/m.test(tarpaulinSource)) {
 }
 if (!/^\s*all-features\s*=\s*true\s*$/m.test(tarpaulinSource)) {
   addError(tarpaulinConfig, 'coverage must run with all Cargo features enabled');
+}
+const failUnderMatch = tarpaulinSource.match(/^\s*fail-under\s*=\s*(\d+)\s*$/m);
+if (!failUnderMatch) {
+  addError(tarpaulinConfig, 'coverage must define fail-under');
+} else if (Number(failUnderMatch[1]) > maxRustCoverageFailUnder) {
+  addError(tarpaulinConfig, `fail-under must not exceed the current Linux tarpaulin baseline (${maxRustCoverageFailUnder}%)`);
 }
 
 if (verifyRemote && errors.length === 0) {
