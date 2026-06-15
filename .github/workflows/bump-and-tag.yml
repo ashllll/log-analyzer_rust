@@ -27,7 +27,7 @@ jobs:
       !contains(github.event.workflow_run.head_commit.message, '[skip ci]')
     permissions:
       contents: write
-      # ME-48: Removed actions: write to follow principle of least privilege
+      actions: write # Required to dispatch the release workflow after tagging.
 
     steps:
       - name: Checkout repository
@@ -90,6 +90,7 @@ jobs:
 
           git add \
             log-analyzer/package.json \
+            log-analyzer/src-tauri/Cargo.lock \
             log-analyzer/src-tauri/Cargo.toml \
             log-analyzer/src-tauri/tauri.conf.json \
             log-analyzer/src-tauri/crates/la-core/Cargo.toml \

@@ -15,8 +15,11 @@ const versionFiles = [
   { kind: 'cargo', path: 'log-analyzer/src-tauri/crates/la-core/Cargo.toml', label: 'la-core/Cargo.toml' },
   { kind: 'cargo', path: 'log-analyzer/src-tauri/crates/la-storage/Cargo.toml', label: 'la-storage/Cargo.toml' },
   { kind: 'cargo', path: 'log-analyzer/src-tauri/crates/la-search/Cargo.toml', label: 'la-search/Cargo.toml' },
-  { kind: 'cargo', path: 'log-analyzer/src-tauri/crates/la-archive/Cargo.toml', label: 'la-archive/Cargo.toml' },
+  { kind: 'cargo', path: 'log-analyzer/src-tauri/crates/la-archive/Cargo.toml', label: 'la-archive/Cargo.toml' }
 ];
+
+const cargoLockPath = 'log-analyzer/src-tauri/Cargo.lock';
+const cargoLockPackageNames = ['log-analyzer', 'la-core', 'la-storage', 'la-search', 'la-archive'];
 
 function usage() {
   console.error(`Usage:
@@ -34,7 +37,7 @@ function parseSemver(version) {
   if (!isSemver(version)) {
     throw new Error(`Invalid semver version: ${version}`);
   }
-  return version.split('.').map((part) => Number(part));
+  return version.split('.').map(part => Number(part));
 }
 
 function compareSemver(left, right) {
@@ -53,7 +56,7 @@ function bumpPatch(version) {
 function git(args) {
   return execFileSync('git', args, {
     cwd: repoRoot,
-    encoding: 'utf8',
+    encoding: 'utf8'
   }).trim();
 }
 
@@ -91,34 +94,74 @@ function writeFileVersion(file, version) {
   fs.writeFileSync(absPath, updated);
 }
 
-function readWorkspaceVersionState() {
-  const versions = versionFiles.map((file) => ({
-    ...file,
-    version: readFileVersion(file),
-  }));
+function refreshCargoLock() {
+  execFileSync('cargo', ['metadata', '--format-version', '1', '--no-deps'], {
+    cwd: path.join(repoRoot, 'log-analyzer', 'src-tauri'),
+    stdio: ['ignore', 'ignore', 'inherit']
+  });
+}
 
-  const unique = [...new Set(versions.map((entry) => entry.version))];
+function readCargoLockVersions() {
+  const absPath = path.join(repoRoot, cargoLockPath);
+  const content = fs.readFileSync(absPath, 'utf8');
+  const packageBlocks = content.split(/\n(?=\[\[package\]\]\n)/);
+  const versions = [];
+
+  for (const packageName of cargoLockPackageNames) {
+    const block = packageBlocks.find(entry => {
+      const name = entry.match(/^name = "([^"]+)"/m);
+      return name?.[1] === packageName;
+    });
+
+    if (!block) {
+      throw new Error(`Cargo.lock does not contain package ${packageName}`);
+    }
+
+    const version = block.match(/^version = "([^"]+)"/m);
+    if (!version || !isSemver(version[1])) {
+      throw new Error(`Cargo.lock package ${packageName} does not contain a valid version`);
+    }
+
+    versions.push({
+      label: `Cargo.lock:${packageName}`,
+      version: version[1]
+    });
+  }
+
+  return versions;
+}
+
+function readWorkspaceVersionState() {
+  const versions = [
+    ...versionFiles.map(file => ({
+      ...file,
+      version: readFileVersion(file)
+    })),
+    ...readCargoLockVersions()
+  ];
+
+  const unique = [...new Set(versions.map(entry => entry.version))];
   if (unique.length !== 1) {
-    const details = versions.map((entry) => `${entry.label}=${entry.version}`).join(', ');
+    const details = versions.map(entry => `${entry.label}=${entry.version}`).join(', ');
     throw new Error(`Workspace versions are inconsistent: ${details}`);
   }
 
   return {
     currentVersion: unique[0],
-    versions,
+    versions
   };
 }
 
 function findLatestTagVersion() {
   const tags = git(['tag', '-l', 'v*', '--sort=-v:refname'])
     .split('\n')
-    .map((tag) => tag.trim())
+    .map(tag => tag.trim())
     .filter(Boolean);
 
-  const latestTag = tags.find((tag) => /^v\d+\.\d+\.\d+$/.test(tag)) ?? 'v0.0.0';
+  const latestTag = tags.find(tag => /^v\d+\.\d+\.\d+$/.test(tag)) ?? 'v0.0.0';
   return {
     latestTag,
-    latestTagVersion: latestTag.slice(1),
+    latestTagVersion: latestTag.slice(1)
   };
 }
 
@@ -132,9 +175,7 @@ function planReleaseVersion() {
 
   if (compareSemver(currentVersion, latestTagVersion) > 0) {
     targetVersion = currentVersion;
-    strategy = compareSemver(currentVersion, nextPatchVersion) === 0
-      ? 'use_current_workspace_version'
-      : 'preserve_ahead_workspace_version';
+    strategy = compareSemver(currentVersion, nextPatchVersion) === 0 ? 'use_current_workspace_version' : 'preserve_ahead_workspace_version';
   }
 
   const changed = currentVersion !== targetVersion;
@@ -147,7 +188,7 @@ function planReleaseVersion() {
     targetVersion,
     tag: `v${targetVersion}`,
     changed: String(changed),
-    strategy,
+    strategy
   };
 }
 
@@ -167,7 +208,7 @@ function main() {
     const state = readWorkspaceVersionState();
     emitOutputs({
       currentVersion: state.currentVersion,
-      checked: 'true',
+      checked: 'true'
     });
     return;
   }
@@ -193,6 +234,7 @@ function main() {
       for (const file of versionFiles) {
         writeFileVersion(file, targetVersion);
       }
+      refreshCargoLock();
     }
 
     const verified = readWorkspaceVersionState();
@@ -201,7 +243,7 @@ function main() {
       targetVersion,
       changed: String(state.currentVersion !== targetVersion),
       tag: `v${targetVersion}`,
-      applied: 'true',
+      applied: 'true'
     });
     return;
   }

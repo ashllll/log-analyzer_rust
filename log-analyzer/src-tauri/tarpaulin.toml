@@ -33,7 +33,7 @@ doc = false
 verbose = false
 
 # 启用所有 features，与 CI 测试保持一致（--all-features）
-features = "all"
+all-features = true
 
 # 跳过特定 crate
 skip-clean = false

@@ -1,20 +1,22 @@
 #!/usr/bin/env node
 
-import { execFileSync } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { execFileSync } from 'node:child_process';
+import { readdirSync, readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const workflowsDir = join(projectRoot, ".github", "workflows");
-const setupAction = "./.github/actions/setup-tauri-linux";
-const verifyRemote = process.argv.includes("--verify-remote");
+const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const workflowsDir = join(projectRoot, '.github', 'workflows');
+const setupAction = './.github/actions/setup-tauri-linux';
+const bumpWorkflow = '.github/workflows/bump-and-tag.yml';
+const tarpaulinConfig = 'log-analyzer/src-tauri/tarpaulin.toml';
+const verifyRemote = process.argv.includes('--verify-remote');
 const errors = [];
 const remoteRefs = new Map();
 const remoteQueryAttempts = 3;
 
 const workflowFiles = readdirSync(workflowsDir)
-  .filter((name) => name.endsWith(".yml") || name.endsWith(".yaml"))
+  .filter(name => name.endsWith('.yml') || name.endsWith('.yaml'))
   .sort();
 
 function addError(file, message) {
@@ -22,12 +24,7 @@ function addError(file, message) {
 }
 
 function sleep(milliseconds) {
-  Atomics.wait(
-    new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT)),
-    0,
-    0,
-    milliseconds,
-  );
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT)), 0, 0, milliseconds);
 }
 
 function queryRemoteRefs(repository) {
@@ -35,16 +32,12 @@ function queryRemoteRefs(repository) {
 
   for (let attempt = 1; attempt <= remoteQueryAttempts; attempt += 1) {
     try {
-      return execFileSync(
-        "git",
-        ["ls-remote", `https://github.com/${repository}.git`],
-        {
-          encoding: "utf8",
-          env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
-          stdio: ["ignore", "pipe", "pipe"],
-          timeout: 30_000,
-        },
-      );
+      return execFileSync('git', ['ls-remote', `https://github.com/${repository}.git`], {
+        encoding: 'utf8',
+        env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: 30_000
+      });
     } catch (error) {
       lastError = error;
       if (attempt < remoteQueryAttempts) {
@@ -58,7 +51,7 @@ function queryRemoteRefs(repository) {
 
 function jobBlocks(source) {
   const lines = source.split(/\r?\n/);
-  const jobsLine = lines.findIndex((line) => line === "jobs:");
+  const jobsLine = lines.findIndex(line => line === 'jobs:');
   if (jobsLine === -1) {
     return [];
   }
@@ -78,7 +71,7 @@ function jobBlocks(source) {
         break;
       }
     }
-    blocks.push({ name: match[1], text: lines.slice(start, end).join("\n") });
+    blocks.push({ name: match[1], text: lines.slice(start, end).join('\n') });
     index = end - 1;
   }
   return blocks;
@@ -86,19 +79,19 @@ function jobBlocks(source) {
 
 for (const file of workflowFiles) {
   const relativeFile = `.github/workflows/${file}`;
-  const source = readFileSync(join(workflowsDir, file), "utf8");
+  const source = readFileSync(join(workflowsDir, file), 'utf8');
 
-  if (source.includes("\t")) {
-    addError(relativeFile, "YAML must not contain tab indentation");
+  if (source.includes('\t')) {
+    addError(relativeFile, 'YAML must not contain tab indentation');
   }
 
   for (const match of source.matchAll(/^\s*uses:\s*([^\s#]+)\s*$/gm)) {
     const action = match[1];
-    if (action.startsWith("./")) {
+    if (action.startsWith('./')) {
       continue;
     }
 
-    const separator = action.lastIndexOf("@");
+    const separator = action.lastIndexOf('@');
     if (separator === -1) {
       addError(relativeFile, `action is missing a ref: ${action}`);
       continue;
@@ -111,40 +104,41 @@ for (const file of workflowFiles) {
       continue;
     }
 
-    const repository = actionPath.split("/").slice(0, 2).join("/");
+    const repository = actionPath.split('/').slice(0, 2).join('/');
     if (!remoteRefs.has(repository)) {
       remoteRefs.set(repository, new Set());
     }
     remoteRefs.get(repository).add(ref);
   }
 
-  if (source.includes("libwebkit2gtk-4.1-dev")) {
-    addError(
-      relativeFile,
-      `native dependencies must be defined only in ${setupAction}`,
-    );
+  if (source.includes('libwebkit2gtk-4.1-dev')) {
+    addError(relativeFile, `native dependencies must be defined only in ${setupAction}`);
   }
 
   for (const job of jobBlocks(source)) {
-    const targetsUbuntu =
-      /runs-on:\s*ubuntu-[^\s]+/.test(job.text) ||
-      /-\s*os:\s*ubuntu-[^\s]+/.test(job.text);
-    const buildsTauri =
-      /\bcargo\s+(build|check|clippy|test|tarpaulin)\b/.test(job.text) ||
-      /\bnpm\s+run\s+tauri\s+build\b/.test(job.text) ||
-      /uses:\s*tauri-apps\/tauri-action@/.test(job.text);
+    const targetsUbuntu = /runs-on:\s*ubuntu-[^\s]+/.test(job.text) || /-\s*os:\s*ubuntu-[^\s]+/.test(job.text);
+    const buildsTauri = /\bcargo\s+(build|check|clippy|test|tarpaulin)\b/.test(job.text) || /\bnpm\s+run\s+tauri\s+build\b/.test(job.text) || /uses:\s*tauri-apps\/tauri-action@/.test(job.text);
 
-    if (
-      targetsUbuntu &&
-      buildsTauri &&
-      !job.text.includes(`uses: ${setupAction}`)
-    ) {
-      addError(
-        relativeFile,
-        `job "${job.name}" builds Rust/Tauri on Ubuntu without ${setupAction}`,
-      );
+    if (targetsUbuntu && buildsTauri && !job.text.includes(`uses: ${setupAction}`)) {
+      addError(relativeFile, `job "${job.name}" builds Rust/Tauri on Ubuntu without ${setupAction}`);
     }
   }
+}
+
+const bumpWorkflowSource = readFileSync(join(projectRoot, bumpWorkflow), 'utf8');
+if (!/^\s*actions:\s*write\s*(?:#.*)?$/m.test(bumpWorkflowSource)) {
+  addError(bumpWorkflow, 'release dispatch requires job permissions.actions: write');
+}
+if (!bumpWorkflowSource.includes('log-analyzer/src-tauri/Cargo.lock')) {
+  addError(bumpWorkflow, 'version bump commits must include log-analyzer/src-tauri/Cargo.lock');
+}
+
+const tarpaulinSource = readFileSync(join(projectRoot, tarpaulinConfig), 'utf8');
+if (/^\s*features\s*=\s*["']all["']\s*$/m.test(tarpaulinSource)) {
+  addError(tarpaulinConfig, 'use all-features = true, not features = "all"');
+}
+if (!/^\s*all-features\s*=\s*true\s*$/m.test(tarpaulinSource)) {
+  addError(tarpaulinConfig, 'coverage must run with all Cargo features enabled');
 }
 
 if (verifyRemote && errors.length === 0) {
@@ -153,10 +147,7 @@ if (verifyRemote && errors.length === 0) {
     try {
       output = queryRemoteRefs(repository);
     } catch {
-      addError(
-        repository,
-        `unable to query remote refs after ${remoteQueryAttempts} attempts`,
-      );
+      addError(repository, `unable to query remote refs after ${remoteQueryAttempts} attempts`);
       continue;
     }
 
@@ -164,7 +155,7 @@ if (verifyRemote && errors.length === 0) {
       output
         .split(/\r?\n/)
         .filter(Boolean)
-        .map((line) => line.split(/\s+/)[0]),
+        .map(line => line.split(/\s+/)[0])
     );
     for (const ref of refs) {
       if (!advertisedShas.has(ref)) {
@@ -175,13 +166,11 @@ if (verifyRemote && errors.length === 0) {
 }
 
 if (errors.length > 0) {
-  console.error("CI workflow validation failed:");
+  console.error('CI workflow validation failed:');
   for (const error of errors) {
     console.error(`- ${error}`);
   }
   process.exit(1);
 }
 
-console.log(
-  `CI workflow validation passed (${workflowFiles.length} workflows, ${remoteRefs.size} action repositories${verifyRemote ? ", remote refs verified" : ""}).`,
-);
+console.log(`CI workflow validation passed (${workflowFiles.length} workflows, ${remoteRefs.size} action repositories${verifyRemote ? ', remote refs verified' : ''}).`);
