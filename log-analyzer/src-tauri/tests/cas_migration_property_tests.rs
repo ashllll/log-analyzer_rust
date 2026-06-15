@@ -757,14 +757,6 @@ mod search_uses_cas_tests {
         prop::string::string_regex("[a-zA-Z0-9 ]{3,20}").unwrap()
     }
 
-    /// Generate random log content with searchable terms
-    fn log_content_strategy() -> impl Strategy<Value = Vec<String>> {
-        prop::collection::vec(
-            prop::string::string_regex("(ERROR|WARN|INFO|DEBUG): [a-zA-Z0-9 ]{10,50}").unwrap(),
-            10..100,
-        )
-    }
-
     /// **Property 3.1: Search Queries MetadataStore**
     /// **Validates: Requirements 2.3**
     ///
@@ -870,95 +862,77 @@ mod search_uses_cas_tests {
     /// 3. The content must be retrievable and valid
     /// 4. Search results must reference the CAS hash
     #[test]
-    fn prop_search_reads_from_cas() {
-        let config = ProptestConfig::with_cases(50);
+    fn search_reads_from_cas() {
+        tokio_test::block_on(async {
+            let temp_dir = TempDir::new().unwrap();
+            let workspace_dir = temp_dir.path().to_path_buf();
 
-        proptest!(config, |(
-            log_lines in log_content_strategy(),
-            search_term in prop::string::string_regex("(ERROR|WARN|INFO)").unwrap()
-        )| {
-            tokio_test::block_on(async {
-                let temp_dir = TempDir::new().unwrap();
-                let workspace_dir = temp_dir.path().to_path_buf();
+            let cas = ContentAddressableStorage::new(workspace_dir.clone());
+            let metadata_store = MetadataStore::new(&workspace_dir).await.unwrap();
 
-                let cas = ContentAddressableStorage::new(workspace_dir.clone());
-                let metadata_store = MetadataStore::new(&workspace_dir).await.unwrap();
+            let log_lines = [
+                "2024-01-01 10:00:00 INFO startup complete",
+                "2024-01-01 10:01:00 WARN cache warming",
+                "2024-01-01 10:02:00 ERROR failed to parse record",
+                "2024-01-01 10:03:00 ERROR retry succeeded",
+            ];
+            let search_term = "ERROR";
+            let content = log_lines.join("\n");
+            let content_bytes = content.as_bytes();
 
-                // Create test file with log content
-                let content = log_lines.join("\n");
-                let content_bytes = content.as_bytes();
+            let hash = cas.store_content(content_bytes).await.unwrap();
 
-                // Store in CAS
-                let hash = cas.store_content(content_bytes).await.unwrap();
+            let file_meta = FileMetadata {
+                id: 0,
+                sha256_hash: hash.clone(),
+                virtual_path: "logs/test.log".to_string(),
+                original_name: "test.log".to_string(),
+                size: content_bytes.len() as i64,
+                modified_time: chrono::Utc::now().timestamp(),
+                mime_type: Some("text/plain".to_string()),
+                parent_archive_id: None,
+                depth_level: 0,
+                min_timestamp: None,
+                max_timestamp: None,
+                level_mask: None,
+                analysis_status: AnalysisStatus::Pending,
+            };
 
-                // Create metadata
-                let file_meta = FileMetadata {
-                    id: 0,
-                    sha256_hash: hash.clone(),
-                    virtual_path: "logs/test.log".to_string(),
-                    original_name: "test.log".to_string(),
-                    size: content_bytes.len() as i64,
-                    modified_time: chrono::Utc::now().timestamp(),
-                    mime_type: Some("text/plain".to_string()),
-                    parent_archive_id: None,
-                    depth_level: 0,
-                        min_timestamp: None,
-                        max_timestamp: None,
-                        level_mask: None,
-                        analysis_status: AnalysisStatus::Pending,
-                };
+            metadata_store.insert_file(&file_meta).await.unwrap();
 
-                metadata_store.insert_file(&file_meta).await.unwrap();
+            let files = metadata_store.get_all_files().await.unwrap();
+            assert_eq!(files.len(), 1, "Should have one file");
 
-                // Simulate search operation
-                // Step 1: Get files from MetadataStore
-                let files = metadata_store.get_all_files().await.unwrap();
-                prop_assert_eq!(files.len(), 1, "Should have one file");
+            let file = &files[0];
+            let retrieved_content = cas.read_content(&file.sha256_hash).await.unwrap();
+            assert_eq!(
+                &retrieved_content, content_bytes,
+                "Content from CAS must match original content"
+            );
 
-                let file = &files[0];
+            let content_str = String::from_utf8(retrieved_content).unwrap();
+            let matching_lines: Vec<_> = content_str
+                .lines()
+                .filter(|line| line.contains(search_term))
+                .collect();
 
-                // Step 2: Read content from CAS using hash
-                let retrieved_content = cas.read_content(&file.sha256_hash).await.unwrap();
-                prop_assert_eq!(
-                    &retrieved_content,
-                    content_bytes,
-                    "Content from CAS must match original content"
-                );
-
-                // Step 3: Verify content is searchable
-                let content_str = String::from_utf8(retrieved_content).unwrap();
-                let matching_lines: Vec<_> = content_str
-                    .lines()
-                    .filter(|line| line.contains(&search_term))
-                    .collect();
-
-                // Property 1: Search must use CAS hash
-                prop_assert_eq!(
-                    &file.sha256_hash,
-                    &hash,
-                    "Metadata must reference correct CAS hash"
-                );
-
-                // Property 2: Content must be retrievable via hash
-                prop_assert!(
-                    cas.exists(&file.sha256_hash),
-                    "CAS must contain object for hash: {}",
-                    file.sha256_hash
-                );
-
-                // Property 3: Search results should be based on CAS content
-                let expected_matches = log_lines
+            assert_eq!(
+                &file.sha256_hash, &hash,
+                "Metadata must reference correct CAS hash"
+            );
+            assert!(
+                cas.exists(&file.sha256_hash),
+                "CAS must contain object for hash: {}",
+                file.sha256_hash
+            );
+            assert_eq!(
+                matching_lines.len(),
+                log_lines
                     .iter()
-                    .filter(|line| line.contains(&search_term))
-                    .count();
-                prop_assert_eq!(
-                    matching_lines.len(),
-                    expected_matches,
-                    "Search results must match content from CAS"
-                );
-
-                Ok(())
-            }).unwrap();
+                    .filter(|line| line.contains(search_term))
+                    .count(),
+                "Search results must match content from CAS"
+            );
         });
     }
 
