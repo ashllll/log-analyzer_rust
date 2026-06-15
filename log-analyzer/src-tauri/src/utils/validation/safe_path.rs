@@ -35,9 +35,12 @@ impl SafePath {
         };
 
         // Canonicalize both paths (symlink-aware)
-        let base_canonical = base_dir
-            .canonicalize()
-            .map_err(|e| format!("Cannot resolve base directory '{}': {e}", base_dir.display()))?;
+        let base_canonical = base_dir.canonicalize().map_err(|e| {
+            format!(
+                "Cannot resolve base directory '{}': {e}",
+                base_dir.display()
+            )
+        })?;
         let canonical = full
             .canonicalize()
             .map_err(|e| format!("Cannot resolve path '{path}': {e}"))?;
@@ -54,6 +57,7 @@ impl SafePath {
     }
 
     /// Create from an already-validated path (skip checks).
+    #[allow(dead_code)]
     pub(crate) fn from_validated(path: PathBuf) -> Self {
         Self(path)
     }

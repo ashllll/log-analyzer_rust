@@ -105,10 +105,9 @@ impl TaskRegistry {
         self.manager.lock().clone()
     }
     pub fn scheduler(&self) -> Option<Arc<dyn TaskScheduler>> {
-        self.manager
-            .lock()
-            .as_ref()
-            .map(|tm| Arc::new(TaskManagerAdapter::new(Arc::new(tm.clone()))) as Arc<dyn TaskScheduler>)
+        self.manager.lock().as_ref().map(|tm| {
+            Arc::new(TaskManagerAdapter::new(Arc::new(tm.clone()))) as Arc<dyn TaskScheduler>
+        })
     }
 }
 
@@ -140,6 +139,7 @@ pub struct AppState {
     pub sync: SyncRegistry,
 }
 
+#[allow(clippy::derivable_impls)]
 impl Default for AppState {
     fn default() -> Self {
         Self {

@@ -152,7 +152,10 @@ mod tests {
         assert_eq!(first.lines.len(), 2);
 
         // Append more content
-        let mut f = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
+        let mut f = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
         f.write_all(b"line3\nline4\n").unwrap();
         drop(f);
 
@@ -212,7 +215,10 @@ mod tests {
         let vp = tailer.virtual_path(&path);
         // Path separator varies by OS — just verify it starts with "sub"
         assert!(vp.starts_with("sub"), "Expected 'sub/...', got '{vp}'");
-        assert!(vp.ends_with("test.log"), "Expected '.../test.log', got '{vp}'");
+        assert!(
+            vp.ends_with("test.log"),
+            "Expected '.../test.log', got '{vp}'"
+        );
     }
 
     #[test]

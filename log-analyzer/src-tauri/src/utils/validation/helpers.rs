@@ -328,6 +328,7 @@ pub fn validate_workspace_id(id: &str) -> Result<(), String> {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
 
@@ -755,7 +756,4 @@ fn is_sensitive_system_path(path: &std::path::Path) -> bool {
     }
 }
 
-// 包含属性测试模块
-#[cfg(test)]
-#[path = "validation_property_tests.rs"]
-mod validation_property_tests;
+// 属性测试模块已移至 validation/mod.rs
