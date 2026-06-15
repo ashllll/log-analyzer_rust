@@ -20,7 +20,7 @@ chrono.workspace = true
 
 # 验证
 validator = { version = "0.19", features = ["derive"] }
-sanitize-filename = "0.5"
+sanitize-filename = "0.6"
 
 # 配置
 config = "0.15"
