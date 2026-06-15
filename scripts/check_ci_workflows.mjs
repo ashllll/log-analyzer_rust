@@ -150,8 +150,11 @@ if (!failUnderMatch) {
 }
 
 const prepareReleaseSource = readFileSync(join(projectRoot, prepareReleaseScript), 'utf8');
-if (!prepareReleaseSource.includes("['update', '--workspace', '--offline']")) {
-  addError(prepareReleaseScript, 'release apply must refresh Cargo.lock with cargo update --workspace --offline');
+if (!prepareReleaseSource.includes("['update', '--workspace']")) {
+  addError(prepareReleaseScript, 'release apply must refresh Cargo.lock with cargo update --workspace');
+}
+if (prepareReleaseSource.includes('--offline')) {
+  addError(prepareReleaseScript, 'release apply must not use cargo --offline on fresh GitHub runners');
 }
 if (prepareReleaseSource.includes("'metadata', '--format-version', '1', '--no-deps'")) {
   addError(prepareReleaseScript, 'cargo metadata --no-deps does not refresh workspace versions in Cargo.lock');
