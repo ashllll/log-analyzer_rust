@@ -95,7 +95,7 @@ function writeFileVersion(file, version) {
 }
 
 function refreshCargoLock() {
-  execFileSync('cargo', ['metadata', '--format-version', '1', '--no-deps'], {
+  execFileSync('cargo', ['update', '--workspace', '--offline'], {
     cwd: path.join(repoRoot, 'log-analyzer', 'src-tauri'),
     stdio: ['ignore', 'ignore', 'inherit']
   });

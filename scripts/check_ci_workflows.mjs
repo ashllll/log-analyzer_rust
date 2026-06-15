@@ -10,6 +10,7 @@ const workflowsDir = join(projectRoot, '.github', 'workflows');
 const setupAction = './.github/actions/setup-tauri-linux';
 const bumpWorkflow = '.github/workflows/bump-and-tag.yml';
 const tarpaulinConfig = 'log-analyzer/src-tauri/tarpaulin.toml';
+const prepareReleaseScript = 'scripts/prepare-release.mjs';
 const maxRustCoverageFailUnder = 15;
 const verifyRemote = process.argv.includes('--verify-remote');
 const errors = [];
@@ -146,6 +147,14 @@ if (!failUnderMatch) {
   addError(tarpaulinConfig, 'coverage must define fail-under');
 } else if (Number(failUnderMatch[1]) > maxRustCoverageFailUnder) {
   addError(tarpaulinConfig, `fail-under must not exceed the current Linux tarpaulin baseline (${maxRustCoverageFailUnder}%)`);
+}
+
+const prepareReleaseSource = readFileSync(join(projectRoot, prepareReleaseScript), 'utf8');
+if (!prepareReleaseSource.includes("['update', '--workspace', '--offline']")) {
+  addError(prepareReleaseScript, 'release apply must refresh Cargo.lock with cargo update --workspace --offline');
+}
+if (prepareReleaseSource.includes("'metadata', '--format-version', '1', '--no-deps'")) {
+  addError(prepareReleaseScript, 'cargo metadata --no-deps does not refresh workspace versions in Cargo.lock');
 }
 
 if (verifyRemote && errors.length === 0) {
