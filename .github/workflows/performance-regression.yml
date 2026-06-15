@@ -59,7 +59,7 @@ jobs:
           cargo test --workspace --all-features --lib --bins -- --test-threads=4 | tee test-results.txt
 
       - name: Store test results
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6f9cb5f3607
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: workspace-test-results
           path: log-analyzer/src-tauri/test-results.txt
@@ -164,7 +164,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6f9cb5f3607
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: property-test-results
           path: log-analyzer/src-tauri/property-test-results.txt
@@ -195,7 +195,7 @@ jobs:
         run: npm test -- --testPathIgnorePatterns="e2e" --passWithNoTests --coverage
 
       - name: Upload coverage
-        uses: codecov/codecov-action@e28ff129e5465c2c0dcc6a0032977ef9f9f83c9d
+        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: log-analyzer/coverage/lcov.info
@@ -213,7 +213,7 @@ jobs:
 
     steps:
       - name: Download test results
-        uses: actions/download-artifact@95815c38cf2ff2164869cb1c72b48bcb65d49c2b
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: workspace-test-results
 
@@ -227,7 +227,7 @@ jobs:
           echo "\`\`\`" >> test-report.md
 
       - name: Upload report
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6f9cb5f3607
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: workspace-test-report
           path: test-report.md

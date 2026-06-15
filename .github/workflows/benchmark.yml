@@ -89,7 +89,7 @@ jobs:
           "
 
       - name: Upload test results
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6f9cb5f3607
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: test-results-${{ github.sha }}
           path: log-analyzer/src-tauri/test_results.txt
@@ -111,7 +111,7 @@ jobs:
           fetch-depth: 0
 
       - name: Download current test results
-        uses: actions/download-artifact@95815c38cf2ff2164869cb1c72b48bcb65d49c2b
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: test-results-${{ github.sha }}
           path: current-results/

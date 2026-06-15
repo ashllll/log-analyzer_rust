@@ -34,7 +34,7 @@ pub fn canonicalize_path(path: &Path) -> Result<PathBuf, String> {
     {
         // Unix-like: 标准规范化
         path.canonicalize()
-            .map_err(|e| format!("Path canonicalization failed: {}", e))
+            .map_err(|e| format!("Path canonicalization failed: {e}"))
     }
 }
 

@@ -55,7 +55,7 @@ jobs:
             libjavascriptcoregtk-4.1-dev
 
       - name: Install cargo-tarpaulin
-        uses: taiki-e/install-action@56ab7830a50c6281847dd6e53e263adf7b5d3117
+        uses: taiki-e/install-action@7a79fe8c3a13344501c80d99cae481c1c9085912
         with:
           tool: cargo-tarpaulin
 
@@ -70,7 +70,7 @@ jobs:
             --output-dir coverage
 
       - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@e28ff129e5465c2c0dcc6a0032977ef9f9f83c9d
+        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: log-analyzer/src-tauri/coverage/lcov.info
@@ -79,7 +79,7 @@ jobs:
           fail_ci_if_error: false
 
       - name: Upload HTML report
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6f9cb5f3607
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: rust-coverage-html
           path: log-analyzer/src-tauri/coverage/tarpaulin-report.html
