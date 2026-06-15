@@ -20,6 +20,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "check:ci-config": "node ../scripts/check_ci_workflows.mjs",
     "validate:ci": "bash ../scripts/validate-ci.sh",
     "preview": "vite preview",
     "tauri": "tauri",
@@ -28,8 +29,10 @@
     "lint": "eslint src --ext .ts,.tsx",
     "lint:fix": "eslint src --ext .ts,.tsx --fix",
     "test": "jest",
+    "test:ci": "jest --testPathIgnorePatterns=e2e --no-cache --maxWorkers=2",
+    "test:coverage": "jest --testPathIgnorePatterns=e2e --passWithNoTests --coverage --maxWorkers=2",
     "test:watch": "jest --watch",
-    "prepare": "husky"
+    "prepare": "cd .. && node log-analyzer/node_modules/husky/bin.js log-analyzer/.husky"
   },
   "engines": {
     "node": ">=22.12.0",

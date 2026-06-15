@@ -19,8 +19,9 @@ out = ["Html", "Xml", "Lcov"]
 # 超时时间（秒）
 timeout = "600"
 
-# 运行单元测试
-run-types = ["Tests"]
+# Coverage is collected from stable unit targets. Workspace integration tests
+# run separately in CI without instrumentation.
+run-types = ["Lib", "Bins"]
 
 # 排除无关代码
 ignore-tests = false

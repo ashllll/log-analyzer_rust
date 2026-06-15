@@ -1,107 +1,93 @@
 #!/bin/bash
-# 本地 CI 验证脚本
-# 在推送前运行此脚本，确保本地通过所有 CI 检查
+# Non-interactive pre-push validation matching the required CI checks.
 
-set -e  # 遇到错误立即退出
+set -euo pipefail
 
-# 颜色输出
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
-# 项目根目录
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+echo -e "${GREEN}=== Local CI validation ===${NC}"
+echo "Project: $PROJECT_ROOT"
+echo ""
+
+echo -e "${GREEN}[1/12] Validate CI workflow configuration...${NC}"
+cd "$PROJECT_ROOT"
+node scripts/check_ci_workflows.mjs --verify-remote
+echo -e "${GREEN}CI workflow configuration passed${NC}"
+echo ""
+
+echo -e "${GREEN}[2/12] Validate Node.js version and npm lockfile...${NC}"
 cd "$PROJECT_ROOT/log-analyzer"
-
-echo -e "${GREEN}=== 本地 CI 验证脚本 ===${NC}"
-echo "项目路径: $PROJECT_ROOT"
-echo ""
-
-# 检查 Node 版本
 NODE_VERSION=$(node -v)
-echo -e "${YELLOW}Node 版本: $NODE_VERSION${NC}"
-if [[ ! "$NODE_VERSION" =~ v22 ]]; then
-  echo -e "${RED}⚠️  警告: CI 使用 Node 22，本地使用 $NODE_VERSION${NC}"
+echo -e "${YELLOW}Node.js: $NODE_VERSION${NC}"
+NODE_MAJOR=$(node -p 'Number(process.versions.node.split(".")[0])')
+NODE_MINOR=$(node -p 'Number(process.versions.node.split(".")[1])')
+if (( NODE_MAJOR < 22 || (NODE_MAJOR == 22 && NODE_MINOR < 12) )); then
+  echo -e "${RED}Node.js 22.12.0 or newer is required${NC}"
+  exit 1
 fi
+npm ci --dry-run --ignore-scripts
+echo -e "${GREEN}Node.js and npm lockfile passed${NC}"
 echo ""
 
-# ============================================================================
-# 1. 前端 Lint 检查
-# ============================================================================
-echo -e "${GREEN}[1/7] 运行 ESLint...${NC}"
+echo -e "${GREEN}[3/12] Check workflow formatting...${NC}"
+npx prettier --check \
+  "../.github/workflows/*.{yml,yaml}" \
+  "../.github/actions/**/*.{yml,yaml}"
+echo -e "${GREEN}Workflow formatting passed${NC}"
+echo ""
+
+echo -e "${GREEN}[4/12] Run ESLint...${NC}"
 npm run lint
-echo -e "${GREEN}✅ ESLint 通过${NC}"
+echo -e "${GREEN}ESLint passed${NC}"
 echo ""
 
-# ============================================================================
-# 2. TypeScript 类型检查
-# ============================================================================
-echo -e "${GREEN}[2/7] 运行 TypeScript 类型检查...${NC}"
+echo -e "${GREEN}[5/12] Run TypeScript type checking...${NC}"
 npm run type-check
-echo -e "${GREEN}✅ 类型检查通过${NC}"
+echo -e "${GREEN}TypeScript passed${NC}"
 echo ""
 
-# ============================================================================
-# 3. 前端测试
-# ============================================================================
-echo -e "${GREEN}[3/7] 运行前端测试...${NC}"
-NODE_ENV=test npm test -- --testPathIgnorePatterns=e2e --verbose
-echo -e "${GREEN}✅ 前端测试通过${NC}"
+echo -e "${GREEN}[6/12] Run frontend tests and coverage...${NC}"
+NODE_ENV=test CI=true npm run test:ci
+NODE_ENV=test CI=true npm run test:coverage
+echo -e "${GREEN}Frontend tests passed${NC}"
 echo ""
 
-# ============================================================================
-# 4. 前端构建
-# ============================================================================
-echo -e "${GREEN}[4/7] 构建前端...${NC}"
+echo -e "${GREEN}[7/12] Build frontend...${NC}"
 npm run build
-echo -e "${GREEN}✅ 前端构建成功${NC}"
+echo -e "${GREEN}Frontend build passed${NC}"
 echo ""
 
-# ============================================================================
-# 5. Rust 格式检查
-# ============================================================================
-echo -e "${GREEN}[5/7] 检查 Rust 代码格式...${NC}"
-cd src-tauri
+echo -e "${GREEN}[8/12] Check IPC consistency...${NC}"
+cd "$PROJECT_ROOT"
+bash scripts/check_ipc_consistency.sh
+echo -e "${GREEN}IPC consistency passed${NC}"
+echo ""
+
+echo -e "${GREEN}[9/12] Check Rust formatting...${NC}"
+cd "$PROJECT_ROOT/log-analyzer/src-tauri"
 cargo fmt -- --check
-echo -e "${GREEN}✅ 代码格式检查通过${NC}"
+echo -e "${GREEN}Rust formatting passed${NC}"
 echo ""
 
-# ============================================================================
-# 6. Rust Clippy 检查
-# ============================================================================
-echo -e "${GREEN}[6/7] 运行 Clippy...${NC}"
+echo -e "${GREEN}[10/12] Run Clippy...${NC}"
 cargo clippy --all-features --all-targets -- -D warnings
-echo -e "${GREEN}✅ Clippy 检查通过${NC}"
+echo -e "${GREEN}Clippy passed${NC}"
 echo ""
 
-# ============================================================================
-# 7. Rust 测试覆盖率 (可选，需安装 cargo-tarpaulin)
-# ============================================================================
-echo -e "${GREEN}[7/7] 测试覆盖率检查...${NC}"
-if command -v cargo-tarpaulin &> /dev/null; then
-  cargo tarpaulin --config tarpaulin.toml --out Html --output-dir coverage
-  echo -e "${GREEN}✅ 覆盖率报告已生成: coverage/tarpaulin-report.html${NC}"
-else
-  echo -e "${YELLOW}⚠️  cargo-tarpaulin 未安装，跳过覆盖率检查${NC}"
-  echo -e "${YELLOW}   安装命令: cargo install cargo-tarpaulin${NC}"
-fi
+echo -e "${GREEN}[11/12] Run Rust workspace tests...${NC}"
+RUST_BACKTRACE=1 cargo test --workspace --all-features -- --test-threads=2
+echo -e "${GREEN}Rust workspace tests passed${NC}"
 echo ""
 
-# ============================================================================
-# Rust 测试 (可选，因为耗时较长)
-# ============================================================================
-read -p "是否运行 Rust 测试? (y/N) " -n 1 -r
-echo
-if [[ $REPLY =~ ^[Yy]$ ]]; then
-  echo -e "${GREEN}[extra] 运行 Rust 测试...${NC}"
-  cargo test --all-features --verbose
-  echo -e "${GREEN}✅ Rust 测试通过${NC}"
-fi
+echo -e "${GREEN}[12/12] Run Tauri debug smoke build...${NC}"
+cd "$PROJECT_ROOT/log-analyzer"
+npm run tauri build -- --debug --no-bundle
+echo -e "${GREEN}Tauri debug smoke build passed${NC}"
+echo ""
 
-echo ""
-echo -e "${GREEN}===========================================${NC}"
-echo -e "${GREEN}✅ 本地 CI 验证全部通过！${NC}"
-echo -e "${GREEN}===========================================${NC}"
-echo ""
-echo "可以安全地推送到远程仓库了！"
+echo -e "${GREEN}All local CI checks passed.${NC}"

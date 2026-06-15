@@ -42,17 +42,7 @@ jobs:
           cache-all-crates: true
 
       - name: Install Tauri dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libgtk-3-dev \
-            libwebkit2gtk-4.1-dev \
-            librsvg2-dev \
-            patchelf \
-            libssl-dev \
-            libayatana-appindicator3-dev \
-            libsoup-3.0-dev \
-            libjavascriptcoregtk-4.1-dev
+        uses: ./.github/actions/setup-tauri-linux
 
       # 注意：Bench 文件已移至 workspace crates 中，待后续完善
       # 当前运行 workspace 测试作为性能回归基线

@@ -1,0 +1,19 @@
+name: Setup Tauri Linux dependencies
+description: Install the native packages required to build the Tauri application on Ubuntu.
+
+runs:
+  using: composite
+  steps:
+    - name: Install native dependencies
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          libgtk-3-dev \
+          libwebkit2gtk-4.1-dev \
+          librsvg2-dev \
+          patchelf \
+          libssl-dev \
+          libayatana-appindicator3-dev \
+          libsoup-3.0-dev \
+          libjavascriptcoregtk-4.1-dev

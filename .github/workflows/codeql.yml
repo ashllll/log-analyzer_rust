@@ -9,7 +9,7 @@ on:
   pull_request:
     branches: [main]
   schedule:
-    - cron: "0 8 * * 1"
+    - cron: '0 8 * * 1'
 
 jobs:
   analyze:
@@ -36,6 +36,10 @@ jobs:
         with:
           toolchain: 1.88.0
           components: clippy
+
+      - name: Install Tauri dependencies (Rust only)
+        if: matrix.language == 'rust'
+        uses: ./.github/actions/setup-tauri-linux
 
       - name: Build (Rust)
         if: matrix.language == 'rust'
