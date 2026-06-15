@@ -9,6 +9,7 @@ const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const workflowsDir = join(projectRoot, '.github', 'workflows');
 const setupAction = './.github/actions/setup-tauri-linux';
 const bumpWorkflow = '.github/workflows/bump-and-tag.yml';
+const releaseWorkflow = '.github/workflows/release.yml';
 const tarpaulinConfig = 'log-analyzer/src-tauri/tarpaulin.toml';
 const prepareReleaseScript = 'scripts/prepare-release.mjs';
 const maxRustCoverageFailUnder = 15;
@@ -133,6 +134,11 @@ if (!/^\s*actions:\s*write\s*(?:#.*)?$/m.test(bumpWorkflowSource)) {
 }
 if (!bumpWorkflowSource.includes('log-analyzer/src-tauri/Cargo.lock')) {
   addError(bumpWorkflow, 'version bump commits must include log-analyzer/src-tauri/Cargo.lock');
+}
+
+const releaseWorkflowSource = readFileSync(join(projectRoot, releaseWorkflow), 'utf8');
+if (!releaseWorkflowSource.includes('working-directory: log-analyzer/src-tauri') || !releaseWorkflowSource.includes('rustup target add ${{ matrix.platform.target }}')) {
+  addError(releaseWorkflow, 'release builds must install each Rust target inside src-tauri so rust-toolchain.toml receives the target');
 }
 
 const tarpaulinSource = readFileSync(join(projectRoot, tarpaulinConfig), 'utf8');

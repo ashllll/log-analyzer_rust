@@ -78,6 +78,10 @@ jobs:
           toolchain: 1.88.0
           targets: ${{ matrix.platform.target }}
 
+      - name: Install Rust target for pinned toolchain
+        working-directory: log-analyzer/src-tauri
+        run: rustup target add ${{ matrix.platform.target }}
+
       - name: Setup MSVC (Windows)
         if: matrix.platform.os == 'windows-latest'
         # ilammy/msvc-dev-cmd@v1.13.0
