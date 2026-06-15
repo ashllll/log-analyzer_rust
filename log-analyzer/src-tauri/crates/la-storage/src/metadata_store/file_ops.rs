@@ -259,7 +259,12 @@ pub(crate) async fn get_files_with_pruning(
     level_mask: Option<u8>,
     file_pattern: Option<&str>,
 ) -> Result<Vec<FileMetadata>> {
-    let mut sql = String::from("SELECT * FROM files WHERE analysis_status = 'READY'");
+    let requires_stats = time_start.is_some() || time_end.is_some() || level_mask.is_some();
+    let mut sql = if requires_stats {
+        String::from("SELECT * FROM files WHERE analysis_status = 'READY'")
+    } else {
+        String::from("SELECT * FROM files WHERE 1=1")
+    };
 
     if let (Some(_start), Some(_end)) = (time_start, time_end) {
         sql.push_str(

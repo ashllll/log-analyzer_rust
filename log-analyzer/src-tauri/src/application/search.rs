@@ -25,8 +25,13 @@ use crate::application::search_batch::{BatchAction, SearchBatch};
 use crate::services::search_filters::CompiledSearchFilters;
 use crate::utils::encoding::decode_log_content;
 
-const BATCH_SIZE: usize = 2000;
+/// Flush early enough that the frontend can render a first page while the
+/// rest of the search continues. Larger batches improve write throughput but
+/// make users wait for thousands of matches before anything is readable.
+const BATCH_SIZE: usize = 256;
 const FILE_CHUNK_SIZE: usize = 10;
+const LARGE_FILE_STREAM_THRESHOLD_BYTES: i64 = 64 * 1024;
+const SEARCH_LINE_CHUNK_SIZE: usize = 512;
 
 /// 搜索执行结果。
 #[derive(Debug)]
@@ -93,8 +98,12 @@ impl SearchUseCase {
             )
             .await?;
 
-        // 2. Create result session
-        self.results.create_session(&search_id)?;
+        // 2. Create result session. WorkspaceService may pre-create the
+        // session before returning search_id so the frontend can safely request
+        // page 0 immediately; in that case reuse it instead of truncating.
+        if !self.results.has_session(&search_id) {
+            self.results.create_session(&search_id)?;
+        }
 
         // 3. Notify start
         self.events.emit_search_start(&search_id).await;
@@ -185,62 +194,80 @@ impl SearchUseCase {
                 break;
             }
 
-            let chunk_results: Vec<Vec<LogEntry>> = thread_pool.install(|| {
-                file_batch
-                    .par_iter()
-                    .map(|fm| {
-                        if cancellation_token.is_cancelled() {
-                            return Vec::new();
-                        }
-                        search_one_file(log_files, searcher, fm, &plan, filters)
-                    })
-                    .collect()
-            });
+            let mut small_files = Vec::with_capacity(FILE_CHUNK_SIZE);
 
-            for file_results in chunk_results {
-                match batch.accumulate(file_results, max_results) {
-                    BatchAction::Continue => {}
-                    BatchAction::Flush => {
-                        if let Err(e) = results.append_entries(search_id, &batch.take()) {
-                            let events = events.clone();
-                            let sid = search_id.to_string();
-                            let msg = e.to_string();
-                            tokio::spawn(async move { events.emit_search_error(&sid, &msg).await });
-                            break 'outer;
-                        }
-                        let events = events.clone();
-                        let sid = search_id.to_string();
-                        let count = batch.total();
-                        tokio::spawn(async move { events.emit_search_progress(&sid, count).await });
-                    }
-                    BatchAction::Truncate(_) => {
-                        if !batch.is_empty() {
-                            if let Err(e) = results.append_entries(search_id, &batch.take()) {
-                                let events = events.clone();
-                                let sid = search_id.to_string();
-                                let msg = e.to_string();
-                                tokio::spawn(
-                                    async move { events.emit_search_error(&sid, &msg).await },
-                                );
-                                break 'outer;
-                            }
-                            let events = events.clone();
-                            let sid = search_id.to_string();
-                            let count = batch.total();
-                            tokio::spawn(
-                                async move { events.emit_search_progress(&sid, count).await },
-                            );
-                        }
-                        was_truncated = true;
+            for fm in file_batch {
+                if cancellation_token.is_cancelled() {
+                    break 'outer;
+                }
+
+                if fm.size >= LARGE_FILE_STREAM_THRESHOLD_BYTES {
+                    if !flush_small_files(
+                        &small_files,
+                        log_files,
+                        searcher,
+                        thread_pool,
+                        &plan,
+                        filters,
+                        results,
+                        events,
+                        search_id,
+                        &mut batch,
+                        max_results,
+                        &mut was_truncated,
+                        &cancellation_token,
+                    ) {
                         break 'outer;
                     }
+                    small_files.clear();
+
+                    if !search_large_file_in_chunks(
+                        log_files,
+                        searcher,
+                        fm,
+                        &plan,
+                        filters,
+                        results,
+                        events,
+                        search_id,
+                        &mut batch,
+                        max_results,
+                        &mut was_truncated,
+                        &cancellation_token,
+                    ) {
+                        break 'outer;
+                    }
+                } else {
+                    small_files.push(fm);
                 }
+            }
+
+            if !flush_small_files(
+                &small_files,
+                log_files,
+                searcher,
+                thread_pool,
+                &plan,
+                filters,
+                results,
+                events,
+                search_id,
+                &mut batch,
+                max_results,
+                &mut was_truncated,
+                &cancellation_token,
+            ) {
+                break 'outer;
             }
         }
 
         // Final flush
         if !batch.is_empty() {
-            let _ = results.append_entries(search_id, &batch.take());
+            if let Err(e) = results.append_entries(search_id, &batch.take()) {
+                emit_error(events, search_id, e.to_string());
+            } else {
+                emit_progress(events, search_id, batch.total());
+            }
         }
 
         SearchOutcome {
@@ -251,7 +278,103 @@ impl SearchUseCase {
     }
 }
 
-/// 搜索单个文件的日志条目。
+#[allow(clippy::too_many_arguments)]
+fn flush_small_files(
+    files: &[&FileMetadata],
+    log_files: &Arc<dyn LogFileRepository>,
+    searcher: &Arc<dyn LogSearcher>,
+    thread_pool: &Arc<rayon::ThreadPool>,
+    plan: &ExecutionPlan,
+    filters: &SearchFilters,
+    results: &Arc<dyn SearchResultRepository>,
+    events: &Arc<dyn EventPublisher>,
+    search_id: &str,
+    batch: &mut SearchBatch,
+    max_results: usize,
+    was_truncated: &mut bool,
+    cancellation_token: &tokio_util::sync::CancellationToken,
+) -> bool {
+    if files.is_empty() {
+        return true;
+    }
+
+    let chunk_results: Vec<Vec<LogEntry>> = thread_pool.install(|| {
+        files
+            .par_iter()
+            .map(|fm| {
+                if cancellation_token.is_cancelled() {
+                    return Vec::new();
+                }
+                search_one_file(log_files, searcher, fm, plan, filters)
+            })
+            .collect()
+    });
+
+    for file_results in chunk_results {
+        if !consume_search_entries(
+            file_results,
+            results,
+            events,
+            search_id,
+            batch,
+            max_results,
+            was_truncated,
+        ) {
+            return false;
+        }
+    }
+
+    true
+}
+
+#[allow(clippy::too_many_arguments)]
+fn search_large_file_in_chunks(
+    log_files: &Arc<dyn LogFileRepository>,
+    searcher: &Arc<dyn LogSearcher>,
+    fm: &FileMetadata,
+    plan: &ExecutionPlan,
+    filters: &SearchFilters,
+    results: &Arc<dyn SearchResultRepository>,
+    events: &Arc<dyn EventPublisher>,
+    search_id: &str,
+    batch: &mut SearchBatch,
+    max_results: usize,
+    was_truncated: &mut bool,
+    cancellation_token: &tokio_util::sync::CancellationToken,
+) -> bool {
+    let hash = &fm.sha256_hash;
+    let real_path = format!("cas://{hash}");
+    let mut keep_searching = true;
+    let mut visitor = |chunk_lines: Vec<String>, chunk_start_line: usize| {
+        if cancellation_token.is_cancelled() {
+            keep_searching = false;
+            return Ok(false);
+        }
+
+        keep_searching = search_line_chunk(
+            searcher,
+            &fm.virtual_path,
+            &real_path,
+            plan,
+            filters,
+            &chunk_lines,
+            chunk_start_line,
+            results,
+            events,
+            search_id,
+            batch,
+            max_results,
+            was_truncated,
+        );
+        Ok(keep_searching)
+    };
+
+    match log_files.read_line_chunks_sync(hash, SEARCH_LINE_CHUNK_SIZE, &mut visitor) {
+        Ok(()) => keep_searching,
+        Err(_) => true,
+    }
+}
+
 fn search_one_file(
     log_files: &Arc<dyn LogFileRepository>,
     searcher: &Arc<dyn LogSearcher>,
@@ -271,6 +394,94 @@ fn search_one_file(
         entry.real_path = format!("cas://{hash}").into();
     }
     entries
+}
+
+#[allow(clippy::too_many_arguments)]
+fn search_line_chunk(
+    searcher: &Arc<dyn LogSearcher>,
+    virtual_path: &str,
+    real_path: &str,
+    plan: &ExecutionPlan,
+    filters: &SearchFilters,
+    lines: &[String],
+    start_line: usize,
+    results: &Arc<dyn SearchResultRepository>,
+    events: &Arc<dyn EventPublisher>,
+    search_id: &str,
+    batch: &mut SearchBatch,
+    max_results: usize,
+    was_truncated: &mut bool,
+) -> bool {
+    let text = lines.join("\n");
+    let mut entries = searcher.match_content(&text, virtual_path, plan, filters, batch.total());
+    let line_offset = start_line.saturating_sub(1);
+    for entry in &mut entries {
+        entry.line += line_offset;
+        entry.real_path = real_path.to_string().into();
+    }
+    consume_search_entries(
+        entries,
+        results,
+        events,
+        search_id,
+        batch,
+        max_results,
+        was_truncated,
+    )
+}
+
+fn consume_search_entries(
+    entries: Vec<LogEntry>,
+    results: &Arc<dyn SearchResultRepository>,
+    events: &Arc<dyn EventPublisher>,
+    search_id: &str,
+    batch: &mut SearchBatch,
+    max_results: usize,
+    was_truncated: &mut bool,
+) -> bool {
+    match batch.accumulate(entries, max_results) {
+        BatchAction::Continue => true,
+        BatchAction::Flush => flush_search_batch(results, events, search_id, batch),
+        BatchAction::Truncate(_) => {
+            if !batch.is_empty() && !flush_search_batch(results, events, search_id, batch) {
+                return false;
+            }
+            *was_truncated = true;
+            false
+        }
+    }
+}
+
+fn flush_search_batch(
+    results: &Arc<dyn SearchResultRepository>,
+    events: &Arc<dyn EventPublisher>,
+    search_id: &str,
+    batch: &mut SearchBatch,
+) -> bool {
+    if let Err(e) = results.append_entries(search_id, &batch.take()) {
+        emit_error(events, search_id, e.to_string());
+        return false;
+    }
+    emit_progress(events, search_id, batch.total());
+    true
+}
+
+fn emit_progress(events: &Arc<dyn EventPublisher>, search_id: &str, count: usize) {
+    let Ok(handle) = tokio::runtime::Handle::try_current() else {
+        return;
+    };
+    let events = events.clone();
+    let sid = search_id.to_string();
+    handle.spawn(async move { events.emit_search_progress(&sid, count).await });
+}
+
+fn emit_error(events: &Arc<dyn EventPublisher>, search_id: &str, message: String) {
+    let Ok(handle) = tokio::runtime::Handle::try_current() else {
+        return;
+    };
+    let events = events.clone();
+    let sid = search_id.to_string();
+    handle.spawn(async move { events.emit_search_error(&sid, &message).await });
 }
 
 #[cfg(test)]
@@ -403,18 +614,87 @@ mod tests {
         }
     }
 
+    struct StreamingProbeLogFiles {
+        lines: Vec<String>,
+        append_count: Arc<Mutex<usize>>,
+        saw_append_before_eof: Arc<std::sync::atomic::AtomicBool>,
+        chunks_read: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    #[async_trait]
+    impl LogFileRepository for StreamingProbeLogFiles {
+        async fn get_files_with_filters(
+            &self,
+            _ws: &str,
+            _ts: Option<i64>,
+            _te: Option<i64>,
+            _lm: Option<u8>,
+            _fp: Option<&str>,
+        ) -> Result<Vec<FileMetadata>> {
+            Ok(vec![FileMetadata {
+                id: 1,
+                sha256_hash: "streaming-hash".into(),
+                virtual_path: "large.log".into(),
+                original_name: "large.log".into(),
+                size: 512 * 1024,
+                modified_time: 0,
+                mime_type: None,
+                parent_archive_id: None,
+                depth_level: 0,
+                min_timestamp: None,
+                max_timestamp: None,
+                level_mask: None,
+                analysis_status: la_core::storage_types::AnalysisStatus::Ready,
+            }])
+        }
+
+        fn read_content_sync(&self, _hash: &str) -> Result<Vec<u8>> {
+            Ok(self.lines.join("\n").into_bytes())
+        }
+
+        fn read_line_chunks_sync(
+            &self,
+            _hash: &str,
+            chunk_size: usize,
+            visitor: &mut dyn FnMut(Vec<String>, usize) -> Result<bool>,
+        ) -> Result<()> {
+            let total_lines = self.lines.len();
+            let mut start = 0usize;
+            while start < total_lines {
+                let end = (start + chunk_size).min(total_lines);
+                if !visitor(self.lines[start..end].to_vec(), start + 1)? {
+                    return Ok(());
+                }
+                self.chunks_read
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let append_count = *self.append_count.lock().unwrap();
+                if append_count > 0 && end < total_lines {
+                    self.saw_append_before_eof
+                        .store(true, std::sync::atomic::Ordering::SeqCst);
+                }
+                start = end;
+            }
+
+            Ok(())
+        }
+
+        fn file_exists_sync(&self, _hash: &str) -> bool {
+            true
+        }
+    }
+
     // ── Stub SearchResultRepository that captures appends ──
 
     struct CapturingResults {
         entries: Mutex<Vec<LogEntry>>,
-        append_count: Mutex<usize>,
+        append_count: Arc<Mutex<usize>>,
     }
 
     impl CapturingResults {
         fn new() -> Self {
             Self {
                 entries: Mutex::new(Vec::new()),
-                append_count: Mutex::new(0),
+                append_count: Arc::new(Mutex::new(0)),
             }
         }
     }
@@ -622,10 +902,11 @@ mod tests {
 
     #[tokio::test]
     async fn batch_flush_fires_at_boundary() {
-        let lines: Vec<String> = (0..2500).map(|i| format!("line {i}")).collect();
+        let lines: Vec<String> = (0..10_000).map(|i| format!("line {i}")).collect();
         let content = lines.join("\n");
         let (use_case, results, _events) = make_test_use_case(&content, 1);
-        let files = make_test_files();
+        let mut files = make_test_files();
+        files[0].size = content.len() as i64;
 
         let outcome = SearchUseCase::run_blocking(
             &use_case.log_files,
@@ -637,17 +918,108 @@ mod tests {
             &make_query(),
             &SearchFilters::default(),
             &files,
-            10000,
+            20_000,
             tokio_util::sync::CancellationToken::new(),
         );
 
-        assert_eq!(outcome.total_count, 2500);
+        assert_eq!(outcome.total_count, 10_000);
         assert!(!outcome.was_truncated);
-        assert_eq!(results.entries.lock().unwrap().len(), 2500);
-        // With chunk-based accumulation, the 2500-entry chunk triggers a single
-        // Flush because the buffer exceeds the 2000-entry batch_size.
+        let captured = results.entries.lock().unwrap();
+        assert_eq!(captured.len(), 10_000);
+        assert_eq!(captured[600].line, 601);
+        drop(captured);
         let appends = *results.append_count.lock().unwrap();
-        assert!(appends >= 1, "Expected >= 1 flush calls, got {appends}");
+        assert!(
+            appends > 1,
+            "Expected a large single file to flush incrementally, got {appends}"
+        );
+    }
+
+    #[test]
+    fn large_file_flushes_before_stream_reader_reaches_eof() {
+        let lines: Vec<String> = (0..10_000).map(|i| format!("line {i}")).collect();
+        let results = Arc::new(CapturingResults::new());
+        let saw_append_before_eof = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let chunks_read = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let log_files: Arc<dyn LogFileRepository> = Arc::new(StreamingProbeLogFiles {
+            lines,
+            append_count: results.append_count.clone(),
+            saw_append_before_eof: Arc::clone(&saw_append_before_eof),
+            chunks_read: Arc::clone(&chunks_read),
+        });
+        let events = Arc::new(CapturingEvents::new());
+        let searcher: Arc<dyn LogSearcher> = Arc::new(StubSearcher {
+            plan_id: 42,
+            matches_per_line: 1,
+        });
+        let thread_pool = Arc::new(
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(1)
+                .build()
+                .unwrap(),
+        );
+        let use_case = SearchUseCase::new(
+            log_files,
+            results.clone() as Arc<dyn SearchResultRepository>,
+            events as Arc<dyn EventPublisher>,
+            searcher,
+            thread_pool,
+        );
+        let mut files = make_test_files();
+        files[0].sha256_hash = "streaming-hash".into();
+        files[0].virtual_path = "large.log".into();
+        files[0].size = 512 * 1024;
+
+        let outcome = SearchUseCase::run_blocking(
+            &use_case.log_files,
+            &use_case.results,
+            &use_case.events,
+            &use_case.searcher,
+            &use_case.thread_pool,
+            "search-streaming",
+            &make_query(),
+            &SearchFilters::default(),
+            &files,
+            20_000,
+            tokio_util::sync::CancellationToken::new(),
+        );
+
+        assert_eq!(outcome.total_count, 10_000);
+        assert!(
+            saw_append_before_eof.load(std::sync::atomic::Ordering::SeqCst),
+            "expected first result batch to be appended before the large-file reader reached EOF"
+        );
+        assert!(
+            chunks_read.load(std::sync::atomic::Ordering::SeqCst) > 1,
+            "expected large file search to read multiple line chunks"
+        );
+    }
+
+    #[tokio::test]
+    async fn final_flush_emits_progress_for_small_result_set() {
+        let (use_case, _results, events) = make_test_use_case("line1\nline2\nline3\n", 1);
+        let files = make_test_files();
+
+        let outcome = SearchUseCase::run_blocking(
+            &use_case.log_files,
+            &use_case.results,
+            &use_case.events,
+            &use_case.searcher,
+            &use_case.thread_pool,
+            "search-small",
+            &make_query(),
+            &SearchFilters::default(),
+            &files,
+            1000,
+            tokio_util::sync::CancellationToken::new(),
+        );
+
+        assert_eq!(outcome.total_count, 3);
+        for _ in 0..5 {
+            tokio::task::yield_now().await;
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert_eq!(*events.progress_count.lock().unwrap(), 1);
     }
 
     // ===================================================================

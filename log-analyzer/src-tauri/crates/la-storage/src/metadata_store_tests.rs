@@ -76,6 +76,63 @@ async fn test_count_operations() {
     assert_eq!(total_size, 100);
 }
 
+#[tokio::test]
+async fn test_unfiltered_pruning_includes_pending_files() {
+    let (store, _temp_dir) = create_test_store().await;
+
+    let metadata = FileMetadata {
+        id: 0,
+        sha256_hash: "pending_hash".to_string(),
+        virtual_path: "pending.log".to_string(),
+        original_name: "pending.log".to_string(),
+        size: 100,
+        modified_time: 0,
+        mime_type: None,
+        parent_archive_id: None,
+        depth_level: 0,
+        min_timestamp: None,
+        max_timestamp: None,
+        level_mask: None,
+        analysis_status: AnalysisStatus::Pending,
+    };
+    store.insert_file(&metadata).await.unwrap();
+
+    let files = store
+        .get_files_with_pruning(None, None, None, None)
+        .await
+        .unwrap();
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0].virtual_path, "pending.log");
+}
+
+#[tokio::test]
+async fn test_time_pruning_requires_ready_files() {
+    let (store, _temp_dir) = create_test_store().await;
+
+    let metadata = FileMetadata {
+        id: 0,
+        sha256_hash: "pending_hash_with_time_filter".to_string(),
+        virtual_path: "pending-time.log".to_string(),
+        original_name: "pending-time.log".to_string(),
+        size: 100,
+        modified_time: 0,
+        mime_type: None,
+        parent_archive_id: None,
+        depth_level: 0,
+        min_timestamp: None,
+        max_timestamp: None,
+        level_mask: None,
+        analysis_status: AnalysisStatus::Pending,
+    };
+    store.insert_file(&metadata).await.unwrap();
+
+    let files = store
+        .get_files_with_pruning(Some(1), None, None, None)
+        .await
+        .unwrap();
+    assert!(files.is_empty());
+}
+
 // ========== Additional Unit Tests for Task 2.2 ==========
 
 /// Test database initialization creates all required tables and indexes

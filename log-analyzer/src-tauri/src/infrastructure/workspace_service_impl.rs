@@ -163,6 +163,15 @@ impl SearchService for WorkspaceServiceImpl {
                 .insert(search_id.clone(), cancellation_token.clone());
         }
 
+        // 让 search_logs 返回前结果会话已经存在。前端拿到 search_id 后会立即
+        // fetch_search_page；如果后台搜索尚未创建会话，用户会先看到分页错误和重试。
+        self.repo
+            .disk_result_store()
+            .create_session(&search_id)
+            .map_err(|e| {
+                AppError::io_error(format!("Failed to create search session: {e}"), None)
+            })?;
+
         // 3. 组装 SearchUseCase 的依赖
         let log_files = Arc::new(CasLogFileRepository {
             metadata: self.repo.metadata_store().clone(),

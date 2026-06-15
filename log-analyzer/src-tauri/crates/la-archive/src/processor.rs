@@ -28,6 +28,9 @@ use tokio::sync::Mutex;
 use tracing::{debug, error, info, warn};
 use walkdir::WalkDir;
 
+const DIRECTORY_METADATA_BATCH_SIZE: usize = 500;
+const SMALL_FILE_INLINE_CAS_THRESHOLD_BYTES: u64 = 1024 * 1024;
+
 /// 检查是否启用增强提取系统
 ///
 /// 优先级：
@@ -161,6 +164,11 @@ impl DirectoryProcessingStats {
             context
         );
     }
+}
+
+struct PendingFileImport {
+    metadata: FileMetadata,
+    source_path: PathBuf,
 }
 
 /// Validate virtual path to prevent path traversal attacks
@@ -384,6 +392,7 @@ pub async fn process_path_with_cas_and_checkpoints(
             .max_depth(max_depth)
             .follow_links(follow_symlinks)
             .into_iter();
+        let mut pending_files = Vec::with_capacity(DIRECTORY_METADATA_BATCH_SIZE);
 
         for entry_result in walkdir_iter {
             match entry_result {
@@ -447,28 +456,76 @@ pub async fn process_path_with_cas_and_checkpoints(
                         None
                     };
 
-                    // 确定实际要处理的路径
+                    // 确定实际要处理的路径。WalkDir 已经递归遍历子目录；
+                    // 如果这里再递归目录，会让嵌套文件被重复处理。
                     let path_to_process = target_path.as_deref().unwrap_or_else(|| entry.path());
-                    let entry_name = entry.file_name().to_string_lossy().to_string();
-                    let new_virtual = format!("{virtual_path}/{entry_name}");
+                    if path_to_process.is_dir() {
+                        continue;
+                    }
 
-                    if let Err(e) = Box::pin(process_path_with_cas_and_checkpoints(
-                        path_to_process,
-                        &new_virtual,
-                        context,
-                        provider,
-                        task_id,
-                        workspace_id,
-                        parent_archive_id,
-                        depth_level,
-                    ))
-                    .await
-                    {
-                        warn!(
-                            file = %path_to_process.display(),
-                            error = %e,
-                            "Failed to process directory entry, continuing with others"
-                        );
+                    let relative_path = entry.path().strip_prefix(path).unwrap_or(entry.path());
+                    let new_virtual = build_child_virtual_path(virtual_path, relative_path);
+
+                    if is_archive_file(path_to_process) {
+                        flush_pending_directory_files(context, &mut pending_files).await?;
+                        if let Err(e) = Box::pin(process_path_with_cas_and_checkpoints(
+                            path_to_process,
+                            &new_virtual,
+                            context,
+                            provider,
+                            task_id,
+                            workspace_id,
+                            parent_archive_id,
+                            depth_level,
+                        ))
+                        .await
+                        {
+                            warn!(
+                                file = %path_to_process.display(),
+                                error = %e,
+                                "Failed to process directory archive entry, continuing with others"
+                            );
+                        }
+                    } else {
+                        let file_name = path_to_process
+                            .file_name()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .to_string();
+                        let import_allowed =
+                            should_import_file_defensive(path_to_process, provider).await;
+
+                        if !import_allowed {
+                            tracing::info!(
+                                file = %file_name,
+                                path = %path_to_process.display(),
+                                "File skipped by filter configuration (user-configured)"
+                            );
+                            continue;
+                        }
+
+                        match prepare_regular_file_import(
+                            path_to_process,
+                            &new_virtual,
+                            context,
+                            parent_archive_id,
+                            depth_level,
+                        )
+                        .await
+                        {
+                            Ok(pending) => pending_files.push(pending),
+                            Err(e) => {
+                                warn!(
+                                    file = %path_to_process.display(),
+                                    error = %e,
+                                    "Failed to stage directory file import, continuing with others"
+                                );
+                            }
+                        }
+
+                        if pending_files.len() >= DIRECTORY_METADATA_BATCH_SIZE {
+                            flush_pending_directory_files(context, &mut pending_files).await?;
+                        }
                     }
                     stats.processed_count += 1;
                 }
@@ -485,6 +542,7 @@ pub async fn process_path_with_cas_and_checkpoints(
             }
         }
 
+        flush_pending_directory_files(context, &mut pending_files).await?;
         stats.log_summary(path, "CAS directory processing");
         return Ok(());
     }
@@ -543,80 +601,136 @@ pub async fn process_path_with_cas_and_checkpoints(
         .await;
     }
 
-    // --- Regular file: Store in CAS and add to metadata ---
+    let pending =
+        prepare_regular_file_import(path, virtual_path, context, parent_archive_id, depth_level)
+            .await?;
+    let file_id = context
+        .metadata_store
+        .insert_file(&pending.metadata)
+        .await?;
+    finalize_regular_file_import(context, pending, Some(file_id)).await?;
 
-    // Store file content in CAS using streaming (memory-efficient)
-    let hash = context.cas.store_file_streaming(path).await?;
+    Ok(())
+}
 
-    // Get file metadata
-    let file_size = fs::metadata(path)
-        .await
-        .map(|m| m.len() as i64)
-        .unwrap_or(0);
-
-    let modified_time = fs::metadata(path)
-        .await
-        .and_then(|m| m.modified())
-        .ok()
+async fn prepare_regular_file_import(
+    path: &Path,
+    virtual_path: &str,
+    context: &CasProcessingContext,
+    parent_archive_id: Option<i64>,
+    depth_level: i32,
+) -> Result<PendingFileImport> {
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| AppError::validation_error("Invalid filename"))?
+        .to_string_lossy()
+        .to_string();
+    let metadata = fs::metadata(path).await.ok();
+    let file_size_bytes = metadata.as_ref().map(|m| m.len()).unwrap_or(0);
+    let hash = store_regular_file_content(context, path, file_size_bytes).await?;
+    let file_size = file_size_bytes as i64;
+    let modified_time = metadata
+        .and_then(|m| m.modified().ok())
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
+    let mime_type = detect_mime_type(path);
 
-    // Detect MIME type (simple heuristic based on extension)
-    let mime_type = path
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .and_then(|ext| match ext.to_lowercase().as_str() {
-            "log" | "txt" => Some("text/plain".to_string()),
-            "json" => Some("application/json".to_string()),
-            "xml" => Some("application/xml".to_string()),
-            "gz" => Some("application/gzip".to_string()),
-            "zip" => Some("application/zip".to_string()),
-            _ => None,
-        });
+    Ok(PendingFileImport {
+        metadata: FileMetadata {
+            id: 0,
+            sha256_hash: hash,
+            virtual_path: normalize_path_separator(virtual_path),
+            original_name: file_name,
+            size: file_size,
+            modified_time,
+            mime_type,
+            parent_archive_id,
+            depth_level,
+            min_timestamp: None,
+            max_timestamp: None,
+            level_mask: None,
+            analysis_status: la_core::storage_types::AnalysisStatus::Pending,
+        },
+        source_path: path.to_path_buf(),
+    })
+}
 
-    // Create file metadata
-    let file_metadata = FileMetadata {
-        id: 0, // Will be auto-generated
-        sha256_hash: hash.clone(),
-        virtual_path: normalize_path_separator(virtual_path),
-        original_name: file_name.clone(),
-        size: file_size,
-        modified_time,
-        mime_type,
-        parent_archive_id,
-        depth_level,
-        min_timestamp: None,
-        max_timestamp: None,
-        level_mask: None,
-        analysis_status: la_core::storage_types::AnalysisStatus::Pending,
-    };
+async fn flush_pending_directory_files(
+    context: &CasProcessingContext,
+    pending_files: &mut Vec<PendingFileImport>,
+) -> Result<()> {
+    if pending_files.is_empty() {
+        return Ok(());
+    }
 
-    // Insert into metadata store
-    let file_id = context.metadata_store.insert_file(&file_metadata).await?;
+    let imports = std::mem::take(pending_files);
+    let files: Vec<FileMetadata> = imports
+        .iter()
+        .map(|pending| pending.metadata.clone())
+        .collect();
 
-    // Update checkpoint
+    match context.metadata_store.insert_files_batch_smart(files).await {
+        Ok(_) => {
+            for pending in imports {
+                finalize_regular_file_import(context, pending, None).await?;
+            }
+        }
+        Err(batch_error) => {
+            warn!(
+                error = %batch_error,
+                count = imports.len(),
+                "Batch metadata insert failed, falling back to per-file inserts"
+            );
+            for pending in imports {
+                match context.metadata_store.insert_file(&pending.metadata).await {
+                    Ok(file_id) => {
+                        finalize_regular_file_import(context, pending, Some(file_id)).await?;
+                    }
+                    Err(error) => {
+                        warn!(
+                            path = %pending.metadata.virtual_path,
+                            error = %error,
+                            "Failed to insert file metadata during fallback"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn finalize_regular_file_import(
+    context: &CasProcessingContext,
+    pending: PendingFileImport,
+    file_id: Option<i64>,
+) -> Result<()> {
     context
-        .update_checkpoint(path.to_path_buf(), file_size as u64)
+        .update_checkpoint(pending.source_path, pending.metadata.size as u64)
         .await?;
-
-    // Maybe save checkpoint
     context.maybe_save_checkpoint().await?;
 
     debug!(
-        file_id = file_id,
-        hash = %hash,
-        virtual_path = %virtual_path,
-        size = file_size,
-        depth = depth_level,
+        file_id = ?file_id,
+        hash = %pending.metadata.sha256_hash,
+        virtual_path = %pending.metadata.virtual_path,
+        size = pending.metadata.size,
+        depth = pending.metadata.depth_level,
         "Stored file in CAS and metadata"
     );
 
-    // 增量分析：立即计算文件统计并标记为 READY
-    // 使用 spawn_blocking 避免阻塞异步运行时
+    spawn_file_stats_update(context, &pending.metadata);
+    Ok(())
+}
+
+fn spawn_file_stats_update(context: &CasProcessingContext, metadata: &FileMetadata) {
     let cas = Arc::clone(&context.cas);
     let metadata_store = Arc::clone(&context.metadata_store);
-    let virtual_path_for_stats = normalize_path_separator(virtual_path);
+    let hash = metadata.sha256_hash.clone();
+    let virtual_path_for_stats = metadata.virtual_path.clone();
+
     tokio::task::spawn(async move {
         match cas.read_content(&hash).await {
             Ok(content) => {
@@ -647,8 +761,45 @@ pub async fn process_path_with_cas_and_checkpoints(
             }
         }
     });
+}
 
-    Ok(())
+async fn store_regular_file_content(
+    context: &CasProcessingContext,
+    path: &Path,
+    file_size: u64,
+) -> Result<String> {
+    if file_size <= SMALL_FILE_INLINE_CAS_THRESHOLD_BYTES {
+        let content = fs::read(path).await.map_err(|e| {
+            AppError::io_error(
+                format!("Failed to read small file for CAS storage: {e}"),
+                Some(path.to_path_buf()),
+            )
+        })?;
+        return context.cas.store_content(&content).await;
+    }
+
+    context.cas.store_file_zero_copy(path).await
+}
+
+fn detect_mime_type(path: &Path) -> Option<String> {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .and_then(|ext| match ext.to_lowercase().as_str() {
+            "log" | "txt" => Some("text/plain".to_string()),
+            "json" => Some("application/json".to_string()),
+            "xml" => Some("application/xml".to_string()),
+            "gz" => Some("application/gzip".to_string()),
+            "zip" => Some("application/zip".to_string()),
+            _ => None,
+        })
+}
+
+fn build_child_virtual_path(parent_virtual_path: &str, relative_path: &Path) -> String {
+    format!(
+        "{}/{}",
+        parent_virtual_path,
+        normalize_path_separator(&relative_path.to_string_lossy())
+    )
 }
 
 /// Process path recursively using CAS and MetadataStore
@@ -761,7 +912,7 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
     );
 
     // Store the archive file itself in CAS
-    let archive_hash = context.cas.store_file_streaming(archive_path).await?;
+    let archive_hash = context.cas.store_file_zero_copy(archive_path).await?;
 
     // Detect archive type
     let archive_type = archive_path
@@ -891,7 +1042,7 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
             .to_string_lossy()
             .to_string();
 
-        info!(
+        debug!(
             archive_id = archive_id,
             current = index + 1,
             total = total_files,
@@ -957,7 +1108,7 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
                 "Reached max depth: storing nested archive as regular file without extraction"
             );
             // 将深层嵌套压缩包作为普通文件存入 CAS，使其可被搜索，但不再递归解压
-            let hash = context.cas.store_file_streaming(&full_path).await?;
+            let hash = context.cas.store_file_zero_copy(&full_path).await?;
             let file_size = fs::metadata(&full_path)
                 .await
                 .map(|m| m.len() as i64)
@@ -1205,3 +1356,225 @@ async fn load_config_from_provider(
 }
 
 // ========== 防御性集成结束 ==========
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use std::sync::Arc;
+    use tempfile::TempDir;
+
+    struct TestConfigProvider {
+        dir: PathBuf,
+    }
+
+    impl AppConfigProvider for TestConfigProvider {
+        fn config_dir(&self) -> std::result::Result<PathBuf, String> {
+            Ok(self.dir.clone())
+        }
+    }
+
+    #[test]
+    fn child_virtual_path_preserves_nested_relative_path() {
+        let relative = Path::new("nested").join("child.log");
+        assert_eq!(
+            build_child_virtual_path("root", &relative),
+            "root/nested/child.log"
+        );
+    }
+
+    fn create_many_file_zip(path: &Path, file_count: usize) {
+        let file = std::fs::File::create(path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let options = zip::write::FileOptions::<'_, ()>::default()
+            .compression_method(zip::CompressionMethod::Stored);
+
+        for i in 0..file_count {
+            zip.start_file(format!("file-{i:04}.log"), options).unwrap();
+            zip.write_all(format!("2026-06-15T00:00:00Z INFO line {i}\n").as_bytes())
+                .unwrap();
+        }
+
+        zip.finish().unwrap();
+    }
+
+    #[tokio::test]
+    async fn directory_import_preserves_nested_virtual_paths() {
+        let temp = TempDir::new().unwrap();
+        let source_dir = temp.path().join("source");
+        let nested_dir = source_dir.join("nested");
+        tokio::fs::create_dir_all(&nested_dir).await.unwrap();
+        tokio::fs::write(source_dir.join("top.log"), b"top\n")
+            .await
+            .unwrap();
+        tokio::fs::write(nested_dir.join("child.log"), b"child\n")
+            .await
+            .unwrap();
+
+        let workspace_dir = temp.path().join("workspace");
+        let cas = Arc::new(ContentAddressableStorage::new(workspace_dir.clone()));
+        let metadata_store = Arc::new(MetadataStore::new(&workspace_dir).await.unwrap());
+        let context =
+            CasProcessingContext::new(workspace_dir, Arc::clone(&cas), Arc::clone(&metadata_store));
+        let provider = TestConfigProvider {
+            dir: temp.path().join("config"),
+        };
+
+        process_path_with_cas_and_checkpoints(
+            &source_dir,
+            "source",
+            &context,
+            &provider,
+            "task-1",
+            "workspace-1",
+            None,
+            0,
+        )
+        .await
+        .unwrap();
+
+        let mut paths: Vec<String> = metadata_store
+            .get_all_files()
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|file| file.virtual_path)
+            .collect();
+        paths.sort();
+
+        assert_eq!(
+            paths,
+            vec![
+                "source/nested/child.log".to_string(),
+                "source/top.log".to_string()
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn directory_import_batches_many_regular_files() {
+        let temp = TempDir::new().unwrap();
+        let source_dir = temp.path().join("many");
+        tokio::fs::create_dir_all(&source_dir).await.unwrap();
+
+        for i in 0..12 {
+            tokio::fs::write(
+                source_dir.join(format!("file-{i:02}.log")),
+                format!("line {i}\n"),
+            )
+            .await
+            .unwrap();
+        }
+
+        let workspace_dir = temp.path().join("workspace");
+        let cas = Arc::new(ContentAddressableStorage::new(workspace_dir.clone()));
+        let metadata_store = Arc::new(MetadataStore::new(&workspace_dir).await.unwrap());
+        let context =
+            CasProcessingContext::new(workspace_dir, Arc::clone(&cas), Arc::clone(&metadata_store));
+        let provider = TestConfigProvider {
+            dir: temp.path().join("config"),
+        };
+
+        process_path_with_cas_and_checkpoints(
+            &source_dir,
+            "many",
+            &context,
+            &provider,
+            "task-1",
+            "workspace-1",
+            None,
+            0,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(metadata_store.count_files().await.unwrap(), 12);
+    }
+
+    #[tokio::test]
+    #[ignore = "local performance smoke test; run explicitly when tuning import latency"]
+    async fn directory_imports_1000_small_files_in_seconds() {
+        let temp = TempDir::new().unwrap();
+        let source_dir = temp.path().join("many");
+        tokio::fs::create_dir_all(&source_dir).await.unwrap();
+
+        for i in 0..1000 {
+            tokio::fs::write(
+                source_dir.join(format!("file-{i:04}.log")),
+                format!("2026-06-15T00:00:00Z INFO line {i}\n"),
+            )
+            .await
+            .unwrap();
+        }
+
+        let workspace_dir = temp.path().join("workspace");
+        let cas = Arc::new(ContentAddressableStorage::new(workspace_dir.clone()));
+        let metadata_store = Arc::new(MetadataStore::new(&workspace_dir).await.unwrap());
+        let context =
+            CasProcessingContext::new(workspace_dir, Arc::clone(&cas), Arc::clone(&metadata_store));
+        let provider = TestConfigProvider {
+            dir: temp.path().join("config"),
+        };
+
+        let started = std::time::Instant::now();
+        process_path_with_cas_and_checkpoints(
+            &source_dir,
+            "many",
+            &context,
+            &provider,
+            "task-1",
+            "workspace-1",
+            None,
+            0,
+        )
+        .await
+        .unwrap();
+        let elapsed = started.elapsed();
+
+        assert_eq!(metadata_store.count_files().await.unwrap(), 1000);
+        assert!(
+            elapsed < std::time::Duration::from_secs(2),
+            "expected 1000-file import to complete in seconds, took {elapsed:?}"
+        );
+        eprintln!("1000-file import smoke elapsed: {elapsed:?}");
+    }
+
+    #[tokio::test]
+    #[ignore = "local performance smoke test; run explicitly when tuning archive import latency"]
+    async fn zip_imports_1000_small_files_in_seconds() {
+        let temp = TempDir::new().unwrap();
+        let zip_path = temp.path().join("many.zip");
+        create_many_file_zip(&zip_path, 1000);
+
+        let workspace_dir = temp.path().join("workspace");
+        let cas = Arc::new(ContentAddressableStorage::new(workspace_dir.clone()));
+        let metadata_store = Arc::new(MetadataStore::new(&workspace_dir).await.unwrap());
+        let context =
+            CasProcessingContext::new(workspace_dir, Arc::clone(&cas), Arc::clone(&metadata_store));
+        let provider = TestConfigProvider {
+            dir: temp.path().join("config"),
+        };
+
+        let started = std::time::Instant::now();
+        process_path_with_cas_and_checkpoints(
+            &zip_path,
+            "many.zip",
+            &context,
+            &provider,
+            "task-1",
+            "workspace-1",
+            None,
+            0,
+        )
+        .await
+        .unwrap();
+        let elapsed = started.elapsed();
+
+        assert_eq!(metadata_store.count_files().await.unwrap(), 1000);
+        assert!(
+            elapsed < std::time::Duration::from_secs(3),
+            "expected 1000-file zip import to complete in seconds, took {elapsed:?}"
+        );
+        eprintln!("1000-file zip import smoke elapsed: {elapsed:?}");
+    }
+}

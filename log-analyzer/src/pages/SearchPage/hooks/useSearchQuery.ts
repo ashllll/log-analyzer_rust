@@ -2,12 +2,19 @@
  * 搜索查询管理 Hook
  * 封装查询字符串、结构化查询、自动保存/加载、防抖触发逻辑
  */
-import { useState, useEffect, useCallback } from 'react';
-import { SearchQueryBuilder, parseQueryFromString } from '../../../services/SearchQueryBuilder';
-import { saveQuery, loadQuery, clearQuery } from '../../../services/queryStorage';
-import { splitQueryByPipe } from '../../../utils/searchPatterns';
-import type { SearchQuery } from '../../../types/search';
-import type { KeywordGroup } from '../../../types/common';
+import { useState, useEffect, useCallback } from "react";
+import {
+  SearchQueryBuilder,
+  parseQueryFromString,
+} from "../../../services/SearchQueryBuilder";
+import {
+  saveQuery,
+  loadQuery,
+  clearQuery,
+} from "../../../services/queryStorage";
+import { splitQueryByPipe } from "../../../utils/searchPatterns";
+import type { SearchQuery } from "../../../types/search";
+import type { KeywordGroup } from "../../../types/common";
 
 export interface SearchParsingOptions {
   caseSensitive: boolean;
@@ -35,12 +42,17 @@ export interface UseSearchQueryReturn {
   ) => void;
 }
 
-function shouldResetStructuredQuery(nextQuery: string, currentQuery: SearchQuery | null): boolean {
+export const SEARCH_TRIGGER_DEBOUNCE_MS = 150;
+
+function shouldResetStructuredQuery(
+  nextQuery: string,
+  currentQuery: SearchQuery | null
+): boolean {
   if (!currentQuery) return false;
   const currentDisplayQuery = currentQuery.terms
     .filter((t) => t.enabled)
     .map((t) => t.value)
-    .join('|');
+    .join("|");
   return nextQuery !== currentDisplayQuery;
 }
 
@@ -53,14 +65,18 @@ function syncStructuredQueryWithSettings(
     terms: query.terms.map((term) => ({
       ...term,
       caseSensitive: options.caseSensitive,
-      isRegex: options.regexEnabled && (term.isRegex || /[.*+?^${}()|[\]\\]/.test(term.value)),
+      isRegex:
+        options.regexEnabled &&
+        (term.isRegex || /[.*+?^${}()|[\]\\]/.test(term.value)),
     })),
   };
 }
 
 export function useSearchQuery(): UseSearchQueryReturn {
-  const [query, setQueryState] = useState('');
-  const [currentQuery, setCurrentQueryState] = useState<SearchQuery | null>(null);
+  const [query, setQueryState] = useState("");
+  const [currentQuery, setCurrentQueryState] = useState<SearchQuery | null>(
+    null
+  );
   const [searchTrigger, setSearchTrigger] = useState(0);
 
   // 加载保存的查询
@@ -87,23 +103,30 @@ export function useSearchQuery(): UseSearchQueryReturn {
     if (!query.trim()) return;
     const timer = setTimeout(() => {
       setSearchTrigger((prev) => prev + 1);
-    }, 500);
+    }, SEARCH_TRIGGER_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [query]);
 
-  const setQuery = useCallback((nextQuery: string) => {
-    setQueryState(nextQuery);
-    if (shouldResetStructuredQuery(nextQuery, currentQuery)) {
-      setCurrentQueryState(null);
-    }
-  }, [currentQuery]);
+  const setQuery = useCallback(
+    (nextQuery: string) => {
+      setQueryState(nextQuery);
+      if (shouldResetStructuredQuery(nextQuery, currentQuery)) {
+        setCurrentQueryState(null);
+      }
+    },
+    [currentQuery]
+  );
 
   const activeTerms = currentQuery
     ? currentQuery.terms.filter((t) => t.enabled).map((t) => t.value)
     : splitQueryByPipe(query);
 
   const buildStructuredQuery = useCallback(
-    (rawQuery: string, keywordGroups: KeywordGroup[], options: SearchParsingOptions): SearchQuery => {
+    (
+      rawQuery: string,
+      keywordGroups: KeywordGroup[],
+      options: SearchParsingOptions
+    ): SearchQuery => {
       const baseQuery = currentQuery
         ? syncStructuredQueryWithSettings(currentQuery, options)
         : parseQueryFromString(rawQuery, keywordGroups, options);
@@ -120,23 +143,28 @@ export function useSearchQuery(): UseSearchQueryReturn {
     [currentQuery]
   );
 
-  const removeTermFromQuery = useCallback((termToRemove: string) => {
-    if (currentQuery) {
-      const builder = SearchQueryBuilder.import(JSON.stringify(currentQuery));
-      if (builder) {
-        const existing = builder.findTermByValue(termToRemove);
-        if (existing) {
-          builder.removeTerm(existing.id);
-          setCurrentQueryState(builder.getQuery());
-          setQueryState(builder.toQueryString());
-          return;
+  const removeTermFromQuery = useCallback(
+    (termToRemove: string) => {
+      if (currentQuery) {
+        const builder = SearchQueryBuilder.import(JSON.stringify(currentQuery));
+        if (builder) {
+          const existing = builder.findTermByValue(termToRemove);
+          if (existing) {
+            builder.removeTerm(existing.id);
+            setCurrentQueryState(builder.getQuery());
+            setQueryState(builder.toQueryString());
+            return;
+          }
         }
       }
-    }
-    const terms = splitQueryByPipe(query);
-    const newTerms = terms.filter((t) => t.toLowerCase() !== termToRemove.toLowerCase());
-    setQueryState(newTerms.join('|'));
-  }, [query, currentQuery]);
+      const terms = splitQueryByPipe(query);
+      const newTerms = terms.filter(
+        (t) => t.toLowerCase() !== termToRemove.toLowerCase()
+      );
+      setQueryState(newTerms.join("|"));
+    },
+    [query, currentQuery]
+  );
 
   const toggleRuleInQuery = useCallback(
     (
@@ -148,16 +176,17 @@ export function useSearchQuery(): UseSearchQueryReturn {
       const builder = currentQuery
         ? SearchQueryBuilder.import(JSON.stringify(currentQuery))
         : null;
-      const b = builder ?? SearchQueryBuilder.fromString(query, keywordGroups, options);
+      const b =
+        builder ?? SearchQueryBuilder.fromString(query, keywordGroups, options);
 
       const existing = b.findTermByValue(ruleRegex);
       if (existing) {
         b.toggleTerm(existing.id);
       } else {
         b.addTerm(ruleRegex, {
-          source: 'preset',
+          source: "preset",
           isRegex: options.regexEnabled && /[.*+?^${}()|[\]\\]/.test(ruleRegex),
-          operator: 'OR',
+          operator: "OR",
           caseSensitive: options.caseSensitive,
         });
       }
@@ -165,9 +194,9 @@ export function useSearchQuery(): UseSearchQueryReturn {
       const validation = b.validate();
       if (!validation.isValid) {
         const errors = validation.issues
-          .filter((i) => i.severity === 'error')
+          .filter((i) => i.severity === "error")
           .map((i) => i.message)
-          .join(', ');
+          .join(", ");
         onError(`查询验证失败: ${errors}`);
         return;
       }

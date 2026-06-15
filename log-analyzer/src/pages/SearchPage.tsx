@@ -1,19 +1,25 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useTranslation } from 'react-i18next';
-import { save } from '@tauri-apps/plugin-dialog';
-import { useWorkspaceStore } from '../stores/workspaceStore';
-import { useWorkspaceSelection } from '../hooks/useWorkspaceSelection';
-import { useKeywordStore } from '../stores/keywordStore';
-import { useAppStore } from '../stores/appStore';
-import { useShallow } from 'zustand/shallow';
-import { useToast } from '../hooks/useToast';
-import { useConfig } from '../hooks/useConfig';
-import { useInfiniteSearch } from '../hooks/useInfiniteSearch';
-import { api } from '../services/api';
-import { getFullErrorMessage } from '../services/errors';
-import { logger } from '../utils/logger';
-import { KeywordStatsPanel } from '../components/search/KeywordStatsPanel';
-import type { FilterOptions } from '../types/common';
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+} from "react";
+import { useTranslation } from "react-i18next";
+import { save } from "@tauri-apps/plugin-dialog";
+import { useWorkspaceStore } from "../stores/workspaceStore";
+import { useWorkspaceSelection } from "../hooks/useWorkspaceSelection";
+import { useKeywordStore } from "../stores/keywordStore";
+import { useAppStore } from "../stores/appStore";
+import { useShallow } from "zustand/shallow";
+import { useToast } from "../hooks/useToast";
+import { useConfig } from "../hooks/useConfig";
+import { useInfiniteSearch } from "../hooks/useInfiniteSearch";
+import { api } from "../services/api";
+import { getFullErrorMessage } from "../services/errors";
+import { logger } from "../utils/logger";
+import { KeywordStatsPanel } from "../components/search/KeywordStatsPanel";
+import type { FilterOptions } from "../types/common";
 
 import {
   SearchControls,
@@ -21,7 +27,7 @@ import {
   ActiveKeywords,
   SearchResults,
   LogDetailPanel,
-} from './SearchPage/components';
+} from "./SearchPage/components";
 import {
   useSearchState,
   useVirtualScroll,
@@ -29,16 +35,20 @@ import {
   useSearchEvents,
   useSearchQuery,
   useWorkspaceTimeRange,
-} from './SearchPage/hooks';
+} from "./SearchPage/hooks";
 
 const SearchPage: React.FC = () => {
   const { t } = useTranslation();
   const { showToast: addToast } = useToast();
   const { searchConfig, loadSearchConfig } = useConfig();
   const { activeWorkspace } = useWorkspaceSelection();
-  const keywordGroups = useKeywordStore(useShallow((state) => state.keywordGroups));
+  const keywordGroups = useKeywordStore(
+    useShallow((state) => state.keywordGroups)
+  );
   const workspaceLoading = useWorkspaceStore((state) => state.loading);
-  const isInitialized = useAppStore((state) => state.initPhase !== 'idle' && state.initPhase !== 'loading');
+  const isInitialized = useAppStore(
+    (state) => state.initPhase !== "idle" && state.initPhase !== "loading"
+  );
 
   const enabledKeywordGroups = useMemo(
     () => keywordGroups.filter((g) => g.enabled),
@@ -71,16 +81,20 @@ const SearchPage: React.FC = () => {
   } = useSearchQuery();
 
   // 工作区时间范围
-  const { filterOptions, setFilterOptions, resetFilters } = useWorkspaceTimeRange({
-    activeWorkspaceId: activeWorkspace?.id,
-  });
+  const { filterOptions, setFilterOptions, resetFilters } =
+    useWorkspaceTimeRange({
+      activeWorkspaceId: activeWorkspace?.id,
+    });
 
   // 当前搜索 ID
-  const [currentSearchId, setCurrentSearchId] = useState('');
+  const [currentSearchId, setCurrentSearchId] = useState("");
   const [liveCount, setLiveCount] = useState(0);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [isFilterPaletteOpen, setIsFilterPaletteOpen] = useState(false);
   const lastProgressRefetchAt = useRef(0);
+  const hasLoadedFirstPageRef = useRef(false);
+  const activeSearchIdRef = useRef("");
+  const searchRequestSeqRef = useRef(0);
 
   // 无限搜索
   const {
@@ -107,9 +121,13 @@ const SearchPage: React.FC = () => {
     [infiniteSearchData]
   );
 
+  useEffect(() => {
+    hasLoadedFirstPageRef.current = loadedEntries.length > 0;
+  }, [loadedEntries.length]);
+
   const totalResultCount = useMemo(() => {
     const pagedTotal = infiniteSearchData?.pages[0]?.totalCount;
-    if (typeof pagedTotal === 'number' && pagedTotal >= 0) {
+    if (typeof pagedTotal === "number" && pagedTotal >= 0) {
       return pagedTotal;
     }
     return liveCount;
@@ -126,20 +144,17 @@ const SearchPage: React.FC = () => {
   );
 
   // 虚拟滚动
-  const {
-    parentRef,
-    virtualItems,
-    totalSize,
-    measureElement,
-    scrollToIndex,
-  } = useVirtualScroll({
-    count: totalResultCount,
-    estimateSize: 48,
-    overscan: 20,
-  });
+  const { parentRef, virtualItems, totalSize, measureElement, scrollToIndex } =
+    useVirtualScroll({
+      count: totalResultCount,
+      estimateSize: 48,
+      overscan: 20,
+    });
 
-  const lastVisibleIndex = virtualItems.length > 0 ? virtualItems[virtualItems.length - 1].index : -1;
-  const firstVisibleIndex = virtualItems.length > 0 ? virtualItems[0].index : -1;
+  const lastVisibleIndex =
+    virtualItems.length > 0 ? virtualItems[virtualItems.length - 1].index : -1;
+  const firstVisibleIndex =
+    virtualItems.length > 0 ? virtualItems[0].index : -1;
 
   // 分页加载
   useSearchPagination({
@@ -159,31 +174,58 @@ const SearchPage: React.FC = () => {
   useSearchEvents({
     currentSearchId,
     onStart: useCallback(() => {
-      dispatchSearchExec({ type: 'START' });
+      dispatchSearchExec({ type: "START" });
       setLiveCount(0);
       setSelectedId(null);
+      hasLoadedFirstPageRef.current = false;
       if (parentRef.current) parentRef.current.scrollTop = 0;
     }, [dispatchSearchExec, parentRef]),
-    onProgress: useCallback((count: number) => {
-      setLiveCount(count);
-      const now = Date.now();
-      if (now - lastProgressRefetchAt.current < 300) return;
-      lastProgressRefetchAt.current = now;
-      refetchSearchPages().catch((error) => {
-        logger.error('Refetch search page after progress failed:', error);
-      });
-    }, [refetchSearchPages]),
-    onSummary: useCallback((summary) => {
-      dispatchSearchExec({ type: 'SUMMARY', summary, keywordColors: ['#3B82F6', '#8B5CF6', '#22C55E', '#F59E0B', '#EC4899', '#06B6D4'] });
-    }, [dispatchSearchExec]),
-    onComplete: useCallback((count: number) => {
-      dispatchSearchExec({ type: 'COMPLETE' });
-      setLiveCount(count);
-    }, [dispatchSearchExec]),
-    onError: useCallback((errorMsg: string) => {
-      dispatchSearchExec({ type: 'ERROR' });
-      addToast('error', t('search.error', { message: errorMsg }));
-    }, [addToast, t, dispatchSearchExec]),
+    onProgress: useCallback(
+      (count: number) => {
+        setLiveCount(count);
+        if (hasLoadedFirstPageRef.current) return;
+        const now = Date.now();
+        if (now - lastProgressRefetchAt.current < 150) return;
+        lastProgressRefetchAt.current = now;
+        refetchSearchPages().catch((error) => {
+          logger.error("Refetch search page after progress failed:", error);
+        });
+      },
+      [refetchSearchPages]
+    ),
+    onSummary: useCallback(
+      (summary) => {
+        dispatchSearchExec({
+          type: "SUMMARY",
+          summary,
+          keywordColors: [
+            "#3B82F6",
+            "#8B5CF6",
+            "#22C55E",
+            "#F59E0B",
+            "#EC4899",
+            "#06B6D4",
+          ],
+        });
+      },
+      [dispatchSearchExec]
+    ),
+    onComplete: useCallback(
+      (count: number) => {
+        dispatchSearchExec({ type: "COMPLETE" });
+        setLiveCount(count);
+        activeSearchIdRef.current = "";
+      },
+      [dispatchSearchExec]
+    ),
+    onError: useCallback(
+      (errorMsg: string) => {
+        dispatchSearchExec({ type: "ERROR" });
+        activeSearchIdRef.current = "";
+        addToast("error", t("search.error", { message: errorMsg }));
+      },
+      [addToast, t, dispatchSearchExec]
+    ),
     onRefetch: refetchSearchPages,
     onScrollToTop: useCallback(() => {
       scrollToIndex(0);
@@ -193,34 +235,54 @@ const SearchPage: React.FC = () => {
   // 无限搜索错误处理
   useEffect(() => {
     if (infiniteSearchError) {
-      addToast('error', `分页加载失败: ${infiniteSearchError.message}`);
+      addToast("error", `分页加载失败: ${infiniteSearchError.message}`);
     }
   }, [infiniteSearchError, addToast]);
 
   // 加载搜索配置
   useEffect(() => {
     loadSearchConfig().catch((err) => {
-      logger.warn('Failed to load search config for SearchPage, using defaults', err);
+      logger.warn(
+        "Failed to load search config for SearchPage, using defaults",
+        err
+      );
     });
   }, [loadSearchConfig]);
 
   // 执行搜索
   const handleSearch = useCallback(async () => {
     if (!activeWorkspace) {
-      addToast('error', t('search.no_workspace_selected'));
+      addToast("error", t("search.no_workspace_selected"));
       return;
     }
 
     const trimmedQuery = query.trim();
     if (!trimmedQuery) {
+      searchRequestSeqRef.current += 1;
       setLiveCount(0);
-      setCurrentSearchId('');
+      if (activeSearchIdRef.current) {
+        api.cancelSearch(activeSearchIdRef.current).catch((error) => {
+          logger.warn("Cancel search after clearing query failed:", error);
+        });
+        activeSearchIdRef.current = "";
+      }
+      setCurrentSearchId("");
       return;
     }
 
-    dispatchSearchExec({ type: 'START' });
+    const requestSeq = searchRequestSeqRef.current + 1;
+    searchRequestSeqRef.current = requestSeq;
+
+    if (activeSearchIdRef.current) {
+      api.cancelSearch(activeSearchIdRef.current).catch((error) => {
+        logger.warn("Cancel previous search failed:", error);
+      });
+      activeSearchIdRef.current = "";
+    }
+
+    dispatchSearchExec({ type: "START" });
     setLiveCount(0);
-    setCurrentSearchId('');
+    setCurrentSearchId("");
     setSelectedId(null);
 
     if (parentRef.current) {
@@ -228,12 +290,17 @@ const SearchPage: React.FC = () => {
     }
 
     try {
-      const runtimeSearchConfig = searchConfig ?? (await loadSearchConfig().catch(() => null));
+      const runtimeSearchConfig =
+        searchConfig ?? (await loadSearchConfig().catch(() => null));
       const parsingOptions = {
         caseSensitive: runtimeSearchConfig?.case_sensitive ?? false,
         regexEnabled: runtimeSearchConfig?.regex_enabled ?? true,
       };
-      const structuredQuery = buildStructuredQuery(trimmedQuery, enabledKeywordGroups, parsingOptions);
+      const structuredQuery = buildStructuredQuery(
+        trimmedQuery,
+        enabledKeywordGroups,
+        parsingOptions
+      );
 
       const filters: FilterOptions = {
         timeRange: filterOptions.timeRange,
@@ -248,12 +315,23 @@ const SearchPage: React.FC = () => {
         filters,
       });
 
+      if (requestSeq !== searchRequestSeqRef.current) {
+        api.cancelSearch(searchId).catch((error) => {
+          logger.warn("Cancel stale search failed:", error);
+        });
+        return;
+      }
+
+      activeSearchIdRef.current = searchId;
       setCurrentSearchId(searchId);
       setCurrentQuery(structuredQuery);
     } catch (err) {
-      logger.error('Search failed:', err);
-      dispatchSearchExec({ type: 'ERROR' });
-      addToast('error', `搜索失败: ${getFullErrorMessage(err)}`);
+      if (requestSeq !== searchRequestSeqRef.current) {
+        return;
+      }
+      logger.error("Search failed:", err);
+      dispatchSearchExec({ type: "ERROR" });
+      addToast("error", `搜索失败: ${getFullErrorMessage(err)}`);
     }
   }, [
     query,
@@ -270,6 +348,18 @@ const SearchPage: React.FC = () => {
     parentRef,
   ]);
 
+  useEffect(
+    () => () => {
+      if (activeSearchIdRef.current) {
+        api.cancelSearch(activeSearchIdRef.current).catch((error) => {
+          logger.warn("Cancel search on unmount failed:", error);
+        });
+        activeSearchIdRef.current = "";
+      }
+    },
+    []
+  );
+
   // FIX(CR-11): useRef to hold latest handleSearch, avoiding stale closure
   const handleSearchRef = useRef(handleSearch);
   handleSearchRef.current = handleSearch;
@@ -282,44 +372,63 @@ const SearchPage: React.FC = () => {
   }, [searchTrigger, activeWorkspace]);
 
   // 导出搜索结果
-  const handleExport = useCallback(async (format: 'csv' | 'json') => {
-    if (loadedEntries.length === 0) {
-      addToast('error', '没有可导出的数据');
-      return;
-    }
+  const handleExport = useCallback(
+    async (format: "csv" | "json") => {
+      if (loadedEntries.length === 0) {
+        addToast("error", "没有可导出的数据");
+        return;
+      }
 
-    try {
-      const defaultPath = `log-export-${Date.now()}.${format}`;
-      const savePath = await save({
-        defaultPath,
-        filters: [{ name: format.toUpperCase(), extensions: [format] }],
-      });
+      try {
+        const defaultPath = `log-export-${Date.now()}.${format}`;
+        const savePath = await save({
+          defaultPath,
+          filters: [{ name: format.toUpperCase(), extensions: [format] }],
+        });
 
-      if (!savePath) return;
+        if (!savePath) return;
 
-      await api.exportResults({ results: loadedEntries, format, savePath });
-      addToast('success', `已导出 ${loadedEntries.length} 条日志到 ${format.toUpperCase()}`);
-    } catch (e) {
-      logger.error('Export error:', e);
-      addToast('error', `导出失败: ${getFullErrorMessage(e)}`);
-    }
-  }, [loadedEntries, addToast]);
+        await api.exportResults({ results: loadedEntries, format, savePath });
+        addToast(
+          "success",
+          `已导出 ${loadedEntries.length} 条日志到 ${format.toUpperCase()}`
+        );
+      } catch (e) {
+        logger.error("Export error:", e);
+        addToast("error", `导出失败: ${getFullErrorMessage(e)}`);
+      }
+    },
+    [loadedEntries, addToast]
+  );
 
   // 复制到剪贴板
-  const copyToClipboard = useCallback((text: string) => {
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(text).then(() => addToast('success', 'Copied'));
-    } else {
-      addToast('error', 'Clipboard not available');
-    }
-  }, [addToast]);
+  const copyToClipboard = useCallback(
+    (text: string) => {
+      if (navigator.clipboard) {
+        navigator.clipboard
+          .writeText(text)
+          .then(() => addToast("success", "Copied"));
+      } else {
+        addToast("error", "Clipboard not available");
+      }
+    },
+    [addToast]
+  );
 
   // 切换规则
-  const handleToggleRule = useCallback((ruleRegex: string) => {
-    toggleRuleInQuery(ruleRegex, enabledKeywordGroups, searchParsingOptions, (msg) => {
-      addToast('error', msg);
-    });
-  }, [toggleRuleInQuery, enabledKeywordGroups, searchParsingOptions, addToast]);
+  const handleToggleRule = useCallback(
+    (ruleRegex: string) => {
+      toggleRuleInQuery(
+        ruleRegex,
+        enabledKeywordGroups,
+        searchParsingOptions,
+        (msg) => {
+          addToast("error", msg);
+        }
+      );
+    },
+    [toggleRuleInQuery, enabledKeywordGroups, searchParsingOptions, addToast]
+  );
 
   // 稳定化 queryTerms
   const queryTerms = useMemo(
@@ -340,7 +449,9 @@ const SearchPage: React.FC = () => {
           onSearch={handleSearch}
           onExport={handleExport}
           isFilterPaletteOpen={isFilterPaletteOpen}
-          onFilterPaletteToggle={() => setIsFilterPaletteOpen(!isFilterPaletteOpen)}
+          onFilterPaletteToggle={() =>
+            setIsFilterPaletteOpen(!isFilterPaletteOpen)
+          }
           onFilterPaletteClose={() => setIsFilterPaletteOpen(false)}
           isSearching={isSearching}
           disabled={!activeWorkspace || !query.trim()}
@@ -366,7 +477,7 @@ const SearchPage: React.FC = () => {
             keywords={keywordStats}
             totalMatches={searchSummary.totalMatches}
             searchDurationMs={searchSummary.searchDurationMs}
-            onClose={() => dispatchSearchExec({ type: 'RESET' })}
+            onClose={() => dispatchSearchExec({ type: "RESET" })}
           />
         )}
       </div>

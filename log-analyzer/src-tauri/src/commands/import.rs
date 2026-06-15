@@ -3,8 +3,8 @@
 //! # P4 重构
 //!
 //! `import_folder` 已精简：核心导入逻辑下沉到 `WorkspaceServiceImpl::import_file`。
-//! 命令层仅负责 TaskManager 生命周期、完整性验证（verify_after_import）
-//! 和 Tantivy 段合并。
+//! 命令层仅负责 TaskManager 生命周期，并把完整性验证与 Tantivy
+//! 段合并放到后台执行，避免阻塞导入完成反馈。
 //!
 //! # 前后端集成规范
 //!
@@ -146,48 +146,51 @@ pub async fn import_folder(
         }
     };
 
-    // ── 完整性验证（保留在命令层）──
-    let _ = scheduler
-        .update(&handle, 95, "Verifying integrity...")
-        .await;
+    // ── 完成 ──
+    let _ = scheduler.update(&handle, 100, "Import complete").await;
+    let _ = scheduler.complete(&handle).await;
+    let _ = app.emit("import-complete", &task_id);
 
-    match verify_after_import(&workspace_dir).await {
-        Ok(report) => {
-            if report.is_valid() {
-                info!(
-                    workspace_id = %workspace_id,
-                    total_files = report.total_files,
-                    valid_files = report.valid_files,
-                    "Import completed with integrity verification"
-                );
-            } else {
-                warn!(
-                    workspace_id = %workspace_id,
-                    total_files = report.total_files,
-                    valid_files = report.valid_files,
-                    invalid = report.invalid_files.len(),
-                    missing = report.missing_objects.len(),
-                    corrupted = report.corrupted_objects.len(),
-                    "Integrity verification found issues"
-                );
-                let _ = app.emit(
-                    "validation-report",
-                    serde_json::json!({
-                        "workspace_id": workspace_id,
-                        "report": report,
-                    }),
-                );
+    // ── 完整性验证（后台执行）──
+    let verify_app = app.clone();
+    let verify_workspace_id = workspace_id.clone();
+    let verify_workspace_dir = workspace_dir.clone();
+    tokio::spawn(async move {
+        match verify_after_import(&verify_workspace_dir).await {
+            Ok(report) => {
+                if report.is_valid() {
+                    info!(
+                        workspace_id = %verify_workspace_id,
+                        total_files = report.total_files,
+                        valid_files = report.valid_files,
+                        "Import integrity verification completed"
+                    );
+                } else {
+                    warn!(
+                        workspace_id = %verify_workspace_id,
+                        total_files = report.total_files,
+                        valid_files = report.valid_files,
+                        invalid = report.invalid_files.len(),
+                        missing = report.missing_objects.len(),
+                        corrupted = report.corrupted_objects.len(),
+                        "Integrity verification found issues"
+                    );
+                    let _ = verify_app.emit(
+                        "validation-report",
+                        serde_json::json!({
+                            "workspace_id": verify_workspace_id,
+                            "report": report,
+                        }),
+                    );
+                }
+            }
+            Err(e) => {
+                let msg = format!("Failed to verify integrity: {e}");
+                error!(workspace_id = %verify_workspace_id, error = %e, "{msg}");
+                let _ = verify_app.emit("import-error", &msg);
             }
         }
-        Err(e) => {
-            let msg = format!("Failed to verify integrity: {e}");
-            error!(workspace_id = %workspace_id, error = %e, "{msg}");
-            let _ = app.emit("import-error", &msg);
-        }
-    }
-
-    // ── 完成 ──
-    let _ = scheduler.complete(&handle).await;
+    });
 
     // ── Tantivy segment 合并（后台执行）──
     let search_engine = Arc::clone(service.search_engine());
@@ -204,7 +207,6 @@ pub async fn import_folder(
         }
     });
 
-    let _ = app.emit("import-complete", &task_id);
     Ok(task_id)
 }
 
