@@ -17,7 +17,7 @@ fail-under = 40
 out = ["Html", "Xml", "Lcov"]
 
 # 超时时间（秒）
-timeout = "600"
+timeout = "600s"
 
 # Coverage is collected from stable unit targets. Workspace integration tests
 # run separately in CI without instrumentation.
