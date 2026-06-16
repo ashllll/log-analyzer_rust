@@ -1,7 +1,8 @@
-import { SearchQuery } from '../types/search';
-import { z } from 'zod';
+import { SearchQuery } from "../types/search";
+import { z } from "zod";
+import { logger } from "../utils/logger";
 
-const STORAGE_KEY = 'log_analyzer_current_query';
+const STORAGE_KEY = "log_analyzer_current_query";
 
 const SearchTermSchema = z.object({
   id: z.string(),
@@ -19,14 +20,19 @@ const SearchQuerySchema = z.object({
   id: z.string(),
   terms: z.array(SearchTermSchema),
   globalOperator: z.string(),
-  filters: z.object({
-    levels: z.array(z.string()).optional(),
-    timeRange: z.object({
-      start: z.number().optional(),
-      end: z.number().optional(),
-    }).optional(),
-    filePattern: z.string().optional(),
-  }).nullable().optional(),
+  filters: z
+    .object({
+      levels: z.array(z.string()).optional(),
+      timeRange: z
+        .object({
+          start: z.number().optional(),
+          end: z.number().optional(),
+        })
+        .optional(),
+      filePattern: z.string().optional(),
+    })
+    .nullable()
+    .optional(),
   metadata: z.object({
     createdAt: z.number().optional(),
     lastModified: z.number().optional(),
@@ -42,7 +48,7 @@ export function saveQuery(query: SearchQuery): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(query));
   } catch (error) {
-    console.error('Failed to save query:', error);
+    logger.error("Failed to save query:", error);
   }
 }
 
@@ -57,7 +63,7 @@ export function loadQuery(): SearchQuery | null {
     const parsed = JSON.parse(stored);
     return SearchQuerySchema.parse(parsed) as SearchQuery;
   } catch (error) {
-    console.error('Failed to load query:', error);
+    logger.error("Failed to load query:", error);
     return null;
   }
 }
