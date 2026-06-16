@@ -1,100 +1,108 @@
-import { computeConfigFingerprint } from '../useConfigManager';
-import type { KeywordGroup } from '../../types/common';
+import { computeConfigFingerprint } from "../../services/configSync";
+import type { KeywordGroup } from "../../types/common";
 
-describe('computeConfigFingerprint', () => {
+describe("computeConfigFingerprint", () => {
   const baseGroup: KeywordGroup = {
-    id: 'g1',
-    name: 'Errors',
-    color: 'red',
-    patterns: [{ regex: 'error', comment: '' }],
+    id: "g1",
+    name: "Errors",
+    color: "red",
+    patterns: [{ regex: "error", comment: "" }],
     enabled: true,
   };
 
-  it('detects change when a keyword group name is edited', () => {
+  it("detects change when a keyword group name is edited", () => {
     const before = computeConfigFingerprint([baseGroup], []);
     const after = computeConfigFingerprint(
-      [{ ...baseGroup, name: 'Critical Errors' }],
-      [],
+      [{ ...baseGroup, name: "Critical Errors" }],
+      []
     );
     expect(after).not.toBe(before);
   });
 
-  it('detects change when a keyword group color is edited', () => {
+  it("detects change when a keyword group color is edited", () => {
     const before = computeConfigFingerprint([baseGroup], []);
     const after = computeConfigFingerprint(
-      [{ ...baseGroup, color: 'blue' }],
-      [],
+      [{ ...baseGroup, color: "blue" }],
+      []
     );
     expect(after).not.toBe(before);
   });
 
-  it('detects change when a keyword group pattern is added', () => {
+  it("detects change when a keyword group pattern is added", () => {
     const before = computeConfigFingerprint([baseGroup], []);
     const after = computeConfigFingerprint(
-      [{ ...baseGroup, patterns: [...baseGroup.patterns, { regex: 'timeout', comment: '' }] }],
-      [],
+      [
+        {
+          ...baseGroup,
+          patterns: [...baseGroup.patterns, { regex: "timeout", comment: "" }],
+        },
+      ],
+      []
     );
     expect(after).not.toBe(before);
   });
 
-  it('detects change when a keyword group pattern is removed', () => {
+  it("detects change when a keyword group pattern is removed", () => {
     const group: KeywordGroup = {
       ...baseGroup,
       patterns: [
-        { regex: 'error', comment: '' },
-        { regex: 'timeout', comment: '' },
+        { regex: "error", comment: "" },
+        { regex: "timeout", comment: "" },
       ],
     };
     const before = computeConfigFingerprint([group], []);
     const after = computeConfigFingerprint(
-      [{ ...group, patterns: [{ regex: 'error', comment: '' }] }],
-      [],
+      [{ ...group, patterns: [{ regex: "error", comment: "" }] }],
+      []
     );
     expect(after).not.toBe(before);
   });
 
-  it('detects change when a keyword group pattern regex is edited', () => {
+  it("detects change when a keyword group pattern regex is edited", () => {
     const before = computeConfigFingerprint([baseGroup], []);
     const after = computeConfigFingerprint(
-      [{ ...baseGroup, patterns: [{ regex: 'fatal', comment: '' }] }],
-      [],
+      [{ ...baseGroup, patterns: [{ regex: "fatal", comment: "" }] }],
+      []
     );
     expect(after).not.toBe(before);
   });
 
-  it('detects change when a keyword group enabled state changes', () => {
+  it("detects change when a keyword group enabled state changes", () => {
     const before = computeConfigFingerprint([baseGroup], []);
     const after = computeConfigFingerprint(
       [{ ...baseGroup, enabled: false }],
-      [],
+      []
     );
     expect(after).not.toBe(before);
   });
 
-  it('detects change when a keyword group is deleted', () => {
+  it("detects change when a keyword group is deleted", () => {
     const before = computeConfigFingerprint([baseGroup], []);
     const after = computeConfigFingerprint([], []);
     expect(after).not.toBe(before);
   });
 
-  it('detects change when a workspace watch state changes', () => {
+  it("detects change when a workspace watch state changes", () => {
     const workspace = {
-      id: 'ws-1',
-      name: 'Workspace',
-      path: '/logs',
-      status: 'READY',
-      size: '1 MB',
+      id: "ws-1",
+      name: "Workspace",
+      path: "/logs",
+      status: "READY",
+      size: "1 MB",
       files: 10,
       watching: false,
     };
 
     const before = computeConfigFingerprint([], [workspace]);
-    const after = computeConfigFingerprint([], [{ ...workspace, watching: true }]);
+    const after = computeConfigFingerprint(
+      [],
+      [{ ...workspace, watching: true }]
+    );
 
     expect(after).not.toBe(before);
   });
 
-  it('produces the same fingerprint when nothing changed', () => {
+  it("produces the same fingerprint when nothing changed", () => {
     const fp1 = computeConfigFingerprint([baseGroup], []);
     const fp2 = computeConfigFingerprint([baseGroup], []);
     expect(fp2).toBe(fp1);
