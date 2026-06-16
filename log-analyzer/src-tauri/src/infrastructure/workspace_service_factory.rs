@@ -100,6 +100,9 @@ pub(crate) async fn get_or_create_workspace_service(
     let disk_result_store = state
         .get_disk_result_store()
         .ok_or("Disk result store not initialized")?;
+    let search_session_manager = state
+        .get_search_session_manager()
+        .ok_or("Search session manager not initialized")?;
     let thread_pool = state.get_search_thread_pool();
     let regex_cache_size = search_config.regex_cache_size.max(1);
 
@@ -114,6 +117,7 @@ pub(crate) async fn get_or_create_workspace_service(
         }),
         thread_pool,
         regex_cache_size,
+        search_session_manager,
     ));
 
     state.set_workspace_service(

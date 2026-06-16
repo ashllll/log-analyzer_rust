@@ -10,6 +10,7 @@ pub mod config;
 pub mod export;
 pub mod search;
 pub mod search_batch;
+pub mod search_session;
 pub mod virtual_tree;
 pub mod watch;
 pub mod workspace_service;
@@ -17,6 +18,7 @@ pub mod workspace_service;
 pub use config::ConfigUseCase;
 pub use export::{transform_csv, transform_json};
 pub use search::SearchUseCase;
+pub use search_session::SearchSessionManager;
 pub use workspace_service::{
     ImportOptions, ImportResult, ImportService, SearchService, WatchService, WorkspaceService,
     WorkspaceServiceRef,

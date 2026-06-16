@@ -22,6 +22,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
+use crate::application::search_session::SearchSessionManager;
 use crate::application::watch::{WatchEvent, WatchEventKind};
 use la_core::domain::event::EventPublisher;
 // use la_core::domain::SearchResultRepository; // 不需要直接导入，SearchUseCase 内部使用
@@ -70,8 +71,8 @@ pub struct WorkspaceServiceImpl {
     thread_pool: Arc<rayon::ThreadPool>,
     /// FIX(P1-03): 缓存 QueryEngineLogSearcher，避免每次搜索都新建实例导致正则缓存失效
     searcher: Arc<QueryEngineLogSearcher>,
-    /// 活跃的搜索会话 —— search_id → CancellationToken
-    search_sessions: Arc<Mutex<HashMap<String, CancellationToken>>>,
+    /// P8: 搜索会话生命周期由后端全局 SearchSessionManager 统一管理
+    search_session_manager: SearchSessionManager,
     /// 文件监听器状态（P5：从 AppState::watchers 移入实例）
     watcher_state: Arc<Mutex<Option<WatcherState>>>,
 }
@@ -93,6 +94,7 @@ impl WorkspaceServiceImpl {
         event_publisher: Arc<dyn EventPublisher>,
         thread_pool: Arc<rayon::ThreadPool>,
         regex_cache_size: usize,
+        search_session_manager: SearchSessionManager,
     ) -> Self {
         Self {
             workspace_id,
@@ -101,7 +103,7 @@ impl WorkspaceServiceImpl {
             event_publisher,
             thread_pool,
             searcher: Arc::new(QueryEngineLogSearcher::new(regex_cache_size)),
-            search_sessions: Arc::new(Mutex::new(HashMap::new())),
+            search_session_manager,
             watcher_state: Arc::new(Mutex::new(None)),
         }
     }
@@ -152,25 +154,18 @@ impl SearchService for WorkspaceServiceImpl {
         filters: SearchFilters,
         max_results: usize,
     ) -> Result<String> {
-        // 1. 生成搜索会话 ID 和 CancellationToken（实现层内部管理完整生命周期）
+        // 1. 生成搜索会话 ID 和 CancellationToken（由 SearchSessionManager 统一管理）
         let search_id = uuid::Uuid::new_v4().to_string();
         let cancellation_token = CancellationToken::new();
 
-        // 2. 注册 CancellationToken 到会话表（供 cancel_search 使用）
-        {
-            self.search_sessions
-                .lock()
-                .insert(search_id.clone(), cancellation_token.clone());
-        }
-
-        // 让 search_logs 返回前结果会话已经存在。前端拿到 search_id 后会立即
-        // fetch_search_page；如果后台搜索尚未创建会话，用户会先看到分页错误和重试。
-        self.repo
-            .disk_result_store()
+        // 2. 创建结果会话并注册 CancellationToken
+        self.search_session_manager
             .create_session(&search_id)
             .map_err(|e| {
                 AppError::io_error(format!("Failed to create search session: {e}"), None)
             })?;
+        self.search_session_manager
+            .register_token(&search_id, cancellation_token.clone());
 
         // 3. 组装 SearchUseCase 的依赖
         let log_files = Arc::new(CasLogFileRepository {
@@ -194,9 +189,9 @@ impl SearchService for WorkspaceServiceImpl {
         // 5. 执行搜索（spawn_blocking 内运行，立即返回）
         let workspace_id = self.workspace_id.clone();
         let search_id_clone = search_id.clone();
-        let sessions = Arc::clone(&self.search_sessions);
+        let session_manager = self.search_session_manager.clone();
 
-        // 在后台执行搜索，完成后清理会话
+        // 在后台执行搜索，完成后清理取消令牌
         tokio::spawn(async move {
             let result = use_case
                 .execute(
@@ -209,8 +204,8 @@ impl SearchService for WorkspaceServiceImpl {
                 )
                 .await;
 
-            // 搜索完成后（成功/失败/取消），从会话表中移除
-            sessions.lock().remove(&search_id_clone);
+            // 搜索完成后（成功/失败/取消），从全局会话管理器中移除取消令牌
+            session_manager.cleanup_token(&search_id_clone);
 
             if let Err(e) = result {
                 tracing::warn!(
@@ -230,34 +225,12 @@ impl SearchService for WorkspaceServiceImpl {
         offset: usize,
         limit: usize,
     ) -> Result<la_search::SearchPageResult> {
-        let limit = limit.min(10_000);
-
-        if !self.repo.disk_result_store().has_session(search_id) {
-            return Err(AppError::not_found(format!(
-                "Search session '{search_id}' not found"
-            )));
-        }
-
-        self.repo
-            .disk_result_store()
-            .read_page(search_id, offset, limit)
-            .map_err(|e| AppError::io_error(format!("Failed to read search page: {e}"), None))
+        self.search_session_manager
+            .fetch_search_page(search_id, offset, limit)
     }
 
     async fn cancel_search(&self, search_id: &str) -> Result<()> {
-        let token = {
-            let sessions = self.search_sessions.lock();
-            sessions.get(search_id).cloned()
-        };
-        match token {
-            Some(t) => {
-                t.cancel();
-                Ok(())
-            }
-            None => Err(AppError::not_found(format!(
-                "Search session '{search_id}' not found"
-            ))),
-        }
+        self.search_session_manager.cancel_search(search_id)
     }
 }
 

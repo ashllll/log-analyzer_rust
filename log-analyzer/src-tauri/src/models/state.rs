@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 use parking_lot::{Mutex, RwLock};
 
+use crate::application::search_session::SearchSessionManager;
 use crate::application::workspace_service::WorkspaceServiceRef;
 use crate::infrastructure::TaskManagerAdapter;
 use crate::state_sync::StateSync;
@@ -46,6 +47,7 @@ impl WorkspaceRegistry {
 
 pub struct SearchRegistry {
     disk_result_store: RwLock<Option<Arc<DiskResultStore>>>,
+    search_session_manager: RwLock<Option<SearchSessionManager>>,
     thread_pool: Arc<rayon::ThreadPool>,
 }
 
@@ -53,6 +55,7 @@ impl Default for SearchRegistry {
     fn default() -> Self {
         Self {
             disk_result_store: RwLock::new(None),
+            search_session_manager: RwLock::new(None),
             thread_pool: Arc::new(
                 rayon::ThreadPoolBuilder::new()
                     .num_threads(num_cpus::get().max(2))
@@ -68,7 +71,10 @@ impl SearchRegistry {
         let cache_dir = base_path.join("search-cache");
         match DiskResultStore::new(cache_dir.clone(), 50) {
             Ok(store) => {
-                *self.disk_result_store.write() = Some(Arc::new(store));
+                let store = Arc::new(store);
+                let manager = SearchSessionManager::new(Arc::clone(&store));
+                *self.disk_result_store.write() = Some(store);
+                *self.search_session_manager.write() = Some(manager);
                 tracing::info!(path = %cache_dir.display(), "DiskResultStore initialized");
             }
             Err(e) => {
@@ -78,6 +84,9 @@ impl SearchRegistry {
     }
     pub fn get_disk_result_store(&self) -> Option<Arc<DiskResultStore>> {
         self.disk_result_store.read().clone()
+    }
+    pub fn get_search_session_manager(&self) -> Option<SearchSessionManager> {
+        self.search_session_manager.read().clone()
     }
     pub fn get_thread_pool(&self) -> Arc<rayon::ThreadPool> {
         Arc::clone(&self.thread_pool)
@@ -175,6 +184,9 @@ impl AppState {
     }
     pub fn get_disk_result_store(&self) -> Option<Arc<DiskResultStore>> {
         self.search.get_disk_result_store()
+    }
+    pub fn get_search_session_manager(&self) -> Option<SearchSessionManager> {
+        self.search.get_search_session_manager()
     }
     pub fn get_search_thread_pool(&self) -> Arc<rayon::ThreadPool> {
         self.search.get_thread_pool()

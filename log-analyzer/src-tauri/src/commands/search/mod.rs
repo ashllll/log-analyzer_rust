@@ -13,7 +13,7 @@ pub(crate) mod query;
 use serde::{Deserialize, Serialize};
 use tauri::{command, AppHandle, State};
 
-use la_core::error::{AppError, CommandError};
+use la_core::error::CommandError;
 use la_core::models::{LogEntry, SearchFilters, SearchQuery};
 
 use crate::application::workspace_service::WorkspaceServiceRef;
@@ -134,18 +134,14 @@ pub async fn cancel_search(
     #[allow(non_snake_case)] searchId: String,
     state: State<'_, AppState>,
 ) -> Result<(), CommandError> {
-    // Cancel via WorkspaceService — search sessions are managed internally by each service instance.
-    // (P6: removed global cancellation_tokens HashMap; cancel_search is purely delegated.)
-    for svc in state.all_workspace_services() {
-        if svc.cancel_search(&searchId).await.is_ok() {
-            return Ok(());
-        }
-    }
+    let manager = state.get_search_session_manager().ok_or_else(|| {
+        CommandError::new("NOT_FOUND", "Search session manager not initialized")
+            .with_help("Import a workspace first")
+    })?;
 
-    Err(
-        CommandError::new("NOT_FOUND", format!("Search {searchId} not found"))
-            .with_help("Search may have already finished"),
-    )
+    manager
+        .cancel_search(&searchId)
+        .map_err(|e| CommandError::from(e).with_help("Search may have already finished"))
 }
 
 #[command]
@@ -155,22 +151,14 @@ pub async fn fetch_search_page(
     offset: usize,
     limit: usize,
 ) -> Result<la_search::SearchPageResult, CommandError> {
-    // P3 迁移：DiskResultStore 全局共享，任意 workspace service 皆可服务
-    let services = state.all_workspace_services();
-    if let Some(svc) = services.first() {
-        return svc
-            .fetch_search_page(&searchId, offset, limit)
-            .await
-            .map_err(|e| {
-                CommandError::from(AppError::io_error(
-                    format!("Failed to read page: {e}"),
-                    None,
-                ))
-                .with_help("Results may have been cleared. Try searching again")
-            });
-    }
-    Err(CommandError::new("NOT_FOUND", "No workspace available")
-        .with_help("Import a workspace first"))
+    let manager = state.get_search_session_manager().ok_or_else(|| {
+        CommandError::new("NOT_FOUND", "Search session manager not initialized")
+            .with_help("Import a workspace first")
+    })?;
+
+    manager
+        .fetch_search_page(&searchId, offset, limit)
+        .map_err(|e| e.into())
 }
 
 // ============================================================================
