@@ -4,6 +4,7 @@
 .swarm/
 .omc/
 .codegraph/
+.ci-autofix/
 AGENTS.md
 
 # Reasonix

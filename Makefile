@@ -1,4 +1,4 @@
-.PHONY: test check coverage clean
+.PHONY: test check coverage clean shellcheck ci-autofix-loop ci-autofix-loop-push
 
 test:
 	cd log-analyzer/src-tauri && cargo test --workspace
@@ -11,3 +11,12 @@ coverage:
 
 clean:
 	cd log-analyzer/src-tauri && cargo clean
+
+shellcheck:
+	shellcheck scripts/*.sh
+
+ci-autofix-loop:
+	scripts/ci-autofix-loop.sh
+
+ci-autofix-loop-push:
+	CI_AUTOFIX_PUSH=1 scripts/ci-autofix-loop.sh
