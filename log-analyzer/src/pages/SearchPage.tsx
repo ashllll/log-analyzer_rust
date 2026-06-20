@@ -19,7 +19,6 @@ import { api } from "../services/api";
 import { getFullErrorMessage } from "../services/errors";
 import { logger } from "../utils/logger";
 import { KeywordStatsPanel } from "../components/search/KeywordStatsPanel";
-import type { FilterOptions } from "../types/common";
 
 import {
   SearchControls,
@@ -35,6 +34,7 @@ import {
   useSearchEvents,
   useSearchQuery,
   useWorkspaceTimeRange,
+  useSearchOrchestrator,
 } from "./SearchPage/hooks";
 
 const SearchPage: React.FC = () => {
@@ -93,8 +93,6 @@ const SearchPage: React.FC = () => {
   const [isFilterPaletteOpen, setIsFilterPaletteOpen] = useState(false);
   const lastProgressRefetchAt = useRef(0);
   const hasLoadedFirstPageRef = useRef(false);
-  const activeSearchIdRef = useRef("");
-  const searchRequestSeqRef = useRef(0);
 
   // 无限搜索
   const {
@@ -214,14 +212,12 @@ const SearchPage: React.FC = () => {
       (count: number) => {
         dispatchSearchExec({ type: "COMPLETE" });
         setLiveCount(count);
-        activeSearchIdRef.current = "";
       },
       [dispatchSearchExec]
     ),
     onError: useCallback(
       (errorMsg: string) => {
         dispatchSearchExec({ type: "ERROR" });
-        activeSearchIdRef.current = "";
         addToast("error", t("search.error", { message: errorMsg }));
       },
       [addToast, t, dispatchSearchExec]
@@ -249,127 +245,51 @@ const SearchPage: React.FC = () => {
     });
   }, [loadSearchConfig]);
 
-  // 执行搜索
-  const handleSearch = useCallback(async () => {
-    if (!activeWorkspace) {
-      addToast("error", t("search.no_workspace_selected"));
-      return;
-    }
-
-    const trimmedQuery = query.trim();
-    if (!trimmedQuery) {
-      searchRequestSeqRef.current += 1;
-      setLiveCount(0);
-      if (activeSearchIdRef.current) {
-        api.cancelSearch(activeSearchIdRef.current).catch((error) => {
-          logger.warn("Cancel search after clearing query failed:", error);
-        });
-        activeSearchIdRef.current = "";
-      }
-      setCurrentSearchId("");
-      return;
-    }
-
-    const requestSeq = searchRequestSeqRef.current + 1;
-    searchRequestSeqRef.current = requestSeq;
-
-    if (activeSearchIdRef.current) {
-      api.cancelSearch(activeSearchIdRef.current).catch((error) => {
-        logger.warn("Cancel previous search failed:", error);
-      });
-      activeSearchIdRef.current = "";
-    }
-
-    dispatchSearchExec({ type: "START" });
-    setLiveCount(0);
-    setCurrentSearchId("");
-    setSelectedId(null);
-
-    if (parentRef.current) {
-      parentRef.current.scrollTop = 0;
-    }
-
-    try {
-      const runtimeSearchConfig =
-        searchConfig ?? (await loadSearchConfig().catch(() => null));
-      const parsingOptions = {
-        caseSensitive: runtimeSearchConfig?.case_sensitive ?? false,
-        regexEnabled: runtimeSearchConfig?.regex_enabled ?? true,
-      };
-      const structuredQuery = buildStructuredQuery(
-        trimmedQuery,
+  // 搜索编排器（竞态控制 + 生命周期管理）
+  const { execute: executeSearch, cancelCurrent: cancelSearch } =
+    useSearchOrchestrator(
+      {
+        query,
+        workspaceId: activeWorkspace?.id ?? null,
         enabledKeywordGroups,
-        parsingOptions
-      );
-
-      const filters: FilterOptions = {
-        timeRange: filterOptions.timeRange,
-        levels: filterOptions.levels,
-        filePattern: filterOptions.filePattern,
-      };
-
-      const searchId = await api.searchLogs({
-        query: trimmedQuery,
-        structuredQuery,
-        workspaceId: activeWorkspace.id,
-        filters,
-      });
-
-      if (requestSeq !== searchRequestSeqRef.current) {
-        api.cancelSearch(searchId).catch((error) => {
-          logger.warn("Cancel stale search failed:", error);
-        });
-        return;
+        filterOptions,
+        searchConfig,
+        loadSearchConfig,
+        buildStructuredQuery,
+        searchLogs: (params) =>
+          api.searchLogs({
+            query: params.query,
+            structuredQuery: params.structuredQuery,
+            workspaceId: params.workspaceId,
+            filters: params.filters,
+          }),
+        cancelSearch: (id) => api.cancelSearch(id),
+        addToast,
+        t,
+      },
+      {
+        setCurrentSearchId,
+        setLiveCount,
+        setSelectedId,
+        dispatchSearchExec,
+        setCurrentQuery,
+        scrollToTop: () => {
+          if (parentRef.current) parentRef.current.scrollTop = 0;
+        },
       }
-
-      activeSearchIdRef.current = searchId;
-      setCurrentSearchId(searchId);
-      setCurrentQuery(structuredQuery);
-    } catch (err) {
-      if (requestSeq !== searchRequestSeqRef.current) {
-        return;
-      }
-      logger.error("Search failed:", err);
-      dispatchSearchExec({ type: "ERROR" });
-      addToast("error", `搜索失败: ${getFullErrorMessage(err)}`);
-    }
-  }, [
-    query,
-    activeWorkspace,
-    enabledKeywordGroups,
-    filterOptions,
-    searchConfig,
-    loadSearchConfig,
-    addToast,
-    dispatchSearchExec,
-    t,
-    buildStructuredQuery,
-    setCurrentQuery,
-    parentRef,
-  ]);
-
-  useEffect(
-    () => () => {
-      if (activeSearchIdRef.current) {
-        api.cancelSearch(activeSearchIdRef.current).catch((error) => {
-          logger.warn("Cancel search on unmount failed:", error);
-        });
-        activeSearchIdRef.current = "";
-      }
-    },
-    []
-  );
-
-  // FIX(CR-11): useRef to hold latest handleSearch, avoiding stale closure
-  const handleSearchRef = useRef(handleSearch);
-  handleSearchRef.current = handleSearch;
+    );
 
   // 搜索触发器变化时执行搜索
   useEffect(() => {
     if (searchTrigger > 0 && activeWorkspace) {
-      handleSearchRef.current();
+      executeSearch();
     }
-  }, [searchTrigger, activeWorkspace]);
+  }, [searchTrigger, activeWorkspace, executeSearch]);
+
+  // 组件卸载时取消搜索
+  useEffect(() => () => {
+    cancelSearch();
+  }, [cancelSearch]);
 
   // 导出搜索结果
   const handleExport = useCallback(
@@ -446,7 +366,7 @@ const SearchPage: React.FC = () => {
         <SearchControls
           query={query}
           onQueryChange={setQuery}
-          onSearch={handleSearch}
+          onSearch={executeSearch}
           onExport={handleExport}
           isFilterPaletteOpen={isFilterPaletteOpen}
           onFilterPaletteToggle={() =>

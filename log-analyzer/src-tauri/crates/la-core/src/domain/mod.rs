@@ -18,6 +18,7 @@ pub mod result_store;
 pub mod search;
 pub mod task;
 pub mod workspace;
+pub mod workspace_paths;
 
 // Re-export all traits + types
 pub use event::EventPublisher;
@@ -28,3 +29,4 @@ pub use result_store::{SearchResultPage, SearchResultRepository};
 pub use search::{ExecutionPlan, LogSearcher, MatchPlan};
 pub use task::{TaskHandle, TaskScheduler};
 pub use workspace::{WorkspaceInfo, WorkspaceRepository, WorkspaceStatus};
+pub use workspace_paths::WorkspacePaths;

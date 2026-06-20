@@ -67,7 +67,7 @@ impl Default for SearchRegistry {
 }
 
 impl SearchRegistry {
-    pub fn init_disk_result_store_at(&self, base_path: PathBuf) {
+    pub fn init_disk_result_store_at(&self, base_path: PathBuf) -> Result<(), String> {
         let cache_dir = base_path.join("search-cache");
         match DiskResultStore::new(cache_dir.clone(), 50) {
             Ok(store) => {
@@ -76,9 +76,11 @@ impl SearchRegistry {
                 *self.disk_result_store.write() = Some(store);
                 *self.search_session_manager.write() = Some(manager);
                 tracing::info!(path = %cache_dir.display(), "DiskResultStore initialized");
+                Ok(())
             }
             Err(e) => {
                 tracing::warn!(error = %e, path = %cache_dir.display(), "DiskResultStore init failed");
+                Err(format!("DiskResultStore init failed at {}: {e}", cache_dir.display()))
             }
         }
     }
@@ -179,8 +181,8 @@ impl AppState {
         self.workspace.ids()
     }
 
-    pub fn init_disk_result_store_at(&self, base_path: PathBuf) {
-        self.search.init_disk_result_store_at(base_path);
+    pub fn init_disk_result_store_at(&self, base_path: PathBuf) -> Result<(), String> {
+        self.search.init_disk_result_store_at(base_path)
     }
     pub fn get_disk_result_store(&self) -> Option<Arc<DiskResultStore>> {
         self.search.get_disk_result_store()

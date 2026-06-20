@@ -89,6 +89,26 @@ impl EventPublisher for TauriEventPublisher {
             let _ = self.app_handle.emit("new-logs", value);
         }
     }
+
+    async fn emit_import_complete(&self, task_id: &str) {
+        let _ = self.app_handle.emit("import-complete", task_id);
+    }
+
+    async fn emit_import_error(&self, error: &str) {
+        let _ = self.app_handle.emit("import-error", error);
+    }
+
+    async fn emit_validation_report(&self, workspace_id: &str, report_json: &str) {
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(report_json) {
+            let _ = self.app_handle.emit("validation-report", value);
+        } else {
+            // Fallback: emit as raw JSON string if parsing fails
+            let _ = self.app_handle.emit(
+                "validation-report",
+                serde_json::json!({ "workspace_id": workspace_id, "raw": report_json }),
+            );
+        }
+    }
 }
 
 impl TauriEventPublisher {

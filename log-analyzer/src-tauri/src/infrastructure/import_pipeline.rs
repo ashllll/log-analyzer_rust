@@ -6,34 +6,38 @@
 //!
 //! # 职责边界
 //!
-//! - **本模块**：拥有导入的完整生命周期编排。
+//! - **本模块**：拥有导入的完整生命周期编排。通过 trait 引用接收依赖，不绑定 Tauri。
 //! - **`ImportService::import_file`**：保持行为不变，负责具体的文件导入逻辑。
-//! - **命令层**：构造参数并调用 `run_import`，返回 task id。
+//! - **命令层**：构造 adapter 参数并调用 `run_import`，返回 task id。
 
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
-use tauri::{AppHandle, Emitter};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
-use crate::adapters::tauri_config::TauriAppConfigProvider;
 use crate::application::workspace_service::ImportOptions;
 use crate::infrastructure::workspace_service_factory::get_or_create_workspace_service;
 use crate::models::AppState;
 use crate::utils::canonicalize_path;
 use crate::utils::validation::{validate_import_source_path, validate_workspace_id};
-use crate::utils::workspace_paths::preferred_workspace_dir;
-use la_core::domain::TaskHandle;
+use la_core::domain::event::EventPublisher;
+use la_core::domain::{TaskHandle, WorkspacePaths};
 use la_core::error::AppError;
+use la_core::traits::AppConfigProvider;
 use la_storage::verify_after_import;
 
 /// 运行导入生命周期，返回 TaskScheduler 创建的任务 ID。
 ///
-/// 该函数是 `import_folder` 命令的实际实现；命令层仅负责参数透传。
+/// 通过 trait 引用接收基础设施依赖，不绑定 Tauri 具体类型，可独立测试。
+///
+/// `event_publisher` 使用 `Arc` 以支持后台任务的 fire-and-forget 事件发送。
 pub async fn run_import(
-    app: &AppHandle,
+    event_publisher: Arc<dyn EventPublisher>,
+    workspace_paths: &dyn WorkspacePaths,
+    config_provider: &dyn AppConfigProvider,
+    app_handle_for_factory: &tauri::AppHandle,
     state: &AppState,
     workspace_id: &str,
     path: &str,
@@ -41,14 +45,17 @@ pub async fn run_import(
     validate_workspace_id(workspace_id)?;
 
     let validated_path = validate_import_source_path(path, "path")?;
-    let canonical_path = canonicalize_path(&validated_path).map_err(|e| {
-        let msg = format!("Path canonicalization failed: {e}");
-        warn!("{msg}");
-        let _ = app.emit("import-error", &msg);
-        msg
-    })?;
+    let canonical_path = match canonicalize_path(&validated_path) {
+        Ok(p) => p,
+        Err(e) => {
+            let msg = format!("Path canonicalization failed: {e}");
+            warn!("{msg}");
+            event_publisher.emit_import_error(&msg).await;
+            return Err(msg);
+        }
+    };
 
-    let workspace_dir = preferred_workspace_dir(app, workspace_id)?;
+    let workspace_dir = workspace_paths.workspace_data_dir(workspace_id)?;
     fs::create_dir_all(&workspace_dir).map_err(|e| {
         AppError::io_error(
             format!("Failed to create workspace dir: {e}"),
@@ -75,24 +82,28 @@ pub async fn run_import(
         .map_err(|e| format!("Failed to create task: {e}"))?;
 
     // ── 获取或创建 WorkspaceService ──
-    let service = get_or_create_workspace_service(app, state, workspace_id, &workspace_dir)
-        .await
-        .inspect_err(|e| {
-            let _ = app.emit("import-error", e);
-        })?;
+    let service =
+        get_or_create_workspace_service(app_handle_for_factory, state, workspace_id, &workspace_dir)
+            .await
+            .inspect_err(|e| {
+                let publisher = Arc::clone(&event_publisher);
+                let error_msg = e.clone();
+                tokio::spawn(async move {
+                    publisher.emit_import_error(&error_msg).await;
+                });
+            })?;
 
     // ── 更新任务进度 ──
     let _ = scheduler.update(&handle, 10, "Scanning...").await;
 
     // ── 调用 ImportService ──
-    let config_provider = TauriAppConfigProvider(app.clone());
     let cancel_token = tokio_util::sync::CancellationToken::new();
 
     let _import_result = match service
         .import_file(
             &canonical_path,
             ImportOptions::default(),
-            &config_provider,
+            config_provider,
             &task_id,
             cancel_token,
         )
@@ -105,7 +116,11 @@ pub async fn run_import(
             if workspace_dir.exists() {
                 if let Err(rm_err) = fs::remove_dir_all(&workspace_dir) {
                     warn!(path = ?workspace_dir, error = %rm_err, "Failed to cleanup workspace");
-                    let _ = app.emit("import-error", &format!("Cleanup failed: {rm_err}"));
+                    let publisher = Arc::clone(&event_publisher);
+                    let cleanup_msg = format!("Cleanup failed: {rm_err}");
+                    tokio::spawn(async move {
+                        publisher.emit_import_error(&cleanup_msg).await;
+                    });
                 }
             }
             let msg = format!("Failed to import: {e}");
@@ -117,10 +132,10 @@ pub async fn run_import(
     // ── 完成 ──
     let _ = scheduler.update(&handle, 100, "Import complete").await;
     let _ = scheduler.complete(&handle).await;
-    let _ = app.emit("import-complete", &task_id);
+    event_publisher.emit_import_complete(&task_id).await;
 
     // ── 完整性验证（后台执行）──
-    let verify_app = app.clone();
+    let verify_publisher = Arc::clone(&event_publisher);
     let verify_workspace_id = workspace_id.to_string();
     let verify_workspace_dir = workspace_dir.clone();
     tokio::spawn(async move {
@@ -143,19 +158,19 @@ pub async fn run_import(
                         corrupted = report.corrupted_objects.len(),
                         "Integrity verification found issues"
                     );
-                    let _ = verify_app.emit(
-                        "validation-report",
-                        serde_json::json!({
-                            "workspace_id": verify_workspace_id,
-                            "report": report,
-                        }),
-                    );
+                    let report_json = serde_json::json!({
+                        "workspace_id": verify_workspace_id,
+                        "report": report,
+                    });
+                    let _ = verify_publisher
+                        .emit_validation_report(&verify_workspace_id, &report_json.to_string())
+                        .await;
                 }
             }
             Err(e) => {
                 let msg = format!("Failed to verify integrity: {e}");
                 error!(workspace_id = %verify_workspace_id, error = %e, "{msg}");
-                let _ = verify_app.emit("import-error", &msg);
+                let _ = verify_publisher.emit_import_error(&msg).await;
             }
         }
     });
@@ -181,11 +196,23 @@ pub async fn run_import(
 ///
 /// 主要用于测试或需要显式传入 [`Path`] 的场景。
 pub async fn run_import_with_path(
-    app: &AppHandle,
+    event_publisher: Arc<dyn EventPublisher>,
+    workspace_paths: &dyn WorkspacePaths,
+    config_provider: &dyn AppConfigProvider,
+    app_handle_for_factory: &tauri::AppHandle,
     state: &AppState,
     workspace_id: &str,
     source_path: &Path,
 ) -> Result<String, String> {
     let path_str = source_path.to_string_lossy().to_string();
-    run_import(app, state, workspace_id, &path_str).await
+    run_import(
+        event_publisher,
+        workspace_paths,
+        config_provider,
+        app_handle_for_factory,
+        state,
+        workspace_id,
+        &path_str,
+    )
+    .await
 }

@@ -14,6 +14,7 @@ use log_analyzer::commands::{
 use log_analyzer::models::AppState;
 use log_analyzer::task_manager::{TaskManager, TauriEventEmitter};
 use log_analyzer::utils::load_app_config;
+use tauri::Emitter;
 use std::sync::Arc;
 use tauri::Manager;
 use tracing::info;
@@ -104,7 +105,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // M4 Fix: Initialize DiskResultStore at app data dir (persistent)
             // instead of the OS temp directory (volatile, may be cleaned by system)
             if let Ok(app_data_dir) = app.path().app_data_dir() {
-                app_state.init_disk_result_store_at(app_data_dir);
+                if let Err(e) = app_state.init_disk_result_store_at(app_data_dir) {
+                    tracing::error!(error = %e, "DiskResultStore init failure");
+                    let _ = app.handle().emit("import-error", &format!("Search cache init failed: {e}"));
+                }
             }
 
             info!("✅ 应用初始化完成");

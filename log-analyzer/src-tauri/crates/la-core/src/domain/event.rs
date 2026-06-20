@@ -49,4 +49,15 @@ pub trait EventPublisher: Send + Sync {
 
     /// Emitted when new log entries are parsed from watched files.
     async fn emit_new_logs(&self, workspace_id: &str, entries_json: &str);
+
+    // ── Import events ──
+
+    /// Emitted when an import completes successfully.
+    async fn emit_import_complete(&self, task_id: &str);
+
+    /// Emitted when an import encounters an error.
+    async fn emit_import_error(&self, error: &str);
+
+    /// Emitted when post-import integrity verification finds issues.
+    async fn emit_validation_report(&self, workspace_id: &str, report_json: &str);
 }

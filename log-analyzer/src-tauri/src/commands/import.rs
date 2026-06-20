@@ -13,7 +13,9 @@ use serde::Serialize;
 use tauri::{command, AppHandle, State};
 
 use crate::infrastructure::import_pipeline::run_import;
+use crate::infrastructure::{TauriEventPublisher, TauriWorkspacePaths};
 use crate::models::AppState;
+use std::sync::Arc;
 
 // ============================================================================
 // 共享工具函数
@@ -57,7 +59,21 @@ pub async fn import_folder(
     workspace_id: String,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
-    run_import(&app, &state, &workspace_id, &path).await
+    let event_publisher = Arc::new(TauriEventPublisher {
+        app_handle: app.clone(),
+    });
+    let workspace_paths = TauriWorkspacePaths::new(&app)?;
+    let config_provider = crate::adapters::tauri_config::TauriAppConfigProvider(app.clone());
+    run_import(
+        event_publisher,
+        &workspace_paths,
+        &config_provider,
+        &app,
+        &state,
+        &workspace_id,
+        &path,
+    )
+    .await
 }
 
 /// 检查 RAR 支持状态（无 sidecar 依赖）

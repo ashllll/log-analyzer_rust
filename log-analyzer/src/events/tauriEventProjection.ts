@@ -2,7 +2,14 @@ import { listen } from "@tauri-apps/api/event";
 import { eventBus } from "./EventBus";
 import { logger } from "../utils/logger";
 import type { TaskUpdateEvent, TaskRemovedEvent } from "./types";
+import { ImportCompleteEventSchema } from "./types";
 import type { Task, Workspace } from "../stores/types";
+
+// ── import-complete 一次性事件去重 ──
+// 使用 Set<string> 跟踪已完成导入的 task ID。与 EventBus 中
+// 面向流式事件的版本号去重不同，一次性事件无需 LRU 淘汰——
+// Set 的增长受限于导入操作的总次数。
+const completedImports = new Set<string>();
 
 export interface TauriEventProjectionOptions {
   updateWorkspace: (id: string, updates: Partial<Workspace>) => void;
@@ -37,7 +44,7 @@ export async function mountTauriEventProjection(
     showToast,
     debouncedUpdateWorkspace,
     getTasks,
-    getWorkspaces,
+    // getWorkspaces is unused after dedup moved to Set-based tracker
   } = options;
 
   const taskUpdateUnlisten = await listen<TaskUpdateEvent>(
@@ -79,10 +86,7 @@ export async function mountTauriEventProjection(
     }
   );
 
-  type ImportCompletePayload =
-    | string
-    | { task_id?: string; workspace_id?: string };
-  const importCompleteUnlisten = await listen<ImportCompletePayload>(
+  const importCompleteUnlisten = await listen<unknown>(
     "import-complete",
     (event) => {
       logger.debug(
@@ -90,46 +94,58 @@ export async function mountTauriEventProjection(
         "[TauriEventProjection] Received import-complete from Tauri"
       );
 
-      const payload = event.payload;
+      // Step 1: Schema 验证（支持 string 和 object 两种 payload 格式）
       let taskId: string | null = null;
       let workspaceId: string | null = null;
 
-      if (typeof payload === "string") {
-        taskId = payload;
-      } else if (payload !== null && typeof payload === "object") {
-        taskId = payload.task_id ?? null;
-        workspaceId = payload.workspace_id ?? null;
-      }
-
-      if (taskId) {
-        const currentTask = getTasks().find((t) => t.id === taskId);
-        if (!currentTask || currentTask.status !== "COMPLETED") {
-          updateTask(taskId, { status: "COMPLETED", progress: 100 });
+      if (typeof event.payload === "string") {
+        // 旧格式: 纯 task_id 字符串
+        taskId = event.payload;
+      } else {
+        const parsed = ImportCompleteEventSchema.safeParse(event.payload);
+        if (parsed.success) {
+          taskId = parsed.data.task_id;
+          // workspace_id 可能在 payload 中（未来扩展）
+          workspaceId =
+            (event.payload as Record<string, unknown>).workspace_id as
+              | string
+              | undefined
+            ?? null;
+        } else {
+          logger.warn(
+            { errors: parsed.error.issues, payload: event.payload },
+            "[TauriEventProjection] import-complete schema validation failed"
+          );
+          return; // 丢弃格式异常的事件
         }
       }
+
+      if (!taskId) {
+        logger.warn(
+          "[TauriEventProjection] import-complete without valid task_id, skipping"
+        );
+        return;
+      }
+
+      // Step 2: 一次性事件去重（Set 比 store 查找更可靠，不依赖 task GC 状态）
+      if (completedImports.has(taskId)) {
+        logger.debug(
+          { taskId },
+          "[TauriEventProjection] import-complete already processed (dedup)"
+        );
+        return;
+      }
+      completedImports.add(taskId);
+
+      // Step 3: 状态更新
+      updateTask(taskId, { status: "COMPLETED", progress: 100 });
 
       if (workspaceId) {
-        const currentWs = getWorkspaces().find((w) => w.id === workspaceId);
-        if (!currentWs || currentWs.status !== "READY") {
-          logger.debug(
-            "[TauriEventProjection] import-complete with workspace_id, updating status to READY:",
-            workspaceId
-          );
-          updateWorkspace(workspaceId, { status: "READY" });
-        }
-      } else if (taskId) {
+        updateWorkspace(workspaceId, { status: "READY" });
+      } else {
         const task = getTasks().find((t) => t.id === taskId);
         if (task?.workspaceId) {
-          const currentWs = getWorkspaces().find(
-            (w) => w.id === task.workspaceId
-          );
-          if (!currentWs || currentWs.status !== "READY") {
-            logger.debug(
-              "[TauriEventProjection] import-complete fallback, updating workspace status to READY:",
-              task.workspaceId
-            );
-            updateWorkspace(task.workspaceId, { status: "READY" });
-          }
+          updateWorkspace(task.workspaceId, { status: "READY" });
         }
       }
     }

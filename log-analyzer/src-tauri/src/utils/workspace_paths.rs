@@ -59,7 +59,7 @@ pub fn resolve_workspace_dir(app: &AppHandle, workspace_id: &str) -> Result<Path
 }
 
 /// FIX(HI-11): 拼接前验证 workspace_id，防止路径遍历
-fn preferred_workspace_dir_from_root(
+pub fn preferred_workspace_dir_from_root(
     app_data_dir: &Path,
     workspace_id: &str,
 ) -> Result<PathBuf, String> {

@@ -116,6 +116,21 @@ export const WorkspaceEventSchema = z.discriminatedUnion('type', [
 export type WorkspaceEvent = z.infer<typeof WorkspaceEventSchema>;
 
 // ============================================================================
+// Import 事件
+// ============================================================================
+
+/**
+ * import-complete 事件
+ *
+ * 一次性事件（一次导入只触发一次），使用任务 ID 做去重键。
+ */
+export const ImportCompleteEventSchema = z.object({
+  task_id: z.string().min(1, "task_id is required"),
+});
+
+export type ImportCompleteEvent = z.infer<typeof ImportCompleteEventSchema>;
+
+// ============================================================================
 // 错误类型
 // ============================================================================
 
