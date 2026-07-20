@@ -760,8 +760,9 @@ mod tests {
         }
         async fn emit_search_cancelled(&self, _id: &str) {}
         async fn emit_search_timeout(&self, _id: &str) {}
-        async fn emit_file_changed(&self, _ws: &str, _et: &str, _fp: &str, _ts: i64) {}
-        async fn emit_new_logs(&self, _ws: &str, _ej: &str) {}
+        async fn emit_import_complete(&self, _task_id: &str) {}
+        async fn emit_import_error(&self, _error: &str) {}
+        async fn emit_validation_report(&self, _ws: &str, _report_json: &str) {}
     }
 
     // ── Test helpers ──
