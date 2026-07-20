@@ -87,7 +87,7 @@ describe("computeConfigFingerprint", () => {
       id: "ws-1",
       name: "Workspace",
       path: "/logs",
-      status: "READY",
+      status: "READY" as const,
       size: "1 MB",
       files: 10,
       watching: false,
