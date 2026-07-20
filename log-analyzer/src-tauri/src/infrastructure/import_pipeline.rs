@@ -82,16 +82,20 @@ pub async fn run_import(
         .map_err(|e| format!("Failed to create task: {e}"))?;
 
     // ── 获取或创建 WorkspaceService ──
-    let service =
-        get_or_create_workspace_service(app_handle_for_factory, state, workspace_id, &workspace_dir)
-            .await
-            .inspect_err(|e| {
-                let publisher = Arc::clone(&event_publisher);
-                let error_msg = e.clone();
-                tokio::spawn(async move {
-                    publisher.emit_import_error(&error_msg).await;
-                });
-            })?;
+    let service = get_or_create_workspace_service(
+        app_handle_for_factory,
+        state,
+        workspace_id,
+        &workspace_dir,
+    )
+    .await
+    .inspect_err(|e| {
+        let publisher = Arc::clone(&event_publisher);
+        let error_msg = e.clone();
+        tokio::spawn(async move {
+            publisher.emit_import_error(&error_msg).await;
+        });
+    })?;
 
     // ── 更新任务进度 ──
     let _ = scheduler.update(&handle, 10, "Scanning...").await;

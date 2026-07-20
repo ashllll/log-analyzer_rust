@@ -80,7 +80,10 @@ impl SearchRegistry {
             }
             Err(e) => {
                 tracing::warn!(error = %e, path = %cache_dir.display(), "DiskResultStore init failed");
-                Err(format!("DiskResultStore init failed at {}: {e}", cache_dir.display()))
+                Err(format!(
+                    "DiskResultStore init failed at {}: {e}",
+                    cache_dir.display()
+                ))
             }
         }
     }
