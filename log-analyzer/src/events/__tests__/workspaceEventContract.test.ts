@@ -18,8 +18,11 @@ const fixture: unknown[] = JSON.parse(
 );
 
 describe("workspace-event wire contract", () => {
-  it("fixture covers every status variant", () => {
-    const statuses = fixture.map(
+  it("StatusChanged fixture covers every status variant", () => {
+    const statusChangedEntries = fixture.filter(
+      (entry) => (entry as { type: string }).type === "StatusChanged"
+    );
+    const statuses = statusChangedEntries.map(
       (entry) => (entry as { status: { status: string } }).status.status
     );
     expect(statuses).toEqual([
@@ -29,6 +32,12 @@ describe("workspace-event wire contract", () => {
       "Failed",
       "Cancelled",
     ]);
+  });
+
+  it("fixture covers every event type", () => {
+    const types = fixture.map((entry) => (entry as { type: string }).type);
+    expect(types).toContain("StatusChanged");
+    expect(types).toContain("FilesUpdated");
   });
 
   it.each(fixture.map((_, index) => [index]))(

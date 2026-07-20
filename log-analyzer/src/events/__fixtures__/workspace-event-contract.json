@@ -27,5 +27,10 @@
     "type": "StatusChanged",
     "workspace_id": "ws-contract",
     "status": { "status": "Cancelled", "cancelled_at": 1700000002 }
+  },
+  {
+    "type": "FilesUpdated",
+    "workspace_id": "ws-contract",
+    "new_lines": 42
   }
 ]

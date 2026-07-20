@@ -20,6 +20,12 @@ pub enum WorkspaceEvent {
         workspace_id: String,
         status: WorkspaceStatus,
     },
+    /// Watch mode: 新内容已写入搜索索引（轻量信号，不含日志负载）。
+    FilesUpdated {
+        workspace_id: String,
+        /// 本轮 debounce 窗口内累计写入的行数
+        new_lines: u64,
+    },
 }
 
 /// Workspace status

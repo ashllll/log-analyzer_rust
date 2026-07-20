@@ -118,6 +118,7 @@ pub(crate) async fn get_or_create_workspace_service(
         thread_pool,
         regex_cache_size,
         search_session_manager,
+        app.clone(),
     ));
 
     state.set_workspace_service(

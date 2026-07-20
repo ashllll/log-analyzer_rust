@@ -51,6 +51,10 @@ mod tests {
                     cancelled_at: SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_002),
                 },
             },
+            WorkspaceEvent::FilesUpdated {
+                workspace_id: ws(),
+                new_lines: 42,
+            },
         ]
     }
 

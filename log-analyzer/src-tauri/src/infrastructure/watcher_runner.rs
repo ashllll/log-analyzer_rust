@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use la_core::traits::{ContentStorage, MetadataStorage};
 use tokio::runtime::Handle as TokioHandle;
+use tauri::Emitter;
 use tracing::warn;
 
 use crate::application::watch::{WatchEvent, WatchEventKind};
@@ -28,6 +29,10 @@ pub(crate) struct WatcherRunner {
     is_active: bool,
     workspace_id: String,
     runtime: TokioHandle,
+    /// Watch 模式广播用 AppHandle（构造时由工厂注入）
+    app_handle: tauri::AppHandle,
+    /// FilesUpdated 广播 debounce：记录上次广播的时刻
+    last_broadcast: std::time::Instant,
 }
 
 impl WatcherRunner {
@@ -37,6 +42,7 @@ impl WatcherRunner {
         search_engine: Arc<la_search::SearchEngineManager>,
         watched_path: std::path::PathBuf,
         workspace_id: String,
+        app_handle: tauri::AppHandle,
     ) -> Self {
         Self {
             cas,
@@ -46,6 +52,8 @@ impl WatcherRunner {
             is_active: true,
             workspace_id,
             runtime: TokioHandle::current(),
+            app_handle,
+            last_broadcast: std::time::Instant::now(),
         }
     }
 
@@ -120,6 +128,9 @@ impl WatcherRunner {
 
                 // Update line count
                 self.tailer.add_lines(path, new_line_count);
+
+                // Watch 模式：广播 FilesUpdated（debounce 5 秒，累计行数）
+                self.broadcast_files_updated(new_line_count);
             }
             Err(e) => {
                 warn!(error = %e, file = %path.display(), "Failed to read file incrementally");
@@ -186,6 +197,37 @@ impl WatcherRunner {
                     warn!(error = %e, file = %fp, "Failed to read watcher file for CAS storage");
                 }
             }
+        });
+    }
+
+    /// Watch 模式广播 FilesUpdated 事件（带 5 秒 debounce）。
+    ///
+    /// 新内容已写入 Tantivy 索引后调用，告知前端有新日志到达，
+    /// 触发 refreshWorkspaces 等静默刷新逻辑。不含日志负载（轻量信号）。
+    fn broadcast_files_updated(&mut self, new_lines: usize) {
+        let now = std::time::Instant::now();
+        if now.duration_since(self.last_broadcast).as_secs() < 5 {
+            return;
+        }
+        self.last_broadcast = now;
+
+        let event = crate::state_sync::models::WorkspaceEvent::FilesUpdated {
+            workspace_id: self.workspace_id.clone(),
+            new_lines: new_lines as u64,
+        };
+        let app = self.app_handle.clone();
+        // 非阻塞：在异步运行时中发射，不阻塞监听事件循环
+        self.runtime.spawn(async move {
+            // 简单重试（最多 3 次，10ms 间隔）—— 与 TauriEventPublisher 对齐
+            for attempt in 0..3 {
+                if app.emit("workspace-event", &event).is_ok() {
+                    return;
+                }
+                if attempt < 2 {
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                }
+            }
+            warn!("Failed to emit FilesUpdated after 3 attempts");
         });
     }
 }

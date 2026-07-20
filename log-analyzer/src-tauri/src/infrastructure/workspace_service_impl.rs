@@ -59,6 +59,8 @@ pub struct WorkspaceServiceImpl {
     search_session_manager: SearchSessionManager,
     /// 文件监听器状态（P5：从 AppState::watchers 移入实例）
     watcher_state: Arc<Mutex<Option<WatcherState>>>,
+    /// Watch 模式 FilesUpdated 广播用（传递给 WatcherRunner）
+    app_handle: tauri::AppHandle,
 }
 
 impl WorkspaceServiceImpl {
@@ -71,6 +73,7 @@ impl WorkspaceServiceImpl {
     /// - `event_publisher`: 事件发射器 trait 对象
     /// - `thread_pool`: 全局共享的 Rayon 线程池
     /// - `regex_cache_size`: 正则缓存大小（传递给 QueryEngineLogSearcher）
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         workspace_id: String,
         workspace_dir: PathBuf,
@@ -79,6 +82,7 @@ impl WorkspaceServiceImpl {
         thread_pool: Arc<rayon::ThreadPool>,
         regex_cache_size: usize,
         search_session_manager: SearchSessionManager,
+        app_handle: tauri::AppHandle,
     ) -> Self {
         Self {
             workspace_id,
@@ -89,6 +93,7 @@ impl WorkspaceServiceImpl {
             searcher: Arc::new(QueryEngineLogSearcher::new(regex_cache_size)),
             search_session_manager,
             watcher_state: Arc::new(Mutex::new(None)),
+            app_handle,
         }
     }
 }

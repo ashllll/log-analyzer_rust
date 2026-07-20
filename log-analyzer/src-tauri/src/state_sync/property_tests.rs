@@ -204,6 +204,9 @@ mod tests {
                 let state = states.entry(workspace_id.clone()).or_default();
                 state.status = status_to_name(status);
             }
+            WorkspaceEvent::FilesUpdated { .. } => {
+                // FilesUpdated 不改变工作区状态，此处忽略
+            }
         }
     }
 

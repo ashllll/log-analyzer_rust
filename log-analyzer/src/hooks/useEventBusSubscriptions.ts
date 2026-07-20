@@ -99,6 +99,11 @@ export const useEventBusSubscriptions = () => {
             refreshWorkspaces();
             break;
           }
+          case "FilesUpdated": {
+            // Watch 模式：静默刷新，不发 toast（高频日志下 toast 淹没用户）
+            refreshWorkspaces();
+            break;
+          }
         }
       }
     );

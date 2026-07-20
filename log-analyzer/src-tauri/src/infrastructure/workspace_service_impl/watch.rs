@@ -74,6 +74,7 @@ impl WatchService for WorkspaceServiceImpl {
             Arc::clone(self.repo.search_engine()),
             watch_path_buf,
             self.workspace_id.clone(),
+            self.app_handle.clone(),
         );
         let handle = std::thread::spawn(move || runner.run(rx));
 

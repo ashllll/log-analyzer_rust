@@ -108,6 +108,11 @@ export const WorkspaceEventSchema = z.discriminatedUnion("type", [
     workspace_id: z.string().min(1, "workspace_id is required"),
     status: WorkspaceStatusSchema,
   }),
+  z.object({
+    type: z.literal("FilesUpdated"),
+    workspace_id: z.string().min(1, "workspace_id is required"),
+    new_lines: z.number().int().min(0),
+  }),
 ]);
 
 export type WorkspaceEvent = z.infer<typeof WorkspaceEventSchema>;
