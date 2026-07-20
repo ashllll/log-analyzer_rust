@@ -8,8 +8,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use la_core::traits::{ContentStorage, MetadataStorage};
-use tokio::runtime::Handle as TokioHandle;
 use tauri::Emitter;
+use tokio::runtime::Handle as TokioHandle;
 use tracing::warn;
 
 use crate::application::watch::{WatchEvent, WatchEventKind};
