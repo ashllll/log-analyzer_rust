@@ -2,7 +2,7 @@
  * 任务事件总线 (TaskEventBus)
  *
  * 专注处理任务生命周期相关事件，提供 Schema 验证和幂等性保证。
- * 不处理 import-complete/import-error/files-ready-batch 等简单通知事件，
+ * 不处理 import-complete/import-error/validation-report 等简单通知事件，
  * 那些事件由 useTauriEventListeners 直接处理，避免不必要的验证开销。
  *
  * 职责：
@@ -16,15 +16,15 @@
  * - workspace-event: 工作区状态变更
  */
 
-import { z } from 'zod';
-import { logger } from '../utils/logger';
+import { z } from "zod";
+import { logger } from "../utils/logger";
 import {
   TaskUpdateEventSchema,
   TaskRemovedEventSchema,
   WorkspaceEventSchema,
   EventValidationError,
-} from './types';
-import type { TaskUpdateEvent } from './types';
+} from "./types";
+import type { TaskUpdateEvent } from "./types";
 
 // ============================================================================
 // 事件处理器类型
@@ -33,10 +33,10 @@ import type { TaskUpdateEvent } from './types';
 export type EventHandler<T = unknown> = (event: T) => void | Promise<void>;
 
 export interface EventBusConfig {
-  enableValidation?: boolean;      // 是否启用Schema验证
-  enableIdempotency?: boolean;      // 是否启用幂等性检查
-  enableLogging?: boolean;          // 是否启用日志
-  logLevel?: 'debug' | 'info' | 'warn' | 'error';     // 日志级别
+  enableValidation?: boolean; // 是否启用Schema验证
+  enableIdempotency?: boolean; // 是否启用幂等性检查
+  enableLogging?: boolean; // 是否启用日志
+  logLevel?: "debug" | "info" | "warn" | "error"; // 日志级别
 }
 
 // ============================================================================
@@ -91,8 +91,12 @@ class IdempotencyManager {
     // 如果新版本小于已处理版本，视为旧事件延迟到达，跳过处理
     if (processed.version > version) {
       logger.warn(
-        { taskId, processedVersion: processed.version, incomingVersion: version },
-        'Skipping stale event with older version'
+        {
+          taskId,
+          processedVersion: processed.version,
+          incomingVersion: version,
+        },
+        "Skipping stale event with older version"
       );
       return true;
     }
@@ -161,14 +165,14 @@ class TaskEventBus {
       enableValidation: config.enableValidation ?? true,
       enableIdempotency: config.enableIdempotency ?? true,
       enableLogging: config.enableLogging ?? true,
-      logLevel: config.logLevel ?? 'info',
+      logLevel: config.logLevel ?? "info",
     };
 
     this.idempotencyManager = new IdempotencyManager();
 
     if (this.config.enableLogging) {
       logger.setLevel(this.config.logLevel);
-      logger.info({ component: 'TaskEventBus' }, 'TaskEventBus initialized');
+      logger.info({ component: "TaskEventBus" }, "TaskEventBus initialized");
     }
   }
 
@@ -190,10 +194,7 @@ class TaskEventBus {
    * @param handler - 事件处理函数
    * @returns 取消订阅函数
    */
-  on<T = unknown>(
-    eventType: string,
-    handler: EventHandler<T>
-  ): () => void {
+  on<T = unknown>(eventType: string, handler: EventHandler<T>): () => void {
     if (!this.handlers.has(eventType)) {
       this.handlers.set(eventType, new Set());
     }
@@ -204,7 +205,7 @@ class TaskEventBus {
     if (this.config.enableLogging) {
       logger.debug(
         { eventType, handlerCount: handlers.size },
-        'Handler registered'
+        "Handler registered"
       );
     }
 
@@ -212,7 +213,7 @@ class TaskEventBus {
     return () => {
       handlers.delete(handler as EventHandler);
       if (this.config.enableLogging) {
-        logger.debug({ eventType }, 'Handler unregistered');
+        logger.debug({ eventType }, "Handler unregistered");
       }
       if (handlers.size === 0) {
         this.handlers.delete(eventType);
@@ -231,14 +232,14 @@ class TaskEventBus {
    * @param rawData - 原始事件数据
    */
   async processEvent(
-    eventType: 'task-update' | 'task-removed' | 'workspace-event',
+    eventType: "task-update" | "task-removed" | "workspace-event",
     rawData: unknown
   ): Promise<void> {
     this.metrics.totalEvents++;
     this.metrics.lastEventTime = Date.now();
 
     if (this.config.enableLogging) {
-      logger.debug({ eventType, rawData }, 'Event received');
+      logger.debug({ eventType, rawData }, "Event received");
     }
 
     try {
@@ -246,7 +247,7 @@ class TaskEventBus {
       const validatedEvent = this.validateEvent(eventType, rawData);
 
       // Step 2: 幂等性检查（仅task-update）
-      if (eventType === 'task-update' && this.config.enableIdempotency) {
+      if (eventType === "task-update" && this.config.enableIdempotency) {
         const event = validatedEvent as TaskUpdateEvent;
 
         // 严格模式：拒绝无 version 字段的事件（非 TaskManager 发送）
@@ -258,11 +259,11 @@ class TaskEventBus {
                 taskId: event.task_id,
                 rawEvent: rawData,
               },
-              'Ignoring event without version field (not from TaskManager)'
+              "Ignoring event without version field (not from TaskManager)"
             );
           }
           this.metrics.validationErrors++;
-          return;  // 直接丢弃，不处理
+          return; // 直接丢弃，不处理
         }
 
         const version = event.version;
@@ -274,7 +275,7 @@ class TaskEventBus {
                 taskId: event.task_id,
                 version,
               },
-              'Stale event skipped (idempotency)'
+              "Stale event skipped (idempotency)"
             );
           }
           this.metrics.idempotencySkips++;
@@ -287,10 +288,9 @@ class TaskEventBus {
 
       // Step 3: 分发事件
       await this.dispatchEvent(eventType, validatedEvent);
-
     } catch (err: unknown) {
       // 验证错误单独统计，其他错误算处理错误
-      const isValidationError = (err as Error)?.name === 'EventValidationError';
+      const isValidationError = (err as Error)?.name === "EventValidationError";
 
       if (isValidationError) {
         this.metrics.validationErrors++;
@@ -304,7 +304,7 @@ class TaskEventBus {
           error: err instanceof Error ? err.message : String(err),
           rawData,
         },
-        'Event processing failed'
+        "Event processing failed"
       );
 
       // 验证错误应该抛出，让调用者能感知到
@@ -325,14 +325,14 @@ class TaskEventBus {
 
     try {
       switch (eventType) {
-        case 'task-update':
+        case "task-update":
           return TaskUpdateEventSchema.parse(rawData);
-        case 'task-removed':
+        case "task-removed":
           return TaskRemovedEventSchema.parse(rawData);
-        case 'workspace-event':
+        case "workspace-event":
           return WorkspaceEventSchema.parse(rawData);
         default:
-          logger.warn({ eventType }, 'Unknown event type');
+          logger.warn({ eventType }, "Unknown event type");
           return rawData;
       }
     } catch (err: unknown) {
@@ -345,7 +345,7 @@ class TaskEventBus {
               errors: zodErrors,
               rawData,
             },
-            'Event validation failed'
+            "Event validation failed"
           );
         }
         throw new EventValidationError(eventType, err, rawData);
@@ -358,11 +358,14 @@ class TaskEventBus {
   // 事件分发
   // ========================================================================
 
-  private async dispatchEvent(eventType: string, event: unknown): Promise<void> {
+  private async dispatchEvent(
+    eventType: string,
+    event: unknown
+  ): Promise<void> {
     const handlers = this.handlers.get(eventType);
     if (!handlers || handlers.size === 0) {
       if (this.config.enableLogging) {
-        logger.warn({ eventType }, 'No handlers registered');
+        logger.warn({ eventType }, "No handlers registered");
       }
       return;
     }
@@ -379,9 +382,9 @@ class TaskEventBus {
           {
             eventType,
             error: err instanceof Error ? err.message : String(err),
-            handler: handler.name || 'anonymous',
+            handler: handler.name || "anonymous",
           },
-          'Handler error'
+          "Handler error"
         );
       }
     });
@@ -417,7 +420,7 @@ class TaskEventBus {
     };
 
     if (this.config.enableLogging) {
-      logger.info({ component: 'TaskEventBus' }, 'Metrics reset');
+      logger.info({ component: "TaskEventBus" }, "Metrics reset");
     }
   }
 
@@ -426,7 +429,7 @@ class TaskEventBus {
     this.idempotencyManager.clear();
 
     if (this.config.enableLogging) {
-      logger.info({ component: 'TaskEventBus' }, 'Idempotency cache cleared');
+      logger.info({ component: "TaskEventBus" }, "Idempotency cache cleared");
     }
   }
 
@@ -436,7 +439,10 @@ class TaskEventBus {
 
     if (this.config.enableLogging) {
       logger.setLevel(this.config.logLevel);
-      logger.info({ component: 'TaskEventBus', newConfig: config }, 'Config updated');
+      logger.info(
+        { component: "TaskEventBus", newConfig: config },
+        "Config updated"
+      );
     }
   }
 }

@@ -15,11 +15,6 @@ export interface TauriEventProjectionOptions {
   updateWorkspace: (id: string, updates: Partial<Workspace>) => void;
   updateTask: (id: string, updates: Partial<Task>) => void;
   showToast: (type: "error" | "info", message: string) => void;
-  debouncedUpdateWorkspace: (
-    workspaceId: string,
-    readyCount: number,
-    totalCount: number
-  ) => void;
   getTasks: () => Task[];
   getWorkspaces: () => Workspace[];
 }
@@ -27,11 +22,11 @@ export interface TauriEventProjectionOptions {
 /**
  * 挂载 Tauri 事件投影：把后端原始事件订阅转换为前端 store / toast / EventBus 动作。
  *
- * 规则与原始 hook 保持一致：
+ * 事件契约（与 src-tauri EventPublisher 一一对应，勿引入无后端发送者的监听）：
  * - task-update / task-removed / workspace-event → EventBus（Schema 验证 + 幂等性）
  * - import-complete → 直接更新 task/workspace store（带幂等性检查）
- * - import-error / import-warning → toast
- * - files-ready-batch → 防抖更新 workspace 进度
+ * - import-error → toast
+ * - validation-report → 导入后完整性校验发现问题时 toast 警告
  *
  * @returns 卸载函数：逐个调用 Tauri unlisten，忽略异常
  */
@@ -42,7 +37,6 @@ export async function mountTauriEventProjection(
     updateWorkspace,
     updateTask,
     showToast,
-    debouncedUpdateWorkspace,
     getTasks,
     // getWorkspaces is unused after dedup moved to Set-based tracker
   } = options;
@@ -107,10 +101,9 @@ export async function mountTauriEventProjection(
           taskId = parsed.data.task_id;
           // workspace_id 可能在 payload 中（未来扩展）
           workspaceId =
-            (event.payload as Record<string, unknown>).workspace_id as
+            ((event.payload as Record<string, unknown>).workspace_id as
               | string
-              | undefined
-            ?? null;
+              | undefined) ?? null;
         } else {
           logger.warn(
             { errors: parsed.error.issues, payload: event.payload },
@@ -159,32 +152,34 @@ export async function mountTauriEventProjection(
     showToast("error", `导入失败: ${event.payload}`);
   });
 
-  const importWarningUnlisten = await listen<string>(
-    "import-warning",
+  // validation-report：后端在导入完成后执行完整性校验，仅在发现问题时发送。
+  // Payload 形如 { workspace_id, report: ValidationReport }（见 la-storage integrity）。
+  interface ValidationReportPayload {
+    workspace_id?: string;
+    report?: {
+      total_files?: number;
+      valid_files?: number;
+      invalid_files?: unknown[];
+      missing_objects?: unknown[];
+      corrupted_objects?: unknown[];
+    };
+  }
+  const validationReportUnlisten = await listen<ValidationReportPayload>(
+    "validation-report",
     (event) => {
+      const { workspace_id, report } = event.payload;
+      const issueCount =
+        (report?.invalid_files?.length ?? 0) +
+        (report?.missing_objects?.length ?? 0) +
+        (report?.corrupted_objects?.length ?? 0);
       logger.warn(
         { payload: event.payload },
-        "[TauriEventProjection] Received import-warning from Tauri"
+        "[TauriEventProjection] Import integrity verification found issues"
       );
-      showToast("info", `导入提示: ${event.payload}`);
-    }
-  );
-
-  interface FilesReadyBatchPayload {
-    workspace_id: string;
-    ready_count: number;
-    total_count: number;
-  }
-  const filesReadyBatchUnlisten = await listen<FilesReadyBatchPayload>(
-    "files-ready-batch",
-    (event) => {
-      const { workspace_id, ready_count, total_count } = event.payload;
-      logger.debug(
-        { workspace_id, ready_count, total_count },
-        "[TauriEventProjection] Received files-ready-batch from Tauri"
+      showToast(
+        "error",
+        `导入完整性校验发现 ${issueCount} 个问题（工作区 ${workspace_id ?? "未知"}，共 ${report?.total_files ?? "?"} 个文件），详情请查看日志`
       );
-
-      debouncedUpdateWorkspace(workspace_id, ready_count, total_count);
     }
   );
 
@@ -211,8 +206,7 @@ export async function mountTauriEventProjection(
       taskRemovedUnlisten,
       importCompleteUnlisten,
       importErrorUnlisten,
-      importWarningUnlisten,
-      filesReadyBatchUnlisten,
+      validationReportUnlisten,
       workspaceEventUnlisten,
     ].forEach((unlisten) => {
       try {

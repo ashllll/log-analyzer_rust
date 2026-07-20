@@ -66,30 +66,6 @@ impl EventPublisher for TauriEventPublisher {
         );
     }
 
-    async fn emit_file_changed(
-        &self,
-        workspace_id: &str,
-        event_type: &str,
-        file_path: &str,
-        timestamp: i64,
-    ) {
-        let _ = self.app_handle.emit(
-            "file-changed",
-            serde_json::json!({
-                "event_type": event_type,
-                "file_path": file_path,
-                "workspace_id": workspace_id,
-                "timestamp": timestamp,
-            }),
-        );
-    }
-
-    async fn emit_new_logs(&self, _workspace_id: &str, entries_json: &str) {
-        if let Ok(value) = serde_json::from_str::<serde_json::Value>(entries_json) {
-            let _ = self.app_handle.emit("new-logs", value);
-        }
-    }
-
     async fn emit_import_complete(&self, task_id: &str) {
         let _ = self.app_handle.emit("import-complete", task_id);
     }

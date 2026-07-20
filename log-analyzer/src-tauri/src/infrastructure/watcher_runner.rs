@@ -7,7 +7,6 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use la_core::domain::event::EventPublisher;
 use la_core::traits::{ContentStorage, MetadataStorage};
 use tokio::runtime::Handle as TokioHandle;
 use tracing::warn;
@@ -20,7 +19,6 @@ use crate::infrastructure::file_tailer::FileTailer;
 /// 持有后台线程所需的全部共享状态，通过 channels 接收文件事件。
 /// `FileTailer` owns offset and line-count maps — no Arc<Mutex<Option>> wrapper.
 pub(crate) struct WatcherRunner {
-    events: Arc<dyn EventPublisher>,
     cas: Arc<dyn ContentStorage>,
     metadata: Arc<dyn MetadataStorage>,
     search_engine: Arc<la_search::SearchEngineManager>,
@@ -34,7 +32,6 @@ pub(crate) struct WatcherRunner {
 
 impl WatcherRunner {
     pub(crate) fn new(
-        events: Arc<dyn EventPublisher>,
         cas: Arc<dyn ContentStorage>,
         metadata: Arc<dyn MetadataStorage>,
         search_engine: Arc<la_search::SearchEngineManager>,
@@ -42,7 +39,6 @@ impl WatcherRunner {
         workspace_id: String,
     ) -> Self {
         Self {
-            events,
             cas,
             metadata,
             search_engine,
@@ -79,18 +75,10 @@ impl WatcherRunner {
         };
 
         for path in &event.paths {
-            let file_path_str = match path.to_str() {
-                Some(s) => s.to_string(),
-                None => {
-                    warn!(path = ?path, "Skipping path with non-UTF-8 chars");
-                    continue;
-                }
-            };
-
-            let timestamp = chrono::Utc::now().timestamp();
-
-            // Emit file-changed event
-            self.emit_file_changed(event_type, &file_path_str, timestamp);
+            if path.to_str().is_none() {
+                warn!(path = ?path, "Skipping path with non-UTF-8 chars");
+                continue;
+            }
 
             match event_type {
                 "created" => self.on_create(path),
@@ -98,16 +86,6 @@ impl WatcherRunner {
                 _ => {}
             }
         }
-    }
-
-    fn emit_file_changed(&self, event_type: &str, file_path: &str, timestamp: i64) {
-        let events = self.events.clone();
-        let ws = self.workspace_id.clone();
-        let et = event_type.to_string();
-        let fp = file_path.to_string();
-        self.runtime.spawn(async move {
-            events.emit_file_changed(&ws, &et, &fp, timestamp).await;
-        });
     }
 
     fn on_create(&mut self, path: &Path) {
@@ -134,10 +112,7 @@ impl WatcherRunner {
                     start_line_number,
                 );
 
-                // Emit new-logs
-                self.emit_new_logs(&new_entries);
-
-                // Update Tantivy search index
+                // 更新搜索索引与存储（前端通过 workspace-event 通道获知变更）
                 self.update_search_index(&new_entries);
 
                 // Store in CAS + metadata
@@ -149,16 +124,6 @@ impl WatcherRunner {
             Err(e) => {
                 warn!(error = %e, file = %path.display(), "Failed to read file incrementally");
             }
-        }
-    }
-
-    fn emit_new_logs(&self, entries: &[la_core::models::LogEntry]) {
-        let events = self.events.clone();
-        let ws = self.workspace_id.clone();
-        if let Ok(json) = serde_json::to_string(entries) {
-            self.runtime.spawn(async move {
-                events.emit_new_logs(&ws, &json).await;
-            });
         }
     }
 

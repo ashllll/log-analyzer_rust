@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { mountTauriEventProjection } from "../events/tauriEventProjection";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { useTaskStore } from "../stores/taskStore";
@@ -16,8 +16,7 @@ import { logger } from "../utils/logger";
  * - 简单通知事件 → 直接处理（避免不必要的验证开销）
  *   - import-complete → 直接更新 task/workspace 状态
  *   - import-error → toast 错误提示
- *   - import-warning → toast 警告提示
- *   - files-ready-batch → 防抖更新 workspace 进度
+ *   - validation-report → 导入完整性校验问题 toast
  *
  * 使用 tauriCleanupRef 确保异步注册完成后同步清理。
  */
@@ -25,40 +24,6 @@ export const useTauriEventListeners = () => {
   const updateWorkspace = useWorkspaceStore((state) => state.updateWorkspace);
   const updateTask = useTaskStore((state) => state.updateTask);
   const { showToast } = useToast();
-
-  // 防抖相关 refs（files-ready-batch 高频触发时合并更新）
-  const pendingWorkspaceUpdate = useRef<{
-    workspace_id: string;
-    ready_count: number;
-    total_count: number;
-  } | null>(null);
-  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const debouncedUpdateWorkspace = useCallback(
-    (workspaceId: string, readyCount: number, totalCount: number) => {
-      pendingWorkspaceUpdate.current = {
-        workspace_id: workspaceId,
-        ready_count: readyCount,
-        total_count: totalCount,
-      };
-
-      if (debounceTimer.current) {
-        clearTimeout(debounceTimer.current);
-      }
-
-      debounceTimer.current = setTimeout(() => {
-        if (pendingWorkspaceUpdate.current) {
-          updateWorkspace(pendingWorkspaceUpdate.current.workspace_id, {
-            status: "PARTIAL",
-            ready_files: pendingWorkspaceUpdate.current.ready_count,
-            files: pendingWorkspaceUpdate.current.total_count,
-          });
-          pendingWorkspaceUpdate.current = null;
-        }
-      }, 100);
-    },
-    [updateWorkspace]
-  );
 
   // 使用 ref 存储 Tauri 清理函数，确保在组件卸载时同步调用
   const tauriCleanupRef = useRef<(() => void) | null>(null);
@@ -70,7 +35,6 @@ export const useTauriEventListeners = () => {
       updateWorkspace,
       updateTask,
       showToast,
-      debouncedUpdateWorkspace,
       getTasks: () => useTaskStore.getState().tasks,
       getWorkspaces: () => useWorkspaceStore.getState().workspaces,
     })
@@ -92,17 +56,11 @@ export const useTauriEventListeners = () => {
     return () => {
       isMounted = false;
 
-      // 清理防抖定时器
-      if (debounceTimer.current) {
-        clearTimeout(debounceTimer.current);
-        debounceTimer.current = null;
-      }
-
       // 清理Tauri监听（同步调用，避免 Promise 时序问题）
       if (tauriCleanupRef.current) {
         tauriCleanupRef.current();
         tauriCleanupRef.current = null;
       }
     };
-  }, [updateWorkspace, updateTask, debouncedUpdateWorkspace, showToast]);
+  }, [updateWorkspace, updateTask, showToast]);
 };

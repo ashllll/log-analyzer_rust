@@ -70,7 +70,6 @@ impl WatchService for WorkspaceServiceImpl {
         });
 
         let runner = WatcherRunner::new(
-            Arc::clone(&self.event_publisher),
             self.repo.cas().clone(),
             self.repo.metadata_store().clone(),
             Arc::clone(self.repo.search_engine()),

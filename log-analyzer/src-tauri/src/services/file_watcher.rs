@@ -13,7 +13,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
 
 /// 文件监听器状态
 #[derive(Debug, Clone)]
@@ -139,14 +139,16 @@ pub fn read_file_from_offset(path: &Path, offset: u64) -> Result<(Vec<String>, u
 ///
 /// # 行为
 ///
-/// - 通过 Tauri 事件系统发送新日志到前端（事件名：`new-logs`）
 /// - 持久化新日志条目到 Tantivy 索引（通过 SearchEngineManager）
 /// - 提交索引变更（commit）
 /// - P1-2: 同时写入 CAS 和更新 MetadataStore，修复数据一致性鸿沟
+///
+/// 注：历史版本曾向前端 emit `new-logs` 事件，因前端无监听者且
+/// `workspace-event` 已成为统一状态同步通道，该 emit 已移除。
 pub fn append_to_workspace_index(
     workspace_id: &str,
     new_entries: &[LogEntry],
-    app: &AppHandle,
+    _app: &AppHandle, // 保留参数以维持公共 API 签名（历史上用于 emit new-logs）
     state: &crate::models::state::AppState,
     // FIX(HI-04): 传入 Tokio runtime handle，避免在同步线程中 block_on
     runtime_handle: &tokio::runtime::Handle,
@@ -160,14 +162,6 @@ pub fn append_to_workspace_index(
         workspace_id = %workspace_id,
         "Appending new entries to workspace"
     );
-
-    // Send new logs to frontend (real-time update)
-    if let Err(e) = app.emit("new-logs", new_entries) {
-        warn!(
-            error = %e,
-            "Failed to emit new-logs event to frontend"
-        );
-    }
 
     // 从 WorkspaceService 获取依赖（P3 迁移：替代直接操作 AppState HashMap）
     let service = match state.get_workspace_service(workspace_id) {
