@@ -10,9 +10,9 @@ mod error_handling_property_tests;
 mod concurrency_property_tests;
 
 // 仅导出外部使用的类型（P7 修剪：移除 15+ 未使用的 re-export）
-pub use file_watcher::{append_to_workspace_index, get_file_metadata};
-// parse_log_lines, parse_metadata, TimestampParser: 已提取至 la_core::utils
-pub use la_core::utils::{parse_log_lines, parse_metadata, TimestampParser};
+// file_watcher 仅保留 WatcherState（由 workspace_service_impl 直接按路径引用）；
+// parse_log_lines / parse_metadata / TimestampParser 已提取至 la_core::utils，
+// 调用方均直接使用 la_core 路径，此处不再重复 re-export。
 // querier/searcher 类型
 pub use query_planner::ExecutionPlan;
 // query_planner: export standalone validation for frontend type-ahead

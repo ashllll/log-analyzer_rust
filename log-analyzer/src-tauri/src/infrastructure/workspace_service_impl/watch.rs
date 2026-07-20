@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -79,10 +78,6 @@ impl WatchService for WorkspaceServiceImpl {
         let handle = std::thread::spawn(move || runner.run(rx));
 
         *self.watcher_state.lock() = Some(WatcherState {
-            workspace_id: self.workspace_id.clone(),
-            watched_path: PathBuf::from(watch_path),
-            file_offsets: HashMap::new(),
-            line_counts: HashMap::new(),
             is_active: true,
             thread_handle: Arc::new(parking_lot::Mutex::new(Some(handle))),
             watcher: Arc::new(parking_lot::Mutex::new(Some(watcher))),
