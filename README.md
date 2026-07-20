@@ -248,8 +248,19 @@ cargo test -q
 
 ## 核心文档
 
+完整文档站：[ashllll.github.io/log-analyzer_rust](https://ashllll.github.io/log-analyzer_rust/)
+
+本地预览文档：
+
+```bash
+npm ci
+npm run docs:dev
+```
+
 | 文档 | 说明 |
 |------|------|
+| [快速开始](./docs/guide/getting-started.md) | 安装、导入与第一次搜索 |
+| [架构总览](./docs/architecture/overview.md) | 分层、workspace crates 与关键数据流 |
 | [文档索引](./docs/README.md) | 文档目录与阅读顺序 |
 | [贡献指南](./docs/CONTRIB.md) | 开发环境、提交流程、测试约定 |
 | [运行手册](./docs/RUNBOOK.md) | 构建、排障、回滚指南 |

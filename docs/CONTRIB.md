@@ -12,7 +12,7 @@
 |------|---------|------|
 | Node.js | >= 22.12.0 | 前端运行时 |
 | npm | >= 10 | 包管理器 |
-| Rust | >= 1.70 | Rust 工具链 |
+| Rust | 1.88.0 | 由 `log-analyzer/src-tauri/rust-toolchain.toml` 固定 |
 | Tauri 前置依赖 | 平台相关 | 见下方说明 |
 
 ### Tauri 平台前置依赖
@@ -134,9 +134,11 @@ cargo test -q search
 
 ```text
 前端入口: src/pages/SearchPage.tsx
-后端入口: src-tauri/src/commands/search.rs: search_logs()
-核心匹配: services/query_executor.rs + services/query_planner.rs
-分页读取: search_engine/disk_result_store.rs + fetch_search_page
+后端入口: src-tauri/src/commands/search/mod.rs: search_logs()
+查询解析: src-tauri/src/commands/search/query.rs: resolve_search_query()
+核心编排: application/search.rs: SearchUseCase::execute()
+核心匹配: infrastructure/searcher.rs: QueryEngineLogSearcher
+分页读取: SearchSessionManager + DiskResultStore
 ```
 
 **注意事项：**

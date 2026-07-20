@@ -1,6 +1,6 @@
 # 文档索引
 
-本目录只保留当前项目仍需长期维护的核心文档。原则：
+本目录同时是 [VitePress 文档站](./index.md)的内容源，只保留会随代码持续维护的说明。原则：
 
 - 保留会随着代码一起持续维护的说明
 - 删除一次性分析、修复计划和重复指南
@@ -10,9 +10,11 @@
 
 ## 建议阅读顺序
 
-1. [项目总览](../README.md) — 技术栈、主要能力、仓库结构、核心搜索链路
-2. [贡献指南](./CONTRIB.md) — 开发环境搭建、提交流程、测试约定
-3. [CAS 存储架构](./architecture/CAS_ARCHITECTURE.md) — 内容寻址存储、SQLite 元数据、导入/搜索数据流
+1. [快速开始](./guide/getting-started.md) — 安装、导入与第一次搜索
+2. [功能概览](./guide/features.md) — 产品能力与明确边界
+3. [架构总览](./architecture/overview.md) — 分层、workspace crates 与关键设计约束
+4. [环境与启动](./development/setup.md) — 开发环境、应用与文档站命令
+5. [CI 与 GitHub 工作流](./operations/ci.md) — 校验、发布与 Pages 部署
 
 ---
 
@@ -24,17 +26,24 @@
 |------|------|
 | [CONTRIB.md](./CONTRIB.md) | 开发环境（含平台前置依赖）、构建命令、提交流程、CI 说明 |
 | [RUNBOOK.md](./RUNBOOK.md) | 构建运行、故障排查、常见问题、回滚建议、发布前核对 |
+| [guide/](./guide/getting-started.md) | 用户快速开始、工作区、搜索、过滤、关键词和监听 |
+| [development/](./development/setup.md) | 环境、项目结构与测试质量指南 |
+| [operations/](./operations/ci.md) | CI、发布与故障排查 |
 ### 架构
 
 | 文档 | 说明 |
 |------|------|
 | [architecture/CAS_ARCHITECTURE.md](./architecture/CAS_ARCHITECTURE.md) | CAS 对象存储设计、SQLite 元数据表结构、导入/搜索数据流、GC 机制 |
+| [architecture/overview.md](./architecture/overview.md) | Clean Architecture 分层与 workspace crates |
+| [architecture/search.md](./architecture/search.md) | 查询规划、批处理、过滤与结果会话 |
+| [architecture/import.md](./architecture/import.md) | 导入流水线、归档安全与内容入库 |
+| [architecture/ipc.md](./architecture/ipc.md) | Tauri commands、events 与前端状态投影 |
 ### 仓库级文档
 
 | 文档 | 说明 |
 |------|------|
-| [../CHANGELOG.md](../CHANGELOG.md) | 历史版本变更记录 |
-| [../RELEASE_PROCESS.md](../RELEASE_PROCESS.md) | 发布步骤、版本策略、产物说明 |
+| [CHANGELOG.md](https://github.com/ashllll/log-analyzer_rust/blob/main/CHANGELOG.md) | 历史版本变更记录 |
+| [RELEASE_PROCESS.md](https://github.com/ashllll/log-analyzer_rust/blob/main/RELEASE_PROCESS.md) | 发布步骤、版本策略、产物说明 |
 
 ---
 
@@ -47,8 +56,10 @@ React 前端（pages / hooks / stores / services）
   ↓ Tauri invoke / emit / listen
 后端命令层（commands/）
   ↓ 协调调用
-业务服务层（services/ / storage/ / search_engine/ / archive/）
-  ↓ 依赖
+应用层（application use cases）
+  ↓ domain traits
+基础设施适配器（infrastructure）
+  ↓
 Workspace Crates（la-core / la-storage / la-search / la-archive）
 ```
 
@@ -56,12 +67,13 @@ Workspace Crates（la-core / la-storage / la-search / la-archive）
 
 ```text
 SearchPage → api.searchLogs
-  → commands/search.rs: search_logs
-    → MetadataStore::get_all_files（文件列表）
-    → CAS::retrieve（读取内容）
-    → QueryExecutor（逐行匹配，Aho-Corasick 多模式预检）
-    → DiskResultStore::write_results（写盘分页）
-  → fetch_search_page（分页拉取）
+  → commands/search/mod.rs: search_logs
+    → resolve_search_query（解析 + 验证）
+    → WorkspaceService::search
+      → SearchUseCase::execute（blocking pool）
+      → CasLogFileRepository（metadata + CAS）
+      → QueryEngineLogSearcher + CompiledSearchFilters
+      → SearchSessionManager / DiskResultStore（分页）
 ```
 
 ### 导入链路
@@ -69,10 +81,11 @@ SearchPage → api.searchLogs
 ```text
 WorkspacesPage → api.importFolder
   → commands/import.rs: import_folder
-    → FileTypeFilter（过滤非日志文件）
-    → la-archive: ExtractionOrchestrator（递归解压）
-    → la-storage: StorageCoordinator（CAS + 元数据）
-    → SearchEngineManager（建 Tantivy 索引）
+    → ImportPipeline（任务生命周期 + 失败清理）
+    → la-archive（递归安全提取）
+    → WorkspaceServiceImpl::import_file
+    → la-storage（CAS + MetadataStore）
+    → 完整性校验 + Tantivy segment merge
 ```
 
 ---

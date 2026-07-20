@@ -1,0 +1,16 @@
+{
+  "name": "log-analyzer-documentation",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "cross-env DOCS_BASE=/ vitepress build docs && vitepress preview docs"
+  },
+  "devDependencies": {
+    "cross-env": "^10.1.0",
+    "mermaid": "^11.16.0",
+    "vitepress": "^1.6.4",
+    "vitepress-plugin-mermaid": "^2.0.17"
+  }
+}

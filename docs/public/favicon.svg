@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Log Analyzer">
+  <rect width="64" height="64" rx="15" fill="#0b0f14"/>
+  <path d="M15 18h34M15 27h23M15 36h30M15 45h18" fill="none" stroke="#81918c" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="46" cy="27" r="4" fill="#35d0a0"/>
+  <circle cx="39" cy="45" r="4" fill="#35d0a0"/>
+</svg>
