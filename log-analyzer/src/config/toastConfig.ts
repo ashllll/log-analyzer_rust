@@ -1,4 +1,4 @@
-import type { DefaultToastOptions } from 'react-hot-toast';
+import type { DefaultToastOptions } from "react-hot-toast";
 
 /**
  * 全局 Toast 样式配置
@@ -7,33 +7,34 @@ import type { DefaultToastOptions } from 'react-hot-toast';
 export const toastConfig: DefaultToastOptions = {
   duration: 3000,
   style: {
-    background: '#27272A', // Zinc-800
-    color: '#F4F4F5', // Zinc-100
-    border: '1px solid #3F3F46', // Zinc-700
-    borderRadius: '0.5rem',
-    padding: '0.75rem 1rem',
-    fontSize: '0.875rem',
-    maxWidth: '400px',
-    boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.3)',
+    background: "var(--material-overlay)",
+    color: "rgb(var(--color-text-main))",
+    border: "1px solid rgb(var(--color-border-base))",
+    borderRadius: "0.875rem",
+    padding: "0.75rem 1rem",
+    fontSize: "0.875rem",
+    maxWidth: "400px",
+    backdropFilter: "saturate(165%) blur(24px)",
+    boxShadow: "0 18px 48px rgb(0 0 0 / 0.28)",
   },
   success: {
     duration: 2500,
     iconTheme: {
-      primary: '#10B981', // Emerald-500
-      secondary: '#27272A',
+      primary: "rgb(var(--color-success))",
+      secondary: "rgb(var(--color-bg-card))",
     },
     style: {
-      border: '1px solid rgba(16, 185, 129, 0.4)',
+      border: "1px solid rgb(var(--color-success) / .4)",
     },
   },
   error: {
     duration: 4000,
     iconTheme: {
-      primary: '#EF4444', // Red-500
-      secondary: '#27272A',
+      primary: "rgb(var(--color-danger))",
+      secondary: "rgb(var(--color-bg-card))",
     },
     style: {
-      border: '1px solid rgba(239, 68, 68, 0.4)',
+      border: "1px solid rgb(var(--color-danger) / .4)",
     },
   },
 };

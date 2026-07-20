@@ -1,13 +1,23 @@
 // UI 组件相关类型定义
-import React from 'react';
-import { KeywordGroup } from './common';
-import type { SearchTerm } from './search';
+import React from "react";
+import { KeywordGroup } from "./common";
+import type { SearchTerm } from "./search";
 
 // 按钮变体类型
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'active' | 'cta' | 'icon';
+export type ButtonVariant =
+  | "primary"
+  | "secondary"
+  | "ghost"
+  | "danger"
+  | "active"
+  | "cta"
+  | "icon";
 
 // Lucide 图标类型
-export type LucideIcon = React.ComponentType<{ size?: number; className?: string }>;
+export type LucideIcon = React.ComponentType<{
+  size?: number;
+  className?: string;
+}>;
 
 // 导航项属性
 export interface NavItemProps {
@@ -15,7 +25,7 @@ export interface NavItemProps {
   label: string;
   active: boolean;
   onClick: () => void;
-  'data-testid'?: string;
+  "data-testid"?: string;
 }
 
 // 按钮属性
@@ -48,7 +58,12 @@ export interface HybridLogRendererProps {
   text: string;
   query: string;
   queryTerms?: SearchTerm[] | null;
-  matchDetails?: Array<{ term_id: string; term_value: string; priority: number; match_position?: [number, number] }> | null;
+  matchDetails?: Array<{
+    term_id: string;
+    term_value: string;
+    priority: number;
+    match_position?: [number, number];
+  }> | null;
   keywordGroups: KeywordGroup[];
 }
 
@@ -60,4 +75,5 @@ export interface FilterPaletteProps {
   groups: KeywordGroup[];
   activeTerms: string[];
   onToggleRule: (regex: string) => void;
+  triggerRef?: React.RefObject<HTMLElement | null>;
 }

@@ -1,5 +1,6 @@
-import { Cog, FileText, CheckCircle2, RefreshCw } from 'lucide-react';
-import type { Workspace } from '../stores/workspaceStore';
+import { Cog, FileText, CheckCircle2, RefreshCw } from "lucide-react";
+import { AppearanceControl } from "../theme/AppearanceControl";
+import type { Workspace } from "../stores/workspaceStore";
 
 interface WorkspaceHeaderProps {
   currentPage: string;
@@ -15,9 +16,12 @@ export const WorkspaceHeader: React.FC<WorkspaceHeaderProps> = ({
   activeWorkspace,
 }) => {
   return (
-    <div className="h-14 border-b border-border-subtle bg-bg-main flex items-center justify-between px-6 shrink-0 z-40">
+    <header
+      className="apple-material h-[52px] border-b border-border-subtle flex items-center justify-between px-5 shrink-0 z-40"
+      style={{ background: "var(--material-toolbar)" }}
+    >
       <div className="flex items-center text-sm text-text-muted select-none">
-        {currentPage === 'settings' ? (
+        {currentPage === "settings" ? (
           <span className="font-medium text-text-main flex items-center gap-2">
             <Cog size={14} className="text-primary-text" /> Settings
           </span>
@@ -26,27 +30,33 @@ export const WorkspaceHeader: React.FC<WorkspaceHeaderProps> = ({
             <span className="opacity-50">Workspace / </span>
             <span className="font-medium text-text-main ml-2 flex items-center gap-2">
               <FileText size={14} className="text-primary-text" />
-              {activeWorkspace ? activeWorkspace.name : 'Select Workspace'}
+              {activeWorkspace ? activeWorkspace.name : "Select Workspace"}
             </span>
           </>
         )}
       </div>
       {/* 工作区状态 badge */}
-      {activeWorkspace && currentPage !== 'settings' && (
-        <div className="flex items-center gap-1.5 text-xs font-semibold">
-          {activeWorkspace.status === 'READY' ? (
-            <>
-              <CheckCircle2 size={12} className="text-cta" />
-              <span className="text-cta">READY</span>
-            </>
-          ) : (
-            <>
-              <RefreshCw size={12} className="text-primary-text animate-spin" />
-              <span className="text-primary-text">PROCESSING</span>
-            </>
-          )}
-        </div>
-      )}
-    </div>
+      <div className="flex items-center gap-3">
+        {activeWorkspace && currentPage !== "settings" && (
+          <div className="flex items-center gap-1.5 text-xs font-semibold">
+            {activeWorkspace.status === "READY" ? (
+              <>
+                <CheckCircle2 size={12} className="text-cta" />
+                <span className="text-cta">READY</span>
+              </>
+            ) : (
+              <>
+                <RefreshCw
+                  size={12}
+                  className="text-primary-text animate-spin"
+                />
+                <span className="text-primary-text">PROCESSING</span>
+              </>
+            )}
+          </div>
+        )}
+        <AppearanceControl />
+      </div>
+    </header>
   );
 };

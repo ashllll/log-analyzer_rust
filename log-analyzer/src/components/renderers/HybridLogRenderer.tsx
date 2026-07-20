@@ -1,9 +1,13 @@
-import React, { useMemo, memo, useState } from 'react';
-import { useTranslation } from 'react-i18next';
-import { COLOR_STYLES } from '../../constants/colors';
-import type { HybridLogRendererProps } from '../../types/ui';
-import type { ColorKey, KeywordPattern, MatchDetail } from '../../types/common';
-import { escapeRegexLiteral, looksLikeRegexPattern, splitQueryByPipe } from '../../utils/searchPatterns';
+import React, { useMemo, memo, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { COLOR_STYLES } from "../../constants/colors";
+import type { HybridLogRendererProps } from "../../types/ui";
+import type { ColorKey, KeywordPattern, MatchDetail } from "../../types/common";
+import {
+  escapeRegexLiteral,
+  looksLikeRegexPattern,
+  splitQueryByPipe,
+} from "../../utils/searchPatterns";
 
 // 智能截断相关接口
 interface KeywordPosition {
@@ -22,7 +26,7 @@ interface HighlightPattern {
   raw: string;
   color: ColorKey | string;
   comment: string;
-  mode: 'literal' | 'regex';
+  mode: "literal" | "regex";
   caseSensitive: boolean;
   matcher?: RegExp;
 }
@@ -34,18 +38,24 @@ interface HighlightMatch {
   pattern: HighlightPattern;
 }
 
-const createRegexMatcher = (pattern: string, caseSensitive: boolean): RegExp => {
+const createRegexMatcher = (
+  pattern: string,
+  caseSensitive: boolean
+): RegExp => {
   try {
-    return new RegExp(pattern, caseSensitive ? 'g' : 'gi');
+    return new RegExp(pattern, caseSensitive ? "g" : "gi");
   } catch {
-    return new RegExp(escapeRegexLiteral(pattern), caseSensitive ? 'g' : 'gi');
+    return new RegExp(escapeRegexLiteral(pattern), caseSensitive ? "g" : "gi");
   }
 };
 
 /**
  * 查找文本中所有高亮模式的位置
  */
-const collectMatches = (text: string, patterns: HighlightPattern[]): HighlightMatch[] => {
+const collectMatches = (
+  text: string,
+  patterns: HighlightPattern[]
+): HighlightMatch[] => {
   const MAX_TEXT_LENGTH_FOR_FULL_SCAN = 50000;
   const MAX_MATCHES_PER_PATTERN = 500;
   const GLOBAL_MAX_MATCHES = 2000;
@@ -54,14 +64,14 @@ const collectMatches = (text: string, patterns: HighlightPattern[]): HighlightMa
 
   // 判断是否需要 lowerText：只有存在 case-insensitive literal pattern 时才需要
   const needsLowerText = patterns.some(
-    (p) => p.mode === 'literal' && !p.caseSensitive && p.raw.length > 0
+    (p) => p.mode === "literal" && !p.caseSensitive && p.raw.length > 0
   );
-  const lowerText = needsLowerText ? text.toLowerCase() : '';
+  const lowerText = needsLowerText ? text.toLowerCase() : "";
 
   // 超长文本 early exit：快速预检是否有可能匹配
   if (text.length > MAX_TEXT_LENGTH_FOR_FULL_SCAN) {
     const hasPotentialMatch = patterns.some((p) => {
-      if (p.mode === 'literal') {
+      if (p.mode === "literal") {
         const needle = p.caseSensitive ? p.raw : p.raw.toLowerCase();
         if (needle.length === 0) return false;
         const haystack = p.caseSensitive ? text : lowerText;
@@ -75,8 +85,10 @@ const collectMatches = (text: string, patterns: HighlightPattern[]): HighlightMa
   }
 
   patterns.forEach((pattern) => {
-    if (pattern.mode === 'literal') {
-      const literalNeedle = pattern.caseSensitive ? pattern.raw : pattern.raw.toLowerCase();
+    if (pattern.mode === "literal") {
+      const literalNeedle = pattern.caseSensitive
+        ? pattern.raw
+        : pattern.raw.toLowerCase();
       if (!literalNeedle) {
         return;
       }
@@ -110,7 +122,10 @@ const collectMatches = (text: string, patterns: HighlightPattern[]): HighlightMa
     pattern.matcher.lastIndex = 0;
     let match: RegExpExecArray | null;
     let matchCount = 0;
-    while ((match = pattern.matcher.exec(text)) !== null && matchCount < MAX_MATCHES_PER_PATTERN) {
+    while (
+      (match = pattern.matcher.exec(text)) !== null &&
+      matchCount < MAX_MATCHES_PER_PATTERN
+    ) {
       if (match[0].length === 0) {
         pattern.matcher.lastIndex += 1;
         continue;
@@ -158,7 +173,10 @@ const collectMatches = (text: string, patterns: HighlightPattern[]): HighlightMa
   return nonOverlapping;
 };
 
-const findKeywordPositions = (text: string, patterns: HighlightPattern[]): KeywordPosition[] => {
+const findKeywordPositions = (
+  text: string,
+  patterns: HighlightPattern[]
+): KeywordPosition[] => {
   return collectMatches(text, patterns).map((match) => ({
     start: match.start,
     end: match.end,
@@ -168,17 +186,21 @@ const findKeywordPositions = (text: string, patterns: HighlightPattern[]): Keywo
 /**
  * 提取关键词周围的文本片段
  */
-const extractSnippets = (text: string, positions: KeywordPosition[], contextLength: number): Snippet[] => {
+const extractSnippets = (
+  text: string,
+  positions: KeywordPosition[],
+  contextLength: number
+): Snippet[] => {
   if (positions.length === 0) return [];
-  
+
   const snippets: Snippet[] = [];
-  
-  positions.forEach(pos => {
+
+  positions.forEach((pos) => {
     const start = Math.max(0, pos.start - contextLength);
     const end = Math.min(text.length, pos.end + contextLength);
     snippets.push({ start, end, text: text.substring(start, end) });
   });
-  
+
   return snippets;
 };
 
@@ -187,19 +209,19 @@ const extractSnippets = (text: string, positions: KeywordPosition[], contextLeng
  */
 const mergeOverlappingSnippets = (snippets: Snippet[]): Snippet[] => {
   if (snippets.length === 0) return [];
-  
+
   const merged: Snippet[] = [];
   let current = snippets[0];
-  
+
   for (let i = 1; i < snippets.length; i++) {
     const next = snippets[i];
-    
+
     // 如果片段重叠或相邻（间隔小于10字符）
     if (next.start <= current.end + 10) {
       current = {
         start: current.start,
         end: Math.max(current.end, next.end),
-        text: '' // 稍后重新提取
+        text: "", // 稍后重新提取
       };
     } else {
       merged.push(current);
@@ -207,7 +229,7 @@ const mergeOverlappingSnippets = (snippets: Snippet[]): Snippet[] => {
     }
   }
   merged.push(current);
-  
+
   return merged;
 };
 
@@ -233,7 +255,7 @@ const HybridLogRendererInner: React.FC<HybridLogRendererProps> = ({
       .forEach((group) => {
         group.patterns.forEach((p: KeywordPattern) => {
           if (p.regex?.trim()) {
-            const mode = looksLikeRegexPattern(p.regex) ? 'regex' : 'literal';
+            const mode = looksLikeRegexPattern(p.regex) ? "regex" : "literal";
             const key = `${mode}:${p.regex.toLowerCase()}`;
 
             if (!patterns.has(key)) {
@@ -244,7 +266,10 @@ const HybridLogRendererInner: React.FC<HybridLogRendererProps> = ({
                 comment: p.comment,
                 mode,
                 caseSensitive: false,
-                matcher: mode === 'regex' ? createRegexMatcher(p.regex, false) : undefined,
+                matcher:
+                  mode === "regex"
+                    ? createRegexMatcher(p.regex, false)
+                    : undefined,
               });
             }
           }
@@ -254,41 +279,43 @@ const HybridLogRendererInner: React.FC<HybridLogRendererProps> = ({
     const resolvedQueryTerms = queryTerms?.filter((term) => term.enabled) ?? [];
     if (resolvedQueryTerms.length > 0) {
       resolvedQueryTerms.forEach((term, index) => {
-        const mode = term.isRegex ? 'regex' : 'literal';
-        const key = `${mode}:${term.caseSensitive ? 'cs' : 'ci'}:${term.value.toLowerCase()}`;
+        const mode = term.isRegex ? "regex" : "literal";
+        const key = `${mode}:${term.caseSensitive ? "cs" : "ci"}:${term.value.toLowerCase()}`;
 
         if (!patterns.has(key)) {
           patterns.set(key, {
             id: key,
             raw: term.value,
-            color: ['blue', 'purple', 'green', 'orange'][index % 4],
-            comment: '',
+            color: ["blue", "purple", "green", "orange"][index % 4],
+            comment: "",
             mode,
             caseSensitive: term.caseSensitive,
-            matcher: mode === 'regex'
-              ? createRegexMatcher(term.value, term.caseSensitive)
-              : undefined,
+            matcher:
+              mode === "regex"
+                ? createRegexMatcher(term.value, term.caseSensitive)
+                : undefined,
           });
         }
       });
     } else if (query) {
-      splitQueryByPipe(query)
-        .forEach((term: string, index: number) => {
-          const key = `literal:ci:${term.toLowerCase()}`;
-          if (!patterns.has(key)) {
-            patterns.set(key, {
-              id: key,
-              raw: term,
-              color: ['blue', 'purple', 'green', 'orange'][index % 4],
-              comment: '',
-              mode: 'literal',
-              caseSensitive: false,
-            });
-          }
-        });
+      splitQueryByPipe(query).forEach((term: string, index: number) => {
+        const key = `literal:ci:${term.toLowerCase()}`;
+        if (!patterns.has(key)) {
+          patterns.set(key, {
+            id: key,
+            raw: term,
+            color: ["blue", "purple", "green", "orange"][index % 4],
+            comment: "",
+            mode: "literal",
+            caseSensitive: false,
+          });
+        }
+      });
     }
 
-    return Array.from(patterns.values()).sort((a, b) => b.raw.length - a.raw.length);
+    return Array.from(patterns.values()).sort(
+      (a, b) => b.raw.length - a.raw.length
+    );
   }, [keywordGroups, query, queryTerms]);
 
   // 渲染带高亮的文本
@@ -297,63 +324,68 @@ const HybridLogRendererInner: React.FC<HybridLogRendererProps> = ({
   // 不同关键词独立计数，不会相互影响。
   const MAX_HIGHLIGHT_PER_KEYWORD = 50;
 
-  const renderHighlightedText = (textToRender: string, showEllipsis: { start?: boolean; end?: boolean } = {}) => {
+  const renderHighlightedText = (
+    textToRender: string,
+    showEllipsis: { start?: boolean; end?: boolean } = {}
+  ) => {
     if (highlightPatterns.length === 0) {
       return <span>{textToRender}</span>;
     }
 
     // 优先使用后端提供的 match_details，确保前后端高亮位置完全一致
-    const matches: HighlightMatch[] = matchDetails && matchDetails.length > 0
-      ? (() => {
-          const backendMatches: HighlightMatch[] = [];
-          matchDetails.forEach((detail: MatchDetail) => {
-            if (!detail.match_position) return;
-            const [start, end] = detail.match_position;
-            // 找到对应的高亮 pattern（按 term_value 匹配）
-            const pattern = highlightPatterns.find(
-              (p) => p.raw.toLowerCase() === detail.term_value.toLowerCase()
-            ) ?? highlightPatterns.find(
-              (p) => detail.term_value.toLowerCase().includes(p.raw.toLowerCase())
-            ) ?? {
-              id: detail.term_id,
-              raw: detail.term_value,
-              color: 'blue' as ColorKey,
-              comment: '',
-              mode: 'literal',
-              caseSensitive: false,
-            };
-            backendMatches.push({
-              start,
-              end,
-              text: textToRender.slice(start, end),
-              pattern,
+    const matches: HighlightMatch[] =
+      matchDetails && matchDetails.length > 0
+        ? (() => {
+            const backendMatches: HighlightMatch[] = [];
+            matchDetails.forEach((detail: MatchDetail) => {
+              if (!detail.match_position) return;
+              const [start, end] = detail.match_position;
+              // 找到对应的高亮 pattern（按 term_value 匹配）
+              const pattern = highlightPatterns.find(
+                (p) => p.raw.toLowerCase() === detail.term_value.toLowerCase()
+              ) ??
+                highlightPatterns.find((p) =>
+                  detail.term_value.toLowerCase().includes(p.raw.toLowerCase())
+                ) ?? {
+                  id: detail.term_id,
+                  raw: detail.term_value,
+                  color: "blue" as ColorKey,
+                  comment: "",
+                  mode: "literal",
+                  caseSensitive: false,
+                };
+              backendMatches.push({
+                start,
+                end,
+                text: textToRender.slice(start, end),
+                pattern,
+              });
             });
-          });
-          // 排序 + 去重叠（与 collectMatches 保持一致）
-          backendMatches.sort((left, right) => {
-            if (left.start !== right.start) return left.start - right.start;
-            const leftLen = left.end - left.start;
-            const rightLen = right.end - right.start;
-            if (leftLen !== rightLen) return rightLen - leftLen;
-            return right.pattern.raw.length - left.pattern.raw.length;
-          });
-          const nonOverlapping: HighlightMatch[] = [];
-          let currentEnd = -1;
-          for (const match of backendMatches) {
-            if (match.start < currentEnd) continue;
-            nonOverlapping.push(match);
-            currentEnd = match.end;
-          }
-          return nonOverlapping;
-        })()
-      : collectMatches(textToRender, highlightPatterns);
+            // 排序 + 去重叠（与 collectMatches 保持一致）
+            backendMatches.sort((left, right) => {
+              if (left.start !== right.start) return left.start - right.start;
+              const leftLen = left.end - left.start;
+              const rightLen = right.end - right.start;
+              if (leftLen !== rightLen) return rightLen - leftLen;
+              return right.pattern.raw.length - left.pattern.raw.length;
+            });
+            const nonOverlapping: HighlightMatch[] = [];
+            let currentEnd = -1;
+            for (const match of backendMatches) {
+              if (match.start < currentEnd) continue;
+              nonOverlapping.push(match);
+              currentEnd = match.end;
+            }
+            return nonOverlapping;
+          })()
+        : collectMatches(textToRender, highlightPatterns);
 
     if (matches.length === 0) {
       return (
         <span>
-          {showEllipsis.start && <span className="text-gray-400 dark:text-gray-600">...</span>}
+          {showEllipsis.start && <span className="text-text-dim">...</span>}
           <span>{textToRender}</span>
-          {showEllipsis.end && <span className="text-gray-400 dark:text-gray-600">...</span>}
+          {showEllipsis.end && <span className="text-text-dim">...</span>}
         </span>
       );
     }
@@ -365,26 +397,39 @@ const HybridLogRendererInner: React.FC<HybridLogRendererProps> = ({
 
     matches.forEach((match, index) => {
       if (cursor < match.start) {
-        segments.push(<span key={`text-${index}-${cursor}`}>{textToRender.slice(cursor, match.start)}</span>);
+        segments.push(
+          <span key={`text-${index}-${cursor}`}>
+            {textToRender.slice(cursor, match.start)}
+          </span>
+        );
       }
 
       const currentCount = highlightCounts.get(match.pattern.id) ?? 0;
       if (currentCount >= MAX_HIGHLIGHT_PER_KEYWORD) {
-        segments.push(<span key={`plain-${index}-${match.start}`}>{match.text}</span>);
+        segments.push(
+          <span key={`plain-${index}-${match.start}`}>{match.text}</span>
+        );
       } else {
         highlightCounts.set(match.pattern.id, currentCount + 1);
         const style =
-          COLOR_STYLES[match.pattern.color as ColorKey]?.highlight || COLOR_STYLES.blue.highlight;
+          COLOR_STYLES[match.pattern.color as ColorKey]?.highlight ||
+          COLOR_STYLES.blue.highlight;
 
         segments.push(
-          <span key={`highlight-${index}-${match.start}`} className="inline-block mx-[1px]">
-            <span className={`rounded-[2px] px-1 border font-bold break-words ${style}`}>
+          <span
+            key={`highlight-${index}-${match.start}`}
+            className="inline-block mx-[1px]"
+          >
+            <span
+              className={`rounded-[2px] px-1 border font-bold break-words ${style}`}
+            >
               {match.text}
             </span>
             {match.pattern.comment && currentCount === 0 && (
               <span
                 className={`ml-1 px-1.5 rounded-[2px] text-[10px] font-normal border select-none whitespace-nowrap transform -translate-y-[1px] ${
-                  COLOR_STYLES[match.pattern.color as ColorKey]?.badge ?? COLOR_STYLES.blue.badge
+                  COLOR_STYLES[match.pattern.color as ColorKey]?.badge ??
+                  COLOR_STYLES.blue.badge
                 }`}
               >
                 {match.pattern.comment}
@@ -398,14 +443,16 @@ const HybridLogRendererInner: React.FC<HybridLogRendererProps> = ({
     });
 
     if (cursor < textToRender.length) {
-      segments.push(<span key={`tail-${cursor}`}>{textToRender.slice(cursor)}</span>);
+      segments.push(
+        <span key={`tail-${cursor}`}>{textToRender.slice(cursor)}</span>
+      );
     }
 
     return (
       <span>
-        {showEllipsis.start && <span className="text-gray-400 dark:text-gray-600">...</span>}
+        {showEllipsis.start && <span className="text-text-dim">...</span>}
         {segments}
-        {showEllipsis.end && <span className="text-gray-400 dark:text-gray-600">...</span>}
+        {showEllipsis.end && <span className="text-text-dim">...</span>}
       </span>
     );
   };
@@ -424,7 +471,7 @@ const HybridLogRendererInner: React.FC<HybridLogRendererProps> = ({
             onClick={() => setIsExpanded(false)}
             className="ml-2 text-xs text-primary hover:text-primary-hover underline cursor-pointer"
           >
-            {t('search.collapse_text', 'Collapse')}
+            {t("search.collapse_text", "Collapse")}
           </button>
         )}
       </span>
@@ -433,17 +480,19 @@ const HybridLogRendererInner: React.FC<HybridLogRendererProps> = ({
 
   // 文本过长，使用智能截断
   const positions = findKeywordPositions(text, highlightPatterns);
-  
+
   if (positions.length === 0) {
     // 没有关键词，显示前1000字符
     return (
       <span>
-        {renderHighlightedText(text.substring(0, TRUNCATE_THRESHOLD), { end: true })}
+        {renderHighlightedText(text.substring(0, TRUNCATE_THRESHOLD), {
+          end: true,
+        })}
         <button
           onClick={() => setIsExpanded(true)}
-          className="ml-2 text-xs text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 underline cursor-pointer"
+          className="ml-2 cursor-pointer text-xs text-primary-text underline hover:text-primary-hover"
         >
-          {t('search.expand_full_text', 'Expand Full Text')}
+          {t("search.expand_full_text", "Expand Full Text")}
         </button>
       </span>
     );
@@ -458,13 +507,14 @@ const HybridLogRendererInner: React.FC<HybridLogRendererProps> = ({
       {mergedSnippets.map((snippet, index) => {
         const snippetText = text.substring(snippet.start, snippet.end);
         const showStartEllipsis = snippet.start > 0;
-        const showEndEllipsis = snippet.end < text.length && index === mergedSnippets.length - 1;
-        
+        const showEndEllipsis =
+          snippet.end < text.length && index === mergedSnippets.length - 1;
+
         return (
           <span key={index}>
-            {renderHighlightedText(snippetText, { 
-              start: showStartEllipsis, 
-              end: showEndEllipsis
+            {renderHighlightedText(snippetText, {
+              start: showStartEllipsis,
+              end: showEndEllipsis,
             })}
             {index < mergedSnippets.length - 1 && (
               <span className="text-text-dim"> ... </span>
@@ -474,9 +524,9 @@ const HybridLogRendererInner: React.FC<HybridLogRendererProps> = ({
       })}
       <button
         onClick={() => setIsExpanded(true)}
-        className="ml-2 text-xs text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 underline cursor-pointer"
+        className="ml-2 cursor-pointer text-xs text-primary-text underline hover:text-primary-hover"
       >
-        {t('search.expand_full_text', 'Expand Full Text')}
+        {t("search.expand_full_text", "Expand Full Text")}
       </button>
     </span>
   );
@@ -486,15 +536,18 @@ const HybridLogRendererInner: React.FC<HybridLogRendererProps> = ({
  * 使用 React.memo 包装，避免不必要的重渲染
  * 自定义比较函数：仅当 text、query 或 keywordGroups 引用变化时才重新渲染
  */
-const HybridLogRenderer = memo(HybridLogRendererInner, (prevProps, nextProps) => {
-  // 返回 true 表示 props 相同，不需要重渲染
-  return (
-    prevProps.text === nextProps.text &&
-    prevProps.query === nextProps.query &&
-    prevProps.queryTerms === nextProps.queryTerms &&
-    prevProps.keywordGroups === nextProps.keywordGroups &&
-    prevProps.matchDetails === nextProps.matchDetails
-  );
-});
+const HybridLogRenderer = memo(
+  HybridLogRendererInner,
+  (prevProps, nextProps) => {
+    // 返回 true 表示 props 相同，不需要重渲染
+    return (
+      prevProps.text === nextProps.text &&
+      prevProps.query === nextProps.query &&
+      prevProps.queryTerms === nextProps.queryTerms &&
+      prevProps.keywordGroups === nextProps.keywordGroups &&
+      prevProps.matchDetails === nextProps.matchDetails
+    );
+  }
+);
 
 export default HybridLogRenderer;

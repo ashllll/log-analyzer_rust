@@ -36,6 +36,7 @@ import {
   useWorkspaceTimeRange,
   useSearchOrchestrator,
 } from "./SearchPage/hooks";
+import { restoreLogRowFocus } from "./SearchPage/utils/focusLogRow";
 
 const SearchPage: React.FC = () => {
   const { t } = useTranslation();
@@ -287,9 +288,12 @@ const SearchPage: React.FC = () => {
   }, [searchTrigger, activeWorkspace, executeSearch]);
 
   // 组件卸载时取消搜索
-  useEffect(() => () => {
-    cancelSearch();
-  }, [cancelSearch]);
+  useEffect(
+    () => () => {
+      cancelSearch();
+    },
+    [cancelSearch]
+  );
 
   // 导出搜索结果
   const handleExport = useCallback(
@@ -359,10 +363,18 @@ const SearchPage: React.FC = () => {
 
   const activeLog = selectedId ? loadedEntriesMap.get(selectedId) : undefined;
 
+  const closeInspector = useCallback(() => {
+    const selectedLogId = selectedId;
+    setSelectedId(null);
+    if (selectedLogId !== null) {
+      restoreLogRowFocus(selectedLogId);
+    }
+  }, [selectedId]);
+
   return (
-    <div className="flex flex-col h-full relative">
+    <div className="flex h-full flex-col bg-bg-main relative">
       {/* 搜索控制区 */}
-      <div className="p-4 border-b border-border-subtle bg-bg-sidebar space-y-3 shrink-0 relative z-40">
+      <div className="apple-material relative z-40 shrink-0 space-y-3 border-b border-border-subtle px-4 py-3">
         <SearchControls
           query={query}
           onQueryChange={setQuery}
@@ -435,7 +447,7 @@ const SearchPage: React.FC = () => {
             query={query}
             queryTerms={queryTerms}
             keywordGroups={enabledKeywordGroups}
-            onClose={() => setSelectedId(null)}
+            onClose={closeInspector}
             onCopy={copyToClipboard}
           />
         )}

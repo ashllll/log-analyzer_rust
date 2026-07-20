@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { useTranslation } from 'react-i18next';
-import { BarChart3, ChevronDown, X } from 'lucide-react';
-import { KeywordStat } from '../../types/search';
+import React, { useState } from "react";
+import { useTranslation } from "react-i18next";
+import { BarChart3, ChevronDown, X } from "lucide-react";
+import { KeywordStat } from "../../types/search";
 
 /**
  * 关键词统计面板组件属性
@@ -9,20 +9,20 @@ import { KeywordStat } from '../../types/search';
 interface KeywordStatsPanelProps {
   /** 关键词统计数组 */
   keywords: KeywordStat[];
-  
+
   /** 总匹配数 */
   totalMatches: number;
-  
+
   /** 搜索耗时（毫秒） */
   searchDurationMs: number;
-  
+
   /** 关闭回调（可选） */
   onClose?: () => void;
 }
 
 /**
  * 关键词统计面板组件 - 优化版
- * 
+ *
  * 特性：
  * - 紧凑的设计，不占用过多空间
  * - 可折叠/展开
@@ -47,7 +47,7 @@ export const KeywordStatsPanel: React.FC<KeywordStatsPanelProps> = ({
         <div className="flex items-center gap-2">
           <BarChart3 className="text-primary" size={14} />
           <span className="text-xs font-semibold text-text-main">
-            {t('search.statistics.title')}
+            {t("search.statistics.title")}
           </span>
           <span className="text-[10px] text-text-dim">
             {formatNumber(totalMatches)} 条匹配 · {searchDurationMs}ms
@@ -57,17 +57,17 @@ export const KeywordStatsPanel: React.FC<KeywordStatsPanelProps> = ({
           <button
             onClick={() => setIsCollapsed(!isCollapsed)}
             className="p-1 text-text-dim hover:text-text-main transition-colors rounded hover:bg-bg-hover"
-            aria-label={isCollapsed ? '展开' : '折叠'}
+            aria-label={isCollapsed ? "展开" : "折叠"}
           >
-            <ChevronDown 
-              size={14} 
-              className={`transition-transform duration-200 ${isCollapsed ? 'rotate-180' : ''}`} 
+            <ChevronDown
+              size={14}
+              className={`transition-transform duration-200 ${isCollapsed ? "rotate-180" : ""}`}
             />
           </button>
           {onClose && (
             <button
               onClick={onClose}
-              className="p-1 text-text-dim hover:text-red-400 transition-colors rounded hover:bg-bg-hover"
+              className="p-1 text-text-dim hover:text-status-error transition-colors rounded hover:bg-bg-hover"
               aria-label="关闭"
             >
               <X size={14} />
@@ -83,8 +83,8 @@ export const KeywordStatsPanel: React.FC<KeywordStatsPanelProps> = ({
             <div key={index} className="space-y-1">
               <div className="flex items-center justify-between text-xs">
                 <div className="flex items-center gap-1.5">
-                  <span 
-                    className="w-2 h-2 rounded-full flex-shrink-0" 
+                  <span
+                    className="w-2 h-2 rounded-full flex-shrink-0"
                     style={{ backgroundColor: stat.color }}
                   />
                   <span className="font-medium text-text-main font-mono">
@@ -92,15 +92,19 @@ export const KeywordStatsPanel: React.FC<KeywordStatsPanelProps> = ({
                   </span>
                 </div>
                 <div className="text-text-muted flex items-center gap-1">
-                  <span className="font-semibold text-text-main">{formatNumber(stat.matchCount)}</span>
-                  <span className="text-[10px]">({stat.matchPercentage.toFixed(1)}%)</span>
+                  <span className="font-semibold text-text-main">
+                    {formatNumber(stat.matchCount)}
+                  </span>
+                  <span className="text-[10px]">
+                    ({stat.matchPercentage.toFixed(1)}%)
+                  </span>
                 </div>
               </div>
               {/* 紧凑的进度条 */}
               <div className="w-full bg-bg-main rounded-full h-1 overflow-hidden">
-                <div 
-                  className="h-full rounded-full transition-all duration-300 ease-out"
-                  style={{ 
+                <div
+                  className="h-full rounded-full transition-[width,background-color] duration-300 ease-out"
+                  style={{
                     width: `${stat.matchPercentage}%`,
                     backgroundColor: stat.color,
                   }}

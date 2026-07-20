@@ -22,28 +22,28 @@ export default defineConfig(() => ({
       ignored: ["**/src-tauri/**"],
     },
   },
-  
+
   // 4. Build optimization - code splitting and asset optimization
   build: {
     // HI-33: Explicitly disable source maps for production security
     sourcemap: false,
     // HI-33: Use esbuild for minification (bundled with Vite, no extra deps)
-    minify: 'esbuild' as const,
+    minify: "esbuild" as const,
     // HI-33: Target modern browsers for smaller bundles
-    target: 'es2022',
+    target: "es2022",
     rollupOptions: {
       output: {
         manualChunks: {
           // Core React ecosystem
-          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          "vendor-react": ["react", "react-dom", "react-router-dom"],
           // UI components and icons
-          'vendor-ui': ['lucide-react', 'framer-motion'],
+          "vendor-ui": ["lucide-react"],
           // Data fetching and state management
-          'vendor-query': ['@tanstack/react-query', '@tanstack/react-virtual'],
+          "vendor-query": ["@tanstack/react-query", "@tanstack/react-virtual"],
           // State management
-          'vendor-state': ['zustand', 'immer'],
+          "vendor-state": ["zustand", "immer"],
           // Internationalization
-          'vendor-i18n': ['react-i18next', 'i18next'],
+          "vendor-i18n": ["react-i18next", "i18next"],
         },
       },
     },

@@ -1,22 +1,11 @@
-import React, { useState } from 'react';
-import { Plus, Edit2, Trash2, Tag, Power, PowerOff } from 'lucide-react';
-import { motion } from 'framer-motion';
-import { useKeywordManager } from '../hooks/useKeywordManager';
-import { Button, Card, EmptyState } from '../components/ui';
-import { KeywordModal } from '../components/modals';
-import { COLOR_STYLES } from '../constants/colors';
-import { cn } from '../utils/classNames';
-import type { KeywordGroup } from '../types/common';
-
-const containerVariants = {
-  hidden: {},
-  visible: { transition: { staggerChildren: 0.07, delayChildren: 0.05 } },
-};
-
-const itemVariants = {
-  hidden: { opacity: 0, y: 10, scale: 0.99 },
-  visible: { opacity: 1, y: 0, scale: 1, transition: { duration: 0.2, ease: 'easeOut' as const } },
-};
+import React, { useState } from "react";
+import { Plus, Edit2, Trash2, Tag, Power, PowerOff } from "lucide-react";
+import { useKeywordManager } from "../hooks/useKeywordManager";
+import { Button, Card, EmptyState } from "../components/ui";
+import { KeywordModal } from "../components/modals";
+import { COLOR_STYLES } from "../constants/colors";
+import { cn } from "../utils/classNames";
+import type { KeywordGroup } from "../types/common";
 
 /**
  * 关键词配置页面
@@ -27,9 +16,18 @@ const itemVariants = {
  * 4. 删除关键词组
  */
 const KeywordsPage: React.FC = () => {
-  const { saveKeywordGroup, deleteKeywordGroup, toggleKeywordGroup, keywordGroups } = useKeywordManager();
+  const {
+    saveKeywordGroup,
+    deleteKeywordGroup,
+    toggleKeywordGroup,
+    keywordGroups,
+  } = useKeywordManager();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingGroup, setEditingGroup] = useState<KeywordGroup | null>(null);
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const selectedGroup =
+    keywordGroups.find((group) => group.id === selectedGroupId) ??
+    keywordGroups[0];
 
   /**
    * 保存关键词组（新建或编辑）
@@ -47,10 +45,17 @@ const KeywordsPage: React.FC = () => {
   };
 
   return (
-    <div className="p-8 max-w-6xl mx-auto h-full overflow-auto">
+    <div className="mx-auto h-full max-w-6xl overflow-auto px-8 py-7">
       {/* 页面标题和操作 */}
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-text-main tracking-tight">Keyword Configuration</h1>
+        <div>
+          <h1 className="text-[28px] font-semibold leading-tight text-text-main tracking-[-0.02em]">
+            Keyword Groups
+          </h1>
+          <p className="mt-1 text-sm text-text-muted">
+            Organize reusable rules for highlighting and filtering logs.
+          </p>
+        </div>
         <Button
           icon={Plus}
           onClick={() => {
@@ -69,91 +74,129 @@ const KeywordsPage: React.FC = () => {
           title="还没有关键词组"
           description="创建关键词组来高亮和过滤日志中的重要内容"
           action={{
-            label: 'New Group',
-            onClick: () => { setEditingGroup(null); setIsModalOpen(true); },
+            label: "New Group",
+            onClick: () => {
+              setEditingGroup(null);
+              setIsModalOpen(true);
+            },
             icon: Plus,
-            variant: 'cta',
+            variant: "cta",
           }}
         />
       ) : (
-        <motion.div
-          className="space-y-4"
-          variants={containerVariants}
-          initial="hidden"
-          animate="visible"
-        >
-          {keywordGroups.map((group: KeywordGroup) => (
-            <motion.div key={group.id} variants={itemVariants}>
-              <Card
-                className="overflow-hidden hover:border-primary/50 transition-colors"
+        <div className="grid min-h-[440px] grid-cols-[260px_1fr] overflow-hidden rounded-[14px] border border-border-base bg-bg-card shadow-card">
+          <div
+            className="border-r border-border-base bg-bg-sidebar/40 p-2"
+            aria-label="Keyword groups"
+          >
+            {keywordGroups.map((group: KeywordGroup) => (
+              <div
+                key={group.id}
+                className={cn(
+                  "flex items-center rounded-[10px] pr-1",
+                  selectedGroup?.id === group.id
+                    ? "bg-primary/12"
+                    : "hover:bg-bg-hover"
+                )}
               >
-                {/* 关键词组头部 */}
-                <div className="px-6 py-4 flex items-center justify-between bg-bg-sidebar/30 border-b border-border-base/50">
-                  <div className="flex items-center gap-4">
-                    <div className={cn(
-                      "w-3 h-3 rounded-full shadow-[0_0_8px_currentColor]",
+                <button
+                  type="button"
+                  onClick={() => setSelectedGroupId(group.id)}
+                  className={cn(
+                    "ui-pressable flex min-w-0 flex-1 items-center gap-3 rounded-[10px] px-3 py-2.5 text-left",
+                    selectedGroup?.id === group.id
+                      ? "text-text-main"
+                      : "text-text-muted"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "h-2.5 w-2.5 rounded-full",
                       COLOR_STYLES[group.color].dot
-                    )}></div>
-                    <div>
-                      <h3 className="text-sm font-bold text-text-main">{group.name}</h3>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      icon={group.enabled ? Power : PowerOff}
-                      onClick={() => toggleKeywordGroup(group.id)}
-                      aria-label={`toggle ${group.name}`}
-                      aria-pressed={group.enabled}
-                      className={cn(
-                        group.enabled ? "text-green-400" : "text-text-dim"
-                      )}
-                    >
-                      {group.enabled ? 'Enabled' : 'Disabled'}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      icon={Edit2}
-                      onClick={() => {
-                        setEditingGroup(group);
-                        setIsModalOpen(true);
-                      }}
-                    >
-                      Edit
-                    </Button>
-                    <Button
-                      variant="danger"
-                      icon={Trash2}
-                      onClick={() => handleDelete(group.id)}
-                    >
-                      Delete
-                    </Button>
-                  </div>
-                </div>
+                    )}
+                  />
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                    {group.name}
+                  </span>
+                  <span className="text-xs tabular-nums text-text-dim">
+                    {group.patterns.length}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  aria-label={`toggle ${group.name}`}
+                  aria-pressed={group.enabled}
+                  onClick={() => toggleKeywordGroup(group.id)}
+                  className={cn(
+                    "ui-pressable rounded-full p-1.5",
+                    group.enabled ? "text-status-success" : "text-text-dim"
+                  )}
+                >
+                  {group.enabled ? <Power size={14} /> : <PowerOff size={14} />}
+                </button>
+              </div>
+            ))}
+          </div>
 
-                {/* 关键词模式列表 */}
-                <div className="px-6 py-3 bg-bg-card flex flex-wrap gap-2">
-                  {group.patterns.map((p, i) => (
-                    <div
-                      key={`${group.id}-${p.regex}-${i}`}
-                      className="flex items-center bg-bg-main border border-border-base rounded px-2 py-1 text-xs"
-                    >
-                      <span className="font-mono text-text-main mr-2">{p.regex}</span>
-                      {p.comment && (
-                        <span className={cn(
-                          "text-[10px] px-1.5 rounded",
-                          COLOR_STYLES[group.color].badge
-                        )}>
-                          {p.comment}
-                        </span>
-                      )}
-                    </div>
-                  ))}
+          {selectedGroup && (
+            <Card variant="ghost" padding="none" className="rounded-none">
+              <div className="flex items-center justify-between border-b border-border-base px-6 py-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-text-main">
+                    {selectedGroup.name}
+                  </h2>
+                  <p className="mt-0.5 text-xs text-text-muted">
+                    {selectedGroup.patterns.length} matching rules
+                  </p>
                 </div>
-              </Card>
-            </motion.div>
-          ))}
-        </motion.div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="secondary"
+                    icon={Edit2}
+                    onClick={() => {
+                      setEditingGroup(selectedGroup);
+                      setIsModalOpen(true);
+                    }}
+                  >
+                    Edit
+                  </Button>
+                  <Button
+                    variant="danger"
+                    icon={Trash2}
+                    onClick={() => handleDelete(selectedGroup.id)}
+                  >
+                    Delete
+                  </Button>
+                </div>
+              </div>
+              <div className="divide-y divide-border-subtle px-6">
+                {selectedGroup.patterns.map((pattern, index) => (
+                  <div
+                    key={`${selectedGroup.id}-${pattern.regex}-${index}`}
+                    className="flex items-start gap-4 py-3"
+                  >
+                    <span className="w-8 shrink-0 pt-0.5 text-xs tabular-nums text-text-dim">
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
+                    <code className="min-w-0 flex-1 break-all font-mono text-sm text-text-main">
+                      {pattern.regex}
+                    </code>
+                    {pattern.comment && (
+                      <span
+                        className={cn(
+                          "rounded-full px-2 py-0.5 text-[10px]",
+                          COLOR_STYLES[selectedGroup.color].badge
+                        )}
+                      >
+                        {pattern.comment}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+        </div>
       )}
 
       {/* 关键词编辑模态框 */}

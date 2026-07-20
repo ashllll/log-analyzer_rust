@@ -1,21 +1,17 @@
-import React from 'react';
-import { useTranslation } from 'react-i18next';
-import { CheckCircle2, AlertCircle, RefreshCw, Trash2, X, ListTodo } from 'lucide-react';
-import { motion } from 'framer-motion';
-import { useTaskManager } from '../hooks/useTaskManager';
-import { Button, EmptyState } from '../components/ui';
-import { cn } from '../utils/classNames';
-import type { Task } from '../types/common';
-
-const containerVariants = {
-  hidden: {},
-  visible: { transition: { staggerChildren: 0.06, delayChildren: 0.04 } },
-};
-
-const itemVariants = {
-  hidden: { opacity: 0, x: -8 },
-  visible: { opacity: 1, x: 0, transition: { duration: 0.18, ease: 'easeOut' as const } },
-};
+import React from "react";
+import { useTranslation } from "react-i18next";
+import {
+  CheckCircle2,
+  AlertCircle,
+  RefreshCw,
+  Trash2,
+  X,
+  ListTodo,
+} from "lucide-react";
+import { useTaskManager } from "../hooks/useTaskManager";
+import { Button, EmptyState } from "../components/ui";
+import { cn } from "../utils/classNames";
+import type { Task } from "../types/common";
 
 /**
  * 后台任务页面
@@ -38,55 +34,73 @@ const TasksPage: React.FC = () => {
     cancelTask(id);
   };
 
-  const validTasks = tasks.filter((task: Task) => Boolean(task.id));
+  const statusOrder: Record<Task["status"], number> = {
+    RUNNING: 0,
+    FAILED: 1,
+    COMPLETED: 2,
+    STOPPED: 3,
+  };
+  const validTasks = tasks
+    .filter((task: Task) => Boolean(task.id))
+    .sort(
+      (left, right) => statusOrder[left.status] - statusOrder[right.status]
+    );
 
   return (
-    <div className="p-8 max-w-4xl mx-auto h-full overflow-auto">
-      <h1 className="text-2xl font-bold mb-6 text-text-main tracking-tight">{t('tasks.title')}</h1>
+    <div className="mx-auto h-full max-w-5xl overflow-auto px-8 py-7">
+      <h1 className="mb-6 text-[28px] font-semibold leading-tight text-text-main tracking-[-0.02em]">
+        {t("tasks.title")}
+      </h1>
 
       {validTasks.length === 0 ? (
         <EmptyState
           icon={ListTodo}
-          title={t('tasks.no_tasks', '暂无后台任务')}
+          title={t("tasks.no_tasks", "暂无后台任务")}
           description="导入工作区或执行搜索时，任务会出现在这里"
         />
       ) : (
-        <motion.div
-          className="space-y-4"
-          variants={containerVariants}
-          initial="hidden"
-          animate="visible"
-        >
+        <div className="overflow-hidden rounded-[14px] border border-border-base bg-bg-card shadow-card">
           {validTasks.map((task: Task) => (
-            <motion.div
+            <div
               key={task.id}
-              variants={itemVariants}
-              className="p-4 bg-bg-card border border-border-base rounded-lg flex items-center gap-4"
+              className="flex items-center gap-4 border-b border-border-subtle px-4 py-3 last:border-b-0"
             >
-              <div className={cn(
-                "p-2 rounded-full bg-bg-hover",
-                task.status === 'RUNNING' ? "text-primary-text" :
-                task.status === 'FAILED' ? "text-status-error" : "text-cta"
-              )}>
-                {task.status === 'RUNNING' ? (
-                  <RefreshCw size={20} className="animate-spin"/>
-                ) : task.status === 'FAILED' ? (
-                  <AlertCircle size={20}/>
+              <div
+                className={cn(
+                  "p-2 rounded-full bg-bg-hover",
+                  task.status === "RUNNING"
+                    ? "text-primary-text"
+                    : task.status === "FAILED"
+                      ? "text-status-error"
+                      : "text-cta"
+                )}
+              >
+                {task.status === "RUNNING" ? (
+                  <RefreshCw size={20} className="animate-spin" />
+                ) : task.status === "FAILED" ? (
+                  <AlertCircle size={20} />
                 ) : (
-                  <CheckCircle2 size={20}/>
+                  <CheckCircle2 size={20} />
                 )}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex justify-between mb-1">
-                  <h3 className="font-semibold text-sm text-text-main truncate">{task.type}: {task.target}</h3>
-                  <span className="text-xs font-mono text-text-dim font-bold">{task.status}</span>
+                  <h3 className="font-semibold text-sm text-text-main truncate">
+                    {task.type}: {task.target}
+                  </h3>
+                  <span className="text-xs font-mono text-text-dim font-bold">
+                    {task.status}
+                  </span>
                 </div>
                 <div className="w-full bg-bg-main h-2 rounded-full overflow-hidden relative">
                   <div
                     className={cn(
-                      "h-full transition-all duration-500",
-                      task.status === 'FAILED' ? 'bg-status-error' :
-                      task.status === 'COMPLETED' ? 'bg-cta' : 'bg-primary'
+                      "h-full transition-[width,background-color] duration-500",
+                      task.status === "FAILED"
+                        ? "bg-status-error"
+                        : task.status === "COMPLETED"
+                          ? "bg-cta"
+                          : "bg-primary"
                     )}
                     style={{ width: `${task.progress || 5}%` }}
                   />
@@ -97,7 +111,7 @@ const TasksPage: React.FC = () => {
                 </div>
               </div>
               <div className="flex gap-2">
-                {task.status === 'RUNNING' && (
+                {task.status === "RUNNING" && (
                   <Button
                     variant="ghost"
                     className="h-8 px-2 text-status-warn hover:text-status-warn/80"
@@ -113,12 +127,12 @@ const TasksPage: React.FC = () => {
                   onClick={() => handleDelete(task.id)}
                   data-testid={`delete-task-${task.id}`}
                 >
-                  <Trash2 size={16}/>
+                  <Trash2 size={16} />
                 </Button>
               </div>
-            </motion.div>
+            </div>
           ))}
-        </motion.div>
+        </div>
       )}
     </div>
   );

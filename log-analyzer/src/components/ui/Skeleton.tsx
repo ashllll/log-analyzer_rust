@@ -1,5 +1,5 @@
-import React from 'react';
-import { cn } from '../../utils/classNames';
+import React from "react";
+import { cn } from "../../utils/classNames";
 
 interface SkeletonProps {
   className?: string;
@@ -10,7 +10,7 @@ interface SkeletonProps {
  * 用于替代加载时的旋转圈圈，提供更好的视觉体验
  */
 export const Skeleton: React.FC<SkeletonProps> = ({ className }) => (
-  <div className={cn("animate-pulse rounded bg-bg-hover/40", className)} />
+  <div className={cn("skeleton-shimmer rounded bg-bg-hover/40", className)} />
 );
 
 /**
@@ -31,7 +31,10 @@ export const PageSkeleton: React.FC = () => (
       {/* 内容网格 */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="rounded-lg border border-border-base overflow-hidden">
+          <div
+            key={i}
+            className="rounded-lg border border-border-base overflow-hidden"
+          >
             <Skeleton className="h-12 rounded-none" />
             <div className="p-4 space-y-3">
               <Skeleton className="h-4 w-full" />

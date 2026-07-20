@@ -1,0 +1,1717 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LogAnalyzer Frontend Redesign Prototype</title>
+    <!-- PROTOTYPE — Three full-app UI directions, switchable with ?variant=A|B|C and ?screen=workspaces|search|keywords|tasks|settings. -->
+    <style>
+      :root {
+        color-scheme: dark;
+        --canvas: #1c1c1e;
+        --sidebar: rgba(38, 38, 40, 0.78);
+        --toolbar: rgba(28, 28, 30, 0.76);
+        --panel: #242426;
+        --raised: #2c2c2e;
+        --hover: #353538;
+        --material: rgba(46, 46, 50, 0.82);
+        --border: rgba(255, 255, 255, 0.095);
+        --border-strong: rgba(255, 255, 255, 0.16);
+        --text: rgba(255, 255, 255, 0.94);
+        --muted: rgba(235, 235, 245, 0.62);
+        --dim: rgba(235, 235, 245, 0.38);
+        --accent: #0a84ff;
+        --accent-hover: #2997ff;
+        --danger: #ff453a;
+        --warning: #ff9f0a;
+        --success: #30d158;
+        --info: #64d2ff;
+        --radius: 10px;
+        --radius-lg: 14px;
+        --inspector-width: 420px;
+        --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+        --ease-move: cubic-bezier(0.77, 0, 0.175, 1);
+        --spring-ui: cubic-bezier(0.32, 0.72, 0, 1);
+        font-family:
+          -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
+          system-ui, sans-serif;
+        font-optical-sizing: auto;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        margin: 0;
+        overflow: hidden;
+        background: var(--canvas);
+        color: var(--text);
+        font-size: 13px;
+        -webkit-font-smoothing: antialiased;
+        transition:
+          background-color 220ms var(--ease-out),
+          color 220ms var(--ease-out);
+      }
+      body.light {
+        color-scheme: light;
+        --canvas: #f5f5f7;
+        --sidebar: rgba(244, 244, 246, 0.82);
+        --toolbar: rgba(248, 248, 250, 0.76);
+        --panel: rgba(255, 255, 255, 0.86);
+        --raised: #ffffff;
+        --hover: #ececef;
+        --material: rgba(255, 255, 255, 0.84);
+        --border: rgba(60, 60, 67, 0.13);
+        --border-strong: rgba(60, 60, 67, 0.22);
+        --text: rgba(0, 0, 0, 0.88);
+        --muted: rgba(60, 60, 67, 0.68);
+        --dim: rgba(60, 60, 67, 0.46);
+        --accent: #007aff;
+        --accent-hover: #1687ff;
+        --danger: #ff3b30;
+        --warning: #ff9500;
+        --success: #28a745;
+        --info: #32ade6;
+      }
+      button,
+      input,
+      select {
+        font: inherit;
+      }
+      button {
+        color: inherit;
+      }
+      button:focus-visible,
+      input:focus-visible,
+      select:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+      .mono {
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      }
+      .hidden {
+        display: none !important;
+      }
+
+      .app {
+        display: grid;
+        height: 100vh;
+        min-width: 1080px;
+        background: var(--canvas);
+        transform: scale(1);
+        filter: brightness(1);
+        transition:
+          transform 260ms var(--spring-ui),
+          filter 220ms ease-out;
+        transform-origin: center;
+      }
+      .modal-present .app {
+        transform: scale(0.985);
+        filter: brightness(0.72) saturate(0.88);
+      }
+      .sidebar {
+        position: relative;
+        z-index: 4;
+        background: var(--sidebar);
+        border-right: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        backdrop-filter: saturate(165%) blur(28px);
+        -webkit-backdrop-filter: saturate(165%) blur(28px);
+      }
+      .brand {
+        height: 56px;
+        padding: 0 16px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border-bottom: 1px solid var(--border);
+        font-weight: 700;
+        font-size: 15px;
+        letter-spacing: -0.01em;
+      }
+      .brand-mark {
+        width: 27px;
+        height: 27px;
+        display: grid;
+        place-items: center;
+        border-radius: 8px;
+        background: linear-gradient(145deg, #47a7ff, var(--accent));
+        color: white;
+        font-size: 15px;
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.28),
+          0 2px 7px rgba(0, 80, 180, 0.24);
+      }
+      .nav {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding: 12px 10px;
+        flex: 1;
+      }
+      .nav.bottom {
+        flex: 0;
+        border-top: 1px solid var(--border);
+      }
+      .nav-button {
+        position: relative;
+        min-height: 38px;
+        padding: 0 12px;
+        border: 0;
+        border-radius: var(--radius);
+        background: transparent;
+        color: var(--muted);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        cursor: pointer;
+        text-align: left;
+        transition:
+          color 120ms ease,
+          background-color 120ms ease;
+      }
+      .nav-button:hover {
+        color: var(--text);
+        background: rgba(255, 255, 255, 0.035);
+      }
+      .nav-button.active {
+        color: var(--text);
+        background: color-mix(in srgb, var(--accent) 18%, transparent);
+        box-shadow: inset 0 0 0 1px
+          color-mix(in srgb, var(--accent) 13%, transparent);
+      }
+      .nav-button.active::before {
+        content: none;
+      }
+      .nav-icon {
+        width: 18px;
+        color: currentColor;
+        opacity: 0.9;
+        text-align: center;
+      }
+
+      .main {
+        min-width: 0;
+        display: grid;
+        grid-template-rows: 52px minmax(0, 1fr);
+      }
+      .topbar {
+        position: relative;
+        z-index: 3;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 14px 0 20px;
+        background: var(--toolbar);
+        backdrop-filter: saturate(165%) blur(24px);
+        -webkit-backdrop-filter: saturate(165%) blur(24px);
+      }
+      .crumbs {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--dim);
+      }
+      .crumbs strong {
+        color: var(--text);
+        font-weight: 600;
+      }
+      .top-status {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--muted);
+      }
+      .status-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--success);
+        box-shadow: 0 0 0 3px
+          color-mix(in srgb, var(--success) 14%, transparent);
+      }
+      .content {
+        min-height: 0;
+        overflow: auto;
+        padding: 30px 32px 80px;
+      }
+      .content.no-pad {
+        padding: 0 0 70px;
+        overflow: hidden;
+      }
+      .page-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 24px;
+        margin-bottom: 24px;
+      }
+      h1 {
+        font-size: 26px;
+        line-height: 32px;
+        letter-spacing: -0.035em;
+        margin: 0 0 4px;
+        font-weight: 700;
+      }
+      h2 {
+        font-size: 15px;
+        line-height: 20px;
+        margin: 0;
+      }
+      h3 {
+        font-size: 13px;
+        line-height: 18px;
+        margin: 0;
+      }
+      p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+      .actions,
+      .inline {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .btn {
+        min-height: 36px;
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius);
+        background: var(--raised);
+        color: var(--text);
+        padding: 0 12px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        cursor: pointer;
+        transition:
+          background-color 120ms ease,
+          border-color 120ms ease,
+          transform 120ms var(--ease-out);
+      }
+      .btn:hover {
+        background: var(--hover);
+        border-color: rgba(255, 255, 255, 0.2);
+      }
+      .btn:active {
+        transform: scale(0.97);
+      }
+      .btn.primary {
+        color: white;
+        background: var(--accent);
+        border-color: var(--accent);
+        font-weight: 650;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+      }
+      .btn.primary:hover {
+        background: var(--accent-hover);
+      }
+      .btn.ghost {
+        border-color: transparent;
+        background: transparent;
+        color: var(--muted);
+      }
+      .btn.ghost:hover {
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--text);
+      }
+      .btn.danger {
+        color: var(--danger);
+        background: rgba(240, 120, 120, 0.08);
+        border-color: rgba(240, 120, 120, 0.24);
+      }
+      .btn.icon {
+        width: 36px;
+        padding: 0;
+      }
+      .btn[disabled] {
+        opacity: 0.42;
+        cursor: not-allowed;
+        transform: none;
+      }
+
+      .card {
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        background: var(--panel);
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.025);
+      }
+      .card.interactive {
+        transition:
+          background-color 120ms ease,
+          border-color 120ms ease,
+          box-shadow 120ms ease;
+      }
+      .card.interactive:hover {
+        background: var(--raised);
+        border-color: var(--border-strong);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.14);
+      }
+      .workspace-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(260px, 1fr));
+        gap: 14px;
+      }
+      .workspace-card {
+        min-height: 196px;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+      }
+      .workspace-title {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 14px;
+      }
+      .workspace-title h2 {
+        font-size: 15px;
+      }
+      .quiet-actions {
+        display: flex;
+        gap: 2px;
+        color: var(--dim);
+      }
+      .quiet-actions button {
+        border: 0;
+        width: 28px;
+        height: 28px;
+        border-radius: 6px;
+        background: transparent;
+        color: inherit;
+        cursor: pointer;
+      }
+      .quiet-actions button:hover {
+        background: rgba(255, 255, 255, 0.05);
+        color: var(--text);
+      }
+      .path {
+        color: var(--muted);
+        font-size: 12px;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        padding: 8px 10px;
+        border-radius: 6px;
+        background: var(--canvas);
+        border: 1px solid var(--border);
+      }
+      .metrics {
+        margin-top: 16px;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+      }
+      .metric span {
+        color: var(--dim);
+        font-size: 11px;
+        display: block;
+        margin-bottom: 3px;
+      }
+      .metric strong {
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .card-footer {
+        margin-top: auto;
+        padding-top: 14px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        font-weight: 600;
+      }
+      .status::before {
+        content: "";
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: currentColor;
+      }
+      .status.ready {
+        color: var(--success);
+      }
+      .status.warning {
+        color: var(--warning);
+      }
+      .status.error {
+        color: var(--danger);
+      }
+      .progress {
+        height: 4px;
+        overflow: hidden;
+        border-radius: 9px;
+        background: rgba(255, 255, 255, 0.07);
+      }
+      .progress > span {
+        display: block;
+        height: 100%;
+        border-radius: inherit;
+        background: var(--accent);
+      }
+
+      .search-layout {
+        height: 100%;
+        display: grid;
+        grid-template-rows: auto auto minmax(0, 1fr);
+      }
+      .search-toolbar {
+        padding: 16px;
+        border-bottom: 1px solid var(--border);
+        display: grid;
+        grid-template-columns: minmax(300px, 1fr) auto auto auto;
+        gap: 8px;
+        background: var(--toolbar);
+        backdrop-filter: saturate(165%) blur(22px);
+        -webkit-backdrop-filter: saturate(165%) blur(22px);
+      }
+      .input-wrap {
+        position: relative;
+      }
+      .input,
+      .select {
+        width: 100%;
+        min-height: 38px;
+        border-radius: var(--radius);
+        border: 1px solid var(--border-strong);
+        background: var(--canvas);
+        color: var(--text);
+        padding: 0 12px;
+      }
+      .input::placeholder {
+        color: var(--dim);
+      }
+      .filterbar {
+        min-height: 50px;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 8px 16px;
+        border-bottom: 1px solid var(--border);
+        background: var(--panel);
+      }
+      .field-inline {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+      .field-inline label,
+      .eyebrow {
+        color: var(--dim);
+        font-size: 10px;
+        font-weight: 750;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+      .chip {
+        min-height: 27px;
+        padding: 0 9px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: var(--raised);
+        color: var(--muted);
+        display: inline-flex;
+        align-items: center;
+        cursor: pointer;
+      }
+      .chip.active {
+        border-color: color-mix(in srgb, var(--accent) 34%, transparent);
+        background: color-mix(in srgb, var(--accent) 12%, transparent);
+        color: var(--accent);
+      }
+      .search-body {
+        min-height: 0;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) var(--inspector-width);
+      }
+      .results {
+        min-width: 0;
+        overflow: auto;
+      }
+      .inspector {
+        position: relative;
+        border-left: 1px solid var(--border);
+        background: var(--sidebar);
+        overflow: auto;
+        animation: panel-in 260ms var(--spring-ui);
+        backdrop-filter: saturate(155%) blur(24px);
+        -webkit-backdrop-filter: saturate(155%) blur(24px);
+      }
+      @keyframes panel-in {
+        from {
+          opacity: 0;
+          transform: translateX(10%);
+        }
+        to {
+          opacity: 1;
+          transform: translateX(0);
+        }
+      }
+      .resize-handle {
+        position: absolute;
+        z-index: 5;
+        inset: 0 auto 0 -5px;
+        width: 10px;
+        cursor: col-resize;
+        touch-action: none;
+      }
+      .resize-handle::after {
+        content: "";
+        position: absolute;
+        inset: 44% 4px;
+        width: 2px;
+        border-radius: 2px;
+        background: transparent;
+        transition: background-color 120ms ease;
+      }
+      .resize-handle:hover::after,
+      .resize-handle.dragging::after {
+        background: var(--accent);
+      }
+      body.is-resizing {
+        cursor: col-resize;
+        user-select: none;
+      }
+      .table-head,
+      .log-row {
+        display: grid;
+        grid-template-columns: 72px 146px 140px minmax(280px, 1fr);
+        gap: 10px;
+        align-items: start;
+        padding: 9px 14px;
+        border-bottom: 1px solid var(--border);
+      }
+      .table-head {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        background: var(--raised);
+        color: var(--dim);
+        font-size: 10px;
+        font-weight: 750;
+        letter-spacing: 0.07em;
+      }
+      .log-row {
+        position: relative;
+        min-height: 42px;
+        color: var(--muted);
+        font-size: 11px;
+        cursor: pointer;
+      }
+      .log-row:hover {
+        background: rgba(255, 255, 255, 0.022);
+      }
+      .log-row.selected {
+        background: color-mix(in srgb, var(--accent) 9%, transparent);
+      }
+      .log-row.selected::before {
+        content: "";
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 2px;
+        background: var(--accent);
+      }
+      .level {
+        justify-self: start;
+        min-width: 48px;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 10px;
+        font-weight: 800;
+        text-align: center;
+      }
+      .level.error {
+        color: #ff9b9b;
+        background: rgba(240, 120, 120, 0.12);
+      }
+      .level.warn {
+        color: #f0ca76;
+        background: rgba(230, 183, 92, 0.12);
+      }
+      .level.info {
+        color: #9fc4f4;
+        background: rgba(117, 167, 232, 0.12);
+      }
+      .message {
+        color: #d3d7da;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .inspector-head {
+        height: 48px;
+        position: sticky;
+        top: 0;
+        background: var(--raised);
+        border-bottom: 1px solid var(--border);
+        padding: 0 14px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .inspector-content {
+        padding: 16px;
+        display: grid;
+        gap: 12px;
+      }
+      .detail-block {
+        padding: 12px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--panel);
+      }
+      .detail-block .eyebrow {
+        margin-bottom: 7px;
+      }
+      .detail-value {
+        color: #d9dddf;
+        line-height: 1.55;
+        word-break: break-word;
+      }
+
+      .split {
+        display: grid;
+        grid-template-columns: 260px minmax(0, 1fr);
+        min-height: 620px;
+        overflow: hidden;
+      }
+      .list-pane {
+        padding: 10px;
+        border-right: 1px solid var(--border);
+      }
+      .list-row {
+        width: 100%;
+        border: 0;
+        border-radius: 7px;
+        background: transparent;
+        color: var(--muted);
+        padding: 11px 10px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        cursor: pointer;
+        text-align: left;
+      }
+      .list-row:hover {
+        background: rgba(255, 255, 255, 0.035);
+      }
+      .list-row.active {
+        background: color-mix(in srgb, var(--accent) 14%, transparent);
+        color: var(--text);
+      }
+      .detail-pane {
+        padding: 20px;
+      }
+      .rule-list {
+        margin-top: 16px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        overflow: hidden;
+      }
+      .rule {
+        min-height: 56px;
+        display: grid;
+        grid-template-columns: 22px 1fr 90px 70px;
+        gap: 12px;
+        align-items: center;
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--border);
+      }
+      .rule:last-child {
+        border-bottom: 0;
+      }
+      .rule-type {
+        color: var(--dim);
+        font-size: 11px;
+      }
+      .toggle {
+        width: 32px;
+        height: 18px;
+        border-radius: 10px;
+        background: var(--accent);
+        position: relative;
+      }
+      .toggle::after {
+        content: "";
+        position: absolute;
+        width: 14px;
+        height: 14px;
+        top: 2px;
+        right: 2px;
+        border-radius: 50%;
+        background: white;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
+      }
+
+      .data-table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      .data-table th {
+        height: 38px;
+        text-align: left;
+        padding: 0 12px;
+        color: var(--dim);
+        font-size: 10px;
+        letter-spacing: 0.07em;
+        border-bottom: 1px solid var(--border);
+      }
+      .data-table td {
+        height: 56px;
+        padding: 0 12px;
+        border-bottom: 1px solid var(--border);
+        color: var(--muted);
+      }
+      .data-table tr:last-child td {
+        border-bottom: 0;
+      }
+      .data-table strong {
+        color: var(--text);
+        font-weight: 600;
+      }
+      .task-progress {
+        width: 140px;
+        display: grid;
+        grid-template-columns: 1fr 34px;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .settings {
+        display: grid;
+        grid-template-columns: 220px minmax(0, 760px);
+        gap: 24px;
+      }
+      .settings-nav {
+        display: grid;
+        align-content: start;
+        gap: 3px;
+      }
+      .settings-form {
+        display: grid;
+        gap: 18px;
+      }
+      .form-section {
+        padding: 18px;
+      }
+      .form-grid {
+        margin-top: 16px;
+        display: grid;
+        grid-template-columns: 1fr 220px;
+        gap: 16px;
+        align-items: center;
+      }
+      .form-copy small {
+        display: block;
+        margin-top: 3px;
+        color: var(--dim);
+        line-height: 1.45;
+      }
+      .savebar {
+        position: sticky;
+        bottom: 0;
+        min-height: 56px;
+        margin-top: 18px;
+        padding: 9px 12px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        background: var(--material);
+        box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.16);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        backdrop-filter: saturate(160%) blur(22px);
+        -webkit-backdrop-filter: saturate(160%) blur(22px);
+      }
+
+      .popover {
+        position: fixed;
+        z-index: 20;
+        top: 116px;
+        right: 150px;
+        width: min(520px, calc(100vw - 280px));
+        padding: 14px;
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-lg);
+        background: var(--material);
+        box-shadow:
+          0 22px 60px rgba(0, 0, 0, 0.34),
+          inset 0 1px 0 rgba(255, 255, 255, 0.06);
+        transform-origin: top right;
+        animation: pop-in 180ms var(--ease-out);
+        backdrop-filter: saturate(170%) blur(30px);
+        -webkit-backdrop-filter: saturate(170%) blur(30px);
+      }
+      @keyframes pop-in {
+        from {
+          opacity: 0;
+          transform: translateY(-4px) scale(0.96);
+          filter: blur(6px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+          filter: blur(0);
+        }
+      }
+      .popover-head,
+      .popover-foot {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .popover-groups {
+        margin: 12px 0;
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+      }
+      .group-box {
+        padding: 11px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--panel);
+      }
+      .check-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 9px;
+        color: var(--muted);
+      }
+
+      .scrim {
+        position: fixed;
+        inset: 0;
+        z-index: 30;
+        background: rgba(0, 0, 0, 0.42);
+        display: grid;
+        place-items: center;
+        animation: fade-in 180ms ease-out;
+        backdrop-filter: blur(2px);
+        -webkit-backdrop-filter: blur(2px);
+      }
+      .modal {
+        width: min(580px, calc(100vw - 40px));
+        max-height: 80vh;
+        overflow: auto;
+        border: 1px solid var(--border-strong);
+        border-radius: 16px;
+        background: var(--material);
+        box-shadow:
+          0 28px 90px rgba(0, 0, 0, 0.46),
+          inset 0 1px 0 rgba(255, 255, 255, 0.08);
+        animation: modal-in 240ms var(--spring-ui);
+        backdrop-filter: saturate(170%) blur(34px);
+        -webkit-backdrop-filter: saturate(170%) blur(34px);
+      }
+      @keyframes fade-in {
+        from {
+          opacity: 0;
+        }
+      }
+      @keyframes modal-in {
+        from {
+          opacity: 0;
+          transform: translateY(8px) scale(0.965);
+          filter: blur(5px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+          filter: blur(0);
+        }
+      }
+      .modal-head,
+      .modal-foot {
+        min-height: 54px;
+        padding: 10px 16px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid var(--border);
+      }
+      .modal-foot {
+        border-top: 1px solid var(--border);
+        border-bottom: 0;
+        justify-content: flex-end;
+      }
+      .modal-body {
+        padding: 16px;
+        display: grid;
+        gap: 14px;
+      }
+
+      .prototype-switcher {
+        position: fixed;
+        z-index: 100;
+        left: 50%;
+        bottom: 16px;
+        transform: translateX(-50%);
+        min-width: 360px;
+        padding: 6px;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        border-radius: 999px;
+        background: rgba(18, 18, 20, 0.82);
+        box-shadow:
+          0 14px 42px rgba(0, 0, 0, 0.36),
+          inset 0 1px 0 rgba(255, 255, 255, 0.08);
+        display: grid;
+        grid-template-columns: 34px 1fr 34px;
+        align-items: center;
+        backdrop-filter: saturate(170%) blur(24px);
+        -webkit-backdrop-filter: saturate(170%) blur(24px);
+      }
+      .prototype-switcher button {
+        width: 32px;
+        height: 32px;
+        border: 0;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.07);
+        color: var(--text);
+        cursor: pointer;
+      }
+      .prototype-switcher button {
+        color: rgba(255, 255, 255, 0.92);
+      }
+      .prototype-label {
+        text-align: center;
+        font-size: 12px;
+        color: rgba(235, 235, 245, 0.58);
+      }
+      .prototype-label strong {
+        color: rgba(255, 255, 255, 0.94);
+      }
+      .brand-theme {
+        display: none;
+        margin-left: auto;
+      }
+
+      body.variant-b .app {
+        grid-template-columns: 1fr;
+        grid-template-rows: 52px minmax(0, 1fr);
+      }
+      body.variant-b .sidebar {
+        flex-direction: row;
+        border-right: 0;
+        border-bottom: 1px solid var(--border);
+      }
+      body.variant-b .brand {
+        border-bottom: 0;
+        width: 190px;
+      }
+      body.variant-b .brand-theme {
+        display: grid;
+      }
+      body.variant-b .nav {
+        flex-direction: row;
+        align-items: center;
+        padding: 7px 4px;
+      }
+      body.variant-b .nav.bottom {
+        border-top: 0;
+        border-left: 1px solid var(--border);
+      }
+      body.variant-b .nav-button {
+        min-height: 34px;
+      }
+      body.variant-b .main {
+        grid-row: 2;
+      }
+      body.variant-b .topbar {
+        display: none;
+      }
+      body.variant-b .main {
+        grid-template-rows: minmax(0, 1fr);
+      }
+      body.variant-b .content {
+        padding-top: 22px;
+      }
+      body.variant-b .workspace-grid {
+        grid-template-columns: 1fr;
+      }
+      body.variant-b .workspace-card {
+        min-height: 112px;
+        display: grid;
+        grid-template-columns: 1.2fr 1.4fr 1fr 130px;
+        gap: 18px;
+        align-items: center;
+      }
+      body.variant-b .workspace-title,
+      body.variant-b .metrics,
+      body.variant-b .card-footer {
+        margin: 0;
+        padding: 0;
+      }
+      body.variant-b .metrics {
+        grid-template-columns: repeat(3, 1fr);
+      }
+
+      body.variant-c .app {
+        grid-template-columns: 76px 260px minmax(0, 1fr);
+      }
+      body.variant-c .sidebar {
+        grid-column: 1;
+      }
+      body.variant-c .brand {
+        padding: 0;
+        justify-content: center;
+      }
+      body.variant-c .brand span:last-child,
+      body.variant-c .nav-button span:last-child {
+        display: none;
+      }
+      body.variant-c .nav-button {
+        justify-content: center;
+        padding: 0;
+      }
+      body.variant-c .main {
+        grid-column: 2 / 4;
+        grid-template-columns: 260px minmax(0, 1fr);
+        grid-template-rows: 52px minmax(0, 1fr);
+      }
+      body.variant-c .topbar {
+        grid-column: 1 / 3;
+      }
+      body.variant-c .context-panel {
+        display: block;
+        grid-column: 1;
+        grid-row: 2;
+        border-right: 1px solid var(--border);
+        background: var(--sidebar);
+        padding: 18px 14px 80px;
+        backdrop-filter: saturate(155%) blur(22px);
+        -webkit-backdrop-filter: saturate(155%) blur(22px);
+      }
+      body.variant-c .content {
+        grid-column: 2;
+        grid-row: 2;
+      }
+      body.variant-c .workspace-grid {
+        grid-template-columns: repeat(2, minmax(280px, 1fr));
+      }
+      body:not(.variant-c) .context-panel {
+        display: none;
+      }
+
+      .theme-control {
+        width: 30px;
+        height: 30px;
+        border: 1px solid var(--border);
+        border-radius: 50%;
+        background: color-mix(in srgb, var(--raised) 72%, transparent);
+        color: var(--muted);
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+        transition:
+          color 120ms ease,
+          background-color 120ms ease,
+          transform 120ms var(--ease-out);
+      }
+      .theme-control:active,
+      .prototype-switcher button:active {
+        transform: scale(0.97);
+      }
+      @media (hover: hover) and (pointer: fine) {
+        .btn:hover,
+        .nav-button:hover,
+        .card.interactive:hover {
+          will-change: auto;
+        }
+        .theme-control:hover {
+          color: var(--text);
+          background: var(--hover);
+        }
+      }
+      @media (prefers-reduced-transparency: reduce) {
+        .sidebar,
+        .topbar,
+        .search-toolbar,
+        .inspector,
+        .savebar,
+        .popover,
+        .modal,
+        .prototype-switcher {
+          backdrop-filter: none;
+          -webkit-backdrop-filter: none;
+          background: var(--raised);
+        }
+      }
+      @media (prefers-contrast: more) {
+        :root {
+          --border: rgba(255, 255, 255, 0.24);
+          --border-strong: rgba(255, 255, 255, 0.38);
+          --muted: rgba(255, 255, 255, 0.78);
+        }
+        body.light {
+          --border: rgba(0, 0, 0, 0.24);
+          --border-strong: rgba(0, 0, 0, 0.38);
+          --muted: rgba(0, 0, 0, 0.72);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .inspector,
+        .popover,
+        .scrim,
+        .modal {
+          animation: fade-in 140ms ease-out;
+          transform: none;
+        }
+        .app,
+        body {
+          transition:
+            filter 140ms ease-out,
+            background-color 140ms ease-out,
+            color 140ms ease-out;
+        }
+        .modal-present .app {
+          transform: none;
+        }
+        .btn {
+          transition-property: color, background-color, border-color;
+        }
+        .btn:active {
+          transform: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      const screens = ["workspaces", "search", "keywords", "tasks", "settings"];
+      const variants = {
+        A: "Calm Instrument Panel",
+        B: "Dense Operations Console",
+        C: "Focused Context Workspace",
+      };
+      const params = new URLSearchParams(location.search);
+      let currentVariant = variants[params.get("variant")]
+        ? params.get("variant")
+        : "A";
+      let currentScreen = screens.includes(params.get("screen"))
+        ? params.get("screen")
+        : "workspaces";
+      let popoverOpen = false;
+      let modalOpen = false;
+      let inspectorOpen = true;
+      let lightTheme = params.get("theme") === "light";
+      let inspectorWidth = 420;
+
+      const icon = {
+        workspaces: "▦",
+        search: "⌕",
+        keywords: "☷",
+        tasks: "▤",
+        settings: "⚙",
+      };
+      const label = {
+        workspaces: "Workspaces",
+        search: "Search Logs",
+        keywords: "Keywords",
+        tasks: "Tasks",
+        settings: "Settings",
+      };
+
+      function setUrl() {
+        const next = new URL(location.href);
+        next.searchParams.set("variant", currentVariant);
+        next.searchParams.set("screen", currentScreen);
+        next.searchParams.set("theme", lightTheme ? "light" : "dark");
+        history.replaceState(null, "", next);
+      }
+
+      function navMarkup() {
+        return screens
+          .filter((screen) => screen !== "settings")
+          .map(
+            (screen) => `
+        <button class="nav-button ${currentScreen === screen ? "active" : ""}" data-screen="${screen}">
+          <span class="nav-icon">${icon[screen]}</span><span>${label[screen]}</span>
+        </button>`
+          )
+          .join("");
+      }
+
+      function shell(content, noPad = false) {
+        const context =
+          currentVariant === "C"
+            ? `
+        <aside class="context-panel">
+          <div class="eyebrow">Current view</div>
+          <h2 style="margin:8px 0 4px">${label[currentScreen]}</h2>
+          <p>${contextCopy[currentScreen]}</p>
+          <div style="margin-top:22px" class="eyebrow">Quick access</div>
+          <div style="display:grid;gap:5px;margin-top:8px">
+            <button class="list-row active"><span>Overview</span><span>⌘1</span></button>
+            <button class="list-row"><span>Recent</span><span>⌘2</span></button>
+            <button class="list-row"><span>Saved views</span><span>⌘3</span></button>
+          </div>
+        </aside>`
+            : "";
+        return `
+        <div class="app" style="grid-template-columns:${currentVariant === "A" ? "224px minmax(0,1fr)" : ""}">
+          <aside class="sidebar">
+            <div class="brand"><span class="brand-mark">ϟ</span><span>LogAnalyzer</span><button class="theme-control brand-theme" data-theme title="切换浅色/深色外观" aria-label="切换浅色或深色外观">${lightTheme ? "☾" : "☀"}</button></div>
+            <nav class="nav">${navMarkup()}</nav>
+            <nav class="nav bottom"><button class="nav-button ${currentScreen === "settings" ? "active" : ""}" data-screen="settings"><span class="nav-icon">⚙</span><span>Settings</span></button></nav>
+          </aside>
+          <main class="main">
+            <header class="topbar">
+              <div class="crumbs"><span>Workspace</span><span>/</span><strong>Production API</strong></div>
+              <div class="top-status"><span class="status-dot"></span><span>Ready · 24 files</span><button class="theme-control" data-theme title="切换浅色/深色外观" aria-label="切换浅色或深色外观">${lightTheme ? "☾" : "☀"}</button></div>
+            </header>
+            ${context}
+            <section class="content ${noPad ? "no-pad" : ""}">${content}</section>
+          </main>
+        </div>`;
+      }
+
+      const contextCopy = {
+        workspaces: "Manage sources and indexing state.",
+        search: "Query, filter, and inspect log events.",
+        keywords: "Maintain reusable matching rules.",
+        tasks: "Observe long-running background work.",
+        settings: "Tune local application behavior.",
+      };
+
+      function pageHead(title, subtitle, actions = "") {
+        return `<div class="page-head"><div><h1>${title}</h1><p>${subtitle}</p></div><div class="actions">${actions}</div></div>`;
+      }
+
+      const workspaceData = [
+        [
+          "Production API",
+          "/logs/prod/api",
+          "24 files",
+          "3.8 GB",
+          "2m ago",
+          "Ready",
+          "ready",
+        ],
+        [
+          "Local Development",
+          "~/projects/service/logs",
+          "11 files",
+          "684 MB",
+          "Now",
+          "Watching",
+          "ready",
+        ],
+        [
+          "Archive Review",
+          "/archives/incident-042",
+          "86 files",
+          "12.4 GB",
+          "8m ago",
+          "Processing 68%",
+          "warning",
+        ],
+      ];
+
+      function workspaces() {
+        const cards = workspaceData
+          .map(
+            (w, i) => `<article class="card interactive workspace-card">
+        <div class="workspace-title"><div><h2>${w[0]}</h2><p style="font-size:12px;margin-top:3px">${i === 0 ? "Primary investigation workspace" : i === 1 ? "Live local services" : "April incident archive"}</p></div><div class="quiet-actions"><button title="Open">↗</button><button title="Refresh">↻</button><button title="More">•••</button></div></div>
+        <div class="path mono">${w[1]}</div>
+        <div class="metrics"><div class="metric"><span>Content</span><strong>${w[2]}</strong></div><div class="metric"><span>Size</span><strong>${w[3]}</strong></div><div class="metric"><span>Indexed</span><strong>${w[4]}</strong></div></div>
+        ${i === 2 ? '<div class="progress" style="margin-top:14px"><span style="width:68%"></span></div>' : ""}
+        <div class="card-footer"><span class="status ${w[6]}">${w[5]}</span><span>${i === 1 ? "Watching for changes" : "Index healthy"}</span></div>
+      </article>`
+          )
+          .join("");
+        return shell(
+          `${pageHead("Workspaces", "Manage log workspaces and import sources", '<button class="btn" data-modal="filters">⚙ File Filter Settings</button><button class="btn">⇧ Import File</button><button class="btn primary">＋ Import Folder</button>')}<div class="workspace-grid">${cards}</div>`
+        );
+      }
+
+      const logs = [
+        [
+          "ERROR",
+          "14:22:18.403",
+          "gateway.log",
+          "connection refused while opening upstream 10.0.4.18:8080",
+        ],
+        [
+          "WARN",
+          "14:22:18.118",
+          "retry.rs",
+          "request timeout after 3000ms; scheduling retry 3/5",
+        ],
+        [
+          "INFO",
+          "14:22:17.991",
+          "router.log",
+          "accepted request GET /api/v1/health in 12ms",
+        ],
+        [
+          "ERROR",
+          "14:22:17.724",
+          "database.log",
+          "pool timeout: no connection available for tenant acme",
+        ],
+        [
+          "WARN",
+          "14:22:17.221",
+          "dns.log",
+          "DNS lookup exceeded soft timeout for api.internal",
+        ],
+        [
+          "INFO",
+          "14:22:16.907",
+          "worker.log",
+          "batch 811 completed; processed 1,240 records",
+        ],
+        [
+          "ERROR",
+          "14:22:16.422",
+          "gateway.log",
+          "upstream reset connection before response headers",
+        ],
+        [
+          "INFO",
+          "14:22:15.830",
+          "auth.log",
+          "token refreshed for service account ingest-worker",
+        ],
+      ];
+
+      function search() {
+        const rows = logs
+          .map(
+            (r, i) =>
+              `<div class="log-row ${i === 0 ? "selected" : ""}" data-log="${i}"><span class="level ${r[0].toLowerCase()}">${r[0]}</span><span class="mono">${r[1]}</span><span class="mono">${r[2]}</span><span class="message mono">${r[3]}</span></div>`
+          )
+          .join("");
+        const inspector = inspectorOpen
+          ? `<aside class="inspector"><div class="resize-handle" data-resize-inspector title="拖拽调整宽度"></div><div class="inspector-head"><h2>Log Details</h2><div class="actions"><button class="btn ghost">Copy</button><button class="btn ghost icon" data-close-inspector>×</button></div></div><div class="inspector-content"><div class="detail-block"><div class="eyebrow">Message</div><div class="detail-value mono">connection refused while opening upstream 10.0.4.18:8080</div></div><div class="detail-block"><div class="eyebrow">File</div><div class="detail-value mono">/var/log/services/gateway.log</div></div><div class="detail-block"><div class="eyebrow">Timestamp</div><div class="detail-value mono">2026-07-20 14:22:18.403 +08:00</div></div><div class="detail-block"><div class="eyebrow">Metadata</div><div class="detail-value mono">service=gateway<br>host=prod-edge-03<br>trace_id=9e87f21c</div></div></div></aside>`
+          : "";
+        return shell(
+          `<div class="search-layout"><div class="search-toolbar"><input class="input mono" value="timeout | connection refused" aria-label="Search query"><button class="btn" data-popover>⌘ Keyword Groups <span>⌄</span></button><button class="btn">Export ⌄</button><button class="btn primary">⌕ Search</button></div><div class="filterbar"><div class="field-inline"><label>Level</label><button class="chip active">ERROR</button><button class="chip active">WARN</button><button class="chip">INFO</button><button class="chip">DEBUG</button></div><div class="field-inline"><label>Time range</label><button class="chip">Last 30 minutes ⌄</button></div><div class="field-inline" style="flex:1"><label>File</label><input class="input mono" style="min-height:29px" placeholder="*.log"></div><button class="btn ghost">Reset</button></div><div class="search-body" style="grid-template-columns:${inspectorOpen ? "minmax(0,1fr) var(--inspector-width)" : "1fr"}"><section class="results"><div class="table-head"><span>LEVEL</span><span>TIME</span><span>FILE</span><span>CONTENT</span></div>${rows}</section>${inspector}</div></div>`,
+          true
+        );
+      }
+
+      function keywords() {
+        const groups = [
+          ["Network Errors", 12],
+          ["Authentication", 8],
+          ["Performance", 6],
+          ["Database", 9],
+        ]
+          .map(
+            (g, i) =>
+              `<button class="list-row ${i === 0 ? "active" : ""}"><span><span style="color:${i === 0 ? "var(--accent)" : "var(--dim)"}">●</span> ${g[0]}</span><span>${g[1]}</span></button>`
+          )
+          .join("");
+        const rules = [
+          ["connection refused", "Text"],
+          ["timeout\\s+after\\s+\\d+ms", "Regex"],
+          ["DNS (lookup|resolution) failed", "Regex"],
+          ["upstream reset connection", "Text"],
+        ]
+          .map(
+            (r, i) =>
+              `<div class="rule"><span style="color:${i < 2 ? "var(--danger)" : "var(--warning)"}">●</span><div><strong class="mono">${r[0]}</strong><p style="font-size:11px;margin-top:3px">Matches network failure messages</p></div><span class="rule-type">${r[1]}</span><div class="inline"><span class="toggle"></span><button class="btn ghost icon">•••</button></div></div>`
+          )
+          .join("");
+        return shell(
+          `${pageHead("Keywords", "Manage reusable keyword groups and matching rules", '<button class="btn primary" data-modal="keyword">＋ New Group</button>')}<section class="card split"><aside class="list-pane"><div class="eyebrow" style="padding:8px 10px">Groups</div>${groups}</aside><div class="detail-pane"><div class="page-head" style="margin-bottom:0"><div><h2>Network Errors</h2><p>Connection, timeout, and DNS failure patterns</p></div><button class="btn">＋ Add Rule</button></div><div class="rule-list">${rules}</div><div class="detail-block" style="margin-top:16px"><div class="eyebrow">Match preview</div><div class="detail-value mono"><span style="color:var(--muted)">14:22:18</span> <mark style="background:rgba(240,120,120,.2);color:#ffaaaa">connection refused</mark> while opening upstream</div></div></div></section>`
+        );
+      }
+
+      function tasks() {
+        const rows = [
+          [
+            "Import archive incident-042",
+            "Archive Review",
+            68,
+            "2m ago",
+            "Running",
+            "ready",
+          ],
+          [
+            "Index local development",
+            "Local Development",
+            34,
+            "1m ago",
+            "Running",
+            "ready",
+          ],
+          [
+            "Extract legacy-logs.7z",
+            "Archive Review",
+            0,
+            "12m ago",
+            "Failed",
+            "error",
+          ],
+          [
+            "Search: timeout | refused",
+            "Production API",
+            100,
+            "18m ago",
+            "Completed",
+            "ready",
+          ],
+          [
+            "Search: trace_id=9e87f21c",
+            "Production API",
+            100,
+            "31m ago",
+            "Completed",
+            "ready",
+          ],
+        ]
+          .map(
+            (r, i) =>
+              `<tr><td><strong>${r[0]}</strong><div class="mono" style="font-size:11px;color:var(--dim);margin-top:3px">task_${811 - i}</div></td><td>${r[1]}</td><td>${r[4] === "Running" ? `<div class="task-progress"><div class="progress"><span style="width:${r[2]}%"></span></div><span>${r[2]}%</span></div>` : "—"}</td><td>${r[3]}</td><td><span class="status ${r[5]}">${r[4]}</span></td><td>${r[4] === "Failed" ? '<button class="btn danger">Retry</button>' : '<button class="btn ghost">Details</button>'}</td></tr>`
+          )
+          .join("");
+        return shell(
+          `${pageHead("Tasks", "Track imports, indexing, searches, and background jobs", '<button class="chip active">All</button><button class="chip">Running</button><button class="chip">Failed</button><button class="chip">Completed</button>')}<section class="card"><table class="data-table"><thead><tr><th>TASK</th><th>WORKSPACE</th><th>PROGRESS</th><th>STARTED</th><th>STATUS</th><th>ACTIONS</th></tr></thead><tbody>${rows}</tbody></table></section>`
+        );
+      }
+
+      function settings() {
+        const nav = [
+          "General",
+          "Search",
+          "Import",
+          "Storage",
+          "Appearance",
+          "Advanced",
+        ]
+          .map(
+            (x) =>
+              `<button class="list-row ${x === "Search" ? "active" : ""}"><span>${x}</span><span>›</span></button>`
+          )
+          .join("");
+        const field = (title, help, control) =>
+          `<div class="form-copy"><strong>${title}</strong><small>${help}</small></div><div>${control}</div>`;
+        return shell(
+          `${pageHead("Settings", "Configure LogAnalyzer for this device")}<div class="settings"><nav class="settings-nav">${nav}</nav><div><section class="card form-section"><h2>Search Settings</h2><p style="margin-top:4px">Defaults for local search execution and result presentation.</p><div class="form-grid">${field("Result page size", "Number of results loaded per page.", '<select class="select"><option>500 results</option></select>')}${field("Maximum concurrent searches", "Higher values use more CPU and memory.", '<select class="select"><option>2 searches</option></select>')}${field("Regex timeout", "Stops expensive expressions before they block the app.", '<select class="select"><option>2 seconds</option></select>')}${field("Case sensitive by default", "Can still be overridden per query.", '<span class="toggle"></span>')}${field("Enable query history", "Stores recent queries on this device.", '<span class="toggle"></span>')}${field("Highlight matches", "Emphasize matching terms in result rows.", '<span class="toggle"></span>')}</div></section><div class="savebar"><span style="color:var(--dim)">No unsaved changes</span><div class="actions"><button class="btn">Reset</button><button class="btn primary">Save Changes</button></div></div></div></div>`
+        );
+      }
+
+      function popover() {
+        if (!popoverOpen) return "";
+        return `<aside class="popover"><div class="popover-head"><div><h2>Keyword Groups</h2><p>Select reusable rules for this search.</p></div><button class="btn ghost icon" data-popover>×</button></div><input class="input" style="margin-top:12px" placeholder="Filter keyword groups"><div class="popover-groups">${["Network Errors", "Authentication", "Performance", "Database"].map((g, i) => `<div class="group-box"><strong>${g}</strong><label class="check-row"><input type="checkbox" ${i < 2 ? "checked" : ""}> ${i === 0 ? "connection refused" : i === 1 ? "invalid token" : "slow request"}</label><label class="check-row"><input type="checkbox" ${i === 0 ? "checked" : ""}> ${i === 0 ? "timeout" : "secondary rule"}</label></div>`).join("")}</div><div class="popover-foot"><button class="btn ghost">Clear</button><div class="inline"><span style="color:var(--muted)">4 active</span><button class="btn primary" data-popover>Apply</button></div></div></aside>`;
+      }
+
+      function modal() {
+        if (!modalOpen) return "";
+        return `<div class="scrim" data-scrim><section class="modal" role="dialog" aria-modal="true"><div class="modal-head"><div><h2>${currentScreen === "keywords" ? "Create keyword group" : "File Filter Settings"}</h2><p>${currentScreen === "keywords" ? "Organize reusable matching rules." : "Choose which files are imported into workspaces."}</p></div><button class="btn ghost icon" data-modal-close>×</button></div><div class="modal-body"><label><span class="eyebrow">Name</span><input class="input" style="margin-top:6px" value="${currentScreen === "keywords" ? "New Group" : "Log files"}"></label><label><span class="eyebrow">Include pattern</span><input class="input mono" style="margin-top:6px" value="**/*.log"></label><label><span class="eyebrow">Exclude pattern</span><input class="input mono" style="margin-top:6px" value="**/node_modules/**"></label><div class="detail-block"><strong>Preview</strong><p style="margin-top:4px">24 files match the current rules.</p></div></div><div class="modal-foot"><button class="btn" data-modal-close>Cancel</button><button class="btn primary" data-modal-close>Save</button></div></section></div>`;
+      }
+
+      function switcher() {
+        return `<div class="prototype-switcher"><button data-variant-dir="-1">←</button><div class="prototype-label"><strong>${currentVariant} — ${variants[currentVariant]}</strong><br>${label[currentScreen]} · use ← / → to compare</div><button data-variant-dir="1">→</button></div>`;
+      }
+
+      function render() {
+        document.body.className = `variant-${currentVariant.toLowerCase()} ${lightTheme ? "light" : "dark"} ${modalOpen ? "modal-present" : ""}`;
+        document.documentElement.style.setProperty(
+          "--inspector-width",
+          `${inspectorWidth}px`
+        );
+        const page = { workspaces, search, keywords, tasks, settings }[
+          currentScreen
+        ]();
+        document.getElementById("root").innerHTML =
+          page + popover() + modal() + switcher();
+        bind();
+      }
+
+      function cycleVariant(direction) {
+        const keys = Object.keys(variants);
+        const next =
+          (keys.indexOf(currentVariant) + direction + keys.length) %
+          keys.length;
+        currentVariant = keys[next];
+        setUrl();
+        render();
+      }
+
+      function closeSurface(selector, kind, complete) {
+        const element = document.querySelector(selector);
+        if (
+          !element ||
+          matchMedia("(prefers-reduced-motion: reduce)").matches
+        ) {
+          complete();
+          return;
+        }
+        const frames =
+          kind === "popover"
+            ? [
+                {
+                  opacity: 1,
+                  transform: "translateY(0) scale(1)",
+                  filter: "blur(0)",
+                },
+                {
+                  opacity: 0,
+                  transform: "translateY(-2px) scale(.98)",
+                  filter: "blur(3px)",
+                },
+              ]
+            : [
+                {
+                  opacity: 1,
+                  transform: "translateY(0) scale(1)",
+                  filter: "blur(0)",
+                },
+                {
+                  opacity: 0,
+                  transform: "translateY(5px) scale(.98)",
+                  filter: "blur(3px)",
+                },
+              ];
+        const animation = element.animate(frames, {
+          duration: kind === "popover" ? 130 : 180,
+          easing: "cubic-bezier(.23,1,.32,1)",
+          fill: "forwards",
+        });
+        animation.onfinish = complete;
+        animation.oncancel = complete;
+      }
+
+      function bind() {
+        document.querySelectorAll("[data-screen]").forEach((el) =>
+          el.addEventListener("click", () => {
+            currentScreen = el.dataset.screen;
+            popoverOpen = false;
+            modalOpen = false;
+            inspectorOpen = true;
+            setUrl();
+            render();
+          })
+        );
+        document
+          .querySelectorAll("[data-variant-dir]")
+          .forEach((el) =>
+            el.addEventListener("click", () =>
+              cycleVariant(Number(el.dataset.variantDir))
+            )
+          );
+        document.querySelectorAll("[data-popover]").forEach((el) =>
+          el.addEventListener("click", () => {
+            if (popoverOpen)
+              closeSurface(".popover", "popover", () => {
+                popoverOpen = false;
+                render();
+              });
+            else {
+              popoverOpen = true;
+              render();
+            }
+          })
+        );
+        document.querySelectorAll("[data-modal]").forEach((el) =>
+          el.addEventListener("click", () => {
+            modalOpen = true;
+            render();
+          })
+        );
+        document.querySelectorAll("[data-modal-close]").forEach((el) =>
+          el.addEventListener("click", () =>
+            closeSurface(".modal", "modal", () => {
+              modalOpen = false;
+              render();
+            })
+          )
+        );
+        document.querySelectorAll("[data-close-inspector]").forEach((el) =>
+          el.addEventListener("click", () => {
+            inspectorOpen = false;
+            render();
+          })
+        );
+        document.querySelectorAll("[data-theme]").forEach((el) =>
+          el.addEventListener("click", () => {
+            lightTheme = !lightTheme;
+            setUrl();
+            render();
+          })
+        );
+        const resizeHandle = document.querySelector("[data-resize-inspector]");
+        if (resizeHandle)
+          resizeHandle.addEventListener("pointerdown", (event) => {
+            if (resizeHandle.hasPointerCapture(event.pointerId)) return;
+            const startX = event.clientX;
+            const startWidth = inspectorWidth;
+            resizeHandle.setPointerCapture(event.pointerId);
+            resizeHandle.classList.add("dragging");
+            document.body.classList.add("is-resizing");
+            const move = (moveEvent) => {
+              inspectorWidth = Math.max(
+                320,
+                Math.min(640, startWidth + startX - moveEvent.clientX)
+              );
+              document.documentElement.style.setProperty(
+                "--inspector-width",
+                `${inspectorWidth}px`
+              );
+            };
+            const end = () => {
+              resizeHandle.classList.remove("dragging");
+              document.body.classList.remove("is-resizing");
+              resizeHandle.removeEventListener("pointermove", move);
+              resizeHandle.removeEventListener("pointerup", end);
+              resizeHandle.removeEventListener("pointercancel", end);
+            };
+            resizeHandle.addEventListener("pointermove", move);
+            resizeHandle.addEventListener("pointerup", end);
+            resizeHandle.addEventListener("pointercancel", end);
+          });
+        const scrim = document.querySelector("[data-scrim]");
+        if (scrim)
+          scrim.addEventListener("click", (e) => {
+            if (e.target === scrim)
+              closeSurface(".modal", "modal", () => {
+                modalOpen = false;
+                render();
+              });
+          });
+      }
+
+      addEventListener("keydown", (event) => {
+        const tag = event.target.tagName;
+        if (
+          ["INPUT", "TEXTAREA", "SELECT"].includes(tag) ||
+          event.target.isContentEditable
+        )
+          return;
+        if (event.key === "ArrowLeft") cycleVariant(-1);
+        if (event.key === "ArrowRight") cycleVariant(1);
+        if (event.key === "Escape" && (popoverOpen || modalOpen)) {
+          popoverOpen = false;
+          modalOpen = false;
+          render();
+        }
+      });
+
+      render();
+    </script>
+  </body>
+</html>

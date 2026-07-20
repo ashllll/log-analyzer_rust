@@ -11,10 +11,14 @@
  * - Toast 通知
  */
 
-import React, { Component, ErrorInfo } from 'react';
-import { AlertTriangle, X, RefreshCw, Home, Bug } from 'lucide-react';
-import { createApiError, ErrorCode, isRetryableError } from '../services/errors';
-import toast from 'react-hot-toast';
+import React, { Component, ErrorInfo } from "react";
+import { AlertTriangle, X, RefreshCw, Home, Bug } from "lucide-react";
+import {
+  createApiError,
+  ErrorCode,
+  isRetryableError,
+} from "../services/errors";
+import toast from "react-hot-toast";
 
 // ============================================================================
 // 类型定义
@@ -44,11 +48,11 @@ interface ErrorLogEntry {
   message: string;
   stack?: string;
   componentStack?: string;
-  type: 'error' | 'unhandled_rejection' | 'global_error';
+  type: "error" | "unhandled_rejection" | "global_error";
 }
 
 interface ErrorReportContext {
-  source: ErrorLogEntry['type'];
+  source: ErrorLogEntry["type"];
   componentStack?: string;
 }
 
@@ -58,7 +62,9 @@ export interface ErrorReporter {
 
 let errorReporter: ErrorReporter | undefined;
 
-export function configureErrorReporter(reporter: ErrorReporter | undefined): void {
+export function configureErrorReporter(
+  reporter: ErrorReporter | undefined
+): void {
   errorReporter = reporter;
 }
 
@@ -75,7 +81,7 @@ function reportError(error: unknown, context: ErrorReportContext): void {
  */
 const ERROR_LOG_CONFIG = {
   /** 存储键名 */
-  STORAGE_KEY: 'app_error_logs',
+  STORAGE_KEY: "app_error_logs",
   /** 最大保存条目数 */
   MAX_ENTRIES: 100,
   /** 日志保留天数 */
@@ -92,8 +98,10 @@ function getErrorLogs(): ErrorLogEntry[] {
       const logs = JSON.parse(stored) as ErrorLogEntry[];
       // 过滤过期日志
       const cutoffDate = new Date();
-      cutoffDate.setDate(cutoffDate.getDate() - ERROR_LOG_CONFIG.RETENTION_DAYS);
-      return logs.filter(log => new Date(log.timestamp) > cutoffDate);
+      cutoffDate.setDate(
+        cutoffDate.getDate() - ERROR_LOG_CONFIG.RETENTION_DAYS
+      );
+      return logs.filter((log) => new Date(log.timestamp) > cutoffDate);
     }
   } catch {
     // localStorage 不可用或数据损坏，静默返回空数组
@@ -110,7 +118,10 @@ function addErrorLog(entry: ErrorLogEntry): void {
     logs.unshift(entry); // 添加到开头
     // 限制条目数量
     const trimmedLogs = logs.slice(0, ERROR_LOG_CONFIG.MAX_ENTRIES);
-    localStorage.setItem(ERROR_LOG_CONFIG.STORAGE_KEY, JSON.stringify(trimmedLogs));
+    localStorage.setItem(
+      ERROR_LOG_CONFIG.STORAGE_KEY,
+      JSON.stringify(trimmedLogs)
+    );
   } catch {
     // localStorage 写入失败，静默忽略
   }
@@ -137,7 +148,7 @@ export function exportErrorLogs(): string {
   } catch {
     // 处理循环引用或不可序列化的对象
     return JSON.stringify(
-      logs.map(l => ({
+      logs.map((l) => ({
         ...l,
         stack: l.stack ? String(l.stack) : undefined,
       })),
@@ -154,14 +165,24 @@ export function exportErrorLogs(): string {
 /**
  * 错误信息卡片
  */
-function ErrorCard({ title, message, details, stack, code, canRetry, onRetry, onGoHome, onReport }: ErrorInfoProps) {
+function ErrorCard({
+  title,
+  message,
+  details,
+  stack,
+  code,
+  canRetry,
+  onRetry,
+  onGoHome,
+  onReport,
+}: ErrorInfoProps) {
   return (
     <div className="w-full max-w-2xl mx-auto p-6">
-      <div className="bg-red-500/10 border border-red-500/50 rounded-lg p-6">
+      <div className="bg-status-error/10 border border-status-error/50 rounded-lg p-6">
         {/* 标题 */}
         <div className="flex items-center gap-3 mb-4">
-          <AlertTriangle className="w-8 h-8 text-red-500 flex-shrink-0" />
-          <h2 className="text-xl font-bold text-red-500">{title}</h2>
+          <AlertTriangle className="w-8 h-8 text-status-error flex-shrink-0" />
+          <h2 className="text-xl font-bold text-status-error">{title}</h2>
         </div>
 
         {/* 错误消息 */}
@@ -170,7 +191,9 @@ function ErrorCard({ title, message, details, stack, code, canRetry, onRetry, on
         {/* 错误代码 */}
         {code && (
           <div className="mb-4">
-            <span className="text-xs text-text-dim uppercase font-bold">错误代码：</span>
+            <span className="text-xs text-text-dim uppercase font-bold">
+              错误代码：
+            </span>
             <span className="ml-2 px-2 py-1 bg-log-error/20 text-log-error rounded text-sm font-mono">
               {code}
             </span>
@@ -269,7 +292,7 @@ export class AppErrorBoundary extends Component<
     this.state = {
       hasError: false,
       error: null,
-      errorInfo: null
+      errorInfo: null,
     };
   }
 
@@ -277,7 +300,7 @@ export class AppErrorBoundary extends Component<
     return {
       hasError: true,
       error,
-      errorInfo: null
+      errorInfo: null,
     };
   }
 
@@ -301,7 +324,7 @@ export class AppErrorBoundary extends Component<
       message: error.message,
       stack: error.stack || undefined,
       componentStack: errorInfo.componentStack || undefined,
-      type: 'error',
+      type: "error",
     };
 
     // 持久化到 localStorage
@@ -309,13 +332,17 @@ export class AppErrorBoundary extends Component<
 
     // 开发模式下通过 logger 输出（避免直接 console）
     if (import.meta.env.DEV) {
-      import('../utils/logger').then(({ logger }) => {
-        logger.error('[ErrorBoundary]', JSON.stringify(errorLog, null, 2));
-      }).catch(() => { /* logger 加载失败时静默 */ });
+      import("../utils/logger")
+        .then(({ logger }) => {
+          logger.error("[ErrorBoundary]", JSON.stringify(errorLog, null, 2));
+        })
+        .catch(() => {
+          /* logger 加载失败时静默 */
+        });
     }
 
     reportError(error, {
-      source: 'error',
+      source: "error",
       componentStack: errorInfo.componentStack || undefined,
     });
   }
@@ -324,7 +351,7 @@ export class AppErrorBoundary extends Component<
     this.setState({
       hasError: false,
       error: null,
-      errorInfo: null
+      errorInfo: null,
     });
   };
 
@@ -338,12 +365,12 @@ export class AppErrorBoundary extends Component<
       const { error } = this.state;
 
       // 尝试将错误转换为 ApiError 以获取更多信息
-      let apiError = createApiError('component', error);
+      let apiError = createApiError("component", error);
       let displayError: ErrorInfoProps;
 
       if (error instanceof Error) {
         displayError = {
-          title: '应用程序错误',
+          title: "应用程序错误",
           message: apiError.getUserMessage(),
           details: apiError.details as string,
           stack: error.stack,
@@ -355,14 +382,14 @@ export class AppErrorBoundary extends Component<
             if (this.props.onNavigateHome) {
               this.props.onNavigateHome();
             } else {
-              window.location.hash = '/workspaces';
+              window.location.hash = "/workspaces";
             }
-          }
+          },
         };
       } else {
         displayError = {
-          title: '未知错误',
-          message: '发生了未知错误',
+          title: "未知错误",
+          message: "发生了未知错误",
           details: String(error),
           canRetry: false,
           onRetry: this.handleRetry,
@@ -371,9 +398,9 @@ export class AppErrorBoundary extends Component<
             if (this.props.onNavigateHome) {
               this.props.onNavigateHome();
             } else {
-              window.location.hash = '/workspaces';
+              window.location.hash = "/workspaces";
             }
-          }
+          },
         };
       }
 
@@ -398,17 +425,20 @@ interface CompactErrorFallbackProps {
   resetErrorBoundary: () => void;
 }
 
-export function CompactErrorFallback({ error, resetErrorBoundary }: CompactErrorFallbackProps) {
+export function CompactErrorFallback({
+  error,
+  resetErrorBoundary,
+}: CompactErrorFallbackProps) {
   // 安全处理未知错误类型
   const errorObj = error instanceof Error ? error : new Error(String(error));
-  const apiError = createApiError('component', errorObj);
+  const apiError = createApiError("component", errorObj);
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-bg-main p-6">
-      <div className="w-full max-w-md bg-bg-card border border-red-500/50 rounded-lg p-6">
+      <div className="w-full max-w-md bg-bg-card border border-status-error/50 rounded-lg p-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
-            <AlertTriangle className="w-6 h-6 text-red-500" />
+            <AlertTriangle className="w-6 h-6 text-status-error" />
             <h2 className="text-lg font-bold text-text-main">出错了</h2>
           </div>
           <button
@@ -453,7 +483,10 @@ export function CompactErrorFallback({ error, resetErrorBoundary }: CompactError
  */
 interface PageErrorBoundaryProps {
   children: React.ReactNode;
-  fallback?: React.ComponentType<{ error: Error; resetErrorBoundary: () => void }>;
+  fallback?: React.ComponentType<{
+    error: Error;
+    resetErrorBoundary: () => void;
+  }>;
   onError?: (error: Error, errorInfo: ErrorInfo) => void;
 }
 
@@ -493,7 +526,12 @@ export class PageErrorBoundary extends Component<
           />
         );
       }
-      return <CompactErrorFallback error={this.state.error!} resetErrorBoundary={this.handleReset} />;
+      return (
+        <CompactErrorFallback
+          error={this.state.error!}
+          resetErrorBoundary={this.handleReset}
+        />
+      );
     }
 
     return this.props.children;
@@ -505,25 +543,36 @@ export class PageErrorBoundary extends Component<
  *
  * 用于整个页面的错误边界，提供完整的错误信息显示和恢复选项
  */
-export function PageErrorFallback({ error, resetErrorBoundary, onGoHome }: { error: unknown; resetErrorBoundary: () => void; onGoHome?: () => void }) {
+export function PageErrorFallback({
+  error,
+  resetErrorBoundary,
+  onGoHome,
+}: {
+  error: unknown;
+  resetErrorBoundary: () => void;
+  onGoHome?: () => void;
+}) {
   // 安全处理未知错误类型
   const errorObj = error instanceof Error ? error : new Error(String(error));
-  const apiError = createApiError('page', errorObj);
+  const apiError = createApiError("page", errorObj);
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-bg-main p-6">
       <ErrorCard
-        title={errorObj.name || '页面错误'}
+        title={errorObj.name || "页面错误"}
         message={apiError.getUserMessage()}
         details={apiError.details as string}
         stack={errorObj.stack}
         code={apiError.code as ErrorCode}
         canRetry={isRetryableError(apiError)}
         onRetry={resetErrorBoundary}
-        onGoHome={onGoHome ?? (() => {
-          resetErrorBoundary();
-          window.location.hash = '/workspaces';
-        })}
+        onGoHome={
+          onGoHome ??
+          (() => {
+            resetErrorBoundary();
+            window.location.hash = "/workspaces";
+          })
+        }
       />
     </div>
   );
@@ -569,7 +618,7 @@ export function initGlobalErrorHandlers(): (() => void) | undefined {
       timestamp: new Date().toISOString(),
       message: reason instanceof Error ? reason.message : String(reason),
       stack: reason instanceof Error ? reason.stack : undefined,
-      type: 'unhandled_rejection',
+      type: "unhandled_rejection",
     };
 
     // 持久化日志
@@ -589,15 +638,18 @@ export function initGlobalErrorHandlers(): (() => void) | undefined {
       if (!lastShown || now - lastShown > ERROR_DEBOUNCE_MS) {
         recentErrors.set(signature, now);
         // 延迟清理
-        const timeoutId = setTimeout(() => recentErrors.delete(signature), ERROR_DEBOUNCE_MS);
+        const timeoutId = setTimeout(
+          () => recentErrors.delete(signature),
+          ERROR_DEBOUNCE_MS
+        );
         timeoutIds.push(timeoutId);
 
         // 使用 react-hot-toast 显示错误
-        toast.error('操作失败，请稍后重试', { duration: 4000 });
+        toast.error("操作失败，请稍后重试", { duration: 4000 });
       }
     }
 
-    reportError(reason, { source: 'unhandled_rejection' });
+    reportError(reason, { source: "unhandled_rejection" });
   };
 
   // 全局错误处理
@@ -609,7 +661,7 @@ export function initGlobalErrorHandlers(): (() => void) | undefined {
       timestamp: new Date().toISOString(),
       message: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined,
-      type: 'global_error',
+      type: "global_error",
     };
 
     // 持久化日志
@@ -625,25 +677,28 @@ export function initGlobalErrorHandlers(): (() => void) | undefined {
 
       if (!lastShown || now - lastShown > ERROR_DEBOUNCE_MS) {
         recentErrors.set(signature, now);
-        const timeoutId = setTimeout(() => recentErrors.delete(signature), ERROR_DEBOUNCE_MS);
+        const timeoutId = setTimeout(
+          () => recentErrors.delete(signature),
+          ERROR_DEBOUNCE_MS
+        );
         timeoutIds.push(timeoutId);
 
-        toast.error('应用程序发生错误', { duration: 4000 });
+        toast.error("应用程序发生错误", { duration: 4000 });
       }
     }
 
-    reportError(error, { source: 'global_error' });
+    reportError(error, { source: "global_error" });
   };
 
-  window.addEventListener('unhandledrejection', handleUnhandledRejection);
-  window.addEventListener('error', handleError);
+  window.addEventListener("unhandledrejection", handleUnhandledRejection);
+  window.addEventListener("error", handleError);
 
   // 全局错误处理器已初始化（开发模式下可通过 logger 确认）
 
   // 清理函数
   return () => {
-    window.removeEventListener('unhandledrejection', handleUnhandledRejection);
-    window.removeEventListener('error', handleError);
+    window.removeEventListener("unhandledrejection", handleUnhandledRejection);
+    window.removeEventListener("error", handleError);
     timeoutIds.forEach(clearTimeout);
     timeoutIds.length = 0;
     recentErrors.clear();
