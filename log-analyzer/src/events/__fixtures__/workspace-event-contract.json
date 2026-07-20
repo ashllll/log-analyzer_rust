@@ -1,0 +1,31 @@
+[
+  {
+    "type": "StatusChanged",
+    "workspace_id": "ws-contract",
+    "status": { "status": "Idle" }
+  },
+  {
+    "type": "StatusChanged",
+    "workspace_id": "ws-contract",
+    "status": { "status": "Processing", "started_at": 1700000000 }
+  },
+  {
+    "type": "StatusChanged",
+    "workspace_id": "ws-contract",
+    "status": { "status": "Completed", "duration": 0 }
+  },
+  {
+    "type": "StatusChanged",
+    "workspace_id": "ws-contract",
+    "status": {
+      "status": "Failed",
+      "error": "disk full",
+      "failed_at": 1700000001
+    }
+  },
+  {
+    "type": "StatusChanged",
+    "workspace_id": "ws-contract",
+    "status": { "status": "Cancelled", "cancelled_at": 1700000002 }
+  }
+]

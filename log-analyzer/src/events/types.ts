@@ -86,14 +86,27 @@ export type TaskRemovedEvent = z.infer<typeof TaskRemovedEventSchema>;
  * workspace-event 事件
  *
  * 统一工作区状态变更事件，替代 App.tsx 中直接监听 Tauri 事件的分裂脑问题
+ *
+ * 线上形状与后端 serde 序列化一一对应（state_sync/models.rs）：
+ * WorkspaceStatus 是 #[serde(tag = "status")] 的嵌套对象，不是字符串。
+ * 契约由 src/events/__fixtures__/workspace-event-contract.json 双向锁定。
  */
+export const WorkspaceStatusSchema = z.object({
+  status: z.enum(["Idle", "Processing", "Completed", "Failed", "Cancelled"]),
+  started_at: z.number().int().positive().optional(),
+  duration: z.number().int().min(0).optional(),
+  error: z.string().optional(),
+  failed_at: z.number().int().positive().optional(),
+  cancelled_at: z.number().int().positive().optional(),
+});
+
+export type WorkspaceStatusPayload = z.infer<typeof WorkspaceStatusSchema>;
+
 export const WorkspaceEventSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("StatusChanged"),
     workspace_id: z.string().min(1, "workspace_id is required"),
-    status: z.enum(["Completed", "Cancelled", "Processing", "Error"]),
-    message: z.string().optional(),
-    timestamp: z.number().int().positive().optional(),
+    status: WorkspaceStatusSchema,
   }),
 ]);
 

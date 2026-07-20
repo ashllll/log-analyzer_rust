@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { useTaskStore } from "../stores/taskStore";
 import { eventBus } from "../events/EventBus";
+import { describeWorkspaceStatusChange } from "../events/workspaceStatusProjection";
 import { useWorkspaceList } from "./useWorkspaceList";
 import { useToast } from "./useToast";
 import type {
@@ -89,16 +90,10 @@ export const useEventBusSubscriptions = () => {
 
         switch (event.type) {
           case "StatusChanged": {
-            const toastType =
-              event.status === "Cancelled" ? "error" : "success";
-            const toastMessage =
-              event.status === "Cancelled"
-                ? "Workspace deleted"
-                : event.status === "Completed"
-                  ? "Workspace updated"
-                  : (event.message ?? "Workspace status changed");
-
-            showToast(toastType, toastMessage);
+            const toast = describeWorkspaceStatusChange(event.status);
+            if (toast) {
+              showToast(toast.toastType, toast.message);
+            }
 
             // 刷新工作区列表以同步最新状态
             refreshWorkspaces();

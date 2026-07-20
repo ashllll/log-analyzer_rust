@@ -9,6 +9,8 @@ use crate::infrastructure::TauriEventPublisher;
 pub mod models;
 
 #[cfg(test)]
+mod contract_tests;
+#[cfg(test)]
 mod property_tests;
 
 pub use models::{WorkspaceEvent, WorkspaceStatus};
