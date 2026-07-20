@@ -26,15 +26,14 @@ mod tests {
             any::<u64>().prop_map(|d| WorkspaceStatus::Completed {
                 duration: Duration::from_secs(d % 3600)
             }),
+            any::<u64>().prop_map(|d| WorkspaceStatus::Failed {
+                error: format!("error-{d}"),
+                failed_at: SystemTime::UNIX_EPOCH + Duration::from_secs(d % 1000000)
+            }),
+            any::<u64>().prop_map(|d| WorkspaceStatus::Cancelled {
+                cancelled_at: SystemTime::UNIX_EPOCH + Duration::from_secs(d % 1000000)
+            }),
         ]
-    }
-
-    fn progress_strategy() -> impl Strategy<Value = f64> {
-        0.0..=1.0
-    }
-
-    fn event_sequence_strategy() -> impl Strategy<Value = Vec<u64>> {
-        prop::collection::vec(0u64..1000u64, 1..20)
     }
 
     proptest! {
@@ -86,7 +85,6 @@ mod tests {
         fn test_state_consistency_property(
             workspace_id in workspace_id_strategy(),
             status in workspace_status_strategy(),
-            progress in progress_strategy()
         ) {
             let mut states = HashMap::new();
 
@@ -100,17 +98,6 @@ mod tests {
 
             let state = states.get(&workspace_id).unwrap();
             prop_assert_eq!(&state.status_name(), &status_to_name(&status));
-
-            // Progress update
-            let progress_event = WorkspaceEvent::ProgressUpdate {
-                workspace_id: workspace_id.clone(),
-                progress,
-            };
-
-            apply_event_to_map(&mut states, &progress_event);
-
-            let updated_state = states.get(&workspace_id).unwrap();
-            prop_assert_eq!(updated_state.progress, progress);
         }
 
         /// **Performance Optimization, Property 7: Concurrent State Consistency (Event Ordering)**
@@ -138,41 +125,34 @@ mod tests {
         }
 
         /// **Performance Optimization, Property 10: Network Recovery Synchronization**
-        /// *For any* network reconnection scenario, all missed state changes should be automatically synchronized
+        /// *For any* network reconnection scenario, replaying all missed status
+        /// changes converges to the same state as applying only the latest one.
         /// **Validates: Requirements 2.5**
         #[test]
         fn test_network_recovery_synchronization(
             workspace_id in workspace_id_strategy(),
-            event_sequence in event_sequence_strategy()
+            missed_statuses in prop::collection::vec(workspace_status_strategy(), 1..20)
         ) {
             // Simulate events that occurred during network disconnection
-            let mut missed_events: Vec<WorkspaceEvent> = Vec::new();
-            let mut expected_final_progress = 0.0;
-
-            for seq in event_sequence.iter() {
-                let progress = (*seq as f64) / 1000.0;
-                expected_final_progress = progress;
-
-                missed_events.push(WorkspaceEvent::ProgressUpdate {
+            let missed_events: Vec<WorkspaceEvent> = missed_statuses
+                .iter()
+                .cloned()
+                .map(|status| WorkspaceEvent::StatusChanged {
                     workspace_id: workspace_id.clone(),
-                    progress,
-                });
-            }
+                    status,
+                })
+                .collect();
 
-            // Simulate network recovery - replay all missed events
+            // Simulate network recovery - replay all missed events in order
             let mut states = HashMap::new();
             for event in &missed_events {
                 apply_event_to_map(&mut states, event);
             }
 
-            // Property: After recovery, state should reflect all missed events
+            // Property: After recovery, state converges to the last missed event
             let final_state = states.get(&workspace_id).unwrap();
-            prop_assert!(
-                (final_state.progress - expected_final_progress).abs() < f64::EPSILON,
-                "Expected progress {}, got {}",
-                expected_final_progress,
-                final_state.progress
-            );
+            let last_status = missed_statuses.last().unwrap();
+            prop_assert_eq!(&final_state.status_name(), &status_to_name(last_status));
         }
 
         /// **Performance Optimization, Property 10: Network Recovery - Event Gap Detection**
@@ -220,27 +200,16 @@ mod tests {
             WorkspaceEvent::StatusChanged {
                 workspace_id,
                 status,
-                ..
             } => {
                 let state = states.entry(workspace_id.clone()).or_default();
                 state.status = status_to_name(status);
             }
-            WorkspaceEvent::ProgressUpdate {
-                workspace_id,
-                progress,
-                ..
-            } => {
-                let state = states.entry(workspace_id.clone()).or_default();
-                state.progress = *progress;
-            }
-            _ => {}
         }
     }
 
     #[derive(Default, Debug)]
     struct TestState {
         status: String,
-        progress: f64,
     }
 
     impl TestState {

@@ -1,11 +1,15 @@
-import { useEffect } from 'react';
-import { useWorkspaceStore } from '../stores/workspaceStore';
-import { useTaskStore } from '../stores/taskStore';
-import { eventBus } from '../events/EventBus';
-import { useWorkspaceList } from './useWorkspaceList';
-import { useToast } from './useToast';
-import type { TaskUpdateEvent, TaskRemovedEvent, WorkspaceEvent } from '../events/types';
-import { logger } from '../utils/logger';
+import { useEffect } from "react";
+import { useWorkspaceStore } from "../stores/workspaceStore";
+import { useTaskStore } from "../stores/taskStore";
+import { eventBus } from "../events/EventBus";
+import { useWorkspaceList } from "./useWorkspaceList";
+import { useToast } from "./useToast";
+import type {
+  TaskUpdateEvent,
+  TaskRemovedEvent,
+  WorkspaceEvent,
+} from "../events/types";
+import { logger } from "../utils/logger";
 
 /**
  * EventBus 订阅 Hook
@@ -28,7 +32,7 @@ export const useEventBusSubscriptions = () => {
   useEffect(() => {
     // 注册任务更新事件处理器
     const unsubscribeTaskUpdate = eventBus.on<TaskUpdateEvent>(
-      'task-update',
+      "task-update",
       (event) => {
         const task = {
           id: event.task_id,
@@ -40,20 +44,23 @@ export const useEventBusSubscriptions = () => {
           workspaceId: event.workspace_id,
         };
 
-        logger.debug({ task }, '[EventBusSubscriptions] Processing task update');
+        logger.debug(
+          { task },
+          "[EventBusSubscriptions] Processing task update"
+        );
 
         // 使用 upsert 合并添加/更新为单次操作
         upsertTask(task);
 
         // 更新工作区状态并发送 toast 通知
         if (task.workspaceId) {
-          if (task.status === 'COMPLETED') {
-            updateWorkspace(task.workspaceId, { status: 'READY' });
-            showToast('success', '导入完成');
-          } else if (task.status === 'RUNNING') {
-            updateWorkspace(task.workspaceId, { status: 'PROCESSING' });
-          } else if (task.status === 'FAILED') {
-            updateWorkspace(task.workspaceId, { status: 'OFFLINE' });
+          if (task.status === "COMPLETED") {
+            updateWorkspace(task.workspaceId, { status: "READY" });
+            showToast("success", "导入完成");
+          } else if (task.status === "RUNNING") {
+            updateWorkspace(task.workspaceId, { status: "PROCESSING" });
+          } else if (task.status === "FAILED") {
+            updateWorkspace(task.workspaceId, { status: "OFFLINE" });
           }
         }
       }
@@ -61,41 +68,39 @@ export const useEventBusSubscriptions = () => {
 
     // 注册任务移除事件处理器
     const unsubscribeTaskRemoved = eventBus.on<TaskRemovedEvent>(
-      'task-removed',
+      "task-removed",
       (event) => {
-        logger.info({ taskId: event.task_id }, '[EventBusSubscriptions] Auto-removing task');
+        logger.info(
+          { taskId: event.task_id },
+          "[EventBusSubscriptions] Auto-removing task"
+        );
         deleteTask(event.task_id);
       }
     );
 
     // 注册工作区事件处理器（统一处理工作区状态变更）
     const unsubscribeWorkspaceEvent = eventBus.on<WorkspaceEvent>(
-      'workspace-event',
+      "workspace-event",
       (event) => {
-        logger.debug({ event }, '[EventBusSubscriptions] Processing workspace event');
+        logger.debug(
+          { event },
+          "[EventBusSubscriptions] Processing workspace event"
+        );
 
         switch (event.type) {
-          case 'StatusChanged': {
-            const toastType = event.status === 'Cancelled' ? 'error' : 'success';
-            const toastMessage = event.status === 'Cancelled'
-              ? 'Workspace deleted'
-              : event.status === 'Completed'
-                ? 'Workspace updated'
-                : event.message ?? 'Workspace status changed';
+          case "StatusChanged": {
+            const toastType =
+              event.status === "Cancelled" ? "error" : "success";
+            const toastMessage =
+              event.status === "Cancelled"
+                ? "Workspace deleted"
+                : event.status === "Completed"
+                  ? "Workspace updated"
+                  : (event.message ?? "Workspace status changed");
 
             showToast(toastType, toastMessage);
 
             // 刷新工作区列表以同步最新状态
-            refreshWorkspaces();
-            break;
-          }
-          case 'Created': {
-            showToast('success', event.name ? `Workspace "${event.name}" created` : 'Workspace created');
-            refreshWorkspaces();
-            break;
-          }
-          case 'Deleted': {
-            showToast('success', 'Workspace deleted');
             refreshWorkspaces();
             break;
           }

@@ -11,7 +11,7 @@
  * @created 2025-12-27
  */
 
-import { z } from 'zod';
+import { z } from "zod";
 
 // ============================================================================
 // 基础类型
@@ -21,10 +21,10 @@ import { z } from 'zod';
  * 任务状态枚举
  */
 export const TaskStatusSchema = z.enum([
-  'RUNNING',
-  'COMPLETED',
-  'FAILED',
-  'STOPPED'
+  "RUNNING",
+  "COMPLETED",
+  "FAILED",
+  "STOPPED",
 ]);
 
 export type TaskStatus = z.infer<typeof TaskStatusSchema>;
@@ -32,12 +32,7 @@ export type TaskStatus = z.infer<typeof TaskStatusSchema>;
 /**
  * 任务类型枚举
  */
-export const TaskTypeSchema = z.enum([
-  'Import',
-  'Export',
-  'Search',
-  'Index'
-]);
+export const TaskTypeSchema = z.enum(["Import", "Export", "Search", "Index"]);
 
 export type TaskType = z.infer<typeof TaskTypeSchema>;
 
@@ -92,23 +87,12 @@ export type TaskRemovedEvent = z.infer<typeof TaskRemovedEventSchema>;
  *
  * 统一工作区状态变更事件，替代 App.tsx 中直接监听 Tauri 事件的分裂脑问题
  */
-export const WorkspaceEventSchema = z.discriminatedUnion('type', [
+export const WorkspaceEventSchema = z.discriminatedUnion("type", [
   z.object({
-    type: z.literal('StatusChanged'),
+    type: z.literal("StatusChanged"),
     workspace_id: z.string().min(1, "workspace_id is required"),
-    status: z.enum(['Completed', 'Cancelled', 'Processing', 'Error']),
+    status: z.enum(["Completed", "Cancelled", "Processing", "Error"]),
     message: z.string().optional(),
-    timestamp: z.number().int().positive().optional(),
-  }),
-  z.object({
-    type: z.literal('Created'),
-    workspace_id: z.string().min(1, "workspace_id is required"),
-    name: z.string().optional(),
-    timestamp: z.number().int().positive().optional(),
-  }),
-  z.object({
-    type: z.literal('Deleted'),
-    workspace_id: z.string().min(1, "workspace_id is required"),
     timestamp: z.number().int().positive().optional(),
   }),
 ]);
@@ -145,12 +129,13 @@ export class EventValidationError extends Error {
   ) {
     // FIX(HI-15): z.ZodError 的 issues 是正式属性，移除不必要的 as 断言
     const zodErrors = errors.issues || [];
-    const errorSummary = zodErrors.length > 0
-      ? zodErrors.map((e) => `${e.path.join('.')}: ${e.message}`).join('; ')
-      : 'Unknown validation error';
+    const errorSummary =
+      zodErrors.length > 0
+        ? zodErrors.map((e) => `${e.path.join(".")}: ${e.message}`).join("; ")
+        : "Unknown validation error";
 
     super(`Event validation failed for ${eventType}: ${errorSummary}`);
-    this.name = 'EventValidationError';
+    this.name = "EventValidationError";
   }
 }
 
@@ -163,7 +148,9 @@ export class StaleEventError extends Error {
     public eventVersion: number,
     public currentVersion: number
   ) {
-    super(`Stale event for task ${taskId}: event version ${eventVersion} < current version ${currentVersion}`);
-    this.name = 'StaleEventError';
+    super(
+      `Stale event for task ${taskId}: event version ${eventVersion} < current version ${currentVersion}`
+    );
+    this.name = "StaleEventError";
   }
 }

@@ -11,7 +11,7 @@ pub mod models;
 #[cfg(test)]
 mod property_tests;
 
-pub use models::{WorkspaceEvent, WorkspaceState, WorkspaceStatus};
+pub use models::{WorkspaceEvent, WorkspaceStatus};
 
 /// State synchronization — 纯事件发射器。
 ///

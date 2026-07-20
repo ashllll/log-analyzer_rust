@@ -4,6 +4,15 @@ use serde::{Deserialize, Serialize};
 use std::time::{Duration, SystemTime};
 
 /// Workspace event types
+///
+/// 线上协议事实：目前仅有 `StatusChanged` 一个变体在生产代码中构造
+/// （load_workspace / delete_workspace）。历史上的 ProgressUpdate /
+/// TaskCompleted / Error 变体从未被发送（进度与任务生命周期由
+/// `task-update` 通道承载），已作为死协议面移除。
+///
+/// 线上 payload 形状由 `state_sync/contract_tests.rs` 与前端共享夹具
+/// `log-analyzer/src/events/__fixtures__/workspace-event-contract.json`
+/// 双向锁定，禁止单方面漂移。
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(tag = "type")]
 pub enum WorkspaceEvent {
@@ -11,30 +20,6 @@ pub enum WorkspaceEvent {
         workspace_id: String,
         status: WorkspaceStatus,
     },
-    ProgressUpdate {
-        workspace_id: String,
-        progress: f64,
-    },
-    TaskCompleted {
-        workspace_id: String,
-        task_id: String,
-    },
-    Error {
-        workspace_id: String,
-        error: String,
-    },
-}
-
-impl WorkspaceEvent {
-    /// Get workspace ID from event
-    pub fn workspace_id(&self) -> &str {
-        match self {
-            WorkspaceEvent::StatusChanged { workspace_id, .. } => workspace_id,
-            WorkspaceEvent::ProgressUpdate { workspace_id, .. } => workspace_id,
-            WorkspaceEvent::TaskCompleted { workspace_id, .. } => workspace_id,
-            WorkspaceEvent::Error { workspace_id, .. } => workspace_id,
-        }
-    }
 }
 
 /// Workspace status
@@ -61,52 +46,6 @@ pub enum WorkspaceStatus {
     },
 }
 
-/// Workspace state
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct WorkspaceState {
-    pub id: String,
-    pub status: WorkspaceStatus,
-    pub progress: f64,
-    #[serde(with = "system_time_serde")]
-    pub last_updated: SystemTime,
-    pub active_tasks: Vec<TaskInfo>,
-    pub error_count: u32,
-    pub processed_files: u32,
-    pub total_files: u32,
-}
-
-/// Task information
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct TaskInfo {
-    pub id: String,
-    pub task_type: TaskType,
-    pub status: TaskStatus,
-    pub progress: f64,
-    #[serde(with = "system_time_serde")]
-    pub started_at: SystemTime,
-    #[serde(with = "option_system_time_serde")]
-    pub estimated_completion: Option<SystemTime>,
-}
-
-/// Task type
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub enum TaskType {
-    Indexing,
-    Searching,
-    Extraction,
-    Analysis,
-}
-
-/// Task status
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub enum TaskStatus {
-    Pending,
-    Running,
-    Completed,
-    Failed,
-    Cancelled,
-}
-
 // Serde helpers for SystemTime
 mod system_time_serde {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -128,34 +67,6 @@ mod system_time_serde {
     {
         let secs = u64::deserialize(deserializer)?;
         Ok(UNIX_EPOCH + std::time::Duration::from_secs(secs))
-    }
-}
-
-mod option_system_time_serde {
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    pub fn serialize<S>(time: &Option<SystemTime>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match time {
-            Some(t) => {
-                let duration = t
-                    .duration_since(UNIX_EPOCH)
-                    .map_err(serde::ser::Error::custom)?;
-                Some(duration.as_secs()).serialize(serializer)
-            }
-            None => None::<u64>.serialize(serializer),
-        }
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<SystemTime>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let secs_opt = Option::<u64>::deserialize(deserializer)?;
-        Ok(secs_opt.map(|secs| UNIX_EPOCH + std::time::Duration::from_secs(secs)))
     }
 }
 
