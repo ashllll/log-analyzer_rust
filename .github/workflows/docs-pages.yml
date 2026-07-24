@@ -20,23 +20,20 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: pages
-  cancel-in-progress: false
+  group: documentation-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   validate:
     name: Validate documentation
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
       - name: Checkout repository
-        # actions/checkout@v6
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
 
       - name: Setup Node.js
-        # actions/setup-node@v6
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: '22'
@@ -48,45 +45,16 @@ jobs:
       - name: Build documentation
         run: npm run docs:build
 
-  build:
-    name: Build Pages artifact
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      pages: read
-    steps:
-      - name: Checkout repository
-        # actions/checkout@v6
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
-
-      - name: Setup Node.js
-        # actions/setup-node@v6
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
-        with:
-          node-version: '22'
-          cache: npm
-
-      - name: Configure GitHub Pages
-        # actions/configure-pages@v5
-        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b
-
-      - name: Install documentation dependencies
-        run: npm ci
-
-      - name: Build documentation
-        run: npm run docs:build
-
-      - name: Upload Pages artifact
-        # actions/upload-pages-artifact@v5
+      - name: Upload validated documentation
+        if: github.event_name != 'pull_request' && vars.ENABLE_PAGES == 'true'
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9
         with:
           path: docs/.vitepress/dist
 
   deploy:
     name: Deploy GitHub Pages
-    if: github.event_name != 'pull_request'
-    needs: build
+    if: github.event_name != 'pull_request' && vars.ENABLE_PAGES == 'true'
+    needs: validate
     runs-on: ubuntu-24.04
     permissions:
       pages: write
@@ -95,7 +63,6 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Deploy to GitHub Pages
+      - name: Deploy validated documentation
         id: deployment
-        # actions/deploy-pages@v5
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128

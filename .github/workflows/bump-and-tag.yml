@@ -9,127 +9,70 @@ on:
     branches: [main]
     types: [completed]
 
+# Every successful main commit gets a release. Serialize version allocation so two
+# completed CI runs can never claim the same patch version.
 concurrency:
-  group: bump-and-tag-${{ github.event.workflow_run.head_branch }}
-  cancel-in-progress: true
+  group: continuous-release-train
+  cancel-in-progress: false
 
 env:
   NODE_VERSION: '22'
 
 jobs:
-  bump-and-tag:
-    name: Auto Bump Patch Version
-    runs-on: ubuntu-24.04
-    # 仅在 CI 全部通过后执行，且不重复处理版本 bump 提交本身
+  tag:
+    name: Allocate Version and Tag Validated SHA
     if: >
       github.event.workflow_run.event == 'push' &&
-      github.event.workflow_run.conclusion == 'success' &&
-      !contains(github.event.workflow_run.head_commit.message, '[skip ci]')
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
-      actions: write # Required to dispatch the release workflow after tagging.
+      actions: write
 
     steps:
-      - name: Checkout repository
+      - name: Checkout validated commit
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
           ref: ${{ github.event.workflow_run.head_sha }}
 
-      - name: Verify workflow run still matches main HEAD
-        id: base
-        env:
-          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
-        run: |
-          git fetch origin main --tags
-
-          REMOTE_MAIN_SHA="$(git rev-parse origin/main)"
-
-          echo "workflow_run.head_sha=${HEAD_SHA}"
-          echo "origin/main=${REMOTE_MAIN_SHA}"
-
-          if [ "${HEAD_SHA}" != "${REMOTE_MAIN_SHA}" ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "main 已前进到新的提交，本次 bump/tag 跳过，由更新的 CI 结果接管"
-            exit 0
-          fi
-
-          git checkout -B main "${HEAD_SHA}"
-          echo "skip=false" >> "$GITHUB_OUTPUT"
-
       - name: Setup Node.js
-        if: steps.base.outputs.skip != 'true'
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: Compute next patch version
+      - name: Fetch release tags
+        run: git fetch origin --force --tags
+
+      - name: Allocate next patch version
         id: version
-        if: steps.base.outputs.skip != 'true'
-        run: |
-          node scripts/prepare-release.mjs plan
+        run: node scripts/prepare-release.mjs plan
 
-      - name: Update version in source files
-        if: steps.base.outputs.skip != 'true'
-        env:
-          TARGET_VERSION: ${{ steps.version.outputs.targetVersion }}
-        run: |
-          node scripts/prepare-release.mjs apply --version "$TARGET_VERSION"
-          node scripts/prepare-release.mjs check
-
-      - name: Commit version bump and push tag
+      - name: Tag the exact CI-validated commit
         id: publish
-        if: steps.base.outputs.skip != 'true'
         env:
-          VERSION: ${{ steps.version.outputs.targetVersion }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           TAG: ${{ steps.version.outputs.tag }}
         run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add \
-            log-analyzer/package.json \
-            log-analyzer/src-tauri/Cargo.lock \
-            log-analyzer/src-tauri/Cargo.toml \
-            log-analyzer/src-tauri/tauri.conf.json \
-            log-analyzer/src-tauri/crates/la-core/Cargo.toml \
-            log-analyzer/src-tauri/crates/la-storage/Cargo.toml \
-            log-analyzer/src-tauri/crates/la-search/Cargo.toml \
-            log-analyzer/src-tauri/crates/la-archive/Cargo.toml
-
-          if git diff --staged --quiet; then
-            echo "版本文件未变更，跳过 commit"
-            echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          else
-            git commit -m "chore: bump version to ${VERSION} [skip ci]"
-            git push origin HEAD:main
-            echo "已推送版本 bump commit"
-            echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "Tag ${TAG} already exists; refusing to retarget an immutable release tag"
+            exit 1
           fi
 
-          # 创建并推送 tag
-          if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "Tag ${TAG} 已存在，跳过"
-            echo "tag_created=false" >> "$GITHUB_OUTPUT"
-          else
-            git tag "$TAG"
-            git push origin "$TAG"
-            echo "已创建并推送 tag: ${TAG}"
-            echo "tag_created=true" >> "$GITHUB_OUTPUT"
-          fi
+          git tag -a "${TAG}" "${HEAD_SHA}" -m "Continuous release ${TAG} from ${HEAD_SHA}"
+          git push origin "refs/tags/${TAG}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Dispatch release workflow
-        if: >
-          steps.base.outputs.skip != 'true' &&
-          steps.publish.outputs.tag_created == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.publish.outputs.tag }}
         run: |
-          echo "触发 release 工作流: ${TAG}"
           gh workflow run release.yml \
-            --ref main \
+            --ref "${TAG}" \
             -f "tag=${TAG}" \
-            -f "prerelease=false"
-          echo "已触发 release 工作流 for ${TAG}"
+            -f "prerelease=true"

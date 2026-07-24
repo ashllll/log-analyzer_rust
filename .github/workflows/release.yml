@@ -4,34 +4,151 @@ permissions:
   contents: read
 
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
     inputs:
       tag:
-        description: '要发布的 tag（如 v1.2.36）'
+        description: 'Validated release tag (for example v1.2.77)'
         required: true
+        type: string
       prerelease:
-        description: '标记为预发布版本'
+        description: 'Publish to the continuous prerelease channel'
         required: false
         type: boolean
-        default: false
+        default: true
 
 env:
   NODE_VERSION: '22'
   CARGO_NET_RETRY: 10
 
+# Preserve commit/version order: a newer commit cannot become visible before an
+# older validated commit finishes its release transaction.
+concurrency:
+  group: continuous-release-publish
+  cancel-in-progress: false
+
 jobs:
-  release:
-    name: Build and Release (${{ matrix.platform.name }})
+  prepare:
+    name: Prepare Immutable Release
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
-      # OIDC 支持，用于未来云资源访问
-      id-token: write
-    concurrency:
-      group: release-${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}-${{ matrix.platform.name }}
-      cancel-in-progress: false
+      actions: read
+    outputs:
+      release_id: ${{ steps.release.outputs.id }}
+      source_sha: ${{ steps.source.outputs.sha }}
+      ci_run_id: ${{ steps.source.outputs.ci_run_id }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Validate tag input
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tag must be strict SemVer (vMAJOR.MINOR.PATCH): $TAG"
+            exit 1
+          fi
+
+      - name: Checkout immutable tag
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.tag }}
+
+      - name: Resolve tagged source SHA
+        id: source
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          git fetch origin --force --tags
+          TAG_SHA="$(git rev-list -n 1 "$TAG")"
+          HEAD_SHA="$(git rev-parse HEAD)"
+          test "$TAG_SHA" = "$HEAD_SHA"
+          echo "sha=$TAG_SHA" >> "$GITHUB_OUTPUT"
+
+          CI_RUN_ID="$(gh run list \
+            --workflow ci.yml \
+            --commit "$TAG_SHA" \
+            --event push \
+            --status success \
+            --json databaseId \
+            --jq '.[0].databaseId // empty')"
+          if [ -z "$CI_RUN_ID" ]; then
+            echo "No successful push CI run exists for tagged commit $TAG_SHA"
+            exit 1
+          fi
+          echo "ci_run_id=$CI_RUN_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: 1.88.0
+
+      - name: Materialize release version once
+        id: version
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          VERSION="${TAG#v}"
+          node scripts/prepare-release.mjs apply --version "$VERSION"
+          node scripts/prepare-release.mjs check
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+          tar -czf release-version-files.tar.gz \
+            log-analyzer/package.json \
+            log-analyzer/src-tauri/Cargo.lock \
+            log-analyzer/src-tauri/Cargo.toml \
+            log-analyzer/src-tauri/tauri.conf.json \
+            log-analyzer/src-tauri/crates/la-core/Cargo.toml \
+            log-analyzer/src-tauri/crates/la-storage/Cargo.toml \
+            log-analyzer/src-tauri/crates/la-search/Cargo.toml \
+            log-analyzer/src-tauri/crates/la-archive/Cargo.toml
+
+      - name: Upload immutable version overlay
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-version-${{ inputs.tag }}
+          path: release-version-files.tar.gz
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Create or reuse draft release
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            IS_DRAFT="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" --jq .draft)"
+            if [ "$IS_DRAFT" != "true" ]; then
+              echo "Release ${TAG} is already published and immutable"
+              exit 1
+            fi
+          else
+            FLAGS=(--draft --target "$SOURCE_SHA" --title "Log Analyzer ${TAG}" --notes "Automated release from validated commit ${SOURCE_SHA}.")
+            if [ "$PRERELEASE" = "true" ]; then
+              FLAGS+=(--prerelease)
+            fi
+            gh release create "$TAG" "${FLAGS[@]}"
+          fi
+          RELEASE_ID="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" --jq .id)"
+          echo "id=$RELEASE_ID" >> "$GITHUB_OUTPUT"
+
+  package:
+    name: Package (${{ matrix.platform.name }})
+    needs: prepare
+    runs-on: ${{ matrix.platform.os }}
+    timeout-minutes: 90
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -39,38 +156,51 @@ jobs:
           - os: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             name: linux-x64
-          # macos-15-intel 是最后一个 x86_64 macOS 镜像，2027年8月移除
-          - os: macos-15
-            target: x86_64-apple-darwin
-            name: macos-x64
+            msvc_arch: x64
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            name: linux-arm64
+            msvc_arch: arm64
           - os: macos-15
             target: aarch64-apple-darwin
             name: macos-arm64
-          - os: windows-latest
+            msvc_arch: arm64
+          - os: macos-15
+            target: x86_64-apple-darwin
+            name: macos-x64
+            msvc_arch: x64
+          - os: windows-2025
             target: x86_64-pc-windows-msvc
             name: windows-x64
-
-    runs-on: ${{ matrix.platform.os }}
+            msvc_arch: x64
+          - os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            name: windows-arm64
+            msvc_arch: arm64
 
     steps:
-      - name: Resolve release tag
-        id: tag
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          INPUT_TAG: ${{ github.event.inputs.tag }}
-          REF_NAME: ${{ github.ref_name }}
-        run: |
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            echo "name=$INPUT_TAG" >> "$GITHUB_OUTPUT"
-          else
-            echo "name=$REF_NAME" >> "$GITHUB_OUTPUT"
-          fi
-        shell: bash
-
-      - name: Checkout repository
+      - name: Checkout tagged source
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
         with:
-          ref: ${{ steps.tag.outputs.name }}
+          ref: ${{ inputs.tag }}
+
+      - name: Download release version overlay
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: release-version-${{ inputs.tag }}
+
+      - name: Apply release version overlay
+        run: tar -xzf release-version-files.tar.gz
+        shell: bash
+
+      - name: Verify source and version
+        env:
+          EXPECTED_SHA: ${{ needs.prepare.outputs.source_sha }}
+          EXPECTED_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          node scripts/prepare-release.mjs check | grep "currentVersion=${EXPECTED_VERSION}"
+        shell: bash
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
@@ -78,14 +208,11 @@ jobs:
           toolchain: 1.88.0
           targets: ${{ matrix.platform.target }}
 
-      - name: Install Rust target for pinned toolchain
-        working-directory: log-analyzer/src-tauri
-        run: rustup target add ${{ matrix.platform.target }}
-
-      - name: Setup MSVC (Windows)
-        if: matrix.platform.os == 'windows-latest'
-        # ilammy/msvc-dev-cmd@v1.13.0
+      - name: Setup MSVC
+        if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756
+        with:
+          arch: ${{ matrix.platform.msvc_arch }}
 
       - name: Rust cache
         uses: swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
@@ -97,39 +224,95 @@ jobs:
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
+          cache: npm
           cache-dependency-path: log-analyzer/package-lock.json
 
-      - name: Install system dependencies (Ubuntu)
-        if: matrix.platform.os == 'ubuntu-24.04'
+      - name: Install Linux packaging dependencies
+        if: runner.os == 'Linux'
         uses: ./.github/actions/setup-tauri-linux
 
       - name: Install frontend dependencies
-        run: |
-          cd log-analyzer
-          npm ci
+        working-directory: log-analyzer
+        run: npm ci
 
-      - name: Set executable permissions for bundled binaries (Unix)
-        if: runner.os != 'Windows'
-        run: chmod +x log-analyzer/src-tauri/binaries/unrar-*
-
-      - name: Build and publish release
-        # tauri-apps/tauri-action@v0.6.2
+      - name: Build and upload signed bundles to draft release
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Tauri 1.x 签名密钥
           TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
           TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
-          # HI-35: Tauri v2 uses independent signing key to avoid reuse with v1
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
         with:
           projectPath: log-analyzer
-          tagName: ${{ steps.tag.outputs.name }}
-          releaseName: 'Log Analyzer ${{ steps.tag.outputs.name }}'
-          releaseBody: |
-            查看 [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) 了解本版本变更详情。
-          releaseDraft: false
-          prerelease: ${{ github.event.inputs.prerelease == 'true' }}
-          args: --target ${{ matrix.platform.target }}
+          releaseId: ${{ needs.prepare.outputs.release_id }}
+          releaseDraft: true
+          retryAttempts: 2
+          args: --target ${{ matrix.platform.target }} -- --locked
+
+      - name: Generate bundle checksums
+        env:
+          TARGET: ${{ matrix.platform.target }}
+          PLATFORM_NAME: ${{ matrix.platform.name }}
+        run: |
+          BUNDLE_DIR="log-analyzer/src-tauri/target/${TARGET}/release/bundle"
+          test -d "$BUNDLE_DIR"
+          (
+            cd "$BUNDLE_DIR"
+            find . -type f -print0 | sort -z | xargs -0 shasum -a 256
+          ) > "checksums-${PLATFORM_NAME}.txt"
+        shell: bash
+
+      - name: Upload checksum evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: checksums-${{ matrix.platform.name }}-${{ inputs.tag }}
+          path: checksums-${{ matrix.platform.name }}.txt
+          if-no-files-found: error
+          retention-days: 90
+
+  publish:
+    name: Verify and Publish Release
+    needs: [prepare, package]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download checksum evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: checksums-*-${{ inputs.tag }}
+          path: checksums
+          merge-multiple: true
+
+      - name: Build release manifest
+        env:
+          TAG: ${{ inputs.tag }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
+          CI_RUN_ID: ${{ needs.prepare.outputs.ci_run_id }}
+        run: |
+          test "$(find checksums -name 'checksums-*.txt' | wc -l | tr -d ' ')" = "6"
+          cat checksums/checksums-*.txt > SHA256SUMS
+          CHECKSUMS_JSON="$(jq -Rs 'split("\n") | map(select(length > 0))' SHA256SUMS)"
+          jq -n \
+            --arg tag "$TAG" \
+            --arg version "$VERSION" \
+            --arg source_sha "$SOURCE_SHA" \
+            --arg ci_run_id "$CI_RUN_ID" \
+            --argjson checksums "$CHECKSUMS_JSON" \
+            '{schema_version:1, tag:$tag, version:$version, source_sha:$source_sha, ci_run_id:$ci_run_id, checksums:$checksums}' \
+            > release-manifest.json
+
+      - name: Upload integrity metadata and publish draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          gh release upload "$TAG" SHA256SUMS release-manifest.json --clobber
+          if [ "$PRERELEASE" = "true" ]; then
+            gh release edit "$TAG" --draft=false --prerelease
+          else
+            gh release edit "$TAG" --draft=false --latest
+          fi

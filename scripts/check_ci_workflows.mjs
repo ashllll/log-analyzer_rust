@@ -132,13 +132,53 @@ const bumpWorkflowSource = readFileSync(join(projectRoot, bumpWorkflow), 'utf8')
 if (!/^\s*actions:\s*write\s*(?:#.*)?$/m.test(bumpWorkflowSource)) {
   addError(bumpWorkflow, 'release dispatch requires job permissions.actions: write');
 }
-if (!bumpWorkflowSource.includes('log-analyzer/src-tauri/Cargo.lock')) {
-  addError(bumpWorkflow, 'version bump commits must include log-analyzer/src-tauri/Cargo.lock');
+if (bumpWorkflowSource.includes('git commit') || bumpWorkflowSource.includes('HEAD:main')) {
+  addError(bumpWorkflow, 'continuous releases must tag the CI-validated SHA without creating an unvalidated version commit');
+}
+if (!bumpWorkflowSource.includes('github.event.workflow_run.head_sha')) {
+  addError(bumpWorkflow, 'continuous release tags must be derived from workflow_run.head_sha');
+}
+if (!bumpWorkflowSource.includes('cancel-in-progress: false')) {
+  addError(bumpWorkflow, 'the continuous release train must not discard validated main commits');
+}
+if (!bumpWorkflowSource.includes('--ref "${TAG}"')) {
+  addError(bumpWorkflow, 'release dispatch must use the tagged workflow definition instead of mutable main');
 }
 
 const releaseWorkflowSource = readFileSync(join(projectRoot, releaseWorkflow), 'utf8');
-if (!releaseWorkflowSource.includes('working-directory: log-analyzer/src-tauri') || !releaseWorkflowSource.includes('rustup target add ${{ matrix.platform.target }}')) {
-  addError(releaseWorkflow, 'release builds must install each Rust target inside src-tauri so rust-toolchain.toml receives the target');
+for (const required of [
+  'releaseId: ${{ needs.prepare.outputs.release_id }}',
+  'releaseDraft: true',
+  'release-manifest.json',
+  'SHA256SUMS',
+  'ubuntu-24.04-arm',
+  'windows-11-arm',
+  'source_sha: ${{ steps.source.outputs.sha }}'
+]) {
+  if (!releaseWorkflowSource.includes(required)) {
+    addError(releaseWorkflow, `hardened release invariant is missing: ${required}`);
+  }
+}
+
+const ciWorkflowSource = readFileSync(join(projectRoot, '.github/workflows/ci.yml'), 'utf8');
+if (!ciWorkflowSource.includes('name: CI Gate')) {
+  addError('.github/workflows/ci.yml', 'required checks must converge on a stable CI Gate job');
+}
+if (!ciWorkflowSource.includes("cancel-in-progress: ${{ github.event_name == 'pull_request' }}")) {
+  addError('.github/workflows/ci.yml', 'main CI runs must not be cancelled because every validated commit requires a release');
+}
+for (const command of ['cargo fetch --locked', 'cargo clippy --locked', 'cargo test --locked']) {
+  if (!ciWorkflowSource.includes(command)) {
+    addError('.github/workflows/ci.yml', `dependency resolution invariant is missing: ${command}`);
+  }
+}
+
+const docsWorkflowSource = readFileSync(join(projectRoot, '.github/workflows/docs-pages.yml'), 'utf8');
+if (!docsWorkflowSource.includes("vars.ENABLE_PAGES == 'true'")) {
+  addError('.github/workflows/docs-pages.yml', 'Pages deployment must be explicitly enabled without blocking documentation validation');
+}
+if (!docsWorkflowSource.includes('name: Validate documentation')) {
+  addError('.github/workflows/docs-pages.yml', 'documentation validation must remain an independent required signal');
 }
 
 const tarpaulinSource = readFileSync(join(projectRoot, tarpaulinConfig), 'utf8');

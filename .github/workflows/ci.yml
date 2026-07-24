@@ -12,7 +12,9 @@ on:
 # 避免同一个 PR 的多次推送导致 CI 任务堆积
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Keep every main commit: each successful SHA must advance through CD. Only
+  # superseded PR runs are safe to cancel.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -86,18 +88,18 @@ jobs:
       - name: Fetch dependencies
         run: |
           cd log-analyzer/src-tauri
-          cargo fetch
+          cargo fetch --locked
 
       - name: Run clippy linter
         run: |
           cd log-analyzer/src-tauri
-          cargo clippy --all-features --all-targets -- -D warnings
+          cargo clippy --locked --all-features --all-targets -- -D warnings
         shell: bash
 
       - name: Run unit tests
         run: |
           cd log-analyzer/src-tauri
-          cargo test --all-features --lib --bins -- --test-threads=4 --nocapture 2>&1 | tee test-output.log
+          cargo test --locked --all-features --lib --bins -- --test-threads=4 --nocapture 2>&1 | tee test-output.log
         env:
           RUST_BACKTRACE: 1 # HI-38: Use '1' instead of 'full' to avoid leaking absolute paths/usernames
           RUST_TEST_TIME_INTEGRATION: 1
@@ -214,7 +216,7 @@ jobs:
       - name: Build Tauri app (debug smoke, no bundle)
         run: |
           cd log-analyzer
-          npm run tauri build -- --debug --no-bundle
+          npm run tauri build -- --debug --no-bundle -- --locked
 
   # 集成测试
   integration-test:
@@ -243,7 +245,7 @@ jobs:
       - name: Run integration tests
         run: |
           cd log-analyzer/src-tauri
-          cargo test --workspace --all-features -- --test-threads=2 --nocapture
+          cargo test --locked --workspace --all-features -- --test-threads=2 --nocapture
         env:
           RUST_BACKTRACE: 1 # HI-38: Use '1' instead of 'full' to avoid leaking absolute paths/usernames
 
@@ -268,3 +270,28 @@ jobs:
         run: |
           node scripts/prepare-release.mjs check
           node scripts/prepare-release.mjs plan
+
+  ci-gate:
+    name: CI Gate
+    if: always()
+    needs:
+      - ci-config
+      - test-rust
+      - ipc-consistency-check
+      - test-frontend
+      - desktop-smoke
+      - integration-test
+      - release-automation-dry-run
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Require every CI job to pass
+        env:
+          RESULTS: ${{ join(needs.*.result, ',') }}
+        run: |
+          echo "CI job results: ${RESULTS}"
+          if echo "${RESULTS}" | grep -Eq 'failure|cancelled|skipped'; then
+            echo "At least one required CI job did not succeed"
+            exit 1
+          fi
