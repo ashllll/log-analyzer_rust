@@ -5,7 +5,6 @@
 pub mod app_config;
 pub mod encoding;
 pub mod log_config;
-pub mod log_stats;
 pub mod path;
 pub mod retry;
 pub mod validation;

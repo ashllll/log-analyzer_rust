@@ -734,7 +734,7 @@ fn spawn_file_stats_update(context: &CasProcessingContext, metadata: &FileMetada
     tokio::task::spawn(async move {
         match cas.read_content(&hash).await {
             Ok(content) => {
-                let (min_ts, max_ts, level_mask) = crate::stats::compute_file_stats(&content);
+                let (min_ts, max_ts, level_mask) = la_core::utils::compute_file_stats(&content);
                 if let Err(e) = metadata_store
                     .update_file_ready(&virtual_path_for_stats, min_ts, max_ts, level_mask)
                     .await
@@ -1138,7 +1138,7 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
                 match cas.read_content(&hash).await {
                     Ok(content) => {
                         let (min_ts, max_ts, level_mask) =
-                            crate::stats::compute_file_stats(&content);
+                            la_core::utils::compute_file_stats(&content);
                         if let Err(e) = metadata_store
                             .update_file_ready(&vp, min_ts, max_ts, level_mask)
                             .await

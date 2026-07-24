@@ -9,14 +9,11 @@ use crate::utils::encoding::decode_log_content;
 use la_archive::processor::process_path_with_cas;
 use la_core::error::AppError;
 use la_core::traits::AppConfigProvider;
+use la_core::utils::compute_file_stats;
 
 use super::WorkspaceServiceImpl;
 const SEARCH_INDEX_COMMIT_EVERY_FILES: usize = 25;
 const FALLBACK_STATS_DELAY_SECS: u64 = 5;
-
-pub(super) fn compute_file_stats(content: &[u8]) -> (Option<i64>, Option<i64>, Option<u8>) {
-    crate::utils::log_stats::compute_file_stats(content)
-}
 
 async fn rebuild_search_index_inner(
     metadata_store: Arc<la_storage::MetadataStore>,
