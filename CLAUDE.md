@@ -324,3 +324,17 @@ Common types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `perf`, `ci`
 | `/clear` | 清空 — 清空当前对话上下文 |
 | `/exit` | 退出 — 退出 Claude Code |
 | `/cost` | 费用 — 显示 token 消耗和费用估算 |
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs are tracked in GitHub Issues. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The default five-role label vocabulary is used. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This repository uses a single-context domain layout. See `docs/agents/domain.md`.
