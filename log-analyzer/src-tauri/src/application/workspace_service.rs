@@ -159,9 +159,6 @@ pub trait WatchService: Send + Sync {
 
     /// 停止文件监听。
     async fn stop_watch(&self) -> Result<()>;
-
-    /// 获取监听状态。
-    async fn is_watching(&self) -> Result<bool>;
 }
 
 // ============================================================================

@@ -36,6 +36,21 @@ Log Analyzer 是一个本地桌面应用，重点处理“数据量大、来源�
 
 把常见告警词、组件名与故障模式整理为启用/禁用的关键词组，供搜索过滤和高亮重复使用。
 
+### 界面主题
+
+Apple 风格双主题设计系统，覆盖全部页面：
+
+- **三态切换**：亮色 / 暗色 / 跟随系统（`prefers-color-scheme`），localStorage 持久化
+- **Material 毛玻璃**：侧栏、工具栏、叠加层使用 `backdrop-filter` 半透明模糊材质
+- **骨架屏**：页面与结果列表加载时展示 Skeleton 占位，避免布局跳动
+- **动画与无障碍**：统一的 UI 缓动曲线；尊重 `prefers-reduced-motion`、`prefers-reduced-transparency` 与 `prefers-contrast` 系统设置
+
+详见[前端设计系统](../architecture/frontend.md)。
+
+### 虚拟滚动结果列表
+
+搜索结果经 `DiskResultStore` 分页写盘，前端 TanStack Query 无限分页 + 虚拟滚动渲染，单页仅挂载可视区行，百万级命中不卡顿。
+
 ## 明确边界
 
 - 桌面端使用 Tauri Events 与 invoke，不提供 WebSocket 服务。

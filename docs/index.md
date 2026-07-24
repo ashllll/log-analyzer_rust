@@ -4,7 +4,7 @@ layout: home
 hero:
   name: Log Analyzer
   text: 把复杂日志，留在本地看清楚
-  tagline: 面向开发、测试与运维的大规模日志工作台。导入目录或归档包，快速搜索、组合过滤、沉淀关键词，并持续监听新增日志。
+  tagline: 面向开发、测试与运维的大规模日志工作台。导入目录或归档包，快速搜索、组合过滤、沉淀关键词，并持续监听新增日志。Apple 风格亮 / 暗双主题，毛玻璃质感界面。
   actions:
     - theme: brand
       text: 5 分钟快速开始
@@ -23,6 +23,9 @@ features:
   - icon: ◫
     title: 从归档到实时目录
     details: 同一套工作区模型覆盖日志文件、目录、ZIP / TAR / GZ / 7Z 与持续写入场景。
+  - icon: ◐
+    title: Apple 风格双主题
+    details: 亮色 / 暗色 / 跟随系统三态切换，Material 毛玻璃质感，尊重系统动效与对比度偏好。
 ---
 
 <div class="la-section">

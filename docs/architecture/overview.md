@@ -19,18 +19,19 @@ flowchart TB
 
 | 层 | 位置 | 职责 |
 | --- | --- | --- |
-| 前端 | `log-analyzer/src/` | 页面、hooks、Zustand 状态、React Query 缓存与 Tauri 事件投影 |
+| 前端 | `log-analyzer/src/` | 页面、hooks、Zustand 状态、React Query 缓存与 Tauri 事件投影；Apple 风格亮/暗双主题设计系统（CSS 变量 + Tailwind） |
 | 命令边界 | `src-tauri/src/commands/` | `#[tauri::command]` 参数校验、状态解析与 use case 委托 |
-| 应用层 | `src-tauri/src/application/` | 搜索、导入、监听、配置、导出与工作区用例 |
+| 应用层 | `src-tauri/src/application/` | 搜索（`SearchUseCase` + `SearchBatch` + `SearchSessionManager`）、工作区服务组合（`WorkspaceService` = Search + Import + Watch）、配置、导出与虚拟树 |
 | 基础设施 | `src-tauri/src/infrastructure/` | domain trait 的具体适配器与运行时编排 |
 | 引擎与工具 | `services/`、`utils/` | 查询规划、正则、过滤、文件监听、重试、取消等 |
+| 状态容器 | `src-tauri/src/models/state.rs` | `AppState` = 4 个 typed registries（Workspace / Search / Task / Sync），锁粒度细化到每个 registry 内部（P8+P11） |
 | 领域与 workspace crates | `src-tauri/crates/` | 可独立测试和复用的核心模型、存储、搜索、归档能力 |
 
 ## Workspace crates
 
 ### `la-core`
 
-定义 `LogSearcher`、`LogFileRepository`、`SearchResultRepository`、`ArchiveExtractor`、`EventPublisher`、`WorkspaceRepository`、`TaskScheduler` 等 domain traits，以及共享模型和 `AppError`。它不依赖 Tauri 或具体文件系统。
+定义 `LogSearcher`、`LogFileRepository`、`SearchResultRepository`、`ArchiveExtractor`、`EventPublisher`、`WorkspaceRepository`、`TaskScheduler` 等 domain traits，以及共享模型和 `AppError`。它不依赖 Tauri 或具体文件系统。搜索匹配计划通过 `MatchPlan` trait（`domain/search.rs`）对象化传递，消除 `Any` 向下转型与 side-map，编译期类型安全（P7）。
 
 ### `la-storage`
 
@@ -49,14 +50,17 @@ flowchart TB
 1. **Tauri Events 而非 WebSocket**：应用是桌面本地进程，没有额外网络服务层。
 2. **离线优先**：核心运行链路不依赖远端 API。
 3. **CAS 去重**：内容身份与用户看到的虚拟路径分离。
-4. **阻塞工作隔离**：搜索和导入的 CPU / IO 密集部分不阻塞 Tauri async 事件循环。
-5. **磁盘结果会话**：搜索结果按 `search_id` 生命周期写盘、分页和取消。
+4. **阻塞工作隔离**：搜索和导入的 CPU / IO 密集部分在 Rayon 线程池 `spawn_blocking` 执行，不阻塞 Tauri async 事件循环。
+5. **磁盘结果会话**：搜索结果按 `search_id` 生命周期写盘、分页和取消；`SearchSessionManager`（全局单例）持有每个会话的 `CancellationToken`。
 6. **边界先验证**：路径、工作区 id 与查询字符串在进入深层实现前完成校验。
+7. **Typed registries 状态隔离**：`AppState` 不持有扁平字段，而是 4 个 registry（Workspace / Search / Task / Sync），各自管理内部锁，避免全局大锁竞争。
+8. **预创建 WorkspaceService**：工作区在导入完成时即构建 `WorkspaceServiceImpl`（含独立 CAS、MetadataStore、QueryEngine），搜索路径纯查找、无懒加载 fallback。
 
 ## 继续阅读
 
 - [搜索链路](./search.md)
 - [导入链路](./import.md)
+- [前端设计系统](./frontend.md)
 - [IPC 与状态同步](./ipc.md)
 - [CAS 存储架构](./CAS_ARCHITECTURE.md)
 - [项目结构](../development/structure.md)

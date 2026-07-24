@@ -27,23 +27,16 @@
 //! await invoke('load_workspace', { workspaceId: 'workspace-123' });
 //! ```
 
-use std::{fs, path::Path, sync::Arc};
+use std::{path::Path, sync::Arc};
 
-use la_core::error::{AppError, CommandError};
-use tauri::{AppHandle, Manager, State};
-use tracing::{error, info, warn};
+use la_core::error::CommandError;
+use tauri::{AppHandle, State};
+use tracing::info;
 
-use crate::application::workspace_service::WorkspaceServiceRef;
 use crate::commands::import::import_folder;
 use crate::models::AppState;
 use crate::utils::validation::validate_workspace_id;
 use crate::utils::workspace_paths::{build_workspace_id, resolve_workspace_dir};
-
-/// 关闭工作区数据库连接（MetadataStore + SearchEngine）。
-/// 委托给 WorkspaceService::close_databases()。
-async fn close_workspace_databases(service: &WorkspaceServiceRef) {
-    service.close_databases().await;
-}
 
 /// Workspace load response
 #[derive(Debug, Clone, serde::Serialize)]
@@ -220,331 +213,15 @@ fn resolve_workspace_display_name(app: &AppHandle, workspace_id: &str) -> Option
         .filter(|name| !name.trim().is_empty())
 }
 
-/// 判断工作区是否使用CAS存储
+/// 清理工作区所有资源
 ///
-/// 检查工作区目录下是否存在CAS相关文件（metadata.db或objects目录）
-fn is_cas_workspace(workspace_id: &str, app: &AppHandle) -> Result<bool, CommandError> {
-    let workspace_dir =
-        resolve_workspace_dir(app, workspace_id).map_err(|e| CommandError::new("NOT_FOUND", e))?;
-
-    // Check for metadata.db or objects directory
-    let metadata_db = workspace_dir.join("metadata.db");
-    let objects_dir = workspace_dir.join("objects");
-
-    Ok(metadata_db.exists() || objects_dir.exists())
-}
-
-/// 清理工作区资源
-///
-/// 按正确的依赖顺序清理工作区的所有相关资源。
-///
-/// # 清理顺序
-///
-/// 1. 停止文件监听器(释放目录句柄)
-/// 2. 清除搜索缓存(依赖LRU自动淘汰,已优化为不主动清理)
-/// 3. 清除内存状态(CAS架构下无需清理)
-/// 4. 删除旧的索引文件(向后兼容)
-/// 5. 删除解压目录(包括CAS数据)
-///
-/// # 错误处理
-///
-/// 单步失败不中断流程,记录日志并继续清理其他资源。
+/// 委托给 `CleanupUseCase`，保持命令层精简。
 async fn cleanup_workspace_resources(
     workspace_id: &str,
     state: &AppState,
     app: &AppHandle,
 ) -> Result<(), CommandError> {
-    info!(
-        workspace_id = %workspace_id,
-        "Starting resource cleanup for workspace"
-    );
-
-    let mut errors = Vec::new();
-
-    // 辅助闭包：统一将 io::Error 映射为结构化错误消息
-    let io_err = |e: std::io::Error, path: &std::path::Path| -> String {
-        AppError::io_error(e.to_string(), Some(path.to_path_buf())).to_string()
-    };
-
-    // 辅助函数：带重试的文件删除（处理 Windows 临时文件锁定）
-    async fn remove_file_with_retry(path: &std::path::Path) -> Result<(), std::io::Error> {
-        const MAX_ATTEMPTS: usize = 3;
-        for attempt in 0..MAX_ATTEMPTS {
-            match std::fs::remove_file(path) {
-                Ok(()) => return Ok(()),
-                Err(_) if attempt + 1 < MAX_ATTEMPTS => {
-                    tokio::time::sleep(std::time::Duration::from_millis(
-                        100 * (attempt as u64 + 1),
-                    ))
-                    .await;
-                }
-                Err(e) => return Err(e),
-            }
-        }
-        unreachable!("remove_file_with_retry loop must return")
-    }
-
-    // 辅助函数：带重试的目录删除（处理 Windows 临时文件锁定）
-    async fn remove_dir_with_retry(path: &std::path::Path) -> Result<(), std::io::Error> {
-        const MAX_ATTEMPTS: usize = 3;
-        for attempt in 0..MAX_ATTEMPTS {
-            match std::fs::remove_dir_all(path) {
-                Ok(()) => return Ok(()),
-                Err(_) if attempt + 1 < MAX_ATTEMPTS => {
-                    tokio::time::sleep(std::time::Duration::from_millis(
-                        100 * (attempt as u64 + 1),
-                    ))
-                    .await;
-                }
-                Err(e) => return Err(e),
-            }
-        }
-        unreachable!("remove_dir_with_retry loop must return")
-    }
-
-    // ===== 步骤1: 停止文件监听器 =====
-    // P5 迁移：watcher 状态内嵌于 WorkspaceServiceImpl，通过 service.stop_watch() 清理
-    info!(
-        workspace_id = %workspace_id,
-        "Step 1: Stopping file watcher"
-    );
-    if let Some(service) = state.get_workspace_service(workspace_id) {
-        let _ = service.stop_watch().await; // watcher 可能未激活，忽略错误
-        info!(
-            workspace_id = %workspace_id,
-            "File watcher stopped via service"
-        );
-    } else {
-        info!(
-            workspace_id = %workspace_id,
-            "No workspace service found, skipping watcher stop"
-        );
-    }
-
-    // ===== 步骤2: 清除搜索缓存 =====
-    // 优化决策: 不主动清理搜索缓存,依赖LRU自动淘汰机制
-    // 这样可以避免遍历缓存键的性能开销
-    info!("Step 2: Skipping search cache cleanup (LRU auto-eviction)");
-
-    // ===== 步骤3: 清除工作区运行态资源 =====
-    info!("Step 3: Removing workspace runtime resources");
-
-    // P4 迁移：先关闭资源，再统一清理（workspace_services 替代分散的旧 HashMap）
-    if let Some(service) = state.get_workspace_service(workspace_id) {
-        close_workspace_databases(&service).await;
-        info!(workspace_id = %workspace_id, "Databases closed");
-    }
-    state.remove_workspace_service(workspace_id);
-    info!("Step 3 completed: Workspace runtime resources removed");
-
-    // ===== 步骤4: 清理旧的索引文件（如果存在）=====
-    // 为了向后兼容，检查并删除旧的 .idx.gz 文件
-    info!("Step 4: Checking for legacy index files");
-
-    let index_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| CommandError::new("IO_ERROR", format!("Failed to get app data dir: {e}")))?
-        .join("indices");
-
-    // 尝试删除压缩版本和未压缩版本(兼容性)
-    let compressed_index = index_dir.join(format!("{workspace_id}.idx.gz"));
-    let uncompressed_index = index_dir.join(format!("{workspace_id}.idx"));
-
-    let mut deleted_count = 0;
-    let mut failed_count = 0;
-
-    for index_path in [compressed_index, uncompressed_index].iter() {
-        let index_path: &std::path::PathBuf = index_path;
-        let exists = index_path.exists();
-        if exists {
-            match fs::metadata(index_path) {
-                Ok(metadata) => {
-                    if metadata.is_file() {
-                        match fs::remove_file(index_path) {
-                            Ok(_) => {
-                                deleted_count += 1;
-                                info!(
-                                    path = %index_path.display(),
-                                    size = metadata.len(),
-                                    "Deleted legacy index file"
-                                );
-                            }
-                            Err(e) => {
-                                failed_count += 1;
-                                let error = io_err(e, index_path);
-                                error!(error = %error);
-                                errors.push(error);
-                            }
-                        }
-                    } else {
-                        warn!(
-                            path = %index_path.display(),
-                            "Path exists but is not a regular file, skipping"
-                        );
-                    }
-                }
-                Err(e) => {
-                    failed_count += 1;
-                    let error = io_err(e, index_path);
-                    error!(error = %error);
-                    errors.push(error);
-                }
-            }
-        } else {
-            info!(
-                path = %index_path.display(),
-                "Legacy index file does not exist, skipping"
-            );
-        }
-    }
-
-    if deleted_count > 0 {
-        info!(
-            count = deleted_count,
-            "Step 4 completed: legacy index files deleted"
-        );
-    } else {
-        info!("Step 4 completed: No legacy index files found");
-    }
-
-    // 如果关键文件删除失败，记录警告但不中断清理流程
-    if failed_count > 0 && deleted_count == 0 {
-        warn!(
-            workspace_id = %workspace_id,
-            "All legacy index file deletions failed"
-        );
-    }
-
-    // ===== 步骤5: 删除工作区目录 =====
-    info!("Step 5: Checking for workspace directory");
-
-    match resolve_workspace_dir(app, workspace_id) {
-        Ok(workspace_dir) if workspace_dir.exists() => {
-            info!(
-                path = %workspace_dir.display(),
-                "Attempting to delete workspace directory"
-            );
-
-            match is_cas_workspace(workspace_id, app) {
-                Ok(true) => {
-                    info!("Detected CAS workspace, cleaning up CAS resources");
-
-                    let metadata_db = workspace_dir.join("metadata.db");
-                    if metadata_db.exists() {
-                        if let Err(e) = remove_file_with_retry(&metadata_db).await {
-                            let error = io_err(e, &metadata_db);
-                            error!(error = %error);
-                            errors.push(error);
-                        } else {
-                            info!(path = %metadata_db.display(), "Deleted SQLite database");
-                        }
-                    }
-
-                    for journal_ext in &["-wal", "-shm", "-journal"] {
-                        let journal_file = workspace_dir.join(format!("metadata.db{journal_ext}"));
-                        if journal_file.exists() {
-                            if let Err(e) = remove_file_with_retry(&journal_file).await {
-                                warn!(
-                                    path = %journal_file.display(),
-                                    error = %e,
-                                    "Failed to delete journal file"
-                                );
-                            }
-                        }
-                    }
-
-                    let objects_dir = workspace_dir.join("objects");
-                    if objects_dir.exists() {
-                        if let Err(e) = remove_dir_with_retry(&objects_dir).await {
-                            let error = io_err(e, &objects_dir);
-                            error!(error = %error);
-                            errors.push(error);
-                        } else {
-                            info!(path = %objects_dir.display(), "Deleted CAS objects directory");
-                        }
-                    }
-                }
-                Ok(false) => info!("Traditional workspace, no CAS cleanup needed"),
-                Err(e) => warn!(error = %e, "Failed to check CAS status"),
-            }
-
-            if workspace_dir.exists() {
-                if let Err(e) = remove_dir_with_retry(&workspace_dir).await {
-                    let error = format!(
-                        "Failed to delete workspace directory {}: {}",
-                        workspace_dir.display(),
-                        e
-                    );
-                    error!(error = %error);
-                    errors.push(error);
-                }
-            }
-
-            // 检查工作区目录是否仍然存在（验证删除是否成功）
-            if workspace_dir.exists() {
-                let error = format!(
-                    "Failed to delete workspace directory {} after cleanup",
-                    workspace_dir.display()
-                );
-                error!(error = %error);
-                errors.push(error);
-            } else {
-                info!(
-                    path = %workspace_dir.display(),
-                    "Step 5 completed: Workspace directory successfully deleted"
-                );
-            }
-        }
-        Ok(_) => {
-            info!("Step 5 skipped: Workspace directory does not exist");
-        }
-        Err(e) => {
-            let error = format!("Failed to resolve workspace directory: {e}");
-            warn!(error = %error, "Step 5 failed");
-            errors.push(error);
-        }
-    }
-
-    // ===== 汇总结果 =====
-    // 区分严重错误和非严重错误：
-    // - 严重错误：工作区目录仍然存在（用户无法重新导入同一工作区）
-    // - 非严重错误：辅助文件（journal files 等）删除失败（不影响重新导入）
-    let has_directory_exists_error = errors
-        .iter()
-        .any(|e| e.contains("Failed to delete workspace directory"));
-
-    if errors.is_empty() {
-        info!(
-            workspace_id = %workspace_id,
-            "All cleanup steps completed successfully"
-        );
-        Ok(())
-    } else if has_directory_exists_error {
-        let error_summary = errors.join("; ");
-        error!(
-            workspace_id = %workspace_id,
-            error_count = errors.len(),
-            error_summary = %error_summary,
-            "Critical error: workspace directory still exists after cleanup"
-        );
-        // 工作区目录未删除，这是严重错误，必须返回错误
-        Err(
-            CommandError::new("CLEANUP_ERROR", "Workspace directory deletion failed")
-                .with_help("Please close all programs that may have files open and retry")
-                .with_details(serde_json::json!({ "details": error_summary })),
-        )
-    } else {
-        let error_summary = errors.join("; ");
-        warn!(
-            workspace_id = %workspace_id,
-            error_count = errors.len(),
-            error_summary = %error_summary,
-            "Cleanup completed with non-critical errors (auxiliary files)"
-        );
-        // 非严重错误：辅助文件删除失败，但工作区目录已删除，用户可以正常使用
-        Ok(())
-    }
+    crate::application::cleanup::CleanupUseCase::execute(workspace_id, state, app).await
 }
 
 /// 删除工作区命令
@@ -647,14 +324,17 @@ pub async fn get_workspace_status(
     let (service, _workspace_dir) =
         crate::utils::workspace_guard::require_cas_workspace(&app, &state, &workspace_id).await?;
 
-    let file_count: i64 = service.metadata_store().count_files().await.unwrap_or(0);
+    let file_count: i64 =
+        service.metadata_store().count_files().await.map_err(|e| {
+            CommandError::new("DATABASE_ERROR", format!("Failed to count files: {e}"))
+        })?;
 
     // 用 SQL 聚合查询替代目录遍历，O(1) 而非 O(n)
     let total_size: u64 = service
         .metadata_store()
         .sum_file_sizes()
         .await
-        .unwrap_or(0)
+        .map_err(|e| CommandError::new("DATABASE_ERROR", format!("Failed to sum file sizes: {e}")))?
         .try_into()
         .unwrap_or(0);
 

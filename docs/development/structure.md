@@ -23,11 +23,17 @@ log-analyzer_rust/
 | 目录 | 关注点 |
 | --- | --- |
 | `pages/` | Workspaces、Search、Keywords、Tasks、Settings 等页面 |
-| `components/` | 应用布局、错误边界、UI 与搜索组件 |
+| `components/ui/` | 设计系统原语：Button、Input、Card、DialogSurface、PopoverSurface、Skeleton 等 |
+| `components/search/` | 搜索业务组件：SearchControls、SearchResults、LogRow、LogDetailPanel 等 |
+| `components/renderers/` | 日志渲染器（HybridLogRenderer — 高亮 + 智能截断） |
+| `components/modals/` | 模态框：FileFilterSettings、FilterPalette、KeywordModal |
+| `theme/` | 主题系统：AppearanceProvider + AppearanceControl（亮 / 暗 / 跟随系统三态） |
+| `config/` | 前端静态配置（toastConfig 等） |
 | `hooks/` | 工作区、搜索、配置、任务和 Tauri 生命周期组合 |
 | `services/` | Tauri API、错误映射、查询与配置持久化规则 |
 | `stores/` | Zustand 状态容器 |
 | `events/` | EventBus 与 Tauri event projection |
+| `i18n/` | 国际化资源（en / zh） |
 | `schemas/` | Zod 边界验证 |
 
 ## Rust 后端结构
@@ -35,13 +41,13 @@ log-analyzer_rust/
 | 目录 | 关注点 |
 | --- | --- |
 | `commands/` | Tauri IPC 参数校验与委托 |
-| `application/` | 搜索、导入、监听、配置、导出等 use cases |
+| `application/` | `SearchUseCase` + `SearchBatch` + `SearchSessionManager`、`WorkspaceService` 服务组合（Search/Import/Watch）、配置、导出、虚拟树 |
 | `infrastructure/` | domain traits 的文件系统 / 存储 / 事件适配器 |
-| `services/` | 查询规划、正则、过滤与文件监听引擎 |
-| `models/` | `AppState` 和 typed registries |
+| `services/` | 查询规划（query_planner）、正则（regex_engine）、过滤（search_filters）与文件监听（file_watcher）引擎 |
+| `models/` | `AppState` = 4 个 typed registries（Workspace / Search / Task / Sync） |
 | `utils/` | 路径、编码、缓存、重试、取消与资源工具 |
 | `state_sync/` | 前后端状态同步模型 |
-| `task_manager/` | 异步任务生命周期 |
+| `task_manager/` | 异步任务生命周期（Actor 模型，tokio mpsc） |
 
 ## 依赖方向
 

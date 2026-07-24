@@ -596,22 +596,38 @@ fn document_to_log_entry_inner(schema: &LogSchema, doc: &TantivyDocument) -> Opt
 }
 
 fn document_to_log_entry_impl(schema: &LogSchema, doc: &TantivyDocument) -> Option<LogEntry> {
-    // Extract all fields with detailed error tracking
-    // 优化：直接使用 Arc::from(s) 从 &str 创建 Arc<str>，避免 String 中间分配
-    let content: Arc<str> = match doc.get_first(schema.content) {
-        Some(v) => match v.as_str() {
-            Some(s) => Arc::from(s),
-            None => {
-                tracing::warn!("Document has non-string content field, skipping");
-                return None;
+    // 辅助宏：从 Tantivy 文档提取字段，消除重复的双层 match 嵌套
+    // 对于 as_str() 字段，直接返回 Arc<str>
+    macro_rules! extract_str {
+        ($doc:expr, $schema:expr, $field:ident) => {
+            match $doc.get_first($schema.$field) {
+                Some(v) => match v.as_str() {
+                    Some(s) => Arc::from(s),
+                    None => {
+                        tracing::warn!(
+                            field = stringify!($field),
+                            "Document has non-string field, skipping"
+                        );
+                        return None;
+                    }
+                },
+                None => {
+                    tracing::warn!(
+                        field = stringify!($field),
+                        "Document missing required field, skipping"
+                    );
+                    return None;
+                }
             }
-        },
-        None => {
-            tracing::warn!("Document missing required content field, skipping");
-            return None;
-        }
-    };
+        };
+    }
 
+    let content = extract_str!(doc, schema, content);
+    let level = extract_str!(doc, schema, level);
+    let file_path = extract_str!(doc, schema, file_path);
+    let real_path = extract_str!(doc, schema, real_path);
+
+    // timestamp: i64 → Arc<str> (特殊转换)
     let timestamp: Arc<str> = match doc.get_first(schema.timestamp) {
         Some(v) => match v.as_i64() {
             Some(n) => Arc::from(n.to_string()),
@@ -626,48 +642,7 @@ fn document_to_log_entry_impl(schema: &LogSchema, doc: &TantivyDocument) -> Opti
         }
     };
 
-    let level: Arc<str> = match doc.get_first(schema.level) {
-        Some(v) => match v.as_str() {
-            Some(s) => Arc::from(s),
-            None => {
-                tracing::warn!("Document has non-string level field, skipping");
-                return None;
-            }
-        },
-        None => {
-            tracing::warn!("Document missing required level field, skipping");
-            return None;
-        }
-    };
-
-    let file_path: Arc<str> = match doc.get_first(schema.file_path) {
-        Some(v) => match v.as_str() {
-            Some(s) => Arc::from(s),
-            None => {
-                tracing::warn!("Document has non-string file_path field, skipping");
-                return None;
-            }
-        },
-        None => {
-            tracing::warn!("Document missing required file_path field, skipping");
-            return None;
-        }
-    };
-
-    let real_path: Arc<str> = match doc.get_first(schema.real_path) {
-        Some(v) => match v.as_str() {
-            Some(s) => Arc::from(s),
-            None => {
-                tracing::warn!("Document has non-string real_path field, skipping");
-                return None;
-            }
-        },
-        None => {
-            tracing::warn!("Document missing required real_path field, skipping");
-            return None;
-        }
-    };
-
+    // line_number: u64 → usize (特殊转换)
     let line_number = match doc.get_first(schema.line_number) {
         Some(v) => match v.as_u64() {
             Some(n) => n as usize,

@@ -37,8 +37,11 @@ pub(crate) enum FilePatternMatcher {
     Wildcard(Regex),
 }
 
-fn escape_sqlite_glob_literal(value: &str) -> String {
-    let mut e = String::with_capacity(value.len());
+fn escape_sqlite_glob_literal(value: &str) -> std::borrow::Cow<'_, str> {
+    if !value.contains(['*', '?', '[', ']']) {
+        return std::borrow::Cow::Borrowed(value);
+    }
+    let mut e = String::with_capacity(value.len() + 4);
     for ch in value.chars() {
         match ch {
             '*' => e.push_str("[*]"),
@@ -48,7 +51,7 @@ fn escape_sqlite_glob_literal(value: &str) -> String {
             _ => e.push(ch),
         }
     }
-    e
+    std::borrow::Cow::Owned(e)
 }
 
 impl ParsedLineMetadata {

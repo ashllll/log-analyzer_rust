@@ -3,7 +3,8 @@
 use async_trait::async_trait;
 use tauri::Emitter;
 
-use la_core::domain::event::{EventPublisher, SearchSummary};
+use la_core::domain::event::EventPublisher;
+use la_core::models::search_statistics::SearchResultSummary;
 
 /// Adapter that delegates to Tauri's event system.
 #[derive(Clone)]
@@ -14,75 +15,101 @@ pub struct TauriEventPublisher {
 #[async_trait]
 impl EventPublisher for TauriEventPublisher {
     async fn emit_search_start(&self, search_id: &str) {
-        let _ = self.app_handle.emit(
+        if let Err(e) = self.app_handle.emit(
             "search-start",
             serde_json::json!({ "search_id": search_id }),
-        );
+        ) {
+            tracing::warn!(error = %e, search_id, "Failed to emit search-start event");
+        }
     }
 
     async fn emit_search_progress(&self, search_id: &str, count: usize) {
-        let _ = self.app_handle.emit(
+        if let Err(e) = self.app_handle.emit(
             "search-progress",
             serde_json::json!({ "search_id": search_id, "count": count }),
-        );
+        ) {
+            tracing::warn!(error = %e, search_id, count, "Failed to emit search-progress event");
+        }
     }
 
-    async fn emit_search_complete(&self, search_id: &str, summary: SearchSummary) {
-        let _ = self.app_handle.emit(
+    async fn emit_search_complete(&self, search_id: &str, summary: SearchResultSummary) {
+        if let Err(e) = self.app_handle.emit(
             "search-complete",
             serde_json::json!({
                 "search_id": search_id,
-                "total_count": summary.total_count,
+                "total_count": summary.total_matches,
             }),
-        );
-        let _ = self.app_handle.emit(
+        ) {
+            tracing::warn!(error = %e, search_id, "Failed to emit search-complete event");
+        }
+        if let Err(e) = self.app_handle.emit(
             "search-summary",
             serde_json::json!({
                 "search_id": search_id,
-                "duration_ms": summary.duration_ms,
-                "was_truncated": summary.was_truncated,
+                "summary": summary,
             }),
-        );
+        ) {
+            tracing::warn!(error = %e, search_id, "Failed to emit search-summary event");
+        }
     }
 
     async fn emit_search_error(&self, search_id: &str, error: &str) {
-        let _ = self.app_handle.emit(
+        if let Err(e) = self.app_handle.emit(
             "search-error",
             serde_json::json!({ "search_id": search_id, "error": error }),
-        );
+        ) {
+            tracing::warn!(error = %e, search_id, "Failed to emit search-error event");
+        }
     }
 
     async fn emit_search_cancelled(&self, search_id: &str) {
-        let _ = self.app_handle.emit(
+        if let Err(e) = self.app_handle.emit(
             "search-cancelled",
             serde_json::json!({ "search_id": search_id }),
-        );
+        ) {
+            tracing::warn!(error = %e, search_id, "Failed to emit search-cancelled event");
+        }
     }
 
     async fn emit_search_timeout(&self, search_id: &str) {
-        let _ = self.app_handle.emit(
+        if let Err(e) = self.app_handle.emit(
             "search-timeout",
             serde_json::json!({ "search_id": search_id }),
-        );
+        ) {
+            tracing::warn!(error = %e, search_id, "Failed to emit search-timeout event");
+        }
     }
 
     async fn emit_import_complete(&self, task_id: &str) {
-        let _ = self.app_handle.emit("import-complete", task_id);
+        if let Err(e) = self.app_handle.emit(
+            "import-complete",
+            serde_json::json!({
+                "task_id": task_id,
+            }),
+        ) {
+            tracing::warn!(error = %e, task_id, "Failed to emit import-complete event");
+        }
     }
 
     async fn emit_import_error(&self, error: &str) {
-        let _ = self.app_handle.emit("import-error", error);
+        if let Err(e) = self.app_handle.emit("import-error", error) {
+            tracing::warn!(error = %e, "Failed to emit import-error event");
+        }
     }
 
     async fn emit_validation_report(&self, workspace_id: &str, report_json: &str) {
         if let Ok(value) = serde_json::from_str::<serde_json::Value>(report_json) {
-            let _ = self.app_handle.emit("validation-report", value);
+            if let Err(e) = self.app_handle.emit("validation-report", value) {
+                tracing::warn!(error = %e, workspace_id, "Failed to emit validation-report event");
+            }
         } else {
             // Fallback: emit as raw JSON string if parsing fails
-            let _ = self.app_handle.emit(
+            if let Err(e) = self.app_handle.emit(
                 "validation-report",
                 serde_json::json!({ "workspace_id": workspace_id, "raw": report_json }),
-            );
+            ) {
+                tracing::warn!(error = %e, workspace_id, "Failed to emit validation-report fallback event");
+            }
         }
     }
 }

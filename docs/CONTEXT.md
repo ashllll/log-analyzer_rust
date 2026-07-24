@@ -13,6 +13,7 @@ Log Analyzer 是一款 **Tauri 桌面应用**，用于大规模日志文件的�
 | 桌面框架 | Tauri 2.x | IPC 通信、窗口管理 |
 | 后端 | Rust 1.88 | 日志处理引擎 |
 | 前端 | React 19 + TypeScript 5.8 | UI |
+| UI 体系 | Tailwind CSS 3 + CSS 变量双主题 | Apple 风格亮/暗主题、Material 毛玻璃 |
 | 状态管理 | Zustand 5 + React Query 5 | 前端状态 / 服务端缓存 |
 | IPC | Tauri Events (非 WebSocket) | 前后端事件推送 |
 
@@ -23,17 +24,19 @@ Log Analyzer 是一款 **Tauri 桌面应用**，用于大规模日志文件的�
 | **Workspace** | 工作区，一个日志文件或文件夹的导入产物。包含 CAS 存储、元数据索引、搜索会话。 |
 | **CAS** | Content Addressable Storage，按 SHA-256 哈希寻址的文件内容存储。去重 + 不可变。 |
 | **MetadataStore** | 元数据索引，存储文件的虚拟路径、时间戳、行数等元信息。SQLite 实现。 |
-| **TaskManager** | 异步任务调度器，管理导入、搜索等长任务的创建-更新-完成-取消生命周期。 |
+| **TaskManager** | 异步任务调度器（Actor 模型，基于 tokio mpsc），管理导入、搜索等长任务的创建-更新-完成-取消生命周期。 |
 | **TaskHandle** | 任务句柄，唯一标识一个异步任务。 |
 | **SearchUseCase** | 搜索用例，编排搜索流程：构建计划 → 并行搜索 → 结果分页。 |
-| **ImportUseCase** | 导入用例，编排导入流程：解压归档 → 文件哈希 → CAS 存储 → 元数据索引。 |
-| **WatchUseCase** | 文件监听用例，监控工作区目录变化并增量索引新日志行。 |
+| **SearchBatch** | 搜索批处理器，按 BATCH_SIZE=256 聚合匹配结果，批量写入 DiskResultStore。 |
+| **SearchSessionManager** | 搜索会话管理器（全局单例），管理每个搜索会话的 CancellationToken 与生命周期。 |
+| **WorkspaceService** | 工作区服务组合 trait（SearchService + ImportService + WatchService），每个工作区持有独立的 CAS、MetadataStore、QueryEngine。导入完成时预创建，非懒加载。 |
+| **MatchPlan** | 匹配计划 trait（`la-core/domain/search.rs`），消除 Any 向下转型与 side-map，编译期类型安全。 |
 | **ArchiveExtractor** | 归档解压器 trait，支持 ZIP/TAR/GZ/7Z/RAR 格式。 |
-| **QueryPlanner** | 查询规划器，将用户查询字符串解析为执行计划（关键词/正则/逻辑组合）。 |
-| **DiskResultStore** | 磁盘搜索结果缓存，持久化搜索结果到磁盘以支持分页获取。 |
+| **QueryPlanner** | 查询规划器，将用户查询字符串解析为执行计划（关键词/正则/逻辑组合），Moka Cache 两层缓存。 |
+| **DiskResultStore** | 磁盘搜索结果缓存（NDJSON + 二进制偏移索引），持久化搜索结果到磁盘以支持分页获取。 |
 | **EventBus** | 前端事件总线，前端（Zustand store 间通信，非 Tauri Events）。 |
 | **TauriEventPublisher** | 后端事件发布器，通过 Tauri Events 向前端推送搜索进度/结果。 |
-| **AppState** | 全局应用状态容器，持有 WorkspaceService 实例、DiskResultStore、ThreadPool、TaskManager、AsyncResourceManager、StateSync。搜索会话和文件监听器的运行时状态内嵌于 WorkspaceServiceImpl 中。 |
+| **AppState** | 全局应用状态容器，由 4 个 typed registries 组成：`WorkspaceRegistry`（工作区服务表）、`SearchRegistry`（DiskResultStore + SearchSessionManager + Rayon ThreadPool）、`TaskRegistry`（TaskManager）、`SyncRegistry`（StateSync）。每个 registry 内部管理自己的锁（P8+P11 重构）。 |
 
 ## 架构分层 (Clean Architecture)
 
@@ -67,6 +70,9 @@ Log Analyzer 是一款 **Tauri 桌面应用**，用于大规模日志文件的�
 4. **Domain Trait 模式** — 所有外部依赖通过 trait 抽象，UseCase 无具体实现依赖
 5. **分页搜索结果** — 搜索结果按页缓存到磁盘（DiskResultStore），避免内存溢出
 6. **ReDoS 防护** — 查询验证器检测正则表达式的指数级回溯模式
+7. **Typed Registries（P11）** — AppState 折叠为 4 个注册表，锁粒度细化到每个 registry 内部
+8. **MatchPlan trait（P7）** — 匹配计划对象化，消除 Any 向下转型与 side-map，编译期类型安全
+9. **预创建 WorkspaceService（P3）** — 工作区导入完成时即创建服务实例，搜索时纯查找无懒加载
 
 ## Rust 包结构
 
@@ -74,33 +80,46 @@ Log Analyzer 是一款 **Tauri 桌面应用**，用于大规模日志文件的�
 log-analyzer/src-tauri/
 ├── src/
 │   ├── main.rs          # Tauri 应用入口 + 命令注册
-│   ├── application/     # UseCase（search/import/watch/workspace/config）
+│   ├── application/     # UseCase + 服务组合（search/search_batch/search_session/
+│   │                    #   watch/workspace_service/config/export/virtual_tree）
 │   ├── commands/        # Tauri 命令参数校验 + 业务委托
-│   ├── infrastructure/  # Adapter 实现（archive_extractor/task_scheduler）
-│   ├── services/        # 引擎（query_planner/query_executor/regex_engine/file_watcher）
-│   ├── models/          # AppState
-│   ├── utils/           # 编码/验证/缓存/取消
-│   └── state_sync/      # 状态同步属性测试
+│   ├── infrastructure/  # Adapter 实现（searcher/result_store/log_file_repo/event_publisher）
+│   ├── services/        # 引擎（query_planner/regex_engine/search_filters/file_watcher）
+│   ├── models/          # AppState（4 个 typed registries）
+│   ├── task_manager/    # Actor 模型任务生命周期管理
+│   ├── utils/           # 编码/验证/路径/重试/workspace_guard
+│   └── state_sync/      # 前后端状态同步模型
 └── crates/
-    ├── la-core/         # 核心 trait + 领域模型 + 错误类型
+    ├── la-core/         # 核心 trait + 领域模型 + 错误类型（含 MatchPlan）
     ├── la-storage/      # CAS 存储 + MetadataStore (SQLite)
-    ├── la-search/       # 查询引擎（Aho-Corasick/Regex/Memchr）
+    ├── la-search/       # 查询引擎（Aho-Corasick/Regex/Memchr）+ DiskResultStore
     └── la-archive/      # 归档解压（ZIP/TAR/GZ/7Z/RAR）
 ```
+
+> P6/P7 重构：`ImportUseCase`/`WatchUseCase`/`query_executor.rs`/`search_executor.rs`/`async_resource_manager.rs` 已删除。导入与监听逻辑内联到 `WorkspaceServiceImpl`，搜索循环折叠回 `SearchUseCase`，批量逻辑提取到 `SearchBatch`。
 
 ## 前端目录结构
 
 ```
 log-analyzer/src/
-├── hooks/          # React Hooks (useBackendSync, useInfiniteSearch, etc.)
+├── hooks/          # React Hooks (useBackendSync, useInfiniteSearch, useSearchOrchestrator, etc.)
 ├── services/       # API 客户端 + 错误处理 + 查询构造器
 ├── stores/         # Zustand stores (app/workspace/task/keyword)
-├── pages/          # 页面组件 (SearchPage)
-├── components/     # 共享组件 (renderers, modals)
+├── pages/          # 页面组件 (Workspaces/Search/Keywords/Tasks/Settings)
+├── components/
+│   ├── ui/         # 设计系统原语 (Button/Input/Card/DialogSurface/PopoverSurface/Skeleton...)
+│   ├── search/     # 搜索业务组件 (SearchControls/SearchResults/LogRow/LogDetailPanel...)
+│   ├── renderers/  # 日志渲染器 (HybridLogRenderer — 高亮 + 智能截断)
+│   └── modals/     # 模态框 (FileFilterSettings/FilterPalette/KeywordModal)
+├── theme/          # 主题系统 (AppearanceProvider/AppearanceControl — 亮/暗/跟随系统三态)
+├── config/         # 前端配置 (toastConfig 等)
 ├── events/         # 前端 EventBus
+├── i18n/           # 国际化 (en/zh)
 ├── schemas/        # Zod 验证 schema
 └── utils/          # 日志/搜索模式/错误处理
 ```
+
+> 前端设计系统详见 [架构 / 前端设计系统](./architecture/frontend.md)：CSS 变量双主题、Apple Material 毛玻璃、Tailwind 集成、无障碍策略。
 
 ## CI/CD
 

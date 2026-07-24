@@ -68,6 +68,7 @@ export default withMermaid(
             text: '系统架构',
             items: [
               { text: '架构总览', link: '/architecture/overview' },
+              { text: '前端设计系统', link: '/architecture/frontend' },
               { text: '搜索链路', link: '/architecture/search' },
               { text: '导入链路', link: '/architecture/import' },
               { text: 'IPC 与状态同步', link: '/architecture/ipc' }

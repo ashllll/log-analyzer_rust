@@ -2,8 +2,6 @@
 
 ## Requirements
 - Review the project code for actionable issues.
-- Use the planning-with-files workflow to organize the work.
-- Use the Claude Code Review Loop to delegate implementation once a scoped task is clear.
 - Codex must inspect the real diff, run validation, and report results.
 - Continue with architecture review of the project codebase.
 - Produce architecture findings using the improve-codebase-architecture vocabulary: module, interface, implementation, depth, seam, adapter, leverage, locality.

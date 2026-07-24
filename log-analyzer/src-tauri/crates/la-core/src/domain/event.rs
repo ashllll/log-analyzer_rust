@@ -5,13 +5,7 @@
 
 use async_trait::async_trait;
 
-/// Summary statistics emitted when a search completes.
-#[derive(Debug, Clone)]
-pub struct SearchSummary {
-    pub total_count: usize,
-    pub duration_ms: u64,
-    pub was_truncated: bool,
-}
+use crate::models::search_statistics::SearchResultSummary;
 
 /// Publisher for application events consumed by the frontend.
 #[async_trait]
@@ -25,7 +19,7 @@ pub trait EventPublisher: Send + Sync {
     async fn emit_search_progress(&self, search_id: &str, count: usize);
 
     /// Emitted when a search completes successfully.
-    async fn emit_search_complete(&self, search_id: &str, summary: SearchSummary);
+    async fn emit_search_complete(&self, search_id: &str, summary: SearchResultSummary);
 
     /// Emitted when a search encounters an error.
     async fn emit_search_error(&self, search_id: &str, error: &str);

@@ -139,11 +139,12 @@ impl SearchUseCase {
                 events
                     .emit_search_complete(
                         &sid,
-                        la_core::domain::event::SearchSummary {
-                            total_count: outcome.total_count,
-                            duration_ms: outcome.duration_ms,
-                            was_truncated: outcome.was_truncated,
-                        },
+                        la_core::models::search_statistics::SearchResultSummary::new(
+                            outcome.total_count,
+                            vec![],
+                            outcome.duration_ms,
+                            outcome.was_truncated,
+                        ),
                     )
                     .await;
             });
@@ -371,7 +372,14 @@ fn search_large_file_in_chunks(
 
     match log_files.read_line_chunks_sync(hash, SEARCH_LINE_CHUNK_SIZE, &mut visitor) {
         Ok(()) => keep_searching,
-        Err(_) => true,
+        Err(e) => {
+            tracing::warn!(
+                hash = %hash,
+                error = %e,
+                "Failed to read line chunks for large file, skipping"
+            );
+            true
+        }
     }
 }
 
@@ -385,7 +393,15 @@ fn search_one_file(
     let hash = &fm.sha256_hash;
     let content = match log_files.read_content_sync(hash) {
         Ok(bytes) => bytes,
-        Err(_) => return Vec::new(),
+        Err(e) => {
+            tracing::warn!(
+                hash = %hash,
+                virtual_path = %fm.virtual_path,
+                error = %e,
+                "Failed to read file content from CAS, skipping"
+            );
+            return Vec::new();
+        }
     };
 
     let (text, _) = decode_log_content(&content);
@@ -753,7 +769,11 @@ mod tests {
         async fn emit_search_progress(&self, _id: &str, _c: usize) {
             *self.progress_count.lock().unwrap() += 1;
         }
-        async fn emit_search_complete(&self, _id: &str, _s: la_core::domain::event::SearchSummary) {
+        async fn emit_search_complete(
+            &self,
+            _id: &str,
+            _s: la_core::models::search_statistics::SearchResultSummary,
+        ) {
         }
         async fn emit_search_error(&self, _id: &str, _e: &str) {
             *self.error_count.lock().unwrap() += 1;

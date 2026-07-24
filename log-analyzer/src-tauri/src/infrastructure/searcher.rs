@@ -4,7 +4,7 @@
 //! 真实 plan 现在嵌入 domain ExecutionPlan 的 plan 字段中，
 //! 通过 MatchPlan trait 调用——无全局缓存，无 Any 向下转型，编译期类型安全。
 
-use std::collections::HashSet;
+use std::sync::Arc;
 
 use parking_lot::Mutex;
 
@@ -68,6 +68,8 @@ impl LogSearcher for QueryEngineLogSearcher {
 
         let has_time = compiled.has_time_filter();
         let mut entries = Vec::new();
+        // 缓存 virtual_path 为 Arc<str>，避免每行分配两次 to_string()
+        let virtual_path_arc: Arc<str> = Arc::from(virtual_path);
         for (index, line) in content.lines().enumerate() {
             let metadata = ParsedLineMetadata::parse(line, has_time);
             if !compiled.matches_line(&LineMetadata {
@@ -81,19 +83,20 @@ impl LogSearcher for QueryEngineLogSearcher {
             }
 
             if let Some(details) = match_plan.match_line(line) {
-                let keywords = details
+                // 使用排序+去重替代 HashSet，减少堆分配
+                let mut keywords: Vec<String> = details
                     .iter()
                     .map(|detail| detail.term_value.clone())
-                    .collect::<HashSet<_>>()
-                    .into_iter()
-                    .collect::<Vec<_>>();
+                    .collect();
+                keywords.sort_unstable();
+                keywords.dedup();
 
                 entries.push(LogEntry {
                     id: global_offset + entries.len(),
                     timestamp: metadata.timestamp.into(),
                     level: metadata.level.into(),
-                    file: virtual_path.to_string().into(),
-                    real_path: virtual_path.to_string().into(),
+                    file: Arc::clone(&virtual_path_arc),
+                    real_path: Arc::clone(&virtual_path_arc),
                     line: index + 1,
                     content: line.to_string().into(),
                     tags: vec![],

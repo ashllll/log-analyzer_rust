@@ -306,24 +306,11 @@ impl TaskManagerActor {
                     "Updating task"
                 );
 
-                /// 版本号接近 u64::MAX 时重置为 1，防止饱和后幂等性检查失效
-                const VERSION_RESET_THRESHOLD: u64 = u64::MAX - 10_000;
-
                 let result = if let Some(task) = self.tasks.get_mut(&id) {
                     task.progress = progress;
                     task.message = message.clone();
                     task.status = status;
-                    task.version = if task.version >= VERSION_RESET_THRESHOLD {
-                        warn!(
-                            task_id = %id,
-                            current_version = task.version,
-                            reset_to = VERSION_RESET_THRESHOLD + 1,
-                            "任务版本号接近饱和，从阈值+1继续递增（不跳回1，保持前端幂等性）"
-                        );
-                        VERSION_RESET_THRESHOLD + 1
-                    } else {
-                        task.version.saturating_add(1)
-                    };
+                    task.version = task.version.wrapping_add(1);
 
                     // 如果任务完成或失败，记录完成时间
                     if matches!(
@@ -458,6 +445,7 @@ impl TaskManagerActor {
     fn cleanup_expired_tasks(&mut self) {
         let now = Instant::now();
         let mut to_remove = Vec::new();
+        let mut to_fail = Vec::new();
 
         for (id, task) in &self.tasks {
             if let Some(completed_at) = task.completed_at {
@@ -474,6 +462,29 @@ impl TaskManagerActor {
                 if should_remove {
                     to_remove.push(id.clone());
                 }
+            } else if task.status == TaskStatus::Running {
+                // 检查孤儿 Running 任务：如果运行时间超过 operation_timeout 的 2 倍，标记为失败
+                let running_elapsed = now.duration_since(task.created_at).as_secs();
+                let orphan_timeout = self.config.operation_timeout * 2;
+                if running_elapsed >= orphan_timeout {
+                    warn!(
+                        task_id = %id,
+                        task_type = %task.task_type,
+                        running_seconds = running_elapsed,
+                        timeout_seconds = orphan_timeout,
+                        "Detected orphan Running task, marking as Failed"
+                    );
+                    to_fail.push(id.clone());
+                }
+            }
+        }
+
+        // 将孤儿 Running 任务标记为 Failed
+        for id in to_fail {
+            if let Some(task) = self.tasks.get_mut(&id) {
+                task.status = TaskStatus::Failed;
+                task.message = "Task timed out (orphan detected)".to_string();
+                task.completed_at = Some(now);
             }
         }
 
@@ -672,11 +683,6 @@ impl TaskManager {
             .await
             .map_err(|_| TaskManagerError::OperationTimeout)?
             .map_err(|_| TaskManagerError::ActorDroppedResponse)
-    }
-
-    /// 健康检查
-    pub fn health_check(&self) -> bool {
-        !self.sender.is_closed()
     }
 
     /// 停止任务管理器

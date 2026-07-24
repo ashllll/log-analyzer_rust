@@ -35,11 +35,22 @@ sequenceDiagram
 - 标准正则交给 Rust `regex`。
 - look-around 模式使用 Fancy 引擎。
 
-进入执行前，查询验证器会检查嵌套量词、重叠交替等高风险结构。
+进入执行前，查询验证器会检查嵌套量词、重叠交替等高风险结构（ReDoS 防护）。
+
+规划产物通过 **`MatchPlan` trait**（`la-core/domain/search.rs`，P7 引入）对象化传递：搜索引擎返回 `Box<dyn MatchPlan>`，执行期直接调用其匹配方法，不再依赖 `Any` 向下转型或外部 side-map 表，类型安全在编译期保证。QueryPlanner 结果经 Moka Cache 两层缓存（查询 → 计划、计划 → 编译正则）。
 
 ## 批处理与过滤
 
-`SearchBatch` 分批处理文件与结果，避免无限累积。`CompiledSearchFilters` 把时间范围、日志级别掩码和文件路径规则编译为统一 domain `Filter`，在结果写盘前执行。
+`SearchBatch` 分批处理文件与结果，避免无限累积。关键常量（`application/search.rs`）：
+
+| 常量 | 值 | 作用 |
+| --- | --- | --- |
+| `BATCH_SIZE` | 256 | 单批聚合的命中结果数，写盘前缓冲 |
+| `FILE_CHUNK_SIZE` | 10 | 每轮并行处理的小文件数 |
+| `LARGE_FILE_STREAM_THRESHOLD_BYTES` | 64 KiB | 超过该大小的文件走流式分块路径 |
+| `SEARCH_LINE_CHUNK_SIZE` | 512 | 大文件每次读取的行数（`read_line_chunks_sync`） |
+
+大文件（≥ 64 KiB）由 `search_large_file_in_chunks` 按 512 行一块流式处理，小文件则聚批后在线程池并行匹配。`CompiledSearchFilters` 把时间范围、日志级别掩码和文件路径规则编译为统一 domain `Filter`，在结果写盘前执行。
 
 ## 会话所有权
 
@@ -51,6 +62,8 @@ sequenceDiagram
 - token 清理与结果会话生命周期
 
 这个边界让 `cancel_search` 和 `fetch_search_page` 不需要遍历工作区或猜测结果存储位置。
+
+会话内传递的查询计划同样遵循编译期安全原则：`MatchPlan` trait（P7）把匹配计划封装为对象随会话流转，执行期直接调用其方法，不再依赖 `Any` 向下转型或外部 side-map 映射表——计划与会话之间不存在字符串键查找，类型不匹配在编译期即被拒绝。
 
 ## 性能判断
 

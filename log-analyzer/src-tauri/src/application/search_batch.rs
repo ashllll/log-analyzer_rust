@@ -73,7 +73,7 @@ impl SearchBatch {
         self.total += added;
 
         if self.total >= max_results {
-            return BatchAction::Flush;
+            return BatchAction::Truncate(added);
         }
 
         if self.buffer.len() >= self.batch_size {
@@ -159,11 +159,11 @@ mod tests {
     }
 
     #[test]
-    fn exact_max_results_flush() {
+    fn exact_max_results_truncate() {
         let mut batch = SearchBatch::new(2000);
-        // total=0, add 10, max=10 → exactly at limit, should Flush
+        // total=0, add 10, max=10 → exactly at limit, should Truncate to set was_truncated
         let action = batch.accumulate(make_entries(10), 10);
-        assert_eq!(action, BatchAction::Flush);
+        assert_eq!(action, BatchAction::Truncate(10));
         assert_eq!(batch.total(), 10);
     }
 

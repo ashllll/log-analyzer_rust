@@ -340,11 +340,22 @@ impl DiskResultStore {
             };
             let data_path = base_path.with_extension("ndjson");
             let index_path = base_path.with_extension("idx");
+            let mut errors = Vec::new();
             if let Err(e) = fs::remove_file(&data_path) {
                 tracing::warn!(path = ?data_path, error = %e, "删除搜索结果数据文件失败");
+                errors.push(format!("data: {e}"));
             }
             if let Err(e) = fs::remove_file(&index_path) {
                 tracing::warn!(path = ?index_path, error = %e, "删除搜索结果索引文件失败");
+                errors.push(format!("index: {e}"));
+            }
+            if !errors.is_empty() {
+                tracing::warn!(
+                    search_id = %search_id,
+                    failed_count = errors.len(),
+                    errors = %errors.join(", "),
+                    "会话清理部分失败，磁盘文件可能残留"
+                );
             }
             true
         } else {

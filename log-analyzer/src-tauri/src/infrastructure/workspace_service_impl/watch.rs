@@ -42,7 +42,7 @@ impl WatchService for WorkspaceServiceImpl {
             .watch(&watch_path_buf, notify::RecursiveMode::Recursive)
             .map_err(|e| AppError::io_error(format!("Failed to start watching path: {e}"), None))?;
 
-        std::thread::spawn(move || {
+        let notify_handle = std::thread::spawn(move || {
             for res in notify_rx {
                 let event = match res {
                     Ok(e) => {
@@ -81,6 +81,7 @@ impl WatchService for WorkspaceServiceImpl {
         *self.watcher_state.lock() = Some(WatcherState {
             is_active: true,
             thread_handle: Arc::new(parking_lot::Mutex::new(Some(handle))),
+            notify_thread_handle: Arc::new(parking_lot::Mutex::new(Some(notify_handle))),
             watcher: Arc::new(parking_lot::Mutex::new(Some(watcher))),
         });
 
@@ -98,6 +99,7 @@ impl WatchService for WorkspaceServiceImpl {
 
         ws.is_active = false;
         let thread_handle = ws.thread_handle.lock().take();
+        let notify_thread_handle = ws.notify_thread_handle.lock().take();
         let watcher_opt = ws.watcher.lock().take();
 
         *state = None;
@@ -105,6 +107,14 @@ impl WatchService for WorkspaceServiceImpl {
 
         drop(watcher_opt);
 
+        // 先 join notify 线程，它会 drop watch_tx，导致 runner 的 rx 关闭
+        if let Some(handle) = notify_thread_handle {
+            if handle.join().is_err() {
+                error!("Failed to join notify thread");
+            }
+        }
+
+        // 再 join runner 线程，此时 rx 已关闭，runner 会退出
         if let Some(handle) = thread_handle {
             if handle.join().is_err() {
                 error!("Failed to join watcher thread");
@@ -112,10 +122,5 @@ impl WatchService for WorkspaceServiceImpl {
         }
 
         Ok(())
-    }
-
-    async fn is_watching(&self) -> Result<bool> {
-        let guard = self.watcher_state.lock();
-        Ok(guard.as_ref().map(|w| w.is_active).unwrap_or(false))
     }
 }

@@ -245,7 +245,19 @@ impl ImportService for WorkspaceServiceImpl {
             }
         });
 
-        let files_imported = self.repo.metadata_store().count_files().await.unwrap_or(0) as usize;
+        let files_imported = self
+            .repo
+            .metadata_store()
+            .count_files()
+            .await
+            .map_err(|e| {
+                tracing::warn!(
+                    workspace_id = %self.workspace_id,
+                    error = %e,
+                    "Failed to count files after import, database may be corrupted"
+                );
+                AppError::database_error(format!("Failed to count files: {e}"))
+            })? as usize;
 
         Ok(ImportResult {
             root_name,

@@ -7,7 +7,7 @@
 - **Started:** 2026-06-16
 - Actions taken:
   - Confirmed CodeGraph is active for the repository.
-  - Read planning-with-files and claude-code-review-loop skill instructions.
+  - Read the workflow instructions active at the time.
   - Checked for existing planning files; none existed.
   - Checked initial worktree status and recorded pre-existing changes.
   - Created planning files for this task.

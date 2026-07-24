@@ -22,6 +22,8 @@ pub struct WatcherState {
     /// 监听线程的 JoinHandle，用于确保正确退出并清理资源
     /// 使用 parking_lot::Mutex 避免 poison 问题（B-M3）
     pub thread_handle: Arc<parking_lot::Mutex<Option<std::thread::JoinHandle<()>>>>,
+    /// notify 转发线程的 JoinHandle
+    pub notify_thread_handle: Arc<parking_lot::Mutex<Option<std::thread::JoinHandle<()>>>>,
     /// 底层文件监听器，存放在这里确保其生命周期与状态同步
     /// 使用 parking_lot::Mutex 避免 poison 问题（B-M3）
     pub watcher: Arc<parking_lot::Mutex<Option<notify::RecommendedWatcher>>>,

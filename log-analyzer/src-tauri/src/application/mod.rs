@@ -6,6 +6,7 @@
 //! - **WorkspaceService** trait family: per-workspace service composition (SearchService, ImportService, WatchService)
 //! - Dead use cases removed in P6: ImportUseCase (replaced by ImportService), WorkspaceUseCase + RuntimeWorkspaceRepository (never wired)
 
+pub mod cleanup;
 pub mod config;
 pub mod export;
 pub mod search;
@@ -72,14 +73,14 @@ mod tests {
     }
 
     struct StubResults {
-        entries: std::sync::Mutex<Vec<la_core::models::LogEntry>>,
+        entries: parking_lot::Mutex<Vec<la_core::models::LogEntry>>,
     }
     impl SearchResultRepository for StubResults {
         fn create_session(&self, _id: &str) -> Result<()> {
             Ok(())
         }
         fn append_entries(&self, _id: &str, entries: &[la_core::models::LogEntry]) -> Result<()> {
-            self.entries.lock().unwrap().extend_from_slice(entries);
+            self.entries.lock().extend_from_slice(entries);
             Ok(())
         }
         fn read_page(&self, _id: &str, _off: usize, _lim: usize) -> Result<SearchResultPage> {
@@ -105,7 +106,11 @@ mod tests {
     impl EventPublisher for StubEvents {
         async fn emit_search_start(&self, _id: &str) {}
         async fn emit_search_progress(&self, _id: &str, _c: usize) {}
-        async fn emit_search_complete(&self, _id: &str, _s: la_core::domain::event::SearchSummary) {
+        async fn emit_search_complete(
+            &self,
+            _id: &str,
+            _s: la_core::models::search_statistics::SearchResultSummary,
+        ) {
         }
         async fn emit_search_error(&self, _id: &str, _e: &str) {}
         async fn emit_search_cancelled(&self, _id: &str) {}
@@ -120,7 +125,7 @@ mod tests {
         let use_case = SearchUseCase::new(
             Arc::new(StubLogFiles),
             Arc::new(StubResults {
-                entries: std::sync::Mutex::new(vec![]),
+                entries: parking_lot::Mutex::new(vec![]),
             }),
             Arc::new(StubEvents),
             Arc::new(crate::infrastructure::QueryEngineLogSearcher::new(100)),
