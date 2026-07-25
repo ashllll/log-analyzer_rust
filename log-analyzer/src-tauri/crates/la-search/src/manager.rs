@@ -6,6 +6,7 @@
 //! - Index management and configuration
 //! - Query parsing and execution
 
+use la_core::utils::TimestampParser;
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashSet;
 use std::ops::Bound;
@@ -30,47 +31,6 @@ use crate::{
 };
 use la_core::models::config::SearchConfig as AppSearchConfig;
 use la_core::models::LogEntry;
-
-const INDEX_TIMESTAMP_FORMATS: &[&str] = &[
-    "%Y-%m-%dT%H:%M:%S%.f",
-    "%Y-%m-%dT%H:%M:%S",
-    "%Y-%m-%d %H:%M:%S%.f",
-    "%Y-%m-%d %H:%M:%S",
-    "%d/%m/%Y %H:%M:%S%.f",
-    "%d/%m/%Y %H:%M:%S",
-    "%m/%d/%Y %H:%M:%S%.f",
-    "%m/%d/%Y %H:%M:%S",
-    "%Y/%m/%d %H:%M:%S%.f",
-    "%Y/%m/%d %H:%M:%S",
-    "%d-%m-%Y %H:%M:%S",
-    "%m-%d-%Y %H:%M:%S",
-    "%Y%m%d %H:%M:%S",
-    "%Y-%m-%dT%H:%M",
-    "%Y-%m-%d %H:%M",
-    "%b %d %H:%M:%S",
-    "%d/%b/%Y:%H:%M:%S",
-];
-
-pub fn parse_log_timestamp_to_unix(timestamp: &str) -> Option<i64> {
-    let trimmed = timestamp.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-
-    if let Ok(raw) = trimmed.parse::<i64>() {
-        return Some(if trimmed.len() >= 13 { raw / 1000 } else { raw });
-    }
-
-    for format in INDEX_TIMESTAMP_FORMATS {
-        if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(trimmed, format) {
-            return Some(dt.and_utc().timestamp());
-        }
-    }
-
-    chrono::DateTime::parse_from_rfc3339(trimmed)
-        .ok()
-        .map(|dt| dt.timestamp())
-}
 
 fn glob_to_regex(glob: &str) -> String {
     let mut regex = String::with_capacity(glob.len() * 2);
@@ -680,7 +640,7 @@ impl SearchEngineManager {
         // 统一接受 Unix 时间戳、RFC3339 和项目常见日志时间格式。
         // 解析失败时使用 0（1970-01-01）占位，避免伪造“当前时间”污染时序索引。
         let timestamp_i64 =
-            parse_log_timestamp_to_unix(&log_entry.timestamp).unwrap_or_else(|| {
+            TimestampParser::parse_unix_timestamp(&log_entry.timestamp).unwrap_or_else(|| {
                 tracing::warn!(
                     timestamp = %log_entry.timestamp,
                     file = %log_entry.file,
@@ -717,7 +677,7 @@ impl SearchEngineManager {
 
             doc.add_text(self.schema.content, &entry.content);
             let timestamp_i64 =
-                parse_log_timestamp_to_unix(&entry.timestamp).unwrap_or_else(|| {
+                TimestampParser::parse_unix_timestamp(&entry.timestamp).unwrap_or_else(|| {
                     tracing::warn!(
                         timestamp = %entry.timestamp,
                         file = %entry.file,
@@ -1206,10 +1166,10 @@ mod tests {
 
     #[test]
     fn test_parse_log_timestamp_to_unix_accepts_common_formats() {
-        let iso = parse_log_timestamp_to_unix("2024-01-01T00:00:00").unwrap();
-        let common = parse_log_timestamp_to_unix("2024-01-01 00:00:00").unwrap();
-        let millis = parse_log_timestamp_to_unix("1704067200000").unwrap();
-        let rfc3339 = parse_log_timestamp_to_unix("2024-01-01T00:00:00Z").unwrap();
+        let iso = TimestampParser::parse_unix_timestamp("2024-01-01T00:00:00").unwrap();
+        let common = TimestampParser::parse_unix_timestamp("2024-01-01 00:00:00").unwrap();
+        let millis = TimestampParser::parse_unix_timestamp("1704067200000").unwrap();
+        let rfc3339 = TimestampParser::parse_unix_timestamp("2024-01-01T00:00:00Z").unwrap();
 
         assert_eq!(iso, 1_704_067_200);
         assert_eq!(common, 1_704_067_200);

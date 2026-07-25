@@ -10,7 +10,7 @@ pub mod schema;
 pub use boolean_query_processor::BooleanQueryProcessor;
 pub use disk_result_store::{DiskResultStore, SearchPageResult};
 pub use highlighting_engine::{HighlightingConfig, HighlightingEngine, HighlightingStats};
-pub use manager::{parse_log_timestamp_to_unix, SearchEngineManager};
+pub use manager::SearchEngineManager;
 pub use schema::LogSchema;
 
 use thiserror::Error;

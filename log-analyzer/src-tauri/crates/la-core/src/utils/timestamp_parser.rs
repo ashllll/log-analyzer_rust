@@ -68,6 +68,25 @@ impl TimestampParser {
             .map(|dt| dt.naive_utc())
     }
 
+    /// 将时间戳值解析为 Unix 时间戳（秒）。
+    ///
+    /// 支持两种输入：
+    /// - 纯数字：毫秒（≥13位）自动除以1000，秒（<13位）直接返回
+    /// - 日期时间字符串：通过 `parse_naive_datetime` 解析后转换
+    pub fn parse_unix_timestamp(value: &str) -> Option<i64> {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+
+        if let Ok(raw) = trimmed.parse::<i64>() {
+            return Some(if trimmed.len() >= 13 { raw / 1000 } else { raw });
+        }
+
+        Self::parse_naive_datetime(trimmed)
+            .map(|dt| dt.and_utc().timestamp())
+    }
+
     /// 从日志行中解析时间戳字符串。
     ///
     /// 按预编译正则模式匹配，再用 `parse_naive_datetime` 验证。
