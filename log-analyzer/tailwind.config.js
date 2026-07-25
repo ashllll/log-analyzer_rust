@@ -70,8 +70,21 @@ export default {
         card: "0 1px 0 rgb(255 255 255 / 0.025)",
         "card-hover": "0 10px 30px rgb(0 0 0 / 0.14)",
         elevated: "0 22px 60px rgb(0 0 0 / 0.34)",
+        glass: "var(--glass-shadow)",
+        "glass-lg": "var(--glass-shadow-lg)",
+        "glass-inset": "var(--glass-inset)",
         "glow-primary": "none",
         "glow-cta": "none",
+      },
+      backdropBlur: {
+        glass: "40px",
+        "glass-subtle": "24px",
+        "glass-strong": "60px",
+      },
+      backdropSaturate: {
+        glass: "180%",
+        "glass-subtle": "160%",
+        "glass-strong": "200%",
       },
       animation: {
         "fade-in": "fadeIn 150ms var(--ease-out-ui)",

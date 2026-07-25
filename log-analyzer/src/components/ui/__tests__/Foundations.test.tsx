@@ -37,7 +37,7 @@ describe("UI foundations", () => {
 
   it.each([
     ["primary", "bg-primary"],
-    ["secondary", "bg-bg-card"],
+    ["secondary", "glass-subtle"],
     ["danger", "text-status-error"],
     ["ghost", "hover:bg-bg-hover"],
   ] as const)(

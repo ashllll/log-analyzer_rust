@@ -24,10 +24,10 @@ export const Card: React.FC<
   ...props
 }) => {
   const variants = {
-    default: "bg-bg-card border border-border-base shadow-card",
+    default: "glass",
     interactive:
-      "bg-bg-card border border-border-base shadow-card hover:shadow-card-hover hover:border-border-light hover:bg-bg-elevated cursor-pointer transition-[color,background-color,border-color,box-shadow] duration-150",
-    elevated: "bg-bg-elevated border border-border-subtle shadow-elevated",
+      "glass hover:shadow-glass-lg hover:bg-bg-elevated cursor-pointer transition-[color,background-color,border-color,box-shadow,backdrop-filter] duration-150",
+    elevated: "glass-strong",
     ghost: "bg-transparent",
   };
 

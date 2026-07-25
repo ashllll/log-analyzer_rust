@@ -40,7 +40,7 @@ export const Button = forwardRef<HTMLButtonElement, ExtendedButtonProps>(
       primary:
         "bg-primary hover:bg-primary-hover text-white border border-primary shadow-sm",
       secondary:
-        "bg-bg-card hover:bg-bg-hover text-text-main border border-border-base hover:border-border-light",
+        "glass-subtle hover:bg-bg-elevated text-text-main hover:border-border-light",
       ghost:
         "hover:bg-bg-hover text-text-muted hover:text-text-main active:bg-bg-hover/80",
       danger:

@@ -12,14 +12,14 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
       <input
         ref={ref}
         className={cn(
-          "h-9 w-full bg-bg-main border border-border-base rounded-[10px] px-3",
+          "h-9 w-full glass-input rounded-[10px] px-3",
           "text-sm text-text-main placeholder:text-text-dim",
           // Focus 状态
           "focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20",
           // Focus-visible 状态 (键盘导航)
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 focus-visible:ring-offset-bg-main",
           // Hover 状态
-          "hover:border-border-light transition-colors duration-150",
+          "hover:border-border-light transition-all duration-200",
           // 禁用状态
           "disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-bg-sidebar",
           className
