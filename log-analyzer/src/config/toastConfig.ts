@@ -7,15 +7,15 @@ import type { DefaultToastOptions } from "react-hot-toast";
 export const toastConfig: DefaultToastOptions = {
   duration: 3000,
   style: {
-    background: "var(--material-overlay)",
+    background: "var(--glass-bg-strong)",
     color: "rgb(var(--color-text-main))",
-    border: "1px solid rgb(var(--color-border-base))",
+    border: "1px solid var(--glass-border)",
     borderRadius: "0.875rem",
     padding: "0.75rem 1rem",
     fontSize: "0.875rem",
     maxWidth: "400px",
-    backdropFilter: "saturate(165%) blur(24px)",
-    boxShadow: "0 18px 48px rgb(0 0 0 / 0.28)",
+    backdropFilter: "blur(40px) saturate(180%)",
+    boxShadow: "var(--glass-shadow-lg)",
   },
   success: {
     duration: 2500,

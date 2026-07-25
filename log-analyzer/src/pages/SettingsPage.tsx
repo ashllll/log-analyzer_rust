@@ -626,7 +626,7 @@ export function SettingsPage() {
       </div>
 
       <div
-        className="apple-material sticky bottom-0 z-20 -mx-2 flex items-center justify-end gap-2 rounded-[14px] border border-border-subtle px-3 py-2 shadow-elevated"
+        className="glass sticky bottom-0 z-20 -mx-2 flex items-center justify-end gap-2 rounded-[14px] px-3 py-2"
         aria-live="polite"
       >
         {saveStatus && (

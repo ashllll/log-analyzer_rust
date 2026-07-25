@@ -145,7 +145,7 @@ export function DialogSurface({
           }
         }}
         className={cn(
-          "dialog-panel relative flex max-h-[85vh] flex-col overflow-hidden rounded-[16px] border border-border-base bg-bg-card shadow-elevated",
+          "dialog-panel relative flex max-h-[85vh] flex-col overflow-hidden rounded-[16px] glass-strong",
           className
         )}
       >

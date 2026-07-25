@@ -66,10 +66,7 @@ export const Sidebar: React.FC = () => {
   );
 
   return (
-    <aside
-      className="apple-material w-[224px] border-r border-border-subtle flex flex-col shrink-0 z-50"
-      style={{ background: "var(--material-sidebar)" }}
-    >
+    <aside className="glass-sidebar w-[224px] border-r border-border-subtle flex flex-col shrink-0 z-50">
       {/* Logo 区域 */}
       <div className="h-14 flex items-center px-4 border-b border-border-subtle select-none">
         <div className="h-7 w-7 bg-primary rounded-lg flex items-center justify-center text-white mr-2.5 shadow-sm">

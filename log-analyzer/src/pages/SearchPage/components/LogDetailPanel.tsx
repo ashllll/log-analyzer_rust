@@ -65,8 +65,8 @@ export const LogDetailPanel = memo<LogDetailPanelProps>(
     return (
       <aside
         ref={panelRef}
-        className="inspector-surface apple-material motion-spatial relative border-l border-border-subtle flex flex-col shrink-0 z-20"
-        style={{ width, background: "var(--material-sidebar)" }}
+        className="inspector-surface glass motion-spatial relative border-l border-border-subtle flex flex-col shrink-0 z-20"
+        style={{ width }}
       >
         <div {...handleProps} className="inspector-resize-handle" />
         <div className="h-10 border-b border-border-subtle flex items-center justify-between px-4 bg-bg-elevated">

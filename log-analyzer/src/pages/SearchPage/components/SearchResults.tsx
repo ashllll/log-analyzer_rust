@@ -70,7 +70,7 @@ export const SearchResults = memo<SearchResultsProps>(
         className="flex-1 overflow-auto bg-bg-main scrollbar-thin"
       >
         {/* 表头 */}
-        <div className="apple-material sticky top-0 z-10 grid grid-cols-[70px_160px_170px_1fr] border-b border-border-base px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-text-muted">
+        <div className="glass-subtle sticky top-0 z-10 grid grid-cols-[70px_160px_170px_1fr] border-b border-border-base px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-text-muted">
           <div>{t("search.table.level", "级别")}</div>
           <div>{t("search.table.time", "时间")}</div>
           <div>{t("search.table.file", "文件")}</div>

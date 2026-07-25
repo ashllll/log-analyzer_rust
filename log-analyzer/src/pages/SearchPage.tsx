@@ -374,7 +374,7 @@ const SearchPage: React.FC = () => {
   return (
     <div className="flex h-full flex-col bg-bg-main relative">
       {/* 搜索控制区 */}
-      <div className="apple-material relative z-40 shrink-0 space-y-3 border-b border-border-subtle px-4 py-3">
+      <div className="glass relative z-40 shrink-0 space-y-3 border-b border-border-subtle px-4 py-3">
         <SearchControls
           query={query}
           onQueryChange={setQuery}

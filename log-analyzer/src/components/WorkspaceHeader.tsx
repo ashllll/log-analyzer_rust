@@ -16,10 +16,7 @@ export const WorkspaceHeader: React.FC<WorkspaceHeaderProps> = ({
   activeWorkspace,
 }) => {
   return (
-    <header
-      className="apple-material h-[52px] border-b border-border-subtle flex items-center justify-between px-5 shrink-0 z-40"
-      style={{ background: "var(--material-toolbar)" }}
-    >
+    <header className="glass h-[52px] border-b border-border-subtle flex items-center justify-between px-5 shrink-0 z-40">
       <div className="flex items-center text-sm text-text-muted select-none">
         {currentPage === "settings" ? (
           <span className="font-medium text-text-main flex items-center gap-2">

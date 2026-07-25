@@ -1,7 +1,7 @@
-import React from 'react';
-import { cn } from '../../utils/classNames';
-import { Button } from './Button';
-import type { ButtonVariant, LucideIcon } from '../../types/ui';
+import React from "react";
+import { cn } from "../../utils/classNames";
+import { Button } from "./Button";
+import type { ButtonVariant, LucideIcon } from "../../types/ui";
 
 interface EmptyStateAction {
   label: string;
@@ -30,8 +30,13 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
   className,
 }) => {
   return (
-    <div className={cn("flex flex-col items-center justify-center py-16 px-8 text-center", className)}>
-      <div className="h-14 w-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mb-4">
+    <div
+      className={cn(
+        "flex flex-col items-center justify-center py-16 px-8 text-center",
+        className
+      )}
+    >
+      <div className="h-14 w-14 rounded-2xl glass-subtle flex items-center justify-center mb-4">
         <Icon size={26} className="text-primary-text" aria-hidden="true" />
       </div>
       <h3 className="text-base font-semibold text-text-main mb-1">{title}</h3>
@@ -40,7 +45,7 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
       )}
       {action && (
         <Button
-          variant={action.variant ?? 'cta'}
+          variant={action.variant ?? "cta"}
           icon={action.icon}
           onClick={action.onClick}
         >

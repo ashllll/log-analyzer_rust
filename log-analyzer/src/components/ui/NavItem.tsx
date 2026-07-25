@@ -22,7 +22,7 @@ export const NavItem: React.FC<NavItemProps> = ({
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 focus-visible:ring-offset-bg-sidebar",
         active
           ? "text-text-main bg-primary/15 border border-primary/15"
-          : "text-text-muted hover:text-text-main hover:bg-bg-hover"
+          : "text-text-muted hover:text-text-main hover:bg-bg-hover/60"
       )}
     >
       <span className="flex items-center gap-3">

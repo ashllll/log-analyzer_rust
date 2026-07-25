@@ -92,7 +92,7 @@ export function PopoverSurface({
         role="dialog"
         aria-label={ariaLabel}
         className={cn(
-          "popover-surface apple-material motion-spatial absolute right-0 top-full z-50 mt-2",
+          "popover-surface glass motion-spatial absolute right-0 top-full z-50 mt-2",
           className
         )}
       >
