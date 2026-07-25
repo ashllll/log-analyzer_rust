@@ -639,8 +639,8 @@ impl SearchEngineManager {
         doc.add_text(self.schema.content, &log_entry.content);
         // 统一接受 Unix 时间戳、RFC3339 和项目常见日志时间格式。
         // 解析失败时使用 0（1970-01-01）占位，避免伪造“当前时间”污染时序索引。
-        let timestamp_i64 =
-            TimestampParser::parse_unix_timestamp(&log_entry.timestamp).unwrap_or_else(|| {
+        let timestamp_i64 = TimestampParser::parse_unix_timestamp(&log_entry.timestamp)
+            .unwrap_or_else(|| {
                 tracing::warn!(
                     timestamp = %log_entry.timestamp,
                     file = %log_entry.file,
@@ -676,8 +676,8 @@ impl SearchEngineManager {
             let mut doc = TantivyDocument::default();
 
             doc.add_text(self.schema.content, &entry.content);
-            let timestamp_i64 =
-                TimestampParser::parse_unix_timestamp(&entry.timestamp).unwrap_or_else(|| {
+            let timestamp_i64 = TimestampParser::parse_unix_timestamp(&entry.timestamp)
+                .unwrap_or_else(|| {
                     tracing::warn!(
                         timestamp = %entry.timestamp,
                         file = %entry.file,

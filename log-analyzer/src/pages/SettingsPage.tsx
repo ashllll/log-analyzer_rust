@@ -12,60 +12,15 @@ import {
   type SearchConfig,
   type TaskManagerConfig,
 } from "../hooks/useConfig";
-
-interface ExtractionPolicy {
-  extraction: {
-    max_depth: number;
-    max_file_size: number;
-    max_total_size: number;
-    max_workspace_size: number;
-    concurrent_extractions: number;
-    buffer_size: number;
-    use_enhanced_extraction: boolean;
-  };
-  security: {
-    compression_ratio_threshold: number;
-    exponential_backoff_threshold: number;
-    enable_zip_bomb_detection: boolean;
-  };
-  paths: {
-    enable_long_paths: boolean;
-    shortening_threshold: number;
-    hash_algorithm: string;
-    hash_length: number;
-  };
-}
-
-const defaultPolicy: ExtractionPolicy = {
-  extraction: {
-    max_depth: 10,
-    max_file_size: 104857600,
-    max_total_size: 10737418240,
-    max_workspace_size: 53687091200,
-    concurrent_extractions: 0,
-    buffer_size: 65536,
-    use_enhanced_extraction: false,
-  },
-  security: {
-    compression_ratio_threshold: 100.0,
-    exponential_backoff_threshold: 1000000.0,
-    enable_zip_bomb_detection: true,
-  },
-  paths: {
-    enable_long_paths: true,
-    shortening_threshold: 0.8,
-    hash_algorithm: "SHA256",
-    hash_length: 16,
-  },
-};
+import { useExtractionPolicy } from "../hooks/useExtractionPolicy";
 
 export function SettingsPage() {
   const { t } = useTranslation();
   const { showToast } = useToast();
 
-  // Extraction Policy State
-  const [policy, setPolicy] = useState<ExtractionPolicy>(defaultPolicy);
-  const [policyErrors, setPolicyErrors] = useState<Record<string, string>>({});
+  // Extraction Policy Hook
+  const { policy, setPolicy, policyErrors, validatePolicy, resetPolicy } =
+    useExtractionPolicy();
 
   // Local state for configurations
   const [localSearchConfig, setLocalSearchConfig] =
@@ -113,24 +68,6 @@ export function SettingsPage() {
   useEffect(() => {
     if (taskManagerConfig) setLocalTaskConfig({ ...taskManagerConfig });
   }, [taskManagerConfig]);
-
-  const validatePolicy = (): boolean => {
-    const newErrors: Record<string, string> = {};
-    if (policy.extraction.max_depth < 1 || policy.extraction.max_depth > 20) {
-      newErrors.max_depth = t("settings.policyErrors.max_depth_range");
-    }
-    if (policy.extraction.max_file_size <= 0) {
-      newErrors.max_file_size = t("settings.errors.must_be_positive");
-    }
-    if (
-      policy.paths.shortening_threshold <= 0 ||
-      policy.paths.shortening_threshold > 1.0
-    ) {
-      newErrors.shortening_threshold = t("settings.errors.threshold_range");
-    }
-    setPolicyErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
 
   const validateSearchConfig = (config: SearchConfig | null): boolean => {
     if (!config) return false;
@@ -193,8 +130,7 @@ export function SettingsPage() {
   };
 
   const handleReset = () => {
-    setPolicy(defaultPolicy);
-    setPolicyErrors({});
+    resetPolicy();
     setSaveStatus(null);
     showToast("info", t("settings.reset_success"));
   };
