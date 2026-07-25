@@ -33,6 +33,10 @@ const FILE_CHUNK_SIZE: usize = 10;
 const LARGE_FILE_STREAM_THRESHOLD_BYTES: i64 = 64 * 1024;
 const SEARCH_LINE_CHUNK_SIZE: usize = 512;
 
+/// Maximum time a search may run before being cancelled.
+/// Prevents indefinite hangs when a file or regex causes unexpected slowness.
+const SEARCH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
 /// 搜索执行结果。
 #[derive(Debug)]
 pub(crate) struct SearchOutcome {
@@ -108,21 +112,30 @@ impl SearchUseCase {
         // 3. Notify start
         self.events.emit_search_start(&search_id).await;
 
-        // 4. Spawn blocking search
+        // 4. Spawn blocking search with timeout and panic recovery
         let sid = search_id.clone();
         let query_owned = query.clone();
         let filters_owned = filters.clone();
         let files_owned = files.clone();
         let log_files = Arc::clone(&self.log_files);
-        let results = Arc::clone(&self.results);
+        let results_for_blocking = Arc::clone(&self.results);
         let events = Arc::clone(&self.events);
         let searcher = Arc::clone(&self.searcher);
         let thread_pool = Arc::clone(&self.thread_pool);
+        let cancellation_token_clone = cancellation_token.clone();
 
-        tokio::task::spawn_blocking(move || {
+        // Run the search on a blocking thread with timeout and panic recovery.
+        // Use tokio::task::spawn_blocking + tokio::time::timeout so the caller
+        // is not blocked, but no separate monitor task is spawned.
+        let results_clone = Arc::clone(&self.results);
+        let events_clone = Arc::clone(&self.events);
+        let search_id_clone = search_id.clone();
+        let cancellation_clone = cancellation_token.clone();
+
+        let blocking_handle = tokio::task::spawn_blocking(move || {
             let outcome = Self::run_blocking(
                 &log_files,
-                &results,
+                &results_for_blocking,
                 &events,
                 &searcher,
                 &thread_pool,
@@ -131,23 +144,51 @@ impl SearchUseCase {
                 &filters_owned,
                 &files_owned,
                 max_results,
-                cancellation_token,
+                cancellation_token_clone,
             );
 
-            let _ = results.complete_session(&sid);
-            tokio::spawn(async move {
-                events
-                    .emit_search_complete(
-                        &sid,
-                        la_core::models::search_statistics::SearchResultSummary::new(
-                            outcome.total_count,
-                            vec![],
-                            outcome.duration_ms,
-                            outcome.was_truncated,
-                        ),
-                    )
-                    .await;
-            });
+            let _ = results_for_blocking.complete_session(&sid);
+            outcome
+        });
+
+        // Await the blocking task with timeout and emit completion events.
+        // This runs in a spawned task so the caller returns immediately.
+        tokio::task::spawn(async move {
+            let result = tokio::time::timeout(SEARCH_TIMEOUT, blocking_handle).await;
+
+            match result {
+                Ok(Ok(outcome)) => {
+                    events_clone
+                        .emit_search_complete(
+                            &search_id_clone,
+                            la_core::models::search_statistics::SearchResultSummary::new(
+                                outcome.total_count,
+                                vec![],
+                                outcome.duration_ms,
+                                outcome.was_truncated,
+                            ),
+                        )
+                        .await;
+                }
+                Ok(Err(join_error)) => {
+                    let msg = format!("Search panicked: {join_error}");
+                    tracing::error!(search_id = %search_id_clone, error = %msg);
+                    let _ = results_clone.complete_session(&search_id_clone);
+                    events_clone
+                        .emit_search_error(&search_id_clone, &msg)
+                        .await;
+                }
+                Err(_timeout) => {
+                    let msg = format!("Search timed out after {SEARCH_TIMEOUT:?}");
+                    tracing::warn!(search_id = %search_id_clone, error = %msg);
+                    cancellation_clone.cancel();
+                    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                    let _ = results_clone.complete_session(&search_id_clone);
+                    events_clone
+                        .emit_search_timeout(&search_id_clone)
+                        .await;
+                }
+            }
         });
 
         Ok(())
