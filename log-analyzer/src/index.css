@@ -337,8 +337,18 @@ body {
     --material-sidebar: rgb(var(--color-bg-sidebar));
     --material-toolbar: rgb(var(--color-bg-main));
     --material-overlay: rgb(var(--color-bg-elevated));
+    --glass-bg: rgb(var(--color-bg-card));
+    --glass-bg-subtle: rgb(var(--color-bg-subtle));
+    --glass-bg-strong: rgb(var(--color-bg-elevated));
+    --glass-input-bg: rgb(var(--color-bg-main));
+    --glass-input-focus: rgb(var(--color-bg-elevated));
   }
-  .apple-material {
+  .apple-material,
+  .glass,
+  .glass-subtle,
+  .glass-strong,
+  .glass-input,
+  .glass-sidebar {
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
   }
