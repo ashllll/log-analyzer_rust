@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
-use tokio::runtime::{Handle, Runtime};
+use tokio::runtime::{Handle, Runtime, RuntimeFlavor};
 
 /// Public extraction result structure with all required fields
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -307,6 +307,49 @@ fn runtime_creation_error(e: impl std::fmt::Display) -> ExtractionError {
     }
 }
 
+fn runtime_bridge_error(message: impl Into<String>) -> ExtractionError {
+    ExtractionError {
+        error_code: ErrorCode::InternalError,
+        error_message: message.into(),
+        failed_file_path: None,
+        suggested_remediation: "Retry the operation or use the asynchronous extraction API"
+            .to_string(),
+        context: HashMap::new(),
+    }
+}
+
+#[allow(clippy::result_large_err)]
+fn extract_archive_on_dedicated_runtime(
+    archive_path: &Path,
+    target_dir: &Path,
+    workspace_id: &str,
+    policy: Option<ExtractionPolicy>,
+) -> Result<ExtractionResult> {
+    let archive_path = archive_path.to_path_buf();
+    let target_dir = target_dir.to_path_buf();
+    let workspace_id = workspace_id.to_string();
+    let worker = std::thread::Builder::new()
+        .name("la-archive-sync".to_string())
+        .spawn(move || {
+            let runtime = Runtime::new().map_err(runtime_creation_error)?;
+            runtime.block_on(extract_archive_async(
+                &archive_path,
+                &target_dir,
+                &workspace_id,
+                policy,
+            ))
+        })
+        .map_err(|error| {
+            runtime_bridge_error(format!(
+                "Failed to start synchronous extraction worker: {error}"
+            ))
+        })?;
+
+    worker.join().map_err(|_| {
+        runtime_bridge_error("Synchronous extraction worker terminated unexpectedly")
+    })?
+}
+
 #[allow(clippy::result_large_err)]
 pub fn extract_archive_sync(
     archive_path: &Path,
@@ -314,17 +357,28 @@ pub fn extract_archive_sync(
     workspace_id: &str,
     policy: Option<ExtractionPolicy>,
 ) -> Result<ExtractionResult> {
-    // H1 Fix: Reuse existing runtime handle to avoid creating unnecessary I/O + worker threads.
-    // Creating Runtime::new() every call is an anti-pattern per Tokio docs; each call spawns
-    // its own thread pool that persists until the Runtime is dropped.
-    let extraction_future = extract_archive_async(archive_path, target_dir, workspace_id, policy);
-
     match Handle::try_current() {
-        Ok(handle) => handle.block_on(extraction_future),
+        Ok(handle) if handle.runtime_flavor() == RuntimeFlavor::MultiThread => {
+            tokio::task::block_in_place(|| {
+                handle.block_on(extract_archive_async(
+                    archive_path,
+                    target_dir,
+                    workspace_id,
+                    policy,
+                ))
+            })
+        }
+        Ok(_) => {
+            extract_archive_on_dedicated_runtime(archive_path, target_dir, workspace_id, policy)
+        }
         Err(_) => {
-            // Fallback: no existing runtime context, create a temporary one
             let runtime = Runtime::new().map_err(runtime_creation_error)?;
-            runtime.block_on(extraction_future)
+            runtime.block_on(extract_archive_async(
+                archive_path,
+                target_dir,
+                workspace_id,
+                policy,
+            ))
         }
     }
 }
@@ -487,6 +541,45 @@ fn security_policy_from_extraction_policy(policy: &ExtractionPolicy) -> Security
 mod tests {
     use super::*;
     use la_core::ErrorCategory;
+
+    #[test]
+    #[allow(clippy::result_large_err)]
+    fn sync_api_extracts_from_runtime_context_without_panicking() {
+        for runtime in [
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap(),
+            tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(2)
+                .enable_all()
+                .build()
+                .unwrap(),
+        ] {
+            let temp_dir = tempfile::TempDir::new().unwrap();
+            let archive_path = temp_dir.path().join("runtime.txt.gz");
+            let output_dir = temp_dir.path().join("output");
+            let mut encoder =
+                flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+            std::io::Write::write_all(&mut encoder, b"runtime bridge content").unwrap();
+            std::fs::write(&archive_path, encoder.finish().unwrap()).unwrap();
+
+            let outcome = runtime.block_on(async {
+                std::panic::catch_unwind(|| {
+                    extract_archive_sync(&archive_path, &output_dir, "workspace-1", None)
+                })
+            });
+            let result = outcome
+                .expect("the synchronous API must not panic from a runtime context")
+                .expect("valid gzip extraction must succeed");
+
+            assert_eq!(result.extracted_files.len(), 1);
+            assert_eq!(
+                std::fs::read(output_dir.join("runtime.txt")).unwrap(),
+                b"runtime bridge content"
+            );
+        }
+    }
 
     #[test]
     fn test_error_code_conversion() {
