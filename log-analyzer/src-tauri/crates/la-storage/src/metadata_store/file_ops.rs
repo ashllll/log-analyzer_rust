@@ -251,7 +251,7 @@ pub(crate) async fn update_file_ready(
     max_timestamp: Option<i64>,
     level_mask: Option<u8>,
 ) -> Result<()> {
-    sqlx::query(
+    let result = sqlx::query(
         "UPDATE files SET min_timestamp = ?, max_timestamp = ?, level_mask = ?, analysis_status = 'READY' WHERE virtual_path = ?",
     )
     .bind(min_timestamp)
@@ -261,6 +261,13 @@ pub(crate) async fn update_file_ready(
     .execute(pool)
     .await
     .map_err(|e| AppError::database_error(format!("Failed to mark file ready: {e}")))?;
+
+    if result.rows_affected() != 1 {
+        return Err(AppError::database_error(format!(
+            "Cannot mark unknown file ready: {virtual_path}"
+        )));
+    }
+
     Ok(())
 }
 

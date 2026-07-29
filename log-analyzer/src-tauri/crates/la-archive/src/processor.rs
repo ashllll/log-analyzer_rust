@@ -31,6 +31,7 @@ use walkdir::WalkDir;
 
 const DIRECTORY_METADATA_BATCH_SIZE: usize = 500;
 const SMALL_FILE_INLINE_CAS_THRESHOLD_BYTES: u64 = 1024 * 1024;
+type FileStats = (Option<i64>, Option<i64>, Option<u8>);
 
 fn ensure_not_cancelled(context: &CasProcessingContext, path: &Path) -> Result<()> {
     if context.cancellation_token.is_cancelled() {
@@ -275,6 +276,7 @@ pub struct CasProcessingContext {
     pub files_since_checkpoint: Arc<Mutex<usize>>,
     pub bytes_since_checkpoint: Arc<Mutex<u64>>,
     pub cancellation_token: CancellationToken,
+    file_stats_updates: Arc<Mutex<Vec<tokio::task::JoinHandle<Result<()>>>>>,
 }
 
 impl CasProcessingContext {
@@ -295,6 +297,7 @@ impl CasProcessingContext {
             files_since_checkpoint: Arc::new(Mutex::new(0)),
             bytes_since_checkpoint: Arc::new(Mutex::new(0)),
             cancellation_token: CancellationToken::new(),
+            file_stats_updates: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -302,6 +305,59 @@ impl CasProcessingContext {
     pub fn with_cancellation_token(mut self, cancellation_token: CancellationToken) -> Self {
         self.cancellation_token = cancellation_token;
         self
+    }
+
+    async fn queue_file_stats_update(&self, hash: String, virtual_path: String) {
+        let cas = Arc::clone(&self.cas);
+        let metadata_store = Arc::clone(&self.metadata_store);
+        let task = tokio::task::spawn(async move {
+            let content = cas.read_content(&hash).await.map_err(|error| {
+                AppError::io_error(
+                    format!("Failed to read CAS content for file statistics: {error}"),
+                    None,
+                )
+            })?;
+            let (min_ts, max_ts, level_mask) =
+                tokio::task::spawn_blocking(move || la_core::utils::compute_file_stats(&content))
+                    .await
+                    .map_err(|error| {
+                        AppError::internal_error(format!("File statistics worker failed: {error}"))
+                    })?;
+
+            metadata_store
+                .update_file_ready(&virtual_path, min_ts, max_ts, level_mask)
+                .await?;
+            tracing::debug!(
+                virtual_path = %virtual_path,
+                "File marked as READY for incremental search"
+            );
+            Ok(())
+        });
+
+        self.file_stats_updates.lock().await.push(task);
+    }
+
+    async fn finish_file_stats_updates(&self) -> Result<()> {
+        let tasks = std::mem::take(&mut *self.file_stats_updates.lock().await);
+        let mut first_error = None;
+
+        for task in tasks {
+            let error = match task.await {
+                Ok(Ok(())) => None,
+                Ok(Err(error)) => Some(error),
+                Err(error) => Some(AppError::internal_error(format!(
+                    "File statistics task failed: {error}"
+                ))),
+            };
+            if first_error.is_none() {
+                first_error = error;
+            }
+        }
+
+        match first_error {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
     }
 
     /// Enable checkpoint support
@@ -387,6 +443,43 @@ impl CasProcessingContext {
 /// Validates: Requirements 1.1, 1.2, 1.3, 4.1, 4.2, 4.3, 8.4
 #[allow(clippy::too_many_arguments)]
 pub async fn process_path_with_cas_and_checkpoints(
+    path: &Path,
+    virtual_path: &str,
+    context: &CasProcessingContext,
+    provider: &dyn AppConfigProvider,
+    task_id: &str,
+    workspace_id: &str,
+    parent_archive_id: Option<i64>,
+    depth_level: i32,
+) -> Result<()> {
+    let processing_result = process_path_with_cas_and_checkpoints_inner(
+        path,
+        virtual_path,
+        context,
+        provider,
+        task_id,
+        workspace_id,
+        parent_archive_id,
+        depth_level,
+    )
+    .await;
+    let stats_result = context.finish_file_stats_updates().await;
+
+    match (processing_result, stats_result) {
+        (Ok(()), stats_result) => stats_result,
+        (Err(processing_error), Ok(())) => Err(processing_error),
+        (Err(processing_error), Err(stats_error)) => {
+            warn!(
+                error = %stats_error,
+                "File statistics also failed while the import was already failing"
+            );
+            Err(processing_error)
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn process_path_with_cas_and_checkpoints_inner(
     path: &Path,
     virtual_path: &str,
     context: &CasProcessingContext,
@@ -516,7 +609,7 @@ pub async fn process_path_with_cas_and_checkpoints(
 
                     if is_archive_file(path_to_process) {
                         flush_pending_directory_files(context, &mut pending_files).await?;
-                        if let Err(e) = Box::pin(process_path_with_cas_and_checkpoints(
+                        if let Err(e) = Box::pin(process_path_with_cas_and_checkpoints_inner(
                             path_to_process,
                             &new_virtual,
                             context,
@@ -679,7 +772,7 @@ async fn prepare_regular_file_import(
         .to_string();
     let metadata = fs::metadata(path).await.ok();
     let file_size_bytes = metadata.as_ref().map(|m| m.len()).unwrap_or(0);
-    let hash = store_regular_file_content(context, path, file_size_bytes).await?;
+    let (hash, inline_stats) = store_regular_file_content(context, path, file_size_bytes).await?;
     let file_size = file_size_bytes as i64;
     let modified_time = metadata
         .and_then(|m| m.modified().ok())
@@ -687,6 +780,20 @@ async fn prepare_regular_file_import(
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
     let mime_type = detect_mime_type(path);
+    let (min_timestamp, max_timestamp, level_mask, analysis_status) = match inline_stats {
+        Some((min_timestamp, max_timestamp, level_mask)) => (
+            min_timestamp,
+            max_timestamp,
+            level_mask,
+            la_core::storage_types::AnalysisStatus::Ready,
+        ),
+        None => (
+            None,
+            None,
+            None,
+            la_core::storage_types::AnalysisStatus::Pending,
+        ),
+    };
 
     Ok(PendingFileImport {
         metadata: FileMetadata {
@@ -699,10 +806,10 @@ async fn prepare_regular_file_import(
             mime_type,
             parent_archive_id,
             depth_level,
-            min_timestamp: None,
-            max_timestamp: None,
-            level_mask: None,
-            analysis_status: la_core::storage_types::AnalysisStatus::Pending,
+            min_timestamp,
+            max_timestamp,
+            level_mask,
+            analysis_status,
         },
         source_path: path.to_path_buf(),
     })
@@ -775,53 +882,22 @@ async fn finalize_regular_file_import(
         "Stored file in CAS and metadata"
     );
 
-    spawn_file_stats_update(context, &pending.metadata);
+    if pending.metadata.analysis_status == la_core::storage_types::AnalysisStatus::Pending {
+        context
+            .queue_file_stats_update(
+                pending.metadata.sha256_hash.clone(),
+                pending.metadata.virtual_path.clone(),
+            )
+            .await;
+    }
     Ok(())
-}
-
-fn spawn_file_stats_update(context: &CasProcessingContext, metadata: &FileMetadata) {
-    let cas = Arc::clone(&context.cas);
-    let metadata_store = Arc::clone(&context.metadata_store);
-    let hash = metadata.sha256_hash.clone();
-    let virtual_path_for_stats = metadata.virtual_path.clone();
-
-    tokio::task::spawn(async move {
-        match cas.read_content(&hash).await {
-            Ok(content) => {
-                let (min_ts, max_ts, level_mask) = la_core::utils::compute_file_stats(&content);
-                if let Err(e) = metadata_store
-                    .update_file_ready(&virtual_path_for_stats, min_ts, max_ts, level_mask)
-                    .await
-                {
-                    tracing::warn!(
-                        virtual_path = %virtual_path_for_stats,
-                        error = %e,
-                        "Failed to update file ready status"
-                    );
-                } else {
-                    tracing::debug!(
-                        virtual_path = %virtual_path_for_stats,
-                        "File marked as READY for incremental search"
-                    );
-                }
-            }
-            Err(e) => {
-                tracing::warn!(
-                    virtual_path = %virtual_path_for_stats,
-                    hash = %hash,
-                    error = %e,
-                    "Failed to read CAS content for incremental stats computation"
-                );
-            }
-        }
-    });
 }
 
 async fn store_regular_file_content(
     context: &CasProcessingContext,
     path: &Path,
     file_size: u64,
-) -> Result<String> {
+) -> Result<(String, Option<FileStats>)> {
     if file_size <= SMALL_FILE_INLINE_CAS_THRESHOLD_BYTES {
         let content = fs::read(path).await.map_err(|e| {
             AppError::io_error(
@@ -829,10 +905,12 @@ async fn store_regular_file_content(
                 Some(path.to_path_buf()),
             )
         })?;
-        return context.cas.store_content(&content).await;
+        let stats = la_core::utils::compute_file_stats(&content);
+        let hash = context.cas.store_content(&content).await?;
+        return Ok((hash, Some(stats)));
     }
 
-    context.cas.store_file_zero_copy(path).await
+    Ok((context.cas.store_file_zero_copy(path).await?, None))
 }
 
 fn detect_mime_type(path: &Path) -> Option<String> {
@@ -1221,30 +1299,12 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
             context.metadata_store.insert_file(&nested_metadata).await?;
 
             // 增量分析：深层嵌套压缩包也计算统计
-            let cas = Arc::clone(&context.cas);
-            let metadata_store = Arc::clone(&context.metadata_store);
             let vp = normalize_path_separator(&new_virtual);
-            tokio::task::spawn(async move {
-                match cas.read_content(&hash).await {
-                    Ok(content) => {
-                        let (min_ts, max_ts, level_mask) =
-                            la_core::utils::compute_file_stats(&content);
-                        if let Err(e) = metadata_store
-                            .update_file_ready(&vp, min_ts, max_ts, level_mask)
-                            .await
-                        {
-                            tracing::warn!(virtual_path = %vp, error = %e, "Failed to update nested archive ready status");
-                        }
-                    }
-                    Err(e) => {
-                        tracing::warn!(virtual_path = %vp, hash = %hash, error = %e, "Failed to read nested archive CAS content for stats");
-                    }
-                }
-            });
+            context.queue_file_stats_update(hash, vp).await;
             continue;
         }
 
-        match Box::pin(process_path_with_cas_and_checkpoints(
+        match Box::pin(process_path_with_cas_and_checkpoints_inner(
             &full_path, // Use full path for file operations
             &new_virtual,
             context,
@@ -1583,6 +1643,62 @@ mod tests {
         assert_eq!(metadata_store.count_files().await.unwrap(), 0);
     }
 
+    #[test]
+    fn completed_import_has_ready_metadata_without_a_background_runtime() {
+        let temp = TempDir::new().unwrap();
+        let source_file = temp.path().join("app.log");
+        let mut content = b"2026-07-30T12:00:00Z ERROR deterministic readiness\n".to_vec();
+        content.resize(SMALL_FILE_INLINE_CAS_THRESHOLD_BYTES as usize + 1, b'x');
+        std::fs::write(&source_file, content).unwrap();
+
+        let workspace_dir = temp.path().join("workspace");
+        let config_dir = temp.path().join("config");
+        let metadata_store = {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+
+            runtime.block_on(async {
+                let cas = ContentAddressableStorage::new(workspace_dir.clone());
+                let metadata_store = Arc::new(MetadataStore::new(&workspace_dir).await.unwrap());
+                let provider = TestConfigProvider { dir: config_dir };
+
+                process_path_with_cas(
+                    &source_file,
+                    "app.log",
+                    &workspace_dir,
+                    &cas,
+                    Arc::clone(&metadata_store),
+                    &provider,
+                    "task-ready",
+                    "workspace-ready",
+                    None,
+                    0,
+                )
+                .await
+                .unwrap();
+
+                metadata_store
+            })
+        };
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let file = runtime
+            .block_on(metadata_store.get_file_by_virtual_path("app.log"))
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            file.analysis_status,
+            la_core::storage_types::AnalysisStatus::Ready,
+            "a successful import must not depend on a detached task to make metadata searchable"
+        );
+    }
+
     #[tokio::test]
     async fn directory_import_batches_many_regular_files() {
         let temp = TempDir::new().unwrap();
@@ -1621,6 +1737,11 @@ mod tests {
         .unwrap();
 
         assert_eq!(metadata_store.count_files().await.unwrap(), 12);
+        assert_eq!(
+            metadata_store.get_ready_files().await.unwrap().len(),
+            12,
+            "directory import must wait for every parallel statistics update"
+        );
     }
 
     #[tokio::test]

@@ -133,6 +133,20 @@ async fn test_time_pruning_requires_ready_files() {
     assert!(files.is_empty());
 }
 
+#[tokio::test]
+async fn update_file_ready_rejects_an_unknown_virtual_path() {
+    let (store, _temp_dir) = create_test_store().await;
+
+    let result = store
+        .update_file_ready("missing.log", Some(1), Some(2), Some(1))
+        .await;
+
+    assert!(
+        result.is_err(),
+        "marking a nonexistent file ready must not report success"
+    );
+}
+
 // ========== Additional Unit Tests for Task 2.2 ==========
 
 /// Test database initialization creates all required tables and indexes
