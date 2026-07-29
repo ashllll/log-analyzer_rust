@@ -7,10 +7,13 @@
 use crate::path_manager::PathManager;
 use crate::security_detector::SecurityDetector;
 use crate::staged_extraction::StagedExtraction;
+use futures::{stream, Stream, StreamExt};
 use la_core::error::{AppError, Result};
+pub use la_core::ExtractionPolicy;
 use moka::sync::Cache;
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
+use std::future::Future;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
@@ -178,82 +181,27 @@ impl Default for ExtractionStack {
     }
 }
 
+#[derive(Debug)]
+struct ProcessedExtractedPath {
+    original_path: PathBuf,
+    resolved_path: PathBuf,
+    nested_item: Option<ExtractionItem>,
+    depth_limit_skip: bool,
+    path_shortened: bool,
+}
+
+fn ordered_bounded<I, Fut>(futures: I, limit: usize) -> impl Stream<Item = Fut::Output>
+where
+    I: IntoIterator<Item = Fut>,
+    Fut: Future,
+{
+    debug_assert!(limit > 0);
+    stream::iter(futures).buffered(limit)
+}
+
 // ============================================================================
 // Extraction Engine
 // ============================================================================
-
-/// Extraction policy configuration
-#[derive(Debug, Clone)]
-pub struct ExtractionPolicy {
-    /// Maximum nesting depth (default: 10, range: 1-20)
-    pub max_depth: usize,
-    /// Maximum file size in bytes (default: 100MB)
-    pub max_file_size: u64,
-    /// Maximum total extracted size per archive (default: 10GB)
-    pub max_total_size: u64,
-    /// Buffer size for streaming extraction (default: 64KB)
-    pub buffer_size: usize,
-    /// Directory creation batch size (default: 10)
-    pub dir_batch_size: usize,
-    /// Maximum parallel file extractions within single archive (default: 4)
-    pub max_parallel_files: usize,
-    /// Maximum number of files per archive (default: 10_000, ZIP bomb 防护)
-    pub max_file_count: usize,
-}
-
-impl Default for ExtractionPolicy {
-    fn default() -> Self {
-        Self {
-            max_depth: 10,                     // 统一: 与 nested_archive_config 保持一致
-            max_file_size: 100 * 1024 * 1024,  // 100MB (防止单个超大文件耗尽内存)
-            max_total_size: 500 * 1024 * 1024, // 500MB (防止压缩炸弹攻击)
-            buffer_size: 1024 * 1024,          // 1MB (优化: 从 64KB 增大，提升大文件处理性能)
-            dir_batch_size: 10,                // Batch 10 directories
-            max_parallel_files: 4,             // Extract up to 4 files in parallel
-            max_file_count: 10_000,            // 单次压缩包最多解压文件数，与 ExtractionLimits 对齐
-        }
-    }
-}
-
-impl ExtractionPolicy {
-    /// Validate policy constraints
-    pub fn validate(&self) -> Result<()> {
-        if self.max_depth < 1 || self.max_depth > 20 {
-            return Err(AppError::validation_error(format!(
-                "max_depth must be between 1 and 20, got {}",
-                self.max_depth
-            )));
-        }
-
-        if self.max_file_size == 0 {
-            return Err(AppError::validation_error("max_file_size must be positive"));
-        }
-
-        if self.max_total_size == 0 {
-            return Err(AppError::validation_error(
-                "max_total_size must be positive",
-            ));
-        }
-
-        if self.buffer_size == 0 {
-            return Err(AppError::validation_error("buffer_size must be positive"));
-        }
-
-        if self.dir_batch_size == 0 {
-            return Err(AppError::validation_error(
-                "dir_batch_size must be positive",
-            ));
-        }
-
-        if self.max_parallel_files == 0 {
-            return Err(AppError::validation_error(
-                "max_parallel_files must be positive",
-            ));
-        }
-
-        Ok(())
-    }
-}
 
 /// Result of an extraction operation
 #[derive(Debug, Clone)]
@@ -796,13 +744,7 @@ impl ExtractionEngine {
 
         // Extract archive using handler
         let summary = handler
-            .extract_with_limits(
-                &item.archive_path,
-                staged_extraction.path(),
-                self.policy.max_file_size,
-                self.policy.max_total_size,
-                self.policy.max_file_count, // 使用策略配置的文件数限制，防止 ZIP bomb
-            )
+            .extract_with_policy(&item.archive_path, staged_extraction.path(), &self.policy)
             .await
             .map_err(|e| {
                 AppError::archive_error(
@@ -867,78 +809,49 @@ impl ExtractionEngine {
         let mut depth_limit_skips = 0;
         let mut path_shortenings = 0;
 
-        for file_path in &extracted_paths {
-            // Check if this is a nested archive
-            if self.is_archive_file(file_path) {
-                // Check depth limit before adding to stack
-                if item.depth + 1 >= self.policy.max_depth {
-                    debug!(
-                        "Depth limit reached, skipping nested archive: {:?}",
-                        file_path
-                    );
-                    // Still count the file itself as extracted (it exists in the parent archive)
-                    extracted_files.push(item.target_dir.join(file_path));
-                    depth_limit_skips += 1;
-                    continue;
-                }
+        let processed_paths = ordered_bounded(
+            extracted_paths
+                .into_iter()
+                .map(|file_path| self.process_extracted_path(item, file_path)),
+            self.policy.max_parallel_files,
+        );
+        futures::pin_mut!(processed_paths);
 
-                // Create nested extraction item
-                // Use the full path to the nested archive for proper handler lookup
-                let nested_archive_path = item.target_dir.join(file_path);
-                let nested_target = item.target_dir.join(
-                    file_path
-                        .file_stem()
-                        .unwrap_or_else(|| std::ffi::OsStr::new("extracted")),
+        while let Some(processed_path) = processed_paths.next().await {
+            let processed_path = processed_path?;
+
+            if processed_path.depth_limit_skip {
+                debug!(
+                    "Depth limit reached, skipping nested archive: {:?}",
+                    processed_path.original_path
                 );
+                depth_limit_skips += 1;
+            }
 
-                // Compute hash for cycle detection (skip if IO fails)
-                let nested_hash = Self::compute_file_hash(&nested_archive_path).await.ok();
-
-                let nested_item = if let Some(hash) = nested_hash {
-                    ExtractionItem::with_hash(
-                        nested_archive_path,
-                        nested_target,
-                        item.depth + 1,
-                        item.parent_context.clone(),
-                        hash,
-                    )
-                } else {
-                    ExtractionItem::new(
-                        nested_archive_path,
-                        nested_target,
-                        item.depth + 1,
-                        item.parent_context.clone(),
-                    )
-                };
-
-                // Add to stack for processing
+            if let Some(nested_item) = processed_path.nested_item {
                 stack.push(nested_item).map_err(|e| {
                     AppError::archive_error(
                         format!("Failed to add nested archive to stack: {e}"),
-                        Some(file_path.to_path_buf()),
+                        Some(processed_path.original_path.clone()),
                     )
                 })?;
 
                 debug!(
                     "Added nested archive to stack: {:?} (depth: {})",
-                    file_path,
+                    processed_path.original_path,
                     item.depth + 1
                 );
             }
 
-            // Resolve path (may be shortened if too long)
-            let full_path = item.target_dir.join(file_path);
-            let resolved_path = self
-                .resolve_path_cached(&item.parent_context.workspace_id, &full_path)
-                .await?;
-
-            // Check if path was shortened
-            if resolved_path != full_path {
+            if processed_path.path_shortened {
                 path_shortenings += 1;
-                debug!("Path shortened: {:?} -> {:?}", full_path, resolved_path);
+                debug!(
+                    "Path shortened: {:?} -> {:?}",
+                    processed_path.original_path, processed_path.resolved_path
+                );
             }
 
-            extracted_files.push(resolved_path);
+            extracted_files.push(processed_path.resolved_path);
         }
 
         debug!(
@@ -955,6 +868,66 @@ impl ExtractionEngine {
             depth_limit_skips,
             path_shortenings,
         ))
+    }
+
+    async fn process_extracted_path(
+        &self,
+        item: &ExtractionItem,
+        file_path: PathBuf,
+    ) -> Result<ProcessedExtractedPath> {
+        let full_path = item.target_dir.join(&file_path);
+        let is_nested_archive = self.is_archive_file(&file_path);
+
+        if is_nested_archive && item.depth + 1 >= self.policy.max_depth {
+            return Ok(ProcessedExtractedPath {
+                original_path: file_path,
+                resolved_path: full_path,
+                nested_item: None,
+                depth_limit_skip: true,
+                path_shortened: false,
+            });
+        }
+
+        let nested_item = if is_nested_archive {
+            let nested_target = item.target_dir.join(
+                file_path
+                    .file_stem()
+                    .unwrap_or_else(|| std::ffi::OsStr::new("extracted")),
+            );
+            let nested_hash = Self::compute_file_hash(&full_path).await.ok();
+
+            Some(if let Some(hash) = nested_hash {
+                ExtractionItem::with_hash(
+                    full_path.clone(),
+                    nested_target,
+                    item.depth + 1,
+                    item.parent_context.clone(),
+                    hash,
+                )
+            } else {
+                ExtractionItem::new(
+                    full_path.clone(),
+                    nested_target,
+                    item.depth + 1,
+                    item.parent_context.clone(),
+                )
+            })
+        } else {
+            None
+        };
+
+        let resolved_path = self
+            .resolve_path_cached(&item.parent_context.workspace_id, &full_path)
+            .await?;
+        let path_shortened = resolved_path != full_path;
+
+        Ok(ProcessedExtractedPath {
+            original_path: file_path,
+            resolved_path,
+            nested_item,
+            depth_limit_skip: false,
+            path_shortened,
+        })
     }
 
     /// Create handler registry with all available handlers
@@ -1208,6 +1181,8 @@ mod tests {
     use flate2::write::GzEncoder;
     use flate2::Compression;
     use std::io::Write;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
     use tar::{Builder, Header};
 
     async fn create_test_engine() -> ExtractionEngine {
@@ -1227,6 +1202,29 @@ mod tests {
         let security_detector = Arc::new(SecurityDetector::new(security_policy));
 
         ExtractionEngine::new(path_manager, security_detector, ExtractionPolicy::default()).unwrap()
+    }
+
+    #[tokio::test]
+    async fn ordered_processing_respects_parallel_file_limit() {
+        let active = Arc::new(AtomicUsize::new(0));
+        let peak = Arc::new(AtomicUsize::new(0));
+        let jobs = (0..6).map(|index| {
+            let active = Arc::clone(&active);
+            let peak = Arc::clone(&peak);
+
+            async move {
+                let current = active.fetch_add(1, Ordering::SeqCst) + 1;
+                peak.fetch_max(current, Ordering::SeqCst);
+                tokio::time::sleep(Duration::from_millis(10)).await;
+                active.fetch_sub(1, Ordering::SeqCst);
+                index
+            }
+        });
+
+        let results = ordered_bounded(jobs, 2).collect::<Vec<_>>().await;
+
+        assert_eq!(results, vec![0, 1, 2, 3, 4, 5]);
+        assert_eq!(peak.load(Ordering::SeqCst), 2);
     }
 
     #[tokio::test]
@@ -1360,6 +1358,7 @@ mod tests {
         assert_eq!(policy.buffer_size, 1024 * 1024);
         assert_eq!(policy.dir_batch_size, 10);
         assert_eq!(policy.max_parallel_files, 4);
+        assert_eq!(policy.max_file_count, 10_000);
     }
 
     #[test]
@@ -1405,8 +1404,13 @@ mod tests {
         policy.max_parallel_files = 0;
         assert!(policy.validate().is_err());
 
-        // All valid
+        // Invalid max_file_count
         policy.max_parallel_files = 4;
+        policy.max_file_count = 0;
+        assert!(policy.validate().is_err());
+
+        // All valid
+        policy.max_file_count = 10_000;
         assert!(policy.validate().is_ok());
     }
 

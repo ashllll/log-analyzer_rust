@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use la_core::error::Result;
+use la_core::ExtractionPolicy;
 use std::path::{Path, PathBuf};
 
 // CR-15: async_zip dependency removed; streaming archive handlers migrated to sync zip via spawn_blocking
@@ -45,6 +46,27 @@ pub trait ArchiveHandler: Send + Sync {
         max_total_size: u64,
         max_file_count: usize,
     ) -> Result<ExtractionSummary>;
+
+    /// Extract using the shared runtime policy.
+    ///
+    /// Non-streaming handlers use the three safety limits. Streaming handlers
+    /// can override this method to consume tuning fields such as `buffer_size`.
+    async fn extract_with_policy(
+        &self,
+        source: &Path,
+        target_dir: &Path,
+        policy: &ExtractionPolicy,
+    ) -> Result<ExtractionSummary> {
+        policy.validate()?;
+        self.extract_with_limits(
+            source,
+            target_dir,
+            policy.max_file_size,
+            policy.max_total_size,
+            policy.max_file_count,
+        )
+        .await
+    }
 
     /**
      * 提取压缩文件内容（兼容旧版本，默认调用带限制的方法）

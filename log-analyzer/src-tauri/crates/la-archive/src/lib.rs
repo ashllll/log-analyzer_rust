@@ -198,6 +198,14 @@ mod tests {
         assert!(extensions.contains(&"gz".to_string()));
     }
 
+    #[cfg(feature = "enhanced-extraction")]
+    #[test]
+    fn extraction_policy_is_shared_with_la_core() {
+        let policy: la_core::ExtractionPolicy = ExtractionPolicy::default();
+
+        assert!(policy.validate().is_ok());
+    }
+
     #[test]
     fn test_archive_manager_find_handler() {
         let manager = ArchiveManager::new();

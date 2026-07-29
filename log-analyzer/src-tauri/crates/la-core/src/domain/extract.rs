@@ -1,76 +1,101 @@
-//! ArchiveExtractor — domain trait for archive extraction.
+//! Shared runtime policy for archive extraction.
 //!
-//! This trait abstracts archive format handling (ZIP, TAR, GZ, RAR, 7Z)
-//! behind a simple interface. Infrastructure adapters wrap format-specific
-//! libraries and the `la-archive` crate's `ArchiveManager`.
+//! This type lives in `la-core` so application and archive crates use one
+//! policy contract. Persisted user configuration remains a separate model in
+//! `models::extraction_policy`.
 
-use std::path::Path;
+use crate::error::{AppError, Result};
 
-use async_trait::async_trait;
-
-use crate::error::Result;
-
-/// Summary of an extraction operation.
-#[derive(Debug, Clone)]
-pub struct ExtractionSummary {
-    /// Number of files extracted.
-    pub files_extracted: usize,
-    /// Total bytes extracted.
-    pub total_bytes: u64,
-    /// Maximum nesting depth reached.
-    pub max_depth_reached: usize,
-}
-
-/// A single entry within an archive (file or directory).
-#[derive(Debug, Clone)]
-pub struct ArchiveEntry {
-    /// Relative path inside the archive.
-    pub path: String,
-    /// Uncompressed size in bytes.
-    pub size_bytes: u64,
-}
-
-/// Extraction policy constraints for validation.
+/// Runtime limits and tuning parameters for one archive extraction.
 #[derive(Debug, Clone)]
 pub struct ExtractionPolicy {
-    /// Maximum archive nesting depth (1-20).
+    /// Maximum archive nesting depth (default: 10, range: 1-20).
     pub max_depth: usize,
-    /// Maximum single file size in bytes.
+    /// Maximum single-file size in bytes (default: 100 MiB).
     pub max_file_size: u64,
-    /// Maximum total extracted size per archive.
+    /// Maximum total extracted size per archive (default: 500 MiB).
     pub max_total_size: u64,
+    /// Streaming buffer size in bytes (default: 1 MiB).
+    pub buffer_size: usize,
+    /// Directory creation batch size (default: 10).
+    pub dir_batch_size: usize,
+    /// Maximum concurrent per-file post-processing operations within an archive (default: 4).
+    pub max_parallel_files: usize,
+    /// Maximum number of files per archive (default: 10,000).
+    pub max_file_count: usize,
 }
 
-/// Domain trait for archive extraction operations.
-///
-/// # Implementors
-///
-/// - `ArchiveManagerAdapter` (production) — wraps `la_archive::ArchiveManager`.
-/// - Mock implementations for unit testing `ImportUseCase`.
-#[async_trait]
-pub trait ArchiveExtractor: Send + Sync {
-    /// Extract an archive to a target directory.
-    ///
-    /// Returns a summary of the extraction including file count, total bytes,
-    /// and maximum nesting depth reached.
-    async fn extract(&self, source: &Path, target_dir: &Path) -> Result<ExtractionSummary>;
+impl Default for ExtractionPolicy {
+    fn default() -> Self {
+        Self {
+            max_depth: 10,
+            max_file_size: 100 * 1024 * 1024,
+            max_total_size: 500 * 1024 * 1024,
+            buffer_size: 1024 * 1024,
+            dir_batch_size: 10,
+            max_parallel_files: 4,
+            max_file_count: 10_000,
+        }
+    }
+}
 
-    /// List the contents of an archive without extracting.
-    ///
-    /// Returns entries with their relative paths and uncompressed sizes.
-    /// Useful for preview before extraction.
-    fn list_contents(&self, source: &Path) -> Result<Vec<ArchiveEntry>>;
+impl ExtractionPolicy {
+    /// Validate all runtime limits before extraction starts.
+    pub fn validate(&self) -> Result<()> {
+        if !(1..=20).contains(&self.max_depth) {
+            return Err(AppError::validation_error(format!(
+                "max_depth must be between 1 and 20, got {}",
+                self.max_depth
+            )));
+        }
+        if self.max_file_size == 0 {
+            return Err(AppError::validation_error("max_file_size must be positive"));
+        }
+        if self.max_total_size == 0 {
+            return Err(AppError::validation_error(
+                "max_total_size must be positive",
+            ));
+        }
+        if self.buffer_size == 0 {
+            return Err(AppError::validation_error("buffer_size must be positive"));
+        }
+        if self.dir_batch_size == 0 {
+            return Err(AppError::validation_error(
+                "dir_batch_size must be positive",
+            ));
+        }
+        if self.max_parallel_files == 0 {
+            return Err(AppError::validation_error(
+                "max_parallel_files must be positive",
+            ));
+        }
+        if self.max_file_count == 0 {
+            return Err(AppError::validation_error(
+                "max_file_count must be positive",
+            ));
+        }
 
-    /// Return the list of supported file extensions.
-    ///
-    /// Each extension includes the leading dot (e.g. `".zip"`, `".tar.gz"`).
-    fn supported_formats(&self) -> Vec<String>;
+        Ok(())
+    }
+}
 
-    /// Validate the source path and extraction policy.
-    ///
-    /// Checks:
-    /// - Path exists and is readable
-    /// - File format is supported
-    /// - Policy constraints are within safe bounds
-    fn validate(&self, path: &Path, policy: &ExtractionPolicy) -> Result<()>;
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_policy_is_valid() {
+        assert!(ExtractionPolicy::default().validate().is_ok());
+    }
+
+    #[test]
+    fn rejects_zero_file_count() {
+        let policy = ExtractionPolicy {
+            max_file_count: 0,
+            ..ExtractionPolicy::default()
+        };
+
+        let error = policy.validate().expect_err("zero file count must fail");
+        assert!(error.to_string().contains("max_file_count"));
+    }
 }

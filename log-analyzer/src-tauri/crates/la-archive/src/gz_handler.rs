@@ -2,6 +2,7 @@ use crate::archive_handler::{ArchiveHandler, ExtractionSummary};
 use async_compression::tokio::bufread::GzipDecoder;
 use async_trait::async_trait;
 use la_core::error::{AppError, Result};
+use la_core::ExtractionPolicy;
 use std::path::{Path, PathBuf};
 use tokio::fs;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
@@ -88,6 +89,20 @@ struct GzExtractionLimits {
     max_file_size: u64,
     max_total_size: u64,
     max_file_count: usize,
+    buffer_size: usize,
+}
+
+impl GzExtractionLimits {
+    const DEFAULT_BUFFER_SIZE: usize = 1024 * 1024;
+
+    fn from_policy(policy: &ExtractionPolicy) -> Self {
+        Self {
+            max_file_size: policy.max_file_size,
+            max_total_size: policy.max_total_size,
+            max_file_count: policy.max_file_count,
+            buffer_size: policy.buffer_size,
+        }
+    }
 }
 
 impl GzHandler {
@@ -122,6 +137,7 @@ impl GzHandler {
                 max_file_size,
                 max_total_size: max_file_size,
                 max_file_count: 1,
+                buffer_size: GzExtractionLimits::DEFAULT_BUFFER_SIZE,
             },
         )
         .await
@@ -132,8 +148,6 @@ impl GzHandler {
         target_dir: &Path,
         limits: GzExtractionLimits,
     ) -> Result<ExtractionSummary> {
-        const BUFFER_SIZE: usize = 1024 * 1024;
-
         if limits.max_file_count < 1 {
             return Err(AppError::archive_error(
                 format!(
@@ -158,7 +172,7 @@ impl GzHandler {
             )
         })?;
 
-        let reader = BufReader::with_capacity(BUFFER_SIZE, file);
+        let reader = BufReader::with_capacity(limits.buffer_size, file);
         let mut decoder = GzipDecoder::new(reader);
 
         let output_name = source
@@ -189,8 +203,6 @@ impl GzHandler {
     where
         R: AsyncRead + Unpin,
     {
-        const BUFFER_SIZE: usize = 1024 * 1024;
-
         let existing_permissions = match fs::metadata(&output_path).await {
             Ok(metadata) => Some(metadata.permissions()),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
@@ -220,8 +232,8 @@ impl GzHandler {
         let (output_file, temporary_path) = temporary_file.into_parts();
         let output_file = fs::File::from_std(output_file);
 
-        let mut writer = BufWriter::with_capacity(BUFFER_SIZE, output_file);
-        let mut buffer = vec![0u8; BUFFER_SIZE];
+        let mut writer = BufWriter::with_capacity(limits.buffer_size, output_file);
+        let mut buffer = vec![0u8; limits.buffer_size];
         let mut total_bytes = 0u64;
 
         loop {
@@ -324,7 +336,23 @@ impl ArchiveHandler for GzHandler {
                 max_file_size,
                 max_total_size,
                 max_file_count,
+                buffer_size: GzExtractionLimits::DEFAULT_BUFFER_SIZE,
             },
+        )
+        .await
+    }
+
+    async fn extract_with_policy(
+        &self,
+        source: &Path,
+        target_dir: &Path,
+        policy: &ExtractionPolicy,
+    ) -> Result<ExtractionSummary> {
+        policy.validate()?;
+        Self::stream_extract_gz_with_limits(
+            source,
+            target_dir,
+            GzExtractionLimits::from_policy(policy),
         )
         .await
     }
@@ -363,10 +391,21 @@ mod tests {
     use super::*;
     use flate2::write::GzEncoder;
     use flate2::Compression;
+    use la_core::ExtractionPolicy;
     use std::io::Write;
     use std::pin::Pin;
     use std::task::{Context, Poll};
     use tempfile::TempDir;
+
+    #[test]
+    fn extraction_policy_controls_streaming_buffer_size() {
+        let policy = ExtractionPolicy {
+            buffer_size: 4096,
+            ..ExtractionPolicy::default()
+        };
+
+        assert_eq!(GzExtractionLimits::from_policy(&policy).buffer_size, 4096);
+    }
     use tokio::io::ReadBuf;
     use tokio::sync::oneshot;
 
@@ -852,6 +891,7 @@ mod tests {
                     max_file_size: 1024,
                     max_total_size: 1024,
                     max_file_count: 1,
+                    buffer_size: GzExtractionLimits::DEFAULT_BUFFER_SIZE,
                 },
             )
             .await

@@ -1,6 +1,5 @@
 //! Infrastructure adapters — implement domain traits for concrete types.
 
-pub mod archive_extractor;
 pub mod event_publisher;
 pub mod file_tailer;
 pub mod import_pipeline;
@@ -15,7 +14,6 @@ pub mod workspace_repo;
 pub mod workspace_service_factory;
 pub mod workspace_service_impl;
 
-pub use archive_extractor::ArchiveManagerAdapter;
 pub use event_publisher::TauriEventPublisher;
 pub use log_file_repo::CasLogFileRepository;
 pub use result_store::DiskResultStoreRepo;

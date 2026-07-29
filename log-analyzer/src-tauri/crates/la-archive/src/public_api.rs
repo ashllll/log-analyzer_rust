@@ -463,7 +463,6 @@ pub(crate) async fn extract_archive_async_with_security_policy(
     let path_manager = Arc::new(PathManager::new(PathConfig::default(), metadata_db.clone()));
 
     let security_detector = Arc::new(SecurityDetector::new(security_policy));
-
     // Create extraction engine
     let engine = ExtractionEngine::new(
         path_manager.clone(),
@@ -473,7 +472,7 @@ pub(crate) async fn extract_archive_async_with_security_policy(
     .map_err(ExtractionError::from)?;
 
     // Create orchestrator for concurrency control
-    let orchestrator = ExtractionOrchestrator::new(Arc::new(engine), Some(num_cpus::get() / 2));
+    let orchestrator = ExtractionOrchestrator::new(Arc::new(engine), None);
 
     // Perform extraction
     let internal_result: InternalExtractionResult = orchestrator
@@ -882,5 +881,24 @@ mod tests {
             security_policy.max_workspace_size,
             SecurityPolicy::default().max_workspace_size
         );
+    }
+
+    #[tokio::test]
+    async fn public_api_rejects_zero_file_count_before_extraction() {
+        let policy = ExtractionPolicy {
+            max_file_count: 0,
+            ..ExtractionPolicy::default()
+        };
+
+        let error = extract_archive_async(
+            Path::new("not-opened.zip"),
+            Path::new("not-created"),
+            "policy-validation",
+            Some(policy),
+        )
+        .await
+        .expect_err("invalid limits must fail before archive access");
+
+        assert!(error.error_message.contains("max_file_count"));
     }
 }
