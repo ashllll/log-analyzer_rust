@@ -2,7 +2,7 @@
 //!
 //! 将 `import_folder` Tauri 命令中原本混杂的验证、目录创建、
 //! TaskScheduler 生命周期、WorkspaceService 创建、导入调用、失败清理、
-//! 后台完整性验证和 Tantivy 段合并抽取到本模块，使命令层保持薄。
+//! 完整性校验和索引收敛抽取到本模块，使命令层保持薄。
 //!
 //! # 职责边界
 //!
@@ -27,7 +27,6 @@ use la_core::domain::event::EventPublisher;
 use la_core::domain::{TaskHandle, TaskScheduler, WorkspacePaths};
 use la_core::error::{AppError, ErrorCategory};
 use la_core::traits::AppConfigProvider;
-use la_storage::verify_after_import;
 
 fn cleanup_failed_import_workspace(
     workspace_dir: &Path,
@@ -167,7 +166,6 @@ async fn complete_import_task(
 ///
 /// 通过 trait 引用接收基础设施依赖，不绑定 Tauri 具体类型，可独立测试。
 ///
-/// `event_publisher` 使用 `Arc` 以支持后台任务的 fire-and-forget 事件发送。
 pub async fn run_import(
     event_publisher: Arc<dyn EventPublisher>,
     workspace_paths: &dyn WorkspacePaths,
@@ -199,12 +197,7 @@ pub async fn run_import(
 
     // ── TaskScheduler 任务创建 ──
     let task_id = Uuid::new_v4().to_string();
-    let ImportInitialization {
-        service,
-        scheduler,
-        handle,
-        workspace_existed_before_import,
-    } = initialize_import(
+    let initialization = initialize_import(
         &workspace_dir,
         state.get_task_scheduler(),
         &task_id,
@@ -219,14 +212,19 @@ pub async fn run_import(
             )
         },
     )
-    .await
-    .inspect_err(|e| {
-        let publisher = Arc::clone(&event_publisher);
-        let error_msg = e.clone();
-        tokio::spawn(async move {
-            publisher.emit_import_error(&error_msg).await;
-        });
-    })?;
+    .await;
+    let ImportInitialization {
+        service,
+        scheduler,
+        handle,
+        workspace_existed_before_import,
+    } = match initialization {
+        Ok(initialization) => initialization,
+        Err(error) => {
+            event_publisher.emit_import_error(&error).await;
+            return Err(error);
+        }
+    };
 
     // ── 更新任务进度 ──
     let _ = scheduler.update(&handle, 10, "Scanning...").await;
@@ -271,11 +269,8 @@ pub async fn run_import(
                 cleanup_failed_import_workspace(&workspace_dir, workspace_existed_before_import)
             {
                 warn!(path = ?workspace_dir, error = %rm_err, "Failed to cleanup workspace");
-                let publisher = Arc::clone(&event_publisher);
                 let cleanup_msg = format!("Cleanup failed: {rm_err}");
-                tokio::spawn(async move {
-                    publisher.emit_import_error(&cleanup_msg).await;
-                });
+                event_publisher.emit_import_error(&cleanup_msg).await;
             }
             if was_cancelled {
                 let _ = scheduler.cancel(&handle).await;
@@ -290,61 +285,6 @@ pub async fn run_import(
     // ── 完成 ──
     complete_import_task(scheduler.as_ref(), &handle).await?;
     event_publisher.emit_import_complete(&task_id).await;
-
-    // ── 完整性验证（后台执行）──
-    let verify_publisher = Arc::clone(&event_publisher);
-    let verify_workspace_id = workspace_id.to_string();
-    let verify_workspace_dir = workspace_dir.clone();
-    tokio::spawn(async move {
-        match verify_after_import(&verify_workspace_dir).await {
-            Ok(report) => {
-                if report.is_valid() {
-                    info!(
-                        workspace_id = %verify_workspace_id,
-                        total_files = report.total_files,
-                        valid_files = report.valid_files,
-                        "Import integrity verification completed"
-                    );
-                } else {
-                    warn!(
-                        workspace_id = %verify_workspace_id,
-                        total_files = report.total_files,
-                        valid_files = report.valid_files,
-                        invalid = report.invalid_files.len(),
-                        missing = report.missing_objects.len(),
-                        corrupted = report.corrupted_objects.len(),
-                        "Integrity verification found issues"
-                    );
-                    let report_json = serde_json::json!({
-                        "workspace_id": verify_workspace_id,
-                        "report": report,
-                    });
-                    let _ = verify_publisher
-                        .emit_validation_report(&verify_workspace_id, &report_json.to_string())
-                        .await;
-                }
-            }
-            Err(e) => {
-                let msg = format!("Failed to verify integrity: {e}");
-                error!(workspace_id = %verify_workspace_id, error = %e, "{msg}");
-                let _ = verify_publisher.emit_import_error(&msg).await;
-            }
-        }
-    });
-
-    // ── Tantivy segment 合并（后台执行）──
-    let search_engine = Arc::clone(service.search_engine());
-    let ws_id = workspace_id.to_string();
-    tokio::spawn(async move {
-        info!(workspace_id = %ws_id, "Starting Tantivy segment merge");
-        if let Err(e) = search_engine.commit_and_wait_merge().await {
-            warn!(
-                workspace_id = %ws_id,
-                error = %e,
-                "Tantivy segment merge warning (non-critical)"
-            );
-        }
-    });
 
     Ok(task_id)
 }

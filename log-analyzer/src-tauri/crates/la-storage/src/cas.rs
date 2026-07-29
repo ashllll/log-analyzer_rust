@@ -205,9 +205,7 @@ impl TempFileGuard {
         &self.path
     }
 
-    /// Consume the guard without deleting the file (e.g., after successful rename)
     fn keep(mut self) -> PathBuf {
-        // Disable cleanup by taking the path
         std::mem::take(&mut self.path)
     }
 }
@@ -257,6 +255,81 @@ impl ContentAddressableStorage {
                     .time_to_idle(Duration::from_secs(300))
                     .build(),
             ),
+        }
+    }
+
+    async fn reuse_existing_object(
+        &self,
+        hash: &str,
+        object_path: &Path,
+        expected_size: u64,
+    ) -> Result<bool> {
+        match fs::symlink_metadata(object_path).await {
+            Ok(metadata) if metadata.file_type().is_file() && metadata.len() == expected_size => {
+                self.existence_cache.insert(hash.to_string(), ());
+                Ok(true)
+            }
+            Ok(metadata) => {
+                self.existence_cache.invalidate(hash);
+                Err(AppError::io_error(
+                    format!(
+                        "CAS object path is not a valid object file (type: {:?}, expected size: {}, actual size: {})",
+                        metadata.file_type(),
+                        expected_size,
+                        metadata.len()
+                    ),
+                    Some(object_path.to_path_buf()),
+                ))
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                self.existence_cache.invalidate(hash);
+                Ok(false)
+            }
+            Err(error) => Err(AppError::io_error(
+                format!("Failed to inspect CAS object path: {error}"),
+                Some(object_path.to_path_buf()),
+            )),
+        }
+    }
+
+    async fn publish_temp_object(
+        &self,
+        temp_guard: TempFileGuard,
+        hash: &str,
+        expected_size: u64,
+    ) -> Result<()> {
+        let object_path = self.get_object_path(hash);
+        if let Some(parent) = object_path.parent() {
+            fs::create_dir_all(parent).await.map_err(|error| {
+                AppError::io_error(
+                    format!("Failed to create object directory: {error}"),
+                    Some(parent.to_path_buf()),
+                )
+            })?;
+        }
+
+        match fs::rename(temp_guard.path(), &object_path).await {
+            Ok(()) => {
+                let _ = temp_guard.keep();
+                self.existence_cache.insert(hash.to_string(), ());
+                Ok(())
+            }
+            Err(rename_error) => {
+                match self
+                    .reuse_existing_object(hash, &object_path, expected_size)
+                    .await
+                {
+                    Ok(true) => {
+                        debug!(hash = %hash, "Content already exists, deduplication");
+                        Ok(())
+                    }
+                    Ok(false) => Err(AppError::io_error(
+                        format!("Failed to publish CAS object atomically: {rename_error}"),
+                        Some(object_path),
+                    )),
+                    Err(validation_error) => Err(validation_error),
+                }
+            }
         }
     }
 
@@ -650,29 +723,10 @@ impl ContentAddressableStorage {
     pub async fn store_content(&self, content: &[u8]) -> Result<String> {
         let hash = Self::compute_hash(content);
         let object_path = self.get_object_path(&hash);
-
-        // Check cache first for performance (fast path)
-        if self.existence_cache.get(&hash).is_some() {
-            // Verify that the file actually exists to handle stale cache
-            if object_path.exists() {
-                debug!(
-                    hash = %hash,
-                    "Content already exists (verified), skipping write (deduplication)"
-                );
-                return Ok(hash);
-            }
-            // Cache is stale, invalidate it and continue
-            self.existence_cache.invalidate(&hash);
-            debug!(
-                hash = %hash,
-                "Cache indicated existence but file missing, proceeding with write"
-            );
-        }
-
-        // Check if object already exists (deduplication) - authoritative check
-        if object_path.exists() {
-            // Cache the result
-            self.existence_cache.insert(hash.clone(), ());
+        if self
+            .reuse_existing_object(&hash, &object_path, content.len() as u64)
+            .await?
+        {
             debug!(
                 hash = %hash,
                 "Content already exists, skipping write (deduplication)"
@@ -680,61 +734,39 @@ impl ContentAddressableStorage {
             return Ok(hash);
         }
 
-        // Create parent directory (e.g., objects/a3/)
-        if let Some(parent) = object_path.parent() {
-            fs::create_dir_all(parent).await.map_err(|e| {
-                AppError::io_error(
-                    format!("Failed to create object directory: {e}"),
-                    Some(parent.to_path_buf()),
-                )
-            })?;
-        }
-
-        // **SECURITY FIX**: Use atomic write with create_new() to prevent TOCTOU race
-        use tokio::fs::OpenOptions;
         use tokio::io::AsyncWriteExt;
+        let temp_dir = self.workspace_dir.join("tmp");
+        fs::create_dir_all(&temp_dir).await.map_err(|error| {
+            AppError::io_error(
+                format!("Failed to create temp directory: {error}"),
+                Some(temp_dir.clone()),
+            )
+        })?;
+        let temp_path = temp_dir.join(format!("content_{}", uuid::Uuid::new_v4()));
+        let mut temp_file = fs::File::create(&temp_path).await.map_err(|error| {
+            AppError::io_error(
+                format!("Failed to create temp object: {error}"),
+                Some(temp_path.clone()),
+            )
+        })?;
+        let temp_guard = TempFileGuard::new(temp_path.clone());
 
-        match OpenOptions::new()
-            .write(true)
-            .create_new(true) // O_EXCL: atomic check-and-create
-            .open(&object_path)
-            .await
-        {
-            Ok(mut file) => {
-                // Successfully created new file, write content
-                file.write_all(content).await.map_err(|e| {
-                    AppError::io_error(
-                        format!("Failed to write object file: {e}"),
-                        Some(object_path.clone()),
-                    )
-                })?;
+        temp_file.write_all(content).await.map_err(|error| {
+            AppError::io_error(
+                format!("Failed to write temp object: {error}"),
+                Some(temp_path.clone()),
+            )
+        })?;
+        temp_file.flush().await.map_err(|error| {
+            AppError::io_error(
+                format!("Failed to flush temp object: {error}"),
+                Some(temp_path.clone()),
+            )
+        })?;
+        drop(temp_file);
 
-                file.flush().await.map_err(|e| {
-                    AppError::io_error(
-                        format!("Failed to flush object file: {e}"),
-                        Some(object_path.clone()),
-                    )
-                })?;
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                // Another thread created the file concurrently - deduplication win
-                self.existence_cache.insert(hash.clone(), ());
-                debug!(
-                    hash = %hash,
-                    "Content already exists (concurrent write detected), skipping"
-                );
-                return Ok(hash);
-            }
-            Err(e) => {
-                return Err(AppError::io_error(
-                    format!("Failed to create object file: {e}"),
-                    Some(object_path.clone()),
-                ));
-            }
-        }
-
-        // Cache the newly created object
-        self.existence_cache.insert(hash.clone(), ());
+        self.publish_temp_object(temp_guard, &hash, content.len() as u64)
+            .await?;
 
         info!(
             hash = %hash,
@@ -956,9 +988,11 @@ impl ContentAddressableStorage {
                 Some(tmp_path.clone()),
             )
         })?;
+        let temp_guard = TempFileGuard::new(tmp_path.clone());
 
         let mut hasher = Sha256::new();
         let mut buf = vec![0u8; 1024 * 1024]; // 1MB buffer
+        let mut total_bytes = 0u64;
 
         loop {
             let n = reader
@@ -969,6 +1003,7 @@ impl ContentAddressableStorage {
                 break;
             }
             hasher.update(&buf[..n]);
+            total_bytes += n as u64;
             tmp_file.write_all(&buf[..n]).await.map_err(|e| {
                 AppError::io_error(
                     format!("Temp file write failed: {e}"),
@@ -985,35 +1020,17 @@ impl ContentAddressableStorage {
         })?;
 
         let hash = format!("{:x}", hasher.finalize());
+        drop(tmp_file);
         let object_path = self.get_object_path(&hash);
-
-        if let Some(parent) = object_path.parent() {
-            fs::create_dir_all(parent).await.map_err(|e| {
-                AppError::io_error(
-                    format!("Failed to create object directory: {e}"),
-                    Some(parent.to_path_buf()),
-                )
-            })?;
+        if self
+            .reuse_existing_object(&hash, &object_path, total_bytes)
+            .await?
+        {
+            return Ok(hash);
         }
-
-        match fs::rename(&tmp_path, &object_path).await {
-            Ok(_) => {
-                self.existence_cache.insert(hash.clone(), ());
-                Ok(hash)
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                fs::remove_file(&tmp_path).await.ok();
-                self.existence_cache.insert(hash.clone(), ());
-                Ok(hash)
-            }
-            Err(e) => {
-                fs::remove_file(&tmp_path).await.ok();
-                Err(AppError::io_error(
-                    format!("CAS rename failed: {e}"),
-                    Some(object_path),
-                ))
-            }
-        }
+        self.publish_temp_object(temp_guard, &hash, total_bytes)
+            .await?;
+        Ok(hash)
     }
 
     /// Read content via memory-mapped I/O (sync version)
@@ -1416,88 +1433,24 @@ impl ContentAddressableStorage {
         }
 
         // 2. 计算最终哈希
+        drop(temp_file);
         let hash = format!("{:x}", hasher.finalize());
         let object_path = self.get_object_path(&hash);
 
-        // Check cache first - might already exist
-        if self.existence_cache.get(&hash).is_some() {
-            // Verify the file actually exists before skipping
-            if object_path.exists() {
-                // Temp file will be cleaned up by RAII guard (BUG-007 fix)
-                debug!(
-                    hash = %hash,
-                    file = %file_path.display(),
-                    "Content already exists (verified), skipping"
-                );
-                return Ok(hash);
-            }
-            // Cache was stale, continue with the write
-            self.existence_cache.invalidate(&hash);
-        }
-
-        // Create parent directory for final destination
-        if let Some(parent) = object_path.parent() {
-            fs::create_dir_all(parent).await.map_err(|e| {
-                AppError::io_error(
-                    format!("Failed to create object directory: {e}"),
-                    Some(parent.to_path_buf()),
-                )
-            })?;
-        }
-
-        // 3. 原子重命名到目标位置 (O_EXCL 确保不会覆盖现有文件)
-        // Use tokio::fs::OpenOptions for atomic creation
-        use tokio::fs::OpenOptions;
-
-        // Check if target already exists
-        match OpenOptions::new()
-            .write(true)
-            .create_new(true) // O_EXCL: fail if exists
-            .open(&object_path)
-            .await
+        if self
+            .reuse_existing_object(&hash, &object_path, total_bytes)
+            .await?
         {
-            Ok(_target_file) => {
-                // Target doesn't exist, we can proceed with rename
-                drop(_target_file);
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                // File already exists - deduplication win
-                self.existence_cache.insert(hash.clone(), ());
-                // Temp file will be cleaned up by RAII guard (BUG-007 fix)
-                debug!(
-                    hash = %hash,
-                    file = %file_path.display(),
-                    "Content already exists, deduplication"
-                );
-                return Ok(hash);
-            }
-            Err(e) => {
-                // Temp file will be cleaned up by RAII guard (BUG-007 fix)
-                return Err(AppError::io_error(
-                    format!("Failed to check target file: {e}"),
-                    Some(object_path.clone()),
-                ));
-            }
+            debug!(
+                hash = %hash,
+                file = %file_path.display(),
+                "Content already exists, deduplication"
+            );
+            return Ok(hash);
         }
 
-        // Perform atomic rename
-        match fs::rename(&temp_path, &object_path).await {
-            Ok(()) => {
-                // Success! Prevent RAII guard from cleaning up the temp file
-                // since it's now the permanent file
-                let _ = temp_guard.keep();
-            }
-            Err(e) => {
-                // Rename failed, temp file will be cleaned up by RAII guard (BUG-007 fix)
-                return Err(AppError::io_error(
-                    format!("Failed to rename temp file to target: {e}"),
-                    Some(object_path.clone()),
-                ));
-            }
-        }
-
-        // Cache the newly created object
-        self.existence_cache.insert(hash.clone(), ());
+        self.publish_temp_object(temp_guard, &hash, total_bytes)
+            .await?;
 
         info!(
             hash = %hash,
@@ -1620,6 +1573,27 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn concurrent_writers_publish_one_complete_object() {
+        let temp_dir = TempDir::new().unwrap();
+        let cas = Arc::new(ContentAddressableStorage::new(
+            temp_dir.path().join("workspace"),
+        ));
+        let content = b"all concurrent writers publish the same complete object";
+        let expected_hash = ContentAddressableStorage::compute_hash(content);
+        let mut writers = tokio::task::JoinSet::new();
+
+        for _ in 0..16 {
+            let cas = Arc::clone(&cas);
+            writers.spawn(async move { cas.store_content(content).await });
+        }
+
+        while let Some(result) = writers.join_next().await {
+            assert_eq!(result.unwrap().unwrap(), expected_hash);
+        }
+        assert_eq!(cas.read_content(&expected_hash).await.unwrap(), content);
+    }
+
+    #[tokio::test]
     async fn test_verify_integrity() {
         let temp_dir = TempDir::new().unwrap();
         let cas = ContentAddressableStorage::new(temp_dir.path().to_path_buf());
@@ -1720,6 +1694,85 @@ mod tests {
 
         assert_eq!(hash1, hash2, "Same file should produce same hash");
         assert!(cas.exists(&hash1), "Content should exist");
+    }
+
+    #[tokio::test]
+    async fn store_file_zero_copy_rejects_a_non_file_object_path() {
+        let temp_dir = TempDir::new().unwrap();
+        let cas = ContentAddressableStorage::new(temp_dir.path().join("workspace"));
+        let source_path = temp_dir.path().join("source.log");
+        let content = b"CAS objects must be regular files";
+        tokio::fs::write(&source_path, content).await.unwrap();
+
+        let hash = ContentAddressableStorage::compute_hash(content);
+        let object_path = cas.get_object_path(&hash);
+        tokio::fs::create_dir_all(&object_path).await.unwrap();
+
+        let result = cas.store_file_zero_copy(&source_path).await;
+
+        assert!(
+            result.is_err(),
+            "a directory at the object path must not be accepted as deduplicated content"
+        );
+    }
+
+    #[tokio::test]
+    async fn store_content_rejects_a_non_file_object_path() {
+        let temp_dir = TempDir::new().unwrap();
+        let cas = ContentAddressableStorage::new(temp_dir.path().join("workspace"));
+        let content = b"inline CAS objects must be regular files";
+        let hash = ContentAddressableStorage::compute_hash(content);
+        let object_path = cas.get_object_path(&hash);
+        tokio::fs::create_dir_all(&object_path).await.unwrap();
+
+        let result = cas.store_content(content).await;
+
+        assert!(
+            result.is_err(),
+            "a directory at the object path must not be accepted as inline deduplicated content"
+        );
+    }
+
+    #[tokio::test]
+    async fn store_stream_rejects_a_non_file_object_path() {
+        let temp_dir = TempDir::new().unwrap();
+        let cas = ContentAddressableStorage::new(temp_dir.path().join("workspace"));
+        let content = b"streamed CAS objects must be regular files";
+        let hash = ContentAddressableStorage::compute_hash(content);
+        let object_path = cas.get_object_path(&hash);
+        tokio::fs::create_dir_all(&object_path).await.unwrap();
+
+        let result = cas.store_stream(&content[..]).await;
+
+        assert!(
+            result.is_err(),
+            "a directory at the object path must not be accepted as streamed deduplicated content"
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn store_stream_rejects_a_symlink_at_the_object_path() {
+        use std::os::unix::fs::symlink;
+
+        let temp_dir = TempDir::new().unwrap();
+        let cas = ContentAddressableStorage::new(temp_dir.path().join("workspace"));
+        let content = b"symlinks must not impersonate CAS objects";
+        let hash = ContentAddressableStorage::compute_hash(content);
+        let object_path = cas.get_object_path(&hash);
+        tokio::fs::create_dir_all(object_path.parent().unwrap())
+            .await
+            .unwrap();
+        let symlink_target = temp_dir.path().join("symlink-target.log");
+        tokio::fs::write(&symlink_target, content).await.unwrap();
+        symlink(&symlink_target, &object_path).unwrap();
+
+        let result = cas.store_stream(&content[..]).await;
+
+        assert!(
+            result.is_err(),
+            "a symlink at the object path must not be accepted as streamed deduplicated content"
+        );
     }
 
     #[test]
@@ -2050,30 +2103,6 @@ mod tests {
             !temp_path.exists(),
             "Temp file should be cleaned up by RAII guard"
         );
-    }
-
-    /// Test TempFileGuard keep() prevents cleanup
-    #[tokio::test]
-    async fn test_temp_file_guard_keep() {
-        let temp_dir = TempDir::new().unwrap();
-        let temp_path = temp_dir.path().join("test_keep.tmp");
-
-        // Create a temp file
-        tokio::fs::write(&temp_path, b"test content").await.unwrap();
-        assert!(temp_path.exists(), "Temp file should exist");
-
-        // Create guard and keep the file
-        let kept_path = {
-            let guard = TempFileGuard::new(temp_path.clone());
-            guard.keep()
-        };
-
-        // Give a moment for any async operations
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-
-        // File should still exist
-        assert!(kept_path.exists(), "File should exist after keep()");
-        assert_eq!(kept_path, temp_path);
     }
 
     #[tokio::test]

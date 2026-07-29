@@ -11,8 +11,8 @@ flowchart LR
   EXTRACT --> FILTER[FileTypeFilter]
   FILTER --> CAS[la-storage CAS]
   CAS --> META[SQLite MetadataStore]
-  META --> VERIFY[完整性校验]
-  META --> INDEX[Tantivy segment merge]
+  META --> STATS[统计收敛]
+  STATS --> INDEX[Tantivy 事务重建 + CAS 哈希校验]
   PIPE --> TASK[TaskScheduler events]
 ```
 
@@ -25,8 +25,8 @@ flowchart LR
 - TaskScheduler 创建、更新、完成与失败
 - 工作区服务创建与 import 调用
 - 失败后的资源清理
-- 后台完整性校验
-- Tantivy segment merge 收尾
+- 导入文件统计收敛
+- 带 CAS 哈希校验的 Tantivy 事务重建
 
 因此 Tauri command 可以保持薄边界，只处理调用参数和返回任务 id。
 
@@ -40,5 +40,6 @@ flowchart LR
 
 ## 失败语义
 
-流水线会把失败写回任务状态，并清理未完成的工作区资源。后台完整性验证和索引合并属于导入成功后的收尾阶段，错误必须通过任务 / 事件链路可见，而不是静默丢失。
-
+流水线只在文件统计全部就绪、每个 CAS 对象的实际 SHA-256 与元数据一致、Tantivy
+替换索引提交成功后完成任务。缺失或损坏对象会中止索引事务，保留上一次已提交索引，
+并沿导入错误与任务失败链路返回；新建工作区导入失败时会清理未完成资源。

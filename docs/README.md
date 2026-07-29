@@ -85,7 +85,7 @@ WorkspacesPage → api.importFolder
     → la-archive（递归安全提取）
     → WorkspaceServiceImpl::import_file
     → la-storage（CAS + MetadataStore）
-    → 完整性校验 + Tantivy segment merge
+    → 文件统计收敛 + CAS 哈希校验 + Tantivy 事务重建
 ```
 
 ---

@@ -792,21 +792,6 @@ impl SearchEngineManager {
         Ok(())
     }
 
-    /// 提交并等待所有 segment 合并完成
-    ///
-    /// 在大批量导入后调用此方法，确保 Tantivy 后台 segment 合并线程完成工作，
-    /// 减少后续搜索时的段数量，提升查询性能。合并由 Tantivy 的 MergePolicy 自动触发。
-    ///
-    /// 注意：`IndexWriter::wait_merging_threads()` 会消费 writer 所有权。
-    /// 当前 SearchEngineManager 通过共享 Mutex 持有单例 writer，若为了等待合并
-    /// 再临时创建第二个 writer 作为占位，会触发 Tantivy 的 `LockBusy`。
-    /// 因此这里采用安全降级：commit 后立即返回，由 Tantivy 在后台继续完成合并。
-    pub async fn commit_and_wait_merge(&self) -> SearchResult<()> {
-        self.commit()?;
-        debug!("Index commit completed; Tantivy will continue segment merge in background");
-        Ok(())
-    }
-
     /// Search with multiple keywords using optimized intersection algorithms
     pub async fn search_multi_keyword(
         &self,

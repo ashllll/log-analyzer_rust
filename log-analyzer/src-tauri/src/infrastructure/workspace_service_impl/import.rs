@@ -1,6 +1,5 @@
 use std::future::Future;
 use std::sync::Arc;
-use std::time::Duration;
 
 use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;
@@ -13,7 +12,6 @@ use la_core::traits::AppConfigProvider;
 use la_core::utils::compute_file_stats;
 
 use super::WorkspaceServiceImpl;
-const FALLBACK_STATS_DELAY_SECS: u64 = 5;
 
 async fn acquire_import_permit(
     import_lock: Arc<tokio::sync::Mutex<()>>,
@@ -58,6 +56,13 @@ async fn rebuild_search_index_inner(
             let content = cas.read_content_sync(&file.sha256_hash).map_err(|e| {
                 format!("Failed to read CAS content for {}: {e}", file.virtual_path)
             })?;
+            let actual_hash = la_storage::ContentAddressableStorage::compute_hash(&content);
+            if actual_hash != file.sha256_hash {
+                return Err(format!(
+                    "CAS hash mismatch for {}: expected {}, got {}",
+                    file.virtual_path, file.sha256_hash, actual_hash
+                ));
+            }
             let (content_str, _) = decode_log_content(&content);
             let real_path = format!("cas://{}", file.sha256_hash);
 
@@ -160,6 +165,44 @@ where
     Ok(indexed_lines)
 }
 
+async fn finalize_pending_file_stats(
+    metadata_store: Arc<la_storage::MetadataStore>,
+    cas: Arc<la_storage::ContentAddressableStorage>,
+    cancellation_token: &CancellationToken,
+) -> la_core::error::Result<usize> {
+    let files = metadata_store.get_all_files().await?;
+    let mut updated = 0usize;
+
+    for file in files {
+        if cancellation_token.is_cancelled() {
+            return Err(AppError::Archive {
+                category: ErrorCategory::CancellationRequested,
+                _message: "Import cancelled while finalizing file statistics".to_string(),
+                _path: None,
+            });
+        }
+        if file.analysis_status == la_core::storage_types::AnalysisStatus::Ready {
+            continue;
+        }
+
+        let content = cas.read_content(&file.sha256_hash).await?;
+        let (min_ts, max_ts, level_mask) =
+            tokio::task::spawn_blocking(move || compute_file_stats(&content))
+                .await
+                .map_err(|error| {
+                    AppError::internal_error(format!(
+                        "File statistics worker failed while finalizing import: {error}"
+                    ))
+                })?;
+        metadata_store
+            .update_file_ready(&file.virtual_path, min_ts, max_ts, level_mask)
+            .await?;
+        updated += 1;
+    }
+
+    Ok(updated)
+}
+
 #[async_trait]
 impl ImportService for WorkspaceServiceImpl {
     async fn import_file(
@@ -208,81 +251,19 @@ impl ImportService for WorkspaceServiceImpl {
             }
         })?;
 
-        let metadata_store = self.repo.metadata_store().clone();
-        let cas = Arc::clone(self.repo.cas());
-        let workspace_id = self.workspace_id.clone();
-        let ct = cancellation_token.clone();
-        tokio::spawn(async move {
-            if ct.is_cancelled() {
-                return;
-            }
-            tokio::time::sleep(Duration::from_secs(FALLBACK_STATS_DELAY_SECS)).await;
-            if ct.is_cancelled() {
-                return;
-            }
-
-            match metadata_store.get_all_files().await {
-                Ok(files) => {
-                    let mut updated = 0usize;
-                    let mut failed = 0usize;
-
-                    for file in files {
-                        if file.analysis_status == la_core::storage_types::AnalysisStatus::Ready {
-                            continue;
-                        }
-
-                        match cas.read_content(&file.sha256_hash).await {
-                            Ok(content) => {
-                                let (min_ts, max_ts, level_mask) = compute_file_stats(&content);
-                                if let Err(e) = metadata_store
-                                    .update_file_ready(
-                                        &file.virtual_path,
-                                        min_ts,
-                                        max_ts,
-                                        level_mask,
-                                    )
-                                    .await
-                                {
-                                    tracing::warn!(
-                                        virtual_path = %file.virtual_path,
-                                        error = %e,
-                                        "Failed to update file ready status in fallback"
-                                    );
-                                    failed += 1;
-                                } else {
-                                    updated += 1;
-                                }
-                            }
-                            Err(e) => {
-                                tracing::warn!(
-                                    virtual_path = %file.virtual_path,
-                                    hash = %file.sha256_hash,
-                                    error = %e,
-                                    "Failed to read file content for fallback stats"
-                                );
-                                failed += 1;
-                            }
-                        }
-                    }
-
-                    if updated > 0 || failed > 0 {
-                        tracing::info!(
-                            workspace_id = %workspace_id,
-                            stats_updated = updated,
-                            stats_failed = failed,
-                            "Fallback file stats computation completed"
-                        );
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        workspace_id = %workspace_id,
-                        error = %e,
-                        "Failed to get files for fallback stats computation"
-                    );
-                }
-            }
-        });
+        let finalized_stats = finalize_pending_file_stats(
+            self.repo.metadata_store().clone(),
+            Arc::clone(self.repo.cas()),
+            &cancellation_token,
+        )
+        .await?;
+        if finalized_stats > 0 {
+            tracing::info!(
+                workspace_id = %self.workspace_id,
+                stats_updated = finalized_stats,
+                "Pending file statistics finalized before indexing"
+            );
+        }
 
         let metadata_store = self.repo.metadata_store().clone();
         let cas = Arc::clone(self.repo.cas());
@@ -322,6 +303,7 @@ mod tests {
     use super::*;
     use la_core::storage_types::{AnalysisStatus, FileMetadata};
     use la_search::manager::SearchConfig;
+    use std::time::Duration;
     use tempfile::TempDir;
 
     fn file_metadata(hash: String, content_len: usize) -> FileMetadata {
@@ -368,6 +350,35 @@ mod tests {
         );
 
         (workspace, index, metadata_store, cas, search_manager)
+    }
+
+    #[tokio::test]
+    async fn pending_file_stats_are_finalized_before_indexing() {
+        let (_workspace, _index, metadata_store, cas, _search_manager) = test_dependencies().await;
+        let content = b"2026-07-30 12:00:00 ERROR finalized stats\n";
+        let hash = cas.store_content(content).await.unwrap();
+        metadata_store
+            .insert_file(&file_metadata(hash, content.len()))
+            .await
+            .unwrap();
+
+        let updated = finalize_pending_file_stats(
+            Arc::clone(&metadata_store),
+            cas,
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(updated, 1);
+        let file = metadata_store
+            .get_file_by_virtual_path("logs/app.log")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(file.analysis_status, AnalysisStatus::Ready);
+        assert!(file.min_timestamp.is_some());
+        assert_eq!(file.level_mask, Some(1));
     }
 
     #[tokio::test]
@@ -546,6 +557,49 @@ mod tests {
         .await
         .unwrap_err();
         assert!(error.contains("Failed to read CAS content"));
+
+        search_manager.commit().unwrap();
+        assert_eq!(
+            search_manager.get_time_range().unwrap(),
+            (1_704_067_200, 1_704_067_200, 1)
+        );
+    }
+
+    #[tokio::test]
+    async fn corrupted_cas_object_aborts_rebuild_before_commit() {
+        let (_workspace, _index, metadata_store, cas, search_manager) = test_dependencies().await;
+
+        let content = b"2024-01-01 00:00:00 INFO durable content\n";
+        let hash = cas.store_content(content).await.unwrap();
+        metadata_store
+            .insert_file(&file_metadata(hash.clone(), content.len()))
+            .await
+            .unwrap();
+        rebuild_search_index_inner(
+            Arc::clone(&metadata_store),
+            Arc::clone(&cas),
+            Arc::clone(&search_manager),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+
+        tokio::fs::write(
+            cas.get_object_path(&hash),
+            b"2025-01-01 00:00:00 ERROR corrupted content\n",
+        )
+        .await
+        .unwrap();
+
+        let error = rebuild_search_index_inner(
+            metadata_store,
+            cas,
+            Arc::clone(&search_manager),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap_err();
+        assert!(error.contains("hash mismatch"));
 
         search_manager.commit().unwrap();
         assert_eq!(

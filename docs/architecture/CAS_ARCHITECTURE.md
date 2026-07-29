@@ -49,13 +49,14 @@ CAS 的核心思路：**以内容哈希（SHA-256）为唯一标识，内容只�
 ```text
 1. 计算 content 的 SHA-256：hash = "abcdef1234..."
 2. 构建路径：objects/ab/cdef1234...
-3. 若路径已存在 → 直接返回 hash（不重复写）
-4. 先写临时文件 objects/ab/cdef1234....tmp
-5. 原子重命名为 objects/ab/cdef1234...
+3. 若路径已存在且是同尺寸普通文件 → 直接返回 hash（不重复写）
+4. 先在工作区内写完整临时文件
+5. 在同一文件系统内原子重命名为 objects/ab/cdef1234...
 6. 返回 hash
 ```
 
-原子重命名保证并发写入同一内容不会产生损坏文件（两个进程同时写同一 hash，最终结果幂等）。
+原子重命名保证读取方不会看到半写入或空占位对象；并发写入同一内容时最终结果幂等。
+目标路径若是目录、符号链接或尺寸不符的文件会被视为存储损坏并返回错误，而不是误报去重成功。
 
 **读取：**
 
@@ -206,13 +207,13 @@ CAS 内部维护一个 moka LRU 缓存（`existence_cache: Cache<String, ()>`，
 key:   SHA-256 hash
 value: ()（仅标记"该对象已确认存在"）
 策略:  LRU + TTL/TTI
-作用:  exists() 与写入前去重检查走缓存快路径，避免每次 store 都做 stat 系统调用
+作用:  exists() 查询走缓存快路径；写入复用仍执行权威元数据校验
 ```
 
 注意边界：
 
 - 该缓存只加速"对象是否存在"的判断，**不缓存文件内容**；搜索读取仍直接从磁盘读（由 OS page cache 兜底）
-- 缓存命中后仍会校验文件真实存在，能容忍外部删除导致的过期条目（见 cas.rs 的 cache consistency 测试）
+- 写入复用对象前仍会校验目标是同尺寸普通文件，能容忍外部删除导致的过期条目，并拒绝目录或符号链接冒充对象（见 cas.rs 的 cache consistency 与 object publication 测试）
 
 ---
 
@@ -239,10 +240,11 @@ import_folder(workspace_id, folder_path)
 │         depth_level++，parent_archive_id = 父归档 ID │
 └─────────────────────────────────────────────────────┘
   ↓ 导入完成
-SearchEngineManager 批量建索引（Tantivy）
+SearchEngineManager 事务重建索引（Tantivy）
   → 遍历 MetadataStore 中所有文件
-  → 每文件从 CAS 读取内容，解析日志行，写入 Tantivy
-  → 定期 commit（每批次），完成后 commit_and_wait_merge
+  → 每文件从 CAS 读取内容并校验实际 SHA-256
+  → 解析日志行，写入未提交的替换索引
+  → 全部对象通过校验后一次性 commit；失败则回滚并保留旧索引
 ```
 
 ---
