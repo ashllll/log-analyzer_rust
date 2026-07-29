@@ -28,6 +28,20 @@ use la_core::error::{AppError, ErrorCategory};
 use la_core::traits::AppConfigProvider;
 use la_storage::verify_after_import;
 
+fn cleanup_failed_import_workspace(
+    workspace_dir: &Path,
+    existed_before_import: bool,
+) -> std::io::Result<()> {
+    if existed_before_import {
+        return Ok(());
+    }
+
+    if workspace_dir.exists() {
+        fs::remove_dir_all(workspace_dir)?;
+    }
+    Ok(())
+}
+
 /// 运行导入生命周期，返回 TaskScheduler 创建的任务 ID。
 ///
 /// 通过 trait 引用接收基础设施依赖，不绑定 Tauri 具体类型，可独立测试。
@@ -56,6 +70,7 @@ pub async fn run_import(
     };
 
     let workspace_dir = workspace_paths.workspace_data_dir(workspace_id)?;
+    let workspace_existed_before_import = workspace_dir.exists();
     fs::create_dir_all(&workspace_dir).map_err(|e| {
         AppError::io_error(
             format!("Failed to create workspace dir: {e}"),
@@ -133,16 +148,18 @@ pub async fn run_import(
             } else {
                 error!(error = %e, "Failed to import file");
             }
+            service.close_databases().await;
             state.remove_workspace_service(workspace_id);
-            if workspace_dir.exists() {
-                if let Err(rm_err) = fs::remove_dir_all(&workspace_dir) {
-                    warn!(path = ?workspace_dir, error = %rm_err, "Failed to cleanup workspace");
-                    let publisher = Arc::clone(&event_publisher);
-                    let cleanup_msg = format!("Cleanup failed: {rm_err}");
-                    tokio::spawn(async move {
-                        publisher.emit_import_error(&cleanup_msg).await;
-                    });
-                }
+            drop(service);
+            if let Err(rm_err) =
+                cleanup_failed_import_workspace(&workspace_dir, workspace_existed_before_import)
+            {
+                warn!(path = ?workspace_dir, error = %rm_err, "Failed to cleanup workspace");
+                let publisher = Arc::clone(&event_publisher);
+                let cleanup_msg = format!("Cleanup failed: {rm_err}");
+                tokio::spawn(async move {
+                    publisher.emit_import_error(&cleanup_msg).await;
+                });
             }
             if was_cancelled {
                 let _ = scheduler.cancel(&handle).await;
@@ -240,4 +257,35 @@ pub async fn run_import_with_path(
         &path_str,
     )
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn failed_refresh_preserves_an_existing_workspace() {
+        let parent = TempDir::new().unwrap();
+        let workspace = parent.path().join("existing-workspace");
+        fs::create_dir_all(&workspace).unwrap();
+        let sentinel = workspace.join("metadata.db");
+        fs::write(&sentinel, b"existing metadata").unwrap();
+
+        cleanup_failed_import_workspace(&workspace, true).unwrap();
+
+        assert!(sentinel.exists());
+    }
+
+    #[test]
+    fn failed_initial_import_removes_its_new_workspace() {
+        let parent = TempDir::new().unwrap();
+        let workspace = parent.path().join("new-workspace");
+        fs::create_dir_all(&workspace).unwrap();
+        fs::write(workspace.join("partial-object"), b"partial").unwrap();
+
+        cleanup_failed_import_workspace(&workspace, false).unwrap();
+
+        assert!(!workspace.exists());
+    }
 }

@@ -12,7 +12,6 @@ use la_core::traits::AppConfigProvider;
 use la_core::utils::compute_file_stats;
 
 use super::WorkspaceServiceImpl;
-const SEARCH_INDEX_COMMIT_EVERY_FILES: usize = 25;
 const FALLBACK_STATS_DELAY_SECS: u64 = 5;
 
 async fn rebuild_search_index_inner(
@@ -20,29 +19,19 @@ async fn rebuild_search_index_inner(
     cas: Arc<la_storage::ContentAddressableStorage>,
     search_manager: Arc<la_search::SearchEngineManager>,
 ) -> std::result::Result<usize, String> {
-    let index_empty = match search_manager.get_time_range() {
-        Ok((_, _, count)) => count == 0,
-        Err(_) => true,
-    };
-
-    if !index_empty {
-        tracing::info!("Skipping index rebuild: Tantivy index already has documents");
-        return Ok(0);
-    }
-
     let files = metadata_store
         .get_all_files()
         .await
         .map_err(|e| format!("Failed to enumerate imported files for indexing: {e}"))?;
 
     tokio::task::spawn_blocking(move || -> std::result::Result<usize, String> {
-        search_manager
-            .clear_index()
-            .map_err(|e| format!("Failed to clear search index before rebuild: {e}"))?;
+        let mut rebuild = search_manager
+            .begin_rebuild()
+            .map_err(|e| format!("Failed to begin search index rebuild: {e}"))?;
 
         let mut indexed_lines = 0usize;
 
-        for (file_index, file) in files.into_iter().enumerate() {
+        for file in files {
             let content = cas.read_content_sync(&file.sha256_hash).map_err(|e| {
                 format!("Failed to read CAS content for {}: {e}", file.virtual_path)
             })?;
@@ -63,11 +52,9 @@ async fn rebuild_search_index_inner(
                         indexed_lines,
                         start_line_number,
                     );
-                    for entry in &entries {
-                        search_manager
-                            .add_document(entry)
-                            .map_err(|e| format!("Failed to add indexed document: {e}"))?;
-                    }
+                    rebuild
+                        .add_documents(&entries)
+                        .map_err(|e| format!("Failed to add indexed documents: {e}"))?;
                     indexed_lines += entries.len();
                     start_line_number += line_buffer.len();
                     line_buffer.clear();
@@ -82,22 +69,14 @@ async fn rebuild_search_index_inner(
                     indexed_lines,
                     start_line_number,
                 );
-                for entry in &entries {
-                    search_manager
-                        .add_document(entry)
-                        .map_err(|e| format!("Failed to add indexed document: {e}"))?;
-                }
+                rebuild
+                    .add_documents(&entries)
+                    .map_err(|e| format!("Failed to add indexed documents: {e}"))?;
                 indexed_lines += entries.len();
-            }
-
-            if (file_index + 1) % SEARCH_INDEX_COMMIT_EVERY_FILES == 0 {
-                search_manager
-                    .commit()
-                    .map_err(|e| format!("Failed to commit rebuilt search index: {e}"))?;
             }
         }
 
-        search_manager
+        rebuild
             .commit()
             .map_err(|e| format!("Failed to finalize rebuilt search index: {e}"))?;
 
@@ -265,5 +244,139 @@ impl ImportService for WorkspaceServiceImpl {
             root_name,
             files_imported,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use la_core::storage_types::{AnalysisStatus, FileMetadata};
+    use la_search::manager::SearchConfig;
+    use tempfile::TempDir;
+
+    fn file_metadata(hash: String, content_len: usize) -> FileMetadata {
+        FileMetadata {
+            id: 0,
+            sha256_hash: hash,
+            virtual_path: "logs/app.log".to_string(),
+            original_name: "app.log".to_string(),
+            size: content_len as i64,
+            modified_time: 0,
+            mime_type: Some("text/plain".to_string()),
+            parent_archive_id: None,
+            depth_level: 0,
+            min_timestamp: None,
+            max_timestamp: None,
+            level_mask: None,
+            analysis_status: AnalysisStatus::Pending,
+        }
+    }
+
+    async fn test_dependencies() -> (
+        TempDir,
+        TempDir,
+        Arc<la_storage::MetadataStore>,
+        Arc<la_storage::ContentAddressableStorage>,
+        Arc<la_search::SearchEngineManager>,
+    ) {
+        let workspace = TempDir::new().unwrap();
+        let index = TempDir::new().unwrap();
+        let metadata_store = Arc::new(
+            la_storage::MetadataStore::new(workspace.path())
+                .await
+                .unwrap(),
+        );
+        let cas = Arc::new(la_storage::ContentAddressableStorage::new(
+            workspace.path().to_path_buf(),
+        ));
+        let search_manager = Arc::new(
+            la_search::SearchEngineManager::new(SearchConfig {
+                index_path: index.path().to_path_buf(),
+                ..Default::default()
+            })
+            .unwrap(),
+        );
+
+        (workspace, index, metadata_store, cas, search_manager)
+    }
+
+    #[tokio::test]
+    async fn rebuild_replaces_documents_when_a_virtual_path_changes() {
+        let (_workspace, _index, metadata_store, cas, search_manager) = test_dependencies().await;
+
+        let old_content = b"2024-01-01 00:00:00 INFO old content\n";
+        let old_hash = cas.store_content(old_content).await.unwrap();
+        metadata_store
+            .insert_file(&file_metadata(old_hash, old_content.len()))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            rebuild_search_index_inner(
+                Arc::clone(&metadata_store),
+                Arc::clone(&cas),
+                Arc::clone(&search_manager),
+            )
+            .await
+            .unwrap(),
+            1
+        );
+        assert_eq!(
+            search_manager.get_time_range().unwrap(),
+            (1_704_067_200, 1_704_067_200, 1)
+        );
+
+        let new_content = b"2025-01-01 00:00:00 ERROR new content\n";
+        let new_hash = cas.store_content(new_content).await.unwrap();
+        metadata_store
+            .insert_file(&file_metadata(new_hash, new_content.len()))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            rebuild_search_index_inner(metadata_store, cas, Arc::clone(&search_manager))
+                .await
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            search_manager.get_time_range().unwrap(),
+            (1_735_689_600, 1_735_689_600, 1)
+        );
+    }
+
+    #[tokio::test]
+    async fn failed_rebuild_preserves_the_last_committed_index() {
+        let (_workspace, _index, metadata_store, cas, search_manager) = test_dependencies().await;
+
+        let content = b"2024-01-01 00:00:00 INFO durable content\n";
+        let hash = cas.store_content(content).await.unwrap();
+        metadata_store
+            .insert_file(&file_metadata(hash, content.len()))
+            .await
+            .unwrap();
+        rebuild_search_index_inner(
+            Arc::clone(&metadata_store),
+            Arc::clone(&cas),
+            Arc::clone(&search_manager),
+        )
+        .await
+        .unwrap();
+
+        metadata_store
+            .insert_file(&file_metadata("missing-cas-object".to_string(), 1))
+            .await
+            .unwrap();
+
+        let error = rebuild_search_index_inner(metadata_store, cas, Arc::clone(&search_manager))
+            .await
+            .unwrap_err();
+        assert!(error.contains("Failed to read CAS content"));
+
+        search_manager.commit().unwrap();
+        assert_eq!(
+            search_manager.get_time_range().unwrap(),
+            (1_704_067_200, 1_704_067_200, 1)
+        );
     }
 }

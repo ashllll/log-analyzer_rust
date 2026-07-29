@@ -7,7 +7,7 @@
 //! - Query parsing and execution
 
 use la_core::utils::TimestampParser;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::{Mutex, MutexGuard, RwLock};
 use std::collections::HashSet;
 use std::ops::Bound;
 use std::path::PathBuf;
@@ -131,6 +131,68 @@ pub struct SearchEngineManager {
     stats: Arc<RwLock<SearchStats>>,
     boolean_processor: BooleanQueryProcessor,
     highlighting_engine: HighlightingEngine,
+}
+
+/// Exclusive, rollback-safe replacement of all documents in a search index.
+///
+/// The previously committed index remains visible to readers until `commit`.
+/// Dropping an unfinished rebuild rolls the writer back to its last commit.
+pub struct SearchIndexRebuild<'a> {
+    manager: &'a SearchEngineManager,
+    writer: Option<MutexGuard<'a, IndexWriter>>,
+    committed: bool,
+}
+
+impl SearchIndexRebuild<'_> {
+    /// Add a batch to the replacement index without publishing partial results.
+    pub fn add_documents(&mut self, entries: &[LogEntry]) -> SearchResult<()> {
+        let writer = self
+            .writer
+            .as_ref()
+            .expect("search index rebuild writer must exist before commit");
+
+        for entry in entries {
+            writer.add_document(self.manager.document_for_entry(entry))?;
+        }
+
+        Ok(())
+    }
+
+    /// Atomically publish the replacement index and refresh readers.
+    pub fn commit(mut self) -> SearchResult<()> {
+        self.writer
+            .as_mut()
+            .expect("search index rebuild writer must exist before commit")
+            .commit()?;
+        self.committed = true;
+        drop(self.writer.take());
+
+        if let Err(e) = self.manager.reader.reload() {
+            warn!(
+                error = %e,
+                "Reader reload failed after index rebuild; readers may see stale data temporarily"
+            );
+        }
+
+        Ok(())
+    }
+}
+
+impl Drop for SearchIndexRebuild<'_> {
+    fn drop(&mut self) {
+        if self.committed {
+            return;
+        }
+
+        if let Some(writer) = self.writer.as_mut() {
+            if let Err(e) = writer.rollback() {
+                error!(
+                    error = %e,
+                    "Failed to roll back unfinished search index rebuild"
+                );
+            }
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -632,30 +694,32 @@ fn document_to_log_entry_impl(schema: &LogSchema, doc: &TantivyDocument) -> Opti
 }
 
 impl SearchEngineManager {
-    /// Add document to index
-    pub fn add_document(&self, log_entry: &LogEntry) -> SearchResult<()> {
+    fn document_for_entry(&self, entry: &LogEntry) -> TantivyDocument {
         let mut doc = TantivyDocument::default();
 
-        doc.add_text(self.schema.content, &log_entry.content);
-        // 统一接受 Unix 时间戳、RFC3339 和项目常见日志时间格式。
-        // 解析失败时使用 0（1970-01-01）占位，避免伪造“当前时间”污染时序索引。
-        let timestamp_i64 = TimestampParser::parse_unix_timestamp(&log_entry.timestamp)
-            .unwrap_or_else(|| {
+        doc.add_text(self.schema.content, &entry.content);
+        let timestamp_i64 =
+            TimestampParser::parse_unix_timestamp(&entry.timestamp).unwrap_or_else(|| {
                 tracing::warn!(
-                    timestamp = %log_entry.timestamp,
-                    file = %log_entry.file,
+                    timestamp = %entry.timestamp,
+                    file = %entry.file,
                     "时间戳解析失败，使用 0 (1970-01-01) 作为占位值；不影响其他日志时序"
                 );
                 0i64
             });
         doc.add_i64(self.schema.timestamp, timestamp_i64);
-        doc.add_text(self.schema.level, &log_entry.level);
-        doc.add_text(self.schema.file_path, &log_entry.file);
-        doc.add_text(self.schema.real_path, &log_entry.real_path);
-        doc.add_u64(self.schema.line_number, log_entry.line as u64);
+        doc.add_text(self.schema.level, &entry.level);
+        doc.add_text(self.schema.file_path, &entry.file);
+        doc.add_text(self.schema.real_path, &entry.real_path);
+        doc.add_u64(self.schema.line_number, entry.line as u64);
 
+        doc
+    }
+
+    /// Add document to index
+    pub fn add_document(&self, log_entry: &LogEntry) -> SearchResult<()> {
         let writer = self.writer.lock();
-        writer.add_document(doc)?;
+        writer.add_document(self.document_for_entry(log_entry))?;
 
         Ok(())
     }
@@ -673,29 +737,27 @@ impl SearchEngineManager {
 
         let writer = self.writer.lock();
         for entry in entries {
-            let mut doc = TantivyDocument::default();
-
-            doc.add_text(self.schema.content, &entry.content);
-            let timestamp_i64 = TimestampParser::parse_unix_timestamp(&entry.timestamp)
-                .unwrap_or_else(|| {
-                    tracing::warn!(
-                        timestamp = %entry.timestamp,
-                        file = %entry.file,
-                        "时间戳解析失败，使用 0 (1970-01-01) 作为占位值；不影响其他日志时序"
-                    );
-                    0i64
-                });
-            doc.add_i64(self.schema.timestamp, timestamp_i64);
-            doc.add_text(self.schema.level, &entry.level);
-            doc.add_text(self.schema.file_path, &entry.file);
-            doc.add_text(self.schema.real_path, &entry.real_path);
-            doc.add_u64(self.schema.line_number, entry.line as u64);
-
-            writer.add_document(doc)?;
+            writer.add_document(self.document_for_entry(entry))?;
         }
         // Writer lock is released here when `writer` goes out of scope
 
         Ok(())
+    }
+
+    /// Begin an exclusive replacement of all indexed documents.
+    ///
+    /// Readers continue to see the last committed index until the returned
+    /// rebuild is committed. Dropping it before commit restores the writer to
+    /// the last committed state.
+    pub fn begin_rebuild(&self) -> SearchResult<SearchIndexRebuild<'_>> {
+        let writer = self.writer.lock();
+        writer.delete_all_documents()?;
+
+        Ok(SearchIndexRebuild {
+            manager: self,
+            writer: Some(writer),
+            committed: false,
+        })
     }
 
     /// Commit pending changes to index
@@ -1124,6 +1186,21 @@ mod tests {
         (manager, temp_dir)
     }
 
+    fn test_entry(timestamp: &str, content: &str) -> LogEntry {
+        LogEntry {
+            id: 1,
+            timestamp: timestamp.into(),
+            level: "INFO".into(),
+            file: "logs/app.log".into(),
+            real_path: "cas://test".into(),
+            line: 1,
+            content: content.into(),
+            tags: vec![],
+            match_details: None,
+            matched_keywords: None,
+        }
+    }
+
     #[tokio::test]
     async fn test_search_engine_creation() {
         let (_manager, _temp_dir) = create_test_manager();
@@ -1214,6 +1291,57 @@ mod tests {
         assert_eq!(min_ts, 1_704_067_200);
         assert_eq!(max_ts, 1_704_067_500);
         assert_eq!(total, 2);
+    }
+
+    #[test]
+    fn test_rebuild_keeps_previous_index_visible_until_commit() {
+        let (manager, _temp_dir) = create_test_manager();
+        manager
+            .add_document(&test_entry("2024-01-01 00:00:00", "old"))
+            .unwrap();
+        manager.commit().unwrap();
+
+        let mut rebuild = manager.begin_rebuild().unwrap();
+        rebuild
+            .add_documents(&[test_entry("2025-01-01 00:00:00", "new")])
+            .unwrap();
+
+        assert_eq!(
+            manager.get_time_range().unwrap(),
+            (1_704_067_200, 1_704_067_200, 1)
+        );
+
+        rebuild.commit().unwrap();
+        assert_eq!(
+            manager.get_time_range().unwrap(),
+            (1_735_689_600, 1_735_689_600, 1)
+        );
+    }
+
+    #[test]
+    fn test_dropped_rebuild_rolls_back_to_previous_index() {
+        let (manager, _temp_dir) = create_test_manager();
+        manager
+            .add_document(&test_entry("2024-01-01 00:00:00", "old"))
+            .unwrap();
+        manager.commit().unwrap();
+
+        {
+            let mut rebuild = manager.begin_rebuild().unwrap();
+            rebuild
+                .add_documents(&[test_entry("2025-01-01 00:00:00", "new")])
+                .unwrap();
+        }
+
+        assert_eq!(
+            manager.get_time_range().unwrap(),
+            (1_704_067_200, 1_704_067_200, 1)
+        );
+        manager.commit().unwrap();
+        assert_eq!(
+            manager.get_time_range().unwrap(),
+            (1_704_067_200, 1_704_067_200, 1)
+        );
     }
 
     /// Test delete_file_documents functionality

@@ -459,6 +459,7 @@ impl TaskManagerActor {
         let now = Instant::now();
         let mut to_remove = Vec::new();
         let mut to_fail = Vec::new();
+        let mut failed_updates = Vec::new();
 
         for (id, task) in &self.tasks {
             if let Some(completed_at) = task.completed_at {
@@ -498,6 +499,35 @@ impl TaskManagerActor {
                 task.status = TaskStatus::Failed;
                 task.message = "Task timed out (orphan detected)".to_string();
                 task.completed_at = Some(now);
+                task.version = task.version.wrapping_add(1);
+                failed_updates.push(task.clone());
+            }
+        }
+
+        for task in failed_updates {
+            let payload = serde_json::json!({
+                "task_id": task.task_id,
+                "task_type": task.task_type,
+                "target": task.target,
+                "progress": task.progress,
+                "message": task.message,
+                "status": task.status,
+                "version": task.version,
+                "workspace_id": task.workspace_id,
+            });
+            if let Err(e) = self.event_publisher.emit("task-update", payload.clone()) {
+                warn!(
+                    task_id = %task.task_id,
+                    error = %e,
+                    "Failed to emit orphan task failure, retrying once"
+                );
+                if let Err(e2) = self.event_publisher.emit("task-update", payload) {
+                    error!(
+                        task_id = %task.task_id,
+                        error = %e2,
+                        "Failed to emit orphan task failure after retry"
+                    );
+                }
             }
         }
 
@@ -735,6 +765,7 @@ impl TaskManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
 
     struct SilentEmitter;
 
@@ -742,6 +773,64 @@ mod tests {
         fn emit(&self, _event: &str, _payload: serde_json::Value) -> Result<(), String> {
             Ok(())
         }
+    }
+
+    #[derive(Default)]
+    struct RecordingEmitter {
+        events: Mutex<Vec<(String, serde_json::Value)>>,
+    }
+
+    impl TaskEventEmitter for RecordingEmitter {
+        fn emit(&self, event: &str, payload: serde_json::Value) -> Result<(), String> {
+            self.events
+                .lock()
+                .unwrap()
+                .push((event.to_string(), payload));
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn orphan_timeout_emits_a_versioned_failed_update() {
+        let emitter = Arc::new(RecordingEmitter::default());
+        let mut actor = TaskManagerActor::new(
+            emitter.clone(),
+            TaskManagerConfig {
+                operation_timeout: 0,
+                ..TaskManagerConfig::default()
+            },
+        );
+        actor.tasks.insert(
+            "orphan-1".to_string(),
+            TaskInfo {
+                task_id: "orphan-1".to_string(),
+                task_type: "Import".to_string(),
+                target: "logs".to_string(),
+                progress: 10,
+                message: "Scanning...".to_string(),
+                status: TaskStatus::Running,
+                version: 1,
+                workspace_id: Some("workspace-1".to_string()),
+                created_at: Instant::now(),
+                completed_at: None,
+            },
+        );
+
+        actor.cleanup_expired_tasks();
+
+        let task = actor.tasks.get("orphan-1").unwrap();
+        assert_eq!(task.status, TaskStatus::Failed);
+        assert_eq!(task.version, 2);
+        assert!(task.completed_at.is_some());
+
+        let events = emitter.events.lock().unwrap();
+        let (_, payload) = events
+            .iter()
+            .find(|(event, _)| event == "task-update")
+            .expect("orphan failure must be published");
+        assert_eq!(payload["task_id"], "orphan-1");
+        assert_eq!(payload["status"], "FAILED");
+        assert_eq!(payload["version"], 2);
     }
 
     #[tokio::test]
