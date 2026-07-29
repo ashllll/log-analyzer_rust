@@ -6,9 +6,10 @@
 
 use std::sync::Arc;
 
+use super::filter::CompiledSearchFilter;
 use crate::error::Result;
 use crate::models::match_detail::MatchDetail;
-use crate::models::{LogEntry, SearchFilters, SearchQuery};
+use crate::models::{LogEntry, SearchQuery};
 
 /// A compiled plan that can match a single line of text.
 ///
@@ -67,6 +68,8 @@ pub trait LogSearcher: Send + Sync {
     ///
     /// `content` is the full text content of one log file.
     /// `virtual_path` is the display path shown in search results.
+    /// `compiled_filter` is created once by the use case and reused for every
+    /// file and streamed chunk in the search.
     /// `global_offset` is the starting line number offset for correct
     /// line numbering in results.
     fn match_content(
@@ -74,7 +77,7 @@ pub trait LogSearcher: Send + Sync {
         content: &str,
         virtual_path: &str,
         plan: &ExecutionPlan,
-        filters: &SearchFilters,
+        compiled_filter: &dyn CompiledSearchFilter,
         global_offset: usize,
     ) -> Vec<LogEntry>;
 }

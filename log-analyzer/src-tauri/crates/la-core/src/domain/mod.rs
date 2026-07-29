@@ -23,7 +23,7 @@ pub mod workspace_paths;
 // Re-export all traits + types
 pub use event::EventPublisher;
 pub use extract::{ArchiveEntry, ArchiveExtractor, ExtractionPolicy, ExtractionSummary};
-pub use filter::{Filter, LineMetadata};
+pub use filter::{CompiledSearchFilter, LineMetadata};
 pub use log_file::LogFileRepository;
 pub use result_store::{SearchResultPage, SearchResultRepository};
 pub use search::{ExecutionPlan, LogSearcher, MatchPlan};

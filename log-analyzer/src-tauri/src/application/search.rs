@@ -15,9 +15,10 @@
 use std::sync::Arc;
 
 use la_core::domain::event::EventPublisher;
+use la_core::domain::filter::CompiledSearchFilter;
 use la_core::domain::{ExecutionPlan, LogFileRepository, LogSearcher, SearchResultRepository};
 use la_core::error::Result;
-use la_core::models::{LogEntry, SearchFilters, SearchQuery};
+use la_core::models::{LogEntry, SearchQuery};
 use la_core::storage_types::FileMetadata;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
@@ -124,7 +125,6 @@ impl SearchUseCase {
         // 4. Spawn blocking search with timeout and panic recovery
         let sid = search_id.clone();
         let query_owned = query.clone();
-        let filters_owned = filters.clone();
         let files_owned = files.clone();
         let log_files = Arc::clone(&self.log_files);
         let results_for_blocking = Arc::clone(&self.results);
@@ -150,7 +150,7 @@ impl SearchUseCase {
                 &thread_pool,
                 &sid,
                 &query_owned,
-                &filters_owned,
+                &compiled_filters,
                 &files_owned,
                 max_results,
                 cancellation_token_clone,
@@ -242,7 +242,7 @@ impl SearchUseCase {
         thread_pool: &Arc<rayon::ThreadPool>,
         search_id: &str,
         query: &SearchQuery,
-        filters: &SearchFilters,
+        compiled_filter: &dyn CompiledSearchFilter,
         files: &[FileMetadata],
         max_results: usize,
         cancellation_token: tokio_util::sync::CancellationToken,
@@ -275,7 +275,7 @@ impl SearchUseCase {
                         searcher,
                         thread_pool,
                         &plan,
-                        filters,
+                        compiled_filter,
                         results,
                         events,
                         search_id,
@@ -293,7 +293,7 @@ impl SearchUseCase {
                         searcher,
                         fm,
                         &plan,
-                        filters,
+                        compiled_filter,
                         results,
                         events,
                         search_id,
@@ -315,7 +315,7 @@ impl SearchUseCase {
                 searcher,
                 thread_pool,
                 &plan,
-                filters,
+                compiled_filter,
                 results,
                 events,
                 search_id,
@@ -349,7 +349,7 @@ fn flush_small_files(
     searcher: &Arc<dyn LogSearcher>,
     thread_pool: &Arc<rayon::ThreadPool>,
     plan: &ExecutionPlan,
-    filters: &SearchFilters,
+    compiled_filter: &dyn CompiledSearchFilter,
     results: &Arc<dyn SearchResultRepository>,
     events: &Arc<dyn EventPublisher>,
     search_id: &str,
@@ -369,7 +369,7 @@ fn flush_small_files(
                 if cancellation_token.is_cancelled() {
                     return Vec::new();
                 }
-                search_one_file(log_files, searcher, fm, plan, filters)
+                search_one_file(log_files, searcher, fm, plan, compiled_filter)
             })
             .collect()
     });
@@ -397,7 +397,7 @@ fn search_large_file_in_chunks(
     searcher: &Arc<dyn LogSearcher>,
     fm: &FileMetadata,
     plan: &ExecutionPlan,
-    filters: &SearchFilters,
+    compiled_filter: &dyn CompiledSearchFilter,
     results: &Arc<dyn SearchResultRepository>,
     events: &Arc<dyn EventPublisher>,
     search_id: &str,
@@ -420,7 +420,7 @@ fn search_large_file_in_chunks(
             &fm.virtual_path,
             &real_path,
             plan,
-            filters,
+            compiled_filter,
             &chunk_lines,
             chunk_start_line,
             results,
@@ -451,7 +451,7 @@ fn search_one_file(
     searcher: &Arc<dyn LogSearcher>,
     fm: &FileMetadata,
     plan: &ExecutionPlan,
-    filters: &SearchFilters,
+    compiled_filter: &dyn CompiledSearchFilter,
 ) -> Vec<LogEntry> {
     let hash = &fm.sha256_hash;
     let content = match log_files.read_content_sync(hash) {
@@ -468,7 +468,7 @@ fn search_one_file(
     };
 
     let (text, _) = decode_log_content(&content);
-    let mut entries = searcher.match_content(&text, &fm.virtual_path, plan, filters, 0);
+    let mut entries = searcher.match_content(&text, &fm.virtual_path, plan, compiled_filter, 0);
     for entry in &mut entries {
         entry.real_path = format!("cas://{hash}").into();
     }
@@ -481,7 +481,7 @@ fn search_line_chunk(
     virtual_path: &str,
     real_path: &str,
     plan: &ExecutionPlan,
-    filters: &SearchFilters,
+    compiled_filter: &dyn CompiledSearchFilter,
     lines: &[String],
     start_line: usize,
     results: &Arc<dyn SearchResultRepository>,
@@ -492,7 +492,8 @@ fn search_line_chunk(
     was_truncated: &mut bool,
 ) -> Result<bool> {
     let text = lines.join("\n");
-    let mut entries = searcher.match_content(&text, virtual_path, plan, filters, batch.total());
+    let mut entries =
+        searcher.match_content(&text, virtual_path, plan, compiled_filter, batch.total());
     let line_offset = start_line.saturating_sub(1);
     for entry in &mut entries {
         entry.line += line_offset;
@@ -564,6 +565,7 @@ mod tests {
     use super::*;
     use async_trait::async_trait;
     use la_core::domain::event::EventPublisher;
+    use la_core::domain::filter::{CompiledSearchFilter, LineMetadata};
     use la_core::domain::{
         ExecutionPlan, LogFileRepository, LogSearcher, MatchPlan, SearchResultPage,
         SearchResultRepository,
@@ -597,6 +599,22 @@ mod tests {
         }
     }
 
+    struct AcceptAllFilter;
+
+    impl CompiledSearchFilter for AcceptAllFilter {
+        fn matches_file(&self, _virtual_path: &str, _real_path: Option<&str>) -> bool {
+            true
+        }
+
+        fn matches_line(&self, _metadata: &LineMetadata) -> bool {
+            true
+        }
+
+        fn has_time_filter(&self) -> bool {
+            false
+        }
+    }
+
     // ── Stub LogSearcher ──
 
     struct StubSearcher {
@@ -621,7 +639,7 @@ mod tests {
             text: &str,
             virtual_path: &str,
             plan: &ExecutionPlan,
-            _filters: &SearchFilters,
+            _compiled_filter: &dyn CompiledSearchFilter,
             start_id: usize,
         ) -> Vec<LogEntry> {
             let mut entries = Vec::new();
@@ -669,7 +687,7 @@ mod tests {
             _text: &str,
             _virtual_path: &str,
             _plan: &ExecutionPlan,
-            _filters: &SearchFilters,
+            _compiled_filter: &dyn CompiledSearchFilter,
             _start_id: usize,
         ) -> Vec<LogEntry> {
             self.entered
@@ -1017,7 +1035,7 @@ mod tests {
             &use_case.thread_pool,
             "search-1",
             &make_query(),
-            &SearchFilters::default(),
+            &AcceptAllFilter,
             &[],
             1000,
             tokio_util::sync::CancellationToken::new(),
@@ -1047,7 +1065,7 @@ mod tests {
             &use_case.thread_pool,
             "search-2",
             &make_query(),
-            &SearchFilters::default(),
+            &AcceptAllFilter,
             &files,
             1000,
             tokio_util::sync::CancellationToken::new(),
@@ -1078,7 +1096,7 @@ mod tests {
             &use_case.thread_pool,
             "search-unique-ids",
             &make_query(),
-            &SearchFilters::default(),
+            &AcceptAllFilter,
             &files,
             1000,
             tokio_util::sync::CancellationToken::new(),
@@ -1111,7 +1129,7 @@ mod tests {
             &use_case.thread_pool,
             "search-3",
             &make_query(),
-            &SearchFilters::default(),
+            &AcceptAllFilter,
             &files,
             20_000,
             tokio_util::sync::CancellationToken::new(),
@@ -1174,7 +1192,7 @@ mod tests {
             &use_case.thread_pool,
             "search-streaming",
             &make_query(),
-            &SearchFilters::default(),
+            &AcceptAllFilter,
             &files,
             20_000,
             tokio_util::sync::CancellationToken::new(),
@@ -1205,7 +1223,7 @@ mod tests {
             &use_case.thread_pool,
             "search-small",
             &make_query(),
-            &SearchFilters::default(),
+            &AcceptAllFilter,
             &files,
             1000,
             tokio_util::sync::CancellationToken::new(),
@@ -1237,7 +1255,7 @@ mod tests {
             &use_case.thread_pool,
             "search-4",
             &make_query(),
-            &SearchFilters::default(),
+            &AcceptAllFilter,
             &files,
             3,
             tokio_util::sync::CancellationToken::new(),
@@ -1270,7 +1288,7 @@ mod tests {
             &use_case.thread_pool,
             "search-5",
             &make_query(),
-            &SearchFilters::default(),
+            &AcceptAllFilter,
             &files,
             10000,
             token,
@@ -1478,7 +1496,7 @@ mod tests {
             _text: &str,
             _virtual_path: &str,
             _plan: &ExecutionPlan,
-            _filters: &SearchFilters,
+            _compiled_filter: &dyn CompiledSearchFilter,
             _start_id: usize,
         ) -> Vec<LogEntry> {
             vec![]
@@ -1517,7 +1535,7 @@ mod tests {
             &use_case.thread_pool,
             "search-6",
             &make_query(),
-            &SearchFilters::default(),
+            &AcceptAllFilter,
             &files,
             1000,
             tokio_util::sync::CancellationToken::new(),

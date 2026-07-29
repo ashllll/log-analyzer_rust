@@ -4,7 +4,7 @@
 //! 修复依赖方向（application + infrastructure 不应依赖 commands）。
 //! commands/search/filters.rs 保留为 re-export 以保持向后兼容。
 
-use la_core::domain::filter::{Filter, LineMetadata};
+use la_core::domain::filter::{CompiledSearchFilter, LineMetadata};
 use la_core::error::CommandError;
 use la_core::models::SearchFilters;
 use la_core::utils::{level_to_mask, parse_metadata, TimestampParser};
@@ -182,10 +182,10 @@ impl CompiledSearchFilters {
 }
 
 // ============================================================================
-// Filter trait impl
+// CompiledSearchFilter trait impl
 // ============================================================================
 
-impl Filter for CompiledSearchFilters {
+impl CompiledSearchFilter for CompiledSearchFilters {
     fn matches_file(&self, virtual_path: &str, real_path: Option<&str>) -> bool {
         let Some(m) = &self.file_matcher else {
             return true;

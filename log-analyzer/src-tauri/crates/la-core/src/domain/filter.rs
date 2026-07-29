@@ -1,4 +1,4 @@
-//! Filter trait — abstracts file and line-level search filtering.
+//! Compiled search-filter interface for file and line-level matching.
 //!
 //! Defined in the domain layer so that application/infrastructure code
 //! depends on the trait rather than the concrete `CompiledSearchFilters`.
@@ -28,7 +28,7 @@ pub struct LineMetadata {
 ///
 /// Implementations decide which files and lines to include based on
 /// criteria such as time range, log level mask, and file-pattern matching.
-pub trait Filter: Send + Sync {
+pub trait CompiledSearchFilter: Send + Sync {
     /// Returns `true` if the file (identified by its virtual or real path)
     /// passes the file-pattern filter.
     fn matches_file(&self, virtual_path: &str, real_path: Option<&str>) -> bool;

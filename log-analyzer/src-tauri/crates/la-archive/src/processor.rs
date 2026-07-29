@@ -22,6 +22,7 @@ use la_core::models::config::{ArchiveConfig, FileFilterConfig};
 use la_core::storage_types::{ArchiveMetadata, FileMetadata};
 use la_core::traits::AppConfigProvider;
 use la_core::utils::path::normalize_path_separator;
+use la_core::utils::path_security::has_parent_directory_component;
 use la_storage::{ContentAddressableStorage, MetadataStore};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
@@ -202,18 +203,15 @@ fn validate_path_safety(path: &Path, base_dir: &Path) -> Result<()> {
         )));
     }
 
-    // 检查路径组件中是否包含可疑的遍历尝试
-    for component in path.components() {
-        if let Component::Normal(os_str) = component {
-            if let Some(str) = os_str.to_str() {
-                // 检查是否包含路径遍历序列
-                if str.contains("..") || str.contains("/") || str.contains("\\") {
-                    return Err(AppError::validation_error(format!(
-                        "Suspicious path component detected: {str}"
-                    )));
-                }
-            }
-        }
+    // 只拒绝真正的父目录组件；普通文件名中的 ".."（如 release..log）是合法的。
+    if path
+        .components()
+        .any(|component| component == Component::ParentDir)
+    {
+        return Err(AppError::validation_error(format!(
+            "Parent directory component detected: {}",
+            path.display()
+        )));
     }
 
     Ok(())
@@ -266,8 +264,8 @@ fn validate_virtual_path(virtual_path: &str) -> Result<()> {
         ));
     }
 
-    // Check for path traversal sequences
-    if virtual_path.contains("..") {
+    // Check for actual parent-directory components on both supported separators.
+    if has_parent_directory_component(virtual_path) {
         return Err(AppError::validation_error(format!(
             "Path traversal detected in virtual path: {virtual_path}"
         )));
@@ -1716,6 +1714,98 @@ mod tests {
         }
 
         zip.finish().unwrap();
+    }
+
+    #[tokio::test]
+    async fn archive_import_preserves_safe_filename_containing_two_dots() {
+        let temp = TempDir::new().unwrap();
+        let zip_path = temp.path().join("release.zip");
+        let content = b"2026-06-15T00:00:00Z INFO release\n";
+        let file = std::fs::File::create(&zip_path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let options = zip::write::FileOptions::<'_, ()>::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        zip.start_file("release..log", options).unwrap();
+        zip.write_all(content).unwrap();
+        zip.finish().unwrap();
+
+        let workspace_dir = temp.path().join("workspace");
+        let cas = Arc::new(ContentAddressableStorage::new(workspace_dir.clone()));
+        let metadata_store = Arc::new(MetadataStore::new(&workspace_dir).await.unwrap());
+        let context =
+            CasProcessingContext::new(workspace_dir, Arc::clone(&cas), Arc::clone(&metadata_store));
+        let provider = TestConfigProvider {
+            dir: temp.path().join("config"),
+        };
+
+        process_path_with_cas_and_checkpoints(
+            &zip_path,
+            "release.zip",
+            &context,
+            &provider,
+            "task-1",
+            "workspace-1",
+            None,
+            0,
+        )
+        .await
+        .unwrap();
+
+        let files = metadata_store.get_all_files().await.unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].virtual_path, "release.zip/release..log");
+        assert_eq!(files[0].original_name, "release..log");
+        assert_eq!(
+            cas.read_content(&files[0].sha256_hash).await.unwrap(),
+            content
+        );
+    }
+
+    #[tokio::test]
+    async fn archive_import_rejects_parent_absolute_and_drive_member_paths() {
+        let temp = TempDir::new().unwrap();
+        let zip_path = temp.path().join("unsafe.zip");
+        let file = std::fs::File::create(&zip_path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let options = zip::write::FileOptions::<'_, ()>::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        for name in [
+            "../escape.log",
+            r"..\escape-windows.log",
+            "/absolute.log",
+            r"\absolute-windows.log",
+            "C:/drive.log",
+        ] {
+            zip.start_file(name, options).unwrap();
+            zip.write_all(b"unsafe\n").unwrap();
+        }
+        zip.finish().unwrap();
+
+        let workspace_dir = temp.path().join("workspace");
+        let cas = Arc::new(ContentAddressableStorage::new(workspace_dir.clone()));
+        let metadata_store = Arc::new(MetadataStore::new(&workspace_dir).await.unwrap());
+        let context =
+            CasProcessingContext::new(workspace_dir, Arc::clone(&cas), Arc::clone(&metadata_store));
+        let provider = TestConfigProvider {
+            dir: temp.path().join("config"),
+        };
+
+        process_path_with_cas_and_checkpoints(
+            &zip_path,
+            "unsafe.zip",
+            &context,
+            &provider,
+            "task-1",
+            "workspace-1",
+            None,
+            0,
+        )
+        .await
+        .unwrap();
+
+        assert!(metadata_store.get_all_files().await.unwrap().is_empty());
+        assert!(!temp.path().join("escape.log").exists());
+        assert!(!temp.path().join("absolute.log").exists());
     }
 
     #[tokio::test]

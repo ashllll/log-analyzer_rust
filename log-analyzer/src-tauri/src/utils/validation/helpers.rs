@@ -109,6 +109,11 @@ pub fn prevent_path_traversal(path: &str) -> Result<String, String> {
 ///
 /// 对字符串进行 URL 解码，正确处理 UTF-8 多字节序列（如 %E4%B8%AD → 中）
 fn url_decode(input: &str) -> String {
+    fn push_char(bytes: &mut Vec<u8>, value: char) {
+        let mut buffer = [0u8; 4];
+        bytes.extend_from_slice(value.encode_utf8(&mut buffer).as_bytes());
+    }
+
     let mut bytes: Vec<u8> = Vec::with_capacity(input.len());
     let mut chars = input.chars().peekable();
 
@@ -116,29 +121,37 @@ fn url_decode(input: &str) -> String {
         if c == '%' {
             if matches!(chars.peek(), Some('u' | 'U')) {
                 let prefix = chars.next().unwrap_or('u');
-                let mut hex = String::with_capacity(4);
+                let mut digits = ['\0'; 4];
+                let mut digit_count = 0;
                 for _ in 0..4 {
                     if let Some(h) = chars.next() {
-                        hex.push(h);
+                        digits[digit_count] = h;
+                        digit_count += 1;
                     } else {
                         bytes.push(b'%');
-                        bytes.push(prefix as u8);
-                        bytes.extend_from_slice(hex.as_bytes());
+                        push_char(&mut bytes, prefix);
+                        for digit in &digits[..digit_count] {
+                            push_char(&mut bytes, *digit);
+                        }
                         return String::from_utf8_lossy(&bytes).into_owned();
                     }
                 }
 
-                if let Ok(code_point) = u32::from_str_radix(&hex, 16) {
+                let code_point = digits.iter().try_fold(0u32, |value, digit| {
+                    digit.to_digit(16).map(|next| value * 16 + next)
+                });
+                if let Some(code_point) = code_point {
                     if let Some(decoded) = char::from_u32(code_point) {
-                        let mut buf = [0u8; 4];
-                        bytes.extend_from_slice(decoded.encode_utf8(&mut buf).as_bytes());
+                        push_char(&mut bytes, decoded);
                         continue;
                     }
                 }
 
                 bytes.push(b'%');
-                bytes.push(prefix as u8);
-                bytes.extend_from_slice(hex.as_bytes());
+                push_char(&mut bytes, prefix);
+                for digit in digits {
+                    push_char(&mut bytes, digit);
+                }
                 continue;
             }
 
@@ -146,20 +159,20 @@ fn url_decode(input: &str) -> String {
             let hex2 = chars.next();
 
             if let (Some(h1), Some(h2)) = (hex1, hex2) {
-                let hex_str = format!("{h1}{h2}");
-                if let Ok(byte) = u8::from_str_radix(&hex_str, 16) {
-                    bytes.push(byte);
-                } else {
-                    // 无效的十六进制，保留原始序列
-                    bytes.push(b'%');
-                    bytes.push(h1 as u8);
-                    bytes.push(h2 as u8);
+                match (h1.to_digit(16), h2.to_digit(16)) {
+                    (Some(high), Some(low)) => bytes.push((high * 16 + low) as u8),
+                    _ => {
+                        // 无效的十六进制，保留原始序列
+                        bytes.push(b'%');
+                        push_char(&mut bytes, h1);
+                        push_char(&mut bytes, h2);
+                    }
                 }
             } else {
                 // 不完整的 % 序列，保留 %
                 bytes.push(b'%');
                 if let Some(h1) = hex1 {
-                    bytes.push(h1 as u8);
+                    push_char(&mut bytes, h1);
                 }
             }
         } else if c == '+' {
@@ -167,9 +180,7 @@ fn url_decode(input: &str) -> String {
             bytes.push(b' ');
         } else {
             // 对非 ASCII 字符直接转为 UTF-8 字节
-            let mut buf = [0u8; 4];
-            let encoded = c.encode_utf8(&mut buf);
-            bytes.extend_from_slice(encoded.as_bytes());
+            push_char(&mut bytes, c);
         }
     }
 
@@ -408,6 +419,8 @@ mod tests {
         assert_eq!(url_decode("path%GG"), "path%GG");
         assert_eq!(url_decode("path%2G"), "path%2G");
         assert_eq!(url_decode("path%u00GG"), "path%u00GG");
+        assert_eq!(url_decode("path%中A"), "path%中A");
+        assert_eq!(url_decode("path%中"), "path%中");
     }
 
     #[test]

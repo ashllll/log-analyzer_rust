@@ -50,6 +50,14 @@ const WINDOWS_RESERVED_NAMES: &[&str] = &[
 /// Windows保留字符列表
 const WINDOWS_RESERVED_CHARS: &[char] = &['<', '>', ':', '"', '|', '?', '*'];
 
+/// Return whether a portable virtual/archive path contains an actual parent-directory component.
+///
+/// Both separators are recognized because archive entry names and virtual paths can originate on
+/// a different platform from the current host.
+pub fn has_parent_directory_component(path: &str) -> bool {
+    path.split(['/', '\\']).any(|component| component == "..")
+}
+
 /// 验证并清理路径组件
 ///
 /// # Arguments
@@ -84,7 +92,7 @@ pub fn validate_and_sanitize_path(
     }
 
     // 检查路径穿越
-    if component.contains("..")
+    if component == ".."
         || component.contains('/')
         || component.contains('\\')
         || component.contains(':')
@@ -185,6 +193,14 @@ pub fn validate_and_sanitize_archive_path(
 ) -> PathValidationResult {
     if full_path.is_empty() {
         return PathValidationResult::Unsafe("路径为空".to_string());
+    }
+
+    if full_path.starts_with('/') || full_path.starts_with('\\') {
+        return PathValidationResult::Unsafe("路径不能是绝对路径".to_string());
+    }
+
+    if has_parent_directory_component(full_path) {
+        return PathValidationResult::Unsafe("路径包含父目录组件".to_string());
     }
 
     // 预检：如果包含驱动器字母且是Windows兼容模式，直接拒绝
@@ -360,6 +376,38 @@ mod tests {
             result,
             PathValidationResult::Valid("normal_file.log".to_string())
         );
+    }
+
+    #[test]
+    fn archive_path_accepts_two_dots_inside_a_filename() {
+        let config = SecurityConfig::default();
+        assert_eq!(
+            validate_and_sanitize_archive_path("logs/release..log", &config),
+            PathValidationResult::Valid("logs/release..log".to_string())
+        );
+    }
+
+    #[test]
+    fn archive_path_rejects_parent_absolute_and_drive_paths() {
+        let config = SecurityConfig::default();
+        for path in [
+            "../etc/passwd",
+            r"..\Windows\system.ini",
+            "logs/../secret.log",
+            r"logs\..\secret.log",
+            "/etc/passwd",
+            r"\Windows\system.ini",
+            "C:/Windows/system.ini",
+            r"C:\Windows\system.ini",
+        ] {
+            assert!(
+                matches!(
+                    validate_and_sanitize_archive_path(path, &config),
+                    PathValidationResult::Unsafe(_)
+                ),
+                "expected unsafe archive path: {path}"
+            );
+        }
     }
 
     #[test]
