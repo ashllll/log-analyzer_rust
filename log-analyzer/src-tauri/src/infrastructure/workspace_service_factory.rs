@@ -79,6 +79,12 @@ pub(crate) async fn get_or_create_workspace_service(
         return Ok(service);
     }
 
+    let creation_lock = state.workspace_service_creation_lock(workspace_id);
+    let _creation_permit = creation_lock.lock().await;
+    if let Some(service) = state.get_workspace_service(workspace_id) {
+        return Ok(service);
+    }
+
     // 创建各运行时组件
     let cas = Arc::new(ContentAddressableStorage::new(workspace_dir.to_path_buf()));
 

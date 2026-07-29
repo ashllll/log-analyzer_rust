@@ -59,6 +59,8 @@ pub struct WorkspaceServiceImpl {
     search_session_manager: SearchSessionManager,
     /// 文件监听器状态（P5：从 AppState::watchers 移入实例）
     watcher_state: Arc<Mutex<Option<WatcherState>>>,
+    /// 同一工作区的导入必须串行，避免旧元数据快照覆盖较新的搜索索引。
+    import_lock: Arc<tokio::sync::Mutex<()>>,
     /// Watch 模式 FilesUpdated 广播用（传递给 WatcherRunner）
     app_handle: tauri::AppHandle,
 }
@@ -93,6 +95,7 @@ impl WorkspaceServiceImpl {
             searcher: Arc::new(QueryEngineLogSearcher::new(regex_cache_size)),
             search_session_manager,
             watcher_state: Arc::new(Mutex::new(None)),
+            import_lock: Arc::new(tokio::sync::Mutex::new(())),
             app_handle,
         }
     }

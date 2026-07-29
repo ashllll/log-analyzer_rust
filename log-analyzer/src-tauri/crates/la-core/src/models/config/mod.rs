@@ -32,4 +32,5 @@ pub use loader::ConfigLoader as AppConfigLoader;
 
 #[cfg(test)]
 #[path = "tests.rs"]
+#[allow(clippy::module_inception)]
 mod tests;

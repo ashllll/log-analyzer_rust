@@ -26,6 +26,7 @@ use la_search::DiskResultStore;
 #[derive(Default)]
 pub struct WorkspaceRegistry {
     services: Arc<Mutex<HashMap<String, WorkspaceServiceRef>>>,
+    creation_locks: Arc<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>>,
 }
 
 impl WorkspaceRegistry {
@@ -43,6 +44,14 @@ impl WorkspaceRegistry {
     }
     pub fn ids(&self) -> Vec<String> {
         self.services.lock().keys().cloned().collect()
+    }
+    pub fn creation_lock(&self, id: &str) -> Arc<tokio::sync::Mutex<()>> {
+        Arc::clone(
+            self.creation_locks
+                .lock()
+                .entry(id.to_string())
+                .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(()))),
+        )
     }
 }
 
@@ -204,6 +213,12 @@ impl AppState {
     pub fn workspace_ids(&self) -> Vec<String> {
         self.workspace.ids()
     }
+    pub fn workspace_service_creation_lock(
+        &self,
+        workspace_id: &str,
+    ) -> Arc<tokio::sync::Mutex<()>> {
+        self.workspace.creation_lock(workspace_id)
+    }
 
     pub fn init_disk_result_store_at(&self, base_path: PathBuf) -> Result<(), String> {
         self.search.init_disk_result_store_at(base_path)
@@ -271,5 +286,17 @@ mod tests {
         registry.cleanup_cancellation("import-1");
         assert_eq!(registry.active_cancellation_count(), 0);
         assert!(!registry.cancel("import-1"));
+    }
+
+    #[test]
+    fn workspace_registry_reuses_the_creation_lock_for_the_same_workspace() {
+        let registry = WorkspaceRegistry::default();
+
+        let first = registry.creation_lock("workspace-1");
+        let second = registry.creation_lock("workspace-1");
+        let other = registry.creation_lock("workspace-2");
+
+        assert!(Arc::ptr_eq(&first, &second));
+        assert!(!Arc::ptr_eq(&first, &other));
     }
 }

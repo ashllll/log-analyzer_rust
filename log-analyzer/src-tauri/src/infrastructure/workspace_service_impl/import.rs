@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -14,24 +15,46 @@ use la_core::utils::compute_file_stats;
 use super::WorkspaceServiceImpl;
 const FALLBACK_STATS_DELAY_SECS: u64 = 5;
 
+async fn acquire_import_permit(
+    import_lock: Arc<tokio::sync::Mutex<()>>,
+    cancellation_token: &CancellationToken,
+    source_path: &std::path::Path,
+) -> la_core::error::Result<tokio::sync::OwnedMutexGuard<()>> {
+    tokio::select! {
+        biased;
+        _ = cancellation_token.cancelled() => Err(AppError::Archive {
+            category: ErrorCategory::CancellationRequested,
+            _message: "Import cancelled while waiting for the workspace".to_string(),
+            _path: Some(source_path.to_path_buf()),
+        }),
+        permit = import_lock.lock_owned() => Ok(permit),
+    }
+}
+
 async fn rebuild_search_index_inner(
     metadata_store: Arc<la_storage::MetadataStore>,
     cas: Arc<la_storage::ContentAddressableStorage>,
     search_manager: Arc<la_search::SearchEngineManager>,
+    cancellation_token: CancellationToken,
 ) -> std::result::Result<usize, String> {
+    ensure_index_rebuild_active(&cancellation_token)?;
     let files = metadata_store
         .get_all_files()
         .await
         .map_err(|e| format!("Failed to enumerate imported files for indexing: {e}"))?;
+    ensure_index_rebuild_active(&cancellation_token)?;
 
     tokio::task::spawn_blocking(move || -> std::result::Result<usize, String> {
+        ensure_index_rebuild_active(&cancellation_token)?;
         let mut rebuild = search_manager
             .begin_rebuild()
             .map_err(|e| format!("Failed to begin search index rebuild: {e}"))?;
+        ensure_index_rebuild_active(&cancellation_token)?;
 
         let mut indexed_lines = 0usize;
 
         for file in files {
+            ensure_index_rebuild_active(&cancellation_token)?;
             let content = cas.read_content_sync(&file.sha256_hash).map_err(|e| {
                 format!("Failed to read CAS content for {}: {e}", file.virtual_path)
             })?;
@@ -45,6 +68,7 @@ async fn rebuild_search_index_inner(
                 line_buffer.push(line.to_string());
 
                 if line_buffer.len() >= 1024 {
+                    ensure_index_rebuild_active(&cancellation_token)?;
                     let entries = la_core::utils::parse_log_lines(
                         &line_buffer,
                         &file.virtual_path,
@@ -62,6 +86,7 @@ async fn rebuild_search_index_inner(
             }
 
             if !line_buffer.is_empty() {
+                ensure_index_rebuild_active(&cancellation_token)?;
                 let entries = la_core::utils::parse_log_lines(
                     &line_buffer,
                     &file.virtual_path,
@@ -76,6 +101,7 @@ async fn rebuild_search_index_inner(
             }
         }
 
+        ensure_index_rebuild_active(&cancellation_token)?;
         rebuild
             .commit()
             .map_err(|e| format!("Failed to finalize rebuilt search index: {e}"))?;
@@ -84,6 +110,54 @@ async fn rebuild_search_index_inner(
     })
     .await
     .map_err(|e| format!("Search index rebuild task panicked: {e}"))?
+}
+
+fn ensure_index_rebuild_active(
+    cancellation_token: &CancellationToken,
+) -> std::result::Result<(), String> {
+    if cancellation_token.is_cancelled() {
+        Err("Search index rebuild cancelled".to_string())
+    } else {
+        Ok(())
+    }
+}
+
+fn map_index_rebuild_error(
+    error: String,
+    source_path: &std::path::Path,
+    cancellation_token: &CancellationToken,
+) -> AppError {
+    if cancellation_token.is_cancelled() {
+        AppError::Archive {
+            category: ErrorCategory::CancellationRequested,
+            _message: "Import cancelled while rebuilding the search index".to_string(),
+            _path: Some(source_path.to_path_buf()),
+        }
+    } else {
+        AppError::index_error(error)
+    }
+}
+
+async fn finish_import_indexing<F>(
+    workspace_id: String,
+    cancellation_token: CancellationToken,
+    rebuild: F,
+) -> std::result::Result<usize, String>
+where
+    F: Future<Output = std::result::Result<usize, String>>,
+{
+    if cancellation_token.is_cancelled() {
+        return Err("Search index rebuild cancelled".to_string());
+    }
+
+    let indexed_lines = rebuild.await?;
+    tracing::info!(
+        workspace_id = %workspace_id,
+        indexed_lines,
+        "Tantivy index rebuild completed"
+    );
+
+    Ok(indexed_lines)
 }
 
 #[async_trait]
@@ -96,6 +170,13 @@ impl ImportService for WorkspaceServiceImpl {
         task_id: &str,
         cancellation_token: CancellationToken,
     ) -> la_core::error::Result<ImportResult> {
+        let _import_permit = acquire_import_permit(
+            Arc::clone(&self.import_lock),
+            &cancellation_token,
+            source_path,
+        )
+        .await?;
+
         let root_name = source_path
             .file_name()
             .unwrap_or_default()
@@ -208,23 +289,12 @@ impl ImportService for WorkspaceServiceImpl {
         let search_engine = Arc::clone(self.repo.search_engine());
         let workspace_id_bg = self.workspace_id.clone();
         let ct_bg = cancellation_token.clone();
-        tokio::spawn(async move {
-            if ct_bg.is_cancelled() {
-                return;
-            }
-            if let Err(e) = rebuild_search_index_inner(metadata_store, cas, search_engine).await {
-                tracing::warn!(
-                    workspace_id = %workspace_id_bg,
-                    error = %e,
-                    "Background Tantivy index rebuild failed; get_time_range may be stale"
-                );
-            } else {
-                tracing::info!(
-                    workspace_id = %workspace_id_bg,
-                    "Background Tantivy index rebuild completed"
-                );
-            }
-        });
+        let ct_rebuild = cancellation_token.clone();
+        finish_import_indexing(workspace_id_bg, ct_bg, async move {
+            rebuild_search_index_inner(metadata_store, cas, search_engine, ct_rebuild).await
+        })
+        .await
+        .map_err(|error| map_index_rebuild_error(error, source_path, &cancellation_token))?;
 
         let files_imported = self
             .repo
@@ -301,6 +371,98 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn import_indexing_does_not_finish_before_the_rebuild() {
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+        let mut task = tokio::spawn(finish_import_indexing(
+            "workspace-1".to_string(),
+            CancellationToken::new(),
+            async move {
+                let _ = started_tx.send(());
+                let _ = release_rx.await;
+                Ok(7)
+            },
+        ));
+
+        started_rx.await.unwrap();
+        let premature = tokio::time::timeout(Duration::from_millis(20), &mut task).await;
+        let _ = release_tx.send(());
+
+        let (completed_early, result) = match premature {
+            Ok(join_result) => (true, join_result.unwrap()),
+            Err(_) => (false, task.await.unwrap()),
+        };
+
+        assert!(
+            !completed_early,
+            "import completion was reported before the index rebuild finished"
+        );
+        assert_eq!(result.unwrap(), 7);
+    }
+
+    #[tokio::test]
+    async fn a_second_import_waits_for_the_existing_workspace_import() {
+        let import_lock = Arc::new(tokio::sync::Mutex::new(()));
+        let existing_import = Arc::clone(&import_lock).lock_owned().await;
+        let waiting_lock = Arc::clone(&import_lock);
+        let mut waiting_import = tokio::spawn(async move {
+            acquire_import_permit(
+                waiting_lock,
+                &CancellationToken::new(),
+                std::path::Path::new("/tmp/source.log"),
+            )
+            .await
+        });
+
+        let premature = tokio::time::timeout(Duration::from_millis(20), &mut waiting_import).await;
+        drop(existing_import);
+
+        let (completed_early, result) = match premature {
+            Ok(join_result) => (true, join_result.unwrap()),
+            Err(_) => (false, waiting_import.await.unwrap()),
+        };
+
+        assert!(
+            !completed_early,
+            "a second import entered the workspace while another import held the permit"
+        );
+        result.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_waiting_import_can_be_cancelled() {
+        let import_lock = Arc::new(tokio::sync::Mutex::new(()));
+        let _existing_import = Arc::clone(&import_lock).lock_owned().await;
+        let cancellation_token = CancellationToken::new();
+        let waiting_token = cancellation_token.clone();
+        let mut waiting_import = tokio::spawn(async move {
+            acquire_import_permit(
+                import_lock,
+                &waiting_token,
+                std::path::Path::new("/tmp/source.log"),
+            )
+            .await
+        });
+
+        assert!(
+            tokio::time::timeout(Duration::from_millis(20), &mut waiting_import)
+                .await
+                .is_err()
+        );
+        cancellation_token.cancel();
+
+        let result = tokio::time::timeout(Duration::from_secs(1), waiting_import)
+            .await
+            .expect("cancelled import did not wake")
+            .unwrap();
+        let error = match result {
+            Ok(_) => panic!("cancelled import unexpectedly acquired the permit"),
+            Err(error) => error,
+        };
+        assert_eq!(error.category(), ErrorCategory::CancellationRequested);
+    }
+
+    #[tokio::test]
     async fn rebuild_replaces_documents_when_a_virtual_path_changes() {
         let (_workspace, _index, metadata_store, cas, search_manager) = test_dependencies().await;
 
@@ -316,6 +478,7 @@ mod tests {
                 Arc::clone(&metadata_store),
                 Arc::clone(&cas),
                 Arc::clone(&search_manager),
+                CancellationToken::new(),
             )
             .await
             .unwrap(),
@@ -334,9 +497,14 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            rebuild_search_index_inner(metadata_store, cas, Arc::clone(&search_manager))
-                .await
-                .unwrap(),
+            rebuild_search_index_inner(
+                metadata_store,
+                cas,
+                Arc::clone(&search_manager),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap(),
             1
         );
         assert_eq!(
@@ -359,6 +527,7 @@ mod tests {
             Arc::clone(&metadata_store),
             Arc::clone(&cas),
             Arc::clone(&search_manager),
+            CancellationToken::new(),
         )
         .await
         .unwrap();
@@ -368,9 +537,14 @@ mod tests {
             .await
             .unwrap();
 
-        let error = rebuild_search_index_inner(metadata_store, cas, Arc::clone(&search_manager))
-            .await
-            .unwrap_err();
+        let error = rebuild_search_index_inner(
+            metadata_store,
+            cas,
+            Arc::clone(&search_manager),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap_err();
         assert!(error.contains("Failed to read CAS content"));
 
         search_manager.commit().unwrap();
@@ -378,5 +552,63 @@ mod tests {
             search_manager.get_time_range().unwrap(),
             (1_704_067_200, 1_704_067_200, 1)
         );
+    }
+
+    #[tokio::test]
+    async fn cancelled_rebuild_preserves_the_last_committed_index() {
+        let (_workspace, _index, metadata_store, cas, search_manager) = test_dependencies().await;
+
+        let old_content = b"2024-01-01 00:00:00 INFO durable content\n";
+        let old_hash = cas.store_content(old_content).await.unwrap();
+        metadata_store
+            .insert_file(&file_metadata(old_hash, old_content.len()))
+            .await
+            .unwrap();
+        rebuild_search_index_inner(
+            Arc::clone(&metadata_store),
+            Arc::clone(&cas),
+            Arc::clone(&search_manager),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+
+        let new_content = b"2025-01-01 00:00:00 ERROR replacement content\n";
+        let new_hash = cas.store_content(new_content).await.unwrap();
+        metadata_store
+            .insert_file(&file_metadata(new_hash, new_content.len()))
+            .await
+            .unwrap();
+
+        let cancellation_token = CancellationToken::new();
+        cancellation_token.cancel();
+        let error = rebuild_search_index_inner(
+            metadata_store,
+            cas,
+            Arc::clone(&search_manager),
+            cancellation_token,
+        )
+        .await
+        .unwrap_err();
+
+        assert_eq!(error, "Search index rebuild cancelled");
+        assert_eq!(
+            search_manager.get_time_range().unwrap(),
+            (1_704_067_200, 1_704_067_200, 1)
+        );
+    }
+
+    #[test]
+    fn cancelled_indexing_is_reported_as_import_cancellation() {
+        let cancellation_token = CancellationToken::new();
+        cancellation_token.cancel();
+
+        let error = map_index_rebuild_error(
+            "Search index rebuild cancelled".to_string(),
+            std::path::Path::new("/tmp/source.log"),
+            &cancellation_token,
+        );
+
+        assert_eq!(error.category(), ErrorCategory::CancellationRequested);
     }
 }

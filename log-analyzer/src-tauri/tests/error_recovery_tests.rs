@@ -927,10 +927,11 @@ mod property_tests {
         /// - The system doesn't crash or stop processing
         #[test]
         fn prop_error_recovery_isolation(
-            file_names in prop::collection::vec(file_name_strategy(), 3..10),
+            file_names in prop::collection::btree_set(file_name_strategy(), 3..10),
             file_contents in prop::collection::vec(file_content_strategy(), 3..10),
             failure_index in 0usize..10
         ) {
+            let file_names: Vec<_> = file_names.into_iter().collect();
             // Ensure we have matching names and contents
             let count = file_names.len().min(file_contents.len());
             let file_names = &file_names[..count];
@@ -1092,10 +1093,11 @@ mod property_tests {
         /// ensuring that the system can handle multiple errors gracefully.
         #[test]
         fn prop_multiple_error_recovery_isolation(
-            file_names in prop::collection::vec(file_name_strategy(), 5..15),
+            file_names in prop::collection::btree_set(file_name_strategy(), 5..15),
             file_contents in prop::collection::vec(file_content_strategy(), 5..15),
             failure_count in 1usize..5
         ) {
+            let file_names: Vec<_> = file_names.into_iter().collect();
             // Ensure we have matching names and contents
             let count = file_names.len().min(file_contents.len());
             let file_names = &file_names[..count];

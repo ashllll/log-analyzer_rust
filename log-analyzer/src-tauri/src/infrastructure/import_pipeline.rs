@@ -11,6 +11,7 @@
 //! - **命令层**：构造 adapter 参数并调用 `run_import`，返回 task id。
 
 use std::fs;
+use std::future::Future;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -23,7 +24,7 @@ use crate::models::AppState;
 use crate::utils::canonicalize_path;
 use crate::utils::validation::{validate_import_source_path, validate_workspace_id};
 use la_core::domain::event::EventPublisher;
-use la_core::domain::{TaskHandle, WorkspacePaths};
+use la_core::domain::{TaskHandle, TaskScheduler, WorkspacePaths};
 use la_core::error::{AppError, ErrorCategory};
 use la_core::traits::AppConfigProvider;
 use la_storage::verify_after_import;
@@ -40,6 +41,126 @@ fn cleanup_failed_import_workspace(
         fs::remove_dir_all(workspace_dir)?;
     }
     Ok(())
+}
+
+struct ImportInitialization<T> {
+    service: T,
+    scheduler: Arc<dyn TaskScheduler>,
+    handle: TaskHandle,
+    workspace_existed_before_import: bool,
+}
+
+async fn rollback_import_initialization(
+    scheduler: &dyn TaskScheduler,
+    handle: &TaskHandle,
+    workspace_dir: &Path,
+    workspace_existed_before_import: bool,
+    error: String,
+) -> String {
+    let mut rollback_errors = Vec::new();
+
+    if let Err(cleanup_error) =
+        cleanup_failed_import_workspace(workspace_dir, workspace_existed_before_import)
+    {
+        rollback_errors.push(format!("workspace cleanup failed: {cleanup_error}"));
+    }
+
+    if let Err(task_error) = scheduler.fail(handle, &error).await {
+        rollback_errors.push(format!("task failure update failed: {task_error}"));
+    }
+
+    if rollback_errors.is_empty() {
+        error
+    } else {
+        format!("{error}; rollback errors: {}", rollback_errors.join("; "))
+    }
+}
+
+async fn initialize_import<T, F, Fut>(
+    workspace_dir: &Path,
+    scheduler: Option<Arc<dyn TaskScheduler>>,
+    task_id: &str,
+    target_name: &str,
+    workspace_id: &str,
+    create_service: F,
+) -> Result<ImportInitialization<T>, String>
+where
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = Result<T, String>>,
+{
+    let scheduler = scheduler.ok_or("Task manager not initialized")?;
+    let handle = scheduler
+        .create(task_id, "Import", target_name, Some(workspace_id))
+        .await
+        .map_err(|e| format!("Failed to create task: {e}"))?;
+
+    let workspace_existed_before_import = workspace_dir.exists();
+    if let Err(error) = fs::create_dir_all(workspace_dir) {
+        let error = AppError::io_error(
+            format!("Failed to create workspace dir: {error}"),
+            Some(workspace_dir.to_path_buf()),
+        )
+        .to_string();
+        return Err(rollback_import_initialization(
+            scheduler.as_ref(),
+            &handle,
+            workspace_dir,
+            workspace_existed_before_import,
+            error,
+        )
+        .await);
+    }
+
+    let service = match create_service().await {
+        Ok(service) => service,
+        Err(error) => {
+            return Err(rollback_import_initialization(
+                scheduler.as_ref(),
+                &handle,
+                workspace_dir,
+                workspace_existed_before_import,
+                error,
+            )
+            .await);
+        }
+    };
+
+    Ok(ImportInitialization {
+        service,
+        scheduler,
+        handle,
+        workspace_existed_before_import,
+    })
+}
+
+async fn complete_import_task(
+    scheduler: &dyn TaskScheduler,
+    handle: &TaskHandle,
+) -> Result<(), String> {
+    let terminal_result = async {
+        scheduler
+            .update(handle, 100, "Import complete")
+            .await
+            .map_err(|error| format!("Failed to update completed import task: {error}"))?;
+        scheduler
+            .complete(handle)
+            .await
+            .map_err(|error| format!("Failed to complete import task: {error}"))
+    }
+    .await;
+
+    match terminal_result {
+        Ok(()) => Ok(()),
+        Err(error) => {
+            if let Err(fail_error) = scheduler.fail(handle, &error).await {
+                Err(format!(
+                    "{error}; additionally failed to mark task as failed: {fail_error}"
+                ))
+            } else {
+                Err(error)
+            }
+        }
+    }
 }
 
 /// 运行导入生命周期，返回 TaskScheduler 创建的任务 ID。
@@ -70,15 +191,6 @@ pub async fn run_import(
     };
 
     let workspace_dir = workspace_paths.workspace_data_dir(workspace_id)?;
-    let workspace_existed_before_import = workspace_dir.exists();
-    fs::create_dir_all(&workspace_dir).map_err(|e| {
-        AppError::io_error(
-            format!("Failed to create workspace dir: {e}"),
-            Some(workspace_dir.clone()),
-        )
-        .to_string()
-    })?;
-
     let target_name = canonical_path
         .file_name()
         .and_then(|n| n.to_str())
@@ -87,21 +199,25 @@ pub async fn run_import(
 
     // ── TaskScheduler 任务创建 ──
     let task_id = Uuid::new_v4().to_string();
-    let scheduler = state
-        .get_task_scheduler()
-        .ok_or("Task manager not initialized")?;
-    let handle = TaskHandle::new(&task_id);
-    scheduler
-        .create(&task_id, "Import", &target_name, Some(workspace_id))
-        .await
-        .map_err(|e| format!("Failed to create task: {e}"))?;
-
-    // ── 获取或创建 WorkspaceService ──
-    let service = get_or_create_workspace_service(
-        app_handle_for_factory,
-        state,
-        workspace_id,
+    let ImportInitialization {
+        service,
+        scheduler,
+        handle,
+        workspace_existed_before_import,
+    } = initialize_import(
         &workspace_dir,
+        state.get_task_scheduler(),
+        &task_id,
+        &target_name,
+        workspace_id,
+        || {
+            get_or_create_workspace_service(
+                app_handle_for_factory,
+                state,
+                workspace_id,
+                &workspace_dir,
+            )
+        },
     )
     .await
     .inspect_err(|e| {
@@ -172,8 +288,7 @@ pub async fn run_import(
     };
 
     // ── 完成 ──
-    let _ = scheduler.update(&handle, 100, "Import complete").await;
-    let _ = scheduler.complete(&handle).await;
+    complete_import_task(scheduler.as_ref(), &handle).await?;
     event_publisher.emit_import_complete(&task_id).await;
 
     // ── 完整性验证（后台执行）──
@@ -262,7 +377,148 @@ pub async fn run_import_with_path(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
+    use std::sync::Mutex;
     use tempfile::TempDir;
+
+    #[derive(Default)]
+    struct RecordingScheduler {
+        fail_create: bool,
+        fail_complete: bool,
+        created: Mutex<Vec<String>>,
+        failed: Mutex<Vec<String>>,
+    }
+
+    #[async_trait]
+    impl TaskScheduler for RecordingScheduler {
+        async fn create(
+            &self,
+            id: &str,
+            _task_type: &str,
+            _target: &str,
+            _workspace_id: Option<&str>,
+        ) -> la_core::error::Result<TaskHandle> {
+            if self.fail_create {
+                return Err(AppError::internal_error("injected task creation failure"));
+            }
+            self.created.lock().unwrap().push(id.to_string());
+            Ok(TaskHandle::new(id))
+        }
+
+        async fn update(
+            &self,
+            _handle: &TaskHandle,
+            _progress: u8,
+            _message: &str,
+        ) -> la_core::error::Result<()> {
+            Ok(())
+        }
+
+        async fn complete(&self, _handle: &TaskHandle) -> la_core::error::Result<()> {
+            if self.fail_complete {
+                return Err(AppError::internal_error("injected task completion failure"));
+            }
+            Ok(())
+        }
+
+        async fn fail(&self, handle: &TaskHandle, _error: &str) -> la_core::error::Result<()> {
+            self.failed.lock().unwrap().push(handle.id().to_string());
+            Ok(())
+        }
+
+        async fn cancel(&self, _handle: &TaskHandle) -> la_core::error::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn missing_scheduler_does_not_create_a_workspace_directory() {
+        let parent = TempDir::new().unwrap();
+        let workspace = parent.path().join("missing-scheduler");
+
+        let result = initialize_import(
+            &workspace,
+            None,
+            "task-1",
+            "source.log",
+            "workspace-1",
+            || async { Ok(()) },
+        )
+        .await;
+
+        let error = match result {
+            Ok(_) => panic!("initialization unexpectedly succeeded"),
+            Err(error) => error,
+        };
+        assert_eq!(error, "Task manager not initialized");
+        assert!(!workspace.exists());
+    }
+
+    #[tokio::test]
+    async fn task_creation_failure_does_not_create_a_workspace_directory() {
+        let parent = TempDir::new().unwrap();
+        let workspace = parent.path().join("failed-task");
+        let scheduler = Arc::new(RecordingScheduler {
+            fail_create: true,
+            ..RecordingScheduler::default()
+        });
+
+        let result = initialize_import(
+            &workspace,
+            Some(scheduler as Arc<dyn TaskScheduler>),
+            "task-2",
+            "source.log",
+            "workspace-2",
+            || async { Ok(()) },
+        )
+        .await;
+
+        let error = match result {
+            Ok(_) => panic!("initialization unexpectedly succeeded"),
+            Err(error) => error,
+        };
+        assert!(error.contains("Failed to create task"));
+        assert!(!workspace.exists());
+    }
+
+    #[tokio::test]
+    async fn service_initialization_failure_rolls_back_task_and_new_workspace() {
+        let parent = TempDir::new().unwrap();
+        let workspace = parent.path().join("failed-service");
+        let scheduler = Arc::new(RecordingScheduler::default());
+
+        let result = initialize_import(
+            &workspace,
+            Some(Arc::clone(&scheduler) as Arc<dyn TaskScheduler>),
+            "task-3",
+            "source.log",
+            "workspace-3",
+            || async { Err::<(), _>("injected service initialization failure".to_string()) },
+        )
+        .await;
+
+        let error = match result {
+            Ok(_) => panic!("initialization unexpectedly succeeded"),
+            Err(error) => error,
+        };
+        assert_eq!(error, "injected service initialization failure");
+        assert!(!workspace.exists());
+        assert_eq!(scheduler.failed.lock().unwrap().as_slice(), ["task-3"]);
+    }
+
+    #[tokio::test]
+    async fn task_completion_failure_is_not_reported_as_import_success() {
+        let scheduler = RecordingScheduler {
+            fail_complete: true,
+            ..RecordingScheduler::default()
+        };
+        let handle = TaskHandle::new("task-4");
+
+        let result = complete_import_task(&scheduler, &handle).await;
+
+        assert!(result.is_err());
+        assert_eq!(scheduler.failed.lock().unwrap().as_slice(), ["task-4"]);
+    }
 
     #[test]
     fn failed_refresh_preserves_an_existing_workspace() {

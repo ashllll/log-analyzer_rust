@@ -17,6 +17,8 @@ pub struct TailResult {
     pub lines: Vec<String>,
     /// New file offset (file size after reading).
     pub new_offset: u64,
+    previous_offset: Option<u64>,
+    previous_line_count: Option<usize>,
 }
 
 /// Tracks per-file read offsets and line counts for incremental file watching.
@@ -45,7 +47,9 @@ impl FileTailer {
     ///
     /// Updates the internal offset. Returns the new lines and the new offset.
     pub fn tail(&mut self, path: &Path) -> Result<TailResult> {
-        let offset = self.offsets.get(path).copied().unwrap_or(0);
+        let previous_offset = self.offsets.get(path).copied();
+        let previous_line_count = self.line_counts.get(path).copied();
+        let offset = previous_offset.unwrap_or(0);
         let (lines, file_size, start_offset) = read_file_from_offset(path, offset)?;
 
         if start_offset < offset {
@@ -56,7 +60,33 @@ impl FileTailer {
         Ok(TailResult {
             lines,
             new_offset: file_size,
+            previous_offset,
+            previous_line_count,
         })
+    }
+
+    /// Restore the offset and line-count state captured by a `tail` call.
+    ///
+    /// Watcher persistence and indexing use this when either side effect fails,
+    /// allowing the same bytes to be retried on the next filesystem event.
+    pub fn rollback(&mut self, path: &Path, result: &TailResult) {
+        match result.previous_offset {
+            Some(offset) => {
+                self.offsets.insert(path.to_path_buf(), offset);
+            }
+            None => {
+                self.offsets.remove(path);
+            }
+        }
+
+        match result.previous_line_count {
+            Some(count) => {
+                self.line_counts.insert(path.to_path_buf(), count);
+            }
+            None => {
+                self.line_counts.remove(path);
+            }
+        }
     }
 
     /// Get the line count for a file (used for line-number computation).
@@ -203,6 +233,39 @@ mod tests {
 
         tailer.add_lines(&path, 2);
         assert_eq!(tailer.line_count(&path), 5);
+    }
+
+    #[test]
+    fn rollback_replays_uncommitted_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_temp_file(dir.path(), "test.log", "line1\nline2\n");
+
+        let mut tailer = FileTailer::new(dir.path().to_path_buf());
+        tailer.on_create(&path);
+        let first = tailer.tail(&path).unwrap();
+        tailer.rollback(&path, &first);
+
+        let retried = tailer.tail(&path).unwrap();
+        assert_eq!(retried.lines, vec!["line1", "line2"]);
+    }
+
+    #[test]
+    fn rollback_restores_line_count_after_truncation() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_temp_file(dir.path(), "test.log", "line1\nline2\n");
+
+        let mut tailer = FileTailer::new(dir.path().to_path_buf());
+        tailer.on_create(&path);
+        tailer.tail(&path).unwrap();
+        tailer.add_lines(&path, 2);
+        std::fs::write(&path, "short\n").unwrap();
+
+        let truncated = tailer.tail(&path).unwrap();
+        assert_eq!(tailer.line_count(&path), 0);
+        tailer.rollback(&path, &truncated);
+
+        assert_eq!(tailer.line_count(&path), 2);
+        assert_eq!(tailer.tail(&path).unwrap().lines, vec!["short"]);
     }
 
     #[test]

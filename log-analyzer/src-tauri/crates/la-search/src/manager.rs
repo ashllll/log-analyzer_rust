@@ -133,10 +133,10 @@ pub struct SearchEngineManager {
     highlighting_engine: HighlightingEngine,
 }
 
-/// Exclusive, rollback-safe replacement of all documents in a search index.
+/// Exclusive, rollback-safe transaction over documents in a search index.
 ///
 /// The previously committed index remains visible to readers until `commit`.
-/// Dropping an unfinished rebuild rolls the writer back to its last commit.
+/// Dropping an unfinished transaction rolls the writer back to its last commit.
 pub struct SearchIndexRebuild<'a> {
     manager: &'a SearchEngineManager,
     writer: Option<MutexGuard<'a, IndexWriter>>,
@@ -144,7 +144,7 @@ pub struct SearchIndexRebuild<'a> {
 }
 
 impl SearchIndexRebuild<'_> {
-    /// Add a batch to the replacement index without publishing partial results.
+    /// Add a batch without publishing partial results.
     pub fn add_documents(&mut self, entries: &[LogEntry]) -> SearchResult<()> {
         let writer = self
             .writer
@@ -760,6 +760,19 @@ impl SearchEngineManager {
         })
     }
 
+    /// Begin an exclusive append transaction.
+    ///
+    /// Readers continue to see the last committed index until the returned
+    /// transaction is committed. Dropping it before commit rolls back every
+    /// document appended through the transaction.
+    pub fn begin_update(&self) -> SearchResult<SearchIndexRebuild<'_>> {
+        Ok(SearchIndexRebuild {
+            manager: self,
+            writer: Some(self.writer.lock()),
+            committed: false,
+        })
+    }
+
     /// Commit pending changes to index
     pub fn commit(&self) -> SearchResult<()> {
         // 先在独立作用域内提交并释放 writer 锁，
@@ -1341,6 +1354,48 @@ mod tests {
         assert_eq!(
             manager.get_time_range().unwrap(),
             (1_704_067_200, 1_704_067_200, 1)
+        );
+    }
+
+    #[test]
+    fn test_dropped_update_rolls_back_appended_documents() {
+        let (manager, _temp_dir) = create_test_manager();
+        manager
+            .add_document(&test_entry("2024-01-01 00:00:00", "old"))
+            .unwrap();
+        manager.commit().unwrap();
+
+        {
+            let mut update = manager.begin_update().unwrap();
+            update
+                .add_documents(&[test_entry("2025-01-01 00:00:00", "new")])
+                .unwrap();
+        }
+
+        manager.commit().unwrap();
+        assert_eq!(
+            manager.get_time_range().unwrap(),
+            (1_704_067_200, 1_704_067_200, 1)
+        );
+    }
+
+    #[test]
+    fn test_committed_update_appends_documents() {
+        let (manager, _temp_dir) = create_test_manager();
+        manager
+            .add_document(&test_entry("2024-01-01 00:00:00", "old"))
+            .unwrap();
+        manager.commit().unwrap();
+
+        let mut update = manager.begin_update().unwrap();
+        update
+            .add_documents(&[test_entry("2025-01-01 00:00:00", "new")])
+            .unwrap();
+        update.commit().unwrap();
+
+        assert_eq!(
+            manager.get_time_range().unwrap(),
+            (1_704_067_200, 1_735_689_600, 2)
         );
     }
 

@@ -7,6 +7,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use la_core::error::{AppError, Result};
 use la_core::traits::{ContentStorage, MetadataStorage};
 use tauri::Emitter;
 use tokio::runtime::Handle as TokioHandle;
@@ -14,6 +15,42 @@ use tracing::warn;
 
 use crate::application::watch::{WatchEvent, WatchEventKind};
 use crate::infrastructure::file_tailer::FileTailer;
+
+async fn persist_file_snapshot(
+    cas: &dyn ContentStorage,
+    metadata: &dyn MetadataStorage,
+    file_path: &str,
+    virtual_path: &str,
+) -> Result<()> {
+    let content = tokio::fs::read(file_path).await.map_err(|error| {
+        AppError::io_error(
+            format!("Failed to read watcher file for CAS storage: {error}"),
+            Some(file_path.into()),
+        )
+    })?;
+    let hash = cas.store(&content).await?;
+    let file_name = Path::new(file_path)
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_else(|| file_path.to_string());
+    let file_metadata = la_core::storage_types::FileMetadata {
+        id: 0,
+        sha256_hash: hash,
+        virtual_path: virtual_path.to_string(),
+        original_name: file_name,
+        size: content.len() as i64,
+        modified_time: 0,
+        mime_type: None,
+        parent_archive_id: None,
+        depth_level: 0,
+        min_timestamp: None,
+        max_timestamp: None,
+        level_mask: None,
+        analysis_status: la_core::storage_types::AnalysisStatus::Pending,
+    };
+    metadata.insert_file(&file_metadata).await?;
+    Ok(())
+}
 
 /// 文件监听后台运行器。
 ///
@@ -98,6 +135,7 @@ impl WatcherRunner {
 
     fn on_create(&mut self, path: &Path) {
         self.tailer.on_create(path);
+        self.on_modify(path);
     }
 
     fn on_modify(&mut self, path: &Path) {
@@ -119,11 +157,30 @@ impl WatcherRunner {
                     start_line_number,
                 );
 
-                // 更新搜索索引与存储（前端通过 workspace-event 通道获知变更）
-                self.update_search_index(&new_entries);
+                // Persist the complete snapshot before publishing the incremental
+                // index update. The tail offset is committed only after both
+                // operations succeed, so a later event can retry safely.
+                if let Err(error) = self.store_to_cas(&path.to_string_lossy(), &virtual_path) {
+                    self.tailer.rollback(path, &result);
+                    warn!(
+                        error = %error,
+                        file = %path.display(),
+                        workspace_id = %self.workspace_id,
+                        "Failed to persist watcher file snapshot"
+                    );
+                    return;
+                }
 
-                // Store in CAS + metadata
-                self.store_to_cas(&path.to_string_lossy(), &virtual_path);
+                if let Err(error) = self.update_search_index(&new_entries) {
+                    self.tailer.rollback(path, &result);
+                    warn!(
+                        error = %error,
+                        count = new_entries.len(),
+                        workspace_id = %self.workspace_id,
+                        "Failed to update search index for watcher event"
+                    );
+                    return;
+                }
 
                 // Update line count
                 self.tailer.add_lines(path, new_line_count);
@@ -137,66 +194,29 @@ impl WatcherRunner {
         }
     }
 
-    fn update_search_index(&self, entries: &[la_core::models::LogEntry]) {
+    fn update_search_index(&self, entries: &[la_core::models::LogEntry]) -> Result<()> {
         if entries.is_empty() {
-            return;
+            return Ok(());
         }
-        if let Err(e) = self.search_engine.add_documents(entries) {
-            warn!(
-                error = %e, count = entries.len(),
-                workspace_id = %self.workspace_id,
-                "Failed to add watch documents to search index"
-            );
-        }
-        if let Err(e) = self.search_engine.commit() {
-            warn!(
-                error = %e, workspace_id = %self.workspace_id,
-                "Failed to commit search index after watch update"
-            );
-        }
+        let mut update = self
+            .search_engine
+            .begin_update()
+            .map_err(|error| AppError::index_error(error.to_string()))?;
+        update
+            .add_documents(entries)
+            .map_err(|error| AppError::index_error(error.to_string()))?;
+        update
+            .commit()
+            .map_err(|error| AppError::index_error(error.to_string()))
     }
 
-    fn store_to_cas(&self, file_path: &str, virtual_path: &str) {
-        let cas = Arc::clone(&self.cas);
-        let metadata = Arc::clone(&self.metadata);
-        let fp = file_path.to_string();
-        let vp = virtual_path.to_string();
-        self.runtime.spawn(async move {
-            match tokio::fs::read(&fp).await {
-                Ok(content) => match cas.store(&content).await {
-                    Ok(hash) => {
-                        let file_name = Path::new(&fp)
-                            .file_name()
-                            .map(|n| n.to_string_lossy().to_string())
-                            .unwrap_or_else(|| fp.clone());
-                        let file_meta = la_core::storage_types::FileMetadata {
-                            id: 0,
-                            sha256_hash: hash,
-                            virtual_path: vp,
-                            original_name: file_name,
-                            size: content.len() as i64,
-                            modified_time: 0,
-                            mime_type: None,
-                            parent_archive_id: None,
-                            depth_level: 0,
-                            min_timestamp: None,
-                            max_timestamp: None,
-                            level_mask: None,
-                            analysis_status: la_core::storage_types::AnalysisStatus::Pending,
-                        };
-                        if let Err(e) = metadata.insert_file(&file_meta).await {
-                            warn!(error = %e, file = %fp, "Failed to insert watcher file metadata");
-                        }
-                    }
-                    Err(e) => {
-                        warn!(error = %e, file = %fp, "Failed to store watcher file content in CAS");
-                    }
-                },
-                Err(e) => {
-                    warn!(error = %e, file = %fp, "Failed to read watcher file for CAS storage");
-                }
-            }
-        });
+    fn store_to_cas(&self, file_path: &str, virtual_path: &str) -> Result<()> {
+        self.runtime.block_on(persist_file_snapshot(
+            self.cas.as_ref(),
+            self.metadata.as_ref(),
+            file_path,
+            virtual_path,
+        ))
     }
 
     /// Watch 模式广播 FilesUpdated 事件（带 5 秒 debounce）。
@@ -228,5 +248,82 @@ impl WatcherRunner {
             }
             warn!("Failed to emit FilesUpdated after 3 attempts");
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use async_trait::async_trait;
+    use la_core::error::AppError;
+    use la_core::storage_types::FileMetadata;
+
+    struct SuccessfulContentStorage;
+
+    #[async_trait]
+    impl ContentStorage for SuccessfulContentStorage {
+        async fn store(&self, _content: &[u8]) -> Result<String> {
+            Ok("stored-hash".to_string())
+        }
+
+        async fn retrieve(&self, _hash: &str) -> Result<Vec<u8>> {
+            Ok(Vec::new())
+        }
+
+        async fn exists(&self, _hash: &str) -> bool {
+            true
+        }
+    }
+
+    struct FailingMetadataStorage;
+
+    #[async_trait]
+    impl MetadataStorage for FailingMetadataStorage {
+        async fn insert_file(&self, _metadata: &FileMetadata) -> Result<i64> {
+            Err(AppError::database_error(
+                "injected watcher metadata failure",
+            ))
+        }
+
+        async fn get_all_files(&self) -> Result<Vec<FileMetadata>> {
+            Ok(Vec::new())
+        }
+
+        async fn get_file_by_hash(&self, _hash: &str) -> Result<Option<FileMetadata>> {
+            Ok(None)
+        }
+    }
+
+    #[tokio::test]
+    async fn watcher_snapshot_reports_file_read_failure() {
+        let parent = tempfile::TempDir::new().unwrap();
+        let missing_file = parent.path().join("missing.log");
+
+        let result = persist_file_snapshot(
+            &SuccessfulContentStorage,
+            &FailingMetadataStorage,
+            missing_file.to_str().unwrap(),
+            "missing.log",
+        )
+        .await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn watcher_snapshot_reports_metadata_failure() {
+        let parent = tempfile::TempDir::new().unwrap();
+        let file = parent.path().join("app.log");
+        std::fs::write(&file, b"one line\n").unwrap();
+
+        let result = persist_file_snapshot(
+            &SuccessfulContentStorage,
+            &FailingMetadataStorage,
+            file.to_str().unwrap(),
+            "app.log",
+        )
+        .await;
+
+        assert!(result.is_err());
     }
 }
