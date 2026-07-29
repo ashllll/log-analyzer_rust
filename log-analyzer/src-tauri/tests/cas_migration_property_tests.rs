@@ -594,8 +594,8 @@ mod cas_storage_consistency_tests {
     /// 2. The hash should be identical for all attempts
     /// 3. The content should be retrievable with the same hash
     ///
-    /// Note: The current system has a UNIQUE constraint on sha256_hash in the files table,
-    /// so each hash can only have one metadata entry. This test verifies CAS-level deduplication.
+    /// File metadata may reference the same hash from multiple virtual paths;
+    /// this property verifies that the shared CAS object itself remains deduplicated.
     #[test]
     fn prop_cas_deduplication_consistency() {
         let config = ProptestConfig::with_cases(50);

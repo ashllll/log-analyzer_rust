@@ -630,12 +630,8 @@ async fn test_search_with_deduplication() {
     // Store the same content once (CAS will deduplicate automatically)
     let hash = cas.store_content(content).await.unwrap();
 
-    // Index the files with different virtual paths but same hash
-    // Note: We can't insert multiple files with the same hash due to UNIQUE constraint
-    // So we'll test that the same content can be searched from different virtual paths
-    // by using the metadata's virtual_path field
-
-    let file_meta = FileMetadata {
+    // Index two visible paths backed by the same deduplicated CAS object.
+    let first_file = FileMetadata {
         id: 0,
         sha256_hash: hash.clone(),
         virtual_path: "logs/duplicate_0.log".to_string(),
@@ -650,12 +646,22 @@ async fn test_search_with_deduplication() {
         level_mask: None,
         analysis_status: AnalysisStatus::Pending,
     };
+    let second_file = FileMetadata {
+        virtual_path: "logs/duplicate_1.log".to_string(),
+        original_name: "duplicate_1.log".to_string(),
+        ..first_file.clone()
+    };
 
-    metadata.insert_file(&file_meta).await.unwrap();
+    metadata.insert_file(&first_file).await.unwrap();
+    metadata.insert_file(&second_file).await.unwrap();
 
     // Verify file is indexed
     let all_files = metadata.get_all_files().await.unwrap();
-    assert_eq!(all_files.len(), 1, "File should be indexed");
+    assert_eq!(
+        all_files.len(),
+        2,
+        "CAS deduplication must not discard either virtual path"
+    );
 
     // Search should work correctly
     let matches = search_cas_file_async(&cas, &hash, "ERROR").await;

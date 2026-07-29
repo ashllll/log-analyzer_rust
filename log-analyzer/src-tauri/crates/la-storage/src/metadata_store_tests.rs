@@ -174,6 +174,260 @@ async fn test_database_initialization() {
     );
 }
 
+#[tokio::test]
+async fn legacy_hash_identity_schema_migrates_to_path_identity() {
+    let temp_dir = TempDir::new().unwrap();
+    let db_path = temp_dir.path().join("metadata.db");
+    let db_url = format!("sqlite://{}?mode=rwc", db_path.display());
+    let legacy_pool = sqlx::SqlitePool::connect(&db_url).await.unwrap();
+
+    sqlx::query(
+        r#"
+        CREATE TABLE files (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sha256_hash TEXT NOT NULL UNIQUE,
+            virtual_path TEXT NOT NULL,
+            original_name TEXT NOT NULL,
+            size INTEGER NOT NULL,
+            modified_time INTEGER NOT NULL,
+            mime_type TEXT,
+            parent_archive_id INTEGER,
+            depth_level INTEGER NOT NULL DEFAULT 0,
+            min_timestamp INTEGER,
+            max_timestamp INTEGER,
+            level_mask INTEGER,
+            created_at INTEGER NOT NULL
+        )
+        "#,
+    )
+    .execute(&legacy_pool)
+    .await
+    .unwrap();
+
+    for (hash, path, size, created_at) in [
+        ("old_hash", "mutable.log", 100_i64, 1_i64),
+        ("new_hash", "mutable.log", 200_i64, 2_i64),
+        ("stable_hash", "stable.log", 300_i64, 3_i64),
+    ] {
+        sqlx::query(
+            r#"
+            INSERT INTO files (
+                sha256_hash, virtual_path, original_name, size, modified_time,
+                depth_level, created_at
+            ) VALUES (?, ?, ?, ?, ?, 0, ?)
+            "#,
+        )
+        .bind(hash)
+        .bind(path)
+        .bind(path)
+        .bind(size)
+        .bind(created_at)
+        .bind(created_at)
+        .execute(&legacy_pool)
+        .await
+        .unwrap();
+    }
+    legacy_pool.close().await;
+
+    let store = MetadataStore::new(temp_dir.path()).await.unwrap();
+    assert_eq!(
+        store.count_files().await.unwrap(),
+        2,
+        "migration should keep only the newest record for a repeated virtual path"
+    );
+    let migrated = store
+        .get_file_by_virtual_path("mutable.log")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(migrated.sha256_hash, "new_hash");
+    assert_eq!(migrated.size, 200);
+
+    store
+        .insert_file(&FileMetadata {
+            id: 0,
+            sha256_hash: "new_hash".to_string(),
+            virtual_path: "copy.log".to_string(),
+            original_name: "copy.log".to_string(),
+            size: 200,
+            modified_time: 2,
+            mime_type: None,
+            parent_archive_id: None,
+            depth_level: 0,
+            min_timestamp: None,
+            max_timestamp: None,
+            level_mask: None,
+            analysis_status: AnalysisStatus::Pending,
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        store.count_files().await.unwrap(),
+        3,
+        "migrated schema must allow one CAS hash to back multiple virtual paths"
+    );
+
+    let fts_results = store.search_files("mutable").await.unwrap();
+    assert_eq!(fts_results.len(), 1, "migration must rebuild the FTS index");
+}
+
+#[tokio::test]
+async fn legacy_archive_identity_migration_remaps_hierarchy() {
+    let temp_dir = TempDir::new().unwrap();
+    let db_path = temp_dir.path().join("metadata.db");
+    let db_url = format!("sqlite://{}?mode=rwc", db_path.display());
+    let legacy_pool = sqlx::SqlitePool::connect(&db_url).await.unwrap();
+
+    sqlx::query(
+        r#"
+        CREATE TABLE archives (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sha256_hash TEXT NOT NULL UNIQUE,
+            virtual_path TEXT NOT NULL,
+            original_name TEXT NOT NULL,
+            archive_type TEXT NOT NULL,
+            parent_archive_id INTEGER,
+            depth_level INTEGER NOT NULL DEFAULT 0,
+            extraction_status TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY (parent_archive_id) REFERENCES archives(id) ON DELETE CASCADE
+        )
+        "#,
+    )
+    .execute(&legacy_pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        r#"
+        CREATE TABLE files (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sha256_hash TEXT NOT NULL,
+            virtual_path TEXT NOT NULL UNIQUE,
+            original_name TEXT NOT NULL,
+            size INTEGER NOT NULL,
+            modified_time INTEGER NOT NULL,
+            mime_type TEXT,
+            parent_archive_id INTEGER,
+            depth_level INTEGER NOT NULL DEFAULT 0,
+            min_timestamp INTEGER,
+            max_timestamp INTEGER,
+            level_mask INTEGER,
+            analysis_status TEXT NOT NULL DEFAULT 'PENDING',
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY (parent_archive_id) REFERENCES archives(id) ON DELETE CASCADE
+        )
+        "#,
+    )
+    .execute(&legacy_pool)
+    .await
+    .unwrap();
+
+    for (hash, path, parent_id, depth, created_at) in [
+        ("old_parent_hash", "parent.zip", None, 0_i32, 1_i64),
+        ("new_parent_hash", "parent.zip", None, 0_i32, 2_i64),
+        (
+            "child_archive_hash",
+            "parent.zip/child.zip",
+            Some(1_i64),
+            1_i32,
+            3_i64,
+        ),
+    ] {
+        sqlx::query(
+            r#"
+            INSERT INTO archives (
+                sha256_hash, virtual_path, original_name, archive_type,
+                parent_archive_id, depth_level, extraction_status, created_at
+            ) VALUES (?, ?, ?, 'zip', ?, ?, 'completed', ?)
+            "#,
+        )
+        .bind(hash)
+        .bind(path)
+        .bind(path)
+        .bind(parent_id)
+        .bind(depth)
+        .bind(created_at)
+        .execute(&legacy_pool)
+        .await
+        .unwrap();
+    }
+
+    sqlx::query(
+        r#"
+        INSERT INTO files (
+            sha256_hash, virtual_path, original_name, size, modified_time,
+            parent_archive_id, depth_level, analysis_status, created_at
+        ) VALUES (
+            'child_file_hash', 'parent.zip/child.log', 'child.log', 10, 0,
+            1, 1, 'PENDING', 3
+        )
+        "#,
+    )
+    .execute(&legacy_pool)
+    .await
+    .unwrap();
+    legacy_pool.close().await;
+
+    let store = MetadataStore::new(temp_dir.path()).await.unwrap();
+    let archives = store.get_all_archives().await.unwrap();
+    assert_eq!(archives.len(), 2);
+    let parent = archives
+        .iter()
+        .find(|archive| archive.virtual_path == "parent.zip")
+        .unwrap();
+    assert_eq!(parent.sha256_hash, "new_parent_hash");
+    let child = archives
+        .iter()
+        .find(|archive| archive.virtual_path == "parent.zip/child.zip")
+        .unwrap();
+    assert_eq!(child.parent_archive_id, Some(parent.id));
+
+    let child_file = store
+        .get_file_by_virtual_path("parent.zip/child.log")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(child_file.parent_archive_id, Some(parent.id));
+
+    store
+        .insert_archive(&ArchiveMetadata {
+            id: 0,
+            sha256_hash: "new_parent_hash".to_string(),
+            virtual_path: "copy.zip".to_string(),
+            original_name: "copy.zip".to_string(),
+            archive_type: "zip".to_string(),
+            parent_archive_id: None,
+            depth_level: 0,
+            extraction_status: "completed".to_string(),
+        })
+        .await
+        .unwrap();
+    assert_eq!(store.count_archives().await.unwrap(), 3);
+
+    sqlx::query("DELETE FROM archives WHERE id = ?")
+        .bind(parent.id)
+        .execute(&store.pool)
+        .await
+        .unwrap();
+    assert!(
+        store
+            .get_file_by_virtual_path("parent.zip/child.log")
+            .await
+            .unwrap()
+            .is_none(),
+        "migrated child file must still cascade with its retained parent"
+    );
+    assert!(
+        store
+            .get_all_archives()
+            .await
+            .unwrap()
+            .iter()
+            .all(|archive| archive.virtual_path != "parent.zip/child.zip"),
+        "migrated nested archive must still cascade with its retained parent"
+    );
+}
+
 /// Test file insertion with all fields
 #[tokio::test]
 async fn test_insert_file_with_all_fields() {
@@ -306,6 +560,127 @@ async fn test_insert_and_retrieve_archive() {
     assert_eq!(retrieved.extraction_status, "completed");
 }
 
+#[tokio::test]
+async fn identical_archive_content_retains_each_virtual_path() {
+    let (store, _temp_dir) = create_test_store().await;
+    let first = ArchiveMetadata {
+        id: 0,
+        sha256_hash: "shared_archive_hash".to_string(),
+        virtual_path: "first.zip".to_string(),
+        original_name: "first.zip".to_string(),
+        archive_type: "zip".to_string(),
+        parent_archive_id: None,
+        depth_level: 0,
+        extraction_status: "completed".to_string(),
+    };
+    let second = ArchiveMetadata {
+        virtual_path: "second.zip".to_string(),
+        original_name: "second.zip".to_string(),
+        ..first.clone()
+    };
+
+    let first_id = store.insert_archive(&first).await.unwrap();
+    let second_id = store.insert_archive(&second).await.unwrap();
+
+    assert_ne!(
+        first_id, second_id,
+        "each archive path must have its own metadata identity"
+    );
+    let archives = store.get_all_archives().await.unwrap();
+    assert_eq!(archives.len(), 2);
+    assert!(archives
+        .iter()
+        .any(|archive| archive.virtual_path == "first.zip"));
+    assert!(archives
+        .iter()
+        .any(|archive| archive.virtual_path == "second.zip"));
+}
+
+#[tokio::test]
+async fn reinserting_archive_path_replaces_its_content_reference() {
+    let (store, _temp_dir) = create_test_store().await;
+    let original = ArchiveMetadata {
+        id: 0,
+        sha256_hash: "old_archive_hash".to_string(),
+        virtual_path: "mutable.zip".to_string(),
+        original_name: "mutable.zip".to_string(),
+        archive_type: "zip".to_string(),
+        parent_archive_id: None,
+        depth_level: 0,
+        extraction_status: "pending".to_string(),
+    };
+    let replacement = ArchiveMetadata {
+        sha256_hash: "new_archive_hash".to_string(),
+        extraction_status: "completed".to_string(),
+        ..original.clone()
+    };
+
+    let original_id = store.insert_archive(&original).await.unwrap();
+    let replacement_id = store.insert_archive(&replacement).await.unwrap();
+
+    assert_eq!(
+        original_id, replacement_id,
+        "an archive path should keep one stable metadata identity"
+    );
+    let archives = store.get_all_archives().await.unwrap();
+    assert_eq!(archives.len(), 1);
+    assert_eq!(archives[0].sha256_hash, "new_archive_hash");
+    assert_eq!(archives[0].extraction_status, "completed");
+}
+
+#[tokio::test]
+async fn deleting_archive_cascades_to_child_file_metadata() {
+    let (store, _temp_dir) = create_test_store().await;
+
+    let archive_id = store
+        .insert_archive(&ArchiveMetadata {
+            id: 0,
+            sha256_hash: "cascade_archive_hash".to_string(),
+            virtual_path: "cascade.zip".to_string(),
+            original_name: "cascade.zip".to_string(),
+            archive_type: "zip".to_string(),
+            parent_archive_id: None,
+            depth_level: 0,
+            extraction_status: "completed".to_string(),
+        })
+        .await
+        .unwrap();
+
+    store
+        .insert_file(&FileMetadata {
+            id: 0,
+            sha256_hash: "cascade_child_hash".to_string(),
+            virtual_path: "cascade.zip/child.log".to_string(),
+            original_name: "child.log".to_string(),
+            size: 12,
+            modified_time: 0,
+            mime_type: Some("text/plain".to_string()),
+            parent_archive_id: Some(archive_id),
+            depth_level: 1,
+            min_timestamp: None,
+            max_timestamp: None,
+            level_mask: None,
+            analysis_status: AnalysisStatus::Pending,
+        })
+        .await
+        .unwrap();
+
+    sqlx::query("DELETE FROM archives WHERE id = ?")
+        .bind(archive_id)
+        .execute(&store.pool)
+        .await
+        .unwrap();
+
+    assert!(
+        store
+            .get_file_by_virtual_path("cascade.zip/child.log")
+            .await
+            .unwrap()
+            .is_none(),
+        "deleting an archive must not leave child file metadata behind"
+    );
+}
+
 /// Test archive hierarchy queries - get children of an archive
 #[tokio::test]
 async fn test_archive_hierarchy_queries() {
@@ -425,6 +800,76 @@ async fn test_nested_archive_hierarchy() {
     // Verify max depth
     let max_depth = store.get_max_depth().await.unwrap();
     assert_eq!(max_depth, 2);
+}
+
+#[tokio::test]
+async fn invalid_analysis_status_is_reported_as_database_corruption() {
+    let (store, _temp_dir) = create_test_store().await;
+    store
+        .insert_file(&FileMetadata {
+            id: 0,
+            sha256_hash: "invalid_status_hash".to_string(),
+            virtual_path: "invalid-status.log".to_string(),
+            original_name: "invalid-status.log".to_string(),
+            size: 1,
+            modified_time: 0,
+            mime_type: None,
+            parent_archive_id: None,
+            depth_level: 0,
+            min_timestamp: None,
+            max_timestamp: None,
+            level_mask: None,
+            analysis_status: AnalysisStatus::Pending,
+        })
+        .await
+        .unwrap();
+
+    sqlx::query("UPDATE files SET analysis_status = 'CORRUPT' WHERE virtual_path = ?")
+        .bind("invalid-status.log")
+        .execute(&store.pool)
+        .await
+        .unwrap();
+
+    let error = store
+        .get_file_by_virtual_path("invalid-status.log")
+        .await
+        .expect_err("an invalid persisted status must not be silently treated as pending");
+    assert!(
+        error.to_string().contains("Unknown analysis status"),
+        "unexpected error: {error}"
+    );
+}
+
+#[tokio::test]
+async fn nullable_analysis_fields_round_trip_as_none() {
+    let (store, _temp_dir) = create_test_store().await;
+    store
+        .insert_file(&FileMetadata {
+            id: 0,
+            sha256_hash: "nullable_stats_hash".to_string(),
+            virtual_path: "nullable-stats.log".to_string(),
+            original_name: "nullable-stats.log".to_string(),
+            size: 1,
+            modified_time: 0,
+            mime_type: None,
+            parent_archive_id: None,
+            depth_level: 0,
+            min_timestamp: None,
+            max_timestamp: None,
+            level_mask: None,
+            analysis_status: AnalysisStatus::Pending,
+        })
+        .await
+        .unwrap();
+
+    let stored = store
+        .get_file_by_virtual_path("nullable-stats.log")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.min_timestamp, None);
+    assert_eq!(stored.max_timestamp, None);
+    assert_eq!(stored.level_mask, None);
 }
 
 /// Test virtual path lookups
@@ -763,9 +1208,9 @@ async fn test_metrics_operations() {
     assert_eq!(max_depth, 3);
 }
 
-/// Test unique constraint on hash
+/// CAS deduplicates content, while metadata retains every virtual path.
 #[tokio::test]
-async fn test_unique_hash_constraint() {
+async fn identical_content_retains_each_virtual_path() {
     let (store, _temp_dir) = create_test_store().await;
 
     let file1 = FileMetadata {
@@ -784,15 +1229,12 @@ async fn test_unique_hash_constraint() {
         analysis_status: AnalysisStatus::Pending,
     };
 
-    store.insert_file(&file1).await.unwrap();
-
-    // Try to insert another file with same hash - CAS deduplication should return existing ID
     let file2 = FileMetadata {
         id: 0,
-        sha256_hash: "duplicate_hash".to_string(), // 相同的哈希
+        sha256_hash: "duplicate_hash".to_string(),
         virtual_path: "file2.log".to_string(),
         original_name: "file2.log".to_string(),
-        size: 200, // 大小不同，但哈希相同
+        size: 100,
         modified_time: 0,
         mime_type: None,
         parent_archive_id: None,
@@ -803,15 +1245,13 @@ async fn test_unique_hash_constraint() {
         analysis_status: AnalysisStatus::Pending,
     };
 
-    // CAS 去重设计：相同哈希应该成功插入（返回已存在记录的 ID）
-    // 但由于 UNIQUE 约束在 sha256_hash 上，第二个文件不会创建新的虚拟路径记录
-    let result = store.insert_file(&file2).await;
-    assert!(
-        result.is_ok(),
-        "Should successfully insert duplicate hash (returns existing ID due to UNIQUE constraint)"
+    let first_id = store.insert_file(&file1).await.unwrap();
+    let second_id = store.insert_file(&file2).await.unwrap();
+    assert_ne!(
+        first_id, second_id,
+        "each virtual path must have its own metadata identity"
     );
 
-    // 验证第一个文件仍然存在
     let retrieved1 = store
         .get_file_by_virtual_path("file1.log")
         .await
@@ -819,12 +1259,58 @@ async fn test_unique_hash_constraint() {
         .unwrap();
     assert_eq!(retrieved1.sha256_hash, "duplicate_hash");
 
-    // 验证第二个虚拟路径不存在（被 INSERT OR IGNORE 忽略）
-    let retrieved2 = store.get_file_by_virtual_path("file2.log").await.unwrap();
-    assert!(
-        retrieved2.is_none(),
-        "Second virtual path should not exist (ignored by UNIQUE constraint)"
+    let retrieved2 = store
+        .get_file_by_virtual_path("file2.log")
+        .await
+        .unwrap()
+        .expect("the second virtual path must not be discarded");
+    assert_eq!(retrieved2.sha256_hash, "duplicate_hash");
+    assert_eq!(store.count_files().await.unwrap(), 2);
+}
+
+#[tokio::test]
+async fn reinserting_virtual_path_replaces_its_content_reference() {
+    let (store, _temp_dir) = create_test_store().await;
+
+    let original = FileMetadata {
+        id: 0,
+        sha256_hash: "original_hash".to_string(),
+        virtual_path: "mutable.log".to_string(),
+        original_name: "mutable.log".to_string(),
+        size: 100,
+        modified_time: 10,
+        mime_type: None,
+        parent_archive_id: None,
+        depth_level: 0,
+        min_timestamp: None,
+        max_timestamp: None,
+        level_mask: None,
+        analysis_status: AnalysisStatus::Pending,
+    };
+    let replacement = FileMetadata {
+        sha256_hash: "replacement_hash".to_string(),
+        size: 200,
+        modified_time: 20,
+        ..original.clone()
+    };
+
+    let original_id = store.insert_file(&original).await.unwrap();
+    let replacement_id = store.insert_file(&replacement).await.unwrap();
+
+    assert_eq!(
+        original_id, replacement_id,
+        "a virtual path should keep one stable metadata identity"
     );
+    assert_eq!(store.count_files().await.unwrap(), 1);
+
+    let stored = store
+        .get_file_by_virtual_path("mutable.log")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.sha256_hash, "replacement_hash");
+    assert_eq!(stored.size, 200);
+    assert_eq!(stored.modified_time, 20);
 }
 
 // ========== Index State Management Tests ==========
@@ -1179,31 +1665,16 @@ mod property_tests {
                 let temp_dir = TempDir::new().unwrap();
                 let store = MetadataStore::new(temp_dir.path()).await.unwrap();
 
-                // Simulate extraction: insert all files into metadata store
-                let mut inserted_files = Vec::new();
+                // Simulate extraction: every path is retained, and reinserting the
+                // same path replaces that path's content reference.
+                let mut expected_by_path = std::collections::HashMap::new();
                 for file in files {
-                    // Skip files with duplicate hashes (database constraint)
-                    if inserted_files.iter().any(|f: &FileMetadata| f.sha256_hash == file.sha256_hash) {
-                        continue;
-                    }
-                    // Skip files with duplicate virtual_path (database UNIQUE constraint)
-                    if inserted_files.iter().any(|f: &FileMetadata| f.virtual_path == file.virtual_path) {
-                        continue;
-                    }
-
-                    match store.insert_file(&file).await {
-                        Ok(_) => {
-                            inserted_files.push(file.clone());
-                        }
-                        Err(_) => {
-                            // Skip files that fail to insert (e.g., constraint violations)
-                            continue;
-                        }
-                    }
+                    store.insert_file(&file).await.unwrap();
+                    expected_by_path.insert(file.virtual_path.clone(), file);
                 }
 
                 // Property: For any extracted file, it must exist in metadata store
-                for file in &inserted_files {
+                for file in expected_by_path.values() {
                     // Verify file can be retrieved by virtual path
                     let retrieved = store
                         .get_file_by_virtual_path(&file.virtual_path)
@@ -1248,16 +1719,20 @@ mod property_tests {
                 let all_files = store.get_all_files().await.unwrap();
                 prop_assert_eq!(
                     all_files.len(),
-                    inserted_files.len(),
-                    "Metadata store should contain exactly the number of files we inserted"
+                    expected_by_path.len(),
+                    "Metadata store should contain exactly one row per virtual path"
                 );
 
                 // Verify each inserted file is in the complete list
-                for file in &inserted_files {
+                for file in expected_by_path.values() {
                     prop_assert!(
-                        all_files.iter().any(|f| f.sha256_hash == file.sha256_hash),
-                        "File with hash '{}' must be in the complete file list",
-                        file.sha256_hash
+                        all_files.iter().any(|stored| {
+                            stored.virtual_path == file.virtual_path
+                                && stored.sha256_hash == file.sha256_hash
+                        }),
+                        "File path '{}' with hash '{}' must be in the complete file list",
+                        file.virtual_path,
+                        file.sha256_hash,
                     );
                 }
 

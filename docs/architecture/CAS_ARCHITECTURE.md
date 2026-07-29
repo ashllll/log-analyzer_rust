@@ -83,8 +83,8 @@ pub async fn read_content(&self, hash: &str) -> Result<Vec<u8>> {
 -- 文件记录（每个导入文件对应一行）
 CREATE TABLE files (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
-    sha256_hash       TEXT NOT NULL UNIQUE,     -- CAS 对象标识（唯一）
-    virtual_path      TEXT NOT NULL,            -- 工作区内虚拟路径
+    sha256_hash       TEXT NOT NULL,            -- CAS 对象标识（内容可被多路径复用）
+    virtual_path      TEXT NOT NULL UNIQUE,     -- 工作区内虚拟路径（元数据身份）
     original_name     TEXT NOT NULL,            -- 原始文件名
     size              INTEGER NOT NULL,         -- 文件大小（字节）
     modified_time     INTEGER NOT NULL,         -- 修改时间（Unix 时间戳）
@@ -97,8 +97,8 @@ CREATE TABLE files (
 -- 归档文件记录（压缩包本身）
 CREATE TABLE archives (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
-    sha256_hash       TEXT NOT NULL UNIQUE,     -- 归档内容哈希
-    virtual_path      TEXT NOT NULL,            -- 虚拟路径
+    sha256_hash       TEXT NOT NULL,            -- 归档 CAS 对象（内容可被多路径复用）
+    virtual_path      TEXT NOT NULL UNIQUE,     -- 虚拟路径（归档元数据身份）
     original_name     TEXT NOT NULL,            -- 原始文件名
     archive_type      TEXT NOT NULL,            -- zip/tar/gz/rar/7z
     parent_archive_id INTEGER,                  -- 父归档 ID（嵌套归档）

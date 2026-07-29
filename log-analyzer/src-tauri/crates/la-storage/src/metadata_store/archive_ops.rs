@@ -5,7 +5,7 @@ use la_core::storage_types::ArchiveMetadata;
 use sqlx::{Row, SqlitePool};
 use tracing::debug;
 
-/// Insert archive metadata with deduplication.
+/// Insert or replace archive metadata by virtual path.
 pub(crate) async fn insert_archive(pool: &SqlitePool, metadata: &ArchiveMetadata) -> Result<i64> {
     let mut tx = pool
         .begin()
@@ -14,10 +14,17 @@ pub(crate) async fn insert_archive(pool: &SqlitePool, metadata: &ArchiveMetadata
 
     sqlx::query(
         r#"
-        INSERT OR IGNORE INTO archives (
+        INSERT INTO archives (
             sha256_hash, virtual_path, original_name, archive_type,
             parent_archive_id, depth_level, extraction_status, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(virtual_path) DO UPDATE SET
+            sha256_hash = excluded.sha256_hash,
+            original_name = excluded.original_name,
+            archive_type = excluded.archive_type,
+            parent_archive_id = excluded.parent_archive_id,
+            depth_level = excluded.depth_level,
+            extraction_status = excluded.extraction_status
         "#,
     )
     .bind(&metadata.sha256_hash)
@@ -32,8 +39,8 @@ pub(crate) async fn insert_archive(pool: &SqlitePool, metadata: &ArchiveMetadata
     .await
     .map_err(|e| AppError::database_error(format!("Failed to insert archive: {e}")))?;
 
-    let id = sqlx::query_as::<_, (i64,)>("SELECT id FROM archives WHERE sha256_hash = ? LIMIT 1")
-        .bind(&metadata.sha256_hash)
+    let id = sqlx::query_as::<_, (i64,)>("SELECT id FROM archives WHERE virtual_path = ?")
+        .bind(&metadata.virtual_path)
         .fetch_one(&mut *tx)
         .await
         .map_err(|e| AppError::database_error(format!("Failed to fetch archive ID: {e}")))?
@@ -47,7 +54,7 @@ pub(crate) async fn insert_archive(pool: &SqlitePool, metadata: &ArchiveMetadata
         id = id,
         hash = %metadata.sha256_hash,
         path = %metadata.virtual_path,
-        "Inserted or retrieved existing archive metadata (CAS deduplication)"
+        "Upserted archive metadata by virtual path"
     );
 
     Ok(id)
@@ -125,17 +132,24 @@ pub(crate) async fn get_all_archives(pool: &SqlitePool) -> Result<Vec<ArchiveMet
         .collect())
 }
 
-/// Insert archive within a transaction.
+/// Insert or replace archive metadata by virtual path within a transaction.
 pub(crate) async fn insert_archive_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     metadata: &ArchiveMetadata,
 ) -> Result<i64> {
     sqlx::query(
         r#"
-        INSERT OR IGNORE INTO archives (
+        INSERT INTO archives (
             sha256_hash, virtual_path, original_name, archive_type,
             parent_archive_id, depth_level, extraction_status, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(virtual_path) DO UPDATE SET
+            sha256_hash = excluded.sha256_hash,
+            original_name = excluded.original_name,
+            archive_type = excluded.archive_type,
+            parent_archive_id = excluded.parent_archive_id,
+            depth_level = excluded.depth_level,
+            extraction_status = excluded.extraction_status
         "#,
     )
     .bind(&metadata.sha256_hash)
@@ -152,8 +166,8 @@ pub(crate) async fn insert_archive_tx(
         AppError::database_error(format!("Failed to insert archive in transaction: {e}"))
     })?;
 
-    let id = sqlx::query_as::<_, (i64,)>("SELECT id FROM archives WHERE sha256_hash = ? LIMIT 1")
-        .bind(&metadata.sha256_hash)
+    let id = sqlx::query_as::<_, (i64,)>("SELECT id FROM archives WHERE virtual_path = ?")
+        .bind(&metadata.virtual_path)
         .fetch_one(&mut **tx)
         .await
         .map_err(|e| {
@@ -165,7 +179,7 @@ pub(crate) async fn insert_archive_tx(
         id = id,
         hash = %metadata.sha256_hash,
         path = %metadata.virtual_path,
-        "Inserted or retrieved existing archive metadata in transaction (CAS deduplication)"
+        "Upserted archive metadata by virtual path in transaction"
     );
 
     Ok(id)

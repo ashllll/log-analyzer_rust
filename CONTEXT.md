@@ -20,3 +20,5 @@
 |---|---|
 | **CAS** | Content Addressable Storage，按 SHA-256 哈希存储日志内容，跨工作区去重。 |
 | **工作区（Workspace）** | 一组导入日志文件的容器；数据落在 `{app_data_dir}/workspaces/{workspace_id}/`（CAS + `metadata.db`）。 |
+| **内容身份（Content Identity）** | CAS 对象的 SHA-256；相同字节只存一份，可被多个元数据路径复用。 |
+| **路径身份（Path Identity）** | `metadata.db` 中文件或归档的唯一 `virtual_path`；同一路径重新导入时原地更新内容引用。 |

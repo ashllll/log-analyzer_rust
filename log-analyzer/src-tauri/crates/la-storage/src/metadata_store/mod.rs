@@ -87,6 +87,8 @@ impl MetadataStore {
         schema::init_schema(&pool).await?;
         schema::migrate_schema_v2(&pool).await?;
         schema::migrate_schema_v3(&pool).await?;
+        schema::migrate_schema_v4(&pool).await?;
+        schema::migrate_schema_v5(&pool).await?;
 
         Ok(Self { pool })
     }

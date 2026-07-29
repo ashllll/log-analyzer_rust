@@ -4,13 +4,28 @@
 //! insert, query, update stats, batch operations, and FTS search.
 
 use la_core::error::{AppError, Result};
-use la_core::storage_types::FileMetadata;
+use la_core::storage_types::{AnalysisStatus, FileMetadata};
 use sqlx::{Row, SqlitePool};
 use tracing::{debug, info};
 
-use super::types::{parse_analysis_status, MAX_BATCH_SIZE};
+use super::types::MAX_BATCH_SIZE;
 
-/// Insert file metadata with CAS deduplication (within a transaction).
+const FILE_UPSERT_UPDATE_SQL: &str = r#"
+    ON CONFLICT(virtual_path) DO UPDATE SET
+        sha256_hash = excluded.sha256_hash,
+        original_name = excluded.original_name,
+        size = excluded.size,
+        modified_time = excluded.modified_time,
+        mime_type = excluded.mime_type,
+        parent_archive_id = excluded.parent_archive_id,
+        depth_level = excluded.depth_level,
+        min_timestamp = excluded.min_timestamp,
+        max_timestamp = excluded.max_timestamp,
+        level_mask = excluded.level_mask,
+        analysis_status = excluded.analysis_status
+"#;
+
+/// Insert or replace file metadata by virtual path within a transaction.
 pub(crate) async fn insert_file(pool: &SqlitePool, metadata: &FileMetadata) -> Result<i64> {
     let mut tx = pool
         .begin()
@@ -19,11 +34,23 @@ pub(crate) async fn insert_file(pool: &SqlitePool, metadata: &FileMetadata) -> R
 
     sqlx::query(
         r#"
-        INSERT OR IGNORE INTO files (
+        INSERT INTO files (
             sha256_hash, virtual_path, original_name, size,
             modified_time, mime_type, parent_archive_id, depth_level, created_at,
             min_timestamp, max_timestamp, level_mask, analysis_status
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(virtual_path) DO UPDATE SET
+            sha256_hash = excluded.sha256_hash,
+            original_name = excluded.original_name,
+            size = excluded.size,
+            modified_time = excluded.modified_time,
+            mime_type = excluded.mime_type,
+            parent_archive_id = excluded.parent_archive_id,
+            depth_level = excluded.depth_level,
+            min_timestamp = excluded.min_timestamp,
+            max_timestamp = excluded.max_timestamp,
+            level_mask = excluded.level_mask,
+            analysis_status = excluded.analysis_status
         "#,
     )
     .bind(&metadata.sha256_hash)
@@ -43,8 +70,8 @@ pub(crate) async fn insert_file(pool: &SqlitePool, metadata: &FileMetadata) -> R
     .await
     .map_err(|e| AppError::database_error(format!("Failed to insert file: {e}")))?;
 
-    let id = sqlx::query_as::<_, (i64,)>("SELECT id FROM files WHERE sha256_hash = ? LIMIT 1")
-        .bind(&metadata.sha256_hash)
+    let id = sqlx::query_as::<_, (i64,)>("SELECT id FROM files WHERE virtual_path = ?")
+        .bind(&metadata.virtual_path)
         .fetch_one(&mut *tx)
         .await
         .map_err(|e| AppError::database_error(format!("Failed to fetch file ID: {e}")))?
@@ -58,7 +85,7 @@ pub(crate) async fn insert_file(pool: &SqlitePool, metadata: &FileMetadata) -> R
         id = id,
         hash = %metadata.sha256_hash,
         path = %metadata.virtual_path,
-        "Inserted or retrieved existing file metadata (CAS deduplication)"
+        "Upserted file metadata by virtual path"
     );
 
     Ok(id)
@@ -75,7 +102,8 @@ pub(crate) async fn get_file_by_virtual_path(
         .await
         .map_err(|e| AppError::database_error(format!("Failed to query file: {e}")))?;
 
-    Ok(row.map(|r: sqlx::sqlite::SqliteRow| row_to_file_metadata(&r)))
+    row.map(|r: sqlx::sqlite::SqliteRow| row_to_file_metadata(&r))
+        .transpose()
 }
 
 /// Get file by SHA-256 hash.
@@ -89,7 +117,8 @@ pub(crate) async fn get_file_by_hash(
         .await
         .map_err(|e| AppError::database_error(format!("Failed to query file: {e}")))?;
 
-    Ok(row.map(|r: sqlx::sqlite::SqliteRow| row_to_file_metadata(&r)))
+    row.map(|r: sqlx::sqlite::SqliteRow| row_to_file_metadata(&r))
+        .transpose()
 }
 
 /// Batch check which hashes have references in the files table.
@@ -146,10 +175,9 @@ pub(crate) async fn get_archive_children(
         .await
         .map_err(|e| AppError::database_error(format!("Failed to query archive children: {e}")))?;
 
-    Ok(rows
-        .into_iter()
+    rows.into_iter()
         .map(|r: sqlx::sqlite::SqliteRow| row_to_file_metadata(&r))
-        .collect())
+        .collect()
 }
 
 /// Get all files.
@@ -159,10 +187,9 @@ pub(crate) async fn get_all_files(pool: &SqlitePool) -> Result<Vec<FileMetadata>
         .await
         .map_err(|e| AppError::database_error(format!("Failed to query all files: {e}")))?;
 
-    Ok(rows
-        .into_iter()
+    rows.into_iter()
         .map(|r: sqlx::sqlite::SqliteRow| row_to_file_metadata(&r))
-        .collect())
+        .collect()
 }
 
 /// Count total files.
@@ -245,10 +272,9 @@ pub(crate) async fn get_ready_files(pool: &SqlitePool) -> Result<Vec<FileMetadat
             .await
             .map_err(|e| AppError::database_error(format!("Failed to query ready files: {e}")))?;
 
-    Ok(rows
-        .into_iter()
+    rows.into_iter()
         .map(|r: sqlx::sqlite::SqliteRow| row_to_file_metadata(&r))
-        .collect())
+        .collect()
 }
 
 /// Get files with pruning filters (time range, level mask, file pattern).
@@ -308,10 +334,9 @@ pub(crate) async fn get_files_with_pruning(
         AppError::database_error(format!("Failed to query files with pruning: {e}"))
     })?;
 
-    Ok(rows
-        .into_iter()
+    rows.into_iter()
         .map(|r: sqlx::sqlite::SqliteRow| row_to_file_metadata(&r))
-        .collect())
+        .collect()
 }
 
 /// Search files using FTS5.
@@ -329,10 +354,9 @@ pub(crate) async fn search_files(pool: &SqlitePool, query: &str) -> Result<Vec<F
     .await
     .map_err(|e| AppError::database_error(format!("Failed to search files: {e}")))?;
 
-    Ok(rows
-        .into_iter()
+    rows.into_iter()
         .map(|r: sqlx::sqlite::SqliteRow| row_to_file_metadata(&r))
-        .collect())
+        .collect()
 }
 
 /// Insert multiple files in a single transaction.
@@ -358,11 +382,23 @@ pub(crate) async fn insert_files_batch(
     for metadata in files {
         sqlx::query(
             r#"
-            INSERT OR IGNORE INTO files (
+            INSERT INTO files (
                 sha256_hash, virtual_path, original_name, size,
                 modified_time, mime_type, parent_archive_id, depth_level, created_at,
                 min_timestamp, max_timestamp, level_mask, analysis_status
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(virtual_path) DO UPDATE SET
+                sha256_hash = excluded.sha256_hash,
+                original_name = excluded.original_name,
+                size = excluded.size,
+                modified_time = excluded.modified_time,
+                mime_type = excluded.mime_type,
+                parent_archive_id = excluded.parent_archive_id,
+                depth_level = excluded.depth_level,
+                min_timestamp = excluded.min_timestamp,
+                max_timestamp = excluded.max_timestamp,
+                level_mask = excluded.level_mask,
+                analysis_status = excluded.analysis_status
             "#,
         )
         .bind(&metadata.sha256_hash)
@@ -382,8 +418,8 @@ pub(crate) async fn insert_files_batch(
         .await
         .map_err(|e| AppError::database_error(format!("Failed to insert file: {e}")))?;
 
-        let id = sqlx::query_as::<_, (i64,)>("SELECT id FROM files WHERE sha256_hash = ? LIMIT 1")
-            .bind(&metadata.sha256_hash)
+        let id = sqlx::query_as::<_, (i64,)>("SELECT id FROM files WHERE virtual_path = ?")
+            .bind(&metadata.virtual_path)
             .fetch_one(&mut *tx)
             .await
             .map_err(|e| AppError::database_error(format!("Failed to fetch file ID: {e}")))?
@@ -396,10 +432,7 @@ pub(crate) async fn insert_files_batch(
         .await
         .map_err(|e| AppError::database_error(format!("Failed to commit transaction: {e}")))?;
 
-    info!(
-        count = ids.len(),
-        "Inserted files in batch transaction (with CAS deduplication)"
-    );
+    info!(count = ids.len(), "Upserted files in batch transaction");
     Ok(ids)
 }
 
@@ -453,7 +486,7 @@ pub(crate) async fn insert_files_batch_optimized(
         .map_err(|e| AppError::database_error(format!("Failed to begin transaction: {e}")))?;
 
     let mut query = String::from(
-        "INSERT OR IGNORE INTO files (sha256_hash, virtual_path, original_name, size, modified_time, mime_type, parent_archive_id, depth_level, created_at, min_timestamp, max_timestamp, level_mask, analysis_status) VALUES ",
+        "INSERT INTO files (sha256_hash, virtual_path, original_name, size, modified_time, mime_type, parent_archive_id, depth_level, created_at, min_timestamp, max_timestamp, level_mask, analysis_status) VALUES ",
     );
 
     let placeholders: Vec<String> = files
@@ -461,6 +494,7 @@ pub(crate) async fn insert_files_batch_optimized(
         .map(|_| "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)".to_string())
         .collect();
     query.push_str(&placeholders.join(", "));
+    query.push_str(FILE_UPSERT_UPDATE_SQL);
     query.push_str(" RETURNING id");
 
     let mut query_builder = sqlx::query(&query);
@@ -564,18 +598,30 @@ pub(crate) async fn begin_transaction(
         .map_err(|e| AppError::database_error(format!("Failed to begin transaction: {e}")))
 }
 
-/// Insert file within a transaction.
+/// Insert or replace file metadata by virtual path within a transaction.
 pub(crate) async fn insert_file_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     metadata: &FileMetadata,
 ) -> Result<i64> {
     sqlx::query(
         r#"
-        INSERT OR IGNORE INTO files (
+        INSERT INTO files (
             sha256_hash, virtual_path, original_name, size,
             modified_time, mime_type, parent_archive_id, depth_level, created_at,
             min_timestamp, max_timestamp, level_mask, analysis_status
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(virtual_path) DO UPDATE SET
+            sha256_hash = excluded.sha256_hash,
+            original_name = excluded.original_name,
+            size = excluded.size,
+            modified_time = excluded.modified_time,
+            mime_type = excluded.mime_type,
+            parent_archive_id = excluded.parent_archive_id,
+            depth_level = excluded.depth_level,
+            min_timestamp = excluded.min_timestamp,
+            max_timestamp = excluded.max_timestamp,
+            level_mask = excluded.level_mask,
+            analysis_status = excluded.analysis_status
         "#,
     )
     .bind(&metadata.sha256_hash)
@@ -595,8 +641,8 @@ pub(crate) async fn insert_file_tx(
     .await
     .map_err(|e| AppError::database_error(format!("Failed to insert file in transaction: {e}")))?;
 
-    let id = sqlx::query_as::<_, (i64,)>("SELECT id FROM files WHERE sha256_hash = ? LIMIT 1")
-        .bind(&metadata.sha256_hash)
+    let id = sqlx::query_as::<_, (i64,)>("SELECT id FROM files WHERE virtual_path = ?")
+        .bind(&metadata.virtual_path)
         .fetch_one(&mut **tx)
         .await
         .map_err(|e| {
@@ -608,27 +654,48 @@ pub(crate) async fn insert_file_tx(
         id = id,
         hash = %metadata.sha256_hash,
         path = %metadata.virtual_path,
-        "Inserted or retrieved existing file metadata in transaction (CAS deduplication)"
+        "Upserted file metadata by virtual path in transaction"
     );
 
     Ok(id)
 }
 
 /// Convert a database row to FileMetadata.
-fn row_to_file_metadata(r: &sqlx::sqlite::SqliteRow) -> FileMetadata {
-    FileMetadata {
-        id: r.get("id"),
-        sha256_hash: r.get("sha256_hash"),
-        virtual_path: r.get("virtual_path"),
-        original_name: r.get("original_name"),
-        size: r.get("size"),
-        modified_time: r.get("modified_time"),
-        mime_type: r.get("mime_type"),
-        parent_archive_id: r.get("parent_archive_id"),
-        depth_level: r.get("depth_level"),
-        min_timestamp: r.try_get("min_timestamp").ok(),
-        max_timestamp: r.try_get("max_timestamp").ok(),
-        level_mask: r.try_get("level_mask").ok(),
-        analysis_status: parse_analysis_status(r),
+fn row_to_file_metadata(r: &sqlx::sqlite::SqliteRow) -> Result<FileMetadata> {
+    macro_rules! read_column {
+        ($name:literal) => {
+            r.try_get($name).map_err(|error| {
+                AppError::database_error(format!("Failed to decode files.{}: {error}", $name))
+            })?
+        };
     }
+
+    let status_value: String = read_column!("analysis_status");
+    let analysis_status: AnalysisStatus = status_value.parse().map_err(AppError::database_error)?;
+    let level_mask_value: Option<i64> = read_column!("level_mask");
+    let level_mask = level_mask_value
+        .map(|value| {
+            u8::try_from(value).map_err(|_| {
+                AppError::database_error(format!(
+                    "Invalid files.level_mask value {value}; expected 0..=255"
+                ))
+            })
+        })
+        .transpose()?;
+
+    Ok(FileMetadata {
+        id: read_column!("id"),
+        sha256_hash: read_column!("sha256_hash"),
+        virtual_path: read_column!("virtual_path"),
+        original_name: read_column!("original_name"),
+        size: read_column!("size"),
+        modified_time: read_column!("modified_time"),
+        mime_type: read_column!("mime_type"),
+        parent_archive_id: read_column!("parent_archive_id"),
+        depth_level: read_column!("depth_level"),
+        min_timestamp: read_column!("min_timestamp"),
+        max_timestamp: read_column!("max_timestamp"),
+        level_mask,
+        analysis_status,
+    })
 }

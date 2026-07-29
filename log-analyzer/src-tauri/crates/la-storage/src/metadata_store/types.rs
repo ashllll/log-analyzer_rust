@@ -3,17 +3,6 @@
 //! Shared types used across metadata store submodules.
 
 use serde::{Deserialize, Serialize};
-use sqlx::Row;
-
-use la_core::storage_types::AnalysisStatus;
-
-/// Parse analysis_status from a database row
-pub(crate) fn parse_analysis_status(row: &sqlx::sqlite::SqliteRow) -> AnalysisStatus {
-    row.try_get::<String, _>("analysis_status")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(AnalysisStatus::Pending)
-}
 
 /// Index state for tracking indexing progress
 #[derive(Debug, Clone, Serialize, Deserialize)]
