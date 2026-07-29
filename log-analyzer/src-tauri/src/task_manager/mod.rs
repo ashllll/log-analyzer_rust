@@ -307,66 +307,79 @@ impl TaskManagerActor {
                 );
 
                 let result = if let Some(task) = self.tasks.get_mut(&id) {
-                    task.progress = progress;
-                    task.message = message.clone();
-                    task.status = status;
-                    task.version = task.version.wrapping_add(1);
-
-                    // 如果任务完成或失败，记录完成时间
                     if matches!(
-                        status,
+                        task.status,
                         TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Stopped
                     ) {
-                        task.completed_at = Some(Instant::now());
-                        info!(
-                            task_id = %id,
-                            status = ?status,
-                            "Task finished"
-                        );
-                    }
-
-                    // 老王备注：发送task-update事件给前端（业内成熟的事件驱动架构）
-                    let payload = serde_json::json!({
-                        "task_id": id,
-                        "task_type": task.task_type,
-                        "target": task.target,
-                        "progress": task.progress,
-                        "message": task.message,
-                        "status": status,
-                        "version": task.version,
-                        "workspace_id": task.workspace_id,
-                    });
-                    if let Err(e) = self.event_publisher.emit("task-update", payload.clone()) {
-                        // emit 失败时立即重试一次，防止终态更新（Completed/Failed/Stopped）永久丢失
                         warn!(
                             task_id = %id,
-                            error = %e,
-                            "Failed to emit task-update event, retrying once"
+                            current_status = ?task.status,
+                            requested_status = ?status,
+                            "Ignoring update for terminal task"
                         );
-                        if let Err(e2) = self.event_publisher.emit("task-update", payload) {
-                            error!(
+                        Some(task.clone())
+                    } else {
+                        task.progress = progress;
+                        task.message = message.clone();
+                        task.status = status;
+                        task.version = task.version.wrapping_add(1);
+
+                        // 如果任务完成或失败，记录完成时间
+                        if matches!(
+                            status,
+                            TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Stopped
+                        ) {
+                            task.completed_at = Some(Instant::now());
+                            info!(
                                 task_id = %id,
-                                error = %e2,
-                                "Failed to emit task-update event after retry"
+                                status = ?status,
+                                "Task finished"
                             );
+                        }
+
+                        // 老王备注：发送task-update事件给前端（业内成熟的事件驱动架构）
+                        let payload = serde_json::json!({
+                            "task_id": id,
+                            "task_type": task.task_type,
+                            "target": task.target,
+                            "progress": task.progress,
+                            "message": task.message,
+                            "status": status,
+                            "version": task.version,
+                            "workspace_id": task.workspace_id,
+                        });
+                        if let Err(e) = self.event_publisher.emit("task-update", payload.clone()) {
+                            // emit 失败时立即重试一次，防止终态更新（Completed/Failed/Stopped）永久丢失
+                            warn!(
+                                task_id = %id,
+                                error = %e,
+                                "Failed to emit task-update event, retrying once"
+                            );
+                            if let Err(e2) = self.event_publisher.emit("task-update", payload) {
+                                error!(
+                                    task_id = %id,
+                                    error = %e2,
+                                    "Failed to emit task-update event after retry"
+                                );
+                            } else {
+                                info!(
+                                    task_id = %id,
+                                    progress = task.progress,
+                                    status = ?status,
+                                    "Emitted task-update event (retry succeeded)"
+                                );
+                            }
                         } else {
                             info!(
                                 task_id = %id,
                                 progress = task.progress,
                                 status = ?status,
-                                "Emitted task-update event (retry succeeded)"
+                                "Emitted task-update event"
                             );
                         }
-                    } else {
-                        info!(
-                            task_id = %id,
-                            progress = task.progress,
-                            status = ?status,
-                            "Emitted task-update event"
-                        );
-                    }
 
-                    Some(task.clone())
+                        Some(task.clone())
+                    }
                 } else {
                     warn!(task_id = %id, "Task not found for update");
                     None
@@ -718,3 +731,50 @@ impl TaskManager {
 // TaskManager 是单例，应该在应用生命周期内一直存在
 // Clone 的句柄被 drop 时不应该关闭整个 actor
 // 只有显式调用 shutdown() 或应用退出时才应该关闭
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct SilentEmitter;
+
+    impl TaskEventEmitter for SilentEmitter {
+        fn emit(&self, _event: &str, _payload: serde_json::Value) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn stopped_task_cannot_be_overwritten_by_late_completion() {
+        let manager =
+            TaskManager::new(Arc::new(SilentEmitter), TaskManagerConfig::default()).unwrap();
+        manager
+            .create_task_async(
+                "import-1".to_string(),
+                "Import".to_string(),
+                "logs".to_string(),
+                None,
+            )
+            .await
+            .unwrap();
+
+        let stopped = manager
+            .update_task_async("import-1", 0, "Cancelled".to_string(), TaskStatus::Stopped)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(stopped.status, TaskStatus::Stopped);
+
+        let late_completion = manager
+            .update_task_async("import-1", 100, "Done".to_string(), TaskStatus::Completed)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            late_completion.status,
+            TaskStatus::Stopped,
+            "terminal task status must be monotonic"
+        );
+    }
+}

@@ -15,7 +15,7 @@ use crate::internal::file_type_filter::FileTypeFilter;
 #[cfg(feature = "enhanced-extraction")]
 use crate::public_api::extract_archive_async;
 use crate::ArchiveManager;
-use la_core::error::{AppError, Result};
+use la_core::error::{AppError, ErrorCategory, Result};
 use la_core::models::config::{ArchiveConfig, FileFilterConfig};
 use la_core::storage_types::{ArchiveMetadata, FileMetadata};
 use la_core::traits::AppConfigProvider;
@@ -25,11 +25,47 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use tokio::fs;
 use tokio::sync::Mutex;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 use walkdir::WalkDir;
 
 const DIRECTORY_METADATA_BATCH_SIZE: usize = 500;
 const SMALL_FILE_INLINE_CAS_THRESHOLD_BYTES: u64 = 1024 * 1024;
+
+fn ensure_not_cancelled(context: &CasProcessingContext, path: &Path) -> Result<()> {
+    if context.cancellation_token.is_cancelled() {
+        return Err(AppError::Archive {
+            category: ErrorCategory::CancellationRequested,
+            _message: "Import cancelled".to_string(),
+            _path: Some(path.to_path_buf()),
+        });
+    }
+    Ok(())
+}
+
+async fn ensure_archive_not_cancelled(
+    context: &CasProcessingContext,
+    archive_id: i64,
+    archive_path: &Path,
+    extract_dir: &Path,
+) -> Result<()> {
+    if !context.cancellation_token.is_cancelled() {
+        return Ok(());
+    }
+
+    context
+        .metadata_store
+        .update_archive_status(archive_id, "cancelled")
+        .await?;
+    if let Err(error) = fs::remove_dir_all(extract_dir).await {
+        tracing::warn!(
+            path = %extract_dir.display(),
+            error = %error,
+            "Failed to remove cancelled extraction directory"
+        );
+    }
+    ensure_not_cancelled(context, archive_path)
+}
 
 /// 检查是否启用增强提取系统
 ///
@@ -238,6 +274,7 @@ pub struct CasProcessingContext {
     pub checkpoint: Option<Arc<Mutex<Checkpoint>>>,
     pub files_since_checkpoint: Arc<Mutex<usize>>,
     pub bytes_since_checkpoint: Arc<Mutex<u64>>,
+    pub cancellation_token: CancellationToken,
 }
 
 impl CasProcessingContext {
@@ -257,7 +294,14 @@ impl CasProcessingContext {
             checkpoint: None,
             files_since_checkpoint: Arc::new(Mutex::new(0)),
             bytes_since_checkpoint: Arc::new(Mutex::new(0)),
+            cancellation_token: CancellationToken::new(),
         }
+    }
+
+    /// Attach the cancellation token owned by the importing task.
+    pub fn with_cancellation_token(mut self, cancellation_token: CancellationToken) -> Self {
+        self.cancellation_token = cancellation_token;
+        self
     }
 
     /// Enable checkpoint support
@@ -352,6 +396,8 @@ pub async fn process_path_with_cas_and_checkpoints(
     parent_archive_id: Option<i64>,
     depth_level: i32,
 ) -> Result<()> {
+    ensure_not_cancelled(context, path)?;
+
     // Check if file was already extracted (checkpoint resume)
     if context.is_file_extracted(path).await {
         debug!(
@@ -395,6 +441,8 @@ pub async fn process_path_with_cas_and_checkpoints(
         let mut pending_files = Vec::with_capacity(DIRECTORY_METADATA_BATCH_SIZE);
 
         for entry_result in walkdir_iter {
+            ensure_not_cancelled(context, path)?;
+
             match entry_result {
                 Ok(entry) => {
                     // 处理符号链接
@@ -480,6 +528,9 @@ pub async fn process_path_with_cas_and_checkpoints(
                         ))
                         .await
                         {
+                            if e.category() == ErrorCategory::CancellationRequested {
+                                return Err(e);
+                            }
                             warn!(
                                 file = %path_to_process.display(),
                                 error = %e,
@@ -604,6 +655,7 @@ pub async fn process_path_with_cas_and_checkpoints(
     let pending =
         prepare_regular_file_import(path, virtual_path, context, parent_archive_id, depth_level)
             .await?;
+    ensure_not_cancelled(context, path)?;
     let file_id = context
         .metadata_store
         .insert_file(&pending.metadata)
@@ -663,6 +715,7 @@ async fn flush_pending_directory_files(
     if pending_files.is_empty() {
         return Ok(());
     }
+    ensure_not_cancelled(context, &context.workspace_dir)?;
 
     let imports = std::mem::take(pending_files);
     let files: Vec<FileMetadata> = imports
@@ -673,6 +726,7 @@ async fn flush_pending_directory_files(
     match context.metadata_store.insert_files_batch_smart(files).await {
         Ok(_) => {
             for pending in imports {
+                ensure_not_cancelled(context, &pending.source_path)?;
                 finalize_regular_file_import(context, pending, None).await?;
             }
         }
@@ -835,11 +889,43 @@ pub async fn process_path_with_cas(
     parent_archive_id: Option<i64>,
     depth_level: i32,
 ) -> Result<()> {
+    process_path_with_cas_cancellable(
+        path,
+        virtual_path,
+        workspace_dir,
+        cas,
+        metadata_store,
+        provider,
+        task_id,
+        workspace_id,
+        parent_archive_id,
+        depth_level,
+        CancellationToken::new(),
+    )
+    .await
+}
+
+/// Process a path while observing the cancellation token owned by the import task.
+#[allow(clippy::too_many_arguments)]
+pub async fn process_path_with_cas_cancellable(
+    path: &Path,
+    virtual_path: &str,
+    workspace_dir: &Path,
+    cas: &ContentAddressableStorage,
+    metadata_store: Arc<MetadataStore>,
+    provider: &dyn AppConfigProvider,
+    task_id: &str,
+    workspace_id: &str,
+    parent_archive_id: Option<i64>,
+    depth_level: i32,
+    cancellation_token: CancellationToken,
+) -> Result<()> {
     // Wrap CAS in Arc for the context
     let cas_arc = Arc::new(cas.clone());
 
     // Create context without checkpoints for backward compatibility
-    let context = CasProcessingContext::new(workspace_dir.to_path_buf(), cas_arc, metadata_store);
+    let context = CasProcessingContext::new(workspace_dir.to_path_buf(), cas_arc, metadata_store)
+        .with_cancellation_token(cancellation_token);
 
     process_path_with_cas_and_checkpoints(
         path,
@@ -1021,6 +1107,8 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
         }
     };
 
+    ensure_archive_not_cancelled(context, archive_id, archive_path, &extract_dir).await?;
+
     // Update archive status to extracting
     context
         .metadata_store
@@ -1036,6 +1124,8 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
     );
 
     for (index, extracted_file) in extracted_files.iter().enumerate() {
+        ensure_archive_not_cancelled(context, archive_id, archive_path, &extract_dir).await?;
+
         let file_name = extracted_file
             .file_name()
             .unwrap_or_default()
@@ -1175,6 +1265,11 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
                 );
             }
             Err(e) => {
+                if e.category() == ErrorCategory::CancellationRequested {
+                    ensure_archive_not_cancelled(context, archive_id, archive_path, &extract_dir)
+                        .await?;
+                    return Err(e);
+                }
                 error!(
                     current = index + 1,
                     total = total_files,
@@ -1449,6 +1544,43 @@ mod tests {
                 "source/top.log".to_string()
             ]
         );
+    }
+
+    #[tokio::test]
+    async fn pre_cancelled_directory_import_writes_no_metadata() {
+        let temp = TempDir::new().unwrap();
+        let source_dir = temp.path().join("source");
+        tokio::fs::create_dir_all(&source_dir).await.unwrap();
+        tokio::fs::write(source_dir.join("cancelled.log"), b"should not import\n")
+            .await
+            .unwrap();
+
+        let workspace_dir = temp.path().join("workspace");
+        let cas = Arc::new(ContentAddressableStorage::new(workspace_dir.clone()));
+        let metadata_store = Arc::new(MetadataStore::new(&workspace_dir).await.unwrap());
+        let cancellation_token = CancellationToken::new();
+        cancellation_token.cancel();
+        let context =
+            CasProcessingContext::new(workspace_dir, Arc::clone(&cas), Arc::clone(&metadata_store))
+                .with_cancellation_token(cancellation_token);
+        let provider = TestConfigProvider {
+            dir: temp.path().join("config"),
+        };
+
+        let result = process_path_with_cas_and_checkpoints(
+            &source_dir,
+            "source",
+            &context,
+            &provider,
+            "task-cancelled",
+            "workspace-1",
+            None,
+            0,
+        )
+        .await;
+
+        assert!(result.is_err(), "a pre-cancelled import must stop");
+        assert_eq!(metadata_store.count_files().await.unwrap(), 0);
     }
 
     #[tokio::test]

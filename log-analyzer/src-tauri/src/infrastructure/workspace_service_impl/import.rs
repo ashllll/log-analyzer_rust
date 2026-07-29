@@ -6,8 +6,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::application::workspace_service::{ImportOptions, ImportResult, ImportService};
 use crate::utils::encoding::decode_log_content;
-use la_archive::processor::process_path_with_cas;
-use la_core::error::AppError;
+use la_archive::processor::process_path_with_cas_cancellable;
+use la_core::error::{AppError, ErrorCategory};
 use la_core::traits::AppConfigProvider;
 use la_core::utils::compute_file_stats;
 
@@ -123,7 +123,7 @@ impl ImportService for WorkspaceServiceImpl {
             .to_string_lossy()
             .to_string();
 
-        process_path_with_cas(
+        process_path_with_cas_cancellable(
             source_path,
             &root_name,
             &self.workspace_dir,
@@ -134,13 +134,18 @@ impl ImportService for WorkspaceServiceImpl {
             &self.workspace_id,
             None,
             0,
+            cancellation_token.clone(),
         )
         .await
         .map_err(|e| {
-            AppError::archive_error(
-                format!("Import failed: {e}"),
-                Some(source_path.to_path_buf()),
-            )
+            if e.category() == ErrorCategory::CancellationRequested {
+                e
+            } else {
+                AppError::archive_error(
+                    format!("Import failed: {e}"),
+                    Some(source_path.to_path_buf()),
+                )
+            }
         })?;
 
         let metadata_store = self.repo.metadata_store().clone();

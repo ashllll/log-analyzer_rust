@@ -282,6 +282,13 @@ pub async fn cancel_task(task_id: String, state: State<'_, AppState>) -> Result<
     let task_manager = state
         .get_task_manager_clone()
         .ok_or_else(|| CommandError::new("NOT_INITIALIZED", "Task manager not initialized"))?;
+    let execution_cancelled = state.cancel_task_execution(&task_id);
+    if !execution_cancelled {
+        tracing::debug!(
+            task_id = %task_id,
+            "Task has no registered execution token; updating status only"
+        );
+    }
     // FIX(HI-03): 使用 ? 传播错误，避免静默丢弃
     task_manager
         .update_task_async(

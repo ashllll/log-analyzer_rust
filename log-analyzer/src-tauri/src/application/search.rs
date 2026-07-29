@@ -52,6 +52,7 @@ pub struct SearchUseCase {
     events: Arc<dyn EventPublisher>,
     searcher: Arc<dyn LogSearcher>,
     thread_pool: Arc<rayon::ThreadPool>,
+    timeout: std::time::Duration,
 }
 
 impl SearchUseCase {
@@ -68,13 +69,21 @@ impl SearchUseCase {
             events,
             searcher,
             thread_pool,
+            timeout: SEARCH_TIMEOUT,
         }
+    }
+
+    #[cfg(test)]
+    fn with_timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.timeout = timeout;
+        self
     }
 
     /// Execute a search query asynchronously.
     ///
-    /// CPU-intensive work runs on `spawn_blocking`; this method returns
-    /// immediately. Progress and results are reported via EventPublisher.
+    /// CPU-intensive work runs on `spawn_blocking`. The future remains active
+    /// until the search reaches a terminal state so callers can keep
+    /// cancellation and session resources alive for the whole operation.
     #[allow(clippy::too_many_arguments)]
     pub async fn execute(
         &self,
@@ -132,7 +141,7 @@ impl SearchUseCase {
         let search_id_clone = search_id.clone();
         let cancellation_clone = cancellation_token.clone();
 
-        let blocking_handle = tokio::task::spawn_blocking(move || {
+        let mut blocking_handle = tokio::task::spawn_blocking(move || {
             let outcome = Self::run_blocking(
                 &log_files,
                 &results_for_blocking,
@@ -148,49 +157,77 @@ impl SearchUseCase {
             );
 
             let completion = results_for_blocking.complete_session(&sid);
-            (outcome, completion)
+            outcome.and_then(|outcome| {
+                completion?;
+                Ok(outcome)
+            })
         });
 
-        // Await the blocking task with timeout and emit completion events.
-        // This runs in a spawned task so the caller returns immediately.
-        tokio::task::spawn(async move {
-            let result = tokio::time::timeout(SEARCH_TIMEOUT, blocking_handle).await;
+        // Await the blocking task with timeout and emit exactly one terminal
+        // event before returning to the owner of the cancellation token.
+        let result = tokio::time::timeout(self.timeout, &mut blocking_handle).await;
 
-            match result {
-                Ok(Ok((outcome, Ok(())))) => {
-                    events_clone
-                        .emit_search_complete(
-                            &search_id_clone,
-                            la_core::models::search_statistics::SearchResultSummary::new(
-                                outcome.total_count,
-                                vec![],
-                                outcome.duration_ms,
-                                outcome.was_truncated,
-                            ),
-                        )
-                        .await;
-                }
-                Ok(Ok((_outcome, Err(error)))) => {
-                    let msg = format!("Failed to finalize search results: {error}");
-                    tracing::error!(search_id = %search_id_clone, error = %msg);
-                    events_clone.emit_search_error(&search_id_clone, &msg).await;
-                }
-                Ok(Err(join_error)) => {
-                    let msg = format!("Search panicked: {join_error}");
-                    tracing::error!(search_id = %search_id_clone, error = %msg);
-                    let _ = results_clone.complete_session(&search_id_clone);
-                    events_clone.emit_search_error(&search_id_clone, &msg).await;
-                }
-                Err(_timeout) => {
-                    let msg = format!("Search timed out after {SEARCH_TIMEOUT:?}");
-                    tracing::warn!(search_id = %search_id_clone, error = %msg);
-                    cancellation_clone.cancel();
-                    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-                    let _ = results_clone.complete_session(&search_id_clone);
-                    events_clone.emit_search_timeout(&search_id_clone).await;
-                }
+        match result {
+            Ok(Ok(Ok(_outcome))) if cancellation_clone.is_cancelled() => {
+                events_clone.emit_search_cancelled(&search_id_clone).await;
             }
-        });
+            Ok(Ok(Ok(outcome))) => {
+                events_clone
+                    .emit_search_complete(
+                        &search_id_clone,
+                        la_core::models::search_statistics::SearchResultSummary::new(
+                            outcome.total_count,
+                            vec![],
+                            outcome.duration_ms,
+                            outcome.was_truncated,
+                        ),
+                    )
+                    .await;
+            }
+            Ok(Ok(Err(error))) => {
+                let msg = format!("Search failed: {error}");
+                tracing::error!(search_id = %search_id_clone, error = %msg);
+                events_clone.emit_search_error(&search_id_clone, &msg).await;
+            }
+            Ok(Err(join_error)) => {
+                let msg = format!("Search panicked: {join_error}");
+                tracing::error!(search_id = %search_id_clone, error = %msg);
+                let _ = results_clone.complete_session(&search_id_clone);
+                events_clone.emit_search_error(&search_id_clone, &msg).await;
+            }
+            Err(_timeout) => {
+                let msg = format!("Search timed out after {:?}", self.timeout);
+                tracing::warn!(search_id = %search_id_clone, error = %msg);
+                cancellation_clone.cancel();
+                events_clone.emit_search_timeout(&search_id_clone).await;
+
+                // spawn_blocking tasks cannot be forcefully aborted. Keep the
+                // join handle alive so the worker owns the writable session
+                // until it observes cancellation and exits. The worker then
+                // finalizes the session exactly once.
+                let timed_out_search_id = search_id_clone.clone();
+                tokio::spawn(async move {
+                    match blocking_handle.await {
+                        Ok(Ok(_)) => {}
+                        Ok(Err(error)) => {
+                            tracing::warn!(
+                                search_id = %timed_out_search_id,
+                                error = %error,
+                                "Timed-out search stopped with an error"
+                            );
+                        }
+                        Err(join_error) => {
+                            tracing::error!(
+                                search_id = %timed_out_search_id,
+                                error = %join_error,
+                                "Timed-out search panicked while stopping"
+                            );
+                            let _ = results_clone.complete_session(&timed_out_search_id);
+                        }
+                    }
+                });
+            }
+        }
 
         Ok(())
     }
@@ -209,24 +246,11 @@ impl SearchUseCase {
         files: &[FileMetadata],
         max_results: usize,
         cancellation_token: tokio_util::sync::CancellationToken,
-    ) -> SearchOutcome {
+    ) -> Result<SearchOutcome> {
         let start = std::time::Instant::now();
 
         // ── Build plan ──
-        let plan = match searcher.build_plan(query) {
-            Ok(p) => p,
-            Err(e) => {
-                let events = events.clone();
-                let sid = search_id.to_string();
-                let msg = e.to_string();
-                tokio::spawn(async move { events.emit_search_error(&sid, &msg).await });
-                return SearchOutcome {
-                    total_count: 0,
-                    duration_ms: start.elapsed().as_millis() as u64,
-                    was_truncated: false,
-                };
-            }
-        };
+        let plan = searcher.build_plan(query)?;
 
         // ── Search loop ──
         let mut batch = SearchBatch::new(BATCH_SIZE);
@@ -259,7 +283,7 @@ impl SearchUseCase {
                         max_results,
                         &mut was_truncated,
                         &cancellation_token,
-                    ) {
+                    )? {
                         break 'outer;
                     }
                     small_files.clear();
@@ -277,7 +301,7 @@ impl SearchUseCase {
                         max_results,
                         &mut was_truncated,
                         &cancellation_token,
-                    ) {
+                    )? {
                         break 'outer;
                     }
                 } else {
@@ -299,25 +323,22 @@ impl SearchUseCase {
                 max_results,
                 &mut was_truncated,
                 &cancellation_token,
-            ) {
+            )? {
                 break 'outer;
             }
         }
 
         // Final flush
         if !batch.is_empty() {
-            if let Err(e) = results.append_entries(search_id, &batch.take()) {
-                emit_error(events, search_id, e.to_string());
-            } else {
-                emit_progress(events, search_id, batch.total());
-            }
+            results.append_entries(search_id, &batch.take())?;
+            emit_progress(events, search_id, batch.total());
         }
 
-        SearchOutcome {
+        Ok(SearchOutcome {
             total_count: batch.total(),
             duration_ms: start.elapsed().as_millis() as u64,
             was_truncated,
-        }
+        })
     }
 }
 
@@ -336,9 +357,9 @@ fn flush_small_files(
     max_results: usize,
     was_truncated: &mut bool,
     cancellation_token: &tokio_util::sync::CancellationToken,
-) -> bool {
+) -> Result<bool> {
     if files.is_empty() {
-        return true;
+        return Ok(true);
     }
 
     let chunk_results: Vec<Vec<LogEntry>> = thread_pool.install(|| {
@@ -362,12 +383,12 @@ fn flush_small_files(
             batch,
             max_results,
             was_truncated,
-        ) {
-            return false;
+        )? {
+            return Ok(false);
         }
     }
 
-    true
+    Ok(true)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -384,7 +405,7 @@ fn search_large_file_in_chunks(
     max_results: usize,
     was_truncated: &mut bool,
     cancellation_token: &tokio_util::sync::CancellationToken,
-) -> bool {
+) -> Result<bool> {
     let hash = &fm.sha256_hash;
     let real_path = format!("cas://{hash}");
     let mut keep_searching = true;
@@ -408,19 +429,19 @@ fn search_large_file_in_chunks(
             batch,
             max_results,
             was_truncated,
-        );
+        )?;
         Ok(keep_searching)
     };
 
     match log_files.read_line_chunks_sync(hash, SEARCH_LINE_CHUNK_SIZE, &mut visitor) {
-        Ok(()) => keep_searching,
+        Ok(()) => Ok(keep_searching),
         Err(e) => {
             tracing::warn!(
                 hash = %hash,
                 error = %e,
                 "Failed to read line chunks for large file, skipping"
             );
-            true
+            Ok(true)
         }
     }
 }
@@ -469,7 +490,7 @@ fn search_line_chunk(
     batch: &mut SearchBatch,
     max_results: usize,
     was_truncated: &mut bool,
-) -> bool {
+) -> Result<bool> {
     let text = lines.join("\n");
     let mut entries = searcher.match_content(&text, virtual_path, plan, filters, batch.total());
     let line_offset = start_line.saturating_sub(1);
@@ -496,21 +517,24 @@ fn consume_search_entries(
     batch: &mut SearchBatch,
     max_results: usize,
     was_truncated: &mut bool,
-) -> bool {
+) -> Result<bool> {
     let next_id = batch.total();
     for (offset, entry) in entries.iter_mut().enumerate() {
         entry.id = next_id + offset;
     }
 
     match batch.accumulate(entries, max_results) {
-        BatchAction::Continue => true,
-        BatchAction::Flush => flush_search_batch(results, events, search_id, batch),
+        BatchAction::Continue => Ok(true),
+        BatchAction::Flush => {
+            flush_search_batch(results, events, search_id, batch)?;
+            Ok(true)
+        }
         BatchAction::Truncate(_) => {
-            if !batch.is_empty() && !flush_search_batch(results, events, search_id, batch) {
-                return false;
+            if !batch.is_empty() {
+                flush_search_batch(results, events, search_id, batch)?;
             }
             *was_truncated = true;
-            false
+            Ok(false)
         }
     }
 }
@@ -520,13 +544,10 @@ fn flush_search_batch(
     events: &Arc<dyn EventPublisher>,
     search_id: &str,
     batch: &mut SearchBatch,
-) -> bool {
-    if let Err(e) = results.append_entries(search_id, &batch.take()) {
-        emit_error(events, search_id, e.to_string());
-        return false;
-    }
+) -> Result<()> {
+    results.append_entries(search_id, &batch.take())?;
     emit_progress(events, search_id, batch.total());
-    true
+    Ok(())
 }
 
 fn emit_progress(events: &Arc<dyn EventPublisher>, search_id: &str, count: usize) {
@@ -536,15 +557,6 @@ fn emit_progress(events: &Arc<dyn EventPublisher>, search_id: &str, count: usize
     let events = events.clone();
     let sid = search_id.to_string();
     handle.spawn(async move { events.emit_search_progress(&sid, count).await });
-}
-
-fn emit_error(events: &Arc<dyn EventPublisher>, search_id: &str, message: String) {
-    let Ok(handle) = tokio::runtime::Handle::try_current() else {
-        return;
-    };
-    let events = events.clone();
-    let sid = search_id.to_string();
-    handle.spawn(async move { events.emit_search_error(&sid, &message).await });
 }
 
 #[cfg(test)]
@@ -632,6 +644,44 @@ mod tests {
                 }
             }
             entries
+        }
+    }
+
+    struct BlockingSearcher {
+        entered: Arc<std::sync::atomic::AtomicBool>,
+        release: Arc<(Mutex<bool>, std::sync::Condvar)>,
+    }
+
+    impl LogSearcher for BlockingSearcher {
+        fn build_plan(&self, _query: &SearchQuery) -> Result<ExecutionPlan> {
+            Ok(ExecutionPlan {
+                id: 43,
+                engine_count: 1,
+                steps: vec!["blocking-stub".into()],
+                plan: Some(Arc::new(StubMatchPlan {
+                    matches_per_line: 1,
+                })),
+            })
+        }
+
+        fn match_content(
+            &self,
+            _text: &str,
+            _virtual_path: &str,
+            _plan: &ExecutionPlan,
+            _filters: &SearchFilters,
+            _start_id: usize,
+        ) -> Vec<LogEntry> {
+            self.entered
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+
+            let (lock, ready) = &*self.release;
+            let mut released = lock.lock().unwrap();
+            while !*released {
+                released = ready.wait(released).unwrap();
+            }
+
+            Vec::new()
         }
     }
 
@@ -751,6 +801,8 @@ mod tests {
     struct CapturingResults {
         entries: Mutex<Vec<LogEntry>>,
         append_count: Arc<Mutex<usize>>,
+        complete_count: Mutex<usize>,
+        fail_append: bool,
         fail_complete: bool,
     }
 
@@ -759,6 +811,8 @@ mod tests {
             Self {
                 entries: Mutex::new(Vec::new()),
                 append_count: Arc::new(Mutex::new(0)),
+                complete_count: Mutex::new(0),
+                fail_append: false,
                 fail_complete: false,
             }
         }
@@ -766,6 +820,13 @@ mod tests {
         fn failing_complete() -> Self {
             Self {
                 fail_complete: true,
+                ..Self::new()
+            }
+        }
+
+        fn failing_append() -> Self {
+            Self {
+                fail_append: true,
                 ..Self::new()
             }
         }
@@ -778,6 +839,11 @@ mod tests {
 
         fn append_entries(&self, _id: &str, entries: &[LogEntry]) -> Result<()> {
             *self.append_count.lock().unwrap() += 1;
+            if self.fail_append {
+                return Err(la_core::error::AppError::database_error(
+                    "simulated append failure",
+                ));
+            }
             self.entries.lock().unwrap().extend_from_slice(entries);
             Ok(())
         }
@@ -793,6 +859,7 @@ mod tests {
         }
 
         fn complete_session(&self, _id: &str) -> Result<()> {
+            *self.complete_count.lock().unwrap() += 1;
             if self.fail_complete {
                 Err(la_core::error::AppError::database_error(
                     "simulated completion failure",
@@ -815,6 +882,8 @@ mod tests {
         error_count: Mutex<usize>,
         progress_count: Mutex<usize>,
         complete_count: Mutex<usize>,
+        cancelled_count: Mutex<usize>,
+        timeout_count: Mutex<usize>,
     }
 
     impl CapturingEvents {
@@ -823,6 +892,8 @@ mod tests {
                 error_count: Mutex::new(0),
                 progress_count: Mutex::new(0),
                 complete_count: Mutex::new(0),
+                cancelled_count: Mutex::new(0),
+                timeout_count: Mutex::new(0),
             }
         }
     }
@@ -843,8 +914,12 @@ mod tests {
         async fn emit_search_error(&self, _id: &str, _e: &str) {
             *self.error_count.lock().unwrap() += 1;
         }
-        async fn emit_search_cancelled(&self, _id: &str) {}
-        async fn emit_search_timeout(&self, _id: &str) {}
+        async fn emit_search_cancelled(&self, _id: &str) {
+            *self.cancelled_count.lock().unwrap() += 1;
+        }
+        async fn emit_search_timeout(&self, _id: &str) {
+            *self.timeout_count.lock().unwrap() += 1;
+        }
         async fn emit_import_complete(&self, _task_id: &str) {}
         async fn emit_import_error(&self, _error: &str) {}
         async fn emit_validation_report(&self, _ws: &str, _report_json: &str) {}
@@ -946,7 +1021,8 @@ mod tests {
             &[],
             1000,
             tokio_util::sync::CancellationToken::new(),
-        );
+        )
+        .expect("empty search should succeed");
 
         assert_eq!(outcome.total_count, 0);
         assert!(!outcome.was_truncated);
@@ -975,7 +1051,8 @@ mod tests {
             &files,
             1000,
             tokio_util::sync::CancellationToken::new(),
-        );
+        )
+        .expect("small-file search should succeed");
 
         assert_eq!(outcome.total_count, 3);
         assert!(!outcome.was_truncated);
@@ -1005,7 +1082,8 @@ mod tests {
             &files,
             1000,
             tokio_util::sync::CancellationToken::new(),
-        );
+        )
+        .expect("multi-file search should succeed");
 
         assert_eq!(outcome.total_count, 4);
         let captured = results.entries.lock().unwrap();
@@ -1037,7 +1115,8 @@ mod tests {
             &files,
             20_000,
             tokio_util::sync::CancellationToken::new(),
-        );
+        )
+        .expect("large-file search should succeed");
 
         assert_eq!(outcome.total_count, 10_000);
         assert!(!outcome.was_truncated);
@@ -1099,7 +1178,8 @@ mod tests {
             &files,
             20_000,
             tokio_util::sync::CancellationToken::new(),
-        );
+        )
+        .expect("streaming search should succeed");
 
         assert_eq!(outcome.total_count, 10_000);
         assert!(
@@ -1129,7 +1209,8 @@ mod tests {
             &files,
             1000,
             tokio_util::sync::CancellationToken::new(),
-        );
+        )
+        .expect("final batch flush should succeed");
 
         assert_eq!(outcome.total_count, 3);
         for _ in 0..5 {
@@ -1160,7 +1241,8 @@ mod tests {
             &files,
             3,
             tokio_util::sync::CancellationToken::new(),
-        );
+        )
+        .expect("truncated search should succeed");
 
         assert_eq!(outcome.total_count, 3);
         assert!(outcome.was_truncated);
@@ -1192,11 +1274,189 @@ mod tests {
             &files,
             10000,
             token,
-        );
+        )
+        .expect("cancelled search should stop cleanly");
 
         assert_eq!(outcome.total_count, 0);
         assert!(!outcome.was_truncated);
         assert_eq!(results.entries.lock().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn execute_remains_active_until_the_blocking_search_finishes() {
+        let log_files: Arc<dyn LogFileRepository> = Arc::new(ContentStubLogFiles {
+            content: b"line1\n".to_vec(),
+        });
+        let results = Arc::new(CapturingResults::new());
+        let events = Arc::new(CapturingEvents::new());
+        let entered = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let release = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
+        let searcher: Arc<dyn LogSearcher> = Arc::new(BlockingSearcher {
+            entered: Arc::clone(&entered),
+            release: Arc::clone(&release),
+        });
+        let thread_pool = Arc::new(
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(1)
+                .build()
+                .unwrap(),
+        );
+        let use_case = SearchUseCase::new(
+            log_files,
+            results as Arc<dyn SearchResultRepository>,
+            events as Arc<dyn EventPublisher>,
+            searcher,
+            thread_pool,
+        );
+
+        let execution = tokio::spawn(async move {
+            use_case
+                .execute(
+                    "workspace-1",
+                    &make_query(),
+                    &SearchFilters::default(),
+                    1000,
+                    "search-lifecycle".into(),
+                    tokio_util::sync::CancellationToken::new(),
+                )
+                .await
+        });
+
+        for _ in 0..100 {
+            if entered.load(std::sync::atomic::Ordering::SeqCst) {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        assert!(
+            entered.load(std::sync::atomic::Ordering::SeqCst),
+            "the blocking search did not start"
+        );
+
+        let returned_before_search_finished = execution.is_finished();
+        let (lock, ready) = &*release;
+        *lock.lock().unwrap() = true;
+        ready.notify_all();
+
+        tokio::time::timeout(std::time::Duration::from_secs(1), execution)
+            .await
+            .expect("search execution did not finish after release")
+            .expect("search task panicked")
+            .expect("search execution failed");
+
+        assert!(
+            !returned_before_search_finished,
+            "execute returned while the blocking search was still running"
+        );
+    }
+
+    #[tokio::test]
+    async fn cancelled_search_emits_cancelled_instead_of_complete() {
+        let (use_case, _results, events) = make_test_use_case("line1\nline2\n", 1);
+        let token = tokio_util::sync::CancellationToken::new();
+        token.cancel();
+
+        use_case
+            .execute(
+                "workspace-1",
+                &make_query(),
+                &SearchFilters::default(),
+                1000,
+                "search-cancelled".into(),
+                token,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(*events.cancelled_count.lock().unwrap(), 1);
+        assert_eq!(
+            *events.complete_count.lock().unwrap(),
+            0,
+            "a cancelled search must not also emit a completion event"
+        );
+        assert_eq!(*events.error_count.lock().unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn timeout_does_not_finalize_results_while_blocking_search_is_still_running() {
+        let log_files: Arc<dyn LogFileRepository> = Arc::new(ContentStubLogFiles {
+            content: b"line1\n".to_vec(),
+        });
+        let results = Arc::new(CapturingResults::new());
+        let events = Arc::new(CapturingEvents::new());
+        let entered = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let release = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
+        let searcher: Arc<dyn LogSearcher> = Arc::new(BlockingSearcher {
+            entered: Arc::clone(&entered),
+            release: Arc::clone(&release),
+        });
+        let thread_pool = Arc::new(
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(1)
+                .build()
+                .unwrap(),
+        );
+        let use_case = SearchUseCase::new(
+            log_files,
+            results.clone() as Arc<dyn SearchResultRepository>,
+            events.clone() as Arc<dyn EventPublisher>,
+            searcher,
+            thread_pool,
+        )
+        .with_timeout(std::time::Duration::from_millis(10));
+
+        let execution = tokio::spawn(async move {
+            use_case
+                .execute(
+                    "workspace-1",
+                    &make_query(),
+                    &SearchFilters::default(),
+                    1000,
+                    "search-timeout".into(),
+                    tokio_util::sync::CancellationToken::new(),
+                )
+                .await
+        });
+
+        for _ in 0..100 {
+            if entered.load(std::sync::atomic::Ordering::SeqCst) {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        assert!(
+            entered.load(std::sync::atomic::Ordering::SeqCst),
+            "the blocking search did not start"
+        );
+
+        tokio::time::timeout(std::time::Duration::from_secs(1), execution)
+            .await
+            .expect("timed-out search did not return")
+            .expect("search task panicked")
+            .expect("search execution failed");
+        let completion_before_worker_exit = *results.complete_count.lock().unwrap();
+
+        let (lock, ready) = &*release;
+        *lock.lock().unwrap() = true;
+        ready.notify_all();
+
+        for _ in 0..100 {
+            if *results.complete_count.lock().unwrap() > completion_before_worker_exit {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+
+        assert_eq!(*events.timeout_count.lock().unwrap(), 1);
+        assert_eq!(
+            completion_before_worker_exit, 0,
+            "a timed-out worker must keep its result session open until it stops writing"
+        );
+        assert_eq!(
+            *results.complete_count.lock().unwrap(),
+            1,
+            "the result session must be finalized exactly once"
+        );
     }
 
     // ===================================================================
@@ -1225,8 +1485,8 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn build_plan_error_emits_error_event() {
+    #[test]
+    fn build_plan_error_is_propagated() {
         let log_files: Arc<dyn LogFileRepository> = Arc::new(ContentStubLogFiles {
             content: b"irrelevant".to_vec(),
         });
@@ -1249,7 +1509,7 @@ mod tests {
         );
 
         let files = make_test_files();
-        let outcome = SearchUseCase::run_blocking(
+        let error = SearchUseCase::run_blocking(
             &use_case.log_files,
             &use_case.results,
             &use_case.events,
@@ -1261,16 +1521,61 @@ mod tests {
             &files,
             1000,
             tokio_util::sync::CancellationToken::new(),
+        )
+        .expect_err("build-plan failure must propagate to the supervisor");
+
+        assert!(error.to_string().contains("simulated build_plan failure"));
+        assert_eq!(*events.error_count.lock().unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn build_plan_failure_emits_only_an_error_terminal_event() {
+        let log_files: Arc<dyn LogFileRepository> = Arc::new(ContentStubLogFiles {
+            content: b"irrelevant".to_vec(),
+        });
+        let results = Arc::new(CapturingResults::new());
+        let events = Arc::new(CapturingEvents::new());
+        let searcher: Arc<dyn LogSearcher> = Arc::new(FailingSearcher);
+        let thread_pool = Arc::new(
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(1)
+                .build()
+                .unwrap(),
+        );
+        let use_case = SearchUseCase::new(
+            log_files,
+            results as Arc<dyn SearchResultRepository>,
+            events.clone() as Arc<dyn EventPublisher>,
+            searcher,
+            thread_pool,
         );
 
-        assert_eq!(outcome.total_count, 0);
-        assert!(!outcome.was_truncated);
-        // Error event is emitted via tokio::spawn — yield to let it fire
-        for _ in 0..5 {
+        use_case
+            .execute(
+                "workspace-1",
+                &make_query(),
+                &SearchFilters::default(),
+                1000,
+                "search-build-plan-failure".into(),
+                tokio_util::sync::CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+
+        for _ in 0..20 {
+            if *events.error_count.lock().unwrap() > 0 {
+                break;
+            }
             tokio::task::yield_now().await;
-            std::thread::sleep(std::time::Duration::from_millis(5));
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
         }
+
         assert_eq!(*events.error_count.lock().unwrap(), 1);
+        assert_eq!(
+            *events.complete_count.lock().unwrap(),
+            0,
+            "a failed search must not also emit a completion event"
+        );
     }
 
     #[tokio::test]
@@ -1321,5 +1626,47 @@ mod tests {
 
         assert_eq!(*events.error_count.lock().unwrap(), 1);
         assert_eq!(*events.complete_count.lock().unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn result_append_failure_emits_error_instead_of_complete() {
+        let log_files: Arc<dyn LogFileRepository> = Arc::new(ContentStubLogFiles {
+            content: b"line1\n".to_vec(),
+        });
+        let results = Arc::new(CapturingResults::failing_append());
+        let events = Arc::new(CapturingEvents::new());
+        let searcher: Arc<dyn LogSearcher> = Arc::new(StubSearcher {
+            plan_id: 42,
+            matches_per_line: 1,
+        });
+        let thread_pool = Arc::new(
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(1)
+                .build()
+                .unwrap(),
+        );
+        let use_case = SearchUseCase::new(
+            log_files,
+            results.clone() as Arc<dyn SearchResultRepository>,
+            events.clone() as Arc<dyn EventPublisher>,
+            searcher,
+            thread_pool,
+        );
+
+        use_case
+            .execute(
+                "workspace-1",
+                &make_query(),
+                &SearchFilters::default(),
+                1000,
+                "search-append-failure".into(),
+                tokio_util::sync::CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(*events.error_count.lock().unwrap(), 1);
+        assert_eq!(*events.complete_count.lock().unwrap(), 0);
+        assert_eq!(*results.complete_count.lock().unwrap(), 1);
     }
 }

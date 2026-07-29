@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use parking_lot::{Mutex, RwLock};
+use tokio_util::sync::CancellationToken;
 
 use crate::application::search_session::SearchSessionManager;
 use crate::application::workspace_service::WorkspaceServiceRef;
@@ -106,6 +107,7 @@ impl SearchRegistry {
 #[derive(Default)]
 pub struct TaskRegistry {
     manager: Arc<Mutex<Option<TaskManager>>>,
+    cancellations: Arc<Mutex<HashMap<String, CancellationToken>>>,
 }
 
 impl TaskRegistry {
@@ -122,6 +124,25 @@ impl TaskRegistry {
         self.manager.lock().as_ref().map(|tm| {
             Arc::new(TaskManagerAdapter::new(Arc::new(tm.clone()))) as Arc<dyn TaskScheduler>
         })
+    }
+    pub fn register_cancellation(&self, task_id: &str, token: CancellationToken) {
+        self.cancellations.lock().insert(task_id.to_string(), token);
+    }
+    pub fn cancel(&self, task_id: &str) -> bool {
+        let token = self.cancellations.lock().get(task_id).cloned();
+        if let Some(token) = token {
+            token.cancel();
+            true
+        } else {
+            false
+        }
+    }
+    pub fn cleanup_cancellation(&self, task_id: &str) {
+        self.cancellations.lock().remove(task_id);
+    }
+    #[cfg(test)]
+    pub fn active_cancellation_count(&self) -> usize {
+        self.cancellations.lock().len()
     }
 }
 
@@ -212,6 +233,15 @@ impl AppState {
     pub fn get_task_scheduler(&self) -> Option<Arc<dyn TaskScheduler>> {
         self.task.scheduler()
     }
+    pub fn register_task_cancellation(&self, task_id: &str, token: CancellationToken) {
+        self.task.register_cancellation(task_id, token);
+    }
+    pub fn cancel_task_execution(&self, task_id: &str) -> bool {
+        self.task.cancel(task_id)
+    }
+    pub fn cleanup_task_cancellation(&self, task_id: &str) {
+        self.task.cleanup_cancellation(task_id);
+    }
 
     pub fn init_state_sync(&self, sync: StateSync) {
         self.sync.init(sync);
@@ -221,5 +251,25 @@ impl AppState {
     }
     pub fn state_sync_arc(&self) -> Arc<Mutex<Option<StateSync>>> {
         self.sync.arc()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn task_registry_cancels_and_cleans_up_execution_tokens() {
+        let registry = TaskRegistry::default();
+        let token = CancellationToken::new();
+
+        registry.register_cancellation("import-1", token.clone());
+        assert_eq!(registry.active_cancellation_count(), 1);
+        assert!(registry.cancel("import-1"));
+        assert!(token.is_cancelled());
+
+        registry.cleanup_cancellation("import-1");
+        assert_eq!(registry.active_cancellation_count(), 0);
+        assert!(!registry.cancel("import-1"));
     }
 }

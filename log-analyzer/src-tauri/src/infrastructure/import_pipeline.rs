@@ -24,7 +24,7 @@ use crate::utils::canonicalize_path;
 use crate::utils::validation::{validate_import_source_path, validate_workspace_id};
 use la_core::domain::event::EventPublisher;
 use la_core::domain::{TaskHandle, WorkspacePaths};
-use la_core::error::AppError;
+use la_core::error::{AppError, ErrorCategory};
 use la_core::traits::AppConfigProvider;
 use la_storage::verify_after_import;
 
@@ -102,20 +102,37 @@ pub async fn run_import(
 
     // ── 调用 ImportService ──
     let cancel_token = tokio_util::sync::CancellationToken::new();
+    state.register_task_cancellation(&task_id, cancel_token.clone());
 
-    let _import_result = match service
+    let import_result = service
         .import_file(
             &canonical_path,
             ImportOptions::default(),
             config_provider,
             &task_id,
-            cancel_token,
+            cancel_token.clone(),
         )
-        .await
-    {
+        .await;
+    state.cleanup_task_cancellation(&task_id);
+    let import_result = if cancel_token.is_cancelled() && import_result.is_ok() {
+        Err(AppError::Archive {
+            category: ErrorCategory::CancellationRequested,
+            _message: "Import cancelled".to_string(),
+            _path: Some(canonical_path.clone()),
+        })
+    } else {
+        import_result
+    };
+
+    let _import_result = match import_result {
         Ok(result) => result,
         Err(e) => {
-            error!(error = %e, "Failed to import file");
+            let was_cancelled = e.category() == ErrorCategory::CancellationRequested;
+            if was_cancelled {
+                info!(task_id = %task_id, "Import cancelled by user");
+            } else {
+                error!(error = %e, "Failed to import file");
+            }
             state.remove_workspace_service(workspace_id);
             if workspace_dir.exists() {
                 if let Err(rm_err) = fs::remove_dir_all(&workspace_dir) {
@@ -126,6 +143,10 @@ pub async fn run_import(
                         publisher.emit_import_error(&cleanup_msg).await;
                     });
                 }
+            }
+            if was_cancelled {
+                let _ = scheduler.cancel(&handle).await;
+                return Err("Import cancelled".to_string());
             }
             let msg = format!("Failed to import: {e}");
             let _ = scheduler.fail(&handle, &msg).await;
