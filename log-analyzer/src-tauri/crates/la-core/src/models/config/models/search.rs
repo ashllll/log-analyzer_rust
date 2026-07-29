@@ -102,7 +102,6 @@ impl ConfigValidator for SearchConfig {
     }
 }
 
-
 // ============ 任务管理器配置 ============
 
 /// 任务管理器配置（可外部化）
@@ -215,4 +214,3 @@ impl ConfigValidator for TaskManagerConfig {
         (result, !modified)
     }
 }
-

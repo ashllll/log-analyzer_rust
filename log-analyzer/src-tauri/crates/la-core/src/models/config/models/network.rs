@@ -192,7 +192,6 @@ impl ConfigValidator for StorageConfig {
     }
 }
 
-
 // ============ 监控配置 ============
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -380,7 +379,6 @@ impl ConfigValidator for SecurityConfig {
         (result, !modified)
     }
 }
-
 
 // ============ 数据库配置 ============
 
@@ -1011,7 +1009,4 @@ impl ConfigValidator for FrontendConfig {
     }
 }
 
-
 // Shared defaults (reused from other config domains)
-
-

@@ -141,7 +141,6 @@ fn default_1000_usize() -> usize {
     1000
 }
 
-
 // ============ 压缩解压配置 ============
 
 /// 文件大小处理策略
@@ -835,7 +834,6 @@ impl ConfigValidator for ArchiveConfig {
         (result, !modified)
     }
 }
-
 
 // Shared defaults (reused from other config domains)
 fn default_10_usize() -> usize {

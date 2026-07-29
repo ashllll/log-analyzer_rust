@@ -83,8 +83,7 @@ impl TimestampParser {
             return Some(if trimmed.len() >= 13 { raw / 1000 } else { raw });
         }
 
-        Self::parse_naive_datetime(trimmed)
-            .map(|dt| dt.and_utc().timestamp())
+        Self::parse_naive_datetime(trimmed).map(|dt| dt.and_utc().timestamp())
     }
 
     /// 从日志行中解析时间戳字符串。
