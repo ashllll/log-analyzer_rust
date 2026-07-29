@@ -6,11 +6,12 @@
 
 use crate::path_manager::PathManager;
 use crate::security_detector::SecurityDetector;
+use crate::staged_extraction::StagedExtraction;
 use la_core::error::{AppError, Result};
 use moka::sync::Cache;
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::fs;
@@ -679,6 +680,13 @@ impl ExtractionEngine {
 
                     result.extracted_files.extend(extracted_files);
                 }
+                Err(error @ AppError::Security { .. }) => {
+                    warn!(
+                        "Security policy halted extraction of {:?} at depth {}: {}",
+                        item.archive_path, item.depth, error
+                    );
+                    return Err(error);
+                }
                 Err(e) => {
                     // Archive-level error: log warning and continue with other archives in stack
                     warn!(
@@ -761,15 +769,9 @@ impl ExtractionEngine {
         &self,
         item: &ExtractionItem,
         stack: &mut ExtractionStack,
-        current_workspace_bytes: u64,
+        current_extraction_bytes: u64,
     ) -> Result<(Vec<PathBuf>, u64, usize, usize)> {
-        // Ensure target directory exists
-        fs::create_dir_all(&item.target_dir).await.map_err(|e| {
-            AppError::archive_error(
-                format!("Failed to create target directory: {e}"),
-                Some(item.target_dir.clone()),
-            )
-        })?;
+        let staged_extraction = StagedExtraction::new(&item.target_dir).await?;
 
         debug!(
             "Processing archive: {:?} -> {:?} (depth: {})",
@@ -796,7 +798,7 @@ impl ExtractionEngine {
         let summary = handler
             .extract_with_limits(
                 &item.archive_path,
-                &item.target_dir,
+                staged_extraction.path(),
                 self.policy.max_file_size,
                 self.policy.max_total_size,
                 self.policy.max_file_count, // 使用策略配置的文件数限制，防止 ZIP bomb
@@ -813,10 +815,39 @@ impl ExtractionEngine {
             "Extracted {} files ({} bytes) from {:?}",
             summary.files_extracted, summary.total_size, item.archive_path
         );
+        let extracted_paths =
+            normalize_extracted_paths(&summary.extracted_files, staged_extraction.path())?;
+
+        let compressed_size = fs::metadata(&item.archive_path)
+            .await
+            .map_err(|error| {
+                AppError::archive_error(
+                    format!("Failed to inspect archive size: {error}"),
+                    Some(item.archive_path.clone()),
+                )
+            })?
+            .len();
+        let (should_halt, violation) = self.security_detector.should_halt_extraction(
+            compressed_size,
+            summary.total_size,
+            item.depth,
+            current_extraction_bytes,
+        );
+        if should_halt {
+            let message = violation
+                .map(|violation| violation.message)
+                .unwrap_or_else(|| {
+                    format!(
+                        "Archive security policy halted extraction of {:?}",
+                        item.archive_path
+                    )
+                });
+            return Err(AppError::security_error(message));
+        }
 
         let (should_halt, violation) = self
             .security_detector
-            .should_halt_for_workspace_size(current_workspace_bytes, summary.total_size);
+            .should_halt_for_workspace_size(current_extraction_bytes, summary.total_size);
         if should_halt {
             let message = violation
                 .map(|violation| violation.message)
@@ -826,17 +857,17 @@ impl ExtractionEngine {
                         item.archive_path
                     )
                 });
-
-            let _ = fs::remove_dir_all(&item.target_dir).await;
             return Err(AppError::security_error(message));
         }
+
+        staged_extraction.commit().await?;
 
         // Process extracted files
         let mut extracted_files = Vec::new();
         let mut depth_limit_skips = 0;
         let mut path_shortenings = 0;
 
-        for file_path in &summary.extracted_files {
+        for file_path in &extracted_paths {
             // Check if this is a nested archive
             if self.is_archive_file(file_path) {
                 // Check depth limit before adding to stack
@@ -1137,11 +1168,47 @@ impl ExtractionEngine {
     }
 }
 
+fn normalize_extracted_paths(paths: &[PathBuf], staging_root: &Path) -> Result<Vec<PathBuf>> {
+    paths
+        .iter()
+        .map(|path| {
+            let relative = if path.is_absolute() {
+                path.strip_prefix(staging_root).map_err(|_| {
+                    AppError::security_error(format!(
+                        "Archive handler returned a path outside the staging directory: {}",
+                        path.display()
+                    ))
+                })?
+            } else {
+                path.as_path()
+            };
+
+            if relative.as_os_str().is_empty()
+                || relative
+                    .components()
+                    .any(|component| !matches!(component, Component::Normal(_)))
+            {
+                return Err(AppError::security_error(format!(
+                    "Archive handler returned an unsafe extracted path: {}",
+                    path.display()
+                )));
+            }
+
+            Ok(relative.to_path_buf())
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::internal::metadata_db::MetadataDB;
     use crate::path_manager::PathConfig;
+    use crate::security_detector::SecurityPolicy;
+    use flate2::write::GzEncoder;
+    use flate2::Compression;
+    use std::io::Write;
+    use tar::{Builder, Header};
 
     async fn create_test_engine() -> ExtractionEngine {
         let db = Arc::new(MetadataDB::new(":memory:").await.unwrap());
@@ -1150,6 +1217,138 @@ mod tests {
         let policy = ExtractionPolicy::default();
 
         ExtractionEngine::new(path_manager, security_detector, policy).unwrap()
+    }
+
+    async fn create_test_engine_with_security_policy(
+        security_policy: SecurityPolicy,
+    ) -> ExtractionEngine {
+        let db = Arc::new(MetadataDB::new(":memory:").await.unwrap());
+        let path_manager = Arc::new(PathManager::new(PathConfig::default(), db));
+        let security_detector = Arc::new(SecurityDetector::new(security_policy));
+
+        ExtractionEngine::new(path_manager, security_detector, ExtractionPolicy::default()).unwrap()
+    }
+
+    #[tokio::test]
+    async fn compression_ratio_rejection_preserves_existing_output() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let archive_path = temp_dir.path().join("suspicious.log.gz");
+        let target_dir = temp_dir.path().join("output");
+        let existing_output = target_dir.join("suspicious.log");
+
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(&vec![b'A'; 64 * 1024]).unwrap();
+        std::fs::write(&archive_path, encoder.finish().unwrap()).unwrap();
+        std::fs::create_dir_all(&target_dir).unwrap();
+        std::fs::write(&existing_output, b"trusted-existing-output").unwrap();
+
+        let engine = create_test_engine_with_security_policy(SecurityPolicy {
+            max_compression_ratio: 2.0,
+            max_cumulative_size: u64::MAX,
+            max_workspace_size: u64::MAX,
+            exponential_backoff_threshold: f64::MAX,
+        })
+        .await;
+
+        let error = engine
+            .extract_archive(&archive_path, &target_dir, "test-workspace")
+            .await
+            .expect_err("configured compression-ratio limit must reject suspicious archives");
+
+        assert!(
+            error.to_string().contains("Compression ratio"),
+            "unexpected error: {error}"
+        );
+        assert_eq!(
+            std::fs::read(existing_output).unwrap(),
+            b"trusted-existing-output"
+        );
+        assert!(
+            std::fs::read_dir(temp_dir.path())
+                .unwrap()
+                .all(|entry| !entry
+                    .unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".archive-")),
+            "security rejection must clean staging and rollback directories"
+        );
+    }
+
+    #[tokio::test]
+    async fn successful_extraction_commits_over_existing_output() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let archive_path = temp_dir.path().join("application.log.gz");
+        let target_dir = temp_dir.path().join("output");
+        let extracted_output = target_dir.join("application.log");
+        let unrelated_output = target_dir.join("keep.log");
+
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::none());
+        encoder.write_all(b"replacement output").unwrap();
+        std::fs::write(&archive_path, encoder.finish().unwrap()).unwrap();
+        std::fs::create_dir_all(&target_dir).unwrap();
+        std::fs::write(&extracted_output, b"old output").unwrap();
+        std::fs::write(&unrelated_output, b"unrelated output").unwrap();
+
+        let result = create_test_engine()
+            .await
+            .extract_archive(&archive_path, &target_dir, "test-workspace")
+            .await
+            .unwrap();
+
+        assert_eq!(result.total_files, 1);
+        assert_eq!(result.extracted_files, vec![extracted_output.clone()]);
+        assert!(result.extracted_files[0].exists());
+        assert!(result.extracted_files[0].starts_with(&target_dir));
+        assert_eq!(
+            std::fs::read(extracted_output).unwrap(),
+            b"replacement output"
+        );
+        assert_eq!(
+            std::fs::read(unrelated_output).unwrap(),
+            b"unrelated output"
+        );
+    }
+
+    #[tokio::test]
+    async fn nested_archives_enforce_cumulative_size_limit() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let archive_path = temp_dir.path().join("outer.tar");
+        let target_dir = temp_dir.path().join("output");
+        let nested_payload = vec![b'N'; 1024];
+
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::none());
+        encoder.write_all(&nested_payload).unwrap();
+        let nested_archive = encoder.finish().unwrap();
+
+        let archive_file = std::fs::File::create(&archive_path).unwrap();
+        let mut archive = Builder::new(archive_file);
+        let mut header = Header::new_gnu();
+        header.set_size(nested_archive.len() as u64);
+        header.set_mode(0o644);
+        header.set_cksum();
+        archive
+            .append_data(&mut header, "nested.log.gz", nested_archive.as_slice())
+            .unwrap();
+        archive.finish().unwrap();
+
+        let engine = create_test_engine_with_security_policy(SecurityPolicy {
+            max_compression_ratio: f64::MAX,
+            max_cumulative_size: nested_payload.len() as u64 + nested_archive.len() as u64 - 1,
+            max_workspace_size: u64::MAX,
+            exponential_backoff_threshold: f64::MAX,
+        })
+        .await;
+
+        let error = engine
+            .extract_archive(&archive_path, &target_dir, "test-workspace")
+            .await
+            .expect_err("nested extraction must count bytes already extracted by the root archive");
+
+        assert!(
+            error.to_string().contains("Cumulative extracted size"),
+            "unexpected error: {error}"
+        );
     }
 
     #[test]

@@ -26,6 +26,8 @@ pub mod rar_handler;
 #[cfg(feature = "enhanced-extraction")]
 pub mod security_detector;
 pub mod sevenz_handler;
+#[cfg(feature = "enhanced-extraction")]
+mod staged_extraction;
 mod symlink_guard;
 pub mod tar_handler;
 pub mod zip_handler;

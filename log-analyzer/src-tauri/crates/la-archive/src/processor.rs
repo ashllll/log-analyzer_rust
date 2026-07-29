@@ -13,7 +13,9 @@ use crate::checkpoint_manager::{Checkpoint, CheckpointManager};
 use crate::extraction_engine::ExtractionPolicy;
 use crate::internal::file_type_filter::FileTypeFilter;
 #[cfg(feature = "enhanced-extraction")]
-use crate::public_api::extract_archive_async;
+use crate::public_api::extract_archive_async_with_security_policy;
+#[cfg(feature = "enhanced-extraction")]
+use crate::security_detector::SecurityPolicy;
 use crate::ArchiveManager;
 use la_core::error::{AppError, ErrorCategory, Result};
 use la_core::models::config::{ArchiveConfig, FileFilterConfig};
@@ -96,6 +98,21 @@ fn extraction_policy_from_archive_config(config: &ArchiveConfig) -> ExtractionPo
         dir_batch_size: config.directory_batch_size,
         max_parallel_files: config.max_parallel_files,
         max_file_count: config.max_file_count,
+    }
+}
+
+#[cfg(feature = "enhanced-extraction")]
+fn security_policy_from_archive_config(
+    config: &ArchiveConfig,
+    existing_workspace_bytes: u64,
+) -> SecurityPolicy {
+    SecurityPolicy {
+        max_compression_ratio: config.max_compression_ratio,
+        max_cumulative_size: config.max_archive_total_size,
+        max_workspace_size: config
+            .max_workspace_size
+            .saturating_sub(existing_workspace_bytes),
+        exponential_backoff_threshold: config.exponential_backoff_threshold,
     }
 }
 
@@ -1135,7 +1152,18 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
     #[cfg(feature = "enhanced-extraction")]
     let extracted_files = if is_enhanced_extraction_enabled() {
         let policy = extraction_policy_from_archive_config(&archive_config);
-        match extract_archive_async(archive_path, &extract_dir, workspace_id, Some(policy)).await {
+        let existing_workspace_bytes = context.metadata_store.sum_file_sizes().await?.max(0) as u64;
+        let security_policy =
+            security_policy_from_archive_config(&archive_config, existing_workspace_bytes);
+        match extract_archive_async_with_security_policy(
+            archive_path,
+            &extract_dir,
+            workspace_id,
+            policy,
+            security_policy,
+        )
+        .await
+        {
             Ok(result) => {
                 info!(
                     files = result.extracted_files.len(),
@@ -1536,6 +1564,25 @@ mod tests {
             build_child_virtual_path("root", &relative),
             "root/nested/child.log"
         );
+    }
+
+    #[cfg(feature = "enhanced-extraction")]
+    #[test]
+    fn enhanced_security_policy_tracks_archive_configuration() {
+        let config = ArchiveConfig {
+            max_compression_ratio: 42.0,
+            max_archive_total_size: 123_456,
+            max_workspace_size: 789_012,
+            exponential_backoff_threshold: 9_876.0,
+            ..ArchiveConfig::default()
+        };
+
+        let security_policy = security_policy_from_archive_config(&config, 12);
+
+        assert_eq!(security_policy.max_compression_ratio, 42.0);
+        assert_eq!(security_policy.max_cumulative_size, 123_456);
+        assert_eq!(security_policy.max_workspace_size, 789_000);
+        assert_eq!(security_policy.exponential_backoff_threshold, 9_876.0);
     }
 
     fn create_many_file_zip(path: &Path, file_count: usize) {

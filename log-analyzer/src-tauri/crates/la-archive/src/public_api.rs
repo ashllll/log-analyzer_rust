@@ -423,10 +423,26 @@ pub async fn extract_archive_async(
     workspace_id: &str,
     policy: Option<ExtractionPolicy>,
 ) -> Result<ExtractionResult> {
-    let start_time = SystemTime::now();
-
-    // Use provided policy or default
     let policy = policy.unwrap_or_default();
+    let security_policy = security_policy_from_extraction_policy(&policy);
+    extract_archive_async_with_security_policy(
+        archive_path,
+        target_dir,
+        workspace_id,
+        policy,
+        security_policy,
+    )
+    .await
+}
+
+pub(crate) async fn extract_archive_async_with_security_policy(
+    archive_path: &Path,
+    target_dir: &Path,
+    workspace_id: &str,
+    policy: ExtractionPolicy,
+    security_policy: SecurityPolicy,
+) -> Result<ExtractionResult> {
+    let start_time = SystemTime::now();
 
     // Validate policy
     policy.validate().map_err(ExtractionError::from)?;
@@ -446,9 +462,7 @@ pub async fn extract_archive_async(
 
     let path_manager = Arc::new(PathManager::new(PathConfig::default(), metadata_db.clone()));
 
-    let security_detector = Arc::new(SecurityDetector::new(
-        security_policy_from_extraction_policy(&policy),
-    ));
+    let security_detector = Arc::new(SecurityDetector::new(security_policy));
 
     // Create extraction engine
     let engine = ExtractionEngine::new(
