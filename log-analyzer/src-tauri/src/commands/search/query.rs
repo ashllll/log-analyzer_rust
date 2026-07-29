@@ -6,10 +6,18 @@ use la_core::models::SearchQuery;
 
 use crate::services::looks_like_regex_pattern;
 
+#[derive(Clone, Copy)]
+enum QueryScope {
+    Group(char),
+    CharacterClass {
+        allows_literal_closing_bracket: bool,
+    },
+}
+
 pub(crate) fn split_query_by_pipe(query: &str) -> Vec<String> {
     let mut terms = Vec::new();
     let mut current = String::new();
-    let mut depth: i32 = 0;
+    let mut scopes = Vec::new();
     let mut escaped = false;
     for ch in query.chars() {
         if escaped {
@@ -19,6 +27,12 @@ pub(crate) fn split_query_by_pipe(query: &str) -> Vec<String> {
                 current.push('\\');
                 current.push(ch);
             }
+            if let Some(QueryScope::CharacterClass {
+                allows_literal_closing_bracket,
+            }) = scopes.last_mut()
+            {
+                *allows_literal_closing_bracket = false;
+            }
             escaped = false;
             continue;
         }
@@ -26,19 +40,55 @@ pub(crate) fn split_query_by_pipe(query: &str) -> Vec<String> {
             escaped = true;
             continue;
         }
-        if ch == '(' || ch == '[' || ch == '{' {
-            depth += 1;
+
+        if let Some(QueryScope::CharacterClass {
+            allows_literal_closing_bracket,
+        }) = scopes.last_mut()
+        {
+            current.push(ch);
+            match ch {
+                '[' => {
+                    *allows_literal_closing_bracket = false;
+                    scopes.push(QueryScope::CharacterClass {
+                        allows_literal_closing_bracket: true,
+                    });
+                }
+                ']' if *allows_literal_closing_bracket => {
+                    *allows_literal_closing_bracket = false;
+                }
+                ']' => {
+                    scopes.pop();
+                }
+                '^' if *allows_literal_closing_bracket => {}
+                _ => *allows_literal_closing_bracket = false,
+            }
+            continue;
+        }
+
+        if ch == '[' {
+            scopes.push(QueryScope::CharacterClass {
+                allows_literal_closing_bracket: true,
+            });
             current.push(ch);
             continue;
         }
-        if ch == ')' || ch == ']' || ch == '}' {
-            if depth > 0 {
-                depth -= 1;
+        if let Some(expected_closer) = match ch {
+            '(' => Some(')'),
+            '{' => Some('}'),
+            _ => None,
+        } {
+            scopes.push(QueryScope::Group(expected_closer));
+            current.push(ch);
+            continue;
+        }
+        if matches!(ch, ')' | ']' | '}') {
+            if matches!(scopes.last(), Some(QueryScope::Group(closer)) if *closer == ch) {
+                scopes.pop();
             }
             current.push(ch);
             continue;
         }
-        if ch == '|' && depth == 0 {
+        if ch == '|' && scopes.is_empty() {
             let t = current.trim();
             if !t.is_empty() {
                 terms.push(t.to_string());
@@ -132,4 +182,51 @@ pub(crate) fn resolve_search_query(
         return Ok((raw, sq));
     }
     build_structured_search_query(query, case_sensitive, query_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_structured_search_query;
+
+    #[test]
+    fn character_class_pipe_is_not_treated_as_a_query_separator() {
+        let (raw_terms, structured_query) =
+            build_structured_search_query("[)|] | timeout", false, "search-1")
+                .expect("valid search query should parse");
+
+        assert_eq!(raw_terms, vec!["[)|]", "timeout"]);
+        assert_eq!(
+            structured_query
+                .terms
+                .iter()
+                .map(|term| term.value.as_str())
+                .collect::<Vec<_>>(),
+            vec!["[)|]", "timeout"]
+        );
+    }
+
+    #[test]
+    fn nested_character_class_pipe_is_not_treated_as_a_query_separator() {
+        let (raw_terms, _) =
+            build_structured_search_query("[[:alpha:]|_] | timeout", false, "search-2")
+                .expect("valid search query should parse");
+
+        assert_eq!(raw_terms, vec!["[[:alpha:]|_]", "timeout"]);
+    }
+
+    #[test]
+    fn leading_closing_bracket_in_character_class_is_treated_as_a_literal() {
+        let (raw_terms, _) = build_structured_search_query("[]|] | timeout", false, "search-3")
+            .expect("valid search query should parse");
+
+        assert_eq!(raw_terms, vec!["[]|]", "timeout"]);
+    }
+
+    #[test]
+    fn leading_closing_bracket_after_negation_is_treated_as_a_literal() {
+        let (raw_terms, _) = build_structured_search_query("[^]|] | timeout", false, "search-4")
+            .expect("valid search query should parse");
+
+        assert_eq!(raw_terms, vec!["[^]|]", "timeout"]);
+    }
 }
