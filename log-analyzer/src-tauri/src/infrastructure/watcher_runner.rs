@@ -101,14 +101,13 @@ impl WatcherRunner {
     }
 
     fn on_modify(&mut self, path: &Path) {
-        let start_line_number = self.tailer.line_count(path) + 1;
-
         match self.tailer.tail(path) {
             Ok(result) => {
                 if result.lines.is_empty() {
                     return;
                 }
 
+                let start_line_number = self.tailer.line_count(path) + 1;
                 let new_line_count = result.lines.len();
                 let virtual_path = self.tailer.virtual_path(path);
 

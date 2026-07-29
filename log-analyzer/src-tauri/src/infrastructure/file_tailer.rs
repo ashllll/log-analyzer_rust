@@ -46,11 +46,12 @@ impl FileTailer {
     /// Updates the internal offset. Returns the new lines and the new offset.
     pub fn tail(&mut self, path: &Path) -> Result<TailResult> {
         let offset = self.offsets.get(path).copied().unwrap_or(0);
-        let (lines, file_size, _start_offset) = read_file_from_offset(path, offset)?;
+        let (lines, file_size, start_offset) = read_file_from_offset(path, offset)?;
 
-        if file_size > offset {
-            self.offsets.insert(path.to_path_buf(), file_size);
+        if start_offset < offset {
+            self.line_counts.insert(path.to_path_buf(), 0);
         }
+        self.offsets.insert(path.to_path_buf(), file_size);
 
         Ok(TailResult {
             lines,
@@ -229,11 +230,33 @@ mod tests {
         let mut tailer = FileTailer::new(dir.path().to_path_buf());
         tailer.on_create(&path);
         tailer.tail(&path).unwrap();
+        tailer.add_lines(&path, 3);
 
         // Truncate the file
         std::fs::write(&path, "short\n").unwrap();
 
         let result = tailer.tail(&path).unwrap();
         assert_eq!(result.lines, vec!["short"]);
+        assert_eq!(
+            tailer.line_count(&path),
+            0,
+            "truncation must reset the source line-number base"
+        );
+
+        let unchanged = tailer.tail(&path).unwrap();
+        assert!(
+            unchanged.lines.is_empty(),
+            "truncated content must not be emitted again without another write"
+        );
+
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        file.write_all(b"next\n").unwrap();
+        drop(file);
+
+        let appended = tailer.tail(&path).unwrap();
+        assert_eq!(appended.lines, vec!["next"]);
     }
 }
