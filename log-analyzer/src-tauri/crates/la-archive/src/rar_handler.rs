@@ -231,11 +231,56 @@ impl ArchiveHandler for RarHandler {
     }
 }
 
+// 无 RAR 支持时的空实现
+#[cfg(not(feature = "rar-support"))]
+use crate::archive_handler::{ArchiveHandler, ExtractionSummary};
+#[cfg(not(feature = "rar-support"))]
+use async_trait::async_trait;
+#[cfg(not(feature = "rar-support"))]
+use la_core::error::{AppError, Result};
+#[cfg(not(feature = "rar-support"))]
+use std::path::Path;
+
+#[cfg(not(feature = "rar-support"))]
+pub struct RarHandler;
+
+#[cfg(not(feature = "rar-support"))]
+#[async_trait]
+impl ArchiveHandler for RarHandler {
+    fn can_handle(&self, path: &Path) -> bool {
+        path.extension()
+            .and_then(|s| s.to_str())
+            .map(|ext| ext.eq_ignore_ascii_case("rar"))
+            .unwrap_or(false)
+    }
+
+    async fn extract_with_limits(
+        &self,
+        _source: &Path,
+        _target_dir: &Path,
+        _max_file_size: u64,
+        _max_total_size: u64,
+        _max_file_count: usize,
+    ) -> Result<ExtractionSummary> {
+        Err(AppError::archive_error(
+            "RAR support is not enabled. Enable the 'rar-support' feature to extract RAR files.",
+            None,
+        ))
+    }
+
+    fn file_extensions(&self) -> Vec<&str> {
+        vec!["rar"]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
+    #[cfg(feature = "rar-support")]
+    use std::path::PathBuf;
 
+    #[cfg(feature = "rar-support")]
     fn find_unrar_fixture(name: &str) -> Option<PathBuf> {
         let mut candidates = Vec::new();
 
@@ -268,12 +313,9 @@ mod tests {
     fn test_rar_handler_can_handle() {
         let handler = RarHandler;
 
-        // 应该能处理 .rar 文件
         assert!(handler.can_handle(Path::new("test.rar")));
         assert!(handler.can_handle(Path::new("test.RAR")));
         assert!(handler.can_handle(Path::new("/path/to/archive.rar")));
-
-        // 不应该处理其他格式
         assert!(!handler.can_handle(Path::new("test.zip")));
         assert!(!handler.can_handle(Path::new("test.tar")));
         assert!(!handler.can_handle(Path::new("test.gz")));
@@ -284,25 +326,19 @@ mod tests {
     #[test]
     fn test_rar_handler_file_extensions() {
         let handler = RarHandler;
-        let extensions = handler.file_extensions();
-
-        assert_eq!(extensions, vec!["rar"]);
+        assert_eq!(handler.file_extensions(), vec!["rar"]);
     }
 
     #[tokio::test]
     async fn test_extract_rar_without_support() {
-        // 测试在没有 rar-support feature 时的行为
         let temp_dir = tempfile::TempDir::new().expect("创建临时目录失败");
         let rar_file = temp_dir.path().join("test.rar");
         let output_dir = temp_dir.path().join("output");
-
-        // 创建一个虚拟的 RAR 文件（即使内容无效）
         std::fs::write(&rar_file, b"RAR").unwrap();
 
         let handler = RarHandler;
         let result = handler.extract(&rar_file, &output_dir).await;
 
-        // 在没有 rar-support feature 时应该返回错误
         #[cfg(not(feature = "rar-support"))]
         {
             assert!(result.is_err());
@@ -314,11 +350,8 @@ mod tests {
             );
         }
 
-        // 在有 rar-support feature 时，由于文件内容无效，也会返回错误
         #[cfg(feature = "rar-support")]
-        {
-            assert!(result.is_err());
-        }
+        assert!(result.is_err());
     }
 
     #[tokio::test]
@@ -359,47 +392,5 @@ mod tests {
             std::fs::read_to_string(extracted_file).expect("读取已解压文件"),
             "unrar-0.4.0"
         );
-    }
-}
-
-// 无 RAR 支持时的空实现
-#[cfg(not(feature = "rar-support"))]
-use crate::archive_handler::{ArchiveHandler, ExtractionSummary};
-#[cfg(not(feature = "rar-support"))]
-use async_trait::async_trait;
-#[cfg(not(feature = "rar-support"))]
-use la_core::error::{AppError, Result};
-#[cfg(not(feature = "rar-support"))]
-use std::path::Path;
-
-#[cfg(not(feature = "rar-support"))]
-pub struct RarHandler;
-
-#[cfg(not(feature = "rar-support"))]
-#[async_trait]
-impl ArchiveHandler for RarHandler {
-    fn can_handle(&self, path: &Path) -> bool {
-        path.extension()
-            .and_then(|s| s.to_str())
-            .map(|ext| ext.eq_ignore_ascii_case("rar"))
-            .unwrap_or(false)
-    }
-
-    async fn extract_with_limits(
-        &self,
-        _source: &Path,
-        _target_dir: &Path,
-        _max_file_size: u64,
-        _max_total_size: u64,
-        _max_file_count: usize,
-    ) -> Result<ExtractionSummary> {
-        Err(AppError::archive_error(
-            "RAR support is not enabled. Enable the 'rar-support' feature to extract RAR files.",
-            None,
-        ))
-    }
-
-    fn file_extensions(&self) -> Vec<&str> {
-        vec!["rar"]
     }
 }

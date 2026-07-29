@@ -66,6 +66,7 @@ pub fn ensure_no_symlink_components(root: &Path, candidate: &Path) -> Result<()>
     Ok(())
 }
 
+#[cfg(any(feature = "rar-support", test))]
 fn remove_symlink(path: &Path) -> Result<()> {
     let metadata = std::fs::symlink_metadata(path).map_err(|error| {
         AppError::archive_error(
@@ -96,6 +97,7 @@ fn remove_symlink(path: &Path) -> Result<()> {
     Ok(())
 }
 
+#[cfg(any(feature = "rar-support", test))]
 pub fn reject_extracted_symlink(path: &Path) -> Result<()> {
     if let Some(metadata) = metadata_if_exists(path)? {
         if metadata.file_type().is_symlink() {

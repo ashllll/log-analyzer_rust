@@ -35,6 +35,37 @@ const DIRECTORY_METADATA_BATCH_SIZE: usize = 500;
 const SMALL_FILE_INLINE_CAS_THRESHOLD_BYTES: u64 = 1024 * 1024;
 type FileStats = (Option<i64>, Option<i64>, Option<u8>);
 
+fn parse_boolean_override(value: &str) -> Option<bool> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "true" => Some(true),
+        "false" => Some(false),
+        _ => None,
+    }
+}
+
+fn boolean_env_override(name: &str, default: bool) -> bool {
+    match std::env::var(name) {
+        Ok(value) => match parse_boolean_override(&value) {
+            Some(value) => value,
+            None => {
+                warn!(
+                    variable = name,
+                    value, default, "Ignoring invalid boolean environment override"
+                );
+                default
+            }
+        },
+        Err(std::env::VarError::NotPresent) => default,
+        Err(std::env::VarError::NotUnicode(_)) => {
+            warn!(
+                variable = name,
+                default, "Ignoring non-Unicode boolean environment override"
+            );
+            default
+        }
+    }
+}
+
 fn ensure_not_cancelled(context: &CasProcessingContext, path: &Path) -> Result<()> {
     if context.cancellation_token.is_cancelled() {
         return Err(AppError::Archive {
@@ -74,18 +105,10 @@ async fn ensure_archive_not_cancelled(
 ///
 /// 优先级：
 /// 1. 环境变量 USE_ENHANCED_EXTRACTION（用于测试和临时覆盖）
-/// 2. 配置文件中的 use_enhanced_extraction 标志
-/// 3. 默认为 false（使用旧系统）以保持向后兼容性
+/// 2. 编译 enhanced-extraction 功能时默认启用
 #[cfg(feature = "enhanced-extraction")]
 fn is_enhanced_extraction_enabled() -> bool {
-    // 首先检查环境变量（最高优先级）
-    if let Ok(env_value) = std::env::var("USE_ENHANCED_EXTRACTION") {
-        return env_value.to_lowercase() == "true";
-    }
-
-    // Configuration file support can be added in the future if needed
-    // Currently defaults to false for backward compatibility
-    false
+    boolean_env_override("USE_ENHANCED_EXTRACTION", true)
 }
 
 #[cfg(feature = "enhanced-extraction")]
@@ -127,10 +150,7 @@ fn security_policy_from_archive_config(
 /// 启用此选项可能存在安全风险，因为符号链接可能指向目录外的位置。
 /// 路径遍历检查会捕获大多数此类情况，但仍需谨慎使用。
 fn should_follow_symlinks() -> bool {
-    if let Ok(env_value) = std::env::var("FOLLOW_SYMLINKS") {
-        return env_value.to_lowercase() == "true";
-    }
-    false
+    boolean_env_override("FOLLOW_SYMLINKS", false)
 }
 
 /// 检查路径是否安全（防止路径遍历攻击）
@@ -290,7 +310,9 @@ pub struct CasProcessingContext {
     pub checkpoint_manager: Option<Arc<Mutex<CheckpointManager>>>,
     #[cfg(feature = "enhanced-extraction")]
     pub checkpoint: Option<Arc<Mutex<Checkpoint>>>,
+    #[cfg(feature = "enhanced-extraction")]
     pub files_since_checkpoint: Arc<Mutex<usize>>,
+    #[cfg(feature = "enhanced-extraction")]
     pub bytes_since_checkpoint: Arc<Mutex<u64>>,
     pub cancellation_token: CancellationToken,
     file_stats_updates: Arc<Mutex<Vec<tokio::task::JoinHandle<Result<()>>>>>,
@@ -311,7 +333,9 @@ impl CasProcessingContext {
             checkpoint_manager: None,
             #[cfg(feature = "enhanced-extraction")]
             checkpoint: None,
+            #[cfg(feature = "enhanced-extraction")]
             files_since_checkpoint: Arc::new(Mutex::new(0)),
+            #[cfg(feature = "enhanced-extraction")]
             bytes_since_checkpoint: Arc::new(Mutex::new(0)),
             cancellation_token: CancellationToken::new(),
             file_stats_updates: Arc::new(Mutex::new(Vec::new())),
@@ -390,26 +414,29 @@ impl CasProcessingContext {
     }
 
     /// Update checkpoint if needed
-    #[cfg(feature = "enhanced-extraction")]
     async fn maybe_save_checkpoint(&self) -> Result<()> {
-        if let (Some(manager), Some(checkpoint)) = (&self.checkpoint_manager, &self.checkpoint) {
-            let files = *self.files_since_checkpoint.lock().await;
-            let bytes = *self.bytes_since_checkpoint.lock().await;
+        #[cfg(feature = "enhanced-extraction")]
+        {
+            if let (Some(manager), Some(checkpoint)) = (&self.checkpoint_manager, &self.checkpoint)
+            {
+                let files = *self.files_since_checkpoint.lock().await;
+                let bytes = *self.bytes_since_checkpoint.lock().await;
 
-            let manager_guard = manager.lock().await;
-            if manager_guard.should_write_checkpoint(files, bytes) {
-                let checkpoint_guard = checkpoint.lock().await;
-                manager_guard.save_checkpoint(&checkpoint_guard).await?;
+                let manager_guard = manager.lock().await;
+                if manager_guard.should_write_checkpoint(files, bytes) {
+                    let checkpoint_guard = checkpoint.lock().await;
+                    manager_guard.save_checkpoint(&checkpoint_guard).await?;
 
-                // Reset counters
-                *self.files_since_checkpoint.lock().await = 0;
-                *self.bytes_since_checkpoint.lock().await = 0;
+                    // Reset counters
+                    *self.files_since_checkpoint.lock().await = 0;
+                    *self.bytes_since_checkpoint.lock().await = 0;
 
-                info!(
-                    files = checkpoint_guard.metrics.files_extracted,
-                    bytes = checkpoint_guard.metrics.bytes_extracted,
-                    "Checkpoint saved"
-                );
+                    info!(
+                        files = checkpoint_guard.metrics.files_extracted,
+                        bytes = checkpoint_guard.metrics.bytes_extracted,
+                        "Checkpoint saved"
+                    );
+                }
             }
         }
         Ok(())
@@ -417,25 +444,34 @@ impl CasProcessingContext {
 
     /// Update checkpoint with new file
     async fn update_checkpoint(&self, file_path: PathBuf, file_size: u64) -> Result<()> {
-        if let Some(checkpoint) = &self.checkpoint {
-            let mut checkpoint_guard = checkpoint.lock().await;
-            checkpoint_guard.update_file(file_path, file_size);
+        #[cfg(feature = "enhanced-extraction")]
+        {
+            if let Some(checkpoint) = &self.checkpoint {
+                let mut checkpoint_guard = checkpoint.lock().await;
+                checkpoint_guard.update_file(file_path, file_size);
 
-            // Update counters
-            *self.files_since_checkpoint.lock().await += 1;
-            *self.bytes_since_checkpoint.lock().await += file_size;
+                // Update counters
+                *self.files_since_checkpoint.lock().await += 1;
+                *self.bytes_since_checkpoint.lock().await += file_size;
+            }
         }
+        #[cfg(not(feature = "enhanced-extraction"))]
+        let _ = (file_path, file_size);
         Ok(())
     }
 
     /// Check if file was already extracted
     async fn is_file_extracted(&self, file_path: &Path) -> bool {
-        if let Some(checkpoint) = &self.checkpoint {
-            let checkpoint_guard = checkpoint.lock().await;
-            checkpoint_guard.is_file_extracted(file_path)
-        } else {
-            false
+        #[cfg(feature = "enhanced-extraction")]
+        {
+            if let Some(checkpoint) = &self.checkpoint {
+                let checkpoint_guard = checkpoint.lock().await;
+                return checkpoint_guard.is_file_extracted(file_path);
+            }
         }
+        #[cfg(not(feature = "enhanced-extraction"))]
+        let _ = file_path;
+        false
     }
 }
 
@@ -1035,6 +1071,39 @@ pub async fn process_path_with_cas_cancellable(
     .await
 }
 
+async fn extract_with_legacy_manager(
+    archive_manager: &ArchiveManager,
+    archive_path: &Path,
+    extract_dir: &Path,
+    context: &CasProcessingContext,
+    archive_id: i64,
+) -> Result<Vec<PathBuf>> {
+    match archive_manager
+        .extract_archive(archive_path, extract_dir)
+        .await
+    {
+        Ok(summary) => {
+            info!(
+                files = summary.files_extracted,
+                bytes = summary.total_size,
+                "Legacy extraction completed"
+            );
+            Ok(summary.extracted_files)
+        }
+        Err(error) => {
+            context
+                .metadata_store
+                .update_archive_status(archive_id, "failed")
+                .await?;
+            let _ = fs::remove_dir_all(extract_dir).await;
+            Err(AppError::archive_error(
+                format!("Legacy extraction failed: {error}"),
+                Some(archive_path.to_path_buf()),
+            ))
+        }
+    }
+}
+
 /// Extract and process archive using CAS with checkpoint support
 ///
 /// This function handles nested archive extraction with depth tracking and checkpoint support.
@@ -1186,32 +1255,24 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
             }
         }
     } else {
-        match archive_manager
-            .extract_archive(archive_path, &extract_dir)
-            .await
-        {
-            Ok(summary) => {
-                info!(
-                    files = summary.files_extracted,
-                    bytes = summary.total_size,
-                    "Legacy extraction completed"
-                );
-                summary.extracted_files
-            }
-            Err(e) => {
-                context
-                    .metadata_store
-                    .update_archive_status(archive_id, "failed")
-                    .await?;
-                // 清理失败解压的临时目录
-                let _ = fs::remove_dir_all(&extract_dir).await;
-                return Err(AppError::archive_error(
-                    format!("Legacy extraction failed: {e}"),
-                    Some(archive_path.to_path_buf()),
-                ));
-            }
-        }
+        extract_with_legacy_manager(
+            &archive_manager,
+            archive_path,
+            &extract_dir,
+            context,
+            archive_id,
+        )
+        .await?
     };
+    #[cfg(not(feature = "enhanced-extraction"))]
+    let extracted_files = extract_with_legacy_manager(
+        &archive_manager,
+        archive_path,
+        &extract_dir,
+        context,
+        archive_id,
+    )
+    .await?;
 
     ensure_archive_not_cancelled(context, archive_id, archive_path, &extract_dir).await?;
 
@@ -1543,6 +1604,10 @@ async fn load_config_from_provider(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "enhanced-extraction")]
+    use flate2::write::GzEncoder;
+    #[cfg(feature = "enhanced-extraction")]
+    use flate2::Compression;
     use std::io::Write;
     use std::sync::Arc;
     use tempfile::TempDir;
@@ -1555,6 +1620,14 @@ mod tests {
         fn config_dir(&self) -> std::result::Result<PathBuf, String> {
             Ok(self.dir.clone())
         }
+    }
+
+    #[test]
+    fn boolean_environment_overrides_require_explicit_true_or_false() {
+        assert_eq!(parse_boolean_override(" true "), Some(true));
+        assert_eq!(parse_boolean_override("FALSE"), Some(false));
+        assert_eq!(parse_boolean_override("1"), None);
+        assert_eq!(parse_boolean_override(""), None);
     }
 
     #[test]
@@ -1583,6 +1656,51 @@ mod tests {
         assert_eq!(security_policy.max_cumulative_size, 123_456);
         assert_eq!(security_policy.max_workspace_size, 789_000);
         assert_eq!(security_policy.exponential_backoff_threshold, 9_876.0);
+    }
+
+    #[cfg(feature = "enhanced-extraction")]
+    #[tokio::test]
+    async fn default_archive_import_enforces_configured_compression_ratio() {
+        let temp = TempDir::new().unwrap();
+        let archive_path = temp.path().join("suspicious.log.gz");
+        let config_dir = temp.path().join("config");
+        let workspace_dir = temp.path().join("workspace");
+
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(&vec![b'A'; 64 * 1024]).unwrap();
+        std::fs::write(&archive_path, encoder.finish().unwrap()).unwrap();
+
+        let mut config = la_core::models::config::AppConfig::default();
+        config.archive.max_compression_ratio = 2.0;
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::write(
+            config_dir.join("config.json"),
+            serde_json::to_vec_pretty(&config).unwrap(),
+        )
+        .unwrap();
+
+        let cas = Arc::new(ContentAddressableStorage::new(workspace_dir.clone()));
+        let metadata_store = Arc::new(MetadataStore::new(&workspace_dir).await.unwrap());
+        let context = CasProcessingContext::new(workspace_dir, Arc::clone(&cas), metadata_store);
+        let provider = TestConfigProvider { dir: config_dir };
+
+        let error = process_path_with_cas_and_checkpoints(
+            &archive_path,
+            "suspicious.log.gz",
+            &context,
+            &provider,
+            "task-1",
+            "workspace-1",
+            None,
+            0,
+        )
+        .await
+        .expect_err("default archive imports must enforce the configured compression-ratio limit");
+
+        assert!(
+            error.to_string().contains("Compression ratio"),
+            "unexpected error: {error}"
+        );
     }
 
     fn create_many_file_zip(path: &Path, file_count: usize) {
