@@ -12,6 +12,7 @@ pub mod export;
 pub mod search;
 pub mod search_batch;
 pub mod search_session;
+pub(crate) mod search_strategy;
 pub mod virtual_tree;
 pub mod watch;
 pub mod workspace_service;

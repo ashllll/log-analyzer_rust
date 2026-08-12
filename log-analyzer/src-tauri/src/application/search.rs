@@ -16,23 +16,22 @@ use std::sync::Arc;
 
 use la_core::domain::event::EventPublisher;
 use la_core::domain::filter::CompiledSearchFilter;
-use la_core::domain::{ExecutionPlan, LogFileRepository, LogSearcher, SearchResultRepository};
+use la_core::domain::{LogFileRepository, LogSearcher, SearchResultRepository};
 use la_core::error::Result;
-use la_core::models::{LogEntry, SearchQuery};
+use la_core::models::SearchQuery;
 use la_core::storage_types::FileMetadata;
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
-use crate::application::search_batch::{BatchAction, SearchBatch};
+use crate::application::search_batch::SearchBatch;
+use crate::application::search_strategy::{
+    flush_search_batch, is_large_file, ParallelSmallFileStrategy, StreamingLargeFileStrategy,
+};
 use crate::services::search_filters::CompiledSearchFilters;
-use crate::utils::encoding::decode_log_content;
 
 /// Flush early enough that the frontend can render a first page while the
 /// rest of the search continues. Larger batches improve write throughput but
 /// make users wait for thousands of matches before anything is readable.
 const BATCH_SIZE: usize = 256;
 const FILE_CHUNK_SIZE: usize = 10;
-const LARGE_FILE_STREAM_THRESHOLD_BYTES: i64 = 64 * 1024;
-const SEARCH_LINE_CHUNK_SIZE: usize = 512;
 
 /// Maximum time a search may run before being cancelled.
 /// Prevents indefinite hangs when a file or regex causes unexpected slowness.
@@ -262,46 +261,42 @@ impl SearchUseCase {
             }
 
             let mut small_files = Vec::with_capacity(FILE_CHUNK_SIZE);
+            let small_strategy = ParallelSmallFileStrategy::new(
+                log_files,
+                results,
+                events,
+                searcher,
+                &plan,
+                compiled_filter,
+                search_id,
+                max_results,
+                &cancellation_token,
+                thread_pool,
+            );
 
             for fm in file_batch {
                 if cancellation_token.is_cancelled() {
                     break 'outer;
                 }
 
-                if fm.size >= LARGE_FILE_STREAM_THRESHOLD_BYTES {
-                    if !flush_small_files(
-                        &small_files,
-                        log_files,
-                        searcher,
-                        thread_pool,
-                        &plan,
-                        compiled_filter,
-                        results,
-                        events,
-                        search_id,
-                        &mut batch,
-                        max_results,
-                        &mut was_truncated,
-                        &cancellation_token,
-                    )? {
+                if is_large_file(fm.size) {
+                    if !small_strategy.process(&small_files, &mut batch, &mut was_truncated)? {
                         break 'outer;
                     }
                     small_files.clear();
 
-                    if !search_large_file_in_chunks(
+                    let large_strategy = StreamingLargeFileStrategy::new(
                         log_files,
-                        searcher,
-                        fm,
-                        &plan,
-                        compiled_filter,
                         results,
                         events,
+                        searcher,
+                        &plan,
+                        compiled_filter,
                         search_id,
-                        &mut batch,
                         max_results,
-                        &mut was_truncated,
                         &cancellation_token,
-                    )? {
+                    );
+                    if !large_strategy.process(fm, &mut batch, &mut was_truncated)? {
                         break 'outer;
                     }
                 } else {
@@ -309,29 +304,14 @@ impl SearchUseCase {
                 }
             }
 
-            if !flush_small_files(
-                &small_files,
-                log_files,
-                searcher,
-                thread_pool,
-                &plan,
-                compiled_filter,
-                results,
-                events,
-                search_id,
-                &mut batch,
-                max_results,
-                &mut was_truncated,
-                &cancellation_token,
-            )? {
+            if !small_strategy.process(&small_files, &mut batch, &mut was_truncated)? {
                 break 'outer;
             }
         }
 
         // Final flush
         if !batch.is_empty() {
-            results.append_entries(search_id, &batch.take())?;
-            emit_progress(events, search_id, batch.total());
+            flush_search_batch(results, events, search_id, &mut batch)?;
         }
 
         Ok(SearchOutcome {
@@ -340,224 +320,6 @@ impl SearchUseCase {
             was_truncated,
         })
     }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn flush_small_files(
-    files: &[&FileMetadata],
-    log_files: &Arc<dyn LogFileRepository>,
-    searcher: &Arc<dyn LogSearcher>,
-    thread_pool: &Arc<rayon::ThreadPool>,
-    plan: &ExecutionPlan,
-    compiled_filter: &dyn CompiledSearchFilter,
-    results: &Arc<dyn SearchResultRepository>,
-    events: &Arc<dyn EventPublisher>,
-    search_id: &str,
-    batch: &mut SearchBatch,
-    max_results: usize,
-    was_truncated: &mut bool,
-    cancellation_token: &tokio_util::sync::CancellationToken,
-) -> Result<bool> {
-    if files.is_empty() {
-        return Ok(true);
-    }
-
-    let chunk_results: Vec<Vec<LogEntry>> = thread_pool.install(|| {
-        files
-            .par_iter()
-            .map(|fm| {
-                if cancellation_token.is_cancelled() {
-                    return Vec::new();
-                }
-                search_one_file(log_files, searcher, fm, plan, compiled_filter)
-            })
-            .collect()
-    });
-
-    for file_results in chunk_results {
-        if !consume_search_entries(
-            file_results,
-            results,
-            events,
-            search_id,
-            batch,
-            max_results,
-            was_truncated,
-        )? {
-            return Ok(false);
-        }
-    }
-
-    Ok(true)
-}
-
-#[allow(clippy::too_many_arguments)]
-fn search_large_file_in_chunks(
-    log_files: &Arc<dyn LogFileRepository>,
-    searcher: &Arc<dyn LogSearcher>,
-    fm: &FileMetadata,
-    plan: &ExecutionPlan,
-    compiled_filter: &dyn CompiledSearchFilter,
-    results: &Arc<dyn SearchResultRepository>,
-    events: &Arc<dyn EventPublisher>,
-    search_id: &str,
-    batch: &mut SearchBatch,
-    max_results: usize,
-    was_truncated: &mut bool,
-    cancellation_token: &tokio_util::sync::CancellationToken,
-) -> Result<bool> {
-    let hash = &fm.sha256_hash;
-    let real_path = format!("cas://{hash}");
-    let mut keep_searching = true;
-    let mut visitor = |chunk_lines: Vec<String>, chunk_start_line: usize| {
-        if cancellation_token.is_cancelled() {
-            keep_searching = false;
-            return Ok(false);
-        }
-
-        keep_searching = search_line_chunk(
-            searcher,
-            &fm.virtual_path,
-            &real_path,
-            plan,
-            compiled_filter,
-            &chunk_lines,
-            chunk_start_line,
-            results,
-            events,
-            search_id,
-            batch,
-            max_results,
-            was_truncated,
-        )?;
-        Ok(keep_searching)
-    };
-
-    match log_files.read_line_chunks_sync(hash, SEARCH_LINE_CHUNK_SIZE, &mut visitor) {
-        Ok(()) => Ok(keep_searching),
-        Err(e) => {
-            tracing::warn!(
-                hash = %hash,
-                error = %e,
-                "Failed to read line chunks for large file, skipping"
-            );
-            Ok(true)
-        }
-    }
-}
-
-fn search_one_file(
-    log_files: &Arc<dyn LogFileRepository>,
-    searcher: &Arc<dyn LogSearcher>,
-    fm: &FileMetadata,
-    plan: &ExecutionPlan,
-    compiled_filter: &dyn CompiledSearchFilter,
-) -> Vec<LogEntry> {
-    let hash = &fm.sha256_hash;
-    let content = match log_files.read_content_sync(hash) {
-        Ok(bytes) => bytes,
-        Err(e) => {
-            tracing::warn!(
-                hash = %hash,
-                virtual_path = %fm.virtual_path,
-                error = %e,
-                "Failed to read file content from CAS, skipping"
-            );
-            return Vec::new();
-        }
-    };
-
-    let (text, _) = decode_log_content(&content);
-    let mut entries = searcher.match_content(&text, &fm.virtual_path, plan, compiled_filter, 0);
-    for entry in &mut entries {
-        entry.real_path = format!("cas://{hash}").into();
-    }
-    entries
-}
-
-#[allow(clippy::too_many_arguments)]
-fn search_line_chunk(
-    searcher: &Arc<dyn LogSearcher>,
-    virtual_path: &str,
-    real_path: &str,
-    plan: &ExecutionPlan,
-    compiled_filter: &dyn CompiledSearchFilter,
-    lines: &[String],
-    start_line: usize,
-    results: &Arc<dyn SearchResultRepository>,
-    events: &Arc<dyn EventPublisher>,
-    search_id: &str,
-    batch: &mut SearchBatch,
-    max_results: usize,
-    was_truncated: &mut bool,
-) -> Result<bool> {
-    let text = lines.join("\n");
-    let mut entries =
-        searcher.match_content(&text, virtual_path, plan, compiled_filter, batch.total());
-    let line_offset = start_line.saturating_sub(1);
-    for entry in &mut entries {
-        entry.line += line_offset;
-        entry.real_path = real_path.to_string().into();
-    }
-    consume_search_entries(
-        entries,
-        results,
-        events,
-        search_id,
-        batch,
-        max_results,
-        was_truncated,
-    )
-}
-
-fn consume_search_entries(
-    mut entries: Vec<LogEntry>,
-    results: &Arc<dyn SearchResultRepository>,
-    events: &Arc<dyn EventPublisher>,
-    search_id: &str,
-    batch: &mut SearchBatch,
-    max_results: usize,
-    was_truncated: &mut bool,
-) -> Result<bool> {
-    let next_id = batch.total();
-    for (offset, entry) in entries.iter_mut().enumerate() {
-        entry.id = next_id + offset;
-    }
-
-    match batch.accumulate(entries, max_results) {
-        BatchAction::Continue => Ok(true),
-        BatchAction::Flush => {
-            flush_search_batch(results, events, search_id, batch)?;
-            Ok(true)
-        }
-        BatchAction::Truncate(_) => {
-            if !batch.is_empty() {
-                flush_search_batch(results, events, search_id, batch)?;
-            }
-            *was_truncated = true;
-            Ok(false)
-        }
-    }
-}
-
-fn flush_search_batch(
-    results: &Arc<dyn SearchResultRepository>,
-    events: &Arc<dyn EventPublisher>,
-    search_id: &str,
-    batch: &mut SearchBatch,
-) -> Result<()> {
-    results.append_entries(search_id, &batch.take())?;
-    emit_progress(events, search_id, batch.total());
-    Ok(())
-}
-
-fn emit_progress(events: &Arc<dyn EventPublisher>, search_id: &str, count: usize) {
-    let Ok(handle) = tokio::runtime::Handle::try_current() else {
-        return;
-    };
-    let events = events.clone();
-    let sid = search_id.to_string();
-    handle.spawn(async move { events.emit_search_progress(&sid, count).await });
 }
 
 #[cfg(test)]

@@ -41,16 +41,18 @@ sequenceDiagram
 
 ## 批处理与过滤
 
-`SearchBatch` 分批处理文件与结果，避免无限累积。关键常量（`application/search.rs`）：
+`SearchUseCase::run_blocking`（`application/search.rs`）是搜索编排器：按文件顺序分段，派发小文件或大文件策略，并持有一个由两种策略共享的 `SearchBatch`（`application/search_batch.rs`）。`ParallelSmallFileStrategy` 和 `StreamingLargeFileStrategy` 均为 `application/search_strategy.rs` 中的具体实现；前者使用 Rayon 并行处理小文件并按输入顺序消费结果，后者对大于等于 64 KiB 的文件按 512 行流式读取。策略实现细节留在该模块，`SearchUseCase` 对外接口保持不变。
 
-| 常量 | 值 | 作用 |
-| --- | --- | --- |
-| `BATCH_SIZE` | 256 | 单批聚合的命中结果数，写盘前缓冲 |
-| `FILE_CHUNK_SIZE` | 10 | 每轮并行处理的小文件数 |
-| `LARGE_FILE_STREAM_THRESHOLD_BYTES` | 64 KiB | 超过该大小的文件走流式分块路径 |
-| `SEARCH_LINE_CHUNK_SIZE` | 512 | 大文件每次读取的行数（`read_line_chunks_sync`） |
+`SearchBatch` 分批处理文件与结果，避免无限累积。关键常量按编排器和策略模块分别归属：
 
-大文件（≥ 64 KiB）由 `search_large_file_in_chunks` 按 512 行一块流式处理，小文件则聚批后在线程池并行匹配。`CompiledSearchFilters` 把时间范围、日志级别掩码和文件路径规则编译为统一 domain `Filter`，在结果写盘前执行。
+| 常量 | 值 | 作用 | 定义位置 |
+| --- | --- | --- | --- |
+| `BATCH_SIZE` | 256 | 单批聚合的命中结果数，写盘前缓冲 | `application/search.rs` |
+| `FILE_CHUNK_SIZE` | 10 | 每轮并行处理的小文件数 | `application/search.rs` |
+| `LARGE_FILE_STREAM_THRESHOLD_BYTES` | 64 KiB | 大于等于该大小的文件走流式分块路径 | `application/search_strategy.rs` |
+| `SEARCH_LINE_CHUNK_SIZE` | 512 | 大文件每次读取的行数（`read_line_chunks_sync`） | `application/search_strategy.rs` |
+
+大文件（≥ 64 KiB）由 `StreamingLargeFileStrategy` 按 512 行一块流式处理，小文件则由 `ParallelSmallFileStrategy` 使用 Rayon 并行匹配，但按输入文件顺序消费结果。两条路径通过同一个编排器持有的 `SearchBatch` 共享批量、全局截断与结果写盘逻辑。`CompiledSearchFilters` 把时间范围、日志级别掩码和文件路径规则编译为统一 domain `Filter`，在结果写盘前执行。
 
 ## 会话所有权
 
