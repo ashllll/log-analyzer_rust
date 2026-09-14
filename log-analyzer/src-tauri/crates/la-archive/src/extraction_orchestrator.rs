@@ -149,6 +149,7 @@ impl ExtractionOrchestrator {
         archive_path: &Path,
         target_dir: &Path,
         workspace_id: &str,
+        initial_depth: usize,
     ) -> Result<ExtractionResult> {
         let archive_path_buf = archive_path.to_path_buf();
 
@@ -198,7 +199,7 @@ impl ExtractionOrchestrator {
 
         // Perform the extraction with concurrency control
         let result = self
-            .extract_with_concurrency_control(archive_path, target_dir, workspace_id)
+            .extract_with_concurrency_control(archive_path, target_dir, workspace_id, initial_depth)
             .await;
 
         in_flight_guard.finish_with(Arc::new(match &result {
@@ -231,6 +232,7 @@ impl ExtractionOrchestrator {
         archive_path: &Path,
         target_dir: &Path,
         workspace_id: &str,
+        initial_depth: usize,
     ) -> Result<ExtractionResult> {
         // Acquire semaphore permit
         let _permit =
@@ -251,7 +253,7 @@ impl ExtractionOrchestrator {
 
         // Perform the actual extraction
         let result = tokio::select! {
-            extraction_result = self.engine.extract_archive(archive_path, target_dir, workspace_id) => {
+            extraction_result = self.engine.extract_archive(archive_path, target_dir, workspace_id, initial_depth) => {
                 extraction_result
             }
             _ = self.cancellation_token.cancelled() => {
@@ -417,6 +419,7 @@ mod tests {
                     &archive_path_for_waiter,
                     &target_dir_for_waiter,
                     "workspace-1",
+                    0,
                 )
                 .await
         });

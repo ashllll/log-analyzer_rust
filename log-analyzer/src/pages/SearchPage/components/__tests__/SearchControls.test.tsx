@@ -45,6 +45,7 @@ describe("SearchControls", () => {
     onFilterPaletteClose: jest.fn(),
     isSearching: false,
     disabled: false,
+    exportDisabled: false,
     searchInputRef: {
       current: null,
     } as React.RefObject<HTMLInputElement | null>,
@@ -194,8 +195,8 @@ describe("SearchControls", () => {
     expect(onSearch).toHaveBeenCalledTimes(1);
   });
 
-  it("should disable the export control when disabled=true", () => {
-    render(<SearchControls {...defaultProps} disabled={true} />);
+  it("should disable the export control when exportDisabled=true", () => {
+    render(<SearchControls {...defaultProps} exportDisabled={true} />);
 
     expect(
       screen.getByRole("combobox", { name: /export format/i })

@@ -10,9 +10,9 @@
  * - 缓存策略优化
  */
 
-import { useInfiniteQuery, InfiniteData } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
-import { LogEntry } from '../types/common';
+import { useInfiniteQuery, InfiniteData } from "@tanstack/react-query";
+import { invoke } from "@tauri-apps/api/core";
+import { LogEntry } from "../types/common";
 
 /**
  * 后端 SearchPageResult 结构（对应 Rust search_engine::disk_result_store::SearchPageResult）
@@ -63,16 +63,19 @@ export interface UseInfiniteSearchOptions {
   maxPages?: number;
 }
 
-
 // 查询键工厂
+//
+// P2#10 修复：key 中不再包含 `query`。查询文本变化（打字过程）不应改变
+// 缓存键——旧的 searchId 结果在防抖触发新搜索前仍可正常展示；searchId
+// 本身已唯一标识一次搜索会话。
 const searchQueryKeys = {
-  infinite: (searchId: string, query: string, workspaceId: string | null) =>
-    ['search', 'infinite', searchId, query, workspaceId] as const,
+  infinite: (searchId: string, workspaceId: string | null) =>
+    ["search", "infinite", searchId, workspaceId] as const,
 };
 
 /**
  * 流式无限搜索 Hook
- * 
+ *
  * @example
  * ```typescript
  * const {
@@ -86,7 +89,7 @@ const searchQueryKeys = {
  *   workspaceId: activeWorkspace?.id ?? null,
  *   enabled: isSearching,
  * });
- * 
+ *
  * // 滚动到底部触发加载
  * useEffect(() => {
  *   if (isNearBottom && hasNextPage && !isFetchingNextPage) {
@@ -111,7 +114,7 @@ export function useInfiniteSearch({
     ReturnType<typeof searchQueryKeys.infinite>,
     number
   >({
-    queryKey: searchQueryKeys.infinite(searchId, query, workspaceId),
+    queryKey: searchQueryKeys.infinite(searchId, workspaceId),
 
     queryFn: async ({ pageParam = 0 }): Promise<SearchPage> => {
       // 验证前置条件
@@ -125,11 +128,14 @@ export function useInfiniteSearch({
       }
 
       // 调用后端 fetch_search_page 命令，返回包含完整元数据的 SearchPageResult
-      const backendResult = await invoke<BackendSearchPageResult>('fetch_search_page', {
-        searchId,
-        offset: pageParam,
-        limit: pageSize,
-      });
+      const backendResult = await invoke<BackendSearchPageResult>(
+        "fetch_search_page",
+        {
+          searchId,
+          offset: pageParam,
+          limit: pageSize,
+        }
+      );
 
       return {
         results: backendResult.entries,
@@ -168,8 +174,10 @@ export function useInfiniteSearch({
     // 错误重试策略
     retry: (failureCount, error) => {
       // 如果是会话不存在错误，不重试
-      if (error instanceof Error &&
-          error.message.includes('not found or expired')) {
+      if (
+        error instanceof Error &&
+        error.message.includes("not found or expired")
+      ) {
         return false;
       }
       return failureCount < 3;

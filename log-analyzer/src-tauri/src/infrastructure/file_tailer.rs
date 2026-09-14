@@ -17,6 +17,8 @@ pub struct TailResult {
     pub lines: Vec<String>,
     /// New file offset (file size after reading).
     pub new_offset: u64,
+    /// The file shrank below the committed offset, including truncation to zero.
+    pub truncated: bool,
     previous_offset: Option<u64>,
     previous_line_count: Option<usize>,
 }
@@ -46,20 +48,23 @@ impl FileTailer {
     /// Read new content from a file starting at its tracked offset.
     ///
     /// Updates the internal offset. Returns the new lines and the new offset.
+    /// 只有以换行结尾的完整行会被消费；末尾的半行留到下一次事件补全，
+    /// 避免一条日志被拆成两行、行号漂移。
     pub fn tail(&mut self, path: &Path) -> Result<TailResult> {
         let previous_offset = self.offsets.get(path).copied();
         let previous_line_count = self.line_counts.get(path).copied();
         let offset = previous_offset.unwrap_or(0);
-        let (lines, file_size, start_offset) = read_file_from_offset(path, offset)?;
+        let (lines, consumed_offset, start_offset) = read_file_from_offset(path, offset)?;
 
         if start_offset < offset {
             self.line_counts.insert(path.to_path_buf(), 0);
         }
-        self.offsets.insert(path.to_path_buf(), file_size);
+        self.offsets.insert(path.to_path_buf(), consumed_offset);
 
         Ok(TailResult {
             lines,
-            new_offset: file_size,
+            new_offset: consumed_offset,
+            truncated: start_offset < offset,
             previous_offset,
             previous_line_count,
         })
@@ -102,10 +107,19 @@ impl FileTailer {
 
     /// Compute the virtual path relative to the watched root.
     pub fn virtual_path(&self, path: &Path) -> String {
-        path.strip_prefix(&self.watched_path)
-            .unwrap_or(path)
-            .to_string_lossy()
-            .to_string()
+        // Import uses the selected root basename followed by the relative path.
+        // For a watched file the relative suffix is empty, so keep its basename.
+        let root_name = self.watched_path.file_name().unwrap_or_default();
+        match path.strip_prefix(&self.watched_path) {
+            Ok(relative) if relative.as_os_str().is_empty() => {
+                root_name.to_string_lossy().into_owned()
+            }
+            Ok(relative) => Path::new(root_name)
+                .join(relative)
+                .to_string_lossy()
+                .into_owned(),
+            Err(_) => path.to_string_lossy().into_owned(),
+        }
     }
 }
 
@@ -129,19 +143,30 @@ fn read_file_from_offset(path: &Path, offset: u64) -> Result<(Vec<String>, u64, 
     file.seek(SeekFrom::Start(start_offset))
         .map_err(AppError::Io)?;
 
-    let reader = BufReader::with_capacity(65536, file);
+    let mut reader = BufReader::with_capacity(65536, file);
     let mut lines = Vec::new();
-    for line_result in reader.lines() {
-        match line_result {
-            Ok(line) => lines.push(line),
-            Err(e) => {
-                tracing::warn!(error = %e, "Error reading line, continuing");
-                continue;
-            }
+    let mut current = Vec::new();
+    let mut consumed_offset = start_offset;
+    loop {
+        current.clear();
+        let n = reader
+            .read_until(b'\n', &mut current)
+            .map_err(AppError::Io)?;
+        if n == 0 {
+            break; // EOF
         }
+        if current.last() != Some(&b'\n') {
+            // 半行（无换行结尾）：不消费，留到下一次事件补全。
+            break;
+        }
+        while matches!(current.last(), Some(b'\n' | b'\r')) {
+            current.pop();
+        }
+        lines.push(String::from_utf8_lossy(&current).into_owned());
+        consumed_offset += n as u64;
     }
 
-    Ok((lines, file_size, start_offset))
+    Ok((lines, consumed_offset, start_offset))
 }
 
 // ── Tests ──
@@ -192,6 +217,35 @@ mod tests {
 
         let second = tailer.tail(&path).unwrap();
         assert_eq!(second.lines, vec!["line3", "line4"]);
+    }
+
+    // ── P2 回归：末尾半行留待补全，不拆行 ──
+
+    #[test]
+    fn tail_holds_back_a_partial_final_line_until_it_is_completed() {
+        let dir = tempfile::tempdir().unwrap();
+        let watched = dir.path();
+        let file_path = dir.path().join("app.log");
+        std::fs::write(&file_path, b"line1\npartial").unwrap();
+
+        let mut tailer = FileTailer::new(watched.to_path_buf());
+        let first = tailer.tail(&file_path).unwrap();
+
+        // 完整行被消费；半行保留。
+        assert_eq!(first.lines, vec!["line1".to_string()]);
+        assert_eq!(first.new_offset, "line1\n".len() as u64);
+
+        // 写者补全同一逻辑行。
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(&file_path)
+            .unwrap()
+            .write_all(b" rest\n")
+            .unwrap();
+        let second = tailer.tail(&file_path).unwrap();
+
+        // 半行 + 追加内容合并为一条完整日志，不拆成两行。
+        assert_eq!(second.lines, vec!["partial rest".to_string()]);
     }
 
     #[test]
@@ -269,7 +323,7 @@ mod tests {
     }
 
     #[test]
-    fn virtual_path_strips_watched_prefix() {
+    fn virtual_path_matches_import_root_namespace() {
         let dir = tempfile::tempdir().unwrap();
         let sub = dir.path().join("sub");
         std::fs::create_dir(&sub).unwrap();
@@ -277,12 +331,31 @@ mod tests {
 
         let tailer = FileTailer::new(dir.path().to_path_buf());
         let vp = tailer.virtual_path(&path);
-        // Path separator varies by OS — just verify it starts with "sub"
-        assert!(vp.starts_with("sub"), "Expected 'sub/...', got '{vp}'");
+        let expected = Path::new(dir.path().file_name().unwrap()).join("sub/test.log");
+        assert_eq!(vp, expected.to_string_lossy());
         assert!(
             vp.ends_with("test.log"),
             "Expected '.../test.log', got '{vp}'"
         );
+    }
+
+    #[test]
+    fn single_file_identity_is_its_basename() {
+        let path = PathBuf::from("/logs/app.log");
+        assert_eq!(FileTailer::new(path.clone()).virtual_path(&path), "app.log");
+    }
+
+    #[test]
+    fn truncation_to_empty_is_reported_even_without_new_lines() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_temp_file(dir.path(), "app.log", "old ERROR\n");
+        let mut tailer = FileTailer::new(dir.path().to_path_buf());
+        tailer.tail(&path).unwrap();
+        std::fs::write(&path, "").unwrap();
+        let result = tailer.tail(&path).unwrap();
+        assert!(result.truncated);
+        assert!(result.lines.is_empty());
+        assert!(!tailer.tail(&path).unwrap().truncated);
     }
 
     #[test]

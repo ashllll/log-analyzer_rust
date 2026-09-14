@@ -4,6 +4,7 @@
 //! truncate, or continue becomes testable pure logic without async or I/O.
 
 use la_core::models::LogEntry;
+use std::collections::HashMap;
 
 /// Action returned by `SearchBatch::accumulate` after ingesting a chunk.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,6 +25,8 @@ pub struct SearchBatch {
     buffer: Vec<LogEntry>,
     total: usize,
     batch_size: usize,
+    /// 关键词命中行数统计（keyword → 命中条数），用于搜索完成事件。
+    keyword_counts: HashMap<String, usize>,
 }
 
 impl SearchBatch {
@@ -32,6 +35,7 @@ impl SearchBatch {
             buffer: Vec::new(),
             total: 0,
             batch_size,
+            keyword_counts: HashMap::new(),
         }
     }
 
@@ -48,7 +52,14 @@ impl SearchBatch {
     ///   caller should `take()` and flush, then stop
     pub fn accumulate(&mut self, entries: Vec<LogEntry>, max_results: usize) -> BatchAction {
         let remaining = max_results.saturating_sub(self.total);
-
+        // Statistics describe the retained result set, not discarded matches.
+        for entry in entries.iter().take(remaining) {
+            if let Some(keywords) = &entry.matched_keywords {
+                for keyword in keywords {
+                    *self.keyword_counts.entry(keyword.clone()).or_insert(0) += 1;
+                }
+            }
+        }
         if remaining == 0 {
             // Already at max — nothing more to take.
             // If buffer has data, signal a final flush; otherwise truncate(0).
@@ -97,6 +108,11 @@ impl SearchBatch {
     pub fn is_empty(&self) -> bool {
         self.buffer.is_empty()
     }
+
+    /// 关键词命中统计（keyword → 命中条目数）。
+    pub fn keyword_counts(&self) -> &HashMap<String, usize> {
+        &self.keyword_counts
+    }
 }
 
 #[cfg(test)]
@@ -104,6 +120,51 @@ mod tests {
     use super::*;
     use la_core::models::LogEntry;
     use std::sync::Arc;
+
+    #[test]
+    fn keyword_counts_exclude_truncated_and_zero_limit_entries() {
+        let entries = || {
+            (0..10)
+                .map(|id| {
+                    let mut entry = make_entry(id);
+                    entry.matched_keywords = Some(vec!["error".into()]);
+                    entry
+                })
+                .collect()
+        };
+        let mut batch = SearchBatch::new(256);
+        batch.accumulate(entries(), 1);
+        assert_eq!(batch.total(), 1);
+        assert_eq!(batch.keyword_counts().get("error"), Some(&1));
+        batch.take();
+        batch.accumulate(entries(), 1);
+        assert_eq!(batch.keyword_counts().get("error"), Some(&1));
+        let mut empty = SearchBatch::new(256);
+        empty.accumulate(entries(), 0);
+        assert!(empty.keyword_counts().is_empty());
+    }
+
+    #[test]
+    fn keyword_counts_accumulate_across_flushes() {
+        let mut batch = SearchBatch::new(2);
+
+        let mut e1 = make_entry(0);
+        e1.matched_keywords = Some(vec!["error".to_string(), "timeout".to_string()]);
+        let mut e2 = make_entry(1);
+        e2.matched_keywords = Some(vec!["error".to_string()]);
+        let mut e3 = make_entry(2);
+        e3.matched_keywords = Some(vec!["retry".to_string()]);
+
+        batch.accumulate(vec![e1], 100);
+        batch.take(); // flush
+        batch.accumulate(vec![e2, e3], 100);
+
+        let counts = batch.keyword_counts();
+        assert_eq!(counts.get("error"), Some(&2));
+        assert_eq!(counts.get("timeout"), Some(&1));
+        assert_eq!(counts.get("retry"), Some(&1));
+        assert_eq!(batch.keyword_counts().len(), 3);
+    }
 
     fn make_entry(id: usize) -> LogEntry {
         LogEntry {

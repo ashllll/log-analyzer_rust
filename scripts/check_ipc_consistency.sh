@@ -18,4 +18,5 @@ if ! command -v node >/dev/null 2>&1; then
 fi
 
 # 运行 Node.js 检查脚本
+node --test "${SCRIPT_DIR}/check_ipc_consistency.test.cjs"
 node "${SCRIPT_DIR}/check_ipc_consistency.cjs"

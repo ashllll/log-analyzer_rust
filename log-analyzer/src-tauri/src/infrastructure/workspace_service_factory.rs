@@ -74,13 +74,36 @@ pub(crate) async fn get_or_create_workspace_service(
     workspace_id: &str,
     workspace_dir: &Path,
 ) -> Result<WorkspaceServiceRef, String> {
-    // 优先返回已存在的服务
+    let lifecycle = state.workspace_lifecycle(workspace_id);
+    if lifecycle.is_deleting() {
+        return Err("Workspace is being deleted".into());
+    }
+    // Reusing a live instance does not create files. Its CAS lease protects
+    // callers even if deletion begins immediately after this return.
+    // Keep searches available while an import holds the creation gate.
     if let Some(service) = state.get_workspace_service(workspace_id) {
+        if service.cas().is_closing() {
+            return Err("Workspace is closing".into());
+        }
         return Ok(service);
     }
+    let permit = lifecycle.enter().await?;
+    // Recheck under the deletion gate; an earlier path check is not a lease.
+    if !workspace_dir.join("metadata.db").exists() || !workspace_dir.join("objects").is_dir() {
+        return Err("Workspace no longer exists or is not in CAS format".into());
+    }
+    get_or_create_workspace_service_locked(app, state, workspace_id, workspace_dir, &permit).await
+}
 
-    let creation_lock = state.workspace_service_creation_lock(workspace_id);
-    let _creation_permit = creation_lock.lock().await;
+/// Caller holds the workspace lifecycle gate through initialization/teardown.
+/// Imports may create a new directory; ordinary loads must check its existence.
+pub(crate) async fn get_or_create_workspace_service_locked(
+    app: &AppHandle,
+    state: &AppState,
+    workspace_id: &str,
+    workspace_dir: &Path,
+    _permit: &tokio::sync::OwnedMutexGuard<()>,
+) -> Result<WorkspaceServiceRef, String> {
     if let Some(service) = state.get_workspace_service(workspace_id) {
         return Ok(service);
     }

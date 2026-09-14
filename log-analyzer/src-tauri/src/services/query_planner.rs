@@ -339,7 +339,7 @@ impl QueryPlanner {
 
         if enabled_terms
             .iter()
-            .any(|term| term.is_regex || term.value.is_empty())
+            .any(|term| term.is_regex || term.value.is_empty() || term.value.contains('|'))
         {
             return Ok(None);
         }
@@ -390,8 +390,18 @@ impl QueryPlanner {
             let raw_pattern = &term.value;
 
             if raw_pattern.contains('|') {
-                // 多模式：保留原始模式，由 AhoCorasick ascii_case_insensitive 处理
-                (raw_pattern.clone(), !term.case_sensitive)
+                // Terms are already parsed. A pipe inside a literal term is
+                // data, not another OR separator. Use escaped regex syntax;
+                // carry case folding inline for the standard-engine fallback.
+                let escaped = regex::escape(raw_pattern);
+                (
+                    if term.case_sensitive {
+                        escaped
+                    } else {
+                        format!("(?i:{escaped})")
+                    },
+                    false,
+                )
             } else {
                 let escaped = regex::escape(raw_pattern);
                 if term.case_sensitive {
@@ -735,6 +745,45 @@ pub struct CompiledEngine {
 mod tests {
     use super::*;
     use la_core::models::search::{QueryMetadata, TermSource};
+
+    #[test]
+    fn literal_pipes_survive_single_terms_and_fast_or_planning() {
+        let mut planner = QueryPlanner::new(100);
+        for sensitive in [false, true] {
+            for value in ["foo|bar", "foo|", "|bar", "|"] {
+                for additional in [false, true] {
+                    let mut term = create_test_term(value, QueryOperator::Or);
+                    term.case_sensitive = sensitive;
+                    let mut terms = vec![term];
+                    if additional {
+                        let mut other = create_test_term("retry", QueryOperator::Or);
+                        other.id = "other".into();
+                        other.case_sensitive = sensitive;
+                        terms.push(other);
+                    }
+                    let query = SearchQuery {
+                        id: format!("{value}-{sensitive}-{additional}"),
+                        terms,
+                        global_operator: QueryOperator::Or,
+                        filters: None,
+                        metadata: QueryMetadata {
+                            created_at: 0,
+                            last_modified: 0,
+                            execution_count: 0,
+                            label: None,
+                        },
+                    };
+                    let plan = planner.build_plan(&query).unwrap();
+                    assert!(plan.match_line(value).is_some());
+                    assert!(plan.match_line("foo bar unrelated").is_none(), "{query:?}");
+                    assert_eq!(plan.match_line("retry").is_some(), additional);
+                    if value != "|" {
+                        assert_eq!(plan.match_line(&value.to_uppercase()).is_some(), !sensitive);
+                    }
+                }
+            }
+        }
+    }
 
     fn create_test_term(value: &str, operator: QueryOperator) -> SearchTerm {
         SearchTerm {

@@ -94,13 +94,26 @@ function readFile(filePath) {
  */
 function extractBackendCommands(content) {
   const commands = [];
-  // 匹配 #[command] 或 #[tauri::command] 及其变体后的函数定义
-  const regex = /#\[\s*(?:tauri::)?command\s*\]\s*(?:#\[\s*\w+\s*\([^)]*\)\]\s*)*\s*(?:pub\s+)?(?:async\s+)?fn\s+(\w+)\s*\(([^)]*)\)/gs;
+  // 先定位函数参数的左括号，再用深度计数找到右括号。参数属性和泛型
+  // 都可能包含括号或逗号，不能用简单的 `[^)]*` 截取。
+  const regex = /#\[\s*(?:tauri::)?command\s*\](?:\s*#\[[^\]]+\])*\s*(?:pub\s+)?(?:async\s+)?fn\s+(\w+)\s*\(/gs;
   let match;
 
   while ((match = regex.exec(content)) !== null) {
     const fnName = match[1];
-    const paramsStr = match[2];
+    const paramsStart = regex.lastIndex;
+    let depth = 1;
+    let cursor = paramsStart;
+    while (cursor < content.length && depth > 0) {
+      if (content[cursor] === '(') depth += 1;
+      if (content[cursor] === ')') depth -= 1;
+      cursor += 1;
+    }
+    if (depth !== 0) continue;
+    const paramsStr = content
+      .slice(paramsStart, cursor - 1)
+      .replace(/#\[[^\]]+\]/g, '');
+    regex.lastIndex = cursor;
 
     // 解析参数名（忽略类型）
     const paramNames = [];
@@ -128,14 +141,14 @@ function extractBackendCommands(content) {
 // ============================================================================
 
 /**
- * 从 TypeScript 源文件中提取 invoke() 调用
+ * 从 TypeScript 源文件中提取 invoke() 及统一 API 包装器调用。
+ * 命令名仍必须是字符串字面量，避免动态命令绕过静态契约检查。
  */
 function extractFrontendInvokes(content) {
   const invokes = [];
 
-  // 匹配 invoke('commandName', ...) 或 invoke("commandName", ...)
-  // 支持: invoke('cmd'), invoke('cmd', { ... }), invoke('cmd', params), invoke('cmd', args as InvokeArgs)
-  const regex = /invoke\s*\(\s*['"]([^'"]+)['"]\s*(?:,\s*([^)]*\)))?/g;
+  // 支持直接调用和 LogAnalyzerApi.invokeWithErrorHandling/Timeout 包装器。
+  const regex = /(?:invoke|invokeWithErrorHandling|invokeWithTimeout)\s*(?:<[^>]+>)?\s*\(\s*['"]([^'"]+)['"]\s*(?:,\s*([^)]*\)))?/g;
   let match;
 
   while ((match = regex.exec(content)) !== null) {
@@ -151,10 +164,11 @@ function extractFrontendInvokes(content) {
       // 匹配对象字面量中的 key: value 或 key 简写
       // 注意：需要排除类型断言中的内容
       const cleanObjContent = objContent.replace(/as\s+\w+(<[^}]*>)?/g, '');
-      const argRegex = /([a-zA-Z_]\w*)\s*:/g;
-      let argMatch;
-      while ((argMatch = argRegex.exec(cleanObjContent)) !== null) {
-        argNames.push(argMatch[1]);
+      for (const property of cleanObjContent.split(',')) {
+        const argMatch = property.trim().match(/^([a-zA-Z_]\w*)\s*(?::|$)/);
+        if (argMatch) {
+          argNames.push(argMatch[1]);
+        }
       }
     }
 
@@ -340,4 +354,8 @@ function main() {
   }
 }
 
-main();
+if (require.main === module) {
+  main();
+}
+
+module.exports = { extractBackendCommands, extractFrontendInvokes };

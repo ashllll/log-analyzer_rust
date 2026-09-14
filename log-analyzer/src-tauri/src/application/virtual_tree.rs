@@ -67,7 +67,14 @@ pub async fn build_tree_structure(
 
     // Add root archives with their children
     for archive in root_archives {
-        let node = build_archive_node_indexed(archive, &archive_children, &file_children).await?;
+        let node = build_archive_node_indexed(
+            archive,
+            &archive_children,
+            &file_children,
+            std::collections::HashSet::new(),
+            0,
+        )
+        .await?;
         tree.push(node);
     }
 
@@ -85,22 +92,49 @@ pub async fn build_tree_structure(
     Ok(tree)
 }
 
+/// 归档树最大递归深度防御上限（metadata 层上限远小于此，防止数据
+/// 损坏导致的自引用/成环无限递归）。
+const MAX_ARCHIVE_TREE_DEPTH: usize = 128;
+
 /// Build archive node with pre-built HashMap indexes, O(n) total instead of O(n²)
+///
+/// P2#9 修复：携带 visited 集合与深度计数，parent_archive_id 自引用或
+/// 成环时跳过而非无限递归；超深树返回错误而非栈溢出。
 fn build_archive_node_indexed<'a>(
     archive: &'a la_storage::ArchiveMetadata,
     archive_children: &'a std::collections::HashMap<i64, Vec<&'a la_storage::ArchiveMetadata>>,
     file_children: &'a std::collections::HashMap<i64, Vec<&'a la_storage::FileMetadata>>,
+    mut visited: std::collections::HashSet<i64>,
+    depth: usize,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<VirtualTreeNode, String>> + Send + 'a>>
 {
     Box::pin(async move {
+        if depth > MAX_ARCHIVE_TREE_DEPTH {
+            return Err(format!(
+                "Archive tree nesting exceeds {MAX_ARCHIVE_TREE_DEPTH} levels"
+            ));
+        }
+        visited.insert(archive.id);
         let mut children = Vec::new();
 
         // O(1) HashMap lookup instead of O(n) linear scan
         if let Some(child_archives) = archive_children.get(&archive.id) {
             for child_archive in child_archives {
-                let child_node =
-                    build_archive_node_indexed(child_archive, archive_children, file_children)
-                        .await?;
+                if visited.contains(&child_archive.id) {
+                    tracing::warn!(
+                        archive_id = child_archive.id,
+                        "Cycle detected in archive tree, skipping child"
+                    );
+                    continue;
+                }
+                let child_node = build_archive_node_indexed(
+                    child_archive,
+                    archive_children,
+                    file_children,
+                    visited.clone(),
+                    depth + 1,
+                )
+                .await?;
                 children.push(child_node);
             }
         }
@@ -161,5 +195,83 @@ mod tests {
             .expect("VirtualTreeNode::Archive should always be serializable");
         assert!(json.contains("\"type\":\"archive\""));
         assert!(json.contains("\"archiveType\":\"zip\""));
+    }
+    fn archive_meta(id: i64, parent: Option<i64>) -> la_storage::ArchiveMetadata {
+        la_storage::ArchiveMetadata {
+            id,
+            sha256_hash: format!("hash-{id}"),
+            virtual_path: format!("a{id}.zip"),
+            original_name: format!("a{id}.zip"),
+            archive_type: "zip".to_string(),
+            parent_archive_id: parent,
+            depth_level: 0,
+            extraction_status: "done".to_string(),
+        }
+    }
+
+    fn file_meta(id: i64, parent: i64) -> la_storage::FileMetadata {
+        la_storage::FileMetadata {
+            id,
+            sha256_hash: format!("fhash-{id}"),
+            virtual_path: format!("a{parent}.zip/f{id}.log"),
+            original_name: format!("f{id}.log"),
+            size: 10,
+            modified_time: 0,
+            mime_type: None,
+            parent_archive_id: Some(parent),
+            depth_level: 1,
+            min_timestamp: None,
+            max_timestamp: None,
+            level_mask: None,
+            analysis_status: la_core::storage_types::AnalysisStatus::Ready,
+        }
+    }
+
+    // P2#9 regression: cycles must not recurse forever
+
+    #[tokio::test]
+    async fn self_referencing_archive_does_not_recurse_forever() {
+        let archives = vec![archive_meta(1, Some(1))];
+        let files: Vec<la_storage::FileMetadata> = vec![];
+
+        let tree = build_tree_structure(&archives, &files, &make_store().await)
+            .await
+            .expect("self-referencing metadata must not hang or panic");
+
+        assert!(tree.is_empty());
+    }
+
+    #[tokio::test]
+    async fn mutually_recursive_archives_are_skipped_instead_of_hanging() {
+        let archives = vec![archive_meta(1, Some(2)), archive_meta(2, Some(1))];
+        let files: Vec<la_storage::FileMetadata> = vec![];
+
+        let tree = build_tree_structure(&archives, &files, &make_store().await)
+            .await
+            .expect("cycle must be detected and skipped");
+
+        assert!(tree.is_empty(), "both archives form a cycle with no root");
+    }
+
+    #[tokio::test]
+    async fn normal_nested_archives_still_build() {
+        let archives = vec![archive_meta(1, None), archive_meta(2, Some(1))];
+        let files = vec![file_meta(1, 2)];
+
+        let tree = build_tree_structure(&archives, &files, &make_store().await)
+            .await
+            .expect("normal tree should build");
+
+        assert_eq!(tree.len(), 1);
+        if let VirtualTreeNode::Archive { children, .. } = &tree[0] {
+            assert_eq!(children.len(), 1);
+        } else {
+            panic!("root must be an archive");
+        }
+    }
+
+    async fn make_store() -> MetadataStore {
+        let dir = tempfile::tempdir().unwrap();
+        MetadataStore::new(dir.path()).await.unwrap()
     }
 }

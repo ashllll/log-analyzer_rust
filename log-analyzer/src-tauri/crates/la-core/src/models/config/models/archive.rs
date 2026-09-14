@@ -696,25 +696,28 @@ fn default_4_usize() -> usize {
 
 impl Default for ArchiveConfig {
     fn default() -> Self {
+        // P2#15 修复：与 serde 默认值对齐（100MB 单文件 / 1GB 单归档 /
+        // 10GB 归档总量 / 50GB 工作区）。修复前的 100GB/500GB 会让
+        // 默认安装下的 zip 炸弹防线形同虚设。
         Self {
-            max_file_size: 100 * 1024 * 1024 * 1024, // 100GB (统一: 支持大文件)
-            max_total_size: 500 * 1024 * 1024 * 1024, // 500GB (统一: 支持大文件)
+            max_file_size: 100 * 1024 * 1024,   // 100MB
+            max_total_size: 1024 * 1024 * 1024, // 1GB
             max_file_count: 1000,
             max_extraction_depth: 10,
-            max_archive_total_size: 500 * 1024 * 1024 * 1024, // 500GB (统一: 支持大文件)
+            max_archive_total_size: 10 * 1024 * 1024 * 1024, // 10GB
             max_compression_ratio: 100.0,
-            max_workspace_size: 500 * 1024 * 1024 * 1024, // 500GB (统一: 支持大文件)
+            max_workspace_size: 50 * 1024 * 1024 * 1024, // 50GB
             exponential_backoff_threshold: 1_000_000.0,
             path_shorten_threshold: 0.8,
             checkpoint_byte_interval: 1024 * 1024 * 1024,
             temp_file_ttl_seconds: 24 * 60 * 60,
             max_resource_release_seconds: 5,
-            streaming_buffer_size: 1024 * 1024, // 1MB (优化: 从 64KB 增大)
+            streaming_buffer_size: 1024 * 1024, // 1MB (性能参数,保持原值)
             directory_batch_size: 10,
             max_parallel_files: 4,
             gz_streaming_threshold: 10 * 1024 * 1024,
             file_copy_timeout_seconds: 300,
-            copy_buffer_size: 1024 * 1024, // 1MB (优化: 从 64KB 增大)
+            copy_buffer_size: 1024 * 1024, // 1MB (性能参数,保持原值)
         }
     }
 }

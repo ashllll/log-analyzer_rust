@@ -18,12 +18,13 @@ export const ActiveKeywords: React.FC<ActiveKeywordsProps> = memo(
           Active:
         </span>
         {activeTerms.length > 0 ? (
-          activeTerms.map((term: string) => {
+          activeTerms.map((term: string, index: number) => {
             const trimmedTerm = term.trim();
             if (!trimmedTerm) return null;
             return (
               <span
-                key={trimmedTerm}
+                // P3 修复：重复词项（如 a|a）会产生重复 key，追加索引保证唯一。
+                key={`${trimmedTerm}-${index}`}
                 className="flex items-center text-[10px] bg-bg-card border border-border-base px-1.5 py-0.5 rounded text-text-main whitespace-nowrap group gap-1"
               >
                 <Hash size={8} className="mr-0.5 opacity-50" />

@@ -178,6 +178,10 @@ pub struct ContentAddressableStorage {
     /// In-memory LRU cache for object existence checks (performance optimization)
     /// Limits memory usage by evicting least recently used entries
     existence_cache: Arc<Cache<String, ()>>,
+    /// Shared by clones. Readers cover whole snapshot/producer lifetimes;
+    /// GC alone takes exclusive access before enumerating references.
+    activity: Arc<tokio::sync::RwLock<()>>,
+    closed: Arc<std::sync::atomic::AtomicBool>,
 }
 
 fn is_valid_content_hash(hash: &str) -> bool {
@@ -226,6 +230,33 @@ impl Drop for TempFileGuard {
     }
 }
 
+/// 清扫 CAS tmp 目录中的崩溃残留临时文件。
+///
+/// 正常路径由 `TempFileGuard` 清理；进程崩溃后残留的临时文件没有
+/// 守卫对象，在构造时统一删除（此时没有正在进行的写操作）。
+fn sweep_cas_temp_residue(workspace_dir: &Path) {
+    let tmp_dir = workspace_dir.join("tmp");
+    let Ok(entries) = std::fs::read_dir(&tmp_dir) else {
+        return;
+    };
+    let mut removed = 0usize;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if entry.file_type().map(|t| t.is_file()).unwrap_or(false)
+            && std::fs::remove_file(&path).is_ok()
+        {
+            removed += 1;
+        }
+    }
+    if removed > 0 {
+        tracing::debug!(
+            path = %tmp_dir.display(),
+            removed,
+            "Swept crash-residue CAS temp files"
+        );
+    }
+}
+
 impl ContentAddressableStorage {
     /// Create a new CAS instance
     ///
@@ -242,12 +273,17 @@ impl ContentAddressableStorage {
     /// let cas = ContentAddressableStorage::new(PathBuf::from("./workspace_123"));
     /// ```
     pub fn new(workspace_dir: PathBuf) -> Self {
+        // P2 修复：清扫 tmp 目录中的崩溃残留（TempFileGuard 保证正常
+        // 路径清理，但进程崩溃后遗留的临时文件没有守卫）。
+        sweep_cas_temp_residue(&workspace_dir);
         // Create an LRU cache for object existence checks with TTL/TTI expiration
         // Capacity: 10,000 entries to balance performance and memory usage
         // TTL: 1 hour - entries forced to expire after max lifetime
         // TTI: 5 minutes - entries removed after idle time
         Self {
             workspace_dir,
+            activity: Arc::new(tokio::sync::RwLock::new(())),
+            closed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             existence_cache: Arc::new(
                 Cache::builder()
                     .max_capacity(10_000)
@@ -256,6 +292,44 @@ impl ContentAddressableStorage {
                     .build(),
             ),
         }
+    }
+
+    /// Keep objects alive from before a metadata snapshot until its last read,
+    /// or from before a producer writes until its metadata is committed.
+    pub async fn activity_guard(&self) -> Result<tokio::sync::OwnedRwLockReadGuard<()>> {
+        if self.closed.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(AppError::validation_error(
+                "Workspace is closing".to_string(),
+            ));
+        }
+        let guard = self.activity.clone().read_owned().await;
+        if self.closed.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(la_core::error::AppError::validation_error(
+                "Workspace is closing".to_string(),
+            ));
+        }
+        Ok(guard)
+    }
+
+    pub fn is_closing(&self) -> bool {
+        self.closed.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Reject new operations on this instance, including stale service handles.
+    pub fn stop_accepting_activity(&self) {
+        self.closed.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// Wait for actual producers/readers, not merely their cancellation signals.
+    pub async fn drain_activity(&self) -> tokio::sync::OwnedRwLockWriteGuard<()> {
+        self.activity.clone().write_owned().await
+    }
+
+    pub(crate) fn try_gc_guard(&self) -> Option<tokio::sync::OwnedRwLockWriteGuard<()>> {
+        if self.closed.load(std::sync::atomic::Ordering::SeqCst) {
+            return None;
+        }
+        self.activity.clone().try_write_owned().ok()
     }
 
     async fn reuse_existing_object(
@@ -269,17 +343,37 @@ impl ContentAddressableStorage {
                 self.existence_cache.insert(hash.to_string(), ());
                 Ok(true)
             }
-            Ok(metadata) => {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                // 符号链接不是崩溃残留，而是潜在攻击面/用户误操作：保持拒绝。
                 self.existence_cache.invalidate(hash);
                 Err(AppError::io_error(
                     format!(
-                        "CAS object path is not a valid object file (type: {:?}, expected size: {}, actual size: {})",
-                        metadata.file_type(),
-                        expected_size,
-                        metadata.len()
+                        "CAS object path is a symlink and will not be used or removed: {}",
+                        object_path.display()
                     ),
                     Some(object_path.to_path_buf()),
                 ))
+            }
+            Ok(metadata) => {
+                // P2#3 修复（自愈）：对象存在但大小不符——通常是崩溃/断电
+                // 残留的部分写入。删除损坏对象并返回 false，让调用方走
+                // publish 重新写入，而不是永久报错阻塞重导入。
+                self.existence_cache.invalidate(hash);
+                warn!(
+                    hash = %hash,
+                    expected_size = expected_size,
+                    actual_size = metadata.len(),
+                    "CAS object is corrupted (size mismatch), removing and rewriting"
+                );
+                if let Err(remove_error) = fs::remove_file(object_path).await {
+                    if remove_error.kind() != std::io::ErrorKind::NotFound {
+                        return Err(AppError::io_error(
+                            format!("Failed to remove corrupted CAS object: {remove_error}"),
+                            Some(object_path.to_path_buf()),
+                        ));
+                    }
+                }
+                Ok(false)
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 self.existence_cache.invalidate(hash);
@@ -521,15 +615,38 @@ impl ContentAddressableStorage {
             {
                 Ok(file) => file,
                 Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                    // Another thread created the file - this is expected in concurrent scenarios
-                    // Update cache and return early (deduplication win)
-                    self.existence_cache.insert(hash.clone(), ());
-                    debug!(
-                        hash = %hash,
-                        file = %file_path.display(),
-                        "Content already exists (concurrent write detected), skipping"
-                    );
-                    return Ok(0u64); // Signal early return with 0 bytes
+                    // P2#3 修复：对象已存在时必须校验其完整性，绝不静默
+                    // 接受崩溃残留的部分文件。并发写者可能仍在拷贝，
+                    // 因此大小不符时短暂重试；重试后仍不符则报错。
+                    let src_size = fs::metadata(file_path)
+                        .await
+                        .map(|m| m.len())
+                        .unwrap_or(0);
+                    let mut valid = false;
+                    for attempt in 0..5 {
+                        if let Ok(metadata) = fs::metadata(&object_path).await {
+                            if metadata.file_type().is_file() && metadata.len() == src_size {
+                                valid = true;
+                                break;
+                            }
+                        }
+                        if attempt < 4 {
+                            tokio::time::sleep(Duration::from_millis(200)).await;
+                        }
+                    }
+                    if valid {
+                        self.existence_cache.insert(hash.clone(), ());
+                        debug!(
+                            hash = %hash,
+                            file = %file_path.display(),
+                            "Content already exists (concurrent write detected), skipping"
+                        );
+                        return Ok(0u64); // Signal early return with 0 bytes
+                    }
+                    return Err(AppError::io_error(
+                        format!("CAS object exists but its size does not match the source (possible corruption): {}", object_path.display()),
+                        Some(object_path.to_path_buf()),
+                    ));
                 }
                 Err(e) => {
                     return Err(AppError::io_error(
@@ -1158,6 +1275,58 @@ impl ContentAddressableStorage {
         self.existence_cache.invalidate(hash);
         debug!(hash = %hash, "Invalidated cache entry");
     }
+    /// 枚举 objects/ 目录中的所有对象哈希（两层分片布局 objects/xx/hash）。
+    pub fn list_object_hashes(&self) -> Vec<String> {
+        let objects_dir = self.objects_dir();
+        let mut hashes = Vec::new();
+        let Ok(prefixes) = std::fs::read_dir(&objects_dir) else {
+            return hashes;
+        };
+        for prefix in prefixes.flatten() {
+            if !prefix.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                continue;
+            }
+            let prefix_name = prefix.file_name();
+            let Some(prefix_name) = prefix_name.to_str() else {
+                continue;
+            };
+            let Ok(entries) = std::fs::read_dir(prefix.path()) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                if !entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
+                    continue;
+                }
+                let name = entry.file_name();
+                let Some(name) = name.to_str() else {
+                    continue;
+                };
+                hashes.push(format!("{prefix_name}{name}"));
+            }
+        }
+        hashes
+    }
+
+    /// 删除单个对象（幂等：对象不存在视为成功）。
+    pub fn remove_object(&self, hash: &str) -> Result<()> {
+        if !is_valid_content_hash(hash) {
+            return Err(AppError::validation_error(format!(
+                "Invalid content hash format: {hash}"
+            )));
+        }
+        let object_path = self.get_object_path(hash);
+        match std::fs::remove_file(&object_path) {
+            Ok(()) => {
+                self.invalidate_cache_entry(hash);
+                Ok(())
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(AppError::io_error(
+                format!("Failed to remove CAS object {hash}: {e}"),
+                Some(object_path),
+            )),
+        }
+    }
 
     /// Get the total size of stored objects
     ///
@@ -1714,6 +1883,94 @@ mod tests {
             result.is_err(),
             "a directory at the object path must not be accepted as deduplicated content"
         );
+    }
+    // ── P2#3 regression: corrupted CAS objects must not be accepted ──
+
+    #[tokio::test]
+    async fn store_file_zero_copy_self_heals_a_corrupted_existing_object() {
+        let temp_dir = TempDir::new().unwrap();
+        let cas = ContentAddressableStorage::new(temp_dir.path().join("workspace"));
+
+        let source_path = temp_dir.path().join("source.log");
+        let content = b"complete log content that must survive a crash";
+        tokio::fs::write(&source_path, content).await.unwrap();
+
+        // 预置崩溃残留：正确哈希路径上的部分文件（前 8 字节）。
+        let hash = ContentAddressableStorage::compute_hash(content);
+        let object_path = cas.get_object_path(&hash);
+        tokio::fs::create_dir_all(object_path.parent().unwrap())
+            .await
+            .unwrap();
+        tokio::fs::write(&object_path, &content[..8]).await.unwrap();
+
+        // 修复前：reuse_existing_object 大小不符直接报错，重导入永久失败。
+        // 修复后：删除损坏对象并重新写入。
+        let stored_hash = cas.store_file_zero_copy(&source_path).await.unwrap();
+        assert_eq!(stored_hash, hash);
+        assert_eq!(cas.read_content(&hash).await.unwrap(), content);
+    }
+
+    #[tokio::test]
+    async fn constructor_sweeps_tmp_crash_residue() {
+        let temp_dir = TempDir::new().unwrap();
+        let workspace = temp_dir.path().join("workspace");
+        let tmp_dir = workspace.join("tmp");
+        std::fs::create_dir_all(&tmp_dir).unwrap();
+        std::fs::write(tmp_dir.join("stream_abc"), b"partial").unwrap();
+        std::fs::write(tmp_dir.join(".tmp.123.456.tmp"), b"partial").unwrap();
+
+        ContentAddressableStorage::new(workspace.clone());
+
+        assert_eq!(
+            std::fs::read_dir(&tmp_dir).unwrap().count(),
+            0,
+            "crash-residue temp files must be swept on construction"
+        );
+    }
+
+    #[tokio::test]
+    async fn store_file_streaming_rejects_a_corrupted_existing_object() {
+        let temp_dir = TempDir::new().unwrap();
+        let cas = ContentAddressableStorage::new(temp_dir.path().join("workspace"));
+
+        let source_path = temp_dir.path().join("source.log");
+        let content = b"streaming content that must not be silently corrupted";
+        tokio::fs::write(&source_path, content).await.unwrap();
+
+        // 预置崩溃残留（部分文件）。
+        let hash = ContentAddressableStorage::compute_hash(content);
+        let object_path = cas.get_object_path(&hash);
+        tokio::fs::create_dir_all(object_path.parent().unwrap())
+            .await
+            .unwrap();
+        tokio::fs::write(&object_path, &content[..5]).await.unwrap();
+
+        // 修复前：AlreadyExists 分支静默返回成功，损坏对象被永久接受。
+        // 修复后：大小不符时短暂重试后报错。
+        let result = cas.store_file_streaming(&source_path).await;
+        assert!(result.is_err(), "corrupted object must be rejected");
+    }
+
+    #[tokio::test]
+    async fn store_file_streaming_dedup_still_works_for_intact_objects() {
+        let temp_dir = TempDir::new().unwrap();
+        let cas = ContentAddressableStorage::new(temp_dir.path().join("workspace"));
+
+        let source_path = temp_dir.path().join("source.log");
+        let content = b"intact deduplicated content";
+        tokio::fs::write(&source_path, content).await.unwrap();
+
+        // 预置完整对象（模拟并发写者已完成）。
+        let hash = ContentAddressableStorage::compute_hash(content);
+        let object_path = cas.get_object_path(&hash);
+        tokio::fs::create_dir_all(object_path.parent().unwrap())
+            .await
+            .unwrap();
+        tokio::fs::write(&object_path, content).await.unwrap();
+
+        let stored = cas.store_file_streaming(&source_path).await.unwrap();
+        assert_eq!(stored, hash);
+        assert_eq!(cas.read_content(&hash).await.unwrap(), content);
     }
 
     #[tokio::test]

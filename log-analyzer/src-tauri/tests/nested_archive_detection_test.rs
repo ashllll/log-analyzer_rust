@@ -72,7 +72,7 @@ async fn test_detect_single_nested_archive() {
     // Extract outer archive
     let extract_dir = temp_dir.path().join("extracted");
     let result = engine
-        .extract_archive(&outer_path, &extract_dir, "test_workspace")
+        .extract_archive(&outer_path, &extract_dir, "test_workspace", 0)
         .await
         .unwrap();
 
@@ -136,7 +136,7 @@ async fn test_detect_multiple_nested_archives() {
     // Extract
     let extract_dir = temp_dir.path().join("extracted");
     let result = engine
-        .extract_archive(&outer_path, &extract_dir, "test_workspace")
+        .extract_archive(&outer_path, &extract_dir, "test_workspace", 0)
         .await
         .unwrap();
 
@@ -181,7 +181,7 @@ async fn test_depth_limit_enforcement() {
     // Extract
     let extract_dir = temp_dir.path().join("extracted");
     let result = engine
-        .extract_archive(&level0_path, &extract_dir, "test_workspace")
+        .extract_archive(&level0_path, &extract_dir, "test_workspace", 0)
         .await
         .unwrap();
 
@@ -260,7 +260,7 @@ async fn test_nested_archive_with_regular_files() {
     // Extract
     let extract_dir = temp_dir.path().join("extracted");
     let result = engine
-        .extract_archive(&outer_path, &extract_dir, "test_workspace")
+        .extract_archive(&outer_path, &extract_dir, "test_workspace", 0)
         .await
         .unwrap();
 
@@ -303,7 +303,7 @@ async fn test_archive_format_detection() {
     // Extract
     let extract_dir = temp_dir.path().join("extracted");
     let result = engine
-        .extract_archive(&outer_path, &extract_dir, "test_workspace")
+        .extract_archive(&outer_path, &extract_dir, "test_workspace", 0)
         .await
         .unwrap();
 
@@ -340,7 +340,7 @@ async fn test_empty_nested_archive() {
     // Extract
     let extract_dir = temp_dir.path().join("extracted");
     let result = engine
-        .extract_archive(&outer_path, &extract_dir, "test_workspace")
+        .extract_archive(&outer_path, &extract_dir, "test_workspace", 0)
         .await
         .unwrap();
 
@@ -387,7 +387,7 @@ async fn test_three_level_nesting() {
     // Extract
     let extract_dir = temp_dir.path().join("extracted");
     let result = engine
-        .extract_archive(&level0_path, &extract_dir, "test_workspace")
+        .extract_archive(&level0_path, &extract_dir, "test_workspace", 0)
         .await
         .unwrap();
 

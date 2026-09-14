@@ -25,6 +25,14 @@ pub struct FileContentResponse {
     pub size: usize,
 }
 
+/// 可查看文件的大小上限（P2#5：防止 GB 级对象整块进内存 OOM）。
+pub(crate) const MAX_VIEW_FILE_BYTES: u64 = 50 * 1024 * 1024;
+
+/// 纯函数判定：对象是否大到不应整块加载供前端查看。
+pub(crate) fn too_large_to_view(size: u64) -> bool {
+    size > MAX_VIEW_FILE_BYTES
+}
+
 fn validate_file_hash(hash: &str) -> Result<(), String> {
     if hash.len() != 64 || !hash.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Err("Invalid file hash format".to_string());
@@ -58,10 +66,21 @@ pub async fn read_file_by_hash(
             .map_err(|e| e.to_string())?;
 
     let cas = service.cas();
+    let _activity = cas.activity_guard().await.map_err(|e| e.to_string())?;
 
     if !cas.exists(&hash) {
         error!(hash = %hash, "File not found in CAS");
         return Err(format!("File not found: {hash}"));
+    }
+
+    // P2#5 修复：查看文件内容会把整个对象读进内存并整块转成 UTF-8，
+    // 再经 IPC 序列化（字节+String+JSON 三份拷贝）。对超大对象直接
+    // 拒绝并提示，避免 GB 级文件导致 OOM。
+    let object_size = cas.object_size_sync(&hash);
+    if too_large_to_view(object_size) {
+        return Err(format!(
+            "File is too large to view directly ({object_size} bytes, limit {MAX_VIEW_FILE_BYTES}). "
+        ));
     }
 
     let content_bytes = cas
@@ -147,5 +166,16 @@ mod tests {
         assert!(validate_file_hash("../etc/passwd").is_err());
         assert!(validate_file_hash("aa/tmp/escaped").is_err());
         assert!(validate_file_hash("short").is_err());
+    }
+    #[test]
+    fn view_size_limit_accepts_boundary_and_rejects_oversized() {
+        // 恰好等于上限：允许查看。
+        assert!(!too_large_to_view(MAX_VIEW_FILE_BYTES));
+        // 超出 1 字节：拒绝。
+        assert!(too_large_to_view(MAX_VIEW_FILE_BYTES + 1));
+        // 超大对象（GB 级）：拒绝。
+        assert!(too_large_to_view(1024 * 1024 * 1024));
+        // 正常小文件：允许。
+        assert!(!too_large_to_view(100));
     }
 }

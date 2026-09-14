@@ -19,7 +19,7 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::application::workspace_service::ImportOptions;
-use crate::infrastructure::workspace_service_factory::get_or_create_workspace_service;
+use crate::infrastructure::workspace_service_factory::get_or_create_workspace_service_locked;
 use crate::models::AppState;
 use crate::utils::canonicalize_path;
 use crate::utils::validation::{validate_import_source_path, validate_workspace_id};
@@ -188,6 +188,10 @@ pub async fn run_import(
         }
     };
 
+    // Keep initialization, the import itself and failure rollback under one
+    // gate so deletion cannot close this service or remove its directory.
+    let lifecycle = state.workspace_lifecycle(workspace_id);
+    let lifecycle_permit = lifecycle.enter().await?;
     let workspace_dir = workspace_paths.workspace_data_dir(workspace_id)?;
     let target_name = canonical_path
         .file_name()
@@ -204,11 +208,12 @@ pub async fn run_import(
         &target_name,
         workspace_id,
         || {
-            get_or_create_workspace_service(
+            get_or_create_workspace_service_locked(
                 app_handle_for_factory,
                 state,
                 workspace_id,
                 &workspace_dir,
+                &lifecycle_permit,
             )
         },
     )
@@ -233,6 +238,28 @@ pub async fn run_import(
     let cancel_token = tokio_util::sync::CancellationToken::new();
     state.register_task_cancellation(&task_id, cancel_token.clone());
 
+    // ── 导入心跳 ──
+    // 长导入（大文件、嵌套归档、索引重建）可持续数分钟，而 TaskManager
+    // 的孤儿检测基于"距上次进度更新的时间"。导入期间周期性刷新心跳，
+    // 防止正常的长任务被误标记为 Failed。
+    let heartbeat_scheduler = Arc::clone(&scheduler);
+    let heartbeat_handle = handle.clone();
+    let heartbeat_token = cancel_token.clone();
+    let heartbeat = tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(std::time::Duration::from_secs(20));
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            tokio::select! {
+                _ = ticker.tick() => {
+                    let _ = heartbeat_scheduler
+                        .update(&heartbeat_handle, 10, "Importing...")
+                        .await;
+                }
+                _ = heartbeat_token.cancelled() => break,
+            }
+        }
+    });
+
     let import_result = service
         .import_file(
             &canonical_path,
@@ -242,6 +269,7 @@ pub async fn run_import(
             cancel_token.clone(),
         )
         .await;
+    heartbeat.abort();
     state.cleanup_task_cancellation(&task_id);
     let import_result = if cancel_token.is_cancelled() && import_result.is_ok() {
         Err(AppError::Archive {
@@ -262,8 +290,26 @@ pub async fn run_import(
             } else {
                 error!(error = %e, "Failed to import file");
             }
-            service.close_databases().await;
-            state.remove_workspace_service(workspace_id);
+            // P2#14 修复：只有本次导入创建的全新工作区才销毁运行时服务。
+            // 对已存在工作区的重新导入失败，保留其服务——否则该工作区的
+            // 搜索/读取会全部失效，直到用户手动 load_workspace。
+            let mut _closing = None;
+            if !workspace_existed_before_import {
+                service.cas().stop_accepting_activity();
+                if let Some(manager) = state.get_search_session_manager() {
+                    manager.cancel_workspace_searches(workspace_id);
+                }
+                if let Err(watch_error) = service.stop_watch().await {
+                    warn!(
+                        workspace_id = %workspace_id,
+                        error = %watch_error,
+                        "Failed to stop watcher during failed-import cleanup"
+                    );
+                }
+                _closing = Some(service.cas().drain_activity().await);
+                service.close_databases().await;
+                state.remove_workspace_service(workspace_id);
+            }
             drop(service);
             if let Err(rm_err) =
                 cleanup_failed_import_workspace(&workspace_dir, workspace_existed_before_import)

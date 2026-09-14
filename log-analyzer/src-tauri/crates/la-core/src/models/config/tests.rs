@@ -169,6 +169,33 @@ mod tests {
 
     // ============ ArchiveConfig 验证测试 ============
 
+    // ── P2#15 regression: Default must match serde fallbacks ──
+
+    #[test]
+    fn archive_config_default_matches_serde_fallbacks() {
+        let defaulted = ArchiveConfig::default();
+
+        // 空对象反序列化走 serde 默认值函数；两套默认必须一致，
+        // 否则无 config.json 的安装与缺字段的配置行为分裂。
+        let from_empty_json: ArchiveConfig = serde_json::from_str("{}").unwrap();
+
+        assert_eq!(defaulted.max_file_size, 100 * 1024 * 1024, "100MB per file");
+        assert_eq!(defaulted.max_file_size, from_empty_json.max_file_size);
+        assert_eq!(defaulted.max_total_size, from_empty_json.max_total_size);
+        assert_eq!(
+            defaulted.max_archive_total_size,
+            from_empty_json.max_archive_total_size
+        );
+        assert_eq!(
+            defaulted.max_workspace_size,
+            from_empty_json.max_workspace_size
+        );
+        assert_eq!(
+            defaulted.max_compression_ratio,
+            from_empty_json.max_compression_ratio
+        );
+    }
+
     #[test]
     fn test_archive_config_valid() {
         let config = ArchiveConfig::default();

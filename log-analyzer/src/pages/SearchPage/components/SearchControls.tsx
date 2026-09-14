@@ -20,6 +20,7 @@ export interface SearchControlsProps {
   onFilterPaletteClose: () => void;
   isSearching: boolean;
   disabled: boolean;
+  exportDisabled: boolean;
   keywordGroups: KeywordGroup[];
   activeTerms: string[];
   onToggleRule: (regex: string) => void;
@@ -36,6 +37,7 @@ export const SearchControls: React.FC<SearchControlsProps> = memo(
     onFilterPaletteClose,
     isSearching,
     disabled,
+    exportDisabled,
     keywordGroups,
     activeTerms,
     onToggleRule,
@@ -109,7 +111,7 @@ export const SearchControls: React.FC<SearchControlsProps> = memo(
           <select
             className="h-9 rounded-[10px] border border-border-base bg-bg-card pl-9 pr-8 text-sm text-text-main hover:bg-bg-hover"
             defaultValue=""
-            disabled={disabled}
+            disabled={exportDisabled}
             onChange={(event) => {
               if (event.target.value)
                 onExport(event.target.value as "csv" | "json");

@@ -515,7 +515,8 @@ mod tests {
     fn test_validate_export_path() {
         assert!(validate_export_path("file.txt").is_ok());
         assert!(validate_export_path("path/to/file").is_ok());
-        assert!(validate_export_path("/path/to/file").is_err());
+        assert!(validate_export_path("/path/to/file").is_ok());
+        assert!(validate_export_path("%2Fpath%2Fto%2Ffile").is_err());
         assert!(validate_export_path("../file.txt").is_err());
         assert!(validate_export_path("path/../file.txt").is_err());
         assert!(validate_export_path("file\0.txt").is_err());
@@ -525,7 +526,7 @@ mod tests {
     #[test]
     #[cfg(windows)]
     fn test_validate_export_path_windows() {
-        assert!(validate_export_path("C:\\windows\\file.txt").is_err());
+        assert!(validate_export_path("C:\\windows\\file.txt").is_ok());
     }
 
     #[test]
@@ -613,19 +614,13 @@ pub fn validate_search_query(query: &str) -> Result<(), String> {
 ///
 /// FIX(HI-10): 复用 `prevent_path_traversal()` 进行全面的路径安全检查，
 /// 覆盖 Null 字节、URL 编码绕过、Unicode 规范化绕过等攻击向量。
-/// 同时限制只能使用相对路径，禁止绝对路径。
+/// 允许保存对话框返回的原生绝对路径，同时拒绝编码后才变成绝对路径的输入。
 pub fn validate_export_path(path: &str) -> Result<(), String> {
     // 全面路径遍历检测（包含 URL 解码、Unicode NFC、null 字节、控制字符）
-    prevent_path_traversal(path)?;
-
-    // 禁止绝对路径（导出只能使用相对路径）
+    let validated = prevent_path_traversal(path)?;
     let path_obj = std::path::Path::new(path);
-    if path_obj.is_absolute() {
-        return Err("导出路径必须是相对路径".to_string());
-    }
-    // 额外拒绝以 / 或 \ 开头的路径（跨平台一致性，Windows 下 /path 被视为相对路径）
-    if path.starts_with('/') || path.starts_with('\\') {
-        return Err("导出路径必须是相对路径".to_string());
+    if std::path::Path::new(&validated).is_absolute() && !path_obj.is_absolute() {
+        return Err("导出路径不能使用编码后的绝对路径".to_string());
     }
 
     // 额外的 ParentDir 检查（防御深层路径遍历）

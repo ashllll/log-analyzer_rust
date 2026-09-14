@@ -220,11 +220,29 @@ impl ImportService for WorkspaceServiceImpl {
         )
         .await?;
 
+        let _cas_activity = self.repo.cas().activity_guard().await?;
         let root_name = source_path
             .file_name()
             .unwrap_or_default()
             .to_string_lossy()
             .to_string();
+
+        // P2 修复：记录导入前文件数，本次导入数 = 导入后 − 导入前，
+        // 而非整个库的文件总数（此前对已有大量文件的工作区，
+        // files_imported 会错误地返回全库计数）。
+        let files_before = self
+            .repo
+            .metadata_store()
+            .count_files()
+            .await
+            .map_err(|e| {
+                tracing::warn!(
+                    workspace_id = %self.workspace_id,
+                    error = %e,
+                    "Failed to count files before import"
+                );
+                AppError::database_error(format!("Failed to count files: {e}"))
+            })?;
 
         process_path_with_cas_cancellable(
             source_path,
@@ -277,7 +295,7 @@ impl ImportService for WorkspaceServiceImpl {
         .await
         .map_err(|error| map_index_rebuild_error(error, source_path, &cancellation_token))?;
 
-        let files_imported = self
+        let files_after = self
             .repo
             .metadata_store()
             .count_files()
@@ -289,7 +307,8 @@ impl ImportService for WorkspaceServiceImpl {
                     "Failed to count files after import, database may be corrupted"
                 );
                 AppError::database_error(format!("Failed to count files: {e}"))
-            })? as usize;
+            })?;
+        let files_imported = files_after.saturating_sub(files_before) as usize;
 
         Ok(ImportResult {
             root_name,

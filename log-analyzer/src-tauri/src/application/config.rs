@@ -1,6 +1,7 @@
 //! ConfigUseCase — application-layer configuration orchestration.
 
 use std::fs;
+use std::io::Write;
 use std::sync::Arc;
 
 use la_core::error::{AppError, Result};
@@ -59,14 +60,24 @@ where
         }
 
         let config_path = config_dir.join("config.json");
-        let tmp_path = config_dir.join("config.json.tmp");
         let json = serde_json::to_string_pretty(config)
             .map_err(|e| AppError::config_error(format!("Failed to serialize config: {e}")))?;
 
-        fs::write(&tmp_path, json)
-            .map_err(|e| AppError::io_error(e.to_string(), Some(tmp_path.clone())))?;
-        fs::rename(&tmp_path, &config_path)
-            .map_err(|e| AppError::io_error(e.to_string(), Some(config_path)))?;
+        let mut temporary = tempfile::Builder::new()
+            .prefix(".config.json.")
+            .suffix(".tmp")
+            .tempfile_in(&config_dir)
+            .map_err(|e| AppError::io_error(e.to_string(), Some(config_dir.clone())))?;
+        temporary
+            .write_all(json.as_bytes())
+            .map_err(|e| AppError::io_error(e.to_string(), Some(temporary.path().to_path_buf())))?;
+        temporary
+            .as_file()
+            .sync_all()
+            .map_err(|e| AppError::io_error(e.to_string(), Some(temporary.path().to_path_buf())))?;
+        temporary
+            .persist(&config_path)
+            .map_err(|e| AppError::io_error(e.error.to_string(), Some(config_path)))?;
         Ok(())
     }
 
@@ -120,5 +131,41 @@ mod tests {
         let loaded = use_case.load().unwrap();
 
         assert_eq!(loaded.search.max_results, 1234);
+    }
+
+    #[test]
+    fn concurrent_config_saves_succeed_and_leave_a_loadable_config() {
+        const SAVE_COUNT: usize = 32;
+
+        let temp_dir = TempDir::new().unwrap();
+        let use_case = Arc::new(ConfigUseCase::new(Arc::new(TempConfigProvider {
+            dir: temp_dir.path().to_path_buf(),
+        })));
+        let start = Arc::new(std::sync::Barrier::new(SAVE_COUNT));
+
+        let handles = (0..SAVE_COUNT)
+            .map(|offset| {
+                let use_case = Arc::clone(&use_case);
+                let start = Arc::clone(&start);
+                std::thread::spawn(move || {
+                    let mut config = AppConfig::default();
+                    config.search.max_results = 1000 + offset;
+                    start.wait();
+                    use_case.save(&config)
+                })
+            })
+            .collect::<Vec<_>>();
+
+        let failures = handles
+            .into_iter()
+            .filter_map(|handle| handle.join().unwrap().err())
+            .collect::<Vec<_>>();
+        assert!(
+            failures.is_empty(),
+            "concurrent saves must not fail: {failures:?}"
+        );
+
+        let loaded = use_case.load().unwrap();
+        assert!((1000..1000 + SAVE_COUNT).contains(&loaded.search.max_results));
     }
 }

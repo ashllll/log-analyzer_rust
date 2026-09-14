@@ -26,7 +26,9 @@ use la_search::DiskResultStore;
 #[derive(Default)]
 pub struct WorkspaceRegistry {
     services: Arc<Mutex<HashMap<String, WorkspaceServiceRef>>>,
-    creation_locks: Arc<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>>,
+    lifecycles: Arc<
+        Mutex<HashMap<String, Arc<crate::application::workspace_lifecycle::WorkspaceLifecycle>>>,
+    >,
 }
 
 impl WorkspaceRegistry {
@@ -46,12 +48,17 @@ impl WorkspaceRegistry {
         self.services.lock().keys().cloned().collect()
     }
     pub fn creation_lock(&self, id: &str) -> Arc<tokio::sync::Mutex<()>> {
-        Arc::clone(
-            self.creation_locks
-                .lock()
-                .entry(id.to_string())
-                .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(()))),
-        )
+        self.lifecycle(id).gate.clone()
+    }
+    pub fn lifecycle(
+        &self,
+        id: &str,
+    ) -> Arc<crate::application::workspace_lifecycle::WorkspaceLifecycle> {
+        self.lifecycles
+            .lock()
+            .entry(id.to_owned())
+            .or_default()
+            .clone()
     }
 }
 
@@ -198,6 +205,12 @@ impl Default for AppState {
 // ── Backward-compat methods (delegate to registries) ──
 
 impl AppState {
+    pub fn workspace_lifecycle(
+        &self,
+        id: &str,
+    ) -> Arc<crate::application::workspace_lifecycle::WorkspaceLifecycle> {
+        self.workspace.lifecycle(id)
+    }
     pub fn get_workspace_service(&self, workspace_id: &str) -> Option<WorkspaceServiceRef> {
         self.workspace.get(workspace_id)
     }

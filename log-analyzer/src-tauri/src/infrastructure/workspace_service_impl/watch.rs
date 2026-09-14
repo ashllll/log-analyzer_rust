@@ -15,6 +15,7 @@ use super::WorkspaceServiceImpl;
 #[async_trait]
 impl WatchService for WorkspaceServiceImpl {
     async fn start_watch(&self, watch_path: &str) -> Result<()> {
+        let _activity = self.repo.cas().activity_guard().await?;
         let watch_path_buf = PathBuf::from(watch_path);
         if !watch_path_buf.exists() {
             return Err(AppError::validation_error(format!(
@@ -22,13 +23,19 @@ impl WatchService for WorkspaceServiceImpl {
             )));
         }
 
-        {
-            let state = self.watcher_state.lock();
-            if state.is_some() {
-                return Err(AppError::validation_error(
-                    "Workspace is already being watched".to_string(),
-                ));
-            }
+        // Keep startup and registration atomic with stop_watch. There are no
+        // awaits below this lock, and the activity lease fences deletion.
+        let mut state = self.watcher_state.lock();
+        // Deletion may have started between taking the lease and this lock.
+        if self.repo.cas().is_closing() {
+            return Err(AppError::validation_error(
+                "Workspace is closing".to_string(),
+            ));
+        }
+        if state.is_some() {
+            return Err(AppError::validation_error(
+                "Workspace is already being watched".to_string(),
+            ));
         }
 
         let (tx, notify_rx) =
@@ -78,7 +85,7 @@ impl WatchService for WorkspaceServiceImpl {
         );
         let handle = std::thread::spawn(move || runner.run(rx));
 
-        *self.watcher_state.lock() = Some(WatcherState {
+        *state = Some(WatcherState {
             is_active: true,
             thread_handle: Arc::new(parking_lot::Mutex::new(Some(handle))),
             notify_thread_handle: Arc::new(parking_lot::Mutex::new(Some(notify_handle))),
@@ -89,38 +96,43 @@ impl WatchService for WorkspaceServiceImpl {
     }
 
     async fn stop_watch(&self) -> Result<()> {
-        let mut state = self.watcher_state.lock();
+        let (thread_handle, notify_thread_handle, watcher_opt) = {
+            let mut state = self.watcher_state.lock();
 
-        let Some(ref mut ws) = *state else {
-            return Err(AppError::validation_error(
-                "No active watcher found for this workspace".to_string(),
-            ));
+            let Some(ref mut ws) = *state else {
+                return Err(AppError::validation_error(
+                    "No active watcher found for this workspace".to_string(),
+                ));
+            };
+
+            ws.is_active = false;
+            let thread_handle = ws.thread_handle.lock().take();
+            let notify_thread_handle = ws.notify_thread_handle.lock().take();
+            let watcher_opt = ws.watcher.lock().take();
+
+            *state = None;
+            (thread_handle, notify_thread_handle, watcher_opt)
         };
 
-        ws.is_active = false;
-        let thread_handle = ws.thread_handle.lock().take();
-        let notify_thread_handle = ws.notify_thread_handle.lock().take();
-        let watcher_opt = ws.watcher.lock().take();
+        tokio::task::spawn_blocking(move || {
+            drop(watcher_opt);
 
-        *state = None;
-        drop(state);
-
-        drop(watcher_opt);
-
-        // 先 join notify 线程，它会 drop watch_tx，导致 runner 的 rx 关闭
-        if let Some(handle) = notify_thread_handle {
-            if handle.join().is_err() {
-                error!("Failed to join notify thread");
+            // 先 join notify 线程，它会 drop watch_tx，导致 runner 的 rx 关闭
+            if let Some(handle) = notify_thread_handle {
+                if handle.join().is_err() {
+                    error!("Failed to join notify thread");
+                }
             }
-        }
 
-        // 再 join runner 线程，此时 rx 已关闭，runner 会退出
-        if let Some(handle) = thread_handle {
-            if handle.join().is_err() {
-                error!("Failed to join watcher thread");
+            // 再 join runner 线程，此时 rx 已关闭，runner 会退出
+            if let Some(handle) = thread_handle {
+                if handle.join().is_err() {
+                    error!("Failed to join watcher thread");
+                }
             }
-        }
-
+        })
+        .await
+        .map_err(|e| AppError::io_error(format!("Failed to stop watcher: {e}"), None))?;
         Ok(())
     }
 }

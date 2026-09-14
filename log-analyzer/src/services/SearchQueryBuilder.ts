@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from "zod";
 import {
   SearchQuery,
   SearchTerm,
@@ -6,10 +6,13 @@ import {
   QueryValidation,
   OptimizedQuery,
   ValidationIssue,
-  TermSource
-} from '../types/search';
-import type { KeywordGroup } from '../types/common';
-import { looksLikeRegexPattern, splitQueryByPipe } from '../utils/searchPatterns';
+  TermSource,
+} from "../types/search";
+import type { KeywordGroup } from "../types/common";
+import {
+  looksLikeRegexPattern,
+  splitQueryByPipeWithFlags,
+} from "../utils/searchPatterns";
 
 // ── Standalone query-parsing (extracted from class for hook use) ──
 
@@ -34,20 +37,20 @@ export interface ParseStringOptions {
 export function parseQueryFromString(
   queryString: string,
   keywordGroups: KeywordGroup[] = [],
-  options?: ParseStringOptions,
+  options?: ParseStringOptions
 ): SearchQuery {
   const caseSensitive = options?.caseSensitive ?? false;
   const regexEnabled = options?.regexEnabled ?? true;
   const terms: SearchTerm[] = [];
 
   if (queryString && queryString.trim().length > 0) {
-    const rawTerms = splitQueryByPipe(queryString);
-    rawTerms.forEach((value, idx) => {
-      let source: TermSource = 'user';
+    const split = splitQueryByPipeWithFlags(queryString);
+    split.terms.forEach((value, idx) => {
+      let source: TermSource = "user";
       let presetGroupId: string | undefined;
       for (const group of keywordGroups) {
         if (group.patterns && group.patterns.some((p) => p.regex === value)) {
-          source = 'preset';
+          source = "preset";
           presetGroupId = group.id;
           break;
         }
@@ -55,11 +58,16 @@ export function parseQueryFromString(
       terms.push({
         id: generateTermId(),
         value,
-        operator: 'OR' as QueryOperator,
+        operator: "OR" as QueryOperator,
         source,
         presetGroupId,
-        isRegex: regexEnabled && looksLikeRegexPattern(value),
-        priority: rawTerms.length - idx,
+        // 转义管道（\|）是字面量意图：不得按正则交替解释
+        // （`foo\|` 的正则空分支会匹配所有行）。
+        isRegex:
+          regexEnabled &&
+          !split.escapedFlags[idx] &&
+          looksLikeRegexPattern(value),
+        priority: split.terms.length - idx,
         enabled: true,
         caseSensitive,
       });
@@ -69,7 +77,7 @@ export function parseQueryFromString(
   return {
     id: generateId(),
     terms,
-    globalOperator: 'OR',
+    globalOperator: "OR",
     filters: undefined,
     metadata: {
       createdAt: Date.now(),
@@ -84,8 +92,8 @@ export function parseQueryFromString(
 const SearchTermSchema = z.object({
   id: z.string(),
   value: z.string(),
-  operator: z.enum(['AND', 'OR', 'NOT']),
-  source: z.enum(['user', 'preset']),
+  operator: z.enum(["AND", "OR", "NOT"]),
+  source: z.enum(["user", "preset"]),
   presetGroupId: z.string().optional(),
   isRegex: z.boolean(),
   priority: z.number(),
@@ -103,21 +111,23 @@ const QueryMetadataSchema = z.object({
 const SearchQuerySchema = z.object({
   id: z.string(),
   terms: z.array(SearchTermSchema),
-  globalOperator: z.enum(['AND', 'OR', 'NOT']),
-  filters: z.object({
-    timeRange: z.object({
-      start: z.string().nullable(),
-      end: z.string().nullable(),
-    }),
-    levels: z.array(z.string()),
-    filePattern: z.string(),
-  }).optional(),
+  globalOperator: z.enum(["AND", "OR", "NOT"]),
+  filters: z
+    .object({
+      timeRange: z.object({
+        start: z.string().nullable(),
+        end: z.string().nullable(),
+      }),
+      levels: z.array(z.string()),
+      filePattern: z.string(),
+    })
+    .optional(),
   metadata: QueryMetadataSchema,
 });
 
 /**
  * 搜索查询构建器
- * 
+ *
  * 提供流畅的API来构建、验证和转换搜索查询
  */
 export class SearchQueryBuilder {
@@ -134,12 +144,12 @@ export class SearchQueryBuilder {
     return new SearchQueryBuilder({
       id: SearchQueryBuilder.generateId(),
       terms: [],
-      globalOperator: 'AND',
+      globalOperator: "AND",
       metadata: {
         createdAt: Date.now(),
         lastModified: Date.now(),
-        executionCount: 0
-      }
+        executionCount: 0,
+      },
     });
   }
 
@@ -157,35 +167,39 @@ export class SearchQueryBuilder {
     }
   ): SearchQueryBuilder {
     const builder = SearchQueryBuilder.create();
-    builder.setGlobalOperator('OR');
+    builder.setGlobalOperator("OR");
     const caseSensitive = options?.caseSensitive ?? false;
     const regexEnabled = options?.regexEnabled ?? true;
-    
+
     if (!queryString || queryString.trim().length === 0) {
       return builder;
     }
 
-    const terms = splitQueryByPipe(queryString);
+    const split = splitQueryByPipeWithFlags(queryString);
 
-    terms.forEach((value, idx) => {
+    split.terms.forEach((value, idx) => {
       // 检查是否是预置关键词
-      let source: TermSource = 'user';
+      let source: TermSource = "user";
       let presetGroupId: string | undefined;
 
       for (const group of keywordGroups) {
         if (group.patterns && group.patterns.some((p) => p.regex === value)) {
-          source = 'preset';
+          source = "preset";
           presetGroupId = group.id;
           break;
         }
       }
 
       builder.addTerm(value, {
-        operator: 'OR',
+        operator: "OR",
         source,
         presetGroupId,
-        isRegex: regexEnabled && looksLikeRegexPattern(value),
-        priority: terms.length - idx,
+        // 转义管道是字面量意图，不得按正则交替解释
+        isRegex:
+          regexEnabled &&
+          !split.escapedFlags[idx] &&
+          looksLikeRegexPattern(value),
+        priority: split.terms.length - idx,
         caseSensitive,
       });
     });
@@ -234,13 +248,13 @@ export class SearchQueryBuilder {
     const term: SearchTerm = {
       id: SearchQueryBuilder.generateTermId(),
       value,
-      operator: options?.operator ?? 'AND',
-      source: options?.source ?? 'user',
+      operator: options?.operator ?? "AND",
+      source: options?.source ?? "user",
       presetGroupId: options?.presetGroupId,
       isRegex: options?.isRegex ?? false,
       priority: options?.priority ?? 0,
       enabled: true,
-      caseSensitive: options?.caseSensitive ?? false
+      caseSensitive: options?.caseSensitive ?? false,
     };
 
     this.query.terms.push(term);
@@ -252,7 +266,7 @@ export class SearchQueryBuilder {
    * 移除搜索项
    */
   removeTerm(termId: string): this {
-    this.query.terms = this.query.terms.filter(t => t.id !== termId);
+    this.query.terms = this.query.terms.filter((t) => t.id !== termId);
     this.updateMetadata();
     return this;
   }
@@ -262,8 +276,8 @@ export class SearchQueryBuilder {
    */
   toggleTerm(termId: string): this {
     // FIX(HI-20): 使用不可变更新替代直接突变
-    if (this.query.terms.some(t => t.id === termId)) {
-      this.query.terms = this.query.terms.map(t =>
+    if (this.query.terms.some((t) => t.id === termId)) {
+      this.query.terms = this.query.terms.map((t) =>
         t.id === termId ? { ...t, enabled: !t.enabled } : t
       );
       this.updateMetadata();
@@ -276,8 +290,8 @@ export class SearchQueryBuilder {
    */
   updateTermValue(termId: string, newValue: string): this {
     // FIX(HI-20): 使用不可变更新替代直接突变
-    if (this.query.terms.some(t => t.id === termId)) {
-      this.query.terms = this.query.terms.map(t =>
+    if (this.query.terms.some((t) => t.id === termId)) {
+      this.query.terms = this.query.terms.map((t) =>
         t.id === termId ? { ...t, value: newValue } : t
       );
       this.updateMetadata();
@@ -304,31 +318,31 @@ export class SearchQueryBuilder {
     // 检查是否为空
     if (this.query.terms.length === 0) {
       issues.push({
-        severity: 'error',
-        code: 'EMPTY_QUERY',
-        message: '查询不能为空（至少需要一个搜索项）'
+        severity: "error",
+        code: "EMPTY_QUERY",
+        message: "查询不能为空（至少需要一个搜索项）",
       });
       errorCount++;
       return { isValid: false, issues };
     }
 
     // 检查是否有启用的项
-    const enabledTerms = this.query.terms.filter(t => t.enabled);
+    const enabledTerms = this.query.terms.filter((t) => t.enabled);
     if (enabledTerms.length === 0) {
       issues.push({
-        severity: 'error',
-        code: 'NO_ENABLED_TERMS',
-        message: '至少需要启用一个搜索项'
+        severity: "error",
+        code: "NO_ENABLED_TERMS",
+        message: "至少需要启用一个搜索项",
       });
       errorCount++;
     }
 
     // 验证每个项
-    this.query.terms.forEach(term => {
+    this.query.terms.forEach((term) => {
       const termIssues = this.validateTerm(term);
-      termIssues.forEach(issue => {
+      termIssues.forEach((issue) => {
         issues.push(issue);
-        if (issue.severity === 'error') {
+        if (issue.severity === "error") {
           errorCount++;
         }
       });
@@ -336,18 +350,18 @@ export class SearchQueryBuilder {
 
     // 检查重复
     const duplicates = this.findDuplicates();
-    duplicates.forEach(termId => {
+    duplicates.forEach((termId) => {
       issues.push({
         termId,
-        severity: 'warning',
-        code: 'DUPLICATE_TERM',
-        message: '存在重复的搜索条件'
+        severity: "warning",
+        code: "DUPLICATE_TERM",
+        message: "存在重复的搜索条件",
       });
     });
 
     return {
       isValid: errorCount === 0,
-      issues
+      issues,
     };
   }
 
@@ -358,9 +372,9 @@ export class SearchQueryBuilder {
     if (!term.value.trim()) {
       issues.push({
         termId: term.id,
-        severity: 'error',
-        code: 'EMPTY_VALUE',
-        message: '搜索值不能为空'
+        severity: "error",
+        code: "EMPTY_VALUE",
+        message: "搜索值不能为空",
       });
     }
 
@@ -368,9 +382,9 @@ export class SearchQueryBuilder {
     if (term.value.length > 500) {
       issues.push({
         termId: term.id,
-        severity: 'warning',
-        code: 'VALUE_TOO_LONG',
-        message: '搜索值过长（> 500 字符），可能影响性能'
+        severity: "warning",
+        code: "VALUE_TOO_LONG",
+        message: "搜索值过长（> 500 字符），可能影响性能",
       });
     }
 
@@ -381,9 +395,9 @@ export class SearchQueryBuilder {
       } catch (e) {
         issues.push({
           termId: term.id,
-          severity: 'error',
-          code: 'INVALID_REGEX',
-          message: `无效的正则表达式：${e instanceof Error ? e.message : String(e)}`
+          severity: "error",
+          code: "INVALID_REGEX",
+          message: `无效的正则表达式：${e instanceof Error ? e.message : String(e)}`,
         });
       }
     }
@@ -395,7 +409,7 @@ export class SearchQueryBuilder {
     const seen = new Map<string, string>();
     const duplicates: string[] = [];
 
-    this.query.terms.forEach(term => {
+    this.query.terms.forEach((term) => {
       const key = `${term.value.toLowerCase()}|${term.source}`;
       if (seen.has(key)) {
         duplicates.push(term.id);
@@ -412,19 +426,19 @@ export class SearchQueryBuilder {
    */
   toQueryString(): string {
     return this.query.terms
-      .filter(t => t.enabled)
-      .map(t => t.value)
-      .join('|');
+      .filter((t) => t.enabled)
+      .map((t) => t.value)
+      .join("|");
   }
 
   /**
    * 转换为优化的查询（用于执行）
    */
   toOptimizedQuery(): OptimizedQuery {
-    const enabledTerms = this.query.terms.filter(t => t.enabled);
+    const enabledTerms = this.query.terms.filter((t) => t.enabled);
     const termsByOperator = new Map<QueryOperator, SearchTerm[]>();
 
-    enabledTerms.forEach(term => {
+    enabledTerms.forEach((term) => {
       const list = termsByOperator.get(term.operator) || [];
       list.push(term);
       termsByOperator.set(term.operator, list);
@@ -435,11 +449,11 @@ export class SearchQueryBuilder {
       enabledTerms,
       termsByOperator,
       normalization: {
-        deduplicatedCount: this.query.terms.length - new Set(
-          this.query.terms.map(t => t.value.toLowerCase())
-        ).size,
-        removedInvalidCount: this.query.terms.filter(t => !t.enabled).length
-      }
+        deduplicatedCount:
+          this.query.terms.length -
+          new Set(this.query.terms.map((t) => t.value.toLowerCase())).size,
+        removedInvalidCount: this.query.terms.filter((t) => !t.enabled).length,
+      },
     };
   }
 
@@ -472,10 +486,10 @@ export class SearchQueryBuilder {
   getSummary() {
     return {
       termCount: this.query.terms.length,
-      enabledTermCount: this.query.terms.filter(t => t.enabled).length,
-      hasPreset: this.query.terms.some(t => t.source === 'preset'),
-      hasRegex: this.query.terms.some(t => t.isRegex),
-      globalOperator: this.query.globalOperator
+      enabledTermCount: this.query.terms.filter((t) => t.enabled).length,
+      hasPreset: this.query.terms.some((t) => t.source === "preset"),
+      hasRegex: this.query.terms.some((t) => t.isRegex),
+      globalOperator: this.query.globalOperator,
     };
   }
 
@@ -490,15 +504,15 @@ export class SearchQueryBuilder {
    * 获取启用的项
    */
   getEnabledTerms(): SearchTerm[] {
-    return this.query.terms.filter(t => t.enabled);
+    return this.query.terms.filter((t) => t.enabled);
   }
 
   /**
    * 检查是否包含某个关键词
    */
   has(value: string): boolean {
-    return this.query.terms.some(t => 
-      t.value.toLowerCase() === value.toLowerCase()
+    return this.query.terms.some(
+      (t) => t.value.toLowerCase() === value.toLowerCase()
     );
   }
 
@@ -506,8 +520,8 @@ export class SearchQueryBuilder {
    * 根据值查找项
    */
   findTermByValue(value: string): SearchTerm | undefined {
-    return this.query.terms.find(t => 
-      t.value.toLowerCase() === value.toLowerCase()
+    return this.query.terms.find(
+      (t) => t.value.toLowerCase() === value.toLowerCase()
     );
   }
 

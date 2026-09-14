@@ -26,11 +26,32 @@ use tracing::{debug, error, info, warn};
 use crate::{
     boolean_query_processor::BooleanQueryProcessor,
     highlighting_engine::{HighlightingConfig, HighlightingEngine},
-    schema::LogSchema,
+    schema::{LogSchema, INDEX_SCHEMA_VERSION},
     SearchError, SearchResult,
 };
 use la_core::models::config::SearchConfig as AppSearchConfig;
 use la_core::models::LogEntry;
+
+/// 索引目录中的 schema 版本标记文件
+const SCHEMA_VERSION_FILE: &str = "schema_version";
+
+/// 检查索引 schema 是否过期（无版本文件视为旧版索引，需要重建）。
+fn index_schema_is_stale(index_path: &std::path::Path) -> bool {
+    match std::fs::read_to_string(index_path.join(SCHEMA_VERSION_FILE)) {
+        Ok(version) => version.trim().parse::<u32>().unwrap_or(0) != INDEX_SCHEMA_VERSION,
+        Err(_) => true,
+    }
+}
+
+/// 写入当前 schema 版本标记。
+fn write_schema_version(index_path: &std::path::Path) -> SearchResult<()> {
+    std::fs::write(
+        index_path.join(SCHEMA_VERSION_FILE),
+        INDEX_SCHEMA_VERSION.to_string(),
+    )
+    .map_err(|e| SearchError::IndexError(format!("Failed to write schema version: {e}")))?;
+    Ok(())
+}
 
 fn glob_to_regex(glob: &str) -> String {
     let mut regex = String::with_capacity(glob.len() * 2);
@@ -144,6 +165,15 @@ pub struct SearchIndexRebuild<'a> {
 }
 
 impl SearchIndexRebuild<'_> {
+    /// Remove a file within the same rollback-safe transaction as its replacement.
+    pub fn remove_file(&mut self, virtual_path: &str) {
+        let term = Term::from_field_text(self.manager.schema.file_path, virtual_path);
+        self.writer
+            .as_ref()
+            .expect("active index transaction")
+            .delete_term(term);
+    }
+
     /// Add a batch without publishing partial results.
     pub fn add_documents(&mut self, entries: &[LogEntry]) -> SearchResult<()> {
         let writer = self
@@ -212,11 +242,31 @@ impl SearchEngineManager {
         // 检查是否存在有效的Tantivy索引（通过检查meta.json文件）
         let meta_path = config.index_path.join("meta.json");
         let index = if meta_path.exists() {
-            // 索引已存在，打开它
-            Index::open_in_dir(&config.index_path)?
+            if index_schema_is_stale(&config.index_path) {
+                // P2 修复：schema 版本不匹配（升级后字段/类型变化）时，
+                // 旧的 Tantivy 索引无法安全打开。CAS 是内容源，索引可
+                // 完整重建——删除旧索引目录并重建，而不是让工作区
+                // 加载失败。
+                warn!(
+                    index_path = %config.index_path.display(),
+                    "Search index schema is stale, rebuilding index directory"
+                );
+                std::fs::remove_dir_all(&config.index_path).map_err(|e| {
+                    SearchError::IndexError(format!("Failed to remove stale index: {e}"))
+                })?;
+                std::fs::create_dir_all(&config.index_path).map_err(|e| {
+                    SearchError::IndexError(format!("Failed to create index dir: {e}"))
+                })?;
+                write_schema_version(&config.index_path)?;
+                Index::create_in_dir(&config.index_path, schema.schema.clone())?
+            } else {
+                // 索引已存在且版本匹配，打开它
+                Index::open_in_dir(&config.index_path)?
+            }
         } else {
             // 创建新索引
             std::fs::create_dir_all(&config.index_path)?;
+            write_schema_version(&config.index_path)?;
             Index::create_in_dir(&config.index_path, schema.schema.clone())?
         };
 
@@ -817,7 +867,10 @@ impl SearchEngineManager {
         let boolean_processor = self.boolean_processor.clone();
         let reader = self.reader.clone();
         let schema = self.schema.clone();
-        let token_inner = token; // move token 进闭包，传递给内部调用以支持取消
+        // 保留 token 副本：闭包与超时分支各持一份，超时后仍能取消
+        // 后台阻塞任务（P2 修复：此前 move 进闭包后超时分支无法 cancel，
+        // spawn_blocking 会继续跑完整索引）。
+        let token_inner = token.clone();
 
         let search_result = timeout(
             timeout_duration,
@@ -870,6 +923,12 @@ impl SearchEngineManager {
             }
             Err(_) => {
                 self.update_stats(query_time, true);
+
+                // P2 修复：超时后取消后台任务，让 collector 尽快退出，
+                // 而不是继续扫描完整索引。
+                if let Some(t) = &token {
+                    t.cancel();
+                }
 
                 warn!(
                     keywords = ?keywords,
@@ -1365,6 +1424,27 @@ mod tests {
     }
 
     #[test]
+    fn file_replacement_and_truncation_preserve_other_files_and_rollback() {
+        let (manager, _temp_dir) = create_test_manager();
+        let mut old = test_entry("2024-01-01 00:00:00", "old");
+        old.file = "logs/app.log".into();
+        let mut other = old.clone();
+        other.file = "logs/other.log".into();
+        manager.add_documents(&[old.clone(), other]).unwrap();
+        manager.commit().unwrap();
+        {
+            let mut update = manager.begin_update().unwrap();
+            update.remove_file(&old.file);
+        }
+        manager.commit().unwrap();
+        assert_eq!(manager.get_time_range().unwrap().2, 2);
+        let mut update = manager.begin_update().unwrap();
+        update.remove_file(&old.file);
+        update.commit().unwrap();
+        assert_eq!(manager.get_time_range().unwrap().2, 1);
+    }
+
+    #[test]
     fn test_committed_update_appends_documents() {
         let (manager, _temp_dir) = create_test_manager();
         manager
@@ -1474,5 +1554,22 @@ mod tests {
             deleted_count, 0,
             "Should delete 0 documents for non-existent file"
         );
+    }
+    // P2 regression: schema version migration
+
+    #[test]
+    fn stale_or_missing_schema_version_requires_rebuild() {
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        assert!(index_schema_is_stale(temp_dir.path()));
+
+        write_schema_version(temp_dir.path()).unwrap();
+        assert!(!index_schema_is_stale(temp_dir.path()));
+
+        std::fs::write(temp_dir.path().join("schema_version"), "999").unwrap();
+        assert!(index_schema_is_stale(temp_dir.path()));
+
+        std::fs::write(temp_dir.path().join("schema_version"), "not-a-number").unwrap();
+        assert!(index_schema_is_stale(temp_dir.path()));
     }
 }

@@ -18,7 +18,7 @@ pub mod watch;
 pub mod workspace_service;
 
 pub use config::ConfigUseCase;
-pub use export::{transform_csv, transform_json};
+pub use export::export_search_results;
 pub use search::SearchUseCase;
 pub use search_session::SearchSessionManager;
 pub use workspace_service::{
@@ -182,3 +182,5 @@ mod tests {
         );
     }
 }
+
+pub mod workspace_lifecycle;

@@ -37,6 +37,7 @@ import {
   useSearchOrchestrator,
 } from "./SearchPage/hooks";
 import { restoreLogRowFocus } from "./SearchPage/utils/focusLogRow";
+import { findSelectedLog } from "./SearchPage/utils/selection";
 
 const SearchPage: React.FC = () => {
   const { t } = useTranslation();
@@ -223,6 +224,10 @@ const SearchPage: React.FC = () => {
       },
       [addToast, t, dispatchSearchExec]
     ),
+    // P3 修复：取消/超时是正常终止，只复位搜索状态，不弹错误 toast。
+    onCancelled: useCallback(() => {
+      dispatchSearchExec({ type: "RESET" });
+    }, [dispatchSearchExec]),
     onRefetch: refetchSearchPages,
     onScrollToTop: useCallback(() => {
       scrollToIndex(0);
@@ -298,7 +303,7 @@ const SearchPage: React.FC = () => {
   // 导出搜索结果
   const handleExport = useCallback(
     async (format: "csv" | "json") => {
-      if (loadedEntries.length === 0) {
+      if (!currentSearchId || totalResultCount === 0) {
         addToast("error", "没有可导出的数据");
         return;
       }
@@ -312,17 +317,21 @@ const SearchPage: React.FC = () => {
 
         if (!savePath) return;
 
-        await api.exportResults({ results: loadedEntries, format, savePath });
+        await api.exportResults({
+          searchId: currentSearchId,
+          format,
+          savePath,
+        });
         addToast(
           "success",
-          `已导出 ${loadedEntries.length} 条日志到 ${format.toUpperCase()}`
+          `已导出 ${totalResultCount} 条日志到 ${format.toUpperCase()}`
         );
       } catch (e) {
         logger.error("Export error:", e);
         addToast("error", `导出失败: ${getFullErrorMessage(e)}`);
       }
     },
-    [loadedEntries, addToast]
+    [currentSearchId, totalResultCount, addToast]
   );
 
   // 复制到剪贴板
@@ -361,7 +370,7 @@ const SearchPage: React.FC = () => {
     [currentQuery?.id, currentQuery?.terms?.length]
   );
 
-  const activeLog = selectedId ? loadedEntriesMap.get(selectedId) : undefined;
+  const activeLog = findSelectedLog(selectedId, loadedEntriesMap);
 
   const closeInspector = useCallback(() => {
     const selectedLogId = selectedId;
@@ -387,6 +396,9 @@ const SearchPage: React.FC = () => {
           onFilterPaletteClose={() => setIsFilterPaletteOpen(false)}
           isSearching={isSearching}
           disabled={!activeWorkspace || !query.trim()}
+          exportDisabled={
+            isSearching || !currentSearchId || totalResultCount === 0
+          }
           keywordGroups={keywordGroups}
           activeTerms={activeTerms}
           onToggleRule={handleToggleRule}

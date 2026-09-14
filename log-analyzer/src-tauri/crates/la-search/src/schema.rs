@@ -12,6 +12,10 @@ use tantivy::schema::{
 };
 use tantivy::tokenizer::TextAnalyzer;
 
+/// 当前索引 schema 版本。修改 `LogSchema::build` 改变字段/类型时，
+/// 必须递增此版本号，旧索引会被自动删除重建（CAS 是内容源，可完整重建）。
+pub const INDEX_SCHEMA_VERSION: u32 = 1;
+
 /// Schema definition for log entries in the search index
 #[derive(Clone, Debug)]
 pub struct LogSchema {

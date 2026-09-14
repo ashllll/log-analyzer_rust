@@ -106,23 +106,40 @@ pub(crate) fn validate_search_params(query: &str) -> Result<(), CommandError> {
         )
         .with_help("Try reducing the number of search terms"));
     }
+    // P3 修复：词项级长度限制与 query_planner 的 validate_term（100 字符）
+    // 保持一致，在命令层提前给出清晰错误，而不是让搜索在后台失败。
+    for (term, _) in crate::commands::search::query::split_query_by_pipe(query) {
+        if term.chars().count() > 100 {
+            return Err(CommandError::new(
+                "VALIDATION_ERROR",
+                format!(
+                    "Search term too long (max 100 characters): {}",
+                    &term[..term
+                        .char_indices()
+                        .nth(40)
+                        .map(|(i, _)| i)
+                        .unwrap_or(term.len())]
+                ),
+            )
+            .with_help("Split the term into shorter keywords"));
+        }
+    }
     Ok(())
 }
 
 pub(crate) fn resolve_workspace_id(
     id_arg: Option<String>,
-    state: &AppState,
+    _state: &AppState,
 ) -> Result<String, CommandError> {
     if let Some(id) = id_arg {
         return Ok(id);
     }
-    let ids = state.workspace_ids();
-    if let Some(first) = ids.first() {
-        Ok(first.clone())
-    } else {
-        Err(CommandError::new("NOT_FOUND", "No workspaces available")
-            .with_help("Create a workspace first"))
-    }
+    // P3 修复：不传 workspaceId 时不再静默选取第一个工作区（多工作区
+    // 并存时可能搜错库），而是要求显式指定。
+    Err(
+        CommandError::new("VALIDATION_ERROR", "workspaceId is required")
+            .with_help("Select a workspace before searching"),
+    )
 }
 
 // ============================================================================
@@ -183,7 +200,18 @@ pub async fn search_logs(
     let rc = load_search_runtime_config(&app);
 
     // ── 3. Resolve params ──
-    let mr = maxResults.unwrap_or(rc.default_max_results).min(100_000);
+    // P3 修复：maxResults=0 在搜索批处理中会立即截断并返回 0 条结果，
+    // 拒绝而不是静默产生空结果。
+    let mr = match maxResults {
+        Some(0) => {
+            return Err(CommandError::new(
+                "VALIDATION_ERROR",
+                "maxResults must be greater than 0",
+            ));
+        }
+        Some(v) => v.min(100_000),
+        None => rc.default_max_results.min(100_000),
+    };
     let f = filters.unwrap_or_default();
     let (raw_terms, sq) =
         resolve_search_query(&query, structuredQuery, rc.case_sensitive, "search_logs")?;

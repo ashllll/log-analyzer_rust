@@ -39,7 +39,7 @@ async fn test_archive_level_error_handling() {
 
     // Attempt extraction
     let result = engine
-        .extract_archive(&archive_path, &target_dir, "test_workspace")
+        .extract_archive(&archive_path, &target_dir, "test_workspace", 0)
         .await;
 
     // With our improved error handling, archive-level errors are now captured
@@ -91,7 +91,7 @@ async fn test_unsupported_format_error() {
 
     // Attempt extraction
     let result = engine
-        .extract_archive(&archive_path, &target_dir, "test_workspace")
+        .extract_archive(&archive_path, &target_dir, "test_workspace", 0)
         .await;
 
     // Should return an error for unsupported format
@@ -146,7 +146,7 @@ async fn test_depth_limit_warning() {
 
     // Extract with default policy (should succeed)
     let result = engine
-        .extract_archive(&archive_path, &target_dir, "test_workspace")
+        .extract_archive(&archive_path, &target_dir, "test_workspace", 0)
         .await;
 
     // Should succeed
@@ -183,7 +183,7 @@ async fn test_security_event_warning() {
 
     // Attempt extraction
     let result = engine
-        .extract_archive(&archive_path, &target_dir, "test_workspace")
+        .extract_archive(&archive_path, &target_dir, "test_workspace", 0)
         .await;
 
     // The extraction may fail or succeed depending on how the zip library handles it
@@ -258,7 +258,7 @@ async fn test_continue_after_file_error() {
 
     // Extract
     let result = engine
-        .extract_archive(&archive_path, &target_dir, "test_workspace")
+        .extract_archive(&archive_path, &target_dir, "test_workspace", 0)
         .await;
 
     // Should succeed

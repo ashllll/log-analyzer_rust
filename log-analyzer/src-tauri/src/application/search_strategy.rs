@@ -5,7 +5,6 @@
 
 use std::sync::Arc;
 
-use la_core::domain::event::EventPublisher;
 use la_core::domain::filter::CompiledSearchFilter;
 use la_core::domain::{ExecutionPlan, LogFileRepository, LogSearcher, SearchResultRepository};
 use la_core::error::Result;
@@ -35,7 +34,7 @@ pub(crate) fn is_large_file(size: i64) -> bool {
 struct SearchExecutionContext<'a> {
     log_files: &'a Arc<dyn LogFileRepository>,
     results: &'a Arc<dyn SearchResultRepository>,
-    events: &'a Arc<dyn EventPublisher>,
+    progress: &'a tokio::sync::mpsc::UnboundedSender<usize>,
     searcher: &'a Arc<dyn LogSearcher>,
     plan: &'a ExecutionPlan,
     compiled_filter: &'a dyn CompiledSearchFilter,
@@ -49,7 +48,7 @@ impl<'a> SearchExecutionContext<'a> {
     fn new(
         log_files: &'a Arc<dyn LogFileRepository>,
         results: &'a Arc<dyn SearchResultRepository>,
-        events: &'a Arc<dyn EventPublisher>,
+        progress: &'a tokio::sync::mpsc::UnboundedSender<usize>,
         searcher: &'a Arc<dyn LogSearcher>,
         plan: &'a ExecutionPlan,
         compiled_filter: &'a dyn CompiledSearchFilter,
@@ -60,7 +59,7 @@ impl<'a> SearchExecutionContext<'a> {
         Self {
             log_files,
             results,
-            events,
+            progress,
             searcher,
             plan,
             compiled_filter,
@@ -82,7 +81,7 @@ impl<'a> ParallelSmallFileStrategy<'a> {
     pub(crate) fn new(
         log_files: &'a Arc<dyn LogFileRepository>,
         results: &'a Arc<dyn SearchResultRepository>,
-        events: &'a Arc<dyn EventPublisher>,
+        progress: &'a tokio::sync::mpsc::UnboundedSender<usize>,
         searcher: &'a Arc<dyn LogSearcher>,
         plan: &'a ExecutionPlan,
         compiled_filter: &'a dyn CompiledSearchFilter,
@@ -95,7 +94,7 @@ impl<'a> ParallelSmallFileStrategy<'a> {
             context: SearchExecutionContext::new(
                 log_files,
                 results,
-                events,
+                progress,
                 searcher,
                 plan,
                 compiled_filter,
@@ -113,6 +112,7 @@ impl<'a> ParallelSmallFileStrategy<'a> {
         files: &[&FileMetadata],
         batch: &mut SearchBatch,
         was_truncated: &mut bool,
+        skipped_files: &mut usize,
     ) -> Result<bool> {
         if self.context.cancellation_token.is_cancelled() {
             return Ok(false);
@@ -121,21 +121,28 @@ impl<'a> ParallelSmallFileStrategy<'a> {
             return Ok(true);
         }
 
-        let chunk_results: Vec<Vec<LogEntry>> = self.thread_pool.install(|| {
+        let chunk_results: Vec<Result<Vec<LogEntry>>> = self.thread_pool.install(|| {
             files
                 .par_iter()
                 .map(|fm| {
                     if self.context.cancellation_token.is_cancelled() {
-                        return Vec::new();
+                        return Ok(Vec::new());
                     }
                     search_one_file(&self.context, fm)
                 })
                 .collect()
         });
 
-        for file_results in chunk_results {
-            if !consume_search_entries(&self.context, file_results, batch, was_truncated)? {
-                return Ok(false);
+        for file_result in chunk_results {
+            match file_result {
+                Ok(file_results) => {
+                    if !consume_search_entries(&self.context, file_results, batch, was_truncated)? {
+                        return Ok(false);
+                    }
+                }
+                Err(_) => {
+                    *skipped_files += 1;
+                }
             }
         }
 
@@ -153,7 +160,7 @@ impl<'a> StreamingLargeFileStrategy<'a> {
     pub(crate) fn new(
         log_files: &'a Arc<dyn LogFileRepository>,
         results: &'a Arc<dyn SearchResultRepository>,
-        events: &'a Arc<dyn EventPublisher>,
+        progress: &'a tokio::sync::mpsc::UnboundedSender<usize>,
         searcher: &'a Arc<dyn LogSearcher>,
         plan: &'a ExecutionPlan,
         compiled_filter: &'a dyn CompiledSearchFilter,
@@ -165,7 +172,7 @@ impl<'a> StreamingLargeFileStrategy<'a> {
             context: SearchExecutionContext::new(
                 log_files,
                 results,
-                events,
+                progress,
                 searcher,
                 plan,
                 compiled_filter,
@@ -182,6 +189,7 @@ impl<'a> StreamingLargeFileStrategy<'a> {
         fm: &FileMetadata,
         batch: &mut SearchBatch,
         was_truncated: &mut bool,
+        skipped_files: &mut usize,
     ) -> Result<bool> {
         if self.context.cancellation_token.is_cancelled() {
             return Ok(false);
@@ -190,6 +198,7 @@ impl<'a> StreamingLargeFileStrategy<'a> {
         let hash = &fm.sha256_hash;
         let real_path = format!("cas://{hash}");
         let mut keep_searching = true;
+        let mut processing_failed = false;
         let mut visitor = |chunk_lines: Vec<String>, chunk_start_line: usize| {
             if self.context.cancellation_token.is_cancelled() {
                 keep_searching = false;
@@ -204,7 +213,12 @@ impl<'a> StreamingLargeFileStrategy<'a> {
                 chunk_start_line,
                 batch,
                 was_truncated,
-            )?;
+            )
+            .inspect_err(|_| {
+                // The visitor can fail while writing results. Preserve its
+                // error instead of treating it as a skippable source read.
+                processing_failed = true;
+            })?;
             Ok(keep_searching)
         };
 
@@ -214,11 +228,14 @@ impl<'a> StreamingLargeFileStrategy<'a> {
             &mut visitor,
         ) {
             Ok(()) => Ok(keep_searching),
+            Err(error) if processing_failed => Err(error),
             Err(e) => {
-                tracing::warn!(
+                *skipped_files += 1;
+                tracing::error!(
                     hash = %hash,
+                    virtual_path = %fm.virtual_path,
                     error = %e,
-                    "Failed to read line chunks for large file, skipping"
+                    "Failed to read line chunks for large file, skipping (results will be incomplete)"
                 );
                 Ok(true)
             }
@@ -226,18 +243,21 @@ impl<'a> StreamingLargeFileStrategy<'a> {
     }
 }
 
-fn search_one_file(context: &SearchExecutionContext<'_>, fm: &FileMetadata) -> Vec<LogEntry> {
+fn search_one_file(
+    context: &SearchExecutionContext<'_>,
+    fm: &FileMetadata,
+) -> Result<Vec<LogEntry>> {
     let hash = &fm.sha256_hash;
     let content = match context.log_files.read_content_sync(hash) {
         Ok(bytes) => bytes,
         Err(e) => {
-            tracing::warn!(
+            tracing::error!(
                 hash = %hash,
                 virtual_path = %fm.virtual_path,
                 error = %e,
-                "Failed to read file content from CAS, skipping"
+                "Failed to read file content from CAS, skipping (results will be incomplete)"
             );
-            return Vec::new();
+            return Err(e);
         }
     };
 
@@ -252,7 +272,7 @@ fn search_one_file(context: &SearchExecutionContext<'_>, fm: &FileMetadata) -> V
     for entry in &mut entries {
         entry.real_path = format!("cas://{hash}").into();
     }
-    entries
+    Ok(entries)
 }
 
 fn search_line_chunk(
@@ -294,12 +314,12 @@ fn consume_search_entries(
     match batch.accumulate(entries, context.max_results) {
         BatchAction::Continue => Ok(true),
         BatchAction::Flush => {
-            flush_search_batch(context.results, context.events, context.search_id, batch)?;
+            flush_search_batch(context.results, context.progress, context.search_id, batch)?;
             Ok(true)
         }
         BatchAction::Truncate(_) => {
             if !batch.is_empty() {
-                flush_search_batch(context.results, context.events, context.search_id, batch)?;
+                flush_search_batch(context.results, context.progress, context.search_id, batch)?;
             }
             *was_truncated = true;
             Ok(false)
@@ -307,32 +327,22 @@ fn consume_search_entries(
     }
 }
 
-/// Flush one shared batch and asynchronously publish its progress.
+/// Flush one shared batch and enqueue its progress in search order.
 pub(crate) fn flush_search_batch(
     results: &Arc<dyn SearchResultRepository>,
-    events: &Arc<dyn EventPublisher>,
+    progress: &tokio::sync::mpsc::UnboundedSender<usize>,
     search_id: &str,
     batch: &mut SearchBatch,
 ) -> Result<()> {
     results.append_entries(search_id, &batch.take())?;
-    emit_progress(events, search_id, batch.total());
+    let _ = progress.send(batch.total());
     Ok(())
-}
-
-fn emit_progress(events: &Arc<dyn EventPublisher>, search_id: &str, count: usize) {
-    let Ok(handle) = tokio::runtime::Handle::try_current() else {
-        return;
-    };
-    let events = events.clone();
-    let sid = search_id.to_string();
-    handle.spawn(async move { events.emit_search_progress(&sid, count).await });
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use async_trait::async_trait;
-    use la_core::domain::event::EventPublisher;
     use la_core::domain::filter::{CompiledSearchFilter, LineMetadata};
     use la_core::domain::{
         ExecutionPlan, LogFileRepository, LogSearcher, SearchResultPage, SearchResultRepository,
@@ -526,32 +536,12 @@ mod tests {
         }
     }
 
-    struct NoopEvents;
-
-    #[async_trait]
-    impl EventPublisher for NoopEvents {
-        async fn emit_search_start(&self, _id: &str) {}
-        async fn emit_search_progress(&self, _id: &str, _count: usize) {}
-        async fn emit_search_complete(
-            &self,
-            _id: &str,
-            _summary: la_core::models::search_statistics::SearchResultSummary,
-        ) {
-        }
-        async fn emit_search_error(&self, _id: &str, _error: &str) {}
-        async fn emit_search_cancelled(&self, _id: &str) {}
-        async fn emit_search_timeout(&self, _id: &str) {}
-        async fn emit_import_complete(&self, _task_id: &str) {}
-        async fn emit_import_error(&self, _error: &str) {}
-        async fn emit_validation_report(&self, _workspace_id: &str, _report_json: &str) {}
-    }
-
     struct TestHarness {
         log_files: Arc<dyn LogFileRepository>,
         log_files_probe: Arc<StrategyLogFiles>,
         results: Arc<dyn SearchResultRepository>,
         results_probe: Arc<CapturingResults>,
-        events: Arc<dyn EventPublisher>,
+        progress: tokio::sync::mpsc::UnboundedSender<usize>,
         searcher: Arc<dyn LogSearcher>,
         plan: ExecutionPlan,
         filter: AcceptAllFilter,
@@ -567,12 +557,13 @@ mod tests {
             });
             log_files.append_count = Arc::clone(&results_probe.append_count);
             let log_files_probe = Arc::new(log_files);
+            let (progress, _progress_rx) = tokio::sync::mpsc::unbounded_channel();
             Self {
                 log_files: log_files_probe.clone(),
                 log_files_probe,
                 results: results_probe.clone(),
                 results_probe,
-                events: Arc::new(NoopEvents),
+                progress,
                 searcher: Arc::new(StrategySearcher),
                 plan: test_plan(),
                 filter: AcceptAllFilter,
@@ -589,7 +580,7 @@ mod tests {
             ParallelSmallFileStrategy::new(
                 &self.log_files,
                 &self.results,
-                &self.events,
+                &self.progress,
                 &self.searcher,
                 &self.plan,
                 &self.filter,
@@ -604,7 +595,7 @@ mod tests {
             StreamingLargeFileStrategy::new(
                 &self.log_files,
                 &self.results,
-                &self.events,
+                &self.progress,
                 &self.searcher,
                 &self.plan,
                 &self.filter,
@@ -659,7 +650,13 @@ mod tests {
     }
 
     fn flush(harness: &TestHarness, batch: &mut SearchBatch) {
-        flush_search_batch(&harness.results, &harness.events, &harness.search_id, batch).unwrap();
+        flush_search_batch(
+            &harness.results,
+            &harness.progress,
+            &harness.search_id,
+            batch,
+        )
+        .unwrap();
     }
 
     #[test]
@@ -674,9 +671,15 @@ mod tests {
         let second = file("second", "second.log", 1);
         let mut batch = SearchBatch::new(256);
         let mut was_truncated = false;
+        let mut skipped = 0;
 
         assert!(strategy
-            .process(&[&first, &second], &mut batch, &mut was_truncated)
+            .process(
+                &[&first, &second],
+                &mut batch,
+                &mut was_truncated,
+                &mut skipped
+            )
             .unwrap());
         flush(&harness, &mut batch);
 
@@ -692,9 +695,10 @@ mod tests {
         let large = file("large", "large.log", LARGE_FILE_STREAM_THRESHOLD_BYTES);
         let mut batch = SearchBatch::new(256);
         let mut was_truncated = false;
+        let mut skipped = 0;
 
         assert!(strategy
-            .process(&large, &mut batch, &mut was_truncated)
+            .process(&large, &mut batch, &mut was_truncated, &mut skipped)
             .unwrap());
         assert!(harness
             .log_files_probe
@@ -730,11 +734,14 @@ mod tests {
         let at = file("at", "at.log", LARGE_FILE_STREAM_THRESHOLD_BYTES);
         let mut batch = SearchBatch::new(256);
         let mut was_truncated = false;
+        let mut skipped = 0;
 
         assert!(small
-            .process(&[&below], &mut batch, &mut was_truncated)
+            .process(&[&below], &mut batch, &mut was_truncated, &mut skipped)
             .unwrap());
-        assert!(large.process(&at, &mut batch, &mut was_truncated).unwrap());
+        assert!(large
+            .process(&at, &mut batch, &mut was_truncated, &mut skipped)
+            .unwrap());
         flush(&harness, &mut batch);
         assert_eq!(
             harness.log_files_probe.content_reads.load(Ordering::SeqCst),
@@ -757,15 +764,16 @@ mod tests {
         let small_2 = file("small-2", "small-2.log", 1);
         let mut batch = SearchBatch::new(256);
         let mut was_truncated = false;
+        let mut skipped = 0;
 
         assert!(small
-            .process(&[&small_1], &mut batch, &mut was_truncated)
+            .process(&[&small_1], &mut batch, &mut was_truncated, &mut skipped)
             .unwrap());
         assert!(large
-            .process(&large_file, &mut batch, &mut was_truncated)
+            .process(&large_file, &mut batch, &mut was_truncated, &mut skipped)
             .unwrap());
         assert!(small
-            .process(&[&small_2], &mut batch, &mut was_truncated)
+            .process(&[&small_2], &mut batch, &mut was_truncated, &mut skipped)
             .unwrap());
         flush(&harness, &mut batch);
 
@@ -797,12 +805,13 @@ mod tests {
         let large_file = file("large", "large.log", LARGE_FILE_STREAM_THRESHOLD_BYTES);
         let mut batch = SearchBatch::new(256);
         let mut was_truncated = false;
+        let mut skipped = 0;
 
         assert!(!small
-            .process(&[&small_file], &mut batch, &mut was_truncated)
+            .process(&[&small_file], &mut batch, &mut was_truncated, &mut skipped)
             .unwrap());
         assert!(!large
-            .process(&large_file, &mut batch, &mut was_truncated)
+            .process(&large_file, &mut batch, &mut was_truncated, &mut skipped)
             .unwrap());
         assert_eq!(batch.total(), 0);
         assert_eq!(
@@ -827,9 +836,10 @@ mod tests {
         let large = file("large", "large.log", LARGE_FILE_STREAM_THRESHOLD_BYTES);
         let mut batch = SearchBatch::new(256);
         let mut was_truncated = false;
+        let mut skipped = 0;
 
         assert!(!strategy
-            .process(&large, &mut batch, &mut was_truncated)
+            .process(&large, &mut batch, &mut was_truncated, &mut skipped)
             .unwrap());
         flush(&harness, &mut batch);
         assert_eq!(
@@ -855,12 +865,13 @@ mod tests {
         let large_file = file("large", "large.log", LARGE_FILE_STREAM_THRESHOLD_BYTES);
         let mut batch = SearchBatch::new(256);
         let mut was_truncated = false;
+        let mut skipped = 0;
 
         assert!(small
-            .process(&[&small_file], &mut batch, &mut was_truncated)
+            .process(&[&small_file], &mut batch, &mut was_truncated, &mut skipped)
             .unwrap());
         assert!(!large
-            .process(&large_file, &mut batch, &mut was_truncated)
+            .process(&large_file, &mut batch, &mut was_truncated, &mut skipped)
             .unwrap());
         assert!(was_truncated);
         assert_eq!(batch.total(), 4);
@@ -880,9 +891,10 @@ mod tests {
         let large = file("large", "large.log", LARGE_FILE_STREAM_THRESHOLD_BYTES);
         let mut batch = SearchBatch::new(256);
         let mut was_truncated = false;
+        let mut skipped = 0;
 
         assert!(strategy
-            .process(&large, &mut batch, &mut was_truncated)
+            .process(&large, &mut batch, &mut was_truncated, &mut skipped)
             .unwrap());
         flush(&harness, &mut batch);
 
@@ -911,10 +923,13 @@ mod tests {
         let good = file("good", "good.log", 1);
         let mut batch = SearchBatch::new(256);
         let mut was_truncated = false;
+        let mut skipped = 0;
 
-        assert!(large.process(&bad, &mut batch, &mut was_truncated).unwrap());
+        assert!(large
+            .process(&bad, &mut batch, &mut was_truncated, &mut skipped)
+            .unwrap());
         assert!(small
-            .process(&[&good], &mut batch, &mut was_truncated)
+            .process(&[&good], &mut batch, &mut was_truncated, &mut skipped)
             .unwrap());
         flush(&harness, &mut batch);
 
@@ -922,5 +937,9 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].file.as_ref(), "good.log");
         assert_eq!(entries[0].id, 0);
+        assert_eq!(
+            skipped, 1,
+            "read failure must be counted so callers can signal incomplete results"
+        );
     }
 }

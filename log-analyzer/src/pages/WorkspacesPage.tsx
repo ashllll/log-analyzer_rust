@@ -65,42 +65,82 @@ const WorkspacesPage: React.FC = () => {
     await importFolder();
   };
 
+  const workspaceSummary = [
+    {
+      label: t("workspaces.metric_total", "Total"),
+      value: workspaces.length,
+      tone: "text-text-main",
+    },
+    {
+      label: t("workspaces.metric_ready", "Ready"),
+      value: workspaces.filter((workspace) => workspace.status === "READY")
+        .length,
+      tone: "text-cta",
+    },
+    {
+      label: t("workspaces.metric_watching", "Watching"),
+      value: workspaces.filter((workspace) => workspace.watching).length,
+      tone: "text-status-warn",
+    },
+    {
+      label: t("workspaces.metric_processing", "Processing"),
+      value: workspaces.filter((workspace) => workspace.status !== "READY")
+        .length,
+      tone: "text-primary-text",
+    },
+  ];
+
   return (
-    <div className="mx-auto h-full max-w-6xl overflow-auto px-8 py-7">
+    <div className="mx-auto h-full max-w-6xl overflow-auto px-3 py-3 sm:px-5 sm:py-4 lg:px-6">
       {/* 页面标题 */}
-      <div className="mb-7 flex items-center justify-between">
-        <div>
-          <h1 className="text-[28px] font-semibold leading-tight text-text-main tracking-[-0.02em]">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="truncate text-[22px] font-semibold leading-tight tracking-[-0.02em] text-text-main">
             {t("workspaces.title")}
           </h1>
-          <p className="text-sm text-text-muted mt-1">
+          <p className="mt-0.5 hidden truncate text-xs text-text-muted sm:block">
             {t("workspaces.subtitle")}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex shrink-0 gap-1.5">
           <Button
             icon={Settings}
             onClick={() => setIsFilterSettingsOpen(true)}
             variant="secondary"
+            className="w-9 px-0 lg:w-auto lg:px-3"
+            aria-label={t("workspaces.filter_settings")}
+            title={t("workspaces.filter_settings")}
             data-testid="file-filter-settings-button"
           >
-            {t("workspaces.filter_settings")}
+            <span className="hidden lg:inline">
+              {t("workspaces.filter_settings")}
+            </span>
           </Button>
           <Button
             icon={FileText}
             onClick={handleImportFile}
             variant="secondary"
+            className="w-9 px-0 lg:w-auto lg:px-3"
+            aria-label={t("workspaces.import_file")}
+            title={t("workspaces.import_file")}
             data-testid="import-file-button"
           >
-            {t("workspaces.import_file")}
+            <span className="hidden lg:inline">
+              {t("workspaces.import_file")}
+            </span>
           </Button>
           <Button
             icon={Plus}
             onClick={handleImportFolder}
             variant="cta"
+            className="w-9 px-0 sm:w-auto sm:px-3"
+            aria-label={t("workspaces.import_folder")}
+            title={t("workspaces.import_folder")}
             data-testid="import-folder-button"
           >
-            {t("workspaces.import_folder")}
+            <span className="hidden sm:inline">
+              {t("workspaces.import_folder")}
+            </span>
           </Button>
         </div>
       </div>
@@ -122,27 +162,88 @@ const WorkspacesPage: React.FC = () => {
           }}
         />
       ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {workspaces.map((ws: Workspace) => (
-            <div key={ws.id}>
-              <Card
-                variant="interactive"
-                data-testid={`workspace-card-${ws.id}`}
-                className={cn(
-                  "h-full flex flex-col",
-                  activeWorkspaceId === ws.id &&
-                    "border-primary ring-1 ring-primary/30"
-                )}
-                onClick={() => switchWorkspace(ws.id)}
-              >
-                {/* 卡片头部 */}
-                <div className="flex items-center justify-between border-b border-border-subtle bg-bg-elevated/40 px-4 py-3 text-sm font-semibold">
-                  <span className="truncate">{ws.name}</span>
-                  <div className="flex gap-1 shrink-0">
+        <>
+          <section
+            className="mb-3 grid grid-cols-2 gap-px overflow-hidden rounded-[12px] border border-border-subtle bg-border-subtle sm:grid-cols-4"
+            aria-label={t("workspaces.overview", "Workspace overview")}
+          >
+            {workspaceSummary.map((metric) => (
+              <div key={metric.label} className="bg-bg-card px-3 py-2.5">
+                <div
+                  className={cn(
+                    "text-lg font-semibold tabular-nums",
+                    metric.tone
+                  )}
+                >
+                  {metric.value}
+                </div>
+                <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-text-dim">
+                  {metric.label}
+                </div>
+              </div>
+            ))}
+          </section>
+
+          <div className="space-y-2">
+            {workspaces.map((ws: Workspace) => (
+              <div key={ws.id}>
+                <Card
+                  variant="interactive"
+                  padding="none"
+                  data-testid={`workspace-card-${ws.id}`}
+                  className={cn(
+                    "group flex min-h-[64px] items-center gap-3 overflow-visible px-3 py-2.5",
+                    activeWorkspaceId === ws.id &&
+                      "border-primary ring-1 ring-primary/30"
+                  )}
+                  onClick={() => switchWorkspace(ws.id)}
+                >
+                  <div
+                    className={cn(
+                      "h-2.5 w-2.5 shrink-0 rounded-full",
+                      ws.status === "READY" ? "bg-cta" : "bg-primary"
+                    )}
+                    aria-hidden="true"
+                  />
+
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-sm font-semibold text-text-main">
+                        {ws.name}
+                      </span>
+                      {ws.watching && (
+                        <span className="hidden items-center gap-1 rounded-full bg-status-warn/10 px-1.5 py-0.5 text-[9px] font-bold tracking-wide text-status-warn sm:flex">
+                          <Eye size={10} aria-hidden="true" /> WATCHING
+                        </span>
+                      )}
+                    </div>
+                    <code className="block truncate font-mono text-[11px] leading-4 text-text-dim">
+                      {ws.path}
+                    </code>
+                  </div>
+
+                  <div className="hidden w-24 shrink-0 items-center gap-1.5 text-[10px] font-bold sm:flex">
+                    {ws.status === "READY" ? (
+                      <>
+                        <CheckCircle2 size={13} className="text-cta" />
+                        <span className="text-cta">READY</span>
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw
+                          size={13}
+                          className="animate-spin text-primary-text"
+                        />
+                        <span className="text-primary-text">PROCESSING</span>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="flex shrink-0 gap-0.5">
                     <Button
                       variant="ghost"
                       icon={ws.watching ? EyeOff : Eye}
-                      className="h-10 w-10 p-0 text-text-dim hover:text-cta-text"
+                      className="h-8 w-8 p-0 text-text-dim hover:text-cta-text"
                       onClick={(e) => {
                         e.stopPropagation();
                         handleToggleWatch(ws);
@@ -153,7 +254,7 @@ const WorkspacesPage: React.FC = () => {
                     <Button
                       variant="ghost"
                       icon={RefreshCw}
-                      className="h-10 w-10 p-0 text-text-dim hover:text-primary-text"
+                      className="hidden h-8 w-8 p-0 text-text-dim hover:text-primary-text sm:flex"
                       onClick={(e) => {
                         e.stopPropagation();
                         handleRefresh(ws);
@@ -166,7 +267,7 @@ const WorkspacesPage: React.FC = () => {
                       onClick={(event) => event.stopPropagation()}
                     >
                       <summary
-                        className="ui-pressable grid h-10 w-10 cursor-pointer list-none place-items-center rounded-[10px] text-text-dim hover:bg-bg-hover hover:text-text-main"
+                        className="ui-pressable grid h-8 w-8 cursor-pointer list-none place-items-center rounded-[9px] text-text-dim hover:bg-bg-hover hover:text-text-main"
                         aria-label={`More actions for ${ws.name}`}
                       >
                         <MoreHorizontal size={16} aria-hidden="true" />
@@ -184,40 +285,11 @@ const WorkspacesPage: React.FC = () => {
                       </div>
                     </details>
                   </div>
-                </div>
-
-                {/* 卡片内容 */}
-                <div className="p-4 space-y-4">
-                  <code className="block truncate rounded-[8px] border border-border-subtle bg-bg-main px-3 py-2 font-mono text-xs text-text-muted">
-                    {ws.path}
-                  </code>
-                  <div className="flex items-center gap-2 text-xs font-bold flex-wrap">
-                    {ws.status === "READY" ? (
-                      <>
-                        <CheckCircle2 size={14} className="text-cta" />
-                        <span className="text-cta">READY</span>
-                      </>
-                    ) : (
-                      <>
-                        <RefreshCw
-                          size={14}
-                          className="text-primary-text animate-spin"
-                        />
-                        <span className="text-primary-text">PROCESSING</span>
-                      </>
-                    )}
-                    {ws.watching && (
-                      <>
-                        <Eye size={14} className="text-status-warn ml-2" />
-                        <span className="text-status-warn">WATCHING</span>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </Card>
-            </div>
-          ))}
-        </div>
+                </Card>
+              </div>
+            ))}
+          </div>
+        </>
       )}
 
       {/* 文件过滤设置模态框 */}

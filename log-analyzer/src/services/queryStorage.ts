@@ -25,8 +25,10 @@ const SearchQuerySchema = z.object({
       levels: z.array(z.string()).optional(),
       timeRange: z
         .object({
-          start: z.number().optional(),
-          end: z.number().optional(),
+          // P3 修复：与 FilterOptions 一致（ISO 字符串或 null），
+          // 此前定义为 number 导致保存的查询重启后解析失败。
+          start: z.string().nullable().optional(),
+          end: z.string().nullable().optional(),
         })
         .optional(),
       filePattern: z.string().optional(),

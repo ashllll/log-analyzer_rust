@@ -20,6 +20,10 @@ impl SearchService for WorkspaceServiceImpl {
         filters: SearchFilters,
         max_results: usize,
     ) -> Result<String> {
+        let log_files = Arc::new(
+            CasLogFileRepository::new(self.repo.metadata_store().clone(), self.repo.cas().clone())
+                .await?,
+        );
         let search_id = uuid::Uuid::new_v4().to_string();
         let cancellation_token = CancellationToken::new();
 
@@ -28,13 +32,12 @@ impl SearchService for WorkspaceServiceImpl {
             .map_err(|e| {
                 AppError::io_error(format!("Failed to create search session: {e}"), None)
             })?;
-        self.search_session_manager
-            .register_token(&search_id, cancellation_token.clone());
+        self.search_session_manager.register_token(
+            &self.workspace_id,
+            &search_id,
+            cancellation_token.clone(),
+        );
 
-        let log_files = Arc::new(CasLogFileRepository {
-            metadata: self.repo.metadata_store().clone(),
-            cas: self.repo.cas().clone(),
-        });
         let results = Arc::new(DiskResultStoreRepo {
             store: self.repo.disk_result_store().clone(),
         });

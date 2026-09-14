@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc dbc2885dc575097c369ef88d3920a570394e1fde1220b6b823184bb7f84a1537 # shrinks to files = [FileMetadata { id: 0, sha256_hash: "bbb846103ab1dedb37bbdaaf72f6d40ec1a45c721ece18e6d8ee980426b41fa2", virtual_path: "_7_q_W9Tt5Zle-T_L.8SG7./wJhG0CFVV3mjk_H_dP.L_F_C/BW__aQ_.Rax-_3U_-bu/0Bol__E-_S5/_r_cx_i246b_.Fjrp_9o3CU7Jm/TsILLo1AF-r8__k", original_name: "_7Hne7-DQ.Seth3.-.2w", size: 57759525, modified_time: 785172568, mime_type: None, parent_archive_id: None, depth_level: 6, min_timestamp: None, max_timestamp: None, level_mask: None, analysis_status: Pending }]

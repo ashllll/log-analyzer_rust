@@ -1,29 +1,24 @@
 //! 导出命令实现（CSV / JSON）
 //!
-//! 路径安全验证 + I/O 在命令层，数据变换委托给 ExportUseCase。
+//! 命令层只负责路径边界与运行时依赖，分页和文件发布委托给 ExportUseCase。
 
 use la_core::error::CommandError;
-use la_core::models::LogEntry;
-use tauri::{command, AppHandle, Manager};
+use tauri::{command, AppHandle, Manager, State};
 
-use crate::application::{transform_csv, transform_json};
+use crate::application::export_search_results;
+use crate::models::AppState;
 
 fn resolve_export_path(
     download_dir: &std::path::Path,
     requested_path: &str,
 ) -> Result<std::path::PathBuf, CommandError> {
-    let safe = crate::utils::validation::prevent_path_traversal(requested_path)
+    let validated = crate::utils::validation::prevent_path_traversal(requested_path)
         .map_err(|e| CommandError::new("EXPORT_PATH_UNSAFE", format!("导出路径不安全: {e}")))?;
-    let save_path = std::path::Path::new(&safe);
+    let save_path = std::path::Path::new(requested_path);
     for component in save_path.components() {
         match component {
             std::path::Component::Normal(_) | std::path::Component::CurDir => {}
-            std::path::Component::RootDir | std::path::Component::Prefix(_) => {
-                return Err(CommandError::new(
-                    "ABSOLUTE_PATH_REJECTED",
-                    "导出路径不允许使用绝对路径".to_string(),
-                ));
-            }
+            std::path::Component::RootDir | std::path::Component::Prefix(_) => {}
             std::path::Component::ParentDir => {
                 return Err(CommandError::new(
                     "PATH_TRAVERSAL_DETECTED",
@@ -33,7 +28,18 @@ fn resolve_export_path(
         }
     }
 
-    let final_path = download_dir.join(&safe);
+    if std::path::Path::new(&validated).is_absolute() && !save_path.is_absolute() {
+        return Err(CommandError::new(
+            "ENCODED_ABSOLUTE_PATH_REJECTED",
+            "导出路径不能使用编码后的绝对路径".to_string(),
+        ));
+    }
+
+    let final_path = if save_path.is_absolute() {
+        save_path.to_path_buf()
+    } else {
+        download_dir.join(save_path)
+    };
     let canonical_download = dunce::canonicalize(download_dir).map_err(|e| {
         CommandError::new("DOWNLOAD_DIR_UNAVAILABLE", format!("无法解析下载目录: {e}"))
     })?;
@@ -47,7 +53,7 @@ fn resolve_export_path(
         )
     })?;
 
-    if !canonical_parent.starts_with(&canonical_download) {
+    if !save_path.is_absolute() && !canonical_parent.starts_with(&canonical_download) {
         return Err(CommandError::new(
             "EXPORT_PATH_ESCAPE",
             "导出路径不允许超出下载目录范围".to_string(),
@@ -71,53 +77,11 @@ fn resolve_export_path(
     Ok(resolved_path)
 }
 
-fn write_export_bytes(destination: &std::path::Path, contents: &[u8]) -> Result<(), CommandError> {
-    use std::io::Write;
-
-    let parent = destination
-        .parent()
-        .ok_or_else(|| CommandError::new("EXPORT_PATH_UNSAFE", "导出路径缺少父目录".to_string()))?;
-    let file_name = destination
-        .file_name()
-        .ok_or_else(|| CommandError::new("EXPORT_PATH_UNSAFE", "导出路径缺少文件名".to_string()))?;
-    let temporary_path = parent.join(format!(
-        ".{}.{}.tmp",
-        file_name.to_string_lossy(),
-        uuid::Uuid::new_v4()
-    ));
-
-    let write_result = (|| -> std::io::Result<()> {
-        let mut temporary = std::fs::OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .open(&temporary_path)?;
-        temporary.write_all(contents)?;
-        temporary.sync_all()?;
-        drop(temporary);
-
-        if let Err(first_error) = std::fs::rename(&temporary_path, destination) {
-            if std::fs::symlink_metadata(destination).is_err() {
-                return Err(first_error);
-            }
-
-            std::fs::remove_file(destination)?;
-            std::fs::rename(&temporary_path, destination)?;
-        }
-
-        Ok(())
-    })();
-
-    if write_result.is_err() {
-        let _ = std::fs::remove_file(&temporary_path);
-    }
-
-    write_result.map_err(|e| CommandError::new("IO_ERROR", e.to_string()))
-}
-
 #[command]
 pub async fn export_results(
     app: AppHandle,
-    results: Vec<LogEntry>,
+    state: State<'_, AppState>,
+    #[allow(non_snake_case)] searchId: String,
     format: String,
     #[allow(non_snake_case)] savePath: String,
 ) -> Result<String, CommandError> {
@@ -126,27 +90,17 @@ pub async fn export_results(
     })?;
     let final_path = resolve_export_path(&download_dir, &savePath)?;
     let path_str = final_path.to_string_lossy().to_string();
+    let manager = state
+        .get_search_session_manager()
+        .ok_or_else(|| CommandError::new("NOT_FOUND", "Search session manager not initialized"))?;
 
     tokio::task::spawn_blocking(move || -> Result<String, CommandError> {
-        match format.as_str() {
-            "csv" => {
-                let csv = transform_csv(&results);
-                let mut bytes = Vec::with_capacity(3 + csv.len());
-                bytes.extend_from_slice(&[0xEFu8, 0xBB, 0xBF]);
-                bytes.extend_from_slice(csv.as_bytes());
-                write_export_bytes(std::path::Path::new(&path_str), &bytes)?;
-                Ok(path_str)
-            }
-            "json" => {
-                let json = transform_json(&results);
-                write_export_bytes(std::path::Path::new(&path_str), json.as_bytes())?;
-                Ok(path_str)
-            }
-            _ => Err(CommandError::new(
-                "UNSUPPORTED_EXPORT_FORMAT",
-                format!("Unsupported format: {format}"),
-            )),
-        }
+        export_search_results(std::path::Path::new(&path_str), &format, |offset, limit| {
+            manager
+                .fetch_search_page(&searchId, offset, limit)
+                .map_err(CommandError::from)
+        })?;
+        Ok(path_str)
     })
     .await
     .map_err(|e| CommandError::new("EXPORT_PANICKED", format!("Export panicked: {e}")))?
@@ -213,10 +167,23 @@ mod tests {
         let destination = downloads.join("results.json");
         std::fs::hard_link(&outside, &destination).unwrap();
 
-        write_export_bytes(&destination, b"new export").unwrap();
+        let requested = destination.to_string_lossy();
+        let resolved = resolve_export_path(&downloads, &requested).unwrap();
+        export_search_results(&resolved, "json", |_, _| {
+            Ok(la_search::SearchPageResult {
+                entries: vec![],
+                total_count: 0,
+                is_complete: true,
+                has_more: false,
+                next_offset: None,
+            })
+        })
+        .unwrap();
 
         assert_eq!(std::fs::read(&outside).unwrap(), b"do not overwrite");
-        assert_eq!(std::fs::read(&destination).unwrap(), b"new export");
+        let exported: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&destination).unwrap()).unwrap();
+        assert_eq!(exported["metadata"]["totalCount"], 0);
     }
 
     #[test]
@@ -230,6 +197,25 @@ mod tests {
         assert_eq!(
             result,
             dunce::canonicalize(downloads).unwrap().join("results.json")
+        );
+    }
+
+    #[test]
+    fn resolves_an_absolute_path_selected_by_the_save_dialog() {
+        let root = TempDir::new().unwrap();
+        let downloads = root.path().join("downloads");
+        let selected_dir = root.path().join("selected");
+        std::fs::create_dir_all(&downloads).unwrap();
+        std::fs::create_dir_all(&selected_dir).unwrap();
+        let selected = selected_dir.join("results.json");
+
+        let result = resolve_export_path(&downloads, &selected.to_string_lossy()).unwrap();
+
+        assert_eq!(
+            result,
+            dunce::canonicalize(selected_dir)
+                .unwrap()
+                .join("results.json")
         );
     }
 }

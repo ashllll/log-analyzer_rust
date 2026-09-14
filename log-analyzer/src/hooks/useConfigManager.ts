@@ -53,17 +53,29 @@ export const useConfigManager = () => {
       return;
     }
 
-    lastFingerprintRef.current = configFingerprint;
-
-    // Save using React Query mutation via stable ref
-    mutateRef.current({
-      keyword_groups: keywordGroups,
-      workspaces: workspaces,
-    });
-
-    logger.debug(
-      "[CONFIG_MANAGER] Configuration saved with fingerprint:",
-      configFingerprint
+    // P3 修复：指纹只在保存成功后标记。此前在发起 mutate 之前就写入，
+    // 保存失败时指纹已被标记，后续不再重试 → 配置静默丢失。
+    mutateRef.current(
+      {
+        keyword_groups: keywordGroups,
+        workspaces: workspaces,
+      },
+      {
+        onSuccess: () => {
+          lastFingerprintRef.current = configFingerprint;
+          logger.debug(
+            "[CONFIG_MANAGER] Configuration saved with fingerprint:",
+            configFingerprint
+          );
+        },
+        onError: (saveError: unknown) => {
+          // 指纹保持旧值：下次触发保存时会重试，而非静默丢弃。
+          logger.error(
+            "[CONFIG_MANAGER] Configuration save failed, will retry on next change:",
+            saveError
+          );
+        },
+      }
     );
   }, [configFingerprint, keywordGroups, workspaces]);
 

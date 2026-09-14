@@ -8,6 +8,71 @@ async fn create_test_store() -> (MetadataStore, TempDir) {
 }
 
 #[tokio::test]
+async fn replacing_content_invalidates_stats_in_each_upsert_path() {
+    let (store, _temp) = create_test_store().await;
+    for mode in 0..4 {
+        let mut file = FileMetadata {
+            id: 0,
+            sha256_hash: "old".into(),
+            virtual_path: format!("{mode}.log"),
+            original_name: "file.log".into(),
+            size: 10,
+            modified_time: 0,
+            mime_type: None,
+            parent_archive_id: None,
+            depth_level: 0,
+            min_timestamp: Some(100),
+            max_timestamp: Some(200),
+            level_mask: Some(1),
+            analysis_status: AnalysisStatus::Ready,
+        };
+        store.insert_file(&file).await.unwrap();
+        file.sha256_hash = "new".into();
+        file.min_timestamp = None;
+        file.max_timestamp = None;
+        file.level_mask = None;
+        file.analysis_status = AnalysisStatus::Pending;
+        match mode {
+            0 => {
+                store.insert_file(&file).await.unwrap();
+            }
+            1 => {
+                store.insert_files_batch(vec![file.clone()]).await.unwrap();
+            }
+            2 => {
+                store
+                    .insert_files_batch_optimized(vec![file.clone()])
+                    .await
+                    .unwrap();
+            }
+            _ => {
+                let mut tx = store.begin_transaction().await.unwrap();
+                MetadataStore::insert_file_tx(&mut tx, &file).await.unwrap();
+                tx.commit().await.unwrap();
+            }
+        }
+        let actual = store
+            .get_file_by_virtual_path(&file.virtual_path)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            actual.analysis_status,
+            AnalysisStatus::Pending,
+            "mode {mode}"
+        );
+        assert_eq!(
+            (
+                actual.min_timestamp,
+                actual.max_timestamp,
+                actual.level_mask
+            ),
+            (None, None, None)
+        );
+    }
+}
+
+#[tokio::test]
 async fn test_create_metadata_store() {
     let (store, _temp_dir) = create_test_store().await;
 
@@ -1326,6 +1391,64 @@ async fn reinserting_virtual_path_replaces_its_content_reference() {
     assert_eq!(stored.size, 200);
     assert_eq!(stored.modified_time, 20);
 }
+// Reimporting identical content can reuse already-computed statistics.
+
+#[tokio::test]
+async fn upsert_with_null_stats_preserves_existing_analysis() {
+    let (store, _temp_dir) = create_test_store().await;
+
+    let analyzed = FileMetadata {
+        id: 0,
+        sha256_hash: "hash-1".to_string(),
+        virtual_path: "watched.log".to_string(),
+        original_name: "watched.log".to_string(),
+        size: 100,
+        modified_time: 1,
+        mime_type: None,
+        parent_archive_id: None,
+        depth_level: 0,
+        min_timestamp: Some(1_700_000_000),
+        max_timestamp: Some(1_700_000_100),
+        level_mask: Some(0b1010),
+        analysis_status: AnalysisStatus::Ready,
+    };
+    store.insert_file(&analyzed).await.unwrap();
+
+    let snapshot = FileMetadata {
+        sha256_hash: "hash-1".to_string(),
+        size: 100,
+        modified_time: 2,
+        min_timestamp: None,
+        max_timestamp: None,
+        level_mask: None,
+        analysis_status: AnalysisStatus::Pending,
+        ..analyzed.clone()
+    };
+    store.insert_file(&snapshot).await.unwrap();
+
+    let stored = store
+        .get_file_by_virtual_path("watched.log")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        stored.min_timestamp,
+        Some(1_700_000_000),
+        "stats must survive NULL upserts"
+    );
+    assert_eq!(stored.max_timestamp, Some(1_700_000_100));
+    assert_eq!(stored.level_mask, Some(0b1010));
+    assert_eq!(
+        stored.analysis_status,
+        AnalysisStatus::Ready,
+        "Ready must not regress to permanent Pending"
+    );
+    assert_eq!(
+        stored.sha256_hash, "hash-1",
+        "identical content keeps its statistics"
+    );
+    assert_eq!(stored.size, 100);
+}
 
 // ========== Index State Management Tests ==========
 
@@ -1754,4 +1877,46 @@ mod property_tests {
             }).unwrap();
         });
     }
+}
+
+#[tokio::test]
+async fn legacy_sampled_large_file_stats_never_exclude_search_candidates() {
+    let (store, _temp) = create_test_store().await;
+    let mut file = FileMetadata {
+        id: 0,
+        sha256_hash: "legacy".into(),
+        virtual_path: "logs/large.log".into(),
+        original_name: "large.log".into(),
+        size: la_core::utils::file_stats::MAX_FULL_PARSE_BYTES as i64 + 1,
+        modified_time: 0,
+        mime_type: None,
+        parent_archive_id: None,
+        depth_level: 0,
+        min_timestamp: Some(100),
+        max_timestamp: Some(200),
+        level_mask: Some(4),
+        analysis_status: AnalysisStatus::Ready,
+    };
+    store.insert_file(&file).await.unwrap();
+    file.virtual_path = "logs/small.log".into();
+    file.size = 100;
+    store.insert_file(&file).await.unwrap();
+    for (start, end, mask) in [
+        (None, None, Some(1)),
+        (Some(300), None, None),
+        (None, Some(50), None),
+        (Some(300), Some(400), Some(1)),
+    ] {
+        let files = store
+            .get_files_with_pruning(start, end, mask, None)
+            .await
+            .unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].virtual_path, "logs/large.log");
+    }
+    assert!(store
+        .get_files_with_pruning(None, None, Some(1), Some("other/*"))
+        .await
+        .unwrap()
+        .is_empty());
 }

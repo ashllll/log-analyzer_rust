@@ -30,8 +30,8 @@
 use std::{path::Path, sync::Arc};
 
 use la_core::error::CommandError;
-use tauri::{AppHandle, State};
-use tracing::info;
+use tauri::{AppHandle, Manager, State};
+use tracing::{info, warn};
 
 use crate::commands::import::import_folder;
 use crate::models::AppState;
@@ -144,9 +144,32 @@ pub async fn refresh_workspace(
     // CAS handles deduplication automatically, so re-importing is safe and simple
     info!("CAS workspace detected, re-importing for refresh");
 
-    import_folder(app, path, workspace_id, state)
+    let import_result = import_folder(app.clone(), path, workspace_id.clone(), state.clone())
         .await
-        .map_err(|e| CommandError::new("IMPORT_ERROR", e))
+        .map_err(|e| CommandError::new("IMPORT_ERROR", e))?;
+
+    // P2 修复：刷新/重导入完成后回收不再被引用的 CAS 孤儿对象
+    // （重导入会替换 virtual_path 的内容引用，旧对象成为孤儿）。
+    if let Some(service) = state.get_workspace_service(&workspace_id) {
+        match la_storage::gc::gc_orphaned_objects(service.cas(), service.metadata_store()).await {
+            Ok(removed) => {
+                info!(
+                    workspace_id = %workspace_id,
+                    removed,
+                    "Garbage-collected orphaned CAS objects"
+                );
+            }
+            Err(e) => {
+                warn!(
+                    workspace_id = %workspace_id,
+                    error = %e,
+                    "CAS garbage collection failed"
+                );
+            }
+        }
+    }
+
+    Ok(import_result)
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -221,7 +244,51 @@ async fn cleanup_workspace_resources(
     state: &AppState,
     app: &AppHandle,
 ) -> Result<(), CommandError> {
-    crate::application::cleanup::CleanupUseCase::execute(workspace_id, state, app).await
+    struct TauriCleanupRuntime<'a> {
+        state: &'a AppState,
+        app: &'a AppHandle,
+    }
+
+    impl crate::application::cleanup::CleanupRuntime for TauriCleanupRuntime<'_> {
+        fn workspace_lifecycle(
+            &self,
+            workspace_id: &str,
+        ) -> std::sync::Arc<crate::application::workspace_lifecycle::WorkspaceLifecycle> {
+            self.state.workspace_lifecycle(workspace_id)
+        }
+        fn workspace_service(
+            &self,
+            workspace_id: &str,
+        ) -> Option<crate::application::workspace_service::WorkspaceServiceRef> {
+            self.state.get_workspace_service(workspace_id)
+        }
+
+        fn remove_workspace_service(&self, workspace_id: &str) {
+            self.state.remove_workspace_service(workspace_id);
+        }
+
+        fn legacy_index_dir(&self) -> Result<std::path::PathBuf, String> {
+            self.app
+                .path()
+                .app_data_dir()
+                .map(|path| path.join("indices"))
+                .map_err(|e| format!("Failed to get app data dir: {e}"))
+        }
+
+        fn workspace_dir(&self, workspace_id: &str) -> Result<std::path::PathBuf, String> {
+            crate::utils::workspace_paths::resolve_workspace_dir(self.app, workspace_id)
+        }
+
+        fn cancel_workspace_searches(&self, workspace_id: &str) -> usize {
+            self.state
+                .get_search_session_manager()
+                .map(|manager| manager.cancel_workspace_searches(workspace_id))
+                .unwrap_or(0)
+        }
+    }
+
+    let runtime = TauriCleanupRuntime { state, app };
+    crate::application::cleanup::CleanupUseCase::execute(workspace_id, &runtime).await
 }
 
 /// 删除工作区命令

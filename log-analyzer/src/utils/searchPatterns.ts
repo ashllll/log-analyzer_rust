@@ -12,7 +12,7 @@ export const looksLikeRegexPattern = (value: string): boolean => {
 };
 
 export const escapeRegexLiteral = (value: string): string =>
-  value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**
  * Smart split of a query string by `|` (pipe).
@@ -28,9 +28,17 @@ export const escapeRegexLiteral = (value: string): string =>
  *   "foo\\|bar"                → ["foo|bar"]
  *   "a | (b|c) | d"            → ["a", "(b|c)", "d"]
  */
-export function splitQueryByPipe(query: string): string[] {
+export interface SplitQueryResult {
+  terms: string[];
+  /** escapedFlags[i] === true 表示 terms[i] 含转义管道（字面量 `|` 意图） */
+  escapedFlags: boolean[];
+}
+
+export function splitQueryByPipeWithFlags(query: string): SplitQueryResult {
   const terms: string[] = [];
-  let current = '';
+  const escapedFlags: boolean[] = [];
+  let current = "";
+  let currentHasEscapedPipe = false;
   let depth = 0;
   let escaped = false;
 
@@ -38,27 +46,28 @@ export function splitQueryByPipe(query: string): string[] {
     const char = query[i];
 
     if (escaped) {
-      if (char === '|') {
-        current += '|';
+      if (char === "|") {
+        current += "|";
+        currentHasEscapedPipe = true;
       } else {
-        current += '\\' + char;
+        current += "\\" + char;
       }
       escaped = false;
       continue;
     }
 
-    if (char === '\\') {
+    if (char === "\\") {
       escaped = true;
       continue;
     }
 
-    if (char === '(' || char === '[' || char === '{') {
+    if (char === "(" || char === "[" || char === "{") {
       depth++;
       current += char;
       continue;
     }
 
-    if (char === ')' || char === ']' || char === '}') {
+    if (char === ")" || char === "]" || char === "}") {
       if (depth > 0) {
         depth--;
       }
@@ -66,12 +75,14 @@ export function splitQueryByPipe(query: string): string[] {
       continue;
     }
 
-    if (char === '|' && depth === 0) {
+    if (char === "|" && depth === 0) {
       const trimmed = current.trim();
       if (trimmed.length > 0) {
         terms.push(trimmed);
+        escapedFlags.push(currentHasEscapedPipe);
       }
-      current = '';
+      current = "";
+      currentHasEscapedPipe = false;
       continue;
     }
 
@@ -80,13 +91,18 @@ export function splitQueryByPipe(query: string): string[] {
 
   // dangling backslash at end
   if (escaped) {
-    current += '\\';
+    current += "\\";
   }
 
   const trimmed = current.trim();
   if (trimmed.length > 0) {
     terms.push(trimmed);
+    escapedFlags.push(currentHasEscapedPipe);
   }
 
-  return terms;
+  return { terms, escapedFlags };
+}
+
+export function splitQueryByPipe(query: string): string[] {
+  return splitQueryByPipeWithFlags(query).terms;
 }

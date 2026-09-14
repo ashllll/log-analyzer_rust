@@ -1,15 +1,12 @@
 //! File-level log metadata statistics.
 //!
 //! Pure conversion from raw log bytes to the time range and level mask used by
-//! incremental search metadata. This module owns the sampling policy so every
-//! import path interprets identical content consistently.
-
-use std::collections::VecDeque;
+//! incremental search metadata. Only complete statistics may exclude a file
+//! from search; large files report unknown bounds instead of sampled bounds.
 
 use super::{level_to_mask, parse_metadata, TimestampParser};
 
-const MAX_FULL_PARSE_BYTES: usize = 10 * 1024 * 1024;
-const SAMPLE_LINE_COUNT: usize = 1_000;
+pub const MAX_FULL_PARSE_BYTES: usize = 10 * 1024 * 1024;
 
 #[derive(Default)]
 struct FileStats {
@@ -52,31 +49,17 @@ impl FileStats {
 
 /// Compute `(minimum timestamp, maximum timestamp, level mask)` from raw log bytes.
 pub fn compute_file_stats(content: &[u8]) -> (Option<i64>, Option<i64>, Option<u8>) {
+    // Unknown statistics keep the file eligible for every search filter. A
+    // sample cannot prove the absence of a level or an out-of-order timestamp.
+    if content.len() > MAX_FULL_PARSE_BYTES {
+        return (None, None, None);
+    }
     let Ok(text) = std::str::from_utf8(content) else {
         return (None, None, None);
     };
 
     let mut stats = FileStats::default();
-    if text.len() <= MAX_FULL_PARSE_BYTES {
-        for line in text.lines() {
-            stats.observe(line);
-        }
-        return stats.finish();
-    }
-
-    let mut lines = text.lines();
-    for line in lines.by_ref().take(SAMPLE_LINE_COUNT) {
-        stats.observe(line);
-    }
-
-    let mut tail = VecDeque::with_capacity(SAMPLE_LINE_COUNT);
-    for line in lines {
-        if tail.len() == SAMPLE_LINE_COUNT {
-            tail.pop_front();
-        }
-        tail.push_back(line);
-    }
-    for line in tail {
+    for line in text.lines() {
         stats.observe(line);
     }
 
@@ -128,7 +111,7 @@ mod tests {
     }
 
     #[test]
-    fn large_files_sample_the_first_and_last_thousand_lines() {
+    fn large_files_do_not_publish_sampled_bounds_as_complete_statistics() {
         let filler = "x".repeat(6_000);
         let mut lines = vec![filler; 2_001];
         lines[0] = "2024-01-15 10:30:00 INFO first".to_string();
@@ -136,9 +119,6 @@ mod tests {
         lines[2_000] = "2024-01-15 10:32:00 WARN last".to_string();
         let content = lines.join("\n");
 
-        assert_eq!(
-            compute_file_stats(content.as_bytes()),
-            (Some(1_705_314_600), Some(1_705_314_720), Some(0b01110))
-        );
+        assert_eq!(compute_file_stats(content.as_bytes()), (None, None, None));
     }
 }

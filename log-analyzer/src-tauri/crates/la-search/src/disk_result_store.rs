@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, File, OpenOptions},
     io::{self, BufRead, BufReader, BufWriter, Read, Seek, SeekFrom, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
@@ -83,10 +83,44 @@ pub struct DiskResultStore {
     max_sessions: usize,
 }
 
+/// 删除缓存目录中的崩溃残留（*.ndjson / *.idx）。
+///
+/// 只在构造时调用（此时没有活跃会话），进程崩溃后重启的残留文件
+/// 不会再有写入者，可以安全删除。
+fn sweep_crash_residue(cache_dir: &Path) {
+    let Ok(entries) = std::fs::read_dir(cache_dir) else {
+        return;
+    };
+    let mut removed = 0usize;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if entry.file_type().map(|t| t.is_file()).unwrap_or(false)
+            && matches!(
+                path.extension().and_then(|e| e.to_str()),
+                Some("ndjson") | Some("idx")
+            )
+            && std::fs::remove_file(&path).is_ok()
+        {
+            removed += 1;
+        }
+    }
+    if removed > 0 {
+        tracing::debug!(
+            path = %cache_dir.display(),
+            removed,
+            "Swept crash-residue search result files"
+        );
+    }
+}
+
 impl DiskResultStore {
     /// 创建新的 DiskResultStore，如果缓存目录不存在则自动创建
+    ///
+    /// 同时清扫崩溃残留的搜索结果文件（*.ndjson / *.idx）：新实例
+    /// 没有任何会话，这些文件必然是无主孤儿，防止磁盘无限增长。
     pub fn new(cache_dir: PathBuf, max_sessions: usize) -> io::Result<Self> {
         fs::create_dir_all(&cache_dir)?;
+        sweep_crash_residue(&cache_dir);
         Ok(Self {
             cache_dir,
             sessions: DashMap::new(),
@@ -111,9 +145,14 @@ impl DiskResultStore {
     pub fn create_session(&self, search_id: &str) -> io::Result<()> {
         let base_path = self.validated_path(search_id)?;
 
-        // 超过最大会话数时驱逐最旧的
-        if self.sessions.len() >= self.max_sessions {
-            self.evict_oldest_session();
+        // 超过最大会话数时驱逐最旧的**已完成**会话。进行中的会话
+        // 绝不驱逐（否则会中断正在写入的搜索或前端正在分页的浏览）。
+        // 若没有可驱逐的已完成会话，拒绝创建而不是破坏活动会话。
+        if self.sessions.len() >= self.max_sessions && !self.evict_oldest_session() {
+            return Err(io::Error::other(format!(
+                "Too many active search sessions (limit {})",
+                self.max_sessions
+            )));
         }
 
         let data_path = base_path.with_extension("ndjson");
@@ -184,14 +223,15 @@ impl DiskResultStore {
             writer.data_writer.write_all(json_bytes)?;
             writer.current_byte_offset += json_bytes.len() as u64;
         }
-        // 单次原子操作更新计数，减少锁内原子竞争
-        session
-            .total_count
-            .fetch_add(entry_count, Ordering::Relaxed);
-
-        // 每批刷新缓冲区，确保读线程能读到最新数据
+        // P2 竞态修复：先把 data 与 index 全部落盘，最后才发布新
+        // total。读线程通过 total 判断可见性——若 total 先于 flush
+        // 更新，分页读可能看到"索引指向尚未写完的 JSON 行"，解析
+        // 失败被跳过，该条结果永久丢失。
         writer.data_writer.flush()?;
         writer.index_writer.flush()?;
+        session
+            .total_count
+            .fetch_add(entry_count, Ordering::Release);
 
         Ok(session.total_count.load(Ordering::Relaxed))
     }
@@ -241,6 +281,18 @@ impl DiskResultStore {
         let total = session.total_count.load(Ordering::Acquire);
         let is_complete = session.is_complete.load(Ordering::Acquire);
 
+        // limit=0 时返回空页且不再继续：否则 next_offset 恒等于 offset、
+        // has_more 恒为 true，前端会无限轮询同一偏移。
+        if limit == 0 {
+            return Ok(SearchPageResult {
+                entries: vec![],
+                total_count: total,
+                is_complete,
+                has_more: false,
+                next_offset: None,
+            });
+        }
+
         // offset 超出当前已写入范围
         if offset >= total {
             return Ok(SearchPageResult {
@@ -272,6 +324,7 @@ impl DiskResultStore {
 
         let mut entries = Vec::with_capacity(actual_limit);
         let mut line = String::new();
+        let mut consumed = 0usize;
 
         for _ in 0..actual_limit {
             line.clear();
@@ -279,6 +332,7 @@ impl DiskResultStore {
             if bytes_read == 0 {
                 break; // EOF
             }
+            consumed += 1;
 
             let trimmed = line.trim_end();
             if trimmed.is_empty() {
@@ -288,6 +342,18 @@ impl DiskResultStore {
             match serde_json::from_str::<LogEntry>(trimmed) {
                 Ok(entry) => entries.push(entry),
                 Err(e) => {
+                    // 半写防御：失败行恰是当前可见的最后一条且搜索仍在
+                    // 进行——可能是写入批次尚未 flush 完成的残留，停止
+                    // 本页读取，留待 progress/complete 事件触发重读。
+                    let is_last_visible = offset + consumed >= total;
+                    if !is_complete && is_last_visible {
+                        tracing::debug!(
+                            error = %e,
+                            offset = offset,
+                            "Last visible entry failed to parse while search is running, stopping page read"
+                        );
+                        break;
+                    }
                     tracing::warn!(error = %e, offset = offset, "跳过无法解析的日志条目");
                 }
             }
@@ -370,17 +436,25 @@ impl DiskResultStore {
 
     // ─── 内部方法 ────────────────────────────────────────────────────────────
 
-    fn evict_oldest_session(&self) {
-        // 找到创建时间最早的会话 ID
+    /// 驱逐最旧的已完成会话，返回是否成功驱逐。
+    ///
+    /// 进行中的会话（`is_complete == false`）绝不会被驱逐：它们可能正在
+    /// 被搜索线程写入，或正在被前端分页读取。找不到可驱逐的已完成会话
+    /// 时返回 `false`，由调用方决定是否拒绝创建新会话。
+    fn evict_oldest_session(&self) -> bool {
         let oldest_id = self
             .sessions
             .iter()
+            .filter(|entry| entry.is_complete.load(std::sync::atomic::Ordering::Acquire))
             .min_by_key(|entry| entry.created_at)
             .map(|entry| entry.key().clone());
 
         if let Some(id) = oldest_id {
-            tracing::debug!(search_id = %id, "LRU 驱逐最旧搜索会话");
+            tracing::debug!(search_id = %id, "驱逐最旧已完成搜索会话");
             self.remove_session(&id);
+            true
+        } else {
+            false
         }
     }
 
@@ -469,6 +543,57 @@ mod tests {
         assert_eq!(last.next_offset, None);
     }
 
+    // ── P2#2 regression: eviction must never destroy active sessions ──
+
+    #[test]
+    fn eviction_prefers_completed_sessions_and_keeps_active_ones() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = DiskResultStore::new(dir.path().to_path_buf(), 2).unwrap();
+
+        store.create_session("completed-old").unwrap();
+        store.complete_session("completed-old").unwrap();
+        store.create_session("active-new").unwrap();
+        store
+            .append_entries("active-new", &[make_entry(0, "live")])
+            .unwrap();
+
+        // 第三个会话触发驱逐：必须驱逐已完成的旧会话，
+        // 进行中的会话保持可用。
+        store.create_session("third").unwrap();
+
+        assert!(
+            !store.has_session("completed-old"),
+            "completed oldest session should be evicted"
+        );
+        assert!(
+            store.has_session("active-new"),
+            "active session must survive"
+        );
+        assert!(store.has_session("third"));
+
+        // 活动会话仍可继续写入与读取
+        store
+            .append_entries("active-new", &[make_entry(1, "more")])
+            .unwrap();
+        let page = store.read_page("active-new", 0, 10).unwrap();
+        assert_eq!(page.total_count, 2);
+    }
+
+    #[test]
+    fn create_session_fails_instead_of_evicting_when_all_sessions_are_active() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = DiskResultStore::new(dir.path().to_path_buf(), 2).unwrap();
+
+        store.create_session("active-1").unwrap();
+        store.create_session("active-2").unwrap();
+
+        // 没有可驱逐的已完成会话：拒绝创建而非破坏活动会话。
+        let err = store.create_session("active-3").unwrap_err();
+        assert!(err.to_string().contains("Too many active search sessions"));
+        assert!(store.has_session("active-1"));
+        assert!(store.has_session("active-2"));
+    }
+
     #[test]
     fn test_session_removal() {
         let dir = tempfile::tempdir().unwrap();
@@ -483,6 +608,65 @@ mod tests {
         assert!(store.has_session("session-x"));
         store.remove_session("session-x");
         assert!(!store.has_session("session-x"));
+    }
+
+    // ── P2 竞态回归：total 发布前 data/index 已落盘 ──
+
+    #[test]
+    fn zero_limit_returns_empty_page_without_infinite_polling() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = DiskResultStore::new(dir.path().to_path_buf(), 10).unwrap();
+        store.create_session("zero-limit").unwrap();
+        store
+            .append_entries("zero-limit", &[make_entry(0, "a")])
+            .unwrap();
+
+        let page = store.read_page("zero-limit", 0, 0).unwrap();
+        assert!(page.entries.is_empty());
+        assert!(!page.has_more, "has_more must be false to stop polling");
+        assert_eq!(page.next_offset, None);
+    }
+
+    #[test]
+    fn constructor_sweeps_crash_residue_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache_dir = dir.path().join("search-cache");
+        std::fs::create_dir_all(&cache_dir).unwrap();
+        std::fs::write(cache_dir.join("dead-session.ndjson"), b"{}").unwrap();
+        std::fs::write(cache_dir.join("dead-session.idx"), b"\0\0").unwrap();
+        std::fs::write(cache_dir.join("keep.txt"), b"unrelated").unwrap();
+
+        DiskResultStore::new(cache_dir.clone(), 10).unwrap();
+
+        assert!(!cache_dir.join("dead-session.ndjson").exists());
+        assert!(!cache_dir.join("dead-session.idx").exists());
+        assert!(
+            cache_dir.join("keep.txt").exists(),
+            "non-residue files must survive"
+        );
+    }
+
+    #[test]
+    fn every_published_total_count_is_fully_readable() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = DiskResultStore::new(dir.path().to_path_buf(), 10).unwrap();
+        store.create_session("consistency-check").unwrap();
+
+        // 多批次小写入；每批后立即分页读取，任何"total 已发布但数据
+        // 未落盘"的窗口都会表现为读页报错或解析失败。
+        for batch in 0..20 {
+            let entries: Vec<LogEntry> = (batch * 5..batch * 5 + 5)
+                .map(|i| make_entry(i, &format!("line {i}")))
+                .collect();
+            store.append_entries("consistency-check", &entries).unwrap();
+
+            let page = store.read_page("consistency-check", 0, 10_000).unwrap();
+            assert_eq!(
+                page.entries.len(),
+                (batch + 1) * 5,
+                "published total must be fully readable at batch {batch}"
+            );
+        }
     }
 
     #[test]

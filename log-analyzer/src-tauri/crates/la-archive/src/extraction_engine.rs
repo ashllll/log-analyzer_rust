@@ -441,10 +441,11 @@ impl ExtractionEngine {
         archive_path: &Path,
         target_dir: &Path,
         workspace_id: &str,
+        initial_depth: usize,
     ) -> Result<ExtractionResult> {
         info!(
-            "Starting archive extraction: {:?} -> {:?} (workspace: {})",
-            archive_path, target_dir, workspace_id
+            "Starting archive extraction: {:?} -> {:?} (workspace: {}, initial depth: {})",
+            archive_path, target_dir, workspace_id, initial_depth
         );
 
         // Create initial extraction context
@@ -453,12 +454,15 @@ impl ExtractionEngine {
         // Compute SHA-256 of the top-level archive for cycle detection
         let top_hash = Self::compute_file_hash(archive_path).await.ok();
 
-        // Create initial extraction item
+        // Create initial extraction item. The initial depth carries the
+        // caller's already-consumed nesting levels so nested processors
+        // and the engine's internal traversal share ONE depth budget
+        // instead of multiplying their limits.
         let initial_item = if let Some(hash) = top_hash {
             ExtractionItem::with_hash(
                 archive_path.to_path_buf(),
                 target_dir.to_path_buf(),
-                0,
+                initial_depth,
                 context,
                 hash,
             )
@@ -466,7 +470,7 @@ impl ExtractionEngine {
             ExtractionItem::new(
                 archive_path.to_path_buf(),
                 target_dir.to_path_buf(),
-                0,
+                initial_depth,
                 context,
             )
         };
@@ -1203,6 +1207,81 @@ mod tests {
 
         ExtractionEngine::new(path_manager, security_detector, ExtractionPolicy::default()).unwrap()
     }
+    async fn engine_with_max_depth(max_depth: usize) -> ExtractionEngine {
+        let db = Arc::new(MetadataDB::new(":memory:").await.unwrap());
+        let path_manager = Arc::new(PathManager::new(PathConfig::default(), db));
+        let security_detector = Arc::new(SecurityDetector::default());
+        let policy = ExtractionPolicy {
+            max_depth,
+            ..ExtractionPolicy::default()
+        };
+        ExtractionEngine::new(path_manager, security_detector, policy).unwrap()
+    }
+
+    fn create_nested_zip_pair(dir: &Path) -> PathBuf {
+        let inner_path = dir.join("inner.zip");
+        {
+            let file = std::fs::File::create(&inner_path).unwrap();
+            let mut writer = zip::ZipWriter::new(file);
+            let options: zip::write::FileOptions<'_, ()> = zip::write::FileOptions::default();
+            writer.start_file("deep.log", options).unwrap();
+            writer.write_all(b"deep").unwrap();
+            writer.finish().unwrap();
+        }
+        let outer_path = dir.join("outer.zip");
+        {
+            let file = std::fs::File::create(&outer_path).unwrap();
+            let mut writer = zip::ZipWriter::new(file);
+            let options: zip::write::FileOptions<'_, ()> = zip::write::FileOptions::default();
+            writer.start_file("inner.zip", options).unwrap();
+            writer
+                .write_all(&std::fs::read(&inner_path).unwrap())
+                .unwrap();
+            writer.finish().unwrap();
+        }
+        outer_path
+    }
+
+    // ── P1#7 regression: processor recursion and engine traversal share
+    //    one depth budget (addition, not multiplication) ──
+
+    #[tokio::test]
+    async fn initial_depth_shares_nesting_budget_with_internal_traversal() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let archive_path = create_nested_zip_pair(temp_dir.path());
+
+        // max_depth=2、initial_depth=0：顶层(depth 0)与嵌套(depth 1)都
+        // 会被处理，没有跳过的归档。
+        let engine = engine_with_max_depth(2).await;
+        let out0 = temp_dir.path().join("out0");
+        let r0 = engine
+            .extract_archive(&archive_path, &out0, "ws", 0)
+            .await
+            .unwrap();
+        assert_eq!(r0.max_depth_reached, 1);
+        assert_eq!(r0.depth_limit_skips, 0);
+
+        // 同一个归档、同一个 max_depth=2，但调用方已消耗 1 层深度：
+        // 顶层(depth 1)处理，嵌套(depth 2)命中上限被跳过。
+        let engine = engine_with_max_depth(2).await;
+        let out1 = temp_dir.path().join("out1");
+        let r1 = engine
+            .extract_archive(&archive_path, &out1, "ws", 1)
+            .await
+            .unwrap();
+        assert_eq!(r1.max_depth_reached, 1);
+        assert_eq!(r1.depth_limit_skips, 1);
+
+        // initial_depth=2 直接命中上限：顶层就被跳过，什么也不提取。
+        let engine = engine_with_max_depth(2).await;
+        let out2 = temp_dir.path().join("out2");
+        let r2 = engine
+            .extract_archive(&archive_path, &out2, "ws", 2)
+            .await
+            .unwrap();
+        assert_eq!(r2.depth_limit_skips, 1);
+        assert_eq!(r2.total_files, 0);
+    }
 
     #[tokio::test]
     async fn ordered_processing_respects_parallel_file_limit() {
@@ -1249,7 +1328,7 @@ mod tests {
         .await;
 
         let error = engine
-            .extract_archive(&archive_path, &target_dir, "test-workspace")
+            .extract_archive(&archive_path, &target_dir, "test-workspace", 0)
             .await
             .expect_err("configured compression-ratio limit must reject suspicious archives");
 
@@ -1290,7 +1369,7 @@ mod tests {
 
         let result = create_test_engine()
             .await
-            .extract_archive(&archive_path, &target_dir, "test-workspace")
+            .extract_archive(&archive_path, &target_dir, "test-workspace", 0)
             .await
             .unwrap();
 
@@ -1339,7 +1418,7 @@ mod tests {
         .await;
 
         let error = engine
-            .extract_archive(&archive_path, &target_dir, "test-workspace")
+            .extract_archive(&archive_path, &target_dir, "test-workspace", 0)
             .await
             .expect_err("nested extraction must count bytes already extracted by the root archive");
 

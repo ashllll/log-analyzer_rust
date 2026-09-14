@@ -554,17 +554,24 @@ async fn process_path_with_cas_and_checkpoints_inner(
     // Validate virtual path
     validate_virtual_path(virtual_path)?;
 
-    // Validate file exists before processing
-    if !path.exists() {
-        warn!(
-            path = %path.display(),
-            "File does not exist, skipping"
-        );
-        return Ok(());
-    }
+    // Resolve metadata asynchronously so the application runtime is not
+    // blocked by filesystem probes on slow or network-backed volumes.
+    let path_metadata = match fs::metadata(path).await {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            warn!(path = %path.display(), "File does not exist, skipping");
+            return Ok(());
+        }
+        Err(error) => {
+            return Err(AppError::io_error(
+                error.to_string(),
+                Some(path.to_path_buf()),
+            ));
+        }
+    };
 
     // Handle directories
-    if path.is_dir() {
+    if path_metadata.is_dir() {
         // Track processing statistics for debugging
         let mut stats = DirectoryProcessingStats::default();
         let follow_symlinks = should_follow_symlinks();
@@ -742,28 +749,44 @@ async fn process_path_with_cas_and_checkpoints_inner(
         return Ok(());
     }
 
+    process_single_file_with_cas_and_checkpoints(
+        path,
+        virtual_path,
+        context,
+        provider,
+        task_id,
+        workspace_id,
+        parent_archive_id,
+        depth_level,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn process_single_file_with_cas_and_checkpoints(
+    path: &Path,
+    virtual_path: &str,
+    context: &CasProcessingContext,
+    provider: &dyn AppConfigProvider,
+    task_id: &str,
+    workspace_id: &str,
+    parent_archive_id: Option<i64>,
+    depth_level: i32,
+) -> Result<()> {
     let file_name = path
         .file_name()
         .ok_or_else(|| AppError::validation_error("Invalid filename"))?
         .to_string_lossy()
         .to_string();
 
-    // ========== 防御性集成：文件类型过滤检查 ==========
-    // 设计要点：
-    // 1. 不修改现有逻辑
-    // 2. 过滤失败时自动降级到旧行为（允许文件通过）
-    // 3. 详细日志记录决策过程
-    if !path.is_dir() && !is_archive_file(path) {
-        // 可选的文件过滤检查（防御性：失败时允许文件通过）
-        let import_allowed = should_import_file_defensive(path, provider).await;
-
-        if !import_allowed {
+    if !is_archive_file(path) {
+        if !should_import_file_defensive(path, provider).await {
             tracing::info!(
                 file = %file_name,
                 path = %path.display(),
                 "File skipped by filter configuration (user-configured)"
             );
-            return Ok(()); // 跳过此文件，但继续处理其他文件
+            return Ok(());
         }
 
         tracing::debug!(
@@ -771,18 +794,14 @@ async fn process_path_with_cas_and_checkpoints_inner(
             "File passed filter check, proceeding with import"
         );
     }
-    // ========== 集成结束 ==========
 
-    // Report progress
     tracing::debug!(
         task_id = %task_id,
         file = %file_name,
         "Processing file with CAS (event sent via TaskManager)"
     );
 
-    // Check if this is an archive file
     if is_archive_file(path) {
-        // Process as archive
         return Box::pin(extract_and_process_archive_with_cas_and_checkpoints(
             path,
             virtual_path,
@@ -804,9 +823,7 @@ async fn process_path_with_cas_and_checkpoints_inner(
         .metadata_store
         .insert_file(&pending.metadata)
         .await?;
-    finalize_regular_file_import(context, pending, Some(file_id)).await?;
-
-    Ok(())
+    finalize_regular_file_import(context, pending, Some(file_id)).await
 }
 
 async fn prepare_regular_file_import(
@@ -1137,6 +1154,12 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
     // Check depth limit - if reached, still extract but don't recurse into nested archives
     let is_at_max_depth = depth_level >= max_extraction_depth;
 
+    // P2 修复（重复导入）：enhanced 模式下 ExtractionEngine 已递归展开全部
+    // 嵌套归档，extracted_files 已包含所有层级的文件。processor 若再对
+    // 嵌套归档递归解压，同一内容会以两套虚拟路径重复入库（搜索结果
+    // 翻倍）。此标志在循环中用于把嵌套归档存档为普通文件。
+    let nested_already_expanded = is_enhanced_extraction_enabled();
+
     if is_at_max_depth {
         warn!(
             archive = %archive_path.display(),
@@ -1222,10 +1245,14 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
         let existing_workspace_bytes = context.metadata_store.sum_file_sizes().await?.max(0) as u64;
         let security_policy =
             security_policy_from_archive_config(&archive_config, existing_workspace_bytes);
+        // 把 processor 递归已消耗的深度传给 engine，使两者的嵌套
+        // 深度共享同一预算（加法而非乘法），修复深度限制被平方绕过。
+        let engine_initial_depth = depth_level.max(0) as usize;
         match extract_archive_async_with_security_policy(
             archive_path,
             &extract_dir,
             workspace_id,
+            engine_initial_depth,
             policy,
             security_policy,
         )
@@ -1355,8 +1382,10 @@ async fn extract_and_process_archive_with_cas_and_checkpoints(
         }
 
         // Recursively process (supports nested archives)
-        // Skip recursion if at max depth to prevent infinite loops
-        if is_at_max_depth && is_archive_file(&full_path) {
+        // Skip recursion if at max depth to prevent infinite loops.
+        // P2 修复：enhanced 模式下 engine 已展开嵌套归档，processor 不再
+        // 二次解压（否则同一内容以两套虚拟路径重复入库）。
+        if is_archive_file(&full_path) && (is_at_max_depth || nested_already_expanded) {
             warn!(
                 file = %file_name,
                 depth = depth_level,

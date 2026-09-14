@@ -1,5 +1,6 @@
 // la-storage: CAS 内容寻址存储 + SQLite 元数据
 pub mod cas;
+pub mod gc;
 pub mod integrity;
 pub mod metadata_store;
 

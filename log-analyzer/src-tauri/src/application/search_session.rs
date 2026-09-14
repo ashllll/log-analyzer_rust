@@ -26,6 +26,8 @@ use tokio_util::sync::CancellationToken;
 pub struct SearchSessionManager {
     disk_result_store: Arc<DiskResultStore>,
     sessions: Arc<Mutex<HashMap<String, CancellationToken>>>,
+    /// search_id → workspace_id 关联（用于删除工作区时批量取消其搜索）
+    token_workspaces: Arc<Mutex<HashMap<String, String>>>,
 }
 
 impl SearchSessionManager {
@@ -34,6 +36,7 @@ impl SearchSessionManager {
         Self {
             disk_result_store,
             sessions: Arc::new(Mutex::new(HashMap::new())),
+            token_workspaces: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -48,8 +51,34 @@ impl SearchSessionManager {
     }
 
     /// Register a cancellation token for an active search session.
-    pub fn register_token(&self, search_id: &str, token: CancellationToken) {
+    pub fn register_token(&self, workspace_id: &str, search_id: &str, token: CancellationToken) {
         self.sessions.lock().insert(search_id.to_string(), token);
+        self.token_workspaces
+            .lock()
+            .insert(search_id.to_string(), workspace_id.to_string());
+    }
+
+    /// Cancel all active searches belonging to a workspace (used before the
+    /// workspace is deleted so in-flight searches cannot race the cleanup).
+    ///
+    /// Returns the number of cancelled searches.
+    pub fn cancel_workspace_searches(&self, workspace_id: &str) -> usize {
+        let search_ids: Vec<String> = self
+            .token_workspaces
+            .lock()
+            .iter()
+            .filter(|(_, ws)| ws.as_str() == workspace_id)
+            .map(|(id, _)| id.clone())
+            .collect();
+        let tokens = self.sessions.lock();
+        let mut cancelled = 0;
+        for search_id in search_ids {
+            if let Some(token) = tokens.get(&search_id) {
+                token.cancel();
+                cancelled += 1;
+            }
+        }
+        cancelled
     }
 
     /// Cancel the search identified by `search_id`, if it is still active.
@@ -92,6 +121,7 @@ impl SearchSessionManager {
     /// can continue paginating through results.
     pub fn cleanup_token(&self, search_id: &str) {
         self.sessions.lock().remove(search_id);
+        self.token_workspaces.lock().remove(search_id);
     }
 
     /// Returns the number of active cancellation tokens.
@@ -169,11 +199,33 @@ mod tests {
         let search_id = "session-2";
         let token = CancellationToken::new();
 
-        mgr.register_token(search_id, token.clone());
+        mgr.register_token("workspace-1", search_id, token.clone());
         assert_eq!(mgr.active_token_count(), 1);
 
         mgr.cancel_search(search_id).unwrap();
         assert!(token.is_cancelled());
+    }
+
+    #[test]
+    fn cancel_workspace_searches_only_cancels_that_workspace() {
+        let (mgr, _dir) = make_manager();
+
+        let token_a = CancellationToken::new();
+        let token_b = CancellationToken::new();
+        let token_other = CancellationToken::new();
+        mgr.register_token("workspace-a", "search-a1", token_a.clone());
+        mgr.register_token("workspace-a", "search-a2", token_b.clone());
+        mgr.register_token("workspace-b", "search-b1", token_other.clone());
+
+        let cancelled = mgr.cancel_workspace_searches("workspace-a");
+
+        assert_eq!(cancelled, 2);
+        assert!(token_a.is_cancelled());
+        assert!(token_b.is_cancelled());
+        assert!(
+            !token_other.is_cancelled(),
+            "other workspace searches must stay active"
+        );
     }
 
     #[test]
@@ -189,7 +241,7 @@ mod tests {
         let search_id = "session-3";
 
         mgr.create_session(search_id).unwrap();
-        mgr.register_token(search_id, CancellationToken::new());
+        mgr.register_token("workspace-1", search_id, CancellationToken::new());
 
         mgr.cleanup_token(search_id);
         assert_eq!(mgr.active_token_count(), 0);

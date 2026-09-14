@@ -523,8 +523,6 @@ impl HighlightingEngine {
     }
 
     /// 从大文档中提取与查询相关的片段内容
-    ///
-    /// 优化策略：
     /// 1. 使用字节位置而非字符位置进行切片，避免 O(n) 的 chars() 遍历
     /// 2. 限制搜索范围，避免在超大文档中全文扫描
     /// 3. 优先在文档前部查找匹配，提高响应速度
@@ -545,7 +543,11 @@ impl HighlightingEngine {
         // 优化：限制搜索范围，避免在超大文档中全文扫描
         // 优先搜索文档前 10KB 内容，如未找到则返回开头片段
         const SEARCH_LIMIT_BYTES: usize = 10 * 1024; // 10KB 搜索限制
-        let search_window = &content[..content.len().min(SEARCH_LIMIT_BYTES)];
+                                                     // P2#13 修复：10KB 截断点可能落在多字节字符中间，必须对齐到
+                                                     // 字符边界（floor_char_boundary 返回不超过该字节位置的最大
+                                                     // 字符边界），否则切片 panic。
+        let search_window =
+            &content[..floor_char_boundary(content, content.len().min(SEARCH_LIMIT_BYTES))];
         let content_lower = search_window.to_lowercase();
 
         let mut best_byte_start: Option<usize> = None;
@@ -566,10 +568,15 @@ impl HighlightingEngine {
         }
 
         // 根据找到的位置提取内容
-        let start_byte = best_byte_start.unwrap_or(0);
-        let end_byte = (start_byte + max_length * 4).min(content.len()); // 保守估计 UTF-8
+        let raw_start = best_byte_start.unwrap_or(0);
+        let raw_end = (raw_start + max_length * 4).min(content.len()); // 保守估计 UTF-8
 
-        // 确保在有效的 UTF-8 边界处切片
+        // P2#13 修复：to_lowercase 可能改变字节长度，content_lower 中的
+        // 字节位置与 content 不完全对应；start/end 是估算值，必须对齐到
+        // 字符边界后再切片，否则多字节文本（中文/emoji）会 panic。
+        let start_byte = floor_char_boundary(content, raw_start.min(content.len()));
+        let end_byte = floor_char_boundary(content, raw_end.max(start_byte));
+
         let slice = &content[start_byte..end_byte];
         self.truncate_by_bytes(slice, max_length)
     }
@@ -609,6 +616,17 @@ impl HighlightingEngine {
 
         self.config = new_config;
     }
+}
+
+/// 返回不超过 `index` 的最大 UTF-8 字符边界（Rust 1.88 下
+/// `str::floor_char_boundary` 仍不稳定，使用稳定的 `is_char_boundary`
+/// 实现等价逻辑）。
+fn floor_char_boundary(s: &str, index: usize) -> usize {
+    let mut idx = index.min(s.len());
+    while idx > 0 && !s.is_char_boundary(idx) {
+        idx -= 1;
+    }
+    idx
 }
 
 #[cfg(test)]
@@ -701,6 +719,73 @@ mod tests {
 
         assert!(extracted.len() <= max_length);
         assert!(extracted.contains("important"));
+    }
+    // ── P2#13 regression: multibyte boundary panics in extraction ──
+
+    #[test]
+    fn extract_relevant_content_does_not_panic_when_search_window_cuts_a_multibyte_char() {
+        let (engine, _temp_dir) = create_test_highlighting_engine();
+
+        // 4000 个“中”（每个 3 字节 = 12000 字节）。10KB（10240）截断点
+        // 落在某个“中”的中间字节——旧代码直接切片会 panic。查询词在
+        // 10KB 窗口之外，应回退到开头片段且不得 panic。
+        let mut content = "中".repeat(4000);
+        content.push_str(" error occurred 错误");
+        let query = "occurred";
+        let max_length = 500;
+
+        let extracted = engine.extract_relevant_content(&content, query, max_length);
+        assert!(!extracted.is_empty());
+        assert!(extracted.chars().count() <= max_length);
+        assert!(extracted.starts_with('中'));
+    }
+
+    #[test]
+    fn extract_relevant_content_aligns_context_start_on_multibyte_text() {
+        let (engine, _temp_dir) = create_test_highlighting_engine();
+
+        // “中”×134 = 402 字节；查询词位于 402 字节处。上下文回退
+        // start = 402 - 100×4 = 2，落在第一个“中”的中间字节——旧代码
+        // 切片 panic，修复后对齐到字符边界 0。
+        let mut content = "中".repeat(134);
+        content.push_str("occurred");
+        let query = "occurred";
+        let max_length = 500;
+
+        let extracted = engine.extract_relevant_content(&content, query, max_length);
+        assert!(extracted.contains("occurred"));
+        assert!(extracted.chars().count() <= max_length);
+    }
+
+    #[test]
+    fn extract_relevant_content_aligns_end_byte_on_multibyte_text() {
+        let (engine, _temp_dir) = create_test_highlighting_engine();
+
+        // “中”×40 = 120 字节；max_length=25 时结束估算 = 100 字节，
+        // 落在某个“中”的中间字节——旧代码切片 panic，修复后对齐
+        // 到边界且不 panic。
+        let mut content = "中".repeat(40);
+        content.push_str(" tail end");
+        let query = "tail";
+        let max_length = 25;
+
+        let extracted = engine.extract_relevant_content(&content, query, max_length);
+        assert!(!extracted.is_empty());
+        assert!(extracted.chars().count() <= max_length);
+    }
+
+    #[test]
+    fn extract_relevant_content_returns_start_when_no_match() {
+        let (engine, _temp_dir) = create_test_highlighting_engine();
+
+        let content = "中".repeat(4000) + "tail";
+        let query = "not-present-anywhere";
+        let max_length = 100;
+
+        // 无匹配时回退到开头片段，且不得 panic。
+        let extracted = engine.extract_relevant_content(&content, query, max_length);
+        assert!(extracted.chars().count() <= max_length);
+        assert!(!extracted.is_empty());
     }
 
     #[test]

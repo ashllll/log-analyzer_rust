@@ -66,18 +66,21 @@ export const Sidebar: React.FC = () => {
   );
 
   return (
-    <aside className="glass-sidebar w-[224px] border-r border-border-subtle flex flex-col shrink-0 z-50">
+    <aside
+      className="glass-sidebar z-50 flex w-[64px] shrink-0 flex-col border-r border-border-subtle xl:w-[208px]"
+      aria-label={t("nav.main_navigation", "Main navigation")}
+    >
       {/* Logo 区域 */}
-      <div className="h-14 flex items-center px-4 border-b border-border-subtle select-none">
-        <div className="h-7 w-7 bg-primary rounded-lg flex items-center justify-center text-white mr-2.5 shadow-sm">
-          <Zap size={18} fill="currentColor" />
+      <div className="flex h-12 items-center justify-center border-b border-border-subtle px-2 select-none xl:justify-start xl:px-3">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-primary text-white shadow-sm">
+          <Zap size={17} fill="currentColor" />
         </div>
-        <span className="font-bold text-[15px] tracking-[-0.01em] text-text-main">
+        <span className="ml-2.5 hidden truncate text-[14px] font-semibold tracking-[-0.01em] text-text-main xl:block">
           LogAnalyzer
         </span>
       </div>
 
-      <div className="flex-1 px-2.5 py-3 space-y-1">
+      <nav className="flex-1 space-y-1 px-2 py-2.5">
         {navItems.map(({ icon, label, page, testId }) => (
           <NavItem
             key={page}
@@ -88,8 +91,8 @@ export const Sidebar: React.FC = () => {
             data-testid={testId}
           />
         ))}
-      </div>
-      <div className="p-3 border-t border-border-subtle">
+      </nav>
+      <div className="border-t border-border-subtle p-2">
         <NavItem
           icon={Cog}
           label={t("nav.settings")}

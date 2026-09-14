@@ -6,7 +6,7 @@
  * @module api-responses
  */
 
-import { z } from 'zod';
+import { z } from "zod";
 
 // ============================================================================
 // RAR 支持信息
@@ -34,7 +34,7 @@ export type RarSupportInfo = z.infer<typeof RarSupportInfoSchema>;
  * 文件节点类型
  */
 export type VirtualFileNode = {
-  type: 'file';
+  type: "file";
   name: string;
   path: string;
   hash: string;
@@ -46,7 +46,7 @@ export type VirtualFileNode = {
  * 归档节点类型
  */
 export type VirtualArchiveNode = {
-  type: 'archive';
+  type: "archive";
   name: string;
   path: string;
   hash: string;
@@ -63,7 +63,7 @@ export type VirtualTreeNode = VirtualFileNode | VirtualArchiveNode;
  * 虚拟文件节点 Schema
  */
 export const VirtualFileNodeSchema: z.ZodType<VirtualFileNode> = z.object({
-  type: z.literal('file'),
+  type: z.literal("file"),
   name: z.string(),
   path: z.string(),
   hash: z.string(),
@@ -74,14 +74,16 @@ export const VirtualFileNodeSchema: z.ZodType<VirtualFileNode> = z.object({
 /**
  * 虚拟归档节点 Schema（递归）
  */
-export const VirtualArchiveNodeSchema: z.ZodType<VirtualArchiveNode> = z.object({
-  type: z.literal('archive'),
-  name: z.string(),
-  path: z.string(),
-  hash: z.string(),
-  archiveType: z.string(),
-  children: z.lazy(() => VirtualTreeNodeSchema.array()),
-});
+export const VirtualArchiveNodeSchema: z.ZodType<VirtualArchiveNode> = z.object(
+  {
+    type: z.literal("archive"),
+    name: z.string(),
+    path: z.string(),
+    hash: z.string(),
+    archiveType: z.string(),
+    children: z.lazy(() => VirtualTreeNodeSchema.array()),
+  }
+);
 
 /**
  * 虚拟树节点联合 Schema
@@ -99,7 +101,13 @@ export const VirtualTreeNodeSchema: z.ZodType<VirtualTreeNode> = z.union([
  * 工作区状态 Schema
  */
 // FIX(HI-17): 补充缺失的 'PARTIAL'，与 WorkspaceSchema.status 保持一致
-export const WorkspaceStatusSchema = z.enum(['READY', 'PROCESSING', 'OFFLINE', 'ERROR', 'PARTIAL']);
+export const WorkspaceStatusSchema = z.enum([
+  "READY",
+  "PROCESSING",
+  "OFFLINE",
+  "ERROR",
+  "PARTIAL",
+]);
 
 /**
  * 工作区状态枚举类型
@@ -181,8 +189,8 @@ export type CommandError = z.infer<typeof CommandErrorSchema>;
  * 文件过滤模式枚举
  */
 export enum FilterMode {
-  Whitelist = 'whitelist',
-  Blacklist = 'blacklist'
+  Whitelist = "whitelist",
+  Blacklist = "blacklist",
 }
 
 // ============================================================================
@@ -212,14 +220,16 @@ export type FileFilterConfig = {
  * 文件过滤器配置 Schema
  * 使用 passthrough 保持向后兼容，允许额外字段
  */
-export const FileFilterConfigSchema: z.ZodType<FileFilterConfig> = z.object({
-  enabled: z.boolean(),
-  binary_detection_enabled: z.boolean(),
-  mode: z.nativeEnum(FilterMode),
-  filename_patterns: z.array(z.string()),
-  allowed_extensions: z.array(z.string()),
-  forbidden_extensions: z.array(z.string()),
-}).passthrough();
+export const FileFilterConfigSchema: z.ZodType<FileFilterConfig> = z
+  .object({
+    enabled: z.boolean(),
+    binary_detection_enabled: z.boolean(),
+    mode: z.nativeEnum(FilterMode),
+    filename_patterns: z.array(z.string()),
+    allowed_extensions: z.array(z.string()),
+    forbidden_extensions: z.array(z.string()),
+  })
+  .passthrough();
 
 // ============================================================================
 // 文件读取响应
@@ -299,13 +309,13 @@ export const FilterOptionsSchema = z.object({
   filePattern: z.string(),
 });
 
-const QueryOperatorSchema = z.enum(['AND', 'OR', 'NOT']);
+const QueryOperatorSchema = z.enum(["AND", "OR", "NOT"]);
 
 const SearchTermSchema = z.object({
   id: z.string(),
   value: z.string(),
   operator: QueryOperatorSchema,
-  source: z.enum(['user', 'preset']),
+  source: z.enum(["user", "preset"]),
   presetGroupId: z.string().optional(),
   isRegex: z.boolean(),
   priority: z.number(),
@@ -337,8 +347,8 @@ export const SearchParamsSchema = z.object({
 export type SearchParamsValidated = z.infer<typeof SearchParamsSchema>;
 
 export const ExportParamsSchema = z.object({
-  results: z.array(LogEntrySchema),
-  format: z.enum(['csv', 'json']),
+  searchId: z.string().min(1),
+  format: z.enum(["csv", "json"]),
   savePath: z.string().min(1),
 });
 
@@ -369,13 +379,23 @@ export type SearchConfigValidated = z.infer<typeof SearchConfigSchema>;
 
 export const TaskManagerConfigSchema = z.object({
   max_concurrent_tasks: z.number().int().min(1).max(1000),
-  completed_task_ttl: z.number().int().min(1).max(86400 * 7),
-  failed_task_ttl: z.number().int().min(1).max(86400 * 30),
+  completed_task_ttl: z
+    .number()
+    .int()
+    .min(1)
+    .max(86400 * 7),
+  failed_task_ttl: z
+    .number()
+    .int()
+    .min(1)
+    .max(86400 * 30),
   cleanup_interval: z.number().int().min(1).max(3600),
   operation_timeout: z.number().int().min(1).max(3600),
 });
 
-export type TaskManagerConfigValidated = z.infer<typeof TaskManagerConfigSchema>;
+export type TaskManagerConfigValidated = z.infer<
+  typeof TaskManagerConfigSchema
+>;
 
 // ============================================================================
 // 工作区加载响应
@@ -392,7 +412,9 @@ export const WorkspaceLoadResponseSchema = z.object({
 /**
  * 工作区加载响应类型
  */
-export type WorkspaceLoadResponseValidated = z.infer<typeof WorkspaceLoadResponseSchema>;
+export type WorkspaceLoadResponseValidated = z.infer<
+  typeof WorkspaceLoadResponseSchema
+>;
 
 /**
  * 工作区状态响应 Schema
@@ -408,7 +430,9 @@ export const WorkspaceStatusResponseSchema = z.object({
 /**
  * 工作区状态响应类型
  */
-export type WorkspaceStatusResponseValidated = z.infer<typeof WorkspaceStatusResponseSchema>;
+export type WorkspaceStatusResponseValidated = z.infer<
+  typeof WorkspaceStatusResponseSchema
+>;
 
 /**
  * 工作区时间范围响应 Schema
@@ -422,7 +446,9 @@ export const WorkspaceTimeRangeSchema = z.object({
 /**
  * 工作区时间范围响应类型
  */
-export type WorkspaceTimeRangeValidated = z.infer<typeof WorkspaceTimeRangeSchema>;
+export type WorkspaceTimeRangeValidated = z.infer<
+  typeof WorkspaceTimeRangeSchema
+>;
 
 // ============================================================================
 // 应用配置
@@ -451,7 +477,7 @@ const KeywordPatternSchema = z.object({
 /**
  * 颜色键类型
  */
-const ColorKeySchema = z.enum(['blue', 'green', 'red', 'orange', 'purple']);
+const ColorKeySchema = z.enum(["blue", "green", "red", "orange", "purple"]);
 
 /**
  * 关键词组 Schema
@@ -481,13 +507,15 @@ const WorkspaceSchema = z.object({
 /**
  * 应用配置 Schema（对应 api.ts AppConfig）
  */
-export const AppConfigSchema = z.object({
-  keyword_groups: z.array(KeywordGroupSchema),
-  workspaces: z.array(WorkspaceSchema),
-  file_filter: AppConfigFileFilterSchema,
-  search: SearchConfigSchema.optional(),
-  task_manager: TaskManagerConfigSchema.optional(),
-}).passthrough();
+export const AppConfigSchema = z
+  .object({
+    keyword_groups: z.array(KeywordGroupSchema),
+    workspaces: z.array(WorkspaceSchema),
+    file_filter: AppConfigFileFilterSchema,
+    search: SearchConfigSchema.optional(),
+    task_manager: TaskManagerConfigSchema.optional(),
+  })
+  .passthrough();
 
 /**
  * 应用配置类型（Zod 验证后）

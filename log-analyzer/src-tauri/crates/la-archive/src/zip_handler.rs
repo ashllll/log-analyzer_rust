@@ -4,6 +4,7 @@ use la_core::error::{AppError, Result};
 use la_core::utils::path_security::{
     validate_and_sanitize_archive_path, PathValidationResult, SecurityConfig,
 };
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use tokio::fs;
 use tracing::warn;
@@ -136,11 +137,54 @@ impl ArchiveHandler for ZipHandler {
 
                     match std::fs::File::create(&out_path) {
                         Ok(mut out_file) => {
-                            if let Err(e) = std::io::copy(&mut file, &mut out_file) {
+                            // ── 流式解压 + 实际字节计数 ──
+                            // ZIP 头部声明的 uncompressed_size 可被伪造，
+                            // 仅凭声明值检查无法阻止 zip 炸弹。这里按
+                            // 实际解压字节强制 max_file_size，超限立即
+                            // 中止并删除半写文件。
+                            const COPY_BUFFER_SIZE: usize = 64 * 1024;
+                            let mut buffer = [0u8; COPY_BUFFER_SIZE];
+                            let mut written: u64 = 0;
+                            let mut copy_error: Option<std::io::Error> = None;
+                            let mut exceeded = false;
+                            loop {
+                                match file.read(&mut buffer) {
+                                    Ok(0) => break,
+                                    Ok(n) => {
+                                        let next = written + n as u64;
+                                        if next > max_file_size {
+                                            exceeded = true;
+                                            break;
+                                        }
+                                        if let Err(e) = out_file.write_all(&buffer[..n]) {
+                                            copy_error = Some(e);
+                                            break;
+                                        }
+                                        written = next;
+                                    }
+                                    Err(e) => {
+                                        copy_error = Some(e);
+                                        break;
+                                    }
+                                }
+                            }
+                            if exceeded {
+                                drop(out_file);
+                                let _ = std::fs::remove_file(&out_path);
+                                let msg = format!("ZIP 条目实际解压大小超过 max_file_size，已中止并删除: {name} (written={written} bytes)");
+                                warn!("{}", msg);
+                                summary.errors.push(msg);
+                                continue;
+                            }
+                            if let Some(e) = copy_error {
                                 let msg = format!("Failed to extract file {}: {}", out_path.display(), e);
                                 warn!("{}", msg);
                                 summary.errors.push(msg);
-                            } else {
+                                drop(out_file);
+                                let _ = std::fs::remove_file(&out_path);
+                                continue;
+                            }
+                            {
                                 // TOCTOU 防护: 创建后验证实际路径仍在目标目录内
                                 if let (Ok(real_path), Ok(real_target)) =
                                     (std::fs::canonicalize(&out_path), std::fs::canonicalize(&target_path))
@@ -154,10 +198,10 @@ impl ArchiveHandler for ZipHandler {
                                         continue;
                                     }
                                 }
-                                summary.add_file(safe_path, size);
+                                // 记录实际写入字节（而非声明值），使压缩比
+                                // 检测与累计上限基于真实数据。
+                                summary.add_file(safe_path, written);
                             }
-                            // 显式释放文件句柄
-                            drop(out_file);
                         }
                         Err(e) => {
                             warn!("Failed to create file {:?}: {}", out_path, e);
@@ -559,5 +603,141 @@ mod tests {
             let content = std::fs::read_to_string(file_path).unwrap();
             assert_eq!(content, format!("Content of file {i}"));
         }
+    }
+
+    /// 表驱动 CRC-32（IEEE 802.3），用于手工构造 ZIP 字节流
+    fn crc32(data: &[u8]) -> u32 {
+        fn make_table() -> [u32; 256] {
+            let mut table = [0u32; 256];
+            for (i, entry) in table.iter_mut().enumerate() {
+                let mut c = i as u32;
+                for _ in 0..8 {
+                    c = if c & 1 != 0 {
+                        0xEDB88320 ^ (c >> 1)
+                    } else {
+                        c >> 1
+                    };
+                }
+                *entry = c;
+            }
+            table
+        }
+        let table = make_table();
+        let mut crc = 0xFFFF_FFFFu32;
+        for &b in data {
+            crc = table[((crc ^ b as u32) & 0xFF) as usize] ^ (crc >> 8);
+        }
+        !crc
+    }
+
+    /// 构造一个 ZIP：local header 与 central directory 的
+    /// uncompressed_size 均伪造为 declared_size，而 deflate 流的实际
+    /// 解压大小是 actual_data.len()。
+    fn build_zip_with_forged_size(actual_data: &[u8], declared_size: u32) -> Vec<u8> {
+        use flate2::write::DeflateEncoder;
+        use flate2::Compression;
+
+        let mut encoder = DeflateEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(actual_data).unwrap();
+        let compressed = encoder.finish().unwrap();
+        let crc = crc32(actual_data);
+        let name = b"boom.log";
+        let mut out = Vec::new();
+
+        // ── Local file header ──
+        out.extend_from_slice(&0x0403_4b50u32.to_le_bytes());
+        out.extend_from_slice(&20u16.to_le_bytes()); // version needed
+        out.extend_from_slice(&0u16.to_le_bytes()); // flags
+        out.extend_from_slice(&8u16.to_le_bytes()); // deflate
+        out.extend_from_slice(&0u16.to_le_bytes()); // mod time
+        out.extend_from_slice(&0u16.to_le_bytes()); // mod date
+        out.extend_from_slice(&crc.to_le_bytes());
+        out.extend_from_slice(&(compressed.len() as u32).to_le_bytes());
+        out.extend_from_slice(&declared_size.to_le_bytes()); // ← 伪造
+        out.extend_from_slice(&(name.len() as u16).to_le_bytes());
+        out.extend_from_slice(&0u16.to_le_bytes()); // extra len
+        out.extend_from_slice(name);
+        out.extend_from_slice(&compressed);
+
+        // ── Central directory ──
+        let cd_offset = out.len() as u32;
+        out.extend_from_slice(&0x0201_4b50u32.to_le_bytes());
+        out.extend_from_slice(&20u16.to_le_bytes()); // version made by
+        out.extend_from_slice(&20u16.to_le_bytes()); // version needed
+        out.extend_from_slice(&0u16.to_le_bytes()); // flags
+        out.extend_from_slice(&8u16.to_le_bytes()); // deflate
+        out.extend_from_slice(&0u16.to_le_bytes()); // mod time
+        out.extend_from_slice(&0u16.to_le_bytes()); // mod date
+        out.extend_from_slice(&crc.to_le_bytes());
+        out.extend_from_slice(&(compressed.len() as u32).to_le_bytes());
+        out.extend_from_slice(&declared_size.to_le_bytes()); // ← 伪造
+        out.extend_from_slice(&(name.len() as u16).to_le_bytes());
+        out.extend_from_slice(&0u16.to_le_bytes()); // extra len
+        out.extend_from_slice(&0u16.to_le_bytes()); // comment len
+        out.extend_from_slice(&0u16.to_le_bytes()); // disk number
+        out.extend_from_slice(&0u16.to_le_bytes()); // internal attrs
+        out.extend_from_slice(&0u32.to_le_bytes()); // external attrs
+        out.extend_from_slice(&0u32.to_le_bytes()); // local header offset
+        out.extend_from_slice(name);
+        let cd_len = out.len() as u32 - cd_offset;
+
+        // ── End of central directory ──
+        out.extend_from_slice(&0x0605_4b50u32.to_le_bytes());
+        out.extend_from_slice(&0u16.to_le_bytes()); // disk
+        out.extend_from_slice(&0u16.to_le_bytes()); // cd disk
+        out.extend_from_slice(&1u16.to_le_bytes()); // entries on disk
+        out.extend_from_slice(&1u16.to_le_bytes()); // total entries
+        out.extend_from_slice(&cd_len.to_le_bytes());
+        out.extend_from_slice(&cd_offset.to_le_bytes());
+        out.extend_from_slice(&0u16.to_le_bytes()); // comment len
+        out
+    }
+
+    #[tokio::test]
+    async fn forged_zip_size_is_throttled_by_actual_written_bytes() {
+        let temp_dir = TempDir::new().unwrap();
+        let zip_path = temp_dir.path().join("bomb.zip");
+        let output_dir = temp_dir.path().join("output");
+
+        // 声明 10 字节，实际解压 5000 字节 —— 前置声明值检查会放行。
+        let actual = vec![b'a'; 5000];
+        let zip_bytes = build_zip_with_forged_size(&actual, 10);
+        std::fs::write(&zip_path, &zip_bytes).unwrap();
+
+        let handler = ZipHandler;
+        let summary = handler
+            .extract_with_limits(&zip_path, &output_dir, 1000, 10_000, 100)
+            .await
+            .expect("extraction should complete (entry skipped)");
+
+        assert_eq!(summary.files_extracted, 0);
+        assert!(
+            !output_dir.join("boom.log").exists(),
+            "partial file must be removed"
+        );
+        assert!(
+            summary.errors.iter().any(|e| e.contains("max_file_size")),
+            "abort must be recorded in errors, got: {:?}",
+            summary.errors,
+        );
+    }
+
+    #[tokio::test]
+    async fn normal_zip_entry_is_recorded_with_actual_size() {
+        let temp_dir = TempDir::new().unwrap();
+        let zip_path = temp_dir.path().join("ok.zip");
+        let output_dir = temp_dir.path().join("output");
+
+        let files = vec![("small.txt", b"hello world" as &[u8])];
+        create_test_zip(&zip_path, files).unwrap();
+
+        let handler = ZipHandler;
+        let summary = handler
+            .extract_with_limits(&zip_path, &output_dir, 10_000, 10_000, 100)
+            .await
+            .unwrap();
+
+        assert_eq!(summary.files_extracted, 1);
+        assert!(output_dir.join("small.txt").exists());
     }
 }

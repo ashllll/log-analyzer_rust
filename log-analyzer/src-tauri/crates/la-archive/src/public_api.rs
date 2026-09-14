@@ -429,6 +429,7 @@ pub async fn extract_archive_async(
         archive_path,
         target_dir,
         workspace_id,
+        0,
         policy,
         security_policy,
     )
@@ -439,6 +440,7 @@ pub(crate) async fn extract_archive_async_with_security_policy(
     archive_path: &Path,
     target_dir: &Path,
     workspace_id: &str,
+    initial_depth: usize,
     policy: ExtractionPolicy,
     security_policy: SecurityPolicy,
 ) -> Result<ExtractionResult> {
@@ -476,7 +478,7 @@ pub(crate) async fn extract_archive_async_with_security_policy(
 
     // Perform extraction
     let internal_result: InternalExtractionResult = orchestrator
-        .extract_archive(archive_path, target_dir, workspace_id)
+        .extract_archive(archive_path, target_dir, workspace_id, initial_depth)
         .await
         .map_err(ExtractionError::from)?;
 

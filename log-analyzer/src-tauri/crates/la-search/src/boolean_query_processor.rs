@@ -52,6 +52,7 @@ impl<C: Collector> Collector for CancellableCollector<C> {
         Ok(CancellableChildCollector {
             inner: child,
             token: self.token.clone(),
+            cancelled: false,
         })
     }
 
@@ -70,6 +71,9 @@ impl<C: Collector> Collector for CancellableCollector<C> {
 pub struct CancellableChildCollector<C> {
     inner: C,
     token: CancellationToken,
+    /// 取消后置位：后续文档不再逐个检查，直接跳过，
+    /// 避免取消后仍以 O(n) 遍历整个段。
+    cancelled: bool,
 }
 
 impl<C: tantivy::collector::SegmentCollector> tantivy::collector::SegmentCollector
@@ -81,7 +85,11 @@ impl<C: tantivy::collector::SegmentCollector> tantivy::collector::SegmentCollect
     /// 使用更细粒度的检查策略：
     /// - 每 256 个文档检查一次取消状态（平衡开销和响应性）
     /// - 对于高分文档（score > 0.9）立即检查，确保能快速响应
+    /// - 取消后置位 cancelled，其余文档 O(1) 跳过
     fn collect(&mut self, doc: DocId, score: Score) {
+        if self.cancelled {
+            return;
+        }
         // 细粒度取消检查：每 256 个文档检查一次，比原来的 1024 更频繁
         const CANCEL_CHECK_INTERVAL: u32 = 256;
         // 高分文档阈值：对于高相关性文档立即检查取消状态
@@ -91,14 +99,16 @@ impl<C: tantivy::collector::SegmentCollector> tantivy::collector::SegmentCollect
             doc.is_multiple_of(CANCEL_CHECK_INTERVAL) || score > HIGH_SCORE_THRESHOLD;
 
         if should_check_cancel && self.token.is_cancelled() {
-            // 取消时停止收集当前段，但保留已收集的结果
-            // 通过 inner.harvest() 返回的部分结果可以被上层使用
+            // 取消时停止收集当前段，丢弃剩余文档。
+            self.cancelled = true;
             return;
         }
         self.inner.collect(doc, score);
     }
 
     fn harvest(self) -> Self::Fruit {
+        // 段已取消时 inner 可能为空，返回其 harvest（可能是空结果）；
+        // 上层 merge 后由 for_segment 的取消检查保证整体搜索以错误结束。
         self.inner.harvest()
     }
 }

@@ -496,29 +496,52 @@ impl<'a> Iterator for FancyMatches<'a> {
     type Item = MatchResult;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let remaining = &self.text[self.offset..];
-        match self.regex.find(remaining) {
-            Ok(Some(mat)) => {
-                let start = self.offset + mat.start();
-                let end = self.offset + mat.end();
-                if end <= self.offset {
-                    self.offset += 1;
-                    return self.next();
-                }
-                self.offset = end;
-                Some(MatchResult {
-                    start,
-                    end,
-                    pattern: Arc::clone(&self.pattern),
-                })
+        loop {
+            // Guard: an empty match at the very end of the text used to
+            // advance `offset` past `len`, making the slice below panic.
+            // Terminate instead once the offset can no longer point into
+            // the text.
+            if self.offset > self.text.len() {
+                return None;
             }
-            Ok(None) => None,
-            Err(e) => {
-                // 回溯失败（如 catastrophic backtracking），记录错误并终止迭代
-                if self.error.is_none() {
-                    self.error = Some(format!("fancy-regex execution error: {e}"));
+            let remaining = &self.text[self.offset..];
+            match self.regex.find(remaining) {
+                Ok(Some(mat)) => {
+                    let start = self.offset + mat.start();
+                    let end = self.offset + mat.end();
+                    if end <= self.offset {
+                        // Empty match. Advance past it; if we are already at
+                        // the end of the text there is nothing left to find.
+                        if self.offset >= self.text.len() {
+                            return None;
+                        }
+                        // Advance by one full character (not one byte) so
+                        // the next slice stays on a UTF-8 boundary. Loop
+                        // instead of recursing to avoid stack growth on
+                        // long runs of empty matches.
+                        let advance = self.text[self.offset..]
+                            .chars()
+                            .next()
+                            .map(|c| c.len_utf8())
+                            .unwrap_or(1);
+                        self.offset += advance;
+                        continue;
+                    }
+                    self.offset = end;
+                    return Some(MatchResult {
+                        start,
+                        end,
+                        pattern: Arc::clone(&self.pattern),
+                    });
                 }
-                None
+                Ok(None) => return None,
+                Err(e) => {
+                    // 回溯失败（如 catastrophic backtracking），记录错误并终止迭代
+                    if self.error.is_none() {
+                        self.error = Some(format!("fancy-regex execution error: {e}"));
+                    }
+                    return None;
+                }
             }
         }
     }
@@ -620,11 +643,47 @@ pub fn regex_complexity_score(pattern: &str) -> usize {
 }
 
 /// 检测是否需要前瞻/后瞻
+///
+/// P3 修复：感知转义与字符类——`[(?=]`（字符类内的字面字符）与
+/// `\\` 转义的 `(?` 不再被误判为 lookaround 而误入 Fancy 回溯引擎。
 pub fn needs_lookaround(pattern: &str) -> bool {
-    pattern.contains("(?=")
-        || pattern.contains("(?!")
-        || pattern.contains("(?<=")
-        || pattern.contains("(?<!")
+    let chars: Vec<char> = pattern.chars().collect();
+    let mut in_class = false;
+    let mut escaped = false;
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if escaped {
+            escaped = false;
+            i += 1;
+            continue;
+        }
+        if c == '\\' {
+            escaped = true;
+            i += 1;
+            continue;
+        }
+        if c == '[' {
+            in_class = true;
+            i += 1;
+            continue;
+        }
+        if c == ']' && in_class {
+            in_class = false;
+            i += 1;
+            continue;
+        }
+        if !in_class && c == '(' && i + 2 < chars.len() && chars[i + 1] == '?' {
+            if matches!(chars[i + 2], '=' | '!') {
+                return true;
+            }
+            if chars[i + 2] == '<' && i + 3 < chars.len() && matches!(chars[i + 3], '=' | '!') {
+                return true;
+            }
+        }
+        i += 1;
+    }
+    false
 }
 
 /// Check for ReDoS (Regular Expression Denial of Service) risk patterns.
@@ -648,6 +707,10 @@ fn check_redos_risk(pattern: &str) -> Result<(), EngineError> {
 }
 
 /// Detect nested quantifiers like (X+)+, (X*)*, (X+)*, (X*)+
+///
+/// Also covers the previously missed forms:
+/// - `(a?)+` / `(a?){2,}` — `?` quantifier inside the body
+/// - `(a{1,2})+` — `{n,m}` quantifier inside the body
 fn has_nested_quantifiers(pattern: &str) -> bool {
     let nested_pattern = Regex::new(r"\)[\+\*\?]|\}[\,\d]*[\+\*\?]").unwrap();
     if !nested_pattern.is_match(pattern) {
@@ -665,12 +728,8 @@ fn has_nested_quantifiers(pattern: &str) -> bool {
                     depth += 1;
                 } else if chars[j as usize] == '(' {
                     depth -= 1;
-                    if depth == 0 {
-                        let body = &chars[j as usize + 1..i];
-                        let body_str: String = body.iter().collect();
-                        if body_str.contains('+') || body_str.contains('*') {
-                            return true;
-                        }
+                    if depth == 0 && body_contains_quantifier(&chars, j as usize + 1, i) {
+                        return true;
                     }
                 }
                 j -= 1;
@@ -681,9 +740,43 @@ fn has_nested_quantifiers(pattern: &str) -> bool {
     false
 }
 
-/// Detect overlapping alternation patterns like (a|aa)+
+/// Scan a group body for any quantifier (`+`, `*`, `?`, `{n,m}`).
+///
+/// `?` is only a quantifier when it does not start a group construct
+/// (`(?:` `(?=` `(?!` `(?<=` `(?<!` `(?P<`) and is not escaped. `{` counts
+/// as a quantifier when followed by a digit (approximation of `{n,m}`).
+fn body_contains_quantifier(chars: &[char], start: usize, end: usize) -> bool {
+    let mut k = start;
+    while k < end {
+        match chars[k] {
+            '+' | '*' => return true,
+            '\\' => {
+                // 跳过转义序列，避免把字面量 `\?` 当量词
+                k += 1;
+            }
+            '?' => {
+                // `(?` 开头是组构造（lookaround / non-capturing / named），
+                // 不是量词
+                let prev_is_group_open = k > start && chars[k - 1] == '(';
+                if !prev_is_group_open {
+                    return true;
+                }
+            }
+            '{' => {
+                if chars.get(k + 1).is_some_and(|c| c.is_ascii_digit()) {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+        k += 1;
+    }
+    false
+}
+
+/// Detect overlapping alternation patterns like (a|aa)+ or (a|aa){1,}
 fn has_overlapping_alternation(pattern: &str) -> bool {
-    let alternation_re = Regex::new(r"\([^()]*\|[^()]*\)[\+\*]").unwrap();
+    let alternation_re = Regex::new(r"\([^()]*\|[^()]*\)(?:[\+\*]|\{\d)").unwrap();
     alternation_re.is_match(pattern)
 }
 
@@ -757,6 +850,23 @@ mod tests {
     }
 
     #[test]
+    fn lookaround_detection_ignores_escaped_and_class_occurrences() {
+        // 真正的 lookaround 仍然识别
+        assert!(needs_lookaround(r"(?<=foo)bar"));
+        assert!(needs_lookaround(r"bar(?=foo)"));
+        assert!(needs_lookaround(r"(?!test)"));
+        // 字符类内的 `(?=` 是字面字符，不是 lookaround
+        assert!(!needs_lookaround(r"[(?=]"));
+        // 转义的 `\(?=` 是字面量
+        assert!(!needs_lookaround(r"\(?=\d"));
+        // 非捕获组不是 lookaround
+        assert!(!needs_lookaround(r"(?:ab)"));
+        // 普通模式不是 lookaround
+        assert!(!needs_lookaround(r"\d+"));
+        assert!(!needs_lookaround("error"));
+    }
+
+    #[test]
     fn test_lookaround_detection() {
         assert!(needs_lookaround(r"(?<=foo)bar"));
         assert!(needs_lookaround(r"bar(?=foo)"));
@@ -794,6 +904,95 @@ mod tests {
     fn test_redos_accepts_safe_lookaround() {
         let result = RegexEngine::new(r"(?<=error)\s+\d+", true);
         assert!(result.is_ok(), "Safe look-around should be accepted");
+    }
+    // ── P2#1 regression: previously missed ReDoS patterns ──
+
+    #[test]
+    fn test_redos_rejects_question_mark_nested_quantifier() {
+        let result = RegexEngine::new(r"(?=x)(a?)+", true);
+        assert!(result.is_err(), "(a?)+ must be rejected");
+    }
+
+    #[test]
+    fn test_redos_rejects_braced_nested_quantifier() {
+        let result = RegexEngine::new(r"(?=x)(a{1,2})+", true);
+        assert!(result.is_err(), "braced nested quantifier must be rejected");
+    }
+
+    #[test]
+    fn test_redos_rejects_braced_overlapping_alternation() {
+        let result = RegexEngine::new(r"(?=x)(a|aa){1,}", true);
+        assert!(
+            result.is_err(),
+            "braced overlapping alternation must be rejected"
+        );
+    }
+
+    #[test]
+    fn test_redos_still_accepts_safe_quantified_groups() {
+        // 固定次数/非嵌套的模式不应被误伤。
+        assert!(RegexEngine::new(r"(?=x)a{2}b", true).is_ok());
+        assert!(RegexEngine::new(r"(?=x)\?{2}", true).is_ok());
+        assert!(RegexEngine::new(r"(?<=error)\s+\d+", true).is_ok());
+        // alternation 在量词下被启发式保守拒绝（含安全的 (ab|cd)+），
+        // 这是既有策略，宁可误杀不可漏杀。
+        assert!(RegexEngine::new(r"(?=x)(ab|cd)+", true).is_err());
+    }
+    // ── P1#5 regression: empty matches at the end of the text ──
+
+    #[test]
+    fn fancy_matches_survives_empty_matches_at_end_of_text() {
+        // `(?!debug)` matches the empty string at every position. Empty
+        // matches are skipped by design, but the old iterator advanced
+        // `offset` past `len` on the trailing empty match and then
+        // panicked on the next slice. Collecting must terminate cleanly.
+        let engine = RegexEngine::new_with_case(r"(?!debug)", true, false).unwrap();
+        let matches: Vec<_> = engine.find_iter("abc").collect();
+        assert_eq!(
+            matches.len(),
+            0,
+            "pure-assertion queries yield no consumed matches"
+        );
+    }
+
+    #[test]
+    fn fancy_matches_survives_alternation_empty_match_at_end() {
+        // `$` inside an alternation produces an empty match at the end; the
+        // pattern as a whole still routes through the Fancy engine because
+        // of the lookahead. The trailing empty match used to panic the
+        // iterator on the following next() call.
+        let engine = RegexEngine::new_with_case(r"foo(?=bar)|$", true, false).unwrap();
+        let matches: Vec<_> = engine.find_iter("nope").collect();
+        assert!(!matches.is_empty(), "`$` should match at the end");
+        let last = matches.last().unwrap();
+        assert_eq!(last.end, "nope".len());
+    }
+
+    #[test]
+    fn fancy_matches_advances_by_char_boundaries_on_multibyte_text() {
+        // 原实现空匹配后 offset += 1（字节），在中文等多字节字符中间
+        // 切片会 panic。此处验证遍历多字节文本不 panic。
+        let engine = RegexEngine::new_with_case(r"(?!debug)", true, false).unwrap();
+        let matches: Vec<_> = engine.find_iter("中文").collect();
+        assert_eq!(matches.len(), 0);
+    }
+
+    #[test]
+    fn fancy_matches_handles_long_runs_of_empty_matches_without_stack_overflow() {
+        let engine = RegexEngine::new_with_case(r"(?!debug)", true, false).unwrap();
+        let text = "a".repeat(200_000);
+        let count = engine.find_iter(&text).count();
+        assert_eq!(count, 0, "skipped empty matches; iteration must terminate");
+    }
+
+    #[test]
+    fn fancy_matches_still_returns_consuming_matches_after_empty_skips() {
+        // 跳过空匹配不影响正常（消费字符的）匹配。
+        let engine = RegexEngine::new_with_case(r"a(?!b)", true, false).unwrap();
+        let matches: Vec<_> = engine.find_iter("ac ab az").collect();
+        assert_eq!(matches.len(), 2);
+        assert_eq!((matches[0].start, matches[0].end), (0, 1));
+        assert_eq!((matches[1].start, matches[1].end), (6, 7));
     }
 
     #[test]

@@ -33,15 +33,7 @@ impl EventPublisher for TauriEventPublisher {
     }
 
     async fn emit_search_complete(&self, search_id: &str, summary: SearchResultSummary) {
-        if let Err(e) = self.app_handle.emit(
-            "search-complete",
-            serde_json::json!({
-                "search_id": search_id,
-                "total_count": summary.total_matches,
-            }),
-        ) {
-            tracing::warn!(error = %e, search_id, "Failed to emit search-complete event");
-        }
+        let total_count = summary.total_matches;
         if let Err(e) = self.app_handle.emit(
             "search-summary",
             serde_json::json!({
@@ -50,6 +42,15 @@ impl EventPublisher for TauriEventPublisher {
             }),
         ) {
             tracing::warn!(error = %e, search_id, "Failed to emit search-summary event");
+        }
+        if let Err(e) = self.app_handle.emit(
+            "search-complete",
+            serde_json::json!({
+                "search_id": search_id,
+                "total_count": total_count,
+            }),
+        ) {
+            tracing::warn!(error = %e, search_id, "Failed to emit search-complete event");
         }
     }
 

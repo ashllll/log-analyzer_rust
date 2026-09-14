@@ -3,22 +3,22 @@
  * 测试流式无限搜索 Hook 的功能
  */
 
-import { renderHook } from '@testing-library/react';
-import { useInfiniteSearch } from '../useInfiniteSearch';
+import { renderHook } from "@testing-library/react";
+import { useInfiniteSearch } from "../useInfiniteSearch";
 
 // Mock @tanstack/react-query
-jest.mock('@tanstack/react-query', () => ({
+jest.mock("@tanstack/react-query", () => ({
   useInfiniteQuery: jest.fn(),
-  InfiniteData: {}
+  InfiniteData: {},
 }));
 
 // Mock @tauri-apps/api/core
-jest.mock('@tauri-apps/api/core', () => ({
-  invoke: jest.fn()
+jest.mock("@tauri-apps/api/core", () => ({
+  invoke: jest.fn(),
 }));
 
 // Mock logger
-jest.mock('../../utils/logger', () => ({
+jest.mock("../../utils/logger", () => ({
   logger: {
     debug: jest.fn(),
     error: jest.fn(),
@@ -27,15 +27,15 @@ jest.mock('../../utils/logger', () => ({
   },
 }));
 
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { useInfiniteQuery } from "@tanstack/react-query";
 
-describe('useInfiniteSearch', () => {
+describe("useInfiniteSearch", () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  describe('useInfiniteSearch hook', () => {
-    it('should call useInfiniteQuery with correct parameters', () => {
+  describe("useInfiniteSearch hook", () => {
+    it("should call useInfiniteQuery with correct parameters", () => {
       const mockUseInfiniteQuery = useInfiniteQuery as jest.Mock;
       mockUseInfiniteQuery.mockReturnValue({
         data: undefined,
@@ -43,28 +43,33 @@ describe('useInfiniteSearch', () => {
         hasNextPage: false,
         isFetchingNextPage: false,
         isLoading: false,
-        error: null
+        error: null,
       });
 
       const _result = renderHook(() =>
         useInfiniteSearch({
-          searchId: 'test-search',
-          query: 'error',
-          workspaceId: 'workspace-1',
+          searchId: "test-search",
+          query: "error",
+          workspaceId: "workspace-1",
           enabled: true,
           pageSize: 100,
-          staleTime: 60000
+          staleTime: 60000,
         })
       );
 
       expect(mockUseInfiniteQuery).toHaveBeenCalled();
       const callArg = mockUseInfiniteQuery.mock.calls[0][0];
-      expect(callArg.queryKey).toEqual(['search', 'infinite', 'test-search', 'error', 'workspace-1']);
+      expect(callArg.queryKey).toEqual([
+        "search",
+        "infinite",
+        "test-search",
+        "workspace-1",
+      ]);
       expect(callArg.getNextPageParam).toBeDefined();
       expect(callArg.initialPageParam).toBe(0);
     });
 
-    it('should pass correct options to useInfiniteQuery', () => {
+    it("should pass correct options to useInfiniteQuery", () => {
       const mockUseInfiniteQuery = useInfiniteQuery as jest.Mock;
       mockUseInfiniteQuery.mockReturnValue({
         data: undefined,
@@ -72,17 +77,17 @@ describe('useInfiniteSearch', () => {
         hasNextPage: false,
         isFetchingNextPage: false,
         isLoading: false,
-        error: null
+        error: null,
       });
 
       renderHook(() =>
         useInfiniteSearch({
-          searchId: 'test-search',
-          query: 'error',
-          workspaceId: 'workspace-1',
+          searchId: "test-search",
+          query: "error",
+          workspaceId: "workspace-1",
           enabled: true,
           pageSize: 500,
-          staleTime: 120000
+          staleTime: 120000,
         })
       );
 
@@ -91,12 +96,12 @@ describe('useInfiniteSearch', () => {
     });
   });
 
-  describe('searchQueryKeys', () => {
-    it('should export searchQueryKeys factory', async () => {
-      const { searchQueryKeys } = require('../useInfiniteSearch');
+  describe("searchQueryKeys", () => {
+    it("should export searchQueryKeys factory", async () => {
+      const { searchQueryKeys } = require("../useInfiniteSearch");
 
-      const key = searchQueryKeys.infinite('search-1', 'error', 'workspace-1');
-      expect(key).toEqual(['search', 'infinite', 'search-1', 'error', 'workspace-1']);
+      const key = searchQueryKeys.infinite("search-1", "workspace-1");
+      expect(key).toEqual(["search", "infinite", "search-1", "workspace-1"]);
     });
   });
 });

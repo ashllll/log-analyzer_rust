@@ -93,6 +93,12 @@ pub struct TaskInfo {
     pub workspace_id: Option<String>,
     #[serde(skip)]
     pub created_at: Instant,
+    /// 最后一次收到进度更新的时间（孤儿检测心跳，非创建时间）。
+    ///
+    /// 长任务（如数分钟的大文件导入）只在创建时更新一次进度，若孤儿
+    /// 检测使用 `created_at` 会把正常任务误判为孤儿并标记 Failed。
+    #[serde(skip)]
+    pub last_update: Instant,
     #[serde(skip)]
     pub completed_at: Option<Instant>,
 }
@@ -248,6 +254,7 @@ impl TaskManagerActor {
                     "Creating new task"
                 );
 
+                let now = Instant::now();
                 let task = TaskInfo {
                     task_id: id.clone(), // 老王备注：原字段名为id
                     task_type,
@@ -257,7 +264,8 @@ impl TaskManagerActor {
                     status: TaskStatus::Running,
                     version: 1u64, // 使用 u64 字面量
                     workspace_id,
-                    created_at: Instant::now(),
+                    created_at: now,
+                    last_update: now,
                     completed_at: None,
                 };
                 self.tasks.insert(id.clone(), task.clone());
@@ -323,6 +331,9 @@ impl TaskManagerActor {
                         task.message = message.clone();
                         task.status = status;
                         task.version = task.version.wrapping_add(1);
+                        // Refresh the orphan-detection heartbeat on every
+                        // accepted update so long-running tasks stay alive.
+                        task.last_update = Instant::now();
 
                         // 如果任务完成或失败，记录完成时间
                         if matches!(
@@ -477,8 +488,11 @@ impl TaskManagerActor {
                     to_remove.push(id.clone());
                 }
             } else if task.status == TaskStatus::Running {
-                // 检查孤儿 Running 任务：如果运行时间超过 operation_timeout 的 2 倍，标记为失败
-                let running_elapsed = now.duration_since(task.created_at).as_secs();
+                // 检查孤儿 Running 任务：距离最后一次进度更新超过
+                // operation_timeout 的 2 倍才判定为孤儿。使用心跳时间而非
+                // created_at——长任务（大文件导入、索引重建）会运行数分钟，
+                // 期间持续更新进度，不应被误判为失败。
+                let running_elapsed = now.duration_since(task.last_update).as_secs();
                 let orphan_timeout = self.config.operation_timeout * 2;
                 if running_elapsed >= orphan_timeout {
                     warn!(
@@ -812,6 +826,7 @@ mod tests {
                 version: 1,
                 workspace_id: Some("workspace-1".to_string()),
                 created_at: Instant::now(),
+                last_update: Instant::now(),
                 completed_at: None,
             },
         );
@@ -831,6 +846,80 @@ mod tests {
         assert_eq!(payload["task_id"], "orphan-1");
         assert_eq!(payload["status"], "FAILED");
         assert_eq!(payload["version"], 2);
+    }
+
+    #[test]
+    fn heartbeat_updates_prevent_orphan_false_positives() {
+        let emitter = Arc::new(RecordingEmitter::default());
+        let mut actor = TaskManagerActor::new(
+            emitter.clone(),
+            TaskManagerConfig {
+                operation_timeout: 10,
+                ..TaskManagerConfig::default()
+            },
+        );
+
+        let stale_heartbeat = Instant::now() - Duration::from_secs(100);
+
+        // A task whose heartbeat is stale: orphan detection must fail it.
+        actor.tasks.insert(
+            "stale-1".to_string(),
+            TaskInfo {
+                task_id: "stale-1".to_string(),
+                task_type: "Import".to_string(),
+                target: "logs".to_string(),
+                progress: 10,
+                message: "Importing...".to_string(),
+                status: TaskStatus::Running,
+                version: 1,
+                workspace_id: None,
+                created_at: stale_heartbeat,
+                last_update: stale_heartbeat,
+                completed_at: None,
+            },
+        );
+
+        // A long-running task with the same stale heartbeat that receives a
+        // progress update: the update refreshes the heartbeat and the task
+        // must survive cleanup (this is the >60s import false-positive fix).
+        actor.tasks.insert(
+            "alive-1".to_string(),
+            TaskInfo {
+                task_id: "alive-1".to_string(),
+                task_type: "Import".to_string(),
+                target: "logs".to_string(),
+                progress: 10,
+                message: "Importing...".to_string(),
+                status: TaskStatus::Running,
+                version: 1,
+                workspace_id: None,
+                created_at: stale_heartbeat,
+                last_update: stale_heartbeat,
+                completed_at: None,
+            },
+        );
+
+        let (tx, _rx) = tokio::sync::oneshot::channel();
+        actor.handle_message(ActorMessage::UpdateTask {
+            id: "alive-1".to_string(),
+            progress: 20,
+            message: "Importing...".to_string(),
+            status: TaskStatus::Running,
+            respond_to: tx,
+        });
+
+        actor.cleanup_expired_tasks();
+
+        assert_eq!(
+            actor.tasks.get("stale-1").unwrap().status,
+            TaskStatus::Failed,
+            "stale task without updates must be marked failed"
+        );
+        assert_eq!(
+            actor.tasks.get("alive-1").unwrap().status,
+            TaskStatus::Running,
+            "task with a fresh heartbeat must survive orphan cleanup"
+        );
     }
 
     #[tokio::test]

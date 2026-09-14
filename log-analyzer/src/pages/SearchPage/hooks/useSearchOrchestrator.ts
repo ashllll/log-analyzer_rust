@@ -87,22 +87,38 @@ export function useSearchOrchestrator(
   const searchRequestSeqRef = useRef(0);
   const activeSearchIdRef = useRef("");
 
+  // ── Latest-value refs ──
+  //
+  // Callers pass deps/callbacks as inline object literals, so capturing them
+  // in useCallback deps would create a new `execute` identity on every render.
+  // SearchPage's trigger effect depends on `executeSearch`, so that instability
+  // previously re-ran the effect on every render → cancel + re-search in an
+  // infinite loop. Keep the function identities stable and read the latest
+  // values through refs instead (same pattern as useSearchListeners).
+  const depsRef = useRef(deps);
+  depsRef.current = deps;
+  const callbacksRef = useRef(callbacks);
+  callbacksRef.current = callbacks;
+
   // ── cancel current ──
 
-  const { cancelSearch } = deps;
   const cancelCurrent = useCallback(async () => {
     const id = activeSearchIdRef.current;
     if (id) {
       activeSearchIdRef.current = "";
-      cancelSearch(id).catch((error) => {
+      depsRef.current.cancelSearch(id).catch((error) => {
         logger.warn("Cancel search failed:", error);
       });
     }
-  }, [cancelSearch]);
+  }, []);
 
   // ── execute ──
 
   const execute = useCallback(async () => {
+    // Read the latest deps/callbacks snapshot on each invocation so the
+    // function identity stays stable while callers pass inline literals.
+    const deps = depsRef.current;
+    const callbacks = callbacksRef.current;
     const {
       query,
       workspaceId,
@@ -201,7 +217,8 @@ export function useSearchOrchestrator(
       dispatchSearchExec({ type: "ERROR" });
       addToast("error", `Search failed: ${getFullErrorMessage(err)}`);
     }
-  }, [deps, callbacks, cancelCurrent]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const isActive = useCallback(() => activeSearchIdRef.current !== "", []);
 

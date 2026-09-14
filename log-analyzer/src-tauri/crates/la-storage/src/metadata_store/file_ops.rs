@@ -19,10 +19,10 @@ const FILE_UPSERT_UPDATE_SQL: &str = r#"
         mime_type = excluded.mime_type,
         parent_archive_id = excluded.parent_archive_id,
         depth_level = excluded.depth_level,
-        min_timestamp = excluded.min_timestamp,
-        max_timestamp = excluded.max_timestamp,
-        level_mask = excluded.level_mask,
-        analysis_status = excluded.analysis_status
+        min_timestamp = CASE WHEN files.sha256_hash = excluded.sha256_hash THEN COALESCE(excluded.min_timestamp, files.min_timestamp) ELSE excluded.min_timestamp END,
+        max_timestamp = CASE WHEN files.sha256_hash = excluded.sha256_hash THEN COALESCE(excluded.max_timestamp, files.max_timestamp) ELSE excluded.max_timestamp END,
+        level_mask = CASE WHEN files.sha256_hash = excluded.sha256_hash THEN COALESCE(excluded.level_mask, files.level_mask) ELSE excluded.level_mask END,
+        analysis_status = CASE WHEN files.sha256_hash = excluded.sha256_hash AND excluded.analysis_status = 'PENDING' AND files.analysis_status != 'PENDING' THEN files.analysis_status ELSE excluded.analysis_status END
 "#;
 
 /// Insert or replace file metadata by virtual path within a transaction.
@@ -47,10 +47,10 @@ pub(crate) async fn insert_file(pool: &SqlitePool, metadata: &FileMetadata) -> R
             mime_type = excluded.mime_type,
             parent_archive_id = excluded.parent_archive_id,
             depth_level = excluded.depth_level,
-            min_timestamp = excluded.min_timestamp,
-            max_timestamp = excluded.max_timestamp,
-            level_mask = excluded.level_mask,
-            analysis_status = excluded.analysis_status
+            min_timestamp = CASE WHEN files.sha256_hash = excluded.sha256_hash THEN COALESCE(excluded.min_timestamp, files.min_timestamp) ELSE excluded.min_timestamp END,
+            max_timestamp = CASE WHEN files.sha256_hash = excluded.sha256_hash THEN COALESCE(excluded.max_timestamp, files.max_timestamp) ELSE excluded.max_timestamp END,
+            level_mask = CASE WHEN files.sha256_hash = excluded.sha256_hash THEN COALESCE(excluded.level_mask, files.level_mask) ELSE excluded.level_mask END,
+            analysis_status = CASE WHEN files.sha256_hash = excluded.sha256_hash AND excluded.analysis_status = 'PENDING' AND files.analysis_status != 'PENDING' THEN files.analysis_status ELSE excluded.analysis_status END
         "#,
     )
     .bind(&metadata.sha256_hash)
@@ -299,6 +299,14 @@ pub(crate) async fn get_files_with_pruning(
         String::from("SELECT * FROM files WHERE 1=1")
     };
 
+    // Older workspaces may contain sampled bounds. Never trust them to
+    // exclude a large file, even before that file is reimported.
+    if requires_stats {
+        sql.push_str(&format!(
+            " AND (size > {} OR (1=1",
+            la_core::utils::file_stats::MAX_FULL_PARSE_BYTES
+        ));
+    }
     if let (Some(_start), Some(_end)) = (time_start, time_end) {
         sql.push_str(
             " AND (min_timestamp IS NULL OR max_timestamp IS NULL OR (min_timestamp <= ? AND max_timestamp >= ?))",
@@ -313,6 +321,9 @@ pub(crate) async fn get_files_with_pruning(
         sql.push_str(" AND (level_mask IS NULL OR (level_mask & ?) != 0)");
     }
 
+    if requires_stats {
+        sql.push_str("))");
+    }
     if file_pattern.is_some() {
         sql.push_str(" AND virtual_path GLOB ?");
     }
@@ -402,10 +413,10 @@ pub(crate) async fn insert_files_batch(
                 mime_type = excluded.mime_type,
                 parent_archive_id = excluded.parent_archive_id,
                 depth_level = excluded.depth_level,
-                min_timestamp = excluded.min_timestamp,
-                max_timestamp = excluded.max_timestamp,
-                level_mask = excluded.level_mask,
-                analysis_status = excluded.analysis_status
+                min_timestamp = CASE WHEN files.sha256_hash = excluded.sha256_hash THEN COALESCE(excluded.min_timestamp, files.min_timestamp) ELSE excluded.min_timestamp END,
+                max_timestamp = CASE WHEN files.sha256_hash = excluded.sha256_hash THEN COALESCE(excluded.max_timestamp, files.max_timestamp) ELSE excluded.max_timestamp END,
+                level_mask = CASE WHEN files.sha256_hash = excluded.sha256_hash THEN COALESCE(excluded.level_mask, files.level_mask) ELSE excluded.level_mask END,
+                analysis_status = CASE WHEN files.sha256_hash = excluded.sha256_hash AND excluded.analysis_status = 'PENDING' AND files.analysis_status != 'PENDING' THEN files.analysis_status ELSE excluded.analysis_status END
             "#,
         )
         .bind(&metadata.sha256_hash)
@@ -625,10 +636,10 @@ pub(crate) async fn insert_file_tx(
             mime_type = excluded.mime_type,
             parent_archive_id = excluded.parent_archive_id,
             depth_level = excluded.depth_level,
-            min_timestamp = excluded.min_timestamp,
-            max_timestamp = excluded.max_timestamp,
-            level_mask = excluded.level_mask,
-            analysis_status = excluded.analysis_status
+            min_timestamp = CASE WHEN files.sha256_hash = excluded.sha256_hash THEN COALESCE(excluded.min_timestamp, files.min_timestamp) ELSE excluded.min_timestamp END,
+            max_timestamp = CASE WHEN files.sha256_hash = excluded.sha256_hash THEN COALESCE(excluded.max_timestamp, files.max_timestamp) ELSE excluded.max_timestamp END,
+            level_mask = CASE WHEN files.sha256_hash = excluded.sha256_hash THEN COALESCE(excluded.level_mask, files.level_mask) ELSE excluded.level_mask END,
+            analysis_status = CASE WHEN files.sha256_hash = excluded.sha256_hash AND excluded.analysis_status = 'PENDING' AND files.analysis_status != 'PENDING' THEN files.analysis_status ELSE excluded.analysis_status END
         "#,
     )
     .bind(&metadata.sha256_hash)
